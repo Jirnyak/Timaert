@@ -29,15 +29,12 @@
 #include "macro/entry_context.h"
 #include "tables/npc.h"
 #include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP law
-#include "macro/anketa.h"
 #include "macro/map_generator.h"
 #include "macro/features.h"
 #include "tables/biomes.h"
 #include "macro/tree_layer.h"
 #include "macro/movement_cost.h"
-#include "macro/currency.h"
 #include "tables/seasons.h"
-#include "macro/zones.h"
 #include "core/rng.h"
 #include "core/torus.h"
 #include "macro/store.h"
@@ -632,7 +629,6 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
         terrain_ = nullptr;
         objects_ = nullptr;
         bus_ = nullptr;
-        zones_ = nullptr;
         treeLayer_ = nullptr;
         active_ = false;
         pendingUpload3d_ = {};
@@ -647,7 +643,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // nobody read was simply a column with no reader (DOD п.9, снесён M-152).
     mw_ = mw;
     gs_ = mw_.gs; terrain_ = mw_.terrain;
-    objects_ = &scene; bus_ = &bus; zones_ = mw_.zones;
+    objects_ = &scene; bus_ = &bus;
     treeLayer_ = mw_.trees;
     GameState& gs = *gs_;
     // The scene raises around the FLAG HOLDER's cell — «кем я на карте» is
@@ -3801,7 +3797,6 @@ void SubworldEngine::leave(bool force) {
     terrain_ = nullptr;
     objects_ = nullptr;
     bus_ = nullptr;
-    zones_ = nullptr;
     treeLayer_ = nullptr;
     structIndex_.clear();
     structIndexDirty_ = true;
@@ -3977,7 +3972,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // the town, vermin from the fauna stock) pay through mw_ like any scene.
     mw_ = mw;
     gs_ = mw_.gs; terrain_ = mw_.terrain;
-    objects_ = &scene; bus_ = &bus; zones_ = mw_.zones;
+    objects_ = &scene; bus_ = &bus;
     treeLayer_ = mw_.trees;
     GameState& gs = *gs_;
 

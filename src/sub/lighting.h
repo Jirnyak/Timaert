@@ -17,7 +17,6 @@
 #pragma once
 #include "core/math.h"
 #include "tables/celestial.h"
-#include "macro/state.h"
 #include "sub/height.h"     // height_m — the curve the air is scaled against
 #include <algorithm>
 #include <cmath>

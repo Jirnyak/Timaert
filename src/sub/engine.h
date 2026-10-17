@@ -11,6 +11,9 @@
 #include "core/time.h"
 #include "macro/audio.h"     // SfxId — the one sound vocabulary (pending sfx)
 #include "macro/chronicle.h"
+#include "macro/macro_world.h" // конверт MacroWorld — член mw_ (значением);
+                               // прежде приезжал ТРАНЗИТОМ macro_stock.h —
+                               // ломоть 1 эпика фрейма назвал груз честно
 #include "sub/seamless_manager.h"
 #include "sub/camera.h"
 #include "sub/collide.h"
@@ -19,7 +22,6 @@
 #include "sub/movement.h"
 #include "sub/vk_renderer_3d.h"
 #include "events/event_bus.h"
-#include "macro/macro_stock.h"
 
 #include <vulkan/vulkan.h>
 
@@ -739,7 +741,8 @@ private:
     // конвертом mw_ (шаг «курьер»).
     SubObjects*         objects_  = nullptr;
     EventBus*           bus_      = nullptr;
-    const ZoneLayer*    zones_    = nullptr;
+    // (вид `zones_` умер ломтём 1 эпика фрейма: ноль читателей — байт
+    // опасности приезжает клетке через `cell_facts().zone`, DOD п.9)
     TreeLayer*          treeLayer_ = nullptr;
     // ── PLACES THAT MEAN SOMETHING (owner, 2026-08-27) ──────────────────
     // «В субмире есть локальные интеракции и ЗОНЫ — например войти в круг

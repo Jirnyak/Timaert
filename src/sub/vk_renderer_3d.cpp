@@ -19,8 +19,6 @@
 #include "gpu/bb_instance.h"
 #include "gpu/vk_device.h"
 #include "gpu/vk_renderer.h"
-#include "macro/fauna.h"
-#include "macro/state.h"
 #include "ecs/components.h"
 
 #include <SDL.h>

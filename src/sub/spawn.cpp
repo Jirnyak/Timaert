@@ -3,6 +3,8 @@
 #include "sub/dgn/dispatch.h"   // dungeon_scene_seed, dungeon_has_upper —
                                 // the household/partition law (CANON S28)
 #include "macro/entry_context.h"
+#include "macro/fauna.h"       // SpawnContext/roll_spawns — закон логова зовётся
+                               // отсюда; прежде транзит через spawn.h (ломоть 1)
 #include "tables/faction.h"
 #include "ecs/components.h"
 #include "ecs/npc_character.h"
@@ -10,9 +12,7 @@
 #include "tables/npc.h"
 #include "macro/macro_stock.h"
 #include "tables/forest.h"
-#include "macro/spell_book_state.h"   // SpellBook — part of the record a body inherits
 #include "macro/squad.h"              // sheet_of — THE door to "who is this"
-#include "macro/player_entity.h"      // player_squad_entity — «чья это запись»
 #include "sub/record.h"
 #include "tables/squad_type.h"   // squad_archetype — ось рода (M-90)
 #include "sub/body.h"

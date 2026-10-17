@@ -10,9 +10,7 @@
 #include "sub/height.h"
 #include "sub/doors.h"    // slot_set_debt — колонка квитанции (ломоть 4; слот-форма (ii-б))
 #include "sub/seamless_manager.h"
-#include "macro/fauna.h"
 #include "tables/biomes.h"
-#include "macro/features.h"
 #include "macro/anketa.h"
 #include "tables/npc.h"
 #include "macro/macro_stock.h"

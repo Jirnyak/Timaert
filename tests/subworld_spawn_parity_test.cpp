@@ -2,6 +2,7 @@
 #include "scene_objects_fixture.h"  // арена сцены фикстурам (кусок 1)
 #include "tables/faction.h"
 #include "macro/world_row.h"
+#include "macro/fauna.h"   // SpawnContext/roll_spawns — паритет зовёт закон логова сам
 #include "sub/spawn.h"
 #include "sub/record.h"   // THE door: whose record is this body (mirror law)
 #include "sub/body.h"     // body_height_m — продукт лица головы (кусок 1)

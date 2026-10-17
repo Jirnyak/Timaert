@@ -15,6 +15,7 @@
 // and a spawner that invents its own numbers must fail.
 #include "check.h"
 
+#include "macro/fauna.h"   // FaunaEntry/creature_catalog — свидетель читает каталог сам
 #include "sub/spawn.h"
 #include "sub/record.h"   // state_of — whose bag/gear/book is this body's
 #include "scene_objects_fixture.h"  // арена: бит стороны игрока — маска

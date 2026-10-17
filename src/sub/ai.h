@@ -6,7 +6,6 @@
 // frame.
 #pragma once
 #include <cstdint>
-#include "macro/anketa.h"
 #include "sub/objects.h"   // SubObjects — арена сцены, явный параметр (ломоть E)
 #include "tables/faction.h"
 
