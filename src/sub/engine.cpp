@@ -68,10 +68,18 @@ bool seam_trace_enabled() {
     return enabled;
 }
 
-// Fine-grid resolution ceiling. If the crowd is spread wider than
-// kBattleGridMaxDim cells the cell GROWS instead of the allocation — density is
-// low in that case, so the neighbour bound holds either way.
-constexpr int kBattleGridMaxDim = 256;
+// The fine-grid resolution ceiling lives with the arrays it sizes now:
+// kUnitGridMaxDim@src/sub/movement.h (слом 8 M-150 — the columns are fixed, so
+// the ceiling and the allocation are the same name).
+// The influence field's ceiling must afford the WHOLE window at the design
+// cell — this is the one TU where the window size and the field cap meet, so
+// the derivation of kInfluenceGridMaxDim (= kFullSize / influenceCell + 1) is
+// nailed here: shrink the cell or grow the window and this line names the cap
+// that must be raised first (ЗАКОН КАПА).
+static_assert(int(float(kFullSize) / MoveParams{}.influenceCell) + 1
+                  <= kInfluenceGridMaxDim,
+              "the influence field's fixed columns no longer cover the 3x3 "
+              "window at MoveParams::influenceCell — raise kInfluenceGridMaxDim");
 // The player side's faction id now comes from the registry itself
 // (macro/faction.h kPlayerFactionId) — the player is an ordinary row with an
 // ordinary row in the relation matrix, so there is no local spelling of it here
@@ -3173,7 +3181,7 @@ std::uint32_t SubworldEngine::spell_neighbors_callback(
     auto* self = static_cast<SubworldEngine*>(user);
     const BodyCrowd& u = *self->crowd_;
     if (u.count <= 0) return 0;             // an honestly empty world
-    const UnitGrid& g = self->crowdPick_;
+    const UnitGrid& g = *self->crowdPick_;
     const float rr = r + self->crowdMaxStepM_ + u.maxRadius;
     const float rr2 = rr * rr;
     const int c0 = g.col_of(x - rr), c1 = g.col_of(x + rr);
@@ -3416,11 +3424,11 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     // Two bucket grids at two scales — bodies are ~1 unit wide while weapons
     // reach up to 25, and one cell size cannot serve both without becoming
     // either quadratic or blind. Both cell sizes come from the crowd's own data.
-    build_unit_grid(crowdFine_, *crowd_, fine_cell_for(*crowd_, moveParams_),
-                    kBattleGridMaxDim);
-    build_unit_grid(crowdPick_, *crowd_, pick_cell_for(*crowd_, moveParams_),
-                    kBattleGridMaxDim);
-    build_influence_field(crowdField_, *crowd_, moveParams_.influenceCell,
+    build_unit_grid(*crowdFine_, *crowd_, fine_cell_for(*crowd_, moveParams_),
+                    kUnitGridMaxDim);
+    build_unit_grid(*crowdPick_, *crowd_, pick_cell_for(*crowd_, moveParams_),
+                    kUnitGridMaxDim);
+    build_influence_field(*crowdField_, *crowd_, moveParams_.influenceCell,
                           float(kFullSize));
     MoveGround terrain{};
     terrain.heightAt = &SubworldEngine::ground_height_callback;
@@ -3447,7 +3455,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     // river beneath it (the owner's support law, 2026-08-30).
     terrain.standTile = &SubworldEngine::solid_walk_tile_callback;
     MoveStats stats{};
-    steer_bodies(*crowd_, crowdFine_, crowdPick_, crowdField_, terrain,
+    steer_bodies(*crowd_, *crowdFine_, *crowdPick_, *crowdField_, terrain,
                  moveParams_, dt, &stats);
 
     // ── Scatter: SoA → колонка pos (ломоть 5; слотами — ступень (iv)) ─────

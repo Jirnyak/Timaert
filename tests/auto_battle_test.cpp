@@ -153,8 +153,9 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
     const MoveParams prm{};
     auto uOwn = make_body_crowd();
     BodyCrowd& u = *uOwn;
-    UnitGrid fine{}, pick{};
-    InfluenceField field{};
+    auto fineOwn = make_unit_grid(); auto pickOwn = make_unit_grid();
+    UnitGrid& fine = *fineOwn; UnitGrid& pick = *pickOwn;
+    auto fieldOwn = make_influence_field(); InfluenceField& field = *fieldOwn;
     std::vector<int> slot;
     const float dt = 1.0f / 30.0f;
     for (int t = 0; t < 18000; ++t) {

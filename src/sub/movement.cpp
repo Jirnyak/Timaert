@@ -101,6 +101,22 @@ std::unique_ptr<BodyCrowd> make_body_crowd() {
     return c;
 }
 
+// The grids and the field are born the same way and for the same reason: their
+// columns are fixed arrays of the cap (слом 8 M-150 — the last tick-sized
+// vectors of the scene died here), so the memory is paid once, honestly, at
+// birth, and the per-frame builds below only sweep the used prefix.
+std::unique_ptr<UnitGrid> make_unit_grid() {
+    std::unique_ptr<UnitGrid> g;
+    g.reset(new UnitGrid());
+    return g;
+}
+
+std::unique_ptr<InfluenceField> make_influence_field() {
+    std::unique_ptr<InfluenceField> f;
+    f.reset(new InfluenceField());
+    return f;
+}
+
 void BodyCrowd::clear() {
     count = 0;
     maxRadius = 0.0f;
@@ -145,12 +161,16 @@ float pick_cell_for(const BodyCrowd& u, const MoveParams& prm) {
 
 void build_unit_grid(UnitGrid& g, const BodyCrowd& u, float cell, int maxDim) {
     const int n = u.count;
-    g.items.clear();
+    g.itemCount = 0;
+    // The arrays ARE the ceiling now: a maxDim past the cap would scatter past
+    // the column ends, so it is clamped here, once, for every path below.
+    maxDim = std::min(maxDim, kUnitGridMaxDim);
     if (n <= 0 || cell <= 0.0f || maxDim < 1) {
         g.cell = cell > 0.0f ? cell : 1.0f;
         g.originX = g.originY = 0.0f;
         g.cols = g.rows = 1;
-        g.begin.assign(2u, 0u);
+        g.begin[0] = 0u;
+        g.begin[1] = 0u;
         return;
     }
 
@@ -167,23 +187,26 @@ void build_unit_grid(UnitGrid& g, const BodyCrowd& u, float cell, int maxDim) {
     // Grow the cell rather than the allocation when the crowd is spread wide.
     // Density is low in that case, so a coarser cell costs nothing in visits.
     float c = cell;
+    int wantCols = 1, wantRows = 1;
     for (;;) {
         const float spanX = maxX - minX, spanY = maxY - minY;
-        const int wantCols = int(spanX / c) + 1;
-        const int wantRows = int(spanY / c) + 1;
-        if ((wantCols <= maxDim && wantRows <= maxDim) || c > 1.0e6f) {
-            g.cols = std::max(1, wantCols);
-            g.rows = std::max(1, wantRows);
-            break;
-        }
+        wantCols = int(spanX / c) + 1;
+        wantRows = int(spanY / c) + 1;
+        if ((wantCols <= maxDim && wantRows <= maxDim) || c > 1.0e6f) break;
         c *= 2.0f;
     }
+    // Dimension guard. The emergency exit above (c > 1.0e6f — a degenerate
+    // span, e.g. a corrupted position) used to hand wantCols out as-is and the
+    // vector simply grew; a fixed column has nothing to grow, so the counts
+    // are clamped and col_of/row_of bin the outliers into the edge cells.
+    g.cols = std::clamp(wantCols, 1, maxDim);
+    g.rows = std::clamp(wantRows, 1, maxDim);
     g.cell = c;
     g.originX = minX;
     g.originY = minY;
 
     const std::size_t cells = std::size_t(g.cols) * std::size_t(g.rows);
-    g.begin.assign(cells + 1u, 0u);
+    std::fill_n(g.begin.data(), cells + 1u, 0u);
 
     // Pass 1 — per-cell counts (offset by one, so the prefix sum lands in place).
     for (int i = 0; i < n; ++i) {
@@ -193,14 +216,14 @@ void build_unit_grid(UnitGrid& g, const BodyCrowd& u, float cell, int maxDim) {
     }
     for (std::size_t i = 1; i <= cells; ++i) g.begin[i] += g.begin[i - 1u];
 
-    // Pass 2 — scatter. A local cursor copy keeps `begin` intact.
-    g.items.resize(std::size_t(n));
-    g.cursor.assign(g.begin.begin(), g.begin.end() - 1);
+    // Pass 2 — scatter. A cursor copy keeps `begin` intact.
+    std::copy_n(g.begin.data(), cells, g.cursor.data());
     for (int i = 0; i < n; ++i) {
         const int ci = g.row_of(u.y[std::size_t(i)]) * g.cols
                      + g.col_of(u.x[std::size_t(i)]);
         g.items[g.cursor[std::size_t(ci)]++] = i;
     }
+    g.itemCount = n;
 }
 
 // ── Influence field + alert chain ──────────────────────────────────────────
@@ -208,8 +231,12 @@ void build_unit_grid(UnitGrid& g, const BodyCrowd& u, float cell, int maxDim) {
 void build_influence_field(InfluenceField& f, const BodyCrowd& u,
                            float cell, float worldSize) {
     f.cell = cell > 0.0f ? cell : 1.0f;
-    // Bbox of the crowd, snapped to cell boundaries and capped at the window.
-    const int maxDim = std::max(1, int(worldSize / f.cell) + 1);
+    // Bbox of the crowd, snapped to cell boundaries and capped at the window —
+    // and at the fixed columns' own ceiling (the dimension guard: a cell finer
+    // than the window affords would otherwise index past the plane cap;
+    // col_of/row_of bin outliers into the edge cells, as they always did).
+    const int maxDim = std::clamp(int(worldSize / f.cell) + 1,
+                                  1, kInfluenceGridMaxDim);
     if (u.count > 0) {
         float minX = u.x[0], maxX = u.x[0], minY = u.y[0], maxY = u.y[0];
         for (int i = 1; i < u.count; ++i) {
@@ -234,13 +261,10 @@ void build_influence_field(InfluenceField& f, const BodyCrowd& u,
     }
 
     const std::size_t cells = f.cell_count();
-    f.occMask.assign(cells, std::uint64_t(0));
-    if (u.count <= 0) {
-        f.count.clear(); f.sumX.clear(); f.sumY.clear(); f.sumZ.clear();
-        f.siteX.clear(); f.siteY.clear(); f.siteZ.clear();
-        f.hasSite.clear(); f.alert.clear();
-        return;
-    }
+    std::fill_n(f.occMask.data(), cells, std::uint64_t(0));
+    // Empty crowd: planeCount is 0, so no reader ever enters a plane — the
+    // plane columns need no sweep at all.
+    if (u.count <= 0) return;
 
     // Which factions are actually here (O(N)). Only those get a plane, so the
     // per-frame clear below is proportional to the factions on the field.
@@ -254,16 +278,18 @@ void build_influence_field(InfluenceField& f, const BodyCrowd& u,
             f.planeIdx[s] = std::int16_t(f.planeCount++);
     }
 
+    // Sweep only the planes of the factions PRESENT — the memory behind all 64
+    // is fixed, but the per-frame clear stays proportional to the battle.
     const std::size_t planes = cells * std::size_t(f.planeCount);
-    f.count.assign(planes, 0u);
-    f.sumX.assign(planes, 0.0f);
-    f.sumY.assign(planes, 0.0f);
-    f.sumZ.assign(planes, 0.0f);
-    f.siteX.assign(planes, 0.0f);
-    f.siteY.assign(planes, 0.0f);
-    f.siteZ.assign(planes, 0.0f);
-    f.hasSite.assign(planes, std::uint8_t(0));
-    f.alert.assign(planes, std::uint8_t(0));
+    std::fill_n(f.count.data(), planes, 0u);
+    std::fill_n(f.sumX.data(), planes, 0.0f);
+    std::fill_n(f.sumY.data(), planes, 0.0f);
+    std::fill_n(f.sumZ.data(), planes, 0.0f);
+    std::fill_n(f.siteX.data(), planes, 0.0f);
+    std::fill_n(f.siteY.data(), planes, 0.0f);
+    std::fill_n(f.siteZ.data(), planes, 0.0f);
+    std::fill_n(f.hasSite.data(), planes, std::uint8_t(0));
+    std::fill_n(f.alert.data(), planes, std::uint8_t(0));
 
     // Scatter: O(N). Each unit contributes presence + centroid to its faction's
     // plane, and OR-s its own enemy mask into its faction's aggregate — so a
@@ -442,16 +468,18 @@ void build_influence_field(InfluenceField& f, const BodyCrowd& u,
     // is the chain of comrades — a rank charges because the rank in front of it
     // saw the enemy, however deep the formation, while a body with no friends
     // between it and the fighting is simply not connected and stays home.
-    std::vector<std::uint32_t>& queue = f.alertQueue;
-    queue.reserve(cells);
+    // The queue is a fixed array over the cell cap: a cell enters it at most
+    // once per faction (the alert flag gates every push), so `tail` is bounded
+    // by `cells` by construction and the flood allocates nothing.
+    std::uint32_t* queue = f.alertQueue.data();
     for (int s = 0; s < kMaxFactions; ++s) {
         if (!f.has_faction(s)) continue;
         const std::size_t base = f.plane(s);
-        queue.clear();
+        std::size_t tail = 0;
         for (std::size_t ci = 0; ci < cells; ++ci) {
-            if (f.alert[base + ci]) queue.push_back(std::uint32_t(ci));
+            if (f.alert[base + ci]) queue[tail++] = std::uint32_t(ci);
         }
-        for (std::size_t head = 0; head < queue.size(); ++head) {
+        for (std::size_t head = 0; head < tail; ++head) {
             const std::uint32_t ci = queue[head];
             const int cx = int(ci) % f.cols;
             const int cy = int(ci) / f.cols;
@@ -466,7 +494,7 @@ void build_influence_field(InfluenceField& f, const BodyCrowd& u,
                     // Only through comrades, and only where the enemy is known.
                     if (f.alert[pi] || f.count[pi] == 0u || !f.hasSite[pi]) continue;
                     f.alert[pi] = 1u;
-                    queue.push_back(std::uint32_t(ni));
+                    queue[tail++] = std::uint32_t(ni);
                 }
             }
         }

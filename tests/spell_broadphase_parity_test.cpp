@@ -117,9 +117,11 @@ std::vector<int> bodies_in_creation_order(const sm::sub::SubObjects& objs) {
 // длиной в кап и беззнаковый счёт, так что усечь выдачу нечем — ровно как у
 // `spell_neighbors_callback`. Груз — СЛОТ арены (ступень (iv) ломтя 7).
 struct GridBroadPhase {
-    // One flat MiB in its own block — the rig cannot hold it by value.
+    // One flat MiB in its own block — the rig cannot hold it by value, and the
+    // grid's fixed columns (слом 8 M-150) are heap-born the same way.
     std::unique_ptr<sm::sub::BodyCrowd> units = sm::sub::make_body_crowd();
-    sm::sub::UnitGrid pick;
+    std::unique_ptr<sm::sub::UnitGrid> pickOwn = sm::sub::make_unit_grid();
+    sm::sub::UnitGrid& pick = *pickOwn;
     std::vector<std::uint16_t> slots;
     float pad = 0.0f;
 

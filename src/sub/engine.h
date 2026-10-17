@@ -670,9 +670,11 @@ private:
     // Two bucket grids at two scales: bodies are ~1 unit wide, weapons reach up
     // to 25, and one cell size cannot serve both queries without going quadratic
     // or blind. Cell sizes are derived from the crowd's own data, not constants.
-    UnitGrid                crowdFine_;   // body separation
-    UnitGrid                crowdPick_;   // contact / target search
-    InfluenceField          crowdField_;
+    // Fixed columns over their caps (слом 8 M-150), so like the crowd they are
+    // heap-born once and the per-tick builds allocate nothing by construction.
+    std::unique_ptr<UnitGrid> crowdFine_ = make_unit_grid();   // body separation
+    std::unique_ptr<UnitGrid> crowdPick_ = make_unit_grid();   // contact / target search
+    std::unique_ptr<InfluenceField> crowdField_ = make_influence_field();
     MoveParams            moveParams_{};
     // Parallel column of the crowd: the arena SLOT each SoA index came from
     // (ступень (iv) ломтя 7 — сущность из карты толпы умерла: всё

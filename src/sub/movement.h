@@ -67,7 +67,6 @@
 #include <array>
 #include <cstdint>
 #include <memory>
-#include <vector>
 
 #include "sub/caps.h"         // kMaxSubObjects — the subworld scene ceiling
 #include "tables/faction.h"   // kMaxFactions — THE world faction limit
@@ -271,21 +270,52 @@ static_assert(sizeof(BodyCrowd) == std::size_t(kMaxSubObjects) * 64u + 16u,
 // make_macro_store, 55.6 s for one empty TU).
 std::unique_ptr<BodyCrowd> make_body_crowd();
 
+// ── Grid resolution ceilings ───────────────────────────────────────────────
+// The two scratch structures below used to be vectors whose length was set IN
+// THE TICK (`begin.assign(cells + 1u, 0u)`) — the last allocation-on-the-hot-
+// path of the scene (DOD п.4, слом 8 M-150). Now the length is the CAP and the
+// columns are fixed arrays, the BodyCrowd shape: a size that has drifted out of
+// step with the cap cannot exist, and a reallocation in the tick is
+// inexpressible rather than avoided.
+//
+// Resolution ceiling of a bucket grid. When the crowd is spread wider than this
+// many cells the CELL grows instead of the allocation — density is low in that
+// case, so the neighbour bound holds either way. (The number lived in
+// engine.cpp as kBattleGridMaxDim while the arrays could grow; now the arrays
+// ARE the ceiling, so the one name lives with them.)
+constexpr int kUnitGridMaxDim = 256;
+constexpr std::size_t kUnitGridCells =
+    std::size_t(kUnitGridMaxDim) * std::size_t(kUnitGridMaxDim);
+// Influence-field ceiling: the whole 3×3 window (kFullSize = 3072 world units)
+// at the field's design resolution, MoveParams::influenceCell = 32 ⇒
+// 3072 / 32 = 96 cells, +1 for the origin snap. Builds asked for a finer cell
+// than the window affords are clamped to this many cells per axis (col_of /
+// row_of bin outliers into the edge cells, as they always did). Tuning
+// influenceCell below 32 therefore needs this cap raised first (ЗАКОН КАПА).
+constexpr int kInfluenceGridMaxDim = 97;
+constexpr std::size_t kInfluenceGridCells =
+    std::size_t(kInfluenceGridMaxDim) * std::size_t(kInfluenceGridMaxDim);
+// One plane per faction that can possibly stand in the window.
+constexpr std::size_t kInfluencePlaneCap =
+    kInfluenceGridCells * std::size_t(kMaxFactions);
+
 // ── Fine grid: contact picking + body separation ───────────────────────────
 // Uniform buckets over the units' ACTUAL bounding box, so cost tracks the real
 // spread instead of the 3072² window. Counting sort: O(N + cells), two passes,
-// no per-bucket allocation.
+// no allocation anywhere — every column is a fixed array of the cap.
 struct UnitGrid {
     float cell = 1.0f;
     float originX = 0.0f, originY = 0.0f;
     int cols = 1, rows = 1;
-    std::vector<std::uint32_t> begin;   // cols*rows + 1 prefix sums
-    std::vector<std::int32_t>  items;   // unit indices, bucket-sorted
-    // Scatter cursors, kept as a member purely so the build allocates NOTHING in
-    // the per-frame path (project rule: no heap churn in a hot loop). Two grids
-    // rebuilt every tick over a 256² cell space would otherwise be half a
-    // megabyte of malloc/free per frame.
-    std::vector<std::uint32_t> cursor;
+    // How many unit indices the last build wrote into `items` (== crowd count).
+    // With fixed columns the array length is the CAP, so the honest length must
+    // be its own number — two witnesses used to read items.size() for this.
+    int itemCount = 0;
+    std::array<std::uint32_t, kUnitGridCells + 1> begin; // cols*rows + 1 prefix sums
+    std::array<std::int32_t, kMaxSubObjects> items;      // unit indices, bucket-sorted
+    // Scatter cursors, a member for the same reason every buffer here is: the
+    // per-frame build must allocate nothing.
+    std::array<std::uint32_t, kUnitGridCells> cursor;
 
     inline int col_of(float wx) const noexcept {
         const int c = int((wx - originX) / cell);
@@ -295,7 +325,27 @@ struct UnitGrid {
         const int r = int((wy - originY) / cell);
         return r < 0 ? 0 : (r >= rows ? rows - 1 : r);
     }
+
+    // ~0.75 MiB: too big for a stack frame, so like BodyCrowd it is
+    // NON-COPYABLE, NON-MOVABLE and born only through make_unit_grid().
+    UnitGrid(const UnitGrid&) = delete;
+    UnitGrid& operator=(const UnitGrid&) = delete;
+    UnitGrid(UnitGrid&&) = delete;
+    UnitGrid& operator=(UnitGrid&&) = delete;
+
+private:
+    UnitGrid() = default;
+    friend std::unique_ptr<UnitGrid> make_unit_grid();
 };
+// Six 4-byte scalars + three u32/i32 columns over the caps, no padding.
+static_assert(sizeof(UnitGrid) == 24u + (kUnitGridCells + 1u) * 4u
+                                      + std::size_t(kMaxSubObjects) * 4u
+                                      + kUnitGridCells * 4u,
+              "UnitGrid is three flat columns over its caps and nothing hidden");
+
+// Births the grid in its own heap block (defined in movement.cpp — a cap-sized
+// named initializer in a header is paid by every includer, AGENTS §5 п.13).
+std::unique_ptr<UnitGrid> make_unit_grid();
 
 // `cell` is the intended query radius (queries then touch 2×2 cells). `maxDim`
 // caps the grid resolution: if the units are spread so wide that the bbox needs
@@ -337,31 +387,40 @@ struct InfluenceField {
     int cols = 1, rows = 1;
     std::uint64_t presentMask = 0;                        // factions with a body
     std::uint64_t factionEnemyMask[kMaxFactions]{};       // OR of member masks
-    // Planes are allocated ONLY for factions actually standing in the window. A
-    // two-army battle pays for two planes — the per-frame clear was the whole
-    // fixed cost of this pass, and a lone bandit must not pay a creatures price.
+    // Planes are CLEARED only for factions actually standing in the window. A
+    // two-army battle sweeps two planes — the per-frame clear was the whole
+    // fixed cost of this pass, and a lone bandit must not pay a creatures
+    // price. The MEMORY behind all 64 possible planes is fixed and paid once
+    // at birth (ЗАКОН СТАБИЛЬНОСТИ: the profile of an empty field and a full
+    // one is the same); only the SWEEP tracks the factions present.
     std::int16_t planeIdx[kMaxFactions]{};               // -1 = faction absent
     int planeCount = 0;
-    std::vector<std::uint64_t> occMask;   // [cell] factions present in the cell
-    std::vector<std::uint32_t> count;     // [plane*cells + cell]
+    std::array<std::uint64_t, kInfluenceGridCells> occMask; // [cell] factions here
+    std::array<std::uint32_t, kInfluencePlaneCap> count;    // [plane*cells + cell]
     // ТРИ ОСИ, ОДНА ФОРМА (ЗАКОН ИЗОТРОПИИ + вердикт владельца 2026-10-12:
     // «могут быть армии со всеми: наземные, летающие… и уже есть в субмире
     // летающие мобы типа драконов, их можно отстрелять и они стреляют»).
     // Вертикаль нужна ГЕЙТУ ЗРЕНИЯ ниже: без неё драконья стая в 200 м НАД
     // строем будила его как из-под ног, а строй под утёсом будился от врага
     // на утёсе и бежал в скалу. ШАГ ПОДХОДА остаётся плоским — ноги по земле.
-    std::vector<float> sumX, sumY, sumZ;  // [plane*cells + cell] centroid accum
+    std::array<float, kInfluencePlaneCap> sumX, sumY, sumZ;  // centroid accum
     // Nearest hostile concentration for a faction, propagated by the transform.
-    std::vector<float> siteX, siteY, siteZ;   // [plane*cells + cell]
-    std::vector<std::uint8_t> hasSite;    // [plane*cells + cell]
+    std::array<float, kInfluencePlaneCap> siteX, siteY, siteZ;
+    std::array<std::uint8_t, kInfluencePlaneCap> hasSite;
     // Alert chain: 1 => bodies of this faction in this cell know where the enemy
     // is, either by their own eyes or relayed through comrades.
-    std::vector<std::uint8_t> alert;      // [plane*cells + cell]
-    // The alert flood's work queue, kept as a MEMBER for the same reason every
-    // buffer above it is: this whole struct exists so a per-frame pass
-    // allocates nothing, and a local vector here was the one that fell out —
-    // reserved to the cell count and rebuilt once per faction, per frame.
-    std::vector<std::uint32_t> alertQueue;
+    std::array<std::uint8_t, kInfluencePlaneCap> alert;
+    // The alert flood's work queue, a member for the same reason every buffer
+    // above it is: the per-frame pass allocates nothing. A cell enters the
+    // queue at most once per faction (the alert flag gates the push), so the
+    // cell cap bounds it by construction.
+    std::array<std::uint32_t, kInfluenceGridCells> alertQueue;
+
+    // ~17.3 MiB: heap-only, like BodyCrowd — born through make_influence_field().
+    InfluenceField(const InfluenceField&) = delete;
+    InfluenceField& operator=(const InfluenceField&) = delete;
+    InfluenceField(InfluenceField&&) = delete;
+    InfluenceField& operator=(InfluenceField&&) = delete;
 
     inline std::size_t cell_count() const noexcept {
         return std::size_t(cols) * std::size_t(rows);
@@ -388,7 +447,28 @@ struct InfluenceField {
     inline std::size_t plane(int f) const noexcept {
         return std::size_t(planeIdx[f]) * cell_count();
     }
+
+private:
+    InfluenceField() = default;
+    friend std::unique_ptr<InfluenceField> make_influence_field();
 };
+// Seven 4-byte columns + two byte columns over the plane cap, the occupancy
+// mask and the flood queue over the cell cap, the faction headers, and three
+// 4-byte pads to the u64 alignment. Nothing hidden.
+static_assert(sizeof(InfluenceField) ==
+                  20u                                       // cell, origin, cols, rows
+                + 8u + 8u * std::size_t(kMaxFactions)       // presentMask + enemy masks
+                + 2u * std::size_t(kMaxFactions) + 4u       // planeIdx + planeCount
+                + 8u * kInfluenceGridCells                  // occMask
+                + 4u * kInfluencePlaneCap * 7u              // count + 6 float columns
+                + 1u * kInfluencePlaneCap * 2u              // hasSite + alert
+                + 4u * kInfluenceGridCells                  // alertQueue
+                + 12u,                                      // three 4-byte pads (u64 align)
+              "InfluenceField is flat columns over its caps and nothing hidden");
+
+// Births the field in its own heap block (defined in movement.cpp — AGENTS §5
+// п.13: a cap-sized named initializer in a header is paid by every includer).
+std::unique_ptr<InfluenceField> make_influence_field();
 
 void build_influence_field(InfluenceField& f, const BodyCrowd& u,
                            float cell, float worldSize);

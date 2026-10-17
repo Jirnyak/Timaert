@@ -124,8 +124,9 @@ RunResult run_battle(int perSide, int ticks, const MoveParams& prm,
             r.units->add(soldier(pos[0], pos[1], me, mask_of(foe), sight));
         }
     }
-    UnitGrid fine{}, pick{};
-    InfluenceField field{};
+    auto fineOwn = make_unit_grid(); auto pickOwn = make_unit_grid();
+    UnitGrid& fine = *fineOwn; UnitGrid& pick = *pickOwn;
+    auto fieldOwn = make_influence_field(); InfluenceField& field = *fieldOwn;
     for (int t = 0; t < ticks; ++t) {
         advance(*r.units, fine, pick, field, terrain, prm, dt, &r.lastStats);
         r.peakEngaged = std::max(r.peakEngaged, r.lastStats.engaged);
@@ -356,10 +357,12 @@ void test_grid() {
                       1000.0f + float(i / 10) * 2.0f, 0, 0));
     }
     const MoveParams prm{};
-    UnitGrid g{};
+    auto gOwn = make_unit_grid(); UnitGrid& g = *gOwn;
     build_unit_grid(g, u, fine_cell_for(u, prm), 256);
 
-    CHECK(g.items.size() == std::size_t(u.count), "grid holds every unit once");
+    // The columns are fixed arrays of the cap now, so the honest fill length is
+    // its own number (itemCount) — .size() would answer the CAP, not the crowd.
+    CHECK(g.itemCount == u.count, "grid holds every unit once");
     std::vector<int> seen(std::size_t(u.count), 0);
     bool cellOk = true;
     for (int cy = 0; cy < g.rows; ++cy) {
@@ -399,16 +402,34 @@ void test_grid() {
     BodyCrowd& wide = *wideOwn;
     wide.add(soldier(1.0f, 1.0f, 0, 0));
     wide.add(soldier(3000.0f, 3000.0f, 0, 0));
-    UnitGrid gw{};
+    auto gwOwn = make_unit_grid(); UnitGrid& gw = *gwOwn;
     build_unit_grid(gw, wide, 4.0f, 16);
     CHECK(gw.cols <= 16 && gw.rows <= 16, "maxDim respected");
     CHECK(gw.cell > 4.0f, "cell grew instead of the allocation");
 
-    UnitGrid ge{};
+    auto geOwn = make_unit_grid(); UnitGrid& ge = *geOwn;
     auto emptyOwn = make_body_crowd();
     BodyCrowd& empty = *emptyOwn;
     build_unit_grid(ge, empty, 4.0f, 256);
-    CHECK(ge.begin.size() == 2u && ge.items.empty(), "empty crowd degrades safely");
+    CHECK(ge.cols == 1 && ge.rows == 1 && ge.begin[0] == 0u && ge.begin[1] == 0u
+              && ge.itemCount == 0,
+          "empty crowd degrades safely");
+
+    // Dimension guard (слом 8 M-150). A span so degenerate that the cell-growth
+    // loop hits its emergency exit (c > 1.0e6f) used to hand wantCols out
+    // unclamped — a vector simply grew, but a fixed column has nothing to grow:
+    // 477×477 cells would run the prefix sum past begin's 65537 entries,
+    // straight into the neighbouring columns. The guard clamps to the cap and
+    // col_of/row_of bin the outliers into edge cells.
+    auto vastOwn = make_body_crowd();
+    BodyCrowd& vast = *vastOwn;
+    vast.add(soldier(0.0f, 0.0f, 0, 0));
+    vast.add(soldier(1.0e9f, 1.0e9f, 0, 0));
+    auto gvOwn = make_unit_grid(); UnitGrid& gv = *gvOwn;
+    build_unit_grid(gv, vast, 4.0f, kUnitGridMaxDim);
+    CHECK(gv.cols <= kUnitGridMaxDim && gv.rows <= kUnitGridMaxDim,
+          "a degenerate span clamps to the cap instead of scattering past it");
+    CHECK(gv.itemCount == 2, "both far bodies are still binned");
 }
 
 // ── 4. Influence field ─────────────────────────────────────────────────────
@@ -419,7 +440,7 @@ void test_influence_field() {
     for (int i = 0; i < 5; ++i)
         u.add(soldier(1000.0f + float(i) * 2.0f, 1000.0f, 1, mask_of(0)));
 
-    InfluenceField f{};
+    auto fOwn = make_influence_field(); InfluenceField& f = *fOwn;
     build_influence_field(f, u, 32.0f, kWorld);
     CHECK(f.has_faction(0) && f.has_faction(1), "both factions get a plane");
     CHECK(f.planeCount == 2, "only present factions are allocated");
@@ -436,7 +457,7 @@ void test_influence_field() {
     auto lonelyOwn = make_body_crowd();
     BodyCrowd& lonely = *lonelyOwn;
     lonely.add(soldier(500.0f, 500.0f, 0, 0));
-    InfluenceField f2{};
+    auto f2Own = make_influence_field(); InfluenceField& f2 = *f2Own;
     build_influence_field(f2, lonely, 32.0f, kWorld);
     const std::size_t li = f2.plane(0)
         + std::size_t(f2.row_of(500.0f)) * std::size_t(f2.cols)
@@ -472,8 +493,9 @@ void test_alert_chain() {
     CHECK(rearmost >= 0 && (cx - rearmostX) > kSight * 0.9f,
           "test setup: rearmost body is beyond its own sight");
 
-    UnitGrid fine{}, pick{};
-    InfluenceField f{};
+    auto fineOwn = make_unit_grid(); auto pickOwn = make_unit_grid();
+    UnitGrid& fine = *fineOwn; UnitGrid& pick = *pickOwn;
+    auto fOwn = make_influence_field(); InfluenceField& f = *fOwn;
     MoveStats st{};
     const float startX = u.x[std::size_t(rearmost)];
     for (int t = 0; t < 240; ++t) {
@@ -605,8 +627,9 @@ void test_thousand_per_side_keeps_formation() {
         BodyCrowd& u = *uOwn;
         deploy(u, 600.0f);
         if (outSpread0) *outSpread0 = spread_of(u, 0);
-        UnitGrid fine{}, pick{};
-        InfluenceField f{};
+        auto fineOwn = make_unit_grid(); auto pickOwn = make_unit_grid();
+        UnitGrid& fine = *fineOwn; UnitGrid& pick = *pickOwn;
+        auto fOwn = make_influence_field(); InfluenceField& f = *fOwn;
         MoveStats st{};
         for (int t = 0; t < ticks; ++t)
             advance(u, fine, pick, f, flat, prm, 1.0f / 60.0f, &st);
@@ -727,8 +750,9 @@ void test_line_holds_through_attrition() {
         Attrition out{};
         auto uOwn = make_body_crowd();
         BodyCrowd& u = *uOwn;
-        UnitGrid fine{}, pick{};
-        InfluenceField f{};
+        auto fineOwn = make_unit_grid(); auto pickOwn = make_unit_grid();
+        UnitGrid& fine = *fineOwn; UnitGrid& pick = *pickOwn;
+        auto fOwn = make_influence_field(); InfluenceField& f = *fOwn;
         std::vector<int> slot;
         std::vector<int> occ(std::size_t(bins), 0);
         const float dt = 1.0f / 60.0f;
@@ -879,8 +903,9 @@ void test_wide_front_meets_as_one_wall() {
 
     auto uOwn = make_body_crowd();
     BodyCrowd& u = *uOwn;
-    UnitGrid fine{}, pick{};
-    InfluenceField f{};
+    auto fineOwn = make_unit_grid(); auto pickOwn = make_unit_grid();
+    UnitGrid& fine = *fineOwn; UnitGrid& pick = *pickOwn;
+    auto fOwn = make_influence_field(); InfluenceField& f = *fOwn;
     std::vector<int> slot;
     std::vector<int> hist;
     int worstGap = 0;
@@ -1018,8 +1043,9 @@ void test_terrain_does_not_outvote_the_advance() {
         u.add(soldier(kWorld * 0.5f - 150.0f, kWorld * 0.5f, 0, mask_of(1), 400.0f));
         u.add(soldier(kWorld * 0.5f + 150.0f, kWorld * 0.5f, 1, 0, 400.0f));
         u.flags[1] |= B_Pinned;
-        UnitGrid fine{}, pick{};
-        InfluenceField f{};
+        auto fineOwn = make_unit_grid(); auto pickOwn = make_unit_grid();
+        UnitGrid& fine = *fineOwn; UnitGrid& pick = *pickOwn;
+        auto fOwn = make_influence_field(); InfluenceField& f = *fOwn;
         for (int t = 0; t < 900; ++t)
             advance(u, fine, pick, f, hills, p, 1.0f / 60.0f, nullptr);
         const float dx = u.x[0] - u.x[1], dy = u.y[0] - u.y[1];
@@ -1049,8 +1075,9 @@ void test_terrain_does_not_outvote_the_advance() {
         idle.add(soldier(kWorld * 0.5f + float(i % 10) * 3.0f,
                          kWorld * 0.5f + float(i / 10) * 3.0f, 0, 0));
     }
-    UnitGrid fine{}, pick{};
-    InfluenceField f{};
+    auto fineOwn = make_unit_grid(); auto pickOwn = make_unit_grid();
+    UnitGrid& fine = *fineOwn; UnitGrid& pick = *pickOwn;
+    auto fOwn = make_influence_field(); InfluenceField& f = *fOwn;
     const float ix0 = idle.x[0], iy0 = idle.y[0];
     for (int t = 0; t < 600; ++t)
         advance(idle, fine, pick, f, hills, prm, 1.0f / 60.0f, nullptr);
@@ -1121,8 +1148,9 @@ void test_terrain_table() {
         t.tileSpeed = speeds;
         t.tileSpeedCount = 2;
         t.worldMax = float(kDim);
-        UnitGrid fine{}, pick{};
-        InfluenceField f{};
+        auto fineOwn = make_unit_grid(); auto pickOwn = make_unit_grid();
+        UnitGrid& fine = *fineOwn; UnitGrid& pick = *pickOwn;
+        auto fOwn = make_influence_field(); InfluenceField& f = *fOwn;
         const float x0 = u.x[0];
         for (int i = 0; i < 180; ++i)
             advance(u, fine, pick, f, t, prm, 1.0f / 60.0f, nullptr);
@@ -1150,8 +1178,9 @@ void test_single_bandit() {
     u.flags[0] |= B_Pinned;
     u.add(soldier(1150.0f, 1000.0f, 1, mask_of(0)));
 
-    UnitGrid fine{}, pick{};
-    InfluenceField f{};
+    auto fineOwn = make_unit_grid(); auto pickOwn = make_unit_grid();
+    UnitGrid& fine = *fineOwn; UnitGrid& pick = *pickOwn;
+    auto fOwn = make_influence_field(); InfluenceField& f = *fOwn;
     MoveStats st{};
     const float px0 = u.x[0], py0 = u.y[0];
     for (int i = 0; i < 900; ++i)
@@ -1219,8 +1248,9 @@ void test_intent_and_passive() {
         BodyCrowd& u = *uOwn;
         u.add(soldier(1000.0f, 1000.0f, 0, 0ull));
         u.intentVx[0] = 3.0f;                    // the sheet says kSpeed = 35
-        UnitGrid fine{}, pick{};
-        InfluenceField f{};
+        auto fineOwn = make_unit_grid(); auto pickOwn = make_unit_grid();
+        UnitGrid& fine = *fineOwn; UnitGrid& pick = *pickOwn;
+        auto fOwn = make_influence_field(); InfluenceField& f = *fOwn;
         for (int i = 0; i < 300; ++i)
             advance(u, fine, pick, f, flat, prm, dt, nullptr);
         const float walked = u.x[0] - 1000.0f;
@@ -1242,8 +1272,9 @@ void test_intent_and_passive() {
         const std::size_t levy = std::size_t(u.add(soldier(
             1000.0f, 1040.0f, 0, mask_of(1))));
         u.add(soldier(1150.0f, 1020.0f, 1, mask_of(0)));
-        UnitGrid fine{}, pick{};
-        InfluenceField f{};
+        auto fineOwn = make_unit_grid(); auto pickOwn = make_unit_grid();
+        UnitGrid& fine = *fineOwn; UnitGrid& pick = *pickOwn;
+        auto fOwn = make_influence_field(); InfluenceField& f = *fOwn;
         for (int i = 0; i < 240; ++i)
             advance(u, fine, pick, f, flat, prm, dt, nullptr);
         CHECK(u.target[deer] < 0, "a passive body never picks a target");
@@ -1261,8 +1292,9 @@ void test_intent_and_passive() {
         u.add(soldier(1000.0f, 1000.0f, 0, mask_of(1)));
         u.intentVx[0] = -3.0f;                   // the mind wants to walk away…
         u.add(soldier(1100.0f, 1000.0f, 1, mask_of(0)));
-        UnitGrid fine{}, pick{};
-        InfluenceField f{};
+        auto fineOwn = make_unit_grid(); auto pickOwn = make_unit_grid();
+        UnitGrid& fine = *fineOwn; UnitGrid& pick = *pickOwn;
+        auto fOwn = make_influence_field(); InfluenceField& f = *fOwn;
         for (int i = 0; i < 240; ++i)
             advance(u, fine, pick, f, flat, prm, dt, nullptr);
         CHECK(u.target[0] == 1 && u.inReach[0] != 0u,
@@ -1304,8 +1336,9 @@ void test_capsule_separation() {
         u.add(b);
         u.z[0] = zA;
         u.z[1] = zB;
-        UnitGrid fine{}, pick{};
-        InfluenceField f{};
+        auto fineOwn = make_unit_grid(); auto pickOwn = make_unit_grid();
+        UnitGrid& fine = *fineOwn; UnitGrid& pick = *pickOwn;
+        auto fOwn = make_influence_field(); InfluenceField& f = *fOwn;
         for (int i = 0; i < 240; ++i)
             advance(u, fine, pick, f, flat, prm, dt, nullptr);
         if (outMovedA) {
@@ -1378,8 +1411,9 @@ void test_stop_is_a_stop_not_a_skid() {
         t.tileSpeed = nullptr;                  // ground SPEED is not this test
         t.tileSpeedCount = 1;
         t.tileGrip = grips;
-        UnitGrid fine{}, pick{};
-        InfluenceField f{};
+        auto fineOwn = make_unit_grid(); auto pickOwn = make_unit_grid();
+        UnitGrid& fine = *fineOwn; UnitGrid& pick = *pickOwn;
+        auto fOwn = make_influence_field(); InfluenceField& f = *fOwn;
         for (int i = 0; i < 240; ++i)
             advance(u, fine, pick, f, t, prm, dt, nullptr);
         const float atSpeed = std::sqrt(u.vx[0] * u.vx[0] + u.vy[0] * u.vy[0]);
