@@ -19,6 +19,7 @@
 #include "macro/resource_field.h"
 #include "ecs/components.h"
 #include "macro/store.h"
+#include "ui/macro_eyes.h"
 
 #include <cmath>
 #include <cstdio>
@@ -63,7 +64,7 @@ sm::MacroHandle spawn_ai(sm::MacroStore& st,
     h = sm::handle_at(st, h.slot);
     st.cell[h.slot] = sm::ecs::MacroCell{
         sm::ecs::cell_index(int(x), int(y), mapW)};
-    st.visual[h.slot] = sm::ecs::MacroVisual{x, y, 0.0f};
+    st.sub[h.slot] = {};   // доля клетки: фикстура рождает в центре (M-244a)
     st.kind[h.slot] = sm::ecs::NPCKind{std::uint16_t(type), std::uint16_t{0}};
 
     sm::ecs::MacroNpcRuntime rt{};
@@ -459,25 +460,38 @@ void test_resting_recovery_prevents_permanent_stall() {
 }
 
 void test_macro_visual_smoothing_and_snap() {
+    // Закон глайда пережил своего носителя (M-244a): цель — клетка + доля
+    // (целые кванты мира), глаз — кэш ПРЕДСТАВЛЕНИЯ (ui/macro_eyes.h), и
+    // мерится он тем же законом: speed × dt к цели, телепорт — снап.
     auto worldStore_ = sm::make_macro_store();
     sm::MacroStore& st = *worldStore_;
     auto e = spawn_ai(st, sm::NPCType::Peasant, 12.0f, 10.0f, -1);
-    auto& visual = (*sm::body_state<sm::ecs::MacroVisual>(st, e));
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
-    visual.vx = 10.0f;
-    visual.vy = 10.0f;
+    sm::ui::MacroEyeCache eyes{};
+    eyes.primed = true;   // сеем глаз руками — снап «непраймленного» не закон этого свидетеля
+    eyes.x[e.slot] = 10.0f;
+    eyes.y[e.slot] = 10.0f;
     rt.visualSpeed = 4.0f;
-    sm::tick_macro_npc_visuals(st, 128, 128, 0.25f);
-    CHECK(close_enough(visual.vx, 11.0f) && close_enough(visual.vy, 10.0f),
-          "the render position glides toward the logical one at speed * dt");
+    sm::ui::tick_macro_eyes(st, eyes, 128, 128, 0.25f);
+    CHECK(close_enough(eyes.x[e.slot], 11.0f)
+              && close_enough(eyes.y[e.slot], 10.0f),
+          "the eye glides toward the stated point at speed * dt");
 
+    // Доля — часть цели: сквад, заявивший западный край, тянет глаз к
+    // клетке МИНУС полклетки, а не к её центру (два кванта закона — одна цель).
+    st.sub[e.slot] = sm::ecs::cell_sub_after_step(+1, 0);   // вошёл с запада
+    sm::ui::tick_macro_eyes(st, eyes, 128, 128, 1.0f);
+    CHECK(close_enough(eyes.x[e.slot], 12.0f - 127.0f / 256.0f)
+              && close_enough(eyes.y[e.slot], 10.0f),
+          "the stated intra-cell point is part of the glide target");
+
+    st.sub[e.slot] = {};
     (*sm::body_state<sm::ecs::MacroCell>(st, e)).idx =
         sm::ecs::cell_index(30, 10, 128);
-    sm::tick_macro_npc_visuals(st, 128, 128, 0.25f);
-    CHECK(close_enough(visual.vx, 30.0f) && close_enough(visual.vy, 10.0f),
+    sm::ui::tick_macro_eyes(st, eyes, 128, 128, 0.25f);
+    CHECK(close_enough(eyes.x[e.slot], 30.0f)
+              && close_enough(eyes.y[e.slot], 10.0f),
           "a jump too far to glide SNAPS instead of sliding across the map");
-    CHECK(close_enough(visual.speed, 0.0f),
-          "a snapped body reports no travel speed: it did not walk there");
 }
 
 // ── ONE RECOVERY LAW, ONE BODY (CANON S14; owner, 2026-09-09) ────────────

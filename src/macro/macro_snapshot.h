@@ -33,7 +33,7 @@ struct MacroStore;
 struct MacroNpcRecord {
     ecs::MacroSpawnId    spawnId{};
     ecs::MacroCell       cell{};
-    ecs::MacroVisual       visual{};
+    ecs::CellSub           sub{};   // доля клетки (M-244; здесь ехал MacroVisual)
     ecs::NPCKind         kind{};
     ecs::Pools           pools{};
     ecs::NpcLevel        level{};

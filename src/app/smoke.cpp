@@ -112,6 +112,7 @@ static void smoke_give_visual(sm::sub::SubObjects& objs, int s,
 #include "macro/squad_index.h"     // settlement_at — «кто живёт на клетке»
 #include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP witness
 #include "macro/player_entity.h"
+#include "macro/entry_context.h"  // unpack_entry_dir — закон доли марша (M-244a)
 #include "macro/store.h"
 #include <bit>
 
@@ -313,9 +314,7 @@ static sm::MacroHandle smoke_birth_squad_at_player(App& app,
     const int pcx = int(smoke_player_x(app));
     const int pcy = int(smoke_player_y(app));
     st.cell[h.slot].idx = sm::ecs::cell_index(pcx, pcy, app.gs.mapW);
-    auto& vis = st.visual[h.slot];
-    vis.vx = float(pcx);
-    vis.vy = float(pcy);
+    st.sub[h.slot] = {};   // пин — прыжок: центр клетки (M-244a)
     auto& rt = st.runtime[h.slot];
     rt.targetX = float(pcx);
     rt.targetY = float(pcy);
@@ -1086,18 +1085,20 @@ bool run_subworld_recovery_smoke(App& app) {
             if (stx.playerFlag[slot].home != 0)
                 continue;
             auto& c = stx.cell[slot];
-            auto& v = stx.visual[slot];
             auto& pools = stx.pools[slot];
             pools.maxHp = std::max(1, pools.maxHp);
             pools.hp = std::max(1, pools.maxHp / 3);   // under half: drip bait
             wPx = float(sm::ecs::cell_x(c, app.gs.mapW));
             wPy = float(sm::ecs::cell_y(c, app.gs.mapW));
-            v.vx = wPx + 0.4f;                          // mid-glide visual
-            v.vy = wPy;
-            v.speed = 2.0f;
+            // Глаз теперь кэш представления (M-244a): сеем середину глайда
+            // прямо в него, скорость — колонка runtime, как у всех.
+            app.macroEyes.primed = true;
+            app.macroEyes.x[slot] = wPx + 0.4f;        // mid-glide eye
+            app.macroEyes.y[slot] = wPy;
+            stx.runtime[slot].visualSpeed = 2.0f;
             scaleWitness = sm::handle_at(stx, slot);
             wCellIdx = c.idx;
-            wVx = v.vx; wVy = v.vy;
+            wVx = app.macroEyes.x[slot]; wVy = app.macroEyes.y[slot];
             break;
         }
     }
@@ -1150,7 +1151,8 @@ bool run_subworld_recovery_smoke(App& app) {
     // trip).
     if ((*app.macroStore).valid(scaleWitness)) {
         const auto& c = (*app.macroStore).cell[scaleWitness.slot];
-        const auto& v = (*app.macroStore).visual[scaleWitness.slot];
+        const float evx = app.macroEyes.x[scaleWitness.slot];
+        const float evy = app.macroEyes.y[scaleWitness.slot];
         (void)wCellIdx;
         // THE UNIT TEST, literally: how far has the visual drifted from the
         // cell it belongs to? Interpolation between neighbours is worth
@@ -1158,7 +1160,7 @@ bool run_subworld_recovery_smoke(App& app) {
         // scale of map cells, which lands orders of magnitude outside this.
         const float cx = float(sm::ecs::cell_x(c, app.gs.mapW));
         const float cy = float(sm::ecs::cell_y(c, app.gs.mapW));
-        const float dx = v.vx - cx, dy = v.vy - cy;
+        const float dx = evx - cx, dy = evy - cy;
         const float driftCells = std::sqrt(dx * dx + dy * dy);
         const bool cellMoved = c.idx != wCellIdx;
         std::fprintf(stderr,
@@ -1166,7 +1168,7 @@ bool run_subworld_recovery_smoke(App& app) {
                      "(moved=%d, LEGAL) visual %.2f,%.2f -> %.2f,%.2f "
                      "drift=%.2f cells\n",
                      wPx, wPy, cx, cy, cellMoved ? 1 : 0,
-                     wVx, wVy, v.vx, v.vy, double(driftCells));
+                     wVx, wVy, evx, evy, double(driftCells));
         std::fflush(stderr);
         // THE NEGATIVE CONTROL, inline: a green check that cannot go red
         // proves nothing (testing law #3), and this witness has already
@@ -2136,7 +2138,6 @@ bool run_macro_npc_trace_smoke(App& app) {
     auto& kind = stt.kind[traceH.slot];
     auto& rt = stt.runtime[traceH.slot];
     auto& hp = stt.pools[traceH.slot];
-    auto& visual = stt.visual[traceH.slot];
 
     // The trace lane must be QUIET: the trace measures rest and march
     // MECHANICS, and any other squad within perception range can lawfully
@@ -2182,8 +2183,7 @@ bool run_macro_npc_trace_smoke(App& app) {
         }
     }
     cell.idx = sm::ecs::cell_index(baseX, baseY, app.gs.mapW);
-    visual.vx = float(baseX);
-    visual.vy = float(baseY);
+    stt.sub[traceH.slot] = {};
 
     // The leader's bar is his SHEET's (Session 21): the cached maxSp the
     // regen law fills, not the retired 2×maxHp dialect. Since the pools
@@ -2219,9 +2219,12 @@ bool run_macro_npc_trace_smoke(App& app) {
         && rt.state == std::uint8_t(sm::NPCState::Idle);
 
     cell.idx = sm::ecs::cell_index(baseX, baseY, app.gs.mapW);
-    visual.vx = float(baseX);
-    visual.vy = float(baseY);
-    visual.speed = 0.0f;
+    stt.sub[traceH.slot] = {};
+    // Глаз — кэш представления (M-244a): сеем его на базу, чтобы глайд
+    // мерился от известной точки, как прежде мерился от visual-колонки.
+    app.macroEyes.primed = true;
+    app.macroEyes.x[traceH.slot] = float(baseX);
+    app.macroEyes.y[traceH.slot] = float(baseY);
     kind.type = std::uint16_t(sm::NPCType::Merchant);
     rt.targetX = float(sm::cell_x(
         sm::cell_step(sm::cell_of(baseX, baseY, app.gs.mapW), 3, 0,
@@ -2252,17 +2255,24 @@ bool run_macro_npc_trace_smoke(App& app) {
     }
     const float logicalX = float(sm::ecs::cell_x(cell, app.gs.mapW));
     const float logicalY = float(sm::ecs::cell_y(cell, app.gs.mapW));
-    const float visualBefore = visual.vx;
-    sm::tick_macro_npc_visuals(*app.macroStore, app.gs.mapW, app.gs.mapH, 0.25f);
-    const float visualMid = visual.vx;
+    // Цель глайда — ЗАЯВЛЕННАЯ точка: клетка + доля (M-244a). Маршировавший
+    // сквад стоит у края входа («вошёл с запада — стоит у западного края»),
+    // и глаз обязан сойтись к НЕЙ, а не к центру клетки.
+    const float statedX = logicalX
+        + float(stt.sub[traceH.slot].x) / 256.0f;
+    const float visualBefore = app.macroEyes.x[traceH.slot];
+    sm::ui::tick_macro_eyes(*app.macroStore, app.macroEyes,
+                            app.gs.mapW, app.gs.mapH, 0.25f);
+    const float visualMid = app.macroEyes.x[traceH.slot];
     // Convergence is a property, not a stopwatch: glide until the visual
     // catches the logical cell (bounded — 16 quarter-seconds covers any sane
     // glide speed for a two-cell gap). The old fixed two ticks were tuned to
     // the pre-recalibration three-cells-per-think visualSpeed.
-    float visualEnd = visual.vx;
-    for (int i = 0; i < 16 && std::fabs(visualEnd - logicalX) >= 0.001f; ++i) {
-        sm::tick_macro_npc_visuals(*app.macroStore, app.gs.mapW, app.gs.mapH, 0.25f);
-        visualEnd = visual.vx;
+    float visualEnd = app.macroEyes.x[traceH.slot];
+    for (int i = 0; i < 16 && std::fabs(visualEnd - statedX) >= 0.001f; ++i) {
+        sm::ui::tick_macro_eyes(*app.macroStore, app.macroEyes,
+                                app.gs.mapW, app.gs.mapH, 0.25f);
+        visualEnd = app.macroEyes.x[traceH.slot];
     }
 
     // The march is checked as a PROPERTY, never as a compass bearing: this
@@ -2278,8 +2288,20 @@ bool run_macro_npc_trace_smoke(App& app) {
                                          logicalX, logicalY,
                                          float(app.gs.mapW),
                                          float(app.gs.mapH));
+    // ДВЕРЬ МАРША ОБЯЗАНА ЗАЯВИТЬ ДОЛЮ (M-244a): шагнувший сквад стоит у
+    // края входа по румбу своего же entryDir. Отношение, не число: направление
+    // марша — факт раскладки мира, а связь «entryDir ⇒ sub» — закон. Без
+    // этой проверки мутация «дверь молчит» зелёная: и цель глайда, и глаз
+    // читают ту же колонку и соглашаются на любом её значении.
+    int edx = 0, edy = 0;
+    const bool hasEntry = sm::unpack_entry_dir(rt.entryDir, edx, edy);
+    const sm::ecs::CellSub wantSub = sm::ecs::cell_sub_after_step(edx, edy);
+    const bool subStamped =
+        !hasEntry || (stt.sub[traceH.slot].x == wantSub.x
+                      && stt.sub[traceH.slot].y == wantSub.y);
     const float glidedMid = sm::torus_dist(float(baseX), float(baseY),
-                                           visualMid, visual.vy,
+                                           visualMid,
+                                           app.macroEyes.y[traceH.slot],
                                            float(app.gs.mapW),
                                            float(app.gs.mapH));
     // The budget is counted in STEPS, and a step is one greedy 8-neighbour
@@ -2296,12 +2318,12 @@ bool run_macro_npc_trace_smoke(App& app) {
     // last whole cell OUTSIDE it: exactly 3 − 1 steps. The old `steps == 3`
     // was true only while one think spent the whole leg before the ring was
     // ever re-asked.
-    const bool logicalMoved = steps == 3 - 1;
+    const bool logicalMoved = steps == 3 - 1 && subStamped;
     const bool visualSmoothed =
         visualBefore == float(baseX)
         && glidedMid > 0.0f
         && glidedMid < marched
-        && std::fabs(visualEnd - logicalX) < 0.001f;
+        && std::fabs(visualEnd - statedX) < 0.001f;
 
     // ── The DENOMINATOR the loop actually feeds that smoothing ────────────
     //

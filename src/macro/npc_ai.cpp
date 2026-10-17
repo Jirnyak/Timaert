@@ -4980,7 +4980,18 @@ void tick_macro_npc_ai(MacroWorld& mw,
         if (gate == ThinkGate::Think)
             dispatch(h, p, kind, rt, hp, ctx);
         settle_march_rhythm(h, p, rt, hp, p.x != x0 || p.y != y0, ctx);
-        cell.idx = ecs::cell_index(int(p.x), int(p.y), gs.mapW);
+        const std::uint32_t newIdx = ecs::cell_index(int(p.x), int(p.y),
+                                                     gs.mapW);
+        // ДОЛЯ КЛЕТКИ ПОСЛЕ ХОДА (M-244): клетка сменилась — сквад стоит у
+        // края входа по румбу последнего шага (ходок уже проштамповал
+        // entryDir); прыжок/телепорт штампует kEntryDirNone, и dx=dy=0
+        // честно дают центр. Клетка не сменилась — доля не трогается.
+        if (newIdx != cell.idx) {
+            int sdx = 0, sdy = 0;
+            unpack_entry_dir(rt.entryDir, sdx, sdy);
+            st.sub[slot] = ecs::cell_sub_after_step(sdx, sdy);
+        }
+        cell.idx = newIdx;
     }
 
     // The END of every dead squad's story, once per tick (CANON S4): any
@@ -4991,71 +5002,10 @@ void tick_macro_npc_ai(MacroWorld& mw,
     settle_dead_squads(mw);
 }
 
-void tick_macro_npc_visuals(MacroStore& st, int mapW, int mapH, float dt) {
-    if (mapW <= 0 || mapH <= 0 || dt <= 0.0f) return;
-
-    // No player exclusion (подпосадка 4, owner: «универсально без игрокового
-    // кода»): his squad and a possessed lord glide by the SAME law as every
-    // sprite on the map — the walker moves the cell, this pass moves the eye.
-    // ФЛИП 1в: чистый проход колонок store — глазу энтити не нужна вовсе,
-    // это самый честный SoA-проход (только cell/visual/runtime/pools).
-    for (std::uint16_t slot = 0; slot < std::uint16_t(kUnifiedCap);
-         ++slot) {
-        if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
-        const auto& c = st.cell[slot];
-        const MacroPos p{float(ecs::cell_x(c, mapW)),
-                         float(ecs::cell_y(c, mapW))};
-        auto& v = st.visual[slot];
-        const auto& rt = st.runtime[slot];
-        const auto& hp = st.pools[slot];
-        if (hp.hp <= 0 || !std::isfinite(v.vx) || !std::isfinite(v.vy)) {
-            v.vx = p.x;
-            v.vy = p.y;
-            v.speed = 0.0f;
-            continue;
-        }
-
-        const float dx = p.x - v.vx;
-        const float dy = p.y - v.vy;
-        const float dSq = dx * dx + dy * dy;
-        // The BACKSTOP, not the smoothing: only true jumps — a teleporter's
-        // hop, a torus seam remap, a snapshot restore — land further than six
-        // cells from where the eye last saw the body, and those must not be
-        // walked across.
-        //
-        // Deliberately generous, and deliberately NOT re-derived from the pace.
-        // The number was sized when a think covered ~3 cells (the old 32
-        // cells/h); a think is under one cell now, so it looks 6× too big — and
-        // tightening it would be treating the symptom of a bug that lived
-        // elsewhere. A visual DESYNC used to accumulate here until it tripped
-        // this line, which is why the bound felt load-bearing; the cause was
-        // the caller feeding one tick of dt while the world lived several
-        // (app/main.cpp frame(), fixed 2026-09-09). With the smoothing honest,
-        // this only ever sees real teleports, and a tight bound would start
-        // snapping the fast legal marches a quick leader is entitled to.
-        if (dSq > 36.0f) {
-            v.vx = p.x;
-            v.vy = p.y;
-            v.speed = 0.0f;
-            continue;
-        }
-
-        const float speed = rt.visualSpeed > 0.0f ? rt.visualSpeed : 2.0f;
-        v.speed = speed;
-        const float step = speed * dt;
-        if (step <= 0.0f || dSq <= 0.000001f) continue;
-
-        const float d = std::sqrt(dSq);
-        if (d <= step) {
-            v.vx = p.x;
-            v.vy = p.y;
-        } else {
-            const float ratio = step / d;
-            v.vx += dx * ratio;
-            v.vy += dy * ratio;
-        }
-    }
-}
+// (tick_macro_npc_visuals жил здесь и умер с M-244a: глайд карты — чистое
+// ПРЕДСТАВЛЕНИЕ, и его интегратор переехал в кэш глаз оверлея —
+// tick_macro_eyes@src/ui/macro_overlay.cpp; мир несёт клетку и целую долю
+// CellSub, float-колонки вида в store больше нет.)
 
 MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     MacroWorld& mw,
@@ -5132,7 +5082,15 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
                     }
                     settle_march_rhythm(h, p, rt, hp,
                                         p.x != x0 || p.y != y0, ctx);
-                    cell.idx = ecs::cell_index(int(p.x), int(p.y), gs.mapW);
+                    const std::uint32_t newIdx =
+                        ecs::cell_index(int(p.x), int(p.y), gs.mapW);
+                    // Та же дверь доли, что у полного свипа выше (M-244).
+                    if (newIdx != cell.idx) {
+                        int sdx = 0, sdy = 0;
+                        unpack_entry_dir(rt.entryDir, sdx, sdy);
+                        st.sub[slot] = ecs::cell_sub_after_step(sdx, sdy);
+                    }
+                    cell.idx = newIdx;
                 }
                 ++result.npcsProcessed;
             }

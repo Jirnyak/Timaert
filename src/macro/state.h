@@ -445,7 +445,7 @@ namespace sm {
 // блоке `worked`, который и так писался. Ординалы рядов НЕ двинулись (ряд
 // остался на своём месте перед жилами), поэтому сдвига блоков нет — двигает
 // версию ровно смена ЖИЛЬЦА блока.
-constexpr int kSaveVersion = 138;   // M-220: ссылка {слот, ID}, эмитент у стора
+constexpr int kSaveVersion = 139;   // M-244a: доля клетки CellSub, MacroVisual мёртв
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система

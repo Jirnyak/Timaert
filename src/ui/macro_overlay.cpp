@@ -171,6 +171,7 @@ inline ImU32 marker_imcol(std::uint32_t argb) {
 } // namespace
 
 void draw_macro_overlay(const MacroWorld& mw,
+                        const MacroEyeCache& eyes,
                         MacroCursor& cursor,
                         float camX, float camY, float zoom,
                         int viewW, int viewH, int mapW, int mapH,
@@ -382,11 +383,12 @@ void draw_macro_overlay(const MacroWorld& mw,
             const auto& kind = st.kind[slot];
             const auto& hp   = st.pools[slot];
             if (hp.hp <= 0) continue;
-            const ecs::MacroVisual* visual = &st.visual[slot];
-            const float drawX = visual ? visual->vx
-                                       : float(ecs::cell_x(cell, gs.mapW));
-            const float drawY = visual ? visual->vy
-                                       : float(ecs::cell_y(cell, gs.mapW));
+            // Глаз — кэш представления (M-244a); непраймленный кадр ещё
+            // не ходил tick_macro_eyes и честно рисует по клетке.
+            const float drawX = eyes.primed ? eyes.x[slot]
+                                            : float(ecs::cell_x(cell, gs.mapW));
+            const float drawY = eyes.primed ? eyes.y[slot]
+                                            : float(ecs::cell_y(cell, gs.mapW));
             // A living walker is the WORLD, not the map: memory keeps no
             // people. Only cells in the player's current sight draw theirs.
             if (gs.knowledge.at(int(std::floor(drawX)), int(std::floor(drawY)))
@@ -486,8 +488,10 @@ void draw_macro_overlay(const MacroWorld& mw,
     // (cell centre = X+0.5). Drawn at the flag holder's VISUAL — the same
     // glide every squad sprite rides (подпосадка 4); the cell is the truth,
     // the visual is what the eye may see between cells.
-    if (const ecs::MacroVisual* pv = player_flag_visual(gs, *mw.store)) {
-        ImVec2 p = world_to_screen(pv->vx + 0.5f, pv->vy + 0.5f,
+    if (const MacroHandle fh = player_flag_handle(gs);
+        mw.store->valid(fh) && eyes.primed) {
+        ImVec2 p = world_to_screen(eyes.x[fh.slot] + 0.5f,
+                                   eyes.y[fh.slot] + 0.5f,
                                    camX, camY, zoom, viewW, viewH, mapW, mapH);
         const float size = std::clamp(zoom * 1.1f, 14.0f, 64.0f);
         draw_sprite(dl, p, SpriteId::Peasant, size,
@@ -533,11 +537,15 @@ std::size_t step_macro_walk(GameState& gs, MacroStore& stw, MacroCursor& cursor,
         // side. wrap_delta: the file-scope helper at the top of this TU.
         const float dx = wrap_delta(float(nxt.x) - float(cx), float(W));
         const float dy = wrap_delta(float(nxt.y) - float(cy), float(H));
-        rt->entryDir = pack_entry_dir(dx > 0.0f ? 1 : (dx < 0.0f ? -1 : 0),
-                                      dy > 0.0f ? 1 : (dy < 0.0f ? -1 : 0));
+        const int sdx = dx > 0.0f ? 1 : (dx < 0.0f ? -1 : 0);
+        const int sdy = dy > 0.0f ? 1 : (dy < 0.0f ? -1 : 0);
+        rt->entryDir = pack_entry_dir(sdx, sdy);
         rt->entryTicks = 0;
         rt->tickAccum = 0;
         cell->idx = ecs::cell_index(nxt.x, nxt.y, W);
+        // Доля клетки — та же дверь марша, что у всякого сквада (M-244):
+        // вошёл с запада — стоит у западного края.
+        stw.sub[fh.slot] = ecs::cell_sub_after_step(sdx, sdy);
         rt->moveBudget -= 1.0f;
         ++cursor.pathIdx;
         ++reached;

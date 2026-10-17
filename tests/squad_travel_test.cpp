@@ -85,7 +85,7 @@ sm::MacroHandle make_walker(sm::MacroStore& st, int mapW, float x, float y,
                             int maxSp, int hp = 100) {
     sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(int(x), int(y), mapW)};
-    st.visual[h.slot] = ecs::MacroVisual{x, y, 0.0f};
+    st.sub[h.slot] = {};   // доля клетки: фикстура рождает в центре (M-244a)
     // НОСИТЕЛЬ МАРША — ЖИВОЙ (2026-09-22). Прежде ходок ехал на роли
     // TaxCollector и сваливался в ai_nomad фолбэком снесённого ai_taxrun:
     // роль умерла, фолбэк вместе с ней, и девятнадцать законов марша разом

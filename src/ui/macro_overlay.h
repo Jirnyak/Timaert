@@ -6,6 +6,7 @@
 
 #include "macro/pathfinding.h"
 #include "macro/store.h"   // MacroHandle — ссылка на сквад после шага 1г
+#include "ui/macro_eyes.h" // MacroEyeCache — глаза карты (M-244a)
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -71,6 +72,7 @@ using MacroWalkReachedFn = void (*)(void* user, int x, int y);
 // `features` порознь — ровно та «parallel list of layer arguments», которую
 // шапка `macro_world.h` называет шрамом; выкачанность шпиля добавила бы пятый.
 void draw_macro_overlay(const MacroWorld& mw,
+                        const MacroEyeCache& eyes,
                         MacroCursor& cursor,
                         float camX, float camY, float zoom,
                         int viewW, int viewH, int mapW, int mapH,

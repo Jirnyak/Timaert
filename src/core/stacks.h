@@ -129,7 +129,7 @@ inline constexpr std::size_t kNavRegionCap = kUnifiedCap;
 // структура не могут разъехаться молча ни в одну сторону.
 inline constexpr std::size_t kMacroStoreRowBytes =
     sizeof(ecs::MacroSpawnId) + sizeof(ecs::MacroCell) + sizeof(ecs::NPCKind)
-    + sizeof(ecs::MacroVisual) + sizeof(ecs::NpcCharacter)
+    + sizeof(ecs::CellSub) + sizeof(ecs::NpcCharacter)
     + sizeof(ecs::SquadName)          // имя анкеты (ход 2, вердикт 3)
     + sizeof(ecs::NpcLevel) + sizeof(ecs::NpcTraits) + sizeof(ecs::Pools)
     + sizeof(ecs::MacroNpcRuntime) + sizeof(SpellBook)
@@ -168,7 +168,7 @@ inline constexpr std::size_t kScarRows = 2u;
 static_assert(sizeof(ecs::MacroNpcRuntime) == 84,
               "строка марша: 84 Б × 16384 = 1.31 МиБ");
 static_assert(sizeof(ecs::Pools) == 36, "строка полос");
-static_assert(sizeof(ecs::MacroVisual) == 12, "строка вида");
+static_assert(sizeof(ecs::CellSub) == 2, "доля клетки (M-244)");
 static_assert(sizeof(ecs::NpcCharacter) == 12, "строка лица");
 static_assert(sizeof(ecs::NpcInventory) == 40960,
               "инвентарь сущности: 1024 стака по 40 Б (единый контейнер "

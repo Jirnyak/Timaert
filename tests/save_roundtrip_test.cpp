@@ -163,7 +163,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     // (ниже эмитента 341, как и все остальные).
     a.spawnId.index = 200;
     a.cell = {sm::ecs::cell_index(33, 44, 512)};
-    a.visual = {33.0f, 44.0f, 1.5f};
+    a.sub = {17, -9};   // доля клетки едет сейвом (M-244a)
     a.kind = {std::uint16_t(sm::NPCType::Bandit), 3};
     a.pools = {17, 42};
     a.level = {5};
@@ -222,7 +222,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     sm::MacroNpcRecord d{};
     d.spawnId.index = 9;
     d.cell = {sm::ecs::cell_index(1, 2, 512)};
-    d.visual = {1.0f, 2.0f, 0.0f};
+    d.sub = {};
     d.kind = {std::uint16_t(sm::NPCType::Guard), 1};
     d.pools = {0, 55};
     d.level = {3};
@@ -242,7 +242,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     player.spawnId.index = kFixturePlayerOrdinal;
     player.playerHome = 1;
     player.cell = {sm::ecs::cell_index(12, 13, 512)};
-    player.visual = {12.0f, 13.0f, 0.0f};
+    player.sub = {};
     player.kind = {std::uint16_t(sm::NPCType::Adventurer),
                    std::uint16_t(sm::faction_index(sm::kPlayerFactionId))};
     player.pools = {40, 40};

@@ -90,9 +90,8 @@ inline std::uint32_t player_flag_ordinal(const GameState& gs,
     return st.valid(flag) ? st.spawnId[flag.slot].index : 0u;
 }
 
-// The flag holder's cell and map-glide visual — the SAME columns every
-// squad keeps (MacroCell = the one number that is his position's truth,
-// MacroVisual = what the eye sees between cells). nullptr before the world
+// The flag holder's cell — the SAME column every squad keeps (MacroCell =
+// the one number that is his position's truth). nullptr before the world
 // exists. These replaced the gs.player.x/y scalars: the last duplicate
 // store of «where he stands» died with подпосадка 4 (v88).
 inline ecs::MacroCell* player_flag_cell(const GameState& gs, MacroStore& st) {
@@ -106,19 +105,27 @@ inline const ecs::MacroCell* player_flag_cell(const GameState& gs,
     if (!st.valid(h)) return nullptr;
     return &st.cell[h.slot];
 }
-inline ecs::MacroVisual* player_flag_visual(const GameState& gs,
-                                            MacroStore& st) {
+// Заявленная точка флажконосца в КЛЕТОЧНЫХ единицах: клетка + целая доля
+// (CellSub, кванты 1/256 — M-244a). Этим якорятся камера и всё, кому нужна
+// правда мира; ГЛАЙД между клетками — кэш глаз карты
+// (tick_macro_eyes@src/ui/macro_overlay.cpp), он представление, не мир.
+inline bool player_flag_point(const GameState& gs, const MacroStore& st,
+                              float& x, float& y) {
     const MacroHandle h = player_flag_handle(gs);
-    if (!st.valid(h)) return nullptr;
-    return &st.visual[h.slot];
+    if (!st.valid(h)) return false;
+    x = float(ecs::cell_x(st.cell[h.slot], gs.mapW))
+        + float(st.sub[h.slot].x) / 256.0f;
+    y = float(ecs::cell_y(st.cell[h.slot], gs.mapW))
+        + float(st.sub[h.slot].y) / 256.0f;
+    return true;
 }
 
 // THE macro jump (escape teleport, console goto, subworld exit door): set
 // the flag holder's cell and erase the entry edge (a jump is not a walk —
-// SubworldEngine::enter must fall back to the centre). The VISUAL is left
-// to the one glide integrator on purpose (owner 2026-09-10: «универсально
+// SubworldEngine::enter must fall back to the centre). The map EYE is left
+// to the one glide cache on purpose (owner 2026-09-10: «универсально
 // без игрокового кода») — a short hop glides, a far jump snaps via the
-// integrator's own teleport backstop.
+// eye cache's own teleport backstop (tick_macro_eyes).
 inline void player_jump_to_cell(GameState& gs, MacroStore& st, int x, int y) {
     const MacroHandle h = player_flag_handle(gs);
     if (!st.valid(h)) return;
@@ -130,6 +137,7 @@ inline void player_jump_to_cell(GameState& gs, MacroStore& st, int x, int y) {
     rt.entryDir = kEntryDirNone;
     rt.entryTicks = 0;
     rt.tickAccum = 0;
+    st.sub[h.slot] = {};   // прыжок — центр клетки (M-244)
 }
 
 // ОЧНУТЬСЯ В СВОЁМ ТЕЛЕ — the one thing that makes possession an EFFECT rather

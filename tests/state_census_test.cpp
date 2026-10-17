@@ -448,7 +448,8 @@ constexpr Row kMacroStoreRows[] = {
     {"spawnId", Rod::Squads, ""},
     {"cell", Rod::Squads, "адрес — одно число (ЗАКОН АДРЕСА)"},
     {"kind", Rod::Squads, ""},
-    {"visual", Rod::Squads, ""},
+    {"sub", Rod::Squads,
+     "доля клетки (CellSub, M-244a) — где внутри клетки стоит сквад"},
     {"character", Rod::Squads, ""},
     {"name", Rod::Squads,
      "имя анкеты char[32], мутируемо (вердикт 3, 2026-09-30); Landmark::name "
@@ -587,6 +588,9 @@ constexpr Row kAppRows[] = {
     {"keymap", Rod::Session, ""},
     {"uiPrefsDirty", Rod::Session, ""},
     {"cursor", Rod::Session, ""},
+    {"macroEyes", Rod::Cache,
+     "глаза карты — глайд спрайтов, представление (M-244a); пересобирается "
+     "tick_macro_eyes с заявленных точек, мир и сейв его не знают"},
     {"saveSummary", Rod::Session, ""},
     {"autosaveSummary", Rod::Session, ""},
     {"pathCost", Rod::Cache, "запечённая цена пути"},

@@ -95,7 +95,7 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
         // сущностью мира с идентичностью-литералом; ручная запись spawnId
         // умерла вместе с эмитентом GameState.
         st.cell[h.slot]    = ecs::MacroCell{ecs::cell_index(sx, sy, gs.mapW)};
-        st.visual[h.slot]  = ecs::MacroVisual{float(sx), float(sy), 0.0f};
+        st.sub[h.slot]     = {};   // рождение — центр клетки (M-244)
         st.kind[h.slot]    = ecs::NPCKind{
             std::uint16_t(NPCType::Adventurer),
             std::uint16_t(faction_index(kPlayerFactionId))};

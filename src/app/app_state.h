@@ -300,6 +300,9 @@ struct App {
     sm::ui::Keymap     keymap;       // universal rebindable key bindings (global)
     bool uiPrefsDirty = false;       // set when the Interface panel changes a value
     sm::ui::MacroCursor cursor;
+    // Глаза карты — представление (M-244a, КЭШ: пересобирается глайдом с
+    // заявленных точек; мир и сейв его не знают). 128 КиБ значением.
+    sm::ui::MacroEyeCache macroEyes;
     sm::SaveSummary saveSummary;
     sm::SaveSummary autosaveSummary;
     sm::PathCostData pathCost;

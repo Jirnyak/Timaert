@@ -18,7 +18,7 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(const MacroStore& st) {
         MacroNpcRecord m{};
         m.spawnId   = st.spawnId[slot];
         m.cell      = st.cell[slot];
-        m.visual    = st.visual[slot];
+        m.sub       = st.sub[slot];
         m.kind      = st.kind[slot];
         m.pools     = st.pools[slot];
         m.level     = st.level[slot];
@@ -78,7 +78,7 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
         if (!st.valid(h)) break;   // отказ капа уже прозвучал вслух
         st.spawnId[h.slot]   = m.spawnId;
         st.cell[h.slot]      = m.cell;
-        st.visual[h.slot]    = m.visual;
+        st.sub[h.slot]       = m.sub;
         st.kind[h.slot]      = m.kind;
         st.pools[h.slot]     = m.pools;
         st.level[h.slot]     = m.level;

@@ -88,7 +88,7 @@ struct PlayerFlag {
     X(spawnId,   ecs::MacroSpawnId)                                          \
     X(cell,      ecs::MacroCell)                                             \
     X(kind,      ecs::NPCKind)                                               \
-    X(visual,    ecs::MacroVisual)                                           \
+    X(sub,       ecs::CellSub)     /* доля клетки, M-244 */                                           \
     X(character, ecs::NpcCharacter)                                          \
     X(name,      ecs::SquadName)                                             \
     X(level,     ecs::NpcLevel)                                              \
@@ -158,7 +158,7 @@ struct MacroStore {
 // пустота (владелец, M-204): кап и есть место, куда мир растёт прыжками по
 // одиннадцать тысяч слотов за тик, а отказ рождения ГРОМКИЙ (store_birth
 // печатает в stderr), день конца капа будет НАЗВАН, а не угадан.
-static_assert(sizeof(MacroStore) == 712884240ull,    // кап 16384; M-220: −2 Б/слот (generation умерла, −32 768) + 4 Б эмитент nextSpawnId + 4 Б выравнивания хвоста: 712 917 000 → 712 884 240
+static_assert(sizeof(MacroStore) == 712720400ull,    // кап 16384; M-244a: −10 Б/слот (MacroVisual 12 умер, доля CellSub 2 родилась) — 712 884 240 → 712 720 400
               "гладкая память макромира: новая колонка = новая цена, "
               "названная вслух (AGENTS п.10)");
 

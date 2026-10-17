@@ -835,6 +835,7 @@ timaert_test(caravan_deal_test
 timaert_test(macro_npc_ai_parity_test
     SOURCES
         src/macro/squad_index.cpp   # каркас клеток (ломтик F)
+        src/ui/macro_eyes.cpp       # глаза карты — свидетель глайда (M-244a)
         src/macro/npc_ai.cpp
         # effective_sheet_of (squad.h, посадка Б) sums worn gear via
         # anatomy.cpp worn_bonuses — the daily bread law walks it now.

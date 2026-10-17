@@ -387,10 +387,6 @@ int provision_squad(Inventory& store, Inventory& bag, int soldiers,
 void tick_macro_npc_ai(MacroWorld& mw,
                        MacroNpcAiRuntime& runtime, std::uint64_t ticks);
 
-// Smooth macro NPC render positions toward their logical cell positions.
-// Mirrors TS `visualX/Y` interpolation and snaps long seam/teleport jumps.
-void tick_macro_npc_visuals(MacroStore& st, int mapW, int mapH, float dt);
-
 // Subworld path: queues one AI sweep per kAiTicks of WORLD time, then
 // dispatches at most `max_npc_ticks` entities this step. Because the clock
 // crawls underground, so do the sweeps — the macro world keeps thinking, at the

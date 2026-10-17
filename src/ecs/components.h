@@ -33,13 +33,27 @@ struct Position { float x, y, z; };
 // of the composite window; the scale split, 2026-09-10). Scene bodies only.
 struct VisualPos { float vx, vy, speed; };
 
-// The macro twin — CELL units (map cells per second in `speed`). Same three
-// floats, split by SCALE, not by shape: one component carrying both units
-// let the scene's interpolator drag ~16k squads in the wrong space (the
-// systems.cpp hole beside SUB-1). Macro squads only; the scene physically
-// cannot see it. Rides the macro snapshot byte-for-byte where VisualPos did
-// (identical layout — the save format did not move).
-struct MacroVisual { float vx, vy, speed; };
+// ДОЛЯ КЛЕТКИ МАКРО-СКВАДА (M-244, вердикты владельца 2026-10-09/15, дословно
+// в реестре): клетка делится крестом с 0 в середине, квант = 256 на сторону
+// клетки, законный диапазон −127..127 (−128 не рождается — один никогда не
+// занимаемый квант у края). Клетка (MacroCell) остаётся ЕДИНСТВЕННЫМ адресом:
+// макро-механика долю НЕ читает ни одной веткой, мир дискретен, «между
+// клетками» не бывает. Читают два потребителя — ВОПЛОЩЕНИЕ (точка тел сквада
+// в клетке субмира) и КАРТА (цель глайда спрайта). Пишут три двери: рождение
+// (центр, нули), марш при смене клетки (край входа по румбу —
+// cell_sub_after_step ниже), дельта шва (свёртка позиции тела; придёт с
+// дельта-буфером эпика фрейма). Здесь стоял float-тройкой `MacroVisual`
+// {vx,vy,speed} — он умер этим же ходом («да убиваем макровиузуал он флоат
+// а флоаты это плохо»): глайд карты стал ПРЕДСТАВЛЕНИЕМ (кэш глаз у
+// оверлея), скорость глайда и прежде жила в MacroNpcRuntime::visualSpeed.
+struct CellSub { std::int8_t x = 0, y = 0; };
+static_assert(sizeof(CellSub) == 2, "доля клетки — два байта-кванта");
+
+// ДОЛЯ ПОСЛЕ ШАГА МАРША: вошёл с запада (шаг dx=+1) — стоит у ЗАПАДНОГО края
+// новой клетки (subX = −127). Прыжок/телепорт (шага нет) — центр.
+inline constexpr CellSub cell_sub_after_step(int dx, int dy) {
+    return CellSub{std::int8_t(-dx * 127), std::int8_t(-dy * 127)};
+}
 
 // THE CELL OF A MACRO SQUAD — one number (owner verdict 2026-09-10, CANON
 // S2: «мир — плоский массив, связный тор; у каждой клетки ровно одно
@@ -49,9 +63,9 @@ struct MacroVisual { float vx, vy, speed; };
 // the torus is masks and shifts, and a fractional cell is UNREPRESENTABLE:
 // the scale confusion that bred SUB-1 (cells read as tiles) cannot compile
 // against this type, and neither can a half-cell position — the fractional
-// march lives in the walk's own banked budget, the visual glide in
-// MacroVisual. Scene bodies keep Position (tiles + 3D metres); a macro
-// squad keeps THIS, and no pass can mistake one for the other.
+// march lives in the walk's own banked budget, the stated intra-cell point
+// in CellSub quanta (M-244). Scene bodies keep Position (tiles + 3D metres);
+// a macro squad keeps THIS, and no pass can mistake one for the other.
 struct MacroCell { std::uint32_t idx; };
 
 // The three spellings of one address, beside the type they speak for — и все
@@ -750,7 +764,7 @@ static_assert(sizeof(Projectile) == 68, "снаряд — 68 Б");
 TIMAERT_ROW(sm::MacroHandle);
 TIMAERT_ROW(sm::ecs::Position);
 TIMAERT_ROW(sm::ecs::VisualPos);
-TIMAERT_ROW(sm::ecs::MacroVisual);
+TIMAERT_ROW(sm::ecs::CellSub);
 TIMAERT_ROW(sm::ecs::MacroCell);
 TIMAERT_ROW(sm::ecs::Combat);
 TIMAERT_ROW(sm::ecs::MissileAttack);

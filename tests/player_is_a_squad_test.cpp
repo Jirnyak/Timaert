@@ -38,7 +38,7 @@ sm::MacroHandle npc_squad(sm::MacroStore& st, float x, float y,
     sm::MacroHandle h = sm::store_birth(st);
     // 64 — the fixture map side every test in this file boots (gs.mapW).
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(int(x), int(y), 64)};
-    st.visual[h.slot] = ecs::MacroVisual{x, y, 0.0f};
+    st.sub[h.slot] = {};   // доля клетки: центр (M-244a)
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Bandit),
                                    std::uint16_t(faction_index("bandits"))};
     st.level[h.slot] = ecs::NpcLevel{std::int16_t(2)};

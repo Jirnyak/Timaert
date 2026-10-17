@@ -1721,10 +1721,13 @@ void boot_world(App& app, std::uint32_t seed,
     // +0.5 in macro_overlay.cpp lines up with this so the player +
     // every NPC render at their cell centre, never at the cell
     // crossing. (The player himself is anchored by generate_macro_world.)
-    if (const sm::ecs::MacroVisual* pv = sm::player_flag_visual(app.gs, *app.macroStore)) {
-        app.camX = app.camTargetX = pv->vx + 0.5f;
-        app.camY = app.camTargetY = pv->vy + 0.5f;
+    if (float px = 0.0f, py = 0.0f;
+        sm::player_flag_point(app.gs, *app.macroStore, px, py)) {
+        app.camX = app.camTargetX = px + 0.5f;
+        app.camY = app.camTargetY = py + 0.5f;
     }
+    // Мир (пере)родился — глаза карты глайдить не от чего (M-244a).
+    app.macroEyes.primed = false;
     app.camPanX = app.camPanY = 0;
     boot_trace("camera anchored");
     // The starter kit is DEALT INTO HIS BAG, which is a container on his squad
@@ -1920,10 +1923,13 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // restored one — the very defect SAVE-5 named was this call finding a
     // load-path husk instead.
     sm::ensure_macro_player_entity(app.gs, *app.macroStore);
-    if (const sm::ecs::MacroVisual* pv = sm::player_flag_visual(app.gs, *app.macroStore)) {
-        app.camX = app.camTargetX = pv->vx + 0.5f;
-        app.camY = app.camTargetY = pv->vy + 0.5f;
+    if (float px = 0.0f, py = 0.0f;
+        sm::player_flag_point(app.gs, *app.macroStore, px, py)) {
+        app.camX = app.camTargetX = px + 0.5f;
+        app.camY = app.camTargetY = py + 0.5f;
     }
+    // Мир (пере)родился — глаза карты глайдить не от чего (M-244a).
+    app.macroEyes.primed = false;
     app.gs.subState.settlementId = settlement_at_player(app.gs, *app.macroStore);
     app.ui.settlementId = app.gs.subState.settlementId;
 
@@ -3003,9 +3009,18 @@ void update_camera(App& app, float dt) {
         app.camPanX *= decay;
         app.camPanY *= decay;
     }
-    if (const sm::ecs::MacroVisual* pv = sm::player_flag_visual(app.gs, *app.macroStore)) {
-        app.camTargetX = pv->vx + 0.5f + app.camPanX;
-        app.camTargetY = pv->vy + 0.5f + app.camPanY;
+    {
+        // Камера ведёт ГЛАЗ (кэш представления, M-244a), а до первого
+        // прогона глаз — заявленную точку мира.
+        const sm::MacroHandle fh = sm::player_flag_handle(app.gs);
+        if (app.macroStore->valid(fh) && app.macroEyes.primed) {
+            app.camTargetX = app.macroEyes.x[fh.slot] + 0.5f + app.camPanX;
+            app.camTargetY = app.macroEyes.y[fh.slot] + 0.5f + app.camPanY;
+        } else if (float px = 0.0f, py = 0.0f;
+                   sm::player_flag_point(app.gs, *app.macroStore, px, py)) {
+            app.camTargetX = px + 0.5f + app.camPanX;
+            app.camTargetY = py + 0.5f + app.camPanY;
+        }
     }
     const float a = 1.0f - std::exp(-dt * 8.0f);
     // The camera follows across the SHORT way, because the world is a torus and
@@ -5676,9 +5691,9 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
         const auto& c = st.cell[slot];
         const float cx = float(sm::ecs::cell_x(c, app.gs.mapW));
         const float cy = float(sm::ecs::cell_y(c, app.gs.mapW));
-        const auto& v = st.visual[slot];
         ++npcs;
-        const float gap = sm::torus_dist(cx, cy, v.vx, v.vy,
+        const float gap = sm::torus_dist(cx, cy, app.macroEyes.x[slot],
+                                         app.macroEyes.y[slot],
                                          float(app.gs.mapW),
                                          float(app.gs.mapH));
         if (gap > 0.01f) ++gliding;
@@ -5699,11 +5714,10 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
     int   sstate = -1;
     if (sample != sm::kMacroNoSlot) {
         const auto& c = st.cell[sample];
-        const auto& v = st.visual[sample];
         const auto& rt = st.runtime[sample];
         px = float(sm::ecs::cell_x(c, app.gs.mapW));
         py = float(sm::ecs::cell_y(c, app.gs.mapW));
-        vx = v.vx; vy = v.vy;
+        vx = app.macroEyes.x[sample]; vy = app.macroEyes.y[sample];
         vspeed = rt.visualSpeed;
         sstate = int(rt.state);
     }
@@ -5772,9 +5786,10 @@ void frame(App& app, int simSteps) {
     // kSubworldTickDivisor steps, so the squads think rarely and smooth rarely,
     // in the same crawling ratio.
     if (app.state == sm::ui::AppState::Playing && app.worldLoaded) {
-        sm::tick_macro_npc_visuals(*app.macroStore, app.gs.mapW, app.gs.mapH,
-                                   float(turn.timeTick.ticksAdvanced)
-                                       * sm::kStepSeconds);
+        sm::ui::tick_macro_eyes(*app.macroStore, app.macroEyes,
+                                app.gs.mapW, app.gs.mapH,
+                                float(turn.timeTick.ticksAdvanced)
+                                    * sm::kStepSeconds);
         trace_macro_npc_visuals(app, turn.timeTick.ticksAdvanced);
     }
     sync_audio_music(app);
@@ -5948,6 +5963,7 @@ void frame(App& app, int simSteps) {
         } else {
         const float zoomLogical = app.zoom / dpr;
         sm::ui::draw_macro_overlay(macro_world(app),
+                                   app.macroEyes,
                                    app.cursor,
                                    app.camX, app.camY, zoomLogical,
                                    logicalW, logicalH,
