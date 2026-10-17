@@ -4152,8 +4152,14 @@ bool run_spire_climb_smoke(App& app) {
                 "one climb per storey — no storey skipped, none repeated");
     // The world above must remember what was done below. Asked HERE, before
     // the crown gate, because the chronicle does not depend on the crown.
-    SMOKE_CHECK(app, remembered >= 1,
-                "the world above remembers the climb (a chronicle fact)");
+    // РОВНО ОДИН: к моменту счёта игрок успел войти в круг ДВАЖДЫ (вход в
+    // клетку шпиля + высадка на корону после люка — второй enter() заново
+    // строит зоны и переигрывает вход), и второй визит обязан быть задедуплен
+    // окном фактов снимка (ломоть 4г). Мутация «гейт никогда не помнит» (M6)
+    // давала здесь 2 и проходила зелёной, пока порог был «>= 1».
+    SMOKE_CHECK(app, remembered == 1,
+                "the world above remembers the climb EXACTLY once (the "
+                "re-entry after the roof exit is deduped by the fact window)");
     SMOKE_CHECK(app, onRoof, "the last climb put him out on the crown");
     // The crown stands a tower height over the ground the player entered
     // on (the flattened plateau): most of that height must be under him.

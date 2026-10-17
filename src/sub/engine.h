@@ -835,6 +835,19 @@ private:
     // MACRO danger field, and two different meanings must not share a name.
     std::array<SubZone, kMaxSubZones> subZones_{};
     int subZoneCount_ = 0;
+    // ── КАРМАН СОБСТВЕННЫХ ЗАПИСЕЙ РОДА 5 (ломоть 4г) ────────────────────
+    // Окно фактов снимка обновляется раз в границу мирового тика, а свою
+    // сквозную запись (record_world_fact) сцена обязана видеть НЕМЕДЛЕННО —
+    // иначе повторный вход в круг тем же тиком записал бы факт дважды.
+    // Пакет const: своё знание модуль держит у себя (ФРЕЙМ п.5); чистится
+    // квитанцией frame_resynced — свежее окно эти факты уже несёт.
+    // Кап: за один тик могли бы прозвучать все зоны сцены + орб; ближайшая
+    // степень двойки сверху — 64 (32 Б строка ⇒ 2 КиБ, цена названа).
+    static constexpr int kFactsSinceFillCap = 64;
+    static_assert(kFactsSinceFillCap >= kMaxSubZones + 1,
+                  "карман обязан вмещать все зоны сцены плюс орб за один тик");
+    std::array<WorldFact, kFactsSinceFillCap> factsSinceFill_;
+    int factsSinceFillCount_ = 0;
 
     float playerX_ = float(kFullSize / 2);
     float playerY_ = float(kFullSize / 2);
@@ -896,8 +909,17 @@ private:
     // (вход, ре-центр, смена сцены данжа) — никогда не гасит поднятый флаг.
     void note_frame_anchor_();
     // ── РОД 1 ИЗ СНИМКА (ломоть 4б) ────────────────────────────────────
+    // Индекс строки охвата (−1 — вне 5×5): одна арифметика адреса на обе
+    // колонки снимка (строки клеток и запасы рядов рода 3).
+    int frame_cell_index(int cx, int cy) const;
     // Строка клетки из фрейма; nullptr — клетка вне охвата 5×5.
     const CellFacts* frame_cell(int cx, int cy) const;
+    // Ряд Fauna рода 3 из снимка (ломоть 4в); промах — конверт + счётчик.
+    int fauna_stock_at(int cx, int cy) const;
+    // Гейт onceEver: «мир это помнит» — окно фактов снимка + карман
+    // собственных записей текущего тика (ломоть 4г).
+    bool frame_fact_remembered(FactKind kind, int cellX, int cellY,
+                               int today) const;
     // Строка клетки с единой политикой промаха: фрейм, иначе конверт +
     // счётчик frameMisses_ (легаси-путь до ломтя 7).
     CellFacts facts_at(int cx, int cy) const;

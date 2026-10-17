@@ -379,7 +379,7 @@ hp=40.0->40.0 byPlayerBody=0` — байт в байт та же, что 10-05. 
 **ЦЕПОЧКА ЗАМЕРА, ПО ШАГАМ (сид 12345, смоук в одиночку):**
 1. Штатный канал владельца `TIMAERT_COMBAT_LOG=1` печатает
    `[melee] loose range=80.0 cd=1.94s` РОВНО ОДИН РАЗ — ветка
-   src/sub/engine.cpp:2401 «if (strikeStats.kind == ecs::Combat::Missile) {» сработала и
+   src/sub/engine.cpp:2451 «if (strikeStats.kind == ecs::Combat::Missile) {» сработала и
    `spawn_npc_missile` был позван. (Канал виден только у бинарника напрямую:
    `smoke.sh` фильтрует вывод строкой `grep '^\[smoke\]'`, и на ЗЕЛЁНОМ
    мили-близнеце `[melee]` тоже ноль — контроль прибора, без него печать

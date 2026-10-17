@@ -920,6 +920,7 @@ std::uint64_t SubworldEngine::frame_world_tick() const {
 // чтением макро из тика субмира (пересинхронизация плановая, ЗАКОН ШВА).
 void SubworldEngine::frame_resynced() {
     frameResyncNeeded_ = false;
+    factsSinceFillCount_ = 0;   // свежее окно эти факты уже несёт (род 5)
     mgr_.flush_pending_generation();
 }
 
@@ -1484,16 +1485,59 @@ void SubworldEngine::report_player_damage() {
 // fill_local_frame отвечает миру, адресованная знаковой короткой разницей
 // клеточных координат на торе (заворот — маска, ЗАКОН АДРЕСА; раскладка
 // cells[(dy+2)*5+(dx+2)] — зеркало сборщика, паритет держит frame_fill_test).
-const CellFacts* SubworldEngine::frame_cell(int cx, int cy) const {
-    if (!frame_ || frame_->side <= 0) return nullptr;
+int SubworldEngine::frame_cell_index(int cx, int cy) const {
+    if (!frame_ || frame_->side <= 0) return -1;
     const int side = frame_->side;
     const int half = kFrameSpan / 2;
     const int rx = (cx - cell_x(frame_->centerCell, side)) & (side - 1);
     const int ry = (cy - cell_y(frame_->centerCell, side)) & (side - 1);
     const int dx = rx > side / 2 ? rx - side : rx;
     const int dy = ry > side / 2 ? ry - side : ry;
-    if (dx < -half || dx > half || dy < -half || dy > half) return nullptr;
-    return &frame_->cells[std::size_t((dy + half) * kFrameSpan + (dx + half))];
+    if (dx < -half || dx > half || dy < -half || dy > half) return -1;
+    return (dy + half) * kFrameSpan + (dx + half);
+}
+
+const CellFacts* SubworldEngine::frame_cell(int cx, int cy) const {
+    const int i = frame_cell_index(cx, cy);
+    return i < 0 ? nullptr : &frame_->cells[std::size_t(i)];
+}
+
+// Ряд Fauna рода 3 из снимка — та же политика промаха, что у строк клеток
+// (ломоть 4в). Снят сборщиком тем же resource_field_read на границе тика.
+int SubworldEngine::fauna_stock_at(int cx, int cy) const {
+    const int i = frame_cell_index(cx, cy);
+    if (i >= 0) {
+        return frame_->stock[std::size_t(int(ResourceFieldId::Fauna))
+                                 * std::size_t(kFrameCells)
+                             + std::size_t(i)];
+    }
+    ++frameMisses_;
+    MacroWorld w = mw_;
+    return macro_stock_read(w, MacroStock::FaunaCount,
+                            MacroStockKey{-1, std::int16_t(cx),
+                                          std::int16_t(cy)});
+}
+
+// Дедуп «мир это помнит» (гейт onceEver зоны): окно фактов снимка + карман
+// собственных записей с последнего обновления. Горизонт — interestDays
+// строки вида, тот же, которым жил chronicle_near_kind.
+bool SubworldEngine::frame_fact_remembered(FactKind kind, int cellX,
+                                           int cellY, int today) const {
+    const int horizon =
+        today - int(fact_kind_def(kind).interestDays) + 1;
+    const auto matches = [&](const WorldFact& f) {
+        return FactKind(f.kind) == kind && int(f.x) == cellX
+            && int(f.y) == cellY && f.day >= horizon;
+    };
+    if (frame_) {
+        for (std::uint32_t i = 0; i < frame_->factCount; ++i) {
+            if (matches(frame_->facts[i])) return true;
+        }
+    }
+    for (int i = 0; i < factsSinceFillCount_; ++i) {
+        if (matches(factsSinceFill_[std::size_t(i)])) return true;
+    }
+    return false;
 }
 
 // Паритет адресации снимка: раскладка cells[(dy+2)*5+(dx+2)] — зеркало
@@ -1647,11 +1691,9 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
     // creatures embody (macro/macro_stock.h fauna row: spawn-table capacity
     // minus what the hunt has taken). Asked HERE, where the GameState is,
     // exactly like the settlement faction above.
-    MacroWorld faunaWorld = mw_;  // the envelope, whole (deposits included —
-                                  // the partial re-picks were canon-audit C4)
-    const int faunaCount = macro_stock_read(
-        faunaWorld, MacroStock::FaunaCount,
-        MacroStockKey{-1, std::int16_t(wcx), std::int16_t(wcy)});
+    // Ряд Fauna рода 3 — из СНИМКА (ломоть 4в): тот же resource_field_read,
+    // которым сборщик fill_local_frame снял запас на границе тика.
+    const int faunaCount = fauna_stock_at(wcx, wcy);
     // The place's standing army, embodied beside its crowd (§42 Инк 7):
     // the LIVE garrison creatures travels down so the street shows exactly
     // who is home today — patrol out, hired away, killed = not here.
@@ -2090,13 +2132,13 @@ void SubworldEngine::tick_zones() {
         subZonesEntered_ |= bit;
 
         if (z.onceEver) {
-            int seen = 0;
-            chronicle_near_kind(gs_->chronicle, z.cellX, z.cellY,
-                                /*radiusCells*/0, z.kind, today,
-                                [](void* u, const WorldFact&) {
-                                    ++*static_cast<int*>(u);
-                                }, &seen);
-            if (seen > 0) continue;   // the world already remembers this
+            // Мир помнит — ОКНОМ ФАКТОВ снимка (род 5, вердикт Q3) плюс
+            // карманом собственных записей этого тика. Дедуп стал ТОЧНЕЕ
+            // прежнего: chronicle_near_kind отвечал блоком индекса 8×8, окно
+            // отвечает КЛЕТКОЙ места — ровно той, на которой зона построена
+            // («a place already remembers that somebody stood here»).
+            if (frame_fact_remembered(z.kind, z.cellX, z.cellY, today))
+                continue;
         }
         // Filed at the PLACE's own cell, which is the one the zone was built
         // on — not at whichever cell the player's feet happen to resolve to.
@@ -2129,6 +2171,14 @@ void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
     f.x = std::int16_t(cellX);
     f.y = std::int16_t(cellY);
     f.amount = amount;
+    // Своя сквозная запись видна сцене НЕМЕДЛЕННО: окно фактов обновляется
+    // раз в границу тика, а карман держит хвост до ближайшей квитанции
+    // frame_resynced (пакет const — своё знание модуль держит у себя,
+    // ФРЕЙМ п.5). Без кармана повторный вход в круг тем же тиком записал бы
+    // факт дважды — на живой летописи это было невозможно.
+    if (factsSinceFillCount_ < int(factsSinceFill_.size())) {
+        factsSinceFill_[std::size_t(factsSinceFillCount_++)] = f;
+    }
     if (mw_.store) {
         // Filed AND paid through THE one macro door (macro/squad.h
         // record_deed): the named bit and the renown come with the filing —
@@ -3903,6 +3953,7 @@ void SubworldEngine::leave(bool force) {
     gs_ = nullptr;
     frame_ = nullptr;
     frameResyncNeeded_ = false;
+    factsSinceFillCount_ = 0;
     terrain_ = nullptr;
     objects_ = nullptr;
     bus_ = nullptr;
@@ -4022,9 +4073,15 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     // runs the danger gate and every write-back — and RESETS the envelope, so
     // it is captured by copy first, exactly as the dungeon-exit re-enter does.
     // Фрейм — тем же приёмом: указатель на снимок app живёт дольше сцены,
-    // leave() его лишь отвязывает.
+    // leave() его лишь отвязывает. КАРМАН РОДА 5 — тоже: это память «что я
+    // записал с последнего обновления окна», и внутренний переход улица↔данж
+    // её не обнуляет (шрам: подъём шпиля укладывается в ОДИН мировой тик,
+    // окно не успевает обновиться, и вытертый карман делал гейт слепым к
+    // собственному Explored — remembered=2 в spire_climb).
     const MacroWorld mwCopy = mw_;
     const LocalContext* frame = frame_;
+    const std::array<WorldFact, kFactsSinceFillCap> since = factsSinceFill_;
+    const int sinceCount = factsSinceFillCount_;
     sub::SubObjects& scene = *objects_;   // leave() resets the views — capture first
     EventBus& bus = *bus_;
     leave();
@@ -4033,6 +4090,8 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     dungeon_ = ses;
     sceneKind_ = SceneKind::Dungeon;
     frame_ = frame;
+    factsSinceFill_ = since;
+    factsSinceFillCount_ = sinceCount;
     enter_dungeon_scene(mwCopy, scene, bus);
     return true;
 }
@@ -4208,11 +4267,13 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // kind table (dgn/dispatch.h) — the row read at the top of this scene.
     if (kindRow.householdAbove && ses.ref.level >= 0
         && ses.settlementId > 0 && objects_) {
-        MacroWorld mw = mw_;
         const MacroStockKey popKey{ses.settlementId,
                                    std::int16_t(ses.doorCx),
                                    std::int16_t(ses.doorCy)};
-        const int popNow = macro_stock_read(mw, MacroStock::Population, popKey);
+        // Население — колонка строки снимка (landmark.size = souls_flock
+        // того же слота, что отвечает за клетку двери); ключ остаётся
+        // адресом РАСПИСОК займа тел, он не чтение (ломоть 5).
+        const int popNow = doorFacts.landmark.size;
         // THE household law lives in ONE place (spawn.cpp
         // walk_interior_shares, CANON S28): the street spawner subtracts
         // the same shares as its reserve, so a soul at a hearth is a soul
@@ -4257,11 +4318,10 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         && ses.settlementId > 0
         && landmark_def(ses.landmarkKind).crowdHabitat != 0;
     if (placeGarrison && objects_) {
-        MacroWorld mw = mw_;
         const MacroStockKey popKey{ses.settlementId,
                                    std::int16_t(ses.doorCx),
                                    std::int16_t(ses.doorCy)};
-        const int popNow = macro_stock_read(mw, MacroStock::Population, popKey);
+        const int popNow = doorFacts.landmark.size;   // строка снимка (4в)
         // Ярус мансуется СВОИМ ОТРЕЗКОМ голов места — та же партиция, что у
         // очага: пикет снаружи + Σ ярусов == головы, всегда (D-хвост).
         // Отрезок снят на пороге (DungeonSession).
@@ -4299,10 +4359,9 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     const bool denOfBeasts =
         (ses.ref.level < 0 || kindRow.verminAbove) && !placeGarrison;
     if (denOfBeasts && objects_) {
-        MacroWorld mw = mw_;
         const MacroStockKey faunaKey{-1, std::int16_t(ses.doorCx),
                                      std::int16_t(ses.doorCy)};
-        const int budget = macro_stock_read(mw, MacroStock::FaunaCount, faunaKey);
+        const int budget = fauna_stock_at(ses.doorCx, ses.doorCy);
         // The den's table is its landmark's: a spire storey draws the Spire
         // family (demons), a cellar and a cave the Ruin family — the same
         // ONE law the open cell runs (fauna.h roll_spawns). Whose family is
