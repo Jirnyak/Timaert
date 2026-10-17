@@ -154,6 +154,7 @@ void case_seam_crossing_and_stitch() {
     float playerX = float(sm::sub::kCellSize * 2 + 8);
     float playerY = float(sm::sub::kCellSize + 128);
     mgr.check_boundary(playerX, playerY);
+    mgr.flush_pending_generation();
     CHECK_OR_RETURN(mgr.center_cx() == 1 && mgr.center_cy() == 0,
                     "window did not cross the seam east");
     CHECK_OR_RETURN(mgr.consume_composite_dirty(),
@@ -178,6 +179,7 @@ void case_seam_crossing_and_stitch() {
     for (int i = 0; i < 500 && drains < 3; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         mgr.check_boundary(playerX, playerY);
+        mgr.flush_pending_generation();
         if (!mgr.consume_composite_dirty()) continue;
         ++drains;
         SubworldHeightField ref;

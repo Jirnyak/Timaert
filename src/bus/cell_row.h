@@ -6,6 +6,7 @@
 #pragma once
 #include "core/macro_handle.h"
 #include "tables/biomes.h"
+#include "tables/faction.h"   // kNoFaction — дефолт владельца земли
 #include "tables/feature_type.h"
 #include "tables/squad_type.h"
 #include <cstdint>
@@ -74,6 +75,14 @@ struct CellFacts {
     // (ownerKingdom died 2026-09-11 with the kingdoms: it was written and
     // never read — ground ownership answers через faction_index_for_cell.)
     int  cropHarvested = 0;   // the wheat scar: what the sickle already took
+    // ВЛАДЕЛЕЦ ЗЕМЛИ — индекс фракции-хозяйки клетки, ответ
+    // `faction_index_for_cell@src/macro/politik.h` (невладеемая земля =
+    // вольный народ, никогда не kNoFaction у живого мира). ЧИТАТЕЛЬ НАЗВАН
+    // (DOD п.9): `ground_faction_at@src/sub/engine.cpp` — чью землю
+    // наследует контекстный спавн; писатель один — сборщик cell_facts.
+    // kNoFaction — только у строки без мира (голая фикстура). u16 — ровно
+    // тип реестра фракций (kMaxFactions=64, сентинел 0xFFFF).
+    std::uint16_t cellOwner = kNoFaction;
     bool water = false;       // biome == Water, pre-answered for one-fact
                               //   consumers
 };

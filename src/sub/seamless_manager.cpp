@@ -113,10 +113,12 @@ SeamlessSubworldManager::~SeamlessSubworldManager() {
 }
 
 void SeamlessSubworldManager::init(int cx, int cy, CellResolver r,
-                                   BiomeResolver br) {
+                                   BiomeResolver br, CellResolver fr) {
     shutdown_worker();
     cx_ = cx; cy_ = cy; resolver_ = std::move(r);
     biomeResolver_ = std::move(br);
+    farResolver_ = std::move(fr);
+    pendingFreshCount_ = 0;   // отложка прошлой сессии умирает с ней
     nextGeneration_ = 1;
     clear_composite_dirty();
     lastTiming_ = {};
@@ -593,6 +595,19 @@ void SeamlessSubworldManager::place_placeholder(int idx, const CellContext& ctx,
     }
 }
 
+// Достройка отложенной пересечением генерации: контексты свежей полосы
+// собираются ТЕПЕРЬ, когда app перезаполнил фрейм на новый центр (все их
+// соседи ±1 — внутри нового охвата 5×5). Поколение каждой клетки выдано на
+// пересечении: приехавший позже результат с тем же номером вшивается как
+// обычно, устаревшие отбрасывает drain по generation.
+void SeamlessSubworldManager::flush_pending_generation() {
+    for (int i = 0; i < pendingFreshCount_; ++i) {
+        const PendingFresh& pf = pendingFresh_[std::size_t(i)];
+        queue_generation(resolver_(pf.acx, pf.acy), pf.generation);
+    }
+    pendingFreshCount_ = 0;
+}
+
 void SeamlessSubworldManager::queue_generation(const CellContext& ctx,
                                                std::uint64_t generation) {
     GenerationJob job;
@@ -1007,9 +1022,17 @@ void SeamlessSubworldManager::check_boundary(float& playerX, float& playerY) {
             const std::uint64_t generation = nextGeneration_++;
             const int acx = cx_ + ox;
             const int acy = cy_ + oy;
+            // Плейсхолдер — СЕЙЧАС (его контекст — сама клетка: новое окно
+            // лежит внутри прежнего охвата снимка ±2); сбор контекстов для
+            // воркера — ОТЛОЖЕН до свежего фрейма: соседи ±1 свежей клетки
+            // уходят за прежний охват, а тянуть макро из тика субмира
+            // запрещено (ЗАКОН ШВА). flush зовёт движок после перезаполнения.
             const CellContext ctx = resolver_(acx, acy);
             place_placeholder(idx, ctx, generation);
-            queue_generation(ctx, generation);
+            if (pendingFreshCount_ < int(pendingFresh_.size())) {
+                pendingFresh_[std::size_t(pendingFreshCount_++)] =
+                    {acx, acy, generation};
+            }
         }
     }
     for (int i = 0; i < leavingCount; ++i) {

@@ -36,6 +36,7 @@ struct TreeLayer;
 // ЛОКАЛЬНЫЙ ФРЕЙМ (src/bus/local_frame.h) — вход субмира по сводке; здесь
 // только указатель, полную форму включает engine.cpp (цена заголовка §5 п.13).
 struct LocalContext;
+struct CellFacts;   // строка клетки рода 1 (src/bus/cell_row.h)
 // (Блок предобъявлений `ecs::NpcCharacter`/`NpcInventory`/`NpcTraits` снят
 // 2026-10-09, M-150 ломоть 1: ни одно из трёх имён в этом заголовке больше
 // не упоминается — `NpcInventory` осиротел со смертью `inventoryOverride`
@@ -194,7 +195,18 @@ public:
     // ПОДНИМАЕТ ФЛАГ, когда его якорь сдвинулся (ре-центр шва, вход/выход
     // данжа), а app в своей точке кадра заполняет фрейм и квитирует.
     bool needs_frame_resync() const { return frameResyncNeeded_; }
-    void frame_resynced() { frameResyncNeeded_ = false; }
+    // Квитанция app «фрейм заполнен заново»: гасит флаг и достраивает
+    // отложенную на пересечении шва генерацию (тело в .cpp — зовёт менеджер).
+    void frame_resynced();
+    // Промахи снимка: сколько раз симуляция спросила клетку ВНЕ охвата 5×5 и
+    // упала на конверт (легаси-путь, умирает ломтём 7). В канонических
+    // потоках обязан быть 0 — свидетель subworld_clock это требует.
+    std::uint32_t frame_misses() const { return frameMisses_; }
+    // Паритет адресации снимка (прибор свидетеля subworld_clock): каждая
+    // строка охвата, спрошенная дверью frame_cell, несёт СВОИ свёрнутые
+    // координаты — транспонированная/смещённая раскладка отвечает чужой
+    // клеткой, что невидимо потокам с симметричным центром. Тело в .cpp.
+    bool frame_rows_addressed() const;
     // Часы мира, КАК ИХ ВИДИТ СНИМОК, — прибор свидетеля свежести фрейма
     // (смоук subworld_clock): ровно frame.worldTick, без сан-фриз-оверлея
     // render_time. Замороженный снимок = замороженные под землёй помпа дня,
@@ -883,6 +895,20 @@ private:
     // Поднять frameResyncNeeded_, если якорь фрейма разошёлся со снимком
     // (вход, ре-центр, смена сцены данжа) — никогда не гасит поднятый флаг.
     void note_frame_anchor_();
+    // ── РОД 1 ИЗ СНИМКА (ломоть 4б) ────────────────────────────────────
+    // Строка клетки из фрейма; nullptr — клетка вне охвата 5×5.
+    const CellFacts* frame_cell(int cx, int cy) const;
+    // Строка клетки с единой политикой промаха: фрейм, иначе конверт +
+    // счётчик frameMisses_ (легаси-путь до ломтя 7).
+    CellFacts facts_at(int cx, int cy) const;
+    // ОДИН сборщик контекста генерации из строки клетки — обе двери ниже
+    // собирают им же, второй выкладки контекста не существует.
+    CellContext context_from_facts(const CellFacts& f) const;
+    // Конвертная дверь ДЛЯ РЕНДЕРА (resolve_cell менеджера): дальний мир
+    // спрашивает радиусом 97 клеток — это тупик рендера, не симуляция, и
+    // счётчик промахов он не трогает.
+    CellContext resolve_context_envelope(int x, int y) const;
+    mutable std::uint32_t frameMisses_ = 0;
     void sync_macro_player_to_center();
     CellContext resolve_context(int x, int y) const;
     // Terrain difficulty of the macro cell under a composite-window tile. Same

@@ -144,7 +144,8 @@ public:
     ~SeamlessSubworldManager();
 
     void init(int centerCx, int centerCy, CellResolver resolver,
-              BiomeResolver biomeResolver = {});
+              BiomeResolver biomeResolver = {},
+              CellResolver farResolver = {});
     // Re-center if player crosses a boundary; loads/unloads as needed.
     void check_boundary(float& playerX, float& playerY);
     // Returns whether anything changed and clears all dirty state. Kept as the
@@ -163,7 +164,22 @@ public:
     // the same one door the window cells come through. The shadow apron
     // (vk_renderer_3d upload) asks for the ring of cells beyond the window so
     // out-of-window massifs keep casting into it.
-    CellContext resolve_cell(int cx, int cy) const { return resolver_(cx, cy); }
+    // РАЗВОД ДВЕРЕЙ (ломоть 4б эпика фрейма): resolver_ — дверь СИМУЛЯЦИИ
+    // (генерация окна, веса шага, акты; в живом мире читает локальный фрейм
+    // 5×5), а этот вход — дверь РЕНДЕРА: дальний мир спрашивает радиусом 97
+    // клеток, тупику рендера можно отдавать сколько угодно (ЗАКОН ТУПИКА),
+    // но фреймовым счётом промахов он не является. Без farResolver (данж,
+    // карман, голая арматура) — та же resolver_.
+    CellContext resolve_cell(int cx, int cy) const {
+        return farResolver_ ? farResolver_(cx, cy) : resolver_(cx, cy);
+    }
+
+    // Отложенная генерация свежей полосы (ЗАКОН ШВА: пересинхронизация
+    // плановая): пересечение ставит плейсхолдеры и запоминает свежие клетки
+    // здесь, а контексты для воркера собирает flush — его зовёт движок из
+    // frame_resynced(), когда app уже перезаполнил фрейм на новый центр.
+    void flush_pending_generation();
+    bool has_pending_generation() const { return pendingFreshCount_ > 0; }
 
     // Snapshot every currently loaded cell into the per-session save cache.
     // Called when the player leaves the subworld so the next visit
@@ -263,6 +279,13 @@ private:
     int cx_ = 0, cy_ = 0;
     CellResolver resolver_;
     BiomeResolver biomeResolver_;   // the wider ring's cheap door
+    CellResolver farResolver_;      // дверь рендера (см. resolve_cell)
+    // Свежие клетки пересечения, ждущие flush_pending_generation: осевой шаг
+    // обнажает 3, диагональный 5 — кап 8 с запасом (po2), перелив невыразим.
+    struct PendingFresh { int acx = 0; int acy = 0;
+                          std::uint64_t generation = 0; };
+    std::array<PendingFresh, 8> pendingFresh_{};
+    int pendingFreshCount_ = 0;
     // The ring's biome, through the cheap door when there is one and
     // through the full context when there is not (bare harnesses).
     Biome ring_biome(int cx, int cy) const {

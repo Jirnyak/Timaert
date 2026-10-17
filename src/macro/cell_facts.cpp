@@ -4,6 +4,7 @@
 #include "macro/deposit_layer.h"
 #include "macro/map_generator.h"
 #include "macro/npc_ai.h"
+#include "macro/politik.h"   // faction_index_for_cell — владелец земли клетки
 #include "macro/resource_field.h"
 #include "macro/spires.h"   // spire_orb — ОДИН вывод об орбе (M-233 п.8)
 #include "tables/seasons.h"
@@ -59,6 +60,10 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
         f.seasonTempOffset = season_temp_offset(w.gs->worldTime.day());
         f.cropHarvested = resource_field_scar(*w.gs, ResourceFieldId::Wheat,
                                               std::uint32_t(idx));
+        // Чья это земля — тем же выводом, которым спавн наследует почву
+        // (невладеемое = вольный народ); колонка строки, не вторая дверь.
+        f.cellOwner = faction_index_for_cell(w.gs->cellOwner,
+                                             td.width, td.height, f.x, f.y);
     }
 
     // КТО ЗДЕСЬ ЖИВЁТ — тело неподвижного сквада из КАРКАСА КЛЕТОК (ломтик

@@ -680,7 +680,13 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
         return mw_.terrain ? biome_at_cell(*mw_.terrain, x, y) : Biome::Meadow;
     };
 
-    mgr_.init(cx, cy, resolver, biomeResolver);
+    // Дверь рендера — конвертная: дальний мир и апрон высот спрашивают
+    // далеко за охватом снимка, и это законный тупик рендера, а не промах
+    // симуляции (resolve_cell менеджера, ломоть 4б).
+    auto farResolver = [this](int x, int y) {
+        return resolve_context_envelope(x, y);
+    };
+    mgr_.init(cx, cy, resolver, biomeResolver, farResolver);
     // First upload is unconditionally full inside the renderer (device buffers
     // and images not yet created). Consume the manager's dirty (load_all marked
     // it full) and hand it straight to upload(), then clear the accumulator.
@@ -865,7 +871,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // «Что стоит на этой клетке» отвечает ОДИН сборщик фактов клетки
     // (macro/cell_facts.h) — тот же, из которого собирается весь контекст
     // генерации; скан населения мира этот вопрос не задаёт.
-    if (const CellFacts cf = cell_facts(mw_, cx, cy);
+    if (const CellFacts cf = facts_at(cx, cy);
         cf.landmark.type == SquadType::Spire) {
         // The amount IS the cell's worked number — already spell ordinal + 1
         // (0 = drained spire: the spell is forgotten, the fact files unknown,
@@ -906,6 +912,15 @@ std::uint32_t SubworldEngine::frame_anchor_cell() const {
 
 std::uint64_t SubworldEngine::frame_world_tick() const {
     return frame_ ? frame_->worldTick : 0u;
+}
+
+// Квитанция app «фрейм заполнен заново». Здесь же достраивается генерация,
+// отложенная пересечением шва: контексты свежей полосы собираются уже из
+// НОВОГО снимка (его охват покрывает соседей ±2 каждой свежей клетки), а не
+// чтением макро из тика субмира (пересинхронизация плановая, ЗАКОН ШВА).
+void SubworldEngine::frame_resynced() {
+    frameResyncNeeded_ = false;
+    mgr_.flush_pending_generation();
 }
 
 // Якорь сдвинулся против снимка → фрейм ждёт плановой пересинхронизации.
@@ -1465,16 +1480,79 @@ void SubworldEngine::report_player_damage() {
     }
 }
 
+// Строка клетки из СНИМКА — та самая строка, которой сборщик
+// fill_local_frame отвечает миру, адресованная знаковой короткой разницей
+// клеточных координат на торе (заворот — маска, ЗАКОН АДРЕСА; раскладка
+// cells[(dy+2)*5+(dx+2)] — зеркало сборщика, паритет держит frame_fill_test).
+const CellFacts* SubworldEngine::frame_cell(int cx, int cy) const {
+    if (!frame_ || frame_->side <= 0) return nullptr;
+    const int side = frame_->side;
+    const int half = kFrameSpan / 2;
+    const int rx = (cx - cell_x(frame_->centerCell, side)) & (side - 1);
+    const int ry = (cy - cell_y(frame_->centerCell, side)) & (side - 1);
+    const int dx = rx > side / 2 ? rx - side : rx;
+    const int dy = ry > side / 2 ? ry - side : ry;
+    if (dx < -half || dx > half || dy < -half || dy > half) return nullptr;
+    return &frame_->cells[std::size_t((dy + half) * kFrameSpan + (dx + half))];
+}
+
+// Паритет адресации снимка: раскладка cells[(dy+2)*5+(dx+2)] — зеркало
+// сборщика, и единственный её независимый свидетель — координаты, которые
+// строка несёт в себе. Мутация-транспозиция (dx↔dy) прошла ЗЕЛЁНОЙ мимо
+// spire_climb / dungeon_house / subworld_seam (2026-10-17): центр охвата
+// самосопряжён, а чужая строка на этих сидах оказалась правдоподобной.
+bool SubworldEngine::frame_rows_addressed() const {
+    if (!frame_ || frame_->side <= 0) return false;
+    const int side = frame_->side;
+    const int ccx = cell_x(frame_->centerCell, side);
+    const int ccy = cell_y(frame_->centerCell, side);
+    const int half = kFrameSpan / 2;
+    for (int dy = -half; dy <= half; ++dy) {
+        for (int dx = -half; dx <= half; ++dx) {
+            const CellFacts* row = frame_cell(ccx + dx, ccy + dy);
+            if (!row) return false;
+            if (row->x != ((ccx + dx) & (side - 1))
+                || row->y != ((ccy + dy) & (side - 1))) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// ЕДИНАЯ политика промаха снимка: вопрос внутри охвата 5×5 отвечает ФРЕЙМ,
+// вне — конверт (легаси-путь до ломтя 7) со счётом frameMisses_. В
+// канонических потоках промахов НОЛЬ по построению: генерация на пересечении
+// ОТЛОЖЕНА до свежего фрейма (flush в frame_resynced), а все акты и веса
+// спрашивают окно 3×3 ⊂ 5×5. Свидетель — subworld_clock (misses == 0).
+CellFacts SubworldEngine::facts_at(int cx, int cy) const {
+    if (const CellFacts* row = frame_cell(cx, cy)) return *row;
+    ++frameMisses_;
+    return cell_facts(mw_, cx, cy);
+}
+
 CellContext SubworldEngine::resolve_context(int x, int y) const {
+    return context_from_facts(facts_at(x, y));
+}
+
+// Конвертная дверь рендера: дальний мир (радиус 97) и апрон высот — тупик
+// рендера (ЗАКОН ТУПИКА), им можно отдавать сколько угодно; симуляцией и
+// счётчиком промахов этот путь не является.
+CellContext SubworldEngine::resolve_context_envelope(int x, int y) const {
+    return context_from_facts(cell_facts(mw_, x, y));
+}
+
+CellContext SubworldEngine::context_from_facts(const CellFacts& f) const {
     CellContext c{};
-    // THE macro facts come from the one assembler (macro/cell_facts.h);
-    // this function adds only what GENERATION alone needs — the window
+    // THE macro facts come from the one assembler (строка клетки рода 1:
+    // снимок фрейма либо cell_facts конверта — обе двери выше); this
+    // function adds only what GENERATION alone needs — the window
     // geometry, the seeds and the furrow phase. It used to assemble the
     // macro half itself, by hand, and it was one of the drifting copies the
     // door replaced (canon-audit III.12/C2/C5).
-    const CellFacts f = cell_facts(mw_, x, y);
     c.cx = f.x; c.cy = f.y;
-    c.worldCellsX = terrain_->width; c.worldCellsY = terrain_->height;
+    c.worldCellsX = frame_ ? frame_->side : 0;
+    c.worldCellsY = c.worldCellsX;   // тор квадратен (ЗАКОН АДРЕСА)
     c.macroHeight = f.height01;
     // THE PLANE CROSSES THE BORDER HERE, and only here. It is a property of the
     // WORLD, not of this cell, so it comes off the terrain column the same way
@@ -3089,12 +3167,14 @@ bool SubworldEngine::spawn_tracked_npc_body(MacroHandle macro) {
 // is the ONE place the subworld converts "where I am standing" into "whose realm
 // this is", so every context-free spawn inherits the ground the same way.
 std::uint16_t SubworldEngine::ground_faction_at(float fx, float fy) const {
-    if (!gs_) return kNoFaction;
     const int ox = std::clamp(int(fx) / kCellSize, 0, 2) - 1;
     const int oy = std::clamp(int(fy) / kCellSize, 0, 2) - 1;
-    return faction_index_for_cell(gs_->cellOwner, frame_->side, frame_->side,
-                                  mgr_.center_cx() + ox,
-                                  mgr_.center_cy() + oy);
+    // Колонка строки снимка (cellOwner, ломоть 4б): вывод тот же
+    // faction_index_for_cell, но считает его сборщик fill_local_frame —
+    // субмир землевладение больше не спрашивает у gs напрямую.
+    const CellFacts* row = frame_cell(mgr_.center_cx() + ox,
+                                      mgr_.center_cy() + oy);
+    return row ? row->cellOwner : kNoFaction;
 }
 
 // ...and what does it cost to walk it? Same window-tile → macro-cell mapping,
@@ -4118,7 +4198,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // The door cell's LIVE facts — danger byte, deposit gates, biome, trees —
     // through the one assembler: the household and the vermin below spawn by
     // the same law as the street above the door.
-    const CellFacts doorFacts = cell_facts(mw_, ses.doorCx, ses.doorCy);
+    const CellFacts doorFacts = facts_at(ses.doorCx, ses.doorCy);
     // The household: a deterministic handful of the settlement's people,
     // borrowed from the SAME population stock as the street crowd — but only
     // while the town still has people to lend. A door in an emptied town
@@ -4269,7 +4349,7 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     if (cy < 0) cy += mapH;
     // Шпиль клетки спрашивается у ОДНОГО сборщика фактов (macro/cell_facts.h),
     // как его спрашивает `read_sign` ниже; ординал места — его колонка.
-    const CellFacts cf = cell_facts(mw_, cx, cy);
+    const CellFacts cf = facts_at(cx, cy);
     const bool spire = cf.landmark.type == SquadType::Spire;
     const int spireOrdinal = cf.landmark.id;
     // The spell is the cell's worked number (spires.h: ordinal + 1, 0 =
@@ -5038,6 +5118,12 @@ void SubworldEngine::tick(float dt) {
         seamShiftCellsX_ = dx;
         seamShiftCellsY_ = dy;
         repopulate_after_recenter(dx, dy);
+        // Отложка генерации — ТОЛЬКО оверворлду: его резолвер читает снимок,
+        // и соседи свежей полосы ждут нового охвата (flush в frame_resynced).
+        // У кармана/данжа резолвер синтетический — макро он не читает вовсе,
+        // отложка не покупает ничего, а заворот кармана обязан достроиться
+        // тем же тиком (пролог ходит по тору витками).
+        if (sceneKind_ == SceneKind::Dungeon) mgr_.flush_pending_generation();
         note_frame_anchor_();
         // Inc 5a: check_boundary rewrapped the scalars ∓cell and the rebase inside
         // repopulate shifted the SubworldTag-tagged player entity by the SAME

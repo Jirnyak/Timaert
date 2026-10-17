@@ -846,6 +846,17 @@ bool run_subworld_clock_smoke(App& app) {
                 "the snapshot clock advances underground (frame resync alive)");
     SMOKE_CHECK(app, t1 == app.gs.worldTime.tick,
                 "the snapshot caught the macro truth at the tick boundary");
+    // Род 1 — из снимка, и ТОЛЬКО из него (ломоть 4б): промах охвата 5×5
+    // падает на конверт со счётчиком; в каноническом потоке (вход + шаги у
+    // центра окна) промахов НОЛЬ по построению. Мутация «facts_at всегда
+    // конверт» красит ровно эту строку.
+    SMOKE_CHECK(app, app.subworld.frame_misses() == 0,
+                "no simulation read fell past the 5x5 snapshot");
+    // Каждая строка охвата отвечает СВОЕЙ клеткой (координаты она несёт в
+    // себе): транспонированная раскладка (мутация M5) здесь красная, а в
+    // потоках с симметричным центром проходила зелёной.
+    SMOKE_CHECK(app, app.subworld.frame_rows_addressed(),
+                "every snapshot row answers for its OWN cell");
     return !app.smoke.failed;
 }
 

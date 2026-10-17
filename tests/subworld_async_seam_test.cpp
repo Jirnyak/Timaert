@@ -150,6 +150,7 @@ void run_case(sm::sub::CellContext (*resolver)(int, int),
     float playerX = float(sm::sub::kCellSize * 2 + 8);
     float playerY = float(sm::sub::kCellSize + 128);
     mgr.check_boundary(playerX, playerY);
+    mgr.flush_pending_generation();
 
     CHECK_OR_RETURN(mgr.center_cx() == 1 && mgr.center_cy() == 0,
                     "center did not shift east");
@@ -172,6 +173,7 @@ void run_case(sm::sub::CellContext (*resolver)(int, int),
     for (int i = 0; i < 500 && outDirty < targetDirty; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         mgr.check_boundary(playerX, playerY);
+        mgr.flush_pending_generation();
         if (mgr.consume_composite_dirty()) {
             ++outDirty;
         }
@@ -187,6 +189,7 @@ void run_case(sm::sub::CellContext (*resolver)(int, int),
         for (int i = 0; i < 30 && !spurious; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             mgr.check_boundary(playerX, playerY);
+            mgr.flush_pending_generation();
             if (mgr.consume_composite_dirty()) {
                 spurious = true;
             }
@@ -227,6 +230,7 @@ void run_diagonal_plain_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
     float playerX = float(sm::sub::kCellSize * 2 + 16);
     float playerY = float(sm::sub::kCellSize * 2 + 24);
     mgr.check_boundary(playerX, playerY);
+    mgr.flush_pending_generation();
 
     CHECK_OR_RETURN(mgr.center_cx() == 1 && mgr.center_cy() == 1,
                     "center did not shift diagonally");
@@ -249,6 +253,7 @@ void run_diagonal_plain_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
     for (int i = 0; i < 500 && outDirty < 5; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         mgr.check_boundary(playerX, playerY);
+        mgr.flush_pending_generation();
         if (mgr.consume_composite_dirty()) {
             ++outDirty;
         }
@@ -260,6 +265,7 @@ void run_diagonal_plain_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
     for (int i = 0; i < 30 && !spurious; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         mgr.check_boundary(playerX, playerY);
+        mgr.flush_pending_generation();
         if (mgr.consume_composite_dirty()) {
             spurious = true;
         }
@@ -283,6 +289,7 @@ void run_snapshot_during_pending_case() {
         float playerX = float(sm::sub::kCellSize * 2 + 12);
         float playerY = float(sm::sub::kCellSize + 80);
         mgr.check_boundary(playerX, playerY);
+        mgr.flush_pending_generation();
         mgr.consume_composite_dirty();
 
         const sm::sub::CellContext leaving = resolve_plain_cell(-1, 0);
@@ -339,6 +346,7 @@ void run_worker_restore_saved_case() {
         float playerX = float(sm::sub::kCellSize * 2 + 32);
         float playerY = float(sm::sub::kCellSize + 52);
         mgr.check_boundary(playerX, playerY);
+        mgr.flush_pending_generation();
         CHECK_OR_RETURN(mgr.consume_composite_dirty(),
                         "restore saved boundary did not mark composite dirty");
         const int sampleX = sm::sub::kCellSize * 2 + 37;
@@ -354,6 +362,7 @@ void run_worker_restore_saved_case() {
         for (int i = 0; i < 500; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             mgr.check_boundary(playerX, playerY);
+            mgr.flush_pending_generation();
             mgr.consume_composite_dirty();
             restoredStructure = has_structure(mgr,
                 sm::sub::Structure::Bridge,
@@ -466,6 +475,7 @@ void run_water_placeholder_case() {
     float playerX = float(sm::sub::kCellSize * 2 + 8);
     float playerY = float(sm::sub::kCellSize + 128);
     mgr.check_boundary(playerX, playerY);
+    mgr.flush_pending_generation();
     CHECK_OR_RETURN(mgr.center_cx() == 2 && mgr.consume_composite_dirty(),
                     "water placeholder boundary crossing failed");
 
@@ -537,6 +547,7 @@ void run_struct_revision_case() {
     float px = float(sm::sub::kCellSize * 2 + 20);
     float py = float(sm::sub::kCellSize + 64);
     mgr.check_boundary(px, py);
+    mgr.flush_pending_generation();
     CHECK_OR_RETURN(mgr.center_cx() == 1, "ре-центр на восток не случился");
     bool moved = false;
     for (int i = 0; i < 500 && !moved; ++i) {
@@ -557,11 +568,13 @@ void run_rapid_reversal_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
     float playerX = float(sm::sub::kCellSize * 2 + 20);
     float playerY = float(sm::sub::kCellSize + 64);
     mgr.check_boundary(playerX, playerY);
+    mgr.flush_pending_generation();
     CHECK_OR_RETURN(mgr.center_cx() == 1 && mgr.consume_composite_dirty(),
                     "rapid reversal initial east crossing failed");
 
     playerX = float(sm::sub::kCellSize - 20);
     mgr.check_boundary(playerX, playerY);
+    mgr.flush_pending_generation();
     CHECK_OR_RETURN(mgr.center_cx() == 0 && mgr.consume_composite_dirty(),
                     "rapid reversal west crossing failed");
     outTiming = mgr.last_seam_timing();
@@ -572,6 +585,7 @@ void run_rapid_reversal_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
     for (int i = 0; i < 500 && outDirty < 3; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         mgr.check_boundary(playerX, playerY);
+        mgr.flush_pending_generation();
         if (mgr.consume_composite_dirty()) {
             ++outDirty;
         }
@@ -583,6 +597,7 @@ void run_rapid_reversal_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
     for (int i = 0; i < 30 && !spurious; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         mgr.check_boundary(playerX, playerY);
+        mgr.flush_pending_generation();
         if (mgr.consume_composite_dirty()) {
             spurious = true;
         }
