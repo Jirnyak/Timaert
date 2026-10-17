@@ -71,6 +71,11 @@ enum class MacroStock : std::uint8_t {
                      //   + GameState::faunaOverrides — the hunted delta)
     CropCount,       // the standing wheat of one cell (fertility-derived
                      //   estimate − GameState::cropOverrides harvest scar)
+    Worked,          // ЧИСЛО ФИЧИ клетки (единое плоское поле GameState::worked,
+                     //   ЗАКОН ПОЛЯ п.3: смысл задаёт стоящая фича — заряд орба,
+                     //   руда шахты, зерно пашни). Ряд рождён ломтём 5 эпика
+                     //   фрейма: дренаж орба субмиром едет СТРОКОЙ ДЕЛЬТЫ, а
+                     //   строка адресует ведомость, не голую дверь worked_write.
     // (Garrison УНИЧТОЖЕН 2026-09-30, v122: сословия «гарнизон» больше нет —
     // все души места лежат головами в ОДНОМ его инвентаре, и строка
     // `Population` выше адресует их всех, именную по entityId и генерика по

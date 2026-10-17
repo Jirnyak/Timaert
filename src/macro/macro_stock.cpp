@@ -738,6 +738,14 @@ int read_crop_count(const MacroWorld& w, MacroStockKey k) {
 void write_crop_count(MacroWorld& w, MacroStockKey k, int delta) {
     resource_field_apply(w, ResourceFieldId::Wheat, k.cellX, k.cellY, delta);
 }
+// Число фичи клетки — носитель GameState::worked (один на мир, ЗАКОН ПОЛЯ
+// п.3); worked_write клампит в ноль сам — ниже нуля числа фич не живут.
+int read_worked(const MacroWorld& w, MacroStockKey k) {
+    return w.gs ? worked_read(*w.gs, k.cellX, k.cellY) : 0;
+}
+void write_worked(MacroWorld& w, MacroStockKey k, int delta) {
+    if (w.gs) worked_add(*w.gs, k.cellX, k.cellY, delta);
+}
 
 constexpr MacroStockRow kRows[] = {
     {"tree_count",  &read_tree_count,  &write_tree_count},
@@ -745,6 +753,7 @@ constexpr MacroStockRow kRows[] = {
     {"creatures",   &read_creatures,   &write_creatures},
     {"fauna_count", &read_fauna_count, &write_fauna_count},
     {"crop_count",  &read_crop_count,  &write_crop_count},
+    {"worked",      &read_worked,      &write_worked},
 };
 static_assert(sizeof(kRows) / sizeof(kRows[0])
                   == std::size_t(MacroStock::Count),

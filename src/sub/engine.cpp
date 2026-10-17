@@ -914,6 +914,26 @@ std::uint64_t SubworldEngine::frame_world_tick() const {
     return frame_ ? frame_->worldTick : 0u;
 }
 
+// Свёртка позиции тела в долю клетки флаг-записи — ТРЕТЬЯ дверь CellSub
+// (M-244; вниз клетка разворачивается в континуум, вверх континуум
+// СВОРАЧИВАЕТСЯ в числа клетки — ЗАКОН ШВА). Центр окна 3×3 держит полосу
+// [kCellSize, 2·kCellSize); доля — смещение от середины этой полосы в
+// квантах 1/256 клетки, ровно та арифметика, которой точку разворачивает
+// player_flag_point@src/macro/player_entity.h (cell + sub/256).
+void SubworldEngine::fold_player_sub() {
+    if (!gs_ || !mw_.store || !active_) return;
+    if (sceneKind_ == SceneKind::Dungeon) return;   // данж вне клеток окна
+    MacroStore& st = *mw_.store;
+    const MacroHandle fh = gs_->playerFlagRef;
+    if (!st.valid(fh)) return;
+    const auto quant = [](float wpos) {
+        const float frac01 = (wpos - float(kCellSize)) / float(kCellSize);
+        const int q = int((frac01 - 0.5f) * 256.0f);
+        return std::int8_t(std::clamp(q, -127, 127));
+    };
+    st.sub[fh.slot] = {quant(playerX_), quant(playerY_)};
+}
+
 // Квитанция app «фрейм заполнен заново». Здесь же достраивается генерация,
 // отложенная пересечением шва: контексты свежей полосы собираются уже из
 // НОВОГО снимка (его охват покрывает соседей ±2 каждой свежей клетки), а не
@@ -1564,6 +1584,24 @@ bool SubworldEngine::frame_rows_addressed() const {
     return true;
 }
 
+// Строка дельты — вверх идут ОПЕРАЦИИ (ЗАКОН ШВА). Перевод словаря субъекта
+// (ключ ведомости «клетка = −1» → закон нуля-ординала «никто = 0») живёт на
+// двух концах канала: здесь и в apply_local_delta. Переполнение — громкий
+// счёт droppedOps, его печатает точка применения.
+static void push_stock_op(DeltaBuffer& d, MacroStock s, const MacroStockKey& k,
+                          int amount, std::uint32_t cell) {
+    if (d.stockCount >= kDeltaStockCap) { ++d.droppedOps; return; }
+    StockOp& op = d.stockOps[d.stockCount++];
+    op.cell = cell;
+    op.subject = k.subject > 0 ? k.subject : 0;
+    op.amount = amount;
+    op.detail = k.detail;
+    op.detailKind = k.detailKind;
+    op.detailLevel = k.detailLevel;
+    op.stock = std::uint8_t(s);
+    op.door = 0;   // ряд ведомости сам держит закон своего вычитания
+}
+
 // ЕДИНАЯ политика промаха снимка: вопрос внутри охвата 5×5 отвечает ФРЕЙМ,
 // вне — конверт (легаси-путь до ломтя 7) со счётом frameMisses_. В
 // канонических потоках промахов НОЛЬ по построению: генерация на пересечении
@@ -2180,12 +2218,15 @@ void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
         factsSinceFill_[std::size_t(factsSinceFillCount_++)] = f;
     }
     if (mw_.store) {
-        // Filed AND paid through THE one macro door (macro/squad.h
-        // record_deed): the named bit and the renown come with the filing —
-        // the engine never learns where renown lives, and a drained orb or a
-        // crossed circle now makes something of the one who did it, exactly
-        // like a kill above ground. This writer used to file for free.
-        record_deed(*mw_.store, *gs_, f, MacroHandle{});
+        // СТРОКОЙ ДЕЛЬТЫ (ломоть 5): подшивка и слава платятся на границе
+        // тика той же дверью record_deed — внутри apply_local_delta. Сам
+        // момент деяния сцена уже знает карманом выше; миру факт станет
+        // виден свежим окном после применения.
+        if (delta_.factCount < kDeltaFactCap) {
+            delta_.factOps[delta_.factCount++] = f;
+        } else {
+            ++delta_.droppedOps;
+        }
     } else {
         // No macro world under this session (a bare harness): there is
         // nobody to pay, and the fact alone is still the truth.
@@ -2672,18 +2713,19 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
         sceneKind_ == SceneKind::Dungeon && !dungeon_.hasDoor;
     if (!doorlessPocket && victim.kind == Structure::Tree && treeLayer_) {
         prev = int(treeLayer_->at(mcx, mcy));
-        MacroWorld macroWorld = mw_;
-        macro_stock_apply(macroWorld, MacroStock::TreeCount,
-                          MacroStockKey{-1, std::int16_t(mcx), std::int16_t(mcy)},
-                          -1);
+        // Срубленное — СТРОКОЙ ДЕЛЬТЫ («−1 дерева»), применит граница тика
+        // одной точкой (ломоть 5, M-98): операция коммутирует с фоновым
+        // ростом, прямая запись из акта была ниткой мимо канала.
+        push_stock_op(delta_, MacroStock::TreeCount,
+                      MacroStockKey{-1, std::int16_t(mcx), std::int16_t(mcy)},
+                      -1, cell_of(mcx, mcy, frame_ ? frame_->side : 1));
     } else if (!doorlessPocket && victim.kind == Structure::Crop) {
         // One stand cut = one unit off the cell's crop row (the harvest
         // scar): re-entering the cell replants natural yield minus the scar,
         // and the world clock regrows it (crop_daily_regrow).
-        MacroWorld macroWorld = mw_;
-        macro_stock_apply(macroWorld, MacroStock::CropCount,
-                          MacroStockKey{-1, std::int16_t(mcx), std::int16_t(mcy)},
-                          -1);
+        push_stock_op(delta_, MacroStock::CropCount,
+                      MacroStockKey{-1, std::int16_t(mcx), std::int16_t(mcy)},
+                      -1, cell_of(mcx, mcy, frame_ ? frame_->side : 1));
     }
     if (outCellX) *outCellX = mcx;
     if (outCellY) *outCellY = mcy;
@@ -3740,8 +3782,19 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // while the player is still underground. No per-kind counter, no
             // queue to lose on the way out: one receipt, one settler.
             if (const auto* debt = sub::slot_debt(arena, ds)) {
-                MacroWorld macroWorld = mw_;
-                settle_macro_debt(macroWorld, *debt, -1);
+                // Расписка — строкой дельты: тот же ключ, что settle_macro_debt
+                // собирал сам; граница тика применит ведомостью (ломоть 5).
+                if (debt->stock < std::uint8_t(MacroStock::Count)
+                    && debt->amount != 0) {
+                    push_stock_op(delta_, MacroStock(debt->stock),
+                                  MacroStockKey{debt->subject, debt->cellX,
+                                                debt->cellY, debt->detail,
+                                                debt->detailKind,
+                                                debt->detailLevel},
+                                  -int(debt->amount),
+                                  cell_of(debt->cellX, debt->cellY,
+                                          frame_ ? frame_->side : 1));
+                }
             }
             // The other half of the same law, for the other kind of body. A
             // DERIVED body settles a stock; a TRACKED one has no stock to
@@ -3941,6 +3994,11 @@ void SubworldEngine::leave(bool force) {
         clear_player_entity();
     }
     // ── АРЕНДА СНЯТА: ПОДЪЁМ — ВТОРОЙ ИЗ ДВУХ РАВНОПРАВНЫХ КОНЦОВ ───────
+    // НЕСДАННАЯ ДЕЛЬТА ПЕРЕЖИВАЕТ leave ЧЛЕНОМ: применяет её APP — первым
+    // же макро-кадром той же точкой кадра (tick_playing_runtime, ветка
+    // карты), тем же порядком «дельта вверх → тик» (§10 п.2: мир не
+    // забывает сделанное в момент подъёма). Движок макро-дверь применения
+    // не включает — канал сузился, а не вырос (ЗАКОН ДВУХ МИРОВ).
     // Снимается ДО обнуления `gs_`: после него двери некого спросить. С
     // этого числа мир снова ведёт те девять клеток сам — решает за них бой
     // и жнёт их мёртвые записи.
@@ -4422,11 +4480,15 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
         set_status("The orb is dark and silent.");
         return false;
     }
-    // The macro fact, paid in the same keypress — the search_chest pattern:
-    // a subworld act with lasting meaning writes UP immediately. Only the
-    // player can stand here (interactions are his alone), so this write is
-    // player-earned by construction, not by a special case.
-    worked_write(*gs_, cx, cy, 0);
+    // The macro fact — СТРОКОЙ ДЕЛЬТЫ ряда Worked (ломоть 5): дренаж орба
+    // есть операция «−заряд» над числом фичи, применит граница тика. Клетка
+    // в аренде — второго писателя у числа нет, снятие полного заряда
+    // операцией эквивалентно нулю по построению. Only the player can stand
+    // here (interactions are his alone), so this write is player-earned by
+    // construction, not by a special case.
+    push_stock_op(delta_, MacroStock::Worked,
+                  MacroStockKey{-1, std::int16_t(cx), std::int16_t(cy)},
+                  -charge, cell_of(cx, cy, frame_ ? frame_->side : 1));
     // The orb burns out of the scene like a felled tree (owning cell data +
     // composite + dirty signals in one call), so its glow dies now — not on
     // the next visit.

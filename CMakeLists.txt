@@ -1882,6 +1882,19 @@ timaert_test(frame_fill_test
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp)
 
+timaert_test(delta_apply_test
+    SOURCES
+        # точка применения дельты шва (M-98, ломоть 5) и двери, которыми она
+        # кладёт операции: ведомость стока + летопись (подшивка record_deed)
+        src/macro/delta_apply.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
+        src/macro/macro_stock.cpp
+        src/macro/chronicle.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/macro/tree_layer.cpp)
+
 timaert_test(macro_stock_test
     SOURCES
         # M-71: контейнер сам различает области предметов и существ —

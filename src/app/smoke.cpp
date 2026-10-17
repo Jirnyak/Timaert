@@ -167,6 +167,18 @@ static void smoke_settle_on_foot(App& app) {
     }
 }
 
+// Доведи мир до ГРАНИЦЫ МАКРО-ТИКА: операции дельты шва (ломоть 5, M-98)
+// ложатся в мир только там — свидетель, спрашивающий макро-эффект раньше
+// границы, спрашивает не так, как отвечает игра. Потолок цикла — один
+// подземный тик (64 шага) с зазором; на поверхности выходит за шаг.
+static void smoke_advance_to_macro_tick(App& app) {
+    const std::uint64_t t0 = app.gs.worldTime.tick;
+    for (int i = 0; i < int(sm::kSubworldTickDivisor) + 2
+                    && app.gs.worldTime.tick == t0; ++i) {
+        advance_sim_steps(app, 1, /*allowInput*/false);
+    }
+}
+
 static bool smoke_projects_foreign_record(App& app, int s) {
     // Слот-идиома (ломоть B): бэклинк — колонка арены по слоту тела; прежний
     // гейт reg.valid(body) стал битом жизни слота.
@@ -831,6 +843,11 @@ bool run_subworld_clock_smoke(App& app) {
         return false;
     }
     const std::uint64_t t0 = app.subworld.frame_world_tick();
+    // С ЦЕНТРА — ПРОЧЬ: в середине клетки свёртка доли и её дефолт совпадают
+    // (0 == 0), и свидетель третьей двери был бы тавтологией — мутация
+    // «fold_player_sub мёртв» прошла тут зелёной, пока тело стояло в центре.
+    app.subworld.set_player_pos(float(sm::sub::kCellSize) + 173.0f,
+                                float(sm::sub::kCellSize) + 691.0f);
     // Два полных мировых тика подземного темпа: один шаг мира стоит
     // kSubworldTickDivisor шагов тела (core/time.h), +2 кадра зазора на
     // фазу остатка.
@@ -857,6 +874,28 @@ bool run_subworld_clock_smoke(App& app) {
     // потоках с симметричным центром проходила зелёной.
     SMOKE_CHECK(app, app.subworld.frame_rows_addressed(),
                 "every snapshot row answers for its OWN cell");
+    // ТРЕТЬЯ ДВЕРЬ ДОЛИ КЛЕТКИ (M-244, ломоть 5): на границе тика позиция
+    // тела свёрнута в {subX,subY} флаг-записи той же арифметикой, которой
+    // точку разворачивает player_flag_point (cell + sub/256). Паритет
+    // формулы — зеркало fold_player_sub.
+    {
+        const sm::MacroHandle fh = app.gs.playerFlagRef;
+        bool folded = false;
+        if (app.macroStore->valid(fh)) {
+            const auto quant = [](float wpos) {
+                const float frac01 = (wpos - float(sm::sub::kCellSize))
+                                   / float(sm::sub::kCellSize);
+                const int q = int((frac01 - 0.5f) * 256.0f);
+                return std::int8_t(std::clamp(q, -127, 127));
+            };
+            const auto sub = app.macroStore->sub[fh.slot];
+            folded = sub.x == quant(app.subworld.player_x())
+                  && sub.y == quant(app.subworld.player_y());
+        }
+        SMOKE_CHECK(app, folded,
+                    "the tick boundary folded the body's position into the "
+                    "flag record's cell fraction (M-244 third door)");
+    }
     return !app.smoke.failed;
 }
 
@@ -3052,6 +3091,8 @@ bool run_dungeon_house_smoke(App& app) {
                                      sm::sub::DamageSource{},
                                      sm::sub::DamageKind::Script, &app.bus);
         app.subworld.tick(0.016f);
+        // Расписка смерти — строка дельты; город худеет на ГРАНИЦЕ тика.
+        smoke_advance_to_macro_tick(app);
         popAfter = sm::macro_stock_read(mw, sm::MacroStock::Population, key);
     }
 
@@ -4050,6 +4091,9 @@ bool run_spire_climb_smoke(App& app) {
         apply_pending_event_effects(app);
         learned = sm::spellbook_has_learned(smoke_player_book(app),
                                             sm::spell_ordinal(def.id));
+        // Дренаж орба — строка дельты ряда Worked: число фичи гаснет на
+        // ГРАНИЦЕ тика, не в кадре нажатия (ломоть 5).
+        smoke_advance_to_macro_tick(app);
         if (const sm::MacroHandle sph = sm::place_handle_by_ordinal(
                 *app.macroStore, std::uint32_t(spireId));
             app.macroStore->valid(sph)) {
@@ -6560,6 +6604,8 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "chop: no tree found in the 3x3 window");
             return false;
         }
+        // Срубленное — строка дельты; счётчик клетки падает на ГРАНИЦЕ тика.
+        smoke_advance_to_macro_tick(app);
         const int after = int(app.treeLayer.at(cx, cy));
         const int expected = prev > 0 ? prev - 1 : 0;
         // prev == 0 is legal (a tree on a zero-count cell's dry water margin):
@@ -8886,6 +8932,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 app.smoke.trackedPhase = 1;
                 break;      // let the reaper settle the receipt
             }
+            // Расписка жнеца — строка дельты; клетка худеет на ГРАНИЦЕ
+            // макро-тика (ломоть 5), свидетель доводит мир до неё.
+            smoke_advance_to_macro_tick(app);
             const int now = sm::macro_stock_read(
                 faunaMw, sm::MacroStock::FaunaCount,
                 sm::MacroStockKey{-1,

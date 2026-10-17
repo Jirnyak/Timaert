@@ -11,6 +11,7 @@
 #include "core/time.h"
 #include "macro/audio.h"     // SfxId — the one sound vocabulary (pending sfx)
 #include "macro/chronicle.h"
+#include "bus/delta.h"       // ДЕЛЬТА — обратный поток шва (член delta_)
 #include "macro/macro_world.h" // конверт MacroWorld — член mw_ (значением);
                                // прежде приезжал ТРАНЗИТОМ macro_stock.h —
                                // ломоть 1 эпика фрейма назвал груз честно
@@ -212,6 +213,16 @@ public:
     // render_time. Замороженный снимок = замороженные под землёй помпа дня,
     // зоны и солнце — ровно то, что свидетель обязан ловить.
     std::uint64_t frame_world_tick() const;   // тело в .cpp: тип фрейма тут неполон
+    // ── ВЫХОД ШВА — ДЕЛЬТА (ломоть 5, M-98) ──────────────────────────────
+    // Буфер строк-операций родов 3 и 5; применяет app ОДНОЙ точкой на
+    // границе макро-тика (apply_local_delta@src/macro/delta_apply.h:
+    // дельта вверх → тик → свежее окно вниз) и сам движок на leave()
+    // (подъём/смена сцены — конец аренды, несданное применяется там же).
+    DeltaBuffer& delta_buffer() { return delta_; }
+    // Свёртка позиции тела в долю клетки {subX,subY} флаг-записи — ТРЕТЬЯ
+    // дверь CellSub (M-244: рождение — центр, марш — край входа, шов — эта);
+    // зовётся на той же границе, что применение дельты.
+    void fold_player_sub();
     // Клетка-якорь фрейма: центр окна 3×3 (в данже — клетка двери, в
     // кармане — клетка якоря кармана) как индекс тора. До init менеджера —
     // клетка последнего фрейма (анкерить не на что).
@@ -848,6 +859,8 @@ private:
                   "карман обязан вмещать все зоны сцены плюс орб за один тик");
     std::array<WorldFact, kFactsSinceFillCap> factsSinceFill_;
     int factsSinceFillCount_ = 0;
+    // ── ДЕЛЬТА ШВА (ломоть 5): операции родов 3 и 5, копятся до границы ──
+    DeltaBuffer delta_;
 
     float playerX_ = float(kFullSize / 2);
     float playerY_ = float(kFullSize / 2);

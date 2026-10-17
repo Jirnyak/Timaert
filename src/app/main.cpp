@@ -32,6 +32,7 @@
 #include "events/node_registry.h"
 #include "events/quests/quest_engine.h"
 #include "macro/frame_fill.h"  // сборщик локального фрейма (M-171, ломоть 4)
+#include "macro/delta_apply.h"  // применение дельты шва (M-98, ломоть 5)
 #include "macro/state.h"
 #include "macro/knowledge.h"
 #include "ui/map_screen.h"
@@ -1284,6 +1285,10 @@ void boot_audio(App& app) {
 
 void destroy_world(App& app) {
     if (app.worldLoaded && app.subworld.active()) app.subworld.leave(true);
+    // Операции дельты валидны только в мире, их записавшем: остаток буфера
+    // умирает вместе с миром (загрузка/новая игра), иначе строки старого
+    // мира легли бы в чужие клетки первым же кадром нового.
+    app.subworld.delta_buffer() = sm::DeltaBuffer{};
     sm::sub::clear_saved_subworlds();
     app.bus.reset();
     app.logic.reset();
@@ -3577,6 +3582,19 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         } else {
             app.subworld.set_move_intent(0.0f, 0.0f);  // hands off the keys
         }
+        // ГРАНИЦА МАКРО-ТИКА, ПРИЧИННЫЙ ПОРЯДОК ШВА (ЗАКОН ШВА, M-98):
+        // ДЕЛЬТА ВВЕРХ → ТИК МАКРО → СВЕЖЕЕ ОКНО ВНИЗ. Этот шаг купит тик,
+        // когда остаток шагов доходит до делителя — та же арифметика, что в
+        // tick_world_subworld_steps@src/macro/world_tick.cpp («total =
+        // remainder + steps»); предикат стоит ДО тика, потому что операции
+        // обязаны лечь в мир, который сейчас шагнёт. Здесь же — свёртка
+        // позиции в долю клетки (третья дверь CellSub, M-244).
+        if (app.gs.worldTickRt.subworldStepRemainder + 1
+                >= sm::kSubworldTickDivisor) {
+            app.subworld.fold_player_sub();
+            sm::MacroWorld deltaWorld = macro_world(app);
+            sm::apply_local_delta(deltaWorld, app.subworld.delta_buffer());
+        }
         stats.timeTick =
             sm::tick_world_subworld_steps(app.gs, app.gs.worldTickRt, 1);
         sm::MacroWorld subMacroWorld = macro_world(app);
@@ -3637,6 +3655,18 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // flagged records, from any of the ~7 leave call sites) and projects
         // the just-finalised player scalar onto its Position each macro tick.
         sm::ensure_macro_player_entity(app.gs, *app.macroStore);
+        // ОСТАТОК ДЕЛЬТЫ ПОДЪЁМА: leave() не применяет сам (движок не
+        // включает макро-дверь — канал узкий), несданные операции ложатся
+        // первым же макро-кадром ДО тика — тот же порядок «дельта вверх →
+        // тик» (§10 п.2: мир не забывает сделанное в момент подъёма).
+        {
+            sm::DeltaBuffer& dlt = app.subworld.delta_buffer();
+            if (dlt.stockCount > 0 || dlt.factCount > 0
+                || dlt.droppedOps > 0) {
+                sm::MacroWorld dw = macro_world(app);
+                sm::apply_local_delta(dw, dlt);
+            }
+        }
         sm::MacroWorld macroTickWorld = macro_world(app);
         stats.timeTick = sm::tick_world(app.gs, *app.macroStore,
                                         app.gs.worldTickRt, 1,
