@@ -16,6 +16,7 @@
 subworld_time
 subworld_enter
 subworld_enter,subworld_walk
+subworld_enter,subworld_clock
 subworld_seam
 subworld_audio
 subworld_exit_gate

@@ -31,6 +31,7 @@
 #include "events/logic_nodes.h"
 #include "events/node_registry.h"
 #include "events/quests/quest_engine.h"
+#include "macro/frame_fill.h"  // сборщик локального фрейма (M-171, ломоть 4)
 #include "macro/state.h"
 #include "macro/knowledge.h"
 #include "ui/map_screen.h"
@@ -1544,6 +1545,36 @@ void rebake_world(App& app, bool uploadNow) {
 // owner's word): the world settles first, so the projection below reads
 // freshly rebaked fields. CPU truth only — the map textures follow at the
 // dirty flush, and below ground the macro map is not drawn at all.
+// ── ЛОКАЛЬНЫЙ ФРЕЙМ: ПЛАНОВЫЕ ТОЧКИ ЗАПОЛНЕНИЯ (ЗАКОН ШВА) ────────────────
+// Снимок пяти пакетов заполняет ТОЛЬКО app — субмир его читает и никогда не
+// тянет макро сам («пересинхронизация плановая, никогда стихийная»). Точки:
+// вход в сцену (здесь), граница мирового тика под землёй и смена якоря
+// (ре-центр шва / данж) — обе в tick_playing_runtime.
+
+// Клетка флагоносца — тот же расчёт, которым enter() сажает окно: «кем я на
+// карте» и есть «где здесь» (подпосадка 4).
+static std::uint32_t player_anchor_cell(App& app) {
+    const sm::MacroStore& st = *app.macroStore;
+    const sm::MacroHandle fh = sm::player_flag_handle(app.gs);
+    return st.valid(fh) ? st.cell[fh.slot].idx : 0u;
+}
+
+// Пересинхронизация по требованию движка или по границе мирового тика.
+// Третье условие — расхождение хэндлов игрока: вселение двигает
+// gs.playerFlagRef сквозной дверью рода 2 в обработке ввода, и снимок обязан
+// догнать истину до ближайшего тика субмира.
+static void sync_subworld_frame(App& app, bool worldTicked) {
+    if (!app.subworld.active()) return;
+    const bool handlesMoved =
+        !(app.frame.playerFlag == app.gs.playerFlagRef)
+        || !(app.frame.playerSquad == app.gs.playerSquadRef);
+    if (!worldTicked && !handlesMoved && !app.subworld.needs_frame_resync())
+        return;
+    const sm::MacroWorld w = macro_world(app);
+    sm::fill_local_frame(w, app.subworld.frame_anchor_cell(), app.frame);
+    app.subworld.frame_resynced();
+}
+
 void enter_subworld(App& app) {
     rebake_world(app, /*uploadNow=*/false);
     // ЧИСТАЯ СЦЕНА, чем бы ни кончилась прошлая (вердикт «и там, и там»):
@@ -1551,7 +1582,11 @@ void enter_subworld(App& app) {
     // сейва, — а вход ОДИН, и он гарантирует, что мир под ногами тикает,
     // руки пусты и ни одна панель не держит кадр.
     reset_scene_session_state(app);
-    app.subworld.enter(macro_world(app), *app.sceneObjects, app.bus);
+    // Вход — по сводке: фрейм заполняется ДО подъёма сцены, якорь — клетка
+    // флагоносца (ровно тот центр, на который enter() посадит окно).
+    const sm::MacroWorld w = macro_world(app);
+    sm::fill_local_frame(w, player_anchor_cell(app), app.frame);
+    app.subworld.enter(w, *app.sceneObjects, app.bus, &app.frame);
 }
 
 // Raise an authored SCENE over the standing world (release.md §3, owner
@@ -1566,8 +1601,12 @@ void begin_scene(App& app, const sm::content::SceneDef& scene) {
     sm::sub::DungeonRef ref{};
     ref.kind = sm::sub::dungeon_kind_from_token(scene.pocketId);
     if (ref.kind != sm::sub::DungeonRef::None) {
-        app.subworld.enter_pocket_scene(macro_world(app), *app.sceneObjects,
-                                        app.bus, ref,
+        // Карман тоже входит по сводке: его резолвер синтетический и строк
+        // клеток не читает, но род 4 (сид, часы, сторона) — из того же пакета.
+        const sm::MacroWorld w = macro_world(app);
+        sm::fill_local_frame(w, player_anchor_cell(app), app.frame);
+        app.subworld.enter_pocket_scene(w, *app.sceneObjects,
+                                        app.bus, &app.frame, ref,
                                         scene.floorHeight);
     }
     if (!app.subworld.active()) {
@@ -3552,6 +3591,14 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // have drifted. Mark dirty; the macro path re-bakes on return (we never
         // sync the GPU for the map while the subworld is what's on screen).
         if (stats.timeTick.dailyTicksProcessed > 0) app.macroLightsDirty = true;
+        // ГРАНИЦА МАКРО-ТИКА — ПЛАНОВАЯ ТОЧКА СНИМКА (ЗАКОН ШВА): часы
+        // продвинулись (или дневная помпа домолотила долг) — субмир получает
+        // свежий фрейм ДО своего шага. Здесь же догоняются акты обработки
+        // ввода этого кадра (вход в данж, вселение): флаг ресинка и
+        // расхождение хэндлов проверяет сама дверь.
+        sync_subworld_frame(app,
+                            stats.timeTick.ticksAdvanced > 0
+                                || stats.timeTick.dailyTicksProcessed > 0);
         // NO recovery underground — for anyone, the player included (owner
         // ruling 2026-09-10, superseding 2026-08-20's «recovery is driven by
         // TIME»; CANON S14 «HP/MP/SP не регенерируют в субмире» now holds
@@ -3560,6 +3607,10 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // bars back climbs out and camps. The apply_minute_recovery call that
         // stood here was the last writer that moved a bar UP below ground.
         app.subworld.tick(dt);
+        // РЕ-ЦЕНТР ШВА случился внутри тика — якорь сдвинулся, фрейм догоняет
+        // тем же кадром (та же дверь; с ломтя 4б она же достроит отложенную
+        // генерацию свежей полосы).
+        sync_subworld_frame(app, /*worldTicked=*/false);
         // Combat one-shots the tick queued (swing / hit / plate ring): the
         // engine states the facts, the app owns the device — same split as
         // the window. play_sfx degrades gracefully when audio failed to init.

@@ -346,6 +346,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"load_game", SmokeAction::LoadGame},
     {"wait_boot_done", SmokeAction::WaitBootDone},
     {"subworld_time", SmokeAction::SubworldTime},
+    {"subworld_clock", SmokeAction::SubworldClock},
     {"subworld_walk", SmokeAction::SubworldWalk},
     {"subworld_seam", SmokeAction::SubworldSeam},
     {"subworld_audio", SmokeAction::SubworldAudio},
@@ -814,6 +815,38 @@ bool run_subworld_walk_smoke(App& app) {
     std::fprintf(stderr, "[smoke] subworld_walk OK\n");
     std::fflush(stderr);
     return true;
+}
+
+// ЧАСЫ ПОД ЗЕМЛЁЙ ИДУТ — И ИДУТ ГЛАЗАМИ СНИМКА (ЗАКОН ДВУХ ТЕМПОВ + ЗАКОН
+// ШВА, ломоть 4а). subworld_time охраняет МАКРО-часы (gs.worldTime) — они
+// тикают и при мёртвой пересинхронизации; этот свидетель спрашивает часы так,
+// как их читает САМ СУБМИР — из локального фрейма (frame.worldTick), который
+// app обязан обновлять на каждой границе мирового тика. Отключённая
+// sync_subworld_frame замораживает снимок на тике входа: помпа дня, зоны и
+// солнце под землёй молча встают — ровно эта мутация прошла зелёной мимо
+// всей сюиты 64 смоуков, пока этого свидетеля не было (2026-10-17).
+bool run_subworld_clock_smoke(App& app) {
+    if (!app.subworld.active()) {
+        smoke_fail(app, "subworld_clock without a subworld");
+        return false;
+    }
+    const std::uint64_t t0 = app.subworld.frame_world_tick();
+    // Два полных мировых тика подземного темпа: один шаг мира стоит
+    // kSubworldTickDivisor шагов тела (core/time.h), +2 кадра зазора на
+    // фазу остатка.
+    const int steps = int(sm::kSubworldTickDivisor) * 2 + 2;
+    advance_sim_steps(app, steps, /*allowInput*/false);
+    const std::uint64_t t1 = app.subworld.frame_world_tick();
+    std::fprintf(stderr,
+                 "[smoke] subworld_clock t0=%llu t1=%llu macro=%llu steps=%d\n",
+                 (unsigned long long)t0, (unsigned long long)t1,
+                 (unsigned long long)app.gs.worldTime.tick, steps);
+    std::fflush(stderr);
+    SMOKE_CHECK(app, t1 > t0,
+                "the snapshot clock advances underground (frame resync alive)");
+    SMOKE_CHECK(app, t1 == app.gs.worldTime.tick,
+                "the snapshot caught the macro truth at the tick boundary");
+    return !app.smoke.failed;
 }
 
 bool run_subworld_time_smoke(App& app) {
@@ -6791,6 +6824,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=subworld_time\n");
             std::fflush(stderr);
             if (run_subworld_time_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::SubworldClock:
+            std::fprintf(stderr, "[smoke] action=subworld_clock\n");
+            std::fflush(stderr);
+            if (run_subworld_clock_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::SubworldWalk:
             std::fprintf(stderr, "[smoke] action=subworld_walk\n");

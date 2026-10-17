@@ -33,6 +33,9 @@ struct TerrainData;
 struct FeatureLayer;
 struct ZoneLayer;
 struct TreeLayer;
+// ЛОКАЛЬНЫЙ ФРЕЙМ (src/bus/local_frame.h) — вход субмира по сводке; здесь
+// только указатель, полную форму включает engine.cpp (цена заголовка §5 п.13).
+struct LocalContext;
 // (Блок предобъявлений `ecs::NpcCharacter`/`NpcInventory`/`NpcTraits` снят
 // 2026-10-09, M-150 ломоть 1: ни одно из трёх имён в этом заголовке больше
 // не упоминается — `NpcInventory` осиротел со смертью `inventoryOverride`
@@ -170,7 +173,12 @@ public:
     // squad ring / macro projections spawn around the player.
     // `scene` — АРЕНА объектов сцены (ломоть E: ecs::World умер, носитель
     // тел — SubObjects у приложения; реестра сцены больше не существует).
+    // `frame` — ЛОКАЛЬНЫЙ ФРЕЙМ (ЗАКОН КАНОНИЧЕСКОГО ФРЕЙМА, ломоть 4):
+    // вход субмира по сводке. Заполняет app (fill_local_frame) ДО входа и
+    // далее в ПЛАНОВЫХ точках (граница мирового тика, ре-центр, акт смены
+    // сцены); движок только читает. Указатель живёт дольше сессии сцены.
     void enter(const MacroWorld& mw, SubObjects& scene, EventBus& bus,
+               const LocalContext* frame,
                const float* posOverride = nullptr);
     // Raise a POCKET scene directly — no street door, no overworld session
     // underneath (the prologue's entry: character creation drops the player
@@ -178,9 +186,24 @@ public:
     // plot's teardown (leave(true)). `floorHeight` is the pocket's macro
     // height in the normalised [0,1] range the heightmap law reads.
     void enter_pocket_scene(const MacroWorld& mw, SubObjects& scene,
-                            EventBus& bus,
+                            EventBus& bus, const LocalContext* frame,
                             const DungeonRef& ref, float floorHeight);
     void leave(bool force = false);
+    // ── ПЛАНОВАЯ ПЕРЕСИНХРОНИЗАЦИЯ ФРЕЙМА (ЗАКОН ШВА: никогда стихийная) ──
+    // Движок НЕ заполняет фрейм сам («из тика субмира не звать»): он лишь
+    // ПОДНИМАЕТ ФЛАГ, когда его якорь сдвинулся (ре-центр шва, вход/выход
+    // данжа), а app в своей точке кадра заполняет фрейм и квитирует.
+    bool needs_frame_resync() const { return frameResyncNeeded_; }
+    void frame_resynced() { frameResyncNeeded_ = false; }
+    // Часы мира, КАК ИХ ВИДИТ СНИМОК, — прибор свидетеля свежести фрейма
+    // (смоук subworld_clock): ровно frame.worldTick, без сан-фриз-оверлея
+    // render_time. Замороженный снимок = замороженные под землёй помпа дня,
+    // зоны и солнце — ровно то, что свидетель обязан ловить.
+    std::uint64_t frame_world_tick() const;   // тело в .cpp: тип фрейма тут неполон
+    // Клетка-якорь фрейма: центр окна 3×3 (в данже — клетка двери, в
+    // кармане — клетка якоря кармана) как индекс тора. До init менеджера —
+    // клетка последнего фрейма (анкерить не на что).
+    std::uint32_t frame_anchor_cell() const;
     bool interact();
     // True while the active scene is a dungeon interior (see SceneKind).
     bool in_dungeon() const {
@@ -730,6 +753,16 @@ private:
     bool winStepWeightValid_ = false;
     void refresh_window_step_weights();
     GameState*          gs_       = nullptr;
+    // ЛОКАЛЬНЫЙ ФРЕЙМ — вход по сводке (ЗАКОН ШВА). Владеет app; движок
+    // ЧИТАЕТ и никогда не заполняет. Снимок обновляется в плановых точках
+    // (граница мирового тика / ре-центр / акт смены сцены — см.
+    // needs_frame_resync); отставание ≤ одного мирового тика — разрешение
+    // самой истины, константы каденса не существует.
+    const LocalContext* frame_    = nullptr;
+    // Флаг «якорь фрейма сдвинулся» — ре-центр шва и вход/выход данжа ставят
+    // его, app заполняет фрейм и квитирует frame_resynced(). Движок сам
+    // макро не тянет НИКОГДА (пересинхронизация плановая, не стихийная).
+    bool frameResyncNeeded_ = false;
     const TerrainData*  terrain_  = nullptr;
     // `features_` СНЕСЁН 2026-09-28 (наряд M-152): член присваивался в двух
     // входах, обнулялся в двух сбросах и НЕ ЧИТАЛСЯ НИ РАЗУ. Колонка без
@@ -847,6 +880,9 @@ private:
     // снаружи аренда читается и снимается дверями мира (`cell_is_leased`,
     // `release_window`), а назвать центр может только тот, кто его знает.
     void lease_window_here_();
+    // Поднять frameResyncNeeded_, если якорь фрейма разошёлся со снимком
+    // (вход, ре-центр, смена сцены данжа) — никогда не гасит поднятый флаг.
+    void note_frame_anchor_();
     void sync_macro_player_to_center();
     CellContext resolve_context(int x, int y) const;
     // Terrain difficulty of the macro cell under a composite-window tile. Same

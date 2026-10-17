@@ -1,4 +1,5 @@
 #include "sub/engine.h"
+#include "bus/local_frame.h"   // ЛОКАЛЬНЫЙ ФРЕЙМ — вход по сводке (ломоть 4)
 #include "sub/ability.h"   // THE ability door — every act pays the one gate
 #include "content/spells/casting.h"   // kSpellCasterRadius — the player body radius's one home
 #include "macro/macro_stock.h"
@@ -606,7 +607,7 @@ void SubworldEngine::destroy(const gpu::VulkanDevice& dev) {
 }
 
 void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
-                           EventBus& bus,
+                           EventBus& bus, const LocalContext* frame,
                            const float* posOverride) {
     statusLine_.clear();
     statusTimer_ = 0.0f;
@@ -622,10 +623,11 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // A fresh session starts with no known threat: the exit gate can be asked
     // before the first combat tick runs.
     playerThreatD2_ = kNoThreatDistance2;
-    if (!mw.gs || !mw.terrain || !mw.features || !mw.store
+    if (!mw.gs || !mw.terrain || !mw.features || !mw.store || !frame
         || !mw.terrain->has_rgba_storage()) {
         mw_ = {};
         gs_ = nullptr;
+        frame_ = nullptr;
         terrain_ = nullptr;
         objects_ = nullptr;
         bus_ = nullptr;
@@ -643,22 +645,25 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // nobody read was simply a column with no reader (DOD п.9, снесён M-152).
     mw_ = mw;
     gs_ = mw_.gs; terrain_ = mw_.terrain;
+    frame_ = frame;
     objects_ = &scene; bus_ = &bus;
     treeLayer_ = mw_.trees;
     GameState& gs = *gs_;
     // The scene raises around the FLAG HOLDER's cell — «кем я на карте» is
     // where "here" is (подпосадка 4). The entry-side context reads the same
-    // holder's runtime below.
+    // holder's runtime below. Хэндл флага — скаляр рода 2 фрейма (app
+    // заполнил сводку этим же тиком, расхождения нет по построению);
+    // runtime-колонки — род 2 адресом, через store.
     int cx = 0, cy = 0;
     std::uint8_t entryDir = kEntryDirNone;
     std::uint8_t entryTicks = 0;
     {
         MacroStore& st = (*mw_.store);
-        const MacroHandle fh = player_flag_handle(gs);
+        const MacroHandle fh = frame_->playerFlag;
         if (st.valid(fh)) {
             const auto& fc = st.cell[fh.slot];
-            cx = ecs::cell_x(fc, gs.mapW);
-            cy = ecs::cell_y(fc, gs.mapW);
+            cx = ecs::cell_x(fc, frame_->side);
+            cy = ecs::cell_y(fc, frame_->side);
             entryDir = st.runtime[fh.slot].entryDir;
             entryTicks = st.runtime[fh.slot].entryTicks;
         }
@@ -721,7 +726,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
         // (mid-sea cell) the mid-band point stands, as it always did.
         const float seaM = scene_sea_level_m();
         if (!is_dry_footing(footing_height_m(playerX_, playerY_), seaM)) {
-            Rng landing{cell_seed(gs.worldSeed, cx, cy) ^ 0xB21D6Eu};
+            Rng landing{cell_seed(frame_->worldSeed, cx, cy) ^ 0xB21D6Eu};
             for (int attempt = 0; attempt < 20; ++attempt) {
                 const float tx = float(kCellSize) + entry_axis_pos(
                     sdx, entryTicks, float(kCellSize),
@@ -758,10 +763,10 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // or a wall walk seats you on it instead of inside the water below.
     playerZ_ = footing_height_m(playerX_, playerY_);
     playerGrounded_ = true;
-    spellRng_ = Rng{cell_seed(gs.worldSeed, cx, cy)};
+    spellRng_ = Rng{cell_seed(frame_->worldSeed, cx, cy)};
     // Same cell identity, decorrelated stream (golden-ratio odd constant —
     // the standard stream-splitting mix, not a tunable).
-    combatRng_ = Rng{cell_seed(gs.worldSeed, cx, cy) ^ 0x9E3779B9u};
+    combatRng_ = Rng{cell_seed(frame_->worldSeed, cx, cy) ^ 0x9E3779B9u};
 
     // Fill all nine window cells from their own macro contexts (per-cell fauna
     // + settlement citizens), so the whole visible 3×3 is populated up front
@@ -777,7 +782,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // sheet (phase 4), which already follows the flag by its door.
     const BonusTotals playerBonuses =
         squad_bonuses(player_effective_sheet(gs, (*mw_.store)));
-    const MacroHandle flagRec = player_flag_handle(gs);
+    const MacroHandle flagRec = frame_->playerFlag;
     // 0 — «НИКТО» (закон нуля-ординала): если флажок невалиден, мира с
     // игроком ещё нет, и расписке некуда ложиться. Здесь стоял литерал
     // 0x7FFFFFFF (M-255) — то есть несуществующий флажок молча подшивал
@@ -790,8 +795,8 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
         if (st.valid(flagRec)) {
             creaturesSubject = std::int32_t(st.spawnId[flagRec.slot].index);
             const auto& mc = st.cell[flagRec.slot];
-            creaturesCx = std::int16_t(ecs::cell_x(mc, gs.mapW));
-            creaturesCy = std::int16_t(ecs::cell_y(mc, gs.mapW));
+            creaturesCx = std::int16_t(ecs::cell_x(mc, frame_->side));
+            creaturesCy = std::int16_t(ecs::cell_y(mc, frame_->side));
             squadFaction = st.kind[flagRec.slot].factionIdx;
         }
     }
@@ -800,7 +805,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
                            ? *player_inventory(gs, (*mw_.store))
                            : Inventory{},
                        mgr_, playerX_, playerY_,
-        cell_seed(gs.worldSeed, cx, cy) ^ kSquadSpawnSalt,
+        cell_seed(frame_->worldSeed, cx, cy) ^ kSquadSpawnSalt,
         squadFaction, &playerBonuses, creaturesSubject, creaturesCx, creaturesCy);
     // Project the persistent macro NPCs standing in this 3×3 window into the
     // scene as real combat bodies (Inc 5d) — the overworld lords / bandits /
@@ -822,9 +827,9 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // are part of the scene the player enters.
     const int projected = project_macro_npcs_into_subworld(
         (*objects_), *mw_.store, mgr_, cx, cy,
-        gs.mapW, gs.mapH,
-        cell_seed(gs.worldSeed, cx, cy) ^ kMacroProjectionSalt,
-        scene_sea_level(), &structIndex_, gs.playerFlagRef);
+        frame_->side, frame_->side,
+        cell_seed(frame_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
+        scene_sea_level(), &structIndex_, frame_->playerFlag);
     if (projected > 0) {
         char msg[80];
         std::snprintf(msg, sizeof(msg), "%d overworld figure%s nearby",
@@ -875,6 +880,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // Последним действием входа: окно собрано, центр установлен, значит мир
     // вправе узнать, какие девять клеток с этой секунды ведёт субмир.
     lease_window_here_();
+    note_frame_anchor_();
 }
 
 // АРЕНДА — ОДНО ЧИСЛО, И СЦЕНА НАЗЫВАЕТ ЕГО ОДНИМ МЕСТОМ. Зовётся на входе
@@ -885,7 +891,28 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
 void SubworldEngine::lease_window_here_() {
     if (!gs_) return;
     lease_window_at(*gs_, cell_of(mgr_.center_cx(), mgr_.center_cy(),
-                                  gs_->mapW));
+                                  frame_->side));
+}
+
+// Клетка-якорь фрейма — куда app центрирует fill_local_frame: центр окна 3×3
+// (в данже менеджер стоит на клетке двери, в кармане — на якоре кармана, так
+// что формула одна и ветки по роду сцены нет). cell_of заворачивает маской
+// сам (ЗАКОН АДРЕСА); сторона — род 4 снимка, она неизменна всю сессию мира.
+std::uint32_t SubworldEngine::frame_anchor_cell() const {
+    if (!frame_ || frame_->side <= 0) return 0;
+    if (!active_) return frame_->centerCell;
+    return cell_of(mgr_.center_cx(), mgr_.center_cy(), frame_->side);
+}
+
+std::uint64_t SubworldEngine::frame_world_tick() const {
+    return frame_ ? frame_->worldTick : 0u;
+}
+
+// Якорь сдвинулся против снимка → фрейм ждёт плановой пересинхронизации.
+// Никогда не ГАСИТ уже поднятый флаг (ре-центр мог поднять его раньше).
+void SubworldEngine::note_frame_anchor_() {
+    frameResyncNeeded_ = frameResyncNeeded_
+        || (frame_ && frame_->centerCell != frame_anchor_cell());
 }
 
 void SubworldEngine::sync_macro_player_to_center() {
@@ -1492,8 +1519,8 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
     c.landmark.tier       = f.landmark.tier;
     c.landmark.factionIdx = f.landmark.factionIdx;
     c.landmark.depleted   = f.landmark.depleted;
-    c.seed = cell_seed(gs_->worldSeed, f.x, f.y);
-    c.worldSeed = gs_->worldSeed;
+    c.seed = cell_seed(frame_->worldSeed, f.x, f.y);
+    c.worldSeed = frame_->worldSeed;
     return c;
 }
 
@@ -1569,7 +1596,7 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
                     // THE CLOCK, because how many of this cell's people are on
                     // its streets is a question about the hour (city_layout.h
                     // crowd_outdoor_share01) — the rest are behind their doors.
-                    gs_ ? gs_->worldTime : WorldTime{});
+                    frame_ ? WorldTime{frame_->worldTick} : WorldTime{});
 }
 
 // Clean fill of all nine window cells — enter() / fresh scene. The player's
@@ -1631,9 +1658,9 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
         const int cy = mgr_.center_cy();
         project_macro_npcs_into_subworld(
             (*objects_), *mw_.store, mgr_, cx, cy,
-            gs_->mapW, gs_->mapH,
-            cell_seed(gs_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
-            scene_sea_level(), &structIndex_, gs_->playerFlagRef);
+            frame_->side, frame_->side,
+            cell_seed(frame_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
+            scene_sea_level(), &structIndex_, frame_->playerFlag);
     }
 }
 
@@ -1653,8 +1680,8 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
 void SubworldEngine::player_macro_cell(int& cx, int& cy) const {
     // THE seam, said once. The window is 3x3 macro cells around the centre, so
     // where the player stands inside it decides which one he is in.
-    const int mapW = gs_ ? gs_->mapW : 1;
-    const int mapH = gs_ ? gs_->mapH : 1;
+    const int mapW = frame_ ? frame_->side : 1;
+    const int mapH = mapW;
     const int winCellX = int(playerX_) / kCellSize;
     const int winCellY = int(playerY_) / kCellSize;
     cx = (mgr_.center_cx() + winCellX - 1) % (mapW > 0 ? mapW : 1);
@@ -1755,7 +1782,7 @@ void SubworldEngine::tick_day_pump(float dt) {
     // ── On the world's own tick: decide who goes and who comes. ──
     // Not per frame: the share is a function of the clock, and the clock does
     // not move between two steps of one tick.
-    const std::uint64_t nowTick = gs_->worldTime.tick;
+    const std::uint64_t nowTick = frame_->worldTick;
     if (nowTick == pumpTick_) return;
     pumpTick_ = nowTick;
 
@@ -1780,7 +1807,7 @@ void SubworldEngine::tick_day_pump(float dt) {
     const int reserve = interior_reserve_for_cell(
         mgr_.structures(), ctx.landmark.kind, ctx.worldSeed,
         mgr_.center_cx(), mgr_.center_cy(), originX, originY, heads,
-        gs_->worldTime);
+        WorldTime{frame_->worldTick});
     const int target = std::max(0, heads - reserve);
 
     // The doors this town keeps — where a man goes home to, and where one
@@ -1957,7 +1984,7 @@ void SubworldEngine::tick_day_pump(float dt) {
 
 void SubworldEngine::tick_zones() {
     if (!gs_ || subZoneCount_ == 0) return;
-    const std::int32_t today = gs_->worldTime.day();
+    const std::int32_t today = frame_->worldDay;
 
     for (int i = 0; i < subZoneCount_; ++i) {
         const SubZone& z = subZones_[std::size_t(i)];
@@ -1968,9 +1995,9 @@ void SubworldEngine::tick_zones() {
         // to instead of leaving it behind. A cell outside the loaded 3×3 has no
         // window position at all, and the player cannot be standing in it.
         const int ox = toroidal_cell_offset(z.cellX, mgr_.center_cx(),
-                                            gs_->mapW);
+                                            frame_->side);
         const int oy = toroidal_cell_offset(z.cellY, mgr_.center_cy(),
-                                            gs_->mapH);
+                                            frame_->side);
         if (ox < -1 || ox > 1 || oy < -1 || oy > 1) {
             subZonesEntered_ &= ~bit;
             continue;
@@ -2003,7 +2030,7 @@ void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
                                        int amount, int objectLandmarkId) {
     if (!gs_) return;
     WorldFact f{};
-    f.day = gs_->worldTime.day();
+    f.day = frame_ ? frame_->worldDay : 0;
     f.kind = std::uint16_t(kind);
     // The PLAYER is the only one who acts down here (interactions are his
     // alone), and he is a squad like any other — so the deed is ТОГО, НА КОМ
@@ -2565,7 +2592,7 @@ std::string SubworldEngine::grant_prop_loot(const Structure& prop) {
         std::uint32_t((mgr_.center_cx() - 1) * kCellSize + int(prop.x));
     const std::uint32_t absY =
         std::uint32_t((mgr_.center_cy() - 1) * kCellSize + int(prop.y));
-    Rng rng(gs_->worldSeed ^ (absX * 2246822519u) ^ (absY * 3266489917u));
+    Rng rng(frame_->worldSeed ^ (absX * 2246822519u) ^ (absY * 3266489917u));
     gLootRng = &rng;
     // Affix power 0: a felled tree pays wood and a stand pays grain — the
     // world's props carry no worn things to load dice for, and 0 keeps the
@@ -3011,9 +3038,9 @@ bool SubworldEngine::spawn_tracked_npc_body(MacroHandle macro) {
     // diverges two lords on one cell.
     const auto& mc = st.cell[macro.slot];
     const std::uint32_t seed =
-        (gs_ ? cell_seed(gs_->worldSeed, ecs::cell_x(mc, gs_->mapW),
-                         ecs::cell_y(mc, gs_->mapW))
-             : 0u)
+        (frame_ ? cell_seed(frame_->worldSeed, ecs::cell_x(mc, frame_->side),
+                            ecs::cell_y(mc, frame_->side))
+                : 0u)
         ^ (macro.id * 16777619u);
     Rng rng(seed);
     float fx = playerX_;
@@ -3065,7 +3092,7 @@ std::uint16_t SubworldEngine::ground_faction_at(float fx, float fy) const {
     if (!gs_) return kNoFaction;
     const int ox = std::clamp(int(fx) / kCellSize, 0, 2) - 1;
     const int oy = std::clamp(int(fy) / kCellSize, 0, 2) - 1;
-    return faction_index_for_cell(gs_->cellOwner, gs_->mapW, gs_->mapH,
+    return faction_index_for_cell(gs_->cellOwner, frame_->side, frame_->side,
                                   mgr_.center_cx() + ox,
                                   mgr_.center_cy() + oy);
 }
@@ -3669,8 +3696,8 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 } else if (arena.is_avatar_slot(killerSlot)
                            || sub::slot_flag(arena, killerSlot,
                                              sub::kObjPlayerSoldier)) {
-                    if (gs_) {
-                        const MacroHandle ps = player_squad_handle(*gs_);
+                    if (frame_) {
+                        const MacroHandle ps = frame_->playerSquad;
                         if (mw_.store->valid(ps)) leader = ps;
                     }
                 }
@@ -3794,6 +3821,8 @@ void SubworldEngine::leave(bool force) {
     dungeon_ = {};
     mw_ = {};
     gs_ = nullptr;
+    frame_ = nullptr;
+    frameResyncNeeded_ = false;
     terrain_ = nullptr;
     objects_ = nullptr;
     bus_ = nullptr;
@@ -3897,7 +3926,7 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
                 mgr_.structures(), ses.landmarkKind, doorCtx.worldSeed,
                 doorCx, doorCy,
                 float(winCellX * kCellSize), float(winCellY * kCellSize),
-                heads, gs_ ? gs_->worldTime : WorldTime{},
+                heads, frame_ ? WorldTime{frame_->worldTick} : WorldTime{},
                 ses.ref.ordinal, l);
             ses.segOffset[l] = seg.offset;
             ses.segShare[l] = seg.share;
@@ -3912,7 +3941,10 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     // Tear the overworld session down through the one ordinary door: leave()
     // runs the danger gate and every write-back — and RESETS the envelope, so
     // it is captured by copy first, exactly as the dungeon-exit re-enter does.
+    // Фрейм — тем же приёмом: указатель на снимок app живёт дольше сцены,
+    // leave() его лишь отвязывает.
     const MacroWorld mwCopy = mw_;
+    const LocalContext* frame = frame_;
     sub::SubObjects& scene = *objects_;   // leave() resets the views — capture first
     EventBus& bus = *bus_;
     leave();
@@ -3920,12 +3952,14 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
 
     dungeon_ = ses;
     sceneKind_ = SceneKind::Dungeon;
+    frame_ = frame;
     enter_dungeon_scene(mwCopy, scene, bus);
     return true;
 }
 
 void SubworldEngine::enter_pocket_scene(const MacroWorld& mw,
                                         sub::SubObjects& scene, EventBus& bus,
+                                        const LocalContext* frame,
                                         const DungeonRef& ref,
                                         float floorHeight) {
     // A pocket is raised from the map or from boot, never over a live scene
@@ -3940,6 +3974,7 @@ void SubworldEngine::enter_pocket_scene(const MacroWorld& mw,
     dungeon_.floorHeight = floorHeight;
     dungeon_.settlementId = 0;
     sceneKind_ = SceneKind::Dungeon;
+    frame_ = frame;
     enter_dungeon_scene(mw, scene, bus);
 }
 
@@ -3974,7 +4009,6 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     gs_ = mw_.gs; terrain_ = mw_.terrain;
     objects_ = &scene; bus_ = &bus;
     treeLayer_ = mw_.trees;
-    GameState& gs = *gs_;
 
     // Synthetic resolver: the door cell IS the interior, the ring is sealed
     // by whatever filler the kind's row names (Void rock today; an open
@@ -3983,7 +4017,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // dungeon is just a window whose macro context says "behind a door"
     // (pocket-subworld model).
     const DungeonSession ses = dungeon_;
-    const std::uint32_t worldSeed = gs.worldSeed;
+    const std::uint32_t worldSeed = frame_ ? frame_->worldSeed : 0u;
     const DungeonKindRow& kindRow = dungeon_kind_row(ses.ref.kind);
     // The capture rides SmallFunction's 64-byte inline storage: fields, not
     // the whole session/row.
@@ -4212,6 +4246,9 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
                    && spellbook_rule_active(*book, SpellRuleId::Flight));
     }
     }
+    // Якорь фрейма теперь — клетка двери (менеджер стоит на ней): снимок,
+    // центрованный прежним окном, ждёт плановой пересинхронизации app-ом.
+    note_frame_anchor_();
 }
 
 bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
@@ -4358,11 +4395,13 @@ bool SubworldEngine::search_chest(const Structure&) {
 }
 
 bool SubworldEngine::try_take_dungeon_stairs() {
-    // `gs_` is real (the cellar roll below reads `gs_->worldSeed`); `terrain_`
-    // was NOT — this path takes its heights from the window's height field
-    // and never touched the macro map. A gate on a pointer the body does not
-    // use is a refusal with no reason, and it made the census read as if a
-    // staircase needed the world (наряд M-152).
+    // `gs_` is real (deeper storeys re-enter through enter_dungeon_scene,
+    // whose ledgers pay through the envelope); the cellar roll itself reads
+    // the SNAPSHOT's seed (frame_->worldSeed, ломоть 4а). `terrain_` was NOT
+    // — this path takes its heights from the window's height field and never
+    // touched the macro map. A gate on a pointer the body does not use is a
+    // refusal with no reason, and it made the census read as if a staircase
+    // needed the world (наряд M-152).
     if (!active_ || sceneKind_ != SceneKind::Dungeon || !gs_) {
         return false;
     }
@@ -4376,7 +4415,7 @@ bool SubworldEngine::try_take_dungeon_stairs() {
     // kind row's column.
     const bool ladder = dungeon_kind_row(ref.kind).shaftLadder;
     const bool hasUpper = dungeon_has_upper(ref);
-    const bool hasCellar = dungeon_has_cellar(ref, gs_->worldSeed,
+    const bool hasCellar = dungeon_has_cellar(ref, frame_->worldSeed,
                                               dungeon_.doorCx, dungeon_.doorCy);
     const bool padNW = ladder ? hasUpper
                               : (level == 0 && hasUpper) || level == 1;
@@ -4574,7 +4613,7 @@ bool SubworldEngine::try_exit_dungeon() {
     const float pos[2] = {
         float(kCellSize) + (roofExit ? crownX : ses.returnLocalX),
         float(kCellSize) + (roofExit ? crownY : ses.returnLocalY)};
-    enter(mwCopy, scene, bus, pos);
+    enter(mwCopy, scene, bus, frame_, pos);
     if (roofExit && active_) {
         // enter() seated the player on the terrain 128 m below — and it has
         // already indexed the scene's solids, so ASK what is up here instead
@@ -4694,7 +4733,8 @@ float SubworldEngine::scene_sea_level() const {
 // the two worlds agree on the shore by construction. Defined in the .cpp because
 // the header only forward-declares TerrainData.
 float SubworldEngine::world_sea_level() const {
-    return terrain_ ? field01_of(terrain_->seaLevel16) : WATER_LEVEL;
+    return frame_ ? field01_of(std::uint16_t(frame_->seaLevel16))
+                  : WATER_LEVEL;
 }
 
 float SubworldEngine::scene_sea_level_m() const {
@@ -4998,6 +5038,7 @@ void SubworldEngine::tick(float dt) {
         seamShiftCellsX_ = dx;
         seamShiftCellsY_ = dy;
         repopulate_after_recenter(dx, dy);
+        note_frame_anchor_();
         // Inc 5a: check_boundary rewrapped the scalars ∓cell and the rebase inside
         // repopulate shifted the SubworldTag-tagged player entity by the SAME
         // amount. Commit the scalars back onto the entity (assignment ⇒ no double
@@ -5162,8 +5203,8 @@ void SubworldEngine::tick(float dt) {
                     },
                     this,
                     // Два хэндла игрока — ссылками из GameState (1е кл.5).
-                    gs_ ? gs_->playerFlagRef : MacroHandle{},
-                    gs_ ? gs_->playerSquadRef : MacroHandle{});
+                    frame_ ? frame_->playerFlag : MacroHandle{},
+                    frame_ ? frame_->playerSquad : MacroHandle{});
         tick_subworld_bodies(dt);
         // The player's swing AFTER the combat gather: it asks the battle pick
         // grid the same way the spell contact does, and the grid it asks must
@@ -5442,12 +5483,12 @@ void SubworldEngine::record_main(VkCommandBuffer cmd, VkExtent2D ext,
 // and any shading flicker that remains is NOT the sun's motion.
 WorldTime SubworldEngine::render_time() const {
     if (sunFreeze_ && gs_) return sunFreezeTime_;
-    return gs_ ? gs_->worldTime : WorldTime{};
+    return frame_ ? WorldTime{frame_->worldTick} : WorldTime{};
 }
 
 void SubworldEngine::set_sun_freeze(bool on) {
     sunFreeze_ = on;
-    if (on && gs_) sunFreezeTime_ = gs_->worldTime;
+    if (on && frame_) sunFreezeTime_ = WorldTime{frame_->worldTick};
 }
 
 } // namespace sm::sub

@@ -31,6 +31,7 @@
 #include "events/logic_nodes.h"
 #include "events/node_registry.h"
 #include "events/quests/quest_engine.h"
+#include "bus/local_frame.h" // локальный фрейм пяти пакетов (M-171, ломоть 4)
 #include "macro/state.h"
 #include "macro/store.h"     // гладкая память макро-сквадов (M-106)
 #include "macro/knowledge.h"
@@ -134,6 +135,13 @@ struct App {
     bool zoneFieldDirty = false;
 
     sm::GameState        gs;
+    // ЛОКАЛЬНЫЙ ФРЕЙМ пяти пакетов (ЗАКОН КАНОНИЧЕСКОГО ФРЕЙМА, ломоть 4):
+    // один экземпляр на приложение, субмир держит на него const-указатель.
+    // Заполняется ТОЛЬКО app-ом (fill_local_frame) в плановых точках: вход в
+    // сцену, граница мирового тика под землёй, ре-центр/смена якоря
+    // (needs_frame_resync), расхождение хэндлов игрока после его же
+    // сквозной записи (вселение).
+    sm::LocalContext     frame;
     sm::TerrainData      terrain{};
     sm::FeatureLayer     features;
     sm::ZoneLayer        zones;
