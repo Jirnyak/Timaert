@@ -195,7 +195,7 @@ void test_a_possessed_lords_deeds_are_his_participation() {
     // out-of-snapshot field.
     sm::MacroStore& stL = *wStore_;
     sm::MacroHandle hL = sm::store_birth(stL);
-    stL.spawnId[hL.slot] = ecs::MacroSpawnId{42u};   // пин ординала фикстуры
+    sm::store_rename_ordinal(stL, hL, 42u);   // пин ординала фикстуры
     hL = sm::handle_at(stL, hL.slot);                // хэндл — за колонкой
     // Possession MOVES the one flag — дверью переноса (5б): колонка
     // анкеты + кэш-хэндл, запись нового = срыв старого.
@@ -251,7 +251,7 @@ void test_the_deed_door_files_and_pays_as_one_action() {
     // A band with a save-stable identity and a renown store…
     sm::MacroStore& stB = *wStore_;
     sm::MacroHandle hB = sm::store_birth(stB);
-    stB.spawnId[hB.slot] = ecs::MacroSpawnId{7u};
+    sm::store_rename_ordinal(stB, hB, 7u);
     hB = sm::handle_at(stB, hB.slot);
     auto& rt = stB.runtime[hB.slot];
     rt.renown = 0u;

@@ -24,9 +24,9 @@ int main() {
     // Пин с 1: ординал 0 — «никто» (закон нуля-ординала), хэндл с ним
     // невалиден по построению; хэндл пересобирается за пином (M-220).
     auto born_one = [&](std::uint32_t ord) {
-        const MacroHandle h = store_birth(st);
-        st.spawnId[h.slot] = ecs::MacroSpawnId{ord};
-        return handle_at(st, h.slot);
+        MacroHandle h = store_birth(st);
+        store_rename_ordinal(st, h, ord);   // дверь обновляет хэндл сама
+        return h;
     };
     std::vector<MacroHandle> born;
     for (std::uint32_t ord = 1; ord <= 8; ++ord) born.push_back(born_one(ord));

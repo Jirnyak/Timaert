@@ -58,7 +58,7 @@ sm::MacroHandle squad(sm::MacroStore& st, NPCType leaderType,
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(leaderType),
                                    std::uint16_t(faction_index(factionId))};
     st.pools[h.slot] = ecs::Pools{100, 100};
-    st.spawnId[h.slot] = ecs::MacroSpawnId{spawnIndex};
+    store_rename_ordinal(st, h, spawnIndex);
     // Уровень — АНКЕТА (M-246а), той же дверью, какой рождает make_npc.
     // Ординал уже выдан строкой выше — сид анкеты обязан читать ЕГО.
     st.sheet[h.slot] = make_character_sheet(

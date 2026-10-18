@@ -163,11 +163,9 @@ inline void refresh_squad_carry(MacroStore& st, MacroHandle leader) {
     rt.carryCap = rt.carryPerSoul * souls;
 }
 
-// THE lookup by save-stable ordinal (ecs::MacroSpawnId): the one identity a
-// macro entity keeps across a regeneration, so it is what a receipt names
-// (ecs::MacroDebt.subject for a creature row) and what possession stores. The
-// store is never serialized by slot, so this is a scan — of thousands, not
-// of a hot loop: a death, a possession, a load.
+// (Резолв по ординалу — `macro_handle_by_spawn_id@src/macro/store.h`: он
+//  читает ТОЛЬКО стор и живёт у эмитента, рядом со справочником, который
+//  отвечает. Здесь стоял его СКАН всех 16384 слотов — M-271.)
 // ── ИМЯ СКВАДА — ОДНА ДВЕРЬ ЧТЕНИЯ КОЛОНКИ (вердикт 3, ход 2) ───────────
 // Имя анкеты живёт колонкой store (ecs::SquadName, рождение рендерит дефолт
 // из names[...]); всякий показ имени читает ЕЁ, а не перевыводит из индекса
@@ -202,38 +200,6 @@ inline int squad_level(const MacroStore& st, std::uint16_t slot) {
     return st.sheet[slot].levelData.level;
 }
 
-inline MacroHandle macro_handle_by_spawn_id(const MacroStore& st,
-                                            std::uint32_t index) {
-    for (std::uint32_t slot = 0; slot < kUnifiedCap; ++slot) {
-        if (st.alive[slot] != 0 && st.spawnId[slot].index == index)
-            return MacroHandle{std::uint16_t(slot), index};
-    }
-    return MacroHandle{};
-}
-
-// ГОРЯЧАЯ ДВЕРЬ ТОГО ЖЕ РЕЗОЛВА: бинарный поиск по ПОРЯДКУ ЗАКОНА
-// (ординально отсортированные живые слоты — SquadIndex.order, выводимый из
-// store каждый драйв). Это та же механика, что у умершего landmark_index_by_id
-// (монотонный эмитент ⇒ порядок строг), с той же честностью: промах по
-// индексу (сквад родился после пересборки) падает в скан, а попадание
-// ВЕРИФИЦИРУЕТСЯ колонкой spawnId — устаревший порядок соврать не может.
-inline MacroHandle macro_handle_by_spawn_id(
-        const MacroStore& st, const std::vector<SquadWalkEntry>& order,
-        std::uint32_t index) {
-    std::size_t lo = 0, hi = order.size();
-    while (lo < hi) {
-        const std::size_t mid = (lo + hi) / 2;
-        if (order[mid].ordinal < index) lo = mid + 1;
-        else hi = mid;
-    }
-    if (lo < order.size() && order[lo].ordinal == index) {
-        const std::uint16_t slot = order[lo].slot;
-        if (st.alive[slot] != 0 && st.spawnId[slot].index == index)
-            return MacroHandle{slot, index};
-    }
-    return macro_handle_by_spawn_id(st, index);
-}
-
 // РЕЗОЛВ МЕСТА: тот же резолв субъекта + гейт оси рода. Пространство
 // ординалов ОДНО (M-37), и после смерти строки мест «это место?» отвечает
 // только ось тела — звонящий, которому нужен именно НЕПОДВИЖНЫЙ сквад,
@@ -246,24 +212,13 @@ inline MacroHandle place_handle_by_ordinal(const MacroStore& st,
         ? h : MacroHandle{};
 }
 
-// ГОРЯЧАЯ ДВЕРЬ ТОГО ЖЕ РЕЗОЛВА МЕСТА — порядок закона вместо скана, ровно
-// парой к `macro_handle_by_spawn_id` выше: у субъекта две двери (скан и
-// порядок), значит и у места их две, а не три написания закона в трёх файлах.
-//
-// ЗДЕСЬ СТОЯЛО ОДНО НАПИСАНИЕ ИЗ ТРЁХ. Два других жили в `src/macro/npc_ai.cpp`
-// — `place_slot_by_id` (с порядком драйва) и лямбда `slot_of` дневной ротации
-// (со своим `crewOrder`), — и повторяли ТОТ ЖЕ закон строка в строку: резолв
-// по ординалу, проверка валидности, гейт оси рода. Различались они только тем,
-// ПО КАКОМУ порядку идёт бинарный поиск, то есть параметром, а не законом
-// (DOD п.6: второй ответ на один вопрос мира).
-inline MacroHandle place_handle_by_ordinal(
-        const MacroStore& st, const std::vector<SquadWalkEntry>& order,
-        std::uint32_t index) {
-    const MacroHandle h = macro_handle_by_spawn_id(st, order, index);
-    return st.valid(h)
-            && squad_archetype(SquadType(st.runtime[h.slot].squadType)) == SquadArchetype::Place
-        ? h : MacroHandle{};
-}
+// (ВТОРОЙ ДВЕРИ У ЭТОГО ВОПРОСА БОЛЬШЕ НЕТ — M-271. Здесь стояла её «горячая»
+//  пара, бравшая порядок драйва отдельным параметром: пока голый резолв был
+//  сканом капа, звонящий с порядком на руках обходил его стороной, и на один
+//  вопрос мира в дереве стояло ДВА ответа (DOD п.6). Теперь дешёв сам резолв
+//  — справочник у эмитента, — и параметр покупать нечего. Вместе с ней ушло
+//  последнее, третье написание закона: лямбда `slot_of` дневной ротации и
+//  `place_slot_by_id` думки сведены к ОДНОМУ переходнику в `npc_ai.cpp`.)
 
 // ДВЕРЬ ПЕРЕХОДА ВИДА — второе событие места, и оно же его СМЕРТЬ (владелец
 // 2026-09-20: «уничтожение ландмарка и рождение будет как механика»). Смерть

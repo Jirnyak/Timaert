@@ -148,9 +148,14 @@ inline constexpr std::size_t kMacroStoreRowBytes =
                                       // держит ассерт на той стороне.
     + sizeof(std::uint8_t)            // dead — байт судьбы
     + sizeof(std::uint8_t)            // alive — занятость
-    + sizeof(std::uint16_t);          // freeSlots — стек свободных
+    + sizeof(std::uint16_t)           // freeSlots — стек свободных
                                       // (generation умерла с M-220:
                                       // протухание судит spawnId)
+    + sizeof(std::uint32_t)           // ordKey — ключ справочника
+                                      // идентичности (M-271): ординал →
+                                      // слот бинарным поиском вместо скана
+                                      // всех 16384 слотов
+    + sizeof(std::uint16_t);          // ordSlot — его же слот
 
 // СКОЛЬКО РЯДОВ РЕАЛЬНО ВЫДЕЛЯЮТ СВОЁ ПОЛЕ ШРАМОВ. Не десять: ряд-НОСИТЕЛЬ
 // держит живое состояние в своём контейнере, и allocate_world_fields его

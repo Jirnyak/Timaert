@@ -78,7 +78,7 @@ sm::MacroHandle make_woodcutter(sm::MacroStore& st, float x, float y,
     rt.squadType = std::uint8_t(SquadType::Artel);
     rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Trees));
     st.runtime[h.slot] = rt;
-    st.spawnId[h.slot] = ecs::MacroSpawnId{11u};
+    sm::store_rename_ordinal(st, h, 11u);
     h = sm::handle_at(st, h.slot);
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(
@@ -207,7 +207,7 @@ void test_the_farmer_works_the_field() {
     prt.squadType = std::uint8_t(SquadType::Artel);
     prt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Wheat));
     st.runtime[h.slot] = prt;
-    st.spawnId[h.slot] = ecs::MacroSpawnId{12u};
+    sm::store_rename_ordinal(st, h, 12u);
     h = sm::handle_at(st, h.slot);
     e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
@@ -285,7 +285,7 @@ void test_farmer_without_terrain_conjures_nothing() {
     prt.squadType = std::uint8_t(SquadType::Artel);
     prt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Wheat));
     st.runtime[h.slot] = prt;
-    st.spawnId[h.slot] = ecs::MacroSpawnId{12u};
+    sm::store_rename_ordinal(st, h, 12u);
     h = sm::handle_at(st, h.slot);
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(
@@ -379,7 +379,7 @@ void test_the_mine_runs_while_the_player_is_away() {
     rt.squadType = std::uint8_t(SquadType::Artel);
     rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Iron));
     st.runtime[h.slot] = rt;
-    st.spawnId[h.slot] = ecs::MacroSpawnId{13u};
+    sm::store_rename_ordinal(st, h, 13u);
     h = sm::handle_at(st, h.slot);
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(
@@ -497,7 +497,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     st.runtime[h.slot] = crt;
-    st.spawnId[h.slot] = ecs::MacroSpawnId{13u};
+    sm::store_rename_ordinal(st, h, 13u);
     h = sm::handle_at(st, h.slot);
     e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
@@ -619,7 +619,7 @@ void test_the_miner_works_the_vein() {
     rt.squadType = std::uint8_t(SquadType::Artel);
     rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Iron));
     st.runtime[h.slot] = rt;
-    st.spawnId[h.slot] = ecs::MacroSpawnId{13u};
+    sm::store_rename_ordinal(st, h, 13u);
     h = sm::handle_at(st, h.slot);
     e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
@@ -688,7 +688,7 @@ void test_the_miner_works_the_vein() {
     st2.kind[h2.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                      std::uint16_t(faction_index("timaert"))};
     st2.runtime[h2.slot] = rt;
-    st2.spawnId[h2.slot] = ecs::MacroSpawnId{14u};
+    sm::store_rename_ordinal(st2, h2, 14u);
     h2 = sm::handle_at(st2, h2.slot);
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st2.sheet[h2.slot] = make_character_sheet(
@@ -786,7 +786,7 @@ void test_the_catch_lands_as_creatures() {
     prt.carryPerSoul = 40.0f;
     prt.carryCap = 40.0f;
     st.runtime[h.slot] = prt;
-    st.spawnId[h.slot] = ecs::MacroSpawnId{77u};
+    sm::store_rename_ordinal(st, h, 77u);
     h = sm::handle_at(st, h.slot);
     e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.

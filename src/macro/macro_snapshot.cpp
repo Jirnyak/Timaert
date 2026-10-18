@@ -71,11 +71,13 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
     std::uint32_t maxOrdinal = 0;
     bool any = false;
     for (const MacroNpcRecord& m : records) {
-        // Рождение выдаёт временный ординал (M-220) — restore тут же
-        // перезаписывает его сохранённым: идентичность записи — в файле.
-        const MacroHandle h = store_birth(st);
+        // Идентичность записи — в файле, и ставит её ДВЕРЬ (M-271): рождение
+        // и справочник ординалов обязаны узнать имя одновременно, иначе
+        // резолв по ординалу молча не найдёт загруженный мир. Прежде здесь
+        // стояло сырое присваивание колонки ПОСЛЕ `store_birth`; теперь
+        // сырых писателей `spawnId` нет ни одного, и это судит arch_guard.
+        const MacroHandle h = store_birth_as(st, m.spawnId.index);
         if (!st.valid(h)) break;   // отказ капа уже прозвучал вслух
-        st.spawnId[h.slot]   = m.spawnId;
         st.cell[h.slot]      = m.cell;
         st.sub[h.slot]       = m.sub;
         st.kind[h.slot]      = m.kind;

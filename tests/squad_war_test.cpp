@@ -79,7 +79,7 @@ sm::MacroHandle make_squad_at(sm::MacroStore& st, NPCType type,
     pools.sp = pools.maxSp;               // rested: fatigue 1.0, as before
     st.pools[h.slot] = pools;
     st.runtime[h.slot] = rt;
-    st.spawnId[h.slot] = ecs::MacroSpawnId{ordinal};
+    sm::store_rename_ordinal(st, h, ordinal);
     h = sm::handle_at(st, h.slot);
     // Уровень несёт АНКЕТА (M-246а): `sheet` построен из `level` выше.
     st.sheet[h.slot] = sheet;   // колонка листа — как make_npc рождает всем

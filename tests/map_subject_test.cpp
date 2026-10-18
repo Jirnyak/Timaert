@@ -78,8 +78,8 @@ Fixture make_world(sm::MacroStore& st) {
 // Фикстура пинит рукописный ординал — хэндл пересобирается после записи
 // колонки, иначе он нёс бы выданный дверью ординал и протух бы на месте.
 sm::MacroHandle make_squad(sm::MacroStore& st, std::uint32_t ordinal) {
-    const sm::MacroHandle h = sm::store_birth(st);
-    st.spawnId[h.slot] = sm::ecs::MacroSpawnId{ordinal};
+    sm::MacroHandle h = sm::store_birth(st);
+    sm::store_rename_ordinal(st, h, ordinal);
     sm::creatures_push(st.inventory[h.slot].inv,
         sm::make_soldier(std::uint8_t(sm::NPCType::Guard), 2, 21u));
     return sm::handle_at(st, h.slot);

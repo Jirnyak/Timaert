@@ -358,9 +358,7 @@ void test_a_squad_on_the_map_projects_its_creatures() {
     sm::MacroHandle macro = make_macro_lord(
         *worldStore_, NPCType::Guard, /*faction*/5, /*level*/4,
         /*hp*/30.0f, /*maxHp*/30.0f, /*visualSeed*/0xCAFEu);
-    worldStore_->spawnId[macro.slot] =
-        ecs::MacroSpawnId{std::uint32_t(9)};
-    macro = sm::handle_at(*worldStore_, macro.slot);
+    sm::store_rename_ordinal(*worldStore_, macro, 9u);
     {
         auto& mbag = worldStore_->inventory[macro.slot];
         creatures_push(mbag.inv, make_soldier(

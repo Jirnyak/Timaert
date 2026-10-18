@@ -60,8 +60,7 @@ sm::MacroHandle spawn_ai(sm::MacroStore& st,
     // находил бы ГОРОД вместо сквада. База стоит заведомо выше всякого
     // места этой фикстуры (их тут не больше двух).
     static std::uint32_t nextOrdinal = 1000u;
-    st.spawnId[h.slot] = sm::ecs::MacroSpawnId{nextOrdinal++};
-    h = sm::handle_at(st, h.slot);
+    sm::store_rename_ordinal(st, h, nextOrdinal++);
     st.cell[h.slot] = sm::ecs::MacroCell{
         sm::ecs::cell_index(int(x), int(y), mapW)};
     st.sub[h.slot] = {};   // доля клетки: фикстура рождает в центре (M-244a)
@@ -636,9 +635,8 @@ void test_rotation_does_not_dissolve_the_dead() {
     auto dead =
         spawn_ai(st, sm::NPCType::Peasant, 50.0f, 50.0f, cityId);
     {
+        sm::store_rename_ordinal(st, dead, 77u);
         const std::uint16_t ds = dead.slot;
-        st.spawnId[ds] = sm::ecs::MacroSpawnId{77u};
-        dead = sm::handle_at(st, ds);
         sm::creatures_push(
             st.inventory[ds].inv,
             sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2, 200u));
@@ -667,10 +665,10 @@ void test_rotation_does_not_dissolve_the_dead() {
     // наблюдаем это прямо по смерти сущности, а не по арифметике населения,
     // которую та же граница двигает ещё и набором.
     for (std::uint32_t i = 0; i < 2u; ++i) {
-        const auto alive =
+        auto alive =
             spawn_ai(st, sm::NPCType::Peasant, 50.0f, 50.0f, cityId);
+        sm::store_rename_ordinal(st, alive, 78u + i);
         const std::uint16_t as = alive.slot;
-        st.spawnId[as] = sm::ecs::MacroSpawnId{78u + i};
         sm::creatures_push(
             st.inventory[as].inv,
             sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2,

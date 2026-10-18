@@ -105,7 +105,7 @@ sm::MacroHandle make_walker(sm::MacroStore& st, int mapW, float x, float y,
     rt.marathonRank = 0;
     rt.moveMult = 1.0f;
     st.runtime[h.slot] = rt;
-    st.spawnId[h.slot] = ecs::MacroSpawnId{7u};
+    sm::store_rename_ordinal(st, h, 7u);
     h = sm::handle_at(st, h.slot);
     // Уровень — АНКЕТА (M-246а), той же дверью, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(
@@ -315,9 +315,8 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
         auto e = make_walker(st, gs.mapW, 2.0f, 40.0f, 30.0f, 40.0f, /*maxSp*/8,
                              /*hp*/30.0f);
         sm::MacroStore& std_ = st;
+        sm::store_rename_ordinal(std_, e, 55u);   // дверь обновляет хэндл
         sm::MacroHandle eh = e;
-        std_.spawnId[eh.slot] = ecs::MacroSpawnId{55u};
-        eh = sm::handle_at(std_, eh.slot);
         auto& bag = std_.inventory[eh.slot];
         creatures_push(bag.inv, make_soldier(
             std::uint8_t(NPCType::Peasant), 1, 101u));
@@ -442,7 +441,7 @@ void test_a_map_of_marchers_survives_the_new_law() {
         sm::MacroHandle e =
             make_walker(st, gs.mapW, 4.0f, y, 120.0f, y, /*maxSp*/110);
         // Each one hauls right across the map on its own line.
-        st.spawnId[e.slot] = ecs::MacroSpawnId{std::uint32_t(100 + i)};
+        sm::store_rename_ordinal(st, e, std::uint32_t(100 + i));
         e = sm::handle_at(st, e.slot);
         walkers.push_back(e);
     }
@@ -671,7 +670,7 @@ void test_a_laden_squad_pays_for_its_load() {
                              /*hp*/1e6f);
     auto heavy = make_walker(st, gs.mapW, 10.0f, 6.0f, 60.0f, 6.0f, /*maxSp*/110,
                              /*hp*/1e6f);
-    st.spawnId[heavy.slot] = ecs::MacroSpawnId{8u};
+    sm::store_rename_ordinal(st, heavy, 8u);
     heavy = sm::handle_at(st, heavy.slot);
     (*sm::body_state<ecs::MacroNpcRuntime>(st, light)).targetY = 4.0f;
     (*sm::body_state<ecs::MacroNpcRuntime>(st, heavy)).targetY = 6.0f;

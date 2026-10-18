@@ -598,7 +598,7 @@ MacroSeeds seed_macro_npcs(sm::MacroStore& st, int mapW) {
                   int hp, int maxHp, std::int16_t level,
                   std::uint32_t vseed) {
         sm::MacroHandle h = sm::store_birth(st);
-        st.spawnId[h.slot] = sm::ecs::MacroSpawnId{spawnIndex++};
+        sm::store_rename_ordinal(st, h, spawnIndex++);
         h = sm::handle_at(st, h.slot);
         st.cell[h.slot] = sm::ecs::MacroCell{
             sm::ecs::cell_index(cx, cy, 1024)};
@@ -1024,7 +1024,7 @@ bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
     if (reborn.id == s.bandit.id) return false;      // ординал обязан отличаться
     // Фикстура пинит ординал нового жильца (ожидаемая запись 77 ниже);
     // хэндл `reborn` после этого валидность не несёт — колонки пишутся слотом.
-    st.spawnId[reborn.slot] = sm::ecs::MacroSpawnId{77u};
+    sm::store_rename_ordinal(st, reborn, 77u);
     reborn = sm::handle_at(st, reborn.slot);
     st.cell[reborn.slot] = sm::ecs::MacroCell{
         sm::ecs::cell_index(kCenterCx, kCenterCy, kMapW)};
@@ -1249,7 +1249,7 @@ int main() {
 
         sm::MacroStore& stq = *worldStore_;
         sm::MacroHandle hq = sm::store_birth(stq);
-        stq.spawnId[hq.slot] = sm::ecs::MacroSpawnId{std::uint32_t(11)};
+        sm::store_rename_ordinal(stq, hq, 11u);
         hq = sm::handle_at(stq, hq.slot);
         stq.kind[hq.slot] = sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit), std::uint16_t(3)};
@@ -1327,7 +1327,7 @@ int main() {
 
         sm::MacroStore& stq = *worldStore_;
         sm::MacroHandle hq = sm::store_birth(stq);
-        stq.spawnId[hq.slot] = sm::ecs::MacroSpawnId{std::uint32_t(12)};
+        sm::store_rename_ordinal(stq, hq, 12u);
         hq = sm::handle_at(stq, hq.slot);
         stq.kind[hq.slot] = sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit), std::uint16_t(3)};
@@ -1415,7 +1415,7 @@ int main() {
 
         sm::MacroStore& stq = *worldStore_;
         sm::MacroHandle hq = sm::store_birth(stq);
-        stq.spawnId[hq.slot] = sm::ecs::MacroSpawnId{std::uint32_t(13)};
+        sm::store_rename_ordinal(stq, hq, 13u);
         hq = sm::handle_at(stq, hq.slot);
         stq.kind[hq.slot] = sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit), std::uint16_t(3)};

@@ -283,7 +283,7 @@ void test_malformed_receipts_do_nothing() {
 sm::MacroHandle make_squad(sm::MacroStore& st, std::uint32_t ordinal,
                            std::initializer_list<std::uint32_t> memberIds) {
     sm::MacroHandle h = sm::store_birth(st);
-    st.spawnId[h.slot] = sm::ecs::MacroSpawnId{ordinal};
+    sm::store_rename_ordinal(st, h, ordinal);
     h = sm::handle_at(st, h.slot);
     auto& bag = st.inventory[h.slot];
     for (std::uint32_t id : memberIds) {

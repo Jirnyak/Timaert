@@ -43,7 +43,7 @@ sm::MacroHandle npc_squad(sm::MacroStore& st, float x, float y,
                                    std::uint16_t(faction_index("bandits"))};
     st.sheet[h.slot].levelData.level = 2;   // уровень — анкета (M-246а)
     st.pools[h.slot] = ecs::Pools{50, 50};
-    st.spawnId[h.slot] = ecs::MacroSpawnId{ordinal};
+    sm::store_rename_ordinal(st, h, ordinal);
     h = sm::handle_at(st, h.slot);
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId = 0;

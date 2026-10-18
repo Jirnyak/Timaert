@@ -521,6 +521,65 @@ void collect_minus(std::vector<Site>& out) {
     }
 }
 
+// ── R8: ИДЕНТИЧНОСТЬ СКВАДА ПИШЕТСЯ ТОЛЬКО ДВЕРЬЮ СТОРА (M-271) ───────────
+//
+// Колонка `spawnId` — имя сквада, и с M-271 рядом с ней живёт СПРАВОЧНИК
+// (`ordKey`/`ordSlot`), которым резолв «ординал → слот» отвечает без скана
+// всех 16384 слотов. Сырое присваивание колонки разошло бы их МОЛЧА: мир
+// остался бы верным, а найти в нём переименованного было бы нельзя. Поэтому
+// писателей ровно два, оба в `src/macro/store.h` (`store_birth` и
+// `store_rename_ordinal`), и оба ведут справочник.
+//
+// СПИСОК ЭТОГО ПРАВИЛА ПУСТ, И ЭТО НЕ ОПЕЧАТКА. Остальные правила прибора —
+// ТАЮЩИЕ: они запрещают РОСТ существующего долга. Это — запрет как таковой:
+// на 2026-10-18 сырых писателей было 30 (загрузка + 29 фикстур), все
+// переведены на дверь тем же нарядом, и ноль здесь есть ЗАКОН, а не ещё не
+// растаявший остаток. Пустой список значит, что первый же новый писатель
+// назовётся по имени в тот же прогон.
+bool line_writes_spawn_id(const std::string& line) {
+    std::string code = line;
+    const std::size_t comment = code.find("//");
+    if (comment != std::string::npos) code.resize(comment);
+    const std::size_t key = code.find("spawnId[");
+    if (key == std::string::npos) return false;
+    const std::size_t close = code.find(']', key);
+    if (close == std::string::npos) return false;
+    // Присваивание, а не чтение: `== `, `!=`, `<=` и прочие сравнения мимо.
+    std::size_t i = close + 1;
+    while (i < code.size() && code[i] == ' ') ++i;
+    if (i >= code.size() || code[i] != '=') return false;
+    return i + 1 >= code.size() || code[i + 1] != '=';
+}
+
+void collect_identity(std::vector<Site>& out) {
+    for (std::string_view top : {std::string_view("src"),
+                                 std::string_view("tests")}) {
+        const fs::path dir = fs::path(kRoot) / fs::path(top);
+        if (!fs::is_directory(dir)) continue;
+        std::vector<fs::path> files;
+        for (const auto& e : fs::recursive_directory_iterator(dir)) {
+            if (!e.is_regular_file()) continue;
+            const std::string ext = e.path().extension().string();
+            if (ext == ".cpp" || ext == ".h") files.push_back(e.path());
+        }
+        std::sort(files.begin(), files.end());
+        for (const fs::path& p : files) {
+            const std::string rel =
+                fs::relative(p, fs::path(kRoot)).generic_string();
+            if (rel == "src/macro/store.h") continue;   // сами двери
+            // Прибор не судит СВОИ фикстуры: строки негативного контроля
+            // ниже обязаны выглядеть нарушением — в этом их работа.
+            if (rel == "tests/arch_guard_test.cpp") continue;
+            const std::vector<std::string> lines = split_lines(read_file(p));
+            for (std::size_t n = 0; n < lines.size(); ++n) {
+                if (!line_writes_spawn_id(lines[n])) continue;
+                out.push_back({"identity", rel, collapse(lines[n]),
+                               int(n) + 1});
+            }
+        }
+    }
+}
+
 // ── R5: КАРКАС КАТАЛОГОВ ЗАКРЫТ ───────────────────────────────────────────
 // Чистая сверка двух множеств — на неё стоит негативный контроль ниже.
 struct DirDiff {
@@ -697,6 +756,10 @@ Boundary test_melting_rules() {
     collect_minus(sites);
     const std::size_t minusCount = sites.size() - channelCount - verdictCount
                                    - enttCount - subcapCount;
+    collect_identity(sites);
+    const std::size_t identityCount = sites.size() - channelCount
+                                      - verdictCount - enttCount - subcapCount
+                                      - minusCount;
 
     CHECK(channelCount > 0,
           "включения macro/ из src/sub ЕСТЬ — иначе судить нечего, и зелёный "
@@ -726,19 +789,22 @@ Boundary test_melting_rules() {
     CHECK(diff.unlisted == 0,
           "архитектурный долг не вырос: новых включений macro/ в src/sub, "
           "новых безадресных вердиктов в SKELETON.md, новых файлов с entt "
-          "(M-188), новых чтений макро-капа из src/sub (шаг 0 M-150) и "
-          "новых голых -= в macro/sub (ЗАКОН ТРЁХ ДВЕРЕЙ, M-243) нет");
+          "(M-188), новых чтений макро-капа из src/sub (шаг 0 M-150), "
+          "новых голых -= в macro/sub (ЗАКОН ТРЁХ ДВЕРЕЙ, M-243) и новых "
+          "сырых писателей spawnId мимо двери стора (M-271) нет");
     CHECK(diff.stale == 0, "в белом списке нет строк, которых в дереве уже нет");
 
     std::printf(
         "arch_guard: канал %zu включений · безадресных вердиктов %zu · "
         "файлов с entt %zu · макро-кап в sub %zu · голых -= %zu "
+        "· сырых писателей spawnId %zu (ЗАПРЕТ, а не тающий долг: M-271 "
+        "свёл 30 → 0, и список этого правила ПУСТ) "
         "(КАНДИДАТОВ; перепись по типам M-218 2026-10-12: беззнаковых среди "
         "них 1, и та не величина симуляции — две копилки тиков переведены на "
         "try_spend)\n"
         "  строк списка %zu (может только таять)\n",
         channelCount, verdictCount, enttCount, subcapCount, minusCount,
-        allowed.size());
+        identityCount, allowed.size());
 
     return Boundary{channelCount, verdictCount, enttCount};
 }
@@ -794,6 +860,18 @@ void test_detectors_actually_see() {
           "сравнения и += детектор не трогает");
     CHECK(!line_has_bare_minus_assign("// пример из закона: wood -= 10"),
           "минус в комментарии — проза, не код");
+
+    // R8: детектор сырого писателя идентичности. ОБЕ полярности — краснеть
+    // на записи и МОЛЧАТЬ на чтении, иначе правило запретило бы спрашивать
+    // имя сквада, а запрещено только его ПИСАТЬ мимо двери.
+    CHECK(line_writes_spawn_id("    st.spawnId[h.slot] = ecs::MacroSpawnId{7u};"),
+          "сырая запись идентичности видна детектору");
+    CHECK(!line_writes_spawn_id("    if (st.spawnId[slot].index == id) return;"),
+          "ЧТЕНИЕ колонки имени законно — детектор на него молчит");
+    CHECK(!line_writes_spawn_id("    const auto x = s.spawnId[i];"),
+          "копия колонки в локаль — тоже чтение");
+    CHECK(!line_writes_spawn_id("// было: st.spawnId[h.slot] = {7u};"),
+          "запись в комментарии — проза, не код");
 
     // R3: три законные формы адреса опознаются, а безадресное — нет.
     CHECK(has_address("дверь `cell_of@src/core/torus.h` — ПРАВДА"),
