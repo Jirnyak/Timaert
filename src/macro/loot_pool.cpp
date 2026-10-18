@@ -51,9 +51,9 @@ int loot_issue(int budgetValue, const LootContext& ctx, RngFn rng,
     const int rows = int(catalog.size());
     if (rows <= 0) return 0;
 
-    // Три колонки контекста сходятся в ОДНУ дверь — второго вывода «насколько
+    // Обе колонки контекста сходятся в ОДНУ дверь — второго вывода «насколько
     // богата вещь» в мире нет.
-    const std::uint8_t power = affix_power(ctx.level, ctx.danger, ctx.wealthMul);
+    const std::uint8_t power = affix_power(ctx.level, ctx.danger);
 
     int left = budgetValue;
     int spent = 0;

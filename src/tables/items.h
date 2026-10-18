@@ -411,10 +411,11 @@ inline constexpr int kAffixValueBase  = 128;
 inline constexpr int kAffixValueCapUnits = 16;
 
 // The world's one affix-power byte: how loaded the dice are where this thing
-// dropped. Level pulls 8/level, the danger byte rides in whole, the place's
-// wealth adds up to 64 («богатство = стоимость, шире золота» — the third
-// term is the owner's verdict, not a double-count of the purse law).
-std::uint8_t affix_power(int level, std::uint8_t danger, float wealthMul);
+// dropped. Level pulls 8/level, the danger byte rides in whole. Третий вход —
+// богатство места — УНИЧТОЖЕН 2026-10-18 (M-223): он был константой по роду
+// места, писателя не имел ни одного, а своё обоснование брал у кошелька,
+// снесённого за месяц до того (M-139).
+std::uint8_t affix_power(int level, std::uint8_t danger);
 
 // ── THE affix writer (owner's design 2026-09-07) ──────────────────────────
 // One door for every way an item gains modifiers. The RANDOM path — this
@@ -453,9 +454,11 @@ const char* affix_suffix(const ItemRef& item) noexcept;
 // у которых других читателей не было. Контекст ЖИВ и переехал в свою дверь:
 // `LootContext@src/macro/loot_pool.h`. Здесь он звался `CorpseLootContext` и
 // не имел НИ ОДНОГО читателя во всём дереве — контекст без двери, которая его
-// читает, то есть ровно та колонка-сирота, которую запрещает DOD п.9. Три
-// его колонки сходятся в `affix_power` и отвечают на «насколько богата вещь»,
-// а не «сколько монет из воздуха».
+// читает, то есть ровно та колонка-сирота, которую запрещает DOD п.9. Его
+// колонки сходятся в `affix_power` и отвечают на «насколько богата вещь», а
+// не «сколько монет из воздуха». Их было три: богатство места уничтожено
+// 2026-10-18 (M-223) — та же болезнь, что лечил этот абзац, только пережившая
+// его на три недели, потому что у неё был ЧИТАТЕЛЬ и не было ПИСАТЕЛЯ.
 // (generate_settlement_inventory is gone: the unified-container moment it was
 // kept for arrived — landmark stocks are seeded by the ECONOMY's own law,
 // econ_day.h seed_landmark_inventory, from the one commodity dictionary.)

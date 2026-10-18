@@ -123,16 +123,18 @@ struct LandmarkDef {
     // `faction_index(строка)` с пути заселения (ЗАКОН СЛОВАРЯ).
     // Вид НЕ ЕСТЬ ВЛАДЕЛЕЦ — колонке фракции в этой таблице места нет.
 
-    // How RICH this place is — the world's modulation of the coin a body
-    // carries (owner ruling 2026-08-27: «кошелёк по строке × богатство
-    // места», the S10 law «база из таблицы, мир — модуляция», applied through
-    // the one context door). The row's purse (macro/npc.h kNpcPurse) says
-    // what a merchant IS worth; this says whether he trades in a capital or
-    // scrapes a living by a ruin. 1.0 = open land, the silent default.
-    // When the honest-loan track lands (CANON S5: a body's belongings are a
-    // LOAN from its home landmark's stock), this coefficient is what the
-    // actual stockpile query replaces — the socket is deliberate.
-    float            wealthMul = 1.0f;
+    // КОЛОНКА `wealthMul` УНИЧТОЖЕНА 2026-10-18 (M-223, вердикт владельца
+    // 2026-10-06: «богатсвто места уничтожить … снести не вижу в этом
+    // смысла»). Она была КОНСТАНТОЙ ПО РОДУ (City 1.5, Spire/Mine/Lair 1.25,
+    // Ruin 0.5, прочие 1.0), то есть отвечала «что это за место», а не
+    // «насколько оно богато»: богатая и нищая деревня давали одно число.
+    // Её собственное обоснование ссылалось на «the purse law», а кошелёк
+    // строки (`purseMin`/`purseMax`) снесён 2026-09-26 (M-139) — у вердикта
+    // 2026-08-27 «кошелёк по строке × богатство места» умер СУБЪЕКТ, и
+    // модулировать стало нечего. Если богатство места понадобится впредь,
+    // честный источник у него другой и живой — стоимость собственного
+    // контейнера места (`inventory_value@src/macro/currency.h`), а не
+    // константа строки.
 
     // ── Fauna spawn columns (read by THE spawn law, macro/fauna.cpp) ──────
     // What this place's ground rolls, as data — the three switch ladders over
@@ -281,7 +283,6 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
     {.type = SquadType::City, .id = "city", .label = "City",
      .minZone = 0, .maxZone = 76, .glyph = '#', .color = 0xFFE7D27Au,
      .walkable = true, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
-     .wealthMul = 1.5f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
      .bornPopBase = 0, .bornPopPerScore = 0,
@@ -345,7 +346,6 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
     {.type = SquadType::Village, .id = "village", .label = "Village",
      .minZone = 0, .maxZone = 101, .glyph = 'v', .color = 0xFFCCB068u,
      .walkable = true, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
-     .wealthMul = 1.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
      .bornPopBase = 0, .bornPopPerScore = 0,
@@ -364,7 +364,6 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
     {.type = SquadType::Spire, .id = "spire", .label = "Spire",
      .minZone = 128, .maxZone = 255, .glyph = 'I', .color = 0xFFA86CFFu,
      .walkable = true, .lightColor = 0xFFA86CFFu, .lightPop = 200.0f,
-     .wealthMul = 1.25f,
      .faunaHabitat = kLandmarkFaunaGround, .faunaMin = 0, .faunaMax = 0,
      .faunaCap = kLandmarkFaunaCapGround,
      .crowdHabitat = 1u << 13, .crowdInsideShift = 2,
@@ -373,7 +372,6 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
     {.type = SquadType::Ruin, .id = "ruin", .label = "Ruin",
      .minZone = 51, .maxZone = 229, .glyph = 'r', .color = 0xFF8E8576u,
      .walkable = true, .lightColor = 0xFF8E8576u, .lightPop = 40.0f,
-     .wealthMul = 0.5f,
      .faunaHabitat = 1u << 12, .faunaMin = 2, .faunaMax = 6,
      .faunaCap = kLandmarkFaunaCapGround,
      .crowdHabitat = 1u << 12, .crowdInsideShift = 0,
@@ -382,7 +380,6 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
     {.type = SquadType::Lair, .id = "lair", .label = "Lair",
      .minZone = 102, .maxZone = 255, .glyph = 'L', .color = 0xFF883A3Au,
      .walkable = true, .lightColor = 0xFF883A3Au, .lightPop = 70.0f,
-     .wealthMul = 1.25f,
      .faunaHabitat = kLandmarkFaunaGround, .faunaMin = 0, .faunaMax = 0,
      .faunaCap = kLandmarkFaunaCapGround,
      .crowdHabitat = 1u << 12 },
@@ -391,8 +388,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
      .walkable = true, .lightColor = 0xFFE2E2E2u, .lightPop = 90.0f },
     {.type = SquadType::Mine, .id = "mine", .label = "Mine",
      .minZone = 51, .maxZone = 203, .glyph = 'M', .color = 0xFF8B6332u,
-     .walkable = true, .lightColor = 0xFF8B6332u, .lightPop = 60.0f,
-     .wealthMul = 1.25f },
+     .walkable = true, .lightColor = 0xFF8B6332u, .lightPop = 60.0f },
     {.type = SquadType::Tower, .id = "tower", .label = "Tower",
      .minZone = 76, .maxZone = 203, .glyph = 'T', .color = 0xFF6E6E89u,
      .walkable = true, .lightColor = 0xFF6E6E89u, .lightPop = 80.0f },
@@ -458,6 +454,17 @@ static_assert(crew_rows_match_count(kLandmarks,
 // (M-39). Возврат `const char* spawnFaction` перестаёт СОБИРАТЬСЯ, а не
 // перестаёт проходить тест: запрет под компилятором не флачит и не
 // подгоняется (§8 п.6). Строку меняют осознанно — вместе с этим числом.
+//
+// ЧИСЛО НЕ ДВИНУЛОСЬ ПРИ СНОСЕ `wealthMul` (2026-10-18, M-223), И ЭТО НАДО
+// СКАЗАТЬ ВСЛУХ, ИНАЧЕ СЛЕДУЮЩИЙ ЧИТАТЕЛЬ РЕШИТ, ЧТО ПИН ВРЁТ. Замер
+// `offsetof`/`alignof` у clang, а не рассуждение: `alignof` = 8, последнее
+// поле `seedRawMult` стоит на 113, то есть данных 114 — и 120 есть ближайшее
+// кратное восьми. Снесённые четыре байта целиком съело ХВОСТОВОЕ
+// выравнивание (паддинг 2 → 6); щели между `lightPop` (56) и `faunaHabitat`
+// (60) нет вовсе, они стоят подряд. Отсюда правило на будущее: довод «уберём
+// колонку — станет меньше» в этой строке ЛОЖЕН до самого следующего кратного
+// восьми, и к сносу он отношения не имел — колонка умерла за отсутствие
+// ПИСАТЕЛЯ, а не за размер.
 static_assert(sizeof(LandmarkDef) == 120,
               "LandmarkDef layout changed — say WHICH column and why, and "
               "never re-add a faction column: a KIND is not an OWNER (M-39)");

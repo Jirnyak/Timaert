@@ -4811,7 +4811,7 @@ void register_console_commands(App& app) {
             }
             const sm::CharacterSheet* sheet = sm::player_sheet(app.gs, *app.macroStore);
             const int level = sheet ? sheet->levelData.level : 1;
-            int power = int(sm::affix_power(level, 0, 1.0f));
+            int power = int(sm::affix_power(level, 0));
             sm::dev::arg_int(a, 2, power);
             power = std::clamp(power, 0, 255);
             int stacks = 0, refused = 0;

@@ -717,16 +717,15 @@ std::vector<ItemRef> roll_loot_profile(const char* lootId, int level, RngFn rng,
     return roll_loot(p->data, p->n, level, rng, affixPower);
 }
 
-std::uint8_t affix_power(int level, std::uint8_t danger, float wealthMul) {
-    // Three contributions, one byte: 8 per level past the first, the danger
-    // byte verbatim, and up to 64 from the place's wealth — «стоимость», the
-    // same wealthMul the purse law reads, capped so a palace cannot outbid
-    // the deep country's danger on its own.
-    int p = (level > 1 ? (level - 1) * 8 : 0) + int(danger);
-    if (wealthMul > 1.0f) {
-        const float w = (wealthMul - 1.0f) * 64.0f;
-        p += int(w > 64.0f ? 64.0f : w);
-    }
+std::uint8_t affix_power(int level, std::uint8_t danger) {
+    // Two contributions, one byte: 8 per level past the first and the danger
+    // byte verbatim. Здесь стоял ТРЕТИЙ член — «богатство места» со срезом 64,
+    // — и он умер 2026-10-18 вместе со своим источником (M-223, вердикт
+    // владельца 2026-10-06). Его обоснование ссылалось на «the purse law»,
+    // которого нет с 2026-09-26: кошелёк строки снесён вместе с монетами из
+    // воздуха (M-139), и модулировать стало нечего. Писателя у третьего входа
+    // не было ни одного — все звонки передавали 1.0, то есть ноль прибавки.
+    const int p = (level > 1 ? (level - 1) * 8 : 0) + int(danger);
     return std::uint8_t(p > 255 ? 255 : p);
 }
 

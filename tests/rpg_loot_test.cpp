@@ -301,13 +301,25 @@ static void test_affix_door() {
     CHECK(coin_run(rng_high, 271, kAffixChanceDen, 8) == 0,
           "a tails coin runs zero times — no floor is invented");
 
-    // The power byte: three contributions, silent at their zeros.
-    CHECK(affix_power(1, 0, 1.0f) == 0, "a fresh body on open land: power 0");
-    CHECK(affix_power(10, 0, 1.0f) == 72, "level pulls 8 per level past 1");
-    CHECK(affix_power(1, 200, 1.0f) == 200, "the danger byte rides in whole");
-    CHECK(affix_power(1, 0, 1.5f) == 32,
-          "wealth adds (стоимость, not the purse law twice)");
-    CHECK(affix_power(100, 255, 9.9f) == 255, "the byte clamps, never wraps");
+    // The power byte: two contributions, silent at their zeros.
+    //
+    // ТРЕТЬЯ ОСЬ — БОГАТСТВО МЕСТА — СНЕСЕНА 2026-10-18 (M-223, вердикт
+    // владельца 2026-10-06), и вместе с ней ушла проверка «wealth adds»: у
+    // неё УМЕР НОСИТЕЛЬ, это не регресс (§8 п.6). Возврат третьего входа
+    // перестаёт СОБИРАТЬСЯ, а не перестаёт проходить тест — запрет под
+    // компилятором не флачит и не подгоняется.
+    CHECK(affix_power(1, 0) == 0, "a fresh body on open land: power 0");
+    CHECK(affix_power(100, 255) == 255, "the byte clamps, never wraps");
+    // ОТНОШЕНИЯ, А НЕ ПЕРЕСКАЗАННЫЕ ЧИСЛА (§8 п.4): обе оси обязаны ТЯНУТЬ,
+    // и обе — монотонно. Пересчёт кривой опыта или шага уровня эти проверки
+    // не ломает, а выбитая ось ломает (контроль проверен красным: вход
+    // `danger`, умноженный на 0, краснит этот тест).
+    CHECK(affix_power(10, 0) > affix_power(1, 0), "level pulls past the first");
+    CHECK(affix_power(1, 200) > affix_power(1, 100),
+          "the danger byte rides in whole, and more of it weighs more");
+    CHECK(affix_power(10, 100) > affix_power(10, 0)
+              && affix_power(10, 100) > affix_power(1, 100),
+          "both axes act at once — neither swallows the other");
 
     // The door refuses what cannot be worn — food rolls nothing, spends no
     // seed, and the caller did not have to know the distinction.

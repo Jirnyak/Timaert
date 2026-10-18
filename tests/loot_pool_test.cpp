@@ -88,8 +88,7 @@ void test_value_is_conserved() {
     int samples = 0, mismatches = 0, overspends = 0;
     for (int budget = 1; budget <= 100000; budget = budget * 3 + 1) {
         for (std::uint32_t seed = 1u; seed <= 16u; ++seed) {
-            const LootContext ctx{std::uint8_t(seed * 13u), 1.0f + float(seed) * 0.1f,
-                                  int(seed)};
+            const LootContext ctx{std::uint8_t(seed * 13u), int(seed)};
             Inventory bag{};
             rng_reset(seed * 2654435761u + std::uint32_t(budget));
             const int spent = loot_issue(budget, ctx, &rng_lcg, bag);
@@ -109,9 +108,9 @@ void test_value_is_conserved() {
 // Без этого п.2 вакуумен: если аффиксы не выпали ни разу, «цена экземпляра»
 // и «цена строки» совпадают тождественно, и закон никто не проверил.
 void test_affix_path_is_exercised_and_priced() {
-    // Богатый контекст: высокий уровень × полный байт опасности × богатое
-    // место — все три колонки контекста говорят одной дверью affix_power.
-    const LootContext ctx{255, 2.0f, 30};
+    // Богатый контекст: высокий уровень × полный байт опасности — обе
+    // колонки контекста говорят одной дверью affix_power.
+    const LootContext ctx{255, 30};
     int withAffixes = 0, pricedByRow = 0, rounds = 0;
     for (std::uint32_t seed = 1u; seed <= 64u; ++seed) {
         Inventory bag{};
@@ -163,7 +162,7 @@ void test_full_container_refuses() {
 
 // ── 5. Один поток случайности — одна выдача ───────────────────────────────
 void test_deterministic() {
-    const LootContext ctx{64, 1.4f, 12};
+    const LootContext ctx{64, 12};
     Inventory a{}, b{};
     rng_reset(2026u);
     const int sa = loot_issue(5000, ctx, &rng_lcg, a);
@@ -232,11 +231,14 @@ void test_context_steers_composition() {
         }
         return s;
     };
-    // Три ступени ОДНОЙ лестницы контекста (уровень × опасность × богатство —
-    // все три сходятся в `affix_power`), а не «до порога / после порога».
-    const Sample poor   = measure(LootContext{0,   1.0f, 1});
-    const Sample middle = measure(LootContext{96,  1.4f, 8});
-    const Sample rich   = measure(LootContext{255, 2.0f, 40});
+    // Три ступени ОДНОЙ лестницы контекста (уровень × опасность — обе
+    // сходятся в `affix_power`), а не «до порога / после порога». Третья ось,
+    // богатство места, снесена 2026-10-18 (M-223): она НИКОГДА не двигала ни
+    // одну из этих ступеней, потому что писателя у неё не было, и лестница
+    // стояла на двух осях всё время своей жизни.
+    const Sample poor   = measure(LootContext{0,   1});
+    const Sample middle = measure(LootContext{96,  8});
+    const Sample rich   = measure(LootContext{255, 40});
     CHECK(poor.rounds > 0 && middle.rounds > 0 && rich.rounds > 0,
           "все три контекста обязаны были отработать");
     CHECK(poor.units > 0 && middle.units > 0 && rich.units > 0,
