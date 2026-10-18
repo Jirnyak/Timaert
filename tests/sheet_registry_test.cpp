@@ -280,7 +280,7 @@ void test_the_third_currency_accrues() {
     LevelData ld = default_level_data();
     CHECK(ld.attributePoints == 5 && ld.learnPicks == 5 && ld.perkPoints == 5,
           "creation is the K-K-K budget: 5-5-5 (owner 2026-09-14)");
-    ld.exp = ld.expToNext;
+    ld.exp = exp_to_next_of(ld);   // порог — вывод (M-246а)
     CHECK(try_level_up(ld), "the threshold levels");
     CHECK(ld.attributePoints == 6 && ld.skillPoints == 1 && ld.perkPoints == 6,
           "a level grants 1-1-1: full isotropy, no special levels");

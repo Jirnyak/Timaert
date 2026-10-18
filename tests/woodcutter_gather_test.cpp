@@ -80,7 +80,9 @@ sm::MacroHandle make_woodcutter(sm::MacroStore& st, float x, float y,
     st.runtime[h.slot] = rt;
     st.spawnId[h.slot] = ecs::MacroSpawnId{11u};
     h = sm::handle_at(st, h.slot);
-    st.level[h.slot] = ecs::NpcLevel{std::int16_t(3)};
+    // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
+    st.sheet[h.slot] = make_character_sheet(
+        NPCType::Peasant, 3, leader_sheet_seed(st.spawnId[h.slot].index));
     pools.hp = pools.maxHp = 30;
     st.pools[h.slot] = pools;
     return h;
@@ -208,7 +210,9 @@ void test_the_farmer_works_the_field() {
     st.spawnId[h.slot] = ecs::MacroSpawnId{12u};
     h = sm::handle_at(st, h.slot);
     e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
-    st.level[h.slot] = ecs::NpcLevel{std::int16_t(2)};
+    // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
+    st.sheet[h.slot] = make_character_sheet(
+        NPCType::Peasant, 2, leader_sheet_seed(st.spawnId[h.slot].index));
     pools.hp = pools.maxHp = 20;
     st.pools[h.slot] = pools;
 
@@ -283,7 +287,9 @@ void test_farmer_without_terrain_conjures_nothing() {
     st.runtime[h.slot] = prt;
     st.spawnId[h.slot] = ecs::MacroSpawnId{12u};
     h = sm::handle_at(st, h.slot);
-    st.level[h.slot] = ecs::NpcLevel{std::int16_t(2)};
+    // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
+    st.sheet[h.slot] = make_character_sheet(
+        NPCType::Peasant, 2, leader_sheet_seed(st.spawnId[h.slot].index));
     pools.hp = pools.maxHp = 20;
     st.pools[h.slot] = pools;
 
@@ -375,7 +381,9 @@ void test_the_mine_runs_while_the_player_is_away() {
     st.runtime[h.slot] = rt;
     st.spawnId[h.slot] = ecs::MacroSpawnId{13u};
     h = sm::handle_at(st, h.slot);
-    st.level[h.slot] = ecs::NpcLevel{std::int16_t(3)};
+    // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
+    st.sheet[h.slot] = make_character_sheet(
+        NPCType::Peasant, 3, leader_sheet_seed(st.spawnId[h.slot].index));
     pools.hp = pools.maxHp = 30;
     st.pools[h.slot] = pools;
 
@@ -492,7 +500,9 @@ void test_the_vendor_sells_at_the_nearest_city() {
     st.spawnId[h.slot] = ecs::MacroSpawnId{13u};
     h = sm::handle_at(st, h.slot);
     e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
-    st.level[h.slot] = ecs::NpcLevel{std::int16_t(3)};
+    // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
+    st.sheet[h.slot] = make_character_sheet(
+        NPCType::Peasant, 3, leader_sheet_seed(st.spawnId[h.slot].index));
     pools.hp = pools.maxHp = 25;
     st.pools[h.slot] = pools;
 
@@ -612,7 +622,9 @@ void test_the_miner_works_the_vein() {
     st.spawnId[h.slot] = ecs::MacroSpawnId{13u};
     h = sm::handle_at(st, h.slot);
     e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
-    st.level[h.slot] = ecs::NpcLevel{std::int16_t(3)};
+    // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
+    st.sheet[h.slot] = make_character_sheet(
+        NPCType::Peasant, 3, leader_sheet_seed(st.spawnId[h.slot].index));
     pools.hp = pools.maxHp = 30;
     st.pools[h.slot] = pools;
 
@@ -678,7 +690,9 @@ void test_the_miner_works_the_vein() {
     st2.runtime[h2.slot] = rt;
     st2.spawnId[h2.slot] = ecs::MacroSpawnId{14u};
     h2 = sm::handle_at(st2, h2.slot);
-    st2.level[h2.slot] = ecs::NpcLevel{std::int16_t(3)};
+    // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
+    st2.sheet[h2.slot] = make_character_sheet(
+        NPCType::Peasant, 3, leader_sheet_seed(st2.spawnId[h2.slot].index));
     {
         ecs::Pools p2{};
         p2.hp = p2.maxHp = 30;
@@ -775,7 +789,9 @@ void test_the_catch_lands_as_creatures() {
     st.spawnId[h.slot] = ecs::MacroSpawnId{77u};
     h = sm::handle_at(st, h.slot);
     e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
-    st.level[h.slot] = ecs::NpcLevel{std::int16_t(2)};
+    // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
+    st.sheet[h.slot] = make_character_sheet(
+        NPCType::Peasant, 2, leader_sheet_seed(st.spawnId[h.slot].index));
     pools.hp = pools.maxHp = 20;
     st.pools[h.slot] = pools;
 

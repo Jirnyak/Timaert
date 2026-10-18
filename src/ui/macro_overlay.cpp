@@ -915,8 +915,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                     if (isSquad) {
                         const std::uint16_t rslot2 = r.subject.squad.slot;
                         const auto& hp  = st.pools[rslot2];
-                        const auto& lvl = st.level[rslot2];
-                        ImGui::TextDisabled("Lv.%d", int(lvl.value));
+                        ImGui::TextDisabled("Lv.%d", squad_level(st, rslot2));
                         ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 90, 90, 255));
                         ImGui::Text("%d/%d", int(hp.hp), int(hp.maxHp));
                         ImGui::PopStyleColor();

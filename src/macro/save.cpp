@@ -147,12 +147,12 @@ constexpr std::uint64_t kSheetBytes =                // лист опциона�
 constexpr std::uint64_t kMacroNpcBytes =             // write_macro_npc
     sizeof(MacroNpcRecord::spawnId) + sizeof(MacroNpcRecord::cell)
     + sizeof(MacroNpcRecord::sub) + sizeof(MacroNpcRecord::kind)
-    + sizeof(MacroNpcRecord::pools) + sizeof(MacroNpcRecord::level)
+    + sizeof(MacroNpcRecord::pools)   // поле `level` умерло: M-246а
     + sizeof(MacroNpcRecord::runtime) + sizeof(MacroNpcRecord::traits)
     + sizeof(MacroNpcRecord::character) + sizeof(MacroNpcRecord::name)
     + sizeof(MacroNpcRecord::orders)
     + kSpellBookBytes
-    + sizeof(MacroNpcRecord::hasSheet) + kSheetBytes
+    + kSheetBytes   // флаг `hasSheet` умер: M-246а
     + sizeof(MacroNpcRecord::hasOrders) + sizeof(MacroNpcRecord::dead)
     + sizeof(MacroNpcRecord::playerFlag)   // 5б: флажок игрока — колонкой
     + sizeof(MacroNpcRecord::playerHome)   // M-255: «кто оригинал» — тоже
@@ -641,21 +641,21 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     w.pod(m.sub);    // v139: доля клетки (M-244a; здесь ехал MacroVisual)
     w.pod(m.kind);
     w.pod(m.pools);
-    w.pod(m.level);
     w.pod(m.runtime);
     w.pod(m.traits);
     w.pod(m.character);
     w.pod(m.name);   // v119: имя анкеты — колонка (вердикт 3)
     w.pod(m.orders);
     write_spell_book(w, m.book);   // v89: knowledge is the body's (§41 root 3)
-    // v90: the OWNED sheet of a named character, opt-in like orders — the
-    // ММОРПГ-модель's whole point is that his campaign rides the save.
-    w.pod(m.hasSheet);
-    if (m.hasSheet) {
-        w.pod(m.sheet.attributes);
-        w.pod(m.sheet.skills);
-        w.pod(m.sheet.levelData);   // v100: grew perkPoints (third K, S14)
-    }
+    // АНКЕТА ЕДЕТ БЕЗУСЛОВНО (M-246а): опт-ин `hasSheet` умер. Он был
+    // мёртвым флагом с флипа колонок — снимок ставил его 1 ВСЕГДА
+    // (macro_snapshot.cpp), потому что колонка листа есть у каждого слота,
+    // и ветка «листа нет» была недостижима. Держать уровень и опыт внутри
+    // опционального блока после их переезда в анкету значило бы сделать
+    // ОБЯЗАТЕЛЬНУЮ величину мира условной.
+    w.pod(m.sheet.attributes);
+    w.pod(m.sheet.skills);
+    w.pod(m.sheet.levelData);   // v100: grew perkPoints (third K, S14)
     w.pod(m.hasOrders);
     w.pod(m.dead);
     w.pod(m.playerFlag);   // 5б: «этот сквад — игрок», колонка анкеты
@@ -675,20 +675,16 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     r.pod(m.sub);    // v139
     r.pod(m.kind);
     r.pod(m.pools);
-    r.pod(m.level);
     r.pod(m.runtime);
     r.pod(m.traits);
     r.pod(m.character);
     r.pod(m.name);   // v119
     r.pod(m.orders);
     read_spell_book(r, m.book);    // v89
-    r.pod(m.hasSheet);             // v90
-    if (!r.ok || m.hasSheet > 1) { r.ok = false; return; }
-    if (m.hasSheet) {
-        r.pod(m.sheet.attributes);
-        r.pod(m.sheet.skills);
-        r.pod(m.sheet.levelData);   // v100
-    }
+    if (!r.ok) return;
+    r.pod(m.sheet.attributes);     // M-246а: безусловно, `hasSheet` умер
+    r.pod(m.sheet.skills);
+    r.pod(m.sheet.levelData);      // v100
     r.pod(m.hasOrders);
     r.pod(m.dead);
     r.pod(m.playerFlag);   // 5б

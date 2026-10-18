@@ -41,7 +41,7 @@ sm::MacroHandle npc_squad(sm::MacroStore& st, float x, float y,
     st.sub[h.slot] = {};   // доля клетки: центр (M-244a)
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Bandit),
                                    std::uint16_t(faction_index("bandits"))};
-    st.level[h.slot] = ecs::NpcLevel{std::int16_t(2)};
+    st.sheet[h.slot].levelData.level = 2;   // уровень — анкета (M-246а)
     st.pools[h.slot] = ecs::Pools{50, 50};
     st.spawnId[h.slot] = ecs::MacroSpawnId{ordinal};
     h = sm::handle_at(st, h.slot);
@@ -316,7 +316,8 @@ void test_the_entity_numbers_are_not_stale() {
           "negative control: that ceiling did MOVE — the check above is not "
           "comparing two copies of the same stale number");
     CHECK(hp.sp == -6, "the exhaustion DEBT survives the rescale, unclamped");
-    CHECK(wStore_->level[e.slot].value == 4, "and he is level 4 to the map");
+    CHECK(sm::squad_level(*wStore_, e.slot) == 4,
+          "and he is level 4 to the map — ОДНОЙ дверью над анкетой (M-246а)");
     const auto& cellNow = wStore_->cell[e.slot];
     CHECK(ecs::cell_x(cellNow, 64) == 33 && ecs::cell_y(cellNow, 64) == 44,
           "the entity stands where he stands");

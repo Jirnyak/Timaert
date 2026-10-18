@@ -107,7 +107,9 @@ sm::MacroHandle make_walker(sm::MacroStore& st, int mapW, float x, float y,
     st.runtime[h.slot] = rt;
     st.spawnId[h.slot] = ecs::MacroSpawnId{7u};
     h = sm::handle_at(st, h.slot);
-    st.level[h.slot] = ecs::NpcLevel{std::int16_t(1)};
+    // Уровень — АНКЕТА (M-246а), той же дверью, какой рождает make_npc.
+    st.sheet[h.slot] = make_character_sheet(
+        NPCType::Peasant, 1, leader_sheet_seed(st.spawnId[h.slot].index));
     // Three bars, one block (pools landing): the legs' bar is filled here
     // beside the wound, not in the march runtime.
     ecs::Pools pools{};

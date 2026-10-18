@@ -113,8 +113,6 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
         // Тело игрока — маска строки Adventurer (M-183).
         gear_init(st.gear[h.slot].gear, npc_def(NPCType::Adventurer).slots);
         const CharacterSheet& sheet = st.sheet[h.slot];
-        st.level[h.slot] = ecs::NpcLevel{
-            std::int16_t(std::max(1, sheet.levelData.level))};
         ecs::Pools& pools = st.pools[h.slot];
         {
             Rng faceRng(kPlayerDefaultFaceSeed);
@@ -158,8 +156,11 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
     // ── No position projection any more ──────────────────────────────────
     // The MacroCell of this record IS where he stands (подпосадка 4): the
     // walker steps it, the jump door writes it, the snapshot restores it.
-    st.level[home.slot] = ecs::NpcLevel{std::int16_t(
-        std::max(1, st.sheet[home.slot].levelData.level))};
+    //
+    // ЗДЕСЬ СТОЯЛО ЗЕРКАЛО УРОВНЯ В КОЛОНКУ `ecs::NpcLevel` (M-246а) — оно
+    // переписывало вывод из анкеты на КАЖДОМ звонке этой двери, то есть и
+    // после загрузки. Колонки больше нет: уровень игрока читается там же,
+    // где уровень всякого сквада, — `squad_level` над его анкетой.
 
     // ── The flag ──────────────────────────────────────────────────────────
     // Exactly one flag holder exists at a time — «кем я на карте» — and it

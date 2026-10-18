@@ -672,7 +672,7 @@ int spawn_tracked_body(SubObjects& objs, MacroStore& st, MacroHandle macro,
     // What it is, whose it is and how senior it is are read from the record
     // itself — a tracked body has no second opinion about its own identity.
     body.faction   = kind.factionIdx;
-    body.level     = normalize_soldier_level(int(st.level[macro.slot].value));
+    body.level     = normalize_soldier_level(squad_level(st, macro.slot));
     body.seed      = seed;
     body.combatant = combatant;
     // HIMSELF, not a namesake: the record the macro layer keeps (owned by a

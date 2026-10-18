@@ -467,7 +467,7 @@ void collect_subcap(std::vector<Site>& out) {
 //   · ЗНАКОВЫЕ — им минус законен голым (ЗАКОН ТИПА п.2, и двери отказываются
 //     собираться знаковым типом): `ItemRef::count` i32 — ВЕСЬ контейнер;
 //     `playerGold` int; `SquadUpkeep::needDebt` i32; `FactionState::owedValue`
-//     i64; `purse` и `outSeason` long long; `exp`/`expToNext`/`wageDebt` int;
+//     i64; `purse` и `outSeason` long long; `exp`/`wageDebt` int;
 //     буферы диффузии следа и угрозы i32/i64;
 //   · ФЛОАТ: таймеры, дробные переносы, пулы, геометрия — а HP в минусе есть
 //     ЗАКОН, не авария (ЗАКОН КЛАМПА «ноль здоровья — СОБЫТИЕ»), так что

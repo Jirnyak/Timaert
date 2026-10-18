@@ -21,7 +21,6 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(const MacroStore& st) {
         m.sub       = st.sub[slot];
         m.kind      = st.kind[slot];
         m.pools     = st.pools[slot];
-        m.level     = st.level[slot];
         m.runtime   = st.runtime[slot];
         m.traits    = st.traits[slot];
         m.character = st.character[slot];
@@ -38,14 +37,14 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(const MacroStore& st) {
         }
         m.wellbeing = st.wellbeing[slot];
         m.interests = st.interests[slot];
-        // Колонки у всех (закон гладкой памяти): предикаты формата прежние —
-        // «есть приказ» = waypointCount > 0, «есть лист» = у всех с флипа.
+        // Колонки у всех (закон гладкой памяти). Опт-ин остался ОДИН —
+        // «есть приказ» = waypointCount > 0; у листа его больше нет
+        // (M-246а: флаг `hasSheet` был 1 всегда, значит ничего не решал).
         if (st.orders[slot].waypointCount > 0) {
             m.orders = st.orders[slot];
             m.hasOrders = 1;
         }
         m.sheet = st.sheet[slot];
-        m.hasSheet = 1;
         m.designOrdinal = st.designTag[slot].ordinal;
         m.gear = st.gear[slot].gear;
         m.dead = st.dead[slot] ? 1 : 0;
@@ -81,7 +80,6 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
         st.sub[h.slot]       = m.sub;
         st.kind[h.slot]      = m.kind;
         st.pools[h.slot]     = m.pools;
-        st.level[h.slot]     = m.level;
         st.runtime[h.slot]   = m.runtime;
         st.traits[h.slot]    = m.traits;
         st.character[h.slot] = m.character;
@@ -98,7 +96,7 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
         st.wellbeing[h.slot] = m.wellbeing;
         st.interests[h.slot] = m.interests;
         if (m.hasOrders) st.orders[h.slot] = m.orders;
-        if (m.hasSheet) st.sheet[h.slot] = m.sheet;
+        st.sheet[h.slot] = m.sheet;
         st.designTag[h.slot] = ecs::DesignCharacterTag{m.designOrdinal};
         st.gear[h.slot] = ecs::BodyEquipment{m.gear};
         if (m.dead) st.dead[h.slot] = 1;

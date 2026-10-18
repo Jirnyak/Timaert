@@ -604,7 +604,9 @@ MacroSeeds seed_macro_npcs(sm::MacroStore& st, int mapW) {
             sm::ecs::cell_index(cx, cy, 1024)};
         st.kind[h.slot] = sm::ecs::NPCKind{std::uint16_t(type), faction};
         st.pools[h.slot] = sm::ecs::Pools{hp, maxHp};
-        st.level[h.slot] = sm::ecs::NpcLevel{level};
+        // Уровень — АНКЕТА (M-246а), той же дверью, какой рождает make_npc.
+        st.sheet[h.slot] = sm::make_character_sheet(
+            type, level, sm::leader_sheet_seed(st.spawnId[h.slot].index));
         sm::ecs::NpcCharacter ch{};
         ch.visualSeed = vseed;
         // Отличимое от дефолта телосложение: лицо на теле не хранится
@@ -650,7 +652,7 @@ bool run_beast_member_projection_case(
     stl.kind[hl.slot] = sm::ecs::NPCKind{std::uint16_t(sm::NPCType::Bandit),
                                          std::uint16_t(3)};
     stl.pools[hl.slot] = sm::ecs::Pools{10, 10};
-    stl.level[hl.slot] = sm::ecs::NpcLevel{std::int16_t(3)};
+    stl.sheet[hl.slot].levelData.level = 3;   // уровень — анкета (M-246а)
     {
         auto& bag = stl.inventory[hl.slot];
         sm::creatures_push(bag.inv, sm::make_soldier(kBeast, 2, 5001u));
@@ -1029,7 +1031,7 @@ bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
     st.kind[reborn.slot] = sm::ecs::NPCKind{
         std::uint16_t(sm::NPCType::Guard), 2};
     st.pools[reborn.slot] = sm::ecs::Pools{9, 9};
-    st.level[reborn.slot] = sm::ecs::NpcLevel{std::int16_t(2)};
+    st.sheet[reborn.slot].levelData.level = 2;   // уровень — анкета (M-246а)
     {
         sm::ecs::NpcCharacter ch{};
         ch.visualSeed = 0xFEEDu;
@@ -1252,7 +1254,7 @@ int main() {
         stq.kind[hq.slot] = sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit), std::uint16_t(3)};
         stq.pools[hq.slot] = sm::ecs::Pools{10, 10};
-        stq.level[hq.slot] = sm::ecs::NpcLevel{std::int16_t(7)};
+        stq.sheet[hq.slot].levelData.level = 7;   // уровень — анкета (M-246а)
 
         // HIS sheet — deliberately NOT the one his row and level would roll
         // from the cell seed, so "he arrived as himself" is a claim that can
@@ -1330,7 +1332,7 @@ int main() {
         stq.kind[hq.slot] = sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit), std::uint16_t(3)};
         stq.pools[hq.slot] = sm::ecs::Pools{40, 40};
-        stq.level[hq.slot] = sm::ecs::NpcLevel{std::int16_t(5)};
+        stq.sheet[hq.slot].levelData.level = 5;   // уровень — анкета (M-246а)
 
         // Both bodies are created BEFORE any pointer is taken: a spawn
         // reallocates component storage, and a reference held across one is
@@ -1418,7 +1420,7 @@ int main() {
         stq.kind[hq.slot] = sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit), std::uint16_t(3)};
         stq.pools[hq.slot] = sm::ecs::Pools{50, 50};
-        stq.level[hq.slot] = sm::ecs::NpcLevel{std::int16_t(6)};
+        stq.sheet[hq.slot].levelData.level = 6;   // уровень — анкета (M-246а)
 
         const int sBody = sm::sub::spawn_tracked_body(
             objs, stq, hq, 32.0f, 32.0f,

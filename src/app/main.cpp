@@ -963,7 +963,7 @@ void draw_pre_battle_modal(App& app) {
         sm::npc_def(sm::NPCType(std::uint8_t(kind.type)));
     // Имя — колонка анкеты, одна дверь чтения (вердикт 3, ход 2).
     const char* name = sm::squad_name(st, npc.slot);
-    const int level = st.level[npc.slot].value;
+    const int level = sm::squad_level(st, npc.slot);
     ImGui::Text("%s the %s (level %d) blocks your way!",
                 name, def.label, level);
     if (const sm::Inventory* bag = &st.inventory[npc.slot].inv;
@@ -4393,7 +4393,7 @@ void register_console_commands(App& app) {
             c.printfln(Lvl::Ok, "squad #%u: %s (level %d) + %d x %s",
                        app.macroStore->spawnId[leader.slot].index,
                        sm::npc_def(spec.leaderType).label,
-                       int(app.macroStore->level[leader.slot].value),
+                       sm::squad_level(*app.macroStore, leader.slot),
                        members, sm::npc_def(memberKind).label);
             return true;
         });
@@ -4617,7 +4617,8 @@ void register_console_commands(App& app) {
             auto& ld = sheet->levelData;
             const int gained = sm::award_exp(ld, amount);
             c.printfln(Lvl::Ok, "exp +%d -> level %d (%d gained), %d/%d to next",
-                       amount, ld.level, gained, ld.exp, ld.expToNext);
+                       amount, ld.level, gained, ld.exp,
+                       sm::exp_to_next_of(ld));
             return true;
         });
 
@@ -4631,7 +4632,8 @@ void register_console_commands(App& app) {
             auto& ld = sheet->levelData;
             const int before = ld.level;
             for (int i = 0; i < n; ++i) {
-                if (ld.exp < ld.expToNext) ld.exp = ld.expToNext;
+                if (ld.exp < sm::exp_to_next_of(ld))
+                    ld.exp = sm::exp_to_next_of(ld);
                 sm::try_level_up(ld);
             }
             c.printfln(Lvl::Ok, "level %d -> %d  (%d attr, %d skill pts avail)",
@@ -4936,7 +4938,7 @@ void register_console_commands(App& app) {
             const sm::ecs::Pools& cs = player_pools(app);
             c.printfln(Lvl::Ok,
                        "level %d  exp %d/%d  points: %d attr, %d skill, %d learn",
-                       ld.level, ld.exp, ld.expToNext, ld.attributePoints,
+                       ld.level, ld.exp, sm::exp_to_next_of(ld), ld.attributePoints,
                        ld.skillPoints, ld.learnPicks);
             c.printfln(Lvl::Info, "HP %d/%d  MP %d/%d  SP %d/%d", cs.hp,
                        cs.maxHp, cs.mp, cs.maxMp, cs.sp, cs.maxSp);
@@ -5384,7 +5386,7 @@ void draw_debug_panels(App& app) {
                 const sm::CharacterSheet* ps = sm::player_sheet(app.gs, *app.macroStore);
                 const sm::LevelData ld = ps ? ps->levelData : sm::LevelData{};
                 ImGui::Text("level   %d   (exp %d / %d)",
-                            ld.level, ld.exp, ld.expToNext);
+                            ld.level, ld.exp, sm::exp_to_next_of(ld));
                 const sm::ecs::Pools& pools = player_pools(app);
                 ImGui::Text("hp      %d / %d", pools.hp, pools.maxHp);
                 ImGui::Text("mp      %d / %d", pools.mp, pools.maxMp);

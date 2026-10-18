@@ -32,7 +32,7 @@ namespace sm {
 // the player's squad included: the sheet is the law, and everything derived
 // from it — the three bar ceilings AND the four cached scalars a march reads
 // (ecs::MacroNpcRuntime) — is refreshed here and nowhere else. Called by
-// make_npc at birth, by award_leader_xp when a level changes the sheet, by
+// make_npc at birth, by award_kill_xp when a level changes the sheet, by
 // the player's creation / point-spend / gear-change moments through the same
 // signature. It grew out of `refresh_leader_travel_stats` (maxSp + caches)
 // when landing 4 made the lord's fraction-preserving level-up rescale THE
@@ -181,6 +181,25 @@ inline const char* squad_name(const MacroStore& st, std::uint16_t slot) {
     const NPCType kind = raw < std::uint16_t(NPCType::Count)
         ? NPCType(std::uint8_t(raw)) : NPCType::Peasant;
     return npc_def(kind).label;
+}
+
+// ── УРОВЕНЬ СКВАДА — ОДНА ДВЕРЬ НАД АНКЕТОЙ (ЗАКОН АНКЕТЫ, M-246а) ───────
+// Владелец, дословно: «анкета источник». Здесь жила колонка `ecs::NpcLevel`
+// РЯДОМ с `sheet.levelData.level` — два ответа на один вопрос о мире, и
+// приговор ей закон вынес раньше наряда. Колонка умерла 2026-10-18; всякий
+// вопрос «какой он уровня» читает ЭТУ дверь.
+//
+// И СНОС БЫЛ НЕ КОСМЕТИКОЙ — КОЛОНКА ДЕРЖАЛА ЖИВОЙ БАГ, НЕДОСТУПНЫЙ АНКЕТЕ
+// ПО ПОСТРОЕНИЮ. Колонка умела быть НУЛЁМ: `birth_place` её не писал вовсе,
+// а рождение слота обнуляет (`store_birth`). Нулевой уровень обнулял и
+// кривую — `exp_to_next_level(0)` = 0 (`anketa.h`), — поэтому `while (xp >=
+// порог)` срабатывал на ЛЮБОМ положительном xp, и первая же победа
+// неподвижного сквада выдавала ему даровой уровень, а вместе с ним перекат
+// анкеты из сида (см. шрам у двери роста ниже). В анкете нуля не бывает:
+// `LevelData::level = 1` по умолчанию, и `make_character_sheet` клампит
+// `level < 1` в 1 — то есть после этой двери нулевой порог НЕВЫРАЗИМ.
+inline int squad_level(const MacroStore& st, std::uint16_t slot) {
+    return st.sheet[slot].levelData.level;
 }
 
 inline MacroHandle macro_handle_by_spawn_id(const MacroStore& st,
@@ -550,18 +569,38 @@ inline CharacterSheet* owned_sheet(MacroStore& st, MacroHandle h) {
         ? &st.sheet[h.slot] : nullptr;
 }
 
-// Лист по хэндлу — та же онтология, целиком по колонкам (без entt; после 1е
-// это единственная макро-дверь). Протухший хэндл отвечает дефолтным
+// Лист по хэндлу — ОДИН ОТВЕТ: КОЛОНКА. Протухший хэндл отвечает дефолтным
 // деривативом — читатель обязан был спросить valid() раньше.
+//
+// ЗДЕСЬ СТОЯЛ ДУАЛИЗМ owned/derived, И ОН БЫЛ ВТОРЫМ ОТВЕТОМ НА «ЧЕЙ ЛИСТ
+// ИСТИНА» (DOD п.6, снесён 2026-10-18 вместе с колонкой уровня). Ветка
+// спрашивала `sheet_owned_at` и невладеющему скваду ПЕРЕВЫВОДИЛА лист из
+// `(строка существа, колонка уровня, сид ординала)` вместо того, чтобы
+// прочитать колонку. Умерла она потому, что её предпосылка исчезла ещё
+// 2026-09-25: колонка листа есть у ВСЕХ слотов и пишется КАЖДЫМ рождением
+// (`npc_spawn.cpp`, `place_birth.h`, `player_entity.cpp`, restore снапшота),
+// и `npc_spawn.cpp` об этом прямо говорит — «дуализм owned/derived умер
+// здесь». Умер он на одной стороне: писатель перестал деривировать, а
+// ЧИТАТЕЛЬ продолжал, ещё три недели.
+//
+// ЦЕНА ДУАЛИЗМА, НАЗВАННАЯ ЧИСЛОМ. У сквада, рождённого `birth_place`,
+// предикат владения ложен по всем трём термам (строка существа нулевая и не
+// именная, тег анкеты −1, бит дома 0), поэтому дверь ИГНОРИРОВАЛА его
+// анкету и отдавала бросок строки `Peasant`. Город и деревня — ровно два
+// непустых листа таблицы `kLandmarkSheets@src/macro/characters.h`, и все их
+// 12 заполненных ячеек (Blacksmith/Tailoring/Masonry/Alchemy/Trade + Cha)
+// дверь не видела НИ РАЗУ: числа жили только для прямых читателей колонки.
+// Веса роли `Peasant` дают этим пяти ремёслам вес 0 (`tables/npc.h`), так
+// что бросок не мог их родить даже случайно, а `recipe_known` отказывает
+// всем 11 строкам `kRecipes` — то есть через эту дверь мир видел сквад,
+// который не умеет НИЧЕГО, при анкете, которая умеет всё.
+//
+// `sheet_owned_at` ОСТАЁТСЯ, И ЭТО НЕ ОСТАТОК: он отвечает на ДРУГОЙ вопрос
+// — «владеет ли сквад своим листом», то есть надо ли писать в него рост.
 inline CharacterSheet sheet_of(const MacroStore& st, MacroHandle h) {
     if (!st.valid(h))
         return make_character_sheet(NPCType::Peasant, 1, leader_sheet_seed(0));
-    if (sheet_owned_at(st, h.slot)) return st.sheet[h.slot];
-    const auto& kind = st.kind[h.slot];
-    const NPCType type = kind.type < std::uint16_t(NPCType::Count)
-        ? NPCType(std::uint8_t(kind.type)) : NPCType::Peasant;
-    return make_character_sheet(type, int(st.level[h.slot].value),
-                                leader_sheet_seed(st.spawnId[h.slot].index));
+    return st.sheet[h.slot];
 }
 
 // WHAT STANDS ON A MACRO BODY, summed once: what it is wearing
@@ -861,7 +900,7 @@ inline AutoBattleSide auto_battle_side_of(const MacroStore& st, MacroHandle h) {
     if (st.kind[slot].type < std::uint16_t(NPCType::Count)) {
         s.leaderType = NPCType(std::uint8_t(st.kind[slot].type));
     }
-    s.leaderLevel = normalize_soldier_level(st.level[slot].value);
+    s.leaderLevel = normalize_soldier_level(squad_level(st, slot));
     s.leaderSeed  = leader_sheet_seed(st.spawnId[slot].index);
     {
         const ecs::Pools& hp = st.pools[slot];
@@ -892,88 +931,65 @@ inline AutoBattleSide auto_battle_side_of(const MacroStore& st, MacroHandle h) {
     return s;
 }
 
-// Pay a leader's victory. XP flows through the ONE reward law
+// Pay a squad's victory. XP flows through the ONE reward law
 // (npc_xp_reward) and is consumed by the SAME curve the player climbs
-// (exp_to_next_level); a level gained recomputes the leader's macro ceiling
-// from a sheet of the new level while PRESERVING the wound fraction — the
-// currency wounds already travel in. This is what makes the "wandering tsar"
-// a data row: any leader that wins fights, levels.
-// ── ОПЛАТА УБИЙСТВА: ОДНА дверь для любого лидера ────────────────────────
+// (exp_to_next_level, inside award_exp); a level gained recomputes the
+// body's ceilings from its OWN grown sheet while PRESERVING the wound
+// fraction — the currency wounds already travel in. This is what makes the
+// "wandering tsar" a data row: any squad that wins fights, levels.
+// ── ОПЛАТА УБИЙСТВА: ОДНА дверь роста для ВСЯКОГО сквада ─────────────────
 // §41 корень 5, вердикт владельца 2026-09-10: «байт умирает; жнец резолвит
-// лидера убийцы для ВСЕХ — игрок просто лидер своего сквада». Лидер с
-// ВЛАДЕЕМЫМ листом (игрок, именованный, анкета) растёт как игрок: exp в
-// лист с WIS-дивидендом его эффективного листа, очки атрибутов/скиллов
-// КОПЯТСЯ нетраченными до контента трат (учителя/ИИ-траты — вердикт
-// «копить»); уровень на карте и потолки полос следуют за листом через ту
-// же одну дверь пересборки. Транзиент — прежний бросок (award_leader_xp
-// ниже): его лист деривируется, хранить нечего.
-
-inline int award_leader_xp(MacroStore& st, MacroHandle h, int xp) {
+// лидера убийцы для ВСЕХ — игрок просто лидер своего сквада». Всякий сквад
+// растёт ЧЕРЕЗ СВОЮ АНКЕТУ: exp в лист с WIS-дивидендом его эффективного
+// листа, очки атрибутов/скиллов КОПЯТСЯ нетраченными до контента трат
+// (учителя/ИИ-траты — вердикт «копить»); потолки полос следуют за листом
+// через ту же одну дверь пересборки.
+//
+// ЗДЕСЬ БЫЛО ДВА ЗАКОНА РОСТА, И ВТОРОЙ СТИРАЛ АНКЕТЫ (слиты 2026-10-18,
+// вердикт владельца «одна дверь роста для всех»). Невладеющий лист шёл в
+// `award_leader_xp`, которая копила опыт в СВОЕЙ колонке `runtime.xp`, вела
+// СВОЙ счёт уровней по колонке `ecs::NpcLevel` и на каждом уровне
+// ПЕРЕКАТЫВАЛА анкету из сида — `st.sheet[slot] = make_character_sheet(…)`.
+// Для сквада, чья анкета пришла не броском, а ТАБЛИЦЕЙ, это было стирание:
+// город и деревня теряли все свои ремёсла и торговлю НАВСЕГДА (веса роли
+// `Peasant` дают этим пяти ранга́м вес 0, то есть обратно они не отрастают
+// по построению), и мир переставал производить. Достижимо это было одной
+// победой: индекс сквадов фильтрует только `dead`, поэтому неподвижный
+// сквад — законный противник автобоя и законный победитель.
+//
+// ЗАКОН АНКЕТЫ п.4 и назвал верную форму заранее: «ПУСТОЙ ЛИСТ ЕСТЬ
+// ЗАКОННОЕ ЗНАЧЕНИЕ… Отдельной ветки „а это место“ для них не нужно:
+// пустота — значение, а не исключение». Одна дверь, ветки по владению нет.
+//
+// ЧТО УМЕРЛО ВМЕСТЕ С ВТОРЫМ ЗАКОНОМ: колонка `ecs::NpcLevel` (уровень —
+// `levelData.level`, M-246а) и колонка `runtime.xp` (опыт — `levelData.exp`,
+// и он уже ехал в сейв внутри листа; её единственные писатель и читатель
+// жили ВНУТРИ снесённой функции, то есть она была сиротой по DOD п.9).
+//
+// БАЛАНСНОЕ СЛЕДСТВИЕ, НАЗВАННОЕ ВСЛУХ (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ): у
+// транзиентных сквадов атрибуты и ранги больше не добираются сами на
+// уровне-апе — очки КОПЯТСЯ нетраченными, как у игрока и именных. До
+// контента трат такой сквад слабее прежнего; это калибровка, и двигать её
+// надо числами, а не возвратом второго закона.
+inline int award_kill_xp(MacroStore& st, MacroHandle h, int xp) {
     if (xp <= 0 || !st.valid(h)) return 0;
     const std::uint16_t slot = h.slot;
-    ecs::MacroNpcRuntime& rt = st.runtime[slot];
-    ecs::NpcLevel& lvl = st.level[slot];
-    rt.xp += xp;
-    int gained = 0;
-    while (rt.xp >= exp_to_next_level(lvl.value)) {
-        rt.xp -= exp_to_next_level(lvl.value);
-        lvl.value = std::int16_t(
-            std::min<int>(kMaxSoldierLevel, lvl.value + 1));
-        ++gained;
-    }
-    if (gained > 0
-        && st.kind[slot].type < std::uint16_t(NPCType::Count)) {
-        const NPCType type = NPCType(std::uint8_t(st.kind[slot].type));
-        const std::uint32_t seed = leader_sheet_seed(st.spawnId[slot].index);
-        // The new level's sheet — rolled by the one growth law. A
-        // NAMED leader OWNS his: the roll is WRITTEN into his
-        // component (ММОРПГ-модель — the campaign persists; a
-        // future teacher diverges it from the seed and nothing
-        // here overwrites that day's hand-spent points… until
-        // content adds spending, the roll and the store agree by
-        // construction). A transient's roll is used and dropped.
-        // (Колонка листа есть у ВСЕХ — бросок пишется всем, как писала
-        // entt-дверь через body_state<CharacterSheet>; закон ВЛАДЕНИЯ
-        // живёт в owned_sheet, не здесь.)
-        const CharacterSheet grown =
-            make_character_sheet(type, lvl.value, seed);
-        st.sheet[slot] = grown;
-        // Ceilings, fractions and march caches all follow the new
-        // level's sheet through THE one refresh door above. The
-        // fraction-preserving arithmetic that used to be spelled out
-        // here, bar by hand-written bar, IS that door now — a bar
-        // added to Pools and forgotten in a hand-written fold is the
-        // project's oldest bug shape.
-        refresh_body_from_sheet(st.pools[slot], &rt, grown, type);
-    }
-    return gained;
-}
-
-inline void award_kill_xp(MacroStore& st, MacroHandle h, int xp) {
-    if (xp <= 0 || !st.valid(h)) return;
-    CharacterSheet* own = owned_sheet(st, h);
-    if (!own) {
-        // Транзиент: бросок из ординала, как жил всегда.
-        award_leader_xp(st, h, xp);
-        return;
-    }
+    CharacterSheet& own = st.sheet[slot];
     const CharacterSheet eff = effective_sheet_of(st, h);
-    const int before = own->levelData.level;
-    award_exp(own->levelData, xp,
-              calculate_derived(eff.attributes, eff.skills).expMultPct);
-    if (own->levelData.level != before) {
-        // Уровень на карте и потолки следуют за листом — та же пара
-        // движений, что у транзиента в award_leader_xp, но лист НЕ
-        // перекатывается из сида: владеемое владеем (ММОРПГ-модель).
-        const std::uint16_t slot = h.slot;
-        st.level[slot].value = std::int16_t(
-            std::min<int>(kMaxSoldierLevel, own->levelData.level));
+    const int gained = award_exp(
+        own.levelData, xp,
+        calculate_derived(eff.attributes, eff.skills).expMultPct);
+    if (gained > 0) {
+        // Потолки и доли следуют за листом через ТУ ЖЕ одну дверь
+        // пересборки. Строка существа — только для боевого листа тела;
+        // нулевая/неизвестная отвечает `Peasant`, как и всюду.
         const NPCType type =
             st.kind[slot].type < std::uint16_t(NPCType::Count)
                 ? NPCType(std::uint8_t(st.kind[slot].type)) : NPCType::Peasant;
         refresh_body_from_sheet(st.pools[slot], &st.runtime[slot],
                                 effective_sheet_of(st, h), type);
     }
+    return gained;
 }
 
 // ── The settling halves — one set of doors for EVERY consumer ──────────────
@@ -1053,7 +1069,7 @@ inline void report_battle_deaths(const MacroWorld& mw, const MacroStore& st,
                                     : std::uint16_t(0),
                      side, killer, -1,
                      normalize_soldier_level(
-                         st.valid(side) ? int(st.level[side.slot].value) : 1),
+                         st.valid(side) ? squad_level(st, side.slot) : 1),
                      factionId);
     }
 }
@@ -1113,7 +1129,7 @@ inline int xp_for_fallen(const MacroStore& st, MacroHandle loser,
         && st.kind[loser.slot].type < std::uint16_t(NPCType::Count)) {
         xp += npc_xp_reward(
             NPCType(std::uint8_t(st.kind[loser.slot].type)),
-            normalize_soldier_level(int(st.level[loser.slot].value)));
+            normalize_soldier_level(squad_level(st, loser.slot)));
     }
     return xp;
 }

@@ -131,7 +131,7 @@ inline constexpr std::size_t kMacroStoreRowBytes =
     sizeof(ecs::MacroSpawnId) + sizeof(ecs::MacroCell) + sizeof(ecs::NPCKind)
     + sizeof(ecs::CellSub) + sizeof(ecs::NpcCharacter)
     + sizeof(ecs::SquadName)          // имя анкеты (ход 2, вердикт 3)
-    + sizeof(ecs::NpcLevel) + sizeof(ecs::NpcTraits) + sizeof(ecs::Pools)
+    + sizeof(ecs::NpcTraits) + sizeof(ecs::Pools)   // NpcLevel умер: M-246а
     + sizeof(ecs::MacroNpcRuntime) + sizeof(SpellBook)
     + sizeof(ecs::SquadUpkeep)
     + sizeof(Wellbeing)               // благополучие анкеты (M-90 флип)
@@ -165,8 +165,8 @@ inline constexpr std::size_t kScarRows = 2u;
 // ── СТОРОЖ (1): РАЗМЕР СТРОКИ ────────────────────────────────────────────
 // Каждое число выведено из формы строки, а не замерено «как вышло». Разъехался
 // вывод с правдой — компилятор говорит об этом здесь, а не проза где-то.
-static_assert(sizeof(ecs::MacroNpcRuntime) == 84,
-              "строка марша: 84 Б × 16384 = 1.31 МиБ");
+static_assert(sizeof(ecs::MacroNpcRuntime) == 80,
+              "строка марша: 80 Б × 16384 = 1.25 МиБ");
 static_assert(sizeof(ecs::Pools) == 36, "строка полос");
 static_assert(sizeof(ecs::CellSub) == 2, "доля клетки (M-244)");
 static_assert(sizeof(ecs::NpcCharacter) == 12, "строка лица");

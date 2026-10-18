@@ -21,6 +21,7 @@
 #include "core/torus.h"
 #include "ecs/components.h"
 #include "macro/store.h"
+#include "macro/squad.h"   // squad_level — дверь уровня над анкетой (M-246а)
 
 #include <cstdio>
 
@@ -66,8 +67,8 @@ void run_spawn_contract() {
         CHECK(kind.factionIdx == std::uint16_t(sm::faction_index("bandits")),
               "and the faction comes from the ONE registry, resolved by name "
               "at the border and carried as an ordinal");
-        const auto& lvl = st.level[slot];
-        CHECK(lvl.value == 3, "the level asked for is the level pinned");
+        CHECK(sm::squad_level(st, slot) == 3,
+              "the level asked for is the level pinned — в АНКЕТЕ (M-246а)");
         const auto& pc = st.cell[slot];
         // find_valid_spawn scatters within +-6 cells of the wrapped target.
         const float d2 = sm::torus_dist_sq(

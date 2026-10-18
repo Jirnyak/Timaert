@@ -361,7 +361,7 @@ void test_effect_applicator_ts_verbs() {
     bag.add("coin_empire_copper", 10);
     sheet.levelData = sm::default_level_data();
     sheet.levelData.exp = 0;
-    sheet.levelData.expToNext = 100;
+    // Порог — ВЫВОД из уровня (M-246а): его не задают, его назначает уровень.
 
     std::vector<sm::GameEvent> events;
     // НЕГАТИВНЫЙ КОНТРОЛЬ ВЫДАЧИ (M-139, вердикт владельца 2026-09-26):
@@ -472,7 +472,9 @@ void test_grant_xp_pays_the_wis_dividend() {
     sheet = sm::CharacterSheet{};
     sm::GameState wisState = fresh_world(64, 64);
     sheet.levelData = sm::default_level_data();
-    sheet.levelData.expToNext = 1000;   // выше выплаты: мерим ОПЫТ, не уровень
+    // Уровень повыше, чтобы порог (вывод из него, M-246а) стоял ВЫШЕ
+    // выплаты: мерим ОПЫТ, а не случайный уровень-ап.
+    sheet.levelData.level = 4;
     sheet.attributes[sm::AttributeId::Wis] = 10;  // expMult = 1.10
 
     sm::Quest q{};

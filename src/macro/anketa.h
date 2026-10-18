@@ -200,7 +200,16 @@ struct DerivedBonuses {
 struct LevelData {
     int level             = 1;
     int exp               = 0;
-    int expToNext         = 0; // populated by `default_level_data`
+    // (Поле `expToNext` УМЕРЛО 2026-10-18, M-246а — ВТОРОЙ НОСИТЕЛЬ
+    //  ВЫВОДИМОЙ ВЕЛИЧИНЫ. Порог следующего уровня ВСЕГДА равен
+    //  `exp_to_next_level(level)`, и держать его полем значило иметь два
+    //  ответа на один вопрос; синхронизировали их ТРИ места, а
+    //  value-инициализация давала 0 — то есть НУЛЕВОЙ ПОРОГ, и
+    //  `try_level_up` выдавал уровень за единицу опыта. Так и было у всякой
+    //  анкеты, собранной таблицей мимо двери рождения (`kLandmarkSheets@
+    //  src/macro/characters.h` строит строки `a{}`): первая же победа
+    //  неподвижного сквада давала ему даровой уровень. Дверь — `exp_to_next_of`
+    //  ниже; свидетель — `squad_war_test` «один опыт НЕ даёт уровня».)
     // The creation budget (CANON S14, owner 2026-09-03): 5 attribute points
     // and 5 LEARN PICKS — a pick teaches a skill (rank 0 → 1), it is not a
     // rank point. Skill points arrive with levels and spend only into what
@@ -291,10 +300,13 @@ inline int exp_to_next_level(int level) {
 inline Attributes default_attributes() { return {}; }
 inline Skills     default_skills()     { return {}; }
 
-inline LevelData default_level_data() {
-    LevelData ld{};
-    ld.expToNext = exp_to_next_level(1);
-    return ld;
+inline LevelData default_level_data() { return LevelData{}; }
+
+// ПОРОГ СЛЕДУЮЩЕГО УРОВНЯ — ВЫВОД, А НЕ ПОЛЕ (M-246а): одна дверь над
+// уровнем анкеты. Выведенное не может разъехаться с источником по
+// построению — ровно то, чего не умело поле.
+inline int exp_to_next_of(const LevelData& ld) {
+    return exp_to_next_level(ld.level);
 }
 
 // THE ONE RECOVERY LAW (CANON S14; owner rulings Session 21 and 2026-09-03):
@@ -444,10 +456,14 @@ inline float get_overload_penalty(float weightKg, float capacityKg) {
 // no «special» levels, no artificial gates. Specialization is held by the
 // perk graph's TOPOLOGY (distance to a keystone), not by point scarcity.
 inline bool try_level_up(LevelData& ld) {
-    if (ld.exp < ld.expToNext) return false;
-    ld.exp           -= ld.expToNext;
+    // Порог выводится из уровня (M-246а). Минус голый и это законно: `exp`
+    // ЗНАКОВЫЙ, а ЗАКОН ТИПА п.2 и сами двери вычитания (core/subtract.h)
+    // говорят прямо — «знаковой величине минус законен голым»; ниже нуля он
+    // не уходит, потому что порог только что проверен.
+    const int need = exp_to_next_level(ld.level);
+    if (ld.exp < need) return false;
+    ld.exp           -= need;
     ld.level         += 1;
-    ld.expToNext      = exp_to_next_level(ld.level);
     ld.attributePoints += 1;
     ld.skillPoints     += 1;
     ld.perkPoints      += 1;
@@ -986,9 +1002,11 @@ struct CharacterSheet {
 // `std::array` длиной кап: она стоила РОВНО 2.25 МиБ, которые проза объявляла
 // невозможными. Снос маски перков (M-252) сделал 144 → 108, то есть 2.25 →
 // 1.69 МиБ, и число теперь названо тем, чем оно является.
-static_assert(sizeof(CharacterSheet) == 108,
-              "анкета = атрибуты 16 + скиллы 64 + уровень 28; "
-              "× кап 16384 = 1.69 МиБ резидентно");
+// 108 → 104 (2026-10-18, M-246а): из блока уровня ушёл `expToNext` (4 Б) —
+// порог следующего уровня ВЫВОДИТСЯ из уровня, а не хранится вторым полем.
+static_assert(sizeof(CharacterSheet) == 104,
+              "анкета = атрибуты 16 + скиллы 64 + уровень 24; "
+              "× кап 16384 = 1.63 МиБ резидентно");
 
 // ── ТОРГОВАЯ СИЛА АНКЕТЫ — ОДНА ДВЕРЬ НА ВЕСЬ МИР (CANON S25) ─────────────
 // Сделка двусторонняя, и обе стороны называют ОДНО число — финальное
@@ -1081,7 +1099,6 @@ inline CharacterSheet make_character_sheet(NPCType role, int level,
     cs.levelData           = default_level_data();
     cs.levelData.level     = level;
     cs.levelData.exp       = 0;
-    cs.levelData.expToNext = exp_to_next_level(level);
     cs.levelData.attributePoints = 5 + (level - 1);
     cs.levelData.skillPoints     = (level - 1);
     cs.levelData.perkPoints      = 5 + (level - 1);

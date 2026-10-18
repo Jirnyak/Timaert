@@ -256,9 +256,13 @@ static_assert(sizeof(SubworldAi) == 40, "мозг тела субмира — 40
 // his door finds him inside, because the interior draws from the same stock.
 struct GoingHome { float x, y; };
 
-// Per-NPC level (matches TS `npc.level`). Drives loot tables, combat
-// scaling, and visual badges in the proximity panel.
-struct NpcLevel { std::int16_t value; };
+// (`NpcLevel` УМЕРЛА 2026-10-18, M-246а — ВТОРОЙ ОТВЕТ НА ОДИН ВОПРОС О
+//  МИРЕ. Уровень сквада есть `levelData.level` его анкеты, и приговор
+//  колонке ЗАКОН АНКЕТЫ вынес дословно: «колонка ecs::NpcLevel и
+//  sheet.levelData.level — два ответа на один вопрос, и колонка умирает в
+//  анкету». Дверь чтения — `squad_level@src/macro/squad.h`. Колонка держала
+//  и живой баг: она умела быть НУЛЁМ там, где анкета не умеет, а нулевой
+//  уровень обнулял кривую опыта — см. шрам у двери роста в squad.h.)
 
 // Per-NPC inventory: what this body is CARRYING. Only a body whose belongings
 // are state has one — a macro entity and the tracked body that embodies it
@@ -521,13 +525,12 @@ struct MacroNpcRuntime {
     std::uint8_t  entryTicks = 0;
     float         visualSpeed;   // last-tick travelled distance, cells/real s
     std::uint32_t tickAccum;     // WORLD ticks accumulated toward the next think
-    // Experience toward the leader's next level (Session 15): auto-battle
-    // victories pay XP through the one npc_xp_reward law, and
-    // award_leader_xp (macro/squad.h) consumes it into NpcLevel by the same
-    // exp_to_next_level curve the player climbs. PERSISTENT, like the rest of
-    // this struct: «Runtime-only» стояло и здесь (M-253) — вся колонка едет
-    // POD-ом, см. поправку над `entryDir`.
-    std::int32_t  xp = 0;
+    // (Поле `xp` УМЕРЛО 2026-10-18 вместе со вторым законом роста, M-246а:
+    //  опыт сквада есть `levelData.exp` его анкеты, и она едет в сейв той же
+    //  записью. Сиротой оно было по DOD п.9 в самой чистой форме — ЕДИНСТВЕННЫЕ
+    //  его писатель и читатель жили ВНУТРИ снесённой `award_leader_xp`, то
+    //  есть за пределами одной функции байт не отвечал ни на один вопрос
+    //  о мире, а в сейв ехал на всех 16384 слотах.)
     // WHAT THE WORLD THINKS THIS BAND HAS DONE (macro/chronicle.h). A squad
     // starts as one more band on the map: its deeds are weather, remembered by
     // the ring for a season and then forgotten. Do enough, and it becomes a
@@ -600,8 +603,11 @@ struct MacroNpcRuntime {
 //   освободилось 8: три добрала дыра выравнивания, стоявшая за u8.
 // `prevStationId` из мёртвых вышел 2026-09-22 — его читает и пишет
 // многоскачковый рейс корована.
-static_assert(sizeof(MacroNpcRuntime) == 84,
-              "рантайм марша: 84 Б × 16384 сквадов = 1.31 МиБ (AGENTS п.10)");
+//   84 → 80 (2026-10-18, M-246а): ушёл `xp` (4 Б) — счётчик опыта второго
+//   закона роста, чьи единственные писатель и читатель жили ВНУТРИ снесённой
+//   `award_leader_xp`. Названный байт сошёлся с освободившимся ровно.
+static_assert(sizeof(MacroNpcRuntime) == 80,
+              "рантайм марша: 80 Б × 16384 сквадов = 1.25 МиБ (AGENTS п.10)");
 
 // Deterministic spawn ordinal for a persistent macro NPC (Inc 5e-2), assigned
 // in creation order (0,1,2,…) by the SOLE creation path (make_npc) — the one
@@ -780,7 +786,6 @@ TIMAERT_ROW(sm::ecs::Airborne);
 TIMAERT_ROW(sm::ecs::NPCKind);
 TIMAERT_ROW(sm::ecs::SubworldAi);
 TIMAERT_ROW(sm::ecs::GoingHome);
-TIMAERT_ROW(sm::ecs::NpcLevel);
 TIMAERT_ROW(sm::ecs::NpcInventory);
 TIMAERT_ROW(sm::ecs::BodyEquipment);
 TIMAERT_ROW(sm::ecs::NpcTraits);

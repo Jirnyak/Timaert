@@ -166,7 +166,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     a.sub = {17, -9};   // доля клетки едет сейвом (M-244a)
     a.kind = {std::uint16_t(sm::NPCType::Bandit), 3};
     a.pools = {17, 42};
-    a.level = {5};
+    a.sheet.levelData.level = 5;   // уровень — анкета (M-246а)
     a.runtime.homeSettlementId = 2;
     a.runtime.targetSettlementId = 4;
     a.runtime.targetX = 100.0f;
@@ -185,7 +185,8 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     a.runtime.entryTicks = 9;
     a.runtime.visualSpeed = 0.25f;
     a.runtime.tickAccum = 77;
-    a.runtime.xp = 555;               // the leader's campaigns
+    a.sheet.levelData.exp = 555;      // the leader's campaigns (M-246а:
+                                      // опыт — колонка анкеты, не рантайма)
     a.traits.count = 2;
     a.traits.traits[0] = 1;
     a.traits.traits[1] = 4;
@@ -225,7 +226,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     d.sub = {};
     d.kind = {std::uint16_t(sm::NPCType::Guard), 1};
     d.pools = {0, 55};
-    d.level = {3};
+    d.sheet.levelData.level = 3;   // уровень — анкета (M-246а)
     d.dead = 1;
     out.push_back(std::move(d));
     // THE PLAYER's own squad — an ordinary record of the same snapshot, told
@@ -246,11 +247,10 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     player.kind = {std::uint16_t(sm::NPCType::Adventurer),
                    std::uint16_t(sm::faction_index(sm::kPlayerFactionId))};
     player.pools = {40, 40};
-    player.level = {3};
+    player.sheet.levelData.level = 3;   // уровень — анкета (M-246а)
     // ...and WHO HE BUILT (посадка Б, v91): his sheet rides the record's
-    // opt-in hasSheet block like every named character's — the exact values
+    // record's sheet column like every squad's (M-246а: опт-ина нет) — the exact values
     // the dead gs.player.sheet block used to drive.
-    player.hasSheet = 1;
     player.sheet.attributes[sm::AttributeId::Str] = 7;
     player.sheet.attributes[sm::AttributeId::End] = 9;
     player.sheet.attributes[sm::AttributeId::Wil] = 10;
@@ -268,7 +268,6 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     player.sheet.skills[sm::SkillId::Weightlifting] = 7;
     player.sheet.levelData.level = 6;
     player.sheet.levelData.exp = 321;
-    player.sheet.levelData.expToNext = 6543;
     player.sheet.levelData.attributePoints = 4;
     player.sheet.levelData.skillPoints = 5;
     // ...and what he KNOWS (v89): learned + active + a burning sustained —
@@ -412,7 +411,7 @@ sm::GameState make_state(sm::MacroStore& st) {
     // проверялась здесь; колонка уничтожена 2026-10-11 — читателей у памяти
     // не было ни одного.)
     // (No sheet here since v91 — посадка Б: his build is the owned
-    // CharacterSheet component riding his RECORD's hasSheet block, driven
+    // CharacterSheet column riding his RECORD unconditionally, driven
     // and asserted with the player record in make_macro_records.)
     // (No bars here since v85: the player's three pools ride the macro-ECS
     // snapshot inside his squad's MacroNpcRecord — the POD block the
@@ -927,9 +926,10 @@ void run_roundtrip() {
         if (a.pools.hp != want.pools.hp || a.pools.maxHp != want.pools.maxHp) {
             FAIL_BAIL("macro wounds lost");
         }
-        if (a.level.value != want.level.value) FAIL_BAIL("macro level lost");
+        if (a.sheet.levelData.level != want.sheet.levelData.level)
+            FAIL_BAIL("macro level lost");
         if (a.pools.sp != -25) FAIL_BAIL("macro SP debt lost");
-        if (a.runtime.xp != 555) FAIL_BAIL("macro leader xp lost");
+        if (a.sheet.levelData.exp != 555) FAIL_BAIL("macro leader xp lost");
         // ВЕСЬ РАНТАЙМ, КОТОРЫЙ ФИКСТУРА СТАВИТ, ЗДЕСЬ И СУДИТСЯ (M-254,
         // 2026-10-12). До этой правки фикстура ставила ТРИНАДЦАТЬ полей
         // `MacroNpcRuntime`, а вердикт спрашивал ЧЕТЫРЕ — остальные девять
@@ -1022,7 +1022,6 @@ void run_roundtrip() {
             if (r.playerHome != 0) prec = &r;
         }
         if (!prec) FAIL_BAIL("the player's squad record vanished");
-        if (!prec->hasSheet) FAIL_BAIL("the player's owned sheet flag lost");
         const sm::CharacterSheet& sh = prec->sheet;
         if (sh.attributes.of(sm::AttributeId::Str) != 7
             || sh.attributes.of(sm::AttributeId::Intl) != 11
@@ -1035,7 +1034,7 @@ void run_roundtrip() {
             FAIL_BAIL("player skills lost");
         }
         if (sh.levelData.level != 6 || sh.levelData.exp != 321
-            || sh.levelData.expToNext != 6543
+            || sm::exp_to_next_of(sh.levelData) != sm::exp_to_next_level(6)
             || sh.levelData.attributePoints != 4
             || sh.levelData.skillPoints != 5) {
             FAIL_BAIL("player level data lost");

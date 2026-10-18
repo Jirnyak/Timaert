@@ -89,8 +89,10 @@ void test_snapshot_round_trips_the_living_map() {
 
     // Life happened: A campaigned (xp, debt, a march), B was killed through
     // the tracked-death shape (hp=0 + Dead) the whole game uses.
-    auto& rtA = wStore_->runtime[a.slot];
-    rtA.xp = 777;
+    // Опыт — колонка АНКЕТЫ (M-246а): runtime.xp умер со вторым законом
+    // роста, а закон «кампании лорда переживают сейв» остался и держится
+    // на той величине, которая опыт и есть.
+    wStore_->sheet[a.slot].levelData.exp = 777;
     wStore_->pools[a.slot].sp = -15;
     wStore_->cell[a.slot].idx = ecs::cell_index(25, 21, 64);
     wStore_->pools[b.slot].hp = 0.0f;
@@ -148,14 +150,15 @@ void test_snapshot_round_trips_the_living_map() {
 
     const MacroHandle a2 = find_by_ordinal(*w2Store_, ordinalA);
     CHECK_OR_RETURN(w2Store_->valid(a2), "leader A restored under his ordinal");
-    CHECK(w2Store_->runtime[a2.slot].xp == 777,
+    CHECK(w2Store_->sheet[a2.slot].levelData.exp == 777,
           "the leader's campaigns (xp) survive the save");
     CHECK(w2Store_->pools[a2.slot].sp == -15,
           "the leader's exhaustion debt survives the save");
     CHECK(ecs::cell_x(w2Store_->cell[a2.slot], 64) == 25
               && ecs::cell_y(w2Store_->cell[a2.slot], 64) == 21,
           "the march stands - the cell is the saved one, not the spawn one");
-    CHECK(w2Store_->level[a2.slot].value == 5, "the level survives");
+    CHECK(sm::squad_level(*w2Store_, a2.slot) == 5,
+          "the level survives — в АНКЕТЕ (M-246а)");
     CHECK(std::strcmp(w2Store_->name[a2.slot].text, "Chornyy Voron") == 0,
           "мутированное имя анкеты пережило сейв колонкой (v119)");
     CHECK(creature_count(w2Store_->inventory[a2.slot].inv) == 2,
@@ -240,7 +243,10 @@ void test_resnapshot_is_byte_identical() {
     specA.waypoints[0] = 24; specA.waypoints[1] = 20;
     const MacroHandle a = spawn_squad(gs, *wStore_, absent, specA);
     CHECK_OR_RETURN(wStore_->valid(a), "squad A spawned");
-    wStore_->runtime[a.slot].xp = 777;
+    // ОПЫТ — КОЛОНКА АНКЕТЫ (M-246а): поле runtime.xp умерло вместе со
+    // вторым законом роста, и закон «кампании лорда переживают сейв»
+    // держится теперь на той величине, которая опыт и есть.
+    owned_sheet(*wStore_, a)->levelData.exp = 777;
     CHECK_OR_RETURN(owned_sheet(*wStore_, a) != nullptr,
                     "named lord owns his sheet");
     owned_sheet(*wStore_, a)->attributes[AttributeId::End] = 13;
@@ -279,7 +285,7 @@ void test_resnapshot_is_byte_identical() {
     const MacroHandle a2 = find_by_ordinal(
         *w2Store_, wStore_->spawnId[a.slot].index);
     CHECK_OR_RETURN(w2Store_->valid(a2), "lord A restored for the control");
-    w2Store_->runtime[a2.slot].xp += 1;
+    w2Store_->sheet[a2.slot].levelData.exp += 1;
     const std::vector<MacroNpcRecord> snap3 = snapshot_macro_ecs(*w2Store_);
     int controlDiffs = 0;
     for (std::size_t i = 0; i < snap3.size(); ++i) {

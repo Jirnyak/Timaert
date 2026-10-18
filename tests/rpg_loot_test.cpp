@@ -208,7 +208,8 @@ static void test_sheet_budget_identity() {
             std::snprintf(msg, sizeof msg,
                 "sheet L%d role %d: level + xp curve set", lvl, int(role));
             CHECK(cs.levelData.level == lvl
-                  && cs.levelData.expToNext == exp_to_next_level(lvl), msg);
+                  && sm::exp_to_next_of(cs.levelData)
+                         == exp_to_next_level(lvl), msg);
         }
     }
 }

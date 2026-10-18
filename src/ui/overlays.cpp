@@ -824,7 +824,8 @@ namespace sm::ui
                         p.name.empty() ? "Wanderer" : p.name.c_str(),
                         sheet.levelData.level, p.ageDays);
             ImGui::SameLine();
-            ImGui::TextDisabled("EXP %d / %d", sheet.levelData.exp, sheet.levelData.expToNext);
+            ImGui::TextDisabled("EXP %d / %d", sheet.levelData.exp,
+                                exp_to_next_of(sheet.levelData));
             ImGui::Separator();
 
             if (ImGui::BeginTabBar("##character_tabs"))
@@ -852,7 +853,7 @@ namespace sm::ui
                         ImGui::Text("Skill pts %d", sheet.levelData.skillPoints);
                         if (sheet.levelData.learnPicks > 0)
                             ImGui::Text("Learn picks %d", sheet.levelData.learnPicks);
-                        if (sheet.levelData.exp >= sheet.levelData.expToNext)
+                        if (sheet.levelData.exp >= exp_to_next_of(sheet.levelData))
                         {
                             if (ImGui::Button("Level Up"))
                             {
@@ -1782,7 +1783,7 @@ namespace sm::ui
                 kind.type < std::uint16_t(NPCType::Count)
                     ? NPCType(std::uint8_t(kind.type)) : NPCType::Peasant;
             const auto &def = npc_def(t);
-            const auto *lvl = &st.level[squadSubject.slot];
+            const int lvl = squad_level(st, squadSubject.slot);
             const auto *traits = &st.traits[squadSubject.slot];
             auto *bag = &st.inventory[squadSubject.slot];
             // Имя — колонка анкеты (вердикт 3, ход 2), не перевывод
@@ -1815,8 +1816,7 @@ namespace sm::ui
                 ImGui::SameLine();
                 ImGui::TextDisabled("(%s)", def.label);
                 ImGui::Text("Faction: %s   Lv.%d   HP %d/%d",
-                            fd ? fd->name : "?",
-                            lvl ? int(lvl->value) : 0,
+                            fd ? fd->name : "?", lvl,
                             int(pools->hp), int(pools->maxHp));
                 if (ImGui::Button("Talk"))
                 {
@@ -1851,8 +1851,7 @@ namespace sm::ui
                                               ImGuiTableFlags_BordersInnerH
                                                   | ImGuiTableFlags_RowBg))
                         {
-                            draw_info_overview_row("Level",
-                                                   lvl ? int(lvl->value) : 0);
+                            draw_info_overview_row("Level", lvl);
                             draw_info_overview_row("HP", int(pools->hp));
                             draw_info_overview_row(
                                 "Faction index", int(kind.factionIdx));

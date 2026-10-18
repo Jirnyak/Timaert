@@ -144,8 +144,12 @@ void test_spawn_births_the_row() {
     CHECK_OR_RETURN(own != nullptr, "the design character OWNS his sheet");
     CHECK(own->levelData.level == int(row.level),
           "the row's level reached the owned sheet");
-    CHECK(wStore_->level[e.slot].value == row.level,
-          "...and the map-side level column agrees");
+    // Здесь стояла проверка СОГЛАСИЯ колонки `ecs::NpcLevel` с анкетой — она
+    // охраняла сам дубль, и её субъект умер вместе с колонкой (M-246а).
+    // Остался закон «уровень спрашивают ОДНОЙ дверью, и она читает анкету»:
+    // заведи кто-нибудь второй носитель и подмени им дверь — покраснеет тут.
+    CHECK(sm::squad_level(*wStore_, e.slot) == int(row.level),
+          "...and THE level door answers from that same sheet");
     CHECK(int(wStore_->kind[e.slot].factionIdx)
               == faction_index(row.factionId),
           "the row's faction reached the body");
@@ -236,7 +240,7 @@ void test_snapshot_carries_the_ordinal() {
     CHECK_OR_RETURN(w2Store_->valid(back),
                     "restore re-stamped the design tag from the record");
     CHECK(owned_sheet(*w2Store_, back) != nullptr,
-          "...and his owned sheet came back with it (hasSheet)");
+          "...and his owned sheet came back with it (колонка анкеты; опт-ина нет с M-246а)");
 }
 
 void test_king_peasant_births_by_home_faction() {

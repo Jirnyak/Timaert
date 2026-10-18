@@ -182,7 +182,9 @@ sm::MacroHandle make_macro_lord(sm::MacroStore& st, sm::NPCType type,
     st.cell[h.slot] = sm::ecs::MacroCell{sm::ecs::cell_index(10, 12, 64)};
     st.kind[h.slot] = sm::ecs::NPCKind{std::uint16_t(type), faction};
     st.pools[h.slot] = sm::ecs::Pools{hp, maxHp};
-    st.level[h.slot] = sm::ecs::NpcLevel{std::int16_t(level)};
+    // Уровень — АНКЕТА (M-246а), той же дверью, какой рождает make_npc.
+    st.sheet[h.slot] = sm::make_character_sheet(
+        type, level, sm::leader_sheet_seed(st.spawnId[h.slot].index));
     sm::ecs::NpcCharacter face{};
     face.visualSeed = visualSeed;
     face.nameIdx = 3;

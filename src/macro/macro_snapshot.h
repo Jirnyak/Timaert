@@ -36,7 +36,9 @@ struct MacroNpcRecord {
     ecs::CellSub           sub{};   // доля клетки (M-244; здесь ехал MacroVisual)
     ecs::NPCKind         kind{};
     ecs::Pools           pools{};
-    ecs::NpcLevel        level{};
+    // (Поле `level` умерло 2026-10-18, M-246а: уровень — `levelData.level`
+    //  анкеты, и она едет в этой же записи полем `sheet` ниже. Снимок вёз
+    //  его ДВАЖДЫ, и колонка-источник была вторым ответом на один вопрос.)
     ecs::MacroNpcRuntime runtime{};
     ecs::NpcTraits       traits{};
     ecs::NpcCharacter    character{};
@@ -50,13 +52,13 @@ struct MacroNpcRecord {
     ecs::SquadOrders     orders{};          // meaningful iff hasOrders
     // (Колонка `memory` записи снапшота умерла в v132 вместе с `AgentMemory`:
     //  читателей у памяти не было ни одного.)
-    // The OWNED sheet of a NAMED character (v90, owner 2026-09-10 ММОРПГ-
-    // модель: «у каждого персистентного персонажа свой лист и идёт в
-    // сейв»). Opt-in like orders: a transient crew derives its generic
-    // sheet from its row and writes nothing — a stored copy of a
-    // derivable sheet would be a second truth.
-    CharacterSheet       sheet{};           // meaningful iff hasSheet
-    std::uint8_t         hasSheet = 0;
+    // АНКЕТА КАЖДОГО СКВАДА (v90, владелец 2026-09-10, ММОРПГ-модель: «у
+    // каждого персистентного персонажа свой лист и идёт в сейв»).
+    // БЕЗ ОПТ-ИНА (M-246а): флаг `hasSheet` умер —
+    // снимок ставил его 1 всегда, потому что колонка листа есть у ВСЕХ
+    // слотов, а с переездом уровня и опыта в анкету условным стал бы
+    // обязательный байт мира.
+    CharacterSheet       sheet{};
     std::uint8_t         hasOrders = 0;
     std::uint8_t         dead = 0;
     // «Этот сквад — игрок» (5б): колонка playerFlag анкеты, вердикт

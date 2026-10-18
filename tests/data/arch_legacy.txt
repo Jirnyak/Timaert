@@ -86,7 +86,7 @@ verdict	SKELETON.md	До 2026-09-23 эта таблица утверждала: 
 verdict	SKELETON.md	Число агностично, смысл ему задаёт фича, стоящая РОВНО на той клетке; второго
 subcap	src/sub/spawn.cpp	kUnifiedCap
 minus	src/macro/anketa.cpp	s.count -= 1;
-minus	src/macro/anketa.h	ld.exp -= ld.expToNext;
+minus	src/macro/anketa.h	ld.exp -= need;
 minus	src/macro/anketa.h	s.count -= n;
 minus	src/macro/anketa.h	s.count -= take;
 minus	src/macro/anketa.h	left -= take;
@@ -113,7 +113,6 @@ minus	src/macro/npc_ai.cpp	draw -= bids[b].score;
 minus	src/macro/recovery.cpp	accumulator -= float(whole);
 minus	src/macro/scent_field.cpp	d[yc + x] -= std::int32_t(per) * 8;
 minus	src/macro/spires.cpp	for (; gate >= int(def.minZone); gate -= relaxStep) {
-minus	src/macro/squad.h	rt.xp -= exp_to_next_level(lvl.value);
 minus	src/macro/state.cpp	v -= village_pressure(pv.score, d);
 minus	src/macro/state.cpp	r.pressed -= village_pressure(c.raw, d);
 minus	src/macro/threat_field.cpp	delta[r] -= std::int64_t(per);

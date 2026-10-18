@@ -20,6 +20,7 @@
 #include "macro/world_row.h"
 #include "macro/npc_spawn.h"
 #include "macro/squad.h"
+#include "macro/place_birth.h"   // birth_place — фикстура рождает свой неподвижный сквад
 #include "macro/player_entity.h"
 #include "tables/faction.h"
 #include "tables/npc.h"
@@ -80,7 +81,7 @@ sm::MacroHandle make_squad_at(sm::MacroStore& st, NPCType type,
     st.runtime[h.slot] = rt;
     st.spawnId[h.slot] = ecs::MacroSpawnId{ordinal};
     h = sm::handle_at(st, h.slot);
-    st.level[h.slot] = ecs::NpcLevel{std::int16_t(level)};
+    // Уровень несёт АНКЕТА (M-246а): `sheet` построен из `level` выше.
     st.sheet[h.slot] = sheet;   // колонка листа — как make_npc рождает всем
     auto& bag = st.inventory[h.slot];
     for (std::uint32_t id : memberIds) {
@@ -144,13 +145,12 @@ void test_hostiles_on_one_cell_fight_and_the_ledger_pays() {
           "the crushing winner survives");
     CHECK((*sm::body_state<ecs::NpcInventory>(st, bandit)).inv.count("wood") == 5,
           "the raid PAYS: the fallen owner's goods pass to the victor");
-    // Именной лидер ВЛАДЕЕТ листом (Bandit — kNamedKinds): опыт идёт в
-    // levelData листа, транзиентный счётчик rt.xp — путь безлистых.
+    // ОПЫТ ИДЁТ В АНКЕТУ, И ТОЛЬКО В НЕЁ (M-246а): ветка «или транзиентный
+    // счётчик rt.xp» умерла вместе со вторым законом роста — у всякого
+    // сквада рост один, через свой лист.
     {
-        const CharacterSheet* own = owned_sheet(st, bandit);
-        CHECK((own && (own->levelData.exp > 0 || own->levelData.level > 5))
-                  || (*sm::body_state<ecs::MacroNpcRuntime>(st, bandit)).xp
-                         > 0,
+        const CharacterSheet& own = *sm::body_state<CharacterSheet>(st, bandit);
+        CHECK(own.levelData.exp > 0 || own.levelData.level > 5,
               "victory pays experience through the one reward law");
     }
 }
@@ -328,12 +328,12 @@ void test_a_victorious_leader_levels() {
     hp.hp = hp.maxHp / 2;   // walks in wounded
     const float frac0 = float(hp.hp) / float(hp.maxHp);
 
-    CHECK(award_leader_xp(st, tsar, exp_to_next_level(1) / 2) == 0,
+    CHECK(award_kill_xp(st, tsar, exp_to_next_level(1) / 2) == 0,
           "half a bar is not a level");
-    CHECK(award_leader_xp(st, tsar, exp_to_next_level(1)) >= 1,
+    CHECK(award_kill_xp(st, tsar, exp_to_next_level(1)) >= 1,
           "a full bar turns into a level by the player's own curve");
-    CHECK((*sm::body_state<ecs::NpcLevel>(st, tsar)).value >= 2,
-          "the level landed on the leader");
+    CHECK(sm::squad_level(st, tsar.slot) >= 2,
+          "the level landed on the leader — В ЕГО АНКЕТЕ (M-246а)");
     const auto& hp1 = (*sm::body_state<ecs::Pools>(st, tsar));
     // Under the 1:1 economy a single level pays ONE attribute point, and the
     // role's weighted roll may legally land it outside END/Bodybuilding — so
@@ -469,8 +469,8 @@ void test_spawn_squad_is_one_spec_one_door() {
     CHECK_OR_RETURN(st.valid(leader),
                     "the spec became a squad (одна дверь рождения отвечает "
                     "хэндлом — слот store несёт все колонки по построению)");
-    CHECK(st.level[leader.slot].value == 4,
-          "the spec's level pinned the leader's level");
+    CHECK(sm::squad_level(st, leader.slot) == 4,
+          "the spec's level pinned the leader's level — в анкете (M-246а)");
     CHECK(creature_count(st.inventory[leader.slot].inv) == 2,
           "the creature rows are the spec's rows");
     CHECK(st.orders[leader.slot].waypointCount == 2,
@@ -668,8 +668,77 @@ void test_the_leaders_training_reads_at_the_new_doors() {
     }
 }
 
+// ── ПОБЕДА НЕ СТИРАЕТ АНКЕТУ, И КРИВАЯ ОПЫТА НЕ БЫВАЕТ НУЛЕВОЙ (M-246а) ───
+// Закон: рост идёт ОДНОЙ дверью ЧЕРЕЗ АНКЕТУ (AGENTS ЗАКОН АНКЕТЫ: «анкета
+// источник»; п.4: «пустой лист есть ЗАКОННОЕ значение… отдельной ветки „а это
+// место“ для них не нужно»). До слияния дверей невладеющий лист шёл вторым
+// законом, который на каждом уровне ПЕРЕКАТЫВАЛ анкету из сида — и сквад,
+// получивший свою анкету ТАБЛИЦЕЙ, терял её навсегда с первой же победой.
+//
+// Свидетеля у этого закона не было ВОВСЕ, поэтому дефект и жил: ни один тест
+// не спрашивал, цела ли анкета ПОСЛЕ роста. Фикстура рождает предусловие сама
+// (§8 п.11): сквад с табличной анкетой непустых ремёсел — ровно то, что
+// кладёт `birth_place` городу.
+//
+// ДВА УТВЕРЖДЕНИЯ, И ОНИ РАЗНЫЕ:
+//   · ремёсла целы после роста — перекат анкеты невыразим;
+//   · один-единственный опыт НЕ даёт уровня — кривая `exp_to_next_level`
+//     читает уровень АНКЕТЫ, а он не бывает нулём (LevelData::level = 1).
+//     Через мёртвую колонку он был нулём у всякого неподвижного сквада, и
+//     порог `exp_to_next_level(0)` = 0 выдавал уровень за любой xp > 0.
+void test_a_victory_does_not_erase_a_table_born_sheet() {
+    GameState gs = make_world(-80);
+    auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
+
+    const MacroHandle town = sm::birth_place(gs, st, SquadType::City,
+                                             12, 12, std::int16_t(0), "Kamen");
+    CHECK_OR_RETURN(st.valid(town), "фикстура родила свой неподвижный сквад");
+
+    const CharacterSheet born = st.sheet[town.slot];
+    const int smithBorn = born.skills[SkillId::Blacksmith];
+    const int tradeBorn = born.skills[SkillId::Trade];
+    const int chaBorn   = born.attributes[AttributeId::Cha];
+    // Предусловие утверждается: табличная анкета обязана быть НЕПУСТОЙ, иначе
+    // свидетель ниже зелен по пустоте, а не по закону.
+    CHECK_OR_RETURN(smithBorn > 0 && tradeBorn > 0 && chaBorn > 1,
+                    "строка стола дала этому роду непустые ремёсла и торг — "
+                    "иначе проверять нечего");
+
+    // (1) КРИВАЯ НЕ НУЛЕВАЯ: один опыт — это не уровень.
+    const int lvlBorn = sm::squad_level(st, town.slot);
+    CHECK(lvlBorn >= 1, "уровень анкеты не бывает нулём");
+    CHECK(award_kill_xp(st, town, 1) == 0,
+          "один опыт НЕ даёт уровня: порог читает уровень анкеты, а не "
+          "мёртвую колонку, где он был нулём");
+
+    // (2) РОСТ НЕ СТИРАЕТ АНКЕТУ: платим заведомо выше порога.
+    const int gained = award_kill_xp(st, town, exp_to_next_level(lvlBorn) * 3);
+    CHECK(gained >= 1, "полная шкала превращается в уровень общей дверью");
+    CHECK(sm::squad_level(st, town.slot) > lvlBorn,
+          "и уровень лёг в ТУ ЖЕ анкету");
+
+    const CharacterSheet& after = st.sheet[town.slot];
+    CHECK(after.skills[SkillId::Blacksmith] >= smithBorn
+              && after.skills[SkillId::Trade] >= tradeBorn
+              && after.attributes[AttributeId::Cha] >= chaBorn,
+          "РЕМЁСЛА И ТОРГ ЦЕЛЫ ПОСЛЕ РОСТА: перекат анкеты из сида умер "
+          "вместе со вторым законом роста (до него тут были нули, и мир "
+          "переставал производить навсегда)");
+    // Негативный контроль утверждается сам: веса роли, которой этот сквад
+    // носит строку, этих рангов НЕ дают — значит выжить они могли ТОЛЬКО
+    // потому, что анкету не перекатили, а не потому, что бросок их вернул.
+    const SkillWeights& w = npc_skill_weights(
+        NPCType(std::uint8_t(st.kind[town.slot].type)));
+    CHECK(w[std::size_t(SkillId::Blacksmith)] == 0
+              && w[std::size_t(SkillId::Trade)] == 0,
+          "негативный контроль: бросок строки этих рангов не рождает — "
+          "будь перекат жив, они стали бы нулями безвозвратно");
+}
+
 int main() {
     test_hostiles_on_one_cell_fight_and_the_ledger_pays();
+    test_a_victory_does_not_erase_a_table_born_sheet();
     test_the_leaders_training_reads_at_the_new_doors();
     test_the_weak_flee_and_fighters_pursue();
     test_neutral_squads_ignore_each_other();

@@ -161,8 +161,10 @@ MacroHandle make_npc(MacroStore& st, NPCType type,
     // own leader (ecs::SquadUpkeep doctrine). Draws no RNG — streams untouched.
     // Creatures/память/книга/приказы/гир/тег-анкеты/судьба уже обнулены
     // рождением слота (store_birth, единый X-список колонок).
-
-    st.level[h.slot] = ecs::NpcLevel{std::int16_t(lvl)};
+    //
+    // УРОВЕНЬ НЕ ПИШЕТСЯ ВТОРЫМ МЕСТОМ (M-246а): он уже стоит в анкете строкой
+    // выше — `make_character_sheet` кладёт его в `levelData.level`. Здесь
+    // стояла колонка `ecs::NpcLevel`, то есть второй ответ на один вопрос.
 
     // TS `makeNpc`: 1-2 trait rolls, duplicates skipped.
     ecs::NpcTraits traits{};
