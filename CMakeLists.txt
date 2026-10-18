@@ -433,6 +433,58 @@ set_target_properties(balance_run PROPERTIES
 target_include_directories(balance_run PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(balance_run PRIVATE timaert_build_flags)
 
+# Road-reach census (bugs.md Б3, 2026-10-18): измерить, доходит ли дорога до
+# МЕСТА. Доклад владельца «дороги рвутся у городов» (2026-09-30, кадры у него)
+# неделю жил в промте и был стёрт; восстановлен нарядом M-264. Ни один живой
+# прибор этого не мерил: `road_river_generation_test` судит СИНТЕТИЧЕСКИЕ
+# фикстуры и настоящего мира не рождает, а переписи рельефа зовут
+# `generate_terrain`, то есть до фич и сквадов не доходят. Прибор даёт `Л` под
+# `Б` — число и распределение разрыва, — и сознательно НЕ ctest, по причине
+# `balance_run`: это ЗАМЕР, а не вердикт, порога «сколько допустимо» никто не
+# выводил. Набор исходников тот же, что у `balance_run`: мир поднимается ТОЙ ЖЕ
+# дверью `generate_macro_world`, что и игра.
+add_executable(road_reach_census tests/road_reach_census.cpp
+    src/macro/squad_index.cpp
+    src/macro/world_gen.cpp
+    src/macro/ruins.cpp
+    src/macro/state.cpp
+    src/macro/politik.cpp
+    src/macro/settlement_score.cpp
+    src/macro/macro_stock.cpp
+    src/macro/chronicle.cpp
+    src/macro/cell_facts.cpp
+    src/macro/tree_layer.cpp
+    src/macro/deposit_layer.cpp
+    src/macro/fauna.cpp
+    src/macro/map_generator.cpp
+    src/macro/plates.cpp
+    src/macro/language.cpp
+    src/macro/anketa.cpp
+    src/tables/items.cpp
+    src/macro/economy.cpp
+    src/macro/econ_day.cpp
+    src/macro/spawners.cpp
+    src/macro/zones.cpp
+    src/macro/spires.cpp
+    src/macro/pathfinding.cpp
+    src/macro/knowledge.cpp
+    src/macro/npc_spawn.cpp
+    src/macro/npc_ai.cpp
+    src/macro/recovery.cpp
+    src/macro/nav_field.cpp
+    src/macro/world_tick.cpp
+    src/macro/threat_field.cpp
+    src/macro/scent_field.cpp
+    src/macro/world_fields.cpp
+    src/macro/player_entity.cpp
+    src/sub/base_generator.cpp)
+set_target_properties(road_reach_census PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(road_reach_census PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(road_reach_census PRIVATE timaert_build_flags)
+
 # Height census (наряд M-192, ход 0, 2026-10-01): измерить ПОЛЕ высот
 # макромира — долю дисперсии по масштабам, уклоны между соседями, перцентили
 # высоты по суше — и сохранить само поле и карту его уклонов картинками, чтобы
