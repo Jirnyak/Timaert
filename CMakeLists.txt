@@ -2217,6 +2217,18 @@ endif()
 # ПИН: 25 проверок при 17 статических сайтах — разница в циклах фикстуры, и
 # именно поэтому число СНЯТО ПРОГОНОМ, а не посчитано глазами по тексту.
 # Границы классом цифр: ссылки и документы растут от обычной работы.
+# Целостность таблиц доков (2026-10-18, шрам сессии M-264): реестр и скелет —
+# markdown-ТАБЛИЦЫ, а приборы доков считали их потоком строк, поэтому ячейка с
+# переводами строк расклеивала таблицу МОЛЧА (`docs_sync` сверяет номера,
+# `doc_refs_test` — адреса). Судятся ровно два недвусмысленных класса:
+# незакрытая строка и сирота-текст внутри таблицы; равенство колонок шапке
+# только ПЕЧАТАЕТСЯ, потому что 60+ строк несут трубу прозой — гейт на них был
+# бы красным с рождения (§8 п.7: прибор не смеет мешать развитию).
+timaert_test(doc_tables_test
+    PIN "OK doc_tables_test .5 checks")
+target_compile_definitions(doc_tables_test
+    PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
 timaert_test(doc_refs_test SOURCES tests/doc_refs.cpp
     PIN "OK doc_refs_test .25 checks. .доков [0-9]+ · ссылок [0-9]+ · вне слежения [0-9]+ · числа в доках НЕ судит")
 target_compile_definitions(doc_refs_test
@@ -2313,6 +2325,32 @@ target_include_directories(docs_sync_tool PRIVATE ${CMAKE_SOURCE_DIR}/tests)
 target_compile_definitions(docs_sync_tool
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 target_link_libraries(docs_sync_tool PRIVATE timaert_build_flags)
+
+# Прибор «знание без дома» (наряд M-264, 2026-10-18): печатает, какие ЗАМЕРЫ и
+# АДРЕСА живут в сегодняшнем промте и не имеют адресата ни в одном ПОСТОЯННОМ
+# доке, то есть умрут при следующей перезаписи `NEXT_SESSION.md`. Зовётся
+# руками ПЕРЕД перезаписью промта, как `docs_sync`.
+# Сознательно НЕ гейт `check`, и это ЗАМЕР, а не вкус: на трёх исторических
+# обвалах такой гейт выдал бы 235 / 194 / 55 жалоб уже после отбрасывания шума,
+# то есть встал бы стеной в худший момент (§8 п.7 — прибор не смеет мешать
+# развитию). Волатильные файлы (`NEXT_SESSION.md`, `jopus_prompts.md`) домом НЕ
+# считаются по построению: первая редакция детектора молчала о заведомо
+# потерянной переписи шва именно потому, что находила её в стёртом промте.
+add_executable(prompt_loss_tool tests/prompt_loss_main.cpp)
+set_target_properties(prompt_loss_tool PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_compile_definitions(prompt_loss_tool
+    PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_link_libraries(prompt_loss_tool PRIVATE timaert_build_flags)
+
+add_custom_target(prompt_loss
+    COMMAND prompt_loss_tool
+    DEPENDS prompt_loss_tool
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Ищу в промте замеры и адреса без дома в постоянных доках"
+    USES_TERMINAL)
 
 # `--target docs_sync` обязан ПРАВИТЬ, а не собирать: таргет-исполнитель поверх
 # бинарника, как `check` поверх ctest. Иначе «позови docs_sync» из красного
