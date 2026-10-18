@@ -508,7 +508,6 @@ SKELETON.md	sub/map_factory.cpp:27-28
 SKELETON.md	sub/seamless_manager.cpp:309
 SKELETON.md	sub/spawn.cpp:1489-1491
 SKELETON.md	sub/spawn.cpp:514
-SKELETON.md	sub/spawn.cpp:524
 SKELETON.md	sub/spell_effects.cpp:388
 SKELETON.md	sub/spell_effects.h:7
 SKELETON.md	surface_lib.glsl:30
