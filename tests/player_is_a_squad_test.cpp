@@ -375,9 +375,38 @@ void test_one_door_assembles_every_battle_side() {
               == float(std::max(1, bar_ceilings(player_sheet(gs, *wStore_)->attributes,
                                                 player_sheet(gs, *wStore_)->skills, 100, 100, 100).maxHp)),
           "owning his sheet, the door states HIS ceiling");
-    CHECK(generic.leaderHpOverride < 0.0f,
-          "negative control: a transient with no owned sheet derives from "
-          "the row — the component is what makes the difference");
+    // ЗДЕСЬ СТОЯЛ «НЕГАТИВНЫЙ КОНТРОЛЬ», ОХРАНЯВШИЙ САМ ГЕЙТ (M-282,
+    // переписан 2026-10-18). Он утверждал `generic.leaderHpOverride < 0`,
+    // то есть что скваду без ВЛАДЕЕМОГО листа потолок не ставится вовсе, —
+    // а это пересказ ветки по роду, которую ЗАКОН АНКЕТЫ п.5 запрещает
+    // прямым текстом («пустота — значение, а не исключение») и п.7
+    // называет признаком нарушения. Свидетель, утверждающий то, что код
+    // делает сегодня, охраняет СЛУЧАЙ, а не закон (§8 п.5), и здесь он
+    // охранял дефект (§8 п.7: тест НИКОГДА не охраняет дефект).
+    //
+    // ЗАКОН, КОТОРЫЙ ОХРАНЯЕТСЯ ТЕПЕРЬ: потолок лидера читается из АНКЕТЫ
+    // у КАЖДОГО сквада, одной дверью. Разница игрока и транзиента осталась
+    // там, где она настоящая, — в СОДЕРЖИМОМ их анкет, а не в наличии
+    // ветки: ниже утверждается, что у транзиента потолок свой, выведенный
+    // из его листа, и что он НЕ равен игроковому.
+    // Утверждается СВОЙСТВО, а не пересчёт: копия продакшен-арифметики в
+    // свидетеле проверяет умение копировать (§8 п.5), и первая её версия
+    // тут же разошлась с кодом — пол потолка берётся от СТРОКИ тела, а
+    // строки у игрока и транзиента разные.
+    CHECK(generic.leaderHpOverride > 0.0f,
+          "у транзиента терм СТАВИТСЯ: одна дверь на всех (M-282)");
+    CHECK(generic.leaderHpOverride != mine.leaderHpOverride,
+          "и он не равен игрокову — разница живёт в СОДЕРЖИМОМ анкет, а "
+          "не в ветке по владению листом");
+    // ПРИЧИННОСТЬ, А НЕ СОВПАДЕНИЕ: подняли END в АНКЕТЕ транзиента —
+    // потолок обязан вырасти. Это и есть закон «потолок читается из
+    // анкеты»; без этой проверки два числа выше могли бы отличаться по
+    // любой причине, включая случайную.
+    wStore_->sheet[transient.slot].attributes[sm::AttributeId::End] += 20;
+    const AutoBattleSide tougher = auto_battle_side_of(*wStore_, transient);
+    CHECK(tougher.leaderHpOverride > generic.leaderHpOverride,
+          "правка АНКЕТЫ транзиента двигает его потолок — дверь читает "
+          "именно её");
     CHECK(mine.leaderHealthFraction > 0.45f && mine.leaderHealthFraction < 0.55f,
           "his wound walks in with him, read off the entity the merge made "
           "honest");

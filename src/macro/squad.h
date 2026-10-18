@@ -913,21 +913,29 @@ inline AutoBattleSide auto_battle_side_of(const MacroStore& st, MacroHandle h) {
             float(hp.sp) / float(std::max<int>(1, hp.maxSp)), 0.1f, 1.0f);
     }
     s.creatures = &st.inventory[slot].inv;   // область существ контейнера (M-71)
-    if (sheet_owned_at(st, slot)) {
-        // A named leader's hp ceiling is his OWN sheet's, not a roll of his
-        // row — and his aura is what his perks and skills actually say. The
-        // EFFECTIVE sheet (phase 4): the fought path swings by it, so the
-        // resolver pricing the same fight from the same ring must read the
-        // same sheet or the two verdicts disagree. `leaderDpsOverride` is
-        // deliberately NOT set here: a swing is priced by the subworld's
-        // melee identity (sub/engine.h), and macro is L1 — it may not reach
-        // up. The caller that knows both worlds states that one number.
-        // Through THE hp door with his own ROW's floor (§41 root 2).
-        const CharacterSheet eff = effective_sheet_of(st, h);
-        s.leaderHpOverride = float(
-            body_max_hp(eff, npc_def(s.leaderType).combat));
-        s.bonuses = squad_bonuses(eff);
-    }
+    // ПОТОЛОК И АУРА — ОТ АНКЕТЫ, У КАЖДОГО СКВАДА (M-282, 2026-10-18).
+    // Здесь стоял гейт `if (sheet_owned_at(st, slot))`, и невладеющему листом
+    // скваду ОБА терма не ставились ВОВСЕ: потолок HP лидера оставался
+    // броском его строки, а аура — нулём. ЗАКОН АНКЕТЫ п.5 запрещает это
+    // прямым текстом — «пустой лист есть ЗАКОННОЕ значение… отдельной ветки
+    // „а это место“ для них не нужно: пустота — значение, а не исключение», —
+    // и п.7 называет ровно эту форму признаком нарушения.
+    //
+    // ПРЕДПОСЫЛКА ГЕЙТА ИСЧЕЗЛА ДВАЖДЫ. (1) Колонка листа есть у ВСЕХ слотов
+    // с 2026-09-25, и каждое рождение её пишет. (2) С M-246а `sheet_of`
+    // ВСЕГДА отдаёт колонку — дуализм owned/derived умер, — так что
+    // «владение» отвечает теперь ровно на один вопрос: писать ли в лист рост.
+    // К тому, КАКИМ листом сквад ДЕРЁТСЯ, оно отношения не имеет: тот же
+    // лист, которым его судит очный бой, обязан судить и авторезолв, иначе
+    // два исполнения одного закона боя расходятся (CANON S13).
+    //
+    // `leaderDpsOverride` по-прежнему НЕ ставится: удар оценивает ближняя
+    // идентичность субмира (sub/engine.h), а макро — L1 и наверх не тянется.
+    // Это говорит звонящий, который знает оба мира.
+    const CharacterSheet eff = effective_sheet_of(st, h);
+    s.leaderHpOverride = float(
+        body_max_hp(eff, npc_def(s.leaderType).combat));
+    s.bonuses = squad_bonuses(eff);
     return s;
 }
 
