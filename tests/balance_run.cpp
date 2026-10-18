@@ -126,6 +126,55 @@ long long coins_in(const sm::Inventory& inv, const std::vector<int>& coinIdx) {
     return total;
 }
 
+// ── ПЕРЕПИСЬ ЖИВЫХ СЛОТОВ МАКРО-СТОРА ────────────────────────────────────
+//
+// ПОЧЕМУ ПОСТОЯННЫЙ ЖИЛЕЦ, А НЕ ЗОНД ПОД ОДИН ВОПРОС. До 2026-10-18 число
+// населения мира жило ТОЛЬКО в прозе доков, и их было ДВА несводимых: «12.8k
+// слотов = 78 % капа» (пик за 512 дней, родился 2026-09-25 выводом капа 2^15)
+// против «13.7–14.4 тыс. на день 48, три мира» (шапка `squad_index.h`,
+// 2026-10-03), причём меньшее стояло при БОЛЬШЕМ горизонте. Развести их было
+// нечем: оба зонда снесли после ответа (M-72, ЗАМЕР-ОСНОВАНИЕ п.IV), и живого
+// прибора на число живых слотов не осталось ни одного. Снесённый зонд
+// доказывает только то, что его автор видел число один раз. Разбор спора —
+// в SKELETON §I.10 («ЧЕМ ЭТО ЗАКРЫВАЕТ СТАРЫЙ СПОР»): оба старых числа сняты
+// ДО слияния мест в стор, то есть мест не считали вовсе, — потому колонка
+// мест здесь стоит отдельно и рядом.
+//
+// ЧЕТЫРЕ ВЕЛИЧИНЫ, И ОНИ ОТВЕЧАЮТ НА РАЗНЫЕ ВОПРОСЫ — ровно та развилка, из
+// которой спор и вырос:
+//   alive     — сколько слотов ЗАНЯТО, счётчиком самого стора (`aliveCount`);
+//   aliveScan — то же число НЕЗАВИСИМЫМ сканом колонки `alive[]`. Это не
+//               вторая система (DOD п.6), а СВИДЕТЕЛЬ бухгалтерии: закон
+//               прогона ниже стоит на их равенстве, и совравший счётчик
+//               становится виден в тот же день;
+//   dead      — занятые слоты с поднятым байтом `dead`. Ни думка, ни каркас
+//               клеток их не видят (`collect_squads_by_ordinal` фильтрует
+//               `st.dead[slot] == 0`), значит МНОЖЕСТВО ДУМКИ = alive − dead,
+//               и «занято» с «ходит в думку» путать нельзя;
+//   places    — из множества думки те, у кого архетип Place: их дневная думка
+//               кончается ранним возвратом гейта `squad_archetype(…) ==
+//               SquadArchetype::Place` в `npc_ai.cpp`. Счёт идёт ДВЕРЬЮ
+//               `for_each_place@src/macro/landmark_iter.h` — второго написания
+//               закона «что есть место» прибор не заводит.
+struct SlotCensus {
+    long long alive = 0;
+    long long aliveScan = 0;
+    long long dead = 0;
+    long long places = 0;
+};
+
+SlotCensus slot_census(const sm::MacroStore& st) {
+    SlotCensus c;
+    c.alive = (long long)st.aliveCount;
+    for (std::size_t s = 0; s < sm::kUnifiedCap; ++s) {
+        if (st.alive[s] == 0) continue;
+        ++c.aliveScan;
+        if (st.dead[s] != 0) ++c.dead;
+    }
+    sm::for_each_place(st, [&](std::uint16_t) { ++c.places; });
+    return c;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -320,6 +369,31 @@ int main(int argc, char** argv) {
                              "\t%s_consumed\t%s_city\t%s_vil",
                          id, id, id, id, id, id);
         }
+        // ── ПЕРЕПИСЬ СЛОТОВ И ЦЕНА ДУМКИ — В САМОМ КОНЦЕ СТРОКИ ──────────
+        // Приписаны ХВОСТОМ нарочно: ни один индекс прежних колонок не
+        // сдвинулся, поэтому базы, снятые до 2026-10-18, сравнимы с новыми
+        // — и всё равно читать их положено ПО ИМЕНИ заголовка, никогда по
+        // номеру (§5 п.7).
+        //
+        // `aiMsDay` — ВРЕМЯ ПРИБОРА, А НЕ ВЕЛИЧИНА МИРА, и это сказано здесь
+        // вслух, чтобы следующий читатель не принял его за второе: стенные
+        // миллисекунды есть свойство ЖЕЛЕЗА и загрузки машины, их не читает
+        // ни одно число симуляции, калибровать по ним запрещено
+        // («КАЛИБРОВАТЬ ТОЛЬКО В ТИКАХ ИГРЫ»), и закона на них в этом
+        // приборе нет ни одного. Что в них стоит: сумма 256 вызовов
+        // `tick_macro_npc_ai` за игровой день — ровно тот проход, который
+        // переписывает эпик АИ (M-72), без дневного тика мира рядом.
+        //
+        // И ЧТО ИМЕННО МЕРЯЕТСЯ СЕГОДНЯ, СКАЗАНО ВСЛУХ, ИНАЧЕ ЧИСЛО СОВРЁТ
+        // ПОСЛЕ ЭПИКА: за этой дверью сейчас стоит не только думка, а ВСЯ
+        // дневная экономика — `rotate_worker_squads` с аукционом внутри. По
+        // M-72 аукцион УНИЧТОЖАЕТСЯ, а «экономики как самостоятельной системы
+        // не будет» (владелец): её порождают ИИ-модули сквадов, их анкеты и
+        // поля. Значит и число слотов (население рождает та же ротация), и
+        // цена прохода после эпика меняются ПО ЗАМЫСЛУ — это не регресс.
+        // Прибор потому и постоянный жилец: дверь остаётся той же, и дельту
+        // эпика видно ЭТИМИ ЖЕ колонками, а не новым зондом.
+        std::fprintf(fw, "\tslotsAlive\tslotsDead\tslotsPlace\taiMsDay");
         std::fprintf(fw, "\n");
         // ТРИ ПОТОКА МАТЕРИИ, ПО МЕСТАМ (CANON S10, 2026-09-20): гипотеза о
         // расщеплении горизонта — про МЕДИАНЫ по местам (еда топит пол
@@ -370,12 +444,27 @@ int main(int argc, char** argv) {
         // [advance 32 ticks → one AI sweep], daily tick at the rollover —
         // exactly the order the app's frame runs them (main.cpp).
         constexpr int kSweepsPerDay = int(sm::kTicksPerDay / sm::kAiTicks);
+        // Закон бухгалтерии слотов — судится КАЖДЫЙ день, а не на конце
+        // прогона: счётчик, совравший на дне 33 и сошедшийся к дню 512,
+        // прошёл бы итоговую проверку молча.
+        bool slotLawHolds = true;
+        int slotLawFirstBadDay = -1;
+        SlotCensus lastCensus;
+        double lastAiMs = 0.0;
         for (int d = 0; d < days; ++d) {
             accum.reset();
+            double aiSecs = 0.0;
             for (int s = 0; s < kSweepsPerDay; ++s) {
                 sm::tick_world(gs, *macroStore, gs.worldTickRt, sm::kAiTicks,
                                /*max_daily_ticks=*/32, &mw);
+                // Время прибора, не мира (см. шапку колонки `aiMsDay`):
+                // замер стоит ВОКРУГ двери думки и внутрь её не лезет —
+                // `npc_ai.cpp` эпик АИ переписывает целиком, и правка в нём
+                // была бы работой на снос (§5 п.14).
+                const auto a0 = std::chrono::steady_clock::now();
                 sm::tick_macro_npc_ai(mw, ai, sm::kAiTicks);
+                aiSecs += std::chrono::duration<double>(
+                              std::chrono::steady_clock::now() - a0).count();
             }
 
             // Day-end sampling: stocks from the landmarks, flows from facts.
@@ -586,6 +675,34 @@ int main(int argc, char** argv) {
                              stock[c], accum.gathered[c], accum.produced[c],
                              accum.consumed[c], stockCity[c], stockVil[c]);
             }
+            const SlotCensus sc = slot_census(*macroStore);
+            std::fprintf(fw, "\t%lld\t%lld\t%lld\t%.3f",
+                         sc.alive, sc.dead, sc.places, aiSecs * 1000.0);
+            // ЗАКОН СЛОТОВ, И ОН ЖЕ ДЕТЕКТОР ПРИБОРА. Три утверждения, и ни
+            // одно не есть пересказанное число (§8 п.4): (1) счётчик стора
+            // сходится с независимым сканом своей же колонки — бухгалтерия
+            // рождения и смерти не врёт; (2) занятых слотов не ноль;
+            // (3) мест не ноль и они ПОДМНОЖЕСТВО множества думки
+            // (alive − dead), потому что дверь мест фильтрует мёртвых тем же
+            // предикатом. Ненулевое число мест утверждается ОСОЗНАННО как
+            // закон мира, а не как везение сида (§8 п.11): генерация обязана
+            // поставить столицу каждой фракции и города вокруг неё (ЗАКОН
+            // ГЕНЕРАЦИИ п.6), поэтому мир без мест есть сломанный мир, а не
+            // неудачный сид.
+            const bool slotLawDay =
+                sc.alive == sc.aliveScan && sc.alive > 0 && sc.places > 0
+                && sc.places <= sc.alive - sc.dead;
+            if (!slotLawDay && slotLawHolds) {
+                slotLawHolds = false;
+                slotLawFirstBadDay = gs.worldTime.day();
+                std::fprintf(stderr,
+                             "[slots] ДЕНЬ %d: alive=%lld scan=%lld dead=%lld "
+                             "places=%lld\n",
+                             slotLawFirstBadDay, sc.alive, sc.aliveScan,
+                             sc.dead, sc.places);
+            }
+            lastCensus = sc;
+            lastAiMs = aiSecs * 1000.0;
             std::fprintf(fw, "\n");
         }
 
@@ -647,7 +764,7 @@ int main(int argc, char** argv) {
             alive += flock > 0 ? 1 : 0;
         });
         const bool populated = popEnd > 0 && alive > 0;
-        lawsHold = lawsHold && populated;
+        lawsHold = lawsHold && populated && slotLawHolds;
 
         const double secs =
             std::chrono::duration<double>(std::chrono::steady_clock::now()
@@ -658,6 +775,27 @@ int main(int argc, char** argv) {
                      seed, days, popEnd, alive, secs);
         std::fprintf(stderr, "[law] world still populated: %s\n",
                      populated ? "OK" : "FAIL");
+        // Перепись последнего дня — чтобы ответ читался без TSV; `aiMsDay`
+        // здесь стоит рядом с числом слотов не ради удобства, а потому что
+        // поодиночке они оба бессмысленны: цена думки есть цена ЭТОГО
+        // населения. Стенные миллисекунды — время прибора (см. колонку).
+        std::fprintf(stderr,
+                     "[slots] seed=%u day=%d alive=%lld dead=%lld places=%lld "
+                     "walked=%lld aiMsDay=%.3f\n",
+                     seed, gs.worldTime.day(), lastCensus.alive,
+                     lastCensus.dead, lastCensus.places,
+                     lastCensus.alive - lastCensus.dead, lastAiMs);
+        if (slotLawHolds) {
+            std::fprintf(stderr,
+                         "[law] store slot bookkeeping (aliveCount == scan, "
+                         "places subset of walked): OK\n");
+        } else {
+            std::fprintf(stderr,
+                         "[law] store slot bookkeeping (aliveCount == scan, "
+                         "places subset of walked): FAIL (первый день "
+                         "расхождения %d)\n",
+                         slotLawFirstBadDay);
+        }
         std::fclose(fw);
         std::fclose(fl);
     }

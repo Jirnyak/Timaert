@@ -416,8 +416,6 @@ SKELETON.md	resource_field.h:64-83
 SKELETON.md	ruins.cpp:25-31
 SKELETON.md	ruins.cpp:44
 SKELETON.md	ruins.cpp:73
-SKELETON.md	save.cpp:1031
-SKELETON.md	save.cpp:1031-1113
 SKELETON.md	scent_field.cpp:15
 SKELETON.md	scent_field.cpp:20-41
 SKELETON.md	scent_field.cpp:21-32

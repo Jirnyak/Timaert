@@ -378,7 +378,8 @@ struct NpcCharacter {
 struct SquadName {
     char text[32];
 };
-static_assert(sizeof(SquadName) == 32, "имя анкеты: 32 Б × 32768 = 1 МиБ");
+static_assert(sizeof(SquadName) == 32,
+              "имя анкеты: 32 Б × единый кап 16384 = 0.5 МиБ");
 
 // Sprite (atlas index + tint). `spriteRow` is this body's row in THE sprite
 // table (tables/sprite_rows.h) held as a raw ordinal, because the ECS layer may
