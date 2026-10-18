@@ -15,7 +15,7 @@
 #include "macro/nav_field.h"
 #include "macro/pathfinding.h"
 #include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
-#include "macro/squad.h"         // set_place_kind — смена вида места
+#include "macro/squad.h"
 #include "macro/state.h"
 #include "macro/store.h"
 #include "core/torus.h"
@@ -419,13 +419,14 @@ int main() {
         CHECK(f.nav.regionOf[0] == mark,
               "an unchanged world is not rebaked: no poll, no work");
 
-        // ПЕРЕХОД ПЛЮС РОЖДЕНИЕ В ОДНОМ ОКНЕ — ровно та тихая ошибка, на
-        // которой стоял старый сторож: он сравнивал ЧИСЛО ЖИВЫХ мест, а
-        // деревня, ставшая руиной, живой считается по-прежнему — сторож не
-        // видел НИЧЕГО, хотя реестровая строка места сменилась. Событию
-        // такое не сойдёт.
-        sm::set_place_kind(f.gs, places(), f.seeded[1].slot,
-                           sm::SquadType::Ruin);
+        // РОЖДЕНИЕ В ОДНОМ ОКНЕ СО СТАРЫМ ЖИЛЬЦОМ. Прежде блок начинался
+        // СМЕНОЙ РОДА (деревня → руина) через `set_place_kind`, и ловил он
+        // тихую ошибку старого сторожа: тот сравнивал ЧИСЛО ЖИВЫХ мест, а
+        // сменивший род живым считается по-прежнему. Дверь смены рода умерла
+        // 2026-10-18 (ноль прод-вызовов, вердикт владельца), и воспроизводить
+        // её руками здесь ЗАПРЕЩЕНО — это была бы вторая реализация в тесте.
+        // Осталось то, что в мире ЕСТЬ: событие поднимает рождение, и старый
+        // житель обязан пережить перепёк, не потеряв своей округи.
         const int ruinId = f.seeded[1].id;
         const sm::MacroHandle bornH =
             sm::birth_place(f.gs, places(), sm::SquadType::Village, 40, 32);
@@ -434,14 +435,14 @@ int main() {
         CHECK(sm::nav_ensure(f.mw, f.nav),
               "ensure still answers after the swap");
         CHECK(f.nav.regionOf[0] != mark,
-              "death plus birth in one window still rebakes");
+              "рождение в окне перепекает округи");
         bool sawDead = false, sawBorn = false;
         for (std::int32_t lid : f.nav.regionLandmarkId) {
             sawDead = sawDead || lid == ruinId;
             sawBorn = sawBorn || lid == bornId;
         }
         CHECK(sawDead && sawBorn,
-              "the ruin still stands and seeds its region, the newborn too");
+              "старый житель сеет свою округу, и новорождённый тоже");
     }
 
     return sm::test::report("nav_region_test");

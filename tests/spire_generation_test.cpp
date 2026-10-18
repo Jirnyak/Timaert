@@ -374,18 +374,12 @@ void test_genesis_births_souls_and_ruins() {
     // and the placing kinds this harness ran really do declare themselves —
     // "a kind nobody rolled" can never again pose as "a kind that does not
     // exist".
-    for (const PlaceRow& r : all) {
-        CHECK(landmark_def(r.type).worldPlaces,
-              "no pass places a kind whose row says the world does not");
-    }
-    CHECK(landmark_def(SquadType::Spire).worldPlaces
-              && landmark_def(SquadType::Ruin).worldPlaces,
-          "the placing kinds declare worldPlaces");
-    CHECK(!landmark_def(SquadType::Lair).worldPlaces
-              && !landmark_def(SquadType::Shrine).worldPlaces
-              && !landmark_def(SquadType::Mine).worldPlaces
-              && !landmark_def(SquadType::Tower).worldPlaces,
-          "the deliberately-unplaced kinds say so in their rows");
+    // ЗДЕСЬ СТОЯЛИ ТРИ ПРОВЕРКИ КОЛОНКИ `worldPlaces`, И ОНИ ОХРАНЯЛИ ДУБЛЬ
+    // (M-246, снесены 2026-10-18 вместе с колонкой). Колонка объявляла,
+    // расставляет ли генезис род, — а сами размещатели брали род ЛИТЕРАЛОМ и
+    // её не читали НИ РАЗУ: свидетель сверял данные с хардкодом, то есть
+    // утверждал согласие двух ответов вместо одного закона. Что РАССТАВЛЕНО
+    // на самом деле, этот тест по-прежнему судит выше — по телам в сторе.
 }
 
 // ── M-233 п.8: ОДИН ОТВЕТ НА «ВЫКАЧАН ЛИ ШПИЛЬ» ──────────────────────────

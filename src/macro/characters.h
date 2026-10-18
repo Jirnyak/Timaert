@@ -50,10 +50,16 @@ struct DesignCharacterDef {
     NPCType      body;      // строка реестра как есть: спрайт/комбат/апкип;
                             // контекст выбирает строку, не скейлит (S12)
     std::int16_t level;     // −1 = дефолт строки + бросок
-    // Лист: бросок от (body, level, ординальный сид) — как у любого
-    // именованного, ИЛИ авторские числа (вердикт «колонка строки»).
-    bool           authoredSheet;
-    CharacterSheet sheet;   // читается только при authoredSheet
+    // ЛИСТ — ЕДИНОЙ СИСТЕМОЙ, БЕЗ ОСОБОГО ПУТИ (вердикт владельца
+    // 2026-10-18, дословно: «авторед это просто одна из анкет то есть не
+    // ннадо особую систему это единая система просто дод типа будут
+    // добавляться»). Здесь жили `bool authoredSheet` и `CharacterSheet
+    // sheet` — флаг плюс колонка-спутник, то есть ВТОРОЙ путь рождения
+    // анкеты рядом с общим. Мертвы они были буквально: `authoredSheet =
+    // true` не ставила НИ ОДНА из пяти строк, и ветка за ними была
+    // недостижима с рождения. Анкета дизайн-персонажа выводится из его
+    // колонок (`body` + `level`) той же дверью, что у всякого сквада, —
+    // а добавляться будут СТРОКИ, не механика.
     // Строка ОДНОГО реестра фракций (authoring-ключ); nullptr = фракция
     // ДОМА (царь варварского города — их человек, чей бы город ни выпал).
     const char*  factionId;
@@ -86,7 +92,6 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
     {
         "varnava", "Varnava",
         NPCType::Merchant, /*level*/ 3,
-        /*authoredSheet*/ false, CharacterSheet{},
         "empire",
         SquadType::City, /*homeIndex*/ 0, /*homeFaction*/ nullptr,
         /*homePeak*/ false, /*cell*/ 0, 0,
@@ -106,7 +111,6 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
     {
         "king_peasant", "King-Peasant",
         NPCType::Peasant, /*level*/ 70,
-        /*authoredSheet*/ false, CharacterSheet{},
         "king_peasant",
         SquadType::City, /*homeIndex: случайный*/ -1,
         /*homeFaction*/ "barbarian",
@@ -123,7 +127,6 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
     {
         "dragon1", "Dragon1",
         NPCType::Dragon, /*level*/ 10,
-        /*authoredSheet*/ false, CharacterSheet{},
         "dragons",
         SquadType::None, /*homeIndex: вершина №0*/ 0,
         /*homeFaction*/ nullptr,
@@ -134,7 +137,6 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
     {
         "dragon2", "Dragon2",
         NPCType::Dragon, /*level*/ 10,
-        /*authoredSheet*/ false, CharacterSheet{},
         "dragons",
         SquadType::None, /*homeIndex: вершина №1*/ 1,
         /*homeFaction*/ nullptr,
@@ -145,7 +147,6 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
     {
         "dragon3", "Dragon3",
         NPCType::Dragon, /*level*/ 10,
-        /*authoredSheet*/ false, CharacterSheet{},
         "dragons",
         SquadType::None, /*homeIndex: вершина №2*/ 2,
         /*homeFaction*/ nullptr,

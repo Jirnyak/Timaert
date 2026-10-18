@@ -445,16 +445,9 @@ void spawn_design_characters(GameState& gs, MacroStore& st,
         // АНКЕТА ПО-ММОРПГ: колонка уже рождена ординальной формулой в
         // make_npc; авторские числа строки ПЕРЕКРЫВАЮТ её, и полосы/марш-
         // кэши пересобираются от них через ту же дверь, что у всех.
-        if (row.authoredSheet) {
-            st.sheet[slot] = row.sheet;
-            refresh_body_from_sheet(st.pools[slot], &st.runtime[slot],
-                                    effective_sheet_of(st, handle_at(st, slot)),
-                                    row.body);
-            // Рождение целым — как make_npc рождает всех.
-            st.pools[slot].hp = st.pools[slot].maxHp;
-            st.pools[slot].mp = st.pools[slot].maxMp;
-            st.pools[slot].sp = st.pools[slot].maxSp;
-        }
+        // (Ветка `if (row.authoredSheet)` УМЕРЛА 2026-10-18: ни одна строка
+        //  флага не ставила, и анкета дизайн-персонажа приходит ОБЩЕЙ
+        //  дверью — `make_npc` выше уже родил её из (body, level, сид).
         st.designTag[slot] = ecs::DesignCharacterTag{ord};
 
         // Логово — дом-клетка модели вылетов: вершина и есть его дом.

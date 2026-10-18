@@ -947,7 +947,8 @@ inline bool cell_is_leased(const GameState& gs, std::uint32_t cell) noexcept {
 // (landmark_index_by_id / landmark_by_id / add_landmark / set_landmark_type
 // УНИЧТОЖЕНЫ ломтиком F вместе со строкой и штабелем мест: резолв ординала —
 // macro_handle_by_spawn_id@src/macro/squad.h, рождение — birth_place,
-// смена вида — set_place_kind@src/macro/squad.h, та же дверь событий
+// (смена вида места дверью НЕ делается: она умерла 2026-10-18 с нулём
+//  прод-вызовов; событие состава поднимает рождение)
 // navEpoch.)
 
 // ── THE WORKED LAYER'S DOOR (CANON S5, v96) ──────────────────────────────

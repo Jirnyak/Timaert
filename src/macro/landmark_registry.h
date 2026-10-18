@@ -177,12 +177,14 @@ struct LandmarkDef {
     // born with souls this way (settlements keep their own site-score law).
     std::uint16_t    bornPopBase = 0;
     std::uint16_t    bornPopPerScore = 0;
-    // THE REGISTRY WATCHMAN (§42): true = a genesis pass PLACES this kind
-    // on the map; false = the world deliberately does not place it (yet).
-    // Either way the answer is written HERE, so "a kind nobody rolled" can
-    // never be mistaken for "a kind that does not exist" — the class of
-    // silence that kept half this registry stillborn for two refactors.
-    bool             worldPlaces = false;
+    // (Колонка `worldPlaces` УМЕРЛА 2026-10-18, вердикт владельца «снести».
+    //  Она объявляла, РАССТАВЛЯЕТ ли генезис этот род, — то есть говорила
+    //  о том, КАК эту таблицу используют, при нуле прод-читателей: сами
+    //  размещатели (`src/macro/spires.cpp`, `src/macro/ruins.cpp`) берут
+    //  род ЛИТЕРАЛОМ и колонку не спрашивали ни разу. ЗАКОН АГНОСТИЧНОСТИ
+    //  п.3 запрещает это прямо: «в фундаментальной системе появилась
+    //  константа, чей вывод упирается в СЦЕНАРИЙ использования». Решает
+    //  «какие роды ставить» СЛОЙ ВЫШЕ — он и есть редактор.)
     // ── The GARRISON law (§42 Инк 7, owner: «гарнизон = армия ландмарка»)
     // Target strength = population >> this; 0xFF = the kind keeps no
     // garrison (the honest default — a spire's «garrison» is its
@@ -283,7 +285,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
      .bornPopBase = 0, .bornPopPerScore = 0,
-     .worldPlaces = true, .garrisonShift = 3, .labourShift = 3,
+     .garrisonShift = 3, .labourShift = 3,
      .crews = {{.npc = NPCType::Peasant, .gate = CrewGate::Auction,
                 .solo = false, .type = SquadType::Collector},
                    // ПАТРУЛЬНАЯ СТРОКА ВЫРЕЗАНА 2026-09-21 (владелец:
@@ -347,7 +349,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
      .bornPopBase = 0, .bornPopPerScore = 0,
-     .worldPlaces = true, .garrisonShift = 3, .labourShift = 1,
+     .garrisonShift = 3, .labourShift = 1,
      .crews = {{.npc = NPCType::Peasant, .gate = CrewGate::Auction,
                 .solo = false, .type = SquadType::Artel}},
      .crewCount = 1,
@@ -367,7 +369,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
      .faunaCap = kLandmarkFaunaCapGround,
      .crowdHabitat = 1u << 13, .crowdInsideShift = 2,
      .bornPopBase = 128, .bornPopPerScore = 64,
-     .worldPlaces = true },
+     },
     {.type = SquadType::Ruin, .id = "ruin", .label = "Ruin",
      .minZone = 51, .maxZone = 229, .glyph = 'r', .color = 0xFF8E8576u,
      .walkable = true, .lightColor = 0xFF8E8576u, .lightPop = 40.0f,
@@ -376,7 +378,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
      .faunaCap = kLandmarkFaunaCapGround,
      .crowdHabitat = 1u << 12, .crowdInsideShift = 0,
      .bornPopBase = 64, .bornPopPerScore = 1,
-     .worldPlaces = true },
+     },
     {.type = SquadType::Lair, .id = "lair", .label = "Lair",
      .minZone = 102, .maxZone = 255, .glyph = 'L', .color = 0xFF883A3Au,
      .walkable = true, .lightColor = 0xFF883A3Au, .lightPop = 70.0f,
