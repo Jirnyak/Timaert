@@ -782,11 +782,8 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // rule): his own realm as himself, the lord's realm while he wears one
     // (закон шва, 2026-09-17 — the flag survives the seam now). The rule
     // lives at the call site because the owner is what the call site knows.
-    // The owner's AURA rides the same way (character_sheet.h squad_bonuses):
-    // whoever leads this squad buffs every soldier born here — the EFFECTIVE
-    // sheet (phase 4), which already follows the flag by its door.
-    const BonusTotals playerBonuses =
-        squad_bonuses(player_effective_sheet(gs, (*mw_.store)));
+    // (АУРА ВЛАДЕЛЬЦА СНЕСЕНА 2026-10-18 вместе с `squad_bonuses` —
+    //  константой-нулём с перковой чистки; вернётся строками перк-графа.)
     const MacroHandle flagRec = frame_->playerFlag;
     // 0 — «НИКТО» (закон нуля-ординала): если флажок невалиден, мира с
     // игроком ещё нет, и расписке некуда ложиться. Здесь стоял литерал
@@ -811,7 +808,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
                            : Inventory{},
                        mgr_, playerX_, playerY_,
         cell_seed(frame_->worldSeed, cx, cy) ^ kSquadSpawnSalt,
-        squadFaction, &playerBonuses, creaturesSubject, creaturesCx, creaturesCy);
+        squadFaction, creaturesSubject, creaturesCx, creaturesCy);
     // Project the persistent macro NPCs standing in this 3×3 window into the
     // scene as real combat bodies (Inc 5d) — the overworld lords / bandits /
     // peasants are physically MET where they roam, and each projection carries a

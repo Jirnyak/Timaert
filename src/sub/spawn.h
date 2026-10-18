@@ -125,15 +125,12 @@ inline void stamp_macro_debt(SubObjects& objs, int s,
 // Form 1 — DERIVED. `faceSalt` separates two bodies drawn from the same seed
 // (slot index, ordinal in the crowd). Stamps the loan's receipt, if any.
 // `squadBonuses` is what this body's LEADER gives it (character_sheet.h
-// squad_bonuses) — the ordinary BonusTotals every modifier in the game
-// produces, applied into this body's own sheet before combat is projected
-// from it. Ruling №2, never a second multiplier beside the sheet; and since
-// 2026-08-27 not a second SYSTEM either. nullptr (every non-squad body)
-// applies nothing.
+// (Параметр ауры лидера `squadBonuses` снесён 2026-10-18 вместе с
+//  `squad_bonuses`: та возвращала константу-нули с перковой чистки
+//  2026-09-03 — см. некролог в macro/anketa.h.)
 int spawn_derived_body(SubObjects& objs, const BodySpec& body,
-                                std::uint32_t faceSalt,
-                                const BodyLoan& loan = BodyLoan::none(),
-                                const BonusTotals* squadBonuses = nullptr);
+                       std::uint32_t faceSalt,
+                       const BodyLoan& loan = BodyLoan::none());
 
 // Form 2 — TRACKED. Reads WHAT this body is (type, faction, rank), WHO it is
 // (face) and HOW HURT it is straight from the macro record, and hands the body
@@ -454,7 +451,6 @@ void spawn_player_squad(SubObjects& objs,
                         float playerY,
                         std::uint32_t seed,
                         std::uint16_t faction,
-                        const BonusTotals* squadBonuses = nullptr,
                         std::int32_t creaturesSubject = 0,
                         std::int16_t creaturesCx = 0,
                         std::int16_t creaturesCy = 0);
@@ -466,7 +462,6 @@ void spawn_player_squad(SubObjects& objs,
                         float playerY,
                         std::uint32_t seed,
                         std::uint16_t faction,
-                        const BonusTotals* squadBonuses = nullptr,
                         std::int32_t creaturesSubject = 0,
                         std::int16_t creaturesCx = 0,
                         std::int16_t creaturesCy = 0);

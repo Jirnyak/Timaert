@@ -334,83 +334,14 @@ void test_a_body_that_is_not_an_entity_is_refused() {
 // header and add/collect/apply verbs are gone, and what is left is one
 // function producing the same BonusTotals every other modifier in the game
 // produces. Perk rows today; charisma, skills and carried gear are a few
-// lines at the same door when the perk epic lands.
-void test_a_leaders_aura_reaches_his_men() {
-    using namespace sm;
-
-    // The collector: sources are data rows, not branches.
-    CharacterSheet leader{};
-    const BonusTotals none = squad_bonuses(leader);
-    CHECK(none.attr[std::size_t(AttributeId::End)] == 0,
-          "a sheet with no sources buffs nobody");
-    // (The Leader perk row died with the 2026-09-03 perk purge — the door is
-    // empty until the redesign, CANON S14. The application contract below is
-    // exercised with a hand-built gift through the same BonusTotals.)
-    BonusTotals gift{};
-    gift.attr[std::size_t(AttributeId::End)] = 1;
-
-    // The clamps are the registry's, and they are the same ones a legitimate
-    // point spend respects — one door for a leader's gift and a sword's affix.
-    CharacterSheet clamped{};
-    BonusTotals curse{};
-    accumulate(curse, {std::uint8_t(BonusId::End), -50});
-    accumulate(curse, {std::uint8_t(BonusId::Bodybuilding), std::int16_t(500)});
-    clamped = effective_sheet(clamped, curse);
-    CHECK(clamped.attributes.of(sm::AttributeId::End) == 1,
-          "no gift can curse an attribute below its base of 1");
-    CHECK(clamped.skills.of(sm::SkillId::Bodybuilding) == kMaxSkillRank,
-          "and none can push a skill past mastery");
-
-    // End to end through the ONE birth: the same squad born twice from the
-    // same seed — once led, once alone. Every soldier must be tougher led,
-    // by the vit point's worth (10 HP scaled by his own bodybuilding, never
-    // more than the capstone allows) — a constant resolver cannot satisfy a
-    // difference between two live runs.
-    const std::uint16_t f = std::uint16_t(faction_index(kPlayerFactionId));
-    std::vector<std::uint8_t> ground(
-        std::size_t(sub::kFullSize) * sub::kFullSize, sub::TILE_GRASS);
-    // Арена сцены — предусловие рождения тел (§8 п.11): без неё дверь
-    // спавна рожает тела без слотов, и колонки рода/баров некуда класть.
-    // Два прогона — ДВЕ арены: одна сцена не смеет видеть тела другой.
-    auto ledArena_ = sm::test::make_scene_arena();
-    auto aloneArena_ = sm::test::make_scene_arena();
-    sub::SubObjects& ledArena = *ledArena_;
-    sub::SubObjects& aloneArena = *aloneArena_;
-    sub::spawn_player_squad(ledArena, mixed_squad(), ground,
-                            512.0f, 512.0f, 123u, f, &gift);
-    sub::spawn_player_squad(aloneArena, mixed_squad(), ground,
-                            512.0f, 512.0f, 123u, f);
-
-    int compared = 0;
-    // Свипы двух арен по биту (ломоть D): гейт займа отсекает не-тела.
-    for (int sLed = 0; sLed < int(kMaxSubObjects); ++sLed) {
-        if ((ledArena.flags[std::size_t(sLed)] & sub::kObjAlive) == 0u)
-            continue;
-        const auto* loanLedP = sm::sub::slot_debt(ledArena, sLed);
-        if (loanLedP == nullptr) continue;
-        const auto& loanLed = *loanLedP;
-        if (loanLed.stock != std::uint8_t(MacroStock::Creatures)) continue;
-        for (int sAlone = 0; sAlone < int(kMaxSubObjects); ++sAlone) {
-            if ((aloneArena.flags[std::size_t(sAlone)] & sub::kObjAlive) == 0u)
-                continue;
-            const auto* loanAloneP = sm::sub::slot_debt(aloneArena, sAlone);
-            if (loanAloneP == nullptr) continue;
-            const auto& loanAlone = *loanAloneP;
-            if (loanAlone.stock != std::uint8_t(MacroStock::Creatures)
-                || loanAlone.detail != loanLed.detail) {
-                continue;
-            }
-            const float withAura = (*sm::sub::slot_pools(ledArena, sLed)).maxHp;
-            const float without  = (*sm::sub::slot_pools(aloneArena, sAlone)).maxHp;
-            const float delta = withAura - without;
-            CHECK(delta >= 9.0f && delta <= 61.0f,
-                  "a led soldier is tougher by his leader's vit point - "
-                  "10 HP through his own sheet, never a flat second number");
-            ++compared;
-        }
-    }
-    CHECK(compared == 4, "every soldier of the creatures was born in both runs");
-}
+// (СВИДЕТЕЛЬ `test_a_leaders_aura_reaches_his_men` СНЕСЁН
+//  2026-10-18 вместе со своим СУБЪЕКТОМ: он охранял применение АУРЫ
+//  лидера в лист тела, а `squad_bonuses` возвращала константу-нули с
+//  перковой чистки 2026-09-03 и снесена вердиктом владельца «снести,
+//  вернётся с перками». Механики нет — охранять нечего (§5 п.6:
+//  красный тест при сносе может охранять живой закон, у которого умер
+//  носитель; здесь умер сам закон, и это сказано вслух, а не
+//  замаскировано ослабленной проверкой).
 
 // A squad on the map projects its СУЩЕСТВ КОНТЕЙНЕРА, not just its leader (Session 15):
 // the leader arrives as the tracked body it always was, and every creature row
@@ -751,7 +682,6 @@ int main() {
     test_a_creature_is_as_tall_as_its_own_row();
     test_a_tracked_body_is_the_entity_it_embodies();
     test_a_body_that_is_not_an_entity_is_refused();
-    test_a_leaders_aura_reaches_his_men();
     test_a_squad_on_the_map_projects_its_creatures();
     test_a_derived_body_stores_only_what_its_seed_cannot_say();
     return sm::test::report("body_contract_test");

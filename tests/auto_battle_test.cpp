@@ -92,10 +92,9 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
 
     const auto add_fighter = [&bodies](NPCType type, int level,
                                        std::uint32_t seed,
-                                       const BonusTotals* squadBonuses, float frac,
+                                       float frac,
                                        int side) {
         CharacterSheet sheet = make_character_sheet(type, level, seed);
-        if (squadBonuses) sheet = effective_sheet(sheet, *squadBonuses);
         const NpcTypeDef& def = npc_def(type);
         const CombatTemplate pc = project_combat(sheet, def.combat);
         Body f{};
@@ -121,13 +120,13 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
     const AutoBattleSide* sides[2] = {&a, &b};
     for (int side = 0; side < 2; ++side) {
         const AutoBattleSide& s = *sides[side];
-        add_fighter(s.leaderType, s.leaderLevel, s.leaderSeed, nullptr,
+        add_fighter(s.leaderType, s.leaderLevel, s.leaderSeed,
                     s.leaderHealthFraction, side);
         if (s.creatures) {
             for (const CreatureRef r : creatures_range(*s.creatures)) {
                 if (!valid_npc_kind(r.kind)) continue;
                 add_fighter(NPCType(r.kind), normalize_soldier_level(r.level),
-                            auto_battle_detail::member_seed(r), &s.bonuses,
+                            auto_battle_detail::member_seed(r),
                             1.0f, side);
             }
         }
@@ -225,15 +224,11 @@ void test_power_grows_with_the_sheet() {
     CHECK(pMore > pFew, "more men are more strength");
     CHECK(pVet > pFew, "higher levels are more strength - the sheet IS the scaling");
 
-    // The aura reaches the resolver through the same door the births use.
-    // (Hand-built totals since the 2026-09-03 perk purge emptied the aura
-    // table; the redesigned perks will feed this same door — CANON S14.)
-    AutoBattleSide led = side_of(NPCType::Guard, 3, &few);
-    BonusTotals aura{};
-    aura.attr[std::size_t(AttributeId::End)] = 1;
-    led.bonuses = aura;
-    CHECK(squad_power(led) > pFew,
-          "a lord's aura commands a stronger squad by the same law");
+    // (ПРОВЕРКА АУРЫ СНЕСЕНА 2026-10-18 вместе с её носителем: терм
+    //  `AutoBattleSide::bonuses` и дверь `squad_bonuses` умерли — та
+    //  возвращала константу-нули с перковой чистки 2026-09-03, и свидетель
+    //  проверял контракт величины, которой в мире нет. Вернётся вместе с
+    //  перк-графом, строками.)
 
     // Fatigue and terrain are context, not flavour.
     AutoBattleSide tired = side_of(NPCType::Guard, 3, &few);

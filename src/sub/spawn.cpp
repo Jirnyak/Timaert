@@ -297,8 +297,7 @@ ecs::Combat combat_from_sheet(const CharacterSheet& sheet,
 // Возврат — СЛОТ арены (ломоть D); -1 = честный отказ (арены нет / кап).
 int emplace_body(SubObjects& arena, const BodySpec& body,
                  const ecs::NpcCharacter& face,
-                 float healthFraction,
-                 const BonusTotals* squadBonuses = nullptr) {
+                 float healthFraction) {
     const NpcTypeDef& def = npc_def(body.type);
     // WHO HE IS. A record the world keeps wins over a fresh roll of his row:
     // the projection used to call make_character_sheet with the CELL's seed,
@@ -312,7 +311,6 @@ int emplace_body(SubObjects& arena, const BodySpec& body,
     // it (character_sheet.h, ruling №2): from here down a buffed soldier is simply
     // a soldier whose sheet says more, and no formula ever meets a second
     // source of strength standing beside it.
-    if (squadBonuses) sheet = effective_sheet(sheet, *squadBonuses);
     const CombatTemplate pc = project_combat(sheet, def.combat);
 
     // Integers, not fractions: a body that hits for 17.85 accumulates a
@@ -622,11 +620,10 @@ int toroidal_cell_offset(int a, int c, int n) {
 // ── The two forms of birth (declared in spawn.h) ─────────────────────────
 
 int spawn_derived_body(SubObjects& objs, const BodySpec& body,
-                       std::uint32_t faceSalt, const BodyLoan& loan,
-                       const BonusTotals* squadBonuses) {
+                       std::uint32_t faceSalt, const BodyLoan& loan) {
     const int s =
         emplace_body(objs, body, derive_face(body.seed, body.type, faceSalt),
-                     /*healthFraction*/1.0f, squadBonuses);
+                     /*healthFraction*/1.0f);
     // The receipt, stamped by the birth rather than by the caller: borrowing is
     // part of coming into being, not a line a spawner might remember to add.
     // Nothing lent means nothing to stamp — a body drawn from thin air is honest
@@ -1356,12 +1353,11 @@ void spawn_player_squad(SubObjects& objs,
                         float playerY,
                         std::uint32_t seed,
                         std::uint16_t faction,
-                        const BonusTotals* squadBonuses,
                         std::int32_t creaturesSubject,
                         std::int16_t creaturesCx,
                         std::int16_t creaturesCy) {
     spawn_player_squad(objs, squad, mgr.tiles(), playerX, playerY, seed,
-                       faction, squadBonuses, creaturesSubject, creaturesCx,
+                       faction, creaturesSubject, creaturesCx,
                        creaturesCy);
 }
 
@@ -1372,7 +1368,6 @@ void spawn_player_squad(SubObjects& objs,
                         float playerY,
                         std::uint32_t seed,
                         std::uint16_t faction,
-                        const BonusTotals* squadBonuses,
                         std::int32_t creaturesSubject,
                         std::int16_t creaturesCx,
                         std::int16_t creaturesCy) {
@@ -1448,8 +1443,7 @@ void spawn_player_squad(SubObjects& objs,
                                soldier.entityId != 0
                                    ? std::int32_t(soldier.entityId)
                                    : -1,
-                               soldier.kind, soldier.level}),
-            squadBonuses);
+                               soldier.kind, soldier.level}));
         // Отказ арены (-1) бит не ставит — прежний честный no-op.
         if (ss >= 0) {
             slot_flag_set(objs, ss, kObjPlayerSoldier);
@@ -1638,17 +1632,10 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
         }
         ++projected;
 
-        // The leader's buff, read from the leader's OWN sheet (character_sheet.h squad_bonuses)
-        // — collected once per squad and applied into every member's sheet at
-        // birth. A generic leader's derived sheet carries no bonus sources
-        // today (no perks), so this collects empty and changes nothing; a
-        // hand-authored or persistent leader with a Leader-class perk buffs
-        // its troops through this same line with no further change anywhere.
-        BonusTotals leaderBonuses{};
-        if (const auto* leaderSheet =
-                sub::slot_sheet(objs, leaderSlot)) {
-            leaderBonuses = squad_bonuses(*leaderSheet);
-        }
+        // (БАФФ ЛИДЕРА СНЕСЁН 2026-10-18 вместе с `squad_bonuses`: та
+        //  возвращала КОНСТАНТУ-НУЛИ с перковой чистки 2026-09-03, и
+        //  комментарий здесь это признавал сам — «collects empty and changes
+        //  nothing». Вернётся вместе с перк-графом, строками, а не кодом.)
 
         // The leader's troops. Each creature row is one unit of the squad's
         // creatures STOCK made visible: a DERIVED body — the row says WHO stands
@@ -1723,7 +1710,7 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                << 7),
                         /*combatant*/true},
                     /*faceSalt*/std::uint32_t(m) * 2654435761u ^ 0x9E3779B9u,
-                    loan, &leaderBonuses);
+                    loan);
                 ++projected;
             }
         }

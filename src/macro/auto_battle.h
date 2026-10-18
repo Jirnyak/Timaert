@@ -56,7 +56,8 @@ struct AutoBattleSide {
     // ЕДИНЫЙ КОНТЕЙНЕР сквада (M-71): бой читает только область существ
     // (creatures_range), предметная область для него не существует.
     const Inventory* creatures = nullptr;   // may be empty/null
-    BonusTotals   bonuses{};
+    // (Поле `bonuses` умерло с `squad_bonuses` 2026-10-18: аура сквада
+    //  была константой-нулём, см. некролог в macro/anketa.h.)
     // Context, composed by the caller from what the cell and the squad say:
     // terrain advantage (defender's hill, forest cover — data rows when the
     // encounter system lands) and fatigue (sp / maxSp). 1 = neutral/fresh.
@@ -116,9 +117,8 @@ inline int auto_battle_armor(const Defense& d, const Skills& skills) {
 // the door's own for this row: npc_def().defense (macro fighters wear no
 // equipment today), assembled by the SAME body_defense the scene calls.
 inline float fighter_power(NPCType type, int level, std::uint32_t seed,
-                           const BonusTotals* squadBonuses, float healthFraction) {
-    CharacterSheet sheet = make_character_sheet(type, level, seed);
-    if (squadBonuses) sheet = effective_sheet(sheet, *squadBonuses);
+                           float healthFraction) {
+    const CharacterSheet sheet = make_character_sheet(type, level, seed);
     const NpcTypeDef& def = npc_def(type);
     const CombatTemplate pc = project_combat(sheet, def.combat);
     // His armour is his ROW times his TRAINING — the same sentence the fought
@@ -189,14 +189,14 @@ inline float squad_power(const AutoBattleSide& s) {
               * std::max(0.0f, s.leaderDpsOverride);
     } else {
         power = fighter_power(s.leaderType, s.leaderLevel, s.leaderSeed,
-                              /*aura*/nullptr, s.leaderHealthFraction);
+                              s.leaderHealthFraction);
     }
     if (s.creatures) {
         for (const CreatureRef r : creatures_range(*s.creatures)) {
             if (!valid_npc_kind(r.kind)) continue;
             power += fighter_power(NPCType(r.kind),
                                    normalize_soldier_level(r.level),
-                                   member_seed(r), &s.bonuses, 1.0f);
+                                   member_seed(r), 1.0f);
         }
     }
     return power * std::max(0.1f, s.terrain) * std::clamp(s.fatigue, 0.1f, 1.0f);

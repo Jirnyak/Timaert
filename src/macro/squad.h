@@ -913,7 +913,9 @@ inline AutoBattleSide auto_battle_side_of(const MacroStore& st, MacroHandle h) {
             float(hp.sp) / float(std::max<int>(1, hp.maxSp)), 0.1f, 1.0f);
     }
     s.creatures = &st.inventory[slot].inv;   // область существ контейнера (M-71)
-    // ПОТОЛОК И АУРА — ОТ АНКЕТЫ, У КАЖДОГО СКВАДА (M-282, 2026-10-18).
+    // ПОТОЛОК — ОТ АНКЕТЫ, У КАЖДОГО СКВАДА (M-282, 2026-10-18). Аурой этот
+// блок тоже ведал, пока она существовала: `s.bonuses` снесён 2026-10-18
+// вместе с `squad_bonuses` — та была константой-нулём.
     // Здесь стоял гейт `if (sheet_owned_at(st, slot))`, и невладеющему листом
     // скваду ОБА терма не ставились ВОВСЕ: потолок HP лидера оставался
     // броском его строки, а аура — нулём. ЗАКОН АНКЕТЫ п.5 запрещает это
@@ -935,7 +937,6 @@ inline AutoBattleSide auto_battle_side_of(const MacroStore& st, MacroHandle h) {
     const CharacterSheet eff = effective_sheet_of(st, h);
     s.leaderHpOverride = float(
         body_max_hp(eff, npc_def(s.leaderType).combat));
-    s.bonuses = squad_bonuses(eff);
     return s;
 }
 

@@ -223,30 +223,14 @@ void test_instant_bonuses_move_pools_and_tell_the_truth() {
 // «хватит контекста макросквада (минимум систем)... просто скиллы и перки
 // СКВАДА (это и есть лидер) модифицируют юнитов в бою». Squad == leader is
 // CANON S4, so the leader's sheet was always the only source, and the second
-// container was pure weight.
-void test_a_leaders_gift_is_the_same_totals_as_everything_else() {
-    CharacterSheet leader{};
-    CHECK(squad_bonuses(leader).attr[std::size_t(AttributeId::End)] == 0,
-          "a sheet with no sources buffs nobody");
-
-    // (The Leader perk row died with the 2026-09-03 perk purge; the door
-    // stays empty until the redesigned perks feed it rows — CANON S14. The
-    // application path below is exercised with a hand-built gift instead.)
-    BonusTotals gift{};
-    gift.attr[std::size_t(AttributeId::End)] = 1;
-
-    // ...and it reaches a trooper through the ONE application.
-    CharacterSheet trooper{};
-    const int alone =
-        bar_ceilings(trooper.attributes, trooper.skills, 100, 100, 100).maxHp;
-    const CharacterSheet ledSheet = effective_sheet(trooper, gift);
-    CHECK(bar_ceilings(ledSheet.attributes, ledSheet.skills, 100, 100, 100).maxHp
-              > alone,
-          "a led soldier is tougher, by the vit point's worth");
-    CHECK(trooper.attributes.of(AttributeId::End) == 1,
-          "negative control: and his OWN sheet was not rewritten to say so — "
-          "which is exactly what the old aura could not claim");
-}
+// (СВИДЕТЕЛЬ `test_a_leaders_gift_is_the_same_totals_as_everything_else` СНЕСЁН
+//  2026-10-18 вместе со своим СУБЪЕКТОМ: он охранял применение АУРЫ
+//  лидера в лист тела, а `squad_bonuses` возвращала константу-нули с
+//  перковой чистки 2026-09-03 и снесена вердиктом владельца «снести,
+//  вернётся с перками». Механики нет — охранять нечего (§5 п.6:
+//  красный тест при сносе может охранять живой закон, у которого умер
+//  носитель; здесь умер сам закон, и это сказано вслух, а не
+//  замаскировано ослабленной проверкой).
 
 } // namespace
 
@@ -258,6 +242,5 @@ int main() {
     test_a_standing_bonus_can_be_taken_off();
     test_effective_sheet_owns_the_clamps();
     test_instant_bonuses_move_pools_and_tell_the_truth();
-    test_a_leaders_gift_is_the_same_totals_as_everything_else();
     return sm::test::report("bonus_registry_test");
 }

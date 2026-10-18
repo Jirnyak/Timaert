@@ -1214,9 +1214,14 @@ inline CharacterSheet effective_sheet(const CharacterSheet& base,
 // EMPTY since the 2026-09-03 perk purge: the one aura row (Leader → +1 vit)
 // died with the perk system it hung on. The DOOR stays — every body-birth
 // already walks through it — so the redesigned perks feed rows, not code.
-inline BonusTotals squad_bonuses(const CharacterSheet&) {
-    return BonusTotals{};
-}
+// (`squad_bonuses` СНЕСЕНА 2026-10-18, вердикт владельца «снести, вернётся с
+//  перками». Она возвращала `BonusTotals{}` — КОНСТАНТУ-НУЛИ — с перковой
+//  чистки 2026-09-03, то есть терм «аура сквада» три недели передавался по
+//  коду и ничего не решал ни в одном из трёх своих потребителей (автобой,
+//  аура игрока в сцене, бафф лидера при воплощении). Шапка оставляла дверь
+//  «как ось расширения» — но §1 прямо против жильцов-заглушек: дыра стоит
+//  НАЗВАННОЙ в реестре, а не залатанной функцией, которая врёт читателю
+//  своим существованием. Вернётся вместе с перк-графом, строками.)
 
 // Derive combat numbers for a humanoid from its CharacterSheet, layered on top
 // of an authored per-role `base` (the NPC registry's CombatTemplate). Returns a
