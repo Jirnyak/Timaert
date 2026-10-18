@@ -169,7 +169,8 @@ static_assert(sizeof(ecs::MacroNpcRuntime) == 80,
               "строка марша: 80 Б × 16384 = 1.25 МиБ");
 static_assert(sizeof(ecs::Pools) == 36, "строка полос");
 static_assert(sizeof(ecs::CellSub) == 2, "доля клетки (M-244)");
-static_assert(sizeof(ecs::NpcCharacter) == 12, "строка лица");
+static_assert(sizeof(ecs::NpcCharacter) == 8,
+              "строка лица: 12 → 8 Б (M-246б — `nameIdx` стал локалью рождения, тинты были сиротами)");
 static_assert(sizeof(ecs::NpcInventory) == 40960,
               "инвентарь сущности: 1024 стака по 40 Б (единый контейнер "
               "32×32, шаг А слияния 2026-09-24)");

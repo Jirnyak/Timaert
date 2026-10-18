@@ -192,10 +192,6 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     a.traits.traits[1] = 4;
     a.character.visualSeed = 0xABCD1234u;
     a.character.bodyShape = 2;
-    a.character.nameIdx = 7;
-    a.character.tintR = 10;
-    a.character.tintG = 20;
-    a.character.tintB = 30;
     a.hasOrders = 1;
     a.orders.waypointCount = 2;
     a.orders.currentWaypoint = 1;
@@ -965,8 +961,13 @@ void run_roundtrip() {
         if (a.traits.count != 2 || a.traits.traits[1] != 4) {
             FAIL_BAIL("macro traits lost");
         }
+        // ЛИЦО ЦЕЛИКОМ, А НЕ ПОЛОВИНОЙ (M-246б): колонка 12 → 8 Б, и обе её
+        // значащие величины утверждаются. Прежде здесь стоял `nameIdx` —
+        // ВХОД ГЕНЕРАТОРА, который и не должен был ехать в сейв, — а
+        // `bodyShape` не утверждался НИ ОДНИМ тестом дерева, хотя рост тела
+        // субмира выводится ровно из него.
         if (a.character.visualSeed != 0xABCD1234u
-            || a.character.nameIdx != 7) {
+            || a.character.bodyShape != 2) {
             FAIL_BAIL("macro character identity lost");
         }
         if (a.hasOrders != 1 || a.orders.waypointCount != 2

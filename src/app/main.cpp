@@ -1984,7 +1984,6 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // «кто игрок» приехала колонкой playerFlag записей.
     sm::resolve_player_handles_after_load(app.gs, *app.macroStore);
 
-    // TODO: rebuild_landmarks (PHASE C — landmark glyphs/lights).
     // Camera anchor moved BELOW ensure_: the restored flag holder is the
     // anchor, and it exists only after the restore has been healed over.
     // The restore above brought the player's squad AND the flag back verbatim

@@ -1691,22 +1691,19 @@ long long trade_bid_value_(const int* mine,
     return value;
 }
 
-// ТОРГОВАЯ СИЛА ТОРГОВЦА — ОДНО число с его листа (CANON S25): финальное
-// производное (attributes.h, харизма × торговля), то же, что показывает
-// панель. Две половины — атрибут и скилл — больше не ходят по коду порознь:
-// они сложены там, где считается весь производный блок, и сделка спрашивает
-// ИТОГ. Отсюда спеллы, артефакты и перки входят в цену бесплатно.
-int leader_trade_power_(const MacroStore& st, MacroHandle self) {
-    const CharacterSheet sh = sheet_of(st, self);
-    return calculate_derived(sh.attributes, sh.skills).tradeDiscountPct;
-}
-
-// ...и ТОРГОВАЯ СИЛА МЕСТА — та же дверь над анкетой ландмарка (S25: у
-// сделки две макросущности, и место — полноправная сторона, а не «лавка»).
-int landmark_trade_power_(const MacroStore& st, std::uint16_t slot) {
-    const CharacterSheet& sh = st.sheet[slot];
-    return calculate_derived(sh.attributes, sh.skills).tradeDiscountPct;
-}
+// (ДВЕ ПРИВАТНЫЕ КОПИИ ТОРГОВОЙ СИЛЫ УМЕРЛИ 2026-10-18. Здесь стояли
+//  `leader_trade_power_` и `landmark_trade_power_`, и их возвращающая строка
+//  СОВПАДАЛА ПОБАЙТОВО — обе считали `calculate_derived(...).tradeDiscountPct`,
+//  то есть ЧЕТВЁРТОЕ и ПЯТОЕ написание одного выражения при живой двери
+//  `trade_power_of@src/macro/anketa.h`. Шапка той двери предупреждает ровно об
+//  этом дословно: «Эта же строка была написана в трёх местах, и ТРЕТЬЕ
+//  написание врало (поймано 2026-09-21)».
+//
+//  Различались они ровно формой адреса — хэндл против сырого слота, — и это
+//  НЕ два вопроса: у сделки две макросущности (CANON S25), но сила у них
+//  одна и та же величина одной анкеты. После смерти дуализма `sheet_of`
+//  (M-246а) даже разница «дверь против колонки» исчезла: лист теперь ОДИН.
+//  Оба звонящих ниже спрашивают ту одну дверь напрямую.)
 
 // (No own_type_ any more: sheet_of asks the entity itself — «the haggler's
 // numbers are whoever's numbers they are» is the door's own law now.)
@@ -1936,8 +1933,8 @@ void ai_vendor(MacroHandle self, MacroPos& p,
             // складом и своим счётом.
             const CaravanDeal deal = trade_vendor_at_market(
                 st, *bag, rt.carryCap, market, handle_at(st, homeSlot),
-                leader_trade_power_(st, self),
-                landmark_trade_power_(st, market),
+                trade_power_of(sheet_of(st, self)),
+                trade_power_of(st.sheet[market]),
                 ctx.mw.econFacts, ctx.mw.econFactsUser);
             if (deal.movedTableValue > 0) {
                 record_landmark_fact(st, *ctx.mw.gs, FactKind::Traded,

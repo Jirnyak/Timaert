@@ -1787,7 +1787,7 @@ namespace sm::ui
             const auto *traits = &st.traits[squadSubject.slot];
             auto *bag = &st.inventory[squadSubject.slot];
             // Имя — колонка анкеты (вердикт 3, ход 2), не перевывод
-            // из nameIdx.
+            // из индекса имени.
             const char *npcName = squad_name(st, squadSubject.slot);
             const FactionDef *fd = faction_def_by_index(kind.factionIdx);
             // Ключ сессии торга — ОРДИНАЛ сквада (M-220: уникален на мир,

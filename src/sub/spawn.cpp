@@ -52,12 +52,12 @@ bool carried_above_water(const StructureIndex* solids, float x, float y,
     return is_dry_footing(top, seaLevelM);
 }
 
-// The face of a DERIVED body: appearance and name rolled from its seed, never
-// stored anywhere above. `tintBase` used to be 150 here and 160 in the other two
-// spawners — a difference nobody could see (no pass reads NpcCharacter's tint)
-// and nobody could justify, which is exactly how the seven other divergences
-// started. One value, named once.
-constexpr int kBodyFaceTintBase = 160;
+// The face of a DERIVED body: appearance rolled from its seed, never stored
+// anywhere above. ЗДЕСЬ ЖИЛА КОНСТАНТА `kBodyFaceTintBase` И СВОЙ ЖЕ
+// НЕКРОЛОГ: её шапка говорила «no pass reads NpcCharacter's tint» — то есть
+// расхождение 150/160 было названо невидимым, а колонки тинтов пережили эту
+// запись на недели. M-246б снёс и колонки, и константу: у величины, которую
+// никто не читает, нет и правильного значения.
 
 // hash3, not a XOR chain: the settlement populator passes seed = cellSeed ^
 // (i*7919) and salt = i*7919, so `seed ^ type ^ salt` cancelled the i term and
@@ -67,7 +67,7 @@ constexpr int kBodyFaceTintBase = 160;
 ecs::NpcCharacter derive_face(std::uint32_t seed, NPCType type,
                               std::uint32_t salt) {
     Rng rng(hash3(seed, salt, std::uint32_t(type)));
-    return ecs::roll_npc_character(rng, kBodyFaceTintBase);
+    return ecs::roll_npc_character(rng);
 }
 
 // ── THE placement door (CANON S28) ────────────────────────────────────────

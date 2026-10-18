@@ -116,7 +116,7 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
         ecs::Pools& pools = st.pools[h.slot];
         {
             Rng faceRng(kPlayerDefaultFaceSeed);
-            st.character[h.slot] = ecs::roll_npc_character(faceRng, 160);
+            st.character[h.slot] = ecs::roll_npc_character(faceRng);
         }
         // His book, born WITH the body like every squad's (v89) — with the
         // starter spell the old PlayerState default carried (state.cpp).

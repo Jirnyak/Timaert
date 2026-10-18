@@ -365,7 +365,7 @@ namespace sm {
 // AGENTS ЗАКОН СЛОВАРЯ И ОРДИНАЛА п.6); nextLandmarkOrdinal покидает формат;
 // сентинели «нет места» у носителей сводятся с -1 к 0.
 // v119 (ход 2, вердикт 3): имя анкеты — колонка char[32] КАЖДОГО сквада
-// (ecs::SquadName в MacroStore и в записи снапшота); nameIdx остался только
+// (ecs::SquadName в MacroStore и в записи снапшота); индекс имени остался только
 // дефолтом генерации.
 // v120 (ход 2, ломтик B): спелл шпиля — число фичи в worked-слое под
 // FT_Spire (ординал kSpellDefs + 1; 0 = выкачан — закон нуля-ординала);
@@ -724,10 +724,11 @@ struct GameState {
     LayerParameters mapParams{};
     int cityCountTarget = 0;
 
-    // THE landmark list (CANON S9, 2026-08-29): every placed landmark of
-    // every kind, one vector, kind = the record's `type` column. Ownership
-    // priority for a contested cell is for_each_landmark's yield order
-    // (landmark_iter.h), not storage order.
+    // МЕТКИ ИГРОКА НА КАРТЕ — и только они. Здесь стояла шапка «THE landmark
+    // list … every placed landmark of every kind, one vector», описывавшая
+    // ВЕКТОР МЕСТ; он умер 2026-10-04 (неподвижный сквад — слот `MacroStore`),
+    // а проза осталась и читалась как документация к меткам. Ровно тот род
+    // лжи шапки, из-за которого §0 п.2 запрещает ей верить.
     std::vector<Marker>     markers;
     // The player's map knowledge (v40): Unknown / Explored / Visible per cell.
     // Explored persists; Visible is re-derived from the player's position

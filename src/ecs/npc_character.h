@@ -1,9 +1,26 @@
-// The ONE six-draw roll that fills ecs::NpcCharacter (per-NPC visual
-// identity). Existed as three per-TU copies (macro/npc_spawn.cpp,
-// sub/spawn.cpp, sub/engine.cpp) that had to agree on the draw ORDER — the
-// thing that must never drift, since every visual derives from it — and
-// differed only in the tint base. Seeding stays at the call site; this
-// consumes the caller's Rng.
+// ДВУХБРОСКОВЫЙ РОЛЛ ЛИЦА (ecs::NpcCharacter) — визуальная идентичность НПЦ.
+// Существовал тремя копиями по TU (macro/npc_spawn.cpp, sub/spawn.cpp,
+// sub/engine.cpp), которым приходилось сходиться в ПОРЯДКЕ бросков — том
+// единственном, чему нельзя дрейфовать, раз из него выводится вся внешность.
+// Сеяние остаётся у звонящего; функция тратит его Rng.
+//
+// БЫЛО ШЕСТЬ БРОСКОВ, СТАЛО ДВА (M-246б, 2026-10-18), и это снос, а не
+// оптимизация: четыре броска питали поля, у которых НЕ БЫЛО ЧИТАТЕЛЕЙ.
+//  · `nameIdx` — ВХОД ГЕНЕРАТОРА, а не состояние: индекс имени потребляется
+//    РОВНО ОДИН раз, рождением, которое рендерит `names[idx]` в колонку
+//    `SquadName`. Жить в состоянии мира ему незачем, и теперь он — локальная
+//    величина той одной точки (`make_npc@src/macro/npc_spawn.cpp`).
+//    Прецедент назван сценой: `sub/objects.h` уже держит лицо НЕ колонкой —
+//    «потребляется один раз при рождении … вернётся колонкой вместе с
+//    читателем».
+//  · `tintR/G/B` — колонки-сироты в чистом виде: ноль читателей во всём
+//    `src/`, и шапка `derive_face@src/sub/spawn.cpp` ЗНАЛА это дословно («no
+//    pass reads NpcCharacter's tint»), но колонки пережили свой же некролог.
+//
+// ЦЕНА СНОСА НАЗВАНА ВСЛУХ: три броска ушли из потока, значит ВСЕ МИРЫ стали
+// другими. Красной сюиты это не даёт — генезис судят отношения («> 0»,
+// «позиции внутри карты»), а не пересказанные числа, — но всякий замер,
+// снятый до этого дня, с нынешним миром не сравним.
 #pragma once
 #include <cstdint>
 #include "core/rng.h"
@@ -11,15 +28,18 @@
 
 namespace sm::ecs {
 
-inline NpcCharacter roll_npc_character(Rng& rng, int tintBase) {
+inline NpcCharacter roll_npc_character(Rng& rng) {
     NpcCharacter ch{};
     ch.visualSeed = rng.next_u32();
     ch.bodyShape = std::uint8_t(rng.next_u32() & std::uint32_t{0x3});
-    ch.nameIdx = std::uint8_t(rng.next_u32() & std::uint32_t{0xF});
-    ch.tintR = std::uint8_t(tintBase + int(rng.next_u32() % std::uint32_t{96}));
-    ch.tintG = std::uint8_t(tintBase + int(rng.next_u32() % std::uint32_t{96}));
-    ch.tintB = std::uint8_t(tintBase + int(rng.next_u32() % std::uint32_t{96}));
     return ch;
+}
+
+// ИНДЕКС ИМЕНИ — СВОЙ БРОСОК У ТОЧКИ, КОТОРАЯ ИМЯ РЕНДЕРИТ. Отдельная дверь,
+// а не поле лица: так «вход генератора» невыразим как состояние — его просто
+// некуда положить. Четыре бита, потому что пул имён строки — `names[16]`.
+inline std::uint8_t roll_name_index(Rng& rng) {
+    return std::uint8_t(rng.next_u32() & std::uint32_t{0xF});
 }
 
 } // namespace sm::ecs

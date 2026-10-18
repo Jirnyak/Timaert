@@ -187,7 +187,6 @@ sm::MacroHandle make_macro_lord(sm::MacroStore& st, sm::NPCType type,
         type, level, sm::leader_sheet_seed(st.spawnId[h.slot].index));
     sm::ecs::NpcCharacter face{};
     face.visualSeed = visualSeed;
-    face.nameIdx = 3;
     // Отличимое от дефолта телосложение: продукт лица (рост спрайта) обязан
     // отличаться от роста нулевой формы, иначе свидетель продукта слеп.
     face.bodyShape = 3;

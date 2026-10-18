@@ -359,25 +359,30 @@ struct MacroOrigin { MacroHandle macro; };
 // for the macro overlay figures: a deterministic procedural seed that
 // drives sprite-variant + body shape, plus an accessory tint and a
 // stable display-name index into the per-type names[16] pool.
+// 12 → 8 Б (M-246б, 2026-10-18): ушли `nameIdx` и `tintR/G/B`.
+//  · `nameIdx` был ВХОДОМ ГЕНЕРАТОРА, персистированным на все 16384 слота и
+//    уезжавшим в формат сейва: его читал РОВНО ОДИН сайт и ровно один раз,
+//    при рождении. Комментарий на этом месте при этом утверждал «читателей у
+//    него нет» — проза врала в обе стороны сразу, и наряд унаследовал эту
+//    ложь как диагноз «сирота». Теперь имя рендерится из СВОЕГО броска
+//    (`roll_name_index@src/ecs/npc_character.h`) локальной величиной.
+//  · `tintR/G/B` — сироты с НУЛЁМ читателей во всём `src/`; о том, что их
+//    никто не читает, прямым текстом говорила шапка `derive_face@src/sub/spawn.cpp`.
+// Явные пады ОСТАЮТСЯ: без них 5 значащих байт дали бы 3 байта НЕЯВНОГО
+// паддинга, а он не зануляется — байтовые свидетели снапшота читали бы мусор
+// (шрам `upkeepDebtPad@src/macro/macro_snapshot.h`).
 struct NpcCharacter {
     std::uint32_t visualSeed;   // drives procedural sprite variation
     std::uint8_t  bodyShape;    // 0..3 (small / med / large / huge)
-    std::uint8_t  nameIdx;      // ДЕФОЛТ ГЕНЕРАЦИИ имени (вердикт 3, M-90):
-                                // рождение рендерит names[nameIdx] в колонку
-                                // SquadName ниже; живёт дальше только как
-                                // вход генератора, читателей у него нет
-    std::uint8_t  tintR;
-    std::uint8_t  tintG;
-    std::uint8_t  tintB;
     std::uint8_t  pad0, pad1, pad2;
 };
 
 // ── ИМЯ АНКЕТЫ — КОЛОНКА КАЖДОГО СКВАДА (вердикт владельца 2026-09-30,
 // эпик ЖЁСТКИЙ КАРКАС ход 2: «имя — char name[32] колонкой анкеты КАЖДОГО
-// сквада, мутируемо; Landmark::name умирает в неё, nameIdx — дефолт
+// сквада, мутируемо; Landmark::name умирает в неё, индекс имени — дефолт
 // генерации»). Плоские чары, никаких строк (ЗАКОН СЛОВАРЯ; прецедент —
 // вердикт о фракциях «плоский ЧАРЫ! никаких стрингов и говна»). NUL-строка
-// внутри 32 байт; рождение заполняет дефолтом из names[nameIdx], переезд
+// внутри 32 байт; рождение заполняет дефолтом из names[...], переезд
 // места (M-90) привезёт сюда Landmark::name. 32 — число вердикта.
 struct SquadName {
     char text[32];
