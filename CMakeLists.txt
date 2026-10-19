@@ -1954,10 +1954,12 @@ timaert_test(macro_stock_test
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp)
 
-# The interaction menu's ONE addressing door (macro/map_subject.h): a squad's
-# and a landmark's store/roster answer through store_of/roster_of, kind-blind.
+# Двери субъекта макрокарты: глаголы (actions_of@src/macro/squad.h, CANON S22)
+# и ОДИН контейнер — обе кинд-слепы и обе над ОДНОЙ формой адреса. Здесь стоял
+# `map_subject_test` над `macro/map_subject.h`, снесённым целиком (M-281):
+# хранимый род субъекта держали три двери с НУЛЁМ прод-звонящих.
 # Header-only doors; items.cpp is the catalog TU the Inventory fixture needs.
-timaert_test(map_subject_test
+timaert_test(subject_doors_test
     SOURCES
         src/macro/anketa.cpp
         src/tables/items.cpp)

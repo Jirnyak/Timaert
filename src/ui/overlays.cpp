@@ -1994,7 +1994,14 @@ namespace sm::ui
             const sm::FactionDef *fd =
                 sm::faction_def_by_index(sm::faction_or_freefolk(sFaction));
             const LandmarkDef &def = landmark_def(sKind);
-            const std::uint16_t acts = def.actions;
+            // Глаголы — ЧЕРЕЗ ДВЕРЬ, а не чтением колонки рядом (M-281).
+            // Здесь стояло `def.actions`, и это был ТРЕТИЙ читатель колонки
+            // мимо двери, которую канон называет единственной (S22): дверь
+            // при этом не имела ни одного прод-звонящего и жила только в
+            // тесте. Колонку никто не читает дважды: `def` рядом остаётся
+            // для `label`, маску отдаёт `actions_of` — она же примешивает
+            // Enter из `walkable`, чего чтение колонки не делало вовсе.
+            const std::uint16_t acts = actions_of(*mw->store, sh);
             ImGui::PushFont(nullptr);
             ImGui::TextColored(ImVec4(1.0f, 0.92f, 0.50f, 1.0f), "%s", sName);
             ImGui::PopFont();

@@ -14,7 +14,6 @@
 #include "macro/squad_index.h"  // squads_in_frame — кандидаты рамкой (ломоть 6)
 #include "ui/trade_widgets.h"
 #include "ecs/components.h"
-#include "macro/map_subject.h"   // MapSubject + actions_of — the menu's doors
 #include "macro/state.h"
 #include "macro/squad.h"   // record_deed — THE deed door (S20.1)
 #include "macro/landmark_iter.h"
@@ -686,9 +685,11 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
 
         // Fixed row buffer: this render hot path must not grow heap storage
         // when multiple objects share adjacent cells. A row names its
-        // subject (squad OR landmark — one shape, меню-сессия).
+        // subject ОДНИМ ХЭНДЛОМ — {слот, ординал}, одна форма адреса на всех
+        // (M-281). Здесь лежал `MapSubject` — хранимый enum рода плюс ДВА
+        // адреса, из которых второй был той же парой с выброшенным слотом.
         struct Row {
-            MapSubject subject;
+            MacroHandle subject;
             int dx, dy;
             int rank;
             char dir[5];
@@ -701,7 +702,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
         const int px = pcell ? ecs::cell_x(*pcell, gs.mapW) : 0;
         const int py = pcell ? ecs::cell_y(*pcell, gs.mapW) : 0;
 
-        auto push_row = [&](MapSubject subject, int dx, int dy) {
+        auto push_row = [&](MacroHandle subject, int dx, int dy) {
             ++totalRows;
             Row row{};
             row.subject = subject;
@@ -725,24 +726,31 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
         };
 
         // Соседи — РАМКОЙ 3×3 через каркас (ломоть 6, M-244): два скана —
-        // капа по сквадам и всех мест — умерли в одну дверь; место и отряд
-        // различает ось рода внутри колбэка, как их различал мир и прежде.
-        // Landmarks pop the same panel (owner's verdict: «деревни, города,
-        // ландмарки тоже — если маркер игрока рядом, выскакивают их
-        // попапы»).
+        // капа по сквадам и всех мест — умерли в одну дверь. Landmarks pop
+        // the same panel (owner's verdict: «деревни, города, ландмарки тоже
+        // — если маркер игрока рядом, выскакивают их попапы»).
+        //
+        // ОДИН ПУШ НА ВСЕ СКВАДЫ — ГЕЙТА АРХЕТИПА ЗДЕСЬ БОЛЬШЕ НЕТ (M-281).
+        // Он не рисовал и не отбирал: он РОЖДАЛ род субъекта двумя разными
+        // `push_row`, то есть был писателем хранимого выводимого. Рода нет,
+        // адрес один, и ряд заводится одинаково для города и для артели.
+        //
+        // И ВМЕСТЕ С ГЕЙТОМ УМЕР ФИЛЬТР `hp <= 0` — ОН БЫЛ ВТОРЫМ ОТВЕТОМ НА
+        // «МЁРТВ ЛИ ОН». Носитель смерти один — колонка `dead` (`macro_dead`
+        // @src/macro/store.h), и ВСЕ ТРИ макро-двери смерти ставят её ВМЕСТЕ
+        // с нулевым hp: `settle_leader_fraction@src/macro/squad.h` («zero is
+        // the tracked-death shape (hp=0 + Dead)»), истощение через неё же
+        // (`settle_exhaustion@src/macro/npc_ai.cpp`) и жнец субмира
+        // (`src/sub/engine.cpp`). То есть проверка повторяла уже заданный
+        // вопрос — а под снесённым гейтом она стала бы ЛОЖЬЮ: у места пулы
+        // вестигиальны (рождение в нулях), и она выкосила бы из панели
+        // КАЖДЫЙ город молча.
         if (mw.squads)
         squads_in_frame(*mw.squads, st, px, py, 1,
                         [&](std::uint16_t slot, int dx, int dy) {
             if (st.alive[slot] == 0 || st.dead[slot] != 0) return;
-            if (squad_archetype(SquadType(st.runtime[slot].squadType))
-                == SquadArchetype::Place) {
-                push_row(subject_of_landmark(int(st.spawnId[slot].index)),
-                         dx, dy);
-                return;
-            }
             if (slot == flagSlot || st.playerFlag[slot].home != 0) return;
-            if (st.pools[slot].hp <= 0) return;
-            push_row(subject_of_squad(handle_at(st, slot)), dx, dy);
+            push_row(handle_at(st, slot), dx, dy);
         });
 
         if (totalRows > 0) {
@@ -780,42 +788,36 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                 for (std::size_t rowIdx = 0; rowIdx < drawRows; ++rowIdx) {
                     auto& r = rows[rowIdx];
 
-                    // Resolve what the row SHOWS from its subject — one card
-                    // shape for a squad and a place, different columns in.
-                    const bool isSquad =
-                        r.subject.kind == MapSubjectKind::Squad;
-                    // Место — слот store (ломтик F): резолв по ординалу уже
-                    // гейтит ось рода, пустой хэндл = «места нет».
-                    const MacroHandle lmh = isSquad
-                        ? MacroHandle{}
-                        : place_handle_by_ordinal(
-                              st, std::uint32_t(r.subject.landmark));
-                    if (!isSquad && !st.valid(lmh)) continue;
-                    const std::uint16_t lslot = lmh.slot;
-                    const SquadType lmKind = isSquad
-                        ? SquadType::None
-                        : SquadType(st.runtime[lslot].squadType);
+                    // Что ряд ПОКАЗЫВАЕТ — КОЛОНКИ ОДНОГО СЛОТА (M-281).
+                    // Здесь стояла развилка по хранимому роду субъекта, и за
+                    // ней — второй резолв адреса (ординал → слот) у ветки
+                    // места. Адрес один, резолв не нужен: протухший хэндл
+                    // честно отвечает «никого», и ряд исчезает.
+                    if (!st.valid(r.subject)) continue;
+                    const std::uint16_t slot = r.subject.slot;
+                    const SquadType type =
+                        SquadType(st.runtime[slot].squadType);
+                    const ArchetypeDrawRow& grp =
+                        archetype_draw(squad_archetype(type));
+                    const NPCType t = npc_type_or_default(st.kind[slot].type);
 
-                    const char* rowName = "";
-                    const char* rowRole = "";
-                    std::uint16_t rowFaction = kNoFaction;
-                    NPCType t = NPCType::Peasant;
-                    if (isSquad) {
-                        const std::uint16_t rslot = r.subject.squad.slot;
-                        const auto& kind = st.kind[rslot];
-                        t = npc_type_or_default(kind.type);
-                        const auto& def = npc_def(t);
-                        rowName = squad_name(st, rslot);   // колонка анкеты (ход 2)
-                        rowRole = def.label;
-                        rowFaction = kind.factionIdx;
-                    } else {
-                        const LandmarkDef& ldef = landmark_def(lmKind);
-                        rowName = st.name[lslot].text[0] != '\0'
-                            ? st.name[lslot].text : ldef.label.data();
-                        rowRole = ldef.label.data();
-                        rowFaction = faction_or_freefolk(
-                            std::int16_t(st.kind[lslot].factionIdx));
-                    }
+                    // ИМЯ И РОЛЬ — ОДНА ЦЕПЬ ДАННЫХ, А НЕ ДВЕ ВЕТКИ. Имя
+                    // живёт колонкой анкеты у ВСЕХ (`squad_name` это и
+                    // утверждает), а роль называет строка: род, если он
+                    // что-то значит на карте («City», «Spire»), иначе строка
+                    // существа («Peasant»). У ходока ярлык рода пуст по
+                    // построению, поэтому цепь сама приходит к телу — ветка
+                    // по роду субъекта здесь была лишней.
+                    const char* rowRole = landmark_def(type).label.data();
+                    if (rowRole[0] == '\0') rowRole = npc_def(t).label;
+                    const char* rowName = st.name[slot].text;
+                    if (rowName[0] == '\0') rowName = rowRole;
+                    // Фракция — ОДНА дверь на оба случая: ветка сквада брала
+                    // колонку сырой, ветка места — через `faction_or_freefolk`.
+                    // Безфракционный теперь честно «вольный люд» у всех, а не
+                    // серый прочерк у одних и вольный люд у других.
+                    const std::uint16_t rowFaction = faction_or_freefolk(
+                        std::int16_t(st.kind[slot].factionIdx));
 
                     // Resolve faction colour through the macro registry. Falls
                     // back to a neutral grey for unknown ids.
@@ -832,11 +834,11 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                     }
 
                     // Row group — ONE clickable card (клик → меню, PLAY-1).
-                    // Ключ виджета: слот уникален среди ЖИВЫХ сквадов кадра;
-                    // ландмарки — свой бит, пространства не пересекаются.
-                    ImGui::PushID(isSquad
-                        ? int(r.subject.squad.slot)
-                        : int(0x40000000 | r.subject.landmark));
+                    // Ключ виджета — СЛОТ, и он уникален среди живых сквадов
+                    // кадра для всех родов разом. Бит `0x40000000`, разводивший
+                    // два пространства ключей, умер вместе со вторым адресом:
+                    // пространство одно (M-281).
+                    ImGui::PushID(int(slot));
                     ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(20, 14, 8, 220));
                     ImGui::PushStyleColor(ImGuiCol_Border,
                                           (fcol & 0x00FFFFFFu) | 0x60000000u);
@@ -854,23 +856,25 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                     ImGui::BeginChild("##row", ImVec2(0.0f, rowPx), true,
                                       ImGuiWindowFlags_NoScrollbar);
 
-                    // Picture: the kind's drawn PNG — a squad from the NPC
-                    // sprite bank, a landmark from THE same presentation row
-                    // the map draws (kSquadDraw, depleted variant and
-                    // all). Kinds without art fall back to the registry tile
-                    // (colour + glyph), same law as the map's glyph circle.
+                    // Picture: the kind's drawn PNG — ОТКУДА она берётся,
+                    // говорит КОЛОНКА ГРУППЫ (`pictureFromBody`), та же, что
+                    // у единого прохода карты выше: у ходока картинка с ТЕЛА
+                    // (СПРАЙТ-ЗАКОН §7), у стоящего — со строки его РОДА.
+                    // Третьего источника нет, и ветки по хранимому роду
+                    // субъекта здесь больше нет тоже (M-281). Kinds without
+                    // art fall back to the registry tile (colour + glyph),
+                    // same law as the map's glyph circle.
                     {
                         const ImVec2 side(kindPx, kindPx);
                         const Sprite* sp = nullptr;
-                        if (isSquad) {
+                        if (grp.pictureFromBody) {
                             sp = sprite_get(npc_sprite(t));
                         } else {
-                            const SquadDrawRow& drow =
-                                kSquadDraw[std::size_t(lmKind)];
+                            const SquadDrawRow& drow = squad_draw(type);
                             // Выкачанность — ОДИН вывод на весь мир
                             // (spire_orb@src/macro/spires.h, M-233 п.8); здесь
                             // стояло своё написание, четвёртое по счёту.
-                            const auto& lcell = st.cell[lslot];
+                            const auto& lcell = st.cell[slot];
                             const SpriteId sid =
                                 spire_orb(mw,
                                           ecs::cell_x(lcell, gs.mapW),
@@ -881,10 +885,10 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                         }
                         if (sp && sp->tex) {
                             ImGui::Image(sp->tex, side);
-                        } else if (isSquad) {
+                        } else if (grp.pictureFromBody) {
                             ImGui::Dummy(side);
                         } else {
-                            const LandmarkDef& ldef = landmark_def(lmKind);
+                            const LandmarkDef& ldef = landmark_def(type);
                             const ImVec2 p = ImGui::GetCursorScreenPos();
                             ImGui::Dummy(side);
                             ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -935,43 +939,40 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                     ImGui::EndGroup();
                     ImGui::PopClipRect();
 
-                    // Right-aligned direction + figures chip: level and HP
-                    // for a squad, souls for a place.
+                    // Right-aligned direction + figures chip: КАКИЕ цифры —
+                    // колонка ГРУППЫ (`figuresFromPools`), а не хранимый род
+                    // субъекта. У стоящего пулы вестигиальны и число у него
+                    // одно честное — паства; у ходока наоборот (см. вывод
+                    // колонки в `ui/squad_draw.h`).
                     ImGui::SameLine();
                     ImGui::SetCursorPosX(chipX);
                     ImGui::BeginGroup();
                     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 210, 120, 255));
                     ImGui::Text("%s", r.dir);
                     ImGui::PopStyleColor();
-                    if (isSquad) {
-                        const std::uint16_t rslot2 = r.subject.squad.slot;
-                        const auto& hp  = st.pools[rslot2];
-                        ImGui::TextDisabled("Lv.%d", squad_level(st, rslot2));
+                    if (grp.figuresFromPools) {
+                        const auto& hp = st.pools[slot];
+                        ImGui::TextDisabled("Lv.%d", squad_level(st, slot));
                         ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 90, 90, 255));
                         ImGui::Text("%d/%d", int(hp.hp), int(hp.maxHp));
                         ImGui::PopStyleColor();
                     } else {
                         ImGui::TextDisabled("Pop");
-                        ImGui::Text("%d", souls_flock(gs, store, lslot));
+                        ImGui::Text("%d", souls_flock(gs, store, slot));
                     }
                     ImGui::EndGroup();
 
                     ImGui::EndChild();
                     // THE row click (owner's verdicts: «просто тыкать»,
                     // «никакого промежуточного генерик-окна») — the whole
-                    // card is the one button and it opens the subject's OWN
-                    // panel directly: a squad its tabbed window below, a
-                    // landmark the settlement panel (one tabbed system).
+                    // card is the one button and it reports ОДИН СУБЪЕКТ
+                    // одним хэндлом. Какую ветвь панели субъекта он откроет —
+                    // не вопрос этого файла: ветвей две, и выбор живёт рядом
+                    // с двумя носителями, которые он кормит (macro_overlay.h).
                     if (ImGui::IsItemHovered()) {
                         ImGui::SetTooltip("Interact");
-                        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-                            if (isSquad) {
-                                result.openSquad = r.subject.squad;
-                            } else {
-                                result.openSettlementId =
-                                    int(r.subject.landmark);
-                            }
-                        }
+                        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                            result.openSubject = r.subject;
                     }
                     ImGui::PopStyleVar();   // ChildBorderSize
                     ImGui::PopStyleColor(2); // ChildBg + Border

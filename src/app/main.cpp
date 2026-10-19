@@ -511,9 +511,10 @@ void refresh_available_settlement_quests(App& app) {
     }
     const sm::SquadType sKind =
         sm::SquadType(app.macroStore->runtime[s.slot].squadType);
-    // The board follows the actions column: a place that declares no Quests
-    // verb posts nothing; a village posts through its own generator.
-    if ((sm::landmark_def(sKind).actions & sm::kMapActQuests) == 0) {
+    // The board follows the actions column, asked through THE door (M-281):
+    // `landmark_def(sKind).actions` stood here — the second reader of the
+    // column past the one door CANON S22 names for these verbs.
+    if ((sm::actions_of(*app.macroStore, s) & sm::kMapActQuests) == 0) {
         app.availableSettlementQuests.clear();
     } else {
         app.availableSettlementQuests = sKind == sm::SquadType::Village
@@ -6508,17 +6509,27 @@ void frame(App& app, int simSteps) {
                                                      app.uiSettings.scale(sm::ui::UiElementId::NpcProximity));
                 // Клик по ряду = СРАЗУ панель субъекта («система меню
                 // единая»): одна и та же панель, у сквада своя ветка.
-                if (npcResult.openSquad.id != 0) {
-                    app.subjectSquad = npcResult.openSquad;
-                    app.ui.settlementId = 0;
+                //
+                // ВЕТВЬ ВЫБИРАЕТСЯ ЗДЕСЬ, И ЭТО ЕДИНСТВЕННОЕ МЕСТО (M-281).
+                // Панель близости отдаёт ОДИН хэндл и о ветвях не знает;
+                // ветвей две, потому что надвое ветвится сама панель
+                // субъекта (`draw_settlement`: ветка сквада против ветки
+                // поселения), и выбор стоит рядом с двумя носителями,
+                // которые он кормит. Архетип спрашивается КЛЮЧОМ — «какой
+                // модуль ведёт этого субъекта», — а не гейтом прохода:
+                // ни один ряд не пропускается, оба конца заполнены.
+                // Слияние ветвей панели снимет этот выбор одной правкой.
+                if (npcResult.openSubject.id != 0
+                    && app.macroStore->valid(npcResult.openSubject)) {
+                    const sm::MacroHandle h = npcResult.openSubject;
+                    const bool stands =
+                        sm::squad_archetype(sm::SquadType(
+                            app.macroStore->runtime[h.slot].squadType))
+                        == sm::SquadArchetype::Place;
+                    app.subjectSquad = stands ? sm::MacroHandle{} : h;
+                    app.ui.settlementId = stands ? int(h.id) : 0;
                     app.ui.settlementTab = sm::ui::SettlementPanelTab::Info;
-                    app.ui.settlement = true;
-                }
-                if (npcResult.openSettlementId >= 0) {
-                    app.subjectSquad = {};
-                    app.ui.settlementId = npcResult.openSettlementId;
-                    app.ui.settlementTab = sm::ui::SettlementPanelTab::Info;
-                    refresh_available_settlement_quests(app);
+                    if (stands) refresh_available_settlement_quests(app);
                     app.ui.settlement = true;
                 }
             }

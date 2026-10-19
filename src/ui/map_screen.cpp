@@ -1,12 +1,15 @@
 #include "ui/map_screen.h"
 
 #include "tables/biomes.h"
-#include "macro/landmark_iter.h"
+#include "core/caps.h"              // kUnifiedCap — проход по слотам, не по числу
 #include "macro/landmark_registry.h"
 #include "macro/map_generator.h"
 #include "macro/markers.h"
 #include "macro/player_entity.h"
+#include "macro/spires.h"           // spire_orb — ОДИН вывод о выкачанности
+#include "macro/squad_index.h"      // squads_in_frame — каркас клеток
 #include "macro/state.h"
+#include "macro/store.h"
 #include "ui/squad_draw.h"
 #include "ui/screens.h"
 
@@ -102,6 +105,38 @@ constexpr const char* kMarkerLegendLabel[4] = {"Quest", "Point of interest",
 // sampler, and the two disagreed at the coast, canon-audit H10. The one
 // cascade is map_generator.h biome_at_cell.)
 
+// ── ЧТО ЧАРТ ПОКАЗЫВАЕТ — ОДНА КОЛОНКА, И ЭТО ВЕРДИКТ ВЛАДЕЛЬЦА ──────────
+// Дословно (2026-10-19): «ЧАРТ ЕСТЬ КАРТА МЕСТНОСТИ — ХОДОКОВ НА НЁМ НЕТ И
+// НЕ ДОЛЖНО БЫТЬ, он показывает то, что СТОИТ, а не кто где ходит». Колонка,
+// которая это и говорит, уже есть, и её собственный вывод написан теми же
+// словами: `remembered` — «здание СТОИТ на месте и потому есть факт карты»
+// (`kArchetypeDraw@src/ui/squad_draw.h`). Поэтому содержание чарта
+// спрашивается ЕЮ, в одном месте, и этим же предикатом — ровно им, не его
+// копией — судится и подсказка, и метка, и строка легенды.
+//
+// ПОЧЕМУ НЕ `miniR`, ХОТЯ ЕГО ЗНАЧЕНИЯ СОВПАДАЮТ (M-288, премиса наряда
+// проверена и отклонена): `miniR` есть ПОЛ радиуса метки
+// (`max(miniR*2, zoom*0.5)` ниже), и его ноль значит «пола нет», а не «метки
+// нет» — радиус остаётся положительным на любом зуме. Колонка была бы верна
+// по значению и ложна по вопросу: перекалибровка «пусть метка логова тает на
+// общем плане» молча выкинула бы логова с карты. Это тот же класс ошибки,
+// что `sprite` в M-280.
+inline constexpr bool stands_on_the_chart(SquadType t) {
+    return archetype_draw(squad_archetype(t)).remembered;
+}
+
+// Чарт рисует РОВНО неподвижные рода — под компилятором, а не по памяти
+// ревьюера. Негативный контроль записан в теле коммита (обе полярности).
+static_assert([] {
+    for (std::size_t i = 0; i < std::size_t(SquadType::Count); ++i) {
+        const SquadType t = SquadType(i);
+        const bool place = squad_archetype(t) == SquadArchetype::Place;
+        if (stands_on_the_chart(t) != place) return false;
+    }
+    return true;
+}(), "чарт показывает то, что СТОИТ: предикат карты обязан совпадать с "
+     "неподвижностью рода, иначе в легенде заведутся артели и корованы");
+
 } // namespace
 
 float map_fit_zoom(int viewHPx, int mapH) {
@@ -152,11 +187,35 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
                 const Biome b = biome_at_cell(terrain, cx, cy);
                 ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1), "%s",
                                    kBiomes[std::size_t(b)].name);
-                for_each_landmark(mw, [&](const LandmarkView& lm) {
-                    if (lm.x == cx && lm.y == cy && lm.name[0])
+                // КТО НА ЭТОЙ КЛЕТКЕ — КАРКАСОМ, И ДВЕРЬ КИНД-СЛЕПА (M-288).
+                // Здесь стоял `for_each_landmark` — ПОЛНЫЙ СКАН КАПА (8 родов
+                // × 16384 слота = 131 072 посещения) на вопрос об ОДНОЙ
+                // клетке, то есть ровно то, что ЗАКОН КЛЕТОЧНОГО КАРКАСА
+                // называет нарушением дословно. Теперь спрашивается
+                // окрестность радиуса 0, и спрашивается у ЕДИНОЙ СИСТЕМЫ
+                // СКВАДОВ: `squads_in_frame` не фильтрует по роду вовсе
+                // (та же дверь, что у панели близости при радиусе 1), а
+                // ЧТО показать, решает колонка чарта — здесь, в одном месте.
+                // Дверь «кто владеет клеткой» сюда НЕ годилась: она
+                // отбирает неподвижных внутри себя, и закон содержания
+                // чарта оказался бы написан дважды.
+                // Fail-closed: несобранный каркас не назовёт никого — тот же
+                // нулевой вклад, что у прежнего обхода без стора.
+                if (mw.squads) {
+                    squads_in_frame(*mw.squads, *mw.store, cx, cy, 0,
+                                    [&](std::uint16_t slot, int, int) {
+                        const MacroStore& st = *mw.store;
+                        if (st.alive[slot] == 0 || st.dead[slot] != 0) return;
+                        const SquadType t =
+                            SquadType(st.runtime[slot].squadType);
+                        if (!stands_on_the_chart(t)) return;
+                        const char* nm = st.name[slot].text;
+                        if (nm[0] == '\0') nm = landmark_def(t).label.data();
+                        if (nm[0] == '\0') return;
                         ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.4f, 1), "%s",
-                                           lm.name);
-                });
+                                           nm);
+                    });
+                }
             }
             ImGui::EndTooltip();
 
@@ -172,37 +231,71 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
         }
     }
 
-    // ── Landmarks — primitives only: the presentation row's MiniShape at
-    // the registry's ONE colour; ashen when depleted, faded when merely
-    // remembered. The mark grows to half its cell when zoomed in, floored
-    // at the row's legend radius so it never dissolves at world-fit.
-    for_each_landmark(mw, [&](const LandmarkView& lm) {
-        const std::uint8_t know = gs.knowledge.at(lm.x, lm.y);
-        if (know == kKnowledgeUnknown) return;
+    // ── ОДИН ПРОХОД ПО СЛОТАМ: МЕТКИ ЧАРТА И СЧЁТ ЛЕГЕНДЫ ───────────────
+    // Главная карта перестала рисовать двумя проходами 2026-10-19 (M-280);
+    // страница шла ещё тремя обходами `for_each_landmark`, то есть на один
+    // вопрос мира — «как сквад выглядит на карте» — два экрана отвечали
+    // по-разному (DOD п.6). Проход теперь один и той же формы, что у
+    // главной карты: слоты гладкой памяти, колонки вместо обхода по роду.
+    //
+    // СЧЁТ ЛЕГЕНДЫ ЖИВЁТ ЗДЕСЬ ЖЕ, И ЭТО НЕ УДОБСТВО, А ОДНА ПРИЧИНА: он
+    // обязан считать РОВНО то, что рисуется, иначе легенда расходится с
+    // картой молча. Считается ДО отсева за экраном — легенда про мир, а не
+    // про текущий кадр, — и тем же предикатом `stands_on_the_chart`.
+    //
+    // ПОРЯДОК РИСОВКИ — СЛОТОВЫЙ, И ЭТО СКАЗАНО ВСЛУХ. Прежний обход шёл в
+    // `kLandmarkYieldOrder`, но тот порядок есть закон ВЛАДЕНИЯ СПОРНОЙ
+    // КЛЕТКОЙ, а не закон рисования: брать его сюда значило занимать чужой
+    // закон под косметику. Метки чарта — плоские примитивы одного класса
+    // размера, и ни одна не укрывает другую так, как 192-пиксельный спрайт
+    // города укрывал фигурку (шрам, из-за которого у главной карты есть
+    // слои). Перепись трёх миров 2026-10-04 дала 0 клеток с двумя местами.
+    int discovered[std::size_t(SquadType::Count)] = {};
+    for (std::uint32_t s32 = 0; s32 < kUnifiedCap; ++s32) {
+        const std::uint16_t slot = std::uint16_t(s32);
+        const MacroStore& store = *mw.store;
+        if (store.alive[slot] == 0 || store.dead[slot] != 0) continue;
+        const SquadType type = SquadType(store.runtime[slot].squadType);
+        if (!stands_on_the_chart(type)) continue;
+        const auto& c = store.cell[slot];
+        const int lx = ecs::cell_x(c, mapW);
+        const int ly = ecs::cell_y(c, mapW);
+        const std::uint8_t know = gs.knowledge.at(lx, ly);
+        if (know == kKnowledgeUnknown) continue;
+        ++discovered[std::size_t(type)];
         const bool faded = know < kKnowledgeVisible;
-        const SquadDrawRow& row = squad_draw(lm.type);
-        const ImVec2 p = to_screen(float(lm.x) + 0.5f, float(lm.y) + 0.5f, st,
+        const SquadDrawRow& row = squad_draw(type);
+        const ImVec2 p = to_screen(float(lx) + 0.5f, float(ly) + 0.5f, st,
                                    zoomLogical, viewW, viewH, mapW, mapH);
         if (p.x < -64 || p.x > viewW + 64 || p.y < -64 || p.y > viewH + 64)
-            return;
+            continue;
+        // Mark: primitives only — the presentation row's MiniShape at the
+        // registry's ONE colour; ashen when depleted, faded when merely
+        // remembered. The mark grows to half its cell when zoomed in, floored
+        // at the row's legend radius so it never dissolves at world-fit.
         const float r = std::max(row.miniR * 2.0f, zoomLogical * 0.5f);
-        const std::uint32_t argb = landmark_def(lm.type).color;
+        const std::uint32_t argb = landmark_def(type).color;
         // Depleted = half strength, remembered = reduced alpha — the same
         // derivations the old panel used; ONE colour authority throughout.
-        const std::uint32_t base = lm.depleted
+        // Выкачанность — ОДИН вывод на весь мир (spire_orb, M-233 п.8).
+        const std::uint32_t base = spire_orb(mw, lx, ly).depleted
             ? ((argb >> 1) & 0x7F7F7Fu) : argb;
         const ImU32 fill = argb_im(base, faded ? 140 : 230);
         const ImU32 rim = argb_im(base >> 2 & 0x3F3F3Fu, 255);
         chart_shape(dl, p, row.mini, r, fill, rim);
-        if (row.labelZoom > 0.0f && zoomLogical >= row.labelZoom
-            && lm.name[0]) {
-            const ImVec2 ts = ImGui::CalcTextSize(lm.name);
+        if (row.labelZoom > 0.0f && zoomLogical >= row.labelZoom) {
+            // Безымянный показывает label своей строки реестра — один закон
+            // показа на все рода, тот же, что у главной карты.
+            const char* nm = store.name[slot].text;
+            if (nm[0] == '\0') nm = landmark_def(type).label.data();
+            if (nm[0] == '\0') continue;
+            const ImVec2 ts = ImGui::CalcTextSize(nm);
             const ImVec2 tp(p.x - ts.x * 0.5f, p.y - r - ts.y - 3.0f);
-            dl->AddText(tp, IM_COL32(20, 22, 26, 220), lm.name);
+            dl->AddText(tp, IM_COL32(20, 22, 26, 220), nm);
             dl->AddText(ImVec2(tp.x - 1, tp.y - 1),
-                        IM_COL32(235, 232, 220, faded ? 150 : 255), lm.name);
+                        IM_COL32(235, 232, 220, faded ? 150 : 255), nm);
         }
-    });
+    }
 
     // ── Marker ink (kMarkerSurface & Map): waypoints and any world signal
     // that also prints on the chart. Drawn at the cell, primitive shapes.
@@ -249,11 +342,9 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
     const double exploredPct =
         cells > 0.0 ? 100.0 * double(st.exploredCells) / cells : 0.0;
 
-    int discovered[std::size_t(SquadType::Count)] = {};
-    for_each_landmark(mw, [&](const LandmarkView& lm) {
-        if (gs.knowledge.at(lm.x, lm.y) != kKnowledgeUnknown)
-            ++discovered[std::size_t(lm.type)];
-    });
+    // (Третий обход `for_each_landmark` стоял здесь и считал `discovered[]`
+    //  заново. Счёт уехал В ПРОХОД МЕТОК выше — он обязан считать ровно то,
+    //  что нарисовано, и отдельный обход этого не гарантировал ничем.)
     bool styleSeen[4] = {};
     for (const Marker& m : gs.markers) {
         if ((kMarkerSurface[std::size_t(m.style) & 3u] & kMarkerOnMap)

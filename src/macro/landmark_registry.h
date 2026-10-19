@@ -273,9 +273,16 @@ struct LandmarkDef {
 // TSV замера). Переезд строк в ИИ-модули рода (M-235) становится
 // механическим: поля называются, значит их нельзя пересчитать.
 inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
+    // ТИП БЕЗ НАЗНАЧЕНИЯ — ХОДОК, И ГЛАГОЛЫ У НЕГО ХОДОЧЬИ (M-281). Здесь
+    // стояла строка в нулях при `walkable = true`, то есть бестиповый сквад
+    // объявлял ВХОД и не объявлял ни разговора, ни торга, ни драки — и это
+    // было незаметно, потому что ответ за него давала константная маска,
+    // вписанная в `actions_of` веткой по роду субъекта. Ветка умерла, строка
+    // отвечает сама: войти в человека нельзя (`walkable = false`).
     {.type = SquadType::None, .id = "none", .label = "",
      .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u,
-     .walkable = true, .lightColor = 0x00000000u, .lightPop = 0.0f },
+     .walkable = false, .lightColor = 0x00000000u, .lightPop = 0.0f,
+     .actions = kMapActTalk | kMapActTrade | kMapActAttack },
     // Стража города — строка контейнера {Guard, Auction} с душами ИЗ ГАРНИЗОНА
     // (CANON S10, 2026-09-02): патрульный аукцион открывает её только когда
     // поле угрозы предъявило горячую округу дороже похода — тихий город
@@ -393,29 +400,72 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
      .minZone = 76, .maxZone = 203, .glyph = 'T', .color = 0xFF6E6E89u,
      .walkable = true, .lightColor = 0xFF6E6E89u, .lightPop = 80.0f },
 
-    // ── ПОДВИЖНЫЕ РОДЫ ОСИ: СТРОКИ ЧЕСТНО ПУСТЫЕ (M-90 шаг 3а) ───────────
+    // ── ПОДВИЖНЫЕ РОДЫ ОСИ: ГЛАГОЛЫ ИХ, ОСТАЛЬНОЕ ЧЕСТНО ПУСТО ───────────
     // Артель, корован и сборщик стоят на ТОЙ ЖЕ оси, что места (одна ось у
-    // одной популяции), но ни одной колонки этой таблицы не имеют: они не
-    // стоят на клетке, не светятся ночью, не поднимают крю и не держат
-    // фауну. Их строки выписаны ЯВНО, а не оставлены на доинициализацию
-    // нулями, по двум причинам: (1) `rows_in_enum_order` ниже сверяет
-    // колонку `type` с индексом, и неявная строка приехала бы с `None` на
-    // месте `Artel` — молчаливое расхождение таблицы с собственным ключом;
-    // (2) пустая строка обязана быть ВИДНА как решение, а не как пропуск.
-    // Это цена, названная в шапке `squad_type.h`: платим пустотой за то,
-    // что `landmark_def` остаётся ПОЛНОЙ функцией без гейта по роду.
+    // одной популяции), и колонок МЕСТА не имеют: они не стоят на клетке,
+    // не светятся ночью, не поднимают крю и не держат фауну. Их строки
+    // выписаны ЯВНО, а не оставлены на доинициализацию нулями, по двум
+    // причинам: (1) `rows_in_enum_order` ниже сверяет колонку `type` с
+    // индексом, и неявная строка приехала бы с `None` на месте `Artel` —
+    // молчаливое расхождение таблицы с собственным ключом; (2) пустая
+    // строка обязана быть ВИДНА как решение, а не как пропуск. Это цена,
+    // названная в шапке `squad_type.h`: платим пустотой за то, что
+    // `landmark_def` остаётся ПОЛНОЙ функцией без гейта по роду.
+    //
+    // НО КОЛОНКА `actions` У НИХ БОЛЬШЕ НЕ НУЛЕВАЯ (M-281), И ЭТО ТОТ ЖЕ
+    // ХОД, ЧТО С `kSquadDraw` 2026-10-19. Нуль здесь держал не пустоту, а
+    // ВТОРОЙ ОТВЕТ: маска `Talk|Trade|Attack` была вписана КОДОМ в ветку
+    // `actions_of` по роду субъекта, то есть на вопрос «какие глаголы у
+    // этого сквада» в дереве стояло два ответа — строка для неподвижного и
+    // литерал для ходока (DOD п.6). Ветка умерла, литерал переехал в
+    // строки, и `actions_of` стало ОДНОЙ дверью над ОДНОЙ колонкой.
+    // Войти в ходока нельзя: `walkable` остаётся false, и Enter не
+    // примешивается по построению.
     {.type = SquadType::Artel, .id = "artel", .label = "",
      .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u,
-     .walkable = false, .lightColor = 0x00000000u, .lightPop = 0.0f },
+     .walkable = false, .lightColor = 0x00000000u, .lightPop = 0.0f,
+     .actions = kMapActTalk | kMapActTrade | kMapActAttack },
     {.type = SquadType::Caravan, .id = "caravan", .label = "",
      .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u,
-     .walkable = false, .lightColor = 0x00000000u, .lightPop = 0.0f },
+     .walkable = false, .lightColor = 0x00000000u, .lightPop = 0.0f,
+     .actions = kMapActTalk | kMapActTrade | kMapActAttack },
     {.type = SquadType::Collector, .id = "collector", .label = "",
      .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u,
-     .walkable = false, .lightColor = 0x00000000u, .lightPop = 0.0f },
+     .walkable = false, .lightColor = 0x00000000u, .lightPop = 0.0f,
+     .actions = kMapActTalk | kMapActTrade | kMapActAttack },
 };
 static_assert(rows_in_enum_order(kLandmarks, &LandmarkDef::type),
               "kLandmarks row order must mirror SquadType");
+
+// ── ЗАКОН ГЛАГОЛОВ — ПОД КОМПИЛЯТОРОМ, А НЕ В ПРОГОНЕ (M-281) ────────────
+// Здесь проверяется ровно то, что раньше утверждал прогон над мёртвой
+// дверью: каждая строка оси объявляет свои глаголы САМА, и ни одна группа
+// не остаётся без ответа. Три утверждения, и каждое — закон, а не пересказ
+// сегодняшних значений:
+//   1) НИ ОДНО МЕСТО НЕ ГОВОРИТ И НЕ БЬЁТСЯ ЧЕРЕЗ ЭТО МЕНЮ (вердикт
+//      2026-09-11: «война — отдельный трек»). Прежде это держал прогон;
+//      теперь город с `Attack` в строке НЕ СОБЕРЁТСЯ.
+//   2) У ХОДОКА ГЛАГОЛЫ ЕСТЬ. Нулевая строка подвижного рода и была тем
+//      нулём, за который отвечал литерал в коде, — она больше невыразима.
+//   3) ВОЙТИ МОЖНО ТОЛЬКО В ТО, ЧТО СТОИТ. `walkable` у подвижного рода
+//      ложен, значит Enter ему не примешается никаким путём.
+// Негативный контроль записан в теле коммита (мутация → исход, обе
+// полярности): снятие `.actions` у любой подвижной строки роняет СБОРКУ,
+// а не тест.
+static_assert([] {
+    for (const LandmarkDef& d : kLandmarks) {
+        const bool place = squad_archetype(d.type) == SquadArchetype::Place;
+        if (place && (d.actions & (kMapActTalk | kMapActAttack)) != 0)
+            return false;                                           // (1)
+        if (!place
+            && (d.actions & (kMapActTalk | kMapActTrade | kMapActAttack))
+                   != (kMapActTalk | kMapActTrade | kMapActAttack))
+            return false;                                           // (2)
+        if (!place && d.walkable) return false;                     // (3)
+    }
+    return true;
+}(), "строка оси объявляет свои глаголы сама: место не говорит и не бьётся, "
+     "ходок говорит/торгует/бьётся, а войти можно только в стоящее");
 
 // ── СВИДЕТЕЛЬ НА СВЁРТКУ: `crewCount` ПРОТИВ ЧИСЛА ВЫПИСАННЫХ СТРОК ───────
 // Два числа, которые обязаны совпадать, и рукописный позиционный агрегат их
@@ -501,14 +551,49 @@ inline constexpr const LandmarkDef& landmark_def(SquadType t) {
 }
 
 // Is this KIND a SETTLEMENT — a place the player «прибывает в», with enter/
-// leave events and the T-key panel default? The data answers: a kind that
-// declares at least one settlement verb (trade / hire / contract board).
+// leave events and the T-key panel default? The data answers: СТОЯЩИЙ род,
+// который держит прилавок, найм или доску контрактов.
 // This predicate killed the SquadType::City hardcode (PLAY-2): a village
 // answers the same door a city does. The subject PANEL itself opens for ANY
 // landmark by click — which tabs it shows is the actions column's business.
+//
+// ЗДЕСЬ СТОЯЛО `actions != 0`, И ЭТО БЫЛО ВТОРОЕ ЗНАЧЕНИЕ КОЛОНКИ, ЖИВШЕЕ НА
+// ЧУЖОМ НУЛЕ (M-281). Колонка объявляет «какие ГЛАГОЛЫ у рода»; «ноль
+// глаголов» значило «не поселение» ровно до тех пор, пока подвижные строки
+// стояли пустыми. Как только они получили свои глаголы — а это та самая
+// правка, которой M-280 лечил второй проход рисовки, — предикат стал звать
+// поселением АРТЕЛЬ И КОРОВАН, и шесть его звонящих (рыночный выбор думки,
+// событие прибытия) поверили. Поймал не тест, а смоук `macro_travel_sp`:
+// каждый ходок рядом стал «поселением», панель открывалась сама и ПАУЗИЛА
+// мир — марш не доходил за 600 кадров против 124.
+//
+// УРОК ТОТ ЖЕ, ЧТО У `kSquadDraw`: нулевая строка — не пустота, а чей-то
+// несущий ответ, и прежде чем её заполнить, надо спросить, КТО читает ноль.
+// Теперь предикат спрашивает СВОЙ вопрос обеими половинами: «стоит ли» —
+// архетипом (КЛЮЧОМ классификатора, не гейтом прохода), «торгует ли» —
+// поселенческими битами, а не любыми. Ни один из двенадцати родов не сменил
+// ответа: поселения — ровно City и Village, как и было.
 inline constexpr bool landmark_is_settlement(SquadType t) {
-    return landmark_def(t).actions != 0;
+    return squad_archetype(t) == SquadArchetype::Place
+        && (landmark_def(t).actions
+            & (kMapActTrade | kMapActHire | kMapActQuests)) != 0;
 }
+
+// ХОДОК НЕ ПОСЕЛЕНИЕ — ПОД КОМПИЛЯТОРОМ. Ровно тот закон, который правка
+// выше сломала молча; свидетеля у него не было вовсе, и потому он прожил
+// до смоука. Негативный контроль — в теле коммита.
+static_assert([] {
+    for (std::size_t i = 0; i < std::size_t(SquadType::Count); ++i) {
+        const SquadType t = SquadType(i);
+        if (squad_archetype(t) != SquadArchetype::Place
+            && landmark_is_settlement(t))
+            return false;
+    }
+    return landmark_is_settlement(SquadType::City)
+        && landmark_is_settlement(SquadType::Village)
+        && !landmark_is_settlement(SquadType::Spire);
+}(), "поселение — СТОЯЩИЙ род с прилавком/наймом/доской; подвижный род "
+     "поселением не бывает ни при каких глаголах");
 
 // ── Born souls of a DUNGEON landmark (§42 Инк 5, CANON S28) ──────────────
 // mean = base + perScore × the kind's own context number (a spire's spell

@@ -73,15 +73,30 @@ struct ArchetypeDrawRow {
     // что ходок рисуется ПОВЕРХ места, на котором стоит. Иначе артель,
     // вошедшая в город, пропадала бы под его спрайтом в 192 px.
     std::uint8_t layer;
+
+    // КАКИЕ ЦИФРЫ У РЯДА ПАНЕЛИ БЛИЗОСТИ: потолки ТЕЛА (уровень и HP) или
+    // ПАСТВА. Колонка заведена M-281, и у неё ровно один читатель —
+    // `draw_npc_proximity_panel@src/ui/macro_overlay.cpp` (DOD п.9: читатель
+    // назван). Прежде на этот вопрос отвечала ветка по ХРАНИМОМУ роду
+    // субъекта, и ветка была последним, что держало тот род живым.
+    //
+    // ПОЧЕМУ ЭТО ГРУППОВОЙ ВОПРОС, А НЕ ВОПРОС ЖИЗНИ ТЕЛА: у неподвижного
+    // сквада пулы ВЕСТИГИАЛЬНЫ — рождение ставит их нулями
+    // (`birth_place@src/macro/place_birth.h`), а первый же полученный уровень
+    // поднимает ему `maxHp`, оставляя `hp` нулём НАВСЕГДА, потому что дверь
+    // пересборки отказывается воскрешать («Dead stays dead», `squad.h`).
+    // Значит ни `hp`, ни `maxHp` не отвечают «что показать»: число у места
+    // есть, но это паства, а не здоровье.
+    bool figuresFromPools;
 };
 
 inline constexpr ArchetypeDrawRow
     kArchetypeDraw[std::size_t(SquadArchetype::Count)] = {
-    //                        клеток  помнит  картинка с тела  слой
-    {SquadArchetype::Place,   2.0f,   true,   false,           0},
-    {SquadArchetype::Worker,  1.0f,   false,  true,            1},
-    {SquadArchetype::Roamer,  1.0f,   false,  true,            1},
-    {SquadArchetype::Hero,    1.0f,   false,  true,            1},
+    //                        клеток  помнит  картинка с тела  слой  цифры тела
+    {SquadArchetype::Place,   2.0f,   true,   false,           0,    false},
+    {SquadArchetype::Worker,  1.0f,   false,  true,            1,    true},
+    {SquadArchetype::Roamer,  1.0f,   false,  true,            1,    true},
+    {SquadArchetype::Hero,    1.0f,   false,  true,            1,    true},
 };
 
 static_assert(rows_in_enum_order(kArchetypeDraw, &ArchetypeDrawRow::arch),

@@ -43,10 +43,22 @@ struct MacroCursor {
 // 2026-09-11: ряд = один клик → СРАЗУ панель субъекта). The panel never
 // mutates world state itself — it reports the clicked subject and the app
 // opens the ONE subject panel (ui/overlays.h draw_settlement) on it.
+//
+// ОДИН СУБЪЕКТ, ОДНА ФОРМА АДРЕСА (M-281). Здесь стояли ДВА поля — хэндл
+// «для сквада» и ординал «для ландмарка», — и панель решала, какое из них
+// заполнить, по хранимому роду субъекта. Рода нет (ЗАКОН ПОЛЯ п.4), а два
+// поля были ОДНИМ адресом: `MacroHandle` есть {слот, ординал}, то есть
+// ординал лежал в нём и так, а второе поле просто выбрасывало слот.
+//
+// КУДА КЛИК ВЕДЁТ — РЕШАЕТ ПРИЛОЖЕНИЕ, И ЭТО НЕ ПРИДИРКА К МЕСТУ. Панель
+// субъекта ветвится надвое (`draw_settlement`: ветка сквада против ветки
+// поселения), и пока это так, кто-то обязан выбрать ветку. Выбор стоит
+// РЯДОМ С ДВУМЯ НОСИТЕЛЯМИ, которые он кормит (`App::subjectSquad` и
+// `App::ui.settlementId`), а не здесь: слияние ветвей панели снимет его
+// одной правкой в одном месте. Панель близости о ветвях не знает вовсе.
 struct NpcProximityResult {
-    MacroHandle openSquad{};      // a squad row was clicked ({slot,gen},
-                                  //   kMacroNoSlot = ничего не кликнуто)
-    int  openSettlementId = -1;   // a landmark row was clicked
+    MacroHandle openSubject{};    // кликнутый ряд: {слот, ординал};
+                                  //   id == 0 = ничего не кликнуто
 };
 
 using MacroWalkReachedFn = void (*)(void* user, int x, int y);
