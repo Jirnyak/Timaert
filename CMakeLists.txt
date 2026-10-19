@@ -2224,7 +2224,7 @@ target_compile_definitions(doc_tables_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 timaert_test(doc_refs_test SOURCES tests/doc_refs.cpp
-    PIN "OK doc_refs_test .25 checks. .доков [0-9]+ · ссылок [0-9]+ · вне слежения [0-9]+ · числа в доках НЕ судит")
+    PIN "OK doc_refs_test .31 checks. .доков [0-9]+ · ссылок [0-9]+ · вне слежения [0-9]+ · числа в доках НЕ судит")
 target_compile_definitions(doc_refs_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 

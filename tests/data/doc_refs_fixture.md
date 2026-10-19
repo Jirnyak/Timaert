@@ -16,8 +16,21 @@
 ## Три рода ЦЕЛЫХ ссылок
 
 1. Имя стоит на указанной строке: `fixture_ok_marker` (`doc_refs_fixture.md:18`).
-2. Отпечаток найден: `doc_refs_fixture.md:38` «fixture_print_target_line».
+2. Отпечаток найден: `doc_refs_fixture.md:51` «fixture_print_target_line».
 3. Без номера вовсе, гнить нечему: fixture_ok_marker@doc_refs_fixture.md.
+
+## Живость имени: обе полярности, на `doc_refs_needle.h`
+
+Род «имя только в комментарии» нельзя проверить на этом файле: комментарий есть
+понятие ЯЗЫКА, и у `.md` его нет вовсе. Поэтому рядом лежит исходник-образец, и
+спрашивается он с ОБЕИХ сторон — иначе вера в детектор была бы верой в шум.
+
+- МОЛЧИТ на объявлении: fixture_live_in_code@doc_refs_needle.h.
+- МОЛЧИТ на имени, живущем одним литералом: fixture_name_in_literal@doc_refs_needle.h.
+- МОЛЧИТ после ловушек литерала и апострофа: fixture_after_hazards@doc_refs_needle.h,
+  fixture_after_sep@doc_refs_needle.h.
+- КРАСНЕЕТ на строчном комментарии: fixture_dead_in_comment@doc_refs_needle.h.
+- КРАСНЕЕТ на блочном: fixture_dead_in_block@doc_refs_needle.h.
 
 ## Шесть родов ГНИЛЫХ, по одному на вердикт
 

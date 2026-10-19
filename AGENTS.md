@@ -459,7 +459,7 @@ Windows/MSVC — цель верификации, не авторитет гей
         выбрать именно его. **ИМЯ У ЧИСЛА ОДНО —
         `kMaxFactions@src/tables/faction.h`, И ВЫВОД СТОИТ ТАМ ПОД
         `static_assert` НА ШИРИНУ МАСКИ** (M-182 закрыт 2026-10-07: алиас
-        `kMaxCrowdFactions@src/sub/movement.h` снесён, `kMaxWorldFactions`
+        `kMaxCrowdFactions` жил в `src/sub/movement.h` и снесён, `kMaxWorldFactions`
         умер со строками фракций 2026-09-30). Правка 64 с тех пор
         НЕСОБИРАЕМА без правки типа маски — число и его причина стоят
         рядом.

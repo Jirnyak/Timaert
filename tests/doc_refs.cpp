@@ -132,6 +132,90 @@ bool line_has(const std::string& line, const std::string& needle, bool word) {
     return false;
 }
 
+// ── КОД ПРОТИВ КОММЕНТАРИЯ ─────────────────────────────────────────────────
+// Единственное, что здесь лексится, и ровно затем, чтобы ответить на вопрос
+// «лежит ли имя ТОЛЬКО в комментарии» (род `CommentOnly`, довод — `doc_refs.h`).
+//
+// ЛИТЕРАЛ КОММЕНТАРИЕМ НЕ ЯВЛЯЕТСЯ, И ЭТО НЕ МЕЛОЧЬ: имя прибора живёт в
+// `report("header_cost_test")` и больше нигде. Но внутрь литерала заглядывать
+// ОБЯЗАТЕЛЬНО — иначе `/*` из строки `"…глобом src/**.h…"` откроет блочный
+// комментарий и проглотит остаток файла. Первая редакция замера 2026-10-19 так
+// и сделала: объявила `header_cost_test` мёртвым в его же `report(...)`, потому
+// что `header_cost_test.cpp:396` несёт `src/**.h` в кавычках. Таких строк в
+// дереве 439 с `//` внутри литерала и 4 файла с `/*`.
+//
+// Апостроф — РАЗДЕЛИТЕЛЬ РАЗРЯДОВ, когда стоит между цифрами
+// (`145'752'140ull@src/macro/world_fields.h`); принять его за литерал символа
+// значило бы ослепнуть до следующей кавычки. Сырых литералов (`R"(…)"`) в
+// дереве нет ни одного — счёт 2026-10-19.
+//
+// ОШИБКА ЭТОГО ЛЕКСЕРА ГРОМКАЯ, А НЕ ТИХАЯ, и это главное его свойство:
+// переглушив файл, он красит гейт на сотнях целых ссылок разом, а не прячет
+// одну. Молчаливого исхода у него нет по построению.
+std::string strip_comments(const std::string& line, bool& inBlock) {
+    std::string out(line.size(), ' ');
+    std::size_t i = 0;
+    while (i < line.size()) {
+        if (inBlock) {
+            if (i + 1 < line.size() && line[i] == '*' && line[i + 1] == '/') {
+                inBlock = false;
+                i += 2;
+                continue;
+            }
+            ++i;
+            continue;
+        }
+        if (i + 1 < line.size() && line[i] == '/' && line[i + 1] == '/') break;
+        if (i + 1 < line.size() && line[i] == '/' && line[i + 1] == '*') {
+            inBlock = true;
+            i += 2;
+            continue;
+        }
+        if (line[i] == '"' ||
+            (line[i] == '\'' && !(i > 0 && is_digit(line[i - 1])))) {
+            const char q = line[i];
+            out[i] = line[i];
+            ++i;
+            while (i < line.size() && line[i] != q) {
+                // Экранированная кавычка литерал не закрывает; без этого
+                // `"\""` оставил бы состояние открытым до конца строки.
+                if (line[i] == '\\' && i + 1 < line.size()) {
+                    out[i] = line[i];
+                    ++i;
+                }
+                out[i] = line[i];
+                ++i;
+            }
+            if (i < line.size()) {
+                out[i] = line[i];
+                ++i;
+            }
+            continue;
+        }
+        out[i] = line[i];
+        ++i;
+    }
+    return out;
+}
+
+// Вид файла БЕЗ комментариев. Длина и порядок строк сохранены, чтобы номера
+// оставались теми же: вердикт о строке судится по исходному телу.
+std::vector<std::string> code_view(const std::vector<std::string>& body) {
+    std::vector<std::string> out;
+    out.reserve(body.size());
+    bool inBlock = false;
+    for (const std::string& l : body) out.push_back(strip_comments(l, inBlock));
+    return out;
+}
+
+// Комментарий есть понятие ЯЗЫКА, а не файла вообще: у `smoke_suite.txt`,
+// `.tsv` и `.md` его нет, и спрашивать у них «в комментарии ли имя» — вопрос
+// не о мире. Вне этого списка род `CommentOnly` не выносится никогда.
+bool cxx_source(std::string_view path) {
+    return path.ends_with(".h") || path.ends_with(".hpp") ||
+           path.ends_with(".cpp") || path.ends_with(".c");
+}
+
 // ── РАЗБОР СТРОКИ ДОКУМЕНТА ───────────────────────────────────────────────
 // Отпечаток ищется СПРАВА от ссылки: `path:530 «bool plough_field_cell(`.
 bool read_fingerprint(const std::string& line, std::size_t after,
@@ -210,6 +294,24 @@ int parse_int(const std::string& s, std::size_t begin, std::size_t end) {
 
 }  // namespace
 
+bool judges_name_liveness(const std::string& doc) {
+    // ЖУРНАЛЫ. Их строка пишется ОДИН РАЗ и остаётся снимком момента: наряд на
+    // снос обязан назвать то, что сносит, и после сноса имя в нём мертво ПО
+    // ЗАМЫСЛУ. Красить такую строку значит требовать переписать верную прозу
+    // (§8 п.7 — свидетель не смеет мешать работе). `problems.md` тем же
+    // доводом исключён целиком, выше в `scan_tree`.
+    //
+    // Список закрыт и может только РАСТИ ОСОЗНАННО: по умолчанию документ
+    // СУДИТСЯ, поэтому новый док, начавший писать адреса, попадает под гейт
+    // сам. Обратный дефолт («судим только названных») дал бы ровно ту дыру,
+    // из-за которой заведён весь этот род: закон без свидетеля.
+    return doc != "macro-registry.md" &&  // журнал нарядов и их закрытия
+           doc != "jopus_prompts.md" &&   // архив промтов сессий
+           doc != "bugs.md" &&            // журнал «симптом → доказательство»
+           doc != "release.md" &&         // журнал выпусков
+           doc != "lore.md";              // художественный текст, не адреса
+}
+
 const char* kind_name(Kind k) {
     switch (k) {
         case Kind::Ok: return "цела";
@@ -218,6 +320,8 @@ const char* kind_name(Kind k) {
         case Kind::NameElsewhere:
             return "старая форма «имя+номер»: имя в файле есть, но не там";
         case Kind::NeedleGone: return "ИГОЛКИ В ФАЙЛЕ НЕТ";
+        case Kind::CommentOnly:
+            return "ИМЯ ЖИВЁТ ТОЛЬКО В КОММЕНТАРИИ — адрес мёртв";
         case Kind::PastEof: return "СТРОКИ НЕТ — ФАЙЛ КОРОЧЕ";
         case Kind::NoFile: return "ФАЙЛА НЕТ";
         case Kind::Ambiguous: return "ИМЯ ФАЙЛА НЕ ОДНО — допиши каталог";
@@ -273,6 +377,42 @@ Scan scan_tree(const std::string& root, const std::vector<std::string>& docs) {
 
     // Кэш прочитанных исходников: один файл читается один раз на прогон.
     std::map<std::string, std::vector<std::string>, std::less<>> src;
+    // Вид без комментариев строится ЛЕНИВО и тоже один раз: он нужен только
+    // ссылкам с иголкой-ИМЕНЕМ, а их меньше, чем файлов в индексе.
+    std::map<std::string, std::vector<std::string>, std::less<>> bare;
+
+    const auto body_of =
+        [&](const std::string& rel) -> const std::vector<std::string>& {
+        auto it = src.find(rel);
+        if (it == src.end()) {
+            std::vector<std::string> body;
+            // Файл в индексе есть, а прочитать не смогли — это аномалия
+            // прибора, а не факт о ссылке: смолчать тут значит объявить файл
+            // пустым и обвинить ссылку.
+            if (!read_lines((fs::path(root) / rel).string(), body))
+                scan.notes.push_back("не прочитан исходник: " + rel);
+            it = src.emplace(rel, std::move(body)).first;
+        }
+        return it->second;
+    };
+    const auto bare_of =
+        [&](const std::string& rel) -> const std::vector<std::string>& {
+        auto it = bare.find(rel);
+        if (it == bare.end())
+            it = bare.emplace(rel, code_view(body_of(rel))).first;
+        return it->second;
+    };
+    // Имя лежит в файле ТОЛЬКО в комментарии. Спрашивается лишь у исходника
+    // языка, у которого комментарий вообще есть (`cxx_source`), и лишь в
+    // документе, судящем живость (`judges_name_liveness`).
+    const auto comment_only = [&](const std::string& doc,
+                                  const std::string& rel,
+                                  const std::string& name) {
+        if (!judges_name_liveness(doc) || !cxx_source(rel)) return false;
+        for (const std::string& b : bare_of(rel))
+            if (line_has(b, name, true)) return false;
+        return true;
+    };
 
     for (const std::string& doc : scan.docs) {
         std::vector<std::string> lines;
@@ -332,19 +472,22 @@ Scan scan_tree(const std::string& root, const std::vector<std::string>& docs) {
                                 sym.kind = Kind::Ambiguous;
                             } else {
                                 sym.resolved = c.front();
-                                std::vector<std::string> body;
-                                if (!read_lines(
-                                        (fs::path(root) / sym.resolved).string(),
-                                        body))
-                                    scan.notes.push_back(
-                                        "не прочитан исходник: " + sym.resolved);
                                 bool hit = false;
-                                for (const std::string& b : body)
+                                for (const std::string& b : body_of(sym.resolved))
                                     if (line_has(b, sym.needleText, true)) {
                                         hit = true;
                                         break;
                                     }
-                                sym.kind = hit ? Kind::Ok : Kind::NeedleGone;
+                                // Порядок вердиктов: имени нет вовсе → переезд
+                                // или опечатка; имя есть, но одним
+                                // комментарием → адрес мёртв, а запись о его
+                                // смерти держит гейт зелёным.
+                                sym.kind =
+                                    !hit ? Kind::NeedleGone
+                                    : comment_only(doc, sym.resolved,
+                                                   sym.needleText)
+                                        ? Kind::CommentOnly
+                                        : Kind::Ok;
                             }
                             scan.refs.push_back(std::move(sym));
                             continue;
@@ -413,19 +556,7 @@ Scan scan_tree(const std::string& root, const std::vector<std::string>& docs) {
                     r.kind = Kind::Ambiguous;
                 } else {
                     r.resolved = cands.front();
-                    auto it = src.find(r.resolved);
-                    if (it == src.end()) {
-                        std::vector<std::string> body;
-                        // Файл в индексе есть, а прочитать не смогли — это
-                        // аномалия прибора, а не факт о ссылке: смолчать тут
-                        // значит объявить файл пустым и обвинить ссылку.
-                        if (!read_lines((fs::path(root) / r.resolved).string(),
-                                        body))
-                            scan.notes.push_back("не прочитан исходник: " +
-                                                 r.resolved);
-                        it = src.emplace(r.resolved, std::move(body)).first;
-                    }
-                    const std::vector<std::string>& body = it->second;
+                    const std::vector<std::string>& body = body_of(r.resolved);
                     const bool word = r.needle == Needle::Name;
                     if (inherited) {
                         // Унаследованный путь — ДОГАДКА ПАРСЕРА, и обвинять по
@@ -468,6 +599,19 @@ Scan scan_tree(const std::string& root, const std::vector<std::string>& docs) {
                                        std::abs(b - r.lineA);
                             });
                     };
+                    // Род мёртвого адреса судится ДО попадания в строку и
+                    // независимо от него: имя, живущее одним комментарием, не
+                    // становится живее от того, что комментарий стоит на
+                    // указанной строке. Старая форма «имя+номер» тем самым
+                    // получает тот же вердикт, что `symbol@path` — закон один,
+                    // форма ссылки его не меняет.
+                    if (!hits.empty() && word &&
+                        comment_only(doc, r.resolved, r.needleText)) {
+                        r.kind = Kind::CommentOnly;
+                        r.found = nearest();
+                        scan.refs.push_back(std::move(r));
+                        continue;
+                    }
                     if (inside) {
                         r.kind = Kind::Ok;
                         r.found = r.lineA;

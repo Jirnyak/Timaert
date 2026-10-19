@@ -154,13 +154,13 @@ Boundary test_real_docs() {
         "doc_refs: документов %zu, файлов дерева %d, ссылок %zu\n"
         "  цела %d · сдвиг отпечатка %d · отпечаток не один %d\n"
         "  имя+номер (старая форма) %d · иголки нет %d · строки нет %d\n"
-        "  файла нет %d · имя файла не одно %d · не отслеживается %d\n"
-        "  белый список: %zu строк (может только таять)\n",
+        "  имя только в комментарии %d · файла нет %d · имя файла не одно %d\n"
+        "  не отслеживается %d · белый список: %zu строк (может только таять)\n",
         scan.docs.size(), scan.filesIndexed, scan.refs.size(),
         tally[Kind::Ok], tally[Kind::NeedsSync], tally[Kind::NeedleMany],
         tally[Kind::NameElsewhere], tally[Kind::NeedleGone],
-        tally[Kind::PastEof], tally[Kind::NoFile], tally[Kind::Ambiguous],
-        tally[Kind::Untracked], allowed.size());
+        tally[Kind::PastEof], tally[Kind::CommentOnly], tally[Kind::NoFile],
+        tally[Kind::Ambiguous], tally[Kind::Untracked], allowed.size());
 
     return Boundary{scan.docs.size(), scan.refs.size(), tally[Kind::Untracked]};
 }
@@ -176,9 +176,14 @@ void test_fixture_detects_every_rot() {
     for (const Ref& r : scan.refs) ++got[r.kind];
 
     const std::pair<Kind, int> expect[] = {
-        {Kind::Ok, 3},  // по имени на строке, по отпечатку, и `symbol@path`
+        // Семь целых: имя на строке, отпечаток, `symbol@path` — и ЧЕТЫРЕ
+        // полярности «молчит» рода живости (объявление, имя в литерале, и две
+        // ловушки лексера — слэш-звезда в литерале и непарный апостроф).
+        {Kind::Ok, 7},
         {Kind::NeedsSync, 1},     {Kind::NeedleMany, 1},
         {Kind::NameElsewhere, 1}, {Kind::NeedleGone, 1},
+        // Два «только в комментарии»: строчный и блочный.
+        {Kind::CommentOnly, 2},
         {Kind::PastEof, 1},       {Kind::NoFile, 1},
         {Kind::Ambiguous, 1},     {Kind::Untracked, 1},
     };
@@ -191,19 +196,19 @@ void test_fixture_detects_every_rot() {
         CHECK(got[kind] == n, sm::docrefs::kind_name(kind));
     }
     CHECK(static_cast<int>(scan.refs.size()) == expectedTotal,
-          "в фикстуре ровно одиннадцать ссылок — лишнюю прибор не выдумал");
+          "в фикстуре ровно семнадцать ссылок — лишнюю прибор не выдумал");
 
-    // Сам негативный контроль утверждается: три рода из одиннадцати ЦЕЛЫ,
+    // Сам негативный контроль утверждается: семь ссылок из семнадцати ЦЕЛЫ,
     // значит прибор не валит всё подряд — иначе вера в детектор была бы верой
     // в шум.
-    CHECK(got[Kind::Ok] == 3, "детектор не валит всё подряд: три ссылки целы");
+    CHECK(got[Kind::Ok] == 7, "детектор не валит всё подряд: семь ссылок целы");
 
-    // И правка НЕ ТРОГАЕТ то, чего не понимает: из восьми гнилых машина берётся
+    // И правка НЕ ТРОГАЕТ то, чего не понимает: из десяти гнилых машина берётся
     // ровно за ОДНУ — сдвинувшийся отпечаток с единственным вхождением. Это и
     // есть граница автоправки, записанная числом, а не обещанием.
     std::string report;
     const int fixable = sm::docrefs::apply_sync(kRoot, scan, false, &report);
-    CHECK(fixable == 1, "машина правит ровно одну из восьми гнилых ссылок");
+    CHECK(fixable == 1, "машина правит ровно одну из десяти гнилых ссылок");
 }
 
 // Негативный контроль на САМ МЕХАНИЗМ СПИСКА. Без него «список умеет только
@@ -235,12 +240,35 @@ void test_legacy_list_mechanism() {
           "строка списка без ссылки в доках ловится как УСТАРЕВШАЯ");
 }
 
+// ПОЛИТИКА РОДА ДОКУМЕНТА — ЭТО СПИСОК, И ПОД СВИДЕТЕЛЕМ ОБЯЗАН СТОЯТЬ СПИСОК,
+// А НЕ ЕГО ПЕРЕСКАЗ. Живость имени судится в доках-УТВЕРЖДЕНИЯХ (законы и
+// `SKELETON.md`, где каждая строка объявляет ПРАВДА/РАСХОЖДЕНИЕ с адресом) и НЕ
+// судится в ЖУРНАЛАХ, где наряд на снос обязан назвать то, что сносит. Без
+// этого пина «реестр исключён» было бы обещанием: перенеси кто-нибудь
+// `SKELETON.md` в журналы — и гейт замолчит навсегда, зелёный и бесполезный.
+void test_liveness_policy() {
+    using sm::docrefs::judges_name_liveness;
+    CHECK(judges_name_liveness("SKELETON.md"),
+          "SKELETON.md судится: его строка и есть утверждение с адресом");
+    CHECK(judges_name_liveness("CANON.md") && judges_name_liveness("AGENTS.md"),
+          "законы судятся: их читает каждая сессия ДО кода");
+    CHECK(!judges_name_liveness("macro-registry.md"),
+          "реестр нарядов НЕ судится: наряд на снос называет снесённое");
+    CHECK(!judges_name_liveness("jopus_prompts.md"),
+          "архив промтов НЕ судится: его строка — снимок момента");
+    // Дефолт СУДИТ, и это не вкус: документ, которого в списке нет, попадает
+    // под гейт сам — иначе новый док начал бы писать адреса без свидетеля.
+    CHECK(judges_name_liveness("doc_that_nobody_has_written_yet.md"),
+          "по умолчанию документ СУДИТСЯ — список называет только журналы");
+}
+
 }  // namespace
 
 int main() {
     const Boundary b = test_real_docs();
     test_fixture_detects_every_rot();
     test_legacy_list_mechanism();
+    test_liveness_policy();
 
     char scope[200];
     std::snprintf(scope, sizeof(scope),

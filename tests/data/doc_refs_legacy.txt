@@ -109,7 +109,6 @@ SKELETON.md	:337
 SKELETON.md	:345
 SKELETON.md	:348
 SKELETON.md	:3480
-SKELETON.md	:3541
 SKELETON.md	:355
 SKELETON.md	:356
 SKELETON.md	:3611
@@ -158,7 +157,6 @@ SKELETON.md	:6070
 SKELETON.md	:620
 SKELETON.md	:6330
 SKELETON.md	:65
-SKELETON.md	:662
 SKELETON.md	:67
 SKELETON.md	:6715
 SKELETON.md	:68
@@ -168,7 +166,6 @@ SKELETON.md	:689
 SKELETON.md	:699
 SKELETON.md	:719-735
 SKELETON.md	:72-100
-SKELETON.md	:743
 SKELETON.md	:743-756
 SKELETON.md	:76
 SKELETON.md	:779
@@ -182,17 +179,6 @@ SKELETON.md	:99-100
 SKELETON.md	ai.cpp:109-118
 SKELETON.md	ai.cpp:93
 SKELETON.md	app/app_state.h:161
-SKELETON.md	app/main.cpp:1375
-SKELETON.md	app/main.cpp:1897-1901
-SKELETON.md	app/main.cpp:320-335
-SKELETON.md	app/main.cpp:3400
-SKELETON.md	app/main.cpp:3490-3497
-SKELETON.md	app/main.cpp:4064
-SKELETON.md	app/main.cpp:4608-4610
-SKELETON.md	app/main.cpp:4970
-SKELETON.md	app/main.cpp:6320-6322
-SKELETON.md	app/main.cpp:662
-SKELETON.md	app/main.cpp:700
 SKELETON.md	app_state.h:201
 SKELETON.md	army.h:179
 SKELETON.md	auto_battle.h:168
@@ -303,18 +289,6 @@ SKELETON.md	macro_stock.cpp:610
 SKELETON.md	macro_stock.h:114-116
 SKELETON.md	macro_stock.h:60-74
 SKELETON.md	macro_world.h:68-71
-SKELETON.md	main.cpp:1398
-SKELETON.md	main.cpp:1674
-SKELETON.md	main.cpp:1695
-SKELETON.md	main.cpp:1839-1854
-SKELETON.md	main.cpp:1862
-SKELETON.md	main.cpp:2963
-SKELETON.md	main.cpp:3635-3637
-SKELETON.md	main.cpp:4064
-SKELETON.md	main.cpp:4630
-SKELETON.md	main.cpp:5561
-SKELETON.md	main.cpp:5732
-SKELETON.md	main.cpp:6278
 SKELETON.md	map_data.h:395
 SKELETON.md	map_generator.cpp:185-186
 SKELETON.md	map_generator.cpp:317
@@ -479,7 +453,6 @@ SKELETON.md	state.h:510
 SKELETON.md	state.h:616
 SKELETON.md	state.h:617
 SKELETON.md	state.h:623-626
-SKELETON.md	state.h:845-849
 SKELETON.md	store.h:65
 SKELETON.md	sub/ai.cpp:28
 SKELETON.md	sub/base_generator.cpp:373-374
@@ -510,7 +483,6 @@ SKELETON.md	sub/spell_effects.h:7
 SKELETON.md	surface_lib.glsl:30
 SKELETON.md	targeting.cpp:24-80
 SKELETON.md	targeting.cpp:66
-SKELETON.md	tests/spire_generation_test.cpp:307-316
 SKELETON.md	threat_field.cpp:14-17
 SKELETON.md	threat_field.cpp:21
 SKELETON.md	threat_field.cpp:65
@@ -526,7 +498,6 @@ SKELETON.md	ui/overlays.cpp:1653-1660
 SKELETON.md	ui/overlays.cpp:2764-2765
 SKELETON.md	ui/screens.cpp:387-392
 SKELETON.md	vk_macro_renderer.cpp:189
-SKELETON.md	vk_macro_renderer.cpp:31
 SKELETON.md	vk_macro_renderer.cpp:89
 SKELETON.md	vk_renderer_3d.cpp:2305-2321
 SKELETON.md	vk_renderer_3d.cpp:2742
