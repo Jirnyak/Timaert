@@ -90,6 +90,7 @@ enum class SmokeAction : std::uint8_t {
     TriggerCountOnlyDialog,
     TriggerStoryOverlay,
     ConsoleSmoke,
+    MacroGlideGap,
     ReturnTitle,
     Quit,
 };

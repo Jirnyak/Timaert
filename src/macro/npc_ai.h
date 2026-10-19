@@ -33,8 +33,10 @@ static_assert(kTicksPerDay % kAiTicks == 0,
 // Real seconds one AI period lasts ON THE MACRO MAP — the only place these
 // interpolated positions are ever seen. PRESENTATION ONLY, and that claim is
 // about what is DERIVED from it, not about who touches it: its one reader is
-// set_visual_speed (npc_ai.cpp), which divides a think's travelled distance by
-// it to fill MacroNpcRuntime::visualSpeed — a number read by the frame
+// set_visual_speed@src/macro/squad.h, which divides a think's travelled
+// DISTANCE by it (the door takes no other quantity — the march of the player
+// is quoted through it too, M-289) to fill
+// MacroNpcRuntime::visualSpeed — a number read by the frame
 // interpolator (app/main.cpp) and the camera glide (ui/macro_eyes.cpp) and by
 // nothing in the simulation. No law of the world is calibrated in real
 // seconds: the cadence itself is kAiTicks, counted in ticks of the world

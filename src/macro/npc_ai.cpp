@@ -443,13 +443,6 @@ void settle_march_rhythm(MacroHandle e, const MacroPos& p,
     if (bite > 0) settle_exhaustion(e, hp, ctx);
 }
 
-void set_visual_speed(ecs::MacroNpcRuntime& rt, float oldX, float oldY,
-                      float newX, float newY) {
-    float dx = newX - oldX, dy = newY - oldY;
-    float dist = std::sqrt(dx * dx + dy * dy);
-    rt.visualSpeed = dist > 0.0f ? dist / kAiPeriodSeconds : 0.0f;
-}
-
 // Weight of a macro cell from the baked grid the player's A* walks
 // (ctx.mw.pathCost); a missing grid reads as a featureless free-road world.
 float cell_weight(const TickContext& ctx, int x, int y) {
@@ -630,7 +623,13 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
 
     p.x = float(ix);
     p.y = float(iy);
-    set_visual_speed(rt, oldX, oldY, p.x, p.y);
+    // Скорость картинки — РАССТОЯНИЕ, пройденное этой думкой, за её период
+    // (одна дверь, `set_visual_speed@src/macro/squad.h`). Число то же, что
+    // здесь считалось своей парой строк до M-289; дверь общая с маршем
+    // игрока, потому что вопрос один.
+    set_visual_speed(rt, std::sqrt((p.x - oldX) * (p.x - oldX)
+                                   + (p.y - oldY) * (p.y - oldY)),
+                     kAiPeriodSeconds);
 
     // Exhaustion is settled by the DISPATCHER after the think (it owns the
     // entity + Health this function never sees): rest on land, the debt's

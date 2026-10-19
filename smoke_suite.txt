@@ -80,6 +80,7 @@ rest_sp
 timeadvance_burst
 chronicle_rate
 macro_npc_trace
+macro_glide_gap
 
 # Panels, spells, story.
 open_quests

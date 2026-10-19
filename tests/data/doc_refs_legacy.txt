@@ -337,7 +337,6 @@ SKELETON.md	npc_ai.cpp:3479
 SKELETON.md	npc_ai.cpp:3608
 SKELETON.md	npc_ai.cpp:3644
 SKELETON.md	npc_ai.cpp:3929
-SKELETON.md	npc_ai.cpp:427
 SKELETON.md	npc_ai.cpp:4410
 SKELETON.md	npc_ai.cpp:4731
 SKELETON.md	npc_ai.cpp:4796
@@ -490,7 +489,6 @@ SKELETON.md	threat_field.cpp:92-94
 SKELETON.md	threat_field.h:55
 SKELETON.md	tree_layer.cpp:34
 SKELETON.md	tree_layer.cpp:5
-SKELETON.md	ui/macro_overlay.h:87
 SKELETON.md	ui/map_screen.cpp:335
 SKELETON.md	ui/overlays.cpp:1245
 SKELETON.md	ui/overlays.cpp:1253

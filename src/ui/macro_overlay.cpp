@@ -224,12 +224,22 @@ void draw_macro_overlay(const MacroWorld& mw,
 
     // ── Auto-travel polyline (drawn underneath everything else). Chrome:
     // suppressed when the overlay's hover/path markers are toggled off.
-    if (showMarkers && cursor.path.size() > cursor.pathIdx + 1) {
+    // ОДИН НОСИТЕЛЬ «ГДЕ ОН НА ЭКРАНЕ» — ГЛАЗ, И ЛИНИЯ ВЫХОДИТ ИЗ НЕГО (Б4).
+    // Здесь стояла вторая СЫРАЯ клетка `cursor.path[cursor.pathIdx]`, то есть
+    // уже СЛЕДУЮЩАЯ: `pathIdx` ставится в 1 на новом пути и растёт с каждым
+    // шагом, значит целое первое звено не рисовалось вовсе, и линия начиналась
+    // в стороне от фигурки — ровно «стрелки пути от него багованы» и «тыкаешь
+    // новый путь — тоже». Спрайт ниже читает ЭТОТ ЖЕ глаз, и теперь на вопрос
+    // один ответ (DOD п.6). Условие тоже исправлено: `size() > pathIdx + 1`
+    // гасило линию целиком, когда оставалась одна клетка.
+    const MacroHandle lineFh = player_flag_handle(gs);
+    if (showMarkers && cursor.pathIdx < cursor.path.size()
+        && mw.store->valid(lineFh) && eyes.primed) {
         const ImU32 pathCol = IM_COL32(120, 220, 255, 200);
-        ImVec2 prev = world_to_screen(float(cursor.path[cursor.pathIdx].x) + 0.5f,
-                                      float(cursor.path[cursor.pathIdx].y) + 0.5f,
+        ImVec2 prev = world_to_screen(eyes.x[lineFh.slot] + 0.5f,
+                                      eyes.y[lineFh.slot] + 0.5f,
                                       camX, camY, zoom, viewW, viewH, mapW, mapH);
-        for (std::size_t i = cursor.pathIdx + 1; i < cursor.path.size(); ++i) {
+        for (std::size_t i = cursor.pathIdx; i < cursor.path.size(); ++i) {
             ImVec2 p = world_to_screen(float(cursor.path[i].x) + 0.5f,
                                        float(cursor.path[i].y) + 0.5f,
                                        camX, camY, zoom, viewW, viewH, mapW, mapH);
@@ -554,9 +564,6 @@ std::size_t step_macro_walk(GameState& gs, MacroStore& stw, MacroCursor& cursor,
     const float produced = cellsPerSec * dt;
     rt->moveBudget += produced;
     if (rt->moveBudget > produced + 1.0f) rt->moveBudget = produced + 1.0f;
-    // The glide follows at the walk's own pace — the same visualSpeed
-    // every marching squad hands its sprite.
-    rt->visualSpeed = cellsPerSec;
 
     std::size_t reached = 0u;
     while (rt->moveBudget >= 1.0f && cursor.pathIdx < cursor.path.size()) {
@@ -576,8 +583,24 @@ std::size_t step_macro_walk(GameState& gs, MacroStore& stw, MacroCursor& cursor,
         cell->idx = ecs::cell_index(nxt.x, nxt.y, W);
         // Доля клетки — та же дверь марша, что у всякого сквада (M-244):
         // вошёл с запада — стоит у западного края.
-        stw.sub[fh.slot] = ecs::cell_sub_after_step(sdx, sdy);
+        const ecs::CellSub subBefore = stw.sub[fh.slot];
+        const ecs::CellSub subAfter = ecs::cell_sub_after_step(sdx, sdy);
+        stw.sub[fh.slot] = subAfter;
         rt->moveBudget -= 1.0f;
+        // СКОРОСТЬ КАРТИНКИ — ТОЙ ЖЕ ДВЕРЬЮ, ЧТО У ДУМКИ НПЦ, И В ТОЙ ЖЕ
+        // ВЕЛИЧИНЕ: расстояние звена за время звена. Марш НЕ тронут — клетка
+        // по-прежнему стоит 1.0 бюджета в любом румбе; называется иначе ровно
+        // то, что говорит ПРЕДСТАВЛЕНИЮ, как быстро ему ехать. Смещение
+        // берётся настоящее (клетка плюс доля), а не 1 или √2 на глаз: смена
+        // румба двигает долю, и дуга звена выходит, например, 1.116.
+        // Пишется НА ШАГЕ, потому что глаз весь следующий промежуток едет
+        // ровно по этому, только что пройденному звену.
+        const float legX = float(sdx)
+            + float(subAfter.x - subBefore.x) / float(ecs::kCellSubQuantum);
+        const float legY = float(sdy)
+            + float(subAfter.y - subBefore.y) / float(ecs::kCellSubQuantum);
+        set_visual_speed(*rt, std::sqrt(legX * legX + legY * legY),
+                         1.0f / cellsPerSec);
         ++cursor.pathIdx;
         ++reached;
         if (onReached) {

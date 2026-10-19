@@ -422,6 +422,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"return_title", SmokeAction::ReturnTitle},
     {"quit", SmokeAction::Quit},
     {"console", SmokeAction::ConsoleSmoke},
+    {"macro_glide_gap", SmokeAction::MacroGlideGap},
 };
 
 bool smoke_action_from_token(std::string_view token, SmokeAction& out) {
@@ -1893,6 +1894,137 @@ bool run_macro_travel_sp_smoke(App& app) {
         smoke_fail(app, "macro_travel_sp cost health while stamina remained");
         return false;
     }
+    return true;
+}
+
+// ── ГЛАЙД КАРТЫ: ГЛАЗ НЕ ОБЯЗАН ОТСТАВАТЬ ОТ ЗАЯВЛЕННОЙ ТОЧКИ (Б4) ───────
+// ЗАКОН: писатель `set_visual_speed@src/macro/squad.h` называет РАССТОЯНИЕ за
+// время, поэтому за время звена глаз покрывает ДУГУ звена — в любом румбе.
+// Следствие, которое здесь и судится: дуга, пройденная ГЛАЗОМ за весь марш,
+// не меньше дуги ЗАЯВЛЕННОЙ ТОЧКИ минус одно звено (последнее ещё в полёте).
+//
+// ПОЧЕМУ СМОУКОМ, А НЕ ctest. Глайд есть ПРЕДСТАВЛЕНИЕ, и ловится он только
+// в настоящем обороте: `tick_macro_eyes` зовётся раз в кадр с `ticksAdvanced`,
+// а марш — раз в тик; прямой вызов шага (`advance_sim_seconds`) глаза не
+// двигает вовсе, так что ctest этот закон увидеть не может по построению
+// (§8 п.6, пятая слепота). Держится на кадрах механикой `wait_visible`:
+// `break` без `++cursor`.
+//
+// НИ ОДНОГО ЧИСЛА С ПОТОЛКА: обе дуги и длина самого длинного звена
+// ИЗМЕРЯЮТСЯ по ходу, и вердикт есть сравнение измеренного с измеренным.
+// Под дефектом он красный арифметически: писатель, квотивший ТЕМП В КЛЕТКАХ,
+// выдавал глазу ровно 1.0 на звено, то есть `eyeArc` = числу шагов, тогда как
+// диагональ уводит цель на 1.414. Замер 2026-10-19, сид 12345, 26 клеток:
+// дуга цели 28.436 за 25 шагов, `maxGap` 3.990 (simSpeed 1.0) и 3.906 (4.0) —
+// ускорение времени к механизму отношения не имело; после правки 1.403/1.379.
+//
+// Марш идёт на simSpeed 4 намеренно: закон от темпа не зависит (замер выше),
+// а сценарий стоит 303 кадра вместо 1201.
+bool run_macro_glide_gap_smoke(App& app) {
+    static int    armed  = 0;
+    static int    frames = 0;
+    static double eyeArc = 0.0;      // дуга, пройденная ГЛАЗОМ
+    static double statedArc = 0.0;   // дуга ЗАЯВЛЕННОЙ ТОЧКИ
+    static double maxLeg = 0.0;      // самое длинное звено маршрута
+    static double maxGap = 0.0;
+    static float  prevEyeX = 0.0f, prevEyeY = 0.0f;
+    static float  prevStX = 0.0f, prevStY = 0.0f;
+    static int    legs = 0;
+
+    const sm::MacroHandle fh = sm::player_flag_handle(app.gs);
+    if (!app.macroStore->valid(fh)) {
+        smoke_fail(app, "macro_glide_gap has no player flag squad");
+        return false;
+    }
+    const sm::MacroStore& st = *app.macroStore;
+    const float tx = float(sm::ecs::cell_x(st.cell[fh.slot], app.gs.mapW))
+                   + float(st.sub[fh.slot].x) / float(sm::ecs::kCellSubQuantum);
+    const float ty = float(sm::ecs::cell_y(st.cell[fh.slot], app.gs.mapW))
+                   + float(st.sub[fh.slot].y) / float(sm::ecs::kCellSubQuantum);
+
+    if (!armed) {
+        if (!smoke_boot_invariants_hold(app)) {
+            smoke_fail(app, "macro_glide_gap boot invariants");
+            return false;
+        }
+        if (app.subworld.active()) {
+            smoke_fail(app, "macro_glide_gap while subworld active");
+            return false;
+        }
+        smoke_clear_modal_overlays(app);
+        // СВИДЕТЕЛЬ РОЖАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11): маршрут нужен ДЛИННЫЙ
+        // и с диагоналями, иначе дефицита не из чего накопиться. Первое из
+        // восьми направлений, где A* дал не короче 16 звеньев.
+        const int sx = int(std::floor(smoke_player_x(app)));
+        const int sy = int(std::floor(smoke_player_y(app)));
+        static const int kDx[8] = {24, -24,   0,   0,  24,  24, -24, -24};
+        static const int kDy[8] = { 0,   0,  24, -24,  24, -24,  24, -24};
+        sm::PathResult best;
+        for (int d = 0; d < 8 && !best.found; ++d) {
+            sm::PathResult r = sm::find_path(app.pathCost, sx, sy,
+                                             sx + kDx[d], sy + kDy[d],
+                                             app.pathScratch);
+            if (r.found && r.path.size() >= 16) best = std::move(r);
+        }
+        if (!best.found) {
+            smoke_fail(app, "macro_glide_gap found no long path");
+            return false;
+        }
+        app.cursor.path = std::move(best.path);
+        app.cursor.pathIdx = 1;
+        prevEyeX = app.macroEyes.x[fh.slot];
+        prevEyeY = app.macroEyes.y[fh.slot];
+        prevStX = tx; prevStY = ty;
+        armed = 1;
+        return false;   // держимся: мерить начинаем со следующего кадра
+    }
+
+    // Промоушен сбрасывается всякий раз, когда сцена его не разрешает,
+    // поэтому запрос повторяется каждый кадр. Модалка мирового события
+    // ПАУЗИТ мир (поймано замером: марш вставал на девятой клетке) — сценарий
+    // судит глайд, а не события.
+    app.simSpeed = 4.0f;
+    smoke_clear_modal_overlays(app);
+
+    if (app.macroEyes.primed) {
+        const float ex = app.macroEyes.x[fh.slot];
+        const float ey = app.macroEyes.y[fh.slot];
+        eyeArc += double(sm::torus_dist(ex, ey, prevEyeX, prevEyeY,
+                                        float(app.gs.mapW), float(app.gs.mapH)));
+        prevEyeX = ex; prevEyeY = ey;
+        if (tx != prevStX || ty != prevStY) {
+            const double leg = double(sm::torus_dist(tx, ty, prevStX, prevStY,
+                                                     float(app.gs.mapW),
+                                                     float(app.gs.mapH)));
+            statedArc += leg;
+            if (leg > maxLeg) maxLeg = leg;
+            ++legs;
+            prevStX = tx; prevStY = ty;
+        }
+        const double gap = double(sm::torus_dist(tx, ty, ex, ey,
+                                                 float(app.gs.mapW),
+                                                 float(app.gs.mapH)));
+        if (gap > maxGap) maxGap = gap;
+    }
+    ++frames;
+    // Потолок кадров — предохранитель против зависшего марша, не мера закона.
+    if (!app.cursor.path.empty() && frames < 1200) return false;
+
+    std::fprintf(stderr,
+                 "[smoke] macro_glide_gap frames=%d legs=%d left=%zu "
+                 "statedArc=%.3f eyeArc=%.3f maxLeg=%.3f maxGap=%.3f\n",
+                 frames, legs, app.cursor.path.size(),
+                 statedArc, eyeArc, maxLeg, maxGap);
+    std::fflush(stderr);
+
+    SMOKE_CHECK(app, legs >= 16 && app.cursor.path.empty(),
+                "macro_glide_gap walked a long route to its end");
+    SMOKE_CHECK(app, maxLeg > 1.0,
+                "the route has DIAGONAL legs — without one the law is vacuous");
+    SMOKE_CHECK(app, eyeArc >= statedArc - maxLeg,
+                "the eye covered the stated point's arc: the glide speed is "
+                "quoted in DISTANCE per time, so a diagonal leg grants the "
+                "eye the whole diagonal");
     return true;
 }
 
@@ -10387,6 +10519,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=console\n");
             std::fflush(stderr);
             if (run_console_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::MacroGlideGap:
+            // Держится на кадрах, пока идёт маршрут (как wait_visible).
+            if (run_macro_glide_gap_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::ReturnTitle:
             std::fprintf(stderr, "[smoke] action=return_title\n");
