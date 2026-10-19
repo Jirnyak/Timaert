@@ -56,12 +56,15 @@ public:
 };
 
 // Project active quests onto gs.markers as gold "!" quest pins — one per
-// incomplete objective whose completion is anchored to a world cell (VisitCell,
-// FindLocation, DeliverItems -> target settlement, WaitAt; a
-// DestroyNpc "kill N" objective has no fixed cell and is skipped). Rebuilds the
-// whole "quest_" marker set, so it is idempotent and also reconciles stale pins
-// carried in from a loaded save. Universal: no per-quest special-casing — the
-// cell resolver mirrors eval_objective() field-for-field.
+// incomplete objective whose completion is anchored to a world cell (VisitCell
+// and DeliverItems -> target settlement; a DestroyNpc "kill N" objective has
+// no fixed cell and is skipped). That is all three kinds ObjectiveKind has, so
+// the list is exhaustive by the enum, not by this comment's memory of it — it
+// used to name FindLocation and WaitAt, cut 2026-09-28 (M-272).
+// Rebuilds the whole "quest_" marker set, so it is idempotent and also
+// reconciles stale pins carried in from a loaded save. Universal: no
+// per-quest special-casing — the cell resolver mirrors eval_objective()
+// field-for-field.
 // `st` — там, где живёт адрес места (ломтик F): пин доставки резолвится по
 // ординалу давателя, и без store мир не умеет сказать, где он стоит.
 void rebuild_quest_markers(GameState& gs, const MacroStore& st,

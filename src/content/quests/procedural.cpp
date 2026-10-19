@@ -16,7 +16,7 @@
 
 namespace sm {
 
-// Fisher-Yates shuffle of the 7 quest-generator slots. Kept at namespace scope
+// Fisher-Yates shuffle of the quest-generator slots. Kept at namespace scope
 // (external linkage, not in the anonymous namespace below) so the out-of-bounds
 // guard can be white-box tested; see tests/quest_lifecycle_test.cpp.
 // Порядок бросков — по РАЗМЕРУ таблицы генераторов, а не по числу в коде:
@@ -413,6 +413,16 @@ std::vector<Quest> generate_for_context(QuestGenCtx& ctx) {
         gen_scout,
         gen_sanctuary,
     };
+    // THE SLOT MUST FIT THE PROVENANCE BYTE, AND THE COMPILER SAYS SO HERE.
+    // `Quest::offerSlot` is this table's index, and the ceiling is taken from
+    // the FIELD's own type, not from a literal: a new generator is one line,
+    // and the line that would not fit has to break the build instead of
+    // wrapping into another offer's identity. Written because the claim used
+    // to live in quest_types.h as prose ("7 rows today, 36× of headroom")
+    // while the table held six — a count no compiler judges rots (M-272).
+    static_assert(std::size(kGenerators) - 1u
+                      <= std::size_t(decltype(Quest::offerSlot)(-1)),
+                  "строк генератора больше, чем вмещает Quest::offerSlot");
     // gen_visit's slot, for the empty-day fallback below — looked up from the
     // table so a reorder cannot silently desynchronise the provenance.
     constexpr auto slot_of = [](GeneratorFn fn) {

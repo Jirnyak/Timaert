@@ -278,8 +278,11 @@ struct NpcTypeDef {
     //
     // So the answer is a COLUMN, not an exemption — the same law, applied to
     // the back the row actually has. 1 = a person, and every row that omits
-    // this is a person. The number is DATA and the owner's to retune; nothing
-    // reads it but the one capacity call (squad.h refresh_leader_travel_stats).
+    // this is a person. The number is DATA and the owner's to retune, and its
+    // readers are the two cargo doors of squad.h and nobody else:
+    // refresh_body_from_sheet (the LEADER's own back, carryPerSoul) and
+    // refresh_squad_carry (the backs of the souls in his container, each by
+    // the haulMult of ITS row).
     // Last field on purpose, beside the light block: an opt-in column at the
     // end costs no other row a comma.
     //

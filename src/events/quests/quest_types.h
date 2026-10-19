@@ -94,8 +94,12 @@ namespace sm
         // it is what "have I already taken/done this offer?" compares
         // (QuestEngine::is_known), and it dies with its day — tomorrow's
         // offers are new triples by construction.
-        // offerSlot: index into the generator table (7 rows today, uint8
-        // caps at 255 — the table would have to grow 36× to overflow).
+        // offerSlot: index into the generator table (procedural.cpp
+        // kGenerators). The fit into a uint8 is pinned by a static_assert
+        // BESIDE that table, not by this comment's memory of how many rows it
+        // has: the row count moves with the content, and a number no compiler
+        // judges rots (it stood here as "7 rows, 36× of headroom" while the
+        // table held six — M-272).
         // bornDay: the day the offer was generated; -1 = no provenance
         // (authored quests, fixtures) — a legal negative, hence signed.
         std::uint8_t offerSlot = 0;

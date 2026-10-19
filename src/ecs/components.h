@@ -477,7 +477,7 @@ struct MacroNpcRuntime {
     // (Session 21). The full CharacterSheet is derived, never stored: make_npc
     // and the level-up recompute both re-derive it from
     // leader_sheet_seed(MacroSpawnId) and refresh these through ONE helper
-    // (squad.h refresh_leader_travel_stats), so the cache cannot drift from
+    // (squad.h refresh_body_from_sheet), so the cache cannot drift from
     // the sheet law. travelRank/marathonRank: the two SP skills (cost discount
     // / recovery rate). moveMult: spd × athletics, the sheet's own pace.
     std::uint8_t  travelRank = 0;
