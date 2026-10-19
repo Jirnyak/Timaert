@@ -1367,7 +1367,7 @@ libstdc++/MSVC (32 Б). Ещё две строки той же породы: `Ci
 - Было: три `std::string name`. Стало: `NameCol name{}` в `Landmark`,
   `City`, `PlayerState`.
 - Писатели: `state.cpp:184-187,360`, `politik.cpp:192,235,295` —
-  `name_set(x.name, generate_name(...))`; src/app/main.cpp:3166 «    if (cs.name[0] != '\0') app.gs.player.name = cs.name;» —
+  `name_set(x.name, generate_name(...))`; src/app/main.cpp:3171 «    if (cs.name[0] != '\0') app.gs.player.name = cs.name;» —
   `name_set(app.gs.player.name, cs.name)`.
 - Читатели: `.c_str()` → само поле; `.empty()` → `name[0] == '\0'`;
   `procedural.cpp:426` `ctx.name = s.name` — если `ctx.name` — `std::string`

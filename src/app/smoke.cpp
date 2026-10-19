@@ -382,14 +382,13 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"spire_climb", SmokeAction::SpireClimb},
     {"trigger_battle_start", SmokeAction::TriggerBattleStart},
     {"wait_visible", SmokeAction::WaitVisible},
-    {"open_settlement_build", SmokeAction::OpenSettlementBuild},
     {"open_settlement_trade", SmokeAction::OpenSettlementTrade},
-    {"open_settlement_map", SmokeAction::OpenSettlementMap},
     {"enter_first_settlement", SmokeAction::EnterFirstSettlement},
     {"city_gate_probe", SmokeAction::CityGateProbe},
     {"city_day_pump", SmokeAction::CityDayPump},
     {"focus_npc_panel", SmokeAction::FocusNpcPanel},
     {"open_npc_trade", SmokeAction::OpenNpcTrade},
+    {"subject_panel_alive", SmokeAction::SubjectPanelAlive},
     {"attack_first_npc", SmokeAction::AttackFirstNpc},
     {"macro_kill_writeback", SmokeAction::MacroKillWriteback},
     {"fauna_kill_writeback", SmokeAction::FaunaKillWriteback},
@@ -917,7 +916,7 @@ bool run_subworld_time_smoke(App& app) {
     if (smoke_find_open_subworld_cell(app, safeCellX, safeCellY)) {
                 smoke_teleport_player(app, int(float(safeCellX)), int(float(safeCellY)));
         app.gs.subState.settlementId = 0;
-        app.ui.settlementId = 0;
+        app.subjectSquad = {};
     }
 
     const sm::WorldTime before = app.gs.worldTime;
@@ -1125,7 +1124,7 @@ bool run_subworld_recovery_smoke(App& app) {
     if (smoke_find_open_subworld_cell(app, safeCellX, safeCellY)) {
                 smoke_teleport_player(app, int(float(safeCellX)), int(float(safeCellY)));
         app.gs.subState.settlementId = 0;
-        app.ui.settlementId = 0;
+        app.subjectSquad = {};
     }
 
     sm::ecs::Pools& stats = player_pools(app);
@@ -2618,17 +2617,17 @@ bool run_subworld_exit_gate_smoke(App& app) {
     const float oldX = smoke_player_x(app);
     const float oldY = smoke_player_y(app);
     const auto oldSubState = app.gs.subState;
-    const int oldUiSettlement = app.ui.settlementId;
+    const sm::MacroHandle oldSubject = app.subjectSquad;
     auto restore = [&]() {
         if (app.subworld.active()) app.subworld.leave(true);
                 smoke_teleport_player(app, int(oldX), int(oldY));
         app.gs.subState = oldSubState;
-        app.ui.settlementId = oldUiSettlement;
+        app.subjectSquad = oldSubject;
     };
 
         smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
     app.gs.subState.settlementId = 0;
-    app.ui.settlementId = 0;
+    app.subjectSquad = {};
     enter_subworld(app);
     if (!app.subworld.active()) {
         restore();
@@ -2726,12 +2725,12 @@ bool run_dungeon_house_smoke(App& app) {
     const float oldX = smoke_player_x(app);
     const float oldY = smoke_player_y(app);
     const auto oldSubState = app.gs.subState;
-    const int oldUiSettlement = app.ui.settlementId;
+    const sm::MacroHandle oldSubject = app.subjectSquad;
     auto restore = [&]() {
         if (app.subworld.active()) app.subworld.leave(true);
                 smoke_teleport_player(app, int(oldX), int(oldY));
         app.gs.subState = oldSubState;
-        app.ui.settlementId = oldUiSettlement;
+        app.subjectSquad = oldSubject;
     };
 
     // Land on the first city: its centre cell is guaranteed houses.
@@ -2745,7 +2744,7 @@ bool run_dungeon_house_smoke(App& app) {
     // первый город (Л3: ce8d57ca пересеял dungeon_scene_seed клеткой двери).
     app.gs.worldTime = sm::world_time_at(app.gs.worldTime.day(), 0, 0);
     app.gs.subState.settlementId = 0;
-    app.ui.settlementId = 0;
+    app.subjectSquad = {};
     enter_subworld(app);
     if (!app.subworld.active()) {
         restore();
@@ -4448,7 +4447,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
             || smoke_find_danger_land_cell(app, cellX, cellY)) {
                         smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
             app.gs.subState.settlementId = 0;
-            app.ui.settlementId = 0;
+            app.subjectSquad = {};
         }
         enter_subworld(app);
     }
@@ -4566,7 +4565,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
             || smoke_find_danger_land_cell(app, cellX, cellY)) {
                         smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
             app.gs.subState.settlementId = 0;
-            app.ui.settlementId = 0;
+            app.subjectSquad = {};
         }
         enter_subworld(app);
     }
@@ -4693,7 +4692,7 @@ bool run_subworld_self_fireball_smoke(App& app) {
             || smoke_find_danger_land_cell(app, cellX, cellY)) {
                         smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
             app.gs.subState.settlementId = 0;
-            app.ui.settlementId = 0;
+            app.subjectSquad = {};
         }
         enter_subworld(app);
     }
@@ -4800,7 +4799,7 @@ bool run_turn_based_cycle_smoke(App& app) {
             || smoke_find_danger_land_cell(app, cellX, cellY)) {
             smoke_teleport_player(app, cellX, cellY);
             app.gs.subState.settlementId = 0;
-            app.ui.settlementId = 0;
+            app.subjectSquad = {};
         }
         enter_subworld(app);
     }
@@ -5004,7 +5003,7 @@ bool run_subworld_player_melee_smoke(App& app) {
             || smoke_find_danger_land_cell(app, cellX, cellY)) {
                         smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
             app.gs.subState.settlementId = 0;
-            app.ui.settlementId = 0;
+            app.subjectSquad = {};
         }
         enter_subworld(app);
     }
@@ -5413,7 +5412,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
             || smoke_find_danger_land_cell(app, cellX, cellY)) {
                         smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
             app.gs.subState.settlementId = 0;
-            app.ui.settlementId = 0;
+            app.subjectSquad = {};
         }
         enter_subworld(app);
     }
@@ -5640,7 +5639,7 @@ bool run_subworld_mouse_release_smoke(App& app) {
         if (smoke_find_open_subworld_cell(app, cellX, cellY)) {
                         smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
             app.gs.subState.settlementId = 0;
-            app.ui.settlementId = 0;
+            app.subjectSquad = {};
         }
         enter_subworld(app);
     }
@@ -5719,7 +5718,7 @@ bool run_subworld_tree_anchor_smoke(App& app) {
         || smoke_find_open_subworld_cell(app, cellX, cellY)) {
                 smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
         app.gs.subState.settlementId = 0;
-        app.ui.settlementId = 0;
+        app.subjectSquad = {};
     }
     enter_subworld(app);
     if (!app.subworld.active()) {
@@ -6072,7 +6071,7 @@ bool run_console_smoke(App& app) {
     const float  oldX            = smoke_player_x(app);
     const float  oldY            = smoke_player_y(app);
     const auto   oldSubState     = app.gs.subState;
-    const int    oldUiSettlement = app.ui.settlementId;
+    const sm::MacroHandle oldSubject = app.subjectSquad;
     auto restore = [&]() {
         if (app.subworld.active()) {
             app.subworld.set_god_mode(false);
@@ -6087,7 +6086,7 @@ bool run_console_smoke(App& app) {
         app.simSpeed              = oldSimSpeed;
                 smoke_teleport_player(app, int(oldX), int(oldY));
         app.gs.subState           = oldSubState;
-        app.ui.settlementId       = oldUiSettlement;
+        app.subjectSquad          = oldSubject;
     };
 
     sm::dev::Console& con = app.console;
@@ -7212,7 +7211,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 if (bestX >= 0) {
                                         smoke_teleport_player(app, int(float(bestX)), int(float(bestY)));
                     app.gs.subState.settlementId = 0;
-                    app.ui.settlementId = 0;
+                    app.subjectSquad = {};
                     std::fprintf(stderr, "[smoke] near_npc relocate -> %d,%d\n",
                                  bestX, bestY);
                     std::fflush(stderr);
@@ -7558,7 +7557,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     return false;
                 }
                 app.gs.subState.settlementId = 0;
-                app.ui.settlementId = 0;
+                app.subjectSquad = {};
                 enter_subworld(app);
                 return app.subworld.active();
             };
@@ -7703,7 +7702,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                         "сценарий рождает себе тело, которое можно взять");
             if (!app.macroStore->valid(bornForRemap)) break;
             app.gs.subState.settlementId = 0;
-            app.ui.settlementId = 0;
+            app.subjectSquad = {};
             enter_subworld(app);
             if (!app.subworld.active()) {
                 smoke_fail(app, "exit_remap: enter failed");
@@ -8249,32 +8248,6 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             ++app.smoke.cursor;
             break;
         }
-        case SmokeAction::OpenSettlementBuild: {
-            std::fprintf(stderr, "[smoke] action=open_settlement_build\n");
-            std::fflush(stderr);
-            if (!app.worldLoaded) {
-                smoke_fail(app, "open_settlement_build without world");
-                break;
-            }
-            const sm::MacroHandle firstCity = smoke_first_city(app);
-            if (!app.macroStore->valid(firstCity)) {
-                smoke_fail(app, "open_settlement_build without settlements");
-                break;
-            }
-            smoke_clear_modal_overlays(app);
-            const std::uint16_t s = firstCity.slot;
-            app.ui.settlementId = int(app.macroStore->spawnId[s].index);
-            app.ui.settlementTab = sm::ui::SettlementPanelTab::Build;
-            app.ui.settlement = true;
-            refresh_available_settlement_quests(app);
-            std::fprintf(stderr,
-                         "[smoke] settlement_build open id=%d name=\"%s\" tab=Build\n",
-                         int(app.macroStore->spawnId[s].index),
-                         app.macroStore->name[s].text);
-            std::fflush(stderr);
-            ++app.smoke.cursor;
-            break;
-        }
         case SmokeAction::OpenSettlementTrade: {
             std::fprintf(stderr, "[smoke] action=open_settlement_trade\n");
             std::fflush(stderr);
@@ -8289,7 +8262,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             smoke_clear_modal_overlays(app);
             const std::uint16_t s = firstCity.slot;
-            app.ui.settlementId = int(app.macroStore->spawnId[s].index);
+            app.subjectSquad = firstCity;
             app.ui.settlementTab = sm::ui::SettlementPanelTab::Trade;
             app.ui.settlement = true;
             app.ui.codex = false;
@@ -8304,48 +8277,6 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          app.macroStore->inventory[s].inv.used_slots(),
                          player_bag(app).total(),
                          sm::inventory_value(player_bag(app)));
-            std::fflush(stderr);
-            ++app.smoke.cursor;
-            break;
-        }
-        case SmokeAction::OpenSettlementMap: {
-            std::fprintf(stderr, "[smoke] action=open_settlement_map\n");
-            std::fflush(stderr);
-            if (!app.worldLoaded) {
-                smoke_fail(app, "open_settlement_map without world");
-                break;
-            }
-            const sm::MacroHandle firstCity = smoke_first_city(app);
-            if (!app.macroStore->valid(firstCity)) {
-                smoke_fail(app, "open_settlement_map without settlements");
-                break;
-            }
-            smoke_clear_modal_overlays(app);
-            const std::uint16_t s = firstCity.slot;
-            const int sOrdinal = int(app.macroStore->spawnId[s].index);
-            app.ui.settlementId = sOrdinal;
-            app.ui.settlementTab = sm::ui::SettlementPanelTab::Map;
-            app.ui.settlement = true;
-            app.ui.codex = false;
-            app.ui.map = false;
-            app.ui.quest = false;
-            refresh_available_settlement_quests(app);
-            // СИД ПРЕВЬЮ — ТОЙ ЖЕ ДВЕРЬЮ, ЧТО У КАРТИНКИ. Здесь стояло
-            // `worldSeed + ordinal*123` — ПАРАЛЛЕЛЬНЫЙ ЗАКОН СИДА, который
-            // продакшен снёс именем («карта в меню города вообще другая»,
-            // владелец 2026-09-11), а прибор продолжал его печатать: лог
-            // называл число, которого в картинке нет ни разу. Закон один —
-            // `cell_seed@src/sub/map_data.h` по клетке места.
-            const std::uint32_t previewSeed = sm::sub::cell_seed(
-                app.gs.worldSeed,
-                ecs::cell_x(app.macroStore->cell[s], app.gs.mapW),
-                ecs::cell_y(app.macroStore->cell[s], app.gs.mapW));
-            std::fprintf(stderr,
-                         "[smoke] settlement_map open id=%d name=\"%s\" seed=0x%08X pop=%d\n",
-                         sOrdinal,
-                         app.macroStore->name[s].text,
-                         previewSeed,
-                         sm::souls_flock(app.gs, *app.macroStore, s));
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -8375,7 +8306,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.cursor.path.clear();
             app.cursor.pathIdx = 0;
             app.gs.subState.settlementId = sOrdinal;
-            app.ui.settlementId = sOrdinal;
+            app.subjectSquad = firstCity;
             app.ui.settlement = false;
             enter_subworld(app);
             if (!app.subworld.active()) {
@@ -8881,7 +8812,6 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // The ONE subject panel, opened on the squad's Trade tab —
             // the same door a row click opens (App state, no module hook).
             app.subjectSquad = target;
-            app.ui.settlementId = 0;
             app.ui.settlementTab = sm::ui::SettlementPanelTab::Trade;
             app.ui.settlement = true;
             std::fprintf(stderr,
@@ -8892,6 +8822,41 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          player_bag(app).total(),
                          sm::inventory_value(player_bag(app)));
             std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::SubjectPanelAlive: {
+            // ПАНЕЛЬ СУБЪЕКТА НЕ ЗАКРЫЛАСЬ САМА — И ЭТО ЕДИНСТВЕННОЕ, ЧТО
+            // ДЕШЕВО ЛОВИТ ЕЁ СМЕРТЬ ИЗ КОДА (M-290).
+            //
+            // Шрам, купивший сценарий, — числом: слияние ветвей панели дало
+            // ей ОДИН гейт живости, и в него уехал `hp > 0` из ветки сквада.
+            // У места пулы рождаются НУЛЯМИ (CANON S6, `birth_place`), потому
+            // что город не дерётся телом, — и панель ГОРОДА перестала
+            // открываться вовсе. Вторым заходом затёртый субъект убил панель
+            // СКВАДА. Оба раза `check` 130/130 и ВСЕ смоуки остались
+            // ЗЕЛЁНЫМИ: паритет судит числа симуляции, а тут не сдвинулось ни
+            // одно (§8 п.6, пятая слепота). Ловил КАДР, то есть мои глаза.
+            //
+            // Этот сценарий встаёт СЛЕДУЮЩИМ ДЕЙСТВИЕМ после открытия, то
+            // есть через кадр: панель уже нарисовалась и, если её гейт
+            // fail-closed сработал, успела выставить `*open = false`.
+            std::fprintf(stderr, "[smoke] action=subject_panel_alive\n");
+            std::fflush(stderr);
+            const bool openNow = app.ui.settlement;
+            const bool subjectOk = app.macroStore->valid(app.subjectSquad);
+            std::fprintf(stderr,
+                         "[smoke] subject_panel open=%d subject=%u/%u\n",
+                         openNow ? 1 : 0,
+                         unsigned(app.subjectSquad.slot),
+                         unsigned(app.subjectSquad.id));
+            std::fflush(stderr);
+            SMOKE_CHECK(app, openNow,
+                        "the subject panel survived its own frame: its "
+                        "liveness gate did not fail-close on a live subject");
+            SMOKE_CHECK(app, subjectOk,
+                        "the ONE subject carrier still names a live squad "
+                        "after the panel drew");
             ++app.smoke.cursor;
             break;
         }

@@ -32,13 +32,18 @@ enum class CharacterPanelTab : std::uint8_t {
     Craft,
 };
 
+// (Рода `Build` и `Map` УНИЧТОЖЕНЫ 2026-10-19, M-290, вердиктами владельца
+//  «Build снести» и «карта города это фигня». Первый не строил ничего и сам
+//  это признавал надписью; второй рисовал превью ПЛАНИРОВКИ города —
+//  локальную карту, не карту мира, — и тащил на кадр панели прогон
+//  генератора субмира. Карта мира осталась своим экраном, `map_screen.cpp`:
+//  это ОТДЕЛЬНЫЙ модуль, с миникартой субмира не связанный (владелец
+//  2026-10-19: «в макромире карта другой совсем модуль они не связаны»).)
 enum class SettlementPanelTab : std::uint8_t {
     Info,
-    Build,
     Trade,
     Garrison,
     Recruit,
-    Map,
     Inventory,
     Quests,
 };
@@ -51,7 +56,13 @@ struct Toggles {
     bool character   = false;
     bool settings    = false;   // universal Interface (UI show/hide + size) panel
     bool controls    = false;   // universal Controls (key rebinding) panel
-    int  settlementId = 0;
+    // (ПОЛЕ `settlementId` УНИЧТОЖЕНО 2026-10-19, M-290. Оно было ВТОРЫМ
+    //  носителем субъекта панели — ординалом места РЯДОМ с хэндлом
+    //  `App::subjectSquad`, — и держала их пара ветвей внутри самой панели:
+    //  клик по ряду обязан был выбрать ветвь. Ветвей нет, носитель один,
+    //  хэндл. «В каком поселении игрок СТОИТ» — другой вопрос и другое поле,
+    //  `GameState::subState.settlementId`: это состояние мира, а не выбор
+    //  окна, и оно живо.)
     int  questSelection = 0;
     CharacterPanelTab characterTab = CharacterPanelTab::Stats;
     SettlementPanelTab settlementTab = SettlementPanelTab::Info;
@@ -83,19 +94,20 @@ void draw_character_panel(GameState& gs, MacroStore& st,
                           CharacterPanelTab* tab, float scale = 1.0f);
 // THE subject panel (меню-сессия, фидбек владельца 2026-09-11: «сделай
 // единую систему... меню города хороший пример, его обобщить»). ONE window,
-// one pause law, one tab bar — the SUBJECT decides the branch:
-//   * squadSubject != null — a macro squad: banner (name/faction/Lv/HP) +
-//     Talk/Attack buttons, tabs Info / Trade (the Инк 5 shared body).
-//     Attack is reported through `attackRequest`; the app walks the attacker
-//     to the defender's cell (the transfer law) and opens the встреча.
-//   * else — the landmark named by settlementId, tabs by its actions column.
-// `mw` (nullable) feeds the Map tab's preview the REAL cell facts, so the
-// picture is the town you actually enter.
+// one pause law, one tab bar — И ОДИН ПРОХОД: субъект назван ОДНИМ хэндлом,
+// ветвей по его роду внутри нет ни одной (M-290). Чем город отличается от
+// ходока — это КОЛОНКИ: цифры баннера берёт `figuresFromPools`
+// (`ui/squad_draw.h`), глаголы и вкладки — маска `actions_of`
+// (`macro/squad.h`), имя и подпись — цепочка «своё имя → ярлык строки рода →
+// ярлык строки существа». Attack сообщается через `attackRequest`;
+// приложение ведёт нападающего на клетку защитника (закон передачи) и
+// открывает встречу.
+//
+// Конверта мира в сигнатуре НЕТ: его просила одна вкладка (`Map` с превью
+// планировки, снесена 2026-10-19), а панель читает колонки своего слота.
 void draw_settlement(GameState& gs,
                      MacroStore& st,
-                     int settlementId,
-                     MacroHandle squadSubject,
-                     const MacroWorld* mw,
+                     MacroHandle subject,
                      const std::vector<Quest>& availableQuests,
                      std::vector<Quest>& activeQuests,
                      QuestEngine& questEngine,

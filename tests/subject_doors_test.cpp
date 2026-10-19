@@ -143,18 +143,18 @@ void test_verbs_are_declared_by_the_row() {
     const MacroHandle sp   = place_handle_by_ordinal(st, std::uint32_t(fx.spireId));
 
     CHECK(actions_of(st, city)
-              == (kMapActTrade | kMapActHire | kMapActQuests | kMapActEnter),
-          "город: прилавок, найм, доска контрактов и вход");
+              == (kMapActTrade | kMapActHire | kMapActQuests),
+          "город: прилавок, найм, доска контрактов");
     CHECK(actions_of(st, vil)
-              == (kMapActTrade | kMapActHire | kMapActQuests | kMapActEnter),
-          "деревня — тот же вердикт: прилавок + найм + доска (и вход)");
-    CHECK(actions_of(st, sp) == kMapActEnter,
-          "шпиль своих глаголов не объявляет: минимум входа");
+              == (kMapActTrade | kMapActHire | kMapActQuests),
+          "деревня — тот же вердикт: прилавок + найм + доска");
+    CHECK(actions_of(st, sp) == 0,
+          "шпиль своих глаголов не объявляет ВООБЩЕ, и ноль здесь значит "
+          "ровно это: пустая маска — законное значение, а не дыра");
 
     // ВОЙНА — ОТДЕЛЬНЫЙ ТРЕК: через это меню место не говорит и не бьётся.
     // Тот же закон стоит `static_assert`-ом над таблицей
-    // (`landmark_registry.h`); здесь он проверяется НА ВЫХОДЕ ДВЕРИ, то есть
-    // вместе с примесью Enter, которой таблица не делает.
+    // (`landmark_registry.h`); здесь он проверяется НА ВЫХОДЕ ДВЕРИ.
     CHECK((actions_of(st, city) & (kMapActTalk | kMapActAttack)) == 0
               && (actions_of(st, sp) & (kMapActTalk | kMapActAttack)) == 0,
           "ни одно стоящее не предлагает разговор или удар этим меню");
@@ -169,13 +169,13 @@ void test_verbs_are_declared_by_the_row() {
     CHECK(actions_of(st, bare) == (kMapActTalk | kMapActTrade | kMapActAttack),
           "бестиповый сквад — ходок, и глаголы у него ходочьи");
 
-    // ВОЙТИ МОЖНО ТОЛЬКО В ТО, ЧТО СТОИТ. Enter выводится из `walkable`
-    // ОДНИМ местом (дверью), и у подвижной строки он ложен — значит бита не
-    // будет никаким путём. До M-281 строка `None` несла `walkable = true`, и
-    // это было незаметно ровно потому, что ответ за неё давал литерал.
-    CHECK((actions_of(st, artel) & kMapActEnter) == 0
-              && (actions_of(st, bare) & kMapActEnter) == 0,
-          "в человека не входят: Enter у подвижного рода невыразим");
+    // (ЗДЕСЬ ПРОВЕРЯЛОСЬ «В ЧЕЛОВЕКА НЕ ВХОДЯТ» — ВЕРБА `Enter` БОЛЬШЕ НЕТ,
+    //  M-290. Вход в субмир субъекта не спрашивает вовсе: он в клетку под
+    //  ногами (`enter_subworld@src/app/main.cpp` берёт `player_anchor_cell`),
+    //  и бит вместе с колонкой `walkable` имели НОЛЬ прод-читателей на
+    //  двоих. Утверждение о маске ходока выше стало СИЛЬНЕЕ, а не слабее:
+    //  оно сверяет маску ЦЕЛИКОМ (`==`), значит лишний бит любого рода
+    //  покраснеет здесь же.)
 }
 
 // ЗАКОН ТРЕТИЙ — ВТОРОЙ ФОРМЫ АДРЕСА НЕТ, И ПОТОМУ НЕТ ДЫРЫ.

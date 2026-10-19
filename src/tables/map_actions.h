@@ -12,10 +12,14 @@
 // hostility for Attack, a live counterparty for Trade — is the menu row's
 // availability predicate (the kPreBattleActions form), never a second table.
 //
-// Enter carries NO bit: the registry already declares it — LandmarkDef's
-// `walkable` column IS "can the player enter it". actions_of() folds it in,
-// so a consumer still sees one mask; a second byte saying the same thing
-// would be the drift the product-of-two-knobs grabla warns about.
+// ENTER НЕ ГЛАГОЛ СУБЪЕКТА ВОВСЕ, И БИТА У НЕГО БОЛЬШЕ НЕТ (M-290,
+// 2026-10-19). Владелец, дословно: «вход теперь у нас агностичный
+// универсальный просто в клетку где стоишь это единстывыенный вход в субмир
+// (всё агностично и потом строится по модулям генератором 3х3 контекстно но
+// вход просто в клетку)». Код это и делал: `enter_subworld@src/app/main.cpp`
+// берёт `player_anchor_cell` и субъекта не спрашивает. Бит `kMapActEnter` и
+// колонка `walkable`, из которой он выводился, имели НОЛЬ прод-читателей на
+// двоих — сирота DOD п.9, снесена целиком.
 //
 // Talk is the hook of CANON S27 (one interaction window for people and
 // props): today it opens the stub line, tomorrow the graph's start node.
@@ -27,7 +31,6 @@ namespace sm {
 inline constexpr std::uint16_t kMapActTalk   = 1u << 0;
 inline constexpr std::uint16_t kMapActTrade  = 1u << 1;
 inline constexpr std::uint16_t kMapActAttack = 1u << 2;
-inline constexpr std::uint16_t kMapActEnter  = 1u << 3;   // derived: walkable
 inline constexpr std::uint16_t kMapActHire   = 1u << 4;   // creatures_of ↔ hire_npc
 inline constexpr std::uint16_t kMapActQuests = 1u << 5;   // the contract board
 

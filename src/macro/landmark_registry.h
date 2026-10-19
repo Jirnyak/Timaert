@@ -106,7 +106,14 @@ struct LandmarkDef {
     std::uint8_t     maxZone;
     std::uint8_t     glyph;       // ASCII glyph for fallback rendering
     std::uint32_t    color;       // ARGB tint
-    bool             walkable;    // can the player enter it
+    // (КОЛОНКА `walkable` УНИЧТОЖЕНА 2026-10-19, M-290, вердикт владельца
+    //  «снести оба»: она объявляла «можно ли сюда войти», а вход в субмир
+    //  субъекта не спрашивает ВООБЩЕ — `enter_subworld@src/app/main.cpp`
+    //  берёт клетку под ногами. Владелец, дословно: «вход теперь у нас
+    //  агностичный универсальный просто в клетку где стоишь это
+    //  единстывыенный вход в субмир». Прод-читателей у неё был НОЛЬ:
+    //  единственный — подмес `kMapActEnter` в `actions_of`, чей бит тоже
+    //  никто не читал. Сирота DOD п.9 в чистом виде.)
     std::uint32_t    lightColor;  // ARGB night-emission tint (0 = does not glow)
     float            lightPop;    // synthetic emitter strength for fixed POIs;
                                   // 0 => inhabited type, scale by live population
@@ -280,16 +287,14 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
     // вписанная в `actions_of` веткой по роду субъекта. Ветка умерла, строка
     // отвечает сама: войти в человека нельзя (`walkable = false`).
     {.type = SquadType::None, .id = "none", .label = "",
-     .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u,
-     .walkable = false, .lightColor = 0x00000000u, .lightPop = 0.0f,
+     .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u, .lightColor = 0x00000000u, .lightPop = 0.0f,
      .actions = kMapActTalk | kMapActTrade | kMapActAttack },
     // Стража города — строка контейнера {Guard, Auction} с душами ИЗ ГАРНИЗОНА
     // (CANON S10, 2026-09-02): патрульный аукцион открывает её только когда
     // поле угрозы предъявило горячую округу дороже похода — тихий город
     // держит гарнизон дома за полцены содержания.
     {.type = SquadType::City, .id = "city", .label = "City",
-     .minZone = 0, .maxZone = 76, .glyph = '#', .color = 0xFFE7D27Au,
-     .walkable = true, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
+     .minZone = 0, .maxZone = 76, .glyph = '#', .color = 0xFFE7D27Au, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
      .bornPopBase = 0, .bornPopPerScore = 0,
@@ -351,8 +356,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
     // получили положительный скор, — а пул рук его урезает; строка же
     // объявляет только КОГО поднимать и КАКОГО ТИПА.
     {.type = SquadType::Village, .id = "village", .label = "Village",
-     .minZone = 0, .maxZone = 101, .glyph = 'v', .color = 0xFFCCB068u,
-     .walkable = true, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
+     .minZone = 0, .maxZone = 101, .glyph = 'v', .color = 0xFFCCB068u, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
      .bornPopBase = 0, .bornPopPerScore = 0,
@@ -369,36 +373,30 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
     // dictionary (what creeps into cellars and caves), and a ruin's ground
     // honestly crawls.
     {.type = SquadType::Spire, .id = "spire", .label = "Spire",
-     .minZone = 128, .maxZone = 255, .glyph = 'I', .color = 0xFFA86CFFu,
-     .walkable = true, .lightColor = 0xFFA86CFFu, .lightPop = 200.0f,
+     .minZone = 128, .maxZone = 255, .glyph = 'I', .color = 0xFFA86CFFu, .lightColor = 0xFFA86CFFu, .lightPop = 200.0f,
      .faunaHabitat = kLandmarkFaunaGround, .faunaMin = 0, .faunaMax = 0,
      .faunaCap = kLandmarkFaunaCapGround,
      .crowdHabitat = 1u << 13, .crowdInsideShift = 2,
      .bornPopBase = 128, .bornPopPerScore = 64,
      },
     {.type = SquadType::Ruin, .id = "ruin", .label = "Ruin",
-     .minZone = 51, .maxZone = 229, .glyph = 'r', .color = 0xFF8E8576u,
-     .walkable = true, .lightColor = 0xFF8E8576u, .lightPop = 40.0f,
+     .minZone = 51, .maxZone = 229, .glyph = 'r', .color = 0xFF8E8576u, .lightColor = 0xFF8E8576u, .lightPop = 40.0f,
      .faunaHabitat = 1u << 12, .faunaMin = 2, .faunaMax = 6,
      .faunaCap = kLandmarkFaunaCapGround,
      .crowdHabitat = 1u << 12, .crowdInsideShift = 0,
      .bornPopBase = 64, .bornPopPerScore = 1,
      },
     {.type = SquadType::Lair, .id = "lair", .label = "Lair",
-     .minZone = 102, .maxZone = 255, .glyph = 'L', .color = 0xFF883A3Au,
-     .walkable = true, .lightColor = 0xFF883A3Au, .lightPop = 70.0f,
+     .minZone = 102, .maxZone = 255, .glyph = 'L', .color = 0xFF883A3Au, .lightColor = 0xFF883A3Au, .lightPop = 70.0f,
      .faunaHabitat = kLandmarkFaunaGround, .faunaMin = 0, .faunaMax = 0,
      .faunaCap = kLandmarkFaunaCapGround,
      .crowdHabitat = 1u << 12 },
     {.type = SquadType::Shrine, .id = "shrine", .label = "Shrine",
-     .minZone = 25, .maxZone = 178, .glyph = '+', .color = 0xFFE2E2E2u,
-     .walkable = true, .lightColor = 0xFFE2E2E2u, .lightPop = 90.0f },
+     .minZone = 25, .maxZone = 178, .glyph = '+', .color = 0xFFE2E2E2u, .lightColor = 0xFFE2E2E2u, .lightPop = 90.0f },
     {.type = SquadType::Mine, .id = "mine", .label = "Mine",
-     .minZone = 51, .maxZone = 203, .glyph = 'M', .color = 0xFF8B6332u,
-     .walkable = true, .lightColor = 0xFF8B6332u, .lightPop = 60.0f },
+     .minZone = 51, .maxZone = 203, .glyph = 'M', .color = 0xFF8B6332u, .lightColor = 0xFF8B6332u, .lightPop = 60.0f },
     {.type = SquadType::Tower, .id = "tower", .label = "Tower",
-     .minZone = 76, .maxZone = 203, .glyph = 'T', .color = 0xFF6E6E89u,
-     .walkable = true, .lightColor = 0xFF6E6E89u, .lightPop = 80.0f },
+     .minZone = 76, .maxZone = 203, .glyph = 'T', .color = 0xFF6E6E89u, .lightColor = 0xFF6E6E89u, .lightPop = 80.0f },
 
     // ── ПОДВИЖНЫЕ РОДЫ ОСИ: ГЛАГОЛЫ ИХ, ОСТАЛЬНОЕ ЧЕСТНО ПУСТО ───────────
     // Артель, корован и сборщик стоят на ТОЙ ЖЕ оси, что места (одна ось у
@@ -422,16 +420,13 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
     // Войти в ходока нельзя: `walkable` остаётся false, и Enter не
     // примешивается по построению.
     {.type = SquadType::Artel, .id = "artel", .label = "",
-     .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u,
-     .walkable = false, .lightColor = 0x00000000u, .lightPop = 0.0f,
+     .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u, .lightColor = 0x00000000u, .lightPop = 0.0f,
      .actions = kMapActTalk | kMapActTrade | kMapActAttack },
     {.type = SquadType::Caravan, .id = "caravan", .label = "",
-     .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u,
-     .walkable = false, .lightColor = 0x00000000u, .lightPop = 0.0f,
+     .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u, .lightColor = 0x00000000u, .lightPop = 0.0f,
      .actions = kMapActTalk | kMapActTrade | kMapActAttack },
     {.type = SquadType::Collector, .id = "collector", .label = "",
-     .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u,
-     .walkable = false, .lightColor = 0x00000000u, .lightPop = 0.0f,
+     .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u, .lightColor = 0x00000000u, .lightPop = 0.0f,
      .actions = kMapActTalk | kMapActTrade | kMapActAttack },
 };
 static_assert(rows_in_enum_order(kLandmarks, &LandmarkDef::type),
@@ -447,8 +442,6 @@ static_assert(rows_in_enum_order(kLandmarks, &LandmarkDef::type),
 //      теперь город с `Attack` в строке НЕ СОБЕРЁТСЯ.
 //   2) У ХОДОКА ГЛАГОЛЫ ЕСТЬ. Нулевая строка подвижного рода и была тем
 //      нулём, за который отвечал литерал в коде, — она больше невыразима.
-//   3) ВОЙТИ МОЖНО ТОЛЬКО В ТО, ЧТО СТОИТ. `walkable` у подвижного рода
-//      ложен, значит Enter ему не примешается никаким путём.
 // Негативный контроль записан в теле коммита (мутация → исход, обе
 // полярности): снятие `.actions` у любой подвижной строки роняет СБОРКУ,
 // а не тест.
@@ -461,11 +454,10 @@ static_assert([] {
             && (d.actions & (kMapActTalk | kMapActTrade | kMapActAttack))
                    != (kMapActTalk | kMapActTrade | kMapActAttack))
             return false;                                           // (2)
-        if (!place && d.walkable) return false;                     // (3)
     }
     return true;
 }(), "строка оси объявляет свои глаголы сама: место не говорит и не бьётся, "
-     "ходок говорит/торгует/бьётся, а войти можно только в стоящее");
+     "а ходок говорит, торгует и бьётся");
 
 // ── СВИДЕТЕЛЬ НА СВЁРТКУ: `crewCount` ПРОТИВ ЧИСЛА ВЫПИСАННЫХ СТРОК ───────
 // Два числа, которые обязаны совпадать, и рукописный позиционный агрегат их
@@ -505,17 +497,22 @@ static_assert(crew_rows_match_count(kLandmarks,
 // перестаёт проходить тест: запрет под компилятором не флачит и не
 // подгоняется (§8 п.6). Строку меняют осознанно — вместе с этим числом.
 //
-// ЧИСЛО НЕ ДВИНУЛОСЬ ПРИ СНОСЕ `wealthMul` (2026-10-18, M-223), И ЭТО НАДО
-// СКАЗАТЬ ВСЛУХ, ИНАЧЕ СЛЕДУЮЩИЙ ЧИТАТЕЛЬ РЕШИТ, ЧТО ПИН ВРЁТ. Замер
-// `offsetof`/`alignof` у clang, а не рассуждение: `alignof` = 8, последнее
-// поле `seedRawMult` стоит на 113, то есть данных 114 — и 120 есть ближайшее
-// кратное восьми. Снесённые четыре байта целиком съело ХВОСТОВОЕ
-// выравнивание (паддинг 2 → 6); щели между `lightPop` (56) и `faunaHabitat`
-// (60) нет вовсе, они стоят подряд. Отсюда правило на будущее: довод «уберём
-// колонку — станет меньше» в этой строке ЛОЖЕН до самого следующего кратного
-// восьми, и к сносу он отношения не имел — колонка умерла за отсутствие
-// ПИСАТЕЛЯ, а не за размер.
-static_assert(sizeof(LandmarkDef) == 120,
+// ЧИСЛО ДВИНУЛОСЬ 120 → 112 ПРИ СНОСЕ `walkable` (2026-10-19, M-290), И ЭТО
+// ОБЪЯСНЕНИЕ, КОТОРОГО АССЕРТ И ТРЕБУЕТ. Замер `offsetof`/`alignof` у clang,
+// а не рассуждение: `alignof` = 8, последнее поле `seedRawMult` стоит на
+// 109, то есть данных 110 — и 112 есть ближайшее кратное восьми. Снос
+// одного байта `bool` унёс восемь, потому что он стоял между двумя
+// четырёхбайтными полями (`color` и `lightColor`) и тащил на себе три
+// байта выравнивания.
+//
+// ПРЕДЫДУЩИЙ АБЗАЦ ОСТАЁТСЯ ВЕРНЫМ И ПОЛЕЗНЫМ: при сносе `wealthMul`
+// (2026-10-18, M-223) число НЕ двинулось вовсе — четыре снесённых байта
+// целиком съело ХВОСТОВОЕ выравнивание. Отсюда правило, подтверждённое уже
+// дважды с разным знаком: довод «уберём колонку — станет меньше» в этой
+// строке НЕ ВЫВОДИТСЯ из числа байт колонки, а считается по раскладке; и к
+// сносу он отношения не имеет ни разу — обе колонки умерли за отсутствие
+// ЧИТАТЕЛЯ, а не за размер.
+static_assert(sizeof(LandmarkDef) == 112,
               "LandmarkDef layout changed — say WHICH column and why, and "
               "never re-add a faction column: a KIND is not an OWNER (M-39)");
 

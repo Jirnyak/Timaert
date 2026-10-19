@@ -247,9 +247,9 @@ inline void set_visual_speed(ecs::MacroNpcRuntime& rt, float dist,
 // переехал строками в `kLandmarks` (там же `static_assert` на закон), род
 // субъекта не хранится и не выводится, и осталась ОДНА строка кода.
 //
-// ВТОРОГО БАЙТА ПОД Enter НЕТ: его объявляет колонка `walkable` той же
-// строки, и дверь примешивает её здесь — один раз на весь мир, чтобы
-// звонящий видел одну маску (`tables/map_actions.h` это и обещает).
+// ПОДМЕС `Enter` ОТСЮДА УШЁЛ ВМЕСТЕ С САМИМ ГЛАГОЛОМ (M-290): вход в субмир
+// субъекта не спрашивает — он в клетку под ногами, — и ни бит, ни колонка
+// `walkable` не имели ни одного прод-читателя.
 //
 // Fail-closed: протухший или нерождённый хэндл не предлагает НИЧЕГО —
 // нулевая маска, нулевой вклад S6, как у всякой макро-двери.
@@ -257,7 +257,7 @@ inline std::uint16_t actions_of(const MacroStore& st, MacroHandle h) {
     if (!st.valid(h)) return 0;
     const LandmarkDef& def =
         landmark_def(SquadType(st.runtime[h.slot].squadType));
-    return std::uint16_t(def.actions | (def.walkable ? kMapActEnter : 0));
+    return def.actions;
 }
 
 // РЕЗОЛВ МЕСТА: тот же резолв субъекта + гейт оси рода. Пространство

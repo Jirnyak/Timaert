@@ -46,9 +46,7 @@ subworld_enter,cast_bolt_capture
 subworld_enter,light_probe_capture
 
 # Settlements, people, trade.
-open_settlement_build
-open_settlement_trade
-open_settlement_map
+open_settlement_trade,subject_panel_alive
 enter_first_settlement
 # Measures every gateway of a real town against the clear it promises, and
 # photographs one. Needs a settlement scene, hence the line above.
@@ -56,7 +54,7 @@ enter_first_settlement,city_gate_probe
 # The town keeps following the sun while the player stands in it.
 enter_first_settlement,city_day_pump
 focus_npc_panel
-open_npc_trade
+open_npc_trade,subject_panel_alive
 attack_first_npc
 
 # Writebacks: the spawn goes FIRST — spawn_squad_at_player refuses inside a

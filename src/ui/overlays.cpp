@@ -232,11 +232,12 @@ namespace sm::ui
             return int(st.wellbeing[slot].seasonWellbeing) * 100 / 255;
         }
 
-        // The ONE wrapper state of this counter (trade_widgets.h, Инк 5):
-        // staged package + Amount + receipt, keyed by the landmark id.
-        BarterWrapState g_settlementTrade;
-        // ...and the squad counter's own (two counters may be open at once).
-        BarterWrapState g_squadTrade;
+        // THE ONE wrapper state of the subject counter (trade_widgets.h,
+        // Инк 5): staged package + Amount + receipt, keyed by the subject's
+        // ORDINAL. Счётчиков было ДВА — один «для места», другой «для
+        // сквада», — и держала их не нужда, а ветвление панели надвое: одна
+        // страница, одна прилавочная сессия (M-290).
+        BarterWrapState g_subjectTrade;
         // The squad banner's Talk stub (the S27 hook): the line shown inline
         // under the banner, keyed by the subject so another squad's panel
         // never inherits a stranger's words.
@@ -280,47 +281,21 @@ namespace sm::ui
         // — сделка ЛОРДА. Здесь стоял ординал ДОМА, то есть у факта было два
         // хозяина: клетку он брал у флажка (строкой ниже), а субъекта — у
         // оригинала, и вселённая сделка числилась за оставленной оболочкой.
-        void record_npc_deal_fact(GameState& gs, MacroStore& st,
-                                  std::uint32_t traderOrdinal,
-                                  int gave, int took)
+        void record_subject_deal_fact(GameState &gs, MacroStore &st,
+                                      std::uint32_t subjectOrdinal,
+                                      int x, int y, int gave, int took)
         {
             WorldFact f{};
             f.day = gs.worldTime.day();
             f.kind = std::uint16_t(FactKind::Traded);
             f.subjectKind = std::uint8_t(FactSubject::Squad);
+            // Подшивает ДЕЛАТЕЛЬ (владелец: «игрок это рпг анкета сквада…»):
+            // торгуешь в теле лорда — сделка ЛОРДА. Здесь стоял ординал ДОМА,
+            // и у факта было два хозяина: клетку он брал у флажка, а субъекта
+            // у оригинала, и вселённая сделка числилась за оболочкой.
             f.subject = player_flag_ordinal(gs, st);
             f.objectKind = std::uint8_t(FactSubject::Squad);
-            f.object = traderOrdinal;
-            const ecs::MacroCell* pc = player_flag_cell(gs, st);
-            f.x = std::int16_t(pc ? ecs::cell_x(*pc, gs.mapW) : 0);
-            f.y = std::int16_t(pc ? ecs::cell_y(*pc, gs.mapW) : 0);
-            f.amount = gave + took;
-            record_deed(st, gs, f, MacroHandle{});
-        }
-
-
-        // A completed deal is a FACT of the world (S20.1: a deal is a
-        // transition by nature) — the same Traded the caravans file, with
-        // the player as the subject and the settlement as the object, worth
-        // what changed hands either way on the one price table. His journal
-        // learns it by participation; no log line needs to be kept.
-        // Filed through THE one deed door (macro/squad.h record_deed), like
-        // the caravans' record_landmark_fact: the named bits are DERIVED
-        // from each party's renown — a hand-written `true` filed the player
-        // as a figure he had not yet become — and the deal pays the doer
-        // like every other deed.
-        void record_settlement_deal_fact(GameState &gs, MacroStore &st,
-                                         int landmarkId,
-                                         int x, int y, int gave, int took)
-        {
-            WorldFact f{};
-            f.day = gs.worldTime.day();
-            f.kind = std::uint16_t(FactKind::Traded);
-            f.subjectKind = std::uint8_t(FactSubject::Squad);
-            // Та же дверь, что у сделки со сквадом: подшивает ДЕЛАТЕЛЬ.
-            f.subject = player_flag_ordinal(gs, st);
-            f.objectKind = std::uint8_t(FactSubject::Landmark);
-            f.object = std::uint32_t(landmarkId < 0 ? 0 : landmarkId);
+            f.object = subjectOrdinal;
             f.x = std::int16_t(x);
             f.y = std::int16_t(y);
             f.amount = gave + took;
@@ -390,54 +365,16 @@ namespace sm::ui
         // ui/trade_widgets.h draw_item_ref_name / draw_item_ref_bonuses —
         // one spelling for the bag, the body and the counter, instance
         // affixes included.)
-        struct SettlementPreviewCache
-        {
-            ImTextureID tex = 0;
-            std::uint32_t worldSeed = 0;
-            std::uint32_t previewSeed = 0;
-            int settlementId = 0;
-            int population = -1;
-            // ВЫКАЧАННОСТЬ — ВХОД КАРТИНКИ, ЗНАЧИТ И КЛЮЧ (M-233 п.8 завёл
-            // колонку, а ключ её не знал): обобрали орб шпиля — картинка не
-            // перестраивалась, потому что сид, ординал и паства у клетки те
-            // же. Дефект СТАРШЕ колонки: у кеша ключом обязан быть ВЕСЬ вход
-            // генератора, а не та его часть, которую автор помнил.
-            bool depleted = false;
-            int houses = 0;
-            int walls = 0;
-            bool ready = false;
-        };
-
-        SettlementPreviewCache &settlement_preview_cache()
-        {
-            static SettlementPreviewCache cache;
-            return cache;
-        }
-
-        // THE cell-seed law (sub/map_data.h kCellSeedX/Y) applied to the
-        // landmark's OWN cell — the preview must hash the very seed the
-        // engine's resolve_context hashes, or the Map tab shows a town
-        // that does not exist (владелец, 2026-09-11: «карта в меню города
-        // вообще другая»). The old formula (worldSeed + id*123) was a
-        // parallel seed law with exactly that disease.
-        std::uint32_t settlement_preview_seed(std::uint32_t worldSeed,
-                                              int x, int y)
-        {
-            return sub::cell_seed(worldSeed, x, y);
-        }
-
-        // ПАСТВА МЕСТА ДЛЯ ПРЕВЬЮ (переворот v122): её носитель — worked-слой
-        // МИРА, а превью рисуется и без конверта (`mw == nullptr` — та же
-        // деградация, что у биома и высоты рядом). Без мира отвечают
-        // ДОМАШНИЕ головы: они лежат в самой записи места, то есть это
-        // честное «сколько видно отсюда», а не выдуманный ноль.
-        int preview_flock_(const MacroWorld *mw, std::uint16_t slot)
-        {
-            // Без конверта (или store) паства не видна ВООБЩЕ: головы дома тоже
-            // живут в ТЕЛЕ места (M-90 шаг 5) — честный ответ 0, не выдумка.
-            return mw && mw->gs && mw->store
-                ? souls_flock(*mw->gs, *mw->store, slot) : 0;
-        }
+        // (ПРЕВЬЮ ПЛАНИРОВКИ ГОРОДА УНИЧТОЖЕНО 2026-10-19 вместе со своей
+        //  вкладкой (M-290, вердикт владельца «карта города это фигня»).
+        //  Здесь жили: кеш-синглтон с ImGui-текстурой и своим ключом
+        //  свежести, `settlement_preview_seed`, `preview_flock_` и
+        //  `ensure_settlement_preview` — ~200 строк, которые на кадр панели
+        //  собирали полный `CellContext` с кольцами соседей 3×3 и 5×5 и
+        //  ПРОГОНЯЛИ ГЕНЕРАТОР СУБМИРА (`sub::dispatch_generate`), чтобы
+        //  растеризовать 256×256 картинку. Читатель был ровно один — та
+        //  вкладка. Словарь цвета тайлов `subworld_tile_color` ОСТАЛСЯ: его
+        //  второй читатель — миникарта субмира ниже в этом же файле.)
 
         // THE tile → colour dictionary of every 2D subworld rendering in this
         // file (the settlement preview AND the subworld minimap — it lived as
@@ -472,175 +409,6 @@ namespace sm::ui
             default:
                 return IM_COL32(70, 90, 60, 255);
             }
-        }
-
-        // Место — СЛОТ store (ломтик F): адрес, род, ординал и фракция
-        // читаются колонками его тела, а mapW/сид — мировыми переменными.
-        bool ensure_settlement_preview(SettlementPreviewCache &cache,
-                                       const GameState &gs,
-                                       const MacroStore &store,
-                                       std::uint16_t slot,
-                                       const MacroWorld *mw)
-        {
-            const std::uint32_t worldSeed = gs.worldSeed;
-            const int cellX = ecs::cell_x(store.cell[slot], gs.mapW);
-            const int cellY = ecs::cell_y(store.cell[slot], gs.mapW);
-            const SquadType kind =
-                SquadType(store.runtime[slot].squadType);
-            const int ordinal = int(store.spawnId[slot].index);
-            const std::uint32_t previewSeed =
-                settlement_preview_seed(worldSeed, cellX, cellY);
-            // ФАКТЫ ЦЕНТРАЛЬНОЙ КЛЕТКИ — ОДИН ВОПРОС СБОРЩИКУ, И ОН ЗАДАН ДО
-            // КЛЮЧА: выкачанность входит в ключ, а ниже тот же ответ строит
-            // контекст. Второго вызова на ту же клетку не появляется — вопрос
-            // о клетке один (DOD п.6). Без конверта факты вырождаются, и ниже
-            // контекст остаётся на своих дефолтах, как и был.
-            const CellFacts centre =
-                mw ? cell_facts(*mw, cellX, cellY) : CellFacts{};
-            if (cache.ready &&
-                cache.tex != 0 &&
-                cache.worldSeed == worldSeed &&
-                cache.previewSeed == previewSeed &&
-                cache.settlementId == ordinal &&
-                cache.depleted == centre.landmark.depleted &&
-                cache.population == preview_flock_(mw, slot))
-            {
-                return true;
-            }
-
-            // The REAL context of the landmark's cell — the same facts the
-            // engine resolves when you actually walk in (macro/cell_facts.h;
-            // a missing envelope degrades to the old meadow stand-in).
-            sub::CellContext ctx{};
-            ctx.cx = cellX;
-            ctx.cy = cellY;
-            ctx.macroHeight = 0.55f;
-            ctx.biome = Meadow;
-            ctx.feature = FT_None;
-            ctx.landmark.id = ordinal;
-            ctx.landmark.size = preview_flock_(mw, slot);
-            ctx.landmark.kind = kind;
-            ctx.landmark.factionIdx = int(std::int16_t(store.kind[slot].factionIdx));
-            ctx.seed = previewSeed;
-            ctx.worldSeed = worldSeed;
-
-            float nbHeights[9]{};
-            Biome nbBiome[9]{};
-            std::uint8_t nbFeature[9]{};
-            for (int i = 0; i < 9; ++i)
-            {
-                nbHeights[i] = 0.55f;
-                nbBiome[i] = Meadow;
-                nbFeature[i] = std::uint8_t(FT_None);
-            }
-            if (mw)
-            {
-                const CellFacts& cf = centre;
-                ctx.macroHeight = cf.height01;
-                ctx.biome = cf.biome;
-                ctx.feature = cf.feature;
-                // Выкачанность — КОЛОНКА этого же сборщика (M-233 п.8). Она
-                // стояла ВЫШЕ своим написанием, в двадцати строках от вызова,
-                // который её уже посчитал; мир без конверта по-прежнему
-                // вырождается в «не выкачан» — это дефолт `CellContext`.
-                ctx.landmark.depleted = cf.landmark.depleted;
-                // Neighbours in the seamless manager's own order
-                // (ni = yy*3 + xx, offsets −1..1).
-                for (int yy = 0; yy < 3; ++yy)
-                {
-                    for (int xx = 0; xx < 3; ++xx)
-                    {
-                        const CellFacts nf =
-                            cell_facts(*mw, cellX + xx - 1, cellY + yy - 1);
-                        const int ni = yy * 3 + xx;
-                        nbHeights[ni] = nf.height01;
-                        nbBiome[ni] = nf.biome;
-                        nbFeature[ni] = std::uint8_t(nf.feature);
-                    }
-                }
-            }
-
-            // THE WIDER RING, from the same assembler the 3×3 came from, so
-            // the settlement PREVIEW is built by exactly the law the cell you
-            // walk into is built by. (The preview once ran on a fake context
-            // with its own seed and showed a town that did not exist — the
-            // lesson is that a preview is not allowed a shortcut.)
-            Biome nbBiome5[25]{};
-            for (int i = 0; i < 25; ++i) nbBiome5[i] = Meadow;
-            if (mw != nullptr) {
-                for (int yy = 0; yy < 5; ++yy)
-                    for (int xx = 0; xx < 5; ++xx) {
-                        nbBiome5[yy * 5 + xx] =
-                            cell_facts(*mw, cellX + xx - 2, cellY + yy - 2).biome;
-                    }
-            }
-            sub::SubworldMapData map{};
-            sub::dispatch_generate(ctx, nbHeights, nbBiome, nbBiome5,
-                                   nbFeature, map);
-            const std::size_t expected =
-                std::size_t(sub::kCellSize) * sub::kCellSize;
-            if (map.tiles.size() < expected || map.heightmap.size() < expected)
-            {
-                return false;
-            }
-
-            constexpr int kPreviewSide = 256;
-            constexpr int kCropX = (sub::kCellSize - kPreviewSide) / 2;
-            constexpr int kCropY = (sub::kCellSize - kPreviewSide) / 2;
-            std::vector<std::uint8_t> rgba(std::size_t(kPreviewSide) *
-                                           kPreviewSide * 4u);
-            int houses = 0;
-            int walls = 0;
-            for (const auto &st : map.structures)
-            {
-                if (st.kind == sub::Structure::House)
-                    ++houses;
-                else if (st.kind == sub::Structure::Wall)
-                    ++walls;
-            }
-
-            for (int y = 0; y < kPreviewSide; ++y)
-            {
-                const int sy = kCropY + y;
-                for (int x = 0; x < kPreviewSide; ++x)
-                {
-                    const int sx = kCropX + x;
-                    const std::size_t src =
-                        std::size_t(sy) * sub::kCellSize + sx;
-                    const ImU32 base = subworld_tile_color(map.tiles[src]);
-                    const float h = map.heightmap[src];
-                    const float waterLevel = map.waterLevel;
-                    const float shade =
-                        0.86f + 0.24f *
-                        std::clamp((h - waterLevel) /
-                                   (1.0f - waterLevel),
-                                   0.0f, 1.0f);
-                    const std::size_t dst =
-                        (std::size_t(y) * kPreviewSide + x) * 4u;
-                    rgba[dst + 0] = std::uint8_t(
-                        std::clamp(float(base & 0xFFu) * shade, 0.0f, 255.0f));
-                    rgba[dst + 1] = std::uint8_t(
-                        std::clamp(float((base >> 8) & 0xFFu) * shade, 0.0f, 255.0f));
-                    rgba[dst + 2] = std::uint8_t(
-                        std::clamp(float((base >> 16) & 0xFFu) * shade, 0.0f, 255.0f));
-                    rgba[dst + 3] = std::uint8_t((base >> 24) & 0xFFu);
-                }
-            }
-
-            if (cache.tex)
-                destroy_ui_texture(cache.tex);
-            cache.tex = create_ui_texture(kPreviewSide, kPreviewSide,
-                                          rgba.data(),
-                                          /*linear=*/false);
-            cache.worldSeed = worldSeed;
-            cache.previewSeed = previewSeed;
-            cache.settlementId = ordinal;
-            cache.depleted = centre.landmark.depleted;
-            cache.population = preview_flock_(mw, slot);
-            cache.houses = houses;
-            cache.walls = walls;
-            cache.ready = cache.tex != 0;
-            return cache.ready;
         }
 
         // (Строковая перегрузка этой строки умерла вместе со своим последним
@@ -1737,11 +1505,36 @@ namespace sm::ui
         ImGui::End();
     }
 
+    // ── ОДНА СТРАНИЦА СУБЪЕКТА, ОДИН ХЭНДЛ, РАЗЛИЧИЯ — КОЛОНКАМИ ─────────
+    // Здесь ветвились НАДВОЕ: ветка сквада (186 строк, 2 вкладки) против
+    // ветки места (477 строк, 8 вкладок), — и ровно потому у приложения жило
+    // ДВА носителя субъекта, а клик по ряду обязан был выбрать ветвь. Ветвей
+    // нет, носитель один, и выбирать стало нечего (M-290).
+    //
+    // ЧЕМ ОТЛИЧАЕТСЯ ГОРОД ОТ ХОДОКА — ЭТО КОЛОНКИ, И ВСЕ ОНИ УЖЕ БЫЛИ:
+    //   · какие ЦИФРЫ у баннера — `figuresFromPools@src/ui/squad_draw.h`
+    //     («потолки ТЕЛА или ПАСТВА»), ключ архетипа, второй её читатель;
+    //   · какие ГЛАГОЛЫ и ВКЛАДКИ — маска `actions_of@src/macro/squad.h`,
+    //     и это УЖЕСТОЧЕНИЕ: ветка сквада маску не читала вовсе и рисовала
+    //     Talk/Attack безусловно;
+    //   · какое ИМЯ и ПОДПИСЬ — цепочка колонок «своё имя → ярлык строки
+    //     рода → ярлык строки существа»; у подвижных родов ярлык пуст, и
+    //     цепочка сама доходит до тела.
+    // Ветки по роду не осталось ни одной: `squad_archetype` работает здесь
+    // КЛЮЧОМ таблицы, как разрешает его шапка, а не гейтом прохода.
+    //
+    // КОНВЕРТ МИРА ИЗ СИГНАТУРЫ УШЁЛ ВМЕСТЕ С ЕДИНСТВЕННЫМ ЧИТАТЕЛЕМ: его
+    // просила вкладка `Map`, собиравшая по нему факты клетки и кольца
+    // соседей. Панель субъекта спрашивает КОЛОНКИ СВОЕГО СЛОТА, и больше
+    // ничего — канал у неё ровно такой ширины.
+    //
+    // И ВКЛАДКИ ПЕРЕСТАЛИ БЫТЬ ПРИВИЛЕГИЕЙ МЕСТА. Garrison и Inventory были
+    // безусловны у места и отсутствовали у ходока — по ЗАКОНУ КОНТЕЙНЕРА это
+    // один и тот же контейнер (`st.inventory[slot].inv`), значит и вкладки
+    // одни: у артели есть ростер и груз ровно так же, как у города.
     void draw_settlement(GameState &gs,
                          MacroStore &st,
-                         int settlementId,
-                         MacroHandle squadSubject,
-                         const MacroWorld *mw,
+                         MacroHandle subject,
                          const std::vector<Quest> &availableQuests,
                          std::vector<Quest> &activeQuests,
                          QuestEngine &questEngine,
@@ -1758,260 +1551,131 @@ namespace sm::ui
         Inventory bagFallback{};
         Inventory &playerBag = bagPtr ? *bagPtr : bagFallback;
 
-        // ── THE SQUAD BRANCH of the one subject panel ────────────────────
-        // Same window, same pause law, same tab bar as a settlement —
-        // «система меню единая» (владелец): only the banner and the tab
-        // set differ, and both come from the subject.
-        if (squadSubject.id != 0)
+        // ОДИН ГЕЙТ ЖИВОСТИ НА ОБОИХ, И ОН FAIL-CLOSED. Прежде их было два:
+        // ветка сквада закрывала панель, ветка места печатала «No settlement
+        // selected (id=…)» — то есть протухший ординал ОСТАВЛЯЛ окно стоять.
+        // Протухший субъект нечего показывать, чем бы он ни был.
+        //
+        // СМЕРТЬ СПРАШИВАЕТСЯ У `dead`, А НЕ У HP, И ЭТО НЕ ПРИДИРКА — ЭТОТ
+        // ГЕЙТ УЖЕ ОДИН РАЗ УБИЛ ПАНЕЛЬ ЦЕЛИКОМ. Ветка сквада закрывалась по
+        // `hp <= 0`, и при слиянии условие поехало на всех; у места же пулы
+        // рождаются НУЛЯМИ («pools — НУЛЯМИ (CANON S6)»,
+        // `birth_place@src/macro/place_birth.h`), потому что город не дерётся
+        // телом — за него дерутся головы его контейнера (ЗАКОН АНКЕТЫ п.5).
+        // То есть `hp == 0` у места есть ЗАКОННОЕ значение, а не труп, и
+        // панель города перестала открываться вовсе. Поймал КАДР: 130 тестов
+        // и 64 смоука остались зелёными (§8 п.6, пятая слепота — паритет
+        // судит числа, а тут не сдвинулось ни одно). Дверь смерти одна —
+        // `macro_dead@src/macro/store.h` над колонкой `dead`; HP есть ЦИФРА
+        // тела, и спрашивать её о жизни значит предполагать род субъекта.
+        const bool alive = st.valid(subject)
+            && !macro_dead(st, subject)
+            && st.playerFlag[subject.slot].home == 0;
+        if (!alive)
         {
-            // ФЛИП 1в/1г: субъект-сквад — хэндл store, гейт читает колонки.
-            // Прежний гейт требовал entt-компоненты, которых у макро-сквада
-            // после флипа нет, — панель закрывалась для ЛЮБОГО сквада.
-            const bool alive = st.valid(squadSubject)
-                && !macro_dead(st, squadSubject)
-                && st.playerFlag[squadSubject.slot].home == 0;
-            const ecs::Pools *pools = alive
-                ? &st.pools[squadSubject.slot] : nullptr;
-            if (!alive || pools->hp <= 0.0f)
-            {
-                *open = false;   // the counterparty is gone: fail closed
-                return;
-            }
-            const auto &kind = st.kind[squadSubject.slot];
-            const auto &ch   = st.character[squadSubject.slot];
-            const NPCType t =
-                kind.type < std::uint16_t(NPCType::Count)
-                    ? NPCType(std::uint8_t(kind.type)) : NPCType::Peasant;
-            const auto &def = npc_def(t);
-            const int lvl = squad_level(st, squadSubject.slot);
-            const auto *traits = &st.traits[squadSubject.slot];
-            auto *bag = &st.inventory[squadSubject.slot];
-            // Имя — колонка анкеты (вердикт 3, ход 2), не перевывод
-            // из индекса имени.
-            const char *npcName = squad_name(st, squadSubject.slot);
-            const FactionDef *fd = faction_def_by_index(kind.factionIdx);
-            // Ключ сессии торга — ОРДИНАЛ сквада (M-220: уникален на мир,
-            // прежний слот|ген<<16 умер с поколением).
-            g_squadTrade.sync_to(int(squadSubject.id));
-            if (g_squadTalkFor != squadSubject)
-            {
-                g_squadTalkFor = MacroHandle{};
-                g_squadTalkLine = nullptr;
-            }
-            const SettlementPanelTab current =
-                tab ? *tab : SettlementPanelTab::Info;
-
-            ImGui::SetNextWindowSize(ImVec2(760 * scale, 620 * scale),
-                                     ImGuiCond_FirstUseEver);
-            char title[96];
-            std::snprintf(title, sizeof(title), "%s###Settlement", npcName);
-            if (ImGui::Begin(title, open))
-            {
-                ImGui::SetWindowFontScale(scale);
-                // ── Banner (the settlement banner's shape) ──
-                ImGui::PushFont(nullptr);
-                ImGui::TextColored(ImVec4(1.0f, 0.92f, 0.50f, 1.0f),
-                                   "%s", npcName);
-                ImGui::PopFont();
-                ImGui::SameLine();
-                ImGui::TextDisabled("(%s)", def.label);
-                ImGui::Text("Faction: %s   Lv.%d   HP %d/%d",
-                            fd ? fd->name : "?", lvl,
-                            int(pools->hp), int(pools->maxHp));
-                if (ImGui::Button("Talk"))
-                {
-                    g_squadTalkFor = squadSubject;
-                    g_squadTalkLine = def.talkCount > 0
-                        ? def.talkLines[ch.visualSeed
-                                        % std::uint32_t(def.talkCount)]
-                        : "...";
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Attack"))
-                {
-                    if (attackRequest) *attackRequest = squadSubject;
-                    *open = false;
-                }
-                if (g_squadTalkFor == squadSubject && g_squadTalkLine)
-                {
-                    ImGui::TextWrapped("\"%s\"", g_squadTalkLine);
-                }
-                ImGui::Separator();
-
-                // ── Tabs (the same bar the settlement branch draws) ──
-                if (ImGui::BeginTabBar("##settab"))
-                {
-                    const bool infoOpen = ImGui::BeginTabItem("Info", nullptr,
-                        selected_tab(current, SettlementPanelTab::Info));
-                    if (tab && ImGui::IsItemClicked())
-                        *tab = SettlementPanelTab::Info;
-                    if (infoOpen)
-                    {
-                        if (ImGui::BeginTable("squad_info", 2,
-                                              ImGuiTableFlags_BordersInnerH
-                                                  | ImGuiTableFlags_RowBg))
-                        {
-                            draw_info_overview_row("Level", lvl);
-                            draw_info_overview_row("HP", int(pools->hp));
-                            draw_info_overview_row(
-                                "Faction index", int(kind.factionIdx));
-                            if (bag)
-                            {
-                                draw_info_overview_row(
-                                    "Soldiers",
-                                    creature_count(bag->inv));
-                            }
-                            if (bag)
-                            {
-                                draw_info_overview_row(
-                                    "Carries (value)",
-                                    inventory_value(bag->inv));
-                            }
-                            ImGui::EndTable();
-                        }
-                        if (traits && traits->count > 0)
-                        {
-                            ImGui::TextDisabled("Traits:");
-                            for (std::uint8_t ti = 0;
-                                 ti < traits->count && ti < 2; ++ti)
-                            {
-                                ImGui::SameLine();
-                                ImGui::TextDisabled(
-                                    "%s",
-                                    npc_trait_label(traits->traits[ti]));
-                            }
-                        }
-                        ImGui::EndTabItem();
-                    }
-                    // Trade — only when he carries a bag (the tab's own
-                    // gate, the same law a spire has no Trade tab by).
-                    if (bag)
-                    {
-                        const bool tradeOpen = ImGui::BeginTabItem(
-                            "Trade", nullptr,
-                            selected_tab(current, SettlementPanelTab::Trade));
-                        if (tab && ImGui::IsItemClicked())
-                            *tab = SettlementPanelTab::Trade;
-                        if (tradeOpen)
-                        {
-                            const PlayerHaggler h = player_haggler(gs, st);
-                            ImGui::Text("Player value: %d",
-                                        inventory_value(playerBag));
-                            draw_trade_carry_line(h.sheet, playerBag,
-                                                  h.standing);
-                            draw_counterparty_gold(bag->inv);
-                            draw_trade_amount_input(&g_squadTrade.amount);
-                            const auto buyUnit = [&](const ItemRef &ref,
-                                                     const ItemDef &d,
-                                                     int n) {
-                                (void)d;
-                                return trade_overlay_buy_price(
-                                    stock_price(
-                                        value_of(ref),
-                                        bag->inv.count_of(int(ref.def)) - n,
-                                        0),
-                                    h.tradePct,
-                                    trade_power_of(
-                                        sheet_of(st, squadSubject)));
-                            };
-                            const auto sellUnit = [&](const ItemRef &ref,
-                                                      const ItemDef &d,
-                                                      int n) {
-                                (void)d;
-                                return trade_overlay_sell_price(
-                                    stock_price(
-                                        value_of(ref),
-                                        bag->inv.count_of(int(ref.def)) + n,
-                                        0),
-                                    h.tradePct,
-                                    trade_power_of(
-                                        sheet_of(st, squadSubject)));
-                            };
-                            draw_barter_body(
-                                "Trader stock", g_squadTrade,
-                                playerBag, bag->inv,
-                                buyUnit, sellUnit,
-                                [&](int gave, int took) {
-                                    // Ординал — колонка store (1в); try_get
-                                    // у энтити молчал, и факт сделки терялся.
-                                    record_npc_deal_fact(
-                                        gs, st,
-                                        st.spawnId[squadSubject.slot].index,
-                                        gave, took);
-                                });
-                            ImGui::EndTabItem();
-                        }
-                    }
-                    ImGui::EndTabBar();
-                }
-            }
-            ImGui::End();
+            *open = false;
             return;
         }
-        // The panel opens for ANY landmark («меню города — хороший пример,
-        // его обобщить») — the City hardcode is dead; which TABS a kind
-        // shows is the actions column's business below.
-        // Место — СЛОТ store, резолв по ординалу (ломтик F): дверь сама
-        // гейтит ось рода, поэтому отдельной проверки «это не None» нет.
-        const sm::MacroHandle sh =
-            sm::place_handle_by_ordinal(*mw->store, std::uint32_t(settlementId));
-        const bool haveS = mw->store->valid(sh);
-        const std::uint16_t sslot = sh.slot;
-        const SquadType sKind =
-            haveS ? SquadType(mw->store->runtime[sslot].squadType)
-                  : SquadType::None;
-        // Безымянное место показывает label своей строки реестра — один
-        // закон показа на все роды (как у for_each_landmark).
-        const char *sName = "Settlement";
-        if (haveS)
+
+        const std::uint16_t slot = subject.slot;
+        Inventory &sInv = st.inventory[slot].inv;
+        const ecs::Pools &pools = st.pools[slot];
+        const auto &kindCol = st.kind[slot];
+        const SquadType sKind = SquadType(st.runtime[slot].squadType);
+        const LandmarkDef &row = landmark_def(sKind);
+        const NPCType bodyKind =
+            kindCol.type < std::uint16_t(NPCType::Count)
+                ? NPCType(std::uint8_t(kindCol.type)) : NPCType::Peasant;
+        const auto &bodyDef = npc_def(bodyKind);
+        // ПОДПИСЬ — ЯРЛЫК СТРОКИ РОДА, А У ПОДВИЖНЫХ ОН ПУСТ (`.label = ""`),
+        // и тогда отвечает строка ТЕЛА. Это цепочка колонок, а не ветка: род
+        // «артель» нарочно не имеет своего ярлыка, потому что артель видно по
+        // её вожаку (СПРАЙТ-ЗАКОН тем же доводом рисует её его спрайтом).
+        const bool hasRowLabel = !row.label.empty();
+        const char *sLabel = hasRowLabel ? row.label.data() : bodyDef.label;
+        const char *sName = st.name[slot].text[0] != '\0'
+            ? st.name[slot].text : sLabel;
+        const int sx = ecs::cell_x(st.cell[slot], gs.mapW);
+        const int sy = ecs::cell_y(st.cell[slot], gs.mapW);
+        const std::int16_t sFaction = std::int16_t(kindCol.factionIdx);
+        const sm::FactionDef *fd =
+            sm::faction_def_by_index(sm::faction_or_freefolk(sFaction));
+        // ЦИФРЫ СУБЪЕКТА — КОЛОНКА ГРУППЫ, НЕ ВЕТКА ПО РОДУ. Она же решает,
+        // законно ли вообще спрашивать паству: `souls_flock` читает
+        // worked-слой КЛЕТКИ, и у ходока, стоящего на чужой клетке, ответ был
+        // бы чужим числом. Колонка это и предотвращает.
+        const bool bodyFigures =
+            archetype_draw(squad_archetype(sKind)).figuresFromPools;
+        const std::uint16_t acts = actions_of(st, subject);
+        const CharacterSheet &sSheet = st.sheet[slot];
+        const int sLevel = squad_level(st, slot);
+        const auto *traits = &st.traits[slot];
+
+        // Прилавок и реплика ключуются ОРДИНАЛОМ субъекта (M-220: уникален на
+        // мир), поэтому соседняя панель не наследует чужих слов и чужого
+        // отложенного свёртка.
+        g_subjectTrade.sync_to(int(subject.id));
+        if (g_squadTalkFor != subject)
         {
-            sName = mw->store->name[sslot].text;
-            if (sName[0] == '\0')
-                sName = landmark_def(sKind).label.data();
+            g_squadTalkFor = MacroHandle{};
+            g_squadTalkLine = nullptr;
         }
         const SettlementPanelTab current = tab ? *tab : SettlementPanelTab::Info;
 
-        ImGui::SetNextWindowSize(ImVec2(760 * scale, 620 * scale), ImGuiCond_FirstUseEver);
-        char lmTitle[96];
-        std::snprintf(lmTitle, sizeof(lmTitle), "%s###Settlement", sName);
-        if (ImGui::Begin(lmTitle, open))
+        ImGui::SetNextWindowSize(ImVec2(760 * scale, 620 * scale),
+                                 ImGuiCond_FirstUseEver);
+        char title[96];
+        std::snprintf(title, sizeof(title), "%s###Settlement", sName);
+        if (ImGui::Begin(title, open))
         {
             ImGui::SetWindowFontScale(scale);
-            if (!haveS)
-            {
-                ImGui::Text("No settlement selected (id=%d).", settlementId);
-                ImGui::End();
-                return;
-            }
-
-            Inventory &sInv = mw->store->inventory[sslot].inv;
-            const int sx = ecs::cell_x(mw->store->cell[sslot], gs.mapW);
-            const int sy = ecs::cell_y(mw->store->cell[sslot], gs.mapW);
-            const std::int16_t sFaction =
-                std::int16_t(mw->store->kind[sslot].factionIdx);
-
-            // ── Banner ── (one system: the place's faction registry row)
-            const sm::FactionDef *fd =
-                sm::faction_def_by_index(sm::faction_or_freefolk(sFaction));
-            const LandmarkDef &def = landmark_def(sKind);
-            // Глаголы — ЧЕРЕЗ ДВЕРЬ, а не чтением колонки рядом (M-281).
-            // Здесь стояло `def.actions`, и это был ТРЕТИЙ читатель колонки
-            // мимо двери, которую канон называет единственной (S22): дверь
-            // при этом не имела ни одного прод-звонящего и жила только в
-            // тесте. Колонку никто не читает дважды: `def` рядом остаётся
-            // для `label`, маску отдаёт `actions_of` — она же примешивает
-            // Enter из `walkable`, чего чтение колонки не делало вовсе.
-            const std::uint16_t acts = actions_of(*mw->store, sh);
+            // ── Banner ──
             ImGui::PushFont(nullptr);
             ImGui::TextColored(ImVec4(1.0f, 0.92f, 0.50f, 1.0f), "%s", sName);
             ImGui::PopFont();
             ImGui::SameLine();
-            ImGui::TextDisabled("(%.*s)", int(def.label.size()), def.label.data());
+            ImGui::TextDisabled("(%s)", sLabel);
             ImGui::Text("Faction: %s", fd ? fd->name : "Unaligned");
-            ImGui::Text("Population: %d", souls_flock(gs, *mw->store, sslot));
-            ImGui::Text("Wellbeing: %d%%", wellbeing_pct(*mw->store, sslot));
-            ImGui::Text("Starved last boundary: %d",
-                        int(mw->store->wellbeing[sslot].starvedYesterday));
+            if (bodyFigures)
+            {
+                ImGui::Text("Lv.%d   HP %d/%d", sLevel,
+                            int(pools.hp), int(pools.maxHp));
+            }
+            else
+            {
+                ImGui::Text("Population: %d", souls_flock(gs, st, slot));
+                ImGui::Text("Wellbeing: %d%%", wellbeing_pct(st, slot));
+                ImGui::Text("Starved last boundary: %d",
+                            int(st.wellbeing[slot].starvedYesterday));
+            }
+            // ГЛАГОЛЫ БАННЕРА — ПО МАСКЕ, И ЭТО СТРОЖЕ, ЧЕМ БЫЛО: ветка
+            // сквада рисовала обе кнопки безусловно, мимо колонки, которая
+            // уже объявляла их строкой (`kLandmarks`). Место Talk и Attack
+            // не объявляет — и не рисует, ровно как прежде.
+            if (acts & kMapActTalk)
+            {
+                if (ImGui::Button("Talk"))
+                {
+                    g_squadTalkFor = subject;
+                    g_squadTalkLine = bodyDef.talkCount > 0
+                        ? bodyDef.talkLines[st.character[slot].visualSeed
+                                            % std::uint32_t(bodyDef.talkCount)]
+                        : "...";
+                }
+                if (acts & kMapActAttack) ImGui::SameLine();
+            }
+            if (acts & kMapActAttack)
+            {
+                if (ImGui::Button("Attack"))
+                {
+                    if (attackRequest) *attackRequest = subject;
+                    *open = false;
+                }
+            }
+            if (g_squadTalkFor == subject && g_squadTalkLine)
+            {
+                ImGui::TextWrapped("\"%s\"", g_squadTalkLine);
+            }
             ImGui::Separator();
 
             // ── Tabs ──
@@ -2024,37 +1688,48 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Info;
                 if (infoOpen)
                 {
-                    ImGui::TextWrapped("Welcome to %s.", sName);
-                    ImGui::TextDisabled("A %.*s with population %d.",
-                                        int(def.label.size()),
-                                        def.label.data(),
-                                        souls_flock(gs, *mw->store, sslot));
-                    ImGui::Spacing();
-
-                    if (ImGui::BeginTable("settlement_info", 2,
+                    if (ImGui::BeginTable("subject_info", 2,
                                           ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
                     {
                         ImGui::TableSetupColumn("Field", ImGuiTableColumnFlags_WidthFixed, 150.0f);
                         ImGui::TableSetupColumn("Value");
                         ImGui::TableHeadersRow();
-                        draw_info_overview_row("Population",
-                                               souls_flock(gs, *mw->store, sslot));
-                        draw_info_overview_row("Wellbeing %",
-                                               wellbeing_pct(*mw->store, sslot));
+                        if (bodyFigures)
+                        {
+                            draw_info_overview_row("Level", sLevel);
+                            draw_info_overview_row("HP", int(pools.hp));
+                        }
+                        else
+                        {
+                            draw_info_overview_row("Population",
+                                                   souls_flock(gs, st, slot));
+                            draw_info_overview_row("Wellbeing %",
+                                                   wellbeing_pct(st, slot));
+                            draw_info_overview_row(
+                                "Starved last boundary",
+                                int(st.wellbeing[slot].starvedYesterday));
+                        }
                         draw_info_overview_row("Faction index", int(sFaction));
-                        draw_info_overview_row("Starved last boundary",
-                                               int(mw->store->wellbeing[sslot]
-                                    .starvedYesterday));
-                        draw_info_overview_row(
-                            "Garrison units", creature_count(sInv));
-                        draw_info_overview_row("Inventory stacks", sInv.used_slots());
+                        draw_info_overview_row("Creatures",
+                                               creature_count(sInv));
+                        draw_info_overview_row("Inventory stacks",
+                                               sInv.used_slots());
                         draw_info_overview_row("Inventory items", sInv.total());
+                        draw_info_overview_row("Carries (value)",
+                                               inventory_value(sInv));
                         ImGui::EndTable();
                     }
-
-                    // (The dead "Enter City" button died with the меню-
-                    // сессия: entry is the Enter verb of the interaction
-                    // popup, not a disabled decoration.)
+                    if (traits && traits->count > 0)
+                    {
+                        ImGui::TextDisabled("Traits:");
+                        for (std::uint8_t ti = 0;
+                             ti < traits->count && ti < 2; ++ti)
+                        {
+                            ImGui::SameLine();
+                            ImGui::TextDisabled(
+                                "%s", npc_trait_label(traits->traits[ti]));
+                        }
+                    }
                     ImGui::Spacing();
                     if ((acts & kMapActTrade) && ImGui::Button("Trade") && tab)
                     {
@@ -2063,137 +1738,92 @@ namespace sm::ui
                     ImGui::EndTabItem();
                 }
 
-                // Build — a settlement's tab (gated by the actions column
-                // like Trade: a spire declares nothing and shows nothing).
+                // Trade
                 if (acts & kMapActTrade)
                 {
-                const bool buildOpen = ImGui::BeginTabItem("Build", nullptr,
-                                                           selected_tab(current, SettlementPanelTab::Build));
-                if (tab && ImGui::IsItemClicked())
-                    *tab = SettlementPanelTab::Build;
-                if (buildOpen)
-                {
-                    ImGui::TextUnformatted("Build actions are disabled.");
-                    ImGui::Spacing();
-                    ImGui::TextWrapped("The TS SettlementOverlay.svelte currently exposes info, quests, rest, recruit, map, and history tabs only. It does not define build projects, costs, construction time, or effects.");
-                    ImGui::TextWrapped("The native Settlement record persists population, wellbeing, inventory, garrison, faction and suzerain. It has no buildings list or construction queue.");
-                    ImGui::Spacing();
-                    if (ImGui::BeginTable("build_missing_contracts", 2,
-                                          ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
-                    {
-                        ImGui::TableSetupColumn("Missing backend", ImGuiTableColumnFlags_WidthFixed, 190.0f);
-                        ImGui::TableSetupColumn("Required file / symbol");
-                        ImGui::TableHeadersRow();
-
-                        ImGui::TableNextRow();
-                        ImGui::TableNextColumn();
-                        ImGui::TextUnformatted("Persistent building state");
-                        ImGui::TableNextColumn();
-                        ImGui::TextWrapped("src/macro/state.h::Settlement");
-
-                        ImGui::TableNextRow();
-                        ImGui::TableNextColumn();
-                        ImGui::TextUnformatted("Save/load fields");
-                        ImGui::TableNextColumn();
-                        ImGui::TextWrapped("src/macro/save.cpp and kSaveVersion");
-
-                        ImGui::TableNextRow();
-                        ImGui::TableNextColumn();
-                        ImGui::TextUnformatted("Project catalog");
-                        ImGui::TableNextColumn();
-                        ImGui::TextWrapped("TS build data or native data table with costs/effects");
-
-                        ImGui::TableNextRow();
-                        ImGui::TableNextColumn();
-                        ImGui::TextUnformatted("Daily effects");
-                        ImGui::TableNextColumn();
-                        ImGui::TextWrapped("src/macro/world_tick.cpp settlement tick");
-
-                        ImGui::EndTable();
-                    }
-                    ImGui::Spacing();
-                    ImGui::TextDisabled("No decorative build button is shown because there is no backend state that could persist the result.");
-                    ImGui::EndTabItem();
-                }
-
-                // Trade
                 const bool tradeOpen = ImGui::BeginTabItem("Trade", nullptr,
                                                            selected_tab(current, SettlementPanelTab::Trade));
                 if (tab && ImGui::IsItemClicked())
                     *tab = SettlementPanelTab::Trade;
                 if (tradeOpen)
                 {
-                    g_settlementTrade.sync_to(settlementId);
                     // ONE wrapper (Инк 5): the haggler, the state and the
                     // body come from trade_widgets.h — this site keeps only
-                    // its price laws (a town's demand = econSite +
-                    // population, its trade sheet haggles) and its fact.
+                    // its price law and its fact.
                     const PlayerHaggler h = player_haggler(gs, st);
                     ImGui::Text("Player value: %d",
                                 inventory_value(playerBag));
-                    ImGui::SameLine();
-                    ImGui::TextDisabled("Wellbeing: %d%%", wellbeing_pct(*mw->store, sslot));
+                    if (!bodyFigures)
+                    {
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("Wellbeing: %d%%",
+                                            wellbeing_pct(st, slot));
+                    }
                     draw_trade_carry_line(h.sheet, playerBag, h.standing);
                     draw_counterparty_gold(sInv);
-                    draw_trade_amount_input(&g_settlementTrade.amount);
-                    // ── АНКЕТА ЭТОГО СКВАДА, А НЕ СТОЛ ЕГО РОДА ──────────
-                    // Здесь ЧЕТЫРЕЖДЫ стоял `landmark_sheet(sKind)` — чтение
-                    // таблицы РОДА в рантайме, то есть второй ответ на вопрос,
-                    // на который у сквада стоит СВОЯ колонка `sheet`. Панель
-                    // показывала «что умеет РОД», а торговала бы по тому, что
-                    // умеет ЭТОТ сквад: ЗАКОН АНКЕТЫ — «анкета источник», а
-                    // таблица рода только ШАБЛОН РОЖДЕНИЯ (`birth_place`
-                    // ставит `st.sheet[slot] = landmark_sheet(kind)`, и после
-                    // рождения истина у анкеты — она качается).
-                    const CharacterSheet &sSheet = mw->store->sheet[sslot];
+                    draw_trade_amount_input(&g_subjectTrade.amount);
+                    // ОДИН ЗАКОН ЦЕНЫ НА ОБОИХ. У ветки сквада спрос был
+                    // вписан НУЛЁМ (`stock_price(…, 0)`), у ветки места
+                    // считался `season_demand_for` — два ответа на «сколько
+                    // это здесь стоит». Остался второй: он спрашивает КОЛОНКИ
+                    // субъекта (остаток долга нужд, домашние души, руки
+                    // анкеты), и у ходока они свои, а не выдуманный ноль.
+                    //
+                    // АНКЕТА ЭТОГО СКВАДА, А НЕ СТОЛ ЕГО РОДА: таблица рода —
+                    // только ШАБЛОН РОЖДЕНИЯ (`birth_place` ставит
+                    // `st.sheet[slot] = landmark_sheet(kind)`), после него
+                    // истина у анкеты — она качается (ЗАКОН АНКЕТЫ).
                     const auto buyUnit = [&](const ItemRef &ref,
-                                             [[maybe_unused]] const ItemDef &def, int n) {
+                                             [[maybe_unused]] const ItemDef &d, int n) {
                         return trade_overlay_buy_price(
                             stock_price(value_of(ref),
                                         sInv.count_of(int(ref.def)) - n,
                                         season_demand_for(
-                                            int(ref.def), mw->store->upkeep[sslot].needDebt,
-                                            souls_home(*mw->store, sslot),
+                                            int(ref.def),
+                                            st.upkeep[slot].needDebt,
+                                            souls_home(st, slot),
                                             sSheet.skills,
                                             &sInv)),
                             h.tradePct,
                             trade_power_of(sSheet));
                     };
                     const auto sellUnit = [&](const ItemRef &ref,
-                                              [[maybe_unused]] const ItemDef &def, int n) {
+                                              [[maybe_unused]] const ItemDef &d, int n) {
                         return trade_overlay_sell_price(
                             stock_price(value_of(ref),
                                         sInv.count_of(int(ref.def)) + n,
                                         season_demand_for(
-                                            int(ref.def), mw->store->upkeep[sslot].needDebt,
-                                            souls_home(*mw->store, sslot),
+                                            int(ref.def),
+                                            st.upkeep[slot].needDebt,
+                                            souls_home(st, slot),
                                             sSheet.skills,
                                             &sInv)),
                             h.tradePct,
                             trade_power_of(sSheet));
                     };
                     draw_barter_body(
-                        "Settlement stock", g_settlementTrade,
+                        "Subject stock", g_subjectTrade,
                         playerBag, sInv,
                         buyUnit, sellUnit, [&](int gave, int took) {
-                            record_settlement_deal_fact(gs, st, settlementId,
-                                                        sx, sy,
-                                                        gave, took);
+                            record_subject_deal_fact(
+                                gs, st, st.spawnId[slot].index, sx, sy,
+                                gave, took);
                         });
-
                     ImGui::EndTabItem();
                 }
-                }   // acts & kMapActTrade (Build + Trade)
+                }   // acts & kMapActTrade
 
-                // Garrison
+                // Garrison — ростер контейнера. Безусловна у ОБОИХ: контейнер
+                // один на всё, что у сквада есть (ЗАКОН КОНТЕЙНЕРА), и «а у
+                // ходока гарнизона не бывает» есть ровно то сословие внутри
+                // контейнера, которого закон не признаёт.
                 const bool garrisonOpen = ImGui::BeginTabItem("Garrison", nullptr,
                                                               selected_tab(current, SettlementPanelTab::Garrison));
                 if (tab && ImGui::IsItemClicked())
                     *tab = SettlementPanelTab::Garrison;
                 if (garrisonOpen)
                 {
-                    int total = creature_count(sInv);
-                    ImGui::Text("Total: %d units", total);
+                    ImGui::Text("Total: %d units", creature_count(sInv));
                     ImGui::Spacing();
                     if (ImGui::BeginTable("garrison", 2,
                                           ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
@@ -2201,8 +1831,7 @@ namespace sm::ui
                         for (int ti = 0; ti < npc_type_count(); ++ti)
                         {
                             const NPCType t = npc_type_at(ti);
-                            const int count =
-                                creature_count_of(sInv, t);
+                            const int count = creature_count_of(sInv, t);
                             if (count <= 0 && !npc_hireable(t))
                                 continue;
                             ImGui::TableNextRow();
@@ -2215,8 +1844,8 @@ namespace sm::ui
                     }
                     ImGui::EndTabItem();
                 }
-                // Recruit — the Hire verb of the actions column (Creatures-заём
-                // из гарнизона; деревня нанимает так же, как город).
+
+                // Recruit — the Hire verb of the actions column.
                 if (acts & kMapActHire)
                 {
                 const bool recruitOpen = ImGui::BeginTabItem("Recruit", nullptr,
@@ -2233,11 +1862,9 @@ namespace sm::ui
                         const NPCType t = npc_type_at(ti);
                         if (!npc_hireable(t))
                             continue;
-                        const ItemRef* offer =
-                            first_soldier_of_kind(sInv, t);
+                        const ItemRef* offer = first_soldier_of_kind(sInv, t);
                         int cost = offer
-                            ? hire_price_for(
-                                  std::uint16_t(t), offer->level)
+                            ? hire_price_for(std::uint16_t(t), offer->level)
                             : npc_hire_price_base(t);
                         int avail = creature_count_of(sInv, t);
                         Inventory* playerArmy = &playerBag;
@@ -2254,23 +1881,19 @@ namespace sm::ui
                             // армию игрока НАВСЕГДА (у его сквада свой дом),
                             // то есть покидает паству этого места — ровно
                             // случай, для которого `leave_home_flock` и
-                            // написан. Списания здесь не было вовсе: найм
-                            // уменьшал головы гарнизона, а worked-число
-                            // оставалось, и место продолжало кормить и
-                            // облагать данью уехавшего. Откат неудачной
-                            // сделки ниже возвращает голову в состав, и
-                            // замер до/после это учитывает сам.
+                            // написан. Откат неудачной сделки ниже возвращает
+                            // голову в состав, и замер до/после это учитывает.
                             const int folkBefore = count_human_souls(sInv);
                             const int paid = playerArmy
                                 ? hire_npc(*playerArmy, sInv, t, purse)
                                 : 0;
                             if (paid > 0)
                             {
-                                // The fee is REAL coin into the town's own
-                                // store — the treasury IS the landmark's
-                                // inventory (CANON S10), not a sink. A store
-                                // that cannot take the whole fee refuses the
-                                // deal: coin back, recruit back.
+                                // The fee is REAL coin into the subject's own
+                                // store — the treasury IS the inventory
+                                // (CANON S10), not a sink. A store that cannot
+                                // take the whole fee refuses the deal: coin
+                                // back, recruit back.
                                 const int moved = transfer_value_dense(
                                     playerBag, sInv, paid);
                                 if (moved != paid)
@@ -2283,7 +1906,7 @@ namespace sm::ui
                                         creatures_push(sInv, back);
                                 }
                             }
-                            flock_left_home(gs, *mw->store, sslot, folkBefore);
+                            flock_left_home(gs, st, slot, folkBefore);
                         }
                         if (!can)
                             ImGui::EndDisabled();
@@ -2299,49 +1922,8 @@ namespace sm::ui
                     ImGui::EndTabItem();
                 }
                 }   // acts & kMapActHire
-                // Map
-                const bool mapOpen = ImGui::BeginTabItem("Map", nullptr,
-                                                         selected_tab(current, SettlementPanelTab::Map));
-                if (tab && ImGui::IsItemClicked())
-                    *tab = SettlementPanelTab::Map;
-                if (mapOpen)
-                {
-                    SettlementPreviewCache &preview = settlement_preview_cache();
-                    const std::uint32_t previewSeed =
-                        settlement_preview_seed(gs.worldSeed, sx, sy);
-                    ImGui::TextDisabled("Settlement preview");
-                    ImGui::SameLine();
-                    if (ImGui::Button("Refresh"))
-                    {
-                        preview.ready = false;
-                        preview.settlementId = 0;
-                    }
-                    ImGui::Spacing();
 
-                    if (ensure_settlement_preview(preview, gs, *mw->store,
-                                                  sslot, mw))
-                    {
-                        const float avail = ImGui::GetContentRegionAvail().x;
-                        const float side = std::min(360.0f, std::max(180.0f, avail));
-                        ImGui::Image(preview.tex,
-                                     ImVec2(side, side));
-                        ImGui::TextDisabled("Seed: 0x%08X   Population: %d   Houses: %d   Walls: %d",
-                                            previewSeed,
-                                            souls_flock(gs, *mw->store, sslot),
-                                            preview.houses,
-                                            preview.walls);
-                    }
-                    else
-                    {
-                        ImGui::Dummy(ImVec2(0.0f, 120.0f));
-                        ImGui::TextDisabled("Preview unavailable.");
-                        ImGui::TextDisabled("Seed: 0x%08X   Population: %d",
-                                            previewSeed,
-                                            souls_flock(gs, *mw->store, sslot));
-                    }
-                    ImGui::EndTabItem();
-                }
-                // Inventory
+                // Inventory — тот же контейнер, тот же довод, что у Garrison.
                 const bool inventoryOpen = ImGui::BeginTabItem("Inventory", nullptr,
                                                                selected_tab(current, SettlementPanelTab::Inventory));
                 if (tab && ImGui::IsItemClicked())
@@ -2357,15 +1939,15 @@ namespace sm::ui
                         if (ImGui::BeginTable("inv", 2,
                                               ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
                         {
-                            for (const ItemRef &st : sInv.slots)
+                            for (const ItemRef &it : sInv.slots)
                             {
-                                if (st.empty()) continue;
-                                const ItemDef *row = item_def_at(int(st.def));
+                                if (it.empty()) continue;
+                                const ItemDef *irow = item_def_at(int(it.def));
                                 ImGui::TableNextRow();
                                 ImGui::TableNextColumn();
-                                ImGui::Text("%s", row ? row->id : "?");
+                                ImGui::Text("%s", irow ? irow->id : "?");
                                 ImGui::TableNextColumn();
-                                ImGui::Text("x%d", st.count);
+                                ImGui::Text("x%d", it.count);
                             }
                             ImGui::EndTable();
                         }

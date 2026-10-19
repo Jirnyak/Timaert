@@ -478,7 +478,10 @@ void refresh_player_settlement(App& app) {
         app.bus.emit(leave);
     }
     app.gs.subState.settlementId = id;
-    if (app.ui.settlement) app.ui.settlementId = id;
+    // Открытая панель следует за игроком ТЕМ ЖЕ носителем, что всякий другой
+    // субъект, — хэндлом (M-290). Ординал жил здесь вторым носителем.
+    if (app.ui.settlement)
+        app.subjectSquad = settlement_by_id(*app.macroStore, id);
     if (id < 0) return;
     const sm::MacroHandle s = settlement_by_id(*app.macroStore, id);
     sm::GameEvent ev{sm::EventTag::PlayerEnterSettlement};
@@ -490,8 +493,13 @@ void refresh_player_settlement(App& app) {
 }
 
 void refresh_available_settlement_quests(App& app) {
-    const int id = app.ui.settlement ? app.ui.settlementId
-                                     : app.gs.subState.settlementId;
+    // Доска контрактов — у ТОГО, кого показывает панель; закрыта панель —
+    // у поселения, в котором игрок стоит. Ординал субъекта спрашивается у
+    // его слота, а не хранится рядом вторым полем.
+    const int id =
+        app.ui.settlement && app.macroStore->valid(app.subjectSquad)
+            ? int(app.macroStore->spawnId[app.subjectSquad.slot].index)
+            : app.gs.subState.settlementId;
     if (id < 0) {
         app.availableSettlementQuests.clear();
         app.availableQuestSettlementId = -1;
@@ -527,26 +535,25 @@ void refresh_available_settlement_quests(App& app) {
     app.availableQuestDay = app.gs.worldTime.day();
 }
 
-void toggle_settlement_panel(App& app) {
-    app.subjectSquad = {};           // T names the PLACE, not a neighbour
+// КОГО НАЗЫВАЕТ КЛАВИША: место под курсором, иначе то, в котором стоишь.
+// Один ответ, один носитель — хэндл субъекта (M-290).
+sm::MacroHandle settlement_under_hand(App& app) {
     refresh_player_settlement(app);
-    if (app.cursor.hoverSettlementId >= 0) {
-        app.ui.settlementId = app.cursor.hoverSettlementId;
-    } else if (app.gs.subState.settlementId > 0) {
-        app.ui.settlementId = app.gs.subState.settlementId;
-    }
+    if (app.cursor.hoverSettlementId >= 0)
+        return settlement_by_id(*app.macroStore, app.cursor.hoverSettlementId);
+    if (app.gs.subState.settlementId > 0)
+        return settlement_by_id(*app.macroStore, app.gs.subState.settlementId);
+    return {};
+}
+
+void toggle_settlement_panel(App& app) {
+    app.subjectSquad = settlement_under_hand(app);
     refresh_available_settlement_quests(app);
     app.ui.settlement = !app.ui.settlement;
 }
 
 void open_settlement_panel(App& app, sm::ui::SettlementPanelTab tab) {
-    app.subjectSquad = {};
-    refresh_player_settlement(app);
-    if (app.cursor.hoverSettlementId >= 0) {
-        app.ui.settlementId = app.cursor.hoverSettlementId;
-    } else if (app.gs.subState.settlementId > 0) {
-        app.ui.settlementId = app.gs.subState.settlementId;
-    }
+    app.subjectSquad = settlement_under_hand(app);
     app.ui.settlementTab = tab;
     refresh_available_settlement_quests(app);
     app.ui.settlement = true;
@@ -1717,7 +1724,7 @@ void boot_world(App& app, std::uint32_t seed,
     }
     sm::reset_macro_npc_ai_runtime(app.npcAi, seed);
     app.appliedEventCount = 0;
-    app.ui.settlementId = 0;
+    app.subjectSquad = {};
     app.availableSettlementQuests.clear();
     app.availableQuestSettlementId = -1;
     app.availableQuestDay = -1;
@@ -1820,7 +1827,6 @@ void boot_world(App& app, std::uint32_t seed,
             app.gs, *app.macroStore, app.npcAi.squadIndex);
         boot_trace("settlement lookup done");
     }
-    app.ui.settlementId = app.gs.subState.settlementId;
 
     boot_trace("subworld init start");
     app.subworld.init(app.device, app.renderer.renderPass);
@@ -2002,7 +2008,6 @@ bool boot_world_from_save(App& app, const std::string& path) {
     app.macroEyes.primed = false;
     app.gs.subState.settlementId = settlement_at_player(
         app.gs, *app.macroStore, app.npcAi.squadIndex);
-    app.ui.settlementId = app.gs.subState.settlementId;
 
     // boot_world() above derived every field from the SEED's virgin world; we
     // then swapped in the LOADED truths. Restore the remaining truths FIRST —
@@ -6087,11 +6092,14 @@ void frame(App& app, int simSteps) {
                                    app.uiSettings.visible(sm::ui::UiElementId::MacroOverlay),
                                    app.uiSettings.visible(sm::ui::UiElementId::QuestMarkers),
                                    app.uiSettings.scale(sm::ui::UiElementId::QuestMarkers));
-        if (app.cursor.hoverSettlementId >= 0) {
-            app.ui.settlementId = app.cursor.hoverSettlementId;
-        }
+        // КЛИК по месту переводит открытую панель на него. ХОВЕР этого
+        // больше не делает (M-290): он писал субъект КАЖДЫЙ КАДР, то есть
+        // открытая панель меняла хозяина от одного движения мыши, а клавиша
+        // `T` и кнопка тулбара и так спрашивают ховер сами
+        // (`settlement_under_hand`) — на один вопрос стояло два писателя.
         if (app.cursor.clickedSettlementId >= 0) {
-            app.ui.settlementId = app.cursor.clickedSettlementId;
+            app.subjectSquad =
+                settlement_by_id(*app.macroStore, app.cursor.clickedSettlementId);
             app.availableQuestSettlementId = -1;
         }
         // Resolve a click → pathfind here so the overlay stays purely visual.
@@ -6171,7 +6179,7 @@ void frame(App& app, int simSteps) {
                 if (tb.rest && !app.subworld.active())
                     aim_rest_until_rested(app);
                 if (tb.menu)          app.state          = sm::ui::AppState::Menu;
-                if (tb.build)         open_settlement_panel(app, sm::ui::SettlementPanelTab::Build);
+                if (tb.build)         open_settlement_panel(app, sm::ui::SettlementPanelTab::Info);
                 if (tb.quests)        app.ui.quest       = !app.ui.quest;
                 if (tb.codex)         app.ui.codex       = !app.ui.codex;
                 if (tb.map)           app.ui.map         = !app.ui.map;
@@ -6226,12 +6234,9 @@ void frame(App& app, int simSteps) {
                 // ДОХОДИТ (player_jump_to_cell в клетку защитника) — вся
                 // встреча всегда одна клетка, позиции макромира целы.
                 sm::MacroHandle attackReq{};
-                sm::MacroWorld panelMw = macro_world(app);
                 sm::ui::draw_settlement(app.gs,
                                         *app.macroStore,
-                                        app.ui.settlementId,
                                         app.subjectSquad,
-                                        &panelMw,
                                         app.availableSettlementQuests,
                                         app.activeQuests,
                                         app.quests,
@@ -6508,28 +6513,15 @@ void frame(App& app, int simSteps) {
                                                      showNpcRows,
                                                      app.uiSettings.scale(sm::ui::UiElementId::NpcProximity));
                 // Клик по ряду = СРАЗУ панель субъекта («система меню
-                // единая»): одна и та же панель, у сквада своя ветка.
-                //
-                // ВЕТВЬ ВЫБИРАЕТСЯ ЗДЕСЬ, И ЭТО ЕДИНСТВЕННОЕ МЕСТО (M-281).
-                // Панель близости отдаёт ОДИН хэндл и о ветвях не знает;
-                // ветвей две, потому что надвое ветвится сама панель
-                // субъекта (`draw_settlement`: ветка сквада против ветки
-                // поселения), и выбор стоит рядом с двумя носителями,
-                // которые он кормит. Архетип спрашивается КЛЮЧОМ — «какой
-                // модуль ведёт этого субъекта», — а не гейтом прохода:
-                // ни один ряд не пропускается, оба конца заполнены.
-                // Слияние ветвей панели снимет этот выбор одной правкой.
+                // единая»), и ВЕТВИ БОЛЬШЕ НЕТ (M-290). Здесь стоял выбор
+                // «сквад или место» — единственное место, где он стоял, — и
+                // держался он не замыслом, а тем, что надвое ветвилась сама
+                // панель: ветвей нет, носитель один, выбирать нечего.
                 if (npcResult.openSubject.id != 0
                     && app.macroStore->valid(npcResult.openSubject)) {
-                    const sm::MacroHandle h = npcResult.openSubject;
-                    const bool stands =
-                        sm::squad_archetype(sm::SquadType(
-                            app.macroStore->runtime[h.slot].squadType))
-                        == sm::SquadArchetype::Place;
-                    app.subjectSquad = stands ? sm::MacroHandle{} : h;
-                    app.ui.settlementId = stands ? int(h.id) : 0;
+                    app.subjectSquad = npcResult.openSubject;
                     app.ui.settlementTab = sm::ui::SettlementPanelTab::Info;
-                    if (stands) refresh_available_settlement_quests(app);
+                    refresh_available_settlement_quests(app);
                     app.ui.settlement = true;
                 }
             }
