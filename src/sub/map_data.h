@@ -566,7 +566,7 @@ struct Structure {
     enum Shape : std::uint8_t { Box = 0, Cylinder = 1 };
     float x, y;
     float radius;        // XZ half-extent (bounding); billboard scale for Tree
-    float height;        // metres; NEGATIVE = decayed/abandoned (map_factory.h)
+    float height;        // metres (неотрицательна: оверлей ветхости снят, M-262)
     // ── Universal oriented-box extension (all zero ⇒ legacy square box). ──
     float yaw   = 0.0f;  // rotation about vertical, radians, tile-space CCW
     float hx    = 0.0f;  // half-extent along local X, tiles (0 ⇒ radius)
@@ -985,16 +985,16 @@ inline constexpr bool structure_is_lit(Structure::Kind k) {
     return structure_kind_row(k).lightRadiusTiles > 0.0f;
 }
 
-// Visible/solid height in metres. A decayed record (negative height — the
-// map_factory.h sign-bit overlay) collapses to the per-kind stub floor, which
-// is exactly how the renderer has always drawn it. The floor exists to keep
-// degenerate LEGACY grounded records visible; a zBase-lifted body (gate
-// lintel, deck) states its thickness explicitly and is never inflated —
-// otherwise a 3 m lintel would grow a phantom metre that blocks whoever
-// stands on it.
+// Visible/solid height in metres. The floor exists to keep degenerate
+// grounded records visible; a zBase-lifted body (gate lintel, deck) states
+// its thickness explicitly and is never inflated — otherwise a 3 m lintel
+// would grow a phantom metre that blocks whoever stands on it.
+// ЗДЕСЬ СТОЯЛА ВЕТКА ВЕТХОСТИ — отрицательная высота схлопывалась в пол рода.
+// Минус в высоту писал ОДИН писатель, слияние снимка кэша клеток, и он снесён
+// 2026-10-19 (M-262): знакового оверлея больше нет, значит нет и состояния,
+// которое эта ветка читала (DOD п.9 — читатель с нулём писателей).
 inline float structure_visible_height(const Structure& s) {
     const float minH = structure_min_height(s.kind);
-    if (s.height < 0.0f) return minH;
     if (s.zBase > 0.0f || s.zWorld) return s.height;
     return std::max(s.height, minH);
 }

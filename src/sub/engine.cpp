@@ -3942,12 +3942,13 @@ void SubworldEngine::leave(bool force) {
         if (objects_ && gs_) {
             kill_fallen_squad_creatures((*mw_.store), *gs_);
         }
-        // A dungeon is a pure projection — nothing below the door is worth
-        // caching (the overworld cache carries felled trees etc.; an interior
-        // re-derives byte-identically from its identity).
-        if (sceneKind_ != SceneKind::Dungeon) {
-            mgr_.snapshot_all_to_cache();
-        }
+        // ЗДЕСЬ ОКНО УЕЗЖАЛО В КЭШ СЕССИИ. Снесено 2026-10-19 (M-262): ВСЯКАЯ
+        // сцена — и клетка мира, и интерьер — есть ПРОЕКЦИЯ своей
+        // идентичности, то есть выводится обратно побайтово; что обязано
+        // пережить подъём, едет наверх МАКРО-ВЕЛИЧИНОЙ (рубка — дельтой
+        // `MacroStock::TreeCount`), а не снимком вниз (§10, ЗАКОН ШВА).
+        // Ветка «данж кэшировать не надо» ушла вместе с кэшем: различать
+        // род сцены стало нечем и незачем.
         // Sync the player's MACRO position from where they actually ended
         // up in the subworld. The seamless manager re-centres the 3×3 grid
         // when the player crosses a cell boundary, so `mgr_.center_cx()/cy()`

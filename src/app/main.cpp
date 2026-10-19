@@ -81,7 +81,6 @@
 #include "sub/dgn/dispatch.h"
 #include "sub/height.h"
 #include "sub/map_data.h"
-#include "sub/map_factory.h"
 #include "sub/tree_atlas.h"
 #include "macro/fauna.h"
 #include "ui/overlays.h"
@@ -1315,7 +1314,6 @@ void destroy_world(App& app) {
     // умирает вместе с миром (загрузка/новая игра), иначе строки старого
     // мира легли бы в чужие клетки первым же кадром нового.
     app.subworld.delta_buffer() = sm::DeltaBuffer{};
-    sm::sub::clear_saved_subworlds();
     app.bus.reset();
     app.logic.reset();
 #ifndef NDEBUG

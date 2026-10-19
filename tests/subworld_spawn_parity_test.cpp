@@ -11,7 +11,6 @@
 #include "tables/npc.h"
 #include "macro/player_entity.h"
 #include "sub/base_generator.h"
-#include "sub/map_factory.h"
 #include "macro/store.h"
 
 #include <algorithm>
@@ -1050,7 +1049,6 @@ bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
 }
 
 int main() {
-    sm::sub::clear_saved_subworlds();
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(0, 0, meadow_cell);
     mgr.consume_composite_dirty();
@@ -1069,20 +1067,17 @@ int main() {
     const std::vector<SpawnRecord> actual = actual_fauna(centreObjs);
     const int cmp = compare_records(expected, actual);
     if (cmp != 0) {
-        sm::sub::clear_saved_subworlds();
         return cmp;
     }
 
     const bool ok1 = !(!run_water_blocked_squad_case());
     if (!ok1) {
-        sm::sub::clear_saved_subworlds();
     }
     CHECK(ok1, "player squad spawned on an all-water traversability grid");
     if (!ok1) return 1;
 
     const bool ok2 = !(!sheet_lifts_every_body(centreObjs));
     if (!ok2) {
-        sm::sub::clear_saved_subworlds();
     }
     CHECK(ok2, "a wild body came up without a sheet, or weaker than the "
                "row it is made of (CANON.md S14)");
@@ -1090,7 +1085,6 @@ int main() {
 
     const bool ok3 = !(!run_population_does_not_scale_bodies_case(mgr));
     if (!ok3) {
-        sm::sub::clear_saved_subworlds();
     }
     CHECK(ok3, "a settlement's population moved a body's LEVEL "
                "(auto-level by town size is deleted — CANON.md S12)");
@@ -1098,28 +1092,24 @@ int main() {
 
     const bool ok4 = !(!run_city_population_projection_case(mgr));
     if (!ok4) {
-        sm::sub::clear_saved_subworlds();
     }
     CHECK(ok4, "city population projection missing roles or off-cell");
     if (!ok4) return 1;
 
     const bool ok5 = !(!run_carry_across_case(mgr));
     if (!ok5) {
-        sm::sub::clear_saved_subworlds();
     }
     CHECK(ok5, "seam crossing did not carry/evict/respawn cells correctly");
     if (!ok5) return 1;
 
     const bool ok6 = !(!run_reentry_determinism_case(mgr));
     if (!ok6) {
-        sm::sub::clear_saved_subworlds();
     }
     CHECK(ok6, "per-cell fauna respawn is not deterministic from its seed");
     if (!ok6) return 1;
 
     const bool ok7 = !(!run_beast_member_projection_case(mgr));
     if (!ok7) {
-        sm::sub::clear_saved_subworlds();
     }
     CHECK(ok7, "a BEAST in a creatures did not come down as its own row "
                "(squads carry men and monsters alike — CANON.md S4/S16)");
@@ -1127,7 +1117,6 @@ int main() {
 
     const bool ok8 = !(!run_macro_projection_case(mgr));
     if (!ok8) {
-        sm::sub::clear_saved_subworlds();
     }
     CHECK(ok8, "macro->subworld projection wrong "
                "(window/wrap/backlink/hostility/hp/placement/reaper/determinism)");
@@ -1135,7 +1124,6 @@ int main() {
 
     const bool ok9 = !(!run_ghost_origin_case(mgr));
     if (!ok9) {
-        sm::sub::clear_saved_subworlds();
     }
     CHECK(ok9, "призрак мёртвой записи прикрыл живую, занявшую его слот "
                "(бит идемпотентности обязан стоять на ГОДНОМ хэндле)");
@@ -1146,7 +1134,6 @@ int main() {
                 "reentry_determinism=1 macro_projection=1 ghost_origin=1 "
                 "identity_remap=1\n",
                 actual.size(), centre.seed, 1);
-    sm::sub::clear_saved_subworlds();
     // ── THE spawn law's own invariants (fauna.h, owner 2026-08-24) ──
     {
         // The danger byte re-weights WHO IS ROLLED — and nothing after the

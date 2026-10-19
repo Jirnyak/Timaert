@@ -146,7 +146,6 @@ void SeamlessSubworldManager::shutdown_worker() {
         pendingSmoothJobs_.clear();
         completedJobs_.clear();
         completedSmoothJobs_.clear();
-        saveJobsPaused_ = false;
         compositeSmoothQueued_ = false;
     }
 
@@ -165,24 +164,14 @@ void SeamlessSubworldManager::shutdown_worker() {
         }
     }
 
-    for (;;) {
-        drain_completed_saves(1024);
-        std::lock_guard<std::mutex> lock(workerMutex_);
-        if (completedSaveJobs_.empty()) break;
-    }
-
     {
         std::lock_guard<std::mutex> lock(workerMutex_);
         pendingJobs_.clear();
-        pendingSaveJobs_.clear();
         pendingSmoothJobs_.clear();
         completedJobs_.clear();
-        completedSaveJobs_.clear();
         completedSmoothJobs_.clear();
         activeGenerationJobs_ = 0;
-        activeSaveJobs_ = 0;
         activeSmoothJobs_ = 0;
-        saveJobsPaused_ = false;
         compositeSmoothQueued_ = false;
     }
 }
@@ -190,21 +179,17 @@ void SeamlessSubworldManager::shutdown_worker() {
 void SeamlessSubworldManager::worker_loop(std::stop_token stop) {
     for (;;) {
         GenerationJob job;
-        SaveJob saveJob;
         SmoothJob smoothJob;
         bool runGeneration = false;
-        bool runSave = false;
         bool runSmooth = false;
         {
             std::unique_lock<std::mutex> lock(workerMutex_);
             workerCv_.wait(lock, stop, [this] {
                 return !pendingJobs_.empty()
-                    || (activeGenerationJobs_ == 0
-                        && (!pendingSmoothJobs_.empty()
-                            || (!saveJobsPaused_ && !pendingSaveJobs_.empty())));
+                    || (activeGenerationJobs_ == 0 && !pendingSmoothJobs_.empty());
             });
             if (stop.stop_requested() && pendingJobs_.empty()
-                && pendingSmoothJobs_.empty() && pendingSaveJobs_.empty()) {
+                && pendingSmoothJobs_.empty()) {
                 return;
             }
             if (!pendingJobs_.empty()) {
@@ -217,12 +202,6 @@ void SeamlessSubworldManager::worker_loop(std::stop_token stop) {
                 pendingSmoothJobs_.pop_front();
                 ++activeSmoothJobs_;
                 runSmooth = true;
-            } else if (activeGenerationJobs_ == 0 && !saveJobsPaused_
-                       && !pendingSaveJobs_.empty()) {
-                saveJob = std::move(pendingSaveJobs_.front());
-                pendingSaveJobs_.pop_front();
-                ++activeSaveJobs_;
-                runSave = true;
             } else {
                 continue;
             }
@@ -261,21 +240,6 @@ void SeamlessSubworldManager::worker_loop(std::stop_token stop) {
             continue;
         }
 
-        if (runSave) {
-            const auto t0 = Clock::now();
-            CompletedSaveJob done;
-            done.saved = snapshot_subworld(saveJob.seed, saveJob.mode, saveJob.data);
-            done.saveMs = elapsed_ms(t0, Clock::now());
-
-            {
-                std::lock_guard<std::mutex> lock(workerMutex_);
-                completedSaveJobs_.push_back(std::move(done));
-                --activeSaveJobs_;
-            }
-            workerCv_.notify_all();
-            continue;
-        }
-
         if (runGeneration) {
             CompletedJob done;
             done.acx = job.acx;
@@ -291,9 +255,10 @@ void SeamlessSubworldManager::worker_loop(std::stop_token stop) {
             dispatch_generate(job.ctx, job.nbHeights, job.nbBiome, job.nbBiome5,
                               job.nbFeature, done.data, job.nbLandmark,
                               job.nbTreeCount, job.nbFertility);
-            if (job.saved) {
-                restore_into(*job.saved, done.data);
-            }
+            // (ЗДЕСЬ СЛИВАЛСЯ СНИМОК КЛЕТКИ ИЗ КЭША СЕССИИ. Снесён 2026-10-19,
+            // M-262: клетка есть ПРОЕКЦИЯ своей идентичности, а память
+            // срубленного — число макро-поля, и оно уже входит в генерацию
+            // через `nbTreeCount`. Слияние же возвращало ПОЗИЦИИ мимо сейва.)
             collect_road_indices(done.data.tiles,
                                  done.roadIndices,
                                  done.roadMaskIndices);
@@ -311,8 +276,10 @@ void SeamlessSubworldManager::worker_loop(std::stop_token stop) {
 }
 
 // Generate one cell into `cells_[idx]` for absolute (acx, acy).
-// Restores from the snapshot cache after a fresh dispatch_generate so
-// player-edited terrain (e.g. felled trees) survives reloads.
+// КЛЕТКА ЕСТЬ ФУНКЦИЯ СВОЕЙ ИДЕНТИЧНОСТИ, И БОЛЬШЕ НИЧЕГО (M-262, 2026-10-19):
+// здесь после свежей генерации вливался снимок из кэша сессии, то есть позиции
+// срубленного хранились ВТОРЫМ носителем мимо сейва. Единственная память о
+// рубке — число макро-поля, и оно входит сюда через `nbTreeCount`.
 void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
     CellContext ctx = resolver_(acx, acy);
     float nb[9];
@@ -362,10 +329,6 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
     cell.generation = 0;
     dispatch_generate(ctx, nb, nbBiome, nbBiome5, nbFeature, cell.data, nbLandmark,
                       nbTreeCount, nbFertility);
-    if (std::shared_ptr<const SavedSubworld> sv =
-            find_saved_subworld_ref(ctx.seed, cell.mode)) {
-        restore_into(*sv, cell.data);
-    }
     collect_road_indices(cell.data.tiles,
                          cell.roadIndices,
                          cell.roadMaskIndices);
@@ -492,11 +455,12 @@ bool SeamlessSubworldManager::fell_prop_near(float x, float y, float z,
         const float dx = s.x - x, dy = s.y - y;
         // ТРЕТЬЯ ОСЬ — ДО Z-ПРОЛЁТА ПРОПА, А НЕ ДО ТОЧКИ (ЗАКОН ИЗОТРОПИИ).
         // Внутри пролёта вертикального промежутка нет: ствол десятиметрового
-        // дерева достаётся на любой своей высоте. `height` бывает
-        // ОТРИЦАТЕЛЬНОЙ (ветхость, map_factory.h), поэтому пролёт берётся
-        // неотрицательным — иначе верх оказался бы НИЖЕ низа и промежуток
-        // соврал бы в сторону недосягаемости.
-        const float spanTop = s.zBase + std::max(0.0f, s.height);
+        // дерева достаётся на любой своей высоте. Здесь стоял страж
+        // `std::max(0.0f, …)` от ОТРИЦАТЕЛЬНОЙ высоты, и он ушёл вместе со
+        // своей причиной (M-262, 2026-10-19): минус в высоте значил «ветхость»
+        // и ставился ОДНИМ писателем — слиянием снимка кэша. Писателя нет,
+        // значит и опасности нет (§5: защитная форма не живёт дольше причины).
+        const float spanTop = s.zBase + s.height;
         const float dz = z < s.zBase ? s.zBase - z
                        : z > spanTop ? z - spanTop
                                      : 0.0f;
@@ -513,8 +477,8 @@ bool SeamlessSubworldManager::fell_prop_near(float x, float y, float z,
     if (cell.placeholder) return false; // composite/cell raced a shift: bail
 
     // Remove from the owning cell's data (position match in cell-local
-    // coords) so the session snapshot — and hence every revisit — keeps the
-    // stump gone. If the cell entry can't be found the composite is stale
+    // coords) so the cell and the composite agree for as long as the window
+    // holds this cell. If the cell entry can't be found the composite is stale
     // against an in-flight regeneration; fail closed and fell nothing.
     const float lx = victim.x - float(ox * kCellSize);
     const float ly = victim.y - float(oy * kCellSize);
@@ -532,8 +496,8 @@ bool SeamlessSubworldManager::fell_prop_near(float x, float y, float z,
     composite_struct_.erase(composite_struct_.begin() + best);
     ++structRevision_;   // список строений сменился (struct_revision)
 
-    // The stump tile reverts to open ground, in both the cell (authoritative
-    // for snapshots) and the live composite (2D map / movement cost).
+    // The stump tile reverts to open ground, in both the cell (the owner of
+    // that square) and the live composite (2D map / movement cost).
     const int tx = std::clamp(int(lx), 0, kCellSize - 1);
     const int ty = std::clamp(int(ly), 0, kCellSize - 1);
     const std::size_t ci = std::size_t(ty) * kCellSize + tx;
@@ -640,8 +604,6 @@ void SeamlessSubworldManager::queue_generation(const CellContext& ctx,
                     : ring_biome(ctx.cx + xx - 2, ctx.cy + yy - 2);
         }
     }
-    const SubworldMode mode = resolve_mode(job.ctx);
-    job.saved = find_saved_subworld_ref(job.ctx.seed, mode);
     {
         std::lock_guard<std::mutex> lock(workerMutex_);
         pendingJobs_.push_back(std::move(job));
@@ -718,40 +680,9 @@ bool SeamlessSubworldManager::drain_completed_jobs(int maxJobs) {
     }
     if (changed && !has_placeholders()) {
         queue_composite_smooth();
-        {
-            std::lock_guard<std::mutex> lock(workerMutex_);
-            saveJobsPaused_ = false;
-        }
         workerCv_.notify_all();
     }
     return changed;
-}
-
-void SeamlessSubworldManager::queue_save(LoadedCell&& cell) {
-    if (cell.placeholder) return;
-
-    SaveJob job;
-    job.seed = cell.seed;
-    job.mode = cell.mode;
-    job.data = std::move(cell.data);
-    {
-        std::lock_guard<std::mutex> lock(workerMutex_);
-        pendingSaveJobs_.push_back(std::move(job));
-    }
-    workerCv_.notify_one();
-}
-
-void SeamlessSubworldManager::drain_completed_saves(int maxCells) {
-    for (int i = 0; i < maxCells; ++i) {
-        CompletedSaveJob done;
-        {
-            std::lock_guard<std::mutex> lock(workerMutex_);
-            if (completedSaveJobs_.empty()) break;
-            done = std::move(completedSaveJobs_.front());
-            completedSaveJobs_.pop_front();
-        }
-        store_saved_subworld(std::move(done.saved));
-    }
 }
 
 void SeamlessSubworldManager::drain_completed_smooth(int maxJobs) {
@@ -838,18 +769,6 @@ void SeamlessSubworldManager::prune_stale_generation_work() {
         } else {
             completedIt = completedJobs_.erase(completedIt);
         }
-    }
-}
-
-void SeamlessSubworldManager::flush_save_jobs() {
-    for (;;) {
-        drain_completed_saves(1024);
-        std::unique_lock<std::mutex> lock(workerMutex_);
-        if (pendingSaveJobs_.empty() && completedSaveJobs_.empty()
-            && activeSaveJobs_ == 0) {
-            break;
-        }
-        workerCv_.wait_for(lock, std::chrono::milliseconds(1));
     }
 }
 
@@ -958,7 +877,6 @@ void SeamlessSubworldManager::check_boundary(float& playerX, float& playerY) {
     if (playerY < kCellSize)           shiftY = -1;
     else if (playerY >= kCellSize * 2) shiftY = +1;
     if (!shiftX && !shiftY) {
-        drain_completed_saves(1);
         return;
     }
 
@@ -966,33 +884,14 @@ void SeamlessSubworldManager::check_boundary(float& playerX, float& playerY) {
     const auto totalStart = Clock::now();
     const auto genStart = Clock::now();
     cancel_pending_smooth();
-    {
-        std::lock_guard<std::mutex> lock(workerMutex_);
-        saveJobsPaused_ = true;
-    }
 
-    // Move real cells that are about to leave into a bounded stack buffer.
-    // Queue their save jobs after generation jobs so snapshot quantisation
-    // cannot occupy every worker before newly exposed cells start generating.
-    // Placeholder cells have no player edits; skipping them is deterministic.
-    auto leaving = [&](int ox, int oy) {
-        return (shiftX != 0 && ox == (shiftX > 0 ? -1 : +1))
-            || (shiftY != 0 && oy == (shiftY > 0 ? -1 : +1));
-    };
-    std::array<LoadedCell, 5> leavingCells{};
-    int leavingCount = 0;
-    for (int oy = -1; oy <= 1; ++oy) {
-        for (int ox = -1; ox <= 1; ++ox) {
-            if (!leaving(ox, oy)) continue;
-            int idx = (oy + 1) * 3 + (ox + 1);
-            auto& cell = cells_[std::size_t(idx)];
-            if (cell.placeholder) continue;
-            if (leavingCount < int(leavingCells.size())) {
-                leavingCells[std::size_t(leavingCount++)] = std::move(cell);
-            }
-        }
-    }
-
+    // КЛЕТКА, УХОДЯЩАЯ ИЗ ОКНА, ПРОСТО УМИРАЕТ — И ЭТО ЗАКОН, А НЕ ПОТЕРЯ
+    // (M-262, 2026-10-19). Здесь стоял буфер уходящих клеток и постановка им
+    // задач снимка: содержимое клетки уезжало в кэш сессии, который жил мимо
+    // сейва. Теперь оно уезжает ТУДА, ГДЕ ЕМУ МЕСТО, — числом макро-поля
+    // (рубка пишет дельту `MacroStock::TreeCount` в тот же миг, когда валит
+    // дерево), а сама клетка воспроизводится из своей идентичности при
+    // возврате. Уходящие слоты освобождаются перекладкой `next` ниже.
     std::array<LoadedCell, 9> next{};
     bool fresh[9] = {true, true, true, true, true, true, true, true, true};
     for (int oy = -1; oy <= 1; ++oy) {
@@ -1035,10 +934,6 @@ void SeamlessSubworldManager::check_boundary(float& playerX, float& playerY) {
             }
         }
     }
-    for (int i = 0; i < leavingCount; ++i) {
-        queue_save(std::move(leavingCells[std::size_t(i)]));
-    }
-
     rebuild_composite_structures();
     // The CPU composite buffers are already toroidally shifted (overlap moved,
     // fresh cells placeholder-filled). Emit that shift + only the fresh cells so
@@ -1108,23 +1003,6 @@ CompositeDirty SeamlessSubworldManager::consume_composite_dirty_cells() {
     heightField_.refresh(*this, d);
     clear_composite_dirty();
     return d;
-}
-
-void SeamlessSubworldManager::snapshot_all_to_cache() {
-    if (!resolver_) return;
-    drain_completed_jobs(9);
-    cancel_pending_smooth();
-    {
-        std::lock_guard<std::mutex> lock(workerMutex_);
-        pendingJobs_.clear();
-        saveJobsPaused_ = false;
-    }
-    workerCv_.notify_all();
-    for (auto& cell : cells_) {
-        if (cell.placeholder) continue;
-        queue_save(std::move(cell));
-    }
-    flush_save_jobs();
 }
 
 } // namespace sm::sub

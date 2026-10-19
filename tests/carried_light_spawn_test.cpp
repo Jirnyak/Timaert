@@ -190,7 +190,6 @@ void run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
 }  // namespace
 
 int main() {
-    sm::sub::clear_saved_subworlds();
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(0, 0, meadow_cell);
     mgr.consume_composite_dirty();
@@ -204,6 +203,5 @@ int main() {
     run_type_table_contract();
     run_spawn_attach_contract(mgr);
 
-    sm::sub::clear_saved_subworlds();
     return sm::test::report("carried_light_spawn_test");
 }

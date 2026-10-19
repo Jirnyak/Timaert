@@ -121,22 +121,9 @@ bool expect_placeholder(const sm::sub::SeamlessSubworldManager& mgr,
     return tileOk && heightOk;
 }
 
-bool has_structure(const sm::sub::SeamlessSubworldManager& mgr,
-                   sm::sub::Structure::Kind kind,
-                   float expectedX,
-                   float expectedY,
-                   float expectedRadius,
-                   float expectedHeight) {
-    for (const sm::sub::Structure& s : mgr.structures()) {
-        if (s.kind != kind) continue;
-        if (std::fabs(s.x - expectedX) > 0.001f) continue;
-        if (std::fabs(s.y - expectedY) > 0.001f) continue;
-        if (std::fabs(s.radius - expectedRadius) > 0.001f) continue;
-        if (std::fabs(s.height - expectedHeight) > 0.001f) continue;
-        return true;
-    }
-    return false;
-}
+// (ЗДЕСЬ ЖИЛ `has_structure` — поиск пропа в композите по роду и положению.
+// Его единственным потребителем был случай «воркер вернул сохранённый проп»,
+// и он ушёл со сносом кэша клеток, M-262.)
 
 void run_case(sm::sub::CellContext (*resolver)(int, int),
               bool expectSmoothPublish,
@@ -278,118 +265,16 @@ void run_diagonal_plain_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
         outDirty, outTiming.genMs, outTiming.smoothMs, outTiming.totalMs);
 }
 
-void run_snapshot_during_pending_case() {
-    sm::sub::clear_saved_subworlds();
-
-    {
-        sm::sub::SeamlessSubworldManager mgr;
-        mgr.init(0, 0, resolve_plain_cell);
-        mgr.consume_composite_dirty();
-
-        float playerX = float(sm::sub::kCellSize * 2 + 12);
-        float playerY = float(sm::sub::kCellSize + 80);
-        mgr.check_boundary(playerX, playerY);
-        mgr.flush_pending_generation();
-        mgr.consume_composite_dirty();
-
-        const sm::sub::CellContext leaving = resolve_plain_cell(-1, 0);
-        const sm::sub::CellContext surviving = resolve_plain_cell(0, 0);
-        mgr.snapshot_all_to_cache();
-
-        CHECK_OR_RETURN(
-            sm::sub::find_saved_subworld(leaving.seed, sm::sub::SubworldMode::Grassland),
-            "leaving real cell was not saved during pending generation");
-        CHECK_OR_RETURN(
-            sm::sub::find_saved_subworld(surviving.seed, sm::sub::SubworldMode::Grassland),
-            "surviving real cell was not saved during pending generation");
-    }
-
-    sm::sub::clear_saved_subworlds();
-    std::fprintf(stderr, "subworld_async_seam_test: snapshot_pending ok\n");
-}
-
-void run_worker_restore_saved_case() {
-    sm::sub::clear_saved_subworlds();
-
-    // ЗДЕСЬ СТОЯЛА ПОЛОВИНА ПРО РЕЛЬЕФ, И ОНА УШЛА ВМЕСТЕ С МЕХАНИКОЙ
-    // (M-262, 2026-10-12, §5 п.6 «снимая механику, ищи, чьим носителем она
-    // была в тестах»). Свидетель наполнял снимок РОВНЫМ рельефом 0.73 и ждал
-    // его обратно через квант 2.5/65535 — то есть охранял не закон мира, а
-    // САМ КВАНТОВАТЕЛЬ: ровного поля генератор не рождает, и ровно потому
-    // фикстуре приходилось его подделывать. Закон мира тут обратный, и он
-    // записан в самом движке: «an interior re-derives byte-identically from
-    // its identity», а «the overworld cache carries felled trees» — то есть
-    // СТРУКТУРЫ (`src/sub/engine.cpp`, у зова `snapshot_all_to_cache`).
-    // Рельеф сцена не мутирует вовсе (`fell_prop_near@src/sub/seamless_manager.cpp`:
-    // «heights did not»), значит снимок его и не несёт. Живая половина —
-    // ниже: вернувшаяся клетка обязана принести СОХРАНЁННЫЙ ПРОП.
-    constexpr float kSavedBridgeX = 123.25f;
-    constexpr float kSavedBridgeY = 277.5f;
-    constexpr float kSavedBridgeRadius = 9.0f;
-    constexpr float kSavedBridgeHeight = 3.5f;
-    sm::sub::SubworldMapData savedMap;
-    savedMap.structures.push_back(sm::sub::Structure{
-        sm::sub::Structure::Bridge,
-        kSavedBridgeX,
-        kSavedBridgeY,
-        kSavedBridgeRadius,
-        kSavedBridgeHeight});
-    const sm::sub::CellContext savedCtx = resolve_plain_cell(2, 0);
-    sm::sub::store_saved_subworld(sm::sub::snapshot_subworld(
-        savedCtx.seed, sm::sub::SubworldMode::Grassland, savedMap));
-
-    {
-        sm::sub::SeamlessSubworldManager mgr;
-        mgr.init(0, 0, resolve_plain_cell);
-        mgr.consume_composite_dirty();
-
-        float playerX = float(sm::sub::kCellSize * 2 + 32);
-        float playerY = float(sm::sub::kCellSize + 52);
-        mgr.check_boundary(playerX, playerY);
-        mgr.flush_pending_generation();
-        CHECK_OR_RETURN(mgr.consume_composite_dirty(),
-                        "restore saved boundary did not mark composite dirty");
-        const int sampleX = sm::sub::kCellSize * 2 + 37;
-        const int sampleY = sm::sub::kCellSize + 53;
-        if (!expect_placeholder(mgr, resolve_plain_cell, sampleX, sampleY,
-                "restore saved slot was not placeholder before stitch")) {
-            return;
-        }
-
-        const float expectedBridgeX = float(sm::sub::kCellSize * 2) + kSavedBridgeX;
-        const float expectedBridgeY = float(sm::sub::kCellSize) + kSavedBridgeY;
-        bool restoredStructure = false;
-        for (int i = 0; i < 500; ++i) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            mgr.check_boundary(playerX, playerY);
-            mgr.flush_pending_generation();
-            mgr.consume_composite_dirty();
-            restoredStructure = has_structure(mgr,
-                sm::sub::Structure::Bridge,
-                expectedBridgeX,
-                expectedBridgeY,
-                kSavedBridgeRadius,
-                -kSavedBridgeHeight);
-            if (restoredStructure) break;
-        }
-        CHECK_OR_RETURN(restoredStructure,
-                        "worker generation did not restore saved structure");
-        // НЕГАТИВНЫЙ КОНТРОЛЬ ПОЛОВИНЫ, КОТОРАЯ УМЕРЛА: клетка, вернувшаяся
-        // из кэша, обязана нести рельеф СВЕЖЕЙ ГЕНЕРАЦИИ, а не ровную
-        // подделку. Ровного поля генератор не рождает, поэтому проверка
-        // «высота в точке не равна подставленной 0.73» краснеет ровно тогда,
-        // когда кто-нибудь вернёт восстановление рельефа из снимка.
-        const std::size_t probe = sm::sub::tile_index(sampleX, sampleY);
-        CHECK(probe < mgr.heightmap().size()
-                  && std::fabs(mgr.heightmap()[probe] - 0.73f) > 0.0001f,
-              "рельеф вернувшейся клетки — свежая генерация, а не снимок");
-
-        mgr.snapshot_all_to_cache();
-    }
-
-    sm::sub::clear_saved_subworlds();
-    std::fprintf(stderr, "subworld_async_seam_test: worker_restore_saved ok\n");
-}
+// ЗДЕСЬ СТОЯЛИ ДВА СЛУЧАЯ КЭША СНИМКОВ — «снимок при незавершённой
+// генерации» и «воркер вернул сохранённый проп», — и оба ушли ВМЕСТЕ С
+// МЕХАНИКОЙ (§5 п.6, M-262, 2026-10-19). Кэш клеток снесён вердиктом
+// владельца 2026-10-18: он был второй памятью срубленного рядом с числом
+// макро-поля и жил мимо сейва. Вместе с ними ушёл и последний негативный
+// контроль рельефа («вернувшаяся клетка несёт свежую генерацию, а не
+// снимок») — восстанавливать из снимка больше нечего и некому.
+// Выживший закон — «возврат в клетку есть ГЕНЕРАЦИЯ, а память о рубке есть
+// ЧИСЛО» — утверждается там, где живёт сама генерация:
+// `test_revisit_is_regeneration@tests/prop_interaction_test.cpp`.
 
 void run_water_plane_invariant_case() {
     // Two assertions stood here: WATER_LEVEL == 0.40f and kLandMargin == 0.02f,
@@ -409,7 +294,6 @@ void run_water_plane_invariant_case() {
     // and nothing to lift. The shore is still a band, but it is a band the
     // FIELD draws by crossing the plane, not one a constant reserves.
 
-    sm::sub::clear_saved_subworlds();
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(0, 0, resolve_water_plane_cell);
     mgr.consume_composite_dirty();
@@ -461,13 +345,11 @@ void run_water_plane_invariant_case() {
         "subworld_async_seam_test: water_plane water=%d land=%d "
         "badWater=%d badLand=%d maxWater=%.5f minLand=%.5f\n",
         waterTiles, landTiles, badWater, badLand, maxWater, minLand);
-    sm::sub::clear_saved_subworlds();
     CHECK(badWater == 0 && badLand == 0,
           "water-plane height invariant violated");
 }
 
 void run_water_placeholder_case() {
-    sm::sub::clear_saved_subworlds();
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(1, 0, resolve_water_plane_cell);
     mgr.consume_composite_dirty();
@@ -491,7 +373,6 @@ void run_water_placeholder_case() {
                         && mgr.heightmap()[idx] < sm::sub::WATER_LEVEL,
                     "water placeholder did not stay below water plane");
 
-    sm::sub::clear_saved_subworlds();
 }
 
 // Клетка с НАЗНАЧЕННЫМ лесом: свидетель ниже рубит дерево, и надеяться на
@@ -513,7 +394,6 @@ sm::sub::CellContext resolve_forest_cell(int cx, int cy) {
 // что изъятие пропа её двинуло; ре-центр проверяется опросом, потому что
 // новую клетку собирает рабочий поток.
 void run_struct_revision_case() {
-    sm::sub::clear_saved_subworlds();
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(0, 0, resolve_forest_cell);
     mgr.consume_composite_dirty();
@@ -557,7 +437,6 @@ void run_struct_revision_case() {
     }
     CHECK_OR_RETURN(moved,
                     "ре-центр пересобрал композит, а ревизия не двинулась");
-    sm::sub::clear_saved_subworlds();
 }
 
 void run_rapid_reversal_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
@@ -638,14 +517,6 @@ int main() {
         run_rapid_reversal_case(reversalDirty, reversalTiming);
         return sm::test::report("subworld_async_seam_test");
     }
-    if (only && std::strcmp(only, "snapshot_pending") == 0) {
-        run_snapshot_during_pending_case();
-        return sm::test::report("subworld_async_seam_test");
-    }
-    if (only && std::strcmp(only, "worker_restore") == 0) {
-        run_worker_restore_saved_case();
-        return sm::test::report("subworld_async_seam_test");
-    }
     if (only && std::strcmp(only, "water_placeholder") == 0) {
         run_water_placeholder_case();
         return sm::test::report("subworld_async_seam_test");
@@ -661,10 +532,6 @@ int main() {
     run_diagonal_plain_case(diagonalDirty, diagonalTiming);
     if (sm::test::failures() != 0) return sm::test::report("subworld_async_seam_test");
     run_rapid_reversal_case(reversalDirty, reversalTiming);
-    if (sm::test::failures() != 0) return sm::test::report("subworld_async_seam_test");
-    run_snapshot_during_pending_case();
-    if (sm::test::failures() != 0) return sm::test::report("subworld_async_seam_test");
-    run_worker_restore_saved_case();
     if (sm::test::failures() != 0) return sm::test::report("subworld_async_seam_test");
     run_water_placeholder_case();
     if (sm::test::failures() != 0) return sm::test::report("subworld_async_seam_test");

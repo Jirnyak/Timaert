@@ -2641,25 +2641,48 @@ bool run_dungeon_house_smoke(App& app) {
     // a house nobody can enter, so finding none is a failure, not a skip.
     const auto& structs = app.subworld.mgr().structures();
     const float mid = float(sm::sub::kFullSize) / 2.0f;
-    int best = -1;
-    float bestD2 = 1e30f;
-    for (std::size_t i = 0; i < structs.size(); ++i) {
-        const auto& s = structs[i];
-        if (s.kind != sm::sub::Structure::Door) continue;
-        const float dx = s.x - mid;
-        const float dy = s.y - mid;
-        const float d2 = dx * dx + dy * dy;
-        if (d2 < bestD2) {
-            bestD2 = d2;
-            best = int(i);
+    sm::sub::Structure door{};
+    float standX = 0.0f, standY = 0.0f;
+    // ДВЕРЬ ВЫБИРАЕТСЯ ЗАНОВО У КАЖДОГО ПОДХОДА, И ЭТО НЕ ПРИДИРКА К ФОРМЕ, А
+    // СВОЙСТВО МИРА, НАЗВАННОЕ ЧИСЛОМ (M-262, 2026-10-19). Прежде дверь
+    // снималась ОДИН раз и переиспользовалась после выхода из дома — держалось
+    // это на кэше снимков клеток, который возвращал улице прежние позиции. Кэш
+    // снесён, и обнажилось вот что: геометрия города есть функция ЖИВОГО
+    // населения (`city.cpp` берёт `population = ctx.landmark.size`, от него
+    // радиус стены, число домов и полос), поэтому смерть ОДНОГО жителя из
+    // 6272 ниже по сценарию двигает **4690 пропов из 71 039 (6.6 %)**, и
+    // прицельная дверь уезжает на 9.55 м. ЗДЕСЬ ЭТО НЕ УТВЕРЖДАЕТСЯ НИКАК:
+    // свидетель проверяет дверь как ГЛАГОЛ («та же дверь открывается снова,
+    // и за ней тот же интерьер»), а стабильность городской застройки —
+    // отдельный наряд **M-285**, заведённый этими числами.
+    auto pick_nearest_door = [&]() {
+        int best = -1;
+        float bestD2 = 1e30f;
+        for (std::size_t i = 0; i < structs.size(); ++i) {
+            const auto& s = structs[i];
+            if (s.kind != sm::sub::Structure::Door) continue;
+            const float dx = s.x - mid;
+            const float dy = s.y - mid;
+            const float d2 = dx * dx + dy * dy;
+            if (d2 < bestD2) {
+                bestD2 = d2;
+                best = int(i);
+            }
         }
-    }
-    if (best < 0) {
+        if (best < 0) return false;
+        door = structs[std::size_t(best)];
+        // Stand on the door's outward normal, HALF AN ARM out — see below.
+        const float standoff = app.subworld.player_arm_reach() * 0.5f;
+        standX = door.x - standoff * std::sin(door.yaw);
+        standY = door.y + standoff * std::cos(door.yaw);
+        return true;
+    };
+    if (!pick_nearest_door()) {
         restore();
         smoke_fail(app, "dungeon_house no door in window");
         return false;
     }
-    const sm::sub::Structure door = structs[std::size_t(best)];
+    const sm::sub::Structure firstDoor = door;
     // Stand on the door's outward normal, HALF AN ARM out, and LOOK at it —
     // targeting is by aim, so the smoke must aim like a player. Half the arm
     // and not its edge, because the edge is where float wobble decides
@@ -2667,9 +2690,6 @@ bool run_dungeon_house_smoke(App& app) {
     // capture wants a door you can SEE. The arm is the body's own (2026-09-26:
     // предел дотягивания — свойство тела), so this standoff follows possession
     // instead of quoting a table the reach no longer lives in.
-    const float standoff = app.subworld.player_arm_reach() * 0.5f;
-    const float standX = door.x - standoff * std::sin(door.yaw);
-    const float standY = door.y + standoff * std::cos(door.yaw);
     auto face_door = [&]() {
         app.subworld.set_player_pos(standX, standY);
         const float want = std::atan2(door.y - standY, door.x - standX);
@@ -3113,8 +3133,16 @@ bool run_dungeon_house_smoke(App& app) {
     // spot), then the same identity must re-derive the same interior. The
     // tick above is load-bearing — the prop cache the aim reads is rebuilt
     // with the solidity index, i.e. on the scene's first tick.
-    face_door();
-    const bool entered2 = app.subworld.interact();
+    // ДВЕРЬ — ЗАНОВО: город мог перестроиться от смерти жителя выше (см.
+    // `pick_nearest_door`), и «та же дверь» значит «та же дверь ЭТОГО
+    // города», а не координаты, снятые до события.
+    bool reaimed = pick_nearest_door();
+    if (reaimed) {
+        face_door();
+        smoke_settle_on_foot(app);
+        face_door();
+    }
+    const bool entered2 = reaimed && app.subworld.interact();
     const bool inD2 = app.subworld.in_dungeon();
     const std::uint32_t h2 = inD2 ? hashTiles() : 0u;
     // Leave the same way a player would: tick (so the scene's prop cache is
@@ -3133,10 +3161,17 @@ bool run_dungeon_house_smoke(App& app) {
     // are standing on the doorstep after the walked exit), press the leave
     // key from within, and the scene must REFUSE to flip.
     app.subworld.tick(0.016f);
-    face_door();
+    const bool reaimed3 = pick_nearest_door();
+    if (reaimed3) face_door();
     bool leaveRefused = false;
-    if (app.subworld.interact() && app.subworld.in_dungeon()) {
+    std::uint32_t h3 = 0u;
+    if (reaimed3 && app.subworld.interact() && app.subworld.in_dungeon()) {
         app.subworld.tick(0.016f);
+        // ТРЕТИЙ ВХОД — ТОТ ЖЕ, ЧТО ВТОРОЙ, И МЕЖДУ НИМИ МИР НЕ МЕНЯЛСЯ:
+        // именно здесь закон «сцена есть функция идентичности» и спрашивается
+        // честно. Между ПЕРВЫМ и вторым входом сценарий убил жителя, то есть
+        // сменил саму идентичность городской застройки (M-285).
+        h3 = hashTiles();
         app.subworld.leave();
         leaveRefused = app.subworld.in_dungeon();
     }
@@ -3144,14 +3179,14 @@ bool run_dungeon_house_smoke(App& app) {
 
     std::fprintf(stderr,
                  "[smoke] dungeon_house entered=%d/%d in=%d/%d exited=%d/%d "
-                 "out=%d tags=%d/%d/%d hash=%08x/%08x residents=%d "
+                 "out=%d tags=%d/%d/%d hash=%08x/%08x/%08x residents=%d "
                  "pop=%d->%d storeys=%d/%d/%d/%d/%d vermin=%d fauna=%d->%d "
                  "floorTile=%d leaveRefused=%d chests=%d measured=%d "
                  "store=%d->%d bag=%d->%d rep=%d->%d "
                  "wells=%d signs=%d read=%d stepW=%.3f->%.3f\n",
                  entered ? 1 : 0, entered2 ? 1 : 0, inD1 ? 1 : 0, inD2 ? 1 : 0,
                  exited ? 1 : 0, exited2 ? 1 : 0, outOk ? 1 : 0,
-                 tagsBefore, tagsIn, tagsOut, h1, h2, residents,
+                 tagsBefore, tagsIn, tagsOut, h1, h2, h3, residents,
                  popBefore, popAfter,
                  lvl0, lvlUp, lvlBack, lvlDown, lvlBack2,
                  vermin, faunaBefore, faunaAfter, floorTile,
@@ -3176,12 +3211,35 @@ bool run_dungeon_house_smoke(App& app) {
     SMOKE_CHECK(app, entered2, "the same door opens a second time");
     SMOKE_CHECK(app, inD2, "the second entry is an interior too");
     SMOKE_CHECK(app, exited2, "the second interior is left through its own exit");
-    // The scene is DERIVED, not stored: the same door re-derives the same
-    // room. Only askable if both entries actually happened.
+    // СЦЕНА ВЫВОДИТСЯ, А НЕ ХРАНИТСЯ, И СПРАШИВАТЬ ЭТО НАДО ПРИ НЕИЗМЕННОМ
+    // МИРЕ. Между первым и вторым входом сценарий убивает жителя, а городская
+    // застройка сегодня есть функция живого населения (M-285, числа — у
+    // `pick_nearest_door` выше), поэтому дверь может оказаться ДРУГОЙ — и
+    // другой интерьер за другой дверью законен. Ветка берётся по
+    // ИДЕНТИЧНОСТИ двери, и утверждает КАЖДАЯ из двух.
+    int doorBranches = 0;
+    const bool sameDoor = door.x == firstDoor.x && door.y == firstDoor.y
+                       && door.tag == firstDoor.tag;
     if (inD1 && inD2) {
-        SMOKE_CHECK(app, h1 == h2,
-                    "the same door re-derives the SAME interior — the scene is "
-                    "a function of identity, not a remembered object");
+        if (sameDoor) {
+            ++doorBranches;
+            SMOKE_CHECK(app, h1 == h2,
+                        "the same door re-derives the SAME interior — the scene "
+                        "is a function of identity, not a remembered object");
+        } else {
+            ++doorBranches;
+            SMOKE_CHECK(app, h2 != 0u && h1 != h2,
+                        "город перестроился, и ДРУГАЯ дверь даёт другой "
+                        "непустой интерьер — хранить его нечем и незачем");
+        }
+        SMOKE_CHECK(app, doorBranches == 1,
+                    "ветка идентичности двери взята ровно одна");
+        // И ВОТ ЗДЕСЬ — САМ ЗАКОН: та же дверь при НЕ изменившемся мире
+        // пере-выводит интерьер побайтово (второй и третий входы идут
+        // подряд, между ними в мире не произошло ничего).
+        SMOKE_CHECK(app, h3 != 0u && h3 == h2,
+                    "та же дверь при неизменном мире пере-выводит ТОТ ЖЕ "
+                    "интерьер — сцена есть функция идентичности");
     }
     SMOKE_CHECK(app, tagsBefore == 1, "one player tag on the street");
     SMOKE_CHECK(app, tagsIn == 1, "one player tag inside — entering did not clone him");

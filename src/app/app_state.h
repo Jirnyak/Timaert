@@ -75,7 +75,6 @@
 #include "sub/dgn/dispatch.h"
 #include "sub/height.h"
 #include "sub/map_data.h"
-#include "sub/map_factory.h"
 #include "sub/tree_atlas.h"
 #include "macro/fauna.h"
 #include "ui/overlays.h"

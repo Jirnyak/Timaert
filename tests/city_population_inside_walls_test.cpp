@@ -329,7 +329,6 @@ int main() {
     // 1200 souls: one wall ring, wallR = 173, so the built-up disk is 8 % of the
     // cell — under the old spawner 92 % of these people stood in the wilderness.
     {
-        sm::sub::clear_saved_subworlds();
         sm::sub::SeamlessSubworldManager mgr;
         mgr.init(0, 0, settlement_resolver(sm::SquadType::City, 1200));
         mgr.consume_composite_dirty();
@@ -339,7 +338,6 @@ int main() {
         const sm::WorldTime noon = sm::world_time_at(1, 12, 0);
         const Spread s = measure(mgr, sm::SquadType::City, 1200,
                                  0xC17015Eu, noon);
-        sm::sub::clear_saved_subworlds();
 
         const bool ok1 =
             !(s.citizens < street_floor(1200, doors_of(mgr), noon));
@@ -435,7 +433,6 @@ int main() {
     // The tighter case: a village core is ~1 % of the cell, so the old spawner
     // put ~99 % of the villagers in the woods.
     {
-        sm::sub::clear_saved_subworlds();
         sm::sub::SeamlessSubworldManager mgr;
         mgr.init(0, 0,
                  settlement_resolver(sm::SquadType::Village, 400));
@@ -443,7 +440,6 @@ int main() {
         const sm::WorldTime vnoon = sm::world_time_at(1, 12, 0);
         const Spread s = measure(mgr, sm::SquadType::Village, 400,
                                  0x71114Eu, vnoon);
-        sm::sub::clear_saved_subworlds();
 
         const bool ok12 =
             !(s.citizens < street_floor(400, doors_of(mgr), vnoon));

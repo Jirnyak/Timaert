@@ -1307,8 +1307,9 @@ timaert_test(spire_tower_test
 
 # Universal prop / interaction system: the kStructureKindRows draw / light /
 # interact columns, the city doors + street lanterns, the interior door and
-# stair blocks, and the snapshot merge that must carry every prop KIND across
-# a revisit — hence map_factory.cpp on top of the dungeon_house_test stack.
+# stair blocks, and the law M-262 left where the snapshot merge stood — a
+# revisited cell is REGENERATED from its identity, remembering only the
+# macro tree count.
 timaert_test(prop_interaction_test
     SOURCES
         src/sub/base_generator.cpp
@@ -1318,7 +1319,6 @@ timaert_test(prop_interaction_test
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
         src/sub/dgn/prologue_road.cpp
-        src/sub/map_factory.cpp
     LINK_SDL)
 
 timaert_test(mountain_mesh_smoothness_test
@@ -1331,7 +1331,6 @@ timaert_test(subworld_height_field_test
         src/sub/seamless_manager.cpp
         src/sub/height.cpp
         src/sub/base_generator.cpp
-        src/sub/map_factory.cpp
         ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
@@ -1344,7 +1343,6 @@ timaert_test(subworld_async_seam_test
         src/sub/seamless_manager.cpp
         src/sub/height.cpp
         src/sub/base_generator.cpp
-        src/sub/map_factory.cpp
         ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
@@ -1364,7 +1362,6 @@ timaert_test(subworld_spawn_parity_test
         src/sub/seamless_manager.cpp
         src/sub/height.cpp
         src/sub/base_generator.cpp
-        src/sub/map_factory.cpp
         ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
@@ -1808,7 +1805,6 @@ timaert_test(settlement_faction_test
         src/sub/seamless_manager.cpp
         src/sub/height.cpp
         src/sub/base_generator.cpp
-        src/sub/map_factory.cpp
         ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
@@ -1833,7 +1829,6 @@ timaert_test(carried_light_spawn_test
         src/sub/seamless_manager.cpp
         src/sub/height.cpp
         src/sub/base_generator.cpp
-        src/sub/map_factory.cpp
         ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
@@ -1862,7 +1857,6 @@ timaert_test(city_population_inside_walls_test
         src/sub/seamless_manager.cpp
         src/sub/height.cpp
         src/sub/base_generator.cpp
-        src/sub/map_factory.cpp
         ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp

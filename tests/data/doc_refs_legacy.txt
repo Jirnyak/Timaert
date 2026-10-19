@@ -502,7 +502,6 @@ SKELETON.md	sub/engine.h:22
 SKELETON.md	sub/engine.h:252
 SKELETON.md	sub/map_data.h:20-21
 SKELETON.md	sub/map_data.h:518-519
-SKELETON.md	sub/map_factory.cpp:27-28
 SKELETON.md	sub/seamless_manager.cpp:309
 SKELETON.md	sub/spawn.cpp:1489-1491
 SKELETON.md	sub/spawn.cpp:514

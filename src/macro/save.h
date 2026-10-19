@@ -1,7 +1,8 @@
 // Binary save/load. The terrain/politik layers are regenerated from
 // worldSeed + map parameters, then mutable runtime records are overlaid.
-// Subworld snapshots are deliberately session-only; see sub/map_factory.h
-// for that cache boundary.
+// Снимков субмира не существует вовсе (M-262, 2026-10-19): клетка есть
+// проекция своей идентичности плюс числа макро-полей, которые лежат здесь, —
+// второй памяти рядом с ними нет.
 //
 // Save format is binary, version-gated by kSaveVersion. Per AGENTS.md
 // rule #2, we do NOT keep backward compatibility — bump kSaveVersion

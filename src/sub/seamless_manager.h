@@ -14,7 +14,6 @@
 #include "core/small_function.h"
 #include "sub/height.h"
 #include "sub/map_data.h"
-#include "sub/map_factory.h"
 
 namespace sm::sub {
 
@@ -181,19 +180,26 @@ public:
     void flush_pending_generation();
     bool has_pending_generation() const { return pendingFreshCount_ > 0; }
 
-    // Snapshot every currently loaded cell into the per-session save cache.
-    // Called when the player leaves the subworld so the next visit
-    // reproduces the exact heightmap and structure layout (including
-    // felled trees / abandoned houses).
-    void snapshot_all_to_cache();
+    // ЗДЕСЬ СТОЯЛ СНИМОК ОКНА В КЭШ СЕССИИ — `snapshot_all_to_cache()`, — и с
+    // ним весь асинхронный конвейер снимков. Снесён 2026-10-19 (M-262,
+    // вердикт владельца 2026-10-18 «ща для минимализма снос»): кэш был
+    // ВТОРОЙ ПАМЯТЬЮ срубленного рядом с числом макро-поля и жил мимо сейва,
+    // то есть после перезагрузки мир и кэш расходились молча. Память
+    // срубленного — ЧИСЛО КЛЕТКИ (`MacroStock::TreeCount`, едет дельтой из
+    // `harvest_prop_near_player@src/sub/engine.cpp` и лежит в сейве), а
+    // позиции есть ЛОССИ-ПРОЕКЦИЯ этого числа: вернувшись, игрок видит N−1
+    // дерева, и пропасть может другое (владелец: «пня ваще нет»). Клетка
+    // воспроизводится из своей идентичности, и это её единственная истина.
+    // Память посещённых клеток как ФОРМЫ — отдельный наряд M-279.
 
     // Fell/harvest the nearest LOOTABLE prop (structure_is_lootable — a kind
     // with a loot row: trees, crops, whatever the table grows) within
     // `maxDist` of composite-space (x, y). `onlyKind` narrows the search to
     // one kind (the console `chop` and the chop smoke ask for a tree
     // specifically; the bare melee swing takes whatever is nearest). Removes
-    // the record from BOTH the owning cell's data (so session snapshots
-    // persist the loss) and the live composite, clears a tree's
+    // the record from BOTH the owning cell's data (so the cell stays
+    // consistent for as long as the window holds it) and the live composite,
+    // clears a tree's
     // TILE_TREE_DECOR back to grass (a harvested crop leaves its ploughed
     // tile), and marks structures + that cell's material dirty. On success
     // fills the owning cell's ABSOLUTE macro coords — the caller settles the
@@ -372,11 +378,8 @@ private:
     void generate_one(int idx, int acx, int acy);
     void place_placeholder(int idx, const CellContext& ctx, std::uint64_t generation);
     void queue_generation(const CellContext& ctx, std::uint64_t generation);
-    void queue_save(LoadedCell&& cell);
     bool drain_completed_jobs(int maxJobs);
-    void drain_completed_saves(int maxCells);
     void drain_completed_smooth(int maxJobs);
-    void flush_save_jobs();
     void queue_composite_smooth();
     void cancel_pending_smooth();
     bool has_placeholders() const;
@@ -407,7 +410,6 @@ private:
         // Neighbour fertility (CellContext.fertility01) — the field-plot
         // module keys plots off their OWNING cell's fertility. -1 = unknown.
         float nbFertility[9] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
-        std::shared_ptr<const SavedSubworld> saved;
     };
 
     struct CompletedJob {
@@ -430,17 +432,6 @@ private:
         std::vector<std::int32_t> roadIndices;
         int roadMaskTiles = 0;
         std::vector<std::int32_t> roadMaskIndices;
-    };
-
-    struct SaveJob {
-        std::uint32_t seed = 0;
-        SubworldMode mode = SubworldMode::Open;
-        SubworldMapData data;
-    };
-
-    struct CompletedSaveJob {
-        SavedSubworld saved;
-        double saveMs = 0.0;
     };
 
     struct SmoothJob {
@@ -471,14 +462,10 @@ private:
     std::condition_variable_any workerCv_;
     std::deque<GenerationJob> pendingJobs_;
     std::deque<CompletedJob> completedJobs_;
-    std::deque<SaveJob> pendingSaveJobs_;
-    std::deque<CompletedSaveJob> completedSaveJobs_;
     std::deque<SmoothJob> pendingSmoothJobs_;
     std::deque<CompletedSmoothJob> completedSmoothJobs_;
     int activeGenerationJobs_ = 0;
-    int activeSaveJobs_ = 0;
     int activeSmoothJobs_ = 0;
-    bool saveJobsPaused_ = false;
     std::uint64_t nextGeneration_ = 1;
     std::uint64_t smoothGeneration_ = 1;
     bool compositeDirty_ = false;

@@ -234,7 +234,6 @@ void run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
 }  // namespace
 
 int main() {
-    sm::sub::clear_saved_subworlds();
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(0, 0, meadow_cell);
     mgr.consume_composite_dirty();
@@ -248,6 +247,5 @@ int main() {
     run_citizens_wear_their_realm(mgr);
     run_imperial_city_still_imperial(mgr);
 
-    sm::sub::clear_saved_subworlds();
     return sm::test::report("settlement_faction_test");
 }

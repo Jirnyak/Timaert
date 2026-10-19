@@ -2,8 +2,9 @@
 // columns that turned "a prop" into "a thing the world can draw, light and
 // press E on" (sub/map_data.h), the two generators that place the first such
 // props (sub/gens/dispatch.cpp city doors + street lanterns, sub/dgn/house.cpp
-// interior door + stair blocks), and the snapshot merge that has to carry ALL
-// of them across a revisit (sub/map_factory.cpp restore_into).
+// interior door + stair blocks), and — since M-262 killed the snapshot cache —
+// the law that replaced it: a revisited cell is REGENERATED from its identity,
+// and the only memory of a felled tree is the macro COUNT.
 //
 // What is promised and asserted here:
 //   1. TABLE CONSISTENCY — pure, no generation. Every kind that declares an
@@ -30,24 +31,26 @@
 //      Stairs block, tagged 1 up / 0 down, exactly on the shared
 //      dungeon_stair_point. The cellar is a seeded coin, so the test takes
 //      whichever branch dungeon_has_cellar names and ASSERTS that it took one.
-//   5. SNAPSHOT ROUND TRIP — the regression this bought. restore_into used to
-//      diff over a hardcoded 5 kinds (Tree/Rock/House/Wall/Bridge), so every
-//      prop past Bridge — crops, fences, furniture, and now doors and
-//      lanterns — was silently dropped from a revisited cell. Asserted for
-//      EVERY kind in the table, with a negative control proving the census
-//      can see a kind go missing.
+//   5. REVISIT IS REGENERATION — the cell is a function of its identity (two
+//      runs agree column for column), the macro tree count is the ONE memory
+//      of felling (fewer trees, and no other kind moved), the thinning order
+//      is the number's and not the player's (survivors are a positional
+//      SUBSET), and prop height is non-negative now that the decay sign-bit
+//      overlay is gone.
 #include "check.h"
 #include "sub/dgn/dispatch.h"
 #include "sub/gens/dispatch.h"
 #include "sub/map_data.h"
-#include "sub/map_factory.h"
+#include "tables/forest.h"
 // Дотягивание — свойство ТЕЛА, не вещи (вердикт владельца 2026-09-26), поэтому
 // свидетель берёт предел из строки того тела, которым игрок начинает игру, той
 // же колонкой, что читает движок через player_arm_reach().
 #include "tables/npc.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 // ОДИН ФАКТ ВМЕСТО ВОСЬМИ КОЛОНОК, И ОН ИЗВЕСТЕН КОМПИЛЯТОРУ (§8 п.6): предел
@@ -371,111 +374,184 @@ void test_interior_props() {
     CHECK(branches == 1, "the cellar coin took exactly one asserted branch");
 }
 
-// ── 5. Snapshot round trip + the negative control ──────────────────────────
-void test_snapshot_round_trip(const CellContext& ctx,
-                              const SubworldMapData& visited) {
-    const SubworldMode mode = resolve_mode(ctx);
-    CHECK(mode == SubworldMode::City,
-          "fixture: the settlement context resolves to a City subworld");
-    const SavedSubworld saved = snapshot_subworld(ctx.seed, mode, visited);
+// ── 5. ВОЗВРАТ В КЛЕТКУ ЕСТЬ ГЕНЕРАЦИЯ, А ПАМЯТЬ О РУБКЕ — ЧИСЛО ──────
+// Здесь стоял «круговой рейс снимка» — свидетель того, что слияние кэша
+// возвращает в перепосещённую клетку все роды пропов. Он ушёл ВМЕСТЕ С
+// МЕХАНИКОЙ (§5 п.6), потому что самого снимка больше нет: M-262, вердикт
+// владельца 2026-10-18 — кэш был ВТОРОЙ ПАМЯТЬЮ срубленного рядом с числом
+// макро-поля и жил мимо сейва.
+//
+// Закон, который стал на его место, сильнее снесённого и держит ровно то, чем
+// снос оправдан (ЗАКОН ШВА, лосси-проекция в обе стороны):
+//   · клетка есть ФУНКЦИЯ СВОЕЙ ИДЕНТИЧНОСТИ — два прогона одного и того же
+//     контекста дают совпадающие пропы колонка в колонку, и именно поэтому
+//     хранить их не надо вовсе;
+//   · единственная память о рубке — ЧИСЛО КЛЕТКИ: меньше макро-счёт
+//     деревьев — строго меньше деревьев в клетке, и ни одного другого рода
+//     число не касается;
+//   · прореживает число СВОИМ ПОРЯДКОМ, а не выбором игрока: выжившие
+//     стволы есть ПОДМНОЖЕСТВО богатой клетки по положению. Это и есть
+//     вердикт владельца «пня ваще нет»: игрок видит N−1 дерево, и пропасть
+//     может не то, которое он валил. ВЫСОТЫ выживших тут НЕ
+//     утверждаются, и это сознательно: каждый ствол тянет свой рост из
+//     ОДНОГО потока `sizeRng` в порядке ставки, то есть прореженная клетка
+//     не «богатая минус деревья» (`scatter_universal_trees@src/sub/base_generator.cpp`).
+// И сюда же сел свидетель СНЕСЁННОГО ОВЕРЛЕЯ ВЕТХОСТИ: минус в высоте
+// ставило только слияние снимка, и с его смертью отрицательная высота
+// стала НЕДОСТИЖИМОЙ — значит это теперь утверждение о мире, а не страж.
+// НЕГАТИВНЫЙ КОНТРОЛЬ, ПРОГНАННЫЙ И ЗАПИСАННЫЙ ЧИСЛОМ (§8 п.6; 2026-10-19,
+// M-262). Таблица стоит ЗДЕСЬ, а не только в теле коммита: прибор, чья
+// чувствительность доказана лишь в git log, следующему читателю недоступна.
+//   мутация                                             → исход
+//   ставка деревьев от константы 4096 вместо макро-счёта → 1 из 35 КРАСНАЯ
+//                                                          («меньше счёт —
+//                                                          строго меньше»)
+//   место ставки не функция идентичности (статик-дрейф)  → 3 из 35 КРАСНЫХ
+//                                                          (список, перепись,
+//                                                          подмножество)
+//   отрицательная высота ДО честного присвоения          → МОЛЧАНИЕ, код 0 —
+//                                                          мутация НЕГОДНА:
+//                                                          её затирала строка
+//                                                          `s.height = treeH`
+//                                                          ниже. Молчание
+//                                                          прибора на такой
+//                                                          мутации вердиктом
+//                                                          НЕ является
+//   отрицательная высота ПОСЛЕ присвоения                → 1 из 35 КРАСНАЯ
+//   эквивалентная перезапись строки плотности            → МОЛЧАНИЕ, 35/35 —
+//                                                          детектор не
+//                                                          краснеет на всё
+// Довоз величины ЧЕРЕЗ ФАЙЛ — не здесь, а в `save_roundtrip_test`: мутация
+// «загрузка возвращает ровную сетку вместо сохранённой» даёт там 1 из 21
+// красной («tree grid lost»); мутация «выбросить сетку» НЕ СОБИРАЕТСЯ вовсе.
+bool same_prop(const Structure& a, const Structure& b) {
+    return a.kind == b.kind && a.shape == b.shape && a.zWorld == b.zWorld
+        && a.tag == b.tag
+        && a.x == b.x && a.y == b.y && a.radius == b.radius
+        && a.height == b.height && a.yaw == b.yaw
+        && a.hx == b.hx && a.hy == b.hy && a.zBase == b.zBase;
+}
 
-    // Walk out and back in: the cell is generated again from scratch, then the
-    // snapshot is merged into it. Nothing was changed underground, so every
-    // kind must survive at exactly its fresh count.
-    SubworldMapData fresh{};
-    generate(ctx, fresh);
-    const KindCensus before = census(fresh.structures);
-    CHECK_OR_RETURN(before.total > 0,
-                    "fixture: the revisited cell generates props at all");
-    restore_into(saved, fresh);
-    const KindCensus after = census(fresh.structures);
+// Генерация с ЯВНЫМ макро-счётом деревьев по кольцу — тот самый вход,
+// который менеджер шва собирает из `CellContext::treeCount` живого мира.
+void generate_with_trees(const CellContext& ctx, int treeCount,
+                         SubworldMapData& out) {
+    float nbH[9];
+    Biome nbB[9];
+    std::uint8_t nbF[9];
+    int nbT[9];
+    for (int i = 0; i < 9; ++i) {
+        nbH[i] = ctx.macroHeight;
+        nbB[i] = ctx.biome;
+        nbF[i] = std::uint8_t(FT_None);
+        nbT[i] = treeCount;
+    }
+    dispatch_generate(ctx, nbH, nbB, /*nbBiome5*/nullptr, nbF, out,
+                      /*nbLandmark*/nullptr, nbT, /*nbFertility*/nullptr);
+}
 
-    int kindsChecked = 0, dropped = 0, kindsPresent = 0, kindsPastBridge = 0;
+void test_revisit_is_regeneration() {
+    CellContext ctx{};
+    ctx.cx = -7;
+    ctx.cy = 4;
+    ctx.macroHeight = 0.58f;
+    ctx.biome = Meadow;
+    ctx.feature = FT_None;
+    ctx.landmark.id = -1;
+    ctx.landmark.size = 0;
+    ctx.seed = 0x7A1DF00Du;
+
+    // ОБА СЧЁТА НИЖЕ ЛЕСНОГО ПОРОГА И БЕРУТСЯ ИЗ ТАБЛИЦЫ, а не с потолка:
+    // `is_forest_cell` переводит клетку в ДРУГОЙ режим субмира, а два режима
+    // сравнивать нечестно — сравнивается действие ЧИСЛА, а не смена генератора.
+    const int rich = kForestClassTreeCount / 2;    // 4096
+    const int thin = kForestClassTreeCount / 8;    // 1024
+    static_assert(kForestClassTreeCount / 2 < kForestClassTreeCount
+                  && kForestClassTreeCount / 8 < kForestClassTreeCount / 2,
+                  "оба счёта нелесные, и прореженный строго меньше богатого");
+    CHECK(!is_forest_cell(rich) && !is_forest_cell(thin),
+          "fixture: оба счёта лежат по одну сторону лесного порога");
+
+    SubworldMapData first{};
+    SubworldMapData again{};
+    generate_with_trees(ctx, rich, first);
+    generate_with_trees(ctx, rich, again);
+
+    const KindCensus c1 = census(first.structures);
+    const KindCensus c2 = census(again.structures);
+    CHECK_OR_RETURN(c1.total > 0 && c1.n[int(Structure::Tree)] > 0,
+                    "fixture: клетка с макро-счётом деревьев рождает деревья");
+
+    // (1) КЛЕТКА ЕСТЬ ФУНКЦИЯ СВОЕЙ ИДЕНТИЧНОСТИ — колонка в колонку.
+    int compared = 0, differing = 0;
+    const std::size_t common = std::min(first.structures.size(),
+                                        again.structures.size());
+    for (std::size_t i = 0; i < common; ++i) {
+        ++compared;
+        if (!same_prop(first.structures[i], again.structures[i])) ++differing;
+    }
+    CHECK(first.structures.size() == again.structures.size()
+              && compared == int(first.structures.size()) && differing == 0,
+          "два прогона одной идентичности дают ОДИН и тот же список пропов — "
+          "хранить его не нужно");
+    int kindsCompared = 0, kindsDiffering = 0;
     for (int k = 0; k < kKindRows; ++k) {
-        ++kindsChecked;
-        if (after.n[k] != before.n[k]) ++dropped;
-        if (before.n[k] > 0) {
-            ++kindsPresent;
-            if (k > int(Structure::Bridge)) ++kindsPastBridge;
-        }
+        ++kindsCompared;
+        if (c1.n[k] != c2.n[k]) ++kindsDiffering;
     }
-    CHECK(kindsChecked == Structure::kKindCount && dropped == 0,
-          "a revisit restores every prop kind at its full count");
-    CHECK(kindsPresent > 0 && after.total == before.total,
-          "the revisited cell keeps exactly as many props as it generated");
-    // The bug this bought: the merge used to stop at Bridge, so everything
-    // past it vanished on a revisit. The city must actually carry such props,
-    // or the assertion above would be measuring an empty range.
-    CHECK(kindsPastBridge > 0,
-          "the city carries props past Bridge — the range the old literal-5 "
-          "merge dropped");
-    CHECK(after.n[int(Structure::Door)] > 0
-              && after.n[int(Structure::Lantern)] > 0,
-          "doors and lanterns both survive the revisit");
+    CHECK(kindsCompared == Structure::kKindCount && c1.total == c2.total
+              && kindsDiffering == 0,
+          "перепись по родам у двух прогонов одной идентичности совпадает");
 
-    // The per-instance payload has to survive too — a restored door whose tag
-    // was lost opens the wrong interior.
-    const int houses = after.n[int(Structure::House)];
-    std::vector<int> tagged(std::size_t(houses > 0 ? houses : 1), 0);
-    int restoredDoors = 0, badTag = 0;
-    for (const Structure& s : fresh.structures) {
-        if (s.kind != Structure::Door) continue;
-        ++restoredDoors;
-        if (int(s.tag) < houses) ++tagged[std::size_t(s.tag)];
-        else ++badTag;
-    }
-    int ordinals = 0, unpaired = 0;
-    for (int i = 0; i < houses; ++i) {
-        ++ordinals;
-        if (tagged[std::size_t(i)] != 1) ++unpaired;
-    }
-    CHECK(restoredDoors == houses && badTag == 0,
-          "the revisit restores one door per house");
-    CHECK(ordinals == houses && unpaired == 0,
-          "restored door tags are still exactly {0..houses-1}");
-
-    // NEGATIVE CONTROL for the census above. The merge keeps, per kind, the
-    // larger of the two sides (saved positions win, surplus fresh props are
-    // appended, surplus saved props are marked decayed), so a kind can only
-    // go missing if it is absent from BOTH sides — which is precisely what the
-    // old kind-truncated loop did to every prop past Bridge: neither the saved
-    // nor the fresh entries were ever visited. Reproduce that state and the
-    // SAME census must report the loss.
-    SavedSubworld strippedSave = saved;
-    SubworldMapData strippedFresh{};
-    generate(ctx, strippedFresh);
-    int removedSaved = 0, removedFresh = 0;
-    std::vector<Structure> keepSaved;
-    for (const Structure& s : strippedSave.structures) {
-        if (s.kind == Structure::Door) { ++removedSaved; continue; }
-        keepSaved.push_back(s);
-    }
-    strippedSave.structures = keepSaved;
-    std::vector<Structure> keepFresh;
-    for (const Structure& s : strippedFresh.structures) {
-        if (s.kind == Structure::Door) { ++removedFresh; continue; }
-        keepFresh.push_back(s);
-    }
-    strippedFresh.structures = keepFresh;
-    CHECK(removedSaved > 0 && removedFresh > 0,
-          "fixture: there were doors on both sides to strip");
-    restore_into(strippedSave, strippedFresh);
-    const KindCensus lossy = census(strippedFresh.structures);
-    CHECK(lossy.total > 0,
-          "fixture: the stripped map still carries its other props");
-    CHECK(lossy.n[int(Structure::Door)] < before.n[int(Structure::Door)],
-          "with the Door kind lost by the merge the census MUST report the "
-          "drop — the detector can see a missing kind");
-    // …and it sees the loss ONLY there: the kinds the merge still visits are
-    // untouched, so the control is a door-shaped hole, not a broken map.
+    // (2) ПАМЯТЬ О РУБКЕ — ЧИСЛО, и оно касается ТОЛЬКО деревьев.
+    SubworldMapData thinned{};
+    generate_with_trees(ctx, thin, thinned);
+    const KindCensus ct = census(thinned.structures);
+    CHECK(ct.n[int(Structure::Tree)] > 0
+              && ct.n[int(Structure::Tree)] < c1.n[int(Structure::Tree)],
+          "меньше макро-счёт — строго меньше деревьев в клетке");
     int otherKinds = 0, otherChanged = 0;
     for (int k = 0; k < kKindRows; ++k) {
-        if (k == int(Structure::Door)) continue;
+        if (k == int(Structure::Tree)) continue;
         ++otherKinds;
-        if (lossy.n[k] != before.n[k]) ++otherChanged;
+        if (ct.n[k] != c1.n[k]) ++otherChanged;
     }
     CHECK(otherKinds == Structure::kKindCount - 1 && otherChanged == 0,
-          "the control loses doors and nothing else");
+          "счёт деревьев двигает ТОЛЬКО деревья — детектор видит дыру "
+          "древесной формы, а не сломанную клетку");
+
+    // (3) ПОРЯДОК ПРОРЕЖИВАНИЯ — ЧИСЛА, а НЕ ИГРОКА: выжившие стволы
+    // стоят там, где стояли в богатой клетке (гейт плотности монотонен по
+    // счёту), поэтому «пень на месте срубленного» миру выразить нечем.
+    std::vector<std::pair<float, float>> richTrees;
+    for (const Structure& s : first.structures) {
+        if (s.kind == Structure::Tree) richTrees.push_back({s.x, s.y});
+    }
+    std::sort(richTrees.begin(), richTrees.end());
+    int thinTrees = 0, strangers = 0;
+    for (const Structure& s : thinned.structures) {
+        if (s.kind != Structure::Tree) continue;
+        ++thinTrees;
+        if (!std::binary_search(richTrees.begin(), richTrees.end(),
+                                std::pair<float, float>{s.x, s.y})) {
+            ++strangers;
+        }
+    }
+    CHECK(thinTrees == ct.n[int(Structure::Tree)] && strangers == 0,
+          "прореженная клетка — ПОДМНОЖЕСТВО богатой по положению стволов");
+
+    // (4) ОВЕРЛЕЯ ВЕТХОСТИ НЕТ: отрицательную высоту писало слияние
+    // снимка, и с его сносом у знака не осталось ни одного писателя.
+    int heightsSeen = 0, negative = 0;
+    for (const SubworldMapData* m : {&first, &thinned}) {
+        for (const Structure& s : m->structures) {
+            ++heightsSeen;
+            if (s.height < 0.0f) ++negative;
+        }
+    }
+    CHECK(heightsSeen == int(first.structures.size() + thinned.structures.size())
+              && negative == 0,
+          "высота пропа неотрицательна — оверлея ветхости больше нет");
 }
 
 } // namespace
@@ -484,13 +560,12 @@ int main() {
     test_table_consistency();
     test_interior_props();
 
-    // ONE city generation shared by the door/lantern census and the snapshot
-    // round trip — the cell is 1024² and the round trip generates two more.
+    // ONE city generation for the door/lantern census — the cell is 1024².
     const CellContext city = make_city_ctx(0xC17A5EEDu);
     SubworldMapData visited{};
     generate(city, visited);
     test_city_props(visited);
-    test_snapshot_round_trip(city, visited);
+    test_revisit_is_regeneration();
 
     return sm::test::report("prop_interaction_test");
 }
