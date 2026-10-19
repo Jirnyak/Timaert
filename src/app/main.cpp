@@ -88,6 +88,7 @@
 #include "ui/ui_image.h"
 #include "ui/screens.h"
 #include "ui/macro_overlay.h"
+#include "ui/squad_draw.h"   // archetype_draw — закон рисовки одной дверью
 #include "ui/ui_gpu.h"
 #include "ui/keymap.h"
 #include "ui/ui_settings.h"
@@ -5792,9 +5793,15 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
         if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
         if (slot == flagSlot || st.playerFlag[slot].home != 0)
             continue;
-        // ТЕЛО МЕСТА НЕ РИСУЕТСЯ СКВАД-СПРАЙТОМ (ось рода, M-90 шаг 5):
-        // место на карте — глиф своей строки реестра, не ходячая фигурка.
-        if (sm::squad_archetype(sm::SquadType(st.runtime[slot].squadType)) == sm::SquadArchetype::Place)
+        // ТРЕЙС СМОТРИТ НА ТЕХ, КОГО КАРТА РИСУЕТ ФИГУРКОЙ, И СПРАШИВАЕТ ОБ
+        // ЭТОМ ТУ ЖЕ КОЛОНКУ, ЧТО САМ ПРОХОД (`pictureFromBody` строки группы,
+        // ui/squad_draw.h). Здесь стоял гейт по архетипу — он повторял своим
+        // написанием закон рисовки, и разъехаться им было нечем помешать:
+        // вопрос «мозг или глаз» имеет смысл ровно про тело, чья картинка
+        // берётся с него самого и чей глаз догоняет клетку.
+        if (!sm::ui::archetype_draw(
+                 sm::squad_archetype(sm::SquadType(st.runtime[slot].squadType)))
+                 .pictureFromBody)
             continue;
         const auto& c = st.cell[slot];
         const float cx = float(sm::ecs::cell_x(c, app.gs.mapW));

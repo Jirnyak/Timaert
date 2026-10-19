@@ -18,7 +18,7 @@
 // smoke could see it (problems.md §23).
 //
 // Kind tables point HERE by ordinal (`FaunaEntry::sprite`, `NpcTypeDef::sprite`,
-// `kLandmarkDraw[].sprite`). Several kinds may share one row on purpose — every
+// `kSquadDraw[].sprite`). Several kinds may share one row on purpose — every
 // unremarkable townsman is `Peasant` — so this table is the vocabulary of
 // PICTURES, not a mirror of the kind lists.
 //
@@ -49,7 +49,7 @@ enum class CreatureArchetype : std::uint8_t {
 
 // A row that is not a body at all — a town, a spire, a coin icon. It has no
 // procedural silhouette to fall back to; if its art is missing the consumer
-// draws its own mark (kLandmarkDraw's glyph circle, an ImGui blank).
+// draws its own mark (kSquadDraw's glyph circle, an ImGui blank).
 inline constexpr std::uint8_t kNoBody = 0xFF;
 
 // (width, height) billboard multipliers per body plan — how much quad one unit

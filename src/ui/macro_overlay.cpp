@@ -19,7 +19,7 @@
 #include "macro/squad.h"   // record_deed — THE deed door (S20.1)
 #include "macro/landmark_iter.h"
 #include "macro/spires.h"   // spire_orb — ОДИН вывод об орбе (M-233 п.8)
-#include "ui/landmark_draw.h"
+#include "ui/squad_draw.h"
 #include "macro/markers.h"
 #include "macro/tree_layer.h"
 #include "tables/npc.h"
@@ -141,23 +141,26 @@ ImU32 figure_tint_for_time(const WorldTime& time) {
                     channel(kNightTintB), 255);
 }
 
-// Universal landmark scale. `zoom` is pixels-per-cell (range [4, 96]); a
-// landmark sprite is world-anchored at kLandmarkCellSpan cells wide, so it
-// shrinks with the map on zoom-out rather than growing relative to the terrain.
+// ОДНА ФОРМУЛА РАЗМЕРА НА ВСЕ РОДА (слияние проходов 2026-10-19). Прежде их
+// было две: у места `zoom * kLandmarkCellSpan` с полом и потолком своей
+// строки, у фигурки — свой `clamp(zoom, 12, 56)` мимо всякой строки.
+// Разводило их ровно одно число — сколько клеток занимает метка, — и оно
+// стало КОЛОНКОЙ ГРУППЫ (`cellSpan@src/ui/squad_draw.h`): это и есть ответ
+// владельца на «у городов спрайт вылезает на соседние клетки».
 //
-// The readable-size floor (minPx) keeps icons legible in the mid-zoom range,
-// but that floor is itself capped at kLandmarkMaxCells cells: without the cap,
-// at deep zoom-out the fixed 28-px floor spanned ~7 cells (4-px cells) and read
-// as a giant blob — the reported "cities grow on zoom-out" bug. Capping the
-// floor to a few cells lets the icon keep shrinking with the map instead of
-// plateauing into a blob, while staying readable wherever the map is dense
-// enough to warrant it. maxPx bounds the zoom-in end so a city never devours
-// the viewport.
-inline constexpr float kLandmarkCellSpan = 2.0f;  // sprite covers this many cells
-inline constexpr float kLandmarkMaxCells = 3.0f;  // readable floor may not exceed this
-inline float landmark_size(float zoom, float minPx, float maxPx) {
-    const float world   = zoom * kLandmarkCellSpan;
-    const float floorPx  = std::min(minPx, zoom * kLandmarkMaxCells);
+// `zoom` — пикселей на клетку (диапазон [4, 96]); метка привязана к МИРУ на
+// `cellSpan` клеток, поэтому на отдалении она ужимается вместе с картой, а не
+// растёт относительно терраина.
+//
+// Пол читаемости (minPx) держит иконку различимой на средних зумах, но сам
+// ограничен kMarkMaxCells клетками: без этой крышки на сильном отдалении
+// фиксированный пол 28 px занимал ~7 клеток (клетка 4 px) и читался
+// гигантским пятном — тот самый баг «города растут при отдалении». Потолок
+// maxPx держит ближний конец, чтобы город не сожрал экран.
+inline constexpr float kMarkMaxCells = 3.0f;  // readable floor may not exceed this
+inline float mark_size(float zoom, float cellSpan, float minPx, float maxPx) {
+    const float world   = zoom * cellSpan;
+    const float floorPx = std::min(minPx, zoom * kMarkMaxCells);
     return std::clamp(world, floorPx, maxPx);
 }
 
@@ -320,98 +323,119 @@ void draw_macro_overlay(const MacroWorld& mw,
     }
 
 
-    // Landmarks — ONE data-driven loop: the visitor enumerates, the
-    // presentation row (ui/landmark_draw.h) sizes and gates, the sprite
-    // variant IS the state (a consumed spire draws its dark tower — same
-    // rule as the night glow, macro_lighting.cpp), and the glyph-circle
-    // fallback takes its colour from the ONE authority, the registry row.
-    for_each_landmark(mw, [&](const LandmarkView& lm) {
-        // The knowledge law (macro/knowledge.h): terra incognita hides even
-        // the glyph; an Explored landmark is MEMORY and draws faded — same
-        // sprite, same ONE registry colour, alpha alone says "remembered".
-        const std::uint8_t know = gs.knowledge.at(lm.x, lm.y);
-        if (know == kKnowledgeUnknown) return;
-        const bool faded = know < kKnowledgeVisible;
-        const LandmarkDrawRow& row = landmark_draw(lm.type);
-        if (row.minZoom > 0.0f && zoom < row.minZoom) return;
-        ImVec2 p = world_to_screen(float(lm.x) + 0.5f, float(lm.y) + 0.5f,
-                                   camX, camY, zoom, viewW, viewH, mapW, mapH);
-        if (!on_screen(p, viewW, viewH, 128.0f)) return;
-        const float size = landmark_size(zoom, row.basePx, row.maxPx);
-        const std::uint32_t argb = landmark_def(lm.type).color;
-        const ImU32 fallback = IM_COL32((argb >> 16) & 0xFF, (argb >> 8) & 0xFF,
-                                        argb & 0xFF, faded ? 120 : 230);
-        draw_sprite(dl, p, lm.depleted ? row.spriteDepleted : row.sprite,
-                    size, fallback,
-                    faded ? IM_COL32(255, 255, 255, 120) : IM_COL32_WHITE);
-        if (row.labelZoom > 0.0f && zoom >= row.labelZoom && lm.name[0]) {
-            ImVec2 ts = ImGui::CalcTextSize(lm.name);
-            ImVec2 tp(p.x - ts.x * 0.5f, p.y - size * 0.5f - ts.y - 2.0f);
-            dl->AddRectFilled(ImVec2(tp.x - 3, tp.y - 1),
-                              ImVec2(tp.x + ts.x + 3, tp.y + ts.y + 1),
-                              IM_COL32(0, 0, 0, faded ? 90 : 140), 2.0f);
-            dl->AddText(tp, IM_COL32(255, 245, 200, faded ? 140 : 255),
-                        lm.name);
-        }
-    });
-
-    // NPCs — real character PNGs, sized to fit ONE cell (NPCs are mobile
-    // entities, not landmarks; the 256-px sprite is rendered to occupy
-    // exactly the cell footprint = `zoom` pixels). Squad NPCs draw a
-    // 3-figure cluster around the cell centre. Hidden at low zoom so
-    // the procedural feature shaders (trees / mountains / roads) read
-    // cleanly — at zoom < 10 px/cell a 256-px sprite shrinks to a
-    // monochromatic blob that visually competes with the GLSL features.
-    if (zoom >= 10.0f) {
+    // ── ОДИН ПРОХОД НА ВСЕ СКВАДЫ ─────────────────────────────────────────
+    // Вердикт владельца 2026-10-19, дословно: «У НАС ЕДИНАЯ ССИЕМА СКВАДОВ
+    // ПОЧЕМУ ИХ НЕ НАРИСУЕТ?». Здесь стояли ДВА прохода — обход мест
+    // `for_each_landmark` своей строкой и цикл по слотам строкой тела, — а
+    // между ними ранний выход по архетипу, чтобы город не нарисовался
+    // ДВАЖДЫ. Гейт был симптомом: он лечил существование второго прохода.
+    //
+    // Проход теперь один, по слотам гладкой памяти, и ни один сквад из него
+    // не выпадает по роду. Чем город отличается от ходока — КОЛОНКИ, и
+    // групповые из них ключуются архетипом (`ui/squad_draw.h`): сколько
+    // клеток занимает метка, помнит ли её карта, откуда берётся картинка и
+    // каким слоем она ложится.
+    {
         MacroStore& st = *mw.store;
-        // Обход живых слотов store (1е, голый цикл); игрок — свой маркер,
-        // и под вселением тоже: слот флага + колонка ординала.
+        // Игрок — свой маркер, и под вселением тоже: слот флага + колонка.
         const std::uint16_t flagSlot = [&]() -> std::uint16_t {
             const MacroHandle h = player_flag_handle(gs);
             return st.valid(h) ? h.slot : kMacroNoSlot;
         }();
+        // ДВА КАНАЛА — ЭТО ПОРЯДОК, А НЕ ВТОРОЙ ПРОХОД. Один проход по слотам
+        // даёт порядок РАЗДАЧИ СЛОТОВ, а он законом не является; слой строки
+        // группы кладёт метку под фигурку, поэтому артель, вошедшая в город,
+        // не пропадает под его спрайтом в 192 px.
+        dl->ChannelsSplit(int(kMapDrawLayers));
         for (std::uint32_t s32 = 0; s32 < kUnifiedCap; ++s32) {
             const std::uint16_t slot = std::uint16_t(s32);
             if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
             if (slot == flagSlot || st.playerFlag[slot].home != 0)
                 continue;
-            // ТЕЛО МЕСТА — НЕ ФИГУРКА (ось рода, грабля флипа M-90):
-            // место рисует СВОЙ проход (for_each_landmark), и однажды
-            // освежённые pools сделали бы город второй фигуркой здесь.
-            if (squad_archetype(SquadType(st.runtime[slot].squadType)) == SquadArchetype::Place)
-                continue;
+            const SquadType type = SquadType(st.runtime[slot].squadType);
+            const SquadDrawRow& row = squad_draw(type);
+            const ArchetypeDrawRow& grp = archetype_draw(squad_archetype(type));
+            if (row.minZoom > 0.0f && zoom < row.minZoom) continue;
+            // Положение — ГЛАЗ представления (M-244a): у ходока он догоняет
+            // клетку, у неподвижного совпадает с ней (рождение ставит долю
+            // клетки в ноль — `place_birth.h`, «рождение — центр клетки»).
+            // Непраймленный кадр ещё не ходил tick_macro_eyes и честно
+            // рисует по клетке.
             const auto& cell = st.cell[slot];
-            const auto& kind = st.kind[slot];
-            const auto& hp   = st.pools[slot];
-            if (hp.hp <= 0) continue;
-            // Глаз — кэш представления (M-244a); непраймленный кадр ещё
-            // не ходил tick_macro_eyes и честно рисует по клетке.
             const float drawX = eyes.primed ? eyes.x[slot]
                                             : float(ecs::cell_x(cell, gs.mapW));
             const float drawY = eyes.primed ? eyes.y[slot]
                                             : float(ecs::cell_y(cell, gs.mapW));
-            // A living walker is the WORLD, not the map: memory keeps no
-            // people. Only cells in the player's current sight draw theirs.
-            if (gs.knowledge.at(int(std::floor(drawX)), int(std::floor(drawY)))
-                != kKnowledgeVisible)
-                continue;
+            const int cx = int(std::floor(drawX));
+            const int cy = int(std::floor(drawY));
+            // ЗАКОН ЗНАНИЯ (macro/knowledge.h): неизвестная клетка не кажет
+            // даже глифа. Дальше решает колонка ГРУППЫ — здание есть факт
+            // карты и рисуется поблёкшим по памяти, а живого человека память
+            // не держит, он виден только в прямом виду.
+            const std::uint8_t know = gs.knowledge.at(cx, cy);
+            if (know == kKnowledgeUnknown) continue;
+            const bool faded = know < kKnowledgeVisible;
+            if (faded && !grp.remembered) continue;
             // +0.5 so the sprite sits at the CELL CENTRE (the GLSL grid
             // bounds cells at integer worldPx, so cell (X,Y) spans
             // [X..X+1, Y..Y+1] and its centre is at X+0.5, Y+0.5).
-            ImVec2 p = world_to_screen(drawX + 0.5f, drawY + 0.5f,
-                                       camX, camY, zoom, viewW, viewH, mapW, mapH);
-            if (!on_screen(p, viewW, viewH, 64.0f)) continue;
-            const NPCType t = NPCType(kind.type);
-            const SpriteId sid = npc_sprite(t);
-            const ImU32 col = npc_color(t);
-            // One cell wide; clamp so it stays readable on the world map
-            // and never devours surrounding cells when zoomed in.
-            const float size = std::clamp(zoom, 12.0f, 56.0f);
-            // ONE walker, ONE sprite — a squad is not drawn as a crowd of
-            // figures. Its kind IS its picture; how many souls march under it
-            // is the creatures's business, not the map's (owner, 2026-08-20).
-            draw_sprite(dl, p, sid, size, col, figureTint);
+            const ImVec2 p = world_to_screen(drawX + 0.5f, drawY + 0.5f,
+                                             camX, camY, zoom, viewW, viewH,
+                                             mapW, mapH);
+            const float size = mark_size(zoom, grp.cellSpan, row.basePx,
+                                         row.maxPx);
+            // Отсев за экраном — ПО САМОЙ МЕТКЕ: половина её размера плюс
+            // строка подписи над ней. Прежде здесь стояли два числа с потолка
+            // (128 у мест, 64 у фигурок) — запас на глаз, у которого не было
+            // вывода ни там, ни там.
+            if (!on_screen(p, viewW, viewH,
+                           size * 0.5f + ImGui::GetTextLineHeightWithSpacing()))
+                continue;
+            dl->ChannelsSetCurrent(int(grp.layer));
+            if (grp.pictureFromBody) {
+                // Картинка с ТЕЛА: сквад рисуется своим вожаком (СПРАЙТ-ЗАКОН
+                // §7). Тело без здоровья картинки не даёт — это труп, которого
+                // свип ещё не убрал.
+                if (st.pools[slot].hp <= 0) continue;
+                const NPCType bodyType = NPCType(st.kind[slot].type);
+                // ONE walker, ONE sprite — a squad is not drawn as a crowd of
+                // figures. Its kind IS its picture; how many souls march under
+                // it is the creatures's business, not the map's (owner,
+                // 2026-08-20).
+                draw_sprite(dl, p, npc_sprite(bodyType), size,
+                            npc_color(bodyType), figureTint);
+                continue;
+            }
+            // Картинка со строки РОДА; вариант спрайта ЕСТЬ состояние
+            // (выкачанный шпиль рисует тёмную башню — тот же закон, что у
+            // ночного свечения, macro_lighting.cpp), а глиф-кружок берёт цвет
+            // у ОДНОГО источника — строки реестра.
+            const std::uint32_t argb = landmark_def(type).color;
+            const ImU32 fallback = IM_COL32((argb >> 16) & 0xFF,
+                                            (argb >> 8) & 0xFF, argb & 0xFF,
+                                            faded ? 120 : 230);
+            draw_sprite(dl, p,
+                        spire_orb(mw, cx, cy).depleted ? row.spriteDepleted
+                                                       : row.sprite,
+                        size, fallback,
+                        faded ? IM_COL32(255, 255, 255, 120) : IM_COL32_WHITE);
+            if (row.labelZoom > 0.0f && zoom >= row.labelZoom) {
+                // Безымянный показывает label своей строки реестра — один
+                // закон показа на все рода.
+                const char* name = st.name[slot].text;
+                if (name[0] == '\0') name = landmark_def(type).label.data();
+                if (name[0] == '\0') continue;
+                const ImVec2 ts = ImGui::CalcTextSize(name);
+                const ImVec2 tp(p.x - ts.x * 0.5f,
+                                p.y - size * 0.5f - ts.y - 2.0f);
+                dl->AddRectFilled(ImVec2(tp.x - 3, tp.y - 1),
+                                  ImVec2(tp.x + ts.x + 3, tp.y + ts.y + 1),
+                                  IM_COL32(0, 0, 0, faded ? 90 : 140), 2.0f);
+                dl->AddText(tp, IM_COL32(255, 245, 200, faded ? 140 : 255),
+                            name);
+            }
         }
+        dl->ChannelsMerge();
     }
 
     // ── Universal world markers (quest "!", POI ★, danger, waypoint ◆). A
@@ -442,8 +466,15 @@ void draw_macro_overlay(const MacroWorld& mw,
                                        camX, camY, zoom, viewW, viewH, mapW, mapH);
             if (!on_screen(p, viewW, viewH, 96.0f)) continue;
             const ImU32 col   = marker_imcol(kMarkerColor[si]);
-            // Float clear of anything on the cell (a city sprite's half-height).
-            const float above = landmark_size(zoom, 28.0f, 192.0f) * 0.5f + r + 4.0f;
+            // Float clear of anything on the cell (a city sprite's half-height)
+            // — и спрошено это у САМОЙ строки города, а не двумя её числами,
+            // переписанными сюда литералами: пин обязан подниматься над тем,
+            // что карта рисует СЕГОДНЯ.
+            const SquadDrawRow& cityRow = squad_draw(SquadType::City);
+            const float above =
+                mark_size(zoom,
+                          archetype_draw(SquadArchetype::Place).cellSpan,
+                          cityRow.basePx, cityRow.maxPx) * 0.5f + r + 4.0f;
             const ImVec2 c(p.x, p.y - above);                  // pin centre
             // Dark disc + coloured ring so the pin reads over any biome.
             dl->AddCircleFilled(c, r, IM_COL32(0, 0, 0, 150), 20);
@@ -825,7 +856,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
 
                     // Picture: the kind's drawn PNG — a squad from the NPC
                     // sprite bank, a landmark from THE same presentation row
-                    // the map draws (kLandmarkDraw, depleted variant and
+                    // the map draws (kSquadDraw, depleted variant and
                     // all). Kinds without art fall back to the registry tile
                     // (colour + glyph), same law as the map's glyph circle.
                     {
@@ -834,8 +865,8 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                         if (isSquad) {
                             sp = sprite_get(npc_sprite(t));
                         } else {
-                            const LandmarkDrawRow& drow =
-                                kLandmarkDraw[std::size_t(lmKind)];
+                            const SquadDrawRow& drow =
+                                kSquadDraw[std::size_t(lmKind)];
                             // Выкачанность — ОДИН вывод на весь мир
                             // (spire_orb@src/macro/spires.h, M-233 п.8); здесь
                             // стояло своё написание, четвёртое по счёту.

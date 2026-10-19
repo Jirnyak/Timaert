@@ -12,7 +12,7 @@
 #include "tables/codex.h"
 #include "macro/landmark_registry.h"
 #include "macro/landmark_iter.h"
-#include "ui/landmark_draw.h"
+#include "ui/squad_draw.h"
 #include "tables/npc.h"
 #include "tables/commodity.h"   // the raw rows the scrap variant byte names
 #include "macro/economy.h"

@@ -7,7 +7,7 @@
 #include "macro/markers.h"
 #include "macro/player_entity.h"
 #include "macro/state.h"
-#include "ui/landmark_draw.h"
+#include "ui/squad_draw.h"
 #include "ui/screens.h"
 
 #include "imgui.h"
@@ -180,7 +180,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
         const std::uint8_t know = gs.knowledge.at(lm.x, lm.y);
         if (know == kKnowledgeUnknown) return;
         const bool faded = know < kKnowledgeVisible;
-        const LandmarkDrawRow& row = landmark_draw(lm.type);
+        const SquadDrawRow& row = squad_draw(lm.type);
         const ImVec2 p = to_screen(float(lm.x) + 0.5f, float(lm.y) + 0.5f, st,
                                    zoomLogical, viewW, viewH, mapW, mapH);
         if (p.x < -64 || p.x > viewW + 64 || p.y < -64 || p.y > viewH + 64)
@@ -286,7 +286,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
         for (std::size_t t = 0; t < std::size_t(SquadType::Count); ++t) {
             if (discovered[t] == 0) continue;
             const LandmarkDef& def = kLandmarks[t];
-            const LandmarkDrawRow& row = kLandmarkDraw[t];
+            const SquadDrawRow& row = kSquadDraw[t];
             const ImVec2 cur = ImGui::GetCursorScreenPos();
             chart_shape(wdl, ImVec2(cur.x + sw, cur.y + rowH * 0.42f),
                         row.mini, sw, argb_im(def.color, 230),
