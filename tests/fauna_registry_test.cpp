@@ -76,13 +76,29 @@ int main() {
                             std::uint16_t(sm::NPCType::Guard),
                             std::uint16_t(sm::NPCType::Sorceress),
                             std::uint16_t(sm::NPCType::Merchant)}) {
-        CHECK(sm::is_folk_kind(k), "народ — это строка природы, не каталога");
-        CHECK(!sm::is_fauna_kind(k), "и народ не живность");
+        CHECK(sm::is_folk_kind(k), "народ — это архетип строки, не каталог");
+        CHECK(sm::npc_archetype(sm::NPCType(k)) == sm::ObjectArchetype::Folk,
+              "и тот же ответ даёт сама лестница");
     }
+    // ОСЬ РАЗОБРАЛА СВАЛКУ, И СВИДЕТЕЛЬ ТЕПЕРЬ ЭТО ВИДИТ (M-295): до наряда
+    // волк и конь несли ОДНУ колонку `NpcNature::Fauna` и были для мира
+    // неразличимы; здесь стоял `is_fauna_kind` на обоих. Дверь снесена (ноль
+    // продакшен-читателей), а вопрос стал точнее — у них РАЗНЫЕ архетипы.
+    CHECK(sm::npc_archetype(sm::NPCType::Wolf) == sm::ObjectArchetype::Animal,
+          "волк — животное нашего мира");
+    CHECK(sm::npc_archetype(sm::NPCType::Horse)
+              == sm::ObjectArchetype::Livestock,
+          "конь — скот, и это НЕ тот же архетип, что у волка");
+    CHECK(sm::npc_archetype(sm::NPCType::Goblin)
+              == sm::ObjectArchetype::Monster,
+          "гоблин — разумная тварь, а не зверь (ось по РАЗУМУ, не по рукам)");
+    CHECK(sm::npc_archetype(sm::NPCType::Lich) == sm::ObjectArchetype::Void,
+          "лич — хтонь");
     for (std::uint16_t k : {std::uint16_t(sm::NPCType::Wolf),
-                            std::uint16_t(sm::NPCType::Horse)}) {
-        CHECK(sm::is_fauna_kind(k), "живность — живность");
-        CHECK(!sm::is_folk_kind(k), "и не народ");
+                            std::uint16_t(sm::NPCType::Horse),
+                            std::uint16_t(sm::NPCType::Goblin),
+                            std::uint16_t(sm::NPCType::Lich)}) {
+        CHECK(!sm::is_folk_kind(k), "и ни один из них не народ");
     }
 
     // ── a kind that names no row at all -> nullptr ───────────────────────────
@@ -132,7 +148,7 @@ int main() {
             std::uint32_t rng = 0x5EED0000u ^ salt;
             for (int i = 0; i < 4096; ++i) {
                 for (const auto& p : sm::roll_spawns(ctx, rng)) {
-                    if (p.entry) seen[std::size_t(p.entry->type)] = true;
+                    if (p.entry) seen[std::size_t(p.entry->row)] = true;
                 }
             }
         };
@@ -167,12 +183,12 @@ int main() {
             if (e == nullptr || e->weight == 0) continue;   // named-only rows
             ++reachable;
             const bool crowdGround =
-                (sm::npc_def(e->type).habitat & crowdUnion) != 0;
-            viaCrowd += crowdGround && !seen[std::size_t(e->type)] ? 1 : 0;
-            CHECK(seen[std::size_t(e->type)] || crowdGround,
+                (sm::npc_def(e->row).habitat & crowdUnion) != 0;
+            viaCrowd += crowdGround && !seen[std::size_t(e->row)] ? 1 : 0;
+            CHECK(seen[std::size_t(e->row)] || crowdGround,
                    "a rollable catalog row has ground SOMETHING can raise it "
                    "from: roll_spawns or a settlement crowd stripe");
-            if (!seen[std::size_t(e->type)] && !crowdGround) {
+            if (!seen[std::size_t(e->row)] && !crowdGround) {
                 std::printf("  unreachable: %s\n", e->id);
             }
         }
@@ -212,7 +228,7 @@ int main() {
                 // сравниваются те же два читателя одной колонки, только
                 // числами, а имя переводится на границе — здесь.
                 if (p.faction != std::uint16_t(sm::faction_index(
-                        sm::npc_def(p.entry->type).wildFaction))) {
+                        sm::npc_def(p.entry->row).wildFaction))) {
                     ++mismatched;
                 }
                 if (p.faction

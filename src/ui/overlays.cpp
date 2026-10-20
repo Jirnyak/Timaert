@@ -833,7 +833,7 @@ namespace sm::ui
                             if (def && def->description
                                 && def->description[0])
                                 ImGui::TextWrapped("%s", def->description);
-                            if (def && item_type_consumable(def->type)
+                            if (def && archetype_consumable(item_archetype(*def))
                                 && ImGui::SmallButton("Use"))
                             {
                                 // ГЛОТОК — СПОСОБНОСТЬ (CANON S13, вердикт

@@ -147,10 +147,10 @@ bool gen_delivery(const QuestGenCtx& ctx, Quest& q) {
     int bestIdx = -1;
     int bestClass = 4;
     for (int i = 0; i < kCommodityCount; ++i) {
-        // Город просит ТОВАР, а не сырьё: категория каталога и есть ответ
-        // (items.h ItemType — ярус товарной таблицы умер 2026-09-18).
+        // Город просит ТОВАР, а не сырьё: архетип каталога и есть ответ
+        // (ярус товарной таблицы умер 2026-09-18, ось архетипов — M-295).
         const ItemDef* d = item_def(kCommodities[i].id);
-        if (!d || d->type == ItemType::Material) continue;
+        if (!d || item_archetype(*d) == ObjectArchetype::Material) continue;
         const int cls = stock_class(ctx.store->count(kCommodities[i].id));
         if (cls < bestClass) {
             bestClass = cls;

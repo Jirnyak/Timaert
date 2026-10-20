@@ -188,8 +188,9 @@ void test_creature_area_repair_keeps_the_summary() {
 void test_each_creature_column_has_an_anchor() {
     Inventory bag{};
 
-    // ПРИРОДА: зверь есть голова, но не душа. Это колонка `kNpcNature`,
-    // а не счёт, — и ровно это мутация «folkHeads = n» и ломала.
+    // АРХЕТИП: зверь есть голова, но не душа. Это ступень ЛЕСТНИЦЫ
+    // (`npc_archetype`, M-295), а не счёт, — и ровно это мутация
+    // «folkHeads = n» и ломала.
     CHECK(creatures_push_stack(bag, NPCType::Wolf, 1, 4), "четыре волка");
     settled(bag, "якоря: звери");
     CHECK(bag.sum().heads == 4 && bag.sum().folkHeads == 0,

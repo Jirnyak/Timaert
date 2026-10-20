@@ -1737,7 +1737,8 @@ DefenseSum body_defense(const Defense& row, const Skills& skills,
 // Половина этой сборки, нужная панели и свидетелям поимённо: что даёт НАДЕТОЕ.
 DefenseSum worn_defense(const Gear& g, const Inventory& inv,
                         const Skills& skills, DamageType type);
-// Гейт строки «Без брони»: надето ли хоть что-то рода `ItemType::Armor`.
+// Гейт строки «Без брони»: надето ли хоть что-то архетипа
+// `ObjectArchetype::Armor`.
 bool wears_armor(const Gear& g, const Inventory& inv);
 
 // ── ПРОСТОЙ БРОНИ — ВТОРОЙ СУБЪЕКТ ЗАКОНА ВОССТАНОВЛЕНИЯ (M-194) ──────────

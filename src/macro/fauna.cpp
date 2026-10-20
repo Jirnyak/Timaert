@@ -178,7 +178,7 @@ std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
         const NpcTypeDef& row = kNpcTypeDefs[i];
         if (row.weight == 0) continue;   // never rolled blind (the row's law)
         w[i] = std::uint32_t(row.weight)
-             * danger_match_weight(spawn_strength(row.type), ctx.danger);
+             * danger_match_weight(spawn_strength(row.row), ctx.danger);
         total += w[i];
     }
     if (total == 0) { rngState = r.state; return out; }

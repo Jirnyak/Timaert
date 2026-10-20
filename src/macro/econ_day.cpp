@@ -283,7 +283,7 @@ const std::array<int, 3>& faction_mint_rows(int factionIdx) {
 
 bool commodity_is_comfort(int commodityIdx) {
     const ItemDef* d = item_def_at(commodity_item_index(commodityIdx));
-    return d && d->type == ItemType::Goods && d->value > 0;
+    return d && item_archetype(*d) == ObjectArchetype::Goods && d->value > 0;
 }
 
 int comfort_row_count() {
@@ -315,7 +315,7 @@ int hunger_commodity_ordinal() {
         int found = -1, count = 0;
         for (int c = 0; c < kCommodityCount; ++c) {
             const ItemDef* d = item_def_at(commodity_item_index(c));
-            if (!d || d->type != ItemType::Food) continue;
+            if (!d || item_archetype(*d) != ObjectArchetype::Food) continue;
             if (found < 0) found = c;
             ++count;
         }

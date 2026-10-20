@@ -114,7 +114,9 @@ void test_scarcity_shape() {
         for (int c = 0; c < kCommodityCount; ++c) {
             const int idx = item_index(kCommodities[c].id);
             const ItemDef* d = item_def_at(idx);
-            if (!d || d->type != ItemType::Goods) continue;
+            if (!d || sm::item_archetype(*d) != sm::ObjectArchetype::Goods) {
+                continue;
+            }
             anyGoods = true;
             for (const ItemPart& part : item_parts(idx)) {
                 if (int(part.def) == hungerIdx) foodFree = false;

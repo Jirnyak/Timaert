@@ -111,8 +111,9 @@ void test_table_laws() {
         // БЛАГА (Goods), которые сделаны руками. До 2026-09-20 пища лежала в
         // Material и закон читался одной категорией — это было следствием
         // того, что мир считал едой только испечённый хлеб.
-        const bool worldMatter = cd && (cd->type == ItemType::Material
-                                        || cd->type == ItemType::Food);
+        const bool worldMatter = cd
+            && (sm::item_archetype(*cd) == sm::ObjectArchetype::Material
+                || sm::item_archetype(*cd) == sm::ObjectArchetype::Food);
         if (worldMatter) {
             CHECK(is_terminal(idx), "world matter is terminal — ore and food alike");
         } else {

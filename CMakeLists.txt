@@ -719,6 +719,12 @@ timaert_test(ordinal_space_test
         src/macro/anketa.cpp
         src/tables/items.cpp)
 
+# ЛЕСТНИЦА ОБЪЕКТА (M-295): отрезки архетипов, тождество воплощаемости с
+# адресом на всех 91 строке мира, якоря вердиктов владельца о составе.
+timaert_test(object_ladder_test
+    SOURCES
+        src/tables/items.cpp)
+
 timaert_test(save_roundtrip_test
     SOURCES
         # the deposit fixture sizes its vein FIELDS through the layer's door

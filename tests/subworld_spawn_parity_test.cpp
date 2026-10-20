@@ -1147,7 +1147,7 @@ int main() {
             for (std::uint32_t seed = 1; seed <= 64; ++seed) {
                 std::uint32_t rs = seed * 2654435761u;
                 for (const auto& pk : sm::roll_spawns(c, rs)) {
-                    sum += double(sm::spawn_strength(pk.entry->type));
+                    sum += double(sm::spawn_strength(pk.entry->row));
                     ++n;
                 }
             }

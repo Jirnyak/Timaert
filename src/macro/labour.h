@@ -24,7 +24,7 @@
 
 #include <algorithm>
 
-#include "tables/npc.h"     // природа строки: кто есть народ (kNpcNature)
+#include "tables/npc.h"     // архетип строки: кто есть народ (is_folk_kind)
 #include "macro/state.h"   // worked_read — паства
 #include "macro/store.h"   // склад места — колонка его ТЕЛА (слот)
 #include "macro/world_row.h"          // count_human_souls / creature_count

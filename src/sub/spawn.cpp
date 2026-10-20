@@ -1155,7 +1155,7 @@ int spawn_dungeon_vermin(SubObjects& objs,
         const int npcLevel = normalize_soldier_level(
             int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f)));
         spawn_derived_body(objs,
-            BodySpec{f.type, fx, fy,
+            BodySpec{f.row, fx, fy,
                      p.faction, npcLevel,
                      seed ^ (std::uint32_t(placed) * 2654435761u),
                      /*combatant*/false},
@@ -1298,7 +1298,7 @@ void spawn_cell_npcs(SubObjects& objs,
         const int npcLevel = normalize_soldier_level(
             int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f)));
         spawn_derived_body(objs,
-            BodySpec{f.type, fx, fy,
+            BodySpec{f.row, fx, fy,
                      p.faction, npcLevel,
                      cellSeed ^ (std::uint32_t(budget) * 2654435761u),
                      /*combatant*/false},

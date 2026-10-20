@@ -250,7 +250,8 @@ inline CreaturesRange creatures_range(const Inventory& inv) {
 // природа Human, колонка жалованья, спина haulMult.
 
 // ЛЮДИ области — руки и рты ведомости труда, подсудимые суда крю. Зверь —
-// спина и рот, но не рука. Спрашивает ПРИРОДУ (kNpcNature), не границу —
+// спина и рот, но не рука. Спрашивает АРХЕТИП строки (`npc_archetype`), не
+// границу ординала —
 // и спрашивает её `slot_tally` у двери записи, а не этот проход (M-296).
 inline int count_human_souls(const Inventory& inv) {
     return int(inv.sum().folkHeads);

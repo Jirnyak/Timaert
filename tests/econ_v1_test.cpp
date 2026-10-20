@@ -134,7 +134,8 @@ int main() {
         // переехал сюда целиком, не ослабнув.
         const ItemDef* cd = item_def(kCommodities[i].id);
         if (!cd) return fail("commodity id names no catalog row");
-        if ((i < kRawCommodityCount) != (cd->type == ItemType::Material)) {
+        if ((i < kRawCommodityCount)
+            != (sm::item_archetype(*cd) == sm::ObjectArchetype::Material)) {
             return fail("raw rows must be exactly the first kRawCommodityCount");
         }
         // The PRICE is not a column here: the one anchor is the same row's
@@ -153,7 +154,8 @@ int main() {
             return fail("recipe output names no catalog row");
 
         const ItemDef* od = item_def(kRecipes[r].output);
-        if (!isMint && od && od->type == ItemType::Material) {
+        if (!isMint && od
+            && sm::item_archetype(*od) == sm::ObjectArchetype::Material) {
             return fail("recipe may not output raw (only deposits create raw)");
         }
         for (int r2 = r + 1; r2 < kRecipeCount; ++r2) {

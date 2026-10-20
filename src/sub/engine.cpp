@@ -263,7 +263,7 @@ bool token_equals(const char* raw, const char* lit) {
 // what a spawn command that names nothing recognisable should do.
 NPCType npc_type_from_token(const char* token) {
     for (const NpcTypeDef& row : kNpcTypeDefs) {
-        if (row.id && token_equals(token, row.id)) return row.type;
+        if (row.id && token_equals(token, row.id)) return row.row;
     }
     return NPCType::Bandit;
 }

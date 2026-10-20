@@ -498,9 +498,12 @@ void write_inventory(Writer& w, const Inventory& inv) {
         // Fail-closed НА ЗАПИСИ (закон бывшего write_squad): строка, которой
         // нет ни в предметном каталоге, ни в каталоге существ, — порча, и
         // файл отказывается, а не увозит призрака.
-        const bool knownRow = world_row_is_item(s.def)
-            ? item_def_at(int(s.def)) != nullptr
-            : world_row_is_creature(s.def);
+        // ВОПРОС ЗДЕСЬ АДРЕСНЫЙ, И ОН УЖЕ ИМЕЕТ СВОЮ ДВЕРЬ (упрощение M-295).
+        // Здесь стояла развилка по половине пространства с переспросом
+        // `item_def_at(...) != nullptr` в предметной ветке — а `world_row_is_item`
+        // И ЕСТЬ «ординал ниже размера каталога», то есть ветка проверяла ровно
+        // то, что уже проверила сама дверь. Один вопрос — одна дверь.
+        const bool knownRow = world_row_exists(s.def);
         if (!knownRow) {
             w.ok = false;
             return;
@@ -579,9 +582,12 @@ void read_inventory(Reader& r, Inventory& inv) {
         // different game — refuse it out loud rather than carry a phantom.
         // Строка существа легальна (M-71): она живёт за предметным
         // каталогом, но внутри world_row_count().
-        const bool knownRow = world_row_is_item(s.def)
-            ? item_def_at(int(s.def)) != nullptr
-            : world_row_is_creature(s.def);
+        // ВОПРОС ЗДЕСЬ АДРЕСНЫЙ, И ОН УЖЕ ИМЕЕТ СВОЮ ДВЕРЬ (упрощение M-295).
+        // Здесь стояла развилка по половине пространства с переспросом
+        // `item_def_at(...) != nullptr` в предметной ветке — а `world_row_is_item`
+        // И ЕСТЬ «ординал ниже размера каталога», то есть ветка проверяла ровно
+        // то, что уже проверила сама дверь. Один вопрос — одна дверь.
+        const bool knownRow = world_row_exists(s.def);
         if (!knownRow || s.count <= 0
             || slot >= std::uint16_t(kMaxInventorySlots)) {
             r.ok = false;

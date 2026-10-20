@@ -118,7 +118,7 @@ std::string use_item(Inventory& inv, const std::string& itemId, PlayerCombatSlic
 
     const ItemDef* def = item_def(itemId);
     if (!def) return {};
-    if (!item_type_consumable(def->type)) return {};
+    if (!archetype_consumable(item_archetype(*def))) return {};
 
     std::string msg;
     auto append = [&](const std::string& part) {
@@ -316,7 +316,7 @@ BonusTotals worn_bonuses(const Gear& g, const Inventory& inv) {
 // носишь иначе он неработает»). ОРУЖИЕ доспехом не считается — владелец
 // сказал это прямо («даже с учётом надетого оружия норм»), поэтому монах с
 // посохом остаётся без брони, а монах в кольчуге нет. Вопрос задаётся
-// КОЛОНКЕ строки (`ItemType::Armor`), а не имени вещи.
+// АРХЕТИПУ строки (`ObjectArchetype::Armor`), а не имени вещи.
 bool wears_armor(const Gear& g, const Inventory& inv) {
     for (int i = 0; i < kEquipCells; ++i) {
         const std::uint16_t v = g.worn[std::size_t(i)];
@@ -324,7 +324,7 @@ bool wears_armor(const Gear& g, const Inventory& inv) {
         const ItemRef& r = inv.slots[std::size_t(v)];
         if (r.empty()) continue;
         if (const ItemDef* def = item_def_at(int(r.def))) {
-            if (def->type == ItemType::Armor) return true;
+            if (item_archetype(*def) == ObjectArchetype::Armor) return true;
         }
     }
     return false;
@@ -371,7 +371,10 @@ float worn_armor_weight(const Gear& g, const Inventory& inv) {
         const ItemRef& r = inv.slots[std::size_t(v)];
         if (r.empty()) continue;
         const ItemDef* def = item_def_at(int(r.def));
-        if (def == nullptr || def->type != ItemType::Armor) continue;
+        if (def == nullptr
+            || item_archetype(*def) != ObjectArchetype::Armor) {
+            continue;
+        }
         kg += def->weight;
     }
     return kg;
@@ -430,7 +433,7 @@ const ItemDef* weapon_in_hand(const Gear& g, const Inventory& inv) {
         const ItemRef& r = inv.slots[std::size_t(v)];
         if (r.empty()) continue;
         if (const ItemDef* def = item_def_at(int(r.def))) {
-            if (def->type == ItemType::Weapon) return def;
+            if (item_archetype(*def) == ObjectArchetype::Weapon) return def;
         }
     }
     return nullptr;

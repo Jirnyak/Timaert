@@ -9,8 +9,13 @@
 // grant_affixes пишет в него). Каталог выдаёт ссылки на свои строки; анкета
 // их ХРАНИТ.
 //
-// ItemType order is save-relevant and fixed:
-//   ItemType { Weapon=0, Armor=1, Potion=2, Food=3, Material=4, Misc=5 }
+// ЧТО ЗА ВЕЩЬ — ОТВЕЧАЕТ ЛЕСТНИЦА, А НЕ СВОЁ ПЕРЕЧИСЛЕНИЕ (наряд M-295):
+// строка несёт ТИП (`tables/object_type.h`), тип несёт АРХЕТИП
+// (`tables/object_archetype.h`), и ось у объектов ОДНА на обе половины мира.
+// Здесь стоял `ItemType` — восемь родов предметной половины — и ровно та же
+// ступень лестницы звалась `NpcNature` у половины существ: один уровень, два
+// имени, поэтому прицепиться модулям было некуда ни к одной половине целиком.
+// Оба перечисления СЛИЛИСЬ в ось, а не переехали рядом с ней.
 // Stacking semantics: at most one entry per id (addItem stacks quantity).
 //
 // Catalog: the faction coin nominals, consumables (potion_hp/mp, food_meat),
@@ -22,13 +27,18 @@
 // 14 товаров при выведенном `kCommodityCount`). Смотреть таблицы.
 // Товар, который делает город, и товар в сумке игрока — ОДНА строка; id и веса
 // сходятся с commodity.h дословно (закон связи в econ_v1_test).
-// New rows APPEND — a saved ItemRef carries the ordinal.
+// НОВАЯ СТРОКА ВСТАЁТ В СВОЮ ГРУППУ, А НЕ В ХВОСТ. Здесь стояло «New rows
+// APPEND — a saved ItemRef carries the ordinal»: дописка в хвост была платой за
+// стабильность сохранённого ординала, а сейв ограничением не является вовсе
+// (§10). Порядок строк теперь ЗАКОН (лестница), и он прибит static_assert'ами
+// в `items.cpp`.
 
 #pragma once
 #include "core/dice.h"
 #include "tables/attributes.h"
 #include "tables/bonus.h"
 #include "tables/damage_types.h"
+#include "tables/object_type.h"   // ступени лестницы: тип строки и его архетип
 #include <cstdint>
 #include <span>
 #include <string>
@@ -36,47 +46,20 @@
 
 namespace sm {
 
-// КАТЕГОРИЯ ВЕЩИ — единственный словарь «что это такое» (владелец,
-// 2026-09-18: «у нас теперь просто система итемов единая и точка»). Категория
-// несёт ЯВНЫЙ СМЫСЛ, ведущий к канонической системе (AGENTS правило 9):
-//
-//   Material — РЕСУРСЫ: из них крафтят (составы kPartsAuthoring, добыча полей
-//              ресурсов). Эта половина закона работала правильно и раньше.
-//   Goods    — ТОВАРЫ: то, что мир ПРОИЗВОДИТ и в чём нуждается (лестница
-//              нужд, дань, рынок). До 2026-09-18 восемь произведённых строк и
-//              двенадцать монет лежали в Misc — то есть в категории «прочее»,
-//              у которой смысла нет по определению, и вопрос «что это» имел
-//              второй ответ в отдельной товарной таблице.
-//   Food     — ЕДА: та категория, в которой живёт ГОЛОДНАЯ строка лестницы.
-//   Weapon / Armor / Potion — что тело носит, надевает и пьёт.
-//   Misc     — честное «прочее»: вещь, которая не служит ни одной из систем
-//              выше (самоцвет из клада). Строка сюда попадает НАМЕРЕННО, а не
-//              потому, что её некуда было деть.
-enum class ItemType : std::uint8_t {
-    Weapon   = 0,
-    Armor    = 1,
-    Potion   = 2,
-    Food     = 3,
-    Material = 4,
-    Misc     = 5,
-    Goods    = 6,
-    // ЦЕННОСТЬ — РОД ВЕЩИ, А НЕ ФЛАГ НА ТОВАРЕ (владелец, 2026-09-26: «У
-    // МОНЕТЫ БУДЕТ ТЕГ дорогое или куренси или драгоценность»; «почему нельзя
-    // тип ценность?»). Заведён потому, что `Goods` отвечал СРАЗУ НА ДВА
-    // вопроса: «это товар, которого место хочет по лестнице нужд» и «это
-    // деньги». Пока монеты лежали в `Goods`, любой проход по товарам (спрос
-    // места, M-137) заставлял бы горожанина НУЖДАТЬСЯ В МОНЕТАХ по своей доле
-    // бюджета. Ничего «денежного» этот род не включает: платёж по-прежнему
-    // идёт плотностью стоимости (currency.h pay_value_dense), и монета
-    // выигрывает арифметикой веса, а не родом.
-    Currency = 7,
-};
+// (Перечисление `ItemType` стояло ЗДЕСЬ и умерло вместе с `NpcNature` в наряде
+//  M-295: это была ОДНА ступень лестницы, названная в коде дважды. Смыслы его
+//  родов никуда не делись — они стали архетипами оси и объяснены там, у
+//  значений: `tables/object_archetype.h`. Вердикт владельца 2026-10-20,
+//  дословно: «ну и да ясно вижу что групировки существ и типы предметов это
+//  явно архетипы».)
 
-// Can this kind be swallowed for its bonuses (use_item's gate, the UI's
-// "Use" button)? ONE answer — it used to be written out twice, in items.cpp
-// and in the inventory overlay.
-inline constexpr bool item_type_consumable(ItemType t) {
-    return t == ItemType::Potion || t == ItemType::Food;
+// Можно ли это ПРОГЛОТИТЬ за его бонусы (гейт `use_item`, кнопка «Use» в UI)?
+// ОДИН ответ — прежде он был выписан дважды, в items.cpp и в оверлее
+// инвентаря. Вопрос АРХЕТИПНЫЙ, и это видно по самим архетипам: `Potion` есть
+// «что потребляют за эффект», `Food` — «что потребляют за сытость», то есть
+// предикат читает ровно то, ради чего оба архетипа и существуют.
+inline constexpr bool archetype_consumable(ObjectArchetype a) {
+    return a == ObjectArchetype::Potion || a == ObjectArchetype::Food;
 }
 
 // How a weapon row's blow TRAVELS (owner verdicts 2026-09-09, CANON S14
@@ -114,7 +97,15 @@ inline constexpr int kMaxItemBonuses = kMaxItemAffixes;
 struct ItemDef {
     const char* id          = "";
     const char* name        = "";
-    ItemType    type        = ItemType::Misc;
+    // ВВЕРХ ПО ЛЕСТНИЦЕ — КОЛОНКА, И У НЕЁ НЕТ УМОЛЧАНИЯ СОЗНАТЕЛЬНО.
+    //
+    // Здесь стояло `= ItemType::Misc`, и это был немой дефект: строка,
+    // забывшая назвать свой род, МОЛЧА становилась свалочной. С архетипами
+    // цена выросла бы — «свалка» стала бы значить «объект-модуля нет» (ЗАКОН
+    // СЛОВАРЯ п.4 о немом `default:`). Умолчания больше нет: каталог авторится
+    // позиционно, поэтому строка без типа просто не соберётся, и компилятор
+    // спросит там, где комментарий не смог.
+    ObjectType  type;
     int         value       = 0;     // gold price
     float       weight      = 0.0f;  // kg per single
     const char* icon        = "?";   // unicode glyph
@@ -185,6 +176,15 @@ struct ItemDef {
     // ячейку, и range стал 0). Новая колонка ItemDef приписывается СЮДА.
     float         useSeconds = 0.0f;
 };
+
+// АРХЕТИП ЭТОЙ СТРОКИ — ОДНА ДВЕРЬ ВВЕРХ ПО ЛЕСТНИЦЕ, чтобы её читатели не
+// выписывали `object_type_archetype(d.type)` руками: выписанный подъём и есть
+// то место, где однажды кто-нибудь спросит ТИП там, где вопрос об АРХЕТИПЕ.
+// Живёт ЗДЕСЬ, у `ItemDef`, а не у оси: ось объектов не знает ни предметов, ни
+// существ, и знать не должна.
+inline constexpr ObjectArchetype item_archetype(const ItemDef& d) {
+    return object_type_archetype(d.type);
+}
 
 // An affix IS a bonus (tables/bonus.h `Bonus`): a row of the one registry and
 // how much of it. The name stays because "affix" is what a rolled modifier on
