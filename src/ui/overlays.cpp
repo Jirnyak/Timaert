@@ -1813,35 +1813,52 @@ namespace sm::ui
                 }
                 }   // acts & kMapActTrade
 
-                // Garrison — ростер контейнера. Безусловна у ОБОИХ: контейнер
-                // один на всё, что у сквада есть (ЗАКОН КОНТЕЙНЕРА), и «а у
-                // ходока гарнизона не бывает» есть ровно то сословие внутри
-                // контейнера, которого закон не признаёт.
+                // ── ДВЕ ВКЛАДКИ — ДВА ФИЛЬТРА ОДНОГО МАССИВА ─────────────
+                // Вердикт владельца 2026-10-20, дословно: «мне важно чтобы
+                // технически это было единая система но для интерфейсов и
+                // взаиодействий — например загрузка гарнизона и тд или
+                // тороговля — можно разбивать но чтобы было возможно всё всё
+                // равно … можно разные двери но на верхних уровнях уже».
+                //
+                // Значит разбиение законно ТОЛЬКО как вид: обе вкладки идут по
+                // ТЕМ ЖЕ 1024 слотам (`Inventory::slots`), различаются одним
+                // предикатом рода строки и берут имя ОДНОЙ дверью
+                // (`world_row_label@src/macro/world_row.h`). Второго хранилища
+                // нет ни у одной, сословий внутри контейнера нет (ЗАКОН
+                // КОНТЕЙНЕРА), и `?` на существе стал невыразим.
+                //
+                // Прежде `Garrison` обходил не слоты, а ПЕРЕЧЕНЬ РОДОВ, считая
+                // каждый сканом контейнера (`creature_count_of` × число родов,
+                // то есть родов × 1024 посещения слота на кадр); теперь это
+                // один проход по 1024. Строки с нулём у хайрабл-родов ушли —
+                // «кого можно нанять» отвечает вкладка Recruit, и это её
+                // вопрос, а не ростера.
                 const bool garrisonOpen = ImGui::BeginTabItem("Garrison", nullptr,
                                                               selected_tab(current, SettlementPanelTab::Garrison));
                 if (tab && ImGui::IsItemClicked())
                     *tab = SettlementPanelTab::Garrison;
                 if (garrisonOpen)
                 {
-                    ImGui::Text("Total: %d units", creature_count(sInv));
+                    const int units = creature_count(sInv);
+                    ImGui::Text("Total: %d units", units);
                     ImGui::Spacing();
                     if (ImGui::BeginTable("garrison", 2,
                                           ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
                     {
-                        for (int ti = 0; ti < npc_type_count(); ++ti)
+                        for (const ItemRef &it : sInv.slots)
                         {
-                            const NPCType t = npc_type_at(ti);
-                            const int count = creature_count_of(sInv, t);
-                            if (count <= 0 && !npc_hireable(t))
+                            if (it.empty() || !world_row_is_creature(it.def))
                                 continue;
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
-                            ImGui::Text("%s", npc_def(t).label);
+                            ImGui::Text("%s", world_row_label(it.def));
                             ImGui::TableNextColumn();
-                            ImGui::Text("%d", count);
+                            ImGui::Text("x%d", it.count);
                         }
                         ImGui::EndTable();
                     }
+                    if (units == 0)
+                        ImGui::TextDisabled("(no creatures)");
                     ImGui::EndTabItem();
                 }
 
@@ -1923,35 +1940,35 @@ namespace sm::ui
                 }
                 }   // acts & kMapActHire
 
-                // Inventory — тот же контейнер, тот же довод, что у Garrison.
+                // Inventory — ТОТ ЖЕ массив, обратный фильтр (см. Garrison).
                 const bool inventoryOpen = ImGui::BeginTabItem("Inventory", nullptr,
                                                                selected_tab(current, SettlementPanelTab::Inventory));
                 if (tab && ImGui::IsItemClicked())
                     *tab = SettlementPanelTab::Inventory;
                 if (inventoryOpen)
                 {
-                    if (sInv.used_slots() == 0)
+                    // «Пусто» — про ЭТОТ вид, а не про контейнер: склад из
+                    // одних существ не пуст, но предметов в нём нет, и
+                    // `used_slots() == 0` соврал бы в обе стороны.
+                    int shown = 0;
+                    if (ImGui::BeginTable("inv", 2,
+                                          ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
                     {
-                        ImGui::TextDisabled("(empty)");
-                    }
-                    else
-                    {
-                        if (ImGui::BeginTable("inv", 2,
-                                              ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
+                        for (const ItemRef &it : sInv.slots)
                         {
-                            for (const ItemRef &it : sInv.slots)
-                            {
-                                if (it.empty()) continue;
-                                const ItemDef *irow = item_def_at(int(it.def));
-                                ImGui::TableNextRow();
-                                ImGui::TableNextColumn();
-                                ImGui::Text("%s", irow ? irow->id : "?");
-                                ImGui::TableNextColumn();
-                                ImGui::Text("x%d", it.count);
-                            }
-                            ImGui::EndTable();
+                            if (it.empty() || !world_row_is_item(it.def))
+                                continue;
+                            ++shown;
+                            ImGui::TableNextRow();
+                            ImGui::TableNextColumn();
+                            ImGui::Text("%s", world_row_label(it.def));
+                            ImGui::TableNextColumn();
+                            ImGui::Text("x%d", it.count);
                         }
+                        ImGui::EndTable();
                     }
+                    if (shown == 0)
+                        ImGui::TextDisabled("(no items)");
                     ImGui::EndTabItem();
                 }
                 // (The History tab — a per-settlement population plot — died
