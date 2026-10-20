@@ -486,7 +486,7 @@ void test_the_sheet_door_reads_what_is_standing() {
         if (bag.slots[std::size_t(i)].empty()) { free = i; break; }
     }
     CHECK_OR_RETURN(free >= 0, "the player's bag has room for the plate");
-    bag.slots[std::size_t(free)] = plate;
+    CHECK(bag.put_at(free, plate), "...and the address door puts it there");
     eq.gear.worn[0] = std::uint16_t(free);
 
     const CharacterSheet dressed = player_effective_sheet(gs, *wStore_);

@@ -26,6 +26,7 @@
 #include "tables/npc.h"         // каталог: строка существа — цена найма, содержание, награда
 #include "tables/spells.h"      // каталог: строка спелла — что делает каст новичка
 #include "tables/items.h"       // каталог: строки предметов, ItemRef — что ХРАНИТ контейнер ниже
+#include "tables/world_row.h"   // адрес строки мира: по нему сводка читает ПОЛОВИНУ слота
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -33,6 +34,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 namespace sm {
 
@@ -755,8 +757,173 @@ inline constexpr int kMaxInventorySlots = 1024;  // 32×32, the one container
 // затыкается НОВЕЙШИМ (зеркало swap-with-last), поэтому дырок в области
 // существ не бывает по построению. Пустая середина между областями —
 // оплаченная пустота (вердикт владельца).
+
+// ── СВОДКА КОНТЕЙНЕРА — ВОСЕМЬ ЧИСЕЛ, КОТОРЫЕ МИР УЖЕ СПРАШИВАЕТ (M-296
+// ломоть А, 2026-10-20; закрывает M-267) ─────────────────────────────────
+// Форма названа брейнштормом владельца (CANON S29): «между контейнером и
+// модулем стоит СВОДКА фиксированного размера … которую правит одна дверь
+// записи за O(1)», и его же ответ на цену — «ТОГДА УЖИВАТЬ НЕ НАДО ДА»:
+// число слотов выходит из цены расчёта вообще.
+//
+// НОВОГО В МИРЕ НЕ ПОЯВЛЯЕТСЯ НИ ОДНОГО ЧИСЛА. Все восемь вопросов мир
+// задаёт сегодня — и отвечает на них проходом по 1024 слотам КАПА на
+// каждую думку (замер M-267: 2048 посещений `ItemRef` = 8 КиБ на думку,
+// при 12 800 сквадах ≈400 думок/тик ⇒ ≈3.2 МиБ потока на тик, 6.7 млрд
+// посещений слотов за игровые сутки, и первый из двух проходов платится ДО
+// гейта «думает ли этот род»). Здесь та же сумма лежит посчитанной, и у
+// каждой колонки читатель НАЗВАН (DOD п.9) — ни одной «на будущее»:
+//
+//   massCg      → inventory_weight        (перегруз марша, «влезет ли», торг)
+//   valueItems  → inventory_value         («чем он может заплатить»)
+//   valueSouls  → container_worth         («сколько он стоит весь»; = items+souls)
+//   heads       → creature_count          (бой, воплощение, панели)
+//   folkHeads   → count_human_souls       (паства, труд, ссадка состава)
+//   boardPerDay → upkeep_bill().board     (харч — сезонный суд содержания)
+//   wagePerDay  → upkeep_bill().wage, calculate_squad_upkeep
+//   haulCg      → refresh_squad_carry     (спины обоза)
+//
+// ПОЧЕМУ ЦЕЛЫЕ, А НЕ `float` (вердикт владельца 2026-10-20, вариант А).
+// Инкремент обязан совпадать с полным пересчётом ТОЧНО — иначе это кеш,
+// который разъедется молча, и свидетель тождества пришлось бы делать
+// эпсилонным, то есть слепым ровно к тому, что он сторожит. Три веса
+// каталога из четырнадцати (0.01, 0.05, 0.30) в двоичном `float`
+// непредставимы, поэтому сумма в `float` зависит от ПОРЯДКА сложения, а у
+// накопителя он другой. Квант 0.01 кг не выбран, а ВЫВЕДЕН из самого
+// каталога: все четырнадцать его весов кратны 0.01, минимум — монета 0.01
+// кг (ЗАКОН ТИПА п.5). Колонки таблицы это не трогает — они остаются
+// `float`, и открытый вопрос владельца о кванте массы в ТАБЛИЦЕ (M-298)
+// остаётся открытым.
+struct InventorySummary {
+    std::int64_t massCg      = 0;  // масса предметной половины, сантиграммы
+    std::int64_t valueItems  = 0;  // стоимость того, чем можно платить
+    std::int64_t valueSouls  = 0;  // стоимость существ (вторая половина worth)
+    std::int64_t heads       = 0;  // голов существ, Σ count области
+    std::int64_t folkHeads   = 0;  // из них людских душ (природа строки)
+    std::int64_t boardPerDay = 0;  // харч: единиц голодной строки в день
+    std::int64_t wagePerDay  = 0;  // жалованье: стоимостью в день
+    std::int64_t haulCg      = 0;  // спины обоза, сантиграммы
+};
+// Восемь чисел по 8 Б = РОВНО кэш-линия; ширина взята по достижимому
+// диапазону (ЗАКОН ТИПА п.1): стак — `int32` по построению `add_ref`, вес —
+// до 6400 сг, значит 1024 × 2³¹ × 6400 ≈ 1.4·10¹⁶ входит в `int64` с
+// запасом в шестьсот раз, а `int32` переполнялся бы молча.
+static_assert(sizeof(InventorySummary) == 64,
+              "сводка = восемь сумм по 8 Б, ровно кэш-линия");
+
+// ОПЕРАТОР ОДИН, И ЭТО НЕ ЭКОНОМИЯ СТРОК. Вклад слота ЛИНЕЕН по счёту
+// (`slot_tally` ниже), поэтому убыль есть приход ОТРИЦАТЕЛЬНОГО счёта, и
+// второго оператора не нужно вовсе. Так линейность оказывается записана
+// кодом, а не обещана комментарием, — и заодно исчезает вопрос, какой из
+// трёх дверей вычитания (`core/subtract.h`) подчиняется сводка: вычитания
+// в ней нет ни одного.
+inline InventorySummary& operator+=(InventorySummary& a,
+                                    const InventorySummary& b) noexcept {
+    a.massCg += b.massCg;           a.valueItems  += b.valueItems;
+    a.valueSouls += b.valueSouls;   a.heads       += b.heads;
+    a.folkHeads += b.folkHeads;     a.boardPerDay += b.boardPerDay;
+    a.wagePerDay += b.wagePerDay;   a.haulCg      += b.haulCg;
+    return a;
+}
+inline bool operator==(const InventorySummary& a,
+                       const InventorySummary& b) noexcept {
+    return a.massCg == b.massCg && a.valueItems == b.valueItems
+        && a.valueSouls == b.valueSouls && a.heads == b.heads
+        && a.folkHeads == b.folkHeads && a.boardPerDay == b.boardPerDay
+        && a.wagePerDay == b.wagePerDay && a.haulCg == b.haulCg;
+}
+
+// ВКЛАД ОДНОГО СЛОТА — ЕДИНСТВЕННОЕ МЕСТО, ГДЕ ВОСЕМЬ КОЛОНОК НАЗЫВАЮТСЯ.
+// Инкремент у двери и полный пересчёт на границе суть ДВА ПРИМЕНЕНИЯ ОДНОГО
+// определения, а не два закона (DOD п.6): разъехаться им нечем, потому что
+// формула одна. Чистая функция строки и счёта — ни мира, ни соседей.
+//
+// СЧЁТ ЗАКОННО ОТРИЦАТЕЛЕН: вклад линеен по нему, поэтому «снять стак» есть
+// «начислить минус столько же», и дверь записи обходится одним сложением.
+inline InventorySummary slot_tally(const ItemRef& s,
+                                   std::int64_t n) noexcept {
+    InventorySummary t{};
+    // ПУСТОТУ НАЗЫВАЕТ СЧЁТ, И ТОЛЬКО ОН. Здесь стояло `|| s.def == 0u` —
+    // и это был живой дефект ровно на один прогон: ординал 0 есть МЕДЯК
+    // (`coin_empire_copper`, первая строка `kCatalog`), а не «строки нет».
+    // Сто монет весили ноль и стоили ноль, то есть самый частый платёж мира
+    // был невидим для веса. Сводку-тождество это НЕ ловило — обе её стороны
+    // считаются одной формулой, — поймал якорь «сто монет по 0.01 кг весят
+    // РОВНО 100 сантиграмм».
+    if (n == 0 || s.empty()) return t;
+    if (world_row_is_creature(s.def)) {
+        const std::uint16_t kind =
+            std::uint16_t(creature_of_world_row(s.def));
+        t.valueSouls  = std::int64_t(value_of(s)) * n;
+        t.heads       = n;
+        t.folkHeads   = is_folk_kind(kind) ? n : 0;
+        t.boardPerDay = std::int64_t(npc_board_per_day(soldier_npc_type(kind)))
+                      * n;
+        t.wagePerDay  = std::int64_t(soldier_upkeep(kind, s.level)) * n;
+        // Спина объекта — СВОИ килограммы строки (M-297), округлённые тем же
+        // квантом 0.01 кг: `haulMult` сегодня даёт 0 / 7.5 / 10.5 / 120 кг,
+        // но строка с `haulMult = 0.07` сломала бы `float` молча.
+        t.haulCg = std::int64_t(std::lround(
+                       double(npc_def(NPCType(kind)).haulMult)
+                       * double(kHaulBackKg) * 100.0))
+                 * n;
+        return t;
+    }
+    if (const ItemDef* d = item_def_at(int(s.def))) {
+        t.massCg     = std::int64_t(std::lround(double(d->weight) * 100.0)) * n;
+        t.valueItems = std::int64_t(value_of(s)) * n;
+    }
+    return t;
+}
+
+// КЛЮЧ ЗАПИСИ СЛОТА. Сделать его умеет ТОЛЬКО `Inventory`, поэтому дверь
+// слота недостижима ни из какого другого кода — это и есть стена ПОД
+// КОМПИЛЯТОРОМ вместо правила ревью (§8 п.6: лучший свидетель — нарушение,
+// которое невозможно собрать). До M-296 прямых записей в слот мимо дверей
+// было ДВЕНАДЦАТЬ: пять внутри самого контейнера, три перекладывающих
+// единицу (расщепление под экипировку и два отката), две меняющих состав
+// (`loot_fallen_owner`, загрузка сейва) и семь в свидетелях.
+class SlotWrite {
+    friend struct Inventory;
+    SlotWrite() = default;
+};
+
+// СЛОТЫ И СВОДКА — ОДНО ЦЕЛОЕ, И ЗАБЫТЬ ПЕРЕСВЕСТИ НЕЧЕМ. Запись слота
+// существует ровно одна (`write`), она частная для контейнера и ВСЕГДА
+// снимает вклад старого содержимого и добавляет вклад нового. Наружу торчит
+// только чтение, поэтому все 88 мест, читающих `inv.slots[i]`, живут без
+// единой правки, а любая попытка записать слот снаружи не компилируется.
+class Container {
+  public:
+    const ItemRef& operator[](std::size_t i) const noexcept { return a_[i]; }
+    std::size_t    size() const noexcept { return a_.size(); }
+    const ItemRef* begin() const noexcept { return a_.data(); }
+    const ItemRef* end() const noexcept { return a_.data() + a_.size(); }
+    const InventorySummary& sum() const noexcept { return sum_; }
+
+    void write(std::size_t i, const ItemRef& next, SlotWrite) noexcept {
+        ItemRef& cell = a_[i];
+        sum_ += slot_tally(cell, -std::int64_t(cell.count));   // старое долой
+        cell = next;
+        sum_ += slot_tally(cell, cell.count);                  // новое в счёт
+    }
+    // Обнуление целиком — единственный случай, когда сводка известна БЕЗ
+    // счёта: у пустого контейнера все восемь нулей по определению.
+    void wipe(SlotWrite) noexcept {
+        a_.fill(ItemRef{});
+        sum_ = InventorySummary{};
+    }
+
+  private:
+    std::array<ItemRef, kMaxInventorySlots> a_{};
+    InventorySummary                        sum_{};
+};
+
 struct Inventory {
-    std::array<ItemRef, kMaxInventorySlots> slots{};
+    Container slots{};
+
+    // Сводка — ПРОИЗВОДНОЕ от слотов, поэтому читается, но не пишется ни
+    // откуда: писателя у неё нет вовсе, её правит сама запись слота.
+    const InventorySummary& sum() const noexcept { return slots.sum(); }
 
     // ── Reading ───────────────────────────────────────────────────────────
     int count_of(int defIdx) const noexcept {
@@ -804,7 +971,8 @@ struct Inventory {
     // law).
     bool add_ref(const ItemRef& what) {
         if (what.count <= 0) return true;          // nothing to add
-        for (ItemRef& s : slots) {
+        for (std::size_t i = 0; i < slots.size(); ++i) {
+            const ItemRef& s = slots[i];
             if (!s.empty() && s.same_kind_as(what)) {
                 // Отказ переполнения ГРОМКИЙ (закон старого контейнера, теперь
                 // общий): int32-стак — единственный оставшийся кап.
@@ -812,13 +980,21 @@ struct Inventory {
                                    - what.count) {
                     return false;
                 }
-                s.count += what.count;
+                // Слившийся стак и пришедший — ОДНА строка по построению
+                // (`same_kind_as` сверяет всё, от чего зависит вклад), поэтому
+                // сводке безразлично, чьей копией считать прибыль.
+                ItemRef merged = s;
+                merged.count += what.count;
+                slots.write(i, merged, SlotWrite{});
                 return true;
             }
         }
         if (world_row_is_item(what.def)) {
-            for (ItemRef& s : slots) {
-                if (s.empty()) { s = what; return true; }
+            for (std::size_t i = 0; i < slots.size(); ++i) {
+                if (slots[i].empty()) {
+                    slots.write(i, what, SlotWrite{});
+                    return true;
+                }
             }
             return false;
         }
@@ -826,9 +1002,8 @@ struct Inventory {
         // Слот занят предметом — области столкнулись, отказ громкий.
         const int first = creature_first();
         if (first == 0) return false;
-        ItemRef& s = slots[std::size_t(first - 1)];
-        if (!s.empty()) return false;
-        s = what;
+        if (!slots[std::size_t(first - 1)].empty()) return false;
+        slots.write(std::size_t(first - 1), what, SlotWrite{});
         return true;
     }
     // By ORDINAL — what a system that already knows the row uses (the economy
@@ -848,19 +1023,23 @@ struct Inventory {
     // conservation law broken in both directions at once.
     bool remove_at(int slot, int n) {
         if (slot < 0 || slot >= kMaxInventorySlots || n <= 0) return false;
-        ItemRef& s = slots[std::size_t(slot)];
+        const ItemRef& s = slots[std::size_t(slot)];
         if (s.empty() || s.count < n) return false;
         const bool creature = !world_row_is_item(s.def);
         const int first = creature ? creature_first() : 0;
-        s.count -= n;
-        if (s.empty()) {
-            s = ItemRef{};
-            // Дыра в плотной области существ затыкается НОВЕЙШИМ слотом
-            // (slots[first]) — зеркало swap-with-last старого контейнера.
-            if (creature && first < slot) {
-                slots[std::size_t(slot)] = slots[std::size_t(first)];
-                slots[std::size_t(first)] = ItemRef{};
-            }
+        ItemRef left = s;
+        left.count -= n;
+        if (!left.empty()) {
+            slots.write(std::size_t(slot), left, SlotWrite{});
+            return true;
+        }
+        slots.write(std::size_t(slot), ItemRef{}, SlotWrite{});
+        // Дыра в плотной области существ затыкается НОВЕЙШИМ слотом
+        // (slots[first]) — зеркало swap-with-last старого контейнера.
+        if (creature && first < slot) {
+            slots.write(std::size_t(slot), slots[std::size_t(first)],
+                        SlotWrite{});
+            slots.write(std::size_t(first), ItemRef{}, SlotWrite{});
         }
         return true;
     }
@@ -870,16 +1049,7 @@ struct Inventory {
     bool remove_of(int defIdx, int n) {
         if (defIdx < 0 || n <= 0 || count_of(defIdx) < n) return false;
         if (!world_row_is_item(std::uint16_t(defIdx))) return false;
-        int left = n;
-        for (ItemRef& s : slots) {
-            if (s.empty() || s.def != std::uint16_t(defIdx)) continue;
-            const int take = s.count < left ? s.count : left;
-            s.count -= take;
-            left -= take;
-            if (s.empty()) s = ItemRef{};
-            if (left == 0) return true;
-        }
-        return left == 0;
+        return strip_rows(std::uint16_t(defIdx), n);
     }
     bool add(const std::string& id, int n) {
         const int idx = item_index(id);
@@ -896,27 +1066,122 @@ struct Inventory {
     bool remove(const std::string& id, int n = 1) {
         const int idx = item_index(id);
         if (idx < 0 || n <= 0 || count_of(idx) < n) return false;
+        return strip_rows(std::uint16_t(idx), n);
+    }
+    void clear() { slots.wipe(SlotWrite{}); }
+
+    // ── ДВЕРИ, КОТОРЫЕ РАНЬШЕ БЫЛИ ЧУЖИМИ ЗАПИСЯМИ В СЛОТ (M-296) ─────────
+    // Каждая из трёх существовала и до наряда — но СНАРУЖИ, строкой вида
+    // `inv.slots[i] = …`. Снаружи такая строка больше не собирается, значит
+    // им нужен дом, и дом у них ровно здесь: все три трогают ТОЛЬКО слоты.
+
+    // РАСЩЕПЛЕНИЕ ПОД ЭКИПИРОВКУ (M-183): одна штука из стака в СВОЙ пустой
+    // предметный слот. `add_ref` для этого не годится по построению — он
+    // слил бы её обратно в тот же стак (`same_kind_as`), а ячейка тела
+    // держит ровно один экземпляр. Возврат: слот этой штуки или -1, если в
+    // предметной области пусто негде. Сводка НЕ ДВИЖЕТСЯ: единица никуда не
+    // делась, она переехала — и это видно по тому, что обе записи идут одной
+    // дверью, а не по обещанию в комментарии.
+    int split_one(int slot) {
+        if (slot < 0 || slot >= kMaxInventorySlots) return -1;
+        const ItemRef src = slots[std::size_t(slot)];
+        if (src.empty()) return -1;
+        if (src.count == 1) return slot;
+        const int first = creature_first();
+        for (int i = 0; i < first; ++i) {
+            if (!slots[std::size_t(i)].empty()) continue;
+            ItemRef one = src;
+            one.count = 1;
+            ItemRef rest = src;
+            rest.count -= 1;
+            slots.write(std::size_t(i), one, SlotWrite{});
+            slots.write(std::size_t(slot), rest, SlotWrite{});
+            return i;
+        }
+        return -1;
+    }
+
+    // ОБРАТНЫЙ ХОД РАСЩЕПЛЕНИЯ — откат отказавшего надевания (консервация:
+    // тело не взяло вещь, значит она целиком вернулась в свой стак).
+    bool merge_one(int from, int to) {
+        if (from == to) return true;
+        if (from < 0 || from >= kMaxInventorySlots) return false;
+        if (to < 0 || to >= kMaxInventorySlots) return false;
+        const ItemRef one = slots[std::size_t(from)];
+        const ItemRef dst = slots[std::size_t(to)];
+        if (one.count != 1 || dst.empty() || !dst.same_kind_as(one)) {
+            return false;
+        }
+        ItemRef merged = dst;
+        merged.count += 1;
+        slots.write(std::size_t(to), merged, SlotWrite{});
+        slots.write(std::size_t(from), ItemRef{}, SlotWrite{});
+        return true;
+    }
+
+    // ПОЛОЖИТЬ СТАК В НАЗВАННЫЙ СЛОТ — дверь ЗАГРУЗКИ (`read_inventory`) и
+    // свидетелей. Она законно обходит закон стакования, потому что в сейве
+    // ПОЗИЦИЯ есть носитель закона: область существ растёт сверху вниз, и её
+    // порядок ЕСТЬ закон ходока «свежие уходят первыми» — восстановление
+    // через `add_ref` перевернуло бы очередь дезертирства молча. Занятый слот
+    // отказывает ГРОМКО: ровно это условие читатель сейва уже проверял руками.
+    bool put_at(int slot, const ItemRef& what) {
+        if (slot < 0 || slot >= kMaxInventorySlots) return false;
+        if (what.count <= 0 || !slots[std::size_t(slot)].empty()) return false;
+        slots.write(std::size_t(slot), what, SlotWrite{});
+        return true;
+    }
+
+  private:
+    // Снятие n единиц ОДНОЙ строки, стак за стаком — общее тело `remove_of` и
+    // `remove(id)`: до M-296 они были двумя одинаковыми циклами, и каждый
+    // правил `count` своей рукой.
+    bool strip_rows(std::uint16_t row, int n) {
         int left = n;
-        for (ItemRef& s : slots) {
-            if (s.empty() || s.def != std::uint16_t(idx)) continue;
+        for (std::size_t i = 0; i < slots.size() && left > 0; ++i) {
+            const ItemRef& s = slots[i];
+            if (s.empty() || s.def != row) continue;
             const int take = s.count < left ? s.count : left;
-            s.count -= take;
+            ItemRef rest = s;
+            rest.count -= take;
+            slots.write(i, rest.empty() ? ItemRef{} : rest, SlotWrite{});
             left -= take;
-            if (s.empty()) s = ItemRef{};
-            if (left == 0) return true;
         }
         return left == 0;
     }
-    void clear() { slots.fill(ItemRef{}); }
 };
-// РАЗМЕР ЗАКРЕПЛЁН (AGENTS п.10). САМАЯ ТЯЖЁЛАЯ СТРУКТУРА МИРА: 40 960 Б
+// РАЗМЕР ЗАКРЕПЛЁН (AGENTS п.10). САМАЯ ТЯЖЁЛАЯ СТРУКТУРА МИРА: 41 024 Б
 // несёт КАЖДЫЙ сквад и КАЖДОЕ место. Форма НАМЕРЕННАЯ (AGENTS п.2, вердикт
 // владельца 2026-09-22: единый контейнер 32×32, пустота оплачена сознательно;
 // слот 40 Б — вердикт слота В, 2026-09-24); число записано здесь, чтобы
 // следующий читал его, а не догадывался.
-static_assert(sizeof(Inventory) == kMaxInventorySlots * sizeof(ItemRef),
-              "инвентарь = 1024 плоских слота, без счётчика и без дырок");
-static_assert(sizeof(Inventory) == 40960, "и это 40 960 Б ровно");
+//
+// ЗДЕСЬ СТОЯЛО «без счётчика и без дырок» — и первая половина СНЯТА нарядом
+// M-296 вердиктом владельца («аккумулятор круто чтобы каждый раз не
+// перебирать»): счётчик есть, он ровно один, и он кэш-линия на 40 КиБ слотов
+// — 0.16 % структуры за снятие прохода по капу с каждой думки мира. Дырок
+// по-прежнему нет.
+static_assert(sizeof(Inventory)
+                  == kMaxInventorySlots * sizeof(ItemRef)
+                         + sizeof(InventorySummary),
+              "инвентарь = 1024 плоских слота плюс сводка, без дырок");
+static_assert(sizeof(Inventory) == 41024,
+              "и это 41 024 Б ровно: 40 960 слотов + 64 сводки");
+static_assert(std::is_trivially_copyable_v<Inventory>,
+              "контейнер переживает memcpy: сводка едет С НИМ, поэтому "
+              "копия-откат (`craft_item`, `scrap_at`, `barter_swap`) и "
+              "снимок сквада согласованы по построению, а не по дисциплине");
+
+// ПОЛНЫЙ ПЕРЕСЧЁТ — ВТОРОЕ ПРИМЕНЕНИЕ ТОГО ЖЕ ОПРЕДЕЛЕНИЯ, А НЕ ВТОРОЙ ЗАКОН.
+// Сводку правит запись слота, а эта дверь складывает её с нуля по той же
+// `slot_tally`; разъехаться им нечем, потому что формула одна. Нужна ровно
+// двоим: свидетелю тождества и тому, кто собрал контейнер в обход записи —
+// сегодня таких нет ни одного.
+inline InventorySummary inventory_sum_recount(const Inventory& inv) noexcept {
+    InventorySummary t{};
+    for (const ItemRef& s : inv.slots) t += slot_tally(s, s.count);
+    return t;
+}
 
 // Player combat slice consumed by `useItem` (mirrors TS inline type).
 struct PlayerCombatSlice {
@@ -1536,6 +1801,7 @@ TIMAERT_ROW(sm::LevelData);
 TIMAERT_ROW(sm::BonusTotals);
 TIMAERT_ROW(sm::PoolSlice);
 TIMAERT_ROW(sm::SoldierRecord);
+TIMAERT_ROW(sm::InventorySummary);
 TIMAERT_ROW(sm::Inventory);
 TIMAERT_ROW(sm::PlayerCombatSlice);
 TIMAERT_ROW(sm::CharacterSheet);

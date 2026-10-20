@@ -162,8 +162,13 @@ void test_worn_sums_read_the_bag() {
     CHECK(weapon_in_hand(g, bag) == nullptr, "плащ — не оружие в руке");
 
     // Негативный контроль протухшего индекса: вещь исчезла из инвентаря —
-    // перерасчёт гасит ячейку, бонус исчезает.
-    bag.slots[std::size_t(g.worn[std::size_t(cell)])] = ItemRef{};
+    // перерасчёт гасит ячейку, бонус исчезает. Исчезает она ДВЕРЬЮ (M-296):
+    // слот снаружи не пишется, а «вещь пропала из сумки» — это ровно снятие.
+    {
+        const int wornSlot = int(g.worn[std::size_t(cell)]);
+        CHECK(bag.remove_at(wornSlot, bag.slots[std::size_t(wornSlot)].count),
+              "вещь уходит из сумки дверью снятия");
+    }
     remark_gear_blocks(g, bag);
     CHECK(g.worn[std::size_t(cell)] == kWornNothing,
           "протухший индекс зануляется перерасчётом");

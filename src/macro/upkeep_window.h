@@ -40,26 +40,19 @@ struct UpkeepBill {
     std::int64_t wage  = 0;   // жалованье: стоимостью
 };
 
-// ОДИН ПРОХОД НА ОБЕ СТРОКИ СЧЁТА, И ОБЕ — ПО ТАБЛИЦЕ СУЩЕСТВ.
-// Считает по СЛОТАМ области существ ЕДИНОГО контейнера (M-71), а не по
-// душам: тысячная деревня — это два-три слота (генерики стоят стопкой),
-// поэтому цена двери не зависит от размера контейнера.
+// НИ ОДНОГО ПРОХОДА НА ОБЕ СТРОКИ СЧЁТА, И ОБЕ — ПО ТАБЛИЦЕ СУЩЕСТВ.
+// Здесь стоял проход по области существ, и собственный его комментарий
+// оправдывал цену тем, что «тысячная деревня — это два-три слота». Довод был
+// верен и остаётся верен; дверь переведена на сводку не ради него, а ради
+// ЕДИНСТВА (M-296): обе колонки спрашиваются у строки ровно один раз — в
+// `slot_tally`, у двери записи, — и второго места, где рацион и плата
+// складываются, в мире больше нет. Своими дверьми они спрашиваются там же:
+// `npc_board_per_day` — рацион, `soldier_upkeep` — плата (она же читает
+// `kNpcUpkeepNone` как ноль, поэтому зверь ест, но не получает, и это
+// сказано данными, а не веткой).
 inline UpkeepBill upkeep_bill(const Inventory& container) {
-    int boardDay = 0;
-    int wageDay  = 0;
-    for (int i = container.creature_first(); i < kMaxInventorySlots; ++i) {
-        const ItemRef& s = container.slots[std::size_t(i)];
-        const std::uint16_t kind =
-            std::uint16_t(creature_of_world_row(s.def));
-        // Обе колонки спрашиваются у ОДНОЙ строки, своими дверьми:
-        // `npc_board_per_day` — рацион, `soldier_upkeep` — плата (она же
-        // читает `kNpcUpkeepNone` как ноль, поэтому зверь ест, но не
-        // получает, и это сказано данными, а не веткой).
-        boardDay += npc_board_per_day(soldier_npc_type(kind)) * s.count;
-        wageDay  += soldier_upkeep(kind, s.level) * s.count;
-    }
-    return UpkeepBill{boardDay * kDaysPerSeason,
-                      std::int64_t(wageDay) * kDaysPerSeason};
+    return UpkeepBill{int(container.sum().boardPerDay) * kDaysPerSeason,
+                      container.sum().wagePerDay * kDaysPerSeason};
 }
 
 struct UpkeepWindowOutcome {

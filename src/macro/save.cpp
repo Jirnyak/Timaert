@@ -583,8 +583,7 @@ void read_inventory(Reader& r, Inventory& inv) {
             ? item_def_at(int(s.def)) != nullptr
             : world_row_is_creature(s.def);
         if (!knownRow || s.count <= 0
-            || slot >= std::uint16_t(kMaxInventorySlots)
-            || !inv.slots[std::size_t(slot)].empty()) {
+            || slot >= std::uint16_t(kMaxInventorySlots)) {
             r.ok = false;
             return;
         }
@@ -595,7 +594,14 @@ void read_inventory(Reader& r, Inventory& inv) {
             r.ok = false;
             return;
         }
-        inv.slots[std::size_t(slot)] = s;
+        // Адресная дверь загрузки (M-296): она же и проверяет «дважды
+        // записанный слот» — условие, которое здесь стояло руками выше, —
+        // и она же сводит контейнер, поэтому отдельного пересчёта после
+        // чтения не нужно. Запись слота снаружи больше не собирается.
+        if (!inv.put_at(int(slot), s)) {
+            r.ok = false;
+            return;
+        }
     }
 }
 // (write_squad/read_squad умерли слиянием M-71: существа едут внутри

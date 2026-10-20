@@ -1443,7 +1443,9 @@ int main() {
                 if (bag.slots[std::size_t(i)].empty()) { free = i; break; }
             }
             CHECK(free >= 0, "the lord's bag has an empty slot for the ring");
-            bag.slots[std::size_t(free)] = ring;
+            CHECK(bag.put_at(free, ring),
+                  "...и дверь адреса её туда кладёт (M-296: слот снаружи "
+                  "не пишется)");
             gear.worn[0] = std::uint16_t(free);
         }
         CHECK(sm::sub::refresh_body_strike(objs, &stq, sBody),

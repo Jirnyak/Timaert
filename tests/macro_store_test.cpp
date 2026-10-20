@@ -42,7 +42,14 @@ int main() {
           "ординал хэндла и колонка spawnId — одно число");
 
     // ── Негативный контроль призрака: грязь видна ДО перерождения ───────
-    s.inventory[a.slot].inv.slots[0].count = 777;
+    // Грязь кладётся ДВЕРЬЮ адреса (M-296): слот снаружи не пишется, а
+    // проверяемое здесь — что перерождение слота её СТИРАЕТ, и это от способа
+    // её появления не зависит.
+    {
+        sm::ItemRef dirt{};
+        dirt.count = 777;
+        s.inventory[a.slot].inv.put_at(0, dirt);
+    }
     s.pools[a.slot].hp = -123;
     s.dead[a.slot] = 1;
     CHECK(s.inventory[a.slot].inv.slots[0].count == 777,

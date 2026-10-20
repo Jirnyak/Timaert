@@ -176,9 +176,10 @@ static_assert(sizeof(ecs::Pools) == 36, "строка полос");
 static_assert(sizeof(ecs::CellSub) == 2, "доля клетки (M-244)");
 static_assert(sizeof(ecs::NpcCharacter) == 8,
               "строка лица: 12 → 8 Б (M-246б — `nameIdx` стал локалью рождения, тинты были сиротами)");
-static_assert(sizeof(ecs::NpcInventory) == 40960,
+static_assert(sizeof(ecs::NpcInventory) == 41024,
               "инвентарь сущности: 1024 стака по 40 Б (единый контейнер "
-              "32×32, шаг А слияния 2026-09-24)");
+              "32×32, шаг А слияния 2026-09-24) плюс сводка 64 Б — одна "
+              "кэш-линия на 40 КиБ слотов, M-296");
 static_assert(sizeof(ecs::SquadUpkeep) == 72,
               "содержание = счёт харча и платы над единым контейнером (M-71): "
               "харч 60 + пад 4 + плата 8; существа живут в NpcInventory");

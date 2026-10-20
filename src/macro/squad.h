@@ -178,14 +178,11 @@ inline void refresh_squad_carry(MacroStore& st, MacroHandle squad) {
     // времён, когда своя спина жила в `carryCap`; сегодня он недостижим по
     // построению (у места обе колонки нули, у сквада обе пишет дверь листа),
     // то есть защитная форма пережила свою причину.
-    float kg = rt.carryPerSoul;
+    // Килограммы объектов копит сводка контейнера (M-296): тот же Σ
+    // `haulMult × kHaulBackKg × count`, но посчитанный у двери записи и в
+    // целых сантиграммах, поэтому он не зависит от порядка сложения.
     const Inventory& bag = st.inventory[squad.slot].inv;
-    for (int i = bag.creature_first(); i < kMaxInventorySlots; ++i) {
-        const ItemRef& m = bag.slots[std::size_t(i)];
-        kg += npc_def(creature_of_world_row(m.def)).haulMult
-            * kHaulBackKg * float(m.count);
-    }
-    rt.carryCap = kg;
+    rt.carryCap = rt.carryPerSoul + float(bag.sum().haulCg) * 0.01f;
 }
 
 // (Резолв по ординалу — `macro_handle_by_spawn_id@src/macro/store.h`: он
@@ -1205,7 +1202,9 @@ inline int xp_for_fallen(const MacroStore& st, MacroHandle loser,
 inline void loot_fallen_owner(MacroStore& st, MacroHandle fallen,
                               Inventory& into) {
     if (!st.valid(fallen)) return;
-    for (ItemRef& stack : st.inventory[fallen.slot].inv.slots) {
+    Inventory& from = st.inventory[fallen.slot].inv;
+    for (std::size_t i = 0; i < from.slots.size(); ++i) {
+        const ItemRef stack = from.slots[i];
         if (stack.empty()) continue;
         // ЛУТ — ТОЛЬКО ПРЕДМЕТНАЯ ОБЛАСТЬ (M-71): выжившие люди павшего —
         // не добыча: живое добычей не бывает, и павшие ГИБНУТ вместе со
@@ -1214,7 +1213,10 @@ inline void loot_fallen_owner(MacroStore& st, MacroHandle fallen,
         // Credit first: a stack the victor's bag refuses (full) STAYS on the
         // fallen — a refused pickup leaves the corpse holding it (items.h's
         // conservation ruling), never a cleared slot over an evaporated good.
-        if (into.add_ref(stack)) stack = ItemRef{};
+        // Снятие идёт ДВЕРЬЮ (M-296): здесь стояло `stack = ItemRef{}` —
+        // единственная в проде запись в чужой слот, менявшая СОСТАВ, и
+        // ровно такой строкой сводка разъехалась бы молча.
+        if (into.add_ref(stack)) from.remove_at(int(i), stack.count);
     }
 }
 

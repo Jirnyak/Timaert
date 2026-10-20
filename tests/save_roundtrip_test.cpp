@@ -1380,8 +1380,23 @@ void run_roundtrip() {
         sm::ItemRef rot{};
         rot.def = sm::world_row_count();   // строка ЗА концом пространства
         rot.count = 1;
-        invalidMacro[0].inventory
-            .slots[std::size_t(sm::kMaxInventorySlots - 1)] = rot;
+        // Дверь адреса (M-296): запись в слот снаружи больше не собирается,
+        // а порченую строку свидетелю всё равно надо поставить — `put_at`
+        // кладёт её ровно туда же, и это тот же обход закона стакования,
+        // которым пользуется читатель сейва. АДРЕС ПОРЧИ СВИДЕТЕЛЮ БЕЗРАЗЛИЧЕН
+        // — судится fail-closed ПИСАТЕЛЯ, — а верхний слот у фикстуры занят:
+        // там начинается область существ, и освободить его не выйдет, потому
+        // что ремонт плотности тут же переселит туда новейшую голову. Значит
+        // порча садится в первый свободный, и посадка судится ВСЛУХ:
+        // молчаливый отказ оставил бы свидетеля беззубым, но зелёным.
+        sm::Inventory& rotBag = invalidMacro[0].inventory;
+        int rotSlot = -1;
+        for (int i = 0; i < sm::kMaxInventorySlots; ++i) {
+            if (rotBag.slots[std::size_t(i)].empty()) { rotSlot = i; break; }
+        }
+        if (rotSlot < 0 || !rotBag.put_at(rotSlot, rot)) {
+            FAIL_BAIL("порча не села в слот — свидетель судил бы пустоту");
+        }
     }
     if (sm::save_game(invalidSquadState, store.nextSpawnId, quests,
                       invalidMacro, treeCounts, deposits,
@@ -1585,7 +1600,7 @@ void run_payload_cap_is_a_fact() {
             ref.def = std::uint16_t(woodDef);
             ref.count = 1;
             ref.seed = std::uint32_t(i * sm::kMaxInventorySlots + s) + 1u;
-            bag.slots[std::size_t(s)] = ref;
+            bag.put_at(s, ref);
         }
     }
 

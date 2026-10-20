@@ -267,13 +267,14 @@ inline int coin_census_value(const Inventory& inv) {
 // по построению дань, а жалованье ГАСИЛОСЬ БЫ БЕЗ ОПЛАТЫ — долг из воздуха.
 // Вопрос «сколько стоит контейнер ЦЕЛИКОМ, с душами» — другой вопрос, и у
 // него своя дверь ниже.
+//
+// СЧИТАЕТСЯ СВОДКОЙ, А НЕ ПРОХОДОМ (M-296): колонка `valueItems` и есть эта
+// сумма, и слагаемое у неё ТО ЖЕ — `slot_tally` кладёт в неё ровно строки,
+// которые резолвит предметный каталог, то есть ровно те, что пропускал
+// `payable_row`. Предикат остался жив над ОДНИМ слотом (`densest_value_slot`
+// выше), и двум читателям по-прежнему нечем разъехаться.
 inline int inventory_value(const Inventory& inv) {
-    int total = 0;
-    for (const ItemRef& s : inv.slots) {
-        if (!payable_row(s)) continue;
-        total += value_of(s) * s.count;
-    }
-    return total;
+    return int(inv.sum().valueItems);
 }
 
 // ── СКОЛЬКО СТОИТ КОНТЕЙНЕР ЦЕЛИКОМ — ОБЕ ПОЛОВИНЫ ОДНИМ ПРОХОДОМ
@@ -293,13 +294,14 @@ inline int inventory_value(const Inventory& inv) {
 // ЧИТАТЕЛИ НАЗВАНЫ (DOD п.9): запах богатства (`scent_squad_deposit`),
 // «Their value» прилавка и «Carries (value)» обзора субъекта — все три
 // отвечают на «сколько тут всего добра», и душа в этом счёте законна.
+//
+// И ДВЕ ПОЛОВИНЫ СВОДКИ ЗДЕСЬ СКЛАДЫВАЮТСЯ ОБРАТНО (M-296) — это не возврат
+// снесённого ручного сложения, а его противоположность: там складывались
+// два РАЗНЫХ закона цены (`creatures_worth` читала `hireGold` мимо закона
+// уровня), здесь — два слагаемых ОДНОЙ `slot_tally`, разложенные по
+// половинам ровно затем, чтобы платёж мог взять только свою.
 inline int container_worth(const Inventory& inv) {
-    int total = 0;
-    for (const ItemRef& s : inv.slots) {
-        if (s.empty()) continue;
-        total += value_of(s) * s.count;
-    }
-    return total;
+    return int(inv.sum().valueItems + inv.sum().valueSouls);
 }
 
 } // namespace sm

@@ -950,7 +950,21 @@ timaert_test(squad_walk_test)
 
 # Гладкая память макромира (эпик 2 шаг 1б, M-106): хранилище заголовочное,
 # тест — рождение/смерть/переиспользование под gen-защитой.
-timaert_test(macro_store_test)
+# Сводка контейнера (M-296) спрашивает цену и массу СТРОКИ у каталога прямо
+# в заголовке, у двери записи, — значит всякий, кто кладёт вещь в контейнер,
+# линкует каталог. До M-296 за него платил только `anketa.cpp`.
+timaert_test(macro_store_test
+    SOURCES
+        src/tables/items.cpp)
+
+# СВОДКА ТОЖДЕСТВЕННА ПОЛНОМУ ПЕРЕСЧЁТУ (M-296): прибор сверяет её после
+# КАЖДОЙ операции над контейнером, поэтому ему нужны обе половины дверей —
+# тела анкеты (крафт, скрап, экипировка) и каталог, у которого сводка
+# спрашивает цену и массу строки.
+timaert_test(inventory_summary_test
+    SOURCES
+        src/macro/anketa.cpp
+        src/tables/items.cpp)
 
 timaert_test(squad_war_test
     SOURCES
@@ -1379,7 +1393,10 @@ timaert_test(subworld_spawn_parity_test
     # тварей, накатанных сидом. Замер 2026-10-12: смена сида фикстуры двигала
     # его 109 → 123. После сведения к §8 п.3 обход утверждается ОДНИМ
     # вердиктом, счёт структурен (52), и тот же сид его не двигает.
-    PIN "OK subworld_spawn_parity_test .52 checks.")
+    # 52 → 53 (M-296): фикстура сажала кольцо в слот ПРИСВАИВАНИЕМ, а слот
+    # снаружи больше не пишется — посадка пошла дверью адреса, и её отказ
+    # теперь судится вслух. Пин двинут ОСОЗНАННО, как он и задуман.
+    PIN "OK subworld_spawn_parity_test .53 checks.")
 # Pure-logic unit tests for the RPG spine (character_sheet.h) + unified loot
 # table (items.cpp). Header-only sheet code needs no extra deps; the loot
 # functions live in items.cpp (self-contained — no SDL2, same as

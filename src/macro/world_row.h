@@ -69,13 +69,10 @@ inline bool creatures_push_slot(Inventory& inv, const ItemRef& s) {
 }
 
 // СКОЛЬКО ГОЛОВ — души и генерики вместе, Σ count по области (старые
-// Roster::souls() / total_soldiers / SoldierSquad::size()).
+// Roster::souls() / total_soldiers / SoldierSquad::size()). С M-296 это
+// колонка сводки: та же сумма, посчитанная у двери записи.
 inline int creature_count(const Inventory& inv) noexcept {
-    int n = 0;
-    for (int i = inv.creature_first(); i < kMaxInventorySlots; ++i) {
-        n += inv.slots[std::size_t(i)].count;
-    }
-    return n;
+    return int(inv.sum().heads);
 }
 inline int creature_count_of(const Inventory& inv, NPCType kind) noexcept {
     const std::uint16_t row = world_row_of_creature(kind);
@@ -253,16 +250,10 @@ inline CreaturesRange creatures_range(const Inventory& inv) {
 // природа Human, колонка жалованья, спина haulMult.
 
 // ЛЮДИ области — руки и рты ведомости труда, подсудимые суда крю. Зверь —
-// спина и рот, но не рука. Спрашивает ПРИРОДУ (kNpcNature), не границу.
+// спина и рот, но не рука. Спрашивает ПРИРОДУ (kNpcNature), не границу —
+// и спрашивает её `slot_tally` у двери записи, а не этот проход (M-296).
 inline int count_human_souls(const Inventory& inv) {
-    int n = 0;
-    for (int i = inv.creature_first(); i < kMaxInventorySlots; ++i) {
-        const ItemRef& s = inv.slots[std::size_t(i)];
-        if (is_folk_kind(std::uint16_t(creature_of_world_row(s.def)))) {
-            n += s.count;
-        }
-    }
-    return n;
+    return int(inv.sum().folkHeads);
 }
 
 // УБЫЛЬ ДУШ — ДВЕРЬ drain (ЗАКОН ТРЁХ ДВЕРЕЙ): снять до n человеческих душ
@@ -272,6 +263,10 @@ inline int count_human_souls(const Inventory& inv) {
 // в rotate_worker_squads).
 inline int bleed_flock(Inventory& inv, int n) {
     int taken = 0;
+    // Это ПОИСК, а не сумма, поэтому сводка его не заменяет — но «людей нет
+    // вовсе» она отвечает за ноль проходов, и это самый частый случай мира
+    // (у всякого контейнера без паствы).
+    if (inv.sum().folkHeads == 0) return 0;
     while (taken < n) {
         int si = -1;
         for (int k = inv.creature_first(); k < kMaxInventorySlots; ++k) {
@@ -316,16 +311,11 @@ inline int bleed_creatures(Inventory& inv, int n) {
 }
 
 // Upkeep is MAINTENANCE, not a deal: один закон, одно число, чей бы
-// контейнер ни был.
+// контейнер ни был. С M-296 это колонка сводки `wagePerDay` — ТА ЖЕ, что
+// читает сезонный счёт (`upkeep_bill@src/macro/upkeep_window.h`): два
+// звонящих одного числа, а не два числа.
 inline int calculate_squad_upkeep(const Inventory& inv) {
-    int base = 0;
-    for (int i = inv.creature_first(); i < kMaxInventorySlots; ++i) {
-        const ItemRef& s = inv.slots[std::size_t(i)];
-        base += soldier_upkeep(std::uint16_t(creature_of_world_row(s.def)),
-                               s.level)
-                * s.count;
-    }
-    return base;
+    return int(inv.sum().wagePerDay);
 }
 
 // Паства встаёт в область ОДНОЙ строкой (вердикт 2026-09-22: стражи нет,

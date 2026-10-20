@@ -148,7 +148,7 @@ void test_full_container_refuses() {
         s.def = std::uint16_t(ordinal);
         s.count = 1;
         s.seed = std::uint32_t(i) + 1u;   // 0 = «не прокатан», а нам нужен прокат
-        full.slots[std::size_t(i)] = s;
+        full.put_at(i, s);                // дверь адреса (M-296)
     }
     CHECK(full.full(), "фикстура обязана быть ПОЛНОЙ, иначе проверка ни о чём");
     const int before = inventory_value(full);

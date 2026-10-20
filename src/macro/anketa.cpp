@@ -90,22 +90,22 @@ int auto_scrap_overflow(Inventory& inv) {
     return scrapped;
 }
 
+// ЧТЕНИЕ СВОДКИ, А НЕ ПРОХОД ПО КАПУ (M-296, закрывает M-267). Здесь стоял
+// цикл по всем 1024 слотам, и платила его КАЖДАЯ думка мира — причём ДО
+// гейта «думает ли этот род», так что города и деревни платили его и не
+// думали, а их контейнеры самые полные. Сантиграммы сводки делятся на сто
+// ОДИН раз, на выходе: внутри мира величина целая (ЗАКОН ТИПА п.5), float
+// остаётся только в подписи, которую читают 16 мест.
 float inventory_weight(const Inventory& inv) noexcept {
-    float total = 0.0f;
-    for (const ItemRef& s : inv.slots) {
-        if (s.empty()) continue;
-        if (const ItemDef* d = item_def_at(int(s.def))) {
-            total += d->weight * static_cast<float>(s.count);
-        }
-    }
-    return total;
+    return float(inv.sum().massCg) * 0.01f;
 }
 
 std::string use_item(Inventory& inv, const std::string& itemId, PlayerCombatSlice& pc) {
-    // Find stack
-    ItemRef* stack = nullptr;
+    // Find stack (ЧТЕНИЕМ: убыль идёт дверью `remove` ниже, и неизменяемая
+    // ссылка здесь — не стиль, а следствие M-296: слот снаружи не пишется).
+    const ItemRef* stack = nullptr;
     const int idx = item_index(itemId);
-    for (ItemRef& s : inv.slots) {
+    for (const ItemRef& s : inv.slots) {
         if (!s.empty() && s.def == std::uint16_t(idx)) { stack = &s; break; }
     }
     if (!stack || stack->count <= 0) return {};
@@ -172,23 +172,11 @@ void mark_blocks_of(Gear& g, int origin, std::uint64_t blocks) {
     }
 }
 
-// Одна штука из стака в СВОЙ предметный слот (истина — инвентарь; ячейка
-// держит ровно один экземпляр по построению). Возврат: слот этой штуки или
-// -1 — в предметной области нет пустого места, отказ громкий.
-int split_one(Inventory& inv, int slot) {
-    ItemRef& s = inv.slots[std::size_t(slot)];
-    if (s.count == 1) return slot;
-    const int first = inv.creature_first();
-    for (int i = 0; i < first; ++i) {
-        ItemRef& d = inv.slots[std::size_t(i)];
-        if (!d.empty()) continue;
-        d = s;
-        d.count = 1;
-        s.count -= 1;
-        return i;
-    }
-    return -1;
-}
+// (Тело `split_one` уехало В САМ КОНТЕЙНЕР нарядом M-296: оно писало слоты
+//  своей рукой, а снаружи слот больше не записывается — это несобираемо.
+//  Смысл не изменился ни на букву: одна штука из стака в СВОЙ предметный
+//  слот, -1 при отказе, сводка не движется, потому что единица переехала, а
+//  не родилась.)
 
 bool try_equip_cell(Gear& g, int invSlot, const ItemDef& def, int cell) {
     if (!item_fits_cell(g, cell, def)) return false;
@@ -236,29 +224,23 @@ bool item_fits_cell(const Gear& g, int cell, const ItemDef& def) {
 int equip(Gear& g, Inventory& inv, int invSlot) {
     const ItemDef* def = equip_prologue(g, inv, invSlot);
     if (!def) return -1;
-    const int use = split_one(inv, invSlot);
+    const int use = inv.split_one(invSlot);
     if (use < 0) return -1;
     for (int i = 0; i < kEquipCells; ++i) {
         if (try_equip_cell(g, use, *def, i)) return i;
     }
     // Тело отказало: расщеплённая штука сливается назад (консервация).
-    if (use != invSlot) {
-        inv.slots[std::size_t(invSlot)].count += 1;
-        inv.slots[std::size_t(use)] = ItemRef{};
-    }
+    inv.merge_one(use, invSlot);
     return -1;
 }
 
 int equip_at(Gear& g, Inventory& inv, int invSlot, int cell) {
     const ItemDef* def = equip_prologue(g, inv, invSlot);
     if (!def) return -1;
-    const int use = split_one(inv, invSlot);
+    const int use = inv.split_one(invSlot);
     if (use < 0) return -1;
     if (try_equip_cell(g, use, *def, cell)) return cell;
-    if (use != invSlot) {
-        inv.slots[std::size_t(invSlot)].count += 1;
-        inv.slots[std::size_t(use)] = ItemRef{};
-    }
+    inv.merge_one(use, invSlot);
     return -1;
 }
 
