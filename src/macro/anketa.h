@@ -439,16 +439,52 @@ inline int recovery_steps(float baseSeconds, const Attributes& a,
     return steps < 1 ? 1 : steps;
 }
 
-// ── Carry weight ───────────────────────────────────────────────
+// ── Carry weight — ЦЕЛЫЕ ГРАММЫ ───────────────────────────────
+//
+// ГРАММ — УНИВЕРСАЛЬНЫЙ КВАНТ МАССЫ ЭТОГО МИРА (вердикт владельца
+// 2026-10-20, дословно: «у нас теперь кванты грамы это целове универсальное
+// решение»; исполнен для колонки предмета в M-298). Здесь цепочка обоза
+// считалась килограммами во `float` — последний float в величине симуляции
+// на этом пути, при том что у массы есть честный квант и железо флоата не
+// требует (ЗАКОН ТИПА п.5).
+//
+// ПЕРЕНОСИМЫЙ ВЕС ЕСТЬ ПРОИЗВОДНАЯ АНКЕТЫ, И ЭТО ЗАМЫСЕЛ ВЛАДЕЛЬЦА
+// (2026-10-20, дословно: «у анкеты есть переносимый вес он от статов
+// инвентаря и тд вот ну чиста рпг переменная»). Отсюда три слагаемых, и
+// каждое отвечает на СВОЙ вопрос:
+//   · статы и скилы — вот эта дверь (Str за мощь, Weightlifting множит);
+//   · что НАДЕТО — перегрузка ниже, через единый реестр бонусов;
+//   · спины ГОЛОВ контейнера — `sum().haulG`, и складывает их с первым
+//     слагаемым дверь `carry_capacity_g@src/macro/squad.h`.
+// Второго закона обоза нет ни одного.
+constexpr std::int32_t kBaseCarryG = 100'000;   // плоская база анкеты, 100 кг
 
-constexpr float kBaseCarryKg = 100.0f;
-
-inline float get_carry_capacity(const Attributes& a, const Skills& s) {
-    return (kBaseCarryKg + float(a.of(AttributeId::Str)) * 10.0f)
-           * skill_mult(s, SkillId::Weightlifting);
+// МНОЖЕНИЕ ИДЁТ В `int64`, И ЭТО РАСЧЁТ, А НЕ ОСТОРОЖНОСТЬ (ЗАКОН ТИПА п.1).
+// Потолок по капам движка: Str 255 → 100 000 + 2 550 000 = 2 650 000 г, ранг
+// 100 при 10 %/ранг (`attributes.h` Weightlifting) → 1100 %, и промежуточное
+// произведение 2 650 000 × 1100 = 2 915 000 000 ПЕРЕПОЛНЯЕТ `int32` (макс
+// 2 147 483 647). Частное 29 150 000 г (29.15 т) влезает с запасом 73×,
+// поэтому возврат узкий, а множится в широком.
+//
+// ЦЕЛЫЙ ПРОЦЕНТ, А НЕ ФЛОАТ-МНОЖИТЕЛЬ: `skill_mult_pct` — та же самая запись
+// закона скилла (`1 + ранг×0.1` ≡ `(100 + ранг×10)/100` ТОЖДЕСТВЕННО), и
+// соседи этой двери по файлу уже идут ею — `moveSpeedPct` и
+// `tradeDiscountPct` выше. Грузоподъёмность была единственным
+// флоат-отказником среди них.
+inline std::int32_t get_carry_capacity(const Attributes& a, const Skills& s) {
+    const std::int64_t back = std::int64_t(kBaseCarryG)
+                            + std::int64_t(a.of(AttributeId::Str)) * 10'000;
+    return std::int32_t(back
+                        * std::int64_t(skill_mult_pct(s,
+                                                      SkillId::Weightlifting))
+                        / 100);
 }
-inline float get_overload_penalty(float weightKg, float capacityKg) {
-    return weightKg > capacityKg ? (weightKg - capacityKg) : 0.0f;
+// Перегруз — РАЗНОСТЬ ДВУХ ГРАММОВЫХ ЦЕЛЫХ. Знаковое `int64` потому, что
+// слева стоит `sum().massG` (он `int64` с M-296) и сужать его было бы
+// молчаливым обрезанием; голый минус законен — он под гейтом сравнения.
+inline std::int64_t get_overload_penalty(std::int64_t massG,
+                                         std::int64_t capacityG) {
+    return massG > capacityG ? (massG - capacityG) : 0;
 }
 
 // ── Level-up ───────────────────────────────────────────────────
@@ -598,13 +634,35 @@ inline DerivedBonuses calculate_derived(const Attributes& a, const Skills& s,
     return d;
 }
 
-inline float get_carry_capacity(const Attributes& a, const Skills& s,
-                                const BonusTotals& t) {
-    const float kg = get_carry_capacity(a, s)
-                   + float(t.derived_of(DerivedModId::CarryKg));
+// ВТОРОЕ СЛАГАЕМОЕ ОБОЗА — ЧТО НАДЕТО, И ГРАММЫ ПОЯВЛЯЮТСЯ РОВНО ЗДЕСЬ.
+//
+// Строка реестра бонусов держит своё число в АВТОРСКИХ КИЛОГРАММАХ
+// (`BonusId::CarryKg`, ярлык «Carry (kg)», аффикс `of_the_mule` +5 кг за
+// юнит) — и это НЕ исключение из граммов, а уже действующее правило границы:
+// у двери сводки рядом (`slot_tally` ниже) точно так же сворачиваются в
+// граммы безразмерный `haulMult` и килограммовый `kHaulBackG`. Содержимое
+// таблиц и реестров авторское; граммы появляются у двери МИРА, в одном месте
+// на величину (вердикт владельца 2026-10-20 «давай А» — пересчёт живёт
+// ВНУТРИ двери, а не дисциплиной вокруг неё).
+//
+// ПОЧЕМУ РЕЕСТР НЕ ПЕРЕВЕДЁН В ГРАММЫ, ЧИСЛОМ: его значение — один общий
+// `int16` на 21 строку аффиксов, которые меряют несоизмеримое (проценты,
+// плоский урон, очки брони, ранги навыков), а МАССОЙ из них является ОДНА.
+// Граммы в ней стоили бы либо `ItemRef` 40 → 56 Б, то есть `NpcInventory`
+// 641 → 897 МиБ по капу 16384 — ради одной строки из 21, — либо падения
+// потолка аффикса 80 → 16 кг, то есть подгонки БАЛАНСА под ТИП. Ни то, ни
+// другое не покупает ничего: единица авторского числа не врёт.
+//
+// Потолок суммы: 29 150 000 + 32 767 × 1000 = 61 917 000 г (62 т), запас
+// `int32` 34×.
+inline std::int32_t get_carry_capacity(const Attributes& a, const Skills& s,
+                                       const BonusTotals& t) {
+    const std::int64_t g =
+        std::int64_t(get_carry_capacity(a, s))
+        + std::int64_t(t.derived_of(DerivedModId::CarryKg)) * 1000;
     // A back cannot hold a negative load; zero is the honest floor and the
-    // overload law upstairs already prices every carried kilogram over it.
-    return kg < 0.0f ? 0.0f : kg;
+    // overload law upstairs already prices every carried gram over it.
+    return g < 0 ? 0 : std::int32_t(g);
 }
 
 // ── Instant: act once on the pools ───────────────────────────────────────
@@ -870,12 +928,15 @@ inline InventorySummary slot_tally(const ItemRef& s,
         t.boardPerDay = std::int64_t(npc_board_per_day(soldier_npc_type(kind)))
                       * n;
         t.wagePerDay  = std::int64_t(soldier_upkeep(kind, s.level)) * n;
-        // Спина объекта — СВОИ килограммы строки (M-297), округлённые тем же
-        // квантом 0.01 кг: `haulMult` сегодня даёт 0 / 7.5 / 10.5 / 120 кг,
-        // но строка с `haulMult = 0.07` сломала бы `float` молча.
+        // Спина объекта — СВОИ ГРАММЫ строки (M-297). `haulMult` есть
+        // БЕЗРАЗМЕРНЫЙ авторский множитель (число человеческих спин), и
+        // граммы появляются ровно здесь, у его ЕДИНСТВЕННОГО чтения — тем же
+        // правилом границы, каким ниже сворачивается авторский килограмм
+        // аффикса у `get_carry_capacity`. Округление одно и на месте: строка
+        // с `haulMult = 0.07` даёт 1050 г честно.
         t.haulG = std::int64_t(std::lround(
                        double(npc_def(NPCType(kind)).haulMult)
-                       * double(kHaulBackKg) * 1000.0))
+                       * double(kHaulBackG)))
                  * n;
         return t;
     }
@@ -1206,9 +1267,14 @@ struct PlayerCombatSlice {
     int currentSp, maxSp;
 };
 
-// Total inventory weight in kg (сумма `ItemDef::massG` × счёт, делённая на
-// килограмм ОДИН раз — см. тело: внутри мира величина целая).
-float inventory_weight(const Inventory& inv) noexcept;
+// МАССА КОНТЕЙНЕРА — ЦЕЛЫЕ ГРАММЫ, И ДЕЛЕНИЯ ЗДЕСЬ БОЛЬШЕ НЕТ ВОВСЕ.
+// Чтение хранимой сводки (`sum().massG`, M-296), ноль счёта. Имя сменилось
+// вместе с единицей: звалось `inventory_weight` и отдавало килограммы во
+// флоате — последнее место этой цепочки, где целая величина мира портилась
+// обратно (ЗАКОН ИМЕНИ п.5). Килограммы остались ровно у ПОКАЗА (`ui/`).
+inline std::int64_t inventory_mass_g(const Inventory& inv) noexcept {
+    return inv.sum().massG;
+}
 
 // ── The reversible reaction (CANON «Крафт/Скрап», owner 2026-09-11/12) ─────
 // FORWARD — craft: consume exactly n BATCHES of the composition (full

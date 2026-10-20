@@ -218,7 +218,11 @@ void test_the_governed_numbers_follow_the_row() {
     Skills none{};
     const BarCeilings bare = bar_ceilings(a, none, 100, 100, 100);
     const DerivedBonuses bareD = calculate_derived(a, none);
-    const float bareCarry = get_carry_capacity(a, none);
+    // ЦЕЛЫМ, и утверждается ОТНОШЕНИЕ (§8 п.4), потому
+    // свидетель пережил смену кванта кг → г не тронутым по сути:
+    // удвоение есть удвоение в любых единицах. Поменялся ТОЛЬКО тип,
+    // и с ним сравнение стало ТОЧНым вместо флоатного.
+    const std::int32_t bareCarry = get_carry_capacity(a, none);
 
     Skills trained{};
     trained[SkillId::Bodybuilding]  = 20;   // 5 %/rank -> x2
@@ -246,8 +250,36 @@ void test_the_governed_numbers_follow_the_row() {
     CHECK(recovery_steps(1.0f, a, trained, SkillId::Spellcraft)
               < recovery_steps(1.0f, a, none, SkillId::Spellcraft),
           "Spellcraft's row now governs the cast's tempo");
-    CHECK(get_carry_capacity(a, trained) == bareCarry * 2.0f,
+    CHECK(get_carry_capacity(a, trained) == bareCarry * 2,
           "carry capacity follows weightlifting's row");
+
+    // ── ПОТОЛОК ОБОЗА НА КАПАХ ДВИЖКА: РАСЧЁТ ЗАКОНА ТИПА, ПОД СВИДЕТЕЛЕМ ──
+    // ЗАКОН ТИПА п.1 требует посчитать достижимый потолок и написать расчёт;
+    // этот CHECK делает расчёт ПРОВЕРЯЕМЫМ, а не прозой в шапке:
+    //     (100 000 + 255 × 10 000) × (100 + 100 × 10) / 100 = 29 150 000 г
+    // Промежуточное произведение 2 650 000 × 1100 = 2 915 000 000 ПЕРЕПОЛНЯЕТ
+    // `int32` (макс 2 147 483 647) и завернулось бы в ОТРИЦАТЕЛЬНОЕ, поэтому
+    // дверь множит в `int64`, а сужает только частное.
+    //
+    // БЕЗ ЭТОЙ ПРОВЕРКИ ВЫБОР ШИРИНЫ БЫЛ БЕЗ НОСИТЕЛЯ: записанная мутация
+    // «множить в `int32`» прошла ЗЕЛЁНОЙ по всем 322 проверкам файла, потому
+    // что фикстура выше берёт Str 10 и ранг 10 — произведение 40 000 000,
+    // в сорок раз ниже края (§8 п.6).
+    {
+        Attributes capA{};
+        capA[AttributeId::Str] = 255;          // ширина колонки атрибута
+        Skills capS{};
+        capS[SkillId::Weightlifting] = kMaxSkillRank;
+        const std::int32_t peak = get_carry_capacity(capA, capS);
+        CHECK(peak == 29'150'000,
+              "потолок обоза на капах движка — 29 150 000 г (29.15 т): "
+              "множение идёт в int64, иначе промежуточное 2 915 000 000 "
+              "заворачивает int32 в минус");
+        CHECK(peak > 0 && peak > bareCarry,
+              "НЕГАТИВНЫЙ КОНТРОЛЬ ЗАВОРОТА: при сужении множения это число "
+              "становится отрицательным, то есть сильнейшая спина мира "
+              "оказывается слабее нулевой");
+    }
 
     // The SP bar is END's alone — no skill multiplies it, and that is a
     // deliberate absence, so it is pinned as one.

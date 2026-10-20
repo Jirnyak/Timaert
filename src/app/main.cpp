@@ -1111,14 +1111,15 @@ bool player_camp_repays_its_hour(App& app) {
     return sm::camp_repays_its_hour(
         sm::burn_stamina_per_hour(
             macro_cell_cost_weight(app),
-            sm::overload_charge_from_capacity(prt->carryCap,
-                                              player_bag(app)).cost,
+            sm::overload_charge_from_capacity(
+                sm::carry_capacity_g(*prt, player_bag(app)),
+                player_bag(app)).cost,
             sm::skill_mult_of(sm::SkillId::Travel, int(prt->travelRank))),
         pools.maxSp, int(prt->marathonRank));
 }
 
 // HIS march caches, the same two columns every squad carries (travelRank,
-// marathonRank, carryCap) — filled by the ONE sheet door
+// marathonRank, carryPerSoulG) — filled by the ONE sheet door
 // (macro/squad.h refresh_body_from_sheet, reached every macro turn through
 // refresh_player_body). On the FLAG, because that is the body that walks and
 // the body whose bars `player_pools` returns. nullptr before a world exists.
@@ -3762,7 +3763,8 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                     sm::burn_stamina_per_hour(
                         macro_cell_cost_weight(app),
                         sm::overload_charge_from_capacity(
-                            prt.carryCap, player_bag(app)).cost,
+                            sm::carry_capacity_g(prt, player_bag(app)),
+                            player_bag(app)).cost,
                         sm::skill_mult_of(sm::SkillId::Travel,
                                           int(prt.travelRank))),
                     /*regenerates=*/!marching);

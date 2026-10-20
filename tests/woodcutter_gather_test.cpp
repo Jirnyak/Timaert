@@ -26,6 +26,7 @@
 #include "macro/tree_layer.h"
 #include "macro/store.h"
 
+#include <limits>
 #include <cmath>
 #include <cstdint>
 
@@ -783,8 +784,7 @@ void test_the_catch_lands_as_creatures() {
     prt.squadType = std::uint8_t(SquadType::Artel);
     prt.errandObject =
         std::uint32_t(gather_goal_row(ResourceFieldId::Livestock));
-    prt.carryPerSoul = 40.0f;
-    prt.carryCap = 40.0f;
+    prt.carryPerSoulG = 40'000;   // спина 40 кг в целых граммах
     st.runtime[h.slot] = prt;
     sm::store_rename_ordinal(st, h, 77u);
     h = sm::handle_at(st, h.slot);
@@ -852,9 +852,10 @@ void test_the_catch_lands_as_creatures() {
     // артель берёт с клетки поля, как лесоруб с клетки леса.
     // Прегенерацию загонов миром несёт наряд M-79 реестра.)
     // ЕДИНСТВЕННАЯ ВЫЖИВШАЯ КОЛОНКА ЛОШАДИ — СПИНА, и считает её живая
-    // дверь состава (squad.h refresh_squad_carry), которую зовёт сама
-    // ловля. Обоз = своя спина ОТ АНКЕТЫ плюс КИЛОГРАММЫ объектов: конь
-    // даёт `haulMult × kHaulBackKg` = 8 × 15 = 120 кг, и число это его
+    // дверь сводки, которую правит сама запись слота, а складывает
+    // `carry_capacity_g`. Обоз = своя спина ОТ АНКЕТЫ плюс ГРАММЫ
+    // объектов: конь даёт `haulMult × kHaulBackG` = 8 × 15 000 = 120 000 г,
+    // то есть те же 120 кг, и число это его
     // собственное — от анкеты хозяина оно не зависит (ЗАКОН ДВУХ ТАБЛИЦ).
     // Ожидание выводится из ТЕХ ЖЕ колонок, что читает код (§8 п.4), а не
     // пересказывается литералом.
@@ -866,13 +867,18 @@ void test_the_catch_lands_as_creatures() {
     {
         const auto& rtNow =
             (*sm::body_state<ecs::MacroNpcRuntime>(st, e));
-        const float horseKg =
-            npc_def(NPCType::Horse).haulMult * sm::kHaulBackKg;
-        CHECK(std::fabs(rtNow.carryCap
-                        - (rtNow.carryPerSoul + horseKg * float(caught)))
-                  <= 0.5f,
-              "обоз = спина анкеты ПЛЮС килограммы объектов: пойманный конь "
-              "несёт свои 120 кг, а не долю чужой анкеты");
+        const std::int64_t horseG = std::int64_t(std::lround(
+            double(npc_def(NPCType::Horse).haulMult)
+            * double(sm::kHaulBackG)));
+        // ДОПУСК СТАЛ ТОЧНым РАВЕНСТВОМ: здесь стояло
+        // `fabs(...) <= 0.5f` — полкилограмма слабины, купленной
+        // флоатом. В целых граммах прибор видит расхождение в
+        // ОДИН грамм — в 500 раз строже, и бесплатно.
+        CHECK(sm::carry_capacity_g(st, e)
+                  == std::int64_t(rtNow.carryPerSoulG)
+                         + horseG * std::int64_t(caught),
+              "обоз = спина анкеты ПЛЮС граммы объектов: пойманный конь "
+              "несёт свои 120 000 г, а не долю чужой анкеты");
     }
 }
 
@@ -893,9 +899,8 @@ void test_a_hauless_head_does_not_grow_the_train() {
     sm::MacroStore& st = *store;
     const sm::MacroHandle h = make_woodcutter(st, 10.0f, 10.0f, 0);
 
-    sm::refresh_squad_carry(st, h);
-    const float bare = st.runtime[h.slot].carryCap;
-    CHECK(bare > 0.0f,
+    const std::int64_t bare = sm::carry_capacity_g(st, h);
+    CHECK(bare > 0,
           "ПРЕДУСЛОВИЕ: у сквада есть своя спина от анкеты (иначе нулём "
           "ниже можно было бы доказать что угодно)");
 
@@ -906,8 +911,7 @@ void test_a_hauless_head_does_not_grow_the_train() {
     CHECK(creatures_push_stack(st.inventory[h.slot].inv, NPCType::Dragon,
                                npc_def(NPCType::Dragon).baseLevel, 1),
           "ПРЕДУСЛОВИЕ: дракон встал в контейнер");
-    sm::refresh_squad_carry(st, h);
-    CHECK(std::fabs(st.runtime[h.slot].carryCap - bare) <= 0.001f,
+    CHECK(sm::carry_capacity_g(st, h) == bare,
           "ВОЛК И ДРАКОН ОБОЗ НЕ РАСТЯТ: авторский ноль колонки значит НОЛЬ "
           "килограммов, а не одну человеческую спину");
 
@@ -916,12 +920,21 @@ void test_a_hauless_head_does_not_grow_the_train() {
     CHECK(creatures_push_stack(st.inventory[h.slot].inv, NPCType::Horse,
                                npc_def(NPCType::Horse).baseLevel, 2),
           "ПРЕДУСЛОВИЕ: два коня встали в тот же контейнер");
-    sm::refresh_squad_carry(st, h);
-    const float withHorses = st.runtime[h.slot].carryCap;
-    const float horseKg = npc_def(NPCType::Horse).haulMult * sm::kHaulBackKg;
-    CHECK(std::fabs(withHorses - (bare + 2.0f * horseKg)) <= 0.001f,
-          "КОНЬ РАСТИТ, И РОВНО НА СВОИ КИЛОГРАММЫ: 2 × haulMult × "
-          "kHaulBackKg, и ни волк, ни дракон рядом не прибавили ничего");
+    const std::int64_t withHorses = sm::carry_capacity_g(st, h);
+    const std::int64_t horseG = std::int64_t(std::lround(
+        double(npc_def(NPCType::Horse).haulMult) * double(sm::kHaulBackG)));
+    CHECK(withHorses == bare + 2 * horseG,
+          "КОНЬ РАСТИТ, И РОВНО НА СВОИ ГРАММЫ: 2 × haulMult × "
+          "kHaulBackG, и ни волк, ни дракон рядом не прибавили ничего");
+    // И НЕЗАВИСИМЫЙ ЯКОРЬ НА САМО ЧИСЛО (§8 п.6): конь в этом
+    // мире вьючный на 120 кг — это сказано выводом самой
+    // колонки (`kHaulBackG@src/tables/npc.h`: «вьючный конь ~120»).
+    // Тождество выше слепо к ФОРМУЛЕ (обе стороны читают одну
+    // и ту же колонку), а это утверждение о МИРЕ и поймает
+    // смену кванта, которую тождество пережило бы зелёным.
+    CHECK(horseG == 120'000,
+          "спина коня есть 120 000 г = 120 кг — независимый "
+          "факт мира, а не пересчёт продакшен-формулы");
     CHECK(withHorses > bare,
           "НЕГАТИВНЫЙ КОНТРОЛЬ: прибор отличает рост от его отсутствия");
 
@@ -929,13 +942,41 @@ void test_a_hauless_head_does_not_grow_the_train() {
     // ТАБЛИЦ — у объекта анкеты нет, умножаться ему не на что). Прежняя
     // доля этот же конь оценила бы в `анкета × 8`, то есть в разных
     // контейнерах по-разному.
-    const float richer = bare * 2.0f;
-    st.runtime[h.slot].carryPerSoul = richer;
-    sm::refresh_squad_carry(st, h);
-    CHECK(std::fabs(st.runtime[h.slot].carryCap - (richer + 2.0f * horseKg))
-              <= 0.001f,
+    const std::int64_t richer = bare * 2;
+    st.runtime[h.slot].carryPerSoulG = std::int32_t(richer);
+    CHECK(sm::carry_capacity_g(st, h) == richer + 2 * horseG,
           "КИЛОГРАММЫ КОНЯ ОТ БОГАТСТВА ХОЗЯИНА НЕ ЗАВИСЯТ: удвоенная "
           "анкета сдвинула ТОЛЬКО своё слагаемое");
+
+    // ── ШИРИНА `int64` — НЕ ОСТОРОЖНОСТЬ, А РАСЧЁТ, И ВОТ ЕЁ СВИДЕТЕЛЬ ────
+    // Обоз складывается в `int64` потому, что у голов нет структурного
+    // потолка: `ItemRef::count` — `int32`, слотов 1024, и спина коня 120 000 г.
+    // Порог заворота `int32` — 2 147 483 647 / 120 000 ≈ **17 896 голов**, то
+    // есть табун, который контейнер держит ОДНИМ стаком. Замеренный город
+    // давал 11 774 тела — 66 % диапазона, — значит это не умозрительный край.
+    //
+    // БЕЗ ЭТОЙ ПРОВЕРКИ ВЫБОР ТИПА БЫЛ БЕЗ НОСИТЕЛЯ: записанная мутация
+    // «сузить возврат двери до `int32`» прошла ЗЕЛЁНОЙ по всем 51 проверке
+    // этого файла, потому что ни один свидетель не строил табун такого
+    // размера (§8 п.6 — зелёная мутация есть дыра свидетеля, а не прочность).
+    {
+        auto big = sm::make_macro_store();
+        sm::MacroStore& bst = *big;
+        const sm::MacroHandle bh = make_woodcutter(bst, 20.0f, 20.0f, 0);
+        const int herd = 20'000;   // выше порога 17 896
+        CHECK(creatures_push_stack(bst.inventory[bh.slot].inv, NPCType::Horse,
+                                   npc_def(NPCType::Horse).baseLevel, herd),
+              "ПРЕДУСЛОВИЕ: табун из 20 000 коней встал ОДНИМ стаком");
+        const std::int64_t huge = sm::carry_capacity_g(bst, bh);
+        CHECK(huge > std::int64_t(std::numeric_limits<std::int32_t>::max()),
+              "ОБОЗ ПЕРЕВАЛИВАЕТ ЗА `int32` И ОТВЕЧАЕТ ЧЕСТНО: сужение здесь "
+              "завернуло бы сумму в ОТРИЦАТЕЛЬНУЮ, то есть табун сделал бы "
+              "спину меньше, чем у пустого сквада");
+        CHECK(huge == sm::carry_capacity_g(bst, bh)
+                  && huge >= std::int64_t(herd) * horseG,
+              "и она не меньше суммы спин самого табуна — слагаемое анкеты "
+              "только добавляет");
+    }
 
     // ── СВОЯ СПИНА СКВАДА — ЭТО АНКЕТА, И КОЛОНКА СТРОКИ В НЕЁ НЕ ВХОДИТ ──
     // Строка берётся НЕ произвольная: `Dragon` — живой продакшен-случай, три
@@ -949,12 +990,11 @@ void test_a_hauless_head_does_not_grow_the_train() {
         ecs::Pools dp{};
         ecs::MacroNpcRuntime drt{};
         refresh_body_from_sheet(dp, &drt, ds, NPCType::Dragon);
-        CHECK(std::fabs(drt.carryPerSoul
-                        - get_carry_capacity(ds.attributes, ds.skills))
-                  <= 0.001f,
+        CHECK(drt.carryPerSoulG
+                  == get_carry_capacity(ds.attributes, ds.skills),
               "СПИНА ДРАКОНА-СКВАДА = ЕГО АНКЕТА: авторский ноль колонки — "
               "про упряжь объекта, а не про то, что тело не несёт ничего");
-        CHECK(drt.carryPerSoul > 0.0f,
+        CHECK(drt.carryPerSoulG > 0,
               "и она ПОЛОЖИТЕЛЬНА: нулевой обоз означал бы перегруз на "
               "первом килограмме трофея");
     }

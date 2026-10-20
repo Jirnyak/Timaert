@@ -1814,8 +1814,10 @@ bool run_macro_travel_sp_smoke(App& app) {
     // agree, and «happen to» is not a witness.
     const sm::ecs::MacroNpcRuntime* prt = player_march_cache(app);
     const int overloadCost = prt
-        ? sm::overload_charge_from_capacity(prt->carryCap,
-                                            player_bag(app)).cost : 0;
+        ? sm::overload_charge_from_capacity(
+              sm::carry_capacity_g(*prt, player_bag(app)),
+              player_bag(app)).cost
+        : 0;
     const float eff = sm::skill_mult_of(sm::SkillId::Travel,
                                         prt ? int(prt->travelRank) : 0);
     // ...AND ONE WHOLE GAME MINUTE OF SLACK, because that is the quantum the

@@ -475,7 +475,7 @@ int count_tick_events(const sm::EventBus& bus, sm::EventTag tag);
 const sm::GameEvent* latest_tick_event(const sm::EventBus& bus,
                                        sm::EventTag tag);
 // HIS march caches — the two columns every squad carries (travelRank,
-// marathonRank, carryCap), on the FLAG. The hourly burn reads them, and so
+// marathonRank, carryPerSoulG), on the FLAG. The hourly burn reads them, and so
 // does the camp-repays question.
 sm::ecs::MacroNpcRuntime* player_march_cache(App& app);
 bool cast_active_spell(App& app);

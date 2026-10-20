@@ -1,5 +1,6 @@
 // Macroworld NPC AI: behaviour dispatch for persistent macro NPCs.
 #pragma once
+#include <limits>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -196,8 +197,18 @@ struct CaravanDeal {
 // `sink`/`user` — канал фактов мира (Consumed при гашении долга рынка,
 // CANON S10): проданное в место по счёту съедается СРАЗУ. Тесты водят
 // сделку без канала — гашение то же, факты молчат.
+// «ПРЕДЕЛА НЕТ» — ИМЕНОВАННЫМ ЧИСЛОМ, А НЕ ЛИТЕРАЛОМ `1e9f`.
+// Приёмник сделки на рынке есть СКЛАД МЕСТА, а у склада спины нет вовсе:
+// обоз — свойство анкеты, которая идёт, а место не идёт никуда. Вывод числа
+// физический: `int64` держит 9.2·10¹⁸ г, то есть предел заведомо недостижим
+// любым контейнером (1024 слота × `int32` счёт × 64 кг самой тяжёлой строки
+// каталога ≈ 1.4·10¹⁴ г), и минимум в `haul_between` его просто никогда не
+// выбирает. Здесь стоял `1e9f` — километровое число без вывода, которое к
+// тому же в граммах значило всего 1000 т и могло СТАТЬ пределом.
+inline constexpr std::int64_t kNoCarryLimitG =
+    std::numeric_limits<std::int64_t>::max();
 CaravanDeal trade_caravan_at_station(MacroStore& st, Inventory& hold,
-                                     float capacityKg,
+                                     std::int64_t capacityG,
                                      std::uint16_t marketSlot,
                                      int myTradePct, int theirTradePct,
                                      EconFactSink sink = nullptr,
@@ -227,7 +238,7 @@ CaravanDeal trade_caravan_at_station(MacroStore& st, Inventory& hold,
 // `homeSite`, которые существовали только чтобы пересчитать домашний спрос
 // по этому огрублённому снимку. Память сквада (ярус 3) веса не несёт нигде.
 CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
-                                   float capacityKg,
+                                   std::int64_t capacityG,
                                    std::uint16_t marketSlot,
                                    MacroHandle home,
                                    int myTradePct, int theirTradePct,
@@ -388,7 +399,7 @@ int squad_bags_hygiene_daily(MacroWorld& mw);
 // village cannot outfit a far expedition, and that is the truth of it.
 // Returns bread actually loaded.
 int provision_squad(Inventory& store, Inventory& bag, int soldiers,
-                    float roundtripCells, float freeCarryKg);
+                    float roundtripCells, std::int64_t freeCarryG);
 
 // Macro-view path: scans all macro NPCs each step and dispatches those whose
 // per-NPC tick accumulator matured. `ticks` is world ticks elapsed. The

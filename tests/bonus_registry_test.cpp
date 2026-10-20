@@ -78,8 +78,17 @@ void test_derived_rows_reach_their_laws() {
     // The overloads: the same laws, WITH what stands on the body.
     Attributes a{};
     Skills s{};
-    CHECK(get_carry_capacity(a, s, t) == get_carry_capacity(a, s) + 25.0f,
-          "worn CarryKg kilograms add to the one carry law");
+    // ГРАНИЦА КГ → Г, ПРОВЕРЕННАЯ ЯВНО (2026-10-20). Строка
+    // реестра держит авторские КИЛОГРАММы (один общий `int16` на
+    // 21 строку аффиксов, из которых массой является ОДНА), а мир
+    // считает граммами целыми — перевод живёт РОВНО в одном
+    // чтении (`get_carry_capacity@src/macro/anketa.h`), и этот CHECK есть
+    // его единственный свидетель: убери `× 1000` — и покраснеет
+    // только он. Сами 25 — вход строкой выше, не литерал отсюда.
+    CHECK(get_carry_capacity(a, s, t)
+              == get_carry_capacity(a, s) + 25 * 1000,
+          "worn CarryKg kilograms land as GRAMS in the one carry law: "
+          "авторский килограмм реестра сворачивается у ОДНОГО чтения");
     accumulate(t, {std::uint8_t(BonusId::MovePct), 50});
     CHECK(calculate_derived(a, s, t).moveSpeedPct
               == calculate_derived(a, s).moveSpeedPct * 150 / 100,

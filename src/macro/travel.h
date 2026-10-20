@@ -19,8 +19,8 @@ struct Inventory;
 // carried weight from the bag, and the "any overload hurts" ceil (sub-1kg
 // overload still costs 1 SP). Was copy-pasted in travel.cpp and app/main.cpp.
 struct OverloadCharge {
-    float overload = 0.0f;  // kg carried over capacity
-    int   cost = 0;         // its integer SP surcharge
+    std::int64_t overloadG = 0;  // ГРАММЫ, несомые сверх обоза
+    int          cost = 0;       // its integer SP surcharge
 };
 // THE overload law, for any back on the map. It was called
 // `player_overload_charge` and only the player was ever charged by it, so a
@@ -35,13 +35,21 @@ OverloadCharge overload_charge(const CharacterSheet& sheet,
 // rebuilding a derived sheet it does not store. Inline: the macro AI is the
 // caller, and it must not have to link the travel translation unit (and its
 // terrain/feature world) to ask what a pack weighs.
-inline OverloadCharge overload_charge_from_capacity(float capacityKg,
+inline OverloadCharge overload_charge_from_capacity(std::int64_t capacityG,
                                                     const Inventory& inventory) {
-    const float carried = inventory_weight(inventory);
-    const float overload = get_overload_penalty(carried, capacityKg);
-    // Bars are integer POD (Pools). Preserve the "any overload hurts"
-    // behaviour instead of silently truncating sub-1kg overload to zero.
-    return {overload, overload > 0.0f ? int(std::ceil(overload)) : 0};
+    const std::int64_t overloadG =
+        get_overload_penalty(inventory_mass_g(inventory), capacityG);
+    // «ЛЮБОЙ ПЕРЕГРУЗ БОЛИТ» — ТЕПЕРЬ ПО ПОСТРОЕНИЮ, А НЕ ПО ОБЕЩАНИЮ.
+    // Здесь стоял `int(std::ceil(overload))` над КИЛОГРАММАМИ во флоате, и
+    // закон держался тем, что `ceil` округляет вверх; в целых граммах он
+    // становится точным делением с округлением вверх — `(g + 999) / 1000`, —
+    // и один грузовой ГРАММ по-прежнему стоит ровно 1 SP, а 1000 г — тоже 1,
+    // а 1001 г — 2. Свидетель: `macro_travel_parity_test`.
+    //
+    // Старая форма вместе с флоатом теряла и ЧЕСТНОСТЬ: `inventory_weight`
+    // отдавала 112 000 г как 112.0000053 кг, и `ceil` брал лишнюю единицу
+    // цены на ровном месте. Целая арифметика этого не умеет.
+    return {overloadG, int((overloadG + 999) / 1000)};
 }
 
 // (No MacroTravelCost, no macro_travel_cost_for_cell, no

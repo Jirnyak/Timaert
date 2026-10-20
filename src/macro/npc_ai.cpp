@@ -36,6 +36,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <unordered_set>
 
 namespace sm {
@@ -52,23 +53,28 @@ inline int rand_int(const TickContext& ctx, int range) {
 
 inline float rand_f01(const TickContext& ctx) { return ctx.rng->next_f01(); }
 
-// МАССА ЕДИНИЦЫ СТРОКИ, КОТОРАЯ МОЖЕТ НЕ РАЗРЕШИТЬСЯ ВОВСЕ — килограммами,
-// под делители трюма этого файла.
+// МАССА ЕДИНИЦЫ СТРОКИ, КОТОРАЯ МОЖЕТ НЕ РАЗРЕШИТЬСЯ ВОВСЕ — ЦЕЛЫМИ
+// ГРАММАМИ, под делители трюма этого файла.
 //
 // Строка НЕ РАЗРЕШАЕТСЯ законно: выход сборщика бывает СУЩЕСТВОМ (`creatureYield`),
 // а у существа строки предмета нет вовсе, и `item_def_at` честно отдаёт
-// nullptr. Такая строка весит здесь КИЛОГРАММ, и это НЕ ВЫВОД, а СОХРАНЁННОЕ
-// поведение: число стояло в этом файле ОДИННАДЦАТЬЮ литералами `1.0f` до
-// M-298, оно делит живые рейсы, и права сдвинуть его у наряда о массе нет —
-// иначе паритет перестал бы отвечать на вопрос, который ему задан. Названо
-// остатком в реестре вместе с переводом обоза в целое.
+// nullptr. Такая строка весит здесь КИЛОГРАММ (1000 г), и это НЕ ВЫВОД, а
+// СОХРАНЁННОЕ поведение: число стояло в этом файле ОДИННАДЦАТЬЮ литералами
+// `1.0f` до M-298, оно делит живые рейсы, и права сдвинуть его у наряда о
+// массе нет — иначе паритет перестал бы отвечать на вопрос, который ему
+// задан. Смена единицы его НЕ СДВИНУЛА: 1 кг = 1000 г ровно.
 //
 // Что ЗДЕСЬ изменилось: вторая половина прежнего выражения — `weight > 0.0f ?
 // ... : 1.0f` — МЁРТВА и потому снята. Нулевой массы у разрешённой строки
 // больше не бывает (страж `item_mass_g`), а минимум каталога и до стража был
 // 10 г, то есть эта ветка не срабатывала ни разу ни на одной строке мира.
-inline float unit_mass_kg(const ItemDef* d) noexcept {
-    return d ? item_mass_kg(*d) : 1.0f;
+//
+// И ДЕЛИТЕЛЬ ТЕПЕРЬ НИКОГДА НЕ НОЛЬ ПО ПОСТРОЕНИЮ: разрешённую строку держит
+// выше нуля страж `item_mass_g` (`items.cpp` отказывает сборке на строке с
+// нулевой массой), а неразрешённая отдаёт 1000. Целое деление на ноль было бы
+// UB там, где флоат отдавал бы inf, — поэтому сказано вслух.
+inline std::int64_t unit_mass_g(const ItemDef* d) noexcept {
+    return d ? std::int64_t(item_mass_g(*d)) : 1000;
 }
 
 // Store свипа — из конверта (make_tick_context кладёт адрес в ctx.mw.store).
@@ -321,7 +327,8 @@ float cell_weight(const TickContext& ctx, int x, int y);
 void refresh_overload_cost(ecs::MacroNpcRuntime& rt,
                            const ecs::NpcInventory* bag) {
     if (!bag) { rt.overloadCost = 0; return; }
-    const int cost = overload_charge_from_capacity(rt.carryCap, bag->inv).cost;
+    const int cost = overload_charge_from_capacity(
+                         carry_capacity_g(rt, bag->inv), bag->inv).cost;
     rt.overloadCost = std::int16_t(std::clamp(cost, 0, 32767));
 }
 
@@ -1051,7 +1058,8 @@ bool march_is_stuck_(const MacroPos& p, float oldX, float oldY,
                      const ecs::MacroNpcRuntime& rt,
                      const ecs::Pools& pools);
 int haul_between(Inventory& from, Depot to, int defIdx,
-                 int maxUnits, float capacityLeftKg);
+                 int maxUnits, std::int64_t capacityLeftG);
+
 
 // Приёмник-МЕСТО (CANON S10): склад + счёт + канал фактов мира — дверь
 // прихода гасит долг СРАЗУ тем, что упало. Сумки в Depot не заворачиваются
@@ -1100,10 +1108,11 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
                     : nullptr) {
                 // (a CREATURE yield rides the creatures, not the bag — there
                 // is no «full back» to send home early)
-                const float unitKg = unit_mass_kg(item_def_at(outIdx));
+                const std::int64_t unitG = unit_mass_g(item_def_at(outIdx));
                 if (bagIdle->count_of(outIdx) > 0
-                    && rt.carryCap - inventory_weight(*bagIdle)
-                           < unitKg) {
+                    && carry_capacity_g(rt, *bagIdle)
+                               - inventory_mass_g(*bagIdle)
+                           < unitG) {
                     rt.targetX = home.x;
                     rt.targetY = home.y;
                     rt.state = std::uint8_t(NS::Returning);
@@ -1215,10 +1224,16 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
                 // с 2400 кг серебра на спине в 2145 кг, сид 7).
                 int carryMax = have;
                 if (bag && def->creatureYield == NPCType::Count) {
-                    const float unitKg = unit_mass_kg(item_def_at(outIdx));
-                    const float freeKg =
-                        rt.carryCap - inventory_weight(*bag);
-                    carryMax = std::max(0, int(freeKg / unitKg));
+                    const std::int64_t freeG = carry_capacity_g(rt, *bag)
+                                             - inventory_mass_g(*bag);
+                    // Перегруженная спина даёт ОТРИЦАТЕЛЬНЫЙ остаток, и его
+                    // гасит `max(0, …)` — тот же страж, что стоял здесь и до
+                    // граммов. Делить отрицательное целое было бы не ошибкой,
+                    // но ответ «минус три единицы влезет» смысла не имеет.
+                    carryMax = freeG <= 0
+                                   ? 0
+                                   : int(freeG
+                                         / unit_mass_g(item_def_at(outIdx)));
                 }
                 // ONE OBJECT PER HAND (owner, 2026-09-16). Each worker takes
                 // one — exactly what the player takes for exactly the same
@@ -1251,7 +1266,12 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
                         resource_field_apply(mw, def->row, tx, ty, -take);
                         pools.spCarry -= float(cycleCost);
                         settle_sp_carry(pools);
-                        refresh_squad_carry(store_ctx(ctx), self);
+                        // (ЗДЕСЬ СТОЯЛ `refresh_squad_carry` — догон колонки
+                        //  обоза после добора голов. Не нужен: спины голов
+                        //  копит СВОДКА, а её правит сама запись слота,
+                        //  которую `creatures_push_stack` только что и
+                        //  сделал. Разряд А — пересчёт внутри двери
+                        //  изменения, вердикт владельца «давай А».)
                     } else {
                         tookSomething = false;   // no slot — nothing conjured
                     }
@@ -1308,9 +1328,9 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
                     : nullptr;
                 bool backsFull = false;
                 if (bagNow && def->creatureYield == NPCType::Count) {
-                    const float unitKg = unit_mass_kg(item_def_at(outIdx));
-                    backsFull =
-                        rt.carryCap - inventory_weight(*bagNow) < unitKg;
+                    backsFull = carry_capacity_g(rt, *bagNow)
+                                    - inventory_mass_g(*bagNow)
+                                < unit_mass_g(item_def_at(outIdx));
                 }
                 const bool barSpent = int(pools.sp) < cycleCost;
                 // GROUND THAT GAVE NOTHING is the third reason to leave, and
@@ -1387,13 +1407,26 @@ const std::array<int, std::size_t(kCommodityCount)>& value_dense_order() {
     static const auto kOrder = [] {
         std::array<int, std::size_t(kCommodityCount)> order{};
         for (int i = 0; i < kCommodityCount; ++i) order[std::size_t(i)] = i;
-        const auto density = [](int i) {
+        // ПЛОТНОСТЬ СРАВНИВАЕТСЯ ПЕРЕКРЁСТНЫМ УМНОЖЕНИЕМ, А НЕ ДЕЛЕНИЕМ —
+        // тот же закон и та же запись, какой платит всякая сделка
+        // (`densest_value_slot@src/macro/currency.h`): `v₁·m₂ > v₂·m₁`.
+        // Деления тут не было нужды никогда, а в граммах оно стало бы ещё и
+        // лживым — целое деление обрезало бы вниз и склеило соседние строки
+        // в равные. Произведение доходит до 12 800 × 64 000 = 8.2·10⁸, что
+        // ВЫШЕ точного целого диапазона `float` (2²⁴), поэтому `int64`.
+        //
+        // Строка без цены (или неразрешённая) весит здесь нулевой числитель
+        // и уезжает в хвост сама — ветки под неё не нужно.
+        const auto vm = [](int i) -> std::pair<std::int64_t, std::int64_t> {
             const ItemDef* d = item_def_at(commodity_item_index(i));
-            if (!d || d->value <= 0) return 0.0f;
-            return float(d->value) / item_mass_kg(*d);
+            if (!d || d->value <= 0) return {0, 1};
+            return {std::int64_t(d->value), std::int64_t(item_mass_g(*d))};
         };
-        std::sort(order.begin(), order.end(),
-                  [&](int a, int b) { return density(a) > density(b); });
+        std::sort(order.begin(), order.end(), [&](int a, int b) {
+            const auto [va, ma] = vm(a);
+            const auto [vb, mb] = vm(b);
+            return va * mb > vb * ma;
+        });
         return order;
     }();
     return kOrder;
@@ -1404,11 +1437,18 @@ const std::array<int, std::size_t(kCommodityCount)>& value_dense_order() {
 
 
 int haul_between(Inventory& from, Depot to, int defIdx,
-                 int maxUnits, float capacityLeftKg) {
-    if (maxUnits <= 0 || capacityLeftKg <= 0.0f) return 0;
-    const float unitKg = unit_mass_kg(item_def_at(defIdx));
-    const int byWeight = int(capacityLeftKg / unitKg);
-    const int n = std::min({maxUnits, byWeight, from.count_of(defIdx)});
+                 int maxUnits, std::int64_t capacityLeftG) {
+    if (maxUnits <= 0 || capacityLeftG <= 0) return 0;
+    // ТОЧНОЕ ЦЕЛОЕ ДЕЛЕНИЕ вместо `int(float / float)`: обрезание вниз —
+    // тот же закон («влезает столько целых единиц»), но без эпсилона, из-за
+    // которого флоат умел отдать на единицу больше или меньше у круглого
+    // края. Делитель выше нуля по построению (см. `unit_mass_g`).
+    const std::int64_t byWeight =
+        capacityLeftG / unit_mass_g(item_def_at(defIdx));
+    // Все три предела целые и неотрицательные, узкий из них — счёт стака,
+    // поэтому сужение до `int` законно ПОСЛЕ минимума, а не до него.
+    const int n = int(std::min({std::int64_t(maxUnits), byWeight,
+                                std::int64_t(from.count_of(defIdx))}));
     if (n <= 0) return 0;
     // Credit before debit (CANON S5): a hold with no free slot refuses, the
     // cargo stays where it was, and "units moved" is never said of goods
@@ -1746,12 +1786,12 @@ long long trade_bid_value_(const int* mine,
 // рейс увезёт: так дверь спрашивает АУКЦИОН. Оттого «что решили» и «что
 // повезли» — одно число, посчитанное одним кодом, а не два (S26).
 long long plan_home_load_(Inventory& store, const std::int32_t* needDebt,
-                          int population, const Skills& site, float capKg,
-                          Inventory* bag) {
+                          int population, const Skills& site,
+                          std::int64_t capG, Inventory* bag) {
     long long planned = 0;
     bool done[kMaxInventorySlots] = {};
-    float used = bag ? inventory_weight(*bag) : 0.0f;
-    while (used < capKg) {
+    std::int64_t used = bag ? inventory_mass_g(*bag) : 0;
+    while (used < capG) {
         // ЗАКОН ПЛОТНОСТИ — ЧУЖАЯ ДВЕРЬ, И ЗДЕСЬ ОН БОЛЬШЕ НЕ ВЫПИСАН (M-298,
         // вердикт владельца 2026-10-20 «слить в одну дверь сейчас»). Этот
         // цикл держал ВТОРУЮ копию `densest_value_slot` — тот же перекрёстный
@@ -1787,15 +1827,17 @@ long long plan_home_load_(Inventory& store, const std::int32_t* needDebt,
         // несло здесь ТОЛЬКО существо, а его отсекает отказ `if (!d)` строкой
         // выше, то есть `bestW > 0.0f` была истинна на каждом проходе мира.
         // Страж колонки сделал её невыразимой и для будущей строки.
-        const float bestKg = float(double(best.massG) / 1000.0);
-        const int byWeight = int((capKg - used) / bestKg);
-        if (fit > byWeight) fit = byWeight;
+        // Масса едет из двери плотности УЖЕ ЦЕЛОЙ В ГРАММАХ (`DensestSlot::
+        // massG`), и делить её больше не нужно — здесь стояло обратное
+        // превращение в килограммы, последнее на этом пути.
+        const std::int64_t byWeight = (capG - used) / best.massG;
+        if (std::int64_t(fit) > byWeight) fit = int(byWeight);
         if (fit <= 0) continue;
         planned += (long long)fit * best.value;
-        used += float(fit) * bestKg;
+        used += std::int64_t(fit) * best.massG;
         if (bag)
             haul_between(store, *bag, int(sl.def), fit,
-                         capKg - inventory_weight(*bag));
+                         capG - inventory_mass_g(*bag));
     }
     return planned;
 }
@@ -1896,9 +1938,9 @@ void ai_vendor(MacroHandle self, MacroPos& p,
         // (склад держит только излишек — долг съел нужду приходом).
         const Skills& homeSite = st.sheet[homeSlot].skills;
         plan_home_load_(homeInv, st.upkeep[homeSlot].needDebt,
-                        souls_home(st, homeSlot), homeSite, rt.carryCap,
-                        bag);
-        if (inventory_weight(*bag) <= 0.0f
+                        souls_home(st, homeSlot), homeSite,
+                        carry_capacity_g(rt, *bag), bag);
+        if (inventory_mass_g(*bag) <= 0
             && inventory_value(*bag) <= 0) {
             // Nothing to sell and nothing owed: wait out the morning.
             rt.stateTimer = std::int16_t(40 + rand_int(ctx, 40));
@@ -1937,7 +1979,8 @@ void ai_vendor(MacroHandle self, MacroPos& p,
             // (CANON S10, ярус 2): дом сам выписал свои цены точным
             // складом и своим счётом.
             const CaravanDeal deal = trade_vendor_at_market(
-                st, *bag, rt.carryCap, market, handle_at(st, homeSlot),
+                st, *bag, carry_capacity_g(rt, *bag), market,
+                handle_at(st, homeSlot),
                 trade_power_of(sheet_of(st, self)),
                 trade_power_of(st.sheet[market]),
                 ctx.mw.econFacts, ctx.mw.econFactsUser);
@@ -2060,7 +2103,7 @@ void ai_vendor(MacroHandle self, MacroPos& p,
                 // rotation dissolves the crew at dawn.
                 for (int i = 0; i < kCommodityCount; ++i) {
                     haul_between(*bag, depot_(homeSlot, ctx.mw),
-                                 commodity_item_index(i), 1 << 30, 1e9f);
+                                 commodity_item_index(i), 1 << 30, kNoCarryLimitG);
                 }
                 transfer_value_dense(*bag, depot_(homeSlot, ctx.mw),
                                inventory_value(*bag));
@@ -2219,7 +2262,7 @@ void ai_collector(MacroHandle self, MacroPos& p,
                 const int want = int(std::min<long long>(lack, affordable));
                 const int moved = haul_between(
                     vassalInv, *bag, id, want,
-                    rt.carryCap - inventory_weight(*bag));
+                    carry_capacity_g(rt, *bag) - inventory_mass_g(*bag));
                 if (moved <= 0) continue;
                 owed -= (long long)moved * base;
                 took += (long long)moved * base;
@@ -2256,7 +2299,7 @@ void ai_collector(MacroHandle self, MacroPos& p,
         if (at_target(p, rt, ctx)) {
             for (int i = 0; i < kCommodityCount; ++i)
                 haul_between(*bag, depot_(homeSlot, ctx.mw),
-                             commodity_item_index(i), 1 << 30, 1e9f);
+                             commodity_item_index(i), 1 << 30, kNoCarryLimitG);
             transfer_value_dense(*bag, depot_(homeSlot, ctx.mw),
                                  inventory_value(*bag));
             rt.state = std::uint8_t(NS::Idle);
@@ -3308,7 +3351,7 @@ int max_affordable_lot_(int base, int have, int demand, bool selling,
 // touches TOWARD its own need. Arbitrage is emergent: the surplus bought
 // cheap here is exactly what the next hungry station pays above base for.
 CaravanDeal trade_caravan_at_station(MacroStore& st, Inventory& hold,
-                                     float capacityKg,
+                                     std::int64_t capacityG,
                                      std::uint16_t marketSlot,
                                      int myTradePct, int theirTradePct,
                                      EconFactSink sink, void* user) {
@@ -3340,7 +3383,7 @@ CaravanDeal trade_caravan_at_station(MacroStore& st, Inventory& hold,
             n = max_affordable_lot_(base, have, demand, /*selling=*/true,
                                     inventory_value(ms), n);
             if (n <= 0) continue;
-            const int moved = haul_between(hold, msd, id, n, 1e9f);
+            const int moved = haul_between(hold, msd, id, n, kNoCarryLimitG);
             if (moved <= 0) continue;
             // The ONE trade-price law (economy.h): the seller's charisma
             // and trade skill claw back part of the house margin — a
@@ -3356,15 +3399,18 @@ CaravanDeal trade_caravan_at_station(MacroStore& st, Inventory& hold,
             // BUY the surplus above the market's own seasonal need — never
             // its living stock; the lot is bounded by the caravan's purse
             // through the same exact door (max_affordable_lot_).
-            const float kg = item_mass_kg(*def);
-            int n = std::min(have - need,
-                             int((capacityKg - inventory_weight(hold)) / kg));
+            const std::int64_t freeG = capacityG - inventory_mass_g(hold);
+            int n = freeG <= 0
+                        ? 0
+                        : int(std::min<std::int64_t>(
+                              have - need,
+                              freeG / std::int64_t(item_mass_g(*def))));
             n = max_affordable_lot_(base, have, demand, /*selling=*/false,
                                     inventory_value(hold), n);
             if (n <= 0) continue;
             const int moved =
                 haul_between(ms, hold, id, n,
-                             capacityKg - inventory_weight(hold));
+                             capacityG - inventory_mass_g(hold));
             if (moved <= 0) continue;
             const int cost =
                 moved * trade_buy_price(
@@ -3384,7 +3430,7 @@ CaravanDeal trade_caravan_at_station(MacroStore& st, Inventory& hold,
 // home's needs ladder — what the home's own LEDGER says the village lacks.
 // Ведомость принадлежит МЕСТУ, а не слуху: крю читает счёт своего дома.
 CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
-                                   float capacityKg,
+                                   std::int64_t capacityG,
                                    std::uint16_t marketSlot,
                                    MacroHandle home,
                                    int myTradePct, int theirTradePct,
@@ -3416,7 +3462,7 @@ CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
         n = max_affordable_lot_(base, have, demand, /*selling=*/true,
                                 inventory_value(ms), n);
         if (n <= 0) continue;
-        const int moved = haul_between(bag, msd, id, n, 1e9f);
+        const int moved = haul_between(bag, msd, id, n, kNoCarryLimitG);
         if (moved <= 0) continue;
         // Same ONE trade-price law as the station: a village hand haggles
         // with a peasant's charisma, a caravan with a trader's — the sheet
@@ -3464,7 +3510,12 @@ CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
         const std::uint16_t hSlot = home.slot;
         const Skills& homeHands = st.sheet[hSlot].skills;
         const Inventory& homeInv = st.inventory[hSlot].inv;
-        struct Lot { int i; float gainPerKg; int homeCap; };
+        // ВЫГОДА НА МАССУ — ДРОБЬЮ, А НЕ ФЛОАТОМ: держим ЧИСЛИТЕЛЬ (монеты) и
+        // ЗНАМЕНАТЕЛЬ (граммы) порознь, а порядок решает перекрёстное
+        // умножение ниже — тот же приём, что у `value_dense_order` и у
+        // `densest_value_slot`. Делить было не нужно никогда: сортировке
+        // нужен ПОРЯДОК, а не само отношение.
+        struct Lot { int i; int gain; std::int64_t massG; int homeCap; };
         Lot lots[std::size_t(kCommodityCount)];
         int lotCount = 0;
         for (int i = 0; i < kCommodityCount; ++i) {
@@ -3488,18 +3539,19 @@ CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
                 stock_price(base, homeInv.count_of(id), homeDemand);
             if (worthHome <= 0) continue;         // дома этой строке нет цены
             if (worthHome <= buyHere) continue;   // рейс не окупает закупку
-            const float kg = item_mass_kg(*def);
             // ПОТОЛОК СТРОКИ — сезон домашней нужды (спрос уже сезонный),
             // но он больше НЕ ворота: у товара, который дома никто не ест,
             // потолок — только трюм и кошелёк.
             const int seasonCap = homeDemand > 0 ? homeDemand : (1 << 20);
             lots[std::size_t(lotCount++)] =
-                Lot{i, float(worthHome - buyHere) / kg, seasonCap};
+                Lot{i, worthHome - buyHere,
+                    std::int64_t(item_mass_g(*def)), seasonCap};
         }
         // Выгоднейшее — первым: трюм и кошелёк конечны, и купец грузит их
-        // тем, что несёт больше всего ценности на килограмм.
+        // тем, что несёт больше всего ценности на единицу массы.
         std::sort(lots, lots + lotCount, [](const Lot& a, const Lot& b) {
-            return a.gainPerKg > b.gainPerKg;
+            return std::int64_t(a.gain) * b.massG
+                 > std::int64_t(b.gain) * a.massG;
         });
         for (int li = 0; li < lotCount; ++li) {
             const int i = lots[li].i;
@@ -3510,9 +3562,12 @@ CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
                 season_demand_for(id, st.upkeep[marketSlot].needDebt,
                                   souls_home(st, marketSlot), site, &ms);
             const int have = ms.count_of(id);
-            const float kg = item_mass_kg(*def);
-            int n = std::min({have, lots[li].homeCap,
-                              int((capacityKg - inventory_weight(bag)) / kg)});
+            const std::int64_t freeG = capacityG - inventory_mass_g(bag);
+            int n = freeG <= 0
+                        ? 0
+                        : int(std::min<std::int64_t>(
+                              {have, lots[li].homeCap,
+                               freeG / std::int64_t(item_mass_g(*def))}));
             // Точная граница по кошельку (max_affordable_lot_): срез лота
             // по цене ДО среза недокупал — оставшаяся полка дешевле, и
             // честная точка выше.
@@ -3521,7 +3576,7 @@ CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
             if (n <= 0) continue;
             const int moved =
                 haul_between(ms, bag, id, n,
-                             capacityKg - inventory_weight(bag));
+                             capacityG - inventory_mass_g(bag));
             if (moved <= 0) continue;
             const int cost =
                 moved * trade_buy_price(
@@ -3536,7 +3591,7 @@ CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
 
 // ── Squads eat (contract in npc_ai.h) ────────────────────────────────────
 int provision_squad(Inventory& store, Inventory& bag, int soldiers,
-                    float roundtripCells, float freeCarryKg) {
+                    float roundtripCells, std::int64_t freeCarryG) {
     if (soldiers <= 0) return 0;   // the leader is a subject — he needs nothing
     const int days =
         1 + int(std::ceil(roundtripCells / kSustainedMarchCellsPerDay));
@@ -3544,7 +3599,7 @@ int provision_squad(Inventory& store, Inventory& bag, int soldiers,
     // The haul door already speaks credit-before-debit and respects the
     // carry the loaf must ride on.
     return haul_between(store, bag, hunger_item_index(), portion,
-                        freeCarryKg);
+                        freeCarryG);
 }
 
 // ЗДЕСЬ СТОЯЛ `squad_season_needs` — ВТОРОЙ ЗАКОН СОДЕРЖАНИЯ, И ОН УМЕР
@@ -3671,9 +3726,8 @@ int squad_season_window(GameState& gs, MacroStore& st, int day,
                                      folkBefore);
             }
         }
-        // Состав изменился — обоз заново (squad.h): ушедшая душа унесла и
-        // свою спину.
-        refresh_squad_carry(st, handle_at(st, slot));
+        // (ЗДЕСЬ СТОЯЛ `refresh_squad_carry` — догон обоза после ухода души.
+        //  Снят: спину уносит СВОДКА, которую правит сама запись слота.)
     }
     return deserted;
 }
@@ -3915,7 +3969,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             auto& bag = stq.inventory[slot];
             for (int c = 0; c < kCommodityCount; ++c)
                 haul_between(bag.inv, depot_(homeSlot, mw),
-                             commodity_item_index(c), 1 << 30, 1e9f);
+                             commodity_item_index(c), 1 << 30, kNoCarryLimitG);
             transfer_value_dense(bag.inv, depot_(homeSlot, mw),
                                  inventory_value(bag.inv));
         }
@@ -3986,7 +4040,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         const int haveBoard = bag.inv.count_of(hunger_item_index());
         if (owed > haveBoard) {
             haul_between(stq.inventory[homeSlot].inv, bag.inv,
-                         hunger_item_index(), owed - haveBoard, 1e9f);
+                         hunger_item_index(), owed - haveBoard, kNoCarryLimitG);
         }
         const std::int64_t haveCoin = inventory_value(bag.inv);
         if (creatures.wageDebt > haveCoin) {
@@ -4168,7 +4222,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             // арифметикой, что дверь, которую оно предсказывает
             // (`refresh_body_from_sheet@src/macro/squad.h`), иначе скор
             // решает «ехать или нет» не теми единицами, какими потом грузят.
-            const float carryPerSoul =
+            const std::int32_t carryPerSoulG =
                 get_carry_capacity(crewSheet.attributes, crewSheet.skills);
             // Цели добычи: строка открыта, когда мир предъявил рабочее
             // место (find_worksite — тот же предикат, каким работает сама
@@ -4249,18 +4303,33 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // заявки — стоимость в день, — поэтому добыча и сбыт
                 // наконец сравнимы в одной рулетке. Назначенного `1 +`
                 // больше нет: делитель есть настоящая длина рейса.
-                const float unitKg =
-                    unit_mass_kg(item_def_at(gatherer_item_index(g)));
-                const float perSoul = gd.creatureYield != NPCType::Count
-                                          ? 1.0f
-                                          : carryPerSoul / unitKg;
+                // СКОЛЬКО ОБЪЕКТОВ НЕСЁТ ОДНА СПИНА — ЦЕЛЫЙ СЧЁТ, И ЭТО
+                // ТРЕБОВАНИЕ СОСЕДНЕГО АБЗАЦА, А НЕ ВОЛЬНОСТЬ: он велит
+                // предсказанию считать ТОЙ ЖЕ арифметикой, что дверь,
+                // которую оно предсказывает, а дверь артели (`carryMax` в
+                // `ai_gatherer`) делит целыми граммами и берёт целые
+                // объекты. Раньше здесь стоял флоат, и спина, не вмещающая
+                // даже одну статую, сулила «0.4 статуи за рейс» — заявку с
+                // положительным скором на груз, которого исполнитель не
+                // поднимет. Теперь такая заявка честно даёт НОЛЬ и отпадает
+                // гейтом `score <= 0` ниже.
+                const std::int64_t perSoul =
+                    gd.creatureYield != NPCType::Count
+                        ? 1
+                        : carryPerSoulG
+                              / unit_mass_g(
+                                    item_def_at(gatherer_item_index(g)));
+                // ДНИ — ОТНОШЕНИЕ, И ЗДЕСЬ ФЛОАТ ЗАКОНЕН: делится счёт на
+                // счёт-в-день, масса в этой величине уже не участвует.
                 const float workDays =
-                    gd.perWorkerDay > 0 ? perSoul / float(gd.perWorkerDay)
-                                        : 0.0f;
+                    gd.perWorkerDay > 0
+                        ? float(perSoul) / float(gd.perWorkerDay)
+                        : 0.0f;
                 const float tripDays = road_days_(site) + workDays;
                 if (!(tripDays > 0.0f)) continue;
                 const float score =
-                    (float(unitPrice) * perSoul - fear_of(site)) / tripDays;
+                    (float(unitPrice) * float(perSoul) - fear_of(site))
+                    / tripDays;
                 if (score <= 0.0f) continue;
                 bids[bidCount++] = GoalBid{
                     std::uint8_t(SquadType::Artel), std::uint32_t(g),
@@ -4307,7 +4376,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // не равна нулю от того, что продавать ему нечего.
                 long long purse = plan_home_load_(
                     sInv, stq.upkeep[sSlot].needDebt, souls_home(stq, sSlot),
-                    homeSite, carryPerSoul, nullptr);
+                    homeSite, carryPerSoulG, nullptr);
                 const long long purseAtHome = purse;   // трюм ОДНОЙ спины
                 // СКОЛЬКО ТРЮМОВ ИЗЛИШКА ЛЕЖИТ ДОМА — это и есть СПРОС на
                 // корованы (CANON S4 «число караванов — функция контекста
@@ -4323,16 +4392,16 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // больше не обещает маржу, которая в обоз не влезет.
                 // Дань в спине ПЕРВАЯ: долг обязан ехать (тот же приоритет,
                 // что у погрузки), и она же съедает место у излишка.
-                float freeKg = carryPerSoul;
-                for (int oi = 0; oi < kCommodityCount && freeKg > 0.0f; ++oi) {
+                std::int64_t freeG = carryPerSoulG;
+                for (int oi = 0; oi < kCommodityCount && freeG > 0; ++oi) {
                     const int c = value_dense_order()[std::size_t(oi)];
                     const int id = commodity_item_index(c);
                     const ItemDef* d = item_def_at(id);
                     const int base = d ? d->value : 0;
                     if (base <= 0) continue;
-                    const float kg = unit_mass_kg(d);
+                    const std::int64_t unitG = unit_mass_g(d);
                     const auto fits = [&](long long want) -> long long {
-                        const long long cap = (long long)(freeKg / kg);
+                        const long long cap = (long long)(freeG / unitG);
                         return want < cap ? want : cap;
                     };
                     const int have = sInv.count_of(id);
@@ -4351,7 +4420,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     // — это и есть выручка, и знание на него законно.
                     const int therePrice = market_price_seen(c);
                     if (have > demand && therePrice > homePrice
-                        && freeKg > 0.0f) {
+                        && freeG > 0) {
                         const long long fit = fits(have - demand);
                         if (fit > 0) {
                             value += fit * (therePrice - homePrice);
@@ -4359,7 +4428,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                             // посчитан ОДНОЙ дверью погрузки выше, и второе
                             // слагаемое было бы тем же грузом, посчитанным
                             // дважды.)
-                            freeKg -= float(fit) * kg;
+                            freeG -= std::int64_t(fit) * unitG;
                         }
                     }
                     if (have > demand && homePrice > 0)
@@ -4715,9 +4784,11 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                                 break;
                             }
                         }
-                        // Приведённый состав — приведённый обоз (squad.h):
-                        // добранная душа несёт свою спину, ссаженная уносит.
-                        refresh_squad_carry(stq, handle_at(stq, standing));
+                        // (ЗДЕСЬ СТОЯЛ `refresh_squad_carry` — догон обоза
+                        //  после добора и ссадки на границе сезона. Снят:
+                        //  обе двери состава выше — `creatures_take_at` и
+                        //  `raise_flock_into_container` — идут записью слота,
+                        //  а она и правит сводку спин.)
                     }
                 }
                 continue;

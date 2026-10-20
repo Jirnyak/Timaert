@@ -734,7 +734,15 @@ int main(int argc, char** argv) {
                 if (crt.squadType == std::uint8_t(sm::SquadType::Caravan)) {
                     ++vendors;
                     if (crt.state == 0) ++vIdle; else ++vAway;
-                    vendorLoad += (long long)sm::inventory_weight(bag.inv);
+                    // КОЛОНКА ОСТАЁТСЯ В КИЛОГРАММАХ, И ЭТО РЕШЕНИЕ ПРИБОРА,
+                    // А НЕ НЕДОДЕЛКА: сменить ей единицу значило бы сравнить
+                    // граммы с килограммами прошлой базы и назвать это
+                    // сдвигом мира (§5 п.7 — прибор читается по ИМЕНИ
+                    // колонки). Обрезание то же, что было: `(long long)` от
+                    // килограммов во флоате и целое деление на 1000 дают один
+                    // и тот же пол.
+                    vendorLoad += (long long)(sm::inventory_mass_g(bag.inv)
+                                              / 1000);
                     continue;
                 }
                 // ЗОНД КАРАВАНОВ СНЯТ 2026-09-21: род NPCType::Merchant

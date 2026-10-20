@@ -676,16 +676,22 @@ void test_a_laden_squad_pays_for_its_load() {
     (*sm::body_state<ecs::MacroNpcRuntime>(st, heavy)).targetY = 6.0f;
 
     // A back a person actually has, and a load well past it.
-    const float cap = 40.0f;
-    (*sm::body_state<ecs::MacroNpcRuntime>(st, light)).carryCap = cap;
-    (*sm::body_state<ecs::MacroNpcRuntime>(st, heavy)).carryCap = cap;
+    // СПИНА КЛАДЕТСЯ В КОЛОНКУ АНКЕТЫ, а обоз складывает
+    // дверь `carry_capacity_g`: колонки `carryCap` больше нет.
+    // Голов в контейнере у этих двух нет, значит обоз равен
+    // ровно спине — тот же 40 кг, что и до правки.
+    const std::int64_t capG = 40'000;
+    (*sm::body_state<ecs::MacroNpcRuntime>(st, light)).carryPerSoulG =
+        std::int32_t(capG);
+    (*sm::body_state<ecs::MacroNpcRuntime>(st, heavy)).carryPerSoulG =
+        std::int32_t(capG);
     auto& load =
         st.inventory[heavy.slot].inv;
     // A BEARABLE overload: past the back, but a price the bar can pay per
     // step. (An unbearable pack now honestly refuses to march at all — the
     // legs decline a step they cannot pay for, by the same pre-priced law.)
     load.add("iron", 15);
-    CHECK(inventory_weight(load) > cap,
+    CHECK(inventory_mass_g(load) > capG,
           "the fixture is honest: this load IS over the back carrying it");
 
     MacroNpcAiRuntime rt{};

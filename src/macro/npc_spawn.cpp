@@ -577,13 +577,13 @@ MacroHandle spawn_squad(GameState& gs, MacroStore& store,
             : creatures_push(bag.inv, st.rec);
         if (!ok) break;   // the ceiling refuses out loud
     }
-    // The squad's carry is the SUM of its backs (CANON S10, literal: «берёт
-    // по своей грузоподъёмности — СУММА ЛИСТОВ ЧЛЕНОВ») — through THE door
-    // (squad.h refresh_squad_carry), which weighs every soul by ITS OWN row's
-    // haulMult column. The inline `*= 1 + size` that stood here counted heads
-    // and was computed once: a horse in the creatures added nothing, and any
-    // later добор/ссадка/дезертирство left the number lying.
-    refresh_squad_carry(store, leader);
+    // (ЗДЕСЬ СТОЯЛ `refresh_squad_carry` — засев колонки обоза при рождении.
+    //  Снесён 2026-10-20 вместе с самой колонкой: обоз СКЛАДЫВАЕТСЯ у места
+    //  употребления дверью `carry_capacity_g@src/macro/squad.h`, а спины
+    //  голов копит сводка контейнера, которую правит сама запись слота — то
+    //  есть цикл `creatures_push` выше. Прежняя проза этого места уже
+    //  называла болезнь («any later добор/ссадка/дезертирство left the number
+    //  lying»), и лечил её догон четырьмя звонками; теперь врать нечему.)
 
     // A route, only if the spec actually gives one (opt-in like the
     // component; its presence is the order).

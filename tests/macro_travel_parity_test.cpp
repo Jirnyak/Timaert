@@ -129,9 +129,35 @@ void test_overload_is_a_term_of_the_hour() {
     bag.clear();
     bag.add("wood", 56);   // 112 kg, default capacity is 110 kg.
     const sm::OverloadCharge oc = sm::overload_charge(walkerSheet, bag);
-    CHECK(std::fabs(oc.overload - 2.0f) < 0.001f,
-          "overload is weight minus carry capacity");
+    CHECK(oc.overloadG == 2000,
+          "overload is mass minus carry capacity, в целых граммах");
     CHECK(oc.cost == 2, "any overload hurts: kilos over, rounded up");
+
+    // ── «ЛЮБОЙ ПЕРЕГРУЗ БОЛИТ» — ТЕПЕРЬ ПРОВЕРЕНО, А НЕ ОБЕЩАНО ──────────
+    // До 2026-10-20 этот закон держался КОММЕНТАРИЕМ у `int(std::ceil(...))`
+    // («Preserve the "any overload hurts" behaviour»), и ни один свидетель
+    // его не спрашивал: проверялся только случай ровно 2 кг, где потолок и
+    // округление дают одно и то же. В целых граммах закон стал точным
+    // делением, и спросить его можно НА САМОМ КРАЮ.
+    //
+    // ЯКОРЬ НЕЗАВИСИМЫЙ, А НЕ ПЕРЕСЧЁТ ФОРМУЛЫ (§8 п.6, шестая форма
+    // слепоты): ёмкость задаётся ПРЯМО, от известной массы сумки, поэтому
+    // утверждение не повторяет продакшен-арифметику ни одним членом.
+    const std::int64_t massG = sm::inventory_mass_g(bag);
+    CHECK(massG == 112'000, "56 брёвен по 2 кг — ровно 112 000 г, факт мира");
+    struct Edge { std::int64_t capG; std::int64_t overG; int cost; };
+    for (const Edge& e : {Edge{112'000, 0, 0},       // ровно по спине — даром
+                          Edge{111'999, 1, 1},       // ОДИН грамм — уже 1 SP
+                          Edge{111'001, 999, 1},     // меньше кг — тот же 1
+                          Edge{111'000, 1'000, 1},   // ровно кг — ровно 1
+                          Edge{110'999, 1'001, 2},   // грамм сверх кг — 2
+                          Edge{112'001, 0, 0}}) {    // спина с запасом
+        const sm::OverloadCharge e_oc =
+            sm::overload_charge_from_capacity(e.capG, bag);
+        CHECK(e_oc.overloadG == e.overG && e_oc.cost == e.cost,
+              "край закона перегруза: грамм сверх спины стоит SP, "
+              "а ровно по спине — ноль");
+    }
 
     const float road = sm::feature_bed_weight(sm::FT_Road);
     CHECK(nearf(sm::burn_stamina_per_hour(road, oc.cost),

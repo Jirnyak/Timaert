@@ -144,9 +144,13 @@ namespace sm {
 // AgentMemory on his squad entity, both written by the macro-snapshot record
 // that already carries every other leader's — two blocks left the player
 // section of the file and no block replaced them.
-// v45: a macro leader's runtime carries his back — `carryCap` (the sheet's
-// carry capacity, cached beside maxSp/travelRank/marathonRank/moveMult) and
-// `overloadCost`, the SP surcharge his current load is costing. The overload
+// v45: a macro leader's runtime carries his back — `carryPerSoulG` (the
+// sheet's carry capacity in WHOLE GRAMS, cached beside
+// travelRank/marathonRank/moveMult) and `overloadCost`, the SP surcharge
+// his current load is costing. (v140, 2026-10-20: единица стала граммом, а
+// вторая колонка `carryCap` — весь обоз — СНЕСЕНА: сумму спины и голов
+// складывает дверь `carry_capacity_g@src/macro/squad.h` у места
+// употребления, поэтому устареть тоталу нечем.) The overload
 // law was the player's alone, so a caravan hauling a ton marched like an
 // empty scout; it is universal now (owner ruling), and MacroNpcRuntime rides
 // the macro snapshot as a POD block, so its layout IS the format.
@@ -445,7 +449,7 @@ namespace sm {
 // блоке `worked`, который и так писался. Ординалы рядов НЕ двинулись (ряд
 // остался на своём месте перед жилами), поэтому сдвига блоков нет — двигает
 // версию ровно смена ЖИЛЬЦА блока.
-constexpr int kSaveVersion = 139;   // M-244a: доля клетки CellSub, MacroVisual мёртв
+constexpr int kSaveVersion = 140;   // обоз в целые граммы: carryCap снесена, carryPerSoulG
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система

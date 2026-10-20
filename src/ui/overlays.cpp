@@ -573,10 +573,16 @@ namespace sm::ui
         DerivedBonuses derived = calculate_derived(effPanel.attributes,
                                                    effPanel.skills,
                                                    panelStanding);
-        const float carryWeight = inventory_weight(playerBag);
-        const float carryCap = get_carry_capacity(effPanel.attributes,
-                                                  effPanel.skills,
-                                                  panelStanding);
+        // КИЛОГРАММЫ — ЭТО ПОКАЗ, И ЗДЕСЬ ФЛОАТ ЗАКОНЕН (ЗАКОН ТИПА п.5:
+        // представление). Внутри мира величина целая в граммах от колонки
+        // до цены перегруза; килограмм рождается ТОЛЬКО для глаза,
+        // в этих двух строках и в `trade_widgets.h`.
+        const float carryWeight =
+            float(double(inventory_mass_g(playerBag)) / 1000.0);
+        const float carryCap =
+            float(double(get_carry_capacity(effPanel.attributes,
+                                            effPanel.skills,
+                                            panelStanding)) / 1000.0);
         const int armyTotal = army ? creature_count(*army) : 0;
         // Upkeep is maintenance, not a deal (2026-09-17): no CHA discount,
         // and the bill is the SEASON'S — paid a season ahead at the boundary

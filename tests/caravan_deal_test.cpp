@@ -115,7 +115,7 @@ int main() {
     // наценки нет и границы ниже — границы САМОЙ кривой цены, без примеси
     // чьего-то преимущества. Перевес судится отдельной фикстурой в конце.
     const sm::CaravanDeal st = sm::trade_caravan_at_station(
-        mstore, hold, /*capacityKg=*/1e6f, city,
+        mstore, hold, /*capacityG=*/sm::kNoCarryLimitG, city,
         /*myTradePct=*/0, /*theirTradePct=*/0);
 
     CHECK(sm::coin_census_value(hold) + sm::coin_census_value(shelf(mstore, city))
@@ -192,7 +192,7 @@ int main() {
     const long long vCoinBefore =
         sm::coin_census_value(bag) + sm::coin_census_value(shelf(mstore, town));
     const sm::CaravanDeal vd = sm::trade_vendor_at_market(
-        mstore, bag, 1e6f, town, home,
+        mstore, bag, sm::kNoCarryLimitG, town, home,
         /*myTradePct=*/0, /*theirTradePct=*/0);
 
     CHECK(sm::coin_census_value(bag) + sm::coin_census_value(shelf(mstore, town))
@@ -252,7 +252,7 @@ int main() {
 
             sm::Inventory crew;
             CHECK(crew.add("food", 300), "fixture: crew load");
-            sm::trade_vendor_at_market(mstore, crew, 1e6f, mkt,
+            sm::trade_vendor_at_market(mstore, crew, sm::kNoCarryLimitG, mkt,
                                        sm::handle_at(mstore, hm),
                                        /*myTradePct=*/0,
                                        /*theirTradePct=*/0);
@@ -281,7 +281,7 @@ int main() {
         sm::Inventory bag4;
         CHECK(bag4.add("food", 300), "fixture: unlit crew load");
         const sm::CaravanDeal d = sm::trade_vendor_at_market(
-            mstore, bag4, 1e6f, mkt, sm::MacroHandle{},
+            mstore, bag4, sm::kNoCarryLimitG, mkt, sm::MacroHandle{},
             /*myTradePct=*/0, /*theirTradePct=*/0);
         CHECK(d.soldValue > 0 && d.boughtValue == 0
                   && bag4.count("tools") == 0,
@@ -294,7 +294,7 @@ int main() {
     sm::Inventory bag2;
     CHECK(bag2.add("food", 50), "fixture: control food");
     const sm::CaravanDeal none = sm::trade_caravan_at_station(
-        mstore, bag2, 1e6f, broke, 0, 0);
+        mstore, bag2, sm::kNoCarryLimitG, broke, 0, 0);
     CHECK(none.soldValue == 0 && bag2.count("food") == 50,
           "no coin, no sale, no confiscation");
 
@@ -319,7 +319,7 @@ int main() {
         sm::Inventory h;
         h.add("food", 200);
         // Перевес — РАЗНИЦА сил (S25): рынок назван нулём, караван — edge.
-        return sm::trade_caravan_at_station(mstore, h, 1e6f, m, edge, 0);
+        return sm::trade_caravan_at_station(mstore, h, sm::kNoCarryLimitG, m, edge, 0);
     };
     const sm::CaravanDeal plain = run_fixture(0);
     const sm::CaravanDeal silver = run_fixture(10);

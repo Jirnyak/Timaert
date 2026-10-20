@@ -75,11 +75,14 @@ inline PlayerHaggler player_haggler(const GameState& gs,
 inline void draw_trade_carry_line(const CharacterSheet& sheet,
                                   const Inventory& bag,
                                   const BonusTotals& standing) {
+    // КИЛОГРАММЫ — ПОКАЗ (ЗАКОН ТИПА п.5): мир считает граммами целыми, и
+    // деление на килограмм живёт ровно у глаза — здесь и в `overlays.cpp`.
     ImGui::SameLine();
     ImGui::TextDisabled("Carry %.1f / %.0f kg",
-                        double(inventory_weight(bag)),
+                        double(inventory_mass_g(bag)) / 1000.0,
                         double(get_carry_capacity(sheet.attributes,
-                                                  sheet.skills, standing)));
+                                                  sheet.skills, standing))
+                            / 1000.0);
 }
 
 // ── The rolled instance's shopfront ───────────────────────────────────────
