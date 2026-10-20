@@ -853,24 +853,116 @@ void test_the_catch_lands_as_creatures() {
     // Прегенерацию загонов миром несёт наряд M-79 реестра.)
     // ЕДИНСТВЕННАЯ ВЫЖИВШАЯ КОЛОНКА ЛОШАДИ — СПИНА, и считает её живая
     // дверь состава (squad.h refresh_squad_carry), которую зовёт сама
-    // ловля. Лидер — крестьянин (haulMult 1.0), поэтому каждая пойманная
-    // голова добавляет РОВНО восемь его спин, и обоз есть точное
-    // carryPerSoul × (1 + 8 × голов): закон вместимости, а не пересказанное
-    // число (AGENTS §8 п.4).
+    // ловля. Обоз = своя спина ОТ АНКЕТЫ плюс КИЛОГРАММЫ объектов: конь
+    // даёт `haulMult × kHaulBackKg` = 8 × 15 = 120 кг, и число это его
+    // собственное — от анкеты хозяина оно не зависит (ЗАКОН ДВУХ ТАБЛИЦ).
+    // Ожидание выводится из ТЕХ ЖЕ колонок, что читает код (§8 п.4), а не
+    // пересказывается литералом.
+    //
+    // ЗДЕСЬ СТОЯЛО `carryPerSoul × (1 + 8 × голов)` — свидетель охранял
+    // ДОЛЮ, то есть прежнее смешение таблиц, и переписан он вместе с
+    // законом, а не подогнан под него (§8 п.7: на одобренном улучшении
+    // презумпция вины на свидетеле).
     {
         const auto& rtNow =
             (*sm::body_state<ecs::MacroNpcRuntime>(st, e));
-        const float horseHaul = npc_def(NPCType::Horse).haulMult;
-        const float leaderHaul = npc_def(NPCType::Peasant).haulMult;
-        const float backs = 1.0f + horseHaul / leaderHaul * float(caught);
-        CHECK(std::fabs(rtNow.carryCap - rtNow.carryPerSoul * backs) <= 0.5f,
-              "обоз = сумма спин по строкам состава: пойманный конь несёт "
-              "восемь крестьянских (haulMult)");
+        const float horseKg =
+            npc_def(NPCType::Horse).haulMult * sm::kHaulBackKg;
+        CHECK(std::fabs(rtNow.carryCap
+                        - (rtNow.carryPerSoul + horseKg * float(caught)))
+                  <= 0.5f,
+              "обоз = спина анкеты ПЛЮС килограммы объектов: пойманный конь "
+              "несёт свои 120 кг, а не долю чужой анкеты");
+    }
+}
+
+// ── АВТОРСКИЙ НОЛЬ СПИНЫ ЗНАЧИТ НОЛЬ (M-297) ──────────────────────────────
+// Закон: обоз = спина АНКЕТЫ + Σ килограммов ОБЪЕКТОВ, и безрукая строка не
+// несёт НИЧЕГО. Колонка `haulMult` объявляет это прямо — «ни кролика, ни
+// волка, ни ястреба, ни дракона в этом мире не запрягают», — а умолчание
+// колонки есть 1.0 (человек), поэтому ветка «если ноль, считай единицей»
+// могла перехватить ТОЛЬКО авторский ноль, то есть отменяла вердикт данными.
+// До этого свидетеля закон носителя не имел вовсе: ни один тест не спрашивал,
+// что обоз НЕ ВЫРОС.
+//
+// СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ САМ (§8 п.11): головы кладёт он, а не
+// генератор, — волка в контейнере мир сегодня нигде не раздаёт, и надежда на
+// везение сида сделала бы тест красным от невезения, а не от нарушения.
+void test_a_hauless_head_does_not_grow_the_train() {
+    auto store = sm::make_macro_store();
+    sm::MacroStore& st = *store;
+    const sm::MacroHandle h = make_woodcutter(st, 10.0f, 10.0f, 0);
+
+    sm::refresh_squad_carry(st, h);
+    const float bare = st.runtime[h.slot].carryCap;
+    CHECK(bare > 0.0f,
+          "ПРЕДУСЛОВИЕ: у сквада есть своя спина от анкеты (иначе нулём "
+          "ниже можно было бы доказать что угодно)");
+
+    // ── БЕЗРУКИЕ: волк и дракон. Ноль есть ЗНАЧЕНИЕ, а не отсутствие ──────
+    CHECK(creatures_push_stack(st.inventory[h.slot].inv, NPCType::Wolf,
+                               npc_def(NPCType::Wolf).baseLevel, 3),
+          "ПРЕДУСЛОВИЕ: три волка встали в контейнер");
+    CHECK(creatures_push_stack(st.inventory[h.slot].inv, NPCType::Dragon,
+                               npc_def(NPCType::Dragon).baseLevel, 1),
+          "ПРЕДУСЛОВИЕ: дракон встал в контейнер");
+    sm::refresh_squad_carry(st, h);
+    CHECK(std::fabs(st.runtime[h.slot].carryCap - bare) <= 0.001f,
+          "ВОЛК И ДРАКОН ОБОЗ НЕ РАСТЯТ: авторский ноль колонки значит НОЛЬ "
+          "килограммов, а не одну человеческую спину");
+
+    // ── НЕГАТИВНЫЙ КОНТРОЛЬ: детектор обязан ВИДЕТЬ рост ─────────────────
+    // Без него «равно» выше доказывало бы лишь то, что дверь не зовётся.
+    CHECK(creatures_push_stack(st.inventory[h.slot].inv, NPCType::Horse,
+                               npc_def(NPCType::Horse).baseLevel, 2),
+          "ПРЕДУСЛОВИЕ: два коня встали в тот же контейнер");
+    sm::refresh_squad_carry(st, h);
+    const float withHorses = st.runtime[h.slot].carryCap;
+    const float horseKg = npc_def(NPCType::Horse).haulMult * sm::kHaulBackKg;
+    CHECK(std::fabs(withHorses - (bare + 2.0f * horseKg)) <= 0.001f,
+          "КОНЬ РАСТИТ, И РОВНО НА СВОИ КИЛОГРАММЫ: 2 × haulMult × "
+          "kHaulBackKg, и ни волк, ни дракон рядом не прибавили ничего");
+    CHECK(withHorses > bare,
+          "НЕГАТИВНЫЙ КОНТРОЛЬ: прибор отличает рост от его отсутствия");
+
+    // Вклад объекта АБСОЛЮТЕН: он не зависит от анкеты хозяина (ЗАКОН ДВУХ
+    // ТАБЛИЦ — у объекта анкеты нет, умножаться ему не на что). Прежняя
+    // доля этот же конь оценила бы в `анкета × 8`, то есть в разных
+    // контейнерах по-разному.
+    const float richer = bare * 2.0f;
+    st.runtime[h.slot].carryPerSoul = richer;
+    sm::refresh_squad_carry(st, h);
+    CHECK(std::fabs(st.runtime[h.slot].carryCap - (richer + 2.0f * horseKg))
+              <= 0.001f,
+          "КИЛОГРАММЫ КОНЯ ОТ БОГАТСТВА ХОЗЯИНА НЕ ЗАВИСЯТ: удвоенная "
+          "анкета сдвинула ТОЛЬКО своё слагаемое");
+
+    // ── СВОЯ СПИНА СКВАДА — ЭТО АНКЕТА, И КОЛОНКА СТРОКИ В НЕЁ НЕ ВХОДИТ ──
+    // Строка берётся НЕ произвольная: `Dragon` — живой продакшен-случай, три
+    // авторских сквада `dragon1/2/3@src/macro/characters.h` рождаются ею, и
+    // колонка у неё авторский НОЛЬ. Прежняя дверь множила анкету на колонку,
+    // то есть без фоллбэка дала бы дракону спину 0 — вечный перегруз и
+    // SP-долг на первом же трофее. Теперь колонки в этом числе нет вовсе.
+    {
+        const sm::CharacterSheet ds = make_character_sheet(
+            NPCType::Dragon, 10, leader_sheet_seed(5u));
+        ecs::Pools dp{};
+        ecs::MacroNpcRuntime drt{};
+        refresh_body_from_sheet(dp, &drt, ds, NPCType::Dragon);
+        CHECK(std::fabs(drt.carryPerSoul
+                        - get_carry_capacity(ds.attributes, ds.skills))
+                  <= 0.001f,
+              "СПИНА ДРАКОНА-СКВАДА = ЕГО АНКЕТА: авторский ноль колонки — "
+              "про упряжь объекта, а не про то, что тело не несёт ничего");
+        CHECK(drt.carryPerSoul > 0.0f,
+              "и она ПОЛОЖИТЕЛЬНА: нулевой обоз означал бы перегруз на "
+              "первом килограмме трофея");
     }
 }
 
 int main() {
     test_the_chop_is_real_and_the_haul_comes_home();
+    test_a_hauless_head_does_not_grow_the_train();
     // Was DEFINED and never CALLED — found the day -Wunused-function came
     // on (С3): a silently never-running test, the exact family check.h's
     // zero-checks rule hunts, hidden one scope deeper.

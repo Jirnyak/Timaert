@@ -4146,10 +4146,18 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             }();
             const CharacterSheet crewSheet =
                 make_character_sheet(crewKind, 1, 0u);
-            const float crewHaul = npc_def(crewKind).haulMult;
+            // СПИНА — ОТ АНКЕТЫ, И КОЛОНКИ СТРОКИ ЗДЕСЬ НЕТ (ЗАКОН ДВУХ
+            // ТАБЛИЦ). Здесь стояло `× (crewHaul > 0 ? crewHaul : 1.0)` —
+            // третий читатель `haulMult`, о котором шапка колонки прямо
+            // говорила «and nobody else», и притом читавший её не о том.
+            // Множитель был к тому же МЁРТВ: `crewKind` приходит строкой крю
+            // (`ld.crews[i].npc`), а все авторские строки крю — Peasant, то
+            // есть ровно 1.0 всегда. Предсказание обязано считать ТОЙ ЖЕ
+            // арифметикой, что дверь, которую оно предсказывает
+            // (`refresh_body_from_sheet@src/macro/squad.h`), иначе скор
+            // решает «ехать или нет» не теми единицами, какими потом грузят.
             const float carryPerSoul =
-                get_carry_capacity(crewSheet.attributes, crewSheet.skills)
-                * (crewHaul > 0.0f ? crewHaul : 1.0f);
+                get_carry_capacity(crewSheet.attributes, crewSheet.skills);
             // Цели добычи: строка открыта, когда мир предъявил рабочее
             // место (find_worksite — тот же предикат, каким работает сама
             // артель); ценность = домашняя цена товара × дневной тейк

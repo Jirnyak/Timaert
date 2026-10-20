@@ -170,6 +170,26 @@ inline constexpr std::uint16_t hab(Biome b) {
     return std::uint16_t(1u << std::uint16_t(b));
 }
 
+// ЕДИНИЦА КОЛОНКИ `haulMult` — ОДНА ЧЕЛОВЕЧЕСКАЯ СПИНА В КИЛОГРАММАХ, и она
+// стоит здесь потому, что ЗДЕСЬ её ВЫВОД: вся колонка авторена одной цепочкой
+// килограммов — человек ~15 кг, вьючный конь ~120 → 8, вьючная коза ~10 → 0.7,
+// овца с панньерами ~8 → 0.5. Число есть ЗНАМЕНАТЕЛЬ этой цепочки, то есть
+// единственное место, где она записана как величина, а не как пересказ.
+//
+// ПОЧЕМУ АБСОЛЮТНАЯ, А НЕ ДОЛЯ ЧЬЕЙ-ТО АНКЕТЫ (ЗАКОН ДВУХ ТАБЛИЦ, вердикт
+// владельца 2026-10-20: «АНКЕТВ НЕ МОЖЕТ БЫТЬ У ОБЪЕКТОВ»): строка этой
+// таблицы есть ОБЪЕКТ, а у объекта анкеты нет вовсе — значит умножаться ему
+// не на что, и его вклад обязан быть килограммами. Доля делала объект
+// функцией хозяина: один и тот же конь в двух контейнерах давал разные
+// килограммы. ЗАМЕР, КУПИВШИЙ ПРАВКУ (M-297): голова коня давала
+// `анкета 154 кг × 8` = **1232 кг** против тех ~120, из которых 8 и выведено —
+// перекос **10.3×**, и жил он ровно потому, что коэффициент считали от
+// килограммов, а применяли к анкете.
+//
+// Число — БАЛАНС (§3 ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ): менять его можно молча,
+// переносить в строку — нельзя, иначе цепочка перестанет иметь знаменатель.
+inline constexpr float kHaulBackKg = 15.0f;
+
 struct NpcTypeDef {
     // MUST equal the row's index in kNpcTypeDefs (guard below the table).
     NPCType         type;
@@ -278,11 +298,17 @@ struct NpcTypeDef {
     //
     // So the answer is a COLUMN, not an exemption — the same law, applied to
     // the back the row actually has. 1 = a person, and every row that omits
-    // this is a person. The number is DATA and the owner's to retune, and its
-    // readers are the two cargo doors of squad.h and nobody else:
-    // refresh_body_from_sheet (the LEADER's own back, carryPerSoul) and
-    // refresh_squad_carry (the backs of the souls in his container, each by
-    // the haulMult of ITS row).
+    // this is a person. The number is DATA and the owner's to retune.
+    //
+    // ЧИТАТЕЛЬ У КОЛОНКИ РОВНО ОДИН, И ОН ПРО ОБЪЕКТЫ В ИНВЕНТАРЕ:
+    // `refresh_squad_carry@src/macro/squad.h` — спины ГОЛОВ контейнера, каждая
+    // своей строкой, в килограммах через `kHaulBackKg` выше. Здесь стояло «its
+    // readers are the two cargo doors of squad.h and nobody else», и это было
+    // неверно ДВАЖДЫ (перепись M-297, 2026-10-20): читателей было ТРИ, а не
+    // два (третий — скор крю в `npc_ai.cpp`), и один из них читал колонку не о
+    // том — множил на неё АНКЕТУ самого сквада. Спина сквада колонки СТРОКИ не
+    // знает вовсе: её даёт анкета и её СИЛА (ЗАКОН ДВУХ ТАБЛИЦ — анкета у
+    // сквада, объект в инвентаре; наверху массовка есть циферки, а не актор).
     // Last field on purpose, beside the light block: an opt-in column at the
     // end costs no other row a comma.
     //
