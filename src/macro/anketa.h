@@ -773,35 +773,43 @@ inline constexpr int kMaxInventorySlots = 1024;  // 32×32, the one container
 // гейта «думает ли этот род»). Здесь та же сумма лежит посчитанной, и у
 // каждой колонки читатель НАЗВАН (DOD п.9) — ни одной «на будущее»:
 //
-//   massCg      → inventory_weight        (перегруз марша, «влезет ли», торг)
+//   massG       → inventory_weight        (перегруз марша, «влезет ли», торг)
 //   valueItems  → inventory_value         («чем он может заплатить»)
 //   valueSouls  → container_worth         («сколько он стоит весь»; = items+souls)
 //   heads       → creature_count          (бой, воплощение, панели)
 //   folkHeads   → count_human_souls       (паства, труд, ссадка состава)
 //   boardPerDay → upkeep_bill().board     (харч — сезонный суд содержания)
 //   wagePerDay  → upkeep_bill().wage, calculate_squad_upkeep
-//   haulCg      → refresh_squad_carry     (спины обоза)
+//   haulG       → refresh_squad_carry     (спины обоза)
 //
-// ПОЧЕМУ ЦЕЛЫЕ, А НЕ `float` (вердикт владельца 2026-10-20, вариант А).
+// ПОЧЕМУ ЦЕЛЫЕ, И ПОЧЕМУ ИМЕННО ГРАММ (вердикты владельца 2026-10-20:
+// вариант А — «да давай 0.01 хороший квант», затем «можно тогда все веса в
+// граммах» и «да всё на целое»).
 // Инкремент обязан совпадать с полным пересчётом ТОЧНО — иначе это кеш,
 // который разъедется молча, и свидетель тождества пришлось бы делать
 // эпсилонным, то есть слепым ровно к тому, что он сторожит. Три веса
 // каталога из четырнадцати (0.01, 0.05, 0.30) в двоичном `float`
 // непредставимы, поэтому сумма в `float` зависит от ПОРЯДКА сложения, а у
-// накопителя он другой. Квант 0.01 кг не выбран, а ВЫВЕДЕН из самого
-// каталога: все четырнадцать его весов кратны 0.01, минимум — монета 0.01
-// кг (ЗАКОН ТИПА п.5). Колонки таблицы это не трогает — они остаются
-// `float`, и открытый вопрос владельца о кванте массы в ТАБЛИЦЕ (M-298)
-// остаётся открытым.
+// накопителя он другой. Квант не выбран, а ВЫВЕДЕН из каталога: все
+// четырнадцать его весов кратны 0.01 кг = 10 г, минимум — монета 0.01 кг
+// (ЗАКОН ТИПА п.5). Единица — ГРАММ, и машинного преимущества перед сотой
+// килограмма у неё нет (владелец назвал это сам: «это для людей преимущество
+// больше а не машинное»); выигрывают разрешение будущей строки и читаемость
+// авторского числа, а цена нулевая. ЗДЕСЬ СТОЯЛО «сантиграмм», И ЭТО БЫЛО
+// ВРАНЬЁ ИМЕНИ: `× 100` даёт сотую КИЛОГРАММА, то есть 10 граммов, а
+// сантиграмм — сотая ГРАММА, в тысячу раз меньше (ЗАКОН ИМЕНИ: арифметика
+// сильнее имени, и чинится именно имя). Колонка таблицы пока ОСТАЁТСЯ
+// `float` — её перевод в целые граммы идёт своим нарядом вместе со стражем
+// плотности (M-298).
 struct InventorySummary {
-    std::int64_t massCg      = 0;  // масса предметной половины, сантиграммы
+    std::int64_t massG       = 0;  // масса предметной половины, ГРАММЫ
     std::int64_t valueItems  = 0;  // стоимость того, чем можно платить
     std::int64_t valueSouls  = 0;  // стоимость существ (вторая половина worth)
     std::int64_t heads       = 0;  // голов существ, Σ count области
     std::int64_t folkHeads   = 0;  // из них людских душ (природа строки)
     std::int64_t boardPerDay = 0;  // харч: единиц голодной строки в день
     std::int64_t wagePerDay  = 0;  // жалованье: стоимостью в день
-    std::int64_t haulCg      = 0;  // спины обоза, сантиграммы
+    std::int64_t haulG       = 0;  // спины обоза, ГРАММЫ
 };
 // Восемь чисел по 8 Б = РОВНО кэш-линия; ширина взята по достижимому
 // диапазону (ЗАКОН ТИПА п.1): стак — `int32` по построению `add_ref`, вес —
@@ -818,18 +826,18 @@ static_assert(sizeof(InventorySummary) == 64,
 // в ней нет ни одного.
 inline InventorySummary& operator+=(InventorySummary& a,
                                     const InventorySummary& b) noexcept {
-    a.massCg += b.massCg;           a.valueItems  += b.valueItems;
+    a.massG += b.massG;             a.valueItems  += b.valueItems;
     a.valueSouls += b.valueSouls;   a.heads       += b.heads;
     a.folkHeads += b.folkHeads;     a.boardPerDay += b.boardPerDay;
-    a.wagePerDay += b.wagePerDay;   a.haulCg      += b.haulCg;
+    a.wagePerDay += b.wagePerDay;   a.haulG       += b.haulG;
     return a;
 }
 inline bool operator==(const InventorySummary& a,
                        const InventorySummary& b) noexcept {
-    return a.massCg == b.massCg && a.valueItems == b.valueItems
+    return a.massG == b.massG && a.valueItems == b.valueItems
         && a.valueSouls == b.valueSouls && a.heads == b.heads
         && a.folkHeads == b.folkHeads && a.boardPerDay == b.boardPerDay
-        && a.wagePerDay == b.wagePerDay && a.haulCg == b.haulCg;
+        && a.wagePerDay == b.wagePerDay && a.haulG == b.haulG;
 }
 
 // ВКЛАД ОДНОГО СЛОТА — ЕДИНСТВЕННОЕ МЕСТО, ГДЕ ВОСЕМЬ КОЛОНОК НАЗЫВАЮТСЯ.
@@ -848,7 +856,7 @@ inline InventorySummary slot_tally(const ItemRef& s,
     // Сто монет весили ноль и стоили ноль, то есть самый частый платёж мира
     // был невидим для веса. Сводку-тождество это НЕ ловило — обе её стороны
     // считаются одной формулой, — поймал якорь «сто монет по 0.01 кг весят
-    // РОВНО 100 сантиграмм».
+    // РОВНО 1000 граммов».
     if (n == 0 || s.empty()) return t;
     if (world_row_is_creature(s.def)) {
         const std::uint16_t kind =
@@ -862,14 +870,14 @@ inline InventorySummary slot_tally(const ItemRef& s,
         // Спина объекта — СВОИ килограммы строки (M-297), округлённые тем же
         // квантом 0.01 кг: `haulMult` сегодня даёт 0 / 7.5 / 10.5 / 120 кг,
         // но строка с `haulMult = 0.07` сломала бы `float` молча.
-        t.haulCg = std::int64_t(std::lround(
+        t.haulG = std::int64_t(std::lround(
                        double(npc_def(NPCType(kind)).haulMult)
-                       * double(kHaulBackKg) * 100.0))
+                       * double(kHaulBackKg) * 1000.0))
                  * n;
         return t;
     }
     if (const ItemDef* d = item_def_at(int(s.def))) {
-        t.massCg     = std::int64_t(std::lround(double(d->weight) * 100.0)) * n;
+        t.massG     = std::int64_t(std::lround(double(d->weight) * 1000.0)) * n;
         t.valueItems = std::int64_t(value_of(s)) * n;
     }
     return t;

@@ -97,7 +97,13 @@ int auto_scrap_overflow(Inventory& inv) {
 // ОДИН раз, на выходе: внутри мира величина целая (ЗАКОН ТИПА п.5), float
 // остаётся только в подписи, которую читают 16 мест.
 float inventory_weight(const Inventory& inv) noexcept {
-    return float(inv.sum().massCg) * 0.01f;
+    // ДЕЛЕНИЕМ, А НЕ УМНОЖЕНИЕМ НА ОБРАТНОЕ, И В `double` — иначе квант
+    // врёт ВВЕРХ. `× 0.001f` даёт 112 000 г → 112.0000053 кг, и перегруз
+    // 2.0000053 кг округляется вверх до ТРЁХ единиц цены вместо двух;
+    // поймал это `macro_travel_parity_test`, а не глаз. Деление в `double`
+    // переживает и `-ffast-math` с его правом заменить деление обратным:
+    // ошибка double-обратного ~1e-16, и сужение до float её съедает.
+    return static_cast<float>(static_cast<double>(inv.sum().massG) / 1000.0);
 }
 
 std::string use_item(Inventory& inv, const std::string& itemId, PlayerCombatSlice& pc) {

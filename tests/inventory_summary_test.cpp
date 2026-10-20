@@ -9,9 +9,15 @@
 // один сегодняшний прибор этого не увидит, потому что все они спрашивают
 // ровно сводку.
 //
-// ПОЧЕМУ РАВЕНСТВО ТОЧНОЕ, А НЕ ЭПСИЛОННОЕ. Сводка целая (сантиграммы —
-// квант, выведенный из самого каталога: все 14 его весов кратны 0.01 кг,
-// минимум — монета). Будь она в `float`, инкремент отличался бы от пересчёта
+// ПОЧЕМУ РАВЕНСТВО ТОЧНОЕ, А НЕ ЭПСИЛОННОЕ. Сводка целая, и единица её —
+// ГРАММ (вердикт владельца 2026-10-20: «можно тогда все веса в граммах»;
+// довод его же — СГС, и он назвал его честно: «это для людей преимущество
+// больше а не машинное»). Машинного преимущества у грамма перед сотой
+// килограмма и правда нет — оба точны для каталога (все 14 его весов кратны
+// 0.01 кг), оба влезают в `int64` с запасом, — но грамм даёт в сто раз
+// тоньше разрешение будущей строке (стрела в 20 г, зерно в 1 г) и не врёт
+// именем, как врал мой «сантиграмм»: `× 100` давало СОТУЮ КИЛОГРАММА, то
+// есть 10 граммов, и имя разошлось с арифметикой на три порядка. Будь она в `float`, инкремент отличался бы от пересчёта
 // ПОРЯДКОМ сложения — три веса каталога (0.01, 0.05, 0.30) в двоичном float
 // непредставимы, — и эпсилон пришлось бы выбирать на глаз, то есть ослеплять
 // прибор ровно в том, что он сторожит. Это и проверяет раздел 6.
@@ -33,7 +39,7 @@
 //   • `boardPerDay` занулить  → раздел 2b КРАСНЫЙ, тождество молчит
 //   • `wagePerDay` занулить   → раздел 2b КРАСНЫЙ, тождество молчит
 //   • `valueSouls` занулить   → раздел 2b КРАСНЫЙ, тождество молчит
-//   • `massCg` без `lround`, сразу в `double` → раздел 6 КРАСНЫЙ
+//   • `massG` без `lround`, сразу в `double` → раздел 6 КРАСНЫЙ
 // ОБЯЗАНЫ МОЛЧАТЬ (детектор, краснеющий на всё, — не детектор):
 //   • переставить местами строки в `operator+=`            → ЗЕЛЁНЫЙ
 //   • снять ранний выход `folkHeads == 0` в `bleed_flock`   → ЗЕЛЁНЫЙ
@@ -66,14 +72,14 @@ void settled(const Inventory& inv, const char* what) {
         "души %lld/%lld, голов %lld/%lld, людей %lld/%lld, харч %lld/%lld, "
         "плата %lld/%lld, спины %lld/%lld\n",
         what,
-        (long long)inv.sum().massCg,      (long long)truth.massCg,
+        (long long)inv.sum().massG,      (long long)truth.massG,
         (long long)inv.sum().valueItems,  (long long)truth.valueItems,
         (long long)inv.sum().valueSouls,  (long long)truth.valueSouls,
         (long long)inv.sum().heads,       (long long)truth.heads,
         (long long)inv.sum().folkHeads,   (long long)truth.folkHeads,
         (long long)inv.sum().boardPerDay, (long long)truth.boardPerDay,
         (long long)inv.sum().wagePerDay,  (long long)truth.wagePerDay,
-        (long long)inv.sum().haulCg,      (long long)truth.haulCg);
+        (long long)inv.sum().haulG,      (long long)truth.haulG);
 }
 
 ItemRef item(const char* id, int n, std::uint32_t seed = 0u) {
@@ -85,15 +91,15 @@ ItemRef item(const char* id, int n, std::uint32_t seed = 0u) {
 }
 
 // ── 0. САМ ДЕТЕКТОР ВИДИТ РАСХОЖДЕНИЕ (§8 п.6: контроль утверждается) ─────
-void test_the_detector_can_see_a_single_centigram() {
+void test_the_detector_can_see_a_single_gram() {
     Inventory bag{};
     CHECK(bag.add_ref(item("wood", 3)), "фикстура наполняется");
     const InventorySummary truth = inventory_sum_recount(bag);
     CHECK(truth == bag.sum(), "целый контейнер сходится сам с собой");
     InventorySummary bent = truth;
-    bent.massCg += 1;
+    bent.massG += 1;
     CHECK(!(bent == bag.sum()),
-          "детектор видит РАСХОЖДЕНИЕ В ОДИН САНТИГРАММ — без этого "
+          "детектор видит РАСХОЖДЕНИЕ В ОДИН ГРАММ — без этого "
           "равенство ниже доказывало бы только, что оператор == возвращает "
           "true");
     bent = truth;
@@ -129,7 +135,7 @@ void test_item_doors_keep_the_summary() {
 
     bag.clear();
     settled(bag, "clear");
-    CHECK(bag.sum().massCg == 0 && bag.sum().valueItems == 0,
+    CHECK(bag.sum().massG == 0 && bag.sum().valueItems == 0,
           "обнулённый контейнер весит ноль и стоит ноль");
 }
 
@@ -330,8 +336,8 @@ void test_mass_is_exact_over_a_round_trip() {
     for (int i = 0; i < 100; ++i) allIn = bag.add_of(coin, 1) && allIn;
     CHECK(allIn, "сто монет легли поштучно, каждая своей дверью");
     settled(bag, "сто монет поштучно");
-    CHECK(bag.sum().massCg == 100,
-          "сто монет по 0.01 кг весят РОВНО 100 сантиграмм");
+    CHECK(bag.sum().massG == 1000,
+          "сто монет по 0.01 кг весят РОВНО 1000 граммов");
     // ЯКОРЬ ВТОРОЙ КОЛОНКИ, И ОН ЗДЕСЬ НЕ ДЛЯ СИММЕТРИИ. Тождество сводки
     // с пересчётом слепо к НЕВЕРНОЙ `slot_tally` — обе его стороны считает
     // одна формула. Поймать её может только независимый якорь, и один такой
@@ -344,7 +350,7 @@ void test_mass_is_exact_over_a_round_trip() {
     for (int i = 0; i < 100; ++i) allOut = bag.remove_of(coin, 1) && allOut;
     CHECK(allOut, "и ушли поштучно, каждая своей дверью");
     settled(bag, "и сняты поштучно");
-    CHECK(bag.sum().massCg == 0,
+    CHECK(bag.sum().massG == 0,
           "круг замкнулся В НОЛЬ: остатка нет, потому что величина целая");
     CHECK(inventory_weight(bag) == 0.0f, "и дверь массы отвечает тем же нулём");
 }
@@ -358,22 +364,22 @@ void test_hauling_is_linear_and_reads_the_authored_zero() {
     Inventory bag{};
     CHECK(creatures_push_stack(bag, NPCType::Wolf, 1, 5), "пять волков");
     settled(bag, "безрукие головы");
-    CHECK(bag.sum().haulCg == 0,
+    CHECK(bag.sum().haulG == 0,
           "БЕЗРУКАЯ ГОЛОВА НЕ РАСТИТ ОБОЗ: авторский ноль колонки значит ноль");
     CHECK(bag.sum().heads == 5, "…хотя головами они считаются");
 
     CHECK(creatures_push_stack(bag, NPCType::Horse, 1, 1), "одна лошадь");
     settled(bag, "первая упряжная");
-    const std::int64_t one = bag.sum().haulCg;
+    const std::int64_t one = bag.sum().haulG;
     CHECK(one > 0, "упряжная голова обоз растит");
     CHECK(creatures_push_stack(bag, NPCType::Horse, 1, 2), "ещё две");
     settled(bag, "три упряжных");
-    CHECK(bag.sum().haulCg == 3 * one,
+    CHECK(bag.sum().haulG == 3 * one,
           "вклад ЛИНЕЕН по головам — ни множителя от анкеты, ни фоллбэка");
 
     CHECK(bag.remove_at(bag.creature_first(), 3), "упряжные уходят");
     settled(bag, "табун снят");
-    CHECK(bag.sum().haulCg == 0, "и обоз возвращается ровно к нулю");
+    CHECK(bag.sum().haulG == 0, "и обоз возвращается ровно к нулю");
 }
 
 // ── 8. ДВЕРЬ АДРЕСА (путь загрузки сейва) СВОДИТ КОНТЕЙНЕР САМА ──────────
@@ -412,7 +418,7 @@ void test_the_address_door_rebuilds_the_same_summary() {
 } // namespace
 
 int main() {
-    test_the_detector_can_see_a_single_centigram();
+    test_the_detector_can_see_a_single_gram();
     test_item_doors_keep_the_summary();
     test_creature_area_repair_keeps_the_summary();
     test_each_creature_column_has_an_anchor();

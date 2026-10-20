@@ -180,9 +180,11 @@ inline void refresh_squad_carry(MacroStore& st, MacroHandle squad) {
     // то есть защитная форма пережила свою причину.
     // Килограммы объектов копит сводка контейнера (M-296): тот же Σ
     // `haulMult × kHaulBackKg × count`, но посчитанный у двери записи и в
-    // целых сантиграммах, поэтому он не зависит от порядка сложения.
+    // целых ГРАММАХ, поэтому он не зависит от порядка сложения.
     const Inventory& bag = st.inventory[squad.slot].inv;
-    rt.carryCap = rt.carryPerSoul + float(bag.sum().haulCg) * 0.01f;
+    rt.carryCap = rt.carryPerSoul
+                + static_cast<float>(static_cast<double>(bag.sum().haulG)
+                                     / 1000.0);   // см. inventory_weight
 }
 
 // (Резолв по ординалу — `macro_handle_by_spawn_id@src/macro/store.h`: он
