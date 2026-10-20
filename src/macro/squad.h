@@ -341,29 +341,48 @@ inline MacroHandle place_handle_by_ordinal(const MacroStore& st,
 // У ДАНЖА ДВЕРИ НЕТ ПО ПОСТРОЕНИЮ: его паства и есть головы инвентаря
 // (souls_flock), а worked под FT_Spire занят спеллом — списывать там значило
 // бы гасить чужое число.
-inline void leave_home_flock(GameState& gs, const MacroStore& st,
-                             std::int32_t homeId, int souls) {
-    if (homeId <= 0 || souls <= 0) return;
+// ЗНАК СВОБОДЕН, И ЭТО НЕ ОБОБЩЕНИЕ «НА ВСЯКИЙ СЛУЧАЙ», А ВТОРАЯ ПОЛОВИНА
+// ТОГО ЖЕ СОБЫТИЯ (M-292, 2026-10-20). Пока души уходили из места только
+// наймом, смертью и дезертирством, у двери был один знак, и имя
+// `leave_home_flock` было полной правдой. Прилавок двусторонен по построению
+// (владелец: «если понадобится обмен двух прям инвентарей то тоже норм»):
+// игрок вправе ОТДАТЬ голову месту, и тогда носитель-число обязан вырасти —
+// иначе «в поле» = паства − дома уходит в минус, то есть мир начинает врать
+// о том, где его люди. Второй двери на это заводить нельзя (ЗАКОН КОНТЕЙНЕРА
+// п.3: два носителя одного события пишутся ОДНОЙ дверью), поэтому дверь
+// осталась одна и приняла знак; прежнее имя умерло вместе с односторонностью.
+//
+// Приход душ, у которого НЕТ второго носителя в контейнере, по-прежнему идёт
+// `settle_souls@src/macro/labour.h`: она ставит голову И поднимает число
+// разом. Эта дверь — для случая, когда контейнер УЖЕ записан кем-то другим
+// (сделка `barter_swap`, найм `hire_npc`, смерть), и числу осталось догнать
+// измеренный факт.
+inline void shift_home_flock(GameState& gs, const MacroStore& st,
+                             std::int32_t homeId, int delta) {
+    if (homeId <= 0 || delta == 0) return;
     const MacroHandle home = place_handle_by_ordinal(st, std::uint32_t(homeId));
     if (!st.valid(home)) return;
     const SquadType kind = SquadType(st.runtime[home.slot].squadType);
     if (landmark_def(kind).bornPopBase != 0) return;
     const auto& c = st.cell[home.slot];
     const int x = ecs::cell_x(c, gs.mapW), y = ecs::cell_y(c, gs.mapW);
-    worked_write(gs, x, y, std::max(0, worked_read(gs, x, y) - souls));
+    worked_write(gs, x, y, std::max(0, worked_read(gs, x, y) + delta));
 }
 
 // ── ВТОРАЯ ПОЛОВИНА ПАРЫ, ИЗМЕРЕННАЯ ФАКТОМ ──────────────────────────────
-// `leave_home_flock` выше умеет СПИСАТЬ, но не умеет узнать СКОЛЬКО, и
+// `shift_home_flock` выше умеет ПИСАТЬ, но не умеет узнать СКОЛЬКО, и
 // каждый звонящий отвечал на это сам — четырьмя разными способами, из
 // которых верным был один. Эта дверь отвечает за всех, и ответ у неё
-// измеренный: СНЯТО = было минус стало.
+// измеренный: ДЕЛЬТА = было минус стало.
 //
 // ПОЧЕМУ ИМЕННО ИЗМЕРЕНИЕ, А НЕ НАМЕРЕНИЕ. Всякая дверь убыли вправе взять
 // МЕНЬШЕ запрошенного — пустой стак, кап приёмника, отказ пула (ходок
 // возвращается в состав). Списать с паствы запрошенное значило бы вычесть
 // людей, которые остались стоять. Это ровно закон `drain` (ЗАКОН ТРЁХ
-// ДВЕРЕЙ) на втором носителе той же души.
+// ДВЕРЕЙ) на втором носителе той же души. С M-292 измерение стало работать
+// и в ОБРАТНУЮ сторону бесплатно: сделка через прилавок вправе ПРИВЕСТИ
+// голову, и «было минус стало» назовёт это отрицательной дельтой без единой
+// ветки — поэтому возврат теперь ЗНАКОВЫЙ («ушло», минус — «пришло»).
 //
 // ПОЧЕМУ СЧЁТ ЧЕЛОВЕЧЕСКИЙ. Паства поселения — число worked, и приход в неё
 // идёт людьми (`settle_souls` → `raise_flock_into_container`, строка
@@ -373,15 +392,13 @@ inline void leave_home_flock(GameState& gs, const MacroStore& st,
 // её душой (латентно: табун у мест сегодня нулевой).
 //
 // ВЕТКИ ПО РОДУ ЗДЕСЬ НЕТ И НЕ НУЖНО: у данжа паства И ЕСТЬ головы, поэтому
-// `leave_home_flock` сам уходит пустым по колонке `bornPopBase`, а
+// `shift_home_flock` сам уходит пустым по колонке `bornPopBase`, а
 // безымянный дом (homeId = 0) отсекается там же. Оба — ЗНАЧЕНИЯ, а не
 // исключения.
 inline int flock_left_home(GameState& gs, const MacroStore& st,
                            std::uint16_t slot, int folkBefore) {
     const int lost = folkBefore - count_human_souls(st.inventory[slot].inv);
-    if (lost > 0) {
-        leave_home_flock(gs, st, st.runtime[slot].homeSettlementId, lost);
-    }
+    shift_home_flock(gs, st, st.runtime[slot].homeSettlementId, -lost);
     return lost;
 }
 
@@ -417,8 +434,8 @@ inline int kill_fallen_squad_creatures(MacroStore& st, GameState& gs,
         // Душа вышла из мира своего дома — число паствы обязано упасть.
         // Списывается ВСЁ, а не разница «до и после»: отказа у смерти нет,
         // поэтому намерение и факт здесь — одно и то же.
-        leave_home_flock(gs, st, st.runtime[sw.slot].homeSettlementId,
-                         homeSouls);
+        shift_home_flock(gs, st, st.runtime[sw.slot].homeSettlementId,
+                         -homeSouls);
     }
     // ОДИН ДОКЛАД НА ПРОХОД, А НЕ НА СКВАД: ведомость склада душ отвечает на
     // «сколько мир потерял», и дробить это по трупам значило бы заводить
@@ -518,7 +535,7 @@ inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
         // поэтому остаётся ровно одна душа, и списывается она ровно раз: слот
         // умирает в этой строке и второй раз сюда не придёт.
         if (is_folk_kind(st.kind[slot].type)) {
-            leave_home_flock(gs, st, st.runtime[slot].homeSettlementId, 1);
+            shift_home_flock(gs, st, st.runtime[slot].homeSettlementId, -1);
         }
         // 6.3: сквад ЕСТЬ слот store — смерть слота и есть вся смерть.
         store_death(st, handle_at(st, slot));

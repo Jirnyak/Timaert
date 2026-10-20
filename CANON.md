@@ -933,7 +933,7 @@ D; прежняя форма «население = производное от 
 
 **ДУША ПОЯВЛЯЕТСЯ ОДНОЙ ДВЕРЬЮ** — `settle_souls@src/macro/labour.h` пишет ОБА
 носителя; убыль — `bleed_flock`/`bleed_creatures@src/macro/world_row.h` и
-`leave_home_flock@src/macro/squad.h` (душа, покинувшая мир дома, сходит с
+`shift_home_flock@src/macro/squad.h` (душа, покинувшая мир дома, сходит с
 паствы).
 
 **ЧТО ИЗ ПРЕЖНЕЙ ФОРМЫ ОСТАЛОСЬ ВЕРНЫМ:** счёт идёт по ПРИРОДЕ строки
@@ -8259,7 +8259,7 @@ port of state.ts factories… via the band system in state.ts»). Вырезан
 строка мира выдаётся и читается одной дверью (`world_row_of_creature`,
 `world_row_is_creature`, `creature_of_world_row` — все
 `@src/macro/world_row.h`), и ловушка «граница по круглому числу» закрыта
-построением: база выведена из `world_item_rows@src/macro/world_row.h`
+построением: база выведена из `world_item_rows@src/tables/world_row.h`
 (`item_catalog().size()`), литерала в двери нет ни одного. Места и сквады —
 M-37, 2026-09-30: счётчик один (`nextMacroSpawnOrdinal` в
 `GameState@src/macro/state.h`, выдача с 1, 0 навсегда «никто»), свидетель —

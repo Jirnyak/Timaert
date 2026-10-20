@@ -616,7 +616,7 @@ namespace sm::ui
                         ImGui::Text("HP %d / %d", pools.hp, pools.maxHp);
                         ImGui::Text("MP %d / %d", pools.mp, pools.maxMp);
                         ImGui::Text("SP %d / %d", pools.sp, pools.maxSp);
-                        ImGui::Text("Value %d", inventory_value(playerBag));
+                        ImGui::Text("Value %d", container_worth(playerBag));
                         ImGui::Text("Attr pts %d", sheet.levelData.attributePoints);
                         ImGui::Text("Skill pts %d", sheet.levelData.skillPoints);
                         if (sheet.levelData.learnPicks > 0)
@@ -790,8 +790,21 @@ namespace sm::ui
                     // same the two trade counters draw. Click selects; the
                     // detail line below names the stack and offers Use.
                     static int selectedSlot = -1;
+                    // ПРОКРУТКА — ЧТОБЫ ХВОСТ СЕТКИ БЫЛ ДОСТИЖИМ (M-292,
+                    // поймано кадром): контейнер 32×32, панель показывает
+                    // около шестнадцати рядов, а область существ лежит вниз
+                    // от слота 1023 — ровно в невидимых. Резерв выведен из
+                    // того, что рисуется НИЖЕ: блок подробностей слота — это
+                    // десять строк в худшем случае (имя, бонусы, описание на
+                    // три строки, «Use», превью скрапа), и они обязаны
+                    // остаться на экране, пока игрок листает сумку.
+                    const float bagGridH =
+                        -ImGui::GetTextLineHeightWithSpacing() * 10.0f;
+                    ImGui::BeginChild("##charbag_scroll",
+                                      ImVec2(0.0f, bagGridH));
                     const GridClick click =
                         draw_inventory_grid("##charbag", playerBag);
+                    ImGui::EndChild();
                     if (click.slot >= 0)
                         selectedSlot = click.slot;
                     if (selectedSlot >= 0
@@ -802,15 +815,25 @@ namespace sm::ui
                     {
                         const ItemRef &st =
                             playerBag.slots[std::size_t(selectedSlot)];
-                        if (const ItemDef *def = item_def_at(int(st.def)))
+                        // ГЕЙТ — СТРОКА МИРА, А НЕ ПРЕДМЕТНАЯ ПОЛОВИНА
+                        // (M-292): здесь стоял `if (const ItemDef *def =
+                        // item_def_at(…))`, и выбранный слот существа не
+                        // печатал НИЧЕГО — ни имени, ни счёта, ни цены, —
+                        // хотя сетка выше его уже рисует. Личность стака
+                        // общая для обеих половин; предметная строка нужна
+                        // ниже только ГЛАГОЛАМ (описание, глоток), и они
+                        // молчат на существе по своим же колонкам.
+                        if (world_row_exists(st.def))
                         {
-                            draw_item_ref_name(st, *def);
+                            const ItemDef *def = item_def_at(int(st.def));
+                            draw_item_ref_name(st);
                             ImGui::SameLine();
                             ImGui::Text("x%d   %d g", st.count, value_of(st));
-                            draw_item_ref_bonuses(st, *def);
-                            if (def->description && def->description[0])
+                            draw_item_ref_bonuses(st);
+                            if (def && def->description
+                                && def->description[0])
                                 ImGui::TextWrapped("%s", def->description);
-                            if (item_type_consumable(def->type)
+                            if (def && item_type_consumable(def->type)
                                 && ImGui::SmallButton("Use"))
                             {
                                 // ГЛОТОК — СПОСОБНОСТЬ (CANON S13, вердикт
@@ -1209,9 +1232,9 @@ namespace sm::ui
                                 ImGui::TextDisabled("%s",
                                                     body_part_def(equip_cell_part(cell)).label);
                                 ImGui::TableNextColumn();
-                                draw_item_ref_name(r, *def);
+                                draw_item_ref_name(r);
                                 ImGui::TableNextColumn();
-                                draw_item_ref_bonuses(r, *def);
+                                draw_item_ref_bonuses(r);
                                 ImGui::TableNextColumn();
                                 ImGui::PushID(cell);
                                 if (ImGui::SmallButton("Take off"))
@@ -1251,12 +1274,12 @@ namespace sm::ui
                                 ++equipStacks;
                                 ImGui::TableNextRow();
                                 ImGui::TableNextColumn();
-                                draw_item_ref_name(st, *def);
+                                draw_item_ref_name(st);
                                 ImGui::TextDisabled("%s", def->id);
                                 ImGui::TableNextColumn();
                                 ImGui::Text("x%d", st.count);
                                 ImGui::TableNextColumn();
-                                draw_item_ref_bonuses(st, *def);
+                                draw_item_ref_bonuses(st);
                                 ImGui::TableNextColumn();
                                 ImGui::PushID(slot);
                                 if (ImGui::SmallButton("Wear"))
@@ -1716,7 +1739,7 @@ namespace sm::ui
                                                sInv.used_slots());
                         draw_info_overview_row("Inventory items", sInv.total());
                         draw_info_overview_row("Carries (value)",
-                                               inventory_value(sInv));
+                                               container_worth(sInv));
                         ImGui::EndTable();
                     }
                     if (traits && traits->count > 0)
@@ -1751,8 +1774,10 @@ namespace sm::ui
                     // body come from trade_widgets.h — this site keeps only
                     // its price law and its fact.
                     const PlayerHaggler h = player_haggler(gs, st);
+                    // ОБЕ ПОЛОВИНЫ (M-292): две цифры стоят рядом с «Their
+                    // value», и смысл у них один — «сколько тут всего добра».
                     ImGui::Text("Player value: %d",
-                                inventory_value(playerBag));
+                                container_worth(playerBag));
                     if (!bodyFigures)
                     {
                         ImGui::SameLine();
@@ -1773,8 +1798,7 @@ namespace sm::ui
                     // только ШАБЛОН РОЖДЕНИЯ (`birth_place` ставит
                     // `st.sheet[slot] = landmark_sheet(kind)`), после него
                     // истина у анкеты — она качается (ЗАКОН АНКЕТЫ).
-                    const auto buyUnit = [&](const ItemRef &ref,
-                                             [[maybe_unused]] const ItemDef &d, int n) {
+                    const auto buyUnit = [&](const ItemRef &ref, int n) {
                         return trade_overlay_buy_price(
                             stock_price(value_of(ref),
                                         sInv.count_of(int(ref.def)) - n,
@@ -1787,8 +1811,7 @@ namespace sm::ui
                             h.tradePct,
                             trade_power_of(sSheet));
                     };
-                    const auto sellUnit = [&](const ItemRef &ref,
-                                              [[maybe_unused]] const ItemDef &d, int n) {
+                    const auto sellUnit = [&](const ItemRef &ref, int n) {
                         return trade_overlay_sell_price(
                             stock_price(value_of(ref),
                                         sInv.count_of(int(ref.def)) + n,
@@ -1801,10 +1824,31 @@ namespace sm::ui
                             h.tradePct,
                             trade_power_of(sSheet));
                     };
+                    // ВТОРАЯ ПОЛОВИНА СДЕЛКИ — ДВЕРЬ ПАСТВЫ, И ТА ЖЕ, ЧТО У
+                    // НАЙМА (M-292, ЗАКОН КОНТЕЙНЕРА п.3). Контейнер и число
+                    // фичи суть ДВА носителя одной души, и писать их порознь
+                    // запрещено: `barter_swap` пишет контейнер, значит число
+                    // обязано догнать измеренный факт — иначе место
+                    // продолжало бы кормить и облагать данью проданного,
+                    // ровно тот дефект, который у найма уже чинили.
+                    //
+                    // Паства мерится ДО тела панели: сделка настаёт внутри
+                    // него, в `onDeal`, и спрашивать «сколько было» после неё
+                    // уже некого. Дельта ЗНАКОВАЯ — прилавок двусторонен, и
+                    // отданная месту голова поднимает его число тем же
+                    // измерением (ветки на это нет).
+                    //
+                    // Для контрагента-ХОДОКА дверь тоже верна: его
+                    // `homeSettlementId` — его город, и душа, проданная из
+                    // корована, честно покидает паству того города. Это тот
+                    // же адрес, которым ходит смерть
+                    // (`kill_fallen_squad_creatures`).
+                    const int folkBefore = count_human_souls(sInv);
                     draw_barter_body(
                         "Subject stock", g_subjectTrade,
                         playerBag, sInv,
                         buyUnit, sellUnit, [&](int gave, int took) {
+                            flock_left_home(gs, st, slot, folkBefore);
                             record_subject_deal_fact(
                                 gs, st, st.spawnId[slot].index, sx, sy,
                                 gave, took);
@@ -1871,8 +1915,12 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Recruit;
                 if (recruitOpen)
                 {
-                    ImGui::Text("Player value: %d",
-                                inventory_value(playerBag));
+                    // ЗДЕСЬ ИМЕННО ПЛАТЁЖНОЕ ЧИСЛО, И НАЗВАНО ОНО ТАК ЖЕ
+                    // (M-292): оно ГЕЙТИТ кнопку ниже и уходит в `hire_npc`
+                    // кошельком, поэтому показать здесь полную стоимость
+                    // контейнера значило бы включить «Hire» на непокрытую
+                    // сделку — существа в сумке игрока не монета.
+                    ImGui::Text("Payable: %d", inventory_value(playerBag));
                     ImGui::Spacing();
                     for (int ti = 0; ti < npc_type_count(); ++ti)
                     {

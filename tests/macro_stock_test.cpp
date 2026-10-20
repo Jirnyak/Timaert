@@ -19,6 +19,7 @@
 
 #include "macro/deposit_layer.h"
 #include "macro/world_row.h"
+#include "macro/currency.h"      // barter_swap — сделка идёт ТЕМ ЖЕ законом
 #include "macro/macro_stock.h"
 #include "scene_objects_fixture.h"  // арена: квитанция — колонка слота (ломоть 4)
 #include "sub/spawn.h"            // stamp_macro_debt — дверь штампа (ломоть 4)
@@ -569,6 +570,84 @@ void test_deposits_are_carrier_rows() {
     }
 }
 
+// ── СДЕЛКА С СУЩЕСТВОМ ПРОХОДИТ ДВЕРЬ ПАСТВЫ, И В ОБЕ СТОРОНЫ (M-292,
+// ЗАКОН КОНТЕЙНЕРА п.3) ──────────────────────────────────────────────────
+//
+// ЧТО ОХРАНЯЕТСЯ. У «душа покинула место» ДВА носителя: голова в контейнере
+// и число фичи (паства). Писать их порознь запрещено — именно это однажды
+// чинили у найма, и прилавок повторил бы дефект буквально: место продолжало
+// бы кормить, растить и облагать данью проданного человека.
+//
+// ПОЧЕМУ ЭТОТ СВИДЕТЕЛЬ ВООБЩЕ НУЖЕН, ХОТЯ ПРАВКА ВЫГЛЯДИТ ИНТЕРФЕЙСНОЙ:
+// ctest НЕ МОЖЕТ увидеть мёртвый UI-путь (§8 п.6, пятая слепота), и кадр
+// тоже — сдвиг числа паствы на кадре не виден. Но дверь паствы живёт в
+// СИМУЛЯЦИИ, а не в представлении, и вот её и судим: прилавок зовёт ровно
+// `flock_left_home`, ту же дверь, что вкладка Recruit.
+//
+// ИЗМЕРЕНИЕ, А НЕ НАМЕРЕНИЕ: сделка вправе перевезти МЕНЬШЕ запрошенного
+// (кап контейнера), поэтому паства двигается на «было минус стало», и этим
+// же одним выражением покрывается ОБРАТНАЯ сделка — голова, отданная месту.
+void test_a_creature_deal_moves_the_flock_both_ways() {
+    using namespace sm;
+    auto gsp = std::make_unique<sm::GameState>();
+    sm::GameState& gs = *gsp;
+    gs.mapW = gs.mapH = 64;
+    auto storePtr = sm::make_macro_store();
+    sm::MacroStore& st = *storePtr;
+
+    // Свидетель рождает своё предусловие сам (§8 п.11): место и его паства —
+    // дверями мира, а не присвоением колонки.
+    const MacroHandle town = sm::birth_place(gs, st, SquadType::City, 12, 9);
+    const int kSouls = 40;
+    CHECK(sm::settle_souls(gs, st, town.slot, kSouls) == kSouls,
+          "паства встала дверью мира целиком");
+    Inventory& shelf = st.inventory[town.slot].inv;
+    CHECK(souls_flock(gs, st, town.slot) == kSouls
+              && souls_home(st, town.slot) == kSouls,
+          "оба носителя души согласны ДО сделки: дома столько же, сколько в "
+          "пастве");
+
+    // ── ИГРОК ПОКУПАЕТ ГОЛОВЫ ──────────────────────────────────────────
+    Inventory playerBag;
+    const int headSlot = shelf.creature_first();
+    CHECK(headSlot < kMaxInventorySlots, "головы лежат областью сверху");
+    const std::uint16_t headRow = shelf.slots[std::size_t(headSlot)].def;
+    CHECK(value_of(shelf.slots[std::size_t(headSlot)]) > 0,
+          "и прилавок видит их ценой — на нуле этой цены стоял весь дефект");
+
+    const int kBought = 7;
+    int folkBefore = count_human_souls(shelf);
+    CHECK(barter_swap(playerBag, shelf, {},
+                      {BarterLine{headSlot, kBought, headRow}}),
+          "сделка настала ТЕМ ЖЕ barter_swap, второго прилавка нет");
+    CHECK(flock_left_home(gs, st, town.slot, folkBefore) == kBought,
+          "дверь паствы назвала ИЗМЕРЕННЫЙ факт, а не намерение");
+    CHECK(souls_flock(gs, st, town.slot) == kSouls - kBought,
+          "паства места упала РОВНО на число ушедших голов: иначе город "
+          "кормит и облагает данью проданного");
+    CHECK(souls_home(st, town.slot) == kSouls - kBought,
+          "и оба носителя снова согласны");
+    CHECK(creature_count(playerBag) == kBought,
+          "а головы честно у покупателя");
+
+    // ── ИГРОК ОТДАЁТ ИХ ОБРАТНО ────────────────────────────────────────
+    // Прилавок двусторонен по построению, и без этой половины «в поле» =
+    // паства - дома ушло бы в МИНУС, то есть мир соврал бы о том, где его
+    // люди. Ветки на это нет: то же измерение, другой знак.
+    const int backSlot = playerBag.creature_first();
+    const int kGivenBack = 4;
+    folkBefore = count_human_souls(shelf);
+    CHECK(barter_swap(playerBag, shelf,
+                      {BarterLine{backSlot, kGivenBack, headRow}}, {}),
+          "обратная сделка проходит тем же законом");
+    CHECK(flock_left_home(gs, st, town.slot, folkBefore) == -kGivenBack,
+          "дельта ЗНАКОВАЯ: пришло — значит минус ушло");
+    CHECK(souls_flock(gs, st, town.slot) == kSouls - kBought + kGivenBack,
+          "паства выросла ровно на пришедшие головы");
+    CHECK(souls_flock(gs, st, town.slot) == souls_home(st, town.slot),
+          "и «в поле» осталось нулём, а не отрицательным числом");
+}
+
 } // namespace
 
 int main() {
@@ -582,5 +661,6 @@ int main() {
     test_the_lease_holds_the_dead_record_against_the_sweep();
     test_trees_are_a_carrier_row();
     test_deposits_are_carrier_rows();
+    test_a_creature_deal_moves_the_flock_both_ways();
     return sm::test::report("macro_stock_test");
 }

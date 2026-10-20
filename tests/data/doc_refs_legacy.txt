@@ -509,8 +509,6 @@ SKELETON.md	world_gen.cpp:213
 SKELETON.md	world_gen.cpp:51-55
 SKELETON.md	world_gen.cpp:64
 SKELETON.md	world_gen.cpp:90-95
-SKELETON.md	world_row.h:342-343
-SKELETON.md	world_row.h:66
 SKELETON.md	world_tick.cpp:201
 SKELETON.md	world_tick.cpp:212-221
 SKELETON.md	world_tick.cpp:74

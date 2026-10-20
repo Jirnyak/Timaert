@@ -2940,22 +2940,14 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
 // дела их может временно отвлечь враг»). Публично — по прецеденту
 // trade_caravan_at_station: тест водит один think охоты руками.
 
-// Цена душ сквада по строкам найма — та же таблица, что жалованье и threat
-// (лидер — субъект, как в законе хлеба: 0 бойцов = 0 запаха богатства).
-static std::uint32_t creatures_worth(const MacroStore& st, MacroHandle e) {
-    std::uint32_t worth = 0;
-    const Inventory& bag = st.inventory[e.slot].inv;
-    for (int i = bag.creature_first(); i < kMaxInventorySlots; ++i) {
-        const ItemRef& r = bag.slots[std::size_t(i)];
-        const std::uint16_t kind =
-            std::uint16_t(creature_of_world_row(r.def));
-        if (!valid_npc_kind(kind)) continue;
-        worth += std::uint32_t(
-            std::max(0, npc_def(NPCType(kind)).hireGold))
-            * std::uint32_t(r.count);
-    }
-    return worth;
-}
+// (`creatures_worth` УМЕРЛА ЗДЕСЬ 2026-10-20, M-292. Она складывала цену
+// душ по строкам найма, и существовала ровно потому, что дверь стоимости
+// была полуслепа: запах богатства считал `creatures_worth + inventory_value`
+// — ДВЕ половины одного вопроса, сложенные вручную, то есть второй ответ на
+// «сколько стоит этот контейнер» (DOD п.6). Теперь обе половины даёт
+// `container_worth@src/macro/currency.h` одним проходом, и закон уровня у
+// них тот же, что у найма: эта дверь читала `hireGold` БЕЗ
+// `soldier_level_factor`, то есть ветеран пахнул как новобранец.)
 
 void scent_squad_deposit(MacroHandle self, const MacroPos& p,
                          const ecs::NPCKind& kind, const TickContext& ctx) {
@@ -2965,9 +2957,11 @@ void scent_squad_deposit(MacroHandle self, const MacroPos& p,
     if (f < 0 || f >= sf.factions) return;   // kNoFaction не следит
     const MacroStore& st = store_ctx(ctx);
     const float power = squad_power(auto_battle_side_of(st, self));
-    std::uint32_t worth = creatures_worth(st, self);
-    worth += std::uint32_t(
-        std::max(0, inventory_value(st.inventory[self.slot].inv)));
+    // ОБЕ ПОЛОВИНЫ КОНТЕЙНЕРА ОДНОЙ ДВЕРЬЮ (M-292): души и имущество суть
+    // один вопрос «сколько тут добра», и складывать их вручную значило бы
+    // держать второй ответ (здесь стояла `creatures_worth`).
+    const std::uint32_t worth = std::uint32_t(
+        std::max(0, container_worth(st.inventory[self.slot].inv)));
     scent_deposit(sf, f, wrap_axis(int(p.x), sf.w), wrap_axis(int(p.y), sf.h),
                   power <= 0.0f ? 0u : std::uint32_t(power), worth);
 }

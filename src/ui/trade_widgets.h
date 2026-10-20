@@ -24,6 +24,7 @@
 #include "macro/player_entity.h"   // player_effective_sheet — the haggler door
 #include "macro/squad.h"           // standing_bonuses_of
 #include "macro/state.h"
+#include "tables/world_row.h"      // world_row_exists/_label/_id — обе половины
 
 namespace sm::ui {
 
@@ -97,20 +98,31 @@ inline ImVec4 affix_tint(int affixes) {
 // affix gives it, the tint its count earns. Every panel that names a stack
 // calls this, so a rolled thing cannot look plain in one window and charged
 // in another.
-inline void draw_item_ref_name(const ItemRef& st, const ItemDef& def) {
+//
+// ИМЯ БЕРЁТСЯ ДВЕРЬЮ СТРОКИ МИРА, А НЕ ПРЕДМЕТНОЙ ПОЛОВИНОЙ (M-292,
+// 2026-10-20): параметра `const ItemDef&` здесь больше нет, потому что он и
+// БЫЛ тем сужением — звонящий обязан был сперва резолвить предметный каталог,
+// а на строке существа тот отдаёт `nullptr`, и половина единого контейнера
+// оставалась безымянной. Аффиксов у существа не бывает по построению
+// (`grant_affixes` отказывает по `slotMask`), поэтому ветки по роду строки
+// здесь нет: `affix_count` на нём — ноль, то есть ЗНАЧЕНИЕ.
+inline void draw_item_ref_name(const ItemRef& st) {
+    const char* name = world_row_label(st.def);
     const int n = affix_count(st);
     if (n == 0) {
-        ImGui::Text("%s", def.name);
+        ImGui::Text("%s", name);
         return;
     }
     const char* suffix = affix_suffix(st);
     ImGui::TextColored(affix_tint(n), suffix[0] ? "%s %s" : "%s%s",
-                       def.name, suffix);
+                       name, suffix);
 }
 
 // ...and of what it DOES: the row's innate bonuses and the instance's rolled
-// affixes, one vocabulary (they are the same type), one line style.
-inline void draw_item_ref_bonuses(const ItemRef& st, const ItemDef& def) {
+// affixes, one vocabulary (they are the same type), one line style. Строка,
+// у которой врождённых бонусов нет вовсе (вся половина существ), печатает
+// «-» общим путём — отсутствие есть значение, а не случай.
+inline void draw_item_ref_bonuses(const ItemRef& st) {
     bool any = false;
     const auto line = [&any](Bonus b) {
         if (b.row == 0 || b.value == 0) return;
@@ -118,7 +130,8 @@ inline void draw_item_ref_bonuses(const ItemRef& st, const ItemDef& def) {
         ImGui::Text("%+d %s", int(b.value), bonus_def(BonusId(b.row)).label);
         any = true;
     };
-    for (const Bonus& b : def.bonus) line(b);
+    if (const ItemDef* def = item_def_at(int(st.def)))
+        for (const Bonus& b : def->bonus) line(b);
     for (int i = 0; i < kMaxItemAffixes; ++i) line(st.affix_at(i));
     if (!any) ImGui::TextDisabled("-");
 }
@@ -130,24 +143,24 @@ inline void draw_trade_amount_input(int* amount) {
     if (*amount < 1) *amount = 1;
 }
 
-// The counterparty's purchasing power = the VALUE of their whole bag: a coin
-// is just a good (verdict №1, 2026-09-17), so what they can pay with is
-// everything they hold, priced by the one value law.
+// Чем контрагент богат — СТОИМОСТЬ ВСЕГО, что он держит: монета есть просто
+// товар (вердикт №1, 2026-09-17), поэтому отдельной «кассы» у него нет.
+//
+// С M-292 это ОБЕ половины контейнера (`container_worth`), и здесь стояло
+// слово «purchasing power» — оно стало бы ложью: платёж по плотности душ не
+// носит (`payable_row@src/macro/currency.h`), поэтому «сколько у него добра»
+// и «чем он может заплатить» разошлись, и эта строка отвечает на ПЕРВОЕ.
+// Игрок смотрит на прилавок и видит, что у города есть шесть тысяч душ, —
+// ровно то, чем прилавок теперь и умеет торговать.
 inline void draw_counterparty_gold(const Inventory& theirs) {
     ImGui::SameLine();
-    ImGui::TextDisabled("Their value: %d", inventory_value(theirs));
+    ImGui::TextDisabled("Their value: %d", container_worth(theirs));
 }
 
-inline void draw_trade_item_tooltip(const ItemDef* item) {
-    if (!item || !ImGui::IsItemHovered()) return;
-    ImGui::BeginTooltip();
-    ImGui::TextUnformatted(item->name);
-    if (item->description && item->description[0] != '\0') {
-        ImGui::TextWrapped("%s", item->description);
-    }
-    ImGui::Text("Weight: %.2f kg", double(item->weight));
-    ImGui::EndTooltip();
-}
+// (`draw_trade_item_tooltip` УМЕРЛА ЗДЕСЬ 2026-10-20, M-292: НОЛЬ звонящих
+// во всём дереве. Она рисовала свой, второй тултип стака — имя, описание,
+// вес — рядом с тем, который рисует сетка ниже, и пережила переход списка в
+// сетку 2026-09-11 как сирота (DOD п.9). Найдена при переписи этого файла.)
 
 // ── The package deal ─────────────────────────────────────────────────────
 
@@ -239,6 +252,14 @@ inline void barter_clamp(BarterPackage& pkg, const Inventory& shelf) {
 // decides what a click means (select, stage, release).
 struct GridClick { int slot = -1; bool right = false; };
 
+// СЕТКА СПРАШИВАЕТ СТРОКУ МИРА, А НЕ ПРЕДМЕТНУЮ ПОЛОВИНУ (M-292, вердикт
+// владельца 2026-10-20: разбивать для интерфейсов можно, «НО ЧТОБЫ БЫЛО
+// ВОЗМОЖНО ВСЁ ВСЁ РАВНО»). Здесь стоял `item_def_at(ref.def)`, и ВСЯ
+// клетка — фон, рамка, метка, счёт, тултип и САМ КЛИК — висела на его
+// результате. На строке существа он `nullptr`, поэтому слот с шестью
+// тысячами крестьян рисовался пустым фоном и не нажимался: половина единого
+// контейнера не существовала для торга ПО ПОСТРОЕНИЮ. Гейт теперь — «есть ли
+// у мира такая строка», и он один на обе половины.
 template <class TooltipExtraFn>
 inline GridClick draw_inventory_grid(const char* strId, const Inventory& inv,
                                      const BarterPackage* staged,
@@ -253,32 +274,31 @@ inline GridClick draw_inventory_grid(const char* strId, const Inventory& inv,
     for (int slot = 0; slot < kMaxInventorySlots; ++slot) {
         if (slot % kGridCols != 0) ImGui::SameLine(0.0f, 2.0f);
         const ItemRef& ref = inv.slots[std::size_t(slot)];
-        const ItemDef* def =
-            ref.empty() ? nullptr : item_def_at(int(ref.def));
+        const bool filled = !ref.empty() && world_row_exists(ref.def);
         ImGui::PushID(slot);
         const ImVec2 p = ImGui::GetCursorScreenPos();
         ImGui::InvisibleButton("c", ImVec2(cell, cell));
         const bool hovered = ImGui::IsItemHovered();
-        if (hovered && def) {
+        if (hovered && filled) {
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
                 out = GridClick{slot, false};
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Right))
                 out = GridClick{slot, true};
         }
         const int stagedN = staged ? barter_staged(*staged, slot) : 0;
-        const ImU32 bg = def ? IM_COL32(38, 32, 24, 255)
-                             : IM_COL32(24, 22, 18, 160);
+        const ImU32 bg = filled ? IM_COL32(38, 32, 24, 255)
+                                : IM_COL32(24, 22, 18, 160);
         const ImU32 border =
-            stagedN > 0        ? IM_COL32(255, 210, 90, 255)
-            : (hovered && def) ? IM_COL32(220, 220, 220, 200)
-                               : IM_COL32(90, 80, 60, 120);
+            stagedN > 0           ? IM_COL32(255, 210, 90, 255)
+            : (hovered && filled) ? IM_COL32(220, 220, 220, 200)
+                                  : IM_COL32(90, 80, 60, 120);
         dl->AddRectFilled(p, ImVec2(p.x + cell, p.y + cell), bg, 3.0f);
         dl->AddRect(p, ImVec2(p.x + cell, p.y + cell), border, 3.0f);
-        if (def) {
+        if (filled) {
             // Short mark: the name's first two letters, tinted like the
             // shopfront title (one lerp, no second rarity dictionary).
-            char mark[3] = {def->name[0],
-                            def->name[0] ? def->name[1] : '\0', '\0'};
+            const char* name = world_row_label(ref.def);
+            char mark[3] = {name[0], name[0] ? name[1] : '\0', '\0'};
             dl->AddText(ImVec2(p.x + 3.0f, p.y + 2.0f),
                         ImGui::GetColorU32(affix_tint(affix_count(ref))),
                         mark);
@@ -295,14 +315,14 @@ inline GridClick draw_inventory_grid(const char* strId, const Inventory& inv,
                         cnt);
             if (hovered) {
                 ImGui::BeginTooltip();
-                draw_item_ref_name(ref, *def);
-                ImGui::TextDisabled("%s", def->id);
-                draw_item_ref_bonuses(ref, *def);
+                draw_item_ref_name(ref);
+                ImGui::TextDisabled("%s", world_row_id(ref.def));
+                draw_item_ref_bonuses(ref);
                 ImGui::Text("x%d   value %d g", ref.count, value_of(ref));
                 if (stagedN > 0)
                     ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f),
                                        "reserved for the deal: %d", stagedN);
-                tooltipExtra(ref, *def, stagedN);
+                tooltipExtra(ref, stagedN);
                 ImGui::EndTooltip();
             }
         }
@@ -315,7 +335,7 @@ inline GridClick draw_inventory_grid(const char* strId, const Inventory& inv,
 inline GridClick draw_inventory_grid(const char* strId, const Inventory& inv,
                                      const BarterPackage* staged = nullptr) {
     return draw_inventory_grid(strId, inv, staged,
-                               [](const ItemRef&, const ItemDef&, int) {});
+                               [](const ItemRef&, int) {});
 }
 
 // A staged package's value against its shelf — the sum draw_barter_column
@@ -324,6 +344,13 @@ inline GridClick draw_inventory_grid(const char* strId, const Inventory& inv,
 // "coin is ALWAYS face value" branch died 2026-09-18 with verdict №1
 // («никаких особых механик и ворот»): a coin's price is its value_of, and
 // whether a market's modulation touches it is the price law's business.
+// СТРОКА СУЩЕСТВА БОЛЬШЕ НЕ ДАЁТ МОЛЧАЛИВЫЙ НОЛЬ (M-292): здесь стоял
+// `const ItemDef* def = item_def_at(…); if (!def) continue;`, то есть
+// застейдженная голова просто не входила в сумму сделки — кнопка «Deal»
+// считала её бесплатной. Цену обеих половин знает `value_of`, и закон цены
+// звонящего читает ТОЛЬКО её (`ItemDef&` в сигнатуру больше не идёт: ни
+// один из двух законов цены этого параметра не читал, он стоял под
+// `[[maybe_unused]]`).
 template <class UnitPriceFn>
 inline int barter_package_value(const BarterPackage& pkg,
                                 const Inventory& shelf,
@@ -332,10 +359,8 @@ inline int barter_package_value(const BarterPackage& pkg,
     for (const BarterLine& line : pkg) {
         if (line.slot < 0 || line.slot >= kMaxInventorySlots) continue;
         const ItemRef& ref = shelf.slots[std::size_t(line.slot)];
-        if (ref.empty()) continue;
-        const ItemDef* def = item_def_at(int(ref.def));
-        if (!def) continue;
-        total += unitPrice(ref, *def, line.count) * line.count;
+        if (ref.empty() || !world_row_exists(ref.def)) continue;
+        total += unitPrice(ref, line.count) * line.count;
     }
     return total;
 }
@@ -410,24 +435,64 @@ inline void draw_barter_body(const char* stockLabel,
         if (want > ref.count) want = ref.count;
         barter_stage(pkg, c.slot, ref.def, want);
     };
+    // ── СЕТКА 32×32 НЕ ВЛЕЗАЕТ В ПАНЕЛЬ, И ЭТО НЕ МЕЛОЧЬ ВЁРСТКИ (M-292,
+    // поймано КАДРОМ) ──────────────────────────────────────────────────
+    // Контейнер по закону 1024 слота, панель по умолчанию показывает около
+    // шестнадцати рядов из тридцати двух. Пока на полке лежали одни
+    // предметы, это никого не задевало: закон размещения кладёт их СНИЗУ,
+    // от слота 0. Существа лежат НАВЕРХУ области, вниз от 1023
+    // (`creature_first@src/macro/anketa.h`), то есть ровно в тех рядах,
+    // которых не видно, — и «слот теперь рисуется и нажимается» оказалось
+    // правдой, до которой нельзя дотянуться.
+    //
+    // Прокрутка своя, а не окна, ровно поэтому: кнопка «Deal» обязана
+    // остаться на месте, пока игрок листает полку. Высота ВЫВЕДЕНА, а не
+    // вписана — вся оставшаяся высота минус одна строка управления, ту
+    // самую одну строку и рисует `draw_barter_deal_button` ниже.
+    //
+    // ГОРИЗОНТАЛЬНАЯ ТОЖЕ, И ЭТО ТОТ ЖЕ СЧЁТ: 32 столбца по высоте строки
+    // просят около 1250 px, а колонка сделки — половина панели шириной
+    // 760. Без неё дальний столбец обрезался БЕЗ полосы, то есть молча, и
+    // слот 1023 — ровно тот, куда ложатся существа, — был недостижим по
+    // обеим осям сразу.
+    //
+    // ОСТАТОК НАЗВАН: 32×32 не помещаются в половину панели при нынешнем
+    // размере клетки, поэтому дальний угол достаётся прокруткой, а не
+    // взглядом. Сетка «вся разом» — своя задача вёрстки, не этого наряда.
+    //
+    // Свидетеля на это у ctest нет и быть не может (§8 п.6, пятая слепота):
+    // ни одно число симуляции тут не двигается. СУДИТ КАДР, и он снят —
+    // клетка `Pe` со счётом 6272 в правом нижнем углу полки города
+    // (сид 12345, 2026-10-20); до правки там стоял пустой квадрат.
+    // Отрицательная высота — штатная идиома ImGui «вся оставшаяся минус
+    // столько»: она считается ВНУТРИ колонки и сама учитывает рамку региона,
+    // тогда как высота, посчитанная ДО `Columns`, подрезала футер (замерено
+    // кадром 2026-10-20).
+    const float gridH = -ImGui::GetFrameHeightWithSpacing();
     ImGui::Columns(2, "barter_cols", true);
     ImGui::TextUnformatted(stockLabel);
+    ImGui::BeginChild("##shelf_scroll", ImVec2(0.0f, gridH), false,
+                      ImGuiWindowFlags_HorizontalScrollbar);
     stage_click(
         draw_inventory_grid("##shelf", shelf, &st.barter.take,
-                            [&](const ItemRef& r, const ItemDef& d, int n) {
+                            [&](const ItemRef& r, int n) {
                                 ImGui::Text("buy at %d g each",
-                                            buyUnit(r, d, n > 0 ? n : 1));
+                                            buyUnit(r, n > 0 ? n : 1));
                             }),
         st.barter.take, shelf);
+    ImGui::EndChild();
     ImGui::NextColumn();
     ImGui::TextUnformatted("Your inventory");
+    ImGui::BeginChild("##player_scroll", ImVec2(0.0f, gridH), false,
+                      ImGuiWindowFlags_HorizontalScrollbar);
     stage_click(
         draw_inventory_grid("##player_shelf", playerBag, &st.barter.give,
-                            [&](const ItemRef& r, const ItemDef& d, int n) {
+                            [&](const ItemRef& r, int n) {
                                 ImGui::Text("sell at %d g each",
-                                            sellUnit(r, d, n > 0 ? n : 1));
+                                            sellUnit(r, n > 0 ? n : 1));
                             }),
         st.barter.give, playerBag);
+    ImGui::EndChild();
     ImGui::Columns(1);
     const int takeValue =
         barter_package_value(st.barter.take, shelf, buyUnit);
