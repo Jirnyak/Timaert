@@ -120,28 +120,52 @@ inline const ItemDef* payable_row(const ItemRef& s) noexcept {
     return s.empty() ? nullptr : item_def_at(int(s.def));
 }
 
+// ЧТО ВЕРНУЛ ЗАКОН ПЛОТНОСТИ — ТРИ ЧИСЛА ОДНОГО ОТВЕТА. Масса едет наружу не
+// «на будущее» (DOD п.9): её спрашивает погрузка дома, чтобы срезать лот по
+// свободному трюму, и посчитана она уже с охраной — второй раз её брать
+// неоткуда и не из чего.
+struct DensestSlot {
+    int          slot  = -1;   // -1 = платить больше нечем
+    int          value = 0;    // стоимость ОДНОЙ единицы
+    std::int32_t massG = 0;    // масса ОДНОЙ единицы, уже сквозь item_mass_g
+};
+
 // The densest stack of the bag: the slot the value law reaches for first.
-// Плотнее — раньше: v/w больше ⇔ v·bestW > bestV·w (перекрёстно, без
-// деления; вес 0 бесконечно плотен и выигрывает всегда). -1 = nothing of
-// value left to pay with.
-inline int densest_value_slot(const Inventory& inv, int& outUnitValue) {
-    int best = -1;
-    int bestV = 0;
-    float bestW = 0.0f;
+// Плотнее — раньше: v/w больше ⇔ v·bestW > bestV·w (перекрёстно, без деления).
+//
+// ДВЕРЬ ОДНА НА ВЕСЬ МИР, И ЭТО ПРАВКА M-298 (вердикт владельца 2026-10-20
+// «слить в одну дверь сейчас»). Этот же закон был ВЫПИСАН ВТОРОЙ РАЗ внутри
+// `plan_home_load_@src/macro/npc_ai.cpp` — причём его собственный комментарий
+// НАЗЫВАЛ эту дверь («тот же закон, каким платит всякая сделка») и тут же
+// реализовывал её заново. Копию родила маска пропуска: погрузка обходит склад
+// БЕЗ изъятия стака, поэтому ей надо помнить уже взятые слоты. Теперь маска —
+// параметр, а закон один: `skip == nullptr` значит «ничего не пропускать».
+//
+// ЦЕЛОЕ ПЕРЕКРЁСТНОЕ УМНОЖЕНИЕ — НЕ ВОЛЬНОСТЬ, А СЛЕДСТВИЕ ГРАММА: в
+// килограммах произведение `v·w` не выходило за 819 200 и флоат держал его
+// точно, а в граммах оно доходит до 12 800 × 64 000 = 8.2·10⁸ — выше точного
+// целого диапазона `float` (2²⁴ = 1.7·10⁷). Так что ширина взята расчётом:
+// `int64` держит произведение с запасом в десять миллиардов раз.
+inline DensestSlot densest_value_slot(const Inventory& inv,
+                                      const bool* skip = nullptr) {
+    DensestSlot r{};
     for (int i = 0; i < int(inv.slots.size()); ++i) {
+        if (skip && skip[std::size_t(i)]) continue;
         const ItemRef& s = inv.slots[std::size_t(i)];
         const ItemDef* def = payable_row(s);
         if (!def) continue;       // нечем взвесить — не платёжная материя
         const int v = value_of(s);
         if (v <= 0) continue;
-        const float w = def->weight > 0.0f ? def->weight : 0.0f;
-        const bool denser = best < 0
-            || float(v) * bestW > float(bestV) * w
-            || (float(v) * bestW == float(bestV) * w && v > bestV);
-        if (denser) { best = i; bestV = v; bestW = w; }
+        // СТРАЖ, А НЕ ФОЛЛБЭК: при w = 0 обе ветви сравнения ниже вырождаются,
+        // и строка выигрывает порядок ВСЕГДА (M-298). Порог — шаг колонки.
+        const std::int32_t w = item_mass_g(*def);
+        const std::int64_t lhs = std::int64_t(v) * std::int64_t(r.massG);
+        const std::int64_t rhs = std::int64_t(r.value) * std::int64_t(w);
+        const bool denser =
+            r.slot < 0 || lhs > rhs || (lhs == rhs && v > r.value);
+        if (denser) { r.slot = i; r.value = v; r.massG = w; }
     }
-    outUnitValue = bestV;
-    return best;
+    return r;
 }
 
 // ОПЛАТА СТОИМОСТЬЮ В СТОК (владелец, 2026-09-18, дословно: «оплата может
@@ -159,15 +183,14 @@ inline int pay_value_dense(Inventory& inv, int value) {
     int left = value < 0 ? 0 : value;
     int paid = 0;
     while (left > 0) {
-        int unitV = 0;
-        const int best = densest_value_slot(inv, unitV);
-        if (best < 0) break;   // платить больше нечем
-        const ItemRef& s = inv.slots[std::size_t(best)];
-        const int want = (left + unitV - 1) / unitV;
+        const DensestSlot d = densest_value_slot(inv);
+        if (d.slot < 0) break;   // платить больше нечем
+        const ItemRef& s = inv.slots[std::size_t(d.slot)];
+        const int want = (left + d.value - 1) / d.value;
         const int take = want < int(s.count) ? want : int(s.count);
-        if (take <= 0 || !inv.remove_at(best, take)) break;
-        paid += take * unitV;
-        left -= take * unitV;
+        if (take <= 0 || !inv.remove_at(d.slot, take)) break;
+        paid += take * d.value;
+        left -= take * d.value;
     }
     return paid;
 }
@@ -184,19 +207,18 @@ inline int transfer_value_dense(Inventory& from, Depot to, int value) {
     int left = value < 0 ? 0 : value;
     int moved = 0;
     while (left > 0) {
-        int unitV = 0;
-        const int best = densest_value_slot(from, unitV);
-        if (best < 0) break;
-        const ItemRef& s = from.slots[std::size_t(best)];
-        const int want = (left + unitV - 1) / unitV;
+        const DensestSlot d = densest_value_slot(from);
+        if (d.slot < 0) break;
+        const ItemRef& s = from.slots[std::size_t(d.slot)];
+        const int want = (left + d.value - 1) / d.value;
         const int take = want < int(s.count) ? want : int(s.count);
         if (take <= 0) break;
         ItemRef payload = s;
         payload.count = std::uint16_t(take);
         if (!to.inv.add_ref(payload)) break;   // refused: the stack stays put
-        if (!from.remove_at(best, take)) break;
-        moved += take * unitV;
-        left -= take * unitV;
+        if (!from.remove_at(d.slot, take)) break;
+        moved += take * d.value;
+        left -= take * d.value;
     }
     if (moved > 0 && to.needDebt) {
         econ_pay_debt(to.inv, to.needDebt, to.sink, to.user);

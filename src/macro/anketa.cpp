@@ -93,9 +93,10 @@ int auto_scrap_overflow(Inventory& inv) {
 // ЧТЕНИЕ СВОДКИ, А НЕ ПРОХОД ПО КАПУ (M-296, закрывает M-267). Здесь стоял
 // цикл по всем 1024 слотам, и платила его КАЖДАЯ думка мира — причём ДО
 // гейта «думает ли этот род», так что города и деревни платили его и не
-// думали, а их контейнеры самые полные. Сантиграммы сводки делятся на сто
-// ОДИН раз, на выходе: внутри мира величина целая (ЗАКОН ТИПА п.5), float
-// остаётся только в подписи, которую читают 16 мест.
+// думали, а их контейнеры самые полные. Граммы сводки делятся на килограмм
+// ОДИН раз, на выходе: внутри мира величина целая ОТ КОЛОНКИ ДО СУММЫ
+// (ЗАКОН ТИПА п.5, M-298), float остаётся только в подписи, которую читают
+// 16 мест.
 float inventory_weight(const Inventory& inv) noexcept {
     // ДЕЛЕНИЕМ, А НЕ УМНОЖЕНИЕМ НА ОБРАТНОЕ, И В `double` — иначе квант
     // врёт ВВЕРХ. `× 0.001f` даёт 112 000 г → 112.0000053 кг, и перегруз
@@ -363,8 +364,12 @@ DefenseSum worn_defense(const Gear& g, const Inventory& inv,
     return sum;
 }
 
+// СУММА ЦЕЛАЯ, ДЕЛЕНИЕ ОДНО — тем же выводом, что у `inventory_weight`:
+// сумма флоатов зависела от ПОРЯДКА обхода ячеек экипировки, а простой чинит
+// это тем, что складывать нечему. Подпись остаётся килограммами: её читает
+// закон простоя брони через `kArmorRecoverySecondsPerKg`, то есть секунды.
 float worn_armor_weight(const Gear& g, const Inventory& inv) {
-    float kg = 0.0f;
+    std::int32_t grams = 0;
     for (int i = 0; i < kEquipCells; ++i) {
         const std::uint16_t v = g.worn[std::size_t(i)];
         if (v >= kWornBlocked) continue;
@@ -375,9 +380,9 @@ float worn_armor_weight(const Gear& g, const Inventory& inv) {
             || item_archetype(*def) != ObjectArchetype::Armor) {
             continue;
         }
-        kg += def->weight;
+        grams += item_mass_g(*def);
     }
-    return kg;
+    return float(double(grams) / 1000.0);
 }
 
 int armor_recovery_steps(const Gear& g, const Inventory& inv,

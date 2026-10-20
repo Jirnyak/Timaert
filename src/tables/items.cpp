@@ -63,7 +63,7 @@ constexpr ItemDef kCatalog[] = {
     // ОДИН ТИП НА СТРОКУ ЗДЕСЬ — НЕ ДЕФЕКТ ЛЕСТНИЦЫ: оружие растёт видами
     // первым же ростом контента (бронзовый кинжал, стальной), а особенность
     // кинжала есть модуль ТИПА, а не колонка строки.
-    {"wpn_dagger",  "Rusty Dagger",    ObjectType::Dagger,     30, 1.00f, "\xF0\x9F\x97\xA1",
+    {"wpn_dagger",  "Rusty Dagger",    ObjectType::Dagger,     30, 1000, "\xF0\x9F\x97\xA1",
         "A rusty sidearm, quick in the hand", {},
         /*slot*/part_bit(BodyPartId::Grip) | part_bit(BodyPartId::OffGrip),
         // 1d4 piercing through the Dagger skill: a rusty sticker — mean 2.5
@@ -72,7 +72,7 @@ constexpr ItemDef kCatalog[] = {
         // the mass law (anatomy.h weapon_swing_seconds).
         /*blocks*/0, /*def*/{}, /*dice*/{1, 4},
         /*dmgType*/DamageType::Pierce, /*skill*/SkillId::Dagger},
-    {"wpn_sword",   "Worn Sword",      ObjectType::Sword,      60, 2.00f, "\xE2\x9A\x94",
+    {"wpn_sword",   "Worn Sword",      ObjectType::Sword,      60, 2000, "\xE2\x9A\x94",
         "A soldier's blade, past its best years", {},
         /*slot*/part_bit(BodyPartId::Grip) | part_bit(BodyPartId::OffGrip),
         /*blocks*/0, /*def*/{}, /*dice*/{1, 6},
@@ -80,22 +80,22 @@ constexpr ItemDef kCatalog[] = {
     // The two-handers say so through the mask, not through code: they sit in
     // the main grip and take the off hand with them — the case blocksMask
     // exists for.
-    {"wpn_spear",   "Crude Spear",     ObjectType::Spear,      50, 2.50f, "\xF0\x9F\x94\xB1",
+    {"wpn_spear",   "Crude Spear",     ObjectType::Spear,      50, 2500, "\xF0\x9F\x94\xB1",
         "A sharpened head on a long shaft; needs both hands", {},
         /*slot*/part_bit(BodyPartId::Grip),
         /*blocks*/part_bit(BodyPartId::OffGrip), /*def*/{}, /*dice*/{1, 8},
         /*dmgType*/DamageType::Pierce, /*skill*/SkillId::Spear},
-    {"wpn_axe",     "Woodsman's Axe",  ObjectType::Axe,        70, 3.00f, "\xF0\x9F\xAA\x93",
+    {"wpn_axe",     "Woodsman's Axe",  ObjectType::Axe,        70, 3000, "\xF0\x9F\xAA\x93",
         "Made for timber, willing to argue", {},
         /*slot*/part_bit(BodyPartId::Grip) | part_bit(BodyPartId::OffGrip),
         /*blocks*/0, /*def*/{}, /*dice*/{1, 10},
         /*dmgType*/DamageType::Pierce, /*skill*/SkillId::Axe},
-    {"wpn_mace",    "Iron Mace",       ObjectType::Mace,       80, 3.50f, "\xE2\x9A\x92",
+    {"wpn_mace",    "Iron Mace",       ObjectType::Mace,       80, 3500, "\xE2\x9A\x92",
         "A blunt argument no armour fully wins", {},
         /*slot*/part_bit(BodyPartId::Grip) | part_bit(BodyPartId::OffGrip),
         /*blocks*/0, /*def*/{}, /*dice*/{1, 12},
         /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Mace},
-    {"wpn_staff",   "Quarterstaff",    ObjectType::Staff,      40, 2.00f, "\xF0\x9F\xAA\x84",
+    {"wpn_staff",   "Quarterstaff",    ObjectType::Staff,      40, 2000, "\xF0\x9F\xAA\x84",
         "A traveller's stick and a caster's habit; both hands", {},
         /*slot*/part_bit(BodyPartId::Grip),
         /*blocks*/part_bit(BodyPartId::OffGrip), /*def*/{}, /*dice*/{1, 6},
@@ -105,14 +105,14 @@ constexpr ItemDef kCatalog[] = {
     // килограмм через тот же закон массы; его стрела — та же дверь снаряда, в
     // которую стреляет любой НПЦ, и боеприпаса нет нигде. Обе руки, как у
     // копья.
-    {"wpn_bow",     "Hunting Bow",     ObjectType::Bow,        70, 1.00f, "\xF0\x9F\x8F\xB9",
+    {"wpn_bow",     "Hunting Bow",     ObjectType::Bow,        70, 1000, "\xF0\x9F\x8F\xB9",
         "A self bow of yew; kills at a distance it never has to close", {},
         /*slot*/part_bit(BodyPartId::Grip),
         /*blocks*/part_bit(BodyPartId::OffGrip), /*def*/{}, /*dice*/{1, 8},
         /*dmgType*/DamageType::Pierce, /*skill*/SkillId::Bow,
         /*delivery*/Delivery::Missile, /*range*/80.0f},
     // ── АРХЕТИП Armor: ЧТО НАДЕВАЮТ ───────────────────────────────────────
-    {"arm_leather", "Leather Armor",   ObjectType::BodyArmor,  60, 5.00f, "\xF0\x9F\x9B\xA1",
+    {"arm_leather", "Leather Armor",   ObjectType::BodyArmor,  60, 5000, "\xF0\x9F\x9B\xA1",
         "A boiled-leather coat over the torso", {},
         /*slot*/part_bit(BodyPartId::Torso), /*blocks*/0,
         // ПЕРЕКАЛИБРОВАНО с 3 на 10 (M-209): броня стала ПРОЦЕНТОМ, и
@@ -127,14 +127,14 @@ constexpr ItemDef kCatalog[] = {
     // Тип один и зовётся `consumable` (вердикт владельца 2026-10-20): сюда же
     // придут свитки и жезлы — всё, что при потреблении даёт эффект спелла на
     // ресурсы анкеты.
-    {"potion_hp",   "Health Potion",   ObjectType::Consumable, 50, 0.30f, "\xE2\x9D\xA4",
+    {"potion_hp",   "Health Potion",   ObjectType::Consumable, 50, 300, "\xE2\x9D\xA4",
         "Restores 30 HP", {{std::uint8_t(BonusId::HealHp), 30}},
         // Глоток в бою — ДЕЙСТВИЕ (CANON S13): секунда базы, делимая
         // дверью восстановления. До 2026-09-19 зелья пились даром.
         /*slot*/0, /*blocks*/0, /*def*/{}, /*dice*/{},
         /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Count,
         /*delivery*/Delivery::Melee, /*range*/0.0f, /*useSeconds*/1.0f},
-    {"potion_mp",   "Mana Potion",     ObjectType::Consumable, 75, 0.30f, "\xE2\x9C\xA8",
+    {"potion_mp",   "Mana Potion",     ObjectType::Consumable, 75, 300, "\xE2\x9C\xA8",
         "Restores 15 MP", {{std::uint8_t(BonusId::HealMp), 15}},
         /*slot*/0, /*blocks*/0, /*def*/{}, /*dice*/{},
         /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Count,
@@ -142,11 +142,11 @@ constexpr ItemDef kCatalog[] = {
     // ── АРХЕТИП Food: ЧТО ПОТРЕБЛЯЮТ ЗА СЫТОСТЬ ───────────────────────────
     // Здесь живёт ГОЛОДНАЯ строка лестницы нужд, и она обязана быть РОВНО
     // одна (static_assert ниже по файлу).
-    {"food_meat",   "Raw Meat",        ObjectType::Ration,     15, 0.50f, "\xF0\x9F\x8D\x96",
+    {"food_meat",   "Raw Meat",        ObjectType::Ration,     15, 500, "\xF0\x9F\x8D\x96",
         "Restores 15 HP", {{std::uint8_t(BonusId::HealHp), 15}}},
     // ПИЩА — архетип ЕДА, а не материал: ею гасят голод (econ_day.h
     // лестница), и она терминальна — её растят и добывают, а не варят.
-    {"food",    "Provisions",      ObjectType::Ration,     5, 1.00f, "\xF0\x9F\x8C\xBE",
+    {"food",    "Provisions",      ObjectType::Ration,     5, 1000, "\xF0\x9F\x8C\xBE",
         "Raw provisions — grain from the field, meat from the hunt",
         // Съеденное лечит — как всякая еда каталога; величина от СТОИМОСТИ
         // строки (5), чтобы не заводить второго числа о той же вещи: хлеб
@@ -163,48 +163,48 @@ constexpr ItemDef kCatalog[] = {
     // стоило 32, когда монета была номиналом 1; вердикт перекалибровки
     // владельца держит ценностный потолок мира, пересчитывая ЖИЛЫ
     // (deposit_layer.cpp), а не дешевя металл.
-    {"iron",    "Iron Ore",        ObjectType::Ore,        15, 4.00f, "\xE2\x9B\x8F",
+    {"iron",    "Iron Ore",        ObjectType::Ore,        15, 4000, "\xE2\x9B\x8F",
         "Smithing material", {}},
-    {"copper",  "Copper Ore",      ObjectType::Ore,        128, 4.00f, "\xF0\x9F\x9F\xA0",
+    {"copper",  "Copper Ore",      ObjectType::Ore,        128, 4000, "\xF0\x9F\x9F\xA0",
         "Mint metal", {}},
-    {"silver",  "Silver Ore",      ObjectType::Ore,        1280, 4.00f, "\xE2\x9A\xAA",
+    {"silver",  "Silver Ore",      ObjectType::Ore,        1280, 4000, "\xE2\x9A\xAA",
         "Mint metal", {}},
-    {"gold",    "Gold Ore",        ObjectType::Ore,        12800, 4.00f, "\xF0\x9F\x9F\xA1",
+    {"gold",    "Gold Ore",        ObjectType::Ore,        12800, 4000, "\xF0\x9F\x9F\xA1",
         "Mint metal", {}},
-    {"wood",    "Wood",            ObjectType::Timber,     5, 2.00f, "\xF0\x9F\xAA\xB5",
+    {"wood",    "Wood",            ObjectType::Timber,     5, 2000, "\xF0\x9F\xAA\xB5",
         "Building material", {}},
-    {"stone",   "Stone",           ObjectType::Stone,      5, 4.00f, "\xF0\x9F\xAA\xA8",
+    {"stone",   "Stone",           ObjectType::Stone,      5, 4000, "\xF0\x9F\xAA\xA8",
         "Quarried stone", {}},
-    {"clay",    "Clay",            ObjectType::Clay,       5, 2.00f, "\xF0\x9F\xBA",
+    {"clay",    "Clay",            ObjectType::Clay,       5, 2000, "\xF0\x9F\xBA",
         "River clay for bricks", {}},
     // Волокно: стоимость вчетверо ниже ткани (20) — прядение и есть та
     // работа, что поднимает цену, и второго числа об этом не заводится.
-    {"fibre",   "Fibre",           ObjectType::Fibre,      5, 1.00f, "\xF0\x9F\xAA\xA2",
+    {"fibre",   "Fibre",           ObjectType::Fibre,      5, 1000, "\xF0\x9F\xAA\xA2",
         "Flax fibre — what cloth is spun from", {}},
-    {"mat_bone",    "Bone",            ObjectType::Bone,       6, 0.50f, "\xF0\x9F\xA6\xB4",
+    {"mat_bone",    "Bone",            ObjectType::Bone,       6, 500, "\xF0\x9F\xA6\xB4",
         "Crafting material from monsters", {}},
-    {"mat_hide",    "Hide",            ObjectType::Hide,       12, 1.00f, "\xF0\x9F\xA7\xB5",
+    {"mat_hide",    "Hide",            ObjectType::Hide,       12, 1000, "\xF0\x9F\xA7\xB5",
         "Tanned animal hide", {}},
-    {"mat_herb",    "Herb",            ObjectType::Herb,       8, 0.05f, "\xF0\x9F\x8C\xBF",
+    {"mat_herb",    "Herb",            ObjectType::Herb,       8, 50, "\xF0\x9F\x8C\xBF",
         "Alchemy ingredient", {}},
     // ── АРХЕТИП Goods: ТОРГОВАЯ КОРЗИНА ──────────────────────────────────
     // У ВЕЩИ ОДНА РОЛЬ (вердикт владельца 2026-10-20): всё, что лежит здесь и
     // только здесь, есть товар комфорта лестницы нужд. Повозка ушла в свой
     // архетип `Vehicle` и тем ЧЕСТНО вышла из корзины — это смысл переезда, а
     // не его побочный эффект.
-    {"cloth",   "Cloth",           ObjectType::Cloth,      20, 1.00f, "\xF0\x9F\xA7\xB6",
+    {"cloth",   "Cloth",           ObjectType::Cloth,      20, 1000, "\xF0\x9F\xA7\xB6",
         "Woven clothing", {}},
-    {"bricks",  "Bricks",          ObjectType::Bricks,     10, 4.00f, "\xF0\x9F\xA7\xB1",
+    {"bricks",  "Bricks",          ObjectType::Bricks,     10, 4000, "\xF0\x9F\xA7\xB1",
         "Fired bricks for housing", {}},
-    {"tools",   "Tools",           ObjectType::Tools,      40, 2.00f, "\xF0\x9F\x94\xA8",
+    {"tools",   "Tools",           ObjectType::Tools,      40, 2000, "\xF0\x9F\x94\xA8",
         "Iron tools of the trades", {}},
-    {"furniture","Furniture",      ObjectType::Furniture,  40, 8.00f, "\xF0\x9F\xAA\x91",
+    {"furniture","Furniture",      ObjectType::Furniture,  40, 8000, "\xF0\x9F\xAA\x91",
         "Carpented furniture", {}},
-    {"jewelry", "Jewelry",         ObjectType::Jewelry,    160, 1.00f, "\xF0\x9F\x92\x8D",
+    {"jewelry", "Jewelry",         ObjectType::Jewelry,    160, 1000, "\xF0\x9F\x92\x8D",
         "Fine ornaments", {}},
-    {"carving", "Carving",         ObjectType::Carving,    80, 2.00f, "\xF0\x9F\xAA\x86",
+    {"carving", "Carving",         ObjectType::Carving,    80, 2000, "\xF0\x9F\xAA\x86",
         "Ornamental woodwork", {}},
-    {"statue",  "Statue",          ObjectType::Statue,     320, 64.00f, "\xF0\x9F\x97\xBF",
+    {"statue",  "Statue",          ObjectType::Statue,     320, 64000, "\xF0\x9F\x97\xBF",
         "A sculpted stone statue", {}},
     // ── АРХЕТИП Currency: ДЕНЬГИ ─────────────────────────────────────────
     // Вердикт владельца 2026-09-17, дословно: «монета это просто товар со
@@ -219,29 +219,29 @@ constexpr ItemDef kCatalog[] = {
     // фракций. Единственное преимущество монеты над любым другим добром
     // арифметическое: минимальный вес при максимальной стоимости, поэтому
     // плотный по стоимости платёж тянется к ней первым.
-    {"coin_empire_copper",  "Copper Crown",  ObjectType::Coin,       1, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_empire_copper",  "Copper Crown",  ObjectType::Coin,       1, 10, "\xF0\x9F\xAA\x99",
         "Copper coin of the Empire of Light", {}},
-    {"coin_empire_silver",  "Silver Crown",  ObjectType::Coin,       10, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_empire_silver",  "Silver Crown",  ObjectType::Coin,       10, 10, "\xF0\x9F\xAA\x99",
         "Silver coin of the Empire of Light", {}},
-    {"coin_empire_gold",    "Gold Crown",    ObjectType::Coin,       100, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_empire_gold",    "Gold Crown",    ObjectType::Coin,       100, 10, "\xF0\x9F\xAA\x99",
         "Gold coin of the Empire of Light", {}},
-    {"coin_magika_copper",  "Copper Sigil",  ObjectType::Coin,       1, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_magika_copper",  "Copper Sigil",  ObjectType::Coin,       1, 10, "\xF0\x9F\xAA\x99",
         "Copper coin of the Magika realms", {}},
-    {"coin_magika_silver",  "Silver Sigil",  ObjectType::Coin,       10, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_magika_silver",  "Silver Sigil",  ObjectType::Coin,       10, 10, "\xF0\x9F\xAA\x99",
         "Silver coin of the Magika realms", {}},
-    {"coin_magika_gold",    "Gold Sigil",    ObjectType::Coin,       100, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_magika_gold",    "Gold Sigil",    ObjectType::Coin,       100, 10, "\xF0\x9F\xAA\x99",
         "Gold coin of the Magika realms", {}},
-    {"coin_timaert_copper", "Copper Mark",   ObjectType::Coin,       1, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_timaert_copper", "Copper Mark",   ObjectType::Coin,       1, 10, "\xF0\x9F\xAA\x99",
         "Copper coin of the Republic of Timaert", {}},
-    {"coin_timaert_silver", "Silver Mark",   ObjectType::Coin,       10, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_timaert_silver", "Silver Mark",   ObjectType::Coin,       10, 10, "\xF0\x9F\xAA\x99",
         "Silver coin of the Republic of Timaert", {}},
-    {"coin_timaert_gold",   "Gold Mark",     ObjectType::Coin,       100, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_timaert_gold",   "Gold Mark",     ObjectType::Coin,       100, 10, "\xF0\x9F\xAA\x99",
         "Gold coin of the Republic of Timaert", {}},
-    {"coin_barbar_copper",  "Copper Ring",   ObjectType::Coin,       1, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_barbar_copper",  "Copper Ring",   ObjectType::Coin,       1, 10, "\xF0\x9F\xAA\x99",
         "Copper ring-money of the northern kingdoms", {}},
-    {"coin_barbar_silver",  "Silver Ring",   ObjectType::Coin,       10, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_barbar_silver",  "Silver Ring",   ObjectType::Coin,       10, 10, "\xF0\x9F\xAA\x99",
         "Silver ring-money of the northern kingdoms", {}},
-    {"coin_barbar_gold",    "Gold Ring",     ObjectType::Coin,       100, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_barbar_gold",    "Gold Ring",     ObjectType::Coin,       100, 10, "\xF0\x9F\xAA\x99",
         "Gold ring-money of the northern kingdoms", {}},
     // ── АРХЕТИП Vehicle: ПОВОЗКИ ─────────────────────────────────────────
     // Первый потребитель объект-модулей (M-296): предел обоза даст модуль
@@ -250,14 +250,14 @@ constexpr ItemDef kCatalog[] = {
     // грузопереноса здесь НЕТ и до модуля не будет — вердикт владельца
     // (M-294): без предела она делает купленную один раз вместимость
     // навсегда бесплатной.
-    {"wagon",   "Wagon",           ObjectType::Wagon,      80, 32.00f, "\xF0\x9F\x9B\x9E",
+    {"wagon",   "Wagon",           ObjectType::Wagon,      80, 32000, "\xF0\x9F\x9B\x9E",
         "A cart for hauling goods", {}},
     // ── АРХЕТИП Misc: ЧЕСТНОЕ ПРОЧЕЕ, И ПОСЛЕДНЕЕ СРЕДИ ВЕЩЕЙ ────────────
     // Строка попадает сюда НАМЕРЕННО, а не потому, что её некуда было деть:
     // самоцвет не служит ни одной системе выше. Отрезок определён
     // ОТРИЦАНИЕМ, поэтому стоит последним — иначе каждый новый архетип вещи
     // раздвигал бы свалку.
-    {"misc_gem",    "Gemstone",        ObjectType::Gem,        100, 0.05f, "\xF0\x9F\x92\x8E",
+    {"misc_gem",    "Gemstone",        ObjectType::Gem,        100, 50, "\xF0\x9F\x92\x8E",
         "Valuable gem, can be sold", {}},
 };
 
@@ -397,11 +397,11 @@ constexpr PartsAuthoringRow kPartsAuthoring[] = {
 // value. Two literals state that one fact (silver's catalog value, the coin
 // rows' yield) — this guard is the product-of-two-knobs law: they cannot
 // drift apart and compile.
-constexpr float catalog_weight_of(std::string_view id) {
+constexpr std::int32_t catalog_mass_g_of(std::string_view id) {
     for (const ItemDef& d : kCatalog) {
-        if (std::string_view(d.id) == id) return d.weight;
+        if (std::string_view(d.id) == id) return d.massG;
     }
-    return -1.0f;
+    return -1;   // «строки нет» — авторская граница, не величина мира
 }
 constexpr int catalog_value_of(std::string_view id) {
     for (const ItemDef& d : kCatalog) {
@@ -500,27 +500,73 @@ static_assert(commodity_rows_of_archetype(ObjectArchetype::Goods) >= 1,
 // WHY THE YIELD IS 128 (owner's question and pick, 2026-09-18: «из 1 — 32
 // обосновано? по массе, по стоимости? есть вариант 128» → «128 норм»): the
 // grounding is MASS, and both numbers are already in the table. A coin
-// weighs 0.01 kg (10 g — the weight of a real silver penny) and a unit of
-// ore weighs 4 kg, so a 128-coin batch is 1.28 kg of struck metal out of
-// 4 kg of rock: an ORE GRADE of 32 %, a rich ore or a smelted concentrate.
+// weighs 10 g (the weight of a real silver penny) and a unit of ore weighs
+// 4000 g, so a 128-coin batch is 1280 g of struck metal out of 4000 g of
+// rock: an ORE GRADE of 32 %, a rich ore or a smelted concentrate.
 // The guard below is the metal content itself: a struck batch may never
 // outweigh the rock it came out of, so the yield can be retuned freely and
 // the day it stops being physical the table refuses to compile.
+// СЧЁТ ЦЕЛЫЙ, И ИМЕННО ЭТО ТЕПЕРЬ ДЕЛАЕТ СВИДЕТЕЛЯ ТОЧНЫМ: прежде он сравнивал
+// два флоата, собранных из непредставимых 0.01 кг, то есть мог соврать на ulp
+// у самой границы. В граммах граница есть граница: 128 × 10 г = 1280 г битой
+// монеты из 4000 г руды — те самые 32 % содержания металла. `int64` взят под
+// произведение (худшее 128 × 64 000 = 8.2·10⁶, но тип должен держать и будущую
+// партию, а не нынешнюю).
 constexpr bool mint_yield_is_mass_honest() {
     for (const PartsAuthoringRow& r : kPartsAuthoring) {
         if (r.yield <= 1) continue;          // not a struck row
-        const float out = float(r.yield) * catalog_weight_of(r.id);
-        float in = 0.0f;
+        const std::int64_t out =
+            std::int64_t(r.yield) * catalog_mass_g_of(r.id);
+        std::int64_t in = 0;
         for (const auto& p : r.p) {
-            if (p.mat) in += float(p.n) * catalog_weight_of(p.mat);
+            if (p.mat) in += std::int64_t(p.n) * catalog_mass_g_of(p.mat);
         }
-        if (in <= 0.0f || out > in) return false;
+        if (in <= 0 || out > in) return false;
     }
     return true;
 }
 static_assert(mint_yield_is_mass_honest(),
               "a struck batch cannot outweigh its own ore: yield x coin "
               "weight <= the composition's weight (the 8% ore grade)");
+
+// ── ЗАКОН ПЛОТНОСТИ НЕ МОЖЕТ ВЫРОДИТЬСЯ: ДВА ОТКАЗА СОБИРАТЬСЯ (M-298) ────
+// Страж `item_mass_g` охраняет ОБЛАСТЬ ОПРЕДЕЛЕНИЯ порядка (при w = 0 обе
+// ветви перекрёстного сравнения вырождаются, и строка выигрывает платёж
+// ВСЕГДА). Но страж — вторая линия: настоящий носитель закона ЗДЕСЬ, потому
+// что каталог виден компилятору только в этой единице трансляции (§8 п.6 —
+// лучший свидетель есть нарушение, которое невозможно собрать).
+//
+// ПЕРВЫЙ отказ: ни одна строка мира не легче шага колонки, то есть вход, на
+// котором M-298 вообще жил, НЕВЫРАЗИМ, а не «обработан». Строка с нулевой
+// массой теперь не компилируется — и это сильнее всякого прогона.
+// Отсчёт идёт от ПЕРВОЙ СТРОКИ, а не от именованного потолка: потолок был бы
+// константой, которая ничего не покупает, — а такую ЗАКОН КОНСТАНТ велит
+// устранять, а не обосновывать.
+constexpr std::int32_t catalog_min_mass_g() {
+    std::int32_t m = kCatalog[0].massG;
+    for (const ItemDef& d : kCatalog) {
+        if (d.massG < m) m = d.massG;
+    }
+    return m;
+}
+static_assert(catalog_min_mass_g() > kMassStepG,
+              "строка каталога легче шага колонки массы: закон плотности "
+              "вырождается на ней, и она выигрывала бы КАЖДЫЙ платёж мира "
+              "(M-298). Масса строки есть колонка, а не умолчание");
+
+// ВТОРОЙ отказ: страж ТОЖДЕСТВЕНЕН на живом каталоге, то есть порядок платежа
+// он меняет РОВНО НА НОЛЬ. Это и есть то, что паритет `balance_run` может
+// только НАБЛЮДАТЬ на трёх сидах, — здесь оно утверждено на всех 44 строках
+// сразу и навсегда.
+constexpr bool mass_guard_is_identity_on_catalog() {
+    for (const ItemDef& d : kCatalog) {
+        if (item_mass_g(d) != d.massG) return false;
+    }
+    return true;
+}
+static_assert(mass_guard_is_identity_on_catalog(),
+              "страж массы сдвинул бы живой порядок платежа: на каталоге он "
+              "обязан быть тождественным (M-298)");
 
 const std::unordered_map<std::string, const ItemDef*>& catalog_map() {
     static const std::unordered_map<std::string, const ItemDef*> m = []{

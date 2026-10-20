@@ -348,7 +348,7 @@ void test_armor_downtime() {
 
     const sm::Defense& coatDef = sm::item_def_at(coatIdx)->defense;
     const int block = coatDef.block_of(sm::DamageType::Blunt);
-    CHECK_OR_RETURN(block > 0 && sm::item_def_at(coatIdx)->weight > 0.0f,
+    CHECK_OR_RETURN(block > 0 && sm::item_def_at(coatIdx)->massG > 0,
                     "предусловие своё: у куртки есть и колонка блока, и ВЕС — "
                     "без веса простою не из чего взяться");
 

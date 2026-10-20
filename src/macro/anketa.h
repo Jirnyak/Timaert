@@ -813,8 +813,11 @@ struct InventorySummary {
 };
 // Восемь чисел по 8 Б = РОВНО кэш-линия; ширина взята по достижимому
 // диапазону (ЗАКОН ТИПА п.1): стак — `int32` по построению `add_ref`, вес —
-// до 6400 сг, значит 1024 × 2³¹ × 6400 ≈ 1.4·10¹⁶ входит в `int64` с
-// запасом в шестьсот раз, а `int32` переполнялся бы молча.
+// до 64 000 г (статуя, самая тяжёлая строка каталога), значит
+// 1024 × 2³¹ × 64 000 ≈ 1.4·10¹⁷ входит в `int64` с запасом в шестьдесят
+// пять раз, а `int32` переполнялся бы молча. ЗДЕСЬ СТОЯЛО «до 6400 сг …
+// запасом в шестьсот раз» — числа переехали вместе с квантом колонки
+// (M-298), и оба были пересчитаны, а не переписаны.
 static_assert(sizeof(InventorySummary) == 64,
               "сводка = восемь сумм по 8 Б, ровно кэш-линия");
 
@@ -877,7 +880,12 @@ inline InventorySummary slot_tally(const ItemRef& s,
         return t;
     }
     if (const ItemDef* d = item_def_at(int(s.def))) {
-        t.massG     = std::int64_t(std::lround(double(d->weight) * 1000.0)) * n;
+        // ОКРУГЛЕНИЯ ЗДЕСЬ БОЛЬШЕ НЕТ ВОВСЕ (M-298): колонка строки САМА в
+        // граммах, и сводка просто умножает её на счёт. Здесь стояло
+        // `std::lround(double(d->weight) * 1000.0)` — дверь перевода флоата в
+        // квант, то есть место, где целая половина мира чинила нецелую. Обе
+        // половины целые, дверь не нужна.
+        t.massG      = std::int64_t(d->massG) * n;
         t.valueItems = std::int64_t(value_of(s)) * n;
     }
     return t;
@@ -1198,7 +1206,8 @@ struct PlayerCombatSlice {
     int currentSp, maxSp;
 };
 
-// Total inventory weight in kg (sum of def.weight × count).
+// Total inventory weight in kg (сумма `ItemDef::massG` × счёт, делённая на
+// килограмм ОДИН раз — см. тело: внутри мира величина целая).
 float inventory_weight(const Inventory& inv) noexcept;
 
 // ── The reversible reaction (CANON «Крафт/Скрап», owner 2026-09-11/12) ─────

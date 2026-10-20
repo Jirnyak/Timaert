@@ -457,11 +457,11 @@ int main() {
     // row — a commodity id must resolve in the item catalog. Сверки МАССЫ
     // здесь больше нет, и её отсутствие — не ослабление: она сверяла две
     // таблицы весов, а вторая (CommodityDef::weightKg) вырезана 2026-09-22.
-    // Правда о массе теперь ОДНА — ItemDef::weight, сверять её не с чем.
+    // Правда о массе теперь ОДНА — ItemDef::massG, сверять её не с чем.
     for (int i = 0; i < kCommodityCount; ++i) {
         const ItemDef* item = item_def(kCommodities[i].id);
         if (!item) return fail("commodity id missing from the item catalog");
-        if (item->weight <= 0.0f) return fail("commodity item has no mass");
+        if (item->massG <= 0) return fail("commodity item has no mass");
         if (item->value <= 0) return fail("commodity item has no value");
     }
 

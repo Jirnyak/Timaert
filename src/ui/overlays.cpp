@@ -1021,7 +1021,7 @@ namespace sm::ui
                             {
                                 ImGui::BeginTooltip();
                                 ImGui::Text("%d g   %.1f kg", row.value,
-                                            double(row.weight));
+                                            double(row.massG) / 1000.0);
                                 if (row.description && row.description[0])
                                     ImGui::TextWrapped("%s", row.description);
                                 ImGui::EndTooltip();

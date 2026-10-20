@@ -52,6 +52,25 @@ inline int rand_int(const TickContext& ctx, int range) {
 
 inline float rand_f01(const TickContext& ctx) { return ctx.rng->next_f01(); }
 
+// МАССА ЕДИНИЦЫ СТРОКИ, КОТОРАЯ МОЖЕТ НЕ РАЗРЕШИТЬСЯ ВОВСЕ — килограммами,
+// под делители трюма этого файла.
+//
+// Строка НЕ РАЗРЕШАЕТСЯ законно: выход сборщика бывает СУЩЕСТВОМ (`creatureYield`),
+// а у существа строки предмета нет вовсе, и `item_def_at` честно отдаёт
+// nullptr. Такая строка весит здесь КИЛОГРАММ, и это НЕ ВЫВОД, а СОХРАНЁННОЕ
+// поведение: число стояло в этом файле ОДИННАДЦАТЬЮ литералами `1.0f` до
+// M-298, оно делит живые рейсы, и права сдвинуть его у наряда о массе нет —
+// иначе паритет перестал бы отвечать на вопрос, который ему задан. Названо
+// остатком в реестре вместе с переводом обоза в целое.
+//
+// Что ЗДЕСЬ изменилось: вторая половина прежнего выражения — `weight > 0.0f ?
+// ... : 1.0f` — МЁРТВА и потому снята. Нулевой массы у разрешённой строки
+// больше не бывает (страж `item_mass_g`), а минимум каталога и до стража был
+// 10 г, то есть эта ветка не срабатывала ни разу ни на одной строке мира.
+inline float unit_mass_kg(const ItemDef* d) noexcept {
+    return d ? item_mass_kg(*d) : 1.0f;
+}
+
 // Store свипа — из конверта (make_tick_context кладёт адрес в ctx.mw.store).
 // Фолбэка через ctx реестра больше нет (M-150 ломоть A): store в конверте
 // обязателен, звонящий проверяет ctx.mw.store.
@@ -1081,9 +1100,7 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
                     : nullptr) {
                 // (a CREATURE yield rides the creatures, not the bag — there
                 // is no «full back» to send home early)
-                const ItemDef* idef = item_def_at(outIdx);
-                const float unitKg =
-                    idef && idef->weight > 0.0f ? idef->weight : 1.0f;
+                const float unitKg = unit_mass_kg(item_def_at(outIdx));
                 if (bagIdle->count_of(outIdx) > 0
                     && rt.carryCap - inventory_weight(*bagIdle)
                            < unitKg) {
@@ -1198,9 +1215,7 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
                 // с 2400 кг серебра на спине в 2145 кг, сид 7).
                 int carryMax = have;
                 if (bag && def->creatureYield == NPCType::Count) {
-                    const ItemDef* idef = item_def_at(outIdx);
-                    const float unitKg =
-                        idef && idef->weight > 0.0f ? idef->weight : 1.0f;
+                    const float unitKg = unit_mass_kg(item_def_at(outIdx));
                     const float freeKg =
                         rt.carryCap - inventory_weight(*bag);
                     carryMax = std::max(0, int(freeKg / unitKg));
@@ -1293,9 +1308,7 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
                     : nullptr;
                 bool backsFull = false;
                 if (bagNow && def->creatureYield == NPCType::Count) {
-                    const ItemDef* idef = item_def_at(outIdx);
-                    const float unitKg =
-                        idef && idef->weight > 0.0f ? idef->weight : 1.0f;
+                    const float unitKg = unit_mass_kg(item_def_at(outIdx));
                     backsFull =
                         rt.carryCap - inventory_weight(*bagNow) < unitKg;
                 }
@@ -1377,7 +1390,7 @@ const std::array<int, std::size_t(kCommodityCount)>& value_dense_order() {
         const auto density = [](int i) {
             const ItemDef* d = item_def_at(commodity_item_index(i));
             if (!d || d->value <= 0) return 0.0f;
-            return float(d->value) / (d->weight > 0.0f ? d->weight : 1.0f);
+            return float(d->value) / item_mass_kg(*d);
         };
         std::sort(order.begin(), order.end(),
                   [&](int a, int b) { return density(a) > density(b); });
@@ -1393,8 +1406,7 @@ const std::array<int, std::size_t(kCommodityCount)>& value_dense_order() {
 int haul_between(Inventory& from, Depot to, int defIdx,
                  int maxUnits, float capacityLeftKg) {
     if (maxUnits <= 0 || capacityLeftKg <= 0.0f) return 0;
-    const ItemDef* def = item_def_at(defIdx);
-    const float unitKg = def && def->weight > 0.0f ? def->weight : 1.0f;
+    const float unitKg = unit_mass_kg(item_def_at(defIdx));
     const int byWeight = int(capacityLeftKg / unitKg);
     const int n = std::min({maxUnits, byWeight, from.count_of(defIdx)});
     if (n <= 0) return 0;
@@ -1740,24 +1752,21 @@ long long plan_home_load_(Inventory& store, const std::int32_t* needDebt,
     bool done[kMaxInventorySlots] = {};
     float used = bag ? inventory_weight(*bag) : 0.0f;
     while (used < capKg) {
-        int best = -1, bestV = 0;
-        float bestW = 0.0f;
-        for (int i = 0; i < int(store.slots.size()); ++i) {
-            if (done[std::size_t(i)]) continue;
-            const ItemRef& sl = store.slots[std::size_t(i)];
-            if (sl.empty()) continue;
-            const int v = value_of(sl);
-            if (v <= 0) continue;
-            const ItemDef* d = item_def_at(int(sl.def));
-            const float w = d && d->weight > 0.0f ? d->weight : 0.0f;
-            const bool denser =
-                best < 0 || float(v) * bestW > float(bestV) * w
-                || (float(v) * bestW == float(bestV) * w && v > bestV);
-            if (denser) { best = i; bestV = v; bestW = w; }
-        }
-        if (best < 0) break;
-        done[std::size_t(best)] = true;
-        const ItemRef& sl = store.slots[std::size_t(best)];
+        // ЗАКОН ПЛОТНОСТИ — ЧУЖАЯ ДВЕРЬ, И ЗДЕСЬ ОН БОЛЬШЕ НЕ ВЫПИСАН (M-298,
+        // вердикт владельца 2026-10-20 «слить в одну дверь сейчас»). Этот
+        // цикл держал ВТОРУЮ копию `densest_value_slot` — тот же перекрёстный
+        // `v·bestW > bestV·w`, та же вырождающаяся нулевая масса, — и
+        // комментарий выше ЧЕСТНО называл дверь, которую копия обходила.
+        // Разошлись они ровно в одном: копия пускала в гонку плотности и
+        // СУЩЕСТВО (у строки существа `item_def_at` отдаёт nullptr, то есть
+        // массу 0, то есть победу всегда), а дверь отсекает его `payable_row`
+        // ещё до взвешивания (M-292). Исход от этого не менялся — ниже стоял
+        // второй отказ `if (!d) continue`, — но каждая душа склада стоила
+        // лишнего прохода по тысяче слотов.
+        const DensestSlot best = densest_value_slot(store, done);
+        if (best.slot < 0) break;
+        done[std::size_t(best.slot)] = true;
+        const ItemRef& sl = store.slots[std::size_t(best.slot)];
         const ItemDef* d = item_def_at(int(sl.def));
         if (!d) continue;
         int count = int(sl.count);
@@ -1774,13 +1783,16 @@ long long plan_home_load_(Inventory& store, const std::int32_t* needDebt,
             if (count > surplus) count = surplus;
         }
         int fit = count;
-        if (bestW > 0.0f) {
-            const int byWeight = int((capKg - used) / bestW);
-            if (fit > byWeight) fit = byWeight;
-        }
+        // ВЕТКИ «А ЕСЛИ МАССА НОЛЬ» БОЛЬШЕ НЕТ, И ЭТО НЕ ПОТЕРЯ: нулевую массу
+        // несло здесь ТОЛЬКО существо, а его отсекает отказ `if (!d)` строкой
+        // выше, то есть `bestW > 0.0f` была истинна на каждом проходе мира.
+        // Страж колонки сделал её невыразимой и для будущей строки.
+        const float bestKg = float(double(best.massG) / 1000.0);
+        const int byWeight = int((capKg - used) / bestKg);
+        if (fit > byWeight) fit = byWeight;
         if (fit <= 0) continue;
-        planned += (long long)fit * bestV;
-        used += float(fit) * bestW;
+        planned += (long long)fit * best.value;
+        used += float(fit) * bestKg;
         if (bag)
             haul_between(store, *bag, int(sl.def), fit,
                          capKg - inventory_weight(*bag));
@@ -3344,7 +3356,7 @@ CaravanDeal trade_caravan_at_station(MacroStore& st, Inventory& hold,
             // BUY the surplus above the market's own seasonal need — never
             // its living stock; the lot is bounded by the caravan's purse
             // through the same exact door (max_affordable_lot_).
-            const float kg = def->weight > 0.0f ? def->weight : 1.0f;
+            const float kg = item_mass_kg(*def);
             int n = std::min(have - need,
                              int((capacityKg - inventory_weight(hold)) / kg));
             n = max_affordable_lot_(base, have, demand, /*selling=*/false,
@@ -3476,7 +3488,7 @@ CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
                 stock_price(base, homeInv.count_of(id), homeDemand);
             if (worthHome <= 0) continue;         // дома этой строке нет цены
             if (worthHome <= buyHere) continue;   // рейс не окупает закупку
-            const float kg = def->weight > 0.0f ? def->weight : 1.0f;
+            const float kg = item_mass_kg(*def);
             // ПОТОЛОК СТРОКИ — сезон домашней нужды (спрос уже сезонный),
             // но он больше НЕ ворота: у товара, который дома никто не ест,
             // потолок — только трюм и кошелёк.
@@ -3498,7 +3510,7 @@ CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
                 season_demand_for(id, st.upkeep[marketSlot].needDebt,
                                   souls_home(st, marketSlot), site, &ms);
             const int have = ms.count_of(id);
-            const float kg = def->weight > 0.0f ? def->weight : 1.0f;
+            const float kg = item_mass_kg(*def);
             int n = std::min({have, lots[li].homeCap,
                               int((capacityKg - inventory_weight(bag)) / kg)});
             // Точная граница по кошельку (max_affordable_lot_): срез лота
@@ -4237,10 +4249,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // заявки — стоимость в день, — поэтому добыча и сбыт
                 // наконец сравнимы в одной рулетке. Назначенного `1 +`
                 // больше нет: делитель есть настоящая длина рейса.
-                const ItemDef* gdef =
-                    item_def_at(gatherer_item_index(g));
                 const float unitKg =
-                    gdef && gdef->weight > 0.0f ? gdef->weight : 1.0f;
+                    unit_mass_kg(item_def_at(gatherer_item_index(g)));
                 const float perSoul = gd.creatureYield != NPCType::Count
                                           ? 1.0f
                                           : carryPerSoul / unitKg;
@@ -4320,7 +4330,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     const ItemDef* d = item_def_at(id);
                     const int base = d ? d->value : 0;
                     if (base <= 0) continue;
-                    const float kg = d->weight > 0.0f ? d->weight : 1.0f;
+                    const float kg = unit_mass_kg(d);
                     const auto fits = [&](long long want) -> long long {
                         const long long cap = (long long)(freeKg / kg);
                         return want < cap ? want : cap;
