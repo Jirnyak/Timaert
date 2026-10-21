@@ -327,9 +327,7 @@ SKELETON.md	npc_ai.cpp:1790
 SKELETON.md	npc_ai.cpp:1954
 SKELETON.md	npc_ai.cpp:2000
 SKELETON.md	npc_ai.cpp:2313
-SKELETON.md	npc_ai.cpp:2725
 SKELETON.md	npc_ai.cpp:2862
-SKELETON.md	npc_ai.cpp:2894
 SKELETON.md	npc_ai.cpp:3468
 SKELETON.md	npc_ai.cpp:3479
 SKELETON.md	npc_ai.cpp:3608
@@ -337,7 +335,6 @@ SKELETON.md	npc_ai.cpp:3644
 SKELETON.md	npc_ai.cpp:3929
 SKELETON.md	npc_ai.cpp:4410
 SKELETON.md	npc_ai.cpp:4731
-SKELETON.md	npc_ai.cpp:4796
 SKELETON.md	npc_ai.cpp:4843
 SKELETON.md	npc_ai.cpp:4852
 SKELETON.md	npc_ai.cpp:4867
