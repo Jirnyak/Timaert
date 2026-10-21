@@ -37,6 +37,7 @@
 #pragma once
 #include <cstdint>
 #include <cstring>
+#include <string_view>   // faction_ordinal — резолв имени НА СБОРКЕ
 
 namespace sm {
 
@@ -261,6 +262,22 @@ inline int faction_index(const char* id) {
         if (kFactionDefs[i].id == id) return i;
     for (int i = 0; i < kFactionCount; ++i)
         if (std::strcmp(kFactionDefs[i].id, id) == 0) return i;
+    return -1;
+}
+
+// ОРДИНАЛ ФРАКЦИИ РЕЗОЛВОМ НА СБОРКЕ — та же форма, что `spell_ordinal`
+// (ЗАКОН СЛОВАРЯ: «граница переводит имя в ординал ОДИН раз — при загрузке
+// или НА СБОРКЕ, в стиле constexpr-резолва»). `std::string_view`
+// сравнивается constexpr, поэтому имя фракции не доживает до тика вовсе:
+// звонящий пишет имя, а в машинный код уезжает число.
+//
+// Берётся там, где имя известно АВТОРСКИ и потому не может приехать извне:
+// рядом с `faction_index` это не второй словарь, а тот же единственный
+// список, спрошенный на другом этапе. Ответ «нет такой» = -1, и у
+// constexpr-звонящего он ловится `static_assert`, а не ветвью в тике.
+constexpr int faction_ordinal(std::string_view id) {
+    for (int i = 0; i < kFactionCount; ++i)
+        if (id == kFactionDefs[i].id) return i;
     return -1;
 }
 

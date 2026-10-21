@@ -1032,9 +1032,14 @@ inline int player_reputation(const GameState* gs, const char* factionId) {
 // Six hand-spelled `relation < threshold` comparisons converged here; the
 // macro side (squad threat, aggressive pursuit, the forced encounter) asks
 // these functions, so the map and the ground read one law.
+// СТРОКОВАЯ форма — ГРАНИЦА МИРА: переводит имена в ординалы и делегирует
+// ординальной двери (`factions_hostile@src/macro/factions.h`), где порог и
+// живёт. Своего сравнения с порогом здесь больше нет: он выписан в дереве
+// ОДНАЖДЫ, иначе два ответа на один вопрос разъехались бы молча.
 inline bool factions_hostile(const GameState* gs, const char* a,
                              const char* b) {
-    return faction_relation(gs, a, b) < kHostileThreshold;
+    if (!gs) return false;   // нет мира — нет отношений, значит и вражды
+    return factions_hostile(gs->factions, faction_index(a), faction_index(b));
 }
 
 // Is this faction the PLAYER's enemy — the pair every player-facing consumer

@@ -25,6 +25,7 @@
 #include "check.h"
 #include "macro/state.h"
 #include "tables/faction.h"   // registry + kHostileThreshold — THE hostility line lives with the relations
+#include "macro/factions.h"   // ординальная дверь враждебности + relation_of
 #include "macro/politik.h"
 
 #include <cstdint>
@@ -219,6 +220,103 @@ void check_one_seed(std::uint32_t seed) {
           "...in BOTH directions at once — there is one number, not two");
 }
 
+// ── ВРАЖДЕБНОСТЬ ПО ОРДИНАЛАМ ПРОТИВ СЫРОЙ МАТРИЦЫ (M-268) ───────────────
+//
+// Горячий вопрос мира «враг ли он» задаётся ОРДИНАЛАМИ
+// (`factions_hostile@src/macro/factions.h`); строковая форма — граница,
+// которая переводит имя в ординал и делегирует туда же. Свидетель судит
+// ординальную дверь НЕЗАВИСИМЫМ источником — сырым байтом `rows[a].rel[b]`
+// и порогом, — а НЕ пересчётом той же формулы: сверка двух вычислений,
+// сделанных одной формулой, к самой формуле слепа (AGENTS §8 п.6, шестая
+// форма слепоты). Поэтому здесь нет ни одного вызова `relation_of`.
+//
+// Область — ВСЕ пары слотов, включая незаселённые и сентинел `kNoFaction`:
+// ровно там жил бы тихий дефект, потому что мир такие пары задаёт постоянно
+// (ничейный сквад в бакете каркаса), а заметить их нечем.
+void test_hostility_by_ordinal_matches_the_raw_matrix() {
+    using namespace sm;
+    GameState gs{};
+    create_factions(gs, 12345u);
+
+    // Сентинел и слоты за реестром проверяются ВМЕСТЕ с живыми: домен шире
+    // kFactionCount нарочно.
+    const int probe[] = {0, 1, 5, kFactionCount - 1, kFactionCount,
+                         kMaxFactions - 1, kMaxFactions, 0xFFFF};
+    int pairs = 0, disagree = 0, stringDisagree = 0, hostileSeen = 0;
+    for (int a = 0; a < kMaxFactions; ++a) {
+        for (int b = 0; b < kMaxFactions; ++b) {
+            // НЕЗАВИСИМЫЙ ИСТОЧНИК: байт матрицы и порог, больше ничего.
+            const bool raw =
+                int(gs.factions.rows[a].rel[b]) < kHostileThreshold;
+            ++pairs;
+            if (raw) ++hostileSeen;
+            if (factions_hostile(gs.factions, a, b) != raw) ++disagree;
+            // Граница обязана отвечать то же, что ядро: одно имя, две формы.
+            if (hostile(gs, faction_id_for_index(std::uint16_t(a)),
+                        faction_id_for_index(std::uint16_t(b))) != raw
+                && a < kFactionCount && b < kFactionCount) {
+                ++stringDisagree;
+            }
+        }
+    }
+    CHECK(pairs == kMaxFactions * kMaxFactions,
+          "every slot pair of the world was asked, not a sample");
+    CHECK(hostileSeen > 0,
+          "the probe is NOT vacuous: the authored world really does place "
+          "hostile pairs, so a door that always answered 'friend' would fail");
+    CHECK(disagree == 0,
+          "ЗАКОН СЛОВАРЯ: the ordinal door answers exactly what the raw "
+          "matrix byte and the ONE threshold say — on every pair, including "
+          "slots the registry never placed");
+    CHECK(stringDisagree == 0,
+          "and the STRING form at the world's border agrees with it: one law, "
+          "two spellings, the threshold spelled once");
+
+    // Сентинелы и хвост — ОТДЕЛЬНО И ГРОМКО: именно их мир подставляет чаще
+    // всего, и именно их тихое «враг» стоило бы крови.
+    int sentinelHostile = 0, selfHostile = 0;
+    for (int x : probe) {
+        if (factions_hostile(gs.factions, x, kNoFaction)) ++sentinelHostile;
+        if (factions_hostile(gs.factions, kNoFaction, x)) ++sentinelHostile;
+        if (factions_hostile(gs.factions, x, x)) ++selfHostile;
+    }
+    CHECK(sentinelHostile == 0,
+          "a factionless squad (kNoFaction) is nobody's enemy and has none — "
+          "in BOTH directions, and an out-of-range slot reads the same");
+    CHECK(selfHostile == 0, "and no faction is ever its own enemy");
+
+    // ЖИВАЯ МАТРИЦА, А НЕ ЗАПЕЧЁННАЯ КОПИЯ (вердикт владельца 2026-10-21:
+    // «отношения фракций однозначно динамические и могут меняться»). Этот
+    // якорь краснеет у всякой реализации, которая сняла биты заранее: она
+    // ответила бы ПРОШЛЫМ отношением.
+    const FactionSlot emp = faction_index("empire");
+    const FactionSlot tim = faction_index("timaert");
+    CHECK(emp >= 0 && tim >= 0, "both realms are registry rows to move");
+    set_relation(gs.factions, emp, tim, kRelationMin);
+    CHECK(factions_hostile(gs.factions, emp, tim),
+          "a relation driven to the floor makes them enemies THE SAME TICK — "
+          "the door reads the live matrix, never a baked snapshot");
+    CHECK(factions_hostile(gs.factions, tim, emp),
+          "...and in both directions, because the write is symmetric");
+    set_relation(gs.factions, emp, tim, kRelationMax);
+    CHECK(!factions_hostile(gs.factions, emp, tim),
+          "and driven back to the top they are friends again, with no bake to "
+          "invalidate and nothing to go stale");
+
+    // ГРАНИЦА ПОРОГА — РОВНО НА ЗУБ, И ЭТО НЕ ПРИДИРКА: авторский мир не
+    // ставит НИ ОДНОЙ пары ровно на -64, поэтому сдвиг порога на единицу
+    // проходил мимо всех проверок выше молча (записанная мутация M4). Пара
+    // ставится сюда РУКАМИ именно затем, чтобы off-by-one стал виден: ниже
+    // порога — враг, РОВНО на пороге — ещё нет.
+    set_relation(gs.factions, emp, tim, kHostileThreshold);
+    CHECK(!factions_hostile(gs.factions, emp, tim),
+          "РОВНО на пороге вражды ещё нет: закон строгий, `< threshold`");
+    set_relation(gs.factions, emp, tim, kHostileThreshold - 1);
+    CHECK(factions_hostile(gs.factions, emp, tim),
+          "...а на один шаг ниже порога — уже враг; граница прибита на зуб, "
+          "так что сдвиг порога на единицу больше не пройдёт молча");
+}
+
 void test_the_matrix_is_the_authored_table_on_every_seed() {
     int seeds = 0;
     for (std::uint32_t seed : {12345u, 1u, 777u, 2026u}) {
@@ -235,5 +333,6 @@ int main() {
     test_every_realm_names_an_existing_registry_row();
     test_the_no_faction_sentinel_degrades_to_neutral();
     test_the_matrix_is_the_authored_table_on_every_seed();
+    test_hostility_by_ordinal_matches_the_raw_matrix();
     return sm::test::report("faction_relations_test");
 }

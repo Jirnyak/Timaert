@@ -2502,7 +2502,11 @@ MacroHandle nearest_magika_mage(MacroHandle self, const MacroPos& p,
     const CellBuckets& b = g.grid;
     if (b.cols <= 0 || b.rows <= 0) return MacroHandle{};
     const MacroStore& st = store_ctx(ctx);
-    const int magika = faction_index("magika");
+    // Ординал НА СБОРКЕ (M-268): здесь стоял `faction_index("magika")` —
+    // линейный скан реестра по строке на КАЖДУЮ думку охотника. Имя задано
+    // авторски, извне приехать не может, поэтому оно и не доживает до тика.
+    constexpr int magika = faction_ordinal("magika");
+    static_assert(magika >= 0, "реестр обязан нести строку магов");
     const int cx0 = int(p.x) / b.cellSize;
     const int cy0 = int(p.y) / b.cellSize;
     float best = kMageHuntSightCells * kMageHuntSightCells + 1.0f;
@@ -2883,7 +2887,16 @@ MacroHandle nearest_hostile_squad(MacroHandle self, const MacroPos& p,
     const CellBuckets& b = g.grid;
     if (b.cols <= 0 || b.rows <= 0) return MacroHandle{};
     const MacroStore& st = store_ctx(ctx);
-    const char* myFaction = faction_id_for_index(kind.factionIdx);
+    // ВОПРОС ВРАЖДЕБНОСТИ — ОРДИНАЛАМИ, И ЭТО САМОЕ ГОРЯЧЕЕ МЕСТО МИРА
+    // (M-268). Здесь стоял строковый путь: ординал фракции превращался в
+    // ИМЯ, а дверь враждебности сканом реестра искала по этому имени ординал
+    // ОБРАТНО — число → текст → число, плюс strcmp, ради одного байта
+    // матрицы, адрес которого был известен с самого начала. Замер трёх миров:
+    // 578 648…614 391 звонков и 2 263 088…2 447 875 строковых вопросов ЗА
+    // ИГРОВОЙ ДЕНЬ. Теперь это два чтения массива (ЗАКОН СЛОВАРЯ: внутри
+    // симуляции живут только числа).
+    const FactionState& fx = ctx.mw.gs->factions;
+    const FactionSlot myFaction = FactionSlot(kind.factionIdx);
     const int cx0 = int(p.x) / b.cellSize;
     const int cy0 = int(p.y) / b.cellSize;
     const float sight = squad_sight_cells(kind, &st.runtime[self.slot]);
@@ -2898,8 +2911,16 @@ MacroHandle nearest_hostile_squad(MacroHandle self, const MacroPos& p,
                  it != end; ++it) {
                 const SquadWalkEntry& sw = g.order[*it];
                 if (sw.slot == self.slot) continue;
-                const auto& oc = st.cell[sw.slot];
                 const auto& ok = st.kind[sw.slot];
+                // Враждебность СПЕРВА: гейт и расстояние суть КОНЪЮНКЦИЯ,
+                // порядок ответа не меняет (мир вышел побитово тем же), а
+                // дешёвый вопрос вперёд дорогого снимает ~12 торовых
+                // расстояний со звонка до единиц.
+                if (!factions_hostile(fx, myFaction,
+                                      FactionSlot(ok.factionIdx))) {
+                    continue;
+                }
+                const auto& oc = st.cell[sw.slot];
                 const float d = torus_dist_sq(
                     p.x, p.y,
                     float(ecs::cell_x(oc, ctx.mapW)),
@@ -2907,10 +2928,6 @@ MacroHandle nearest_hostile_squad(MacroHandle self, const MacroPos& p,
                     float(ctx.mapW),
                     float(ctx.mapH));
                 if (d >= best) continue;
-                if (!factions_hostile(ctx.mw.gs, myFaction,
-                                      faction_id_for_index(ok.factionIdx))) {
-                    continue;
-                }
                 best = d;
                 found = handle_at(st, sw.slot);
             }
@@ -4993,12 +5010,20 @@ static TickContext make_tick_context(MacroWorld& mw,
     ctx.squads  = &runtime.squadIndex;
     // Запечь враждебность реестра на свип (CANON S10 «хищник-жертва»): F²
     // вопросов к ОДНОЙ матрице раз в свип — копейки, и охота по следу читает
-    // бит вместо строкового слота отношений на каждом think.
+    // бит вместо слота отношений на каждом think. Маска нужна ИМЕННО ей:
+    // её вопрос не про одну пару, а «какие из каналов клетки враждебны», то
+    // есть перебор, и для перебора битсет и есть верная форма. Рефлекс
+    // угрозы маску НЕ читает и читать не должен — у него вопрос про ОДНУ
+    // пару, и матрица отвечает на него одним байтом, всегда свежим.
+    //
+    // Спрашивается ОРДИНАЛАМИ (M-268): здесь стояли табличные id, то есть
+    // 342 строковых вопроса на драйв = 175 104 скана реестра ЗА ИГРОВОЙ
+    // ДЕНЬ — и это был весь остаток строк в макро-думке после правки
+    // рефлекса. Ординалы `a`/`b` здесь и есть ординалы реестра.
     for (int a = 0; a < kFactionCount; ++a) {
         std::uint64_t m = 0;
         for (int b = 0; b < kFactionCount; ++b) {
-            if (a != b && factions_hostile(mw.gs, kFactionDefs[a].id,
-                                           kFactionDefs[b].id))
+            if (a != b && factions_hostile(mw.gs->factions, a, b))
                 m |= 1ull << b;
         }
         ctx.factionHostileMask[a] = m;
