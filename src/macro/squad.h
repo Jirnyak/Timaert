@@ -1065,7 +1065,30 @@ inline int award_kill_xp(MacroStore& st, MacroHandle h, int xp) {
     if (xp <= 0 || !st.valid(h)) return 0;
     const std::uint16_t slot = h.slot;
     CharacterSheet& own = st.sheet[slot];
-    const CharacterSheet eff = effective_sheet_of(st, h);
+    // ЧТО СТОИТ НА СКВАДЕ — СЧИТАЕТСЯ ОДИН РАЗ И ЕДЕТ ДАЛЬШЕ ЦЕЛИКОМ (M-301).
+    // Здесь дважды звалась `effective_sheet_of`, то есть сумма надетого
+    // считалась ДВА раза, и — хуже — второй её результат уходил в дверь
+    // БЕЗ ЧЕТВЁРТОГО АРГУМЕНТА. Эффективный лист несёт только ячейки
+    // атрибутов и рангов; ПРОИЗВОДНЫЕ ячейки надетого (`MovePct`, `CarryKg`
+    // — хвост реестра бонусов) дверь накладывает отдельно, по `standing`.
+    // Значит пересчёт на уровне-апе СТИРАЛ их из обеих кэшированных колонок:
+    // надетый аффикс `of_the_mule` пропадал из спины `carryPerSoulG`, а
+    // хаста — из `moveMult`, и возвращались они только переодеванием.
+    //
+    // ПОЛЛ-ГЕЙТ ГЛАВНОГО ЦИКЛА ЭТУ ДЫРУ НЕ ЛОВИТ ПО ПОСТРОЕНИЮ: он сторожит
+    // ИЗМЕНЕНИЕ суммы надетого (`main.cpp` — `standing != lastStandingBonuses`),
+    // а на уровне-апе надетое не менялось, значит сторож молчит и стёртое
+    // значение живёт до следующего переодевания.
+    //
+    // СЕГОДНЯ ЭТО СТРЕЛЯЕТ ТОЛЬКО ПО ИГРОКУ, И ЭТО ЗАМЕРЕНО, А НЕ ВЫВЕДЕНО:
+    // зонд на 3 сидах × 128 дней дал 15 уровней-апов, из них с непустыми
+    // производными ячейками — НОЛЬ, потому что макро-сквад не носит ничего
+    // (`gear_init` ставит пустые ячейки при рождении, надевает только игрок
+    // через вкладку снаряжения и консоль). Правка всё равно нужна: пустота
+    // здесь — свойство КОНТЕНТА, а не формы, и первый надетый НПЦ-плащ сделал
+    // бы дефект живым молча.
+    const BonusTotals standing = standing_bonuses_of(st, h);
+    const CharacterSheet eff = effective_sheet(own, standing);
     const int gained = award_exp(
         own.levelData, xp,
         calculate_derived(eff.attributes, eff.skills).expMultPct);
@@ -1076,8 +1099,11 @@ inline int award_kill_xp(MacroStore& st, MacroHandle h, int xp) {
         const NPCType type =
             st.kind[slot].type < std::uint16_t(NPCType::Count)
                 ? NPCType(std::uint8_t(st.kind[slot].type)) : NPCType::Peasant;
+        // Лист пересобирается ПОСЛЕ роста: `own` — ссылка на колонку, и
+        // `award_exp` уже сдвинул её `levelData`.
         refresh_body_from_sheet(st.pools[slot], &st.runtime[slot],
-                                effective_sheet_of(st, h), type);
+                                effective_sheet(own, standing), type,
+                                &standing);
     }
     return gained;
 }

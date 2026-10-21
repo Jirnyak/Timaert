@@ -321,15 +321,37 @@ float cell_weight(const TickContext& ctx, int x, int y);
 // now possible everywhere and lethality is a CONSEQUENCE of the two always-on
 // processes — macro/recovery.h settle_pools_over_time.)
 
-// What this leader's load is costing him per cell, asked once per think: a
-// bag changes at every market, so unlike the rest of the sheet cache this one
-// cannot be refreshed at birth and left alone.
-void refresh_overload_cost(ecs::MacroNpcRuntime& rt,
-                           const ecs::NpcInventory* bag) {
-    if (!bag) { rt.overloadCost = 0; return; }
-    const int cost = overload_charge_from_capacity(
-                         carry_capacity_g(rt, bag->inv), bag->inv).cost;
-    rt.overloadCost = std::int16_t(std::clamp(cost, 0, 32767));
+// ЧТО НЕСОМЫЙ ГРУЗ СТОИТ ЭТОМУ СКВАДУ В ЧАС — ЧИСЛО ОДНОЙ ДУМКИ, И ХРАНИЛИЩА
+// У НЕГО НЕТ (вердикт владельца 2026-10-21, дословно: «убирай нафиг нам
+// хранить скока перегруз ест сели просто достатчно хранить 2 значения вес
+// который может нести сквад и вес который несёт»).
+//
+// ЗДЕСЬ СТОЯЛА `refresh_overload_cost`, ПИСАВШАЯ КОЛОНКУ `overloadCost`
+// (`int16`), и последним её шагом был НЕМОЙ КЛАМП `std::clamp(cost, 0, 32767)`
+// — M-302. Вся цепочка выше считала честно (`carry_capacity_g` отдаёт `int64`,
+// цена есть точное `(g + 999) / 1000`), обрезал РОВНО последний шаг, на ширине
+// хранилища. Замер назвал цену обрезания: на 3 сидах × 128 дней кламп
+// СРАБОТАЛ 2 раза из 454 679 260 пересчётов, и в худшем попадании настоящая
+// цена была 64 489 против потолка 32 767 — то есть перегруженный сквад
+// заплатил за час ВДВОЕ меньше должного.
+//
+// ПОЧЕМУ СНОС, А НЕ ШИРИНА: колонка не переносила число через ВРЕМЯ, она
+// переносила его через ДЕВЯТЬ СТРОК. Свип считал цену ровно один раз на думку
+// прямо перед единственным читателем, и это ИЗМЕРЕНО, а не выведено:
+// пересчётов 454 679 260, чтений 454 679 260 — ровно столько же. У числа, чей
+// расчёт и чьё чтение стоят в одной думке, тотала нет; ему выдали колонку, у
+// колонки оказалась ширина, а у ширины — обрезание. Теперь цена едет
+// ПАРАМЕТРОМ, `int` от начала до конца, и обрезать её нечему по построению.
+//
+// Хранимых значений осталось ровно два, как и велено: спина (`carry_capacity_g`
+// — своя колонка анкеты плюс граммы голов из сводки) и несомый вес
+// (`inventory_mass_g` — тотал сводки, разряд А). Перегруз есть их разница, и
+// третьего носителя у него больше нет.
+inline int overload_cost_of(const ecs::MacroNpcRuntime& rt,
+                            const ecs::NpcInventory* bag) {
+    if (!bag) return 0;
+    return overload_charge_from_capacity(carry_capacity_g(rt, bag->inv),
+                                         bag->inv).cost;
 }
 
 ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
@@ -384,9 +406,19 @@ ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
 // stamina and no squad ever ran out again. A body has stopped when it is where
 // it meant to be, or when it has DECIDED to stop — which is exactly the
 // player's own gate, «маршрут пуст», said in the squads' words.
+//
+// `overloadCost` — ЦЕНА ГРУЗА ПАРАМЕТРОМ, А НЕ КОЛОНКОЙ (M-302): свип считает
+// её дверью `overload_cost_of` выше в той же думке, ДО поведения, и передаёт
+// сюда. МОМЕНТ РАСЧЁТА ОСТАВЛЕН ТОТ ЖЕ, что был у снесённой колонки, именно
+// чтобы единственным изменением поведения осталось снятие обрезания, — и
+// паритет это ДОКАЗАЛ атрибуцией: два сида из трёх побайтово идентичны (там
+// кламп не срабатывал), а на третьем возврат ОДНОГО клампа складывает мир
+// обратно байт в байт. `int` вместо `int16` делает прежнее немое обрезание на
+// 32 767 невыразимым.
 void settle_march_rhythm(MacroHandle e, const MacroPos& p,
                          ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
-                         bool moved, const TickContext& ctx) {
+                         bool moved, const TickContext& ctx,
+                         int overloadCost) {
     const int maxSp = std::max<int>(1, hp.maxSp);
 
     // THE two rates of this body, in this cell, this hour — computed ONCE and
@@ -394,12 +426,13 @@ void settle_march_rhythm(MacroHandle e, const MacroPos& p,
     // disagree about what standing here is worth.
     //
     // The hour is priced from the ground UNDER THE BODY plus the two terms
-    // that were the dead per-step price's other half: the leader's own load
-    // (`overloadCost`, refreshed from his bag by the sweep before the
-    // behaviour ran) and his training (`travelRank`). Both come from the same
-    // runtime caches the march itself read, so no sheet is rebuilt per think.
+    // that were the dead per-step price's other half: the squad's own load
+    // (`overloadCost`, priced from its bag by the sweep before the behaviour
+    // ran — a parameter, never a column, M-302) and its training
+    // (`travelRank`, a sheet cache the march itself read, so no sheet is
+    // rebuilt per think).
     const float burnRate = burn_stamina_per_hour(
-        cell_weight(ctx, int(p.x), int(p.y)), int(rt.overloadCost),
+        cell_weight(ctx, int(p.x), int(p.y)), overloadCost,
         skill_mult_of(SkillId::Travel, int(rt.travelRank)));
     const bool campRepays =
         camp_repays_its_hour(burnRate, maxSp, int(rt.marathonRank));
@@ -5045,7 +5078,11 @@ void tick_macro_npc_ai(MacroWorld& mw,
         if (st.dead[slot] != 0) continue;
         const ThinkGate gate = prepare_macro_npc_tick(rt, hp);
         if (gate == ThinkGate::Dead) continue;
-        refresh_overload_cost(rt, &st.inventory[slot]);
+        // Цена груза — ДО поведения, тем же моментом, каким её брала
+        // снесённая колонка (M-302): час, который оплатит ритм ниже, пройден
+        // с ТОЙ сумкой, какая была на входе думки, а не с той, какую сквад
+        // набрал на рынке внутри неё.
+        const int overloadCost = overload_cost_of(rt, &st.inventory[slot]);
         // Decode → think in fractional scratch → encode (the scale split):
         // the STORE is one whole-cell number; the march's own float math
         // lives only on this think's stack.
@@ -5054,7 +5091,8 @@ void tick_macro_npc_ai(MacroWorld& mw,
         const float x0 = p.x, y0 = p.y;
         if (gate == ThinkGate::Think)
             dispatch(h, p, kind, rt, hp, ctx);
-        settle_march_rhythm(h, p, rt, hp, p.x != x0 || p.y != y0, ctx);
+        settle_march_rhythm(h, p, rt, hp, p.x != x0 || p.y != y0, ctx,
+                            overloadCost);
         const std::uint32_t newIdx = ecs::cell_index(int(p.x), int(p.y),
                                                      gs.mapW);
         // ДОЛЯ КЛЕТКИ ПОСЛЕ ХОДА (M-244): клетка сменилась — сквад стоит у
@@ -5147,7 +5185,9 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
                 && st.dead[slot] == 0) {   // may have died this sweep
                 const ThinkGate gate = prepare_macro_npc_tick(rt, hp);
                 if (gate != ThinkGate::Dead) {
-                    refresh_overload_cost(rt, &st.inventory[slot]);
+                    // Цена груза — ДО поведения, тот же момент (M-302).
+                    const int overloadCost =
+                        overload_cost_of(rt, &st.inventory[slot]);
                     // Decode → fractional scratch → encode (the scale split).
                     MacroPos p{float(ecs::cell_x(cell, gs.mapW)),
                                float(ecs::cell_y(cell, gs.mapW))};
@@ -5156,7 +5196,8 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
                         dispatch(h, p, kind, rt, hp, ctx);
                     }
                     settle_march_rhythm(h, p, rt, hp,
-                                        p.x != x0 || p.y != y0, ctx);
+                                        p.x != x0 || p.y != y0, ctx,
+                                        overloadCost);
                     const std::uint32_t newIdx =
                         ecs::cell_index(int(p.x), int(p.y), gs.mapW);
                     // Та же дверь доли, что у полного свипа выше (M-244).

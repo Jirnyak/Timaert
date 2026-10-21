@@ -347,6 +347,80 @@ void test_a_victorious_leader_levels() {
           "the wound crossed the level-up as a fraction, not a free heal");
 }
 
+// ── РОСТ НЕ РАЗДЕВАЕТ (M-301) ────────────────────────────────────────────
+// Эффективный лист несёт ячейки АТРИБУТОВ и РАНГОВ надетого, а ПРОИЗВОДНЫЕ
+// ячейки (`MovePct`, `CarryKg` — хвост реестра бонусов) дверь листа
+// накладывает отдельно, четвёртым аргументом. До 2026-10-21 `award_kill_xp`
+// звала дверь БЕЗ него, поэтому уровень-ап стирал надетую спину из колонки
+// `carryPerSoulG` и надетую скорость из `moveMult`; возвращались они только
+// переодеванием, а полл-гейт главного цикла этого не ловит по построению —
+// он сторожит ИЗМЕНЕНИЕ суммы надетого, а на уровне-апе она не менялась.
+//
+// СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11): плащ кладётся в сумку и
+// НАДЕВАЕТСЯ здесь же, через прод-дверь `equip`, а не в надежде, что
+// генератор выдал одетый сквад. Отказ двери — честный провал фикстуры.
+void test_a_level_does_not_strip_what_is_worn() {
+    // Мира этому свидетелю не нужно вовсе: `award_kill_xp` читает и пишет
+    // ТОЛЬКО стор, и фикстура рождает сквад прямо в нём.
+    auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
+    const auto mule = make_squad_at(st, NPCType::Peasant, "timaert", 1,
+                                    10.0f, 10.0f, 1u, {}, NPCType::Peasant, 1);
+
+    // Ячейки тела — от строки сквада, как их ставит рождение (`gear_init`);
+    // фикстура выше строит запись руками и до них не доходит.
+    sm::Gear& gear = st.gear[mule.slot].gear;
+    sm::gear_init(gear, sm::npc_def(NPCType::Peasant).slots);
+    sm::Inventory& bag = st.inventory[mule.slot].inv;
+
+    // Плащ с ПРОИЗВОДНЫМ аффиксом — ровно тот род ячейки, который стирался.
+    // 40 кг взяты числом, которое ни с чем не спутать и которое заведомо
+    // вмещается в `int16` значения аффикса.
+    constexpr int kWornKg = 40;
+    sm::ItemRef coat{};
+    coat.def = std::uint16_t(sm::item_index("arm_leather"));
+    coat.count = 1;
+    coat.set_affix(0, sm::Bonus{std::uint8_t(sm::BonusId::CarryKg), kWornKg});
+    CHECK(bag.add_ref(coat), "фикстура: плащ лёг в сумку");
+    int coatSlot = -1;
+    for (int i = 0; i < sm::kMaxInventorySlots; ++i) {
+        if (!bag.slots[std::size_t(i)].empty()) { coatSlot = i; break; }
+    }
+    CHECK(coatSlot >= 0 && sm::equip(gear, bag, coatSlot) >= 0,
+          "фикстура: тело ПРИНЯЛО плащ — иначе надетого нет и мерить нечего");
+    CHECK(sm::standing_bonuses_of(st, mule)
+                  .derived_of(sm::DerivedModId::CarryKg) == kWornKg,
+          "фикстура честна: надетое действительно даёт производную ячейку");
+
+    // Колонка до роста — через ту же дверь, что зовёт весь мир.
+    const sm::BonusTotals standing0 = sm::standing_bonuses_of(st, mule);
+    sm::refresh_body_from_sheet(st.pools[mule.slot], &st.runtime[mule.slot],
+                                sm::effective_sheet_of(st, mule),
+                                NPCType::Peasant, &standing0);
+
+    CHECK(award_kill_xp(st, mule, exp_to_next_level(1) * 3) >= 1,
+          "фикстура: опыта хватило на уровень");
+
+    // ЯКОРЬ НЕЗАВИСИМЫЙ: колонка обязана быть РОВНО на 40 000 г выше голой
+    // спины той же анкеты. Это утверждение об ОТНОШЕНИИ («надетое внутри»),
+    // а не пересчёт продакшен-формулы: голая спина берётся у двери БЕЗ
+    // надетого, и разница между ними и есть то, что стиралось. Голая спина
+    // перечитывается ПОСЛЕ роста — уровень мог поднять Str или Weightlifting.
+    const sm::CharacterSheet& own = st.sheet[mule.slot];
+    const std::int32_t bareG =
+        sm::get_carry_capacity(own.attributes, own.skills);
+    const std::int32_t columnG = st.runtime[mule.slot].carryPerSoulG;
+    CHECK(columnG == bareG + kWornKg * 1000,
+          "рост НЕ раздевает: надетые 40 кг остались в спине анкеты и после "
+          "уровня-апа (M-301 — дверь зовётся с `standing`)");
+    // НЕГАТИВНЫЙ КОНТРОЛЬ САМОГО ДЕТЕКТОРА: без надетого эти два числа
+    // СОВПАЛИ БЫ, и утверждение выше прошло бы при любом дефекте. Разница
+    // обязана быть ненулевой, иначе детектор слеп.
+    CHECK(kWornKg * 1000 > 0 && columnG > bareG,
+          "негативный контроль: разница голой и одетой спины НЕ нулевая, "
+          "значит утверждение выше способно покраснеть");
+}
+
 // The player's auto-resolve settles through the SAME halves (Inc 6): the
 // enemy through the ledger and the tracked-death shape, the player where his
 // truth lives — army rows by name, the wound fraction into his squad Pools, XP
@@ -744,6 +818,7 @@ int main() {
     test_neutral_squads_ignore_each_other();
     test_a_meeting_in_the_leased_window_is_not_resolved_upstairs();
     test_a_victorious_leader_levels();
+    test_a_level_does_not_strip_what_is_worn();
     test_player_auto_resolve_settles_through_the_same_doors();
     test_spawn_squad_is_one_spec_one_door();
     return sm::test::report("squad_war_test");

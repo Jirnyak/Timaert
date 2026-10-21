@@ -710,13 +710,123 @@ void test_a_laden_squad_pays_for_its_load() {
 
     CHECK(heavySpent > lightSpent,
           "the laden squad paid more for the same road — the pack is a cost");
+    // НОСИТЕЛЬ ЭТОГО УТВЕРЖДЕНИЯ ПЕРЕЕХАЛ, А ЗАКОН ОСТАЛСЯ (§5 п.6). Здесь
+    // стояло `hrtRun.overloadCost > 0 && lrtRun.overloadCost == 0` — чтение
+    // КОЛОНКИ, снесённой в M-302. Спрашивать вместо неё ту же цену у двери
+    // значило бы пересчитать продакшен-формулу (§8 п.5), а цену уже
+    // утверждает строка выше (`heavySpent > lightSpent`). Поэтому утверждается
+    // ровно то, чем владелец определил перегруз 2026-10-21: «достаточно
+    // хранить 2 значения — вес который может нести сквад и вес который
+    // несёт», перегруз есть «когда больше». Это НЕЗАВИСИМЫЙ факт о фикстуре,
+    // а не копия арифметики.
     const auto& lrtRun = (*sm::body_state<ecs::MacroNpcRuntime>(st, light));
     const auto& hrtRun = (*sm::body_state<ecs::MacroNpcRuntime>(st, heavy));
-    CHECK(hrtRun.overloadCost > 0 && lrtRun.overloadCost == 0,
-          "and the surcharge is on the laden one alone");
+    const auto& lBag = st.inventory[light.slot].inv;
+    const auto& hBag = st.inventory[heavy.slot].inv;
+    CHECK(inventory_mass_g(hBag) > sm::carry_capacity_g(hrtRun, hBag)
+              && inventory_mass_g(lBag)
+                     <= sm::carry_capacity_g(lrtRun, lBag),
+          "and the surcharge is on the laden one alone: перегруз есть ровно "
+          "«несомый вес больше спины», и носителей у него два, не три");
     CHECK(lightCells > 0.0f && heavyCells > 0.0f,
           "negative control: BOTH of them actually walked, so the gap above "
           "is a price and not a body standing still");
+}
+
+// ── ЦЕНА ПЕРЕГРУЗА НЕ ОБРЕЗАЕТСЯ, И СПРОШЕНО ЭТО У СВИПА НА КАПАХ ────────
+// M-302. До 2026-10-21 цена оседала в колонке `overloadCost` (`int16`) через
+// НЕМОЙ `std::clamp(cost, 0, 32767)`, и зонд поймал обрезание В ПРОДАКШЕНЕ:
+// 2 попадания из 454 679 260 пересчётов (3 сида × 128 дней), в худшем
+// настоящая цена 64 489 против потолка 32 767 — час марша стоил ВДВОЕ меньше
+// должного. Колонка снесена, цена едет параметром.
+//
+// ПОЧЕМУ СВИДЕТЕЛЬ ГОНИТ СВИП, А НЕ СПРАШИВАЕТ ДВЕРЬ ЦЕНЫ. Первая его версия
+// стояла в `macro_travel_parity_test` и спрашивала
+// `overload_charge_from_capacity` напрямую — на капах движка, с независимым
+// якорем, выглядела образцово и ПРОШЛА МУТАЦИЮ ЗЕЛЁНОЙ (М1b: кламп возвращён
+// в цепочку свипа). Причина ровно §8 п.6: дверь цены всегда была честной,
+// обрезал её ПУТЬ СВИПА, куда тот свидетель не заходил. Утверждать надо то,
+// что видит МИР, — SP, сгоревшие за думку.
+//
+// КАПЫ ЗДЕСЬ НАШИ ОБЪЯВЛЕННЫЕ ЧИСЛА, А НЕ УДОБНЫЕ (подводный камень M-298:
+// две мутации ширины прошли зелёными ровно потому, что фикстуры не доходили
+// до капов): `kMaxInventorySlots` слотов × самая тяжёлая строка каталога.
+//
+// ТАБЛИЦА «МУТАЦИЯ → ИСХОД», ОБЕ ПОЛЯРНОСТИ, ПРОГНАНА 2026-10-21:
+//   М1a  кламп возвращён, свидетель спрашивает ДВЕРЬ ЦЕНЫ напрямую
+//        (первая версия, стояла в macro_travel_parity_test)  → ЗЕЛЁНЫЙ, ДЫРА
+//   М1b  кламп возвращён, свидетель ГОНИТ СВИП (этот)        → КРАСНЫЙ  2/41
+//   М2   носитель цены `OverloadCharge::cost` сужен до int16 → НЕСОБИРАЕМО
+//        (два стража: -Wc++11-narrowing на записи + static_assert на sizeof)
+//   М3   `&standing` снят в award_kill_xp (M-301)            → КРАСНЫЙ  2/69
+//        (свидетель — test_a_level_does_not_strip_what_is_worn@squad_war_test)
+//   М4   та же сумма standing пересчитана ВТОРОЙ раз
+//        (ОБЯЗАНА МОЛЧАТЬ: форма иная, смысл тот же)         → ЗЕЛЁНЫЙ, как и
+//                                                              должно
+void test_an_engine_cap_load_is_priced_whole() {
+    GameState gs{};
+    gs.mapW = 256;
+    gs.mapH = 256;
+    auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
+    PathCostData grid = make_grid(256, 256, 1.0f);
+
+    // Тело, которое ПЕРЕЖИВЁТ замер: на капах жжение рвёт планку в клочья и
+    // долг кусает HP, а мерить надо ЦЕНУ, а не смерть, которую она покупает.
+    auto ox = make_walker(st, gs.mapW, 10.0f, 4.0f, 60.0f, 4.0f,
+                          /*maxSp*/110, /*hp*/1e9f);
+    sm::store_rename_ordinal(st, ox, 8u);
+    ox = sm::handle_at(st, ox.slot);
+
+    const sm::ItemDef* heaviest = nullptr;
+    for (const sm::ItemDef& d : sm::item_catalog())
+        if (!heaviest || d.massG > heaviest->massG) heaviest = &d;
+    CHECK(heaviest && heaviest->massG == 64'000,
+          "самая тяжёлая строка каталога — статуя, 64 000 г");
+
+    auto& rtOx = (*sm::body_state<ecs::MacroNpcRuntime>(st, ox));
+    rtOx.carryPerSoulG = 0;   // спины нет вовсе: весь трюм есть перегруз
+    auto& hold = st.inventory[ox.slot].inv;
+    hold.add(heaviest->id, sm::kMaxInventorySlots);
+
+    // ЯКОРЬ НЕЗАВИСИМЫЙ: масса трюма есть произведение двух НАЗВАННЫХ капов,
+    // а не пересчёт продакшен-формулы (§8 п.6).
+    const std::int64_t holdG = inventory_mass_g(hold);
+    CHECK(holdG == std::int64_t(sm::kMaxInventorySlots) * 64'000,
+          "трюм на капах движка: 1024 слота × 64 кг = 65 536 000 г");
+    CHECK(sm::carry_capacity_g(rtOx, hold) == 0,
+          "фикстура: спины нет, значит перегруз равен всему трюму");
+
+    const auto& pools0 = (*sm::body_state<ecs::Pools>(st, ox));
+    const float spBefore = float(pools0.sp) + pools0.spCarry;
+
+    MacroNpcAiRuntime rt{};
+    reset_macro_npc_ai_runtime(rt, 94u);
+    {
+        MacroWorld mw{.gs = &gs, .store = &st, .pathCost = &grid};
+        tick_macro_npc_ai(mw, rt, kAiTicks);
+    }
+
+    const auto& pools1 = (*sm::body_state<ecs::Pools>(st, ox));
+    const float spAfter = float(pools1.sp) + pools1.spCarry;
+    const float burned = spBefore - spAfter;
+
+    // ЧТО ОБЯЗАН БЫЛ СЖЕЧЬ ОДИН ПЕРЕГРУЗ: цена входит в час СЛАГАЕМЫМ, и
+    // навык её не сбивает никогда (`burn_stamina_per_hour` — «ПЕРЕГРУЗ,
+    // который навык не сбивает»), поэтому вклад есть ровно цена × часы думки.
+    const float hours = sm::kAiTickGameHours;
+    const float wholePrice = float(holdG / 1000) * hours;
+    const float cappedPrice = 32767.0f * hours;
+    CHECK(burned > cappedPrice * 1.5f,
+          "цена перегруза на капах движка сгорела ЦЕЛИКОМ: сожжённое выше "
+          "того, что мог бы дать обрезанный потолок int16 (M-302)");
+    CHECK(burned >= wholePrice,
+          "и она не меньше полной цены трюма: 65 536 SP/ч × часы думки");
+    // НЕГАТИВНЫЙ КОНТРОЛЬ САМОГО ДЕТЕКТОРА: два кандидата обязаны РАЗЛИЧАТЬСЯ
+    // в наблюдаемом, иначе утверждение выше не способно покраснеть.
+    CHECK(wholePrice > cappedPrice * 1.9f,
+          "негативный контроль: полная и обрезанная цены различаются вдвое, "
+          "значит у детектора есть что различать");
 }
 
 } // namespace
@@ -728,6 +838,7 @@ int main() {
     test_land_exhaustion_makes_camp_without_blood();
     test_banking_a_part_cell_is_not_resting();
     test_a_laden_squad_pays_for_its_load();
+    test_an_engine_cap_load_is_priced_whole();
     test_a_map_of_marchers_survives_the_new_law();
     test_road_bar_lasts_a_days_march();
     return sm::test::report("squad_travel_test");

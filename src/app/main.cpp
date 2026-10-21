@@ -3746,10 +3746,10 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // (`travelRank`) and his load. The rank comes from the runtime cache
         // the one sheet door fills (refresh_player_body, called every macro
         // turn by ensure_macro_player_entity), so no derived sheet is rebuilt
-        // 64 times a second; the load is asked of the bag directly, because
-        // `overloadCost` is refreshed by the AI SWEEP and the sweep never
-        // drives the player — reading that column here would have priced his
-        // pack at a permanent zero.
+        // 64 times a second; the load is asked of the bag directly, by the
+        // same price door every squad's sweep asks (M-302 — the column
+        // `overloadCost` that used to stand between them is gone, so there is
+        // no longer a stored total here to be stale OR to be truncated).
         //
         // ON THE FLAG, NOT ON HIS HOME SQUAD, and that is a fix riding along:
         // the rest law this replaces settled `player_squad_handle`'s bars,
