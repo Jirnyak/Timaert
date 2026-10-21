@@ -180,7 +180,6 @@ SKELETON.md	ai.cpp:93
 SKELETON.md	app/app_state.h:161
 SKELETON.md	app_state.h:201
 SKELETON.md	army.h:179
-SKELETON.md	auto_battle.h:168
 SKELETON.md	auto_battle.h:80
 SKELETON.md	auto_resolve_speaks_test.cpp:196
 SKELETON.md	base_generator.cpp:268

@@ -54,12 +54,23 @@ Inventory creatures_of(NPCType kind, int level, int n,
     return r;
 }
 
+// Сид анкеты лидера фикстуры — тот же способ, которым её пишет рождение
+// сквада (`npc_spawn.cpp`: `make_character_sheet(type, lvl,
+// leader_sheet_seed(ordinal))`). У ЛИДЕРА анкета есть, и M-300 её не отменял:
+// отменена анкета ГОЛОВЫ.
+std::uint32_t fixture_leader_seed(NPCType leader) {
+    return 0xABCDu ^ std::uint32_t(leader);
+}
+
 AutoBattleSide side_of(NPCType leader, int leaderLevel,
                        const Inventory* creatures) {
     AutoBattleSide s{};
     s.leaderType = leader;
-    s.leaderLevel = leaderLevel;
-    s.leaderSeed = 0xABCDu ^ std::uint32_t(leader);
+    // ЛИСТ ЕДЕТ В СТОРОНЕ (M-300): резолвер его больше не катает, и это
+    // половина наряда — лидер обязан судиться ТЕМ листом, который у него
+    // есть, а не новым человеком того же рода и ранга.
+    s.leaderSheet = make_character_sheet(leader, leaderLevel,
+                                         fixture_leader_seed(leader));
     s.creatures = creatures;
     return s;
 }
@@ -90,11 +101,12 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
     };
     std::vector<Body> bodies;
 
-    const auto add_fighter = [&bodies](NPCType type, int level,
-                                       std::uint32_t seed,
-                                       float frac,
-                                       int side) {
-        CharacterSheet sheet = make_character_sheet(type, level, seed);
+    // ОДНО ТЕЛО ОЧНОГО БОЯ. Лист приходит снаружи, потому что ПОЛУЧАЮТ его
+    // два разных жителя по-разному: лидер — свою анкету (`sub/spawn.cpp`
+    // читает запись мира, `body.sheet`), тело массовки — дериват своей
+    // строки (`emplace_body`: `make_character_sheet(type, level, seed)`).
+    const auto add_body = [&bodies](const CharacterSheet& sheet, NPCType type,
+                                    float frac, int side) {
         const NpcTypeDef& def = npc_def(type);
         const CombatTemplate pc = project_combat(sheet, def.combat);
         Body f{};
@@ -116,18 +128,36 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
         f.missile = pc.attackKind == CombatTemplate::Missile;
         bodies.push_back(f);
     };
+    // Лидер — СВОИМ листом (тем же, которым его судит резолвер).
+    const auto add_leader = [&add_body](const CharacterSheet& sheet,
+                                        NPCType type, float frac, int side) {
+        add_body(sheet, type, frac, side);
+    };
+    // Тело массовки — дериват СТРОКИ, ровно как `emplace_body` внизу.
+    const auto add_body_of_row = [&add_body](NPCType type, int level,
+                                             std::uint32_t seed, int side) {
+        add_body(make_character_sheet(type, level, seed), type, 1.0f, side);
+    };
 
     const AutoBattleSide* sides[2] = {&a, &b};
     for (int side = 0; side < 2; ++side) {
         const AutoBattleSide& s = *sides[side];
-        add_fighter(s.leaderType, s.leaderLevel, s.leaderSeed,
-                    s.leaderHealthFraction, side);
+        add_leader(s.leaderSheet, s.leaderType, s.leaderHealthFraction, side);
         if (s.creatures) {
+            // ТЕЛО МАССОВКИ ВНИЗУ — ЭТО ВНИЗ, И M-300 ЕГО НЕ ТРОГАЛ (охват
+            // наряда — макро, вердикт владельца 2026-10-21). Сид анкеты тела
+            // субмир выводит из ОКНА ВХОДА и между входами не сохраняет, то
+            // есть точного тождества листов двух путей не существует вовсе —
+            // ровно это и говорила шапка снесённого `member_seed`. Поэтому
+            // фикстура берёт свой детерминированный сид: сходиться пути
+            // обязаны ПОБЕДИТЕЛЕМ и порядком потерь, а не числом.
+            std::uint32_t fixtureSeed = 0x51EEDu + std::uint32_t(side);
             for (const CreatureRef r : creatures_range(*s.creatures)) {
                 if (!valid_npc_kind(r.kind)) continue;
-                add_fighter(NPCType(r.kind), normalize_soldier_level(r.level),
-                            auto_battle_detail::member_seed(r),
-                            1.0f, side);
+                fixtureSeed = fixtureSeed * 2654435761u + 1u;
+                add_body_of_row(NPCType(r.kind),
+                                normalize_soldier_level(r.level),
+                                fixtureSeed, side);
             }
         }
     }
@@ -217,12 +247,26 @@ void test_power_grows_with_the_sheet() {
     const auto few  = creatures_of(NPCType::Guard, 3, 3, 100u);
     const auto more = creatures_of(NPCType::Guard, 3, 9, 100u);
     const auto veteran = creatures_of(NPCType::Guard, 9, 3, 100u);
+    const auto peasants = creatures_of(NPCType::Peasant, 3, 3, 100u);
 
     const float pFew  = squad_power(side_of(NPCType::Guard, 3, &few));
     const float pMore = squad_power(side_of(NPCType::Guard, 3, &more));
     const float pVet  = squad_power(side_of(NPCType::Guard, 3, &veteran));
+    const float pWeakRow = squad_power(side_of(NPCType::Guard, 3, &peasants));
     CHECK(pMore > pFew, "more men are more strength");
-    CHECK(pVet > pFew, "higher levels are more strength - the sheet IS the scaling");
+    // ТИР ГОЛОВЫ ЕСТЬ ЕЁ СТРОКА, А НЕ ЕЁ УРОВЕНЬ (вердикт владельца
+    // 2026-10-21, дословно: «уровень это строка уровня в таблице объектов
+    // (типа тир) … никаких ветеранов пока (потом если что расширим)»).
+    // Здесь стояло `pVet > pFew` с объяснением «the sheet IS the scaling» —
+    // свидетель охранял РОВНО ту механику, которую наряд M-300 снёс, и его
+    // собственное имя это и говорило: листа у головы больше нет. Теперь
+    // утверждается закон, который есть, И ЕГО НЕГАТИВНЫЙ БЛИЗНЕЦ рядом —
+    // без второй проверки первая прошла бы и на любой другой причине.
+    CHECK(pFew > pWeakRow,
+          "ТИР: стак стражи сильнее стака крестьян — силу несёт СТРОКА");
+    CHECK(pVet == pFew,
+          "а УРОВЕНЬ головы силы не несёт вовсе: ветеранов у объектов нет, "
+          "тир выражается своей строкой (M-300)");
 
     // (ПРОВЕРКА АУРЫ СНЕСЕНА 2026-10-18 вместе с её носителем: терм
     //  `AutoBattleSide::bonuses` и дверь `squad_bonuses` умерли — та
@@ -237,6 +281,98 @@ void test_power_grows_with_the_sheet() {
     AutoBattleSide uphill = side_of(NPCType::Guard, 3, &few);
     uphill.terrain = 1.5f;
     CHECK(squad_power(uphill) > pFew, "ground worth holding is strength");
+}
+
+// ── ДВЕ ТАБЛИЦЫ — ДВЕ ДВЕРИ (M-300) ───────────────────────────────────────
+// ЗАКОН ДВУХ ТАБЛИЦ (вердикт владельца 2026-10-20): «АНКЕТВ НЕ МОЖЕТ БЫТЬ У
+// ОБЪЕКТОВ … в макромире массовка просто строчки в инвентаре просто циферки».
+// Голова судится КОЛОНКАМИ своей строки, лидер — СВОЕЙ анкетой.
+//
+// ЯКОРЬ НА КАЖДУЮ КОЛОНКУ, И НИ ОДИН НЕ ПЕРЕСЧИТЫВАЕТ ПРОДАКШЕН-ФОРМУЛУ
+// (§8 п.6, шестая форма слепоты: тождество двух вычислений с ОДНОЙ формулой
+// слепо к самой формуле). Каждое утверждение ниже — НЕЗАВИСИМО ИЗВЕСТНЫЙ
+// факт мира или ОТНОШЕНИЕ, и каждое было ЛОЖНЫМ до наряда.
+void test_a_head_is_its_row_and_a_leader_is_his_sheet() {
+    using namespace sm;
+
+    // ЯКОРЬ 1 — ЛИНЕЙНОСТЬ. «Десять одинаковых солдат стоят десяти одного» —
+    // факт мира, а не формула. До M-300 был ЛОЖЕН: `member_seed` мешал в сид
+    // анкеты (slot, index), поэтому каждая душа стака получала СВОЙ
+    // выдуманный лист, и стак не был кратен одному.
+    const auto one  = creatures_of(NPCType::Guard, 3, 1, 700u);
+    const auto ten  = creatures_of(NPCType::Guard, 3, 10, 700u);
+    AutoBattleSide sOne = side_of(NPCType::Peasant, 1, &one);
+    AutoBattleSide sTen = side_of(NPCType::Peasant, 1, &ten);
+    const float leaderOnly = squad_power(side_of(NPCType::Peasant, 1, nullptr));
+    const float headOne = squad_power(sOne) - leaderOnly;
+    const float headTen = squad_power(sTen) - leaderOnly;
+    CHECK(headOne > 0.0f, "одна голова что-то да стоит (иначе якорь слеп)");
+    CHECK(std::fabs(headTen - 10.0f * headOne) < 0.01f,
+          "ЛИНЕЙНОСТЬ: десять одинаковых голов стоят РОВНО десяти одной — "
+          "адреса слота в силе головы больше нет");
+
+    // ЯКОРЬ 2 — СЛЕПОТА К АДРЕСУ. Тот же состав, уложенный в ДРУГИЕ слоты,
+    // даёт ТУ ЖЕ силу. До M-300 был ложен по той же причине: сила зависела
+    // от адреса сильнее, чем от выслуги (замер: у стражника разброс по
+    // адресу 976 против 254 за три уровня).
+    Inventory shifted{};
+    creatures_push(shifted, make_soldier(std::uint8_t(NPCType::Rabbit), 1, 0u));
+    for (int i = 0; i < 10; ++i) {
+        creatures_push(shifted,
+                       make_soldier(std::uint8_t(NPCType::Guard), 3, 0u));
+    }
+    AutoBattleSide sShifted = side_of(NPCType::Peasant, 1, &shifted);
+    // Кролик силы не несёт (ЯКОРЬ 4 ниже), значит сдвинутый состав обязан
+    // сойтись с несдвинутым ровно по десяти стражникам.
+    CHECK(std::fabs((squad_power(sShifted) - leaderOnly) - headTen) < 0.01f,
+          "АДРЕС: тот же состав в других слотах — та же сила");
+
+    // ЯКОРЬ 3 — У ОБЪЕКТА НЕТ ВЕТЕРАНОВ (вердикт владельца 2026-10-21).
+    // Уровень головы не двигает её силу; её тир — её СТРОКА.
+    const auto vets = creatures_of(NPCType::Guard, 12, 10, 700u);
+    AutoBattleSide sVets = side_of(NPCType::Peasant, 1, &vets);
+    CHECK(squad_power(sVets) == squad_power(sTen),
+          "УРОВЕНЬ: двенадцатый уровень головы стоит ровно столько же, "
+          "сколько третий — анкеты у объекта нет");
+
+    // ЯКОРЬ 4 — СТРОКА БЕЗ АТАКИ НЕ БЬЁТ. У кролика в таблице `dice.n == 0`
+    // («no roll, total 0»), значит стадо кроликов добавляет РОВНО НОЛЬ. Это
+    // независимо известный факт ТАБЛИЦЫ, а не пересчёт формулы. До M-300
+    // силу кролику выдумывала добавка STR сгенерированной анкеты, и разброс
+    // по адресу у него доходил до 10×.
+    const auto herd = creatures_of(NPCType::Rabbit, 3, 50, 700u);
+    AutoBattleSide sHerd = side_of(NPCType::Peasant, 1, &herd);
+    CHECK(squad_power(sHerd) == leaderOnly,
+          "СТРОКА БЕЗ КОСТЕЙ: пятьдесят кроликов добавляют НОЛЬ силы");
+
+    // ЯКОРЬ 5 — ДВЕРИ РАЗНЫЕ. Лидер строки Guard и голова строки Guard при
+    // одном уровне стоят РАЗНОГО: у лидера есть анкета, у головы нет.
+    const auto oneGuard = creatures_of(NPCType::Guard, 3, 1, 700u);
+    const float asLeader =
+        squad_power(side_of(NPCType::Guard, 3, nullptr));
+    const float asHead =
+        squad_power(side_of(NPCType::Peasant, 1, &oneGuard)) - leaderOnly;
+    CHECK(asLeader != asHead,
+          "ДВЕ ДВЕРИ: та же строка стоит разного лидером и головой — "
+          "анкета есть ровно у одного из них");
+    CHECK(asLeader > asHead,
+          "и лидер дороже: обученная анкета поднимает его потолок и удар");
+
+    // ЯКОРЬ 6 — ЛИДЕР СУДИТСЯ СВОИМ ЛИСТОМ, И ЭТО НЕДОВЕЗЁННАЯ ПОЛОВИНА
+    // M-282. Правка АНКЕТЫ лидера обязана двигать силу сквада; до M-300
+    // резолвер катал лист заново из (строка, уровень, сид), то есть правка
+    // анкеты не меняла НИЧЕГО, а `auto_battle_side_of` считал эффективный
+    // лист миллион раз за игровой день и выбрасывал его.
+    const auto band = creatures_of(NPCType::Guard, 3, 3, 700u);
+    const float plain = squad_power(side_of(NPCType::Guard, 3, &band));
+    AutoBattleSide grown = side_of(NPCType::Guard, 3, &band);
+    grown.leaderSheet.attributes[AttributeId::End] += 20;
+    CHECK(squad_power(grown) > plain,
+          "ЛИСТ ЛИДЕРА ЧИТАЕТСЯ: поднятый END двигает силу сквада");
+    AutoBattleSide trained = side_of(NPCType::Guard, 3, &band);
+    trained.leaderSheet.attributes[AttributeId::Str] += 20;
+    CHECK(squad_power(trained) > plain,
+          "и STR тоже — читается АНКЕТА, а не одна её колонка");
 }
 
 void test_a_clear_advantage_cannot_be_rolled_away() {
@@ -426,6 +562,7 @@ void test_auto_and_fought_agree() {
 
 int main() {
     test_power_grows_with_the_sheet();
+    test_a_head_is_its_row_and_a_leader_is_his_sheet();
     test_a_clear_advantage_cannot_be_rolled_away();
     test_a_leaders_head_is_never_given_to_chance();
     test_context_tips_the_scales();

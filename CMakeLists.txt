@@ -2304,7 +2304,7 @@ target_compile_definitions(isotropy_law_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 timaert_test(law_carrier_test
-    PIN "OK law_carrier_test .20 checks. .носитель есть у [0-9]+ из [0-9]+ законов · прозы 4 .долг. · метод 3 .носитель непредставим. — ведомость судит СУЩЕСТВОВАНИЕ носителя, не годность")
+    PIN "OK law_carrier_test .20 checks. .носитель есть у [0-9]+ из [0-9]+ законов · прозы 3 .долг. · метод 3 .носитель непредставим. — ведомость судит СУЩЕСТВОВАНИЕ носителя, не годность")
 target_compile_definitions(law_carrier_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 

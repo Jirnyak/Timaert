@@ -968,8 +968,6 @@ inline AutoBattleSide auto_battle_side_of(const MacroStore& st, MacroHandle h) {
     if (st.kind[slot].type < std::uint16_t(NPCType::Count)) {
         s.leaderType = NPCType(std::uint8_t(st.kind[slot].type));
     }
-    s.leaderLevel = normalize_soldier_level(squad_level(st, slot));
-    s.leaderSeed  = leader_sheet_seed(st.spawnId[slot].index);
     {
         const ecs::Pools& hp = st.pools[slot];
         s.leaderHealthFraction = hp.maxHp > 0
@@ -1002,9 +1000,24 @@ inline AutoBattleSide auto_battle_side_of(const MacroStore& st, MacroHandle h) {
     // `leaderDpsOverride` по-прежнему НЕ ставится: удар оценивает ближняя
     // идентичность субмира (sub/engine.h), а макро — L1 и наверх не тянется.
     // Это говорит звонящий, который знает оба мира.
-    const CharacterSheet eff = effective_sheet_of(st, h);
-    s.leaderHpOverride = float(
-        body_max_hp(eff, npc_def(s.leaderType).combat));
+    //
+    // ЛИСТ ЕДЕТ ЦЕЛИКОМ, А НЕ ОДНИМ ПОТОЛКОМ (M-300, 2026-10-21). Здесь
+    // стояло `s.leaderHpOverride = body_max_hp(eff, …)` — ОДНО число из
+    // листа, — и оно НЕ ЧИТАЛОСЬ НИКОМУ: гейт `squad_power` требовал ОБА
+    // оверрайда, а второй (`leaderDpsOverride`) ставит ровно один сайт в
+    // игре — игрок. Замер headless-мира назвал дыру числом: 1 088 038
+    // постановок за игровой день, попаданий в ветку — 0, то есть
+    // эффективный лист считался миллион раз в день и выбрасывался, а
+    // авторезолв судил лидера ПЕРЕКАТАННЫМ генерик-листом. Это и была
+    // недовезённая половина M-282: его свидетель утверждал, что поле
+    // ПОСТАВЛЕНО, и ни одна строка не утверждала, что его кто-то ЧИТАЕТ
+    // (§8 п.6). Теперь едет сама анкета, и `leader_power` читает её всегда —
+    // «тот же лист, которым его судит очный бой, обязан судить и
+    // авторезолв» (CANON S13) стало правдой, а не обещанием.
+    //
+    // Вместе с потолком умерли `leaderLevel` и `leaderSeed` выше: они
+    // существовали РОВНО затем, чтобы резолвер катал лист заново.
+    s.leaderSheet = effective_sheet_of(st, h);
     return s;
 }
 

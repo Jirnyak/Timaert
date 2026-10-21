@@ -1685,7 +1685,7 @@ inline CombatTemplate project_combat(const CharacterSheet& sheet,
     // The POWER half of the same split: the typed skill multiplies the dice
     // (the door above already gave the generic pair to TEMPO — one handle,
     // one lever). Both consumers read THIS field now: the fought body
-    // (spawn combat_from_sheet) and the auto-resolve (fighter_power) — the
+    // (spawn combat_from_sheet) and the auto-resolve (leader_power) — the
     // two ends of S13's one law of battle, moved in one commit on purpose.
     out.multPct = std::int16_t(sheet_strike_mult_pct(sheet, base));
     return out;
@@ -1804,7 +1804,7 @@ BonusTotals worn_bonuses(const Gear& g, const Inventory& inv);
 // анкету без реестра существ за ней.
 //
 // ОДНА ДВЕРЬ, ДВА ЧИТАТЕЛЯ: сцена (`defense_of@src/sub/damage.cpp`) и
-// авторезолв (`fighter_power@src/macro/auto_battle.h`). Два ответа на «сколько
+// авторезолв (`leader_power@src/macro/auto_battle.h`). Два ответа на «сколько
 // держит тело» были бы двумя законами боя (S13), поэтому сборка живёт здесь, а
 // не по разу на каждой стороне.
 DefenseSum body_defense(const Defense& row, const Skills& skills,

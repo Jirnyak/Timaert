@@ -144,7 +144,7 @@ struct CombatTemplate {
     // скилл-процент) — the sheet's best-trained skill of the attack's domain
     // (sheet_strike_mult_pct), NEVER authored on a row. Session Е 2026-09-19:
     // this was a hardcoded 100 at BOTH consumers (spawn's combat_from_sheet
-    // and auto_battle's fighter_power) — the largest «игрок == НПЦ»
+    // and auto_battle's leader_power/head_power) — the largest «игрок == НПЦ»
     // asymmetry: the points the generator spent into weapon skills and
     // schools multiplied nothing.
     std::int16_t multPct = 100;

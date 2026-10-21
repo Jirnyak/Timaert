@@ -40,21 +40,33 @@ namespace sm {
 // modifiers. Context multipliers are per-side because terrain and fatigue
 // are: a squad on its hill fights the value of its hill.
 struct AutoBattleSide {
-    NPCType       leaderType  = NPCType::Peasant;
-    int           leaderLevel = 1;
-    std::uint32_t leaderSeed  = 0;
-    float         leaderHealthFraction = 1.0f;   // wounds walk in with him
-    // A leader STATED directly instead of derived from a row: the PLAYER.
-    // His hp ceiling and damage-per-second come from the very numbers his
-    // subworld body fights with (his sheet's own ceilings — the Pools his
-    // squad carries — and the hand_strike_fields swing at its own recovery
-    // tempo, the S14 door) — the same-game guarantee, extended to the
-    // resolver. Both < 0 (the default) means "derive from the row" as
-    // every NPC leader does.
-    float         leaderHpOverride  = -1.0f;
-    float         leaderDpsOverride = -1.0f;
-    // ЕДИНЫЙ КОНТЕЙНЕР сквада (M-71): бой читает только область существ
-    // (creatures_range), предметная область для него не существует.
+    // ЛИДЕР ЕСТЬ НОСИТЕЛЬ АНКЕТЫ, И ОНА ЕДЕТ СЮДА ЦЕЛИКОМ (M-300). Строка
+    // даёт БАЗУ боевого листа, анкета накладывается на неё (ЗАКОН АНКЕТЫ
+    // п.4) — ровно как при воплощении тела. Здесь стояли `leaderLevel` и
+    // `leaderSeed`, и они существовали РОВНО затем, чтобы резолвер КАТАЛ
+    // лист заново: `make_character_sheet(type, level, seed)`. Для сквада,
+    // чья анкета пришла таблицей (неподвижный со строкой стола,
+    // дизайн-персонаж) или ВЫРОСЛА победами, перекат давал ДРУГОГО человека
+    // того же рода и ранга, то есть авторезолв судил не того, кого судит
+    // очный бой, — а CANON S13 требует обратного.
+    NPCType        leaderType = NPCType::Peasant;
+    CharacterSheet leaderSheet{};
+    float          leaderHealthFraction = 1.0f;  // wounds walk in with him
+    // ОДИН ЧИСЛО, КОТОРОГО МАКРОМИР НЕ ЗНАЕТ, — ЗАМАХ ИГРОКА. Его оценивает
+    // ближняя идентичность субмира (hand_strike_fields над оружием В РУКЕ, в
+    // темпе своего восстановления — дверь S14), а макро есть L1 и наверх не
+    // тянется; говорит это звонящий, который видит оба мира. < 0 (умолчание)
+    // значит «удар выводится из листа», как у всякого НПЦ-лидера.
+    //
+    // ПАРНЫЙ `leaderHpOverride` УМЕР ВМЕСТЕ С ГЕЙТОМ (M-300): потолок считался
+    // из анкеты КАЖДОМУ скваду и не читался НИКОМУ — гейт требовал ОБА
+    // оверрайда, а второй ставил ровно один сайт в игре (игрок). Замер
+    // headless-мира: 1 088 038 постановок за день, попаданий в ветку — 0.
+    // Теперь лист едет полем выше и читается всегда, а оверрайд остался один
+    // — на один вопрос, которому вправду нужен нижний мир.
+    float          leaderDpsOverride = -1.0f;
+    // ЕДИНЫЙ КОНТЕЙНЕР сквада (M-71): бой читает только область существ,
+    // предметная область для него не существует.
     const Inventory* creatures = nullptr;   // may be empty/null
     // (Поле `bonuses` умерло с `squad_bonuses` 2026-10-18: аура сквада
     //  была константой-нулём, см. некролог в macro/anketa.h.)
@@ -86,10 +98,7 @@ struct AutoBattleOutcome {
 
 namespace auto_battle_detail {
 
-// One fighter's worth, from the SAME numbers a subworld body of this row and
-// level fights with: hp × damage-per-second of the sheet-projected template.
-// The floor() mirrors emplace_body — both layers fight with integers.
-// The armour a fighter brings to a macro battle, as ONE number: physical
+// The armour a LEADER brings to a macro battle, as ONE number: physical
 // blows are what macro armies trade today, so the credit is the mean of the
 // TWO physical columns (Pierce and Blunt — Slash folded into Pierce
 // 2026-10-01, M-193). When auto-resolve learns attack types, the pairing
@@ -116,9 +125,25 @@ inline int auto_battle_armor(const Defense& d, const Skills& skills) {
 // credits — a named bias, not a disagreement of laws. The defence source is
 // the door's own for this row: npc_def().defense (macro fighters wear no
 // equipment today), assembled by the SAME body_defense the scene calls.
-inline float fighter_power(NPCType type, int level, std::uint32_t seed,
-                           float healthFraction) {
-    const CharacterSheet sheet = make_character_sheet(type, level, seed);
+//
+// ── ЛИДЕР — НОСИТЕЛЬ АНКЕТЫ, И ЛИСТ ПРИХОДИТ СНАРУЖИ (M-300) ───────────────
+// Одна сторона сквада — одно ТЕЛО с личностью, и его стоимость считается из
+// ЕГО листа: hp × урон-в-секунду листа, спроецированного на строку. `floor()`
+// зеркалит `emplace_body` — оба слоя дерутся целыми.
+//
+// ЛИСТ ПРИХОДИТ ПАРАМЕТРОМ, А НЕ КАТАЕТСЯ ЗДЕСЬ, И ЭТО ПОЛОВИНА НАРЯДА. Здесь
+// стояло `make_character_sheet(type, level, seed)`, то есть резолвер делал
+// лидеру НОВОГО человека того же рода и ранга на каждый вопрос о силе. Для
+// типового сквада число совпадало тождественно (анкета записана той же
+// формулой по тому же сиду), но для сквада, чья анкета пришла ТАБЛИЦЕЙ
+// (неподвижный со строкой стола, дизайн-персонаж) или ВЫРОСЛА победами,
+// перекат стирал всё, чем он отличался. `auto_battle_side_of` при этом
+// считал эффективный лист 1 088 038 раз за игровой день и ВЫБРАСЫВАЛ его:
+// гейт требовал ОБА оверрайда, а второй ставил ровно один сайт в игре. Это и
+// есть недовезённая половина M-282 — его свидетель проверял, что поле
+// ПОСТАВЛЕНО, и ни одна строка не утверждала, что его кто-то ЧИТАЕТ (§8 п.6).
+inline float leader_power(const CharacterSheet& sheet, NPCType type,
+                          float healthFraction, float dpsOverride) {
     const NpcTypeDef& def = npc_def(type);
     const CombatTemplate pc = project_combat(sheet, def.combat);
     // His armour is his ROW times his TRAINING — the same sentence the fought
@@ -148,31 +173,66 @@ inline float fighter_power(NPCType type, int level, std::uint32_t seed,
     // because two answers to «как бьёт НПЦ» is two laws of battle (S13).
     // Crit expectation is uncredited like the threshold branch — both need
     // the opponent, which a per-fighter scalar lacks.
-    const float dps = float(strike_mean_x2(pc.dice, pc.flatAdd, pc.multPct))
-                      * 0.5f / std::max(0.1f, pc.cooldown);
+    const float dps = dpsOverride >= 0.0f
+        ? dpsOverride
+        : float(strike_mean_x2(pc.dice, pc.flatAdd, pc.multPct))
+              * 0.5f / std::max(0.1f, pc.cooldown);
     return hp * dps;
 }
 
-// A member's sheet seed. The subworld derives member seeds from the entry
-// window (not stable across entries), so exact sheet identity across the two
-// paths does not exist to agree on — what both paths share is the ROW and the
-// LEVEL, which fix the sheet's entire point budget; the seed only shuffles
-// its allocation. Deterministic from the member's own identity so the same
-// battle re-resolved is the same battle.
-inline std::uint32_t member_seed(const CreatureRef& r) {
-    // A generic soul has no name; its ADDRESS (slot, index) stands in, so
-    // the same composition re-resolved is the same battle (the id formula
-    // for storied souls is the historical one, verbatim). Слот здесь —
-    // СТАРЫЙ КОНТЕЙНЕРНЫЙ ординал (0 = старейший): область существ растёт
-    // сверху вниз, поэтому он ВЫЧИСЛЯЕТСЯ из слота контейнера — та же
-    // композиция даёт тот же бой, что до слияния M-71.
-    const std::uint32_t creatureSlotId =
-        std::uint32_t(kMaxInventorySlots - 1 - r.slot);
-    const std::uint32_t name = r.entityId != 0
-        ? r.entityId
-        : ((creatureSlotId << 16) | (std::uint32_t(r.index) + 1u));
-    return (name * 2654435761u) ^ (std::uint32_t(r.kind) << 16)
-         ^ std::uint32_t(r.level);
+// ── ГОЛОВА РОСТЕРА — ОБЪЕКТ, И У ОБЪЕКТА АНКЕТЫ НЕТ ─────────────────────────
+// ЗАКОН ДВУХ ТАБЛИЦ (вердикт владельца 2026-10-20, дословно): «АНКЕТВ НЕ МОЖЕТ
+// БЫТЬ У ОБЪЕКТОВ … в макромире массовка просто строчки в инвентаре просто
+// циферки». Значит сила головы есть КОЛОНКИ ЕЁ СТРОКИ и ничего больше: hp,
+// две физические колонки защиты, кости с их добавкой и процентом, период
+// удара. Форма названа владельцем 2026-10-21, дословно: «сейчаа минимально
+// табилца и по ней всё идёт сразу хп там броня урон и тд то есть без ролевой
+// системы (в смысле уровней статов) … меч и магия 6 7 8 стайл апрг то есть хп
+// урон (тип урона) броня и тд».
+//
+// УРОВНЯ ЗДЕСЬ НЕТ, И ЭТО ВЕРДИКТ, А НЕ ПРОПУСК (владелец, тот же день):
+// «не мешай цену и уровень — уровень это строка уровня в таблице объектов
+// (типа тир) а стоиомтсь это стоимость для экономики (торговли или найма) …
+// никаких ветеранов пока (потом если что расширим)». То есть ТИР выражается
+// СВОЕЙ СТРОКОЙ (гоблин и гоблин-вождь — две строки, CANON S12 «контекст
+// ВЫБИРАЕТ строку и никогда не масштабирует тело»), а `soldier_level_factor`
+// есть закон ЭКОНОМИКИ — им множатся найм (`hire_price_for`) и содержание
+// (`soldier_upkeep`), и читать его в бою значило бы смешать два вопроса.
+// Колонка `level` у головы при этом ЖИВА и читается своими дверями — монетой
+// гибели (`SoldierRecord`), ценой и содержанием; просто не боем.
+//
+// ЧТО ЗДЕСЬ БЫЛО ДО M-300: `make_character_sheet(type, level, member_seed(r))`
+// на КАЖДУЮ голову, то есть анкета, выданная циферке. Она считалась без ошибки
+// и потому выглядела правдой — ровно как «конь несёт 110 кг» в M-297. Замер
+// назвал цену обеими сторонами: (1) 39 201 130 изготовленных листов за ОДИН
+// игровой день против 1 088 038 лидерских, то есть 96 % анкет мира выдавались
+// объектам; (2) сила головы зависела от АДРЕСА её слота сильнее, чем от
+// выслуги — у стражника разброс по адресу на одном уровне 976 против 254 за
+// три уровня, — потому что `member_seed` мешал в сид `(slot, index)`. Душа,
+// переехавшая в другой слот, меняла боевую силу.
+//
+// И ОТСЮДА ФОРМА ПРОХОДА: раз сила головы больше не зависит ни от адреса, ни
+// от уровня, стак из N одинаковых душ есть РОВНО N одной — значит проход идёт
+// ПО СТАКАМ, а не по душам, и зависимость от адреса стала НЕВЫРАЗИМА.
+inline float head_power(NPCType type) {
+    const NpcTypeDef& def = npc_def(type);
+    const CombatTemplate& row = def.combat;
+    // Броня — ДВЕ ФИЗИЧЕСКИЕ КОЛОНКИ СТРОКИ, средним (та же пара, что у
+    // лидера выше), но БЕЗ выучки: обучение живёт в анкете, а её у объекта
+    // нет. Пустой лист здесь был бы той же анкетой, только тихой, и он ВРЁТ
+    // — замер: `project_combat(CharacterSheet{}, row)` добавляет +10 hp от
+    // END=1 и +1 к урону КАЖДОЙ строке мира (кролик 5 → 15, жаба 3 → 13).
+    const int armour = (def.defense.armor_of(DamageType::Pierce)
+                        + def.defense.armor_of(DamageType::Blunt)) / 2;
+    const float hp = std::max(1.0f, std::floor(row.hp))
+                   * (float(armor_hp_mult_num(armour))
+                      / float(armor_hp_mult_den(armour)));
+    // НОЛЬ — ЗАКОННЫЙ ОТВЕТ: строка с `dice.n == 0` («no roll, total 0») не
+    // бьёт вовсе, и кролик со жабой честно не добавляют скваду силы. До M-300
+    // им её выдумывала добавка STR сгенерированной анкеты.
+    const float dps = float(strike_mean_x2(row.dice, row.flatAdd, row.multPct))
+                    * 0.5f / std::max(0.1f, row.cooldown);
+    return hp * dps;
 }
 
 } // namespace auto_battle_detail
@@ -180,23 +240,26 @@ inline std::uint32_t member_seed(const CreatureRef& r) {
 // The squad's strength — THE number the macro AI thinks with. Flee-or-fight
 // decisions (Inc 5) and the resolver below read the same function, so a squad
 // never runs from a fight the law says it would win: one law of strength.
+//
+// ДВА ВОПРОСА — ДВЕ ДВЕРИ (M-300): лидер есть носитель АНКЕТЫ и судится
+// СВОИМ листом; голова есть ОБЪЕКТ в инвентаре и судится КОЛОНКАМИ своей
+// строки. До этого наряда обе стороны шли одной дверью, и та каждой голове
+// анкету ИЗГОТАВЛИВАЛА.
 inline float squad_power(const AutoBattleSide& s) {
     using namespace auto_battle_detail;
-    float power;
-    if (s.leaderHpOverride >= 0.0f && s.leaderDpsOverride >= 0.0f) {
-        power = std::max(1.0f, s.leaderHpOverride)
-              * std::clamp(s.leaderHealthFraction, 0.0f, 1.0f)
-              * std::max(0.0f, s.leaderDpsOverride);
-    } else {
-        power = fighter_power(s.leaderType, s.leaderLevel, s.leaderSeed,
-                              s.leaderHealthFraction);
-    }
+    float power = leader_power(s.leaderSheet, s.leaderType,
+                               s.leaderHealthFraction, s.leaderDpsOverride);
     if (s.creatures) {
-        for (const CreatureRef r : creatures_range(*s.creatures)) {
-            if (!valid_npc_kind(r.kind)) continue;
-            power += fighter_power(NPCType(r.kind),
-                                   normalize_soldier_level(r.level),
-                                   member_seed(r), 1.0f);
+        // ПО СТАКАМ, А НЕ ПО ДУШАМ (M-300) — тот же проход, что у
+        // `creatures_size` ниже. Законно это ровно потому, что `head_power`
+        // не спрашивает ни адреса, ни уровня: N одинаковых душ есть N одной.
+        for (int i = s.creatures->creature_first(); i < kMaxInventorySlots;
+             ++i) {
+            const ItemRef& r = s.creatures->slots[std::size_t(i)];
+            const std::uint16_t kind =
+                std::uint16_t(creature_of_world_row(r.def));
+            if (!valid_npc_kind(kind)) continue;
+            power += head_power(NPCType(kind)) * float(r.count);
         }
     }
     return power * std::max(0.1f, s.terrain) * std::clamp(s.fatigue, 0.1f, 1.0f);

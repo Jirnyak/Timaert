@@ -643,6 +643,14 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
         sm::strike_mean_x2(hs.dice, hs.flatAdd, hs.multPct)) * 0.5f;
     // ...over the same assembly's recovery (S14 door): the auto-resolve
     // prices the player at the exact tempo the fought fight swings at.
+    //
+    // ЭТО ЕДИНСТВЕННЫЙ ОВЕРРАЙД, ОСТАВШИЙСЯ В ИГРЕ (M-300): потолок HP теперь
+    // приезжает самой анкетой через `auto_battle_side_of` выше и читается
+    // общей дверью `leader_power`, поэтому пара «hp+dps» больше не нужна.
+    // Число игрока при этом НЕ СДВИНУЛОСЬ: прежний `leaderHpOverride` и был
+    // `body_max_hp(eff, combat)`, а та дверь есть `floor(project_combat(…).hp)`
+    // — ровно то, что общая дверь и считает; а строка `Adventurer` несёт
+    // нулевую защиту, так что множитель брони-как-эффективных-HP у него 1.
     s.leaderDpsOverride =
         swing / sm::seconds_from_steps(std::uint32_t(hs.recoverySteps));
     return s;

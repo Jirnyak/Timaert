@@ -334,7 +334,7 @@ void test_the_third_currency_accrues() {
 
 // ── An NPC hits with his SHEET (CANON S13/S14, session Е 2026-09-19) ─────
 // The largest «игрок == НПЦ» asymmetry: both consumers (spawn's
-// combat_from_sheet and auto_battle's fighter_power) hardcoded multPct 100,
+// combat_from_sheet and auto_battle's leader_power) hardcoded multPct 100,
 // so the points the generator spent into weapon skills and schools
 // multiplied nothing. One door now — project_combat.multPct, the
 // best-trained skill of the attack's domain — and both ends read it.
