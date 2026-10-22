@@ -112,7 +112,8 @@ MacroHandle make_npc(MacroStore& st, NPCType type,
     const std::uint32_t ordinal = h.id;
 
     ecs::MacroNpcRuntime rt{};
-    rt.homeSettlementId   = homeId;   // ONE subject-ordinal space (M-37); 0 = без дома
+    // (Дом здесь больше не колонка: ребро Parent ставится ниже, после
+    // заселения runtime, — дверь set_relation резолвит оба конца стором.)
     // ЛЕТУН (v93): кэш колонки строки по образцу travelRank — try_move
     // читает per-think, лукап строки там не нужен.
     rt.flying             = def.combat.cruiseM > 0.0f ? 1 : 0;
@@ -149,6 +150,9 @@ MacroHandle make_npc(MacroStore& st, NPCType type,
     pools.sp = pools.maxSp;   // born rested
     st.pools[h.slot]   = pools;
     st.runtime[h.slot] = rt;
+    // ДОМ = РОДИТЕЛЬ (M-245): ребро Parent одной дверью, оба конца разом;
+    // homeId ≤ 0 дверь отвергает сама — бездомный рождается без ребра.
+    set_relation(st, int(ordinal), homeId, Stance::Parent);
 
     // АНКЕТА ПО-ММОРПГ (владелец 2026-09-25, CANON): у КАЖДОГО сквада своя
     // анкета-данные, рождённая из шаблона; опыт и уровень идут в неё. Формула
@@ -551,7 +555,7 @@ MacroHandle spawn_squad(GameState& gs, MacroStore& store,
     // дороге (измерено, [death-1299] сид 7). «Земля решает» остаётся
     // правилом БЕЗДОМНЫХ и контекстных спавнов.
     const MacroHandle home = place_handle_by_ordinal(
-        store, std::uint32_t(spec.homeSettlementId));
+        store, std::uint32_t(spec.parentId));
     const std::uint16_t f = spec.factionIndex >= 0
         ? std::uint16_t(spec.factionIndex)
         : store.valid(home)
@@ -560,7 +564,7 @@ MacroHandle spawn_squad(GameState& gs, MacroStore& store,
 
     const MacroHandle leader =
         make_npc(store, spec.leaderType, f, p.x, p.y, gs.mapW,
-                 spec.homeSettlementId, rng,
+                 spec.parentId, rng,
                  spec.leaderLevel);
     if (!store.valid(leader)) return {};
 

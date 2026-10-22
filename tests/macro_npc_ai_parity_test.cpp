@@ -67,7 +67,6 @@ sm::MacroHandle spawn_ai(sm::MacroStore& st,
     st.kind[h.slot] = sm::ecs::NPCKind{std::uint16_t(type), std::uint16_t{0}};
 
     sm::ecs::MacroNpcRuntime rt{};
-    rt.homeSettlementId = homeId;
     rt.targetSettlementId = 0;
     rt.targetX = x;
     rt.targetY = y;
@@ -77,6 +76,8 @@ sm::MacroHandle spawn_ai(sm::MacroStore& st,
     rt.visualSpeed = 0.0f;
     rt.tickAccum = 0.0f;
     st.runtime[h.slot] = rt;
+    // ДОМ = РОДИТЕЛЬ (M-245): ребро Parent той же дверью, что у рождения.
+    sm::set_relation(st, int(h.id), homeId, sm::Stance::Parent);
     // The body's three bars live in one block since the pools landing; the
     // legs' bar is filled here beside the wound, not in the march runtime.
     sm::ecs::Pools pools{};

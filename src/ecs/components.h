@@ -439,7 +439,8 @@ struct LightEmitter {
 // homeIsVillage register bit died with the second id space it existed to
 // disambiguate.
 struct MacroNpcRuntime {
-    std::int32_t  homeSettlementId;
+    // (`homeSettlementId` умерла 2026-10-22, M-245: ДОМ = РОДИТЕЛЬ, ребро
+    //  Parent реестра связей; читается дверью `parent_of@src/macro/store.h`.)
     std::int32_t  targetSettlementId;
     // РЕЙС, СТАНЦИЯ ЗА СТАНЦИЕЙ (владелец 2026-08-30: «решает с того рынка,
     // на котором стоит — никакого всеведения»).
@@ -661,8 +662,10 @@ struct MacroNpcRuntime {
 //   ДУМКИ, которому выдали хранилище, а вместе с хранилищем немой кламп по его
 //   ширине. Названных байт 2, освободилось 4: вторые два добрала дыра
 //   выравнивания, стоявшая за `int16` перед `float moveBudget`.
-static_assert(sizeof(MacroNpcRuntime) == 72,
-              "рантайм марша: 72 Б × 16384 сквадов = 1.13 МиБ (AGENTS п.10)");
+//   72 → 68 (2026-10-22, M-245): ушла `homeSettlementId` (4 Б) — дом стал
+//   ребром Parent реестра связей, второй носитель одного вопроса умер.
+static_assert(sizeof(MacroNpcRuntime) == 68,
+              "рантайм марша: 68 Б × 16384 сквадов = 1.06 МиБ (AGENTS п.10)");
 
 // Deterministic spawn ordinal for a persistent macro NPC (Inc 5e-2), assigned
 // in creation order (0,1,2,…) by the SOLE creation path (make_npc) — the one

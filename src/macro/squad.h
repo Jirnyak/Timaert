@@ -452,7 +452,7 @@ inline void shift_home_flock(GameState& gs, const MacroStore& st,
 inline int flock_left_home(GameState& gs, const MacroStore& st,
                            std::uint16_t slot, int folkBefore) {
     const int lost = folkBefore - count_human_souls(st.inventory[slot].inv);
-    shift_home_flock(gs, st, st.runtime[slot].homeSettlementId, -lost);
+    shift_home_flock(gs, st, parent_of(st, slot), -lost);
     return lost;
 }
 
@@ -488,8 +488,7 @@ inline int kill_fallen_squad_creatures(MacroStore& st, GameState& gs,
         // Душа вышла из мира своего дома — число паствы обязано упасть.
         // Списывается ВСЁ, а не разница «до и после»: отказа у смерти нет,
         // поэтому намерение и факт здесь — одно и то же.
-        shift_home_flock(gs, st, st.runtime[sw.slot].homeSettlementId,
-                         -homeSouls);
+        shift_home_flock(gs, st, parent_of(st, sw.slot), -homeSouls);
     }
     // ОДИН ДОКЛАД НА ПРОХОД, А НЕ НА СКВАД: ведомость склада душ отвечает на
     // «сколько мир потерял», и дробить это по трупам значило бы заводить
@@ -589,7 +588,7 @@ inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
         // поэтому остаётся ровно одна душа, и списывается она ровно раз: слот
         // умирает в этой строке и второй раз сюда не придёт.
         if (is_folk_kind(st.kind[slot].type)) {
-            shift_home_flock(gs, st, st.runtime[slot].homeSettlementId, -1);
+            shift_home_flock(gs, st, parent_of(st, slot), -1);
         }
         // 6.3: сквад ЕСТЬ слот store — смерть слота и есть вся смерть.
         store_death(st, handle_at(st, slot));
@@ -769,91 +768,9 @@ inline void refresh_squad_body(MacroStore& st, MacroHandle h) {
                             squad_row_type(st, h.slot), &bt);
 }
 
-// ── ФЕОДАЛЬНОЕ РЕБРО — ОДНА ДВЕРЬ НА ОБА КОНЦА (владелец, 2026-09-21;
-// переехало из state.h флипом M-90: знание роли живёт в interests ТЕЛА) ───
-// CANON S24 требует, чтобы узел знал И сюзерена, И прямых подчинённых.
-// Концы ставятся ОДНИМ вызовом и снимаются одним; старого сюзерена дверь
-// снимает САМА: у места ровно один сюзерен, и смена его без снятия прежнего
-// оставила бы вассала, платящего двоим.
-inline int suzerain_of(const MacroStore& st, std::uint16_t slot) {
-    const Interests& in = st.interests[slot];
-    for (int i = 0; i < kMaxInterests; ++i) {
-        const Interest& it = in.slots[i];
-        if (it.stance == std::uint8_t(Stance::None)) break;
-        if (it.stance == std::uint8_t(Stance::Suzerain)) return it.object;
-    }
-    return 0;
-}
-
-// СРОК И СИЛА — ДЕФОЛТНЫЕ, И ЭТО СТРОЙКА, А НЕ СИРОТА (M-252, 2026-10-12):
-// оба сегодня идут нулём у всех прод-звонящих, то есть феод бессрочен и без
-// веса. Снести их как «колонки без читателя» пробовали тем же днём и вернули
-// — они две из четырёх колонок формы, согласованной с владельцем построчно
-// 2026-09-21 (разбор у `Interest@src/macro/interests.h`).
-inline void set_suzerain(GameState& gs, MacroStore& st, int vassalId,
-                         int suzerainId, int value = 0, int term = 0) {
-    const MacroHandle vh = place_handle_by_ordinal(st, std::uint32_t(vassalId));
-    if (!st.valid(vh) || vassalId == suzerainId) return;
-    Interests& vin = st.interests[vh.slot];
-    // Прежний сюзерен теряет этого вассала — с обоих концов; вместе со
-    // ЗНАНИЕМ роли умирает и ЛЕТОПИСЬ ДОЛГА (ребро рода 6): непогашенная
-    // дань прощается сменой феода, второго носителя долга не существует.
-    for (int i = 0; i < kMaxInterests; ++i) {
-        Interest& it = vin.slots[i];
-        if (it.stance == std::uint8_t(Stance::None)) break;
-        if (it.stance != std::uint8_t(Stance::Suzerain)) continue;
-        const MacroHandle oh = place_handle_by_ordinal(st,
-                                                       std::uint32_t(it.object));
-        if (st.valid(oh)) {
-            interest_clear(st.interests[oh.slot], vassalId);
-            tithe_edge_remove(gs.factions,
-                              std::int16_t(st.kind[oh.slot].factionIdx),
-                              vassalId);
-        }
-        interest_clear(vin, it.object);
-        break;                     // сюзерен у места ровно один
-    }
-    if (suzerainId <= 0) return;   // «стал ничьим» — это и есть весь вызов
-    const MacroHandle sh = place_handle_by_ordinal(st,
-                                                   std::uint32_t(suzerainId));
-    if (!st.valid(sh)) return;     // висячего ребра не заводим
-    interest_set(vin, suzerainId, Stance::Suzerain, value, term);
-    interest_set(st.interests[sh.slot], vassalId, Stance::Vassal,
-                 value, term);
-    // ОДНА ДВЕРЬ ПИШЕТ ОБА НОСИТЕЛЯ: знание роли — в интересы (род 2),
-    // летопись долга — ребром в строку фракции СЮЗЕРЕНА (род 6).
-    tithe_edge_add(gs.factions,
-                   std::int16_t(st.kind[sh.slot].factionIdx), vassalId,
-                   suzerainId);
-}
-
-// ФЕОДАЛЬНОЕ РЕБРО ЭТОГО ВАССАЛА (род 6, v121): долг живёт в строке фракции
-// СЮЗЕРЕНА — путь к нему идёт через знание роли (suzerain_of, род 2), сами
-// носители врозь и отвечают на разные вопросы.
-inline TitheEdge* tithe_edge_of(GameState& gs, const MacroStore& st,
-                                std::uint16_t vassalSlot) {
-    const MacroHandle sh = place_handle_by_ordinal(
-        st, std::uint32_t(suzerain_of(st, vassalSlot)));
-    return st.valid(sh)
-        ? tithe_edge(gs.factions,
-                     std::int16_t(st.kind[sh.slot].factionIdx),
-                     int(st.spawnId[vassalSlot].index))
-        : nullptr;
-}
-inline const TitheEdge* tithe_edge_of(const GameState& gs,
-                                      const MacroStore& st,
-                                      std::uint16_t vassalSlot) {
-    return tithe_edge_of(const_cast<GameState&>(gs), st, vassalSlot);
-}
-
-// ДОЛЖЕН ЛИ ЭТОТ ВАССАЛ ХОТЬ ЧТО-НИБУДЬ. Долг ребра — он же ведомость
-// «с кого собрано»: собранный вассал отвечает «нет» по построению, и второго
-// признака («посещён в этом сезоне») в мире не заводится (S26).
-inline bool owes_tithe(const GameState& gs, const MacroStore& st,
-                       std::uint16_t vassalSlot) {
-    const TitheEdge* e = tithe_edge_of(gs, st, vassalSlot);
-    return e && e->owedValue > 0;
-}
+// (Двери связи — suzerain_of / parent_of / set_relation / tithe_of /
+// owes_tithe — живут у эмитента идентичности, `store.h`: рождение места
+// ставит себе self-ребро Parent той же дверью, не включая этот заголовок.)
 
 // ── STANDING, FOR ANY MACRO PARTICIPANT (CANON S20.1) ─────────────────────
 //
@@ -1461,15 +1378,14 @@ inline void record_battle_facts(MacroStore& st, GameState& gs,
     const auto bereave = [&](MacroHandle side, MacroHandle foe,
                              std::int32_t dead) {
         if (dead <= 0 || !st.valid(side)) return;
-        const ecs::MacroNpcRuntime& srt = st.runtime[side.slot];
-        if (!st.valid(place_handle_by_ordinal(
-                st, std::uint32_t(srt.homeSettlementId))))
+        const int homeId = parent_of(st, side.slot);   // дом = родитель (M-245)
+        if (!st.valid(place_handle_by_ordinal(st, std::uint32_t(homeId))))
             return;   // the homeless bereave nobody — Killed already spoke
         WorldFact f{};
         f.day = gs.worldTime.day();
         f.kind = std::uint16_t(FactKind::Died);
         f.subjectKind = std::uint8_t(FactSubject::Landmark);
-        f.subject = std::uint32_t(srt.homeSettlementId);
+        f.subject = std::uint32_t(homeId);
         const std::uint32_t foeOrd =
             st.valid(foe) ? st.spawnId[foe.slot].index : 0u;
         if (foeOrd != 0u

@@ -205,7 +205,7 @@ void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
         // ОДНА ДВЕРЬ НА ОБА КОНЦА (S24): столица тем же вызовом получает
         // свою запись Vassal, поэтому «кто мои вассалы» не требует ни
         // второго индекса, ни его пересборки.
-        set_suzerain(gs, st, cr.id, (cap == cr.id) ? 0 : cap);
+        set_relation(st, cr.id, (cap == cr.id) ? 0 : cap, Stance::Suzerain);
     }
 
     // ── Villages: the settlement FIELD decides (owner 2026-08-31,
@@ -337,7 +337,8 @@ void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
             seed_landmark_inventory(
                 st.inventory[vslot].inv, vilSouls,
                 landmark_def(SquadType(st.runtime[vslot].squadType)));
-            set_suzerain(gs, st, int(st.spawnId[vslot].index), suzerainId);
+            set_relation(st, int(st.spawnId[vslot].index), suzerainId,
+                         Stance::Suzerain);
         }
     }
 }

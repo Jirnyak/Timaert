@@ -135,16 +135,18 @@ void tithe_daily_(GameState& gs, MacroStore& st, int day) {
     FactionState& f = gs.factions;
     const int season = day / kDaysPerSeason;
     const bool assess = season_boundary(day)
-                     && f.fiefSeasonAssessed != season;
-    if (assess) f.fiefSeasonAssessed = season;
-    for (int i = 0; i < f.fiefTotal; ++i) {
-        TitheEdge& e = f.fief[i];
-        const MacroHandle v = place_handle_by_ordinal(st,
-                                                      std::uint32_t(e.vassal));
-        if (!st.valid(v)) continue;   // вассал умер — ребро снимет смена феода
-        memory_track(e.avgValue,
-                     inventory_value(st.inventory[v.slot].inv));
-        if (assess) e.owedValue += memory_value(e.avgValue) >> 3;
+                     && f.titheSeasonAssessed != season;
+    if (assess) f.titheSeasonAssessed = season;
+    // Долг и память — НА РЕБРЕ Suzerain самого вассала (M-245; пул рода 6
+    // умер). Проход капом, а не населением (ЗАКОН СТАБИЛЬНОСТИ) — тот же
+    // закон, что у тика сроков выше.
+    for (std::uint32_t slot = 0; slot < kUnifiedCap; ++slot) {
+        if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
+        Interest* e = tithe_of(st, std::uint16_t(slot));
+        if (!e) continue;
+        memory_track(e->avgValue,
+                     inventory_value(st.inventory[slot].inv));
+        if (assess) e->owedValue += memory_value(e->avgValue) >> 3;
     }
 }
 

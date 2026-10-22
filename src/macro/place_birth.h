@@ -43,12 +43,14 @@ inline MacroHandle birth_place(GameState& gs, MacroStore& st, SquadType kind,
                      sizeof st.name[h.slot].text - 1);
     st.sheet[h.slot]   = landmark_sheet(kind);
     ecs::MacroNpcRuntime rt{};            // pools — НУЛЯМИ (CANON S6)
-    rt.homeSettlementId = id;             // дом места — оно само
     rt.targetX   = float(x);
     rt.targetY   = float(y);
     rt.state     = std::uint8_t(NPCState::Idle);
     rt.squadType = std::uint8_t(kind);
     st.runtime[h.slot] = rt;
+    // ДОМ МЕСТА — ОНО САМО: self-ребро Parent одной записью (M-245), той же
+    // дверью, что у всякого рождения.
+    set_relation(st, id, id, Stance::Parent);
     ++gs.navEpoch;                        // событие состава (закон add_landmark)
     return h;
 }

@@ -232,7 +232,7 @@ struct MacroStore {
 // 713 572 368 → 713 506 832, то есть **−65 536 Б = −64 КиБ**. И здесь цена
 // снова отрицательная вдвойне: ушли и байты, и НЕМОЙ КЛАМП по ширине колонки,
 // обрезавший цену марша в продакшене (2 попадания, в худшем 64 489 → 32 767).
-static_assert(sizeof(MacroStore) == 713506832ull,    // кап 16384; M-244a: −10 Б/слот (MacroVisual 12 умер, доля CellSub 2 родилась) — 712 884 240 → 712 720 400
+static_assert(sizeof(MacroStore) == 746995728ull,    // кап 16384; M-245: +2044 Б/слот (ребро Interest 8 → 24 Б — долг и память дани НА РЕБРЕ; runtime 72 → 68) — 713 506 832 → 746 995 728 (680.5 → 712.4 МиБ, цена названа в M-245 до кода)
               "гладкая память макромира: новая колонка = новая цена, "
               "названная вслух (AGENTS п.10)");
 
@@ -464,6 +464,20 @@ inline MacroHandle macro_handle_by_spawn_id(const MacroStore& s,
 // компакция на рождении, когда справочник полон.
 inline void store_death(MacroStore& s, MacroHandle h) {
     if (!s.valid(h)) return;   // двойная смерть — no-op, не порча freelist
+    // РЁБРА УМИРАЮТ СО СКВАДОМ (M-245): контрагенты теряют свой конец ЗДЕСЬ,
+    // в единственной двери смерти, — иначе дом копит Child-рёбра умерших
+    // артелей до потолка реестра (128), и место для живых кончается молча.
+    // Свой реестр не трётся — его, как все колонки, обнулит следующее
+    // рождение; читать мёртвый слот запрещает valid()-гарда.
+    for (int i = 0; i < kMaxInterests; ++i) {
+        const Interest& it = s.interests[h.slot].slots[i];
+        if (it.stance == std::uint8_t(Stance::None)) break;
+        const MacroHandle oh = macro_handle_by_spawn_id(
+            s, std::uint32_t(it.object));
+        if (s.valid(oh) && oh.slot != h.slot)
+            interest_clear(s.interests[oh.slot],
+                           int(s.spawnId[h.slot].index));
+    }
     s.alive[h.slot] = 0;
     s.freeSlots[s.freeCount++] = h.slot;
     --s.aliveCount;
@@ -474,6 +488,92 @@ inline void store_death(MacroStore& s, MacroHandle h) {
 // для дверей squad.h. Слот обязан быть жив — это дверь обхода, не поиска.
 inline MacroHandle handle_at(const MacroStore& s, std::uint16_t slot) {
     return MacroHandle{slot, s.spawnId[slot].index};
+}
+
+// ── СВЯЗЬ — ОДНА ДВЕРЬ НА ОБА КОНЦА (владелец, 2026-09-21; M-245: ось
+// одна, пары две — Parent/Child и Suzerain/Vassal; долг дани НА РЕБРЕ) ────
+// CANON S24 требует, чтобы узел знал И сюзерена, И прямых подчинённых; тот
+// же закон держит родительскую пару: ребёнок знает дом, дом знает детей.
+// Концы ставятся ОДНИМ вызовом и снимаются одним; прежнего носителя той же
+// роли дверь снимает САМА: и сюзерен, и родитель у субъекта ровно один.
+inline int suzerain_of(const MacroStore& st, std::uint16_t slot) {
+    return relation_of(st.interests[slot], Stance::Suzerain);
+}
+
+// ДОМ = РОДИТЕЛЬ (M-245, вердикт владельца: «дом НЕ отдельная колонка, дом =
+// родитель»). Колонка `homeSettlementId` умерла в это ребро; у места дом —
+// оно само (self-ребро Parent, поставленное рождением места).
+inline int parent_of(const MacroStore& st, std::uint16_t slot) {
+    return relation_of(st.interests[slot], Stance::Parent);
+}
+
+// СРОК И СИЛА — ДЕФОЛТНЫЕ, И ЭТО СТРОЙКА, А НЕ СИРОТА (M-252, 2026-10-12):
+// оба сегодня идут нулём у всех прод-звонящих, то есть связь бессрочна и без
+// веса. Снести их как «колонки без читателя» пробовали тем днём и вернули —
+// они две из четырёх колонок формы, согласованной с владельцем построчно
+// 2026-09-21 (разбор у `Interest@src/macro/interests.h`).
+//
+// РОЛЬ ЗОВЁТСЯ С НИЖНЕГО КОНЦА: subject получает `role` (Suzerain | Parent),
+// контрагент — зеркало (Vassal | Child). SELF-СВЯЗЬ законна ТОЛЬКО у Parent
+// (место — дом себе) и ставится ОДНОЙ записью без зеркала: «одна запись на
+// пару субъектов» — часть формы (interest_find ищет по object).
+inline void set_relation(MacroStore& st, int subjectId, int otherId,
+                         Stance role, int value = 0, int term = 0) {
+    if (role != Stance::Suzerain && role != Stance::Parent) return;
+    const Stance mirror = role == Stance::Suzerain ? Stance::Vassal
+                                                   : Stance::Child;
+    const MacroHandle vh = macro_handle_by_spawn_id(st,
+                                                    std::uint32_t(subjectId));
+    if (!st.valid(vh)) return;
+    if (subjectId == otherId && role != Stance::Parent) return;
+    Interests& vin = st.interests[vh.slot];
+    // Прежний носитель той же роли теряет этот конец — с обеих сторон;
+    // вместе со ЗНАНИЕМ роли умирает и ДОЛГ НА РЕБРЕ: непогашенная дань
+    // прощается сменой феода, второго носителя долга не существует.
+    for (int i = 0; i < kMaxInterests; ++i) {
+        Interest& it = vin.slots[i];
+        if (it.stance == std::uint8_t(Stance::None)) break;
+        if (it.stance != std::uint8_t(role)) continue;
+        const MacroHandle oh = macro_handle_by_spawn_id(
+            st, std::uint32_t(it.object));
+        if (st.valid(oh) && oh.slot != vh.slot)
+            interest_clear(st.interests[oh.slot], subjectId);
+        interest_clear(vin, it.object);
+        break;                     // носитель роли у субъекта ровно один
+    }
+    if (otherId <= 0) return;      // «стал ничьим» — это и есть весь вызов
+    const MacroHandle sh = macro_handle_by_spawn_id(st,
+                                                    std::uint32_t(otherId));
+    if (!st.valid(sh)) return;     // висячего ребра не заводим
+    interest_set(vin, otherId, role, value, term);
+    if (sh.slot != vh.slot)        // self-ребро Parent зеркала не имеет
+        interest_set(st.interests[sh.slot], subjectId, mirror, value, term);
+}
+
+// РЕБРО ДАНИ ЭТОГО ВАССАЛА — ЕГО ЖЕ ЗАПИСЬ Suzerain (M-245: долг и память
+// переехали НА РЕБРО; пул `TitheEdge` рода 6 умер). Резолва сюзерена вопрос
+// долга больше не требует: и склад, с которого начисляют, и спина, с
+// которой взыскивают, — вассала, значит и ребро — в его реестре.
+inline Interest* tithe_of(MacroStore& st, std::uint16_t vassalSlot) {
+    Interests& in = st.interests[vassalSlot];
+    for (int i = 0; i < kMaxInterests; ++i) {
+        Interest& it = in.slots[i];
+        if (it.stance == std::uint8_t(Stance::None)) break;
+        if (it.stance == std::uint8_t(Stance::Suzerain)) return &it;
+    }
+    return nullptr;
+}
+inline const Interest* tithe_of(const MacroStore& st,
+                                std::uint16_t vassalSlot) {
+    return tithe_of(const_cast<MacroStore&>(st), vassalSlot);
+}
+
+// ДОЛЖЕН ЛИ ЭТОТ ВАССАЛ ХОТЬ ЧТО-НИБУДЬ. Долг ребра — он же ведомость
+// «с кого собрано»: собранный вассал отвечает «нет» по построению, и второго
+// признака («посещён в этом сезоне») в мире не заводится (S26).
+inline bool owes_tithe(const MacroStore& st, std::uint16_t vassalSlot) {
+    const Interest* e = tithe_of(st, vassalSlot);
+    return e && e->owedValue > 0;
 }
 
 // СЕЛЕКТОР КОЛОНКИ ПО ТИПУ (жилец, не мост): тип выбирает массив, ошибиться

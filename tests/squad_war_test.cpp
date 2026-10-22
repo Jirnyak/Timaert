@@ -63,7 +63,6 @@ sm::MacroHandle make_squad_at(sm::MacroStore& st, NPCType type,
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(type),
                                    std::uint16_t(faction_index(faction))};
     ecs::MacroNpcRuntime rt{};
-    rt.homeSettlementId = 0;
     rt.targetSettlementId = 0;
     rt.targetX = x;
     rt.targetY = y;

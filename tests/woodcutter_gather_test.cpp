@@ -63,7 +63,6 @@ sm::MacroHandle make_woodcutter(sm::MacroStore& st, float x, float y,
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime rt{};
-    rt.homeSettlementId = homeVillageId;
     rt.targetSettlementId = 0;
     rt.targetX = x;
     rt.targetY = y;
@@ -81,6 +80,7 @@ sm::MacroHandle make_woodcutter(sm::MacroStore& st, float x, float y,
     st.runtime[h.slot] = rt;
     sm::store_rename_ordinal(st, h, 11u);
     h = sm::handle_at(st, h.slot);
+    sm::set_relation(st, int(h.id), homeVillageId, sm::Stance::Parent);
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(
         NPCType::Peasant, 3, leader_sheet_seed(st.spawnId[h.slot].index));
@@ -194,7 +194,6 @@ void test_the_farmer_works_the_field() {
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime prt{};
-    prt.homeSettlementId = int(st.spawnId[vil.slot].index);
     prt.targetSettlementId = 0;
     prt.targetX = 10.0f;
     prt.targetY = 10.0f;
@@ -210,6 +209,8 @@ void test_the_farmer_works_the_field() {
     st.runtime[h.slot] = prt;
     sm::store_rename_ordinal(st, h, 12u);
     h = sm::handle_at(st, h.slot);
+    sm::set_relation(st, int(h.id), int(st.spawnId[vil.slot].index),
+                     sm::Stance::Parent);
     e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(
@@ -272,7 +273,6 @@ void test_farmer_without_terrain_conjures_nothing() {
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime prt{};
-    prt.homeSettlementId = int(st.spawnId[vil.slot].index);
     prt.targetSettlementId = 0;
     prt.targetX = 10.0f;
     prt.targetY = 10.0f;
@@ -288,6 +288,8 @@ void test_farmer_without_terrain_conjures_nothing() {
     st.runtime[h.slot] = prt;
     sm::store_rename_ordinal(st, h, 12u);
     h = sm::handle_at(st, h.slot);
+    sm::set_relation(st, int(h.id), int(st.spawnId[vil.slot].index),
+                     sm::Stance::Parent);
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(
         NPCType::Peasant, 2, leader_sheet_seed(st.spawnId[h.slot].index));
@@ -366,7 +368,6 @@ void test_the_mine_runs_while_the_player_is_away() {
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime rt{};
-    rt.homeSettlementId = int(st.spawnId[vil.slot].index);
     rt.targetSettlementId = 0;
     rt.targetX = 10.0f;
     rt.targetY = 10.0f;
@@ -382,6 +383,8 @@ void test_the_mine_runs_while_the_player_is_away() {
     st.runtime[h.slot] = rt;
     sm::store_rename_ordinal(st, h, 13u);
     h = sm::handle_at(st, h.slot);
+    sm::set_relation(st, int(h.id), int(st.spawnId[vil.slot].index),
+                     sm::Stance::Parent);
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(
         NPCType::Peasant, 3, leader_sheet_seed(st.spawnId[h.slot].index));
@@ -480,7 +483,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime crt{};
-    crt.homeSettlementId = vilId;   // the VILLAGE: vendors are its arm
+    // Дом (деревня) — ребро Parent, ставится после пина ординала (M-245).
     // РЫНОК — ИЗ ПОРУЧЕНИЯ (2026-09-19): рейс к рынку читает errandObject,
     // а не феодальное ребро, — потому что тем же рейсом горожане едут
     // закупаться В ДЕРЕВНЮ. Фикстура называет рынок так же, как его назвал
@@ -500,6 +503,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     st.runtime[h.slot] = crt;
     sm::store_rename_ordinal(st, h, 13u);
     h = sm::handle_at(st, h.slot);
+    sm::set_relation(st, int(h.id), vilId, sm::Stance::Parent);
     e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(
@@ -606,7 +610,6 @@ void test_the_miner_works_the_vein() {
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime rt{};
-    rt.homeSettlementId = vilId;
     rt.targetSettlementId = 0;
     rt.targetX = 10.0f;
     rt.targetY = 10.0f;
@@ -622,6 +625,7 @@ void test_the_miner_works_the_vein() {
     st.runtime[h.slot] = rt;
     sm::store_rename_ordinal(st, h, 13u);
     h = sm::handle_at(st, h.slot);
+    sm::set_relation(st, int(h.id), vilId, sm::Stance::Parent);
     e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(
@@ -769,7 +773,6 @@ void test_the_catch_lands_as_creatures() {
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime prt{};
-    prt.homeSettlementId = int(st.spawnId[vil.slot].index);
     prt.targetSettlementId = 0;
     prt.targetX = 10.0f;
     prt.targetY = 10.0f;
@@ -788,6 +791,8 @@ void test_the_catch_lands_as_creatures() {
     st.runtime[h.slot] = prt;
     sm::store_rename_ordinal(st, h, 77u);
     h = sm::handle_at(st, h.slot);
+    sm::set_relation(st, int(h.id), int(st.spawnId[vil.slot].index),
+                     sm::Stance::Parent);
     e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(

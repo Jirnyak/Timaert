@@ -19,15 +19,9 @@
 // сквадов»). Ребро несёт ЛЕТОПИСЬ ДОЛГА; а «кого Я считаю феодалом» — роль,
 // колонка строки СКВАДА (реестр интересов, род 2): два разных вопроса.
 //
-// ФОРМА ПУЛА — КАНОНИЧЕСКИЙ COUNTING-SORT (ЗАКОН КЛЕТОЧНОГО КАРКАСА п.2,
-// одобрено владельцем: «и это в системе фракций и на каждую фракцию по
-// такому? хорошо давай попробуем»): ОДИН пул рёбер мира, сгруппированный по
-// (фракция, ординал вассала); строка фракции владеет ОТРЕЗКОМ [fiefStart,
-// fiefStart+fiefCount). Капа «рёбер на фракцию» НЕ СУЩЕСТВУЕТ как числа —
-// фракции делят общий выведенный потолок, перекос компенсируется.
+// (Counting-sort-пул рёбер, живший здесь с v121, умер 2026-10-22 вместе с
+// `TitheEdge`, M-245: долг — на ребре Suzerain вассала, род 2.)
 #pragma once
-#include "core/caps.h"           // kUnifiedCap — кап пула рёбер по построению
-#include "macro/memory.h"        // WorldMemory — память склада вассала
 #include "tables/faction.h"      // kMaxFactions, kFactionDefs, шкала отношений
 
 #include <cstdint>
@@ -44,31 +38,11 @@ namespace sm {
 using FactionSlot = int;
 inline constexpr FactionSlot kNoFactionSlot = -1;
 
-// ── ФЕОДАЛЬНОЕ РЕБРО — «КТО СКОЛЬКО КОМУ ДОЛЖЕН» ────────────────────────
-// Одно ребро на вассала: сюзерен у сквада РОВНО ОДИН (вердикт владельца
-// 2026-09-30 «сюзерен один»; та же аксиома, что держит дверь set_suzerain),
-// значит рёбер в мире ≤ субъектов — кап пула ВЫВЕДЕН, а не назначен.
-// Вассалов у сюзерена — сколько угодно: веер ограничен только числом
-// субъектов («сотни городов в стране» работают по построению).
-struct TitheEdge {
-    std::int32_t vassal = 0;    // субъектный ординал; 0 = пустой слот
-                                //   (закон нуля-ординала)
-    std::int32_t suzerain = 0;  // субъектный ординал получателя дани
-    // Долг СТОИМОСТЬЮ — закон v108 живёт: «всё в инвентаре — товар», долг
-    // одним числом, платится по нужде дома → по плотности.
-    std::int64_t owedValue = 0;
-    // База начисления — среднее стоимости склада вассала за сезон
-    // (macro/memory.h, значение × горизонт; закон v74/v104 живёт).
-    WorldMemory avgValue = 0;
-};
-static_assert(sizeof(TitheEdge) == 24,
-              "ребро = 2 ординала (8) + долг (8) + память (8)");
-
-// Кап пула = ЕДИНЫЙ кап макро-субъектов ПО ПОСТРОЕНИЮ
-// (`kUnifiedCap@src/core/caps.h`): ребро на вассала («сюзерен один»), рёбер
-// больше, чем субъектов, не бывает. Замер 2026-09-30, 4 сида: живых рёбер
-// ~2000 (12 % пула при капе 16384), худшая фракция 644, худший веер 55.
-inline constexpr int kMaxTitheEdges = int(kUnifiedCap);
+// (ФЕОДАЛЬНОЕ РЕБРО `TitheEdge` И ПУЛ `fief` УМЕРЛИ 2026-10-22, M-245:
+//  долг и память дани живут НА РЕБРЕ Suzerain самого вассала —
+//  `Interest@src/macro/interests.h`, двери `tithe_of`/`owes_tithe` у
+//  эмитента идентичности. Второй носитель одной связи снесён вместе с
+//  counting-sort-пулом 393 КиБ и тремя его дверями.)
 
 // ── СТРОКА ФРАКЦИИ ───────────────────────────────────────────────────────
 struct FactionRow {
@@ -83,27 +57,19 @@ struct FactionRow {
     // симметрия — ЗАКОН: пишет только set_relation, обе строки разом.
     std::int8_t rel[kMaxFactions] = {};
     std::uint8_t used = 0;
-    // Отрезок феодальных рёбер этой фракции в общем пуле (см. шапку).
-    // Ребро лежит в строке фракции СЮЗЕРЕНА.
-    std::int32_t fiefStart = 0;
-    std::int32_t fiefCount = 0;
 };
-static_assert(sizeof(FactionRow) == 104,
-              "24 id + 4 цвет + 64 отношений + 1 клеймо + 3 паддинга + 8 отрезок");
+static_assert(sizeof(FactionRow) == 96,
+              "24 id + 4 цвет + 64 отношений + 1 клеймо + 3 паддинга");
 
 struct FactionState {
     FactionRow rows[kMaxFactions] = {};
-    // Пул рёбер, сгруппирован по (фракция, ординал вассала); внутри отрезка
-    // строки — сортировка по вассалу, бинарный поиск.
-    TitheEdge fief[kMaxTitheEdges] = {};
-    std::int32_t fiefTotal = 0;
-    // Сезон, за который начисление уже прошло (-1 = никогда): один штамп на
-    // мир, потому что граница сезона одна и проход по пулу один.
-    std::int32_t fiefSeasonAssessed = -1;
+    // Сезон, за который начисление дани уже прошло (-1 = никогда): один
+    // штамп на мир, потому что граница сезона одна и проход один
+    // (`tithe_daily_@src/macro/world_tick.cpp`).
+    std::int32_t titheSeasonAssessed = -1;
 };
-static_assert(sizeof(FactionState)
-                  == 104 * 64 + 24 * std::size_t(kMaxTitheEdges) + 8,
-              "строки (6656) + пул (786432) + счёт и штамп (8) = 793096 Б");
+static_assert(sizeof(FactionState) == 96 * 64 + 4,
+              "строки (6144) + штамп сезона (4) = 6148 Б");
 
 // ── ДВЕРИ СТРОК ──────────────────────────────────────────────────────────
 
@@ -172,66 +138,7 @@ inline void set_relation(FactionState& f, FactionSlot a, FactionSlot b,
     f.rows[b].rel[a] = std::int8_t(v);
 }
 
-// ── ДВЕРИ ФЕОДАЛЬНЫХ РЁБЕР ───────────────────────────────────────────────
-// Инвариант пула, который держат все три двери: отрезки лежат В ПОРЯДКЕ
-// ИНДЕКСА СТРОКИ (fiefStart[i] = Σ fiefCount[j<i], дыр нет), внутри отрезка
-// рёбра отсортированы по ординалу вассала. Пустой мир: все начала 0.
-
-// Ребро вассала в строке фракции (nullptr — ребра нет). Бинарный поиск по
-// отрезку — тот же закон, что landmark_by_id над монотонным эмитентом.
-inline TitheEdge* tithe_edge(FactionState& f, FactionSlot fac, int vassalId) {
-    if (fac < 0 || fac >= kMaxFactions || vassalId <= 0) return nullptr;
-    const FactionRow& r = f.rows[fac];
-    int lo = r.fiefStart, hi = r.fiefStart + r.fiefCount;
-    while (lo < hi) {
-        const int mid = lo + (hi - lo) / 2;
-        if (f.fief[mid].vassal < vassalId) lo = mid + 1;
-        else hi = mid;
-    }
-    if (lo < r.fiefStart + r.fiefCount && f.fief[lo].vassal == vassalId)
-        return &f.fief[lo];
-    return nullptr;
-}
-inline const TitheEdge* tithe_edge(const FactionState& f, FactionSlot fac,
-                                   int vassalId) {
-    return tithe_edge(const_cast<FactionState&>(f), fac, vassalId);
-}
-
-// Завести ребро (идемпотентно: существующее возвращается как есть).
-// Вставка сдвигает хвост пула и начала последующих отрезков — феод меняется
-// редко (генезис, завоевание), цена честно оплачена здесь, а не в тике.
-inline TitheEdge* tithe_edge_add(FactionState& f, FactionSlot fac,
-                                 int vassalId, int suzerainId) {
-    if (fac < 0 || fac >= kMaxFactions || vassalId <= 0 || suzerainId <= 0)
-        return nullptr;
-    if (TitheEdge* e = tithe_edge(f, fac, vassalId)) return e;
-    if (f.fiefTotal >= kMaxTitheEdges) return nullptr;   // громкий отказ выше
-    FactionRow& r = f.rows[fac];
-    // Точка вставки — конец «меньших» вассалов отрезка.
-    int pos = r.fiefStart;
-    const int end = r.fiefStart + r.fiefCount;
-    while (pos < end && f.fief[pos].vassal < vassalId) ++pos;
-    std::memmove(&f.fief[pos + 1], &f.fief[pos],
-                 std::size_t(f.fiefTotal - pos) * sizeof(TitheEdge));
-    f.fief[pos] = TitheEdge{vassalId, suzerainId, 0, 0};
-    ++f.fiefTotal;
-    ++r.fiefCount;
-    for (int i = fac + 1; i < kMaxFactions; ++i) ++f.rows[i].fiefStart;
-    return &f.fief[pos];
-}
-
-// Снять ребро (смена/потеря сюзерена). Непогашенный долг умирает вместе с
-// ребром — прощение при смене феода, второго носителя долга не заводится.
-inline void tithe_edge_remove(FactionState& f, FactionSlot fac, int vassalId) {
-    TitheEdge* e = tithe_edge(f, fac, vassalId);
-    if (!e) return;
-    const int pos = int(e - f.fief);
-    std::memmove(&f.fief[pos], &f.fief[pos + 1],
-                 std::size_t(f.fiefTotal - pos - 1) * sizeof(TitheEdge));
-    --f.fiefTotal;
-    f.fief[f.fiefTotal] = TitheEdge{};
-    --f.rows[fac].fiefCount;
-    for (int i = fac + 1; i < kMaxFactions; ++i) --f.rows[i].fiefStart;
-}
+// (Три двери пула — `tithe_edge`/`tithe_edge_add`/`tithe_edge_remove` —
+//  умерли вместе с ним, M-245; долг отвечает `tithe_of@src/macro/store.h`.)
 
 } // namespace sm

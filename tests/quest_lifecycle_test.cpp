@@ -1450,12 +1450,13 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
 
     // ВАССАЛ ГОРОДА: до ломтика F фикстура давала деревне ТОТ ЖЕ id 7, что
     // городу («Same Id»), и феодальное ребро молча не ставилось вовсе —
-    // `set_suzerain` отказывает при vassalId == suzerainId. Один эмитент
-    // (M-37) делает такой мир невыразимым, и ребро теперь ставится честно.
+    // дверь связи отказывает при self-феоде. Один эмитент (M-37) делает
+    // такой мир невыразимым, и ребро теперь ставится честно (M-245:
+    // одна дверь `set_relation`, обе пары ролей).
     const sm::MacroHandle village =
         settle_place(gs, sm::SquadType::Village, 24, 22, -1, "Hamlet", 80);
-    sm::set_suzerain(gs, places(), int(places().spawnId[village.slot].index),
-                     cityId);
+    sm::set_relation(places(), int(places().spawnId[village.slot].index),
+                     cityId, sm::Stance::Suzerain);
 
     const auto cityQuests =
         sm::generate_quests_for_settlement(city.slot, places(),

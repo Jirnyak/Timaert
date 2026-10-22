@@ -125,7 +125,6 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
         // The march caches come from the player's OWN sheet, through the same
         // door every leader's do.
         ecs::MacroNpcRuntime rt{};
-        rt.homeSettlementId = 0;
         rt.targetSettlementId = 0;
         rt.targetX = float(sx);
         rt.targetY = float(sy);

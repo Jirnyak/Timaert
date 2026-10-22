@@ -167,7 +167,6 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     a.kind = {std::uint16_t(sm::NPCType::Bandit), 3};
     a.pools = {17, 42};
     a.sheet.levelData.level = 5;   // уровень — анкета (M-246а)
-    a.runtime.homeSettlementId = 2;
     a.runtime.targetSettlementId = 4;
     a.runtime.targetX = 100.0f;
     a.runtime.targetY = 200.0f;
@@ -476,15 +475,15 @@ sm::GameState make_state(sm::MacroStore& st) {
         wb.starvedYesterday = 5;
         wb.popGrowthCarry = -0.25f;
         sm::settle_souls(gs, st, row.slot, kFixtureVillageSouls);
-        // Феод — запись реестра интересов (v107), и ставится он дверью на
-        // оба конца: сейв обязан привезти обратно ИМЕННО пару, а не
-        // половину. v121: та же дверь ведёт ЛЕТОПИСЬ ДОЛГА — ребро в строке
-        // фракции сюзерена; долг пишем на ребро и ждём его назад из блока
-        // рода 6. Интересы с v127 — колонка ТЕЛА, и едут его записью.
-        sm::set_suzerain(gs, st, /*vassalId*/kFixtureVillageId,
-                         /*suzerainId*/kFixtureCityId,
+        // Феод — запись реестра интересов, и ставится он дверью на оба
+        // конца: сейв обязан привезти обратно ИМЕННО пару, а не половину.
+        // M-245: долг и память дани живут НА РЕБРЕ Suzerain самого вассала
+        // (пул рода 6 умер) — долг пишем на ребро и ждём его назад записью
+        // ТЕЛА (интересы — колонка слота с v127).
+        sm::set_relation(st, /*subjectId*/kFixtureVillageId,
+                         /*otherId*/kFixtureCityId, sm::Stance::Suzerain,
                          /*value*/80, /*term*/0);
-        sm::tithe_edge_of(gs, st, row.slot)->owedValue = 123;
+        sm::tithe_of(st, row.slot)->owedValue = 123;
     }
 
     sm::birth_place(gs, st, sm::SquadType::Spire, 12, 34);
@@ -942,9 +941,8 @@ void run_roundtrip() {
             || a.runtime.moveBudget != want.runtime.moveBudget) {
             FAIL_BAIL("macro runtime state lost");
         }
-        if (a.runtime.homeSettlementId != want.runtime.homeSettlementId
-            || a.runtime.targetSettlementId
-                   != want.runtime.targetSettlementId) {
+        if (a.runtime.targetSettlementId
+            != want.runtime.targetSettlementId) {
             FAIL_BAIL("macro runtime errand ids lost");
         }
         if (a.runtime.stateTimer != want.runtime.stateTimer
@@ -1127,15 +1125,11 @@ void run_roundtrip() {
     const sm::MacroHandle vilLm = sm::place_handle_by_ordinal(
         loadedStore, std::uint32_t(kFixtureVillageId));
     if (loadedStore.valid(vilLm)) {
-        // v121: долг дани едет блоком рода 6 — ребро вассала обязано
-        // вернуться с тем же числом.
-        // Знание роли (интересы) приехало колонкой ТЕЛА — без него путь к
-        // ребру рода 6 не находится вовсе, так что эта проверка стережёт
-        // теперь ОБА носителя сразу.
-        const sm::TitheEdge* fe =
-            sm::tithe_edge_of(loaded, loadedStore, vilLm.slot);
+        // M-245: долг дани едет НА РЕБРЕ Suzerain вассала — записью его же
+        // ТЕЛА (род 2); ребро обязано вернуться с тем же числом.
+        const sm::Interest* fe = sm::tithe_of(loadedStore, vilLm.slot);
         if (!fe || fe->owedValue != 123) {
-            FAIL_BAIL("feudal tithe edge (род 6) lost");
+            FAIL_BAIL("tithe edge (ребро Suzerain тела) lost");
         }
         if (sm::suzerain_of(loadedStore, vilLm.slot) != kFixtureCityId) {
             FAIL_BAIL("феодальное ребро (интересы тела) lost");

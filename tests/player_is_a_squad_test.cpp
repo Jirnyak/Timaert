@@ -46,7 +46,6 @@ sm::MacroHandle npc_squad(sm::MacroStore& st, float x, float y,
     sm::store_rename_ordinal(st, h, ordinal);
     h = sm::handle_at(st, h.slot);
     ecs::MacroNpcRuntime rt{};
-    rt.homeSettlementId = 0;
     rt.targetSettlementId = 0;
     rt.targetX = x;
     rt.targetY = y;

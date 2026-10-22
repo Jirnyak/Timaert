@@ -208,7 +208,10 @@ void test_a_dungeon_has_no_second_carrier() {
     const sm::MacroHandle band =
         sm::birth_place(w.gs, *w.store, sm::SquadType::Artel, 41, 41, 0,
                         "Band");
-    w.store->runtime[band.slot].homeSettlementId = id;   // дом банды — шпиль
+    // Дом банды — шпиль: ребро Parent той же дверью (заменяет self-ребро
+    // рождения места, M-245).
+    sm::set_relation(*w.store, int(w.store->spawnId[band.slot].index), id,
+                     sm::Stance::Parent);
     CHECK(sm::creatures_push_stack(
               w.store->inventory[band.slot].inv, sm::NPCType::Peasant,
               sm::npc_def(sm::NPCType::Peasant).baseLevel, 3),

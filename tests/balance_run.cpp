@@ -344,7 +344,7 @@ int main(int argc, char** argv) {
                          //
                          // ЗДЕСЬ БЫЛО ПЯТЬ, И ТРИ ИЗ НИХ СЧИТАЛИ ОДНИХ И ТЕХ
                          // ЖЕ ЛЮДЕЙ. `soulsHomed` идёт по ВСЕМ живым слотам
-                         // и берёт тех, чей `homeSettlementId` разрешается в
+                         // и берёт тех, чьё ребро Parent разрешается в
                          // место; у места он разрешается в НЕГО САМОГО
                          // (place_birth.h «дом места — оно само»), поэтому
                          // места попадали в `soulsHomed`, а `soulsGarr`
@@ -592,14 +592,13 @@ int main(int argc, char** argv) {
                  slot < std::uint16_t(sm::kUnifiedCap); ++slot) {
                 if (macroStore->alive[slot] == 0) continue;
                 const auto& kind = macroStore->kind[slot];
-                const auto& rt = macroStore->runtime[slot];
                 long long souls = sm::is_folk_kind(kind.type) ? 1 : 0;
                 souls += sm::count_human_souls(
                     macroStore->inventory[slot].inv);
                 if (souls <= 0) continue;
                 if (macroStore->valid(sm::place_handle_by_ordinal(
                         *macroStore,
-                        std::uint32_t(rt.homeSettlementId))))
+                        std::uint32_t(sm::parent_of(*macroStore, slot)))))
                     soulsHomed += souls;
                 else
                     soulsFree += souls;

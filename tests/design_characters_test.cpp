@@ -153,7 +153,7 @@ void test_spawn_births_the_row() {
     CHECK(int(wStore_->kind[e.slot].factionIdx)
               == faction_index(row.factionId),
           "the row's faction reached the body");
-    CHECK(wStore_->runtime[e.slot].homeSettlementId == 1,
+    CHECK(sm::parent_of(*wStore_, e.slot) == 1,
           "home resolved to the world's city (row: City #0)");
 
     // Маршрут: дом ↔ БЛИЖАЙШАЯ деревня (20,10), не дальняя (40,40).
@@ -262,7 +262,7 @@ void test_king_peasant_births_by_home_faction() {
     const sm::MacroHandle king = find_design(stk, 1);
     CHECK_OR_RETURN(stk.valid(king),
                     "the king row became one body near the barbarian city");
-    CHECK(stk.runtime[king.slot].homeSettlementId == barbId,
+    CHECK(sm::parent_of(stk, king.slot) == barbId,
           "his home is the BARBARIAN city, not the freefolk one — the "
           "faction-prefix filter picked the row's home");
     // Фракция — ОН САМ (вердикт владельца): своя строка одной матрицы,

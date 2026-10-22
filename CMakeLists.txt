@@ -1526,7 +1526,7 @@ timaert_test(faction_relations_test
 # громкий отказ капа; негативный контроль детектора — руками сломанный
 # порядок обязан быть виден.
 
-timaert_test(faction_fief_test)
+timaert_test(relation_edge_test)
 # THE time ladder (core/time.h). Header-only, no world state — the clock is a
 # pure function of one integer. Walks all 8192 ticks of a day to prove the
 # minute and the hour can be DERIVED instead of stored: in range, gap-free,
