@@ -328,9 +328,9 @@ void test_a_victorious_leader_levels() {
     hp.hp = hp.maxHp / 2;   // walks in wounded
     const float frac0 = float(hp.hp) / float(hp.maxHp);
 
-    CHECK(award_kill_xp(st, tsar, exp_to_next_level(1) / 2) == 0,
+    CHECK(squad_award_exp(st, tsar, exp_to_next_level(1) / 2) == 0,
           "half a bar is not a level");
-    CHECK(award_kill_xp(st, tsar, exp_to_next_level(1)) >= 1,
+    CHECK(squad_award_exp(st, tsar, exp_to_next_level(1)) >= 1,
           "a full bar turns into a level by the player's own curve");
     CHECK(sm::squad_level(st, tsar.slot) >= 2,
           "the level landed on the leader — В ЕГО АНКЕТЕ (M-246а)");
@@ -360,7 +360,7 @@ void test_a_victorious_leader_levels() {
 // НАДЕВАЕТСЯ здесь же, через прод-дверь `equip`, а не в надежде, что
 // генератор выдал одетый сквад. Отказ двери — честный провал фикстуры.
 void test_a_level_does_not_strip_what_is_worn() {
-    // Мира этому свидетелю не нужно вовсе: `award_kill_xp` читает и пишет
+    // Мира этому свидетелю не нужно вовсе: `squad_award_exp` читает и пишет
     // ТОЛЬКО стор, и фикстура рождает сквад прямо в нём.
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
@@ -398,7 +398,7 @@ void test_a_level_does_not_strip_what_is_worn() {
                                 sm::effective_sheet_of(st, mule),
                                 NPCType::Peasant, &standing0);
 
-    CHECK(award_kill_xp(st, mule, exp_to_next_level(1) * 3) >= 1,
+    CHECK(squad_award_exp(st, mule, exp_to_next_level(1) * 3) >= 1,
           "фикстура: опыта хватило на уровень");
 
     // ЯКОРЬ НЕЗАВИСИМЫЙ: колонка обязана быть РОВНО на 40 000 г выше голой
@@ -420,6 +420,79 @@ void test_a_level_does_not_strip_what_is_worn() {
           "негативный контроль: разница голой и одетой спины НЕ нулевая, "
           "значит утверждение выше способно покраснеть");
 }
+
+// ── ОДНО НАДЕВАНИЕ, БЕЗ УРОВНЯ-АПА, ОСВЕЖАЕТ ПРОИЗВОДНЫЕ (M-301) ─────────
+// ЭТОТ СВИДЕТЕЛЬ ДЕРЖИТ ДЫРУ, КОТОРУЮ ДО M-301 НАКРЫВАЛИ ДВЕ СТРАХОВКИ, И
+// ИМЕННО ПОЭТОМУ ЕГО НЕ СУЩЕСТВОВАЛО. Ни один из пяти прод-сайтов надевания
+// не звал пересчёт; свежесть держали сторож главного цикла (сравнивал сумму
+// надетого каждый тик) и безусловный пересчёт листа каждый макро-тик в хвосте
+// `ensure_macro_player_entity`. Обе снесены, пересчёт стоит внутри
+// `squad_equip@src/macro/squad.h` — и спросить это можно только отсюда:
+// `ctest` и паритет мира не видят ни сторожа, ни UI-пути (§8 п.6, пятая форма
+// слепоты), а макро-сквады в проде не носят ничего вовсе, поэтому дефект
+// пришёл бы первым надетым НПЦ-плащом молча.
+//
+// ТАБЛИЦА «МУТАЦИЯ → ИСХОД», ПРОГНАНА, ОБЕ ПОЛЯРНОСТИ (§8 п.6):
+//   М1  `refresh_squad_body(st, h)` снят из `squad_equip`   → КРАСНЫЙ 2 из 77
+//   М2  пересчёт снят из `squad_unequip`                    → КРАСНЫЙ 1 из 77
+//   М3  (ОБЯЗАНА МОЛЧАТЬ) пересчёт позван ДВАЖДЫ            → ЗЕЛЁНЫЙ 77
+//   М4  (ОБЯЗАНА МОЛЧАТЬ) пересчёт и при ОТКАЗЕ двери       → ЗЕЛЁНЫЙ 77
+// М3 и М4 обязаны молчать потому, что пересчёт ИДЕМПОТЕНТЕН: дверь листа
+// сама гейтится по сдвигу потолка, значит лишний звонок не пишет ни байта.
+// Детектор, краснеющий и на них, был бы не детектором, а пином реализации.
+void test_wearing_alone_refreshes_the_derived_columns() {
+    auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
+    const auto mule = make_squad_at(st, NPCType::Peasant, "timaert", 1,
+                                    10.0f, 10.0f, 1u, {}, NPCType::Peasant, 1);
+    sm::Gear& gear = st.gear[mule.slot].gear;
+    sm::gear_init(gear, sm::npc_def(NPCType::Peasant).slots);
+    sm::Inventory& bag = st.inventory[mule.slot].inv;
+
+    // ГОЛАЯ спина — через ту же дверь, которой мир ставит колонку. Это
+    // предусловие, а не утверждение: оно рождается здесь же (§8 п.11).
+    sm::refresh_squad_body(st, mule);
+    const std::int32_t bareColumn = st.runtime[mule.slot].carryPerSoulG;
+    const sm::CharacterSheet& own = st.sheet[mule.slot];
+    CHECK(bareColumn == sm::get_carry_capacity(own.attributes, own.skills),
+          "фикстура: голая колонка равна голой спине анкеты");
+
+    constexpr int kWornKg = 40;
+    sm::ItemRef coat{};
+    coat.def = std::uint16_t(sm::item_index("arm_leather"));
+    coat.count = 1;
+    coat.set_affix(0, sm::Bonus{std::uint8_t(sm::BonusId::CarryKg), kWornKg});
+    CHECK(bag.add_ref(coat), "фикстура: плащ лёг в сумку");
+    int coatSlot = -1;
+    for (int i = 0; i < sm::kMaxInventorySlots; ++i) {
+        if (!bag.slots[std::size_t(i)].empty()) { coatSlot = i; break; }
+    }
+    CHECK_OR_RETURN(coatSlot >= 0, "фикстура: слот плаща найден");
+
+    // НИ УРОВНЯ, НИ ТИКА, НИ СТОРОЖА — ровно одно надевание прод-дверью.
+    const int cell = sm::squad_equip(st, mule, coatSlot);
+    CHECK_OR_RETURN(cell >= 0,
+                    "фикстура: тело ПРИНЯЛО плащ — иначе мерить нечего");
+
+    // ЯКОРЬ НЕЗАВИСИМЫЙ (§8 п.6, шестая форма): утверждение об ОТНОШЕНИИ —
+    // колонка обязана стоять РОВНО на 40 000 г выше голой, — а не пересчёт
+    // продакшен-формулы. Голая спина перечитывается у двери БЕЗ надетого.
+    const std::int32_t wornColumn = st.runtime[mule.slot].carryPerSoulG;
+    CHECK(wornColumn == sm::get_carry_capacity(own.attributes, own.skills)
+                            + kWornKg * 1000,
+          "надевание САМО освежило спину анкеты — пересчёт внутри двери");
+    CHECK(wornColumn > bareColumn,
+          "негативный контроль: колонка СДВИНУЛАСЬ, значит утверждение выше "
+          "способно покраснеть (без сдвига оно сошлось бы на старом числе)");
+
+    // И ОБРАТНО: снятие тоже есть изменение анкеты, и своя дверь у него своя.
+    CHECK_OR_RETURN(sm::squad_unequip(st, mule, cell),
+                    "фикстура: плащ снялся");
+    CHECK(st.runtime[mule.slot].carryPerSoulG == bareColumn,
+          "снятие САМО вернуло спину к голой — у обеих половин класса "
+          "«надевание» пересчёт внутри двери");
+}
+
 
 // The player's auto-resolve settles through the SAME halves (Inc 6): the
 // enemy through the ledger and the tracked-death shape, the player where his
@@ -782,12 +855,12 @@ void test_a_victory_does_not_erase_a_table_born_sheet() {
     // (1) КРИВАЯ НЕ НУЛЕВАЯ: один опыт — это не уровень.
     const int lvlBorn = sm::squad_level(st, town.slot);
     CHECK(lvlBorn >= 1, "уровень анкеты не бывает нулём");
-    CHECK(award_kill_xp(st, town, 1) == 0,
+    CHECK(squad_award_exp(st, town, 1) == 0,
           "один опыт НЕ даёт уровня: порог читает уровень анкеты, а не "
           "мёртвую колонку, где он был нулём");
 
     // (2) РОСТ НЕ СТИРАЕТ АНКЕТУ: платим заведомо выше порога.
-    const int gained = award_kill_xp(st, town, exp_to_next_level(lvlBorn) * 3);
+    const int gained = squad_award_exp(st, town, exp_to_next_level(lvlBorn) * 3);
     CHECK(gained >= 1, "полная шкала превращается в уровень общей дверью");
     CHECK(sm::squad_level(st, town.slot) > lvlBorn,
           "и уровень лёг в ТУ ЖЕ анкету");
@@ -819,6 +892,7 @@ int main() {
     test_a_meeting_in_the_leased_window_is_not_resolved_upstairs();
     test_a_victorious_leader_levels();
     test_a_level_does_not_strip_what_is_worn();
+    test_wearing_alone_refreshes_the_derived_columns();
     test_player_auto_resolve_settles_through_the_same_doors();
     test_spawn_squad_is_one_spec_one_door();
     return sm::test::report("squad_war_test");

@@ -271,13 +271,18 @@ void test_the_entity_numbers_are_not_stale() {
     gs.mapW = gs.mapH = 64;
     auto wStore_ = sm::make_macro_store();
     // The sheet is the OWNED component now (посадка Б): it exists only once
-    // the body does, so the build is written through the door and the next
-    // ensure walk (the per-tick refresh) moves the ceilings after it.
-    ensure_macro_player_entity(gs, *wStore_);
-    player_sheet(gs, *wStore_)->attributes[sm::AttributeId::End] = 5;
-    player_sheet(gs, *wStore_)->levelData.level = 1;
+    // the body does. ЛИСТ ПРАВИТСЯ КЛЮЧОМ (M-301): пересчёт потолков стоит
+    // ВНУТРИ двери, поэтому «написать сырым и дождаться следующего обхода»
+    // больше не выразимо — а именно так этот свидетель и был устроен, то
+    // есть охранял СТРАХОВКУ (безусловный пересчёт каждый макро-тик), а не
+    // закон. Закон — «потолок следует за листом, рана хранит долю, долг
+    // переживает перемасштабирование» — цел и проверяется ниже как прежде.
     ensure_macro_player_entity(gs, *wStore_);
     const MacroHandle e = player_squad_handle(gs);
+    sm::edit_squad_sheet(*wStore_, e, [](sm::CharacterSheet& s) {
+        s.attributes[sm::AttributeId::End] = 5;
+        s.levelData.level = 1;
+    });
 
     const int bornMaxSp = wStore_->pools[e.slot].maxSp;
     CHECK(bornMaxSp
@@ -296,11 +301,14 @@ void test_the_entity_numbers_are_not_stale() {
         pools.sp = -6;   // an honest exhaustion debt
     }
     const int oldMaxHp = wStore_->pools[e.slot].maxHp;
-    player_sheet(gs, *wStore_)->attributes[sm::AttributeId::End] = 12;
-    player_sheet(gs, *wStore_)->levelData.level = 4;
-    // He marched to 33,44 (a cell write — what the walker does); the heal
-    // pass below must rescale his numbers WITHOUT touching where he stands.
+    // He marched to 33,44 (a cell write — what the walker does); the sheet
+    // door must rescale his numbers WITHOUT touching where he stands, and the
+    // ensure walk after it must not stomp the cell either.
     wStore_->cell[e.slot].idx = ecs::cell_index(33, 44, 64);
+    sm::edit_squad_sheet(*wStore_, e, [](sm::CharacterSheet& s) {
+        s.attributes[sm::AttributeId::End] = 12;
+        s.levelData.level = 4;
+    });
     ensure_macro_player_entity(gs, *wStore_);
 
     const auto& hp = wStore_->pools[e.slot];

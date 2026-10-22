@@ -3859,7 +3859,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 // names its leader's spawn ordinal, and the hero husk /
                 // the player's soldiers name the player's squad — the
                 // ordinary leader he is. The leader is then paid through
-                // THE one kill-XP door (squad.h award_kill_xp): an owned
+                // THE one kill-XP door (squad.h squad_award_exp): an owned
                 // sheet grows like the player's, a transient rolls.
                 MacroHandle leader{};
                 if (const MacroHandle killerOrigin =
@@ -3890,7 +3890,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     // One row, one formula (owner, 2026-08-29): what a kill
                     // is worth is npc_xp_reward — the row's own xpReward
                     // stepped by level, for EVERY row and EVERY killer.
-                    award_kill_xp(mst, leader,
+                    squad_award_exp(mst, leader,
                                   npc_xp_reward(NPCType(std::uint8_t(
                                                     kind ? kind->type : 0)),
                                                 lvl));

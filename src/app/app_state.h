@@ -192,12 +192,13 @@ struct App {
     // survives a load; App only keeps derived caches here.
     bool                 lastSpellFlight = false;
     bool                 lastJumpHeld = false;
-    // What stood on the player LAST step (worn + sustained) — the per-step
-    // bar refresh recomputes the derived block only when this CHANGES, so a
-    // scheduled rewrite cannot stomp runtime state nothing touched (the
-    // travel harness's frozen spRegen was the victim, 2026-09-06). Runtime
-    // cache: zeroed on load, so a loaded coat re-registers on step one.
-    sm::BonusTotals      lastStandingBonuses{};
+    // (Колонка `lastStandingBonuses` СНЕСЕНА — M-301. Она была памятью
+    //  СТОРОЖА: «что стояло на игроке прошлым шагом», чтобы тик сам заметил
+    //  смену и позвал дверь листа. Сторожа больше нет — пересчёт живёт внутри
+    //  дверей классов изменений, — и помнить прошлый шаг стало незачем.
+    //  Опасность, которой она оправдывалась — «плановая перезапись затопчет
+    //  runtime, которого никто не трогал», — умерла раньше неё, вместе с
+    //  кэшированными темпами регена.)
     // (`sm::ecs::World ecs` умер ломтём E вместе с реестром: тела сцены —
     // слоты `sceneObjects` ниже, store и арена ходят явными параметрами.)
     // ГЛАДКАЯ ПАМЯТЬ МАКРОМИРА (macro/store.h, M-106): колонки состояния

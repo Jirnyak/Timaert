@@ -1,6 +1,7 @@
 #include "events/quests/quest_engine.h"
 #include "macro/currency.h"
 #include "macro/squad.h"   // place_handle_by_ordinal — резолв места в store
+#include "macro/player_entity.h"   // player_flag_handle — субъект награды
 #include "core/torus.h"
 #include "macro/markers.h"
 #include <algorithm>
@@ -46,11 +47,16 @@ static bool objective_target_cell(const GameState& gs, const MacroStore& st,
 
 // Takes the GameState because a Reputation reward moves the player's row in the
 // ONE relation matrix — his standing is not a map of his own any more.
-// `sheet` — his OWNED component (посадка Б), handed in like `bag`:
-// an XP reward lands in the body that owns the build.
+//
+// ПАРАМЕТР `sheet` СНЯТ (M-301). Он передавался ради ОДНОЙ награды — опыта, —
+// и был вторым носителем ответа «чья это анкета»: прод отдавал сюда
+// `player_sheet(gs, st)`, то есть колонку слота флажка, а дверь роста спросит
+// ту же колонку сама по хэндлу. Пока лист ехал параметром, награда опытом
+// жила МИМО двери класса «прокачка»: ни пересчёта производных, ни единой
+// точки роста — её дыру наверху маскировал безусловный пересчёт каждый
+// макро-тик, а под землёй не маскировало ничто.
 static void emit_reward(const Reward& r, GameState& gs, MacroStore& st,
                         Inventory* bag,
-                        CharacterSheet* sheet,
                         EventBus& bus, int giverSettlementId) {
     if (!bag) return;   // no world, nowhere to pay
     switch (r.kind) {
@@ -111,11 +117,7 @@ static void emit_reward(const Reward& r, GameState& gs, MacroStore& st,
         case RewardKind::Xp:
             // Through the one grant path: a contract that pays a level PAYS it.
             // wis dividend applies here like on every grant (owner ruling).
-            if (sheet) {
-                award_exp(sheet->levelData, r.amount,
-                          calculate_derived(sheet->attributes,
-                                            sheet->skills).expMultPct);
-            }
+            squad_award_exp(st, player_flag_handle(gs), r.amount);
             break;
         case RewardKind::Reputation: {
             add_player_reputation(gs, r.faction.c_str(), r.delta);
@@ -184,7 +186,7 @@ static void prune_settled_offers(PlayerState& p, int today) {
 void QuestEngine::tick(std::vector<Quest>& active, MacroStore& st,
                        EventBus& bus,
                        GameState& gs, Inventory* bag,
-                       CharacterSheet* sheet, int px, int py) {
+                       int px, int py) {
     auto& events = bus.last_tick_events();
     prune_settled_offers(gs.player, gs.worldTime.day());
     std::vector<Quest> completed;
@@ -228,7 +230,7 @@ void QuestEngine::tick(std::vector<Quest>& active, MacroStore& st,
         settle_offer(gs.player, q);
         ++gs.player.completedQuestCount;
         for (auto& r : q.rewards)
-            emit_reward(r, gs, st, bag, sheet, bus, q.giverSettlementId);
+            emit_reward(r, gs, st, bag, bus, q.giverSettlementId);
         GameEvent ev; ev.tag = EventTag::QuestComplete;
         ev.a = q.ordinal;
         ev.b = kEventEffectAlreadyApplied;

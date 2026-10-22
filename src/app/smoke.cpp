@@ -2041,13 +2041,17 @@ bool run_macro_recovery_smoke(App& app) {
     }
     smoke_clear_modal_overlays(app);
 
-    sm::player_sheet(app.gs, *app.macroStore)->attributes[sm::AttributeId::End] = 1;
-    sm::player_sheet(app.gs, *app.macroStore)->attributes[sm::AttributeId::Wil] = 1;
-    // The sheet changed: ceilings follow through THE door (the per-tick walk
-    // would do it anyway; doing it here makes the numbers below honest NOW).
-    // No pinned maxima — the ceiling is the sheet's business, and a pinned
-    // 100 would be silently rescaled back by the very door being exercised.
-    sm::refresh_player_body(app.gs, *app.macroStore);
+    // Лист правится КЛЮЧОМ (M-301): пересчёт потолков стоит внутри двери,
+    // поэтому числа ниже честны сразу и звонка-дисциплины рядом нет. Здесь
+    // стоял `refresh_player_body` и ссылка на «per-tick walk, который сделал
+    // бы это всё равно» — того безусловного пересчёта больше нет вовсе.
+    // Потолки не пиновать: потолок есть дело листа, а пин 100 был бы молча
+    // перемасштабирован той самой дверью, которую смоук и проверяет.
+    sm::edit_squad_sheet(*app.macroStore, sm::player_flag_handle(app.gs),
+                         [](sm::CharacterSheet& s) {
+                             s.attributes[sm::AttributeId::End] = 1;
+                             s.attributes[sm::AttributeId::Wil] = 1;
+                         });
     // Never hold this reference across a simulated tick — spawning entities
     // reallocates the component storage under it (the rest_sp lesson).
     {
@@ -5226,7 +5230,9 @@ bool run_subworld_player_bow_smoke(App& app) {
         if (!st.empty() && int(st.def) == bowDef
             && !sm::slot_is_worn(eqc->gear, i)) { bowSlot = i; break; }
     }
-    if (bowSlot < 0 || sm::equip(eqc->gear, pbag, bowSlot) < 0) {
+    if (bowSlot < 0
+        || sm::squad_equip(*app.macroStore, sm::player_flag_handle(app.gs),
+                           bowSlot) < 0) {
         smoke_fail(app, "subworld_player_bow equip refused");
         return false;
     }
@@ -9448,20 +9454,22 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const int beforePoints = sm::player_sheet(app.gs, *app.macroStore)->levelData.attributePoints;
             const int beforeEnd = sm::player_sheet(app.gs, *app.macroStore)->attributes.of(sm::AttributeId::End);
             const int beforeHp = player_pools(app).maxHp;
-            if (!sm::spend_attribute_point(sm::player_sheet(app.gs, *app.macroStore)->levelData,
-                                           sm::player_sheet(app.gs, *app.macroStore)->attributes,
+            // РАНИТЬ ДО ТРАТЫ, А НЕ ПОСЛЕ (M-301). Правило то же («доля у
+            // всех», владелец 2026-09-10): потолок следует за листом, а полоса
+            // хранит СВОЮ ДОЛЮ — ни дарового лечения, ни кражи. Полная полоса
+            // дала бы долю 1.0 и была бы неотличима от отказа лечить, поэтому
+            // рана нужна. ПОРЯДОК ЖЕ ИЗМЕНИЛСЯ ПО ПОСТРОЕНИЮ: пересчёт теперь
+            // стоит ВНУТРИ двери траты, значит «ранить после, пересчитать
+            // потом» больше не выразимо — и это ближе к игре, где рана
+            // случается раньше, чем игрок тратит очко.
+            player_pools(app).hp = std::max(1, beforeHp / 2);
+            const int curHpBefore = player_pools(app).hp;
+            if (!sm::squad_spend_attribute(*app.macroStore,
+                                           sm::player_flag_handle(app.gs),
                                            sm::AttributeId::End)) {
                 smoke_fail(app, "spend_attribute_end rejected");
                 break;
             }
-            // The rule the UI enforces now («доля у всех», owner 2026-09-10):
-            // the ceiling follows the sheet through THE door and the bar
-            // keeps its FRACTION — never a free full heal, never a theft.
-            // Wound him first, or a full bar's preserved fraction of 1.0
-            // would be indistinguishable from the free heal being denied.
-            player_pools(app).hp = std::max(1, beforeHp / 2);
-            const int curHpBefore = player_pools(app).hp;
-            sm::refresh_player_body(app.gs, *app.macroStore);
             const sm::ecs::Pools& afterSpend = player_pools(app);
             const float fracBefore = float(curHpBefore) / float(beforeHp);
             const float fracAfter =
@@ -9514,22 +9522,21 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "spend_skill_bodybuilding expected ignorance");
                 break;
             }
-            if (!sm::spend_learn_pick(sm::player_sheet(app.gs, *app.macroStore)->levelData,
-                                      sm::player_sheet(app.gs, *app.macroStore)->skills,
-                                      sm::SkillId::Bodybuilding)) {
+            // Тот же свидетель «доли у всех», что у траты атрибута, и тот же
+            // порядок: ранить ДО двери, потому что пересчёт теперь внутри неё
+            // (M-301).
+            player_pools(app).hp = std::max(1, beforeHp / 2);
+            const int curHpBefore = player_pools(app).hp;
+            if (!sm::squad_spend_learn(*app.macroStore,
+                                       sm::player_flag_handle(app.gs),
+                                       sm::SkillId::Bodybuilding)) {
                 smoke_fail(app, "spend_skill_bodybuilding learn rejected");
                 break;
             }
-            // Same «доля у всех» witness as the attribute spend: wound him,
-            // let the ceiling grow, demand the fraction survived and no
-            // full heal happened.
-            player_pools(app).hp = std::max(1, beforeHp / 2);
-            const int curHpBefore = player_pools(app).hp;
-            sm::refresh_player_body(app.gs, *app.macroStore);
             const bool spendRefused =
                 sm::player_sheet(app.gs, *app.macroStore)->levelData.skillPoints <= 0
-                && !sm::spend_skill_point(sm::player_sheet(app.gs, *app.macroStore)->levelData,
-                                          sm::player_sheet(app.gs, *app.macroStore)->skills,
+                && !sm::squad_spend_skill(*app.macroStore,
+                                          sm::player_flag_handle(app.gs),
                                           sm::SkillId::Bodybuilding);
             const sm::ecs::Pools& afterLearn = player_pools(app);
             const float fracBefore = float(curHpBefore) / float(beforeHp);

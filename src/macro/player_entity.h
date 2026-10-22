@@ -222,12 +222,14 @@ const ecs::Pools* player_pools(const GameState& gs, const MacroStore& st);
 SpellBook* player_spellbook(const GameState& gs, MacroStore& st);
 const SpellBook* player_spellbook(const GameState& gs, const MacroStore& st);
 
-// «His sheet changed» — the ONE call every such moment makes (creation,
-// level-up, point spend, learning, gear on/off, console): ceilings and march
-// caches follow the EFFECTIVE sheet through THE door every lord's do
-// (squad.h refresh_body_from_sheet), each bar preserving its fraction
-// («доля у всех», owner 2026-09-10). No-op before the world exists.
-void refresh_player_body(const GameState& gs, MacroStore& st);
+// (`refresh_player_body` СНЕСЕНА — M-301. Она была игроко-особой обёрткой
+//  над дверью сквада: читала флажок и звала `refresh_body_from_sheet`. Её
+//  шапка обещала «ОДИН звонок, который делает каждый такой момент», и это
+//  было неправдой по трём классам изменений сразу — надевание, квестовый
+//  опыт и гашение сустейна не звали её ни разу, а держали их две страховки.
+//  Теперь пересчёт зовёт не МОМЕНТ, а сама ДВЕРЬ изменения, и её имя —
+//  `refresh_squad_body@src/macro/squad.h`: у игрока здесь нет своего пути,
+//  как не было и своего закона.)
 
 // THE player's OWNED base sheet — the ordinary CharacterSheet column of
 // his record (посадка Б, v91): the writable store creation, level-up,

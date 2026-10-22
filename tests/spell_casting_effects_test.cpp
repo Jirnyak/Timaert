@@ -8,6 +8,7 @@
 #include "sub/body.h"
 #include "sub/ability.h"   // tick_body_recovery — один слив (кусок 2)
 #include "macro/store.h"
+#include "macro/squad.h"   // двери анкеты уровня сквада (M-301)
 
 #include <cmath>
 #include <cstdio>
@@ -421,7 +422,7 @@ int main() {
     if (!ok31) return 1;
 
     sm::spellbook_learn(book, sm::spell_ordinal("magic_bolt"));
-    const bool ok32 = !(!sm::spellbook_cast(&worldObjs, worldStore_.get(), book, combat, attributes, skills,
+    const bool ok32 = !(!sm::spellbook_cast(&worldObjs, worldStore_.get(), sm::MacroHandle{}, book, combat, attributes, skills,
                                             sm::spell_ordinal("magic_bolt"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok32, "magic_bolt cast rejected");
@@ -483,7 +484,7 @@ int main() {
     // Кастер — ссылка сцены (iii-б): слот тела через ту же дверь, что у
     // прод-писателя.
     const sm::sub::ObjRef casterId = sm::sub::ref_of(worldObjs, casterSlot);
-    const bool ok38 = !(!sm::spellbook_cast(&worldObjs, worldStore_.get(), book, combat, attributes, skills,
+    const bool ok38 = !(!sm::spellbook_cast(&worldObjs, worldStore_.get(), sm::MacroHandle{}, book, combat, attributes, skills,
                                             sm::spell_ordinal("fireball"), casterId, 100.0f, 100.0f, 0.0f,
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok38, "fireball cast rejected");
@@ -504,7 +505,7 @@ int main() {
     CHECK(ok40, "busy body was allowed to act");
     if (!ok40) return 1;
     const int busyProjectiles = projectile_count(worldObjs);
-    const bool ok41 = !(sm::spellbook_cast(&worldObjs, worldStore_.get(), book, combat, attributes, skills,
+    const bool ok41 = !(sm::spellbook_cast(&worldObjs, worldStore_.get(), sm::MacroHandle{}, book, combat, attributes, skills,
                                            sm::spell_ordinal("magic_bolt"), casterId, 100.0f, 100.0f, 0.0f,
                                            1.0f, 0.0f, 0.0f, true)
                         || projectile_count(worldObjs) != busyProjectiles);
@@ -542,7 +543,7 @@ int main() {
     sm::spellbook_learn(fireExpiryBook, sm::spell_ordinal("fireball"));
     const auto fireExpiryVictim =
         add_target(fireExpiryObjs, 120.0f, 100.0f, 100.0f, false);
-    const bool ok45 = !(!sm::spellbook_cast(&fireExpiryObjs, fireExpiryWorldStore_.get(), fireExpiryBook,
+    const bool ok45 = !(!sm::spellbook_cast(&fireExpiryObjs, fireExpiryWorldStore_.get(), sm::MacroHandle{}, fireExpiryBook,
                                             fireExpiryCombat, attributes, skills,
                                             sm::spell_ordinal("fireball"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
                                             1.0f, 0.0f, 0.0f, true));
@@ -602,7 +603,7 @@ int main() {
     iceCombat.mp = 1000;
     iceCombat.maxMp = 1000;
     sm::spellbook_learn(iceBook, sm::spell_ordinal("ice_shard"));
-    const bool ok48 = !(!sm::spellbook_cast(&iceObjs, iceWorldStore_.get(), iceBook, iceCombat, attributes, skills,
+    const bool ok48 = !(!sm::spellbook_cast(&iceObjs, iceWorldStore_.get(), sm::MacroHandle{}, iceBook, iceCombat, attributes, skills,
                                             sm::spell_ordinal("ice_shard"), sm::sub::ObjRef{}, 10.0f, 10.0f, 0.0f,
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok48, "ice_shard cast rejected");
@@ -649,7 +650,7 @@ int main() {
         if (!ok51) return 1;
     }
     const int beforeMacroProjectiles = projectile_count(worldObjs);
-    const bool ok52 = !(sm::spellbook_cast(&worldObjs, worldStore_.get(), macroBook, macroCombat, attributes, skills,
+    const bool ok52 = !(sm::spellbook_cast(&worldObjs, worldStore_.get(), sm::MacroHandle{}, macroBook, macroCombat, attributes, skills,
                                            sm::spell_ordinal("fireball"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
                                            1.0f, 0.0f, 0.0f, false));
     CHECK(ok52, "world-map fireball spawned micro projectile");
@@ -660,7 +661,7 @@ int main() {
     if (!ok53) return 1;
 
     sm::spellbook_learn(book, sm::spell_ordinal("energy_beam"));
-    const bool ok54 = !(!sm::spellbook_cast(&worldObjs, worldStore_.get(), book, combat, attributes, skills,
+    const bool ok54 = !(!sm::spellbook_cast(&worldObjs, worldStore_.get(), sm::MacroHandle{}, book, combat, attributes, skills,
                                             sm::spell_ordinal("energy_beam"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok54, "energy_beam cast rejected");
@@ -698,7 +699,7 @@ int main() {
     if (!ok56) return 1;
 
     sm::spellbook_learn(book, sm::spell_ordinal("lightning_chain"));
-    const bool ok57 = !(!sm::spellbook_cast(&worldObjs, worldStore_.get(), book, combat, attributes, skills,
+    const bool ok57 = !(!sm::spellbook_cast(&worldObjs, worldStore_.get(), sm::MacroHandle{}, book, combat, attributes, skills,
                                             sm::spell_ordinal("lightning_chain"), sm::sub::ObjRef{}, 100.0f, 100.0f, 0.0f,
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok57, "lightning_chain cast rejected");
@@ -744,7 +745,7 @@ int main() {
     if (!ok62) return 1;
 
     sm::spellbook_learn(book, sm::spell_ordinal("haste"));
-    const bool ok63 = !(!sm::spellbook_cast(&worldObjs, worldStore_.get(), book, combat, attributes, skills,
+    const bool ok63 = !(!sm::spellbook_cast(&worldObjs, worldStore_.get(), sm::MacroHandle{}, book, combat, attributes, skills,
                                             sm::spell_ordinal("haste"), sm::sub::ObjRef{}, 0.0f, 0.0f, 0.0f,
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok63, "haste toggle rejected");
@@ -774,7 +775,7 @@ int main() {
     sm::ecs::Pools zeroTickCombat{};
     zeroTickCombat.mp = 1;
     zeroTickCombat.maxMp = 1;
-    const bool ok68 = !(!sm::spellbook_cast(&worldObjs, worldStore_.get(), zeroTickBook, zeroTickCombat,
+    const bool ok68 = !(!sm::spellbook_cast(&worldObjs, worldStore_.get(), sm::MacroHandle{}, zeroTickBook, zeroTickCombat,
                                             attributes, skills, sm::spell_ordinal("haste"), sm::sub::ObjRef{},
                                             0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true));
     CHECK(ok68, "zero-mp sustained setup rejected");
@@ -811,7 +812,7 @@ int main() {
     sm::ecs::Pools flightCombat{};
     flightCombat.mp = 50;
     flightCombat.maxMp = 50;
-    const bool ok73 = !(!sm::spellbook_cast(&worldObjs, worldStore_.get(), flightBook, flightCombat, attributes, skills,
+    const bool ok73 = !(!sm::spellbook_cast(&worldObjs, worldStore_.get(), sm::MacroHandle{}, flightBook, flightCombat, attributes, skills,
                                             sm::spell_ordinal("flight"), sm::sub::ObjRef{}, 0.0f, 0.0f, 0.0f,
                                             0.0f, 1.0f, 0.0f, false));
     CHECK(ok73, "flight macro toggle rejected");
@@ -831,10 +832,10 @@ int main() {
     multiSustainCombat.maxMp = 25;
     sm::spellbook_learn(multiSustainBook, sm::spell_ordinal("haste"));
     sm::spellbook_learn(multiSustainBook, sm::spell_ordinal("flight"));
-    const bool ok76 = !(!sm::spellbook_cast(&worldObjs, worldStore_.get(), multiSustainBook, multiSustainCombat,
+    const bool ok76 = !(!sm::spellbook_cast(&worldObjs, worldStore_.get(), sm::MacroHandle{}, multiSustainBook, multiSustainCombat,
                                             attributes, skills, sm::spell_ordinal("haste"), sm::sub::ObjRef{},
                                             0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true)
-                        || !sm::spellbook_cast(&worldObjs, worldStore_.get(), multiSustainBook, multiSustainCombat,
+                        || !sm::spellbook_cast(&worldObjs, worldStore_.get(), sm::MacroHandle{}, multiSustainBook, multiSustainCombat,
                                                attributes, skills, sm::spell_ordinal("flight"), sm::sub::ObjRef{},
                                                0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true));
     CHECK(ok76, "multi sustained setup cast rejected");
@@ -867,7 +868,7 @@ int main() {
     // CONNECTS. Friendly fire is real; watch where you aim.
     const auto hitPlayer = add_player(hitObjs, -1000.0f, -1000.0f);
     const auto friendly = add_target(hitObjs, 104.0f, 100.0f, 100.0f, true);
-    const bool ok78 = !(!sm::spellbook_cast(&hitObjs, hitWorldStore_.get(), hitBook, hitCombat, attributes, skills,
+    const bool ok78 = !(!sm::spellbook_cast(&hitObjs, hitWorldStore_.get(), sm::MacroHandle{}, hitBook, hitCombat, attributes, skills,
                                             sm::spell_ordinal("magic_bolt"), hitPlayer, 0.0f, 100.0f, 0.0f,
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok78, "magic_bolt agnostic-hit setup cast rejected");
@@ -895,7 +896,7 @@ int main() {
     sm::spellbook_learn(hostBook, sm::spell_ordinal("magic_bolt"));
     const auto hostPlayer = add_player(hostObjs, -1000.0f, -1000.0f);
     const auto hostile = add_target(hostObjs, 204.0f, 100.0f, 100.0f, false);
-    const bool ok80 = !(!sm::spellbook_cast(&hostObjs, hostWorldStore_.get(), hostBook, hostCombat, attributes, skills,
+    const bool ok80 = !(!sm::spellbook_cast(&hostObjs, hostWorldStore_.get(), sm::MacroHandle{}, hostBook, hostCombat, attributes, skills,
                                             sm::spell_ordinal("magic_bolt"), hostPlayer, 0.0f, 100.0f, 0.0f,
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok80, "magic_bolt hostile-hit setup cast rejected");
@@ -926,7 +927,7 @@ int main() {
     const auto beamHit = add_target(beamObjs, 160.0f, 10.0f, 100.0f, false);
     const auto beamNearMiss = add_target(beamObjs, 160.0f, 21.0f, 100.0f, false);
     const auto beamMiss = add_target(beamObjs, 160.0f, 40.0f, 100.0f, false);
-    const bool ok82 = !(!sm::spellbook_cast(&beamObjs, beamWorldStore_.get(), beamBook, beamCombat, attributes, skills,
+    const bool ok82 = !(!sm::spellbook_cast(&beamObjs, beamWorldStore_.get(), sm::MacroHandle{}, beamBook, beamCombat, attributes, skills,
                                             sm::spell_ordinal("energy_beam"), beamPlayer, 0.0f, 10.0f, 0.0f,
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok82, "energy_beam effect setup cast rejected");
@@ -962,7 +963,7 @@ int main() {
     const auto chainFriendly = add_target(chainObjs, 109.0f, 50.0f, 100.0f, true);
     const auto chainFirst = add_target(chainObjs, 113.0f, 50.0f, 100.0f, false);
     const auto chainSecond = add_target(chainObjs, 120.0f, 50.0f, 100.0f, false);
-    const bool ok84 = !(!sm::spellbook_cast(&chainObjs, chainWorldStore_.get(), chainBook, chainCombat, attributes, skills,
+    const bool ok84 = !(!sm::spellbook_cast(&chainObjs, chainWorldStore_.get(), sm::MacroHandle{}, chainBook, chainCombat, attributes, skills,
                                             sm::spell_ordinal("lightning_chain"), chainPlayer, 0.0f, 50.0f, 0.0f,
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok84, "lightning_chain effect setup cast rejected");
@@ -1020,7 +1021,7 @@ int main() {
     const float armRngValues[] = {0.0f, 0.5f, 0.25f};
     SeqRng armRng{armRngValues, 3, 0};
     const auto armPlayer = add_player(armObjs, -1000.0f, -1000.0f);
-    const bool ok88 = !(!sm::spellbook_cast(&armObjs, armWorldStore_.get(), armBook, armCombat, armAttributes, skills,
+    const bool ok88 = !(!sm::spellbook_cast(&armObjs, armWorldStore_.get(), sm::MacroHandle{}, armBook, armCombat, armAttributes, skills,
                                             sm::spell_ordinal("armageddon"), armPlayer, 100.0f, 100.0f, 0.0f,
                                             1.0f, 0.0f, 0.0f, true,
                                             &seq_rng01, &armRng));
@@ -1262,7 +1263,7 @@ int main() {
                 sweepObjs, sweepTarget,
                 sm::ecs::SubworldAi{sm::ecs::SubworldAi::Wander,
                                     0.0f, 0.0f, 0.0f, 0.0f, 1.2f});
-            const bool ok99 = !(!sm::spellbook_cast(&sweepObjs, sweepWorldStore_.get(), sweepBook, sweepCombat,
+            const bool ok99 = !(!sm::spellbook_cast(&sweepObjs, sweepWorldStore_.get(), sm::MacroHandle{}, sweepBook, sweepCombat,
                                                     attributes, skills, sm::spell_ordinal("magic_bolt"),
                                                     // ОТ ДУЛА, А НЕ ОТ СТУПНЕЙ:
                                                     // продакшен кастует с
@@ -1333,7 +1334,8 @@ int main() {
         capCombat.maxMp = 2000;
         sm::spellbook_learn(capBook, sm::spell_ordinal("magic_bolt"));
         const bool capCast = sm::spellbook_cast(
-            &capArena, capStore_.get(), capBook, capCombat, attributes, skills,
+            &capArena, capStore_.get(), sm::MacroHandle{}, capBook, capCombat,
+            attributes, skills,
             sm::spell_ordinal("magic_bolt"), sm::sub::ObjRef{},
             100.0f, 100.0f, 0.0f, 1.0f, 0.0f, 0.0f, true);
         CHECK(capCast && capCombat.mp < 2000,
@@ -1345,7 +1347,8 @@ int main() {
         // числа отвечает КОЛОНКА.
         capArena.free(0);
         const bool capCast2 = sm::spellbook_cast(
-            &capArena, capStore_.get(), capBook, capCombat, attributes, skills,
+            &capArena, capStore_.get(), sm::MacroHandle{}, capBook, capCombat,
+            attributes, skills,
             sm::spell_ordinal("magic_bolt"), sm::sub::ObjRef{},
             100.0f, 100.0f, 0.0f, 1.0f, 0.0f, 0.0f, true);
         int capWithColumn = 0;
@@ -1399,6 +1402,83 @@ int main() {
               "предусловие своё: слот владельца перерождён (форс курсора)");
         CHECK(!sm::sub::projectile_owner_is_player_side(orphanObjs, orphanBolt),
               "перерождённый жилец ЧУЖОЙ снаряд не наследует: ID сменился");
+    }
+
+    // ── ПЕРЕКЛЮЧЕНИЕ СУСТЕЙНА ОСВЕЖАЕТ ПРОИЗВОДНЫЕ АНКЕТЫ (M-301) ────────
+    // КЛАСС ИЗМЕНЕНИЙ, У КОТОРОГО ДО M-301 НЕ БЫЛО ДВЕРИ ВООБЩЕ. Сустейн
+    // стоит на скваде наравне с надетым (`standing_bonuses_sum@src/macro/
+    // squad.h` читает его биты рядом с гиром), значит зажечь его — значит
+    // сдвинуть производные анкеты: потолки полос, спину, скорость. А
+    // переключал его `spellbook_start_cast` над КНИГОЙ и ПОЛОСАМИ, сквада он
+    // не видел и пересчитать не мог; свежесть держал сторож главного цикла,
+    // снесённый этим же нарядом. Спросить это можно только отсюда: паритет
+    // мира каста игрока не водит вовсе.
+    //
+    // ТАБЛИЦА «МУТАЦИЯ → ИСХОД», ПРОГНАНА, ОБЕ ПОЛЯРНОСТИ (§8 п.6):
+    //   М5  пересчёт СНЯТ из `squad_cast_start`      → ОТКАЗ СБОРКИ (`before`
+    //       осиротела под `-Werror`) — то есть снос двери держит компилятор;
+    //   М5' условие пересчёта ИНВЕРТИРОВАНО (сборка цела, пересчёт мёртв)
+    //                                               → КРАСНЫЙ 1 из 209
+    //   М6  (ОБЯЗАНА МОЛЧАТЬ) `sustained_same` всегда false — пересчёт на
+    //       КАЖДЫЙ каст, а не только на смену набора → ЗЕЛЁНЫЙ 209
+    {
+        auto buffStore_ = sm::make_macro_store();
+        sm::MacroStore& bst = *buffStore_;
+        const sm::MacroHandle mage = sm::store_birth(bst);
+        bst.kind[mage.slot] = sm::ecs::NPCKind{
+            std::uint16_t(sm::NPCType::Peasant), 0};
+        sm::refresh_squad_body(bst, mage);
+
+        // СТРОКУ ВЫБИРАЕТ ТАБЛИЦА, А НЕ ПАМЯТЬ АВТОРА (§8 п.4): нужен
+        // сустейн с ЛЮБЫМ ненулевым бонусом, иначе колонке незачем
+        // шевелиться и мерить было бы нечего. Имя спелла не хардкодится,
+        // поэтому перекалибровка таблицы прибор не ломает.
+        //
+        // ЗДЕСЬ СТОЯЛО ТРЕБОВАНИЕ «БОНУС ОБЯЗАН БЫТЬ ПРОИЗВОДНЫМ», И ОНО БЫЛО
+        // МОЕЙ ОШИБКОЙ О МИРЕ, А НЕ ДЕФЕКТОМ ТАБЛИЦЫ: прибор покраснел и
+        // оказался прав — сустейнов с производным бонусом в таблице НЕТ ни
+        // одного. Их два, и бьют они иначе: `haste` даёт +20 Spd (АТРИБУТ), а
+        // `flight` несёт правило без бонуса вовсе. Атрибут двигает
+        // производные ТРАНЗИТОМ через эффективный лист
+        // (`effective_sheet` → `calculate_derived` → `moveMult`), и именно
+        // этот транзит здесь и проверяется.
+        int buffOrd = -1;
+        for (int i = 0; i < sm::kSpellCount && buffOrd < 0; ++i) {
+            if (!sm::kSpellDefs[i].sustained) continue;
+            for (const sm::Bonus& b : sm::kSpellDefs[i].effects) {
+                if (b.row != 0 && b.value != 0) { buffOrd = i; break; }
+            }
+        }
+        CHECK(buffOrd >= 0,
+              "в таблице спеллов обязан быть сустейн с ненулевым бонусом — "
+              "иначе этот закон мира нечем проверить");
+        if (buffOrd >= 0) {
+            sm::spellbook_learn(bst.spellBook[mage.slot], buffOrd);
+            bst.pools[mage.slot].mp = bst.pools[mage.slot].maxMp;
+
+            const sm::BonusTotals standBefore =
+                sm::standing_bonuses_of(bst, mage);
+            const float moveBefore = bst.runtime[mage.slot].moveMult;
+            const std::int32_t carryBefore =
+                bst.runtime[mage.slot].carryPerSoulG;
+
+            sm::squad_cast_start(bst, mage, buffOrd);
+            CHECK(sm::spellbook_has_sustained(bst.spellBook[mage.slot],
+                                              buffOrd),
+                  "фикстура: сустейн зажёгся");
+
+            // ЯКОРЬ: сумма на скваде ОБЯЗАНА была сдвинуться (иначе строка
+            // выбрана негодная), и следом — хотя бы одна производная колонка.
+            const sm::BonusTotals standAfter =
+                sm::standing_bonuses_of(bst, mage);
+            CHECK(!(standAfter == standBefore),
+                  "фикстура честна: зажжённый сустейн действительно изменил "
+                  "сумму, стоящую на скваде");
+            CHECK(bst.runtime[mage.slot].moveMult != moveBefore
+                      || bst.runtime[mage.slot].carryPerSoulG != carryBefore,
+                  "каст сустейна САМ освежил производные колонки — пересчёт "
+                  "внутри двери класса «баф» (M-301)");
+        }
     }
 
     int susActive = 0;

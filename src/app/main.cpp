@@ -2515,8 +2515,11 @@ bool cast_active_spell(App& app) {
             emit_spell_cast(app, id, false, "World-map spell effect not implemented");
             return false;
         }
-        sm::spellbook_start_cast(player_book(app),
-                                 player_pools(app), ord);
+        // Каст с макро-карты — это ровно переключение сустейна (гейт выше
+        // требует `def->sustained`), то есть класс «баф». Дверь уровня
+        // сквада пересчитает производные сама (M-301).
+        sm::squad_cast_start(*app.macroStore,
+                             sm::player_flag_handle(app.gs), ord);
         emit_spell_cast(app, id, true, "");
         return true;
     }
@@ -2530,6 +2533,9 @@ bool cast_active_spell(App& app) {
     const sm::CharacterSheet effCast = player_effective_sheet(app);
     const bool ok = sm::spellbook_cast(app.sceneObjects.get(),
         app.macroStore.get(),
+        // ЧЕЙ каст (M-301): сустейн ставит бонус на ЭТОТ сквад, и дверь
+        // внутри пересчитает его производные.
+        sm::player_flag_handle(app.gs),
         player_book(app),
         player_pools(app),
         effCast.attributes,
@@ -3198,7 +3204,8 @@ void apply_creation(App& app) {
     {
         // The sheet changed wholesale: ceilings follow through THE door, and
         // — a moment that SAYS it heals — every bar fills to its new maximum.
-        sm::refresh_player_body(app.gs, *app.macroStore);
+        sm::refresh_squad_body(*app.macroStore,
+                               sm::player_flag_handle(app.gs));
         sm::ecs::Pools& pools = player_pools(app);
         pools.hp = pools.maxHp;
         pools.mp = pools.maxMp;
@@ -3472,7 +3479,6 @@ void process_world_events(App& app) {
         const sm::ecs::MacroCell* qc = sm::player_flag_cell(app.gs, *app.macroStore);
         app.quests.tick(app.activeQuests, *app.macroStore, app.bus, app.gs,
                         sm::player_inventory(app.gs, *app.macroStore),
-                        sm::player_sheet(app.gs, *app.macroStore),
                         qc ? sm::ecs::cell_x(*qc, app.gs.mapW) : 0,
                         qc ? sm::ecs::cell_y(*qc, app.gs.mapW) : 0);
     }
@@ -3589,29 +3595,32 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // the wall clock's. Underground the world CLOCK crawls (one tick per
     // kSubworldTickDivisor steps) while the fight keeps the full step rate, so
     // a cooldown is the same length of FIGHT in both worlds (core/time.h).
-    sm::spellbook_tick(player_book(app),
-                       player_pools(app),
-                       /*steps=*/1u);
+    // ДВЕРЬ УРОВНЕМ СКВАДА (M-301): гашение сустейна по нулю маны ТОЖЕ есть
+    // изменение анкеты — оно снимает со сквада стоявший бонус, — и до этого
+    // шага его свежесть держал сторож ниже, а не сама операция.
+    sm::squad_spellbook_tick(*app.macroStore,
+                             sm::player_flag_handle(app.gs),
+                             /*steps=*/1u);
     // (No wind-up queue: a cast resolves at its own click — owner verdict
     // 2026-09-09 — and what it costs in time is the body's recovery gate,
     // drained with every other fighter's by tick_body_recovery.)
-    // The bars follow the EFFECTIVE sheet (phase 4): a worn «+2 END» plate
-    // fattens the SP bar, and taking it off (or a sustained spell lapsing —
-    // spellbook_tick above has already snuffed this step's casualties) thins
-    // it back. Refreshed exactly WHEN the standing sum changes, not every
-    // step (the change gate is cheap and the refresh is not free). The door
-    // preserves each bar's FRACTION («доля у всех», owner 2026-09-10), so
-    // this is never a free heal — the full restore belongs to creation,
-    // which says it heals. The old hazard this gate was born from — a
-    // per-step refresh silently thawing the harness's frozen spRegen
-    // (seed-999, 2026-09-06) — died with the cached rates themselves.
-    {
-        const sm::BonusTotals standing = player_standing_bonuses(app);
-        if (standing != app.lastStandingBonuses) {
-            app.lastStandingBonuses = standing;
-            sm::refresh_player_body(app.gs, *app.macroStore);
-        }
-    }
+    // ЗДЕСЬ СТОЯЛ СТОРОЖ, И ОН СНЕСЁН (M-301, вердикт владельца: «да он финя
+    // сноси какойто говносторож»). Он каждый тик считал полную сумму
+    // надетого на сквад игрока и звал дверь листа, если та разошлась с
+    // прошлой, — то есть был ТРЕТЬИМ ответом на вопрос «свежа ли производная
+    // анкеты»: не разряд А (его никто не зовёт из места изменения) и не
+    // разряд Б (звонка-дисциплины у него нет вовсе).
+    //
+    // Он лечил СЛЕДСТВИЕ: двери классов изменений стояли НИЖЕ сквада и
+    // пересчитать производные не могли. Теперь они стоят на уровне сквада
+    // (`squad_equip`, `squad_spend_*`, `squad_award_exp`, `squad_cast_start`,
+    // `squad_spellbook_tick`, `edit_squad_sheet` — все `@src/macro/squad.h`,
+    // кроме двух бафовых), пересчёт сидит внутри них, и сторожить нечего.
+    //
+    // И ОН БЫЛ НЕ ПРОСТО ИЗБЫТОЧЕН, А НЕВЕРЕН: сумму он брал у РОДНОГО
+    // сквада (`player_standing_bonuses` → `player_squad_handle`), а дверь
+    // звал на сквад ФЛАЖКА, то есть при вселении сторожил одного и
+    // пересчитывал другого.
     if (app.subworld.active()) {
         stats.subworldActive = true;
         // (No before/after position pair, and no distance walked. They existed
@@ -4077,18 +4086,20 @@ const sm::AttributeDef* console_attr_by_key(const std::string& key) {
     return nullptr;
 }
 
-// A console write that CHANGED the base sheet refreshes through THE door
-// (fractions preserved — «доля у всех» — so never a free heal and never a
-// theft).
-void console_recompute_maxima(App& app) {
-    sm::refresh_player_body(app.gs, *app.macroStore);
-}
+// (`console_recompute_maxima` СНЕСЕНА — M-301. Это был звонок-дисциплина
+//  разряда Б: консольная команда сама решала, «изменилось ли», и сама звала
+//  пересчёт. Оба её звонящих (`skill`, `attr`) идут теперь ключом
+//  `edit_squad_sheet@src/macro/squad.h`, внутри которого пересчёт и стоит.)
 
 // THE player's wardrobe, the way the equipment tab gets it: an opt-in
 // container on his squad entity, created the moment something wants to wear.
 // nullptr before the world exists.
 sm::ecs::BodyEquipment* console_player_equipment(App& app) {
-    const sm::MacroHandle pe = sm::player_squad_handle(app.gs);
+    // ФЛАЖОК, НЕ РОДНОЙ СКВАД (M-301): сумка, в которую указывает надетое,
+    // читается по флажку (`player_bag` → `player_inventory`), поэтому гир
+    // обязан читаться им же — иначе при вселении ячейка тела одного сквада
+    // индексирует инвентарь другого.
+    const sm::MacroHandle pe = sm::player_flag_handle(app.gs);
     if (!app.macroStore || !app.macroStore->valid(pe)) return nullptr;
     // ФЛИП 1в: гир — колонка store у КАЖДОГО сквада (вердикт 2026-09-25),
     // opt-in умер вместе с «16384 не платят».
@@ -4628,8 +4639,15 @@ void register_console_commands(App& app) {
             if (!sm::dev::arg_int(a, 0, amount)) return false;
             sm::CharacterSheet* sheet = sm::player_sheet(app.gs, *app.macroStore);
             if (!sheet) { c.printfln(Lvl::Error, "no world"); return false; }
+            // ЧЕРЕЗ ОДНУ ДВЕРЬ КЛАССА «ПРОКАЧКА» (M-301). Здесь звалась
+            // `award_exp` над листом напрямую — то есть консоль выдавала опыт
+            // своими правилами: БЕЗ WIS-дивиденда и без пересчёта потолков.
+            // Дивиденд теперь применяется, как у всякой выдачи (вердикт
+            // владельца о единой двери роста), поэтому напечатанное «+N» —
+            // это запрошенное, а `gained` — взятые уровни.
+            const int gained = sm::squad_award_exp(
+                *app.macroStore, sm::player_flag_handle(app.gs), amount);
             auto& ld = sheet->levelData;
-            const int gained = sm::award_exp(ld, amount);
             c.printfln(Lvl::Ok, "exp +%d -> level %d (%d gained), %d/%d to next",
                        amount, ld.level, gained, ld.exp,
                        sm::exp_to_next_of(ld));
@@ -4645,11 +4663,18 @@ void register_console_commands(App& app) {
             if (!sheet) { c.printfln(Lvl::Error, "no world"); return false; }
             auto& ld = sheet->levelData;
             const int before = ld.level;
-            for (int i = 0; i < n; ++i) {
-                if (ld.exp < sm::exp_to_next_of(ld))
-                    ld.exp = sm::exp_to_next_of(ld);
-                sm::try_level_up(ld);
-            }
+            // Один вход в дверь листа на все N уровней: «добрать опыт до
+            // порога и взять уровень» — правка не класса, а отладочная,
+            // поэтому идёт ключом (M-301), а пересчёт стоит внутри него.
+            sm::edit_squad_sheet(
+                *app.macroStore, sm::player_flag_handle(app.gs),
+                [n](sm::CharacterSheet& s) {
+                    for (int i = 0; i < n; ++i) {
+                        if (s.levelData.exp < sm::exp_to_next_of(s.levelData))
+                            s.levelData.exp = sm::exp_to_next_of(s.levelData);
+                        sm::try_level_up(s.levelData);
+                    }
+                });
             c.printfln(Lvl::Ok, "level %d -> %d  (%d attr, %d skill pts avail)",
                        before, ld.level, ld.attributePoints, ld.skillPoints);
             return true;
@@ -4718,30 +4743,34 @@ void register_console_commands(App& app) {
             const int want = std::clamp(rank, 0, sm::kMaxSkillRank);
             if (want != rank)
                 c.printfln(Lvl::Warn, "rank clamped to %d (the law's cap)", want);
-            sm::CharacterSheet* sheet = sm::player_sheet(app.gs, *app.macroStore);
-            if (!sheet) { c.printfln(Lvl::Error, "no world"); return false; }
-            auto& skills = sheet->skills;
-            bool changed = false;
-            if (a[0] == "all") {
-                for (const auto& d : sm::kSkillDefs) {
-                    if (skills.of(d.id) == want) continue;
-                    skills[d.id] = std::uint8_t(want);
-                    changed = true;
-                }
+            if (!sm::player_sheet(app.gs, *app.macroStore)) {
+                c.printfln(Lvl::Error, "no world"); return false;
+            }
+            const sm::SkillDef* one =
+                a[0] == "all" ? nullptr : console_skill_by_key(a[0]);
+            if (a[0] != "all" && !one) {
+                c.error("unknown skill '" + a[0] + "' - type 'skills' for keys");
+                return true;
+            }
+            // Ключом (M-301): пересчёт внутри двери, флажка `changed` и
+            // звонка `console_recompute_maxima` больше нет.
+            sm::edit_squad_sheet(
+                *app.macroStore, sm::player_flag_handle(app.gs),
+                [one, want](sm::CharacterSheet& s) {
+                    if (!one) {
+                        for (const auto& d : sm::kSkillDefs)
+                            s.skills[d.id] = std::uint8_t(want);
+                    } else {
+                        s.skills[one->id] = std::uint8_t(want);
+                    }
+                });
+            if (!one) {
                 c.printfln(Lvl::Ok, "all %zu skills -> %d",
                            std::size(sm::kSkillDefs), want);
             } else {
-                const sm::SkillDef* d = console_skill_by_key(a[0]);
-                if (!d) {
-                    c.error("unknown skill '" + a[0] + "' - type 'skills' for keys");
-                    return true;
-                }
-                changed = skills.of(d->id) != want;
-                skills[d->id] = std::uint8_t(want);
-                c.printfln(Lvl::Ok, "%s = %d (effective %d)", d->key, want,
-                           player_effective_sheet(app).skills.of(d->id));
+                c.printfln(Lvl::Ok, "%s = %d (effective %d)", one->key, want,
+                           player_effective_sheet(app).skills.of(one->id));
             }
-            if (changed) console_recompute_maxima(app);
             return true;
         });
 
@@ -4772,30 +4801,32 @@ void register_console_commands(App& app) {
             const int want = std::clamp(score, 1, sm::kMaxAttributeScore);
             if (want != score)
                 c.printfln(Lvl::Warn, "score clamped to %d", want);
-            sm::CharacterSheet* sheet = sm::player_sheet(app.gs, *app.macroStore);
-            if (!sheet) { c.printfln(Lvl::Error, "no world"); return false; }
-            auto& attrs = sheet->attributes;
-            bool changed = false;
-            if (a[0] == "all") {
-                for (const auto& d : sm::kAttributeDefs) {
-                    if (attrs.of(d.id) == want) continue;
-                    attrs[d.id] = std::uint8_t(want);
-                    changed = true;
-                }
+            if (!sm::player_sheet(app.gs, *app.macroStore)) {
+                c.printfln(Lvl::Error, "no world"); return false;
+            }
+            const sm::AttributeDef* one =
+                a[0] == "all" ? nullptr : console_attr_by_key(a[0]);
+            if (a[0] != "all" && !one) {
+                c.error("unknown attribute '" + a[0] + "' - type 'attrs' for keys");
+                return true;
+            }
+            sm::edit_squad_sheet(
+                *app.macroStore, sm::player_flag_handle(app.gs),
+                [one, want](sm::CharacterSheet& s) {
+                    if (!one) {
+                        for (const auto& d : sm::kAttributeDefs)
+                            s.attributes[d.id] = std::uint8_t(want);
+                    } else {
+                        s.attributes[one->id] = std::uint8_t(want);
+                    }
+                });
+            if (!one) {
                 c.printfln(Lvl::Ok, "all %zu attributes -> %d",
                            std::size(sm::kAttributeDefs), want);
             } else {
-                const sm::AttributeDef* d = console_attr_by_key(a[0]);
-                if (!d) {
-                    c.error("unknown attribute '" + a[0] + "' - type 'attrs' for keys");
-                    return true;
-                }
-                changed = attrs.of(d->id) != want;
-                attrs[d->id] = std::uint8_t(want);
-                c.printfln(Lvl::Ok, "%s = %d (effective %d)", d->key, want,
-                           player_effective_sheet(app).attributes.of(d->id));
+                c.printfln(Lvl::Ok, "%s = %d (effective %d)", one->key, want,
+                           player_effective_sheet(app).attributes.of(one->id));
             }
-            if (changed) console_recompute_maxima(app);
             return true;
         });
 
@@ -4901,9 +4932,13 @@ void register_console_commands(App& app) {
             }
             int cell = -1;
             const bool hasCell = sm::dev::arg_int(a, 1, cell);
+            // Двери УРОВНЯ СКВАДА (M-301): пересчёт производных внутри них,
+            // поэтому консольное переодевание больше не зависит от сторожа
+            // главного цикла — он снесён этим же нарядом.
+            const sm::MacroHandle ph = sm::player_flag_handle(app.gs);
             const int landed = hasCell
-                ? sm::equip_at(eqc->gear, bag, invSlot, cell)
-                : sm::equip(eqc->gear, bag, invSlot);
+                ? sm::squad_equip_at(*app.macroStore, ph, invSlot, cell)
+                : sm::squad_equip(*app.macroStore, ph, invSlot);
             if (landed >= 0) {
                 c.printfln(Lvl::Ok, "%s -> cell %d (%s)", a[0].c_str(), landed,
                            sm::body_part_def(sm::equip_cell_part(landed)).label);
@@ -4926,7 +4961,8 @@ void register_console_commands(App& app) {
             const std::uint16_t was =
                 (cell >= 0 && cell < sm::kEquipCells)
                     ? eqc->gear.worn[std::size_t(cell)] : sm::kWornNothing;
-            if (!sm::unequip(eqc->gear, bag, cell)) {
+            if (!sm::squad_unequip(*app.macroStore,
+                                   sm::player_flag_handle(app.gs), cell)) {
                 c.printfln(Lvl::Warn, "nothing to take off in cell %d", cell);
                 return true;
             }

@@ -173,16 +173,25 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
         transfer_player_flag(st, gs.playerFlagRef, home);
     }
 
-    // The SAME door every lord's numbers go through (squad.h) — the sheet is
-    // the law, ceilings and march caches are its cache, and there is one
-    // refresh. The EFFECTIVE sheet (phase 4): a worn +END breastplate
-    // carries and marches like the body actually wearing it. The ceilings
-    // self-gate («доля у всех» rescale only when a ceiling actually moved),
-    // so this every-tick walk is an identity while nothing stands or falls
-    // off him — and a sheet-change moment anywhere that forgets its own
-    // refresh_player_body call heals within one macro tick instead of
-    // drifting forever.
-    refresh_player_body(gs, st);
+    // ЗДЕСЬ СТОЯЛ БЕЗУСЛОВНЫЙ ПЕРЕСЧЁТ ЛИСТА КАЖДЫЙ МАКРО-ТИК, И ОН СНЕСЁН
+    // (M-301). Эта дверь зовётся из главного цикла каждым макро-тиком вне
+    // субмира, так что звонок был ЧЕТВЁРТЫМ ответом на «свежа ли производная
+    // анкеты» — и самым откровенным: его прежняя шапка прямо называла себя
+    // страховкой за забытые звонки («a sheet-change moment anywhere that
+    // forgets its own refresh_player_body call heals within one macro tick
+    // instead of drifting forever»).
+    //
+    // Страховка была и неполной, и маскирующей. НЕПОЛНОЙ — под землёй эта
+    // дверь не зовётся вовсе, значит внизу забытый звонок не лечился ничем.
+    // МАСКИРУЮЩЕЙ — именно она делала невидимыми три класса изменений, у
+    // которых пересчёта не было ни одного (надевание, квестовый опыт,
+    // гашение сустейна): наверху дефект сам заживал через тик, и ни один
+    // свидетель его не видел.
+    //
+    // Теперь пересчёт живёт ВНУТРИ дверей классов изменений
+    // (`refresh_squad_body@src/macro/squad.h` и её звонящие), поэтому
+    // страховать нечего: место, где анкета изменилась, и место, где она
+    // пересчитана, — одно и то же место.
 }
 
 bool wake_player_in_original_body(GameState& gs, MacroStore& st) {
@@ -308,18 +317,9 @@ const ecs::Pools* player_pools(const GameState& gs, const MacroStore& st) {
     return slot == kMacroNoSlot ? nullptr : &st.pools[slot];
 }
 
-void refresh_player_body(const GameState& gs, MacroStore& st) {
-    const MacroHandle h = player_flag_handle(gs);
-    if (!st.valid(h)) return;
-    // The ROW is the record's own (A1, 2026-09-17): the door follows the
-    // flag, so its row must too — a worn lord's ceilings and haul are his
-    // row's, not the Adventurer's.
-    const BonusTotals bt = standing_bonuses_of(st, h);
-    const auto& kind = st.kind[h.slot];
-    refresh_body_from_sheet(st.pools[h.slot], &st.runtime[h.slot],
-                            effective_sheet(st.sheet[h.slot], bt),
-                            NPCType(kind.type), &bt);
-}
+// (Тело `refresh_player_body` снесено — M-301; см. некролог в шапке. Строка
+//  существа, которую она читала НЕЗАЩИЩЁННО (`NPCType(kind.type)`), спрашивается
+//  теперь дверью `squad_row_type@src/macro/squad.h`.)
 
 SpellBook* player_spellbook(const GameState& gs, MacroStore& st) {
     const std::uint16_t slot = flag_slot_or_none(gs, st);

@@ -565,7 +565,15 @@ namespace sm::ui
         // still write the BASE one, which is the only thing they may touch.
         // Mutable: a spend refreshes it in place so the row shows the new
         // number this very frame, not the next.
-        const MacroHandle panelSquadH = player_squad_handle(gs);
+        // СУБЪЕКТ ПАНЕЛИ — ФЛАЖОК, А НЕ РОДНОЙ СКВАД (M-301). Здесь стоял
+        // `player_squad_handle`, тогда как лист, полосы и сумка этой же
+        // панели читаются по ФЛАЖКУ (`player_sheet`/`player_pools`/
+        // `player_inventory` → `flag_slot_or_none`). При вселении панель
+        // показывала надетое и сумму ОДНОГО сквада поверх листа и сумки
+        // ДРУГОГО, а двери трат писали в третий. Флажок и есть «кем я на
+        // карте сейчас» — им отвечают все остальные половины анкеты, и
+        // теперь им же отвечает эта.
+        const MacroHandle panelSquadH = player_flag_handle(gs);
         const BonusTotals panelStanding = st.valid(panelSquadH)
             ? standing_bonuses_of(st, panelSquadH)
             : BonusTotals{};
@@ -631,8 +639,7 @@ namespace sm::ui
                         {
                             if (ImGui::Button("Level Up"))
                             {
-                                if (try_level_up(sheet.levelData))
-                                    refresh_player_body(gs, st);
+                                squad_level_up(st, panelSquadH);
                             }
                         }
                         ImGui::TableNextColumn();
@@ -658,9 +665,8 @@ namespace sm::ui
                             ImGui::BeginDisabled(sheet.levelData.attributePoints <= 0);
                             if (ImGui::SmallButton("+"))
                             {
-                                if (spend_attribute_point(sheet.levelData, sheet.attributes, row.id))
+                                if (squad_spend_attribute(st, panelSquadH, row.id))
                                 {
-                                    refresh_player_body(gs, st);
                                     effPanel = player_effective_sheet(gs, st);
                                     derived = calculate_derived_effective(gs, st);
                                 }
@@ -724,9 +730,8 @@ namespace sm::ui
                                 ImGui::BeginDisabled(sheet.levelData.learnPicks <= 0);
                                 if (ImGui::SmallButton("Learn"))
                                 {
-                                    if (spend_learn_pick(sheet.levelData, sheet.skills, row.id))
+                                    if (squad_spend_learn(st, panelSquadH, row.id))
                                     {
-                                        refresh_player_body(gs, st);
                                         effPanel = player_effective_sheet(gs, st);
                                         derived = calculate_derived_effective(gs, st);
                                     }
@@ -744,9 +749,8 @@ namespace sm::ui
                                 ImGui::BeginDisabled(sheet.levelData.skillPoints <= 0);
                                 if (ImGui::SmallButton("+"))
                                 {
-                                    if (spend_skill_point(sheet.levelData, sheet.skills, row.id))
+                                    if (squad_spend_skill(st, panelSquadH, row.id))
                                     {
-                                        refresh_player_body(gs, st);
                                         effPanel = player_effective_sheet(gs, st);
                                         derived = calculate_derived_effective(gs, st);
                                     }
@@ -1157,11 +1161,15 @@ namespace sm::ui
                     // serialization" — all four exist (macro/anatomy.h), so
                     // what was missing was only the hands to use them.
                     ecs::BodyEquipment *eqc = nullptr;
-                    if (const MacroHandle pe = player_squad_handle(gs);
-                        st.valid(pe))
+                    if (st.valid(panelSquadH))
                     {
                         // ФЛИП 1в: гир — колонка store у каждого сквада.
-                        eqc = &st.gear[pe.slot];
+                        // Субъект — ФЛАЖОК, как и у сумки, в которую эта
+                        // вкладка пишет указатели надетого (M-301): до правки
+                        // гир брался у родного сквада, а сумка у флажка, то
+                        // есть при вселении надетое индексировало ЧУЖОЙ
+                        // инвентарь.
+                        eqc = &st.gear[panelSquadH.slot];
                     }
 
                     if (!eqc)
@@ -1247,8 +1255,10 @@ namespace sm::ui
                                 {
                                     // Вещь никуда не движется — она и так в
                                     // сумке; снятие лишь гасит указатель
-                                    // (истина одна — M-183).
-                                    unequip(gear, playerBag, cell);
+                                    // (истина одна — M-183). Дверь уровня
+                                    // сквада: производные анкеты пересчитаны
+                                    // внутри неё (M-301).
+                                    squad_unequip(st, panelSquadH, cell);
                                 }
                                 ImGui::PopID();
                             }
@@ -1270,22 +1280,22 @@ namespace sm::ui
                             ImGui::TableHeadersRow();
                             for (int slot = 0; slot < kMaxInventorySlots; ++slot)
                             {
-                                const ItemRef &st = playerBag.slots[std::size_t(slot)];
-                                if (st.empty()) continue;
+                                const ItemRef &stack = playerBag.slots[std::size_t(slot)];
+                                if (stack.empty()) continue;
                                 if (slot_is_worn(gear, slot))
                                     continue;   // уже на теле — строка выше
-                                const ItemDef *def = item_def_at(int(st.def));
+                                const ItemDef *def = item_def_at(int(stack.def));
                                 if (!def || def->slotMask == 0)
                                     continue;   // the row itself says it is not worn
                                 ++equipStacks;
                                 ImGui::TableNextRow();
                                 ImGui::TableNextColumn();
-                                draw_item_ref_name(st);
+                                draw_item_ref_name(stack);
                                 ImGui::TextDisabled("%s", def->id);
                                 ImGui::TableNextColumn();
-                                ImGui::Text("x%d", st.count);
+                                ImGui::Text("x%d", stack.count);
                                 ImGui::TableNextColumn();
-                                draw_item_ref_bonuses(st);
+                                draw_item_ref_bonuses(stack);
                                 ImGui::TableNextColumn();
                                 ImGui::PushID(slot);
                                 if (ImGui::SmallButton("Wear"))
@@ -1294,7 +1304,7 @@ namespace sm::ui
                                     // любом исходе остаётся в сумке —
                                     // надевание ставит ИНДЕКС (M-183), и
                                     // консервация держится по построению.
-                                    equip(gear, playerBag, slot);
+                                    squad_equip(st, panelSquadH, slot);
                                 }
                                 ImGui::PopID();
                             }

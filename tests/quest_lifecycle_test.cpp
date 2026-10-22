@@ -11,6 +11,7 @@
 #include "events/quests/quest_engine.h"
 #include "macro/labour.h"   // settle_souls — фикстура селит души дверью мира
 #include "macro/place_birth.h"  // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
+#include "macro/player_entity.h" // игрок свидетеля рождается прод-дверью
 #include "macro/squad.h"        // set_suzerain — знание роли в interests ТЕЛА
 #include "macro/store.h"
 #include "tables/codex.h"
@@ -83,10 +84,26 @@ sm::Inventory bag{};
 // (Голова игрока — `sm::AgentMemory head` — умерла 2026-10-11 вместе со всей
 // памятью агента: непокрытый штраф ложился туда долговым фактом, а читателей
 // у памяти не было ни одного. Движок больше не принимает её параметром.)
-// The player's OWNED sheet (посадка Б): an XP grant lands in the component
-// the body owns, and the applicator/engine are handed it like `bag`.
-// Reset per scenario beside them.
-sm::CharacterSheet sheet{};
+// ИГРОК СВИДЕТЕЛЯ РОЖДАЕТСЯ ПРОД-ДВЕРЬЮ, А ЕГО АНКЕТА ЕСТЬ КОЛОНКА СКВАДА
+// (§8 п.11; переделано M-301). Здесь стояла свободно лежащая
+// `sm::CharacterSheet sheet{}`, и движок принимал её ПАРАМЕТРОМ — а прод
+// отдавал в тот параметр колонку слота флажка. С тех пор как награда опытом
+// идёт дверью класса «прокачка» по ХЭНДЛУ, лист параметром не едет вовсе, и
+// свидетель, проверяющий свою структуру, проверял бы носитель, которого в
+// проде нет: ровно та слепота, которой §8 п.6 посвящён целиком.
+//
+// Сквад рождается `ensure_macro_player_entity` — той же дверью, что в игре, —
+// поэтому у него есть и флажок, и лист, и колонки производных.
+sm::MacroHandle settle_player(sm::GameState& gs) {
+    sm::ensure_macro_player_entity(gs, places());
+    return sm::player_flag_handle(gs);
+}
+// Лист игрока ЧИТАЕТСЯ колонкой; писать его свидетель обязан ключом
+// `edit_squad_sheet`, как и всякий непрокачечный правщик листа.
+const sm::CharacterSheet& player_sheet_col(sm::MacroHandle h) {
+    static const sm::CharacterSheet blank{};
+    return places().valid(h) ? places().sheet[h.slot] : blank;
+}
 
 const sm::Quest* find_delivery_quest(const std::vector<sm::Quest>& quests,
                                      const char* itemId) {
@@ -160,7 +177,6 @@ int count_tag(const sm::EventBus& bus, sm::EventTag tag) {
 
 void test_event_bus_contract_surface() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     sm::EventBus bus;
     CHECK_OR_RETURN(!(bus.tick() != 0
         || bus.subscription_count() != 0
@@ -303,7 +319,6 @@ void test_event_bus_contract_surface() {
 
 void test_quest_accept_event_order() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     sm::Quest q{};
     q.title = "Alias";
     sm::GameEvent onAccept{sm::EventTag::SpawnEntity};
@@ -353,15 +368,14 @@ void test_quest_accept_event_order() {
 // one a returning `damage_hp` would have to get past.
 void test_effect_applicator_ts_verbs() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     // The player's standing lives in the relation matrix now, so the verb test
     // drives a whole GameState; `player` stays a reference for readability.
     sm::GameState verbState{};
     sm::PlayerState& player = verbState.player;
     bag.add("coin_empire_copper", 10);
-    sheet.levelData = sm::default_level_data();
-    sheet.levelData.exp = 0;
-    // Порог — ВЫВОД из уровня (M-246а): его не задают, его назначает уровень.
+    // (Лист этому сценарию не нужен вовсе: он спрашивает реестр бонусов и
+    //  негативный контроль выдачи монет, а опыта не касается. Две строки
+    //  засева листа стояли здесь мёртвыми — их никто не читал ни разу.)
 
     std::vector<sm::GameEvent> events;
     // НЕГАТИВНЫЙ КОНТРОЛЬ ВЫДАЧИ (M-139, вердикт владельца 2026-09-26):
@@ -469,13 +483,17 @@ void test_effect_applicator_ts_verbs() {
 // а не в двери, которую никто не звал.
 void test_grant_xp_pays_the_wis_dividend() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     sm::GameState wisState = fresh_world(64, 64);
-    sheet.levelData = sm::default_level_data();
-    // Уровень повыше, чтобы порог (вывод из него, M-246а) стоял ВЫШЕ
-    // выплаты: мерим ОПЫТ, а не случайный уровень-ап.
-    sheet.levelData.level = 4;
-    sheet.attributes[sm::AttributeId::Wis] = 10;  // expMult = 1.10
+    const sm::MacroHandle ph = settle_player(wisState);
+    CHECK_OR_RETURN(places().valid(ph),
+                    "фикстура: игрок обязан родиться — наградить некого");
+    sm::edit_squad_sheet(places(), ph, [](sm::CharacterSheet& s) {
+        s.levelData = sm::default_level_data();
+        // Уровень повыше, чтобы порог (вывод из него, M-246а) стоял ВЫШЕ
+        // выплаты: мерим ОПЫТ, а не случайный уровень-ап.
+        s.levelData.level = 4;
+        s.attributes[sm::AttributeId::Wis] = 10;  // expMult = 1.10
+    });
 
     sm::Quest q{};
     q.title = "Paid in wisdom";
@@ -495,16 +513,15 @@ void test_grant_xp_pays_the_wis_dividend() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, places(), bus, wisState, &bag, &sheet,
+    engine.tick(active, places(), bus, wisState, &bag,
                 g_playerCellX, g_playerCellY);
 
     CHECK_OR_RETURN(active.empty(), "the wis-dividend quest did not complete");
-    if (sheet.levelData.exp != 110) {
-        std::fprintf(stderr, "exp=%d (expected 110)\n",
-                     sheet.levelData.exp);
+    const int paidExp = player_sheet_col(ph).levelData.exp;
+    if (paidExp != 110) {
+        std::fprintf(stderr, "exp=%d (expected 110)\n", paidExp);
     }
-    CHECK(sheet.levelData.exp == 110,
-          "an XP reward ignored the wis expMult");
+    CHECK(paidExp == 110, "an XP reward ignored the wis expMult");
 }
 
 // A quest that pays experience must pay the LEVEL it is worth. This is the bug
@@ -513,10 +530,14 @@ void test_grant_xp_pays_the_wis_dividend() {
 // piled up unspendable, and a quest-only playthrough never levelled at all.
 void test_quest_xp_reward_levels_the_player() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     sm::GameState gs = fresh_world(64, 64);
-    sheet.levelData = sm::default_level_data();
-    sheet.attributes[sm::AttributeId::Wis] = 0;  // isolate from the wis dividend
+    const sm::MacroHandle ph = settle_player(gs);
+    CHECK_OR_RETURN(places().valid(ph),
+                    "фикстура: игрок обязан родиться — наградить некого");
+    sm::edit_squad_sheet(places(), ph, [](sm::CharacterSheet& s) {
+        s.levelData = sm::default_level_data();
+        s.attributes[sm::AttributeId::Wis] = 0;  // изолируем от дивиденда
+    });
 
     // Worth three thresholds at once — a chapter reward at low level does this,
     // and one level-up per grant would silently swallow the rest.
@@ -542,13 +563,25 @@ void test_quest_xp_reward_levels_the_player() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, g_playerCellX, g_playerCellY);
 
     CHECK_OR_RETURN(active.empty(), "the reward quest did not complete");
-    CHECK_OR_RETURN(!(sheet.levelData.level != 4),
+    CHECK_OR_RETURN(!(player_sheet_col(ph).levelData.level != 4),
         "quest XP did not level the player (or stopped at one level)");
-    CHECK_OR_RETURN(!(sheet.levelData.exp != 7),
+    // ОСТАТОК НЕСЁТСЯ — УТВЕРЖДЕНИЕ ОБ ОТНОШЕНИИ, А НЕ ПЕРЕСКАЗ ЧИСЛА
+    // (§8 п.4). Здесь стоял литерал 7 — ровно та добавка, что положена сверх
+    // трёх порогов, — и он был верен ТОЛЬКО пока дивиденд WIS читался с
+    // БАЗОВОГО листа. Дверь класса «прокачка» читает ЭФФЕКТИВНЫЙ (ЗАКОН
+    // АНКЕТЫ называет «XP» среди его читателей прямо, и так же судит опыт за
+    // убийство — до M-301 у одного дивиденда было ДВА листа), а эффективная
+    // дверь поднимает атрибут с нуля до единицы, поэтому самый малый
+    // множитель мира есть 101 %: «изолировать дивиденд нулём WIS» нельзя
+    // вовсе. Утверждаем то, что закон обещает на самом деле.
+    const sm::LevelData& ld = player_sheet_col(ph).levelData;
+    CHECK_OR_RETURN(!(ld.exp <= 0),
         "the remainder past the last threshold was not carried");
+    CHECK_OR_RETURN(!(ld.exp >= sm::exp_to_next_level(ld.level)),
+        "the carried remainder must not itself be another unclaimed level");
 }
 
 // Every builtin node is registered AND active. The name and the three
@@ -561,7 +594,6 @@ void test_quest_xp_reward_levels_the_player() {
 // which nothing has ever emitted, so it could not fire (removed 2026-08-05).
 void test_builtin_nodes_are_registered_and_active() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     sm::LogicNodeEngine logic;
     sm::register_builtin_nodes(logic);
     const char* kBuiltinIds[] = {"sys_settlement"};
@@ -581,7 +613,6 @@ void test_builtin_nodes_are_registered_and_active() {
 // mutating the player. Custom is the permanent such tag.
 void test_unhandled_tag_is_inert_in_applicator() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     sm::GameState levelState{};
     bag.add("coin_empire_copper", 6);
 
@@ -616,7 +647,6 @@ void test_unhandled_tag_is_inert_in_applicator() {
 
 void test_settlement_show_dialog_node() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     const auto run_case = [](sm::EventTag tag, const char* name) {
         sm::PlayerState player{};
         sm::EventBus bus;
@@ -661,7 +691,6 @@ void test_settlement_show_dialog_node() {
 
 void test_logic_node_add_registers_inactive() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     sm::PlayerState player{};
     sm::EventBus bus;
     sm::LogicNodeEngine logic;
@@ -691,7 +720,6 @@ void test_logic_node_add_registers_inactive() {
 
 void test_logic_node_pending_ids_survive_node_add() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     sm::PlayerState player{};
     sm::EventBus bus;
     sm::LogicNodeEngine logic;
@@ -743,7 +771,6 @@ void test_logic_node_pending_ids_survive_node_add() {
 
 void test_logic_node_tick_order_matches_ts_set() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     sm::PlayerState player{};
     sm::EventBus bus;
     sm::LogicNodeEngine logic;
@@ -789,7 +816,6 @@ void test_logic_node_tick_order_matches_ts_set() {
 
 void test_logic_node_effect_can_remove_self() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     sm::PlayerState player{};
     sm::EventBus bus;
     sm::LogicNodeEngine logic;
@@ -819,7 +845,6 @@ void test_logic_node_effect_can_remove_self() {
 
 void test_logic_node_self_reactivation_safe_cases() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     {
         sm::PlayerState player{};
         sm::EventBus bus;
@@ -878,7 +903,6 @@ void test_logic_node_self_reactivation_safe_cases() {
 
 void test_intro_show_story_node() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     // The intro is PURE SLIDES since 2026-09-03: the asking (sex, name,
     // homeland) moved to the pre-world creation screen, which renders the
     // same authored choice tables through creation_*_choices — pinned here so
@@ -969,7 +993,6 @@ void test_intro_show_story_node() {
 
 void test_quest_failed_settles_its_offer() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     sm::GameState gs = fresh_world(128, 128);
     gs.worldTime = sm::world_time_at(10, 6, 0);
         g_playerCellX = 1;
@@ -995,7 +1018,7 @@ void test_quest_failed_settles_its_offer() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty()),
         "expired quest was not removed");
     CHECK_OR_RETURN(!(!has_tag(bus, sm::EventTag::QuestFail)),
@@ -1028,14 +1051,13 @@ void test_quest_failed_settles_its_offer() {
     // The day turns: this offer can never be generated again (its bornDay is
     // part of its identity), so the settled memory prunes itself.
     gs.worldTime = sm::world_time_at(11, 6, 0);
-    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!gs.player.settledQuestOffers.empty()),
         "yesterday's settled offer was not pruned with its day");
 }
 
 void test_item_delivery_direct_path() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     sm::GameState gs = fresh_world(128, 128);
     gs.worldTime = sm::world_time_at(0, 6, 0);
         g_playerCellX = 12;
@@ -1072,7 +1094,7 @@ void test_item_delivery_direct_path() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, g_playerCellX, g_playerCellY);
 
     CHECK_OR_RETURN(!(!active.empty()),
         "delivery quest did not complete from inventory condition");
@@ -1089,14 +1111,18 @@ void test_item_delivery_direct_path() {
 
 void test_quest_reward_dispatch_order_and_application() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     sm::GameState gs = fresh_world(128, 128);
     gs.worldTime = sm::world_time_at(0, 6, 0);
         g_playerCellX = 10;
     g_playerCellY = 10;
     bag.add("coin_empire_copper", 20);
-    sheet.levelData = sm::default_level_data();
-    sheet.levelData.exp = 0;
+    const sm::MacroHandle ph = settle_player(gs);
+    CHECK_OR_RETURN(places().valid(ph),
+                    "фикстура: игрок обязан родиться — наградить некого");
+    sm::edit_squad_sheet(places(), ph, [](sm::CharacterSheet& s) {
+        s.levelData = sm::default_level_data();
+        s.levelData.exp = 0;
+    });
 
     // СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11): у награды обязан быть
     // ДАРИТЕЛЬ с казной, потому что платит только он — выдача монет из
@@ -1159,7 +1185,7 @@ void test_quest_reward_dispatch_order_and_application() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, g_playerCellX, g_playerCellY);
 
     const auto& events = bus.tick_events();
     CHECK_OR_RETURN(!(!active.empty() || events.size() != 3),
@@ -1182,7 +1208,7 @@ void test_quest_reward_dispatch_order_and_application() {
         || reputationSeenByListener != 3),
         "a reward listener reads state that is ALREADY updated - the bus reports, it does not promise");
     CHECK_OR_RETURN(!(sm::coin_census_value(bag) != 27
-        || sheet.levelData.exp != 11
+        || player_sheet_col(ph).levelData.exp != 11
         || sm::player_reputation(&gs, "magika") != 3
         || gs.player.completedQuestCount != 1u),
         "quest rewards mutate gold, exp, reputation and bag directly");
@@ -1190,14 +1216,14 @@ void test_quest_reward_dispatch_order_and_application() {
     std::size_t applied = 0;
     apply_pending(bus, gs, applied);
     CHECK_OR_RETURN(!(sm::coin_census_value(bag) != 27
-        || sheet.levelData.exp != 11
+        || player_sheet_col(ph).levelData.exp != 11
         || sm::player_reputation(&gs, "magika") != 3
         || gs.player.completedQuestCount != 1u),
         "replaying the reward events applies nothing twice - the already-applied flag is honoured");
 
     apply_pending(bus, gs, applied);
     CHECK_OR_RETURN(!(sm::coin_census_value(bag) != 27
-        || sheet.levelData.exp != 11
+        || player_sheet_col(ph).levelData.exp != 11
         || sm::player_reputation(&gs, "magika") != 3
         || gs.player.completedQuestCount != 1u),
         "quest reward events reapplied after pending cursor advanced");
@@ -1211,7 +1237,6 @@ void test_quest_reward_dispatch_order_and_application() {
 
 void test_visit_cell_objective() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     sm::GameState gs = fresh_world(128, 128);
     gs.worldTime = sm::world_time_at(0, 6, 0);
         g_playerCellX = 40;
@@ -1233,14 +1258,13 @@ void test_visit_cell_objective() {
     std::vector<sm::Quest> active;
     active.push_back(q);
     bus.flush();
-    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty() || !has_tag(bus, sm::EventTag::QuestComplete)),
         "VisitCell did not complete from player radius");
 }
 
 void test_quest_completion_order_matches_ts_reverse_scan() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     sm::GameState gs = fresh_world(128, 128);
     gs.worldTime = sm::world_time_at(0, 6, 0);
         g_playerCellX = 10;
@@ -1268,7 +1292,7 @@ void test_quest_completion_order_matches_ts_reverse_scan() {
     active.push_back(make_visit(2u, "q_high"));
 
     bus.flush();
-    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, g_playerCellX, g_playerCellY);
 
     std::vector<std::uint32_t> completed;
     for (const auto& ev : bus.tick_events()) {
@@ -1296,7 +1320,6 @@ void test_quest_completion_order_matches_ts_reverse_scan() {
 
 void test_destroy_npc_objective() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     sm::GameState gs = fresh_world(128, 128);
     gs.worldTime = sm::world_time_at(0, 6, 0);
 
@@ -1334,7 +1357,7 @@ void test_destroy_npc_objective() {
     bus.emit(impostor);
     bus.emit(kindless);
     bus.flush();
-    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(active.size() != 1),
         "DestroyNpc counted an entity handle / a kindless body as a kill");
     CHECK_OR_RETURN(!(active[0].objectives[0].killed != 1),
@@ -1346,7 +1369,7 @@ void test_destroy_npc_objective() {
     secondReal.ix = 2;
     bus.emit(secondReal);
     bus.flush();
-    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty() || !has_tag(bus, sm::EventTag::QuestComplete)),
         "DestroyNpc did not complete on kills of the wanted type");
 }
@@ -1363,7 +1386,6 @@ void test_destroy_npc_objective() {
 
 void test_abandon_emits_and_removes() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     sm::Quest q{};
     q.ordinal = 13u;
     q.giverSettlementId = 4;
@@ -1405,7 +1427,6 @@ void test_abandon_emits_and_removes() {
 
 void test_offer_provenance_is_unique_per_slot_and_day() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     sm::GameState gs = fresh_world(128, 128);
     gs.worldSeed = 0x71477147u;
     gs.worldTime = sm::world_time_at(5, 0, 0);
@@ -1484,7 +1505,6 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
 // on these; otherwise the corrupted order[6] fails the permutation check.
 void test_shuffled_order_guards_rng_upper_bound() {
     bag.clear();
-    sheet = sm::CharacterSheet{};
     constexpr int kSlots = 7;   // произвольная длина: закон не про число
     auto is_permutation = [](const std::vector<int>& order, int n) -> bool {
         if (int(order.size()) != n) return false;
@@ -1597,7 +1617,7 @@ void test_generated_delivery_quest_flow() {
         "accept applied reward before completion");
 
     bus.flush();
-    engine.tick(active, places(), bus, gs, &bag, &sheet, g_playerCellX, g_playerCellY);
+    engine.tick(active, places(), bus, gs, &bag, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty()),
         "delivery items did not complete generated quest");
     CHECK_OR_RETURN(!(!has_tag(bus, sm::EventTag::QuestComplete)),

@@ -29,11 +29,12 @@ public:
     // handed in exactly like `bag`: an XP reward lands in the
     // body that owns the build, and there is no PlayerState field to write
     // to any more. Null = no world yet; an XP reward simply does not land.
+    // Листа параметром больше нет (M-301): субъект награды опытом —
+    // сквад флажка, и дверь роста читает его колонку сама.
     void tick(std::vector<Quest>& active, MacroStore& st,
               EventBus& bus,
               GameState& gs,
               Inventory* bag,
-              CharacterSheet* sheet,
               int px, int py);
 
     // Accepting is the moment an offer becomes an object of the world, so

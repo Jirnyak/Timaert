@@ -641,6 +641,9 @@ timaert_test(quest_lifecycle_test
         # gen_delivery reads the one item catalog now (W2b-4).
         src/macro/anketa.cpp
         src/tables/items.cpp
+        # M-301: награда опытом идёт дверью класса «прокачка» по ХЭНДЛУ, и
+        # свидетель рождает своего игрока прод-дверью (§8 п.11).
+        src/macro/player_entity.cpp
     # M-150 шаг 0: quest_engine.cpp → squad.h → macro_stock.h — печать займа
     # на ТЕЛО сцены (stamp_macro_debt); умрёт с переездом тел
     LINK_SDL)
@@ -811,7 +814,7 @@ timaert_test(spell_casting_effects_test
         # that asks the catalog what each worn row is worth (tables/items.cpp)
         src/macro/anketa.cpp
         src/tables/items.cpp
-    PIN "OK spell_casting_effects_test .205 checks.")
+    PIN "OK spell_casting_effects_test .209 checks.")
 
 timaert_test(combat_squad_test
     SOURCES

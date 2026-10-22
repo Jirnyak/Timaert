@@ -3,6 +3,7 @@
 #include "ecs/components.h"
 #include "macro/store.h"
 #include "macro/anketa.h"  // the record's sheet — casterLevel
+#include "macro/squad.h"   // refresh_squad_body — пересчёт производных анкеты
 #include "sub/body.h"   // body_radius — the caster shell the muzzle clears
 #include "sub/record.h" // state_of — whose sheet the casting body mirrors
 
@@ -144,7 +145,41 @@ int spellbook_start_cast(SpellBook& sb, ecs::Pools& combat,
     return d->manaCost;
 }
 
+namespace {
+// ОДИН ВОПРОС, НА КОТОРЫЙ СМОТРЯТ ОБЕ ДВЕРИ БАФА: сменился ли набор
+// сустейна. Набор — плоские биты (`SpellBook::sustained`), поэтому ответ
+// есть сравнение слов, а не пересчёт суммы бонусов: пересчёт стоит дороже
+// самого вопроса, а здесь он нужен ровно когда ответ «да».
+bool sustained_same(const SpellBook& a, const SpellBook& b) noexcept {
+    for (std::size_t i = 0; i < kSpellBookCapacity / 64u; ++i)
+        if (a.sustained[i] != b.sustained[i]) return false;
+    return true;
+}
+}  // namespace
+
+int squad_cast_start(MacroStore& st, MacroHandle h, int spellOrd) {
+    if (!st.valid(h)) return 0;
+    SpellBook& sb = st.spellBook[h.slot];
+    const SpellBook before = sb;
+    const int spent = spellbook_start_cast(sb, st.pools[h.slot], spellOrd);
+    if (!sustained_same(before, sb)) refresh_squad_body(st, h);
+    return spent;
+}
+
+void squad_spellbook_tick(MacroStore& st, MacroHandle h,
+                          std::uint32_t steps) {
+    if (!st.valid(h)) return;
+    SpellBook& sb = st.spellBook[h.slot];
+    // Биты до тика — копией, потому что гашение их и правит. Копия книги
+    // стоит `sizeof(SpellBook)` и не переживает вызов; альтернатива ей —
+    // вернуть флаг из тика, то есть разряд Б с новым звонящим-дисциплиной.
+    const SpellBook before = sb;
+    spellbook_tick(sb, st.pools[h.slot], steps);
+    if (!sustained_same(before, sb)) refresh_squad_body(st, h);
+}
+
 bool spellbook_cast(sub::SubObjects* objs, MacroStore* st,
+                    MacroHandle casterSquad,
                     SpellBook& sb, ecs::Pools& combat,
                     const Attributes& attributes, const Skills& skills,
                     int spellOrd,
@@ -179,8 +214,17 @@ bool spellbook_cast(sub::SubObjects* objs, MacroStore* st,
                 d->recovery, attributes, skills, SkillId::Spellcraft));
         }
     };
+    // ОДИН ВХОД В НАЧАЛО КАСТА НА ВЕСЬ ЭТОТ ФАЙЛ (M-301): если субъект
+    // назван — дверь уровня сквада (она пересчитает производные, когда
+    // сустейн переключился); фикстура без мира идёт низкой дверью, и
+    // пересчитывать там нечего — ни полос, ни кэшей у неё нет.
+    const auto start_cast = [&] {
+        if (st && st->valid(casterSquad))
+            return squad_cast_start(*st, casterSquad, spellOrd);
+        return spellbook_start_cast(sb, combat, spellOrd);
+    };
     if (d->sustained || d->shape == DeliveryShape::Self) {
-        spellbook_start_cast(sb, combat, spellOrd);
+        start_cast();
         charge_gate();
         return true;
     }
@@ -238,7 +282,7 @@ bool spellbook_cast(sub::SubObjects* objs, MacroStore* st,
     }
 
     if (!cast_spell(objs, *d, ctx)) return false;
-    spellbook_start_cast(sb, combat, spellOrd);
+    start_cast();
     charge_gate();
     return true;
 }

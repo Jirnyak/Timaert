@@ -32,7 +32,7 @@ namespace sm {
 // the player's squad included: the sheet is the law, and everything derived
 // from it — the three bar ceilings AND the four cached scalars a march reads
 // (ecs::MacroNpcRuntime) — is refreshed here and nowhere else. Called by
-// make_npc at birth, by award_kill_xp when a level changes the sheet, by
+// make_npc at birth, by squad_award_exp when a level changes the sheet, by
 // the player's creation / point-spend / gear-change moments through the same
 // signature. It grew out of `refresh_leader_travel_stats` (maxSp + caches)
 // when landing 4 made the lord's fraction-preserving level-up rescale THE
@@ -202,6 +202,27 @@ inline std::int64_t carry_capacity_g(const MacroStore& st,
 // (Резолв по ординалу — `macro_handle_by_spawn_id@src/macro/store.h`: он
 //  читает ТОЛЬКО стор и живёт у эмитента, рядом со справочником, который
 //  отвечает. Здесь стоял его СКАН всех 16384 слотов — M-271.)
+
+// ── СТРОКА СКВАДА — ОДНА ДВЕРЬ НАД КОЛОНКОЙ РОДА (M-301) ────────────────
+// `npc_def` индексирует каталог БЕЗ проверки, поэтому у вопроса «какая у
+// него строка» есть ровно один законный вид: отсечь выход за каталог и
+// ответить `Peasant`. Он был выписан ТРИЖДЫ дословно (`squad_name`,
+// `auto_battle_side_of`, `squad_award_exp`), а дверь листа игрока
+// (`refresh_player_body`) спрашивала то же НЕЗАЩИЩЁННО —
+// `NPCType(kind.type)`, то есть на порченой колонке читала мимо каталога.
+// Один закон — одна дверь (DOD п.6).
+//
+// ДВА СОСЕДНИХ САЙТА СЮДА НЕ СЛИВАЮТСЯ, И ЭТО НЕ НЕДОДЕЛКА: `sheet_owned_at`
+// отвечает на выход за каталог «не именной», а счёт награды за павшего
+// лидера — «награды нет». Это ДРУГИЕ законы, а не та же проверка (DOD п.6
+// судит два ответа на ОДИН вопрос, а не похожие выражения).
+inline NPCType squad_row_type(const MacroStore& st,
+                              std::uint16_t slot) noexcept {
+    const std::uint16_t raw = st.kind[slot].type;
+    return raw < std::uint16_t(NPCType::Count)
+        ? NPCType(std::uint8_t(raw)) : NPCType::Peasant;
+}
+
 // ── ИМЯ СКВАДА — ОДНА ДВЕРЬ ЧТЕНИЯ КОЛОНКИ (вердикт 3, ход 2) ───────────
 // Имя анкеты живёт колонкой store (ecs::SquadName, рождение рендерит дефолт
 // из names[...]); всякий показ имени читает ЕЁ, а не перевыводит из индекса
@@ -211,10 +232,7 @@ inline std::int64_t carry_capacity_g(const MacroStore& st,
 inline const char* squad_name(const MacroStore& st, std::uint16_t slot) {
     const char* t = st.name[slot].text;
     if (t[0] != '\0') return t;
-    const std::uint16_t raw = st.kind[slot].type;
-    const NPCType kind = raw < std::uint16_t(NPCType::Count)
-        ? NPCType(std::uint8_t(raw)) : NPCType::Peasant;
-    return npc_def(kind).label;
+    return npc_def(squad_row_type(st, slot)).label;
 }
 
 // ── УРОВЕНЬ СКВАДА — ОДНА ДВЕРЬ НАД АНКЕТОЙ (ЗАКОН АНКЕТЫ, M-246а) ───────
@@ -717,6 +735,40 @@ inline CharacterSheet effective_sheet_of(const MacroStore& st, MacroHandle h) {
     return effective_sheet(sheet_of(st, h), standing_bonuses_of(st, h));
 }
 
+// ── ПЕРЕСЧЁТ ПРОИЗВОДНЫХ АНКЕТЫ — ОДНА ДВЕРЬ УРОВНЕМ СКВАДА (M-301) ──────
+// Вся сводка в одном месте: что на скваде стоит (`standing`), какой у него
+// эффективный лист, какая строка — и единственная дверь листа. Ниже стоят
+// ДВЕРИ КЛАССОВ ИЗМЕНЕНИЙ, и каждая кончается этим звонком, поэтому забыть
+// пересчёт в них невыразимо (разряд А, вердикт владельца «давай А»).
+//
+// ЗДЕСЬ СХОДЯТСЯ ПЯТЬ ОТВЕТОВ НА ОДИН ВОПРОС МИРА — «свежа ли производная
+// анкеты», — и четыре из них были лишними. Перепись П-26 назвала их все:
+//  1. ДИСЦИПЛИНА ЗВОНКОВ `refresh_player_body` — 8 прод-сайтов, и у трёх
+//     классов изменений звонка не было вовсе (надевание, квестовый опыт,
+//     гашение сустейна);
+//  2. СТОРОЖ главного цикла — каждый тик сравнивал сумму надетого с прошлой
+//     (`lastStandingBonuses`), то есть делал работу вслепую и только за
+//     игрока (вердикт владельца: «да он финя сноси какойто говносторож»);
+//  3. БЕЗУСЛОВНЫЙ ПЕРЕСЧЁТ КАЖДЫЙ МАКРО-ТИК в хвосте
+//     `ensure_macro_player_entity` — страховка за забытые звонки, и шапка
+//     сама это говорила: «a sheet-change moment anywhere that forgets its
+//     own refresh_player_body call heals within one macro tick». Наверху
+//     она делала сторожа чистой избыточностью (оба в одном тике), а под
+//     землёй не работала вовсе — там `ensure_macro_player_entity` не
+//     зовётся, и переодевание ловил сторож один;
+//  4. САМОГЕЙТ ПОТОЛКОВ внутри двери листа — он ЗАКОНЕН и остаётся: это не
+//     ответ на «свежа ли», а защита от дрейфа округлений при тождестве.
+// Цена трёх лишних была числом: `standing_bonuses_of` сканирует 480 ячеек
+// тела (`kEquipCells`) и 10 ординалов спеллов, и наверху игрок платил этот
+// скан ДВАЖДЫ за макро-тик.
+inline void refresh_squad_body(MacroStore& st, MacroHandle h) {
+    if (!st.valid(h)) return;
+    const BonusTotals bt = standing_bonuses_of(st, h);
+    refresh_body_from_sheet(st.pools[h.slot], &st.runtime[h.slot],
+                            effective_sheet(st.sheet[h.slot], bt),
+                            squad_row_type(st, h.slot), &bt);
+}
+
 // ── ФЕОДАЛЬНОЕ РЕБРО — ОДНА ДВЕРЬ НА ОБА КОНЦА (владелец, 2026-09-21;
 // переехало из state.h флипом M-90: знание роли живёт в interests ТЕЛА) ───
 // CANON S24 требует, чтобы узел знал И сюзерена, И прямых подчинённых.
@@ -965,9 +1017,7 @@ inline AutoBattleSide auto_battle_side_of(const MacroStore& st, MacroHandle h) {
     AutoBattleSide s{};
     if (!st.valid(h)) return s;
     const std::uint16_t slot = h.slot;
-    if (st.kind[slot].type < std::uint16_t(NPCType::Count)) {
-        s.leaderType = NPCType(std::uint8_t(st.kind[slot].type));
-    }
+    s.leaderType = squad_row_type(st, slot);
     {
         const ecs::Pools& hp = st.pools[slot];
         s.leaderHealthFraction = hp.maxHp > 0
@@ -1061,7 +1111,15 @@ inline AutoBattleSide auto_battle_side_of(const MacroStore& st, MacroHandle h) {
 // уровне-апе — очки КОПЯТСЯ нетраченными, как у игрока и именных. До
 // контента трат такой сквад слабее прежнего; это калибровка, и двигать её
 // надо числами, а не возвратом второго закона.
-inline int award_kill_xp(MacroStore& st, MacroHandle h, int xp) {
+// ── ДВЕРЬ КЛАССА «ПРОКАЧКА» (M-301) ──────────────────────────────────────
+// ЗДЕСЬ ЗВАЛАСЬ `award_kill_xp`, И ИМЯ ВРАЛО ПРО ОХВАТ: дверь никогда не
+// спрашивала, откуда опыт, — убийство, квестовая награда и консоль суть ОДИН
+// класс изменения анкеты. Квестовая награда при этом шла МИМО
+// (`award_exp(sheet->levelData,…)@src/events/quests/quest_engine.cpp`), то
+// есть правила роста у неё были свои: ни пересчёта производных, ни единой
+// точки. Переименование законно и обязательно (ЗАКОН ИМЕНИ п.5): имя
+// называло один звонящий вместо класса.
+inline int squad_award_exp(MacroStore& st, MacroHandle h, int xp) {
     if (xp <= 0 || !st.valid(h)) return 0;
     const std::uint16_t slot = h.slot;
     CharacterSheet& own = st.sheet[slot];
@@ -1093,19 +1151,107 @@ inline int award_kill_xp(MacroStore& st, MacroHandle h, int xp) {
         own.levelData, xp,
         calculate_derived(eff.attributes, eff.skills).expMultPct);
     if (gained > 0) {
-        // Потолки и доли следуют за листом через ТУ ЖЕ одну дверь
-        // пересборки. Строка существа — только для боевого листа тела;
-        // нулевая/неизвестная отвечает `Peasant`, как и всюду.
-        const NPCType type =
-            st.kind[slot].type < std::uint16_t(NPCType::Count)
-                ? NPCType(std::uint8_t(st.kind[slot].type)) : NPCType::Peasant;
-        // Лист пересобирается ПОСЛЕ роста: `own` — ссылка на колонку, и
-        // `award_exp` уже сдвинул её `levelData`.
-        refresh_body_from_sheet(st.pools[slot], &st.runtime[slot],
-                                effective_sheet(own, standing), type,
-                                &standing);
+        // Потолки и доли следуют за листом через ТУ ЖЕ одну дверь пересчёта
+        // — она сама читает колонки слота ПОСЛЕ роста (`own` — ссылка на
+        // колонку, и `award_exp` уже сдвинул её `levelData`). Сумма надетого
+        // считается внутри двери второй раз, и это осознанно: разойтись она
+        // не может (между двумя звонками мир не менялся), а цена — один скан
+        // против своего пути пересчёта рядом с общим.
+        refresh_squad_body(st, h);
     }
     return gained;
+}
+
+// ── ДВЕРЬ КЛАССА «ТРАТА ОЧКОВ» (M-301) ───────────────────────────────────
+// Уровень даёт ОЧКИ, а лист двигает их ТРАТА — значит классов изменений тут
+// два, и у второго три входа: атрибут, ранг умения, изучение с нуля. Низкие
+// двери (`spend_*@src/macro/anketa.h`) остаются и остаются ПУБЛИЧНЫМИ: их
+// законно зовёт создание персонажа (`src/ui/screens.cpp`) и прокат листа
+// (`make_character_sheet`), где тела ещё нет вовсе и пересчитывать нечего.
+// Разница названа вслух: ниже — АРИФМЕТИКА ЛИСТА, здесь — ИЗМЕНЕНИЕ АНКЕТЫ
+// ЖИВОГО СКВАДА, и только у второго есть производные.
+inline bool squad_spend_attribute(MacroStore& st, MacroHandle h,
+                                  AttributeId id) {
+    if (!st.valid(h)) return false;
+    CharacterSheet& own = st.sheet[h.slot];
+    if (!spend_attribute_point(own.levelData, own.attributes, id)) return false;
+    refresh_squad_body(st, h);
+    return true;
+}
+inline bool squad_spend_skill(MacroStore& st, MacroHandle h, SkillId id) {
+    if (!st.valid(h)) return false;
+    CharacterSheet& own = st.sheet[h.slot];
+    if (!spend_skill_point(own.levelData, own.skills, id)) return false;
+    refresh_squad_body(st, h);
+    return true;
+}
+inline bool squad_spend_learn(MacroStore& st, MacroHandle h, SkillId id) {
+    if (!st.valid(h)) return false;
+    CharacterSheet& own = st.sheet[h.slot];
+    if (!spend_learn_pick(own.levelData, own.skills, id)) return false;
+    refresh_squad_body(st, h);
+    return true;
+}
+
+// ── ДВЕРЬ КЛАССА «УРОВЕНЬ ПО КНОПКЕ» (M-301) ─────────────────────────────
+// Отдельный вход в тот же класс, что `squad_award_exp`: опыт уже накоплен, и
+// игрок берёт уровень сам. Своего закона у него нет — та же `try_level_up` и
+// тот же пересчёт.
+inline bool squad_level_up(MacroStore& st, MacroHandle h) {
+    if (!st.valid(h)) return false;
+    if (!try_level_up(st.sheet[h.slot].levelData)) return false;
+    refresh_squad_body(st, h);
+    return true;
+}
+
+// ── ДВЕРИ КЛАССА «НАДЕВАНИЕ» (M-301) ─────────────────────────────────────
+// До этого шага надевание не звало пересчёт НИ ОДНИМ из пяти прод-сайтов
+// (вкладка снаряжения ×2, консоль ×3) — свежесть держали сторож главного
+// цикла и безусловный пересчёт каждый макро-тик, и ровно поэтому их нельзя
+// было снести первыми. Теперь пересчёт стоит внутри двери, и под землёй, где
+// безусловного пересчёта не бывает, надетое больше не зависит от сторожа.
+inline int squad_equip(MacroStore& st, MacroHandle h, int invSlot) {
+    if (!st.valid(h)) return -1;
+    const int cell = equip(st.gear[h.slot].gear,
+                           st.inventory[h.slot].inv, invSlot);
+    if (cell >= 0) refresh_squad_body(st, h);
+    return cell;
+}
+inline int squad_equip_at(MacroStore& st, MacroHandle h, int invSlot,
+                          int cell) {
+    if (!st.valid(h)) return -1;
+    const int landed = equip_at(st.gear[h.slot].gear,
+                                st.inventory[h.slot].inv, invSlot, cell);
+    if (landed >= 0) refresh_squad_body(st, h);
+    return landed;
+}
+inline bool squad_unequip(MacroStore& st, MacroHandle h, int cell) {
+    if (!st.valid(h)) return false;
+    if (!unequip(st.gear[h.slot].gear, st.inventory[h.slot].inv, cell))
+        return false;
+    refresh_squad_body(st, h);
+    return true;
+}
+
+// ── ПРОИЗВОЛЬНАЯ ПРАВКА ЛИСТА — ОДНА ДВЕРЬ НА ВСЁ ОСТАЛЬНОЕ (M-301) ──────
+// Классы выше покрывают игру; но лист правят ещё отладочная консоль (`attr`,
+// `skill`, `levelup`) и фикстуры, и к одному из названных классов такая
+// правка не сводится. Дверь для них ОДНА, и пересчёт стоит ВНУТРИ неё, после
+// правки, — поэтому забыть его нельзя ни при каком раннем выходе из
+// лямбды. Здесь у трёх звонящих стоял флажок `changed` и дисциплинарный
+// звонок `console_recompute_maxima` — то есть разряд Б, выписанный руками.
+//
+// Пересчёт БЕЗУСЛОВЕН, хотя правка могла ничего не изменить: это осознанная
+// цена формы. Дверь листа сама себя гейтит по сдвигу потолка (см.
+// `refresh_body_from_sheet`), значит тождественная правка стоит один скан и
+// ни одного записанного байта, а флажок «а изменилось ли» был ровно тем
+// местом, где звонящий мог соврать.
+template <class Fn>
+inline bool edit_squad_sheet(MacroStore& st, MacroHandle h, Fn&& edit) {
+    if (!st.valid(h)) return false;
+    edit(st.sheet[h.slot]);
+    refresh_squad_body(st, h);
+    return true;
 }
 
 // ── The settling halves — one set of doors for EVERY consumer ──────────────
@@ -1380,7 +1526,7 @@ inline void settle_auto_battle(const MacroWorld& mw,
     // ОДНА дверь оплаты (корень 5): именованный победитель растёт как
     // игрок (лист владеем, WIS-дивиденд, очки копятся), транзиент —
     // прежний бросок.
-    award_kill_xp(st, winner, xp);
+    squad_award_exp(st, winner, xp);
 
     record_battle_facts(st, gs, winner, loser,
                         battle_dead(loserCasualties, loserFraction),
@@ -1490,8 +1636,8 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
 
     if (xp > 0) {
         // ОДНА дверь оплаты (корень 5): игрок — просто лидер своего
-        // сквада, WIS-дивиденд и рост листа внутри award_kill_xp.
-        award_kill_xp(st, playerH, xp);
+        // сквада, WIS-дивиденд и рост листа внутри squad_award_exp.
+        squad_award_exp(st, playerH, xp);
     }
     return xp;
 }

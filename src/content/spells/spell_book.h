@@ -6,6 +6,7 @@
 #include <string>
 
 #include "content/spells/casting.h"
+#include "core/macro_handle.h"   // хэндл сквада — он едет ПО ЗНАЧЕНИЮ
 #include "ecs/pools.h"
 #include "macro/anketa.h"
 #include "macro/spell_book_state.h"
@@ -64,7 +65,12 @@ int spellbook_start_cast(SpellBook& sb, ecs::Pools& combat,
 // objs/st — арена сцены и гладкая память макро-сквадов ЯВНО (ломоть E:
 // ctx-мосты умерли). Оба nullable: каст с макро-карты живёт без сцены,
 // фикстура без store — честный новичок (нулевой лист).
+// casterSquad — ЧЕЙ это каст (M-301). Без умолчания и это нарочно: каст
+// сустейна СТАВИТ на сквад бонус, то есть меняет его анкету, и звонящий,
+// не назвавший субъекта, назвал бы его молча нулевым. Пустой хэндл —
+// законный ответ фикстуры без мира, и тогда пересчитывать просто нечего.
 bool spellbook_cast(sub::SubObjects* objs, MacroStore* st,
+                    MacroHandle casterSquad,
                     SpellBook& sb, ecs::Pools& combat,
                     const Attributes& attributes, const Skills& skills,
                     int spellOrd,
@@ -78,5 +84,22 @@ bool spellbook_cast(sub::SubObjects* objs, MacroStore* st,
 // It used to take a float dt of real seconds — the same wall-clock coupling the
 // tick ladder abolished everywhere else.
 void spellbook_tick(SpellBook& sb, ecs::Pools& combat, std::uint32_t steps);
+
+// ── ДВЕРИ КЛАССА ИЗМЕНЕНИЙ «БАФ» — УРОВНЕМ СКВАДА (M-301) ────────────────
+// Сустейн СТОИТ на скваде (`standing_bonuses_sum@src/macro/squad.h` читает
+// его биты рядом с надетым), значит всякое его переключение двигает
+// производные анкеты — потолки полос, спину и скорость. Писателей у набора
+// сустейна ровно ДВА, и второй не действие игрока вовсе: тик ГАСИТ платящие
+// дрейны, когда мана кончилась. Поэтому дверей здесь тоже две, и обе
+// кончаются пересчётом — до M-301 свежесть за них держал сторож главного
+// цикла, то есть у класса «баф» своей двери не было ни одной.
+//
+// Обе берут стор и хэндл, потому что пересчёт есть функция СКВАДА целиком
+// (лист × надетое × сустейн × строка), а книга и полосы по отдельности его
+// посчитать не могут — ровно та структурная причина, по которой весь этот
+// эпик и существует.
+int  squad_cast_start(MacroStore& st, MacroHandle h, int spellOrd);
+void squad_spellbook_tick(MacroStore& st, MacroHandle h,
+                          std::uint32_t steps);
 
 } // namespace sm
