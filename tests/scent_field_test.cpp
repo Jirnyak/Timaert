@@ -15,6 +15,7 @@
 #include "macro/currency.h"
 #include "tables/npc.h"
 #include "macro/npc_ai.h"
+#include "macro/factions.h"   // set_relation — вражду ставим отношением
 #include "macro/scent_field.h"
 #include "macro/store.h"
 #include <memory>
@@ -138,6 +139,15 @@ struct HuntRig {
         ctx.rng = &rng;
     }
 
+    // ВРАЖДУ СТАВИМ ОТНОШЕНИЕМ, А НЕ ЯРЛЫКОМ (M-268). Прежде фикстура
+    // поджигала бит `ctx.factionHostileMask` — то есть свидетель гонял
+    // ЗАПЕЧЁННУЮ копию, а не закон, и снос копии он бы не заметил. Теперь
+    // он двигает матрицу той же симметричной дверью, что и мир, и охота
+    // читает её живьём.
+    void make_enemies(int a, int b) {
+        sm::set_relation(gs.factions, a, b, sm::kHostileThreshold - 1);
+    }
+
     sm::MacroHandle spawn(NPCType type, int factionIdx, float x, float y) {
         sm::MacroStore& st = *wStore_;
         const sm::MacroHandle h = sm::store_birth(st);
@@ -191,7 +201,7 @@ void test_hunter_climbs_wealth_gradient() {
     const int fBandit = faction_idx("bandits");
     const int fPrey = faction_idx("timaert");
     auto e = rig.spawn(NPCType::Bandit, fBandit, 10.0f, 10.0f);
-    rig.ctx.factionHostileMask[fBandit] = 1ull << fPrey;
+    rig.make_enemies(fBandit, fPrey);
 
     // Жирный след цены на востоке, силы в нём нет — чистая добыча.
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u, 400u);
@@ -214,7 +224,7 @@ void test_fear_filter_and_scent_floor() {
     const int fBandit = faction_idx("bandits");
     const int fPrey = faction_idx("timaert");
     auto e = rig.spawn(NPCType::Bandit, fBandit, 10.0f, 10.0f);
-    rig.ctx.factionHostileMask[fBandit] = 1ull << fPrey;
+    rig.make_enemies(fBandit, fPrey);
 
     const auto& pc = (*sm::body_state<ecs::MacroCell>(*rig.wStore_, e));
     MacroPos p{float(ecs::cell_x(pc, rig.ctx.mapW)),
@@ -242,7 +252,7 @@ void test_local_maximum_ends_the_hunt_and_keeps_errand() {
     const int fBandit = faction_idx("bandits");
     const int fPrey = faction_idx("timaert");
     auto e = rig.spawn(NPCType::Bandit, fBandit, 10.0f, 10.0f);
-    rig.ctx.factionHostileMask[fBandit] = 1ull << fPrey;
+    rig.make_enemies(fBandit, fPrey);
 
     const auto& pc = (*sm::body_state<ecs::MacroCell>(*rig.wStore_, e));
     MacroPos p{float(ecs::cell_x(pc, rig.ctx.mapW)),
@@ -282,7 +292,7 @@ void test_civilian_never_hunts() {
     const int fVil = faction_idx("timaert");
     const int fPrey = faction_idx("empire");
     auto e = rig.spawn(NPCType::Peasant, fVil, 10.0f, 10.0f);
-    rig.ctx.factionHostileMask[fVil] = 1ull << fPrey;
+    rig.make_enemies(fVil, fPrey);
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u, 4000u);
 
     const auto& pc = (*sm::body_state<ecs::MacroCell>(*rig.wStore_, e));

@@ -345,7 +345,6 @@ SKELETON.md	npc_ai.cpp:917
 SKELETON.md	npc_ai.cpp:946-949
 SKELETON.md	npc_ai.cpp:999
 SKELETON.md	npc_ai.h:102
-SKELETON.md	npc_ai.h:155
 SKELETON.md	npc_spawn.cpp:141
 SKELETON.md	npc_spawn.cpp:216
 SKELETON.md	npc_spawn.cpp:304
