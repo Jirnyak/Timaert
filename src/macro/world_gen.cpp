@@ -97,6 +97,10 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
                                           forestMask.size());
     }
     *out.deposits = build_deposit_layer(*out.terrain, gs.worldSeed);
+    // СЛОЙ ФИЧ РОЖДАЕТСЯ ДО ВСЕХ МЕСТ (вердикт 2026-10-23: «сначала фичи,
+    // сквады поверх»): двери рождения мест ставят фичи рода прямо сюда, а
+    // дороги и пашни вливаются следом на пустые клетки.
+    out.features->resize(gs.mapW, gs.mapH);
     // The world's OWN fields are born with it (CANON S5, v96): the scar grid
     // of every sparse row and the ONE worked layer. Born here rather than on
     // first use for the same reason the deposit fields are — a field
@@ -121,7 +125,8 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     snap_cities_to_land(cityPlan, *out.terrain);
     finalize_politik(cityPlan, gs.cellOwner, gs.mapW, gs.mapH, *out.terrain);
     populate_landmarks_from_politik(gs, *out.store, cityPlan, *out.terrain,
-                                    *out.treeLayer, *out.deposits);
+                                    *out.treeLayer, *out.deposits,
+                                    *out.features);
     if (p.trace) {
         // The R2 report card: how many villages actually stand next to the
         // resources the score placed them by. The old roulette scored ~25%
@@ -223,7 +228,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // Stone first (kRoadClasses hierarchy): the feature layer carries only
     // the main roads here; dirt lanes land in it AFTER zones and spires, so
     // their A* can both target the spires and price the stone at its bed.
-    *out.features = build_feature_layer(*out.terrain, roads, nullptr);
+    build_feature_layer(*out.features, *out.terrain, roads, nullptr);
     build_tree_grid(*out.treeGrid, *out.trees, gs.mapW, gs.mapH);
 
     std::vector<ZoneSeed> zsCities, zsVills;
@@ -243,18 +248,22 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // (boot_world_from_save), spires with everything else — one population,
     // one block, no creatures of its own (ломтик F).
     {
-        generate_spires(gs, *out.store, *out.zones, *out.terrain);
+        generate_spires(gs, *out.store, *out.zones, *out.terrain,
+                        *out.features);
         // Ruins follow the same zone-field law (§42 Инк 5): the row, the
         // subworld route and the surface generator stood ready for months —
         // this call is the ONE missing genesis pass that kept the kind
         // stillborn. After the settlement passes, whose cells it avoids.
-        generate_ruins(gs, *out.store, *out.zones, *out.terrain);
+        generate_ruins(gs, *out.store, *out.zones, *out.terrain,
+                       *out.features);
         // The landmark set is complete — stamp the settlement FEATURES
         // (вердикт 2026-09-30: город/деревня/шпиль/руина — байты слоя фич,
         // ставятся ПОСЛЕ дорог) and build the cell frame over squads —
         // «кто на клетке» мира (macro/squad_index.h; сетка мест умерла
         // ломтиком F, тот же закон свежести: генезис, перепёк, драйв).
-        stamp_settlement_features(st, gs.mapW, *out.terrain, *out.features);
+        // (Перештамп фич из тел УМЕР 2026-10-23, вердикт «фичи делают 1 раз
+        // при генерации»: фичу рода ставит дверь рождения места В МОМЕНТ
+        // ВЫБОРА клетки — birth_place, колонка kLandmarks.feature.)
         build_squad_index(*out.squadIndex, st, gs.mapW, gs.mapH);
         if (p.trace) {
             // The placement report card: every spell offered, every spire in

@@ -165,15 +165,11 @@ int main() {
         // v120: a spire's charge is its cell's worked number (ordinal + 1);
         // drained = 0 — the spent spire's cell simply stays unwritten.
         worked_write(gs, 40, 40, 1);
-        sm::birth_place(gs, st, SquadType::Spire, 40, 40);
-        sm::birth_place(gs, st, SquadType::Spire, 50, 50);
 
-        // СМЫСЛ ЧИСЛУ ЗАДАЁТ ФИЧА КЛЕТКИ (M-233 п.8, ЗАКОН ПОЛЯ п.3),
-        // поэтому свидетель рождает СВОЁ ПРЕДУСЛОВИЕ сам (§8 п.11): без
-        // штампа `FT_Spire` выкачанный шпиль читался бы «не шпиль», то есть
-        // НЕ выкачанным, и перепись дала бы пять источников вместо четырёх.
-        // Штамп идёт ТОЙ ЖЕ дверью, что в живом мире, и ей нужен терраин —
-        // поселение проходит воду тем же единственным штампом (M-212).
+        // СМЫСЛ ЧИСЛУ ЗАДАЁТ ФИЧА КЛЕТКИ (M-233 п.8, ЗАКОН ПОЛЯ п.3), и с
+        // 2026-10-23 фичу рода ставит сама ДВЕРЬ РОЖДЕНИЯ места в момент
+        // выбора клетки (перештамп из тел умер) — свидетель рождает своё
+        // предусловие той же дверью, что живой мир, со слоем и терраином.
         sm::TerrainData land;
         land.width = gs.mapW;
         land.height = gs.mapH;
@@ -185,10 +181,13 @@ int main() {
         feat.height = gs.mapH;
         feat.data.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH),
                          std::uint8_t(FT_None));
-        sm::stamp_settlement_features(st, gs.mapW, land, feat);
+        sm::birth_place(gs, st, SquadType::Spire, 40, 40, -1, nullptr,
+                        &feat, &land);
+        sm::birth_place(gs, st, SquadType::Spire, 50, 50, -1, nullptr,
+                        &feat, &land);
         CHECK(feat.at(40, 40) == FT_Spire && feat.at(50, 50) == FT_Spire,
-              "штамп поставил обеим клеткам шпиля их фичу — без неё вопрос "
-              "«выкачан ли» не задаётся вовсе");
+              "рождение поставило обеим клеткам шпиля их фичу — без неё "
+              "вопрос «выкачан ли» не задаётся вовсе");
 
         sm::MacroWorld mw{};
         mw.gs = &gs;

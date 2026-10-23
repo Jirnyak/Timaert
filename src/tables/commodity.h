@@ -66,8 +66,13 @@ inline constexpr CommodityDef kCommodities[] = {
     // ×300, мир спрял свою еду в рубахи. Вход ткани переехал сюда.
     {"fibre"},
 
-    // Монетный металл (CANON S10 чеканка): жила → слиток → монета фракции.
+    // Монетные металлы (CANON S10 чеканка): жила → слиток → монета фракции.
+    // Медь и золото «доделаны» вердиктом 2026-10-23 («да надо просто
+    // дсдела ть»): их шахты ставит генерация, выход копает шахтёр — товару
+    // быть. Сырьевой блок идёт первым и подряд (закон ниже).
     {"silver"},
+    {"copper"},
+    {"gold"},
     // ── ПИЩА — ПОТОК МАТЕРИИ, А НЕ СЫРЬЁ (владелец, 2026-09-20: «три потока
     // материала — 1) пища… 2) блага для роста 3) ресурсы для производства»;
     // «уберём крафт из пищи, уберём хлеб, и вся пища станет пищей без
@@ -98,9 +103,9 @@ inline constexpr CommodityDef kCommodities[] = {
 
 inline constexpr int kCommodityCount =
     int(sizeof(kCommodities) / sizeof(kCommodities[0]));
-inline constexpr int kRawCommodityCount = 6;
+inline constexpr int kRawCommodityCount = 8;
 
-static_assert(kCommodityCount == 15, "v1 scope of the economy's ordinals");
+static_assert(kCommodityCount == 17, "v1 scope of the economy's ordinals");
 // «СЫРЬЁ ИДЁТ ПЕРВЫМ И ПОДРЯД» — закон живой, и после смерти materialMask
 // его держит уже не битовое пространство, а САМ ПОРЯДОК ОРДИНАЛОВ: сев
 // закромов и голодная дверь читают «первые kRawCommodityCount строк —

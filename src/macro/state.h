@@ -452,7 +452,7 @@ namespace sm {
 // блоке `worked`, который и так писался. Ординалы рядов НЕ двинулись (ряд
 // остался на своём месте перед жилами), поэтому сдвига блоков нет — двигает
 // версию ровно смена ЖИЛЬЦА блока.
-constexpr int kSaveVersion = 143;   // ломоть 1 M-72: жилы единые — блоки жил из сейва ушли (поле производно), ряды реестра 10 → 5
+constexpr int kSaveVersion = 144;   // 2026-10-23: фичи один раз при генерации (перештампы умерли); товары 15 → 17 (медь/золото); залежь дорастает до капа связности
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -1093,6 +1093,7 @@ void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
                                      const std::vector<City>& cities,
                                      const TerrainData& terrain,
                                      TreeLayer& trees,
-                                     DepositLayer& deposits);
+                                     DepositLayer& deposits,
+                                     FeatureLayer& features);
 
 } // namespace sm

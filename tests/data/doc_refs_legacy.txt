@@ -237,7 +237,6 @@ SKELETON.md	engine.h:609
 SKELETON.md	event_bus.h:54-55
 SKELETON.md	events/quests/quest_engine.cpp:98
 SKELETON.md	faction.h:320
-SKELETON.md	feature_layer_parity_test.cpp:128
 SKELETON.md	features.h:131
 SKELETON.md	features.h:173
 SKELETON.md	features.h:202
@@ -407,7 +406,6 @@ SKELETON.md	spawners.cpp:53-54
 SKELETON.md	spawners.cpp:545
 SKELETON.md	spawners.cpp:585-589
 SKELETON.md	spawners.cpp:609
-SKELETON.md	spawners.cpp:651-662
 SKELETON.md	spawners.cpp:675-679
 SKELETON.md	spawners.cpp:681
 SKELETON.md	spell_effects.cpp:111

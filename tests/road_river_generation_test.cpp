@@ -358,7 +358,8 @@ void test_road_bridges_one_cell_river()
 
     // The stamp law (build_feature_layer): the paid water cell IS a bridge,
     // its banks are stone road.
-    const sm::FeatureLayer fl = sm::build_feature_layer(td, roads, nullptr);
+    sm::FeatureLayer fl;
+    sm::build_feature_layer(fl, td, roads, nullptr);
     CHECK(fl.at(5, wetY) == sm::FT_Bridge,
           "a road cell on biome water must stamp FT_Bridge");
     CHECK(fl.at(4, wetY) == sm::FT_Road && fl.at(6, wetY) == sm::FT_Road,

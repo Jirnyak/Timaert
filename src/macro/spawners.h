@@ -111,9 +111,9 @@ int trace_dirt_roads(FeatureLayer& features, const TerrainData& td,
 // last-writer-wins); mountains are the Mountain biome (elevation-classified,
 // see biomes.h) and forests are the tree-count field (macro/tree_layer.h) —
 // neither touches this grid.
-FeatureLayer build_feature_layer(const TerrainData& td,
-                                 const std::vector<std::uint8_t>& roadMask,
-                                 const std::vector<std::uint8_t>* dirtMask);
+void build_feature_layer(FeatureLayer& fl, const TerrainData& td,
+                         const std::vector<std::uint8_t>& roadMask,
+                         const std::vector<std::uint8_t>* dirtMask);
 
 // Stamp FT_Field farmland around villages — the owner-requested man-made
 // feature and the grain DEPOSIT of the economy loop. Fully CONTEXTUAL, no
@@ -177,12 +177,8 @@ bool plough_field_cell(FeatureLayer& fl, const MacroWorld& world,
 // кламп). Дикий кластер остаётся нетронутым — контент разведки.
 // Форма v1 предварительна по слову владельца («сделаем хоть так потом
 // придумаем лучше»).
-// `seedCaps`: генезис пишет залежь (worked) кластерной суммой; ЗАГРУЗКА зовёт
-// с false — фичи шахт производны от сида и живых поселений и штампуются
-// заново, а залежи приезжают сейвом (ряд Worked) и перештамповке не подлежат.
 void stamp_mines(GameState& gs, FeatureLayer& fl, const TerrainData& td,
-                 const DepositLayer& deposits, std::uint32_t seed,
-                 bool seedCaps = true);
+                 const DepositLayer& deposits, std::uint32_t seed);
 
 // (ДВЕ ДВЕРИ ЗАГОНА — `pasture_cell_ok` и `fence_pasture_cell` — СНЕСЕНЫ
 // 2026-10-12 нарядом M-258; эпитафия с числами стоит у их тел,

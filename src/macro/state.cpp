@@ -128,7 +128,8 @@ void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
                                      const std::vector<City>& cities,
                                      const TerrainData& terrain,
                                      TreeLayer& trees,
-                                     DepositLayer& deposits) {
+                                     DepositLayer& deposits,
+                                     FeatureLayer& features) {
     if (!terrain.has_rgba_storage()) {
         return;
     }
@@ -179,7 +180,8 @@ void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
         // же, из того же единого эмитента, что сквадам (M-37).
         const MacroHandle h = birth_place(gs, st, SquadType::City,
                                           c.x, c.y, c.factionIdx,
-                                          cityName.c_str());
+                                          cityName.c_str(), &features,
+                                          &terrain);
         if (!st.valid(h)) continue;      // отказ капа уже прозвучал вслух
         const std::uint16_t slot = h.slot;
         settle_souls(gs, st, slot, souls);
@@ -330,7 +332,8 @@ void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
                                   : std::string("Hamlet");
             const MacroHandle vh = birth_place(gs, st, SquadType::Village,
                                                c.x, c.y, s.factionIdx,
-                                               vilName.c_str());
+                                               vilName.c_str(), &features,
+                                               &terrain);
             if (!st.valid(vh)) continue;   // отказ капа уже прозвучал вслух
             const std::uint16_t vslot = vh.slot;
             settle_souls(gs, st, vslot, vilSouls);

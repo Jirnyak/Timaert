@@ -76,6 +76,15 @@ DepositLayer build_deposit_layer(const TerrainData& terrain,
 // a future discovery law. Inserts (or refills) the cell, bumps the revision.
 void create_deposit(DepositLayer& layer, int x, int y, std::int32_t amount);
 
+// КАП СВЯЗНОСТИ: сумма связного кластера живых жил (8-смежность) вокруг
+// клетки, клампленная шириной клетки поля. ЭТО И ЕСТЬ «кап шахты использует
+// локальное значение связности жил» (вердикт 2026-10-23): генерация кладёт
+// его залежью при постановке шахты, и ЗАЛЕЖЬ ДОРАСТАЕТ К НЕМУ во времени
+// («фундаментальные поля дают кап, поля фич — текущее, дорастают до капа»).
+// 0 = жилы под клеткой нет. O(кластер) — зовут генерация и сезонный ходок
+// роста на ШАХТНЫХ клетках (их десятки на мир), не горячий путь.
+std::int32_t vein_cluster_cap(const DepositLayer& layer, int x, int y);
+
 // (УМЕРЛИ 2026-10-23 с осью родов: `DepositKind`, `kDepositDefs` — колонки
 // `commodityId` (0 звонящих), `mineFeature` (0 читателей), `siteWorth`
 // (один вес жилы живёт у сайт-скоринга); `set_deposit_remaining` — природное

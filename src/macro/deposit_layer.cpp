@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 #include "core/field_noise.h"   // the ONE noise stack of the world's fields
 
@@ -179,6 +180,34 @@ DepositLayer build_deposit_layer(const TerrainData& terrain,
     std::fprintf(stderr, "[deposits] vein=%lld/%d  (units/cells)\n",
                  (long long)layer.virginUnits, int(layer.cells.liveCells));
     return layer;
+}
+
+std::int32_t vein_cluster_cap(const DepositLayer& layer, int x, int y) {
+    if (!layer.cells.live()) return 0;
+    const std::uint32_t root = layer.wrap_index(x, y);
+    if (layer.cells.at_index(root) == 0) return 0;
+    // Однократные буферы вопроса (ЗАКОН ГЕНЕРАЦИИ п.3 — и у сезонного
+    // визита цена та же: кластеры суть гнёзда в десятки клеток).
+    std::vector<std::uint32_t> frontier{root};
+    std::vector<std::uint32_t> seen{root};
+    std::int64_t sum = 0;
+    while (!frontier.empty()) {
+        const std::uint32_t c = frontier.back();
+        frontier.pop_back();
+        sum += layer.cells.at_index(c);
+        for (int dy = -1; dy <= 1; ++dy) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                if (dx == 0 && dy == 0) continue;
+                const std::uint32_t n = cell_step(c, dx, dy, layer.width);
+                if (layer.cells.at_index(n) == 0) continue;
+                if (std::find(seen.begin(), seen.end(), n) != seen.end())
+                    continue;
+                seen.push_back(n);
+                frontier.push_back(n);
+            }
+        }
+    }
+    return std::int32_t(std::min<std::int64_t>(sum, kMaxFieldUnitsPerCell));
 }
 
 void create_deposit(DepositLayer& layer, int x, int y, std::int32_t amount) {

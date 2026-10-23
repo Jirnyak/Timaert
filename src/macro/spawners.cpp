@@ -596,22 +596,27 @@ namespace sm
         return laid;
     }
 
-    FeatureLayer build_feature_layer(const TerrainData &td,
-                                     const std::vector<std::uint8_t> &roadMask,
-                                     const std::vector<std::uint8_t> *dirtMask)
+    // ПИШЕТ В СУЩЕСТВУЮЩИЙ СЛОЙ, И ТОЛЬКО НА ПУСТЫЕ КЛЕТКИ (вердикт
+    // 2026-10-23 «фичи делают 1 раз при генерации; сначала фичи, сквады
+    // поверх»): слой рождается ДО мест, фичи поселений встают дверью
+    // рождения в момент выбора клетки, а дороги вливаются следом и место
+    // не перезаписывают — у клетки с фичей дорога не нужна (прежний
+    // порядок добивался того же перештампом мест ПОВЕРХ дорог).
+    void build_feature_layer(FeatureLayer& fl, const TerrainData &td,
+                             const std::vector<std::uint8_t> &roadMask,
+                             const std::vector<std::uint8_t> *dirtMask)
     {
-        FeatureLayer fl;
         std::size_t total = 0;
         if (!FeatureLayer::cell_count_for(td.width, td.height, total)
             || total > std::numeric_limits<std::size_t>::max() / 4u)
-            return fl;
+            return;
 
-        fl.resize(td.width, td.height);
+        if (!fl.covers(td.width, td.height)) fl.resize(td.width, td.height);
         if (fl.data.empty())
-            return fl;
+            return;
 
         if (td.rgba.size() < total * 4u)
-            return fl;
+            return;
 
         const std::size_t roadMaskLimit = std::min(roadMask.size(), total);
         const std::size_t dirtMaskLimit = dirtMask
@@ -637,6 +642,7 @@ namespace sm
                     continue;
                 // `i` ЕСТЬ адрес клетки (маски идут тем же плоским порядком),
                 // поэтому дверь зовётся индексной формой — сворачивать нечего.
+                if (fl.at(std::uint32_t(i)) != FT_None) continue;
                 feature_put(fl, td, std::uint32_t(i), FT_DirtRoad);
             }
         }
@@ -644,9 +650,13 @@ namespace sm
         {
             if (!roadMask[i])
                 continue;
+            // Камень кладётся поверх ПУСТОТЫ и ГРУНТОВКИ (свой же класс
+            // ниже рангом — прежний last-writer-wins), но фичу РОДА
+            // (поселение, встало при рождении места) не трогает никогда.
+            const FeatureType cur = fl.at(std::uint32_t(i));
+            if (cur != FT_None && cur != FT_DirtRoad) continue;
             feature_put(fl, td, std::uint32_t(i), FT_Road);
         }
-        return fl;
     }
 
     // plough_cell_ok / plough_field_cell are declared in
@@ -719,8 +729,7 @@ namespace sm
 
     // ── ГЕНЕРАЦИЯ ШАХТ (вердикт 2026-10-23; контракт — spawners.h) ────────
     void stamp_mines(GameState& gs, FeatureLayer& fl, const TerrainData& td,
-                     const DepositLayer& deposits, std::uint32_t seed,
-                     bool seedCaps) {
+                     const DepositLayer& deposits, std::uint32_t seed) {
         if (!deposits.cells.live() || !world_shape_ok(fl.width, fl.height))
             return;
         const int W = deposits.width;
@@ -770,19 +779,31 @@ namespace sm
         std::vector<std::uint8_t> seen(std::size_t(W) * std::size_t(H), 0);
         std::vector<std::uint32_t> frontier;
         int stamped[std::size_t(FT_Count)] = {};
+        int clustersTotal = 0, clustersNear = 0;
         deposits.cells.for_each_live([&](std::uint32_t root, std::int32_t) {
             if (seen[root]) return;
             seen[root] = 1;
+            ++clustersTotal;
             frontier.assign(1, root);
-            std::int64_t sum = 0;
             std::uint32_t peak = root;
             std::int32_t peakUnits = 0;
+            // «деревня рядом или город» судится от ЛЮБОЙ клетки кластера:
+            // жила — месторождение целиком, а не одна его вершина (ответ на
+            // «почему так мало шахт», 2026-10-23).
+            bool near = false;
             while (!frontier.empty()) {
                 const std::uint32_t c = frontier.back();
                 frontier.pop_back();
                 const std::int32_t units = deposits.cells.at_index(c);
-                sum += units;
                 if (units > peakUnits) { peakUnits = units; peak = c; }
+                if (!near) {
+                    for (const std::uint32_t t : towns) {
+                        if (torus_cheb(c, t) <= kGathererReach) {
+                            near = true;
+                            break;
+                        }
+                    }
+                }
                 for (int dy = -1; dy <= 1; ++dy) {
                     for (int dx = -1; dx <= 1; ++dx) {
                         if (dx == 0 && dy == 0) continue;
@@ -794,14 +815,8 @@ namespace sm
                     }
                 }
             }
-            // «ставятся шахты толкьо если есть деревня рядом или город если
-            // нет то жила просто остаётся» — будущая разведка игроком.
-            bool near = false;
-            for (const std::uint32_t t : towns) {
-                if (torus_cheb(peak, t) <= kGathererReach) { near = true;
-                                                             break; }
-            }
             if (!near) return;
+            ++clustersNear;
             // Род — сеяный рандом по весу; сид мешается с ПИКОМ кластера,
             // чтобы два мира одного сида совпали, а два кластера — нет.
             Rng rng(seed ^ (peak * 2654435761u));
@@ -817,20 +832,18 @@ namespace sm
             // Жила на воде не родится (vein_virgin_at), так что вода шахту
             // не откажет; факт всё равно судится возвратом двери.
             if (feature_put(fl, td, peak, ft) != ft) return;
-            // КАП ШАХТЫ = СВЯЗНОСТЬ ЖИЛЫ: залежь — число фичи (worked),
-            // клампится шириной клетки поля ВСЛУХ (сумма кластера может её
-            // перерасти — остаток остаётся в дикой жиле под разведку).
-            // Загрузка залежь НЕ трогает: её привёз сейв рядом Worked.
-            if (seedCaps) {
-                worked_write(gs, px, py,
-                             std::int32_t(std::min<std::int64_t>(
-                                 sum, kMaxFieldUnitsPerCell)));
-            }
+            // КАП ШАХТЫ = СВЯЗНОСТЬ ЖИЛЫ — ТОЙ ЖЕ ДВЕРЬЮ, какой залежь
+            // потом дорастает (vein_cluster_cap: фундамент даёт кап, мир
+            // рождается полным). На загрузке эти залежи живут в ГЕНЕЗИСНОМ
+            // gs и честно гибнут при свёртке app.gs = move(fresh).
+            worked_write(gs, px, py, vein_cluster_cap(deposits, px, py));
             ++stamped[std::size_t(ft)];
         });
 
-        // Отпечаток генерации — по строкам, которые реально встали.
-        std::fprintf(stderr, "[mines]");
+        // Отпечаток генерации — по строкам, которые реально встали; счёт
+        // кластеров отвечает «почему так мало шахт» числом, не догадкой.
+        std::fprintf(stderr, "[mines] clusters=%d near=%d:",
+                     clustersTotal, clustersNear);
         for (const MineRow& m : mines) {
             std::fprintf(stderr, " %s=%d",
                          kFeatureDefs[std::size_t(m.ft)].yieldItem,

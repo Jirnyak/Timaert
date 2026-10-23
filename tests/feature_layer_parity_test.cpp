@@ -156,8 +156,8 @@ void test_feature_priority_and_water_filter()
     road[idx(td, 1, 1)] = 255;
     road[idx(td, 2, 2)] = 255;
 
-    const sm::FeatureLayer fl =
-        sm::build_feature_layer(td, road, &dirt);
+    sm::FeatureLayer fl;
+    sm::build_feature_layer(fl, td, road, &dirt);
 
     CHECK(fl.width == 4 && fl.height == 4,
                  "feature layer dimensions must match terrain");
@@ -212,8 +212,8 @@ void test_empty_and_malformed_inputs_are_safe()
     sm::TerrainData td = make_terrain(2, 2, 200.0f / 255.0f);
     std::vector<std::uint8_t> shortRoad{255};
     std::vector<std::uint8_t> shortDirt{0, 255};
-    const sm::FeatureLayer fl =
-        sm::build_feature_layer(td, shortRoad, &shortDirt);
+    sm::FeatureLayer fl;
+    sm::build_feature_layer(fl, td, shortRoad, &shortDirt);
 
     CHECK(empty.width == 0 && empty.height == 0 && empty.data.empty(),
                  "empty feature resize must clear storage");
@@ -359,8 +359,8 @@ void test_feature_layer_reference_matrix()
             for (std::size_t i = 0; i < dirt.size(); ++i)
                 dirt[i] = (next_u8() & 5u) == 0u ? 255 : 0;
 
-            const sm::FeatureLayer actual =
-                sm::build_feature_layer(td, road, &dirt);
+            sm::FeatureLayer actual;
+    sm::build_feature_layer(actual, td, road, &dirt);
             const sm::FeatureLayer expected =
                 build_reference_feature_layer(td, road, &dirt);
 
@@ -393,8 +393,8 @@ void test_feature_water_is_the_plane_not_the_mask()
     dirt[idx(td, 2, 0)] = 255;
     dirt[idx(td, 3, 0)] = 255;
     const std::vector<std::uint8_t> empty(std::size_t(td.width) * td.height, 0);
-    const sm::FeatureLayer fl =
-        sm::build_feature_layer(td, empty, &dirt);
+    sm::FeatureLayer fl;
+    sm::build_feature_layer(fl, td, empty, &dirt);
 
     CHECK(fl.at(0, 0) == sm::FT_DirtRoad,
                  "dirt pass must stamp features on land cells");
@@ -425,10 +425,10 @@ void test_feature_water_filter_uses_map_sea_level()
     lowSeaTd.seaLevel16 = sm::field_word_of(0.30f);
     sm::TerrainData defaultSeaTd = td;
     defaultSeaTd.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
-    const sm::FeatureLayer lowSea =
-        sm::build_feature_layer(lowSeaTd, road, &dirt);
-    const sm::FeatureLayer defaultSea =
-        sm::build_feature_layer(defaultSeaTd, road, &dirt);
+    sm::FeatureLayer lowSea;
+    sm::build_feature_layer(lowSea, lowSeaTd, road, &dirt);
+    sm::FeatureLayer defaultSea;
+    sm::build_feature_layer(defaultSea, defaultSeaTd, road, &dirt);
 
     CHECK(lowSea.at(0, 0) == sm::FT_Road,
                  "feature water filter must use active low sea level for roads");

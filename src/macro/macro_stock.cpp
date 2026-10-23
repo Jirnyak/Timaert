@@ -263,16 +263,40 @@ int vein_read(const MacroWorld& w, int x, int y) {
     if (vein_mine_cell_(w, x, y)) return worked_read(*w.gs, x, y);
     return w.deposits ? int(w.deposits->vein_at(x, y)) : 0;
 }
+
+// КАП ЗАЛЕЖИ — ФУНДАМЕНТ (вердикт 2026-10-23: «фундментальные поля типа
+// фертилити жил и тд дают кап а поля ресурсов либо фич либо лес дают
+// количетсво текущее и дорастают до капа просто во времени»): у шахтной
+// клетки кап есть СВЯЗНОСТЬ её кластера природного поля — та же дверь, какой
+// генерация сеяла залежь. O(кластер), и зовётся только на шахтных клетках
+// (гейт numberRow — O(1) первым).
+int vein_baseline(const MacroWorld& w, int x, int y) {
+    if (!vein_mine_cell_(w, x, y) || !w.deposits) return 0;
+    return int(vein_cluster_cap(*w.deposits, x, y));
+}
+
+// ЗАЛЕЖЬ ДОРАСТАЕТ ДО КАПА ТЕМ ЖЕ ТЕМПОМ, ЧТО ПАШНЯ: четверть ёмкости за
+// сезонный визит — полный кап за год. Единый закон роста, не свой; число —
+// баланс (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ).
+int vein_growth_at(const MacroWorld& w, int x, int y) {
+    const int cap = vein_baseline(w, x, y);
+    return cap > 0 ? std::max(1, cap / 4) : 0;
+}
+
 void vein_apply(MacroWorld& w, int x, int y, int delta) {
     // ДОБЫЧА СУЩЕСТВУЕТ ПО ШАХТАМ (вердикт 2026-10-23): дикая жила —
     // природное поле, и оно НЕ УБЫВАЕТ («метал не убывает как и
     // фертильность») — двигается только залежь под фичей шахты. Клетка без
     // шахты отказывает записи молча-честно: взять с неё нечего по закону,
-    // а не по невезению.
+    // а не по невезению. Приход клампится КАПОМ СВЯЗНОСТИ: рост не надувает
+    // залежь выше фундамента.
     if (!vein_mine_cell_(w, x, y) || delta == 0) return;
+    const int cap = w.deposits
+        ? int(vein_cluster_cap(*w.deposits, x, y))
+        : worked_read(*w.gs, x, y);   // фикстура без геологии: тратить можно
     worked_write(*w.gs, x, y,
                  std::clamp(worked_read(*w.gs, x, y) + delta, 0,
-                            int(kMaxFieldUnitsPerCell)));
+                            std::max(cap, 0)));
 }
 
 // ── The growth laws — the per-row CONTEXT of the one birth mechanism ──────
@@ -402,12 +426,10 @@ void livestock_apply(MacroWorld& w, int x, int y, int delta) {
                  std::clamp(worked_read(*w.gs, x, y) + delta, 0, cap));
 }
 
-// (РОСТА У РЯДА ЖИЛЫ БОЛЬШЕ НЕТ, и это следствие вердиктов, а не упрощение:
-// дикая жила — чистая геология и не убывает вовсе («метал не убывает»), ей
-// нечего залечивать; залежь шахты — одноразовый ком связного кластера,
-// свёрнутый генерацией, и его восстановление владелец не продиктовал
-// («сделаем хоть так потом придумаем лучше»). Колонка growthAt у ряда —
-// nullptr, ходок роста пропускает его одним сравнением.)
+// (Здесь СТОЯЛО «роста у ряда жилы больше нет — одноразовый ком»; снято
+// вердиктом 2026-10-23 в тот же день: «фундаментальные поля дают кап, поля
+// фич — текущее, дорастают до капа во времени». Рост жилы — vein_growth_at
+// выше, тем же ходоком, что пашня и стадо.)
 
 constexpr ResourceFieldDef kResourceFields[] = {
     // Две хвостовые колонки каждого ряда — УМОЛЧАНИЕ ВЫХОДА транзакции
@@ -439,10 +461,10 @@ constexpr ResourceFieldDef kResourceFields[] = {
                  nullptr, NPCType::Horse},
     // ЖИЛА — ОДНО ПРИРОДНОЕ ПОЛЕ (вердикт 2026-10-22): рода нет, род РЕСУРСА
     // решает фича шахты (её `yieldItem`) — поэтому умолчание выхода у ряда
-    // ПУСТО: без шахты добычи не существует. Роста нет (growthAt null):
-    // дикая жила не убывает, залежь шахты — одноразовый ком кластера.
-    /* Vein */ {"vein", nullptr,
-                GrowthDomain::HealToBaseline, nullptr,
+    // ПУСТО: без шахты добычи не существует. Кап залежи — связность кластера
+    // (фундамент), текущее дорастает к нему единым законом (2026-10-23).
+    /* Vein */ {"vein", &vein_baseline,
+                GrowthDomain::HealToBaseline, &vein_growth_at,
                 &vein_read, &vein_apply, kGathererReach,
                 nullptr, NPCType::Count},
 };

@@ -139,6 +139,7 @@ struct World {
     TerrainData  td;
     TreeLayer    trees;
     DepositLayer deposits;
+    FeatureLayer features;   // фичи рода встают при рождении мест (2026-10-23)
     GameState    gs;
     // ПЛАН ГОРОДОВ — буфер генезиса (M-90), а не слой мира: он больше не
     // живёт в `GameState`, поэтому фикстура держит его сама, ровно как это
@@ -162,6 +163,9 @@ void make_settled_world(World& w) {
             mask[std::size_t(y) * kW + x] = 1;
     w.trees = build_tree_layer(w.td, mask.data(), mask.size());
     w.deposits = build_deposit_layer(w.td, 777u);
+    // СЛОЙ ФИЧ — ДО МЕСТ (вердикт 2026-10-23): двери рождения ставят фичи
+    // рода сюда в момент выбора клетки.
+    w.features.resize(kW, kH);
 
     w.gs.worldSeed = 777u;
     w.gs.mapW = kW;
@@ -177,7 +181,7 @@ void make_settled_world(World& w) {
     w.cityPlan.push_back(b);
 
     populate_landmarks_from_politik(w.gs, places(), w.cityPlan, w.td, w.trees,
-                                    w.deposits);
+                                    w.deposits, w.features);
 }
 
 // ПЕРЕПИСЬ МЕСТ РОДА — КОЛОНКИ ТЕЛ (ломтик F: строки места больше нет), и
@@ -674,9 +678,9 @@ int settlement_kind_disagreements(const GameState& gs, const FeatureLayer& fl,
 void test_settlement_kind_has_one_answer() {
     World w;
     make_settled_world(w);
-    FeatureLayer fl;
-    fl.resize(kW, kH);
-    stamp_settlement_features(places(), w.gs.mapW, w.td, fl);
+    // Штамп из тел УМЕР (2026-10-23): байты фич встали при РОЖДЕНИИ мест —
+    // свидетель спрашивает слой фикстуры, который рождение и заполнило.
+    FeatureLayer& fl = w.features;
     SquadIndex frame;
     build_squad_index(frame, places(), kW, kH);
 
@@ -700,11 +704,10 @@ void test_settlement_kind_has_one_answer() {
     const std::vector<PlaceRow> cityRows = cities_of(gs);
     CHECK_OR_RETURN(!cityRows.empty(), "фикстура обязана родить город");
     birth_place(gs, places(), SquadType::Ruin,
-                cityRows[0].x, cityRows[0].y);
+                cityRows[0].x, cityRows[0].y, -1, nullptr,
+                &w.features, &w.td);
 
-    FeatureLayer fl2;
-    fl2.resize(kW, kH);
-    stamp_settlement_features(places(), gs.mapW, w.td, fl2);
+    FeatureLayer& fl2 = w.features;   // руина при рождении перебила байт
     SquadIndex frame2;
     build_squad_index(frame2, places(), kW, kH);
     int stamped2 = 0;

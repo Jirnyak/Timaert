@@ -157,12 +157,24 @@ int torus_cheb(int ax, int ay, int bx, int by) {
     return std::max(dx, dy);
 }
 
+
+// Слой фич на один прогон генератора: фичу рода теперь ставит рождение
+// места (вердикт 2026-10-23), и генератору нужен носитель. Свидетели этого
+// файла судят МЕСТА (тела и их клетки) — слой им не предмет, поэтому каждая
+// генерация берёт свежий.
+sm::FeatureLayer fresh_features(int w, int h) {
+    sm::FeatureLayer fl;
+    fl.resize(w, h);
+    return fl;
+}
+
 void test_one_spire_per_spell_in_the_band() {
     GameState gs = world(12345u);
     const TerrainData terrain = banded_terrain();
     const ZoneLayer zones = banded_zones();
     store_reset(places());
-    generate_spires(gs, places(), zones, terrain);
+    sm::FeatureLayer flA = fresh_features(terrain.width, terrain.height);
+    generate_spires(gs, places(), zones, terrain, flA);
 
     const LandmarkDef& def = landmark_def(SquadType::Spire);
     const std::vector<PlaceRow> all = census(gs, places());
@@ -213,13 +225,16 @@ void test_placement_is_a_fact_of_the_seed() {
     // Перепись снимается СРАЗУ: следующий генезис начинается с пустого мира,
     // и чужих тел в нём стоять не должно.
     store_reset(places());
-    generate_spires(a, places(), zones, terrain);
+    sm::FeatureLayer flB = fresh_features(terrain.width, terrain.height);
+    generate_spires(a, places(), zones, terrain, flB);
     const std::vector<PlaceRow> sa = spires_in(census(a, places()));
     store_reset(places());
-    generate_spires(b, places(), zones, terrain);
+    sm::FeatureLayer flC = fresh_features(terrain.width, terrain.height);
+    generate_spires(b, places(), zones, terrain, flC);
     const std::vector<PlaceRow> sb = spires_in(census(b, places()));
     store_reset(places());
-    generate_spires(c, places(), zones, terrain);
+    sm::FeatureLayer flD = fresh_features(terrain.width, terrain.height);
+    generate_spires(c, places(), zones, terrain, flD);
     const std::vector<PlaceRow> sc = spires_in(census(c, places()));
 
     CHECK_OR_RETURN(sa.size() == sb.size()
@@ -248,7 +263,8 @@ void test_no_admissible_ground_places_nothing() {
         tame.height = kH;
         tame.data.assign(std::size_t(kW * kH), 0);
         store_reset(places());
-        generate_spires(gs, places(), tame, terrain);
+        sm::FeatureLayer flE = fresh_features(terrain.width, terrain.height);
+        generate_spires(gs, places(), tame, terrain, flE);
         CHECK(spires_in(census(gs, places())).empty(),
               "no wild land = no spires");
     }
@@ -260,7 +276,8 @@ void test_no_admissible_ground_places_nothing() {
         ocean.height = kH;
         ocean.rgba.assign(std::size_t(kW * kH) * 4u, 0);
         store_reset(places());
-        generate_spires(gs, places(), banded_zones(), ocean);
+        sm::FeatureLayer flF = fresh_features(ocean.width, ocean.height);
+        generate_spires(gs, places(), banded_zones(), ocean, flF);
         CHECK(spires_in(census(gs, places())).empty(),
               "no land = no spires");
     }
@@ -285,7 +302,8 @@ void test_named_places_veto_their_cells() {
     {
         GameState gs = world(12345u);
         store_reset(places());
-        generate_spires(gs, places(), pin, terrain);
+        sm::FeatureLayer flG = fresh_features(terrain.width, terrain.height);
+        generate_spires(gs, places(), pin, terrain, flG);
         const std::vector<PlaceRow> spires = spires_in(census(gs, places()));
         CHECK_OR_RETURN(spires.size() == std::size_t(kSpellCount),
                         "the wild block hosts every spire");
@@ -302,7 +320,8 @@ void test_named_places_veto_their_cells() {
         for (int y = 32; y < 48; ++y)
             for (int x = 32; x < 48; ++x)
                 birth_place(gs, places(), SquadType::Village, x, y);
-        generate_spires(gs, places(), pin, terrain);
+        sm::FeatureLayer flI = fresh_features(terrain.width, terrain.height);
+        generate_spires(gs, places(), pin, terrain, flI);
         CHECK(spires_in(census(gs, places())).empty(),
               "named places on every admissible cell veto the spire");
     }
@@ -316,8 +335,9 @@ void test_genesis_births_souls_and_ruins() {
     const ZoneLayer zones = banded_zones();
     GameState gs = world(12345u);
     store_reset(places());
-    generate_spires(gs, places(), zones, terrain);
-    generate_ruins(gs, places(), zones, terrain);
+    sm::FeatureLayer flH = fresh_features(terrain.width, terrain.height);
+    generate_spires(gs, places(), zones, terrain, flH);
+    generate_ruins(gs, places(), zones, terrain, flH);
     const std::vector<PlaceRow> all = census(gs, places());
 
     // Spires are born garrisoned: the registry's born columns × the spell's
@@ -354,8 +374,9 @@ void test_genesis_births_souls_and_ruins() {
     // Determinism: the same seed births the same ruins, souls included.
     GameState b = world(12345u);
     store_reset(places());
-    generate_spires(b, places(), zones, terrain);
-    generate_ruins(b, places(), zones, terrain);
+    sm::FeatureLayer flB2 = fresh_features(terrain.width, terrain.height);
+    generate_spires(b, places(), zones, terrain, flB2);
+    generate_ruins(b, places(), zones, terrain, flB2);
     const std::vector<PlaceRow> allB = census(b, places());
     CHECK_OR_RETURN(allB.size() == all.size(),
                     "same seed, same landmark census");
@@ -407,13 +428,19 @@ void test_one_answer_to_the_drained_orb() {
     const TerrainData terrain = banded_terrain();
     const ZoneLayer zones = banded_zones();
     store_reset(places());
-    generate_spires(gs, places(), zones, terrain);
+    // СЛОЙ ФИЧ — ДО МЕСТ (2026-10-23): рождение ставит фичу рода само.
+    FeatureLayer feat;
+    feat.width = kW;
+    feat.height = kH;
+    feat.data.assign(std::size_t(kW) * std::size_t(kH), std::uint8_t(FT_None));
+    generate_spires(gs, places(), zones, terrain, feat);
 
     // ── НЕГАТИВНЫЙ КОНТРОЛЬ С ЗУБАМИ: свидетель рождает его САМ (§8 п.11).
     const int freefolk = faction_index("freefolk");
     CHECK_OR_RETURN(freefolk >= 0, "реестр фракций несёт строку freefolk");
     const MacroHandle city = birth_place(gs, places(), SquadType::City,
-                                        40, 40, std::int16_t(freefolk));
+                                        40, 40, std::int16_t(freefolk),
+                                        nullptr, &feat, &terrain);
     CHECK_OR_RETURN(places().valid(city), "фикстура родила себе город");
     CHECK(landmark_def(SquadType::City).bornPopBase == 0
               && landmark_def(SquadType::Spire).bornPopBase != 0,
@@ -423,14 +450,8 @@ void test_one_answer_to_the_drained_orb() {
           "свежий город пуст — worked его клетки ноль, то есть ровно то "
           "число, которое у шпиля значит «выкачан»");
 
-    // ── ПРЕДУСЛОВИЕ, КОТОРОЕ СВИДЕТЕЛЬ РОЖДАЕТ САМ (§8 п.11): смысл числу
-    // задаёт ФИЧА клетки, значит без штампа вопрос не задаётся вовсе. Штамп
-    // идёт ТОЙ ЖЕ дверью, что в живом мире.
-    FeatureLayer feat;
-    feat.width = kW;
-    feat.height = kH;
-    feat.data.assign(std::size_t(kW) * std::size_t(kH), std::uint8_t(FT_None));
-    stamp_settlement_features(places(), gs.mapW, terrain, feat);
+    // Предусловие рождено выше ВМЕСТЕ с местами: фичи рода встали в их
+    // дверях рождения (перештамп из тел умер 2026-10-23).
     MacroWorld mw{};
     mw.gs = &gs;
     mw.store = &places();
@@ -563,8 +584,9 @@ void test_place_faction_is_the_instance_only() {
     for (std::uint32_t seed : {12345u, 777u, 2026u}) {
         GameState gs = world(seed);
         store_reset(places());
-        generate_spires(gs, places(), zones, terrain);
-        generate_ruins(gs, places(), zones, terrain);
+        sm::FeatureLayer flJ = fresh_features(terrain.width, terrain.height);
+        generate_spires(gs, places(), zones, terrain, flJ);
+        generate_ruins(gs, places(), zones, terrain, flJ);
         for (const PlaceRow& r : census(gs, places())) {
             if (r.type != SquadType::Ruin
                 && r.type != SquadType::Spire) {

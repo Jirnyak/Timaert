@@ -1566,11 +1566,9 @@ void rebake_world(App& app, bool uploadNow) {
     app.zones = sm::generate_zones(app.gs.mapW, app.gs.mapH, app.gs.worldSeed,
                                    zsCities, zsVills, app.features,
                                    &app.terrain, &app.treeLayer);
-    // Фичи поселений — тот же закон свежести, что у каркаса клеток
-    // (загрузка и всякий перепёк состава); ДО build_cost_grid — ложе марша
-    // читает слой фич.
-    sm::stamp_settlement_features(*app.macroStore, app.gs.mapW, app.terrain,
-                                  app.features);
+    // (Перештамп фич из тел УМЕР 2026-10-23: «фичи делают 1 раз ПРИ
+    // ГЕНЕРАЦИИ МИРА никаких загрузок ничего» — слой производен от сида,
+    // фичи рода ставит дверь рождения места в генезисе.)
     sm::build_squad_index(app.npcAi.squadIndex, *app.macroStore,
                           app.gs.mapW, app.gs.mapH);
     app.pathCost = sm::build_cost_grid(app.terrain, &app.features,
@@ -2036,14 +2034,10 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // крутился по нулю элементов с самого v71. Слой фич остаётся ПРОИЗВОДНЫМ
     // от сида, и это сегодня вся правда о нём.)
     rebake_world(app);
-    // ШАХТЫ НА ЗАГРУЗКЕ — ТА ЖЕ ДВЕРЬ, ЧТО НА ГЕНЕЗИСЕ, без залежей: genesis
-    // пути загрузки мест не поднимал (их привёз снимок выше), значит
-    // stamp_mines внутри generate_macro_world видел ноль поселений и не
-    // ставил ничего. Фичи шахт производны от сида и ЖИВЫХ поселений —
-    // штампуются после rebake (фичи поселений уже на слое); залежи приехали
-    // сейвом (ряд Worked) и не перештамповываются (seedCaps = false).
-    sm::stamp_mines(app.gs, app.features, app.terrain, app.deposits,
-                    app.gs.worldSeed, /*seedCaps=*/false);
+    // (Костыль «перештамп шахт после наката снимка» УМЕР 2026-10-23 тем же
+    // вердиктом: генезис пути загрузки рождает места ПЛАНОМ сида — фичи
+    // поселений и шахт встают в нём один раз, снимок кладёт сквады поверх,
+    // залежи приезжают сейвом рядом worked при свёртке app.gs.)
     app.macro.upload_tree_field(app.device, &app.treeLayer);
     app.uploadedTreeRev = app.treeLayer.revision;
     return true;

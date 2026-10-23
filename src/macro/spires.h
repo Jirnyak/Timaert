@@ -14,6 +14,7 @@
 namespace sm {
 
 struct GameState;
+struct FeatureLayer;
 struct TerrainData;
 struct ZoneLayer;
 
@@ -26,7 +27,8 @@ struct ZoneLayer;
 // at all simply lacks that spire (logged).
 struct MacroStore;   // fwd — тело места рождается в store (M-90 шаг 5)
 void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
-                     const TerrainData& terrain);
+                     const TerrainData& terrain,
+                    FeatureLayer& features);
 
 // ── ЗАРЯД ШПИЛЯ — ОДИН ОТВЕТ НА ОДИН ВОПРОС МИРА (M-233 п.8) ─────────────
 //

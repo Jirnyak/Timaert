@@ -49,7 +49,8 @@ bool cell_occupied_(const GameState& gs, const MacroStore& st, int x, int y) {
 } // namespace
 
 void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
-                    const TerrainData& terrain) {
+                    const TerrainData& terrain,
+                    FeatureLayer& features) {
     if (gs.mapW <= 0 || gs.mapH <= 0 || !terrain.has_rgba_storage()
         || !zones.has_complete_storage()) {
         return;
@@ -114,7 +115,9 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
         // Место родится ТЕЛОМ одной дверью (ломтик F); ординал эмитит она —
         // из того же единого эмитента, что сквады (M-37).
         const MacroHandle h = birth_place(gs, st, SquadType::Ruin,
-                                          bestX, bestY, haunted);
+                                          bestX, bestY, haunted,
+                                          /*name*/ nullptr,
+                                          &features, &terrain);
         if (!st.valid(h)) continue;   // отказ капа уже прозвучал вслух
         // Born with its haunt: the row's born columns × the site's own
         // danger byte, a discrete bell around the mean — redder land, harder

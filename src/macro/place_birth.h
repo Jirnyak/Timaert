@@ -21,6 +21,8 @@
 #include <cstring>
 
 #include "macro/characters.h"     // landmark_sheet — анкета места по роду
+#include "macro/features.h"    // feature_put — фича ДО тела
+#include "macro/landmark_registry.h" // колонка фичи рода
 #include "macro/state.h"
 #include "macro/store.h"
 
@@ -29,9 +31,21 @@ namespace sm {
 // kind.type остаётся НУЛЕВОЙ строкой: вопрос «каким листом дерётся лидер»
 // месту не задаёт никто — бой места ведут ГОЛОВЫ его контейнера
 // (auto_battle.h), а анкета берётся строкой стола по роду (landmark_sheet).
+// СНАЧАЛА ФИЧА, СКВАД ПОВЕРХ (вердикт владельца 2026-10-23: «ДЕРЕВНИ ГОРОДА
+// это сначало фичи ВСЁ ТОЛЬКО ФИЧИ потом поверх них ложатся сквады»; фичи
+// делаются ОДИН РАЗ при генерации). Дверь рождения места ставит фичу рода
+// (колонка строки kLandmarks) В МОМЕНТ ВЫБОРА КЛЕТКИ — до тела; слой фич
+// производен от сида и тел не читает никогда. nullptr-слой — фикстура без
+// фич, законно (fail-open как у всякого слоя конверта).
 inline MacroHandle birth_place(GameState& gs, MacroStore& st, SquadType kind,
                                int x, int y, std::int16_t factionIdx = -1,
-                               const char* name = nullptr) {
+                               const char* name = nullptr,
+                               FeatureLayer* fl = nullptr,
+                               const TerrainData* td = nullptr) {
+    if (fl && td) {
+        const FeatureType ft = landmark_def(kind).feature;
+        if (ft != FT_None) feature_put(*fl, *td, x, y, ft);
+    }
     const MacroHandle h = store_birth(st);
     if (!st.valid(h)) return h;   // отказ капа уже прозвучал вслух
     const int id = int(h.id);     // ординал выдала дверь рождения (M-220)

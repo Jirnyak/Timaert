@@ -9,6 +9,7 @@
 // (The header's former first half — collect_landmarks and its string-typed
 // LandmarkEntry — had no callers and is gone with landmark_registry.cpp.)
 #pragma once
+#include "tables/feature_type.h"   // колонка фичи рода (FT_*)
 #include <cstdint>
 #include "core/rng.h"    // the ONE generator (landmark_born_population)
 #include "core/table_guard.h"
@@ -105,6 +106,12 @@ struct LandmarkDef {
     std::uint8_t     minZone;     // minimum difficulty zone to spawn
     std::uint8_t     maxZone;
     std::uint8_t     glyph;       // ASCII glyph for fallback rendering
+    // ФИЧА РОДА — что встаёт на клетку В МОМЕНТ ВЫБОРА (вердикт 2026-10-23:
+    // «ДЕРЕВНИ ГОРОДА это сначало фичи ВСЁ ТОЛЬКО ФИЧИ потом поверх них
+    // ложатся сквады»). Читает дверь рождения места (birth_place); FT_None =
+    // род фичу не ставит (подвижные). Бывший switch по роду в
+    // stamp_settlement_features умер в эту колонку (ЗАКОН СТРОКИ КАТАЛОГА).
+    FeatureType      feature = FT_None;
     std::uint32_t    color;       // ARGB tint
     // (КОЛОНКА `walkable` УНИЧТОЖЕНА 2026-10-19, M-290, вердикт владельца
     //  «снести оба»: она объявляла «можно ли сюда войти», а вход в субмир
@@ -294,7 +301,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
     // поле угрозы предъявило горячую округу дороже похода — тихий город
     // держит гарнизон дома за полцены содержания.
     {.type = SquadType::City, .id = "city", .label = "City",
-     .minZone = 0, .maxZone = 76, .glyph = '#', .color = 0xFFE7D27Au, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
+     .minZone = 0, .maxZone = 76, .glyph = '#', .feature = FT_City, .color = 0xFFE7D27Au, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
      .bornPopBase = 0, .bornPopPerScore = 0,
@@ -356,7 +363,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
     // получили положительный скор, — а пул рук его урезает; строка же
     // объявляет только КОГО поднимать и КАКОГО ТИПА.
     {.type = SquadType::Village, .id = "village", .label = "Village",
-     .minZone = 0, .maxZone = 101, .glyph = 'v', .color = 0xFFCCB068u, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
+     .minZone = 0, .maxZone = 101, .glyph = 'v', .feature = FT_Village, .color = 0xFFCCB068u, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
      .bornPopBase = 0, .bornPopPerScore = 0,
@@ -373,14 +380,14 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
     // dictionary (what creeps into cellars and caves), and a ruin's ground
     // honestly crawls.
     {.type = SquadType::Spire, .id = "spire", .label = "Spire",
-     .minZone = 128, .maxZone = 255, .glyph = 'I', .color = 0xFFA86CFFu, .lightColor = 0xFFA86CFFu, .lightPop = 200.0f,
+     .minZone = 128, .maxZone = 255, .glyph = 'I', .feature = FT_Spire, .color = 0xFFA86CFFu, .lightColor = 0xFFA86CFFu, .lightPop = 200.0f,
      .faunaHabitat = kLandmarkFaunaGround, .faunaMin = 0, .faunaMax = 0,
      .faunaCap = kLandmarkFaunaCapGround,
      .crowdHabitat = 1u << 13, .crowdInsideShift = 2,
      .bornPopBase = 128, .bornPopPerScore = 64,
      },
     {.type = SquadType::Ruin, .id = "ruin", .label = "Ruin",
-     .minZone = 51, .maxZone = 229, .glyph = 'r', .color = 0xFF8E8576u, .lightColor = 0xFF8E8576u, .lightPop = 40.0f,
+     .minZone = 51, .maxZone = 229, .glyph = 'r', .feature = FT_Ruin, .color = 0xFF8E8576u, .lightColor = 0xFF8E8576u, .lightPop = 40.0f,
      .faunaHabitat = 1u << 12, .faunaMin = 2, .faunaMax = 6,
      .faunaCap = kLandmarkFaunaCapGround,
      .crowdHabitat = 1u << 12, .crowdInsideShift = 0,

@@ -237,17 +237,21 @@ void test_the_vein_field_is_inert_and_a_mine_does_not_regrow() {
     CHECK(deposits.cells == born.cells,
           "256 дней календаря не сдвинули природное поле ни на юнит");
 
-    // ЗАЛЕЖЬ ШАХТЫ: двигается дверью, вниз до нуля, и НЕ отрастает — ком
-    // кластера одноразов («сделаем хоть так потом придумаем лучше»).
+    // ЗАЛЕЖЬ ШАХТЫ: кап — СВЯЗНОСТЬ кластера (фундамент), текущее дорастает
+    // к нему единым законом (вердикт 2026-10-23: «фундаментальные поля дают
+    // кап, поля фич — текущее, дорастают до капа во времени»).
     feature_put(features, td, vx, vy, FT_IronMine);
-    worked_write(gs, vx, vy, 12);
+    const int cap = int(vein_cluster_cap(deposits, vx, vy));
+    CHECK_OR_RETURN(cap > 5, "кластер фикстуры несёт честную связность");
+    worked_write(gs, vx, vy, cap);
     CHECK(field_move(w, ResourceFieldId::Vein, vx, vy, -5) == -5,
           "залежь шахты движется дверью и отвечает фактом");
-    CHECK(resource_field_read(w, ResourceFieldId::Vein, vx, vy) == 7,
+    CHECK(resource_field_read(w, ResourceFieldId::Vein, vx, vy) == cap - 5,
           "остаток залежи — число фичи");
     run_days(w, 256);
-    CHECK(resource_field_read(w, ResourceFieldId::Vein, vx, vy) == 7,
-          "залежь шахты не отрастает: ряд жилы без закона роста");
+    CHECK(resource_field_read(w, ResourceFieldId::Vein, vx, vy) == cap,
+          "залежь ДОРАСТАЕТ до капа связности — и ни юнитом выше "
+          "(фундамент даёт кап, текущее дорастает, 2026-10-23)");
 
     // EXTINCTION is the honest end of the breeding law: a world whose
     // fauna is gone EVERYWHERE has nobody left to breed, anywhere, ever.

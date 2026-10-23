@@ -52,7 +52,8 @@ bool cell_occupied(const GameState& gs, const MacroStore& st, int x, int y) {
 } // namespace
 
 void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
-                     const TerrainData& terrain) {
+                     const TerrainData& terrain,
+                    FeatureLayer& features) {
     if (gs.mapW <= 0 || gs.mapH <= 0 || !terrain.has_rgba_storage()
         || !zones.has_complete_storage()) {
         return;
@@ -130,7 +131,9 @@ void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
         // шпиль есть макро-субъект как всякий другой, и берёт его из того же
         // единого эмитента, что сквады (M-37).
         const MacroHandle h = birth_place(gs, st, SquadType::Spire,
-                                          bestX, bestY, infernal);
+                                          bestX, bestY, infernal,
+                                          /*name*/ nullptr,
+                                          &features, &terrain);
         if (!st.valid(h)) continue;   // отказ капа уже прозвучал вслух
         // Born with its haunt (§42 Инк 5): the registry row's own born
         // columns × the spell's tier, a discrete bell around the mean. Its

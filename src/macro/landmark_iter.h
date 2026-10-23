@@ -92,49 +92,9 @@ void for_each_landmark(const MacroWorld& w, F&& fn) {
     }
 }
 
-// ── ШТАМП ФИЧ ПОСЕЛЕНИЙ (вердикт владельца 2026-09-30; ЗАКОН ГЕНЕРАЦИИ
-// п.6: фичи поселений — байты слоя фич, генерация ставит их ДО сквадов).
-// «Что стоит на клетке» отвечает байт фичи; «кто здесь живёт» — сквад.
-// Один проход ПОСЛЕ дорог: клетка поселения — мощёный (город) или
-// грунтовый (деревня) узел сети, штамп её перекрывает (прецедент моста).
-// Свежесть — тот же закон, что у каркаса клеток: генезис и загрузка зовут
-// этот проход рядом с build_squad_index; смерть места — смена ВИДА
-// (set_landmark_type), за ней тот же перепёк.
-// ТЕРРАИН В СИГНАТУРЕ — ПО ЗАКОНУ, А НЕ ДЛЯ УДОБСТВА (M-212). Поселение есть
-// ФИЧА СО СКВАДОМ ПОВЕРХ (владелец 2026-10-03), значит и воду оно проходит той
-// же единственной дверью штампа, что дорога и пашня. До этого штамп мест воду
-// не проверял ВООБЩЕ и держался на том, что размещатель ставит их на сушу, —
-// неявная зависимость, живущая до первого размещателя, который решит иначе.
-inline void stamp_settlement_features(const MacroStore& st, int mapW,
-                                      const TerrainData& td,
-                                      FeatureLayer& f) {
-    for_each_place(st, [&](std::uint16_t slot) {
-        const SquadType kind = SquadType(st.runtime[slot].squadType);
-        FeatureType ft = FT_None;
-        switch (kind) {
-            case SquadType::City:    ft = FT_City; break;
-            case SquadType::Village: ft = FT_Village; break;
-            case SquadType::Spire:   ft = FT_Spire; break;
-            case SquadType::Ruin:    ft = FT_Ruin; break;
-            case SquadType::None:
-            case SquadType::Lair:
-            case SquadType::Shrine:
-            case SquadType::Mine:
-            case SquadType::Tower:
-            // Подвижные роды оси (M-90 шаг 3а): у сквада, который ХОДИТ,
-            // байта фичи нет и быть не может — фича говорит «что СТОИТ на
-            // клетке», а он на ней не стоит, он через неё идёт. Ветки
-            // выписаны, чтобы `-Wswitch` и дальше называл забытое: `default`
-            // здесь проглотил бы следующий НЕПОДВИЖНЫЙ род молча.
-            case SquadType::Artel:
-            case SquadType::Caravan:
-            case SquadType::Collector:
-            case SquadType::Count:   break;   // мир их пока не ставит
-        }
-        if (ft == FT_None) return;
-        const auto& c = st.cell[slot];
-        feature_put(f, td, ecs::cell_x(c, mapW), ecs::cell_y(c, mapW), ft);
-    });
-}
+// (`stamp_settlement_features` УНИЧТОЖЕН 2026-10-23, вердикт «фичи делают
+// 1 раз ПРИ ГЕНЕРАЦИИ МИРА»: он выводил слой фич ИЗ ТЕЛ сквадов — обратное
+// направление. Фичу рода ставит дверь рождения места в момент выбора клетки
+// (`birth_place@src/macro/place_birth.h`, колонка `kLandmarks.feature`).)
 
 } // namespace sm
