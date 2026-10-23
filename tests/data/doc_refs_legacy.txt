@@ -20,7 +20,6 @@
 CANON.md	CMakeLists.txt:15
 CANON.md	core/time.h:47
 CANON.md	currency.h:96-168
-CANON.md	deposit_layer.cpp:229-232
 CANON.md	econ_day.cpp:262-266
 CANON.md	econ_day.cpp:288
 CANON.md	econ_day.h:356
@@ -48,9 +47,7 @@ README.md	tests/balance_run.cpp:1-13
 SKELETON.md	:101
 SKELETON.md	:103
 SKELETON.md	:113
-SKELETON.md	:1168
 SKELETON.md	:1219-1222
-SKELETON.md	:1235
 SKELETON.md	:1260-1266
 SKELETON.md	:1277
 SKELETON.md	:129
@@ -98,7 +95,6 @@ SKELETON.md	:320-330
 SKELETON.md	:3208
 SKELETON.md	:3250
 SKELETON.md	:327
-SKELETON.md	:3291
 SKELETON.md	:330
 SKELETON.md	:330-334
 SKELETON.md	:331
@@ -205,13 +201,10 @@ SKELETON.md	core/torus.h:60
 SKELETON.md	currency.h:184
 SKELETON.md	damage.cpp:129
 SKELETON.md	deposit_layer.cpp:137-138
-SKELETON.md	deposit_layer.cpp:144-156
 SKELETON.md	deposit_layer.cpp:178
 SKELETON.md	deposit_layer.cpp:89
-SKELETON.md	deposit_layer.h:101
 SKELETON.md	deposit_layer.h:12-21
 SKELETON.md	deposit_layer.h:18-21
-SKELETON.md	deposit_layer.h:38-46
 SKELETON.md	econ_day.cpp:148-189
 SKELETON.md	econ_day.cpp:176
 SKELETON.md	econ_day.cpp:194
@@ -248,7 +241,6 @@ SKELETON.md	feature_layer_parity_test.cpp:128
 SKELETON.md	features.h:131
 SKELETON.md	features.h:173
 SKELETON.md	features.h:202
-SKELETON.md	features.h:22-25
 SKELETON.md	gens/dispatch.cpp:95
 SKELETON.md	gpu/vk_renderer.cpp:239-244
 SKELETON.md	height.h:147
@@ -277,8 +269,6 @@ SKELETON.md	macro/save.cpp:10
 SKELETON.md	macro/state.h:856
 SKELETON.md	macro_stock.cpp:221
 SKELETON.md	macro_stock.cpp:225
-SKELETON.md	macro_stock.cpp:231
-SKELETON.md	macro_stock.cpp:358-410
 SKELETON.md	macro_stock.cpp:360-363
 SKELETON.md	macro_stock.cpp:407-416
 SKELETON.md	macro_stock.cpp:440
@@ -320,7 +310,6 @@ SKELETON.md	nav_field.h:73-74
 SKELETON.md	node_registry.cpp:19
 SKELETON.md	node_registry.h:4
 SKELETON.md	npc.h:134
-SKELETON.md	npc_ai.cpp:1199
 SKELETON.md	npc_ai.cpp:1372
 SKELETON.md	npc_ai.cpp:1742
 SKELETON.md	npc_ai.cpp:1790
@@ -454,7 +443,6 @@ SKELETON.md	sub/damage.cpp:105
 SKELETON.md	sub/engine.cpp:1346-1356
 SKELETON.md	sub/engine.cpp:1402-1403
 SKELETON.md	sub/engine.cpp:2220
-SKELETON.md	sub/engine.cpp:2245
 SKELETON.md	sub/engine.cpp:2248
 SKELETON.md	sub/engine.cpp:2265-2266
 SKELETON.md	sub/engine.cpp:2658
@@ -494,7 +482,6 @@ SKELETON.md	vk_macro_renderer.cpp:89
 SKELETON.md	vk_renderer_3d.cpp:2305-2321
 SKELETON.md	vk_renderer_3d.cpp:2742
 SKELETON.md	vk_renderer_3d.cpp:2986-2990
-SKELETON.md	world_fields.cpp:268
 SKELETON.md	world_fields.cpp:79
 SKELETON.md	world_gen.cpp:152-156
 SKELETON.md	world_gen.cpp:193-199
@@ -766,9 +753,6 @@ macro-registry.md	chronicle.h:151
 macro-registry.md	chronicle.h:257
 macro-registry.md	components.h:25-26
 macro-registry.md	currency.h:184
-macro-registry.md	deposit_layer.cpp:270-312
-macro-registry.md	deposit_layer.cpp:293
-macro-registry.md	deposit_layer.h:101
 macro-registry.md	design_characters_test.cpp:139
 macro-registry.md	econ_day.cpp:117-128
 macro-registry.md	econ_day.cpp:132
@@ -884,14 +868,10 @@ macro-registry.md	sub/engine.cpp:2663
 macro-registry.md	sub/map_data.h:424
 macro-registry.md	sub/spawn.cpp:1507
 macro-registry.md	sub/spawn.cpp:459-481
-macro-registry.md	tests/deposit_layer_test.cpp:167-175
-macro-registry.md	tests/deposit_reach_test.cpp:154
 macro-registry.md	tests/econ_v1_test.cpp:513
 macro-registry.md	tests/feature_layer_parity_test.cpp:265-268
-macro-registry.md	tests/resource_growth_test.cpp:218
 macro-registry.md	tests/save_roundtrip_test.cpp:458
 macro-registry.md	tests/squad_travel_test.cpp:67
-macro-registry.md	tests/woodcutter_gather_test.cpp:387-393
 macro-registry.md	tests/woodcutter_gather_test.cpp:404-432
 macro-registry.md	threat_field.cpp:70-84
 macro-registry.md	ui/macro_overlay.h:87

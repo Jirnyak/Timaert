@@ -179,7 +179,7 @@ void test_beasts_breed_where_beasts_are() {
     CHECK_OR_RETURN(cap >= 2, "the meadow carries beasts to hunt");
 
     // One hunted cell in a LIVING valley: heals at one head per epoch.
-    resource_field_apply(w, ResourceFieldId::Fauna, 10, 10, -2);
+    field_move(w, ResourceFieldId::Fauna, 10, 10, -2);
     // A 5×5 hole shot dead around (20,20): it must repopulate from the
     // OUTSIDE in. The hole's corner (18,18) sees 5 of its 9 neighbours
     // alive — over the half-alive threshold — so it breeds; the centre
@@ -187,7 +187,7 @@ void test_beasts_breed_where_beasts_are() {
     // regrow both at once.
     for (int dy = -2; dy <= 2; ++dy)
         for (int dx = -2; dx <= 2; ++dx)
-            resource_field_apply(w, ResourceFieldId::Fauna,
+            field_move(w, ResourceFieldId::Fauna,
                                  20 + dx, 20 + dy, -999);
 
     run_days(w, 2 * kGrowthEpochDays);
@@ -202,73 +202,52 @@ void test_beasts_breed_where_beasts_are() {
           "has not reached it (a flat law would have)");
 }
 
-void test_iron_is_born_where_scarce() {
+void test_the_vein_field_is_inert_and_a_mine_does_not_regrow() {
+    // ЖИЛЫ ЕДИНЫЕ (вердикты 2026-10-22/23): дикая жила — чистая геология,
+    // добыча существует ПО ШАХТАМ, залежь шахты — одноразовый ком кластера.
+    // (ЗДЕСЬ СТОЯЛ СВИДЕТЕЛЬ ЗАЖИВЛЕНИЯ ЖИЛЫ — закон 2026-09-22 снят этими
+    // вердиктами: природное поле не убывает вовсе, ему нечего заживлять, а
+    // восстановление залежи шахты владелец не продиктовал. Свидетель
+    // ПЕРЕПИСАН под новый закон, а не подогнан ожиданием под новый ответ.)
     GameState gs{};
     gs.mapW = kW;
     gs.mapH = kH;
     gs.worldSeed = 12345u;
     const TerrainData td = make_terrain();
     DepositLayer deposits = build_deposit_layer(td, gs.worldSeed);
-    const auto ironCells = [&] {
-        return std::size_t(deposits.grid(DepositKind::Iron).liveCells);
-    };
-    const auto stoneCells = [&] {
-        return std::size_t(deposits.grid(DepositKind::Stone).liveCells);
-    };
-    CHECK_OR_RETURN(stoneCells() > 0, "the mountain band yields stone hosts");
-    CHECK_OR_RETURN(ironCells() > 0, "the fixture holds iron to exhaust");
-    MacroWorld w{.gs = &gs, .terrain = &td, .deposits = &deposits};
+    CHECK_OR_RETURN(deposits.cells.liveCells > 0,
+                    "the fixture world holds veins");
+    FeatureLayer features;
+    features.resize(kW, kH);
+    MacroWorld w{.gs = &gs, .terrain = &td,
+                 .deposits = &deposits, .features = &features};
 
-    // A VIRGIN world strikes nothing, however long it waits.
-    const std::size_t virginIron = ironCells();
+    // ДИКАЯ ЖИЛА ИНЕРТНА: выемка без шахты невыразима, календарь её не
+    // трогает — поле тождественно рождённому.
+    const std::uint32_t firstIdx = deposits.cells.first_live();
+    const int vx = deposits.cells.x_of(firstIdx);
+    const int vy = deposits.cells.y_of(firstIdx);
+    const int wild = int(deposits.cells.at_index(firstIdx));
+    CHECK(field_move(w, ResourceFieldId::Vein, vx, vy, -5) == 0,
+          "добыча существует по шахтам: дикую жилу выемка не берёт");
+    CHECK(int(deposits.cells.at_index(firstIdx)) == wild,
+          "и клетка дикой жилы не шелохнулась");
+    const DepositLayer born = build_deposit_layer(td, gs.worldSeed);
     run_days(w, 256);
-    CHECK(ironCells() == virginIron, "full veins = no discovery, ever");
+    CHECK(deposits.cells == born.cells,
+          "256 дней календаря не сдвинули природное поле ни на юнит");
 
-    // Mine the world's iron OUT through the registry door.
-    std::vector<std::uint32_t> veins;
-    deposits.grid(DepositKind::Iron).for_each_live(
-        [&](std::uint32_t idx, std::int32_t rem) {
-            (void)rem;
-            veins.push_back(idx);
-        });
-    for (const std::uint32_t idx : veins) {
-        resource_field_apply(w, ResourceFieldId::Iron,
-                             int(idx % std::uint32_t(kW)),
-                             int(idx / std::uint32_t(kW)), -1000000);
-    }
-    const std::size_t stoneBefore = stoneCells();
-
-    // ЖИЛА ЗАЖИВАЕТ, КАК ПАШНЯ (владелец, 2026-09-22: «метал не убывает как и
-    // фертильность»). Выработанная клетка держит ноль — но ноль это ВЫРАБОТКА,
-    // а не приговор: ёмкость клетки есть чистая функция терраина и сида, она
-    // не убывала никогда, и сезонный ходок возвращает взятое обратно.
-    //
-    // (ЗДЕСЬ СТОЯЛ СВИДЕТЕЛЬ ДВУХ ОТМЕНЁННЫХ ЗАКОНОВ: аннигиляции выработанной
-    // жилы, 2026-08-28, и рождения новой «где скудно» на клетке-хозяине.
-    // Оба сняты вердиктом владельца, поэтому свидетель ПЕРЕПИСАН под новый
-    // закон, а не подогнан ожиданием под новый ответ.)
-    CHECK(ironCells() == 0,
-          "свежевыработанный мир держит ноль железа в клетках");
-
+    // ЗАЛЕЖЬ ШАХТЫ: двигается дверью, вниз до нуля, и НЕ отрастает — ком
+    // кластера одноразов («сделаем хоть так потом придумаем лучше»).
+    feature_put(features, td, vx, vy, FT_IronMine);
+    worked_write(gs, vx, vy, 12);
+    CHECK(field_move(w, ResourceFieldId::Vein, vx, vy, -5) == -5,
+          "залежь шахты движется дверью и отвечает фактом");
+    CHECK(resource_field_read(w, ResourceFieldId::Vein, vx, vy) == 7,
+          "остаток залежи — число фичи");
     run_days(w, 256);
-    CHECK(ironCells() > 0,
-          "выработанный мир зажил: железо вернулось на СВОИ клетки");
-    CHECK(stoneCells() == stoneBefore,
-          "залечивание железа не тронуло ни одной клетки камня");
-    // Заживает ровно до своей ёмкости и ни на юнит выше: потолок клетки — та
-    // же чистая функция, которой мир родился.
-    bool overCap = false;
-    deposits.grid(DepositKind::Iron).for_each_live(
-        [&](std::uint32_t idx, std::int32_t rem) {
-            const int x = deposits.grid(DepositKind::Iron).x_of(idx);
-            const int y = deposits.grid(DepositKind::Iron).y_of(idx);
-            if (rem > deposit_virgin_at(td, deposits.birthSeed,
-                                        DepositKind::Iron, x, y)) {
-                overCap = true;
-            }
-        });
-    CHECK(!overCap,
-          "ни одна клетка не зажила выше своей ёмкости");
+    CHECK(resource_field_read(w, ResourceFieldId::Vein, vx, vy) == 7,
+          "залежь шахты не отрастает: ряд жилы без закона роста");
 
     // EXTINCTION is the honest end of the breeding law: a world whose
     // fauna is gone EVERYWHERE has nobody left to breed, anywhere, ever.
@@ -279,7 +258,7 @@ void test_iron_is_born_where_scarce() {
         MacroWorld wx{.gs = &gsx, .terrain = &td};
         for (int y = 0; y < kH; ++y)
             for (int x = 0; x < kW; ++x)
-                resource_field_apply(wx, ResourceFieldId::Fauna, x, y, -999);
+                field_move(wx, ResourceFieldId::Fauna, x, y, -999);
         run_days(wx, 4 * kGrowthEpochDays);
         int total = 0;
         for (int y = 0; y < kH; ++y)
@@ -290,24 +269,8 @@ void test_iron_is_born_where_scarce() {
               "breed (a heal-to-baseline law could never say this)");
     }
 
-    // Determinism: replaying the same calendar on the same world state
-    // births the same geology (pure hash of seed+day, no RNG stream).
-    GameState gs2{};
-    gs2.mapW = kW;
-    gs2.mapH = kH;
-    gs2.worldSeed = 12345u;
-    DepositLayer deposits2 = build_deposit_layer(td, gs2.worldSeed);
-    MacroWorld w2{.gs = &gs2, .terrain = &td, .deposits = &deposits2};
-    for (const std::uint32_t idx : veins) {
-        resource_field_apply(w2, ResourceFieldId::Iron,
-                             int(idx % std::uint32_t(kW)),
-                             int(idx / std::uint32_t(kW)), -1000000);
-    }
-    run_days(w2, 256);
-    CHECK(deposits2.grid(DepositKind::Iron)
-              == deposits.grid(DepositKind::Iron),
-          "the same seed and calendar strike the same veins - growth is a "
-          "pure function of the world");
+    // (Прибор «детерминизм заживления» умер с законом роста жилы; детерминизм
+    // САМОГО поля — один сид, одна геология — держит deposit_layer_test.)
 }
 
 } // namespace
@@ -316,6 +279,6 @@ int main() {
     test_forest_plants_the_forest();
     test_biome_gate_starves_the_desert();
     test_beasts_breed_where_beasts_are();
-    test_iron_is_born_where_scarce();
+    test_the_vein_field_is_inert_and_a_mine_does_not_regrow();
     return sm::test::report("resource_growth_test");
 }

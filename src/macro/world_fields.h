@@ -35,7 +35,9 @@ enum class WorldField : std::uint8_t {
     Trees = 0,   // dense u16 carrier — the living forest (since v36)
     Knowledge,   // dense u8 — the explored map; Visible decays to Explored
                  //   on write, sight is recomputed after load (since v40)
-    Deposits,    // sparse i32 per kind — Clay/Iron/Stone veins (since v37)
+    // (Ряд `Deposits` УНИЧТОЖЕН 2026-10-23, «жилы единые»: природное поле
+    //   жил — ЧИСТАЯ ФУНКЦИЯ терраина и сида, геймплеем не мутируется и
+    //   потому не хранится; залежи шахт едут рядом Worked числами фич.)
     Scars,       // sparse u16 per resource row — harvest/hunt debts (v35)
     // (Ряд `Built` УНИЧТОЖЕН в v130, перепись сирот 2026-10-11: вектор
     //   `GameState::builtFeatures` не имел НИ ОДНОГО писателя из геймплея —
@@ -62,7 +64,7 @@ enum class WorldField : std::uint8_t {
 // включивший (AGENTS §5 п.13).
 // 2026-10-11, v130: 155'189'328 → 145'752'140, −9'437'188 Б — ряд `Built`
 // снесён (4 Б счёта + 2^20 клеток × 9 Б записи `{i32 x, i32 y, u8 ft}`).
-inline constexpr std::uint64_t kWorldFieldsMaxBytes = 145'752'140ull;
+inline constexpr std::uint64_t kWorldFieldsMaxBytes = 53'477'408ull;
 
 // The owning stores of the saved rows. Not a second world envelope: load
 // runs BEFORE the app's layers exist (it fills these, and the boot moves
@@ -70,12 +72,10 @@ inline constexpr std::uint64_t kWorldFieldsMaxBytes = 145'752'140ull;
 struct WorldFieldStores {
     const GameState* gs = nullptr;
     const std::vector<std::uint16_t>* treeCounts = nullptr;
-    const DepositLayer* deposits = nullptr;
 };
 struct WorldFieldStoresMut {
     GameState* gs = nullptr;
     std::vector<std::uint16_t>* treeCounts = nullptr;
-    DepositLayer* deposits = nullptr;
 };
 
 // Walk the table in row order. The byte stream is exactly what the four

@@ -61,26 +61,13 @@ struct FeatureDef {
     float civStrength;
     // (КОЛОНКА `worksRow` ВЫРЕЗАНА 2026-09-22, сессия 14: ноль читателей за
     // всю жизнь, при том что её шапка звала себя «THE one door». Живая связь
-    // «фича → что с неё берут» написана строкой цели kGathererDefs.row
-    // (npc_ai.cpp) и всегда была написана только там.)
-    // HOW MANY OF THIS A BODY RAISES IN A DAY — the feature's own rate, and
-    // therefore its SP price through the one labour law (CANON S14.1:
-    // price = bar / rate). Ploughing a parcel, spanning a gap, sinking a
-    // shaft: they are all BUILDING, so they are all priced here, in the table
-    // of the thing being built, rather than by three literals at three call
-    // sites. Owner, 2026-09-16: «распашка и стройка это технически постройки,
-    // им надо выдать цену в SP просто типа как в таблицу фич».
-    //
-    // 0 = hands do not raise this one. A road is laid by the road planner, a
-    // beached hull is what is left of a voyage; neither is a day's work
-    // somebody chooses to spend.
-    //
-    // HANDS DO NOT MULTIPLY A BUILD, and that is the law's boundary rather
-    // than a hole in it (the boundary was miswritten as a defect once): a
-    // span is one span and a shaft is one shaft, so ten pairs of hands have
-    // nothing to make ten of. Hands multiply a QUANTITY — ore, grain, timber
-    // — and a building is not one.
-    int buildsPerDay;
+    // «фича → что с неё берут» теперь КОЛОНКА `yieldItem` ниже — но это НЕ
+    // воскрешение worksRow: та называла РЯД, эта называет ПРЕДМЕТ, и читатель
+    // у неё есть с рождения — транзакция field_harvest.)
+    // (КОЛОНКА `buildsPerDay` И КОНСТАНТА `kBuildsPerDay` ВЫРЕЗАНЫ 2026-10-23,
+    // ломоть 1 M-72: ноль читателей во всём дереве — ветка стройки артелью
+    // умерла 2026-09-22, фичи ставит генерация, цена работы вернётся колонкой,
+    // когда у неё родится читатель.)
 
     // ── ВО ЧТО ЭТА ФИЧА ПРЕВРАЩАЕТСЯ НА ВОДЕ ─────────────────────────────
     // Владелец, 2026-10-03: «ну дорога на воде превращается в фичу мост да?
@@ -127,59 +114,67 @@ struct FeatureDef {
     // стоячий хлеб живёт шрамом ряда `Wheat`, а не полем чисел фич, и
     // переедет сюда нарядом M-78 (консолидированная жила шахты — M-88).
     ResourceFieldId numberRow;
+
+    // ── ВО ЧТО ПРЕВРАЩАЕТСЯ ДОБЫЧА ПОД ЭТОЙ ФИЧЕЙ ────────────────────────
+    // Вердикты 2026-10-22/23: «что там окажется решает фича шахты — золотая
+    // железеная мденая и тд»; лён уже жил этой формой (одна фертильность,
+    // две фичи). nullptr = фича выход ряда НЕ переопределяет, и транзакция
+    // field_harvest берёт умолчание строки реестра (ResourceFieldDef). Это
+    // ОВЕРРАЙД, а не словарь-дубль: предмет называется ровно в одном месте
+    // на каждый случай. Строка — ключ авторства; ординал кэшируется лениво
+    // у двери (ЗАКОН СЛОВАРЯ).
+    const char* yieldItem;
 };
 
-// A DAY'S WORK RAISES FOUR. The number the three build sites used to spell as
-// `bar / 4` each, named once and hung on the thing being built: a body that
-// spends a quarter of its bar on a parcel, a span or a shaft raises four of
-// them between rests. Every buildable row carries it today because no build
-// has yet earned a rate of its own — the column exists so that the day one
-// does (a keep? a mill?), it is a number in a row and not a fourth literal.
-inline constexpr int kBuildsPerDay = 4;
-
 inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
-    //                     bed   optics  civ   строит/день  на воде   чьё число
-    {FT_None,     0.0f, 1.00f, 0.0f,  0,             FT_None,
-     ResourceFieldId::Count},
-    {FT_Road,     1.0f, 0.65f, 0.35f, 0,             FT_Bridge,
-     ResourceFieldId::Count},
-    {FT_DirtRoad, 1.5f, 0.85f, 0.22f, 0,             FT_Bridge,
-     ResourceFieldId::Count},
+    //                     bed   optics  civ    на воде   чьё число · выход
+    {FT_None,     0.0f, 1.00f, 0.0f,  FT_None,
+     ResourceFieldId::Count, nullptr},
+    {FT_Road,     1.0f, 0.65f, 0.35f, FT_Bridge,
+     ResourceFieldId::Count, nullptr},
+    {FT_DirtRoad, 1.5f, 0.85f, 0.22f, FT_Bridge,
+     ResourceFieldId::Count, nullptr},
     // Вспаханная парцелла. Какой культурой засеяна — вопрос ТИПА фичи, а не
     // второго ресурсного ряда: картофельное и маковое поля будут новыми
-    // строками ЭТОЙ таблицы, работающими то же число.
-    {FT_Field,    1.8f, 1.00f, 0.0f,  kBuildsPerDay, FT_None,
-     ResourceFieldId::Count},
+    // строками ЭТОЙ таблицы, работающими то же число. Выход пашни — умолчание
+    // ряда Wheat («food»), поэтому оверрайда у неё нет.
+    {FT_Field,    1.8f, 1.00f, 0.0f,  FT_None,
+     ResourceFieldId::Count, nullptr},
     // Мост несёт колонки каменной дороги: его настил И ЕСТЬ мощёное ложе
     // (марш не замечает реки под ним), тот же коридор свету и взгляду, та же
     // тяга цивилизации. Кладёт его планировщик дорог при генерации мира.
-    {FT_Bridge,   1.0f, 0.65f, 0.35f, kBuildsPerDay, FT_Bridge,
-     ResourceFieldId::Count},
+    {FT_Bridge,   1.0f, 0.65f, 0.35f, FT_Bridge,
+     ResourceFieldId::Count, nullptr},
     // Шахты делят колонки пашни: разработанная земля, не инженерное ложе
     // (0 = своё основание биома), прятаться не за чем, и рабочее место,
-    // которое возделывают, а не держат гарнизоном.
-    {FT_ClayPit,    0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None,
-     ResourceFieldId::Count},
-    {FT_IronMine,   0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None,
-     ResourceFieldId::Count},
-    {FT_Quarry,     0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None,
-     ResourceFieldId::Count},
-    {FT_SilverMine, 0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None,
-     ResourceFieldId::Count},
-    {FT_CopperMine, 0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None,
-     ResourceFieldId::Count},
-    {FT_GoldMine,   0.0f, 1.00f, 0.0f, kBuildsPerDay, FT_None,
-     ResourceFieldId::Count},
+    // которое возделывают, а не держат гарнизоном. ВЫХОД — СТРОКА ШАХТЫ, а
+    // не рода жилы: жилы единые (вердикт 2026-10-22), род ресурса решает
+    // ровно эта колонка. А ЧИСЛО НА ШАХТЕ ЕСТЬ ЕЁ ЗАЛЕЖЬ (numberRow = Vein,
+    // M-78/M-88): кап связного кластера, свёрнутый генерацией шахт.
+    {FT_ClayPit,    0.0f, 1.00f, 0.0f, FT_None,
+     ResourceFieldId::Vein, "clay"},
+    {FT_IronMine,   0.0f, 1.00f, 0.0f, FT_None,
+     ResourceFieldId::Vein, "iron"},
+    {FT_Quarry,     0.0f, 1.00f, 0.0f, FT_None,
+     ResourceFieldId::Vein, "stone"},
+    {FT_SilverMine, 0.0f, 1.00f, 0.0f, FT_None,
+     ResourceFieldId::Vein, "silver"},
+    {FT_CopperMine, 0.0f, 1.00f, 0.0f, FT_None,
+     ResourceFieldId::Vein, "copper"},
+    {FT_GoldMine,   0.0f, 1.00f, 0.0f, FT_None,
+     ResourceFieldId::Vein, "gold"},
     // Пастбище и льняное поле несут колонки пашни: та же возделанная земля,
-    // та же трава по пояс, которая ничего не прячет, та же цена работы.
+    // та же трава по пояс, которая ничего не прячет.
     // А ЧИСЛО НА ПАСТБИЩЕ ЕСТЬ СТАДО — единственная строка таблицы, чьё
     // число сегодня принадлежит ряду реестра (вердикт владельца 2026-10-12,
     // M-258): собственного массива у ряда больше нет, его носитель — поле
-    // чисел фич, и смысл числу задаёт ВОТ ЭТА колонка.
-    {FT_Pasture,  1.8f, 1.00f, 0.0f,  kBuildsPerDay, FT_None,
-     ResourceFieldId::Livestock},
-    {FT_FlaxField, 1.8f, 1.00f, 0.0f, kBuildsPerDay, FT_None,
-     ResourceFieldId::Count},
+    // чисел фич, и смысл числу задаёт ВОТ ЭТА колонка. Выход пастбища —
+    // умолчание ряда Livestock (конь-душа), оверрайд не нужен.
+    {FT_Pasture,  1.8f, 1.00f, 0.0f,  FT_None,
+     ResourceFieldId::Livestock, nullptr},
+    // ЛЁН — оверрайд выхода поверх ряда Wheat: та же земля, своя культура.
+    {FT_FlaxField, 1.8f, 1.00f, 0.0f, FT_None,
+     ResourceFieldId::Count, "fibre"},
     // ── Поселения. Ложе — по прецеденту моста («мост несёт колонки
     // каменной дороги»): город есть МОЩЁНЫЙ узел дорожной сети — его клетка
     // несёт ложе камня (1.0); деревня — грунтовый двор (ложе грунтовки,
@@ -187,13 +182,13 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // Оптика 1.0 и цивилизация 0 — НУЛЕВОЙ ВКЛАД: свет, взгляд и поле
     // опасности продолжают читать свои прежние источники; собственные числа
     // этим колонкам выдаст тот, кто первым начнёт их читать (ЗАКОН КОНСТАНТ
-    // — не выдумывать). Руки поселений не строят (0): их ставит генерация.
+    // — не выдумывать). Фичи поселений ставит генерация.
     // Число на поселении — ПАСТВА, на шпиле — ординал спелла: ни то, ни
     // другое рядом реестра не является, поэтому здесь `Count` (см. колонку).
-    {FT_City,    1.0f, 1.00f, 0.0f, 0, FT_None, ResourceFieldId::Count},
-    {FT_Village, 1.5f, 1.00f, 0.0f, 0, FT_None, ResourceFieldId::Count},
-    {FT_Spire,   0.0f, 1.00f, 0.0f, 0, FT_None, ResourceFieldId::Count},
-    {FT_Ruin,    0.0f, 1.00f, 0.0f, 0, FT_None, ResourceFieldId::Count},
+    {FT_City,    1.0f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr},
+    {FT_Village, 1.5f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr},
+    {FT_Spire,   0.0f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr},
+    {FT_Ruin,    0.0f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr},
 };
 static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
               "kFeatureDefs row order must mirror FeatureType — a new "
@@ -211,13 +206,6 @@ static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
 inline FeatureType feature_on_water(FeatureType want) {
     return kFeatureDefs[std::size_t(want) < std::size_t(FT_Count)
                             ? std::size_t(want) : 0u].onWater;
-}
-
-// How many of this a body raises in a day — the rate its SP price is the bar
-// divided by (CANON S14.1). 0 = hands do not raise it.
-inline constexpr int feature_builds_per_day(FeatureType f) {
-    return kFeatureDefs[std::size_t(f) < std::size_t(FT_Count)
-                            ? std::size_t(f) : 0].buildsPerDay;
 }
 
 inline constexpr const FeatureDef& feature_def(FeatureType t) {
@@ -348,13 +336,26 @@ struct FeatureLayer {
     FeatureType at(std::uint32_t cell) const {
         return cell < data.size() ? decode(data[cell]) : FT_None;
     }
-    void set(std::uint32_t cell, FeatureType t) {
-        if (cell >= data.size()) return;
-        data[cell] = std::uint8_t(decode(std::uint8_t(t)));
-    }
     FeatureType at(int x, int y) const {
         if (!world_shape_ok(width, height) || data.empty()) return FT_None;
         return at(cell_of(x, y, width));
+    }
+
+private:
+    // ── СТЕНА ЛОМТЯ 1 M-72: сырой `set` закрыт компилятором ──────────────
+    // Род фичи клетки пишет ровно одна дверь — feature_put (вода колонкой
+    // строки, FT_None = снять, возврат факта). Друзья: обе формы двери и
+    // именованный пробник прибора контракта САМОЙ двери
+    // (tests/feature_layer_parity_test.cpp — гейты формы и шов индекс/пара).
+    friend FeatureType feature_put(FeatureLayer&, const TerrainData&,
+                                   std::uint32_t, FeatureType);
+    friend FeatureType feature_put(FeatureLayer&, const TerrainData&,
+                                   int, int, FeatureType);
+    friend struct FeatureLayerProbe;
+
+    void set(std::uint32_t cell, FeatureType t) {
+        if (cell >= data.size()) return;
+        data[cell] = std::uint8_t(decode(std::uint8_t(t)));
     }
     void set(int x, int y, FeatureType t) {
         if (!world_shape_ok(width, height) || data.empty()) return;
@@ -362,20 +363,30 @@ struct FeatureLayer {
     }
 };
 
-inline FeatureType stamp_feature(FeatureLayer& fl, const TerrainData& td,
-                                 std::uint32_t cell, FeatureType want) {
+// ── ДВЕРЬ №3 ПУЛЬТА: РОД ФИЧИ КЛЕТКИ (ломоть 1 M-72; бывш. stamp_feature) ──
+// Ставит и СНИМАЕТ одной дверью: `FT_None` — значение, а не отсутствие
+// намерения (выработанную шахту прежде было снять нечем — дыра закрыта).
+// Воду фича спрашивает сама, колонкой своей строки (M-212); возвращает ФАКТ —
+// что реально стоит в клетке после записи, — чтобы звонящий читал факт, а не
+// своё намерение.
+inline FeatureType feature_put(FeatureLayer& fl, const TerrainData& td,
+                               std::uint32_t cell, FeatureType want) {
+    if (want == FT_None) {   // снятие: вода решает только у ПОСТАНОВКИ
+        fl.set(cell, FT_None);
+        return FT_None;
+    }
     // ВОДА СПРАШИВАЕТСЯ У ПОРОГА РЕЛЬЕФА, И ТОЛЬКО У НЕГО (M-212).
     const FeatureType got = td.is_water(cell) ? feature_on_water(want) : want;
-    if (got == FT_None) return FT_None;
+    if (got == FT_None) return FT_None;   // вода отказала — не встало ничего
     fl.set(cell, got);
     return got;
 }
 
 // Та же дверь парой координат — для звонящих, у которых на руках геометрия
 // (ЗАКОН АДРЕСА: индекс первичен, пара законна там, где она уже есть).
-inline FeatureType stamp_feature(FeatureLayer& fl, const TerrainData& td,
-                                 int x, int y, FeatureType want) {
-    return stamp_feature(fl, td, cell_of(x, y, fl.width), want);
+inline FeatureType feature_put(FeatureLayer& fl, const TerrainData& td,
+                               int x, int y, FeatureType want) {
+    return feature_put(fl, td, cell_of(x, y, fl.width), want);
 }
 
 } // namespace sm

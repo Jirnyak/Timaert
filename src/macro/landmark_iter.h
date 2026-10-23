@@ -133,7 +133,7 @@ inline void stamp_settlement_features(const MacroStore& st, int mapW,
         }
         if (ft == FT_None) return;
         const auto& c = st.cell[slot];
-        stamp_feature(f, td, ecs::cell_x(c, mapW), ecs::cell_y(c, mapW), ft);
+        feature_put(f, td, ecs::cell_x(c, mapW), ecs::cell_y(c, mapW), ft);
     });
 }
 

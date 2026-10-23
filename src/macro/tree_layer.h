@@ -25,7 +25,7 @@
 //   - continuous scaling (macro path cost, night-glow canopy occlusion,
 //     danger-zone forest boost) — count / 16384.
 //   - felling a tree in the subworld decrements the owning cell's count
-//     through the registry (resource_field_apply → this grid).
+//     through the registry (field_move → this grid).
 #pragma once
 #include "macro/resource_field.h"   // FieldCell — общая ширина клетки поля
 #include <cstdint>
@@ -84,7 +84,7 @@ TreeLayer build_tree_layer(const TerrainData& terrain,
 
 // Set one cell's count: clamps to [0, kMaxTreesPerCell], writes the grid and
 // bumps `revision`. This is the GRID's one poke door — gameplay never calls
-// it directly, it mutates through resource_field_apply (the Trees carrier
+// it directly, it mutates through field_move (the Trees carrier
 // row), so the ledger and the renderer can never see different forests.
 void set_tree_count(TreeLayer& layer, int x, int y, int count);
 

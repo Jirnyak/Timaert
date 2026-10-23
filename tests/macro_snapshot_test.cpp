@@ -127,10 +127,8 @@ void test_snapshot_round_trips_the_living_map() {
     std::remove(path.c_str());
     const std::vector<Quest> noQuests;
     const std::vector<std::uint16_t> noTrees;
-    const DepositLayer noDeposits;
     CHECK_OR_RETURN(save_game(gs, wStore_->nextSpawnId, noQuests,
-                              snapshot_macro_ecs(*wStore_), noTrees,
-                              noDeposits, path),
+                              snapshot_macro_ecs(*wStore_), noTrees, path),
                     "the snapshot saved");
 
     GameState gs2{};
@@ -138,9 +136,8 @@ void test_snapshot_round_trips_the_living_map() {
     std::vector<Quest> quests2;
     std::vector<MacroNpcRecord> records2;
     std::vector<std::uint16_t> trees2;
-    DepositLayer deposits2;
     CHECK_OR_RETURN(load_game(gs2, nextSpawnId2, quests2, records2, trees2,
-                              deposits2, path),
+                              path),
                     "the snapshot loaded");
     CHECK(nextSpawnId2 == wStore_->nextSpawnId,
           "the identity issuer survives the save");

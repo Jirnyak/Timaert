@@ -385,23 +385,7 @@ int squad_bags_hygiene_daily(MacroWorld& mw);
 // которому служит (macro/upkeep_window.h `upkeep_bill`). Разбор — в теле,
 // на месте бывшего определения (npc_ai.cpp).
 
-// ── THE provisioning law of squad creation (owner 2026-08-31, CANON S10):
-// «универсальная механика создания сквада — он должен быть загружен
-// хлебом». SINCE 2026-09-17 (S19.2) this is the GARRISON SORTIE'S law only:
-// a population crew is perpetual, its содержание is the boundary window's
-// balance (season loaded at creation/boundary — rotate's load_season_upkeep),
-// and the trip loaf died with the daily feed. A patrol still carries bread
-// for its march+dwell days.
-// The raising landmark loads the new squad's bag with bread for
-// its СУЩЕСТВ КОНТЕЙНЕРА (the leader eats nothing — the M&B law above):
-//   portion = soldiers × (roundtrip days to the destination + the work day)
-// Days derive from the squad's own errand — the same march that will walk
-// it — so a far vein honestly demands a bigger loaf. A store that cannot
-// fill the portion loads what it has (credit-before-debit): a starving
-// village cannot outfit a far expedition, and that is the truth of it.
-// Returns bread actually loaded.
-int provision_squad(Inventory& store, Inventory& bag, int soldiers,
-                    float roundtripCells, std::int64_t freeCarryG);
+// (`provision_squad` УМЕР 2026-10-23: 0 звонящих во всём дереве.)
 
 // Macro-view path: scans all macro NPCs each step and dispatches those whose
 // per-NPC tick accumulator matured. `ticks` is world ticks elapsed. The

@@ -34,6 +34,22 @@
 
 namespace {
 
+// РАСПИСКА ПРИМЕНЯЕТСЯ ТАК ЖЕ, КАК ЕЁ ПРИМЕНЯЕТ ДЕЛЬТА (писатель строки —
+// push_stock_op@src/sub/engine.cpp, те же гейты и тот же ключ): дверь
+// settle_macro_debt умерла 2026-10-23 (0 прод-звонящих, ломоть 1 M-72), а
+// ЗАКОН расписки — один ключ, негодная строка не меняет ничего — жив у
+// дельты, и ровно его этот хелпер держит под свидетелями ниже.
+inline void settle_like_the_delta(sm::MacroWorld& w,
+                                  const sm::ecs::MacroDebt& d, int sign) {
+    if (d.stock >= std::uint8_t(sm::MacroStock::Count) || d.amount == 0)
+        return;
+    sm::macro_stock_apply(w, sm::MacroStock(d.stock),
+                          sm::MacroStockKey{d.subject, d.cellX, d.cellY,
+                                            d.detail, d.detailKind,
+                                            d.detailLevel},
+                          sign * int(d.amount));
+}
+
 // Мир фикстуры — СТРОКИ ПЛЮС ТЕЛА (M-90 шаг 5): склад места (а в нём —
 // домашние головы, которыми сток Population и платит) живёт колонкой
 // MacroStore, поэтому store приезжает вместе с GameState.
@@ -210,7 +226,7 @@ void test_debts_bill_their_own_subject() {
     const auto* debt = sub::slot_debt(objs, sCitizen);
     CHECK_OR_RETURN(debt != nullptr, "stamping leaves a receipt on the body");
 
-    settle_macro_debt(w, *debt, -1);
+    settle_like_the_delta(w, *debt, -1);
     CHECK(population_of(wld, wld.cityId) == 299,
           "the dead citizen's own town shrinks by one");
     CHECK(population_of(wld, wld.otherId) == 300,
@@ -223,7 +239,7 @@ void test_debts_bill_their_own_subject() {
     sub::stamp_macro_debt(objs, sVillager,
                           MacroStock::Population,
                           MacroStockKey{wld.hamletId, 20, 20}, 3);
-    settle_macro_debt(w, *sub::slot_debt(objs, sVillager), -1);
+    settle_like_the_delta(w, *sub::slot_debt(objs, sVillager), -1);
     CHECK(population_of(wld, wld.hamletId) == 37,
           "a village pays from its own people, by the amount the receipt says");
 
@@ -234,7 +250,7 @@ void test_debts_bill_their_own_subject() {
     sub::stamp_macro_debt(objs, sTwinVillager,
                           MacroStock::Population,
                           MacroStockKey{wld.twinId, 40, 40}, 2);
-    settle_macro_debt(w, *sub::slot_debt(objs, sTwinVillager), -1);
+    settle_like_the_delta(w, *sub::slot_debt(objs, sTwinVillager), -1);
     CHECK(village_population_of(wld, wld.twinId) == 78,
           "a village pays its own dead through the one id space");
     CHECK(city_population_of(wld, wld.cityId) == 299
@@ -242,7 +258,7 @@ void test_debts_bill_their_own_subject() {
           "and no city is billed for them");
 
     // Signed both ways (owner's ruling): the same row settles creation.
-    settle_macro_debt(w, *sub::slot_debt(objs, sVillager), +1);
+    settle_like_the_delta(w, *sub::slot_debt(objs, sVillager), +1);
     CHECK(population_of(wld, wld.hamletId) == 40,
           "handing the borrowed thing back credits the same place");
 }
@@ -263,10 +279,10 @@ void test_malformed_receipts_do_nothing() {
     ecs::MacroDebt noSubject{std::uint8_t(MacroStock::Population), 0, 10, 10, 5};
     ecs::MacroDebt strangerId{std::uint8_t(MacroStock::Population), 9999, 0, 0, 5};
 
-    settle_macro_debt(w, zeroAmount,   -1);
-    settle_macro_debt(w, unknownStock, -1);
-    settle_macro_debt(w, noSubject,    -1);
-    settle_macro_debt(w, strangerId,   -1);
+    settle_like_the_delta(w, zeroAmount,   -1);
+    settle_like_the_delta(w, unknownStock, -1);
+    settle_like_the_delta(w, noSubject,    -1);
+    settle_like_the_delta(w, strangerId,   -1);
     CHECK(population_of(wld, wld.cityId) == before,
           "a receipt for nothing, for an unknown stock or for nobody moves no stock");
 
@@ -347,7 +363,7 @@ void test_the_creature_row_pays_by_name() {
     const auto* debt = sub::slot_debt(objs, sBody);
     CHECK_OR_RETURN(debt != nullptr && debt->detail == 22,
                     "the receipt carries the member's name to the grave");
-    settle_macro_debt(w, *debt, -1);
+    settle_like_the_delta(w, *debt, -1);
     CHECK(macro_stock_read(w, MacroStock::Creatures, member11) == 0,
           "settling the receipt removes the named member");
     (void)other;
@@ -501,7 +517,7 @@ void test_trees_are_a_carrier_row() {
                  .terrain = &td};
 
     const std::uint32_t rev0 = trees.revision;
-    resource_field_apply(w, ResourceFieldId::Trees, 5, 6, -123);
+    field_move(w, ResourceFieldId::Trees, 5, 6, -123);
     CHECK(int(trees.at(5, 6)) == 377,
           "a registry write lands in the very grid the renderer draws");
     CHECK(resource_field_read(w, ResourceFieldId::Trees, 5, 6) == 377,
@@ -527,47 +543,57 @@ void test_trees_are_a_carrier_row() {
           "growth writes the carrier, never a scar");
 }
 
-// The deposit rows (Clay/Iron/Stone) are carrier rows too: one registry
-// door, per-kind maps underneath. What must hold: a write lands in ITS kind
-// and no other, an absent vein refuses the write (mining invents no
-// geology), and the scar slots stay empty.
-void test_deposits_are_carrier_rows() {
+// РЯД ЖИЛЫ — НОСИТЕЛЬ С ДВУМЯ ЧУЖИМИ КОНТЕЙНЕРАМИ (жилы единые, 2026-10-22):
+// дикая жила — производный грид (инертен для записи: добыча существует по
+// шахтам), залежь шахты — число фичи worked под numberRow == Vein. Что
+// держится здесь: чтение различает оба носителя колонкой строки фичи, запись
+// берёт только залежь, шрамового поля ряд не заводит.
+// (Прежняя посылка прибора — «роды различимы в одной клетке» — снята
+// вердиктом: рода у жилы нет, прибор переписан, не подогнан.)
+void test_vein_is_a_two_carrier_row() {
     using namespace sm;
     World wld = make_world();
     sm::GameState& gs = wld.gs;
     sm::DepositLayer deposits;
     allocate_deposit_fields(deposits, gs.mapW, gs.mapH);
-    deposits.grid(DepositKind::Stone).write(9, 9, 1000);
-    deposits.grid(DepositKind::Iron).write(9, 9, 64);   // a vein IN the quarry
-    MacroWorld w{.gs = &gs, .store = wld.store.get(), .deposits = &deposits};
+    create_deposit(deposits, 9, 9, 1000);   // дикая жила
+    FeatureLayer features;
+    features.resize(gs.mapW, gs.mapH);
+    MacroWorld w{.gs = &gs, .store = wld.store.get(),
+                 .deposits = &deposits, .features = &features};
 
-    CHECK(resource_field_read(w, ResourceFieldId::Stone, 9, 9) == 1000
-              && resource_field_read(w, ResourceFieldId::Iron, 9, 9) == 64,
-          "each kind's row reads its own map of the shared cell");
+    CHECK(resource_field_read(w, ResourceFieldId::Vein, 9, 9) == 1000,
+          "без шахты ряд читает дикую жилу — геологию видно");
+    CHECK(field_move(w, ResourceFieldId::Vein, 9, 9, -60) == 0
+              && deposits.vein_at(9, 9) == 1000,
+          "дикая жила инертна: добыча существует по шахтам");
 
-    resource_field_apply(w, ResourceFieldId::Iron, 9, 9, -60);
-    CHECK(resource_field_read(w, ResourceFieldId::Iron, 9, 9) == 4
-              && resource_field_read(w, ResourceFieldId::Stone, 9, 9) == 1000,
-          "mining one kind never bleeds into the other kind's map");
-
-    resource_field_apply(w, ResourceFieldId::Clay, 9, 9, +500);
-    CHECK(resource_field_read(w, ResourceFieldId::Clay, 9, 9) == 0
-              && deposits.grid(DepositKind::Clay).liveCells == 0,
-          "a kind the cell does not hold refuses the write: mining invents "
-          "no geology");
-
-    resource_field_apply(w, ResourceFieldId::Iron, 9, 9, -100);
-    CHECK(resource_field_read(w, ResourceFieldId::Iron, 9, 9) == 0
-              && deposits.grid(DepositKind::Iron).at(9, 9) == 0,
-          "an over-drained vein is ANNIHILATED - no dead cell lingers (v55)");
-
-    for (std::size_t f : {std::size_t(ResourceFieldId::Clay),
-                          std::size_t(ResourceFieldId::Iron),
-                          std::size_t(ResourceFieldId::Stone)}) {
-        CHECK(!gs.resourceScarCells[f].live(),
-              "a deposit row pays for NO scar field - its carrier cells are "
-              "the only state (the registry's own rule)");
+    {   // Шахта — дверью рода фичи (стена ломтя 1): суша под дверью.
+        TerrainData td;
+        td.width = gs.mapW;
+        td.height = gs.mapH;
+        td.rgba.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH) * 4u, 0);
+        td.seaLevel16 = field_word_of(kDefaultSeaLevel);
+        for (std::size_t c = 0;
+             c < std::size_t(gs.mapW) * std::size_t(gs.mapH); ++c)
+            td.rgba[c * 4u + 0] = field_word_of(140.0f / 255.0f);
+        feature_put(features, td, 9, 9, FT_Quarry);
     }
+    worked_write(gs, 9, 9, 500);   // залежь, свёрнутая генерацией
+    CHECK(resource_field_read(w, ResourceFieldId::Vein, 9, 9) == 500,
+          "под шахтой ряд читает ЗАЛЕЖЬ — число фичи, не геологию");
+    CHECK(field_move(w, ResourceFieldId::Vein, 9, 9, -60) == -60
+              && worked_read(gs, 9, 9) == 440,
+          "выемка движет залежь и отвечает фактом");
+    CHECK(deposits.vein_at(9, 9) == 1000,
+          "и не трогает природное поле — метал не убывает");
+    CHECK(field_move(w, ResourceFieldId::Vein, 9, 9, -1000) == -440
+              && worked_read(gs, 9, 9) == 0,
+          "взять больше, чем лежит, невыразимо: факт — остаток");
+
+    CHECK(!gs.resourceScarCells[std::size_t(ResourceFieldId::Vein)].live(),
+          "a vein row pays for NO scar field - its carriers are "
+          "the only state (the registry's own rule)");
 }
 
 // ── СДЕЛКА С СУЩЕСТВОМ ПРОХОДИТ ДВЕРЬ ПАСТВЫ, И В ОБЕ СТОРОНЫ (M-292,
@@ -660,7 +686,7 @@ int main() {
     test_the_fallen_squads_creatures_die();
     test_the_lease_holds_the_dead_record_against_the_sweep();
     test_trees_are_a_carrier_row();
-    test_deposits_are_carrier_rows();
+    test_vein_is_a_two_carrier_row();
     test_a_creature_deal_moves_the_flock_both_ways();
     return sm::test::report("macro_stock_test");
 }

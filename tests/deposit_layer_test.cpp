@@ -1,19 +1,20 @@
-// The world's mineral deposits (macro/deposit_layer.h; the FIELD law of
-// geology since v72 — owner 2026-08-31: «диффузионная полевая генерация,
-// горы дают ВЕСА, не гейт»). Pinned:
-//   · the AFFINITY LAW — nothing in the water; metal/stone cells stand on
-//     HIGHER ground than the land's average (weight = height⁴), clay on
-//     river-wetted lowland (on this fixture the off-river weight cannot
-//     crest, so every clay cell is river-adjacent — a pinned consequence);
-//   · NESTS — the field law clusters: somewhere a kind holds two adjacent
-//     cells (the connectivity the mine's consolidation folds — the hash law
-//     this replaced scattered lone veins that clustered with nothing);
-//   · determinism — one seed, one geology;
-//   · the quantity door refuses to invent geology on a non-deposit cell, and
-//     a write down to zero ANNIHILATES the cell (owner, 2026-08-28) while the
-//     derived virginUnits baseline keeps what the world was born with;
-//   · load path (v37) — restoring the saved cells reproduces the mutated
-//     world, the dead vein staying dead.
+// ОДНО ПРИРОДНОЕ ПОЛЕ ЖИЛ (macro/deposit_layer.h; вердикт владельца
+// 2026-10-22 «жилы единые то есть одно природно поле жил»). Охраняемые
+// ЗАКОНЫ, не числа:
+//   · СРОДСТВО — ВЕС, НЕ ГЕЙТ: в воде жил нет; всякая жила стоит либо на
+//     земле выше средней (металл/камень по высоте⁴), либо у воды (глина по
+//     влажной низине) — на этой фикстуре вне реки влажность не перелезает
+//     порог, так что дизъюнкция ПОЛНА и падает, если сродство сломано;
+//   · ГНЁЗДА — полевой закон кластерит: где-то жила держит две смежные
+//     клетки (связность, которую генерация шахт сводит в кап залежи);
+//   · ДЕТЕРМИНИЗМ — один сид, одна геология; другой сид — другая;
+//   · ЁМКОСТЬ — ЧИСТАЯ ФУНКЦИЯ: vein_virgin_at на клетке равен тому, что
+//     build записал в грид (одна функция и рождает, и отвечает);
+//   · ДВЕРЬ ГЕНЕЗИСА — create_deposit пишет и двигает ревизию.
+//
+// (Прибор «quantity door / load path» УМЕР с самими дверьми 2026-10-23:
+// природное поле геймплеем не мутируется и в сейв не едет; залежь шахты —
+// число фичи worked, её транзакции держит field_doors_test.)
 #include "check.h"
 
 #include "macro/deposit_layer.h"
@@ -25,44 +26,28 @@ namespace {
 
 using namespace sm;
 
-int total_cells(const DepositLayer& layer) {
-    int n = 0;
-    for (const auto& g : layer.cells) n += int(g.liveCells);
-    return n;
-}
-
 // A little world: sea on the left edge, a river column at x=8 wetting the
 // land, a TALL mountain band at y>=48 (the field law concentrates metal
-// where the land is HIGH — height⁴ — so the fixture holds honest peaks,
-// not foothills), plain grassland elsewhere.
+// where the land is HIGH — height⁴), plain grassland elsewhere.
 TerrainData make_world() {
     const int w = 64, h = 64;
     TerrainData td;
     td.width = w;
     td.height = h;
     td.rgba.assign(std::size_t(w) * h * 4u, 0);
-    // Плоскость моря — колонка КАРТЫ (M-109): свидетель ставит её сам, ровно
-    // тем же порогом, которым ниже пишет канал маски.
     td.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             const std::size_t s = std::size_t(y * w + x) * 4u;
-            // Фикстура авторит УРОВЕНЬ поля (0..1), а в карту он ложится
-            // словом через единственную дверь записи: канал — unorm16, и
-            // литерал прежней байтовой эпохи значил бы здесь другую высоту.
             float level01 = 140.0f / 255.0f;             // land (0.549)
             if (x < 4) level01 = 40.0f / 255.0f;         // sea (0.157)
             if (y >= 48) level01 = 250.0f / 255.0f;      // peaks (0.98)
             td.rgba[s + 0] = sm::field_word_of(level01);
-            td.rgba[s + 1] = sm::field_word_of(200.0f / 255.0f);  // wet: clay
+            td.rgba[s + 1] = sm::field_word_of(200.0f / 255.0f);
             td.rgba[s + 2] = sm::field_word_of(128.0f / 255.0f);
             td.rgba[s + 3] = level01 < sm::kDefaultSeaLevel
                                  ? std::uint16_t(0)
                                  : std::uint16_t(sm::kFieldWordMax);
-            // РУСЛО ЕСТЬ РЕЛЬЕФ (M-211): колонка режется ниже плоскости, и
-            // вода в ней появляется тем же единственным порогом, что в море.
-            // Прежде фикстура ставила МАСКУ рядом с высотой — два носителя
-            // одного факта, и они могли разъехаться молча.
             if (x == 8 && y < 48) {
                 td.rgba[s + 0] = sm::river_bed_word(td.seaLevel16);
                 td.rgba[s + 3] = std::uint16_t(0);
@@ -72,16 +57,21 @@ TerrainData make_world() {
     return td;
 }
 
-void test_deposits_obey_the_world() {
+bool river_adjacent(const TerrainData& td, int x, int y) {
+    const std::uint32_t at = cell_of(x, y, td.width);
+    for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx)
+            if (td.is_water(cell_step(at, dx, dy, td.width))) return true;
+    return false;
+}
+
+void test_the_field_obeys_the_world() {
     const TerrainData td = make_world();
     const DepositLayer layer = build_deposit_layer(td, 777u);
 
-    CHECK_OR_RETURN(total_cells(layer) > 0, "the little world holds deposits");
+    CHECK_OR_RETURN(layer.cells.liveCells > 0, "the little world holds veins");
+    CHECK(layer.virginUnits > 0, "the fingerprint counts what was born");
 
-    // The AFFINITY law (weights, never gates): water holds nothing; a
-    // mineral cell stands on HIGHER ground than the land's average; clay on
-    // this fixture cannot crest off-river (moisture/8), so every clay cell
-    // is river-adjacent — the old hard-gate assertion, now a consequence.
     long long landHeightSum = 0, landCells = 0;
     for (int y = 0; y < td.height; ++y)
         for (int x = 0; x < td.width; ++x)
@@ -90,131 +80,71 @@ void test_deposits_obey_the_world() {
                 ++landCells;
             }
     const long long landMean = landHeightSum / std::max(1LL, landCells);
+
     bool affinityHolds = true;
-    long long mineralHeightSum = 0, mineralCells = 0;
-    for (int k = 0; k < kDepositKindCount; ++k) {
-        layer.cells[k].for_each_live(
-                [&](std::uint32_t idx, std::int32_t remaining) {
-            const int x = int(idx % std::uint32_t(td.width));
-            const int y = int(idx / std::uint32_t(td.width));
-            const bool water = td.is_water(x, y);
-            affinityHolds = affinityHolds && !water && remaining > 0;
-            if (DepositKind(k) == DepositKind::Clay) {
-                bool nearRiver = false;
-                for (int dy = -1; dy <= 1; ++dy)
-                    for (int dx = -1; dx <= 1; ++dx) {
-                        const int xi = (x + dx + td.width) % td.width;
-                        const int yi = (y + dy + td.height) % td.height;
-                        nearRiver = nearRiver
-                            || td.is_water(sm::cell_of(xi, yi, td.width));
-                    }
-                affinityHolds = affinityHolds && nearRiver;
-            } else {
-                mineralHeightSum += td.height_at(x, y);
-                ++mineralCells;
-            }
-        });
-    }
-    CHECK(affinityHolds,
-          "water holds nothing; clay crests only by the river here");
-    CHECK_OR_RETURN(mineralCells > 0, "the peaks yield minerals");
-    CHECK(mineralHeightSum / mineralCells > landMean,
-          "minerals stand on higher ground than the land's average — the "
-          "height-weight affinity, never a hard gate");
-    CHECK(layer.grid(DepositKind::Stone).liveCells > 0,
-          "the mountain band yields stone");
-    // NESTS: the field law clusters — somewhere a kind holds two adjacent
-    // cells. This is the meat the mine's consolidation folds; the hash law
-    // this replaced scattered lone veins and this check is red against it.
     bool nested = false;
-    for (int k = 0; k < kDepositKindCount && !nested; ++k) {
-        layer.cells[std::size_t(k)].for_each_live(
-                [&](std::uint32_t idx, std::int32_t rem) {
-            (void)rem;
-            if (nested) return;
-            const int x = int(idx % std::uint32_t(td.width));
-            const int y = int(idx / std::uint32_t(td.width));
+    layer.cells.for_each_live([&](std::uint32_t idx, std::int32_t remaining) {
+        const int x = layer.cells.x_of(idx);
+        const int y = layer.cells.y_of(idx);
+        // Вода не несёт ничего; всякая жила — высоко ЛИБО у воды. На этой
+        // фикстуре вне реки влажность не перелезает порог глины, поэтому
+        // дизъюнкция полна: сломай вес — и жила встанет на ровной сухой
+        // земле, уронив ровно эту проверку.
+        affinityHolds = affinityHolds && !td.is_water(x, y) && remaining > 0
+            && (td.height_at(x, y) > landMean || river_adjacent(td, x, y));
+        if (!nested) {
             for (int dy = -1; dy <= 1 && !nested; ++dy)
                 for (int dx = -1; dx <= 1 && !nested; ++dx) {
                     if (dx == 0 && dy == 0) continue;
-                    if (layer.cells[std::size_t(k)].at(x + dx, y + dy) != 0)
-                        nested = true;
+                    if (layer.cells.at(x + dx, y + dy) != 0) nested = true;
                 }
-        });
-    }
-    CHECK(nested, "the field law grows NESTS — adjacent same-kind veins");
+        }
+    });
+    CHECK(affinityHolds,
+          "affinity is a WEIGHT, never a gate: water holds nothing, a vein "
+          "stands high or by the water");
+    CHECK(nested, "the field law grows NESTS — adjacent live veins");
 
-    // One seed, one geology.
+    // ЁМКОСТЬ — ЧИСТАЯ ФУНКЦИЯ: та же дверь, что родила мир, отвечает те же
+    // числа по клеткам (и нули там, где грид пуст).
+    bool pureMatches = true;
+    int sampled = 0;
+    for (int y = 0; y < td.height; y += 7) {
+        for (int x = 0; x < td.width; x += 7) {
+            const std::int32_t derived = vein_virgin_at(td, 777u, x, y);
+            pureMatches = pureMatches && derived == layer.vein_at(x, y);
+            ++sampled;
+        }
+    }
+    CHECK(sampled > 0 && pureMatches,
+          "vein_virgin_at IS the built grid — one function births and answers");
+
+    // One seed, one geology; a different seed shuffles the sites.
     const DepositLayer again = build_deposit_layer(td, 777u);
-    bool same = true;
-    for (int k = 0; k < kDepositKindCount; ++k)
-        same = same && again.cells[k] == layer.cells[k];
-    CHECK(same, "the same seed derives the same geology");
-    // A different seed shuffles the sites.
+    CHECK(again.cells == layer.cells,
+          "the same seed derives the same geology");
     const DepositLayer other = build_deposit_layer(td, 778u);
-    bool identical = true;
-    for (int k = 0; k < kDepositKindCount; ++k)
-        identical = identical && other.cells[k] == layer.cells[k];
-    CHECK(!identical, "a different seed is a different geology");
+    CHECK(!(other.cells == layer.cells),
+          "a different seed is a different geology");
 }
 
-void test_the_quantity_door_and_the_load_path() {
-    const TerrainData td = make_world();
-    DepositLayer layer = build_deposit_layer(td, 777u);
-    CHECK_OR_RETURN(layer.grid(DepositKind::Stone).liveCells > 0,
-                    "fixture holds stone");
-
-    const ResourceGrid& stone = layer.grid(DepositKind::Stone);
-    const std::uint32_t firstIdx = stone.first_live();
-    const int x = stone.x_of(firstIdx);
-    const int y = stone.y_of(firstIdx);
-
+void test_the_genesis_door() {
+    DepositLayer layer;
+    allocate_deposit_fields(layer, 64, 64);
     const std::uint32_t rev0 = layer.revision;
-    CHECK(set_deposit_remaining(layer, DepositKind::Stone, x, y, 5),
-          "the door mutates a real deposit");
-    CHECK(layer.remaining_at(DepositKind::Stone, x, y) == 5,
-          "the layer shows the drained vein");
+    create_deposit(layer, 10, 10, 1234);
+    CHECK(layer.vein_at(10, 10) == 1234, "genesis writes the cell");
+    CHECK(layer.cells.liveCells == 1, "the live count rides the write");
     CHECK(layer.revision > rev0, "the mutation moved the revision");
-
-    // Draining to (or below) zero ANNIHILATES: a worked-out vein is a vein
-    // that no longer exists (owner, 2026-08-28). The scarcity baseline is
-    // the DERIVED virginUnits, so the death moves no stored state.
-    const std::int64_t virgin0 =
-        layer.virginUnits[std::size_t(DepositKind::Stone)];
-    CHECK(set_deposit_remaining(layer, DepositKind::Stone, x, y, -3),
-          "over-draining annihilates, not refuses");
-    CHECK(layer.remaining_at(DepositKind::Stone, x, y) == 0,
-          "a worked-out vein leaves the map entirely - in a field, that is 0");
-    CHECK(layer.virginUnits[std::size_t(DepositKind::Stone)] == virgin0
-              && virgin0 > 0,
-          "the born-with baseline is untouched by the death - it is derived, "
-          "not kept");
-
-    // Mining cannot invent geology: a water cell never hosts a deposit, and
-    // a stone write cannot touch another kind's map either.
-    CHECK(!set_deposit_remaining(layer, DepositKind::Stone, 1, 8, 100),
-          "a non-deposit cell refuses the quantity door");
-    CHECK(!set_deposit_remaining(layer, DepositKind::Iron, x, y, 100)
-              || layer.grid(DepositKind::Iron).at(x, y) != 0,
-          "a kind the cell does not hold refuses the door");
-
-    // The load path (v37/v55): the save carries the live cells AND the
-    // annihilation counters whole; restoring onto a virgin derivation
-    // reproduces the mutated world — the dead vein stays dead.
-    DepositLayer loaded = build_deposit_layer(td, 777u);
-    restore_deposit_cells(loaded, layer);
-    CHECK(loaded.remaining_at(DepositKind::Stone, x, y) == 0,
-          "the annihilated vein stays gone through a load");
-    CHECK(loaded.virginUnits[std::size_t(DepositKind::Stone)] == virgin0,
-          "the re-derived layer carries the same born-with baseline");
-    CHECK(total_cells(loaded) == total_cells(layer),
-          "the restore reproduces every live cell, adds none");
+    create_deposit(layer, 11, 10, 0);
+    CHECK(layer.vein_at(11, 10) == 0,
+          "genesis of an empty vein is refused — zero is absence");
 }
 
 } // namespace
 
 int main() {
-    test_deposits_obey_the_world();
-    test_the_quantity_door_and_the_load_path();
+    test_the_field_obeys_the_world();
+    test_the_genesis_door();
     return sm::test::report("deposit_layer_test");
 }

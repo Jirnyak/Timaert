@@ -524,12 +524,15 @@ sm::GameState make_state(sm::MacroStore& st) {
     // scar field — asserted below as the negative control).
     for (const sm::ResourceFieldId row : {sm::ResourceFieldId::Fauna,
                                           sm::ResourceFieldId::Wheat}) {
-        gs.resourceScarCells[std::size_t(row)].allocate(gs.mapW, gs.mapH, 0);
+        sm::field_set_allocate(gs.resourceScarCells[std::size_t(row)],
+                               gs.mapW, gs.mapH, 0);
     }
-    gs.resourceScarCells[std::size_t(sm::ResourceFieldId::Fauna)]
-        .write(17, 42, 3);
-    gs.resourceScarCells[std::size_t(sm::ResourceFieldId::Wheat)]
-        .write(5, 23, 12);
+    // Фикстура кладёт шрамы той же дверью, какой их кладёт провод сейва
+    // (field_set — абсолютная установка; стена ломтя 1 закрыла сырой write).
+    sm::field_set(gs.resourceScarCells[std::size_t(sm::ResourceFieldId::Fauna)],
+                  sm::cell_of(17, 42, gs.mapW), 3);
+    sm::field_set(gs.resourceScarCells[std::size_t(sm::ResourceFieldId::Wheat)],
+                  sm::cell_of(5, 23, gs.mapW), 12);
     // v96: THE worked layer — hulls moored at a harbour, the number under
     // the feature (CANON S5/S10). The layer's first tenant is its witness.
     sm::worked_write(gs, 9, 4, 2);
@@ -547,29 +550,9 @@ std::vector<std::uint16_t> make_tree_counts() {
     return treeCounts;
 }
 
-// The deposit fields ride the save (sparse ON THE WIRE, dense in the world —
-// the file format is not the model, CANON S5). The fixture holds a
-// part-drained stone cell, one cell carrying BOTH kinds — the
-// discovered-vein-in-a-quarry case per-kind storage exists for — and a clay
-// cell far from either.
-//
-// The old fixture also held a "DRY iron cell (remaining 0 is a visible fact,
-// not an absence)". That was the pre-v55 law; the ANNIHILATION ruling
-// (2026-08-28) already made a worked-out vein leave the world, and in a field
-// zero IS absence — there is no cell-shaped hole to store. The case is gone
-// from the fixture because it is gone from the world.
-sm::DepositLayer make_deposits() {
-    sm::DepositLayer d;
-    sm::allocate_deposit_fields(d, 512, 512);   // ЗАКОН АДРЕСА: квадрат, po2
-    auto put = [&](sm::DepositKind k, std::uint32_t idx, std::int32_t v) {
-        auto& g = d.grid(k);
-        g.write(g.x_of(idx), g.y_of(idx), v);
-    };
-    put(sm::DepositKind::Stone, 99u, 1500);
-    put(sm::DepositKind::Stone, 100u, 60000);
-    put(sm::DepositKind::Clay, 7u, 4096);
-    return d;
-}
+// (Фикстура жил УМЕРЛА 2026-10-23, «жилы единые»: природное поле жил —
+// производная терраина и сида, сейв его не возит; залежи шахт едут рядом
+// Worked, и его круговорот держит worked-свидетель ниже.)
 
 sm::Quest make_quest() {
     sm::Quest q{};
@@ -704,7 +687,6 @@ void run_roundtrip() {
     auto gsOwn = std::make_unique<sm::GameState>(make_state(store));
     sm::GameState& gs = *gsOwn;
     const std::vector<std::uint16_t> treeCounts = make_tree_counts();
-    const sm::DepositLayer deposits = make_deposits();
     sm::EventBus bus;
     sm::QuestEngine questEngine;
     std::vector<sm::Quest> quests;
@@ -735,7 +717,7 @@ void run_roundtrip() {
         macroFixture.insert(macroFixture.end(), places.begin(), places.end());
     }
     if (!sm::save_game(gs, store.nextSpawnId, quests, macroFixture,
-                       treeCounts, deposits, path)) {
+                       treeCounts, path)) {
         FAIL_BAIL("save_game returned false");
     }
 
@@ -757,9 +739,8 @@ void run_roundtrip() {
     std::vector<sm::Quest> loadedQuests;
     std::vector<sm::MacroNpcRecord> loadedMacro;
     std::vector<std::uint16_t> loadedTrees;
-    sm::DepositLayer loadedDeposits;
     if (!sm::load_game(loaded, loadedNextSpawnId, loadedQuests, loadedMacro,
-                       loadedTrees, loadedDeposits, path)) {
+                       loadedTrees, path)) {
         FAIL_BAIL("load_game failed");
     }
     if (loaded.version != sm::kSaveVersion) FAIL_BAIL("loaded version mismatch");
@@ -1179,18 +1160,8 @@ void run_roundtrip() {
         || loaded.subState.settlementId != kFixtureCityId) {
         FAIL_BAIL("sub-state lost");
     }
-    for (std::size_t k = 0; k < std::size_t(sm::kDepositKindCount); ++k) {
-        if (loadedDeposits.cells[k] != deposits.cells[k]) {
-            FAIL_BAIL("deposit cells lost (kind block mismatch)");
-        }
-    }
-    {
-        const auto& iron = loadedDeposits.grid(sm::DepositKind::Iron);
-        const auto& stone = loadedDeposits.grid(sm::DepositKind::Stone);
-        if (iron.at_index(100u) != 0 || stone.at_index(100u) != 60000) {
-            FAIL_BAIL("the quarry survived and no iron was invented under it");
-        }
-    }
+    // (Сверка блоков жил умерла с самими блоками: поле производно от сида,
+    // и файлу нечего о нём помнить. Залежи шахт сверяет worked ниже.)
     if (loadedTrees != treeCounts) FAIL_BAIL("tree grid lost");
     if (loadedTrees.at(7) != 0u || loadedTrees.at(17) != 12000u) {
         FAIL_BAIL("felled/thickened tree cells did not round-trip");
@@ -1297,12 +1268,10 @@ void run_roundtrip() {
     std::vector<sm::Quest> sentinelQuests;
     std::vector<sm::MacroNpcRecord> sentinelMacro;
     std::vector<std::uint16_t> sentinelTrees(3, 42u);
-    sm::DepositLayer sentinelDeposits;
     sentinelQuests.push_back(make_quest());
     sentinelQuests[0].ordinal = 777u;
     if (sm::load_game(sentinel, sentinelNextSpawnId, sentinelQuests,
-                      sentinelMacro, sentinelTrees,
-                      sentinelDeposits, truncatedPath)) {
+                      sentinelMacro, sentinelTrees, truncatedPath)) {
         FAIL_BAIL("truncated payload accepted");
     }
     if (sentinel.mapW != 11 || sentinelQuests[0].ordinal != 777u
@@ -1319,8 +1288,7 @@ void run_roundtrip() {
     sentinel.mapW = 22;
     sentinelQuests[0].ordinal = 778u;
     if (sm::load_game(sentinel, sentinelNextSpawnId, sentinelQuests,
-                      sentinelMacro, sentinelTrees,
-                      sentinelDeposits, corruptPath)) {
+                      sentinelMacro, sentinelTrees, corruptPath)) {
         FAIL_BAIL("corrupt payload accepted");
     }
     if (sentinel.mapW != 22 || sentinelQuests[0].ordinal != 778u) {
@@ -1342,9 +1310,8 @@ void run_roundtrip() {
     std::vector<sm::Quest> badQuests;
     std::vector<sm::MacroNpcRecord> badMacro;
     std::vector<std::uint16_t> badTrees;
-    sm::DepositLayer badDeposits;
     if (sm::load_game(badState, badNextSpawnId, badQuests, badMacro, badTrees,
-                      badDeposits, badVersionPath)) {
+                      badVersionPath)) {
         FAIL_BAIL("bad version accepted");
     }
     const sm::SaveSummary badSummary = sm::inspect_save(badVersionPath);
@@ -1393,7 +1360,7 @@ void run_roundtrip() {
         }
     }
     if (sm::save_game(invalidSquadState, store.nextSpawnId, quests,
-                      invalidMacro, treeCounts, deposits,
+                      invalidMacro, treeCounts,
                       temp_save_path("timaert_invalid_squad_save.bin"))) {
         FAIL_BAIL("invalid squad kind saved");
     }
@@ -1404,7 +1371,7 @@ void run_roundtrip() {
         std::vector<sm::MacroNpcRecord> invalidMacro = make_macro_records();
         invalidMacro[0].kind.type = std::uint16_t(sm::NPCType::Count);
         if (sm::save_game(gs, store.nextSpawnId, quests, invalidMacro,
-                          treeCounts, deposits,
+                          treeCounts,
                           temp_save_path("timaert_invalid_macro_save.bin"))) {
             FAIL_BAIL("invalid macro npc kind saved");
         }
@@ -1483,9 +1450,8 @@ void run_every_sub_state_kind_survives() {
         const std::vector<sm::Quest> quests;
         const std::vector<sm::MacroNpcRecord> macro;
         const std::vector<std::uint16_t> trees(std::size_t(gs.mapW * gs.mapH), 0u);
-        const sm::DepositLayer deposits{};
         CHECK_OR_RETURN(sm::save_game(gs, /*storeNextSpawnId*/ 1u, quests,
-                                      macro, trees, deposits, path),
+                                      macro, trees, path),
                         "a state in any live sub-state kind can be SAVED");
 
         auto loadedOwn = std::make_unique<sm::GameState>();
@@ -1494,10 +1460,8 @@ void run_every_sub_state_kind_survives() {
         std::vector<sm::Quest> loadedQuests;
         std::vector<sm::MacroNpcRecord> loadedMacro;
         std::vector<std::uint16_t> loadedTrees;
-        sm::DepositLayer loadedDeposits;
         CHECK_OR_RETURN(sm::load_game(loaded, loadedNextSpawnId, loadedQuests,
-                                      loadedMacro, loadedTrees,
-                                      loadedDeposits, path),
+                                      loadedMacro, loadedTrees, path),
                         "...and LOADED — the reader's refusal bound is not "
                         "below the enum's highest live kind");
         CHECK(loaded.subState.kind == kind,
@@ -1601,10 +1565,9 @@ void run_payload_cap_is_a_fact() {
     const std::vector<sm::MacroNpcRecord> placeBodies =
         sm::snapshot_macro_ecs(store);
     const std::vector<std::uint16_t> noTrees;
-    const sm::DepositLayer noDeposits;
     const std::vector<sm::Quest> noQuests;
     if (!sm::save_game(gs, store.nextSpawnId, noQuests, placeBodies,
-                       noTrees, noDeposits, path)) {
+                       noTrees, path)) {
         FAIL_BAIL("save_game refused a legal world at the census caps");
     }
 
@@ -1641,9 +1604,8 @@ void run_payload_cap_is_a_fact() {
     std::vector<sm::Quest> overQuests;
     std::vector<sm::MacroNpcRecord> overMacro;
     std::vector<std::uint16_t> overTrees;
-    sm::DepositLayer overDeposits;
     CHECK(!sm::load_game(overState, overNextSpawnId, overQuests, overMacro,
-                         overTrees, overDeposits, overPath),
+                         overTrees, overPath),
           "заголовок с payloadSize выше потолка обязан быть отвергнут");
     CHECK(sm::inspect_save(overPath).status
               == sm::SaveInspectStatus::Unreadable,

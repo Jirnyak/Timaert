@@ -330,7 +330,11 @@ public:
     // the player's pack; the return value is the player-visible list ("+3
     // Wood"), empty when the kind drops nothing. Public so the console and
     // smokes can exercise the payout without swinging an axe.
-    std::string grant_prop_loot(const Structure& prop);
+    // КРЕДИТ транзакции жатвы, атомарный: true = весь лут встал (outPicked —
+    // строка статуса, outAdded — вставшие стаки для отката звонящим), false =
+    // сумка отказала, уже вставшее откачено, мир не тронут (ломоть 1 M-72).
+    bool grant_prop_loot(const Structure& prop, std::string& outPicked,
+                         std::vector<ItemRef>& outAdded);
     // Spawn ONE npc/creature body into the live subworld — the console, the
     // encounter events, the battle harness and the macro-encounter path all come
     // through here. It does NOT make the body hostile (it never did): hostility

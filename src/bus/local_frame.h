@@ -38,7 +38,7 @@ inline constexpr int kFrameCells = kFrameSpan * kFrameSpan;   // 25
 // (ResourceFieldId::Count); bus не включает macro/, поэтому равенство прибито
 // static_assert-ом в сборщике — у единственного места, где оба числа видны
 // (ЗАКОН СЛОВАРЯ п.3: пин законен только под static_assert).
-inline constexpr int kFrameFieldRows = 10;
+inline constexpr int kFrameFieldRows = 5;
 
 // КАП ОКНА ФАКТОВ РОДА 5. Вывод: летопись считает пик СВОЕГО дня колонкой
 // factsPeak (контракт M-254) на ВЕСЬ мир в сотни строк; окно 25 клеток несёт
@@ -87,7 +87,7 @@ static_assert(std::is_trivially_copyable_v<LocalContext>,
 // Цена названа (DOD п.10): 25 строк клеток по 72 Б + 25×10 запасов полей +
 // 16384 хэндла (128 КиБ — кап оплачен пустотой, вердикт) + окно фактов
 // 256×32 Б + скаляры = 142 120 Б ≈ 139 КиБ, один экземпляр у приложения.
-static_assert(sizeof(LocalContext) == 142120,
+static_assert(sizeof(LocalContext) == 141624,
               "локальный фрейм — 139 КиБ плоских родов; новая колонка = "
               "новая цена, названная вслух (DOD п.10)");
 

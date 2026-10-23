@@ -1595,7 +1595,6 @@ static void push_stock_op(DeltaBuffer& d, MacroStock s, const MacroStockKey& k,
     op.detailKind = k.detailKind;
     op.detailLevel = k.detailLevel;
     op.stock = std::uint8_t(s);
-    op.door = 0;   // ряд ведомости сам держит закон своего вычитания
 }
 
 // ЕДИНАЯ политика промаха снимка: вопрос внутри охвата 5×5 отвечает ФРЕЙМ,
@@ -2682,9 +2681,38 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
     Structure victim{};
     // ПРЕДЕЛ РУКИ — 3D (ЗАКОН ИЗОТРОПИИ): его высота едет третьим аргументом,
     // иначе рубка срабатывала с любой высоты НАД деревом.
-    if (!mgr_.fell_prop_near(playerX_, playerY_, playerZ_, maxDist, mcx, mcy,
+    // PEEK, НЕ FELL: транзакция «поле→инвентарь» идёт КРЕДИТ ПРЕЖДЕ ДЕБЕТА
+    // (ломоть 1 M-72) — сумка принимает ДО того, как проп падает и строка
+    // дельты уходит. Прежний порядок дебет→кредит терял добычу безвозвратно:
+    // дерево срублено, «−1» уехал строкой, лес убавился, брёвен нет.
+    if (!mgr_.peek_prop_near(playerX_, playerY_, playerZ_, maxDist, mcx, mcy,
                              &victim, onlyKind))
         return false;
+
+    // ── The micro half first: what the prop WAS becomes cargo ──
+    // Resolved through the ONE loot registry a kill goes through — the prop's
+    // kind names a profile (structure_loot_id), the profile rolls items. The
+    // yield then scales by the prop's own metric height against its kind's
+    // reference, so a 20 m mast is worth more than a 6 m tundra scrub: the
+    // size the renderer draws is the size the axe is paid for. The status
+    // verb is the kind's own row too.
+    std::string picked;
+    std::vector<ItemRef> added;
+    if (!grant_prop_loot(victim, picked, added)) {
+        // Отказ сумки: проп стоит, мир цел, добыча не испарилась. Замах
+        // случился и оплачен — действие честно потрачено впустую.
+        set_status("Your pack is full.");
+        charge_act(kHarvestActSeconds);
+        return true;
+    }
+    if (!mgr_.remove_prop(victim)) {
+        // Композит гонится с регенерацией (тот же fail-closed, что был у
+        // fell): кредит откатывается стак в стак — лут только что положен
+        // плоскими строками (affixPower 0), remove_of снимает их же.
+        Inventory& bag = player_bag_of(gs_, mw_.store);
+        for (const ItemRef& s : added) bag.remove_of(int(s.def), s.count);
+        return false;
+    }
     // The macro writeback, through THE ledger (macro/macro_stock.h) rather than
     // through a counter of its own: one tree gone in the subworld is one unit
     // spent from this cell's forest. A prop is not an ECS entity, so it carries
@@ -2702,7 +2730,7 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
     // mask, so it was silent). Nothing done in a pocket has a macro meaning
     // AT ALL: «след в грязи для макромира не существует» (ЗАКОН ШВА). So the
     // ledger is not asked, and no representation is invented for it. The loot
-    // below is paid as always — the axe still works, the world just never
+    // above is paid as always — the axe still works, the world just never
     // hears about it.
     int prev = 0;
     const bool doorlessPocket =
@@ -2727,15 +2755,7 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
     if (outCellY) *outCellY = mcy;
     if (outPrevCount) *outPrevCount = prev;
 
-    // ── The micro half of the same rule: what the prop WAS becomes cargo ──
-    // Resolved through the ONE loot registry a kill goes through — the prop's
-    // kind names a profile (structure_loot_id), the profile rolls items. The
-    // yield then scales by the prop's own metric height against its kind's
-    // reference, so a 20 m mast is worth more than a 6 m tundra scrub: the
-    // size the renderer draws is the size the axe is paid for. The status
-    // verb is the kind's own row too.
     const char* verb = structure_kind_row(victim.kind).harvestMsg;
-    const std::string picked = grant_prop_loot(victim);
     if (picked.empty()) {
         set_status(verb);
     } else {
@@ -2746,10 +2766,14 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
     return true;
 }
 
-std::string SubworldEngine::grant_prop_loot(const Structure& prop) {
-    if (!gs_) return {};
+bool SubworldEngine::grant_prop_loot(const Structure& prop,
+                                     std::string& outPicked,
+                                     std::vector<ItemRef>& outAdded) {
+    outPicked.clear();
+    outAdded.clear();
+    if (!gs_) return true;   // нечего кредитовать — кредит вакуумно успешен
     const char* lootId = structure_loot_id(prop.kind);
-    if (!lootId || !lootId[0]) return {};
+    if (!lootId || !lootId[0]) return true;
 
     // Deterministic per PLACE, not per swing: the same tree always pays the
     // same wood, so a felling cannot be re-rolled by reloading. Absolute tile
@@ -2776,20 +2800,28 @@ std::string SubworldEngine::grant_prop_loot(const Structure& prop) {
     const float refH = structure_kind_row(prop.kind).yieldRefHeightM;
     const float sizeScale = (prop.height > 0.0f && refH > 0.0f)
         ? prop.height / refH : 1.0f;
-    std::string picked;
+    // A full bag REFUSES (owner's ruling): the harvest stays in the world
+    // rather than evaporating into a container with no room for it. С ломтя 1
+    // M-72 отказ — ВСЕЙ транзакции: прежде цикл клал стаки по одному, и отказ
+    // на втором оставлял первый в сумке, а остальное исчезало. Теперь уже
+    // вставшие стаки откатываются (лут плоский, affixPower 0 — remove_of
+    // снимает ровно их род), и звонящий видит целое «нет».
+    Inventory& bag = player_bag_of(gs_, mw_.store);
     for (ItemRef& s : stacks) {
         s.count = std::max(1, int(std::lround(float(s.count) * sizeScale)));
         const ItemDef* def = item_def_at(int(s.def));
-        // A full bag REFUSES (owner's ruling): the harvest stays in the world
-        // rather than evaporating into a container with no room for it.
-        if (!player_bag_of(gs_, mw_.store).add_ref(s)) {
-            return picked.empty() ? std::string("Your pack is full.") : picked;
+        if (!bag.add_ref(s)) {
+            for (const ItemRef& a : outAdded) bag.remove_of(int(a.def), a.count);
+            outAdded.clear();
+            outPicked.clear();
+            return false;
         }
-        if (!picked.empty()) picked += ", ";
-        picked += "+" + std::to_string(s.count) + " "
-                + (def ? def->name : "?");
+        outAdded.push_back(s);
+        if (!outPicked.empty()) outPicked += ", ";
+        outPicked += "+" + std::to_string(s.count) + " "
+                   + (def ? def->name : "?");
     }
-    return picked;
+    return true;
 }
 
 void SubworldEngine::tick_damage_fx() {

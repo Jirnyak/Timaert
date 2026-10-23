@@ -6980,7 +6980,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             if (!sm::save_game(app.gs, app.macroStore->nextSpawnId,
                                app.activeQuests, stage_save_state(app),
-                               app.treeLayer.data, app.deposits,
+                               app.treeLayer.data,
                                app.savePath)) {
                 smoke_fail(app, "save_game returned false");
                 break;

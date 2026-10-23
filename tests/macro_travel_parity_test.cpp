@@ -68,11 +68,13 @@ sm::TerrainData make_terrain() {
     return terrain;
 }
 
-sm::FeatureLayer make_features() {
+sm::FeatureLayer make_features(const sm::TerrainData& td) {
     sm::FeatureLayer features;
     features.resize(2, 2);
-    features.set(0, 0, sm::FT_Road);
-    features.set(1, 1, sm::FT_DirtRoad);
+    // Дверью рода фичи (стена ломтя 1): вода решает колонкой строки — на
+    // клетке 1,1 этой карты суша, дорога встаёт как спрошено.
+    sm::feature_put(features, td, 0, 0, sm::FT_Road);
+    sm::feature_put(features, td, 1, 1, sm::FT_DirtRoad);
     return features;
 }
 
@@ -84,7 +86,7 @@ sm::FeatureLayer make_features() {
 void test_cell_costs_follow_the_weight_table() {
     bag.clear();
     const sm::TerrainData terrain = make_terrain();
-    const sm::FeatureLayer features = make_features();
+    const sm::FeatureLayer features = make_features(terrain);
     const auto weight_at = [&](int x, int y, const sm::FeatureLayer* f) {
         const int wx = sm::FeatureLayer::wrap_coord(x, terrain.width);
         const int wy = sm::FeatureLayer::wrap_coord(y, terrain.height);

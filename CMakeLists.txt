@@ -1967,6 +1967,18 @@ timaert_test(delta_apply_test
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp)
 
+# Двери пульта полей (ломоть 1 M-72): факт движения, транзакция кредит→дебет,
+# выход по фиче клетки, снятие фичи значением FT_None.
+timaert_test(field_doors_test
+    SOURCES
+        src/macro/anketa.cpp
+        src/tables/items.cpp
+        src/macro/macro_stock.cpp
+        src/macro/chronicle.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/macro/tree_layer.cpp)
+
 timaert_test(macro_stock_test
     SOURCES
         # M-71: контейнер сам различает области предметов и существ —

@@ -9,6 +9,20 @@
 #include <limits>
 #include <vector>
 
+// ПРОБНИК СТЕНЫ (ломоть 1 M-72): этот прибор держит контракт САМОГО `set` —
+// гейты формы (пустой/короткий/битый слой), шов «индекс против пары», — и
+// потому он единственный именованный друг стены рядом с дверью feature_put
+// (features.h). Геймплейного пути сюда нет: пробник живёт в приборе.
+struct sm::FeatureLayerProbe {
+    static void set(sm::FeatureLayer& fl, std::uint32_t cell,
+                    sm::FeatureType t) {
+        fl.set(cell, t);
+    }
+    static void set(sm::FeatureLayer& fl, int x, int y, sm::FeatureType t) {
+        fl.set(x, y, t);
+    }
+};
+
 namespace
 {
 
@@ -165,13 +179,13 @@ void test_empty_and_malformed_inputs_are_safe()
 {
     sm::FeatureLayer empty;
     empty.resize(0, 4);
-    empty.set(0, 0, sm::FT_Road);
+    sm::FeatureLayerProbe::set(empty, 0, 0, sm::FT_Road);
 
     sm::FeatureLayer shortStorage;
     shortStorage.width = 4;
     shortStorage.height = 4;
     shortStorage.data.assign(1, std::uint8_t(sm::FT_DirtRoad));
-    shortStorage.set(3, 3, sm::FT_Road);
+    sm::FeatureLayerProbe::set(shortStorage, 3, 3, sm::FT_Road);
 
     sm::FeatureLayer invalidStorage;
     invalidStorage.resize(2, 2);
@@ -180,7 +194,7 @@ void test_empty_and_malformed_inputs_are_safe()
 
     sm::FeatureLayer invalidSet;
     invalidSet.resize(1, 1);
-    invalidSet.set(0, 0, static_cast<sm::FeatureType>(255u));
+    sm::FeatureLayerProbe::set(invalidSet, 0, 0, static_cast<sm::FeatureType>(255u));
 
     sm::FeatureLayer validStorage;
     validStorage.resize(2, 2);
@@ -260,7 +274,7 @@ void test_empty_and_malformed_inputs_are_safe()
     hugeExtent.width = std::numeric_limits<int>::max();
     hugeExtent.height = 1;
     hugeExtent.data.assign(1u, std::uint8_t(sm::FT_Road));
-    hugeExtent.set(std::numeric_limits<int>::max() - 1, 0, sm::FT_DirtRoad);
+    sm::FeatureLayerProbe::set(hugeExtent, std::numeric_limits<int>::max() - 1, 0, sm::FT_DirtRoad);
     // ЗАКОН АДРЕСА (владелец, 2026-09-23) СДЕЛАЛ ЭТОТ ОТКАЗ ПОЛНЫМ. Прежде
     // слой с уродливыми размерами доверялся ЧАСТИЧНО: клетка (0,0) ещё
     // отвечала своим байтом, и только дальняя падала в None. Теперь мир,
@@ -454,9 +468,9 @@ void test_feature_write_goes_through_one_door()
             const std::uint32_t cell = sm::cell_of(x, y, kSide);
             const sm::FeatureType t =
                 sm::FeatureType(cell % std::uint32_t(sm::FT_Count));
-            fl.set(cell, t);                                  // пишем адресом
+            sm::FeatureLayerProbe::set(fl, cell, t);                                  // пишем адресом
             if (fl.at(x, y) != t) ++mismatches;               // читаем парой
-            fl.set(x, y, sm::FT_None);                        // пишем парой
+            sm::FeatureLayerProbe::set(fl, x, y, sm::FT_None);                        // пишем парой
             if (fl.at(cell) != sm::FT_None) ++mismatches;     // читаем адресом
             ++samples;
         }
@@ -468,7 +482,7 @@ void test_feature_write_goes_through_one_door()
     //    украшение: ре-штамп загрузки (`main.cpp`, builtFeatures) несёт байт
     //    ИЗ ФАЙЛА, и до наряда он ложился в поле как есть — незаконный род
     //    доезжал до зон и стоимости пути.
-    fl.set(0u, static_cast<sm::FeatureType>(255u));
+    sm::FeatureLayerProbe::set(fl, 0u, static_cast<sm::FeatureType>(255u));
     CHECK(fl.data[0] == std::uint8_t(sm::FT_None) && fl.at(0u) == sm::FT_None,
           "дверь по адресу обязана сажать незаконный род в FT_None");
 
@@ -481,7 +495,7 @@ void test_feature_write_goes_through_one_door()
     const int seamY = kSide - 1;
     const std::size_t raw =
         std::size_t(seamY) * std::size_t(kSide) + std::size_t(seamX);
-    fl.set(seamX, seamY, sm::FT_Bridge);
+    sm::FeatureLayerProbe::set(fl, seamX, seamY, sm::FT_Bridge);
     const std::uint32_t door = sm::cell_of(seamX, seamY, kSide);
     CHECK(fl.at(door) == sm::FT_Bridge && fl.at(1, kSide - 1) == sm::FT_Bridge
               && std::size_t(door) != raw && raw >= fl.data.size(),

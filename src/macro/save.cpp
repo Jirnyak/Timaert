@@ -1173,8 +1173,7 @@ void write_payload(Writer& w, const GameState& s,
                    std::uint32_t storeNextSpawnId,
                    const std::vector<Quest>& activeQuests,
                    const std::vector<MacroNpcRecord>& macroNpcs,
-                   const std::vector<std::uint16_t>& treeCounts,
-                   const DepositLayer& deposits) {
+                   const std::vector<std::uint16_t>& treeCounts) {
     w.pod(s.worldSeed);
     w.pod(s.mapW);
     w.pod(s.mapH);
@@ -1209,7 +1208,7 @@ void write_payload(Writer& w, const GameState& s,
     // trees, knowledge, deposits, scars — each row writes its own bytes, in
     // row order, byte-identical to the four hand blocks that lived here.
     // Adding a per-cell world truth is one row THERE, no code here.
-    write_world_fields(w, WorldFieldStores{&s, &treeCounts, &deposits});
+    write_world_fields(w, WorldFieldStores{&s, &treeCounts});
 
     // v23: the macro-ECS snapshot — the lords, squads, bandits and beasts of
     // the living map, one record each (macro/macro_snapshot.h).
@@ -1253,8 +1252,7 @@ void write_payload(Writer& w, const GameState& s,
 void read_payload(Reader& r, GameState& s, std::uint32_t& storeNextSpawnId,
                   std::vector<Quest>& activeQuests,
                   std::vector<MacroNpcRecord>& macroNpcs,
-                  std::vector<std::uint16_t>& treeCounts,
-                  DepositLayer& deposits) {
+                  std::vector<std::uint16_t>& treeCounts) {
     s.version = kSaveVersion;
     r.pod(s.worldSeed);
     r.pod(s.mapW);
@@ -1288,8 +1286,7 @@ void read_payload(Reader& r, GameState& s, std::uint32_t& storeNextSpawnId,
     // The saved world FIELDS, by registry row (macro/world_fields.h) — the
     // mirror of the write side; the caller validates trees against the
     // loaded map dims (restore_tree_counts).
-    if (!read_world_fields(r, WorldFieldStoresMut{&s, &treeCounts,
-                                                  &deposits})) {
+    if (!read_world_fields(r, WorldFieldStoresMut{&s, &treeCounts})) {
         return;
     }
 
@@ -1340,8 +1337,7 @@ bool load_payload_from_file(const std::string& path, GameState& s,
                             std::uint32_t& storeNextSpawnId,
                             std::vector<Quest>& activeQuests,
                             std::vector<MacroNpcRecord>& macroNpcs,
-                            std::vector<std::uint16_t>& treeCounts,
-                            DepositLayer& deposits) {
+                            std::vector<std::uint16_t>& treeCounts) {
     std::vector<std::uint8_t> file;
     if (!read_file(path, file)) return false;
 
@@ -1355,10 +1351,9 @@ bool load_payload_from_file(const std::string& path, GameState& s,
     std::vector<Quest> loadedQuests;
     std::vector<MacroNpcRecord> loadedMacro;
     std::vector<std::uint16_t> loadedTrees;
-    DepositLayer loadedDeposits;
     Reader r{file.data() + kHeaderBytes, static_cast<std::size_t>(h.payloadSize)};
     read_payload(r, loaded, loadedNextSpawnId, loadedQuests, loadedMacro,
-                 loadedTrees, loadedDeposits);
+                 loadedTrees);
     if (!r.ok || r.pos != r.size) return false;
 
     s = std::move(loaded);
@@ -1366,7 +1361,6 @@ bool load_payload_from_file(const std::string& path, GameState& s,
     activeQuests = std::move(loadedQuests);
     macroNpcs = std::move(loadedMacro);
     treeCounts = std::move(loadedTrees);
-    deposits = std::move(loadedDeposits);
     return true;
 }
 
@@ -1376,14 +1370,13 @@ bool save_game(const GameState& s, std::uint32_t storeNextSpawnId,
                const std::vector<Quest>& activeQuests,
                const std::vector<MacroNpcRecord>& macroNpcs,
                const std::vector<std::uint16_t>& treeCounts,
-               const DepositLayer& deposits,
                const std::string& path) {
     Writer payload;
     payload.bytes.reserve(64u * 1024u);
     const std::string savedAt = save_timestamp_for(s);
     if (savedAt.empty()) return false;
     write_payload(payload, s, savedAt, storeNextSpawnId, activeQuests,
-                  macroNpcs, treeCounts, deposits);
+                  macroNpcs, treeCounts);
     if (!payload.ok || payload.bytes.size() > kMaxPayloadBytes) return false;
 
     SaveHeader h;
@@ -1401,15 +1394,14 @@ std::uint32_t save_payload_fingerprint(
     const GameState& s, std::uint32_t storeNextSpawnId,
     const std::vector<Quest>& activeQuests,
     const std::vector<MacroNpcRecord>& macroNpcs,
-    const std::vector<std::uint16_t>& treeCounts,
-    const DepositLayer& deposits) {
+    const std::vector<std::uint16_t>& treeCounts) {
     Writer payload;
     payload.bytes.reserve(64u * 1024u);
     // The stamp is held FIXED, and it is the only field that has to be: two
     // honest saves of one state differ in savedAt by construction (a fresh
     // UTC stamp per save, save.cpp:1272), and that is not state.
     write_payload(payload, s, std::string(), storeNextSpawnId,
-                  activeQuests, macroNpcs, treeCounts, deposits);
+                  activeQuests, macroNpcs, treeCounts);
     if (!payload.ok) return 0u;   // 0 = "no answer", never a real fingerprint
     return checksum32(payload.bytes.data(), payload.bytes.size());
 }
@@ -1418,10 +1410,9 @@ bool load_game(GameState& s, std::uint32_t& storeNextSpawnId,
                std::vector<Quest>& activeQuests,
                std::vector<MacroNpcRecord>& macroNpcs,
                std::vector<std::uint16_t>& treeCounts,
-               DepositLayer& deposits,
                const std::string& path) {
     return load_payload_from_file(path, s, storeNextSpawnId, activeQuests,
-                                  macroNpcs, treeCounts, deposits);
+                                  macroNpcs, treeCounts);
 }
 
 SaveSummary inspect_save(const std::string& path) {

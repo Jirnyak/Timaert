@@ -1,209 +1,87 @@
-// The world's mineral deposits — cells of the MAP, not lists on landmarks
-// (owner's ruling, W2): clay by the rivers, stone and iron in the mountains.
-// Agents farm the nearest deposit to their home exactly as woodcutters farm
-// the nearest forest.
+// ОДНО ПРИРОДНОЕ ПОЛЕ ЖИЛ (вердикт владельца 2026-10-22, дословно: «жилы
+// единые то есть одно природно поле жил а что там окажется решает фича шахты
+// - золотая железеная мденая и тд»; и 2026-10-23: «добыча … существует по
+// шахтам … и ставятся шахты толкьо если есть деревня рядом или город если
+// нет то жила просто остаётся»).
 //
-// Since R2 each kind is a CARRIER row of the resource-field registry
-// (macro/resource_field.h): this layer is the rows' live state, mutated only
-// through resource_field_apply, and the save carries the cells WHOLE (the
-// same Persistence ruling the tree grid rides under). The derivation is the
-// field's initial condition, rebuilt for a NEW game only.
+// ЧТО ЭТОТ СЛОЙ ЕСТЬ. Производная геология мира: ёмкость каждой клетки —
+// чистая функция терраина и сида (vein_virgin_at), грид строится при
+// рождении мира и при загрузке ЗАНОВО из того же сида. ГЕЙМПЛЕЙ ЕГО НЕ
+// МУТИРУЕТ: добыча существует по шахтам, а залежь шахты — число фичи в
+// `worked` (кап связного кластера, свёрнутый генерацией шахт). Поэтому слой
+// НЕ едет в сейв: хранить чистую функцию — хранить воздух.
 //
-// A cell may hold SEVERAL kinds — a discovered iron vein lives IN a stone
-// mountain and the quarry does not vanish (owner: у каждого ресурса своё
-// поле, никто не исчезает). That is why storage is one sparse map PER KIND,
-// not one kind per cell: the old single-kind DepositCell could only express
-// discovery as a kind-SWAP, which silently deleted the stone.
+// Рода у жилы НЕТ. Шесть родов (Clay/Iron/Stone/Silver/Copper/Gold) умерли
+// вердиктом: род РЕСУРСА называет строка фичи шахты (FeatureDef::yieldItem).
+// Шесть генераторных компонент (kDepositGen в .cpp) остались НЮАНСОМ
+// ГЕНЕРАЦИИ — однократные буферы её закона (ЗАКОН ГЕНЕРАЦИИ п.3): глина
+// ложится у воды, металл по хребтам, а поле у них ОДНО — сумма.
 //
-// An exhausted deposit LEAVES the map (annihilation law, 2026-08-28 — see
-// DepositLayer::cells below); what the world misses is measured against the
-// derived virginUnits baseline, and new iron is born by the Iron row's
-// GrowthDomain::Geology walk (macro_stock.cpp), not by a bespoke rule here.
-//
-// Grain is deliberately NOT here (the Wheat row prices fertility), nor wood
-// (the Trees row): each commodity lives through the carrier that already
-// owns its kind of renewal.
+// Дикая жила без шахты стоит нетронутой — будущий контент разведки
+// месторождений игроком (вердикт 2026-10-23); кода разведки здесь нет.
 #pragma once
-#include "core/table_guard.h"
 #include "macro/resource_field.h"   // ResourceGrid — THE shape of a row
 #include "core/torus.h"
 #include <cstdint>
-#include <vector>
 
-#include "macro/features.h"      // the kind's own mine feature (v71)
 #include "macro/map_generator.h"
 
 namespace sm {
 
-enum class DepositKind : std::uint8_t {
-    Clay = 0, Iron = 1, Stone = 2,
-    // The mint metals (CANON S10). Appended — saved kind blocks stay ordered.
-    // Copper and Gold joined silver 2026-09-18 with the three coin nominals
-    // (verdict №1): a coin is struck from ITS OWN metal, so a world with one
-    // mint metal could only ever strike one nominal.
-    Silver = 3, Copper = 4, Gold = 5,
-};
-inline constexpr int kDepositKindCount = 6;
-
-// ── THE deposit-kind registry (CANON S16) ────────────────────────────────
-// One row per kind: the commodity it yields into the ONE dictionary, and how
-// a settlement site prices a vein of it (settlement_score.cpp deposit_term —
-// iron is the prize, stone and clay are common wealth). Two switch-shaped
-// dictionaries carried these columns until 2026-08-29.
-struct DepositDef {
-    DepositKind kind;         // MUST equal the row's index (guard below)
-    const char* commodityId;
-    int         siteWorth;    // settlement-score base of a vein in reach
-    // The kind's OWN mine feature (owner 2026-08-31, v71): «шахты-фичи
-    // разных типов — золотая, серебряная, каменоломня» — the column the
-    // mining crew stamps when it opens the vein (ai_gatherer).
-    FeatureType mineFeature;
-};
-inline constexpr DepositDef kDepositDefs[kDepositKindCount] = {
-    {DepositKind::Clay,  "clay",   8, FT_ClayPit},
-    {DepositKind::Iron,  "iron",  16, FT_IronMine},
-    {DepositKind::Stone, "stone",  8, FT_Quarry},
-    // A mint vein prices like iron for a settlement site: the mint is
-    // wealth, but the town still eats bread, not coins.
-    {DepositKind::Silver, "silver", 16, FT_SilverMine},
-    {DepositKind::Copper, "copper", 16, FT_CopperMine},
-    {DepositKind::Gold,   "gold",   16, FT_GoldMine},
-};
-static_assert(rows_in_enum_order(kDepositDefs, &DepositDef::kind),
-              "kDepositDefs row order must mirror DepositKind");
-inline constexpr const DepositDef& deposit_def(DepositKind kind) {
-    return kDepositDefs[std::size_t(kind)];
-}
-
-// The commodity id each kind yields — the ONE dictionary's noun.
-const char* deposit_commodity_id(DepositKind kind);
-
 struct DepositLayer {
     int width = 0;
     int height = 0;
-    // kind -> THE FIELD of that kind: units per cell, 0 = no vein here.
-    //
-    // This was `unordered_map<cellIdx, units>` from the layer's first commit
-    // (81379bf6), whose own message claimed "the proven tree-layer discipline"
-    // while the struct did the opposite. A hash keeps the values and throws the
-    // world's CONNECTEDNESS away — it answers "what is at exactly this key" and
-    // nothing else — so the day geology was asked "is there a vein NEAR here"
-    // the answer became a scan of every vein, per cell (problems.md §52). The
-    // array over the torus IS the connected world, and it carries the reach
-    // field that makes the neighbourhood question O(1) (resource_field.h).
-    //
-    // ANNIHILATION LAW (owner, 2026-08-28): a worked-out vein is a vein that no
-    // longer exists. In a field that is the value 0 — the cell stays, as every
-    // cell of the world does, and holds nothing. The DERIVED virgin baseline
-    // below carries the scarcity the old "dry cells linger at 0" kept around
-    // for. Mutate through the doors, never the array: the doors are what keep
-    // the live count and the reach discs true.
-    ResourceGrid cells[kDepositKindCount];
-    // WHAT THE WORLD WAS BORN WITH, in units per kind — the scarcity baseline
-    // (owner, 2026-08-28: "суммарно железа в мире"). DERIVED, never saved:
-    // build_deposit_layer is a pure function of terrain + seed, and the load
-    // path re-derives the layer before overlaying the save's cells, so the
-    // baseline is recomputed for free every boot. Scarcity = 1 - live/virgin;
-    // discovery may push live ABOVE virgin, which simply reads as "no
-    // scarcity". 64-bit because stone on an all-mountain 1024^2 map is ~2^30
-    // units and the growth law sums in 64-bit anyway.
-    std::int64_t virginUnits[kDepositKindCount] = {};
-    // КАК ЭТОТ СЛОЙ РОДИЛСЯ — чтобы он умел РОДИТЬ ТО ЖЕ САМОЕ снова.
-    // Залечивание клетки обязано вернуть ровно ту ёмкость, которую дала
-    // генерация, поэтому параметры рождения живут на самом слое, а не у того,
-    // кто его однажды построил. Производные, в сейв не едут: их восстановит
-    // тот же мир (worldSeed) при загрузке.
-    // Рядом стояла колонка `birthSeaLevel` — КОПИЯ плоскости моря, чьим
-    // единственным читателем был `deposit_virgin_at`. Плоскость одна на мир и
-    // живёт у карты (`TerrainData::seaLevel8`), значит копия была вторым
-    // словарём, способным разъехаться с картой молча.
+    // ОДНО поле жил: units per cell, 0 = жилы здесь нет. Плоский массив над
+    // тором — связность мира и О(1)-вопрос досягаемости (reach-поле внутри
+    // грида, радиус kGathererReach — досягаемость добытчика).
+    ResourceGrid cells;
+    // Сколько мир родил всего — отпечаток геологии и якорь калибровки.
+    // Производное, в сейв не едет: build_deposit_layer — чистая функция.
+    std::int64_t virginUnits = 0;
+    // Сид рождения: залог того, что boot восстановит РОВНО это поле.
     std::uint32_t birthSeed = 0;
     // Runtime dirty counter for future consumers; never serialized.
     std::uint32_t revision = 0;
-
-    ResourceGrid& grid(DepositKind kind) {
-        return cells[std::size_t(kind)];
-    }
-    const ResourceGrid& grid(DepositKind kind) const {
-        return cells[std::size_t(kind)];
-    }
 
     // Packs a WRAPPED cell into a flat index. The wrap itself is the one in
     // core/torus.h; it used to be written out twice inline right here.
     std::uint32_t wrap_index(int x, int y) const {
         return cell_of(x, y, width);   // ЗАКОН АДРЕСА: одна дверь, маска
     }
-    // The kind's units standing at a WRAPPED cell; 0 = no deposit here (a
-    // worked-out one is annihilated, so "dry" is not a state a cell has).
-    std::int32_t remaining_at(DepositKind kind, int x, int y) const {
-        return cells[std::size_t(kind)].at(x, y);
+    // Дикая жила клетки; 0 = здесь геологии нет.
+    std::int32_t vein_at(int x, int y) const {
+        return cells.at(x, y);
     }
-    // Any deposit of any kind here? (worldgen reporting, map tooltips)
-    bool any_at(int x, int y) const {
-        for (const auto& g : cells) if (g.at(x, y) != 0) return true;
-        return false;
-    }
-    // THE neighbourhood question, in O(1) — "is a live vein of this kind
-    // within a gatherer's reach of here". The field behind it is the row's
-    // own (resource_field.h reachCells), stamped by the grid's writes.
-    bool kind_near(DepositKind kind, int x, int y) const {
-        return cells[std::size_t(kind)].near(x, y);
+    // «Есть ли живая жила в досягаемости добытчика» — O(1) по reach-полю.
+    bool vein_near(int x, int y) const {
+        return cells.near(x, y);
     }
 };
 
-// Size every kind's field to a world, zeroed, each carrying the reach radius
-// its registry row declares. Worldgen calls it; so must any fixture that
-// hand-places veins, because a field that was never allocated silently
-// swallows every write.
+// Size the field to a world, zeroed, carrying the gatherer's reach. Worldgen
+// calls it; so must any fixture that hand-places veins, because a field that
+// was never allocated silently swallows every write.
 void allocate_deposit_fields(DepositLayer& layer, int width, int height);
 
-// Derive the deposit sites from terrain + seed. Deterministic; density and
-// base amounts are the po2 constants in deposit_layer.cpp (clay 1/64 of
-// river-adjacent land, stone 1/64 of mountains quasi-infinite, iron 1/256 of
-// mountains finite).
-// ЁМКОСТЬ КЛЕТКИ ПО ЭТОМУ РОДУ — чистая функция терраина и сида, как
-// фертильность у пашни (владелец, 2026-09-22). Не убывает никогда: убывает и
-// заживает только разработанное. Та же функция и РОЖДАЕТ мир при генерации, и
-// ЗАЛЕЧИВАЕТ клетку на сезонном визите ходока роста — один закон, не два.
-std::int32_t deposit_virgin_at(const TerrainData& terrain, std::uint32_t seed,
-                               DepositKind kind, int x, int y);
+// ЁМКОСТЬ КЛЕТКИ — ЧИСТАЯ ФУНКЦИЯ ТЕРРАИНА И СИДА, как фертильность
+// (владелец, 2026-09-22). Сумма шести генераторных компонент (kDepositGen):
+// профиль/сродство/порог — нюансы генерации, поле одно.
+std::int32_t vein_virgin_at(const TerrainData& terrain, std::uint32_t seed,
+                            int x, int y);
 
 DepositLayer build_deposit_layer(const TerrainData& terrain,
                                  std::uint32_t seed);
 
-// THE quantity door (the registry's carrier hook lands here): a write down
-// to zero ANNIHILATES the cell, bumps the revision. A cell that was never a
-// deposit of this kind is refused — MINING cannot invent geology; creation
-// goes through create_deposit below, deliberately.
-bool set_deposit_remaining(DepositLayer& layer, DepositKind kind,
-                           int x, int y, std::int32_t remaining);
+// The GENESIS door: the world creates geology — a fixture's hand-placed vein,
+// a future discovery law. Inserts (or refills) the cell, bumps the revision.
+void create_deposit(DepositLayer& layer, int x, int y, std::int32_t amount);
 
-// The GENESIS door: the world creates geology — a discovered vein, a future
-// growth law. Inserts (or refills) the kind's cell and bumps the revision.
-void create_deposit(DepositLayer& layer, DepositKind kind,
-                    int x, int y, std::int32_t amount);
-
-
-// Load path (v37): overwrite the live cells with the save's (the save
-// carries them whole). Width/height stay the layer's own — the version gate
-// makes a foreign-map save unreachable; stale indices are dropped.
-void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded);
-
-// (The bespoke W2c iron-discovery trio — discover_iron_vein, iron_depletion,
-// iron_discovery_chance_per_day — died 2026-08-29: the LIVE law is the Iron
-// row's GrowthDomain::Geology walk in macro_stock.cpp, «железо родится где
-// мир оскудел», and the dead path guarded a second copy of it.)
-
-// The lump a fresh vein of THIS KIND opens with — the Geology domain's
-
-// The MINE's consolidation (owner 2026-08-31, CANON S10 «шахта — фича, как
-// поле»): flood the locally CONNECTED cluster of same-kind veins
-// (8-adjacency over live deposit cells) from the mine's cell and fold their
-// units INTO that cell — the absorbed cells leave the map (the annihilation
-// law), the mine's cell holds their sum, and every worksite/score law reads
-// on unchanged because the stock never left the deposit layer. Returns the
-// number of cells absorbed (0 = the mine sits on a lone vein — also fine).
-int consolidate_deposit_cluster(DepositLayer& layer, DepositKind kind,
-                                int x, int y);
+// (УМЕРЛИ 2026-10-23 с осью родов: `DepositKind`, `kDepositDefs` — колонки
+// `commodityId` (0 звонящих), `mineFeature` (0 читателей), `siteWorth`
+// (один вес жилы живёт у сайт-скоринга); `set_deposit_remaining` — природное
+// поле геймплеем не мутируется; `restore_deposit_cells` — слой производный,
+// сейв его не возит; `consolidate_deposit_cluster` — 0 прод-звонящих, его
+// работу делает генерация шахт (stamp_mines@src/macro/spawners.cpp), сводя
+// кластер в число фичи `worked`.)
 
 } // namespace sm

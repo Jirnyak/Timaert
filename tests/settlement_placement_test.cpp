@@ -528,8 +528,8 @@ void test_villages_stand_next_to_something() {
         for (int dy = -kGathererReach; dy <= kGathererReach && !found; ++dy) {
             for (int dx = -kGathererReach; dx <= kGathererReach && !found;
                  ++dx) {
-                if (w.deposits.any_at(wrapi(v.x + dx, kW),
-                                      wrapi(v.y + dy, kH)))
+                if (w.deposits.vein_at(wrapi(v.x + dx, kW),
+                                       wrapi(v.y + dy, kH)) != 0)
                     found = true;
             }
         }

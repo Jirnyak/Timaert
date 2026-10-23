@@ -117,7 +117,7 @@ int main()
                  "terrain storage helpers must accept valid RGBA backing data");
     sm::FeatureLayer fullFeatures;
     fullFeatures.resize(2, 2);
-    fullFeatures.set(0, 0, sm::FT_Road);
+    sm::feature_put(fullFeatures, td, 0, 0, sm::FT_Road);
 
     // Cell (1,0) is a mountain by ELEVATION (biome), not a feature: raise its
     // height above the mountain level so build_cost_grid classifies it Mountain
@@ -204,7 +204,7 @@ int main()
 
     sm::FeatureLayer mismatchedFeatures;
     mismatchedFeatures.resize(1, 2);
-    mismatchedFeatures.set(0, 0, sm::FT_Road);
+    sm::feature_put(mismatchedFeatures, td, 0, 0, sm::FT_Road);
     const sm::PathCostData mismatchCosts = sm::build_cost_grid(td, &mismatchedFeatures);
     CHECK(mismatchCosts.costGrid == noFeatures.costGrid,
                  "dimension-mismatched feature storage must be ignored");
@@ -212,7 +212,7 @@ int main()
     sm::FeatureLayer invalidFeatures;
     invalidFeatures.resize(2, 2);
     invalidFeatures.data[0] = 255u;
-    invalidFeatures.set(1, 0, sm::FT_Road);
+    sm::feature_put(invalidFeatures, td, 1, 0, sm::FT_Road);
     const sm::PathCostData invalidFeatureCosts = sm::build_cost_grid(td, &invalidFeatures);
     CHECK(invalidFeatureCosts.costGrid.size() == 4u,
                  "invalid-byte feature grid must still build a complete cost grid");

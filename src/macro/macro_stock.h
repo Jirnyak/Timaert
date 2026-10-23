@@ -125,10 +125,10 @@ const char* macro_stock_id(MacroStock s);
 // M-150: квитанция стала КОЛОНКОЙ арены субмира, и макро-слою её не видно.
 // Здесь остаются чтение, движение и расчёт стока — макро-половина закона.)
 
-// Settle one debt. `sign` is -1 when the borrowed thing is consumed (a citizen
-// killed, a tree felled) and +1 when it is handed back. Called from ONE place
-// per event class, never from whichever system happens to notice first.
-void settle_macro_debt(MacroWorld& w, const ecs::MacroDebt& d, int sign);
+// (`settle_macro_debt` УМЕР 2026-10-23, ломоть 1 M-72: 0 прод-звонящих —
+// расписка мертвеца едет СТРОКОЙ ДЕЛЬТЫ с тем же ключом, собранным у писателя
+// (`push_stock_op@src/sub/engine.cpp`), и применяется границей тика через
+// `macro_stock_apply`. Закон «один ключ расписки» живёт у дельты.)
 
 // Birth walks through ONE door now — resource_fields_daily_growth
 // (macro/resource_field.h): every field grows by the one law, its context

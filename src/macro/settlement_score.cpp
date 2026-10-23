@@ -206,28 +206,32 @@ std::vector<std::uint16_t> build_deposit_reach_field(const DepositLayer& dl,
     // the per-candidate box scan it replaces priced billions of hash
     // lookups per generation. Клетка сплата — шаг ИНДЕКСА от жилы через
     // cell_step (ЗАКОН АДРЕСА): координаты здесь не нужны вовсе.
-    for (int k = 0; k < kDepositKindCount; ++k) {
-        const int worth = kDepositDefs[k].siteWorth;
-        dl.cells[std::size_t(k)].for_each_live(
-                [&](std::uint32_t idx, std::int32_t remaining) {
-            (void)remaining;   // presence is what settles people
-            for (int dy = -kGathererReach; dy <= kGathererReach; ++dy) {
-                for (int dx = -kGathererReach; dx <= kGathererReach; ++dx) {
-                    const int d = std::max(std::abs(dx), std::abs(dy));
-                    // The ONE po2 distance ladder (village_pressure's law):
-                    // full worth across the home-field box, halving per
-                    // box-width beyond it.
-                    const int v = d <= kSettlementReach
-                        ? worth
-                        : worth >> (d / (kSettlementReach + 1));
-                    if (v <= 0) continue;
-                    auto& slot = field[cell_step(idx, dx, dy, mapW)];
-                    slot = std::uint16_t(
-                        std::min(kTermMax, std::max(int(slot), v)));
-                }
+    // ЖИЛЫ ЕДИНЫЕ (вердикт 2026-10-22): рода у жилы нет, и цена жилы для
+    // сайта — ОДИН вес. 16 — прежний вес металлов (камень и глина стоили 8);
+    // балансное число, перекалибровано вслух при слиянии (ЗАКОН ПРИОРИТЕТА
+    // СТРУКТУРЫ: структура старше чисел). «Какой металл» сайт не знает и
+    // знать не может — род ресурса решит фича шахты, которую генерация
+    // поставит ПОСЛЕ поселений.
+    constexpr int kVeinSiteWorth = 16;
+    dl.cells.for_each_live(
+            [&](std::uint32_t idx, std::int32_t remaining) {
+        (void)remaining;   // presence is what settles people
+        for (int dy = -kGathererReach; dy <= kGathererReach; ++dy) {
+            for (int dx = -kGathererReach; dx <= kGathererReach; ++dx) {
+                const int d = std::max(std::abs(dx), std::abs(dy));
+                // The ONE po2 distance ladder (village_pressure's law):
+                // full worth across the home-field box, halving per
+                // box-width beyond it.
+                const int v = d <= kSettlementReach
+                    ? kVeinSiteWorth
+                    : kVeinSiteWorth >> (d / (kSettlementReach + 1));
+                if (v <= 0) continue;
+                auto& slot = field[cell_step(idx, dx, dy, mapW)];
+                slot = std::uint16_t(
+                    std::min(kTermMax, std::max(int(slot), v)));
             }
-        });
-    }
+        }
+    });
     return field;
 }
 

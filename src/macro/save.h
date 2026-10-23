@@ -17,7 +17,6 @@ namespace sm {
 struct GameState;
 struct Quest;
 struct MacroNpcRecord;
-struct DepositLayer;
 
 enum class SaveInspectStatus : std::uint8_t {
     Missing,
@@ -42,7 +41,7 @@ struct SaveSummary {
 // `macroNpcs` is the flattened macro-ECS (macro/macro_snapshot.h) — a
 // REQUIRED parameter on purpose: a call site that could omit it would write
 // a world with no lords in it and nobody would notice until a load.
-// `treeCounts` (the living tree grid, v36) and `deposits` (the living
+// `treeCounts` (the living tree grid, v36) and (до 2026-10-23) `deposits` (the living
 // deposit cells, v37) are required for the same reason: omit either and a
 // felled forest or a drained vein silently regrows on load.
 // («Кем я на карте» едет колонкой playerFlag записи снапшота — 5б: провод
@@ -56,13 +55,11 @@ bool save_game(const GameState& s, std::uint32_t storeNextSpawnId,
                const std::vector<Quest>& activeQuests,
                const std::vector<MacroNpcRecord>& macroNpcs,
                const std::vector<std::uint16_t>& treeCounts,
-               const DepositLayer& deposits,
                const std::string& path);
 bool load_game(GameState& s, std::uint32_t& storeNextSpawnId,
                std::vector<Quest>& activeQuests,
                std::vector<MacroNpcRecord>& macroNpcs,
                std::vector<std::uint16_t>& treeCounts,
-               DepositLayer& deposits,
                const std::string& path);
 SaveSummary inspect_save(const std::string& path);
 
@@ -100,7 +97,6 @@ std::uint32_t save_payload_fingerprint(
     const GameState& s, std::uint32_t storeNextSpawnId,
     const std::vector<Quest>& activeQuests,
     const std::vector<MacroNpcRecord>& macroNpcs,
-    const std::vector<std::uint16_t>& treeCounts,
-    const DepositLayer& deposits);
+    const std::vector<std::uint16_t>& treeCounts);
 
 } // namespace sm

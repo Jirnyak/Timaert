@@ -488,14 +488,14 @@ void test_water_rule_lives_in_the_feature_row()
     // (1) ПРЕВРАЩАЕТСЯ: дорога на воде есть мост — и это ДАННЫЕ строки, а не
     // ветка у звонящего. Обе дорожные строки дают ОДИН пролёт: «every bridge
     // is stone» теперь сказано таблицей, а не комментарием в двух местах.
-    CHECK(sm::stamp_feature(fl, td, 0u, sm::FT_Road) == sm::FT_Bridge,
+    CHECK(sm::feature_put(fl, td, 0u, sm::FT_Road) == sm::FT_Bridge,
           "дорога на воде становится мостом");
-    CHECK(sm::stamp_feature(fl, td, 0u, sm::FT_DirtRoad) == sm::FT_Bridge,
+    CHECK(sm::feature_put(fl, td, 0u, sm::FT_DirtRoad) == sm::FT_Bridge,
           "грунтовка на воде кладёт тот же пролёт, что шоссе");
     CHECK(fl.at(0u) == sm::FT_Bridge, "и в слое лежит именно мост");
 
     // (2) ВСЁ РАВНО: мост на воде остаётся мостом — вода ему дом.
-    CHECK(sm::stamp_feature(fl, td, 0u, sm::FT_Bridge) == sm::FT_Bridge,
+    CHECK(sm::feature_put(fl, td, 0u, sm::FT_Bridge) == sm::FT_Bridge,
           "мост на воде остаётся мостом");
 
     // (3) НЕ ВСТАЁТ: пашня, шахта и ПОСЕЛЕНИЕ. Поселение здесь не случайно —
@@ -506,7 +506,7 @@ void test_water_rule_lives_in_the_feature_row()
                                    sm::FT_Ruin};
     int refused = 0;
     for (sm::FeatureType ft : dry)
-        if (sm::stamp_feature(fl, td, 0u, ft) == sm::FT_None) ++refused;
+        if (sm::feature_put(fl, td, 0u, ft) == sm::FT_None) ++refused;
     CHECK(refused == int(std::size(dry)),
           "пашня, шахта и поселение на воде не встают вовсе");
     CHECK(fl.at(0u) == sm::FT_Bridge,
@@ -515,11 +515,11 @@ void test_water_rule_lives_in_the_feature_row()
     // (4) НА СУШЕ КОЛОНКА МОЛЧИТ: что просили, то и встало.
     int asAsked = 0;
     for (sm::FeatureType ft : dry) {
-        if (sm::stamp_feature(fl, td, 1u, ft) == ft) ++asAsked;
+        if (sm::feature_put(fl, td, 1u, ft) == ft) ++asAsked;
     }
     CHECK(asAsked == int(std::size(dry)),
           "на суше встаёт ровно то, что просили — колонка в дело не лезет");
-    CHECK(sm::stamp_feature(fl, td, 1u, sm::FT_Road) == sm::FT_Road,
+    CHECK(sm::feature_put(fl, td, 1u, sm::FT_Road) == sm::FT_Road,
           "дорога на суше остаётся дорогой");
     std::printf("  [колонка воды] отказов %d из %zu, на суше как просили %d\n",
                 refused, std::size(dry), asAsked);
@@ -678,7 +678,8 @@ void test_dirt_roads_lay_a_star_lanes()
     sm::TerrainData td = make_terrain(16, 16, kPlainLand01);   // ЗАКОН АДРЕСА: квадрат, po2
     sm::FeatureLayer features;
     features.resize(td.width, td.height);
-    features.set(12, 4, sm::FT_Road); // the city stands on stone already
+    sm::feature_put(features, td, 12, 4,
+                    sm::FT_Road);   // the city stands on stone already
 
     std::vector<sm::VillageRoadSite> villages(1);
     villages[0].x = 2 - 16; // out-of-range on purpose: must wrap, not index

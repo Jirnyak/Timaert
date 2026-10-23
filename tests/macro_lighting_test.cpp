@@ -304,8 +304,16 @@ int main() {
         const int W = 32, H = 32;
         FeatureLayer feat;
         feat.resize(W, H);
+        // Суша под дверью фичи (стена ломтя 1: сырой set закрыт).
+        TerrainData roadTd;
+        roadTd.width = W;
+        roadTd.height = H;
+        roadTd.rgba.assign(std::size_t(W) * std::size_t(H) * 4u, 0);
+        roadTd.seaLevel16 = field_word_of(kDefaultSeaLevel);
+        for (std::size_t c = 0; c < std::size_t(W) * std::size_t(H); ++c)
+            roadTd.rgba[c * 4u + 0] = field_word_of(140.0f / 255.0f);
         for (int x = 21; x <= 32; ++x)
-            feat.set(x, 20, FT_Road);  // a road running east
+            feature_put(feat, roadTd, x, 20, FT_Road);  // a road running east
         MacroLight L{};
         L.nx = (20.0f + 0.5f) / W;
         L.ny = (20.0f + 0.5f) / H;

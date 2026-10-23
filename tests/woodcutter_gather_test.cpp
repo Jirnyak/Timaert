@@ -36,6 +36,19 @@ using namespace sm;
 
 constexpr int kMap = 32;
 
+
+// Суша под дверью фичи: стена ломтя 1 закрыла сырой set — фикстура ставит
+// фичу той же дверью, что мир (feature_put; воду та спрашивает у карты).
+sm::TerrainData all_land() {
+    sm::TerrainData td;
+    td.width = kMap;
+    td.height = kMap;
+    td.rgba.assign(std::size_t(kMap) * std::size_t(kMap) * 4u, 0);
+    td.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
+    for (std::size_t c = 0; c < std::size_t(kMap) * std::size_t(kMap); ++c)
+        td.rgba[c * 4u + 0] = sm::field_word_of(140.0f / 255.0f);
+    return td;
+}
 // Count the chronicle's facts of one kind around a cell — the witcher's own
 // question, asked by the tests that pin what the work-loops write (and, by
 // the negative controls, what they must NOT write).
@@ -166,7 +179,7 @@ void test_the_farmer_works_the_field() {
     // A field two cells east — where stamp_field_features would put one.
     FeatureLayer features;
     features.resize(kMap, kMap);
-    features.set(12, 10, FT_Field);
+    feature_put(features, all_land(), 12, 10, FT_Field);
 
     // The terrain master: fertile land everywhere. Without it the reap is
     // fail-closed (Field Inc F4), so the honest test wires it.
@@ -259,7 +272,7 @@ void test_farmer_without_terrain_conjures_nothing() {
     gs.mapH = kMap;
     FeatureLayer features;
     features.resize(kMap, kMap);
-    features.set(12, 10, FT_Field);
+    feature_put(features, all_land(), 12, 10, FT_Field);
 
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
@@ -351,10 +364,13 @@ void test_the_mine_runs_while_the_player_is_away() {
     GameState gs{};
     gs.mapW = kMap;
     gs.mapH = kMap;
-    DepositLayer deposits;
-    allocate_deposit_fields(deposits, kMap, kMap);
-    const std::uint32_t veinIdx = 10u * std::uint32_t(kMap) + 14u;
-    deposits.grid(DepositKind::Iron).write(14, 10, 20);
+    // ЖИЛЫ ЕДИНЫЕ (2026-10-22): рабочее место шахтёра — ШАХТА (фича с
+    // numberRow == Vein + залежь числом фичи), не голая геология. Свидетель
+    // рожает своё предусловие сам: фича + worked, как их ставит генерация.
+    FeatureLayer features;
+    features.resize(kMap, kMap);
+    feature_put(features, all_land(), 14, 10, FT_IronMine);
+    worked_write(gs, 14, 10, 20);
 
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
@@ -379,7 +395,7 @@ void test_the_mine_runs_while_the_player_is_away() {
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     rt.squadType = std::uint8_t(SquadType::Artel);
-    rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Iron));
+    rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Vein));
     st.runtime[h.slot] = rt;
     sm::store_rename_ordinal(st, h, 13u);
     h = sm::handle_at(st, h.slot);
@@ -394,15 +410,14 @@ void test_the_mine_runs_while_the_player_is_away() {
     MacroNpcAiRuntime art{};
     reset_macro_npc_ai_runtime(art, 70u);
     for (int i = 0; i < 400; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &st, .deposits = &deposits};
+        MacroWorld mw{.gs = &gs, .store = &st, .features = &features};
         tick_macro_npc_ai_budgeted(mw, art, kAiTicks,
                                    /*max_npc_ticks=*/64);
     }
 
-    // Annihilation (v55): a vein worked all the way out within the run has
-    // LEFT the map — absent reads as 0, exactly what "worked" means here.
-    const int veinLeft =
-        int(deposits.grid(DepositKind::Iron).at_index(veinIdx));
+    // Залежь шахты — число фичи: выработка видна там же, где её оставила
+    // транзакция. Что добыто — решила ФИЧА (железная шахта → железо).
+    const int veinLeft = worked_read(gs, 14, 10);
     CHECK(20 - veinLeft > 0,
           "the mine is worked while the player is underground, exactly as it "
           "is worked while he is on the map");
@@ -591,10 +606,12 @@ void test_the_miner_works_the_vein() {
     gs.mapW = kMap;
     gs.mapH = kMap;
     chronicle_init(gs.chronicle, kMap, kMap);
-    DepositLayer deposits;
-    allocate_deposit_fields(deposits, kMap, kMap);
-    const std::uint32_t veinIdx = 10u * std::uint32_t(kMap) + 14u;
-    deposits.grid(DepositKind::Iron).write(14, 10, 20);
+    // ЖИЛЫ ЕДИНЫЕ (2026-10-22): рабочее место — ШАХТА (фича + залежь числом
+    // фичи worked); что добыто, решает СТРОКА фичи (железная шахта → iron).
+    FeatureLayer features;
+    features.resize(kMap, kMap);
+    feature_put(features, all_land(), 14, 10, FT_IronMine);
+    worked_write(gs, 14, 10, 20);
 
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
@@ -621,7 +638,7 @@ void test_the_miner_works_the_vein() {
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     rt.squadType = std::uint8_t(SquadType::Artel);
-    rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Iron));
+    rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Vein));
     st.runtime[h.slot] = rt;
     sm::store_rename_ordinal(st, h, 13u);
     h = sm::handle_at(st, h.slot);
@@ -636,12 +653,11 @@ void test_the_miner_works_the_vein() {
     MacroNpcAiRuntime art{};
     reset_macro_npc_ai_runtime(art, 70u);
     for (int i = 0; i < 400; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &st, .deposits = &deposits};
+        MacroWorld mw{.gs = &gs, .store = &st, .features = &features};
         tick_macro_npc_ai(mw, art, kAiTicks);
     }
 
-    const auto& ironCells = deposits.grid(DepositKind::Iron);
-    const int veinLeft = int(ironCells.at_index(veinIdx));
+    const int veinLeft = worked_read(gs, 14, 10);
     const int veinLost = 20 - veinLeft;
     const int storeGained = st.inventory[vil.slot].inv.count("iron");
     const int inBag = (*sm::body_state<ecs::NpcInventory>(st, e)).inv.count("iron");
@@ -655,8 +671,8 @@ void test_the_miner_works_the_vein() {
     // 2026-08-28) the worked-out vein is a vein that no longer exists: the
     // cell leaves the map, the counter keeps the scarcity baseline, and the
     // chronicle (below) is the only record of what stood here.
-    CHECK(ironCells.at_index(veinIdx) == 0,
-          "the worked-out vein is ANNIHILATED - in a field, that is 0");
+    CHECK(veinLeft == 0,
+          "the worked-out mine reads 0 — its deposit is the feature's number");
     CHECK(storeGained + inBag == 20,
           "everything the vein ever held is accounted for");
 
@@ -673,7 +689,7 @@ void test_the_miner_works_the_vein() {
           "the fact names the village whose man worked the vein out");
     CHECK(drained.last.x == 14 && drained.last.y == 10,
           "the fact stands on the vein's own cell");
-    CHECK(drained.last.amount == int(ResourceFieldId::Iron) + 1,
+    CHECK(drained.last.amount == int(ResourceFieldId::Vein) + 1,
           "the fact says WHAT ran dry: the resource registry row, +1");
 
     // No deposit layer wired = no ore conjured (the shared fail-closed rule).
@@ -804,12 +820,12 @@ void test_the_catch_lands_as_creatures() {
     // ±kSettlementReach вокруг дома и НЕ сама деревня: её число — паства
     // (`settle_souls` выше), и смысл ему задаёт её собственная фича.
     constexpr int kFoldX = 12, kFoldY = 10;
-    features.set(kFoldX, kFoldY, sm::FT_Pasture);
+    feature_put(features, all_land(), kFoldX, kFoldY, sm::FT_Pasture);
     MacroWorld seedWorld{.gs = &gs, .store = &st, .terrain = &terrain,
                          .features = &features};
     // Избыточная дельта: дверь ряда САМА зажимает в кап клетки, поэтому
     // число берётся из фертильности, а не из головы автора.
-    sm::resource_field_apply(seedWorld, ResourceFieldId::Livestock,
+    sm::field_move(seedWorld, ResourceFieldId::Livestock,
                              kFoldX, kFoldY, sm::kMaxFieldUnitsPerCell);
     const int herdAtFence = sm::resource_field_read(
         seedWorld, ResourceFieldId::Livestock, kFoldX, kFoldY);

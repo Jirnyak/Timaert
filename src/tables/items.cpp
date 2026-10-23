@@ -606,7 +606,7 @@ struct LootEntry {
 // ONE exchange rate for gathered matter (owner verdict 2026-09-12, CANON
 // «Вердикты ТРУДА»: «1 рабочий рубит 1 дерево… 32 древесины с 32 деревьев»):
 // 1 felled tree = 1 wood — exactly what the macro crew's take already debits
-// from the tree layer (resource_field_apply, 1:1). The 2–5 roll this
+// from the tree layer (field_move, 1:1). The 2–5 roll this
 // replaces made the subworld axe ~3.5× more generous than the world's own
 // law, which is a money printer with extra steps.
 constexpr LootEntry kTreeLoot[] = {

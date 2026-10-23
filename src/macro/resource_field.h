@@ -60,6 +60,9 @@ struct GameState;
 struct TerrainData;
 struct TreeLayer;
 struct MacroWorld;
+// Колонка выхода ряда несёт РОД СУЩЕСТВА добычи; полного стола существ этому
+// заголовку не нужно — ширина у перечисления фиксирована (tables/npc.h).
+enum class NPCType : std::uint8_t;
 
 enum class ResourceFieldId : std::uint8_t {
     Wheat = 0,   // standing-wheat potential — fertility (climate G channel)
@@ -71,19 +74,19 @@ enum class ResourceFieldId : std::uint8_t {
     // РЯДОМ ЗАКОНА — кап от фертильности, рост поголовья, выемка при ловле, —
     // но своего массива у него больше нет: он НОСИТЕЛЬ, и носитель его —
     // единое поле чисел фич (`GameState::worked`), где смысл числу задаёт
-    // колонка `numberRow` стоящей фичи. Нового диалекта это не заводит: жила
-    // живёт точно так же — своя базовая плюс чужой контейнер.
-    // Место в enum НЕ двинулось (перед блоком жил): `resource_row_is_vein`
-    // читает «Clay и до конца», и стадо — не геология.
+    // колонка `numberRow` стоящей фичи.
     Livestock,
-    Clay,        // alluvial pits — carrier row (macro/deposit_layer.h)
-    Iron,        // finite mountain veins — carrier row (deposit_layer.h)
-    Stone,       // quasi-infinite quarries — carrier row (deposit_layer.h)
-    Silver,      // the mint metal — finite veins (deposit_layer.h)
-    // The other two mint metals (v96, with the three coin nominals): a new
-    // род is a new array and a row of law, никакого кода (CANON S5).
-    Copper,
-    Gold,
+    // ЖИЛА — ОДНО ПРИРОДНОЕ ПОЛЕ (вердикт владельца 2026-10-22, дословно:
+    // «жилы единые то есть одно природно поле жил а что там окажется решает
+    // фича шахты - золотая железеная мденая и тд»). Шесть рядов
+    // Clay/Iron/Stone/Silver/Copper/Gold умерли этим вердиктом: рода у жилы
+    // НЕТ, род РЕСУРСА называет строка фичи шахты (её `yieldItem`). Носителей
+    // два, и оба чужие (форма стада): дикая жила — производный грид
+    // `DepositLayer` (чистая функция терраина и сида, геймплеем НЕ
+    // мутируется, в сейв не едет), залежь шахты — число фичи в `worked`,
+    // свёрнутое генерацией из связного кластера (кап шахты = связность жилы,
+    // вердикт 2026-10-23).
+    Vein,
     Count,
 };
 
@@ -168,26 +171,24 @@ struct ResourceFieldDef {
     // was written as a one-off scan inside the context assembler instead of
     // as a property of the row being asked about.
     int reachCells;
+    // ── ЧТО РЯД КЛАДЁТ В РУКИ (ломоть 1 M-72, словарь «поле→предмет» 3 → 1) ──
+    // Читатель — транзакция field_harvest (ниже): умолчание выхода, когда
+    // фича клетки не переопределила его своей строкой (FeatureDef::yieldItem —
+    // лён поверх пашни, металл шахты поверх жилы). Строка — ключ АВТОРСТВА;
+    // ординал кэшируется лениво рядом с таблицей (ЗАКОН СЛОВАРЯ), nullptr =
+    // предметом ряд не добывается.
+    const char* yieldItem;
+    // Выход-СУЩЕСТВО (CANON S10 «лошадь — юнит»): добытое встаёт ДУШОЙ в
+    // контейнер сквада, не предметом в сумку. NPCType::Count = выход не
+    // существо. Обе колонки разом не живут: существо старше предмета.
+    NPCType yieldCreature;
 };
 
 // The registry row (macro_stock.cpp owns the table).
 const ResourceFieldDef& resource_field_def(ResourceFieldId f);
 
-// IS THIS ROW A VEIN — one of the deposit layer's kinds? The deposit rows are
-// a contiguous block of this enum and the guard below keeps that a fact, so
-// the question is arithmetic and every consumer asks it the same way (the
-// survey of a place's округа, the growth walker, the crews).
-inline constexpr bool resource_row_is_vein(ResourceFieldId f) {
-    return std::uint8_t(f) >= std::uint8_t(ResourceFieldId::Clay)
-        && std::uint8_t(f) < std::uint8_t(ResourceFieldId::Count);
-}
-// The row → the deposit layer's kind, as its ORDINAL (valid exactly when the
-// row is a vein). An ordinal rather than the enum because DepositKind lives in
-// the layer that includes THIS header — the caller casts, and the guard beside
-// the block above is what makes the cast a fact rather than a hope.
-inline constexpr int deposit_kind_ordinal(ResourceFieldId f) {
-    return int(std::uint8_t(f) - std::uint8_t(ResourceFieldId::Clay));
-}
+// (`resource_row_is_vein` и `deposit_kind_ordinal` УМЕРЛИ 2026-10-23 с осью
+// родов жилы: ряд жилы один, спрашивать «который род» больше не у чего.)
 
 // Give the world its own fields: the SCAR grid of every sparse-dialect row
 // (a carrier row's grid stays empty — its live state is its carrier) and the
@@ -203,11 +204,54 @@ void allocate_world_fields(GameState& gs, int width, int height);
 // zero, fail-closed without terrain. Carrier rows: the carrier's cell.
 int resource_field_read(const MacroWorld& w, ResourceFieldId f, int x, int y);
 
+// ── ДВЕРЬ №1 ПУЛЬТА: ДВИЖЕНИЕ ПОЛЯ С ВОЗВРАТОМ ФАКТА (ломоть 1 M-72) ──────
 // Move the field: negative spends, positive returns. Sparse rows clamp the
 // scar to [0, baseline] and a healed cell self-erases; carrier rows clamp
 // to their own cap and bump their carrier's revision.
-void resource_field_apply(MacroWorld& w, ResourceFieldId f, int x, int y,
-                          int delta);
+//
+// Возвращает ФАКТ — сколько поле реально сдвинулось, тем же знаком, что
+// намерение (семейство drain, ЗАКОН ТРЁХ ДВЕРЕЙ: взять больше, чем есть,
+// невыразимо; вернуть выше ёмкости — тоже). Прежнее имя resource_field_apply
+// умерло: дверь без факта заставляла каждого звонящего читать поле самому,
+// и 57 строк между read и apply у артели дюпали выемку двух сквадов.
+int field_move(MacroWorld& w, ResourceFieldId f, int x, int y, int delta);
+
+// ── ДВЕРЬ №2 ПУЛЬТА: ТРАНЗАКЦИЯ «ПОЛЕ → КОНТЕЙНЕР СКВАДА» ─────────────────
+// Форма продиктована владельцем дословно: «списание из поля клетки ->
+// зачисление в инвентарь по таблице соответствия -> возврат факта о добытом
+// объёме. Если в поле ресурсов нет, транзакция возвращает 0, и модуль
+// реагирует на этот факт сам».
+//
+// КРЕДИТ ПРЕЖДЕ ДЕБЕТА, атомарно: поле платит ровно то, что контейнер ПРИНЯЛ;
+// отказ контейнера (нет слота, спина полна) поле не трогает. ВЫХОД решает
+// ФИЧА КЛЕТКИ своей строкой (лён поверх пашни, металл шахты поверх жилы —
+// вердикт 2026-10-22 «что там окажется решает фича шахты»), иначе умолчание
+// ряда (yieldItem/yieldCreature). `want` — намерение звонящего (его руки);
+// дверь клампит по «есть», по спине (товар) и по слоту (существо).
+// Вход — АДРЕС контейнера (слот сквада), никогда голый Inventory& (вердикт
+// 2026-10-22 п.3: второй носитель пишется дверью контейнера, разряд А).
+int field_harvest(MacroWorld& w, ResourceFieldId f, int x, int y, int want,
+                  std::uint32_t squadSlot);
+
+// ЧТО ЗДЕСЬ КЛАДУТ В РУКИ — ординал ПРЕДМЕТА выхода транзакции на этой
+// клетке: оверрайд фичи, иначе умолчание ряда; -1 = предметного выхода нет
+// (выход существо или ряд без выхода). Тот же резолв, которым берёт
+// field_harvest, — для скоринга целей и выгрузки домой (ЗАКОН СЛОВАРЯ:
+// ординалы кэшированы у таблиц, в тике ходит число).
+int field_yield_ordinal(const MacroWorld& w, ResourceFieldId f, int x, int y);
+
+// ── field_set: АБСОЛЮТНАЯ УСТАНОВКА ПОЛЯ — ВНЕ ПУЛЬТА (вердикт 2026-10-22
+// п.5: «field_set вне пульта — генерация/загрузка, закрыт подписью»).
+// Геймплей полей НЕ СТАВИТ — он их двигает (field_move/field_harvest);
+// звонящие этой двери — рождение мира, провод сейва и фикстура свидетеля
+// (тот обязан рожать своё предусловие сам, §8 п.11). ПОДПИСЬ — ЭТО ИМЯ:
+// сырые ResourceGrid::write/allocate закрыты private, а новый геймплейный
+// вызов field_set виден грепом и не переживает ревью.
+struct ResourceGrid;
+void field_set(ResourceGrid& g, std::uint32_t idx, int value);
+void field_set_allocate(ResourceGrid& g, int w, int h, int reach);
+// (Тела — inline под структурой ниже: дверь живёт у самого поля, и всякий,
+// кто видит грид, видит и его единственную законную абсолютную установку.)
 
 // The raw scar of a cell (0 = unscarred) — what subworld generation
 // subtracts from its own embodied yield (CellContext.cropHarvested).
@@ -327,6 +371,24 @@ struct ResourceGrid {
         return reach[index(x, y)] != 0u;
     }
 
+private:
+    // ── СТЕНА ЛОМТЯ 1 M-72: СЫРЫЕ ВХОДЫ ЗАКРЫТЫ КОМПИЛЯТОРОМ ────────────
+    // Пишут поле только НОСИТЕЛИ ДВЕРЕЙ — пульт (field_move, и только он в
+    // геймплее), рождение мира, провод сейва и двери носителей (worked,
+    // жила). Пятая дверь не заводится одной строкой: ей нужна строка в этом
+    // списке друзей, и компилятор молчать не будет. (12 сайтов write до
+    // стены: 4 геймплейных ушли в двери, 1 генерация, 5 загрузка, 2 умерли
+    // с consolidate_deposit_cluster — перепись 2026-10-23.)
+    friend int  field_move(MacroWorld&, ResourceFieldId, int, int, int);
+    friend void field_set(ResourceGrid&, std::uint32_t, int);
+    friend void field_set_allocate(ResourceGrid&, int, int, int);
+    friend void allocate_world_fields(GameState&, int, int);
+    friend void worked_write(GameState&, int, int, int);
+    friend void worked_add(GameState&, int, int, int);
+    friend void allocate_deposit_fields(struct DepositLayer&, int, int);
+    friend DepositLayer build_deposit_layer(const TerrainData&, std::uint32_t);
+    friend void create_deposit(struct DepositLayer&, int, int, std::int32_t);
+
     // THE ONE WRITE. Everything a cell's value implies — the live count, the
     // reach discs, the revision — moves with it, here, because a derived field
     // kept in step by its CALLERS is a field that drifts the first time
@@ -352,6 +414,7 @@ struct ResourceGrid {
         ++revision;
     }
 
+public:
     // Every cell that holds something, as (index, value). O(cells) by nature —
     // a dense field has no shorter honest way to enumerate itself, and the
     // callers that cannot afford it (the nearest-vein errand) must ask a
@@ -392,7 +455,10 @@ struct ResourceGrid {
         return width == o.width && height == o.height && cells == o.cells;
     }
 
+private:
     // Size the field to a world, zeroed, with its reach field iff it reaches.
+    // За стеной вместе с write: поле рождается у носителей мира, не у
+    // звонящего (ленивое взятие — признак нарушения, ЗАКОН СТАБИЛЬНОСТИ).
     void allocate(int w, int h, int reachRadiusCells) {
         width = w;
         height = h;
@@ -436,6 +502,13 @@ private:
         }
     }
 };
+
+inline void field_set(ResourceGrid& g, std::uint32_t idx, int value) {
+    g.write(g.x_of(idx), g.y_of(idx), value);
+}
+inline void field_set_allocate(ResourceGrid& g, int w, int h, int reach) {
+    g.allocate(w, h, reach);
+}
 
 // All seven fields, one place. Adding a resource — gold, coal, anything — is a
 // row of the registry, and its field appears with it; there is no new code and

@@ -1425,7 +1425,7 @@ bool save_game_checked(App& app, bool autosave = false) {
     const std::string& path = autosave ? app.autosavePath : app.savePath;
     const bool ok = sm::save_game(app.gs, app.macroStore->nextSpawnId,
                                   app.activeQuests, stage_save_state(app),
-                                  app.treeLayer.data, app.deposits, path);
+                                  app.treeLayer.data, path);
     refresh_save_summary(app);
     if (!ok)
         std::fprintf(stderr, "save_game FAILED: %s\n", path.c_str());
@@ -1853,17 +1853,15 @@ bool boot_world_from_save(App& app, const std::string& path) {
     std::vector<sm::Quest> loadedQuests;
     std::vector<sm::MacroNpcRecord> loadedMacro;
     std::vector<std::uint16_t> loadedTrees;
-    sm::DepositLayer loadedDeposits;
     if (!sm::load_game(fresh, loadedNextSpawnId, loadedQuests, loadedMacro,
-                       loadedTrees, loadedDeposits, path)) {
+                       loadedTrees, path)) {
         return false;
     }
     // What the FILE says the world is, weighed before a single field of it is
     // applied. Compared against the living world at the bottom of this
     // function — see the fold witness there.
     const std::uint32_t fileFingerprint = sm::save_payload_fingerprint(
-        fresh, loadedNextSpawnId, loadedQuests, loadedMacro, loadedTrees,
-        loadedDeposits);
+        fresh, loadedNextSpawnId, loadedQuests, loadedMacro, loadedTrees);
     // registerIntroStory=TRUE even on load (v25): node definitions are code
     // and must all exist before the saved story progress is replayed below.
     // The old `false` here was the 3-nodes -> 1 bug: a loaded game lost the
@@ -1971,7 +1969,7 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // world's own thinking.
     const std::uint32_t liveFingerprint = sm::save_payload_fingerprint(
         app.gs, app.macroStore->nextSpawnId, app.activeQuests, loadedMacro,
-        loadedTrees, loadedDeposits);
+        loadedTrees);
     // A witness that answers "0" twice would agree with itself over a world it
     // never weighed: 0 is what the fingerprint returns when the writer FAILED.
     // Refuse that agreement out loud — a check that cannot fail is the defect
@@ -2031,12 +2029,21 @@ bool boot_world_from_save(App& app, const std::string& path) {
                      "keeping virgin forest\n",
                      loadedTrees.size(), app.treeLayer.cell_count());
     }
-    sm::restore_deposit_cells(app.deposits, loadedDeposits);
+    // (Накат блоков жил умер 2026-10-23, «жилы единые»: слой производный,
+    // rebake уже перестроил его из сида — сейв о нём не знает.)
     // (Ре-штамп построенных сквадами фич УМЕР в v130: вектор `builtFeatures`
     // был всегда пуст — писателей из геймплея ноль, — то есть этот цикл
     // крутился по нулю элементов с самого v71. Слой фич остаётся ПРОИЗВОДНЫМ
     // от сида, и это сегодня вся правда о нём.)
     rebake_world(app);
+    // ШАХТЫ НА ЗАГРУЗКЕ — ТА ЖЕ ДВЕРЬ, ЧТО НА ГЕНЕЗИСЕ, без залежей: genesis
+    // пути загрузки мест не поднимал (их привёз снимок выше), значит
+    // stamp_mines внутри generate_macro_world видел ноль поселений и не
+    // ставил ничего. Фичи шахт производны от сида и ЖИВЫХ поселений —
+    // штампуются после rebake (фичи поселений уже на слое); залежи приехали
+    // сейвом (ряд Worked) и не перештамповываются (seedCaps = false).
+    sm::stamp_mines(app.gs, app.features, app.terrain, app.deposits,
+                    app.gs.worldSeed, /*seedCaps=*/false);
     app.macro.upload_tree_field(app.device, &app.treeLayer);
     app.uploadedTreeRev = app.treeLayer.revision;
     return true;

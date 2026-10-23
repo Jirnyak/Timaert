@@ -219,6 +219,17 @@ public:
                         Structure* outFelled = nullptr,
                         const Structure::Kind* onlyKind = nullptr);
 
+    // ── ДВЕ ПОЛОВИНЫ ТОЙ ЖЕ ДВЕРИ ВРОЗЬ (ломоть 1 M-72) ──────────────────
+    // Транзакция жатвы обязана спросить сумку ДО того, как проп упадёт
+    // (кредит прежде дебета): peek находит ближайший проп, НЕ трогая мир;
+    // remove снимает ровно НАЙДЕННЫЙ (по роду и позиции). fell_prop_near
+    // выше — композиция этих двух для звонящих без транзакции (орб шпиля).
+    bool peek_prop_near(float x, float y, float z, float maxDist,
+                        int& outMacroCx, int& outMacroCy,
+                        Structure* outProp,
+                        const Structure::Kind* onlyKind = nullptr) const;
+    bool remove_prop(const Structure& victim);
+
     // Composited 3kx3k fields.
     const std::vector<std::uint8_t>& tiles() const { return composite_tiles_; }
     // HARNESS ONLY: repaint the composite's ground so a smoke can measure a

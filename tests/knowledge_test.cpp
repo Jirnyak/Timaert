@@ -25,6 +25,19 @@ sm::FeatureLayer open_ground() {
     return f;
 }
 
+// Суша под дверью фичи: стена ломтя 1 закрыла сырой set — фикстура ставит
+// дорогу той же дверью, что мир (feature_put; воду та спрашивает у карты).
+sm::TerrainData all_land() {
+    sm::TerrainData td;
+    td.width = W;
+    td.height = H;
+    td.rgba.assign(std::size_t(W) * std::size_t(H) * 4u, 0);
+    td.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
+    for (std::size_t c = 0; c < std::size_t(W) * std::size_t(H); ++c)
+        td.rgba[c * 4u + 0] = sm::field_word_of(140.0f / 255.0f);
+    return td;
+}
+
 int count_state(const sm::KnowledgeLayer& k, std::uint8_t s) {
     int n = 0;
     for (std::uint8_t v : k.data) n += (v == s) ? 1 : 0;
@@ -121,8 +134,9 @@ void test_road_carries_sight_farther() {
           "open ground cannot see that far (negative control)");
 
     sm::FeatureLayer roadFeat = open_ground();
+    const sm::TerrainData roadTd = all_land();
     for (int x = 20; x <= 20 + steps; ++x)
-        roadFeat.set(x, 20, sm::FT_Road);
+        sm::feature_put(roadFeat, roadTd, x, 20, sm::FT_Road);
     sm::KnowledgeLayer roadK;
     sm::knowledge_reset(roadK, W, H);
     sm::SightRuntime roadRt;

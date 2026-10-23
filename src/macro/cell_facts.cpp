@@ -39,21 +39,16 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
     f.treeCount = (w.trees && w.trees->has_complete_storage())
         ? int(w.trees->at(f.x, f.y)) : -1;
     f.zone = w.zones ? w.zones->at(f.x, f.y) : std::uint8_t(0);
-    // Live veins within the profession reach — the same ground and the same
+    // Live vein within the profession reach — the same ground and the same
     // radius that raise a macro gatherer (npc_ai.h kGathererReach) put his
     // trade in this cell's street crowd (spawn law, fauna.h).
-    // One array read per kind. This used to scan the ENTIRE vein list — 69 624
-    // entries in a real world, and the early break only fires for the rare
-    // cell that has a vein near it, so almost every caller paid the full scan:
-    // 161 µs per cell_facts, 4.3 ms of a 6.8 ms seam crossing, for one byte.
-    // The radius question is a stamped field now (deposit_layer.h reach,
-    // problems.md §52) and the metric is the same circle it always was.
-    if (w.deposits) {
-        for (std::size_t k = 0; k < std::size_t(kDepositKindCount); ++k) {
-            if (w.deposits->kind_near(DepositKind(k), f.x, f.y)) {
-                f.depositsNear |= std::uint8_t(1u << k);
-            }
-        }
+    // ONE array read. This used to scan the ENTIRE vein list — 69 624
+    // entries in a real world — 161 µs per cell_facts, 4.3 ms of a 6.8 ms
+    // seam crossing, for one byte. The radius question is a stamped field
+    // (deposit_layer.h reach, problems.md §52). Жилы единые (2026-10-22):
+    // рода у маски больше нет, байт несёт один факт «жила рядом».
+    if (w.deposits && w.deposits->vein_near(f.x, f.y)) {
+        f.depositsNear = 1u;
     }
 
     if (w.gs) {

@@ -452,7 +452,7 @@ namespace sm {
 // блоке `worked`, который и так писался. Ординалы рядов НЕ двинулись (ряд
 // остался на своём месте перед жилами), поэтому сдвига блоков нет — двигает
 // версию ровно смена ЖИЛЬЦА блока.
-constexpr int kSaveVersion = 142;   // M-245: дом/дань на ребре Parent/Suzerain, пул TitheEdge умер
+constexpr int kSaveVersion = 143;   // ломоть 1 M-72: жилы единые — блоки жил из сейва ушли (поле производно), ряды реестра 10 → 5
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система

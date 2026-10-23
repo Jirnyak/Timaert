@@ -802,8 +802,10 @@ enum class Worksite : std::uint8_t {
 
 struct GathererDef {
     ResourceFieldId row;        // what leaves the world
-    const char*     commodity;  // what rides the bag and lands in the store
-                                // (nullptr when the yield is a CREATURE)
+    // (КОЛОНКИ `commodity` И `creatureYield` УМЕРЛИ 2026-10-23, ломоть 1
+    // M-72: словарь «поле→предмет» 3 → 1. Выход цели ВЫВОДИТСЯ из колонок
+    // реестра полей и таблицы фич — см. gatherer_item_index ниже; второй
+    // носитель того же ответа здесь был бы вторым словарём, DOD п.6.)
     Worksite        worksite;
     // СКОЛЬКО ОДИН РАБОТНИК БЕРЁТ ЗА ДЕНЬ — темп ЭТОГО источника. Колонка
     // появилась с ПИЩЕЙ (владелец, 2026-09-18: «просто сделать, что охота не
@@ -811,60 +813,72 @@ struct GathererDef {
     // приходит из разных источников с разной отдачей, и это ЧИСЛО, а не
     // ветка. Якорь мира — kGatherPerWorkerDay (S10, «добытчик кормит 32»).
     int perWorkerDay;
-    // ОДНА новая колонка канона (S10 «ЛОШАДЬ — ЮНИТ», дословно: «выход
-    // ложится в КОНТЕЙНЕР, а не в сумку»): Count = обычный товар в сумку;
-    // строка существа = добытое встаёт ДУШОЙ в контейнер артели, спина сразу
-    // в обозе (refresh_squad_carry). Овцы — следующая такая же строка.
-    NPCType creatureYield = NPCType::Count;
 };
 
 constexpr GathererDef kGathererDefs[] = {
     // ПИЩА из двух источников: пашня — полный якорь, охота — четверть его
     // (зверь бегает, а колос стоит; число — крутилка дубль-прогона). Именно
     // это кормит хутор на скале, где пашни нет, а зверь есть.
-    {ResourceFieldId::Wheat,  "food",   Worksite::HomeField,
-     kGatherPerWorkerDay},
-    {ResourceFieldId::Fauna,  "food",   Worksite::HomeFauna,
-     kGatherPerWorkerDay / 4},
+    {ResourceFieldId::Wheat,  Worksite::HomeField,     kGatherPerWorkerDay},
+    {ResourceFieldId::Fauna,  Worksite::HomeFauna,     kGatherPerWorkerDay / 4},
     // ЛЁН — ТА ЖЕ ЗЕМЛЯ, СВОЯ ПАРЦЕЛЛА (владелец, 2026-09-20: «на пашне уже
     // пшеница-пища, значит нужна фича льняное поле»). Ряд тот же арабельный:
     // клетка под льном — это клетка, не занятая хлебом, и конкуренция за
     // землю выходит сама, без второго поля и без нового ресурса. Четверть
     // якоря — тем же числом охота слабее пашни (крутилка дубль-прогона).
-    {ResourceFieldId::Wheat,  "fibre",  Worksite::HomeFlaxField,
-     kGatherPerWorkerDay / 4},
-    {ResourceFieldId::Silver, "silver", Worksite::Deposit,
-     kGatherPerWorkerDay},
-    {ResourceFieldId::Trees,  "wood",   Worksite::ForestCell,
-     kGatherPerWorkerDay},
-    {ResourceFieldId::Iron,   "iron",   Worksite::Deposit,
-     kGatherPerWorkerDay},
-    {ResourceFieldId::Stone,  "stone",  Worksite::Deposit,
-     kGatherPerWorkerDay},
-    {ResourceFieldId::Clay,   "clay",   Worksite::Deposit,
-     kGatherPerWorkerDay},
+    // ЧТО с парцеллы берут — говорит ФИЧА (FT_FlaxField → fibre), не цель.
+    {ResourceFieldId::Wheat,  Worksite::HomeFlaxField, kGatherPerWorkerDay / 4},
+    // ШАХТЁР — ОДНА ЦЕЛЬ НА ВСЕ ЖИЛЫ (вердикт 2026-10-23: артель не
+    // профессия, добыча универсальна): что добудется, решает фича шахты,
+    // на которую артель пришла, — её строка, не строка цели.
+    {ResourceFieldId::Vein,   Worksite::Deposit,       kGatherPerWorkerDay},
+    {ResourceFieldId::Trees,  Worksite::ForestCell,    kGatherPerWorkerDay},
     // ЛОШАДЬ-ЮНИТ: темп 1 — поимка стоит работнику ДЕНЬ (цикл = целый бар
     // по закону цены труда S14.1), против 32 колосьев той же ценой; выход
-    // не товар, а существо (колонка creatureYield).
-    {ResourceFieldId::Livestock, nullptr, Worksite::HomePasture,
-     1, NPCType::Horse},
+    // не товар, а существо — умолчание ряда Livestock (реестр полей).
+    {ResourceFieldId::Livestock, Worksite::HomePasture, 1},
 };
 constexpr int kGathererGoalCount =
     int(sizeof(kGathererDefs) / sizeof(kGathererDefs[0]));
 
+// ФИЧА, КОТОРУЮ ПОДРАЗУМЕВАЕТ WORKSITE ЦЕЛИ — мост от «где работа» к «что
+// кладут в руки»: оверрайд выхода читается СО СТРОКИ ФИЧИ (features.h), не
+// дублируется здесь. FT_None = worksite фичу не называет, выход — умолчание
+// ряда реестра.
+constexpr FeatureType worksite_feature(Worksite ws) {
+    return ws == Worksite::HomeField     ? FT_Field
+         : ws == Worksite::HomeFlaxField ? FT_FlaxField
+         : ws == Worksite::HomePasture   ? FT_Pasture
+                                         : FT_None;
+}
+
+// ВЫХОД ЦЕЛИ СУЩЕСТВОМ — умолчание её ряда, если фича worksite не
+// переопределила выход предметом (предмет фичи старше существа ряда —
+// та же лестница, что в field_harvest).
+inline NPCType gatherer_creature_yield(const GathererDef& gd) {
+    if (feature_def(worksite_feature(gd.worksite)).yieldItem)
+        return NPCType::Count;
+    return resource_field_def(gd.row).yieldCreature;
+}
+
 // ОРДИНАЛ ВЫХОДА СТРОКИ ЦЕЛИ — РЕЗОЛВ ОДИН РАЗ, РЯДОМ СО СВОЕЙ ТАБЛИЦЕЙ
 // (ЗАКОН СЛОВАРЯ И ОРДИНАЛА п.1: строка живёт на границе, внутри мира — число;
-// образец — `r.needIdx` в econ_day.cpp). -1 у строки, чей выход СУЩЕСТВО
-// (`commodity == nullptr`): у него нет каталожной строки товара, он встаёт
-// душой в контейнер. Резолв ленивый, потому что каталог виден только своей
-// единице трансляции — `constexpr` тут недостижим, а вывод из ТОЙ ЖЕ строки
-// сохранён: разъехаться с таблицей эта колонка не может по построению.
+// образец — `r.needIdx` в econ_day.cpp). -1 у строки, чей выход СУЩЕСТВО:
+// у него нет каталожной строки товара, он встаёт душой в контейнер. Предмет
+// называют КОЛОНКИ реестра полей и таблицы фич (ломоть 1 M-72, словарь 3 → 1);
+// резолв ленивый, потому что каталог виден только своей единице трансляции.
 int gatherer_item_index(int goal) {
     static const std::array<int, std::size_t(kGathererGoalCount)> kOut = [] {
         std::array<int, std::size_t(kGathererGoalCount)> m{};
         for (int g = 0; g < kGathererGoalCount; ++g) {
-            m[std::size_t(g)] = kGathererDefs[g].commodity
-                ? item_index(kGathererDefs[g].commodity) : -1;
+            const GathererDef& gd = kGathererDefs[g];
+            const char* fid =
+                feature_def(worksite_feature(gd.worksite)).yieldItem;
+            const ResourceFieldDef& row = resource_field_def(gd.row);
+            const char* id = fid ? fid
+                : (row.yieldCreature == NPCType::Count ? row.yieldItem
+                                                       : nullptr);
+            m[std::size_t(g)] = id ? item_index(id) : -1;
         }
         return m;
     }();
@@ -872,9 +886,27 @@ int gatherer_item_index(int goal) {
         ? kOut[std::size_t(goal)] : -1;
 }
 
-// Та же строка цели ординалом ТОВАРА — для фактов и прейскуранта.
-int gatherer_commodity_index(int goal) {
-    return commodity_of_item(gatherer_item_index(goal));
+// (gatherer_commodity_index УМЕР 2026-10-23: прейскурант урны берёт товар
+// от РАЗРЕШЁННОГО предмета места — commodity_of_item(goalItem), — потому что
+// у цели-жилы статического товара нет, его называет фича рабочего места.)
+
+// ПРЕДМЕТНЫЕ ВЫХОДЫ ЦЕЛИ-ЖИЛЫ — строки фич шахт (род решает фича рабочего
+// места). Нужен учёту груза и выгрузке домой: у цели со статическим выходом
+// ординал один, у жилы он — вопрос клетки, но МНОЖЕСТВО возможных выходов
+// названо данными (kFeatureDefs, numberRow == Vein), не веткой.
+const std::vector<int>& vein_yield_ordinals() {
+    static const std::vector<int> kOut = [] {
+        std::vector<int> m;
+        for (std::size_t t = 0; t < std::size_t(FT_Count); ++t) {
+            const FeatureDef& def = kFeatureDefs[t];
+            if (def.numberRow != ResourceFieldId::Vein || !def.yieldItem)
+                continue;
+            const int idx = item_index(def.yieldItem);
+            if (idx >= 0) m.push_back(idx);
+        }
+        return m;
+    }();
+    return kOut;
 }
 
 // The crew's OWN goal row, named by its errand — nullptr when the errand is
@@ -985,13 +1017,16 @@ constexpr float kSustainedMarchCellsPerDay =
 // строку, поиска в тике не остаётся. Урок метода: когда закон упирается в
 // цену ПОИСКА, снимать надо сам поиск, а не подпирать его радиусом.)
 
+// РАБОЧЕЕ МЕСТО ЖИЛЫ — ШАХТА, НЕ ГОЛАЯ ГЕОЛОГИЯ (вердикт 2026-10-23:
+// «добыча … существует по шахтам»): артель ищет клетку с фичей, чьё число
+// есть залежь (`FeatureDef::numberRow == Vein`), и живой залежью в `worked`.
+// Шахты ставит генерация у поселений; выработанная (залежь 0) рабочим местом
+// не является — и честно отпадает тем же предикатом.
 bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
                        const XY& home, XY& out) {
-    if (!ctx.mw.deposits || ctx.mapW <= 0) return false;
-    const DepositKind kind =
-        DepositKind(std::uint8_t(row) - std::uint8_t(ResourceFieldId::Clay));
-    const ResourceGrid& cells = ctx.mw.deposits->grid(kind);
-    if (cells.liveCells == 0) return false;
+    (void)row;   // ряд один — жила; подпись держит форму вызова worksite
+    if (!ctx.mw.features || !ctx.mw.gs || ctx.mapW <= 0) return false;
+    const FeatureLayer& fl = *ctx.mw.features;
     const int hx = int(home.x), hy = int(home.y);
     NavWorld* nv = ctx.mw.nav;
     const bool navReady = nv && nav_ensure(ctx.mw, *nv);
@@ -1014,7 +1049,11 @@ bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
         const std::uint32_t n = cell_step(homeIdx, dx, dy, ctx.mapW);
         const int x = cell_x(n, ctx.mapW);
         const int y = cell_y(n, ctx.mapW);
-        if (cells.at_index(n) == 0) return;   // no vein standing here
+        // Шахта с живой залежью — предикат колонкой строки фичи, не родом;
+        // залежь спрашивается ДВЕРЬЮ ряда (worked сырьём читает только она).
+        if (feature_def(fl.at(n)).numberRow != ResourceFieldId::Vein) return;
+        if (resource_field_read(ctx.mw, ResourceFieldId::Vein, x, y) == 0)
+            return;   // выработана — не рабочее место
         if (!navReady) {
             const float dsq = float(dx * dx + dy * dy);
             if (dsq < bestSq) {
@@ -1125,8 +1164,24 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
     const GathererDef* def = gatherer_def_of(rt);
     if (!def) { ai_home_wanderer(self, p, rt, pools, ctx); return; }
     // Выход строки цели ОРДИНАЛОМ, один резолв на таблицу (ЗАКОН СЛОВАРЯ):
-    // -1 = выход существо, у него каталожной строки товара нет.
+    // -1 = выход существо ЛИБО цель-жила (её предмет решает фича рабочего
+    // места — поштучно знает транзакция, множество — vein_yield_ordinals).
     const int outIdx = gatherer_item_index(int(rt.errandObject));
+    // «Спина полна СВОИМ выходом» — одним предикатом на статическую цель и
+    // цель-жилу: гружёный металл в сумке и места меньше одной единицы.
+    const auto back_full_of_yield = [&](const Inventory& bag) {
+        const std::int64_t freeG =
+            carry_capacity_g(rt, bag) - inventory_mass_g(bag);
+        const auto full = [&](int idx) {
+            return idx >= 0 && bag.count_of(idx) > 0
+                && freeG < unit_mass_g(item_def_at(idx));
+        };
+        if (outIdx >= 0) return full(outIdx);
+        for (const int m : vein_yield_ordinals()) {
+            if (full(m)) return true;
+        }
+        return false;
+    };
 
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
@@ -1136,17 +1191,13 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
             // слал её к жиле — даже с грузом, которому на жиле нечего взять.
             // Вечный челнок «шахта→привал→шахта» держал 536 серебра в одной
             // сумке 48 дней при пустом складе (измерено, сид 7).
-            if (const Inventory* bagIdle = def->creatureYield == NPCType::Count
+            if (const Inventory* bagIdle = gatherer_creature_yield(*def) == NPCType::Count
                     && ctx.mw.store
                     ? &store_ctx(ctx).inventory[self.slot].inv
                     : nullptr) {
                 // (a CREATURE yield rides the creatures, not the bag — there
                 // is no «full back» to send home early)
-                const std::int64_t unitG = unit_mass_g(item_def_at(outIdx));
-                if (bagIdle->count_of(outIdx) > 0
-                    && carry_capacity_g(rt, *bagIdle)
-                               - inventory_mass_g(*bagIdle)
-                           < unitG) {
+                if (back_full_of_yield(*bagIdle)) {
                     rt.targetX = home.x;
                     rt.targetY = home.y;
                     rt.state = std::uint8_t(NS::Returning);
@@ -1240,106 +1291,42 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
                 // Фичи ставит генерация мира; артель только добывает.)
                 MacroWorld mw = ctx.mw;  // the envelope, whole — never a
                                          // partial re-pick of its layers
-                const int have = resource_field_read(mw, def->row, tx, ty);
                 // Every soul in the squad works: headcount multiplies the
                 // cycle's yield at the squad's one fixed SP price (owner:
                 // «SP тратится столько же, добывают кратно больше»).
-                Inventory* bag = &store_ctx(ctx).inventory[self.slot].inv;
                 // Руки — ЛЮДИ: лошадь в контейнере — спина и рот, не рука
                 // (count_human_souls, world_row.h) — иначе пойманный табун
                 // сам становился бы добытчиком и контур шёл вразнос.
-                const int workers = production_hands(
-                    bag ? count_human_souls(*bag) : 0);
-                // «Берёт ПО СВОЕЙ ГРУЗОПОДЪЁМНОСТИ» — CANON S10 дословно:
-                // спины сквада ограничивают тейк. Без этой скобы артель
-                // грузила цикл×души невзирая на вес и каменела перегрузом
-                // на обратном пути НАВСЕГДА (наценка 256 SP/клетку при баре
-                // 110 неоплатна и после полного отдыха — измерено: рудокоп
-                // с 2400 кг серебра на спине в 2145 кг, сид 7).
-                int carryMax = have;
-                if (bag && def->creatureYield == NPCType::Count) {
-                    const std::int64_t freeG = carry_capacity_g(rt, *bag)
-                                             - inventory_mass_g(*bag);
-                    // Перегруженная спина даёт ОТРИЦАТЕЛЬНЫЙ остаток, и его
-                    // гасит `max(0, …)` — тот же страж, что стоял здесь и до
-                    // граммов. Делить отрицательное целое было бы не ошибкой,
-                    // но ответ «минус три единицы влезет» смысла не имеет.
-                    carryMax = freeG <= 0
-                                   ? 0
-                                   : int(freeG
-                                         / unit_mass_g(item_def_at(outIdx)));
-                }
-                // ONE OBJECT PER HAND (owner, 2026-09-16). Each worker takes
-                // one — exactly what the player takes for exactly the same
-                // price — and the crew's yield is that times its hands. The
-                // batch of eight this replaced was a HAUL, and the haul is not
-                // gone: it emerges below from the backs and the bar instead of
-                // being declared by a constant nobody could derive.
-                int take = std::min(std::min(workers, have), carryMax);
-                tookSomething = take > 0;
-                // «ВЫХОД ЛОЖИТСЯ В КОНТЕЙНЕР, А НЕ В СУМКУ» (CANON S10,
-                // дословно): существо встаёт ДУШОЙ в отряд — генерик-стаком
-                // по закону слота — и его спина сразу считается в обозе
-                // (refresh_squad_carry, та же дверь, что у добора). Credit
-                // BEFORE debit: поле платит только за вставших.
-                if (take > 0 && def->creatureYield != NPCType::Count) {
-                    // ПОТОЛКА ЛОВЛИ НЕТ, И ТОРМОЗА ТОЖЕ НЕТ — ДЫРА НАЗВАНА
-                    // (M-230, вердикт владельца 2026-10-06 «сноси
-                    // полностью»). Прежде ловца останавливала ЦЕНА: кривая
-                    // дефицита над табуном, чья НУЖДА была мерой упряжки
-                    // «по лошадке на душу». Мера снесена вместе с законом,
-                    // и цена цели теперь плоская (цена найма строки), то
-                    // есть поголовье растёт, пока в поле есть звери. Нож
-                    // излишка отменён владельцем, рацион поголовье не
-                    // режет. Обратная связь — отдельный наряд; костыля на
-                    // её место не ставим (AGENTS §1).
-                    if (take > 0 && bag && creatures_push_stack(
-                            *bag, def->creatureYield,
-                            npc_def(def->creatureYield).baseLevel,
-                            take)) {
-                        resource_field_apply(mw, def->row, tx, ty, -take);
-                        pools.spCarry -= float(cycleCost);
-                        settle_sp_carry(pools);
-                        // (ЗДЕСЬ СТОЯЛ `refresh_squad_carry` — догон колонки
-                        //  обоза после добора голов. Не нужен: спины голов
-                        //  копит СВОДКА, а её правит сама запись слота,
-                        //  которую `creatures_push_stack` только что и
-                        //  сделал. Разряд А — пересчёт внутри двери
-                        //  изменения, вердикт владельца «давай А».)
-                    } else {
-                        tookSomething = false;   // no slot — nothing conjured
-                    }
-                }
-                // Credit BEFORE debit (CANON S5): the field pays only what
-                // the OWN bag actually took — a bagless walker, or a bag
-                // with no room, drains nothing and writes no Drained fact.
-                // `outIdx >= 0` сказано ВСЛУХ: ординальная дверь `add_of`
-                // на -1 отвечает «положил» молча (ничего не положив), и без
-                // этой проверки строка без выхода-товара опустошала бы поле
-                // в пустоту. Строковая дверь на этом месте падала в UB
-                // (std::string из nullptr) — тот же дефект, только громче.
-                else if (take > 0 && bag && outIdx >= 0
-                         && bag->add_of(outIdx, take)) {
-                    resource_field_apply(mw, def->row, tx, ty, -take);
+                const Inventory& hands =
+                    store_ctx(ctx).inventory[self.slot].inv;
+                const int workers =
+                    production_hands(count_human_souls(hands));
+                // ТРАНЗАКЦИЯ «ПОЛЕ → КОНТЕЙНЕР» — ОДНА ДВЕРЬ (ломоть 1
+                // M-72): кредит прежде дебета, кламп по «есть», спине и
+                // слоту — закон двери; руки — закон думки. 57 строк между
+                // read и apply, дюпавшие выемку двух сквадов одной клетки,
+                // умерли вместе с ними. Выход решает фича клетки, иначе
+                // умолчание ряда; существо встаёт душой (сводка — разряд А).
+                const int got = field_harvest(mw, def->row, tx, ty, workers,
+                                              self.slot);
+                tookSomething = got > 0;
+                if (got > 0) {
                     // The cycle is PAID the moment it produced — through
-                    // the same fractional carry the march charges
-                    // (settle_sp_carry above): work and walking drain one
-                    // purse, which is the whole law.
+                    // the same fractional carry the march charges: work and
+                    // walking drain one purse, which is the whole law.
                     pools.spCarry -= float(cycleCost);
                     settle_sp_carry(pools);
                     // A DEPOSIT worked down to nothing is a fact of the world
-                    // (FactKind::Drained: "a vein worked out") — and by the
-                    // annihilation law the cell itself leaves the map, so
-                    // "why did the town grow poor" is answered by THIS record
-                    // and nothing else. The daily haul is weather, not
-                    // history (S20.1: the TRANSITION is the story); forest
-                    // and wheat regrow by their own law, so their emptied
-                    // cells write nothing. amount = resource registry row +1:
-                    // the land has no ordinal to ride as the object (a spire
-                    // does, and its drain points at the place instead), and
-                    // after annihilation the world no longer holds the
-                    // "what" — the fact is its only carrier.
-                    if (def->worksite == Worksite::Deposit && take == have) {
+                    // (FactKind::Drained: "a vein worked out") — "why did the
+                    // town grow poor" is answered by THIS record and nothing
+                    // else. The daily haul is weather, not history (S20.1:
+                    // the TRANSITION is the story); forest and wheat regrow
+                    // by their own law, so their emptied cells write nothing.
+                    // amount = resource registry row +1. Факт судится по
+                    // ОСТАТКУ после транзакции — прежнее `take == have`
+                    // читало поле до неё и было тем же вопросом.
+                    if (def->worksite == Worksite::Deposit
+                        && resource_field_read(mw, def->row, tx, ty) == 0) {
                         record_landmark_fact(store_ctx(ctx), *ctx.mw.gs,
                                              FactKind::Drained,
                                              parent_of(store_ctx(ctx),
@@ -1362,10 +1349,8 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
                     ? &store_ctx(ctx).inventory[self.slot].inv
                     : nullptr;
                 bool backsFull = false;
-                if (bagNow && def->creatureYield == NPCType::Count) {
-                    backsFull = carry_capacity_g(rt, *bagNow)
-                                    - inventory_mass_g(*bagNow)
-                                < unit_mass_g(item_def_at(outIdx));
+                if (bagNow && gatherer_creature_yield(*def) == NPCType::Count) {
+                    backsFull = back_full_of_yield(*bagNow);
                 }
                 const bool barSpent = int(pools.sp) < cycleCost;
                 // GROUND THAT GAVE NOTHING is the third reason to leave, and
@@ -1395,8 +1380,14 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
                 // инвентаре артели: двухтактного обоза больше нет (M-230),
                 // и у существа нет товарной колонки, поэтому сумка его и
                 // не видит.
-                if (outIdx >= 0)
+                if (outIdx >= 0) {
                     deliver_bag_home(self, ctx, outIdx);
+                } else {
+                    // Цель-жила: что добыто, решила фича места — домой
+                    // сдаётся всякий шахтный выход (в сумке лежит добытое).
+                    for (const int m : vein_yield_ordinals())
+                        deliver_bag_home(self, ctx, m);
+                }
             }
             rt.state = std::uint8_t(NS::Idle);
             rt.stateTimer = std::int16_t(6 + rand_int(ctx, 12));
@@ -3671,19 +3662,6 @@ CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
     return out;
 }
 
-// ── Squads eat (contract in npc_ai.h) ────────────────────────────────────
-int provision_squad(Inventory& store, Inventory& bag, int soldiers,
-                    float roundtripCells, std::int64_t freeCarryG) {
-    if (soldiers <= 0) return 0;   // the leader is a subject — he needs nothing
-    const int days =
-        1 + int(std::ceil(roundtripCells / kSustainedMarchCellsPerDay));
-    const int portion = soldiers * days;
-    // The haul door already speaks credit-before-debit and respects the
-    // carry the loaf must ride on.
-    return haul_between(store, bag, hunger_item_index(), portion,
-                        freeCarryG);
-}
-
 // ЗДЕСЬ СТОЯЛ `squad_season_needs` — ВТОРОЙ ЗАКОН СОДЕРЖАНИЯ, И ОН УМЕР
 // 2026-09-22 вместе со своим близнецом у мест. Он расходился с ним в двух
 // местах, и оба расхождения были дефектом, а не контекстом:
@@ -4312,7 +4290,20 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             for (int g = 0; g < kGathererGoalCount; ++g) {
                 const GathererDef& gd = kGathererDefs[g];
                 int unitPrice = 0;
-                if (gd.creatureYield != NPCType::Count) {
+                const NPCType creatureYield = gatherer_creature_yield(gd);
+                // ОДНА ДВЕРЬ ПОИСКА РАБОЧЕГО МЕСТА на все рода — и теперь
+                // ДО цены: у цели-жилы предмет выхода называет ФИЧА рабочего
+                // места (вердикт 2026-10-22 «что там окажется решает фича
+                // шахты»), значит цены без места не существует.
+                XY site;
+                if (!find_worksite(gd, ctx, homePos, home, site)) continue;
+                int goalItem = gatherer_item_index(g);
+                if (creatureYield == NPCType::Count && goalItem < 0) {
+                    goalItem = field_yield_ordinal(ctx.mw, gd.row,
+                                                   int(site.x), int(site.y));
+                    if (goalItem < 0) continue;   // место без выхода — не работа
+                }
+                if (creatureYield != NPCType::Count) {
                     // ЦЕЛЬ-СУЩЕСТВО ЦЕНИТСЯ СВОЕЙ СТРОКОЙ НАЙМА, И БОЛЬШЕ
                     // НИЧЕМ (M-230, вердикт владельца 2026-10-06 «сноси
                     // полностью»). Кривая дефицита над табуном снесена
@@ -4323,12 +4314,11 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     // цель не чувствует, и это НАЗВАННАЯ ДЫРА, а не
                     // замысел: обратная связь (ножом, рационом или ценой по
                     // выжившей колонке) строится отдельным нарядом.
-                    const NpcTypeDef& yieldRow = npc_def(gd.creatureYield);
+                    const NpcTypeDef& yieldRow = npc_def(creatureYield);
                     const int base = yieldRow.hireGold;
                     if (base <= 0) continue;
                     unitPrice = base;
                 } else {
-                    const int goalItem = gatherer_item_index(g);
                     const ItemDef* idef = item_def_at(goalItem);
                     const int base = idef ? idef->value : 0;
                     if (base <= 0) continue;
@@ -4370,16 +4360,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     // стоит железо, даже когда дома его девать некуда.
                     {
                         const int there = market_price_seen(
-                            gatherer_commodity_index(g));
+                            commodity_of_item(goalItem));
                         if (there > unitPrice) unitPrice = there;
                     }
                 }
-                // ОДНА ДВЕРЬ ПОИСКА РАБОЧЕГО МЕСТА на все роды: опись
-                // округи уничтожена (ломтик E шаг 2), и аукцион спрашивает
-                // ровно то же, что спросит поднятая им артель, — иначе он
-                // сулил бы работу, которой исполнитель не найдёт.
-                XY site;
-                if (!find_worksite(gd, ctx, homePos, home, site)) continue;
                 // СКОР = ВЫРАБОТКА В ДЕНЬ РЕЙСА. Одна величина на все
                 // заявки — стоимость в день, — поэтому добыча и сбыт
                 // наконец сравнимы в одной рулетке. Назначенного `1 +`
@@ -4395,11 +4379,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // поднимет. Теперь такая заявка честно даёт НОЛЬ и отпадает
                 // гейтом `score <= 0` ниже.
                 const std::int64_t perSoul =
-                    gd.creatureYield != NPCType::Count
+                    creatureYield != NPCType::Count
                         ? 1
                         : carryPerSoulG
-                              / unit_mass_g(
-                                    item_def_at(gatherer_item_index(g)));
+                              / unit_mass_g(item_def_at(goalItem));
                 // ДНИ — ОТНОШЕНИЕ, И ЗДЕСЬ ФЛОАТ ЗАКОНЕН: делится счёт на
                 // счёт-в-день, масса в этой величине уже не участвует.
                 const float workDays =

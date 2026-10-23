@@ -20,6 +20,22 @@
 
 namespace {
 
+// РАСПИСКА ПРИМЕНЯЕТСЯ ТАК ЖЕ, КАК ЕЁ ПРИМЕНЯЕТ ДЕЛЬТА (писатель строки —
+// push_stock_op@src/sub/engine.cpp, те же гейты и тот же ключ): дверь
+// settle_macro_debt умерла 2026-10-23 (0 прод-звонящих, ломоть 1 M-72), а
+// ЗАКОН расписки — один ключ, негодная строка не меняет ничего — жив у
+// дельты, и ровно его этот хелпер держит под свидетелями ниже.
+inline void settle_like_the_delta(sm::MacroWorld& w,
+                                  const sm::ecs::MacroDebt& d, int sign) {
+    if (d.stock >= std::uint8_t(sm::MacroStock::Count) || d.amount == 0)
+        return;
+    sm::macro_stock_apply(w, sm::MacroStock(d.stock),
+                          sm::MacroStockKey{d.subject, d.cellX, d.cellY,
+                                            d.detail, d.detailKind,
+                                            d.detailLevel},
+                          sign * int(d.amount));
+}
+
 using namespace sm;
 
 // One 4x4 all-Meadow world: height level 0.502 (above `kDefaultSeaLevel`,
@@ -71,8 +87,8 @@ void test_hunt_thins_and_return_does_not_resurrect() {
     // Two kills, each through the SAME receipt the death reaper settles.
     const ecs::MacroDebt receipt{
         std::uint8_t(MacroStock::FaunaCount), 0, 2, 2, 1, -1};
-    settle_macro_debt(w, receipt, -1);
-    settle_macro_debt(w, receipt, -1);
+    settle_like_the_delta(w, receipt, -1);
+    settle_like_the_delta(w, receipt, -1);
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(2, 2)) == cap - 2,
           "each settled receipt is one head gone");
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(2, 2)) == cap - 2,

@@ -148,7 +148,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
                     const int x = cell_x(n, gs.mapW);
                     const int y = cell_y(n, gs.mapW);
                     if (out.terrain->is_water(n)) water = true;
-                    if (out.deposits->any_at(x, y)) deposit = true;
+                    if (out.deposits->vein_at(x, y) != 0) deposit = true;
                 }
             nearWater   += water   ? 1 : 0;
             nearDeposit += deposit ? 1 : 0;
@@ -380,6 +380,11 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         });
         stamp_field_features(*out.features, siteCtx.w, fieldSites);
     }
+
+    // Шахты — ПОСЛЕ поселений и дорог (вердикт 2026-10-23: «ставятся шахты
+    // толкьо если есть деревня рядом или город»): пик связного кластера жил,
+    // род по весу 1/стоимость, залежь = кап кластера числом фичи.
+    stamp_mines(gs, *out.features, *out.terrain, *out.deposits, gs.worldSeed);
 
     *out.pathCost = build_cost_grid(*out.terrain, out.features, out.treeLayer);
     gs.lastWorldRebakeDay = gs.worldTime.day();

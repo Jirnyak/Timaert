@@ -435,11 +435,10 @@ void SeamlessSubworldManager::rebuild_composite_structures() {
     ++structRevision_;   // список строений сменился (struct_revision)
 }
 
-bool SeamlessSubworldManager::fell_prop_near(float x, float y, float z,
-                                             float maxDist,
-                                             int& outMacroCx, int& outMacroCy,
-                                             Structure* outFelled,
-                                             const Structure::Kind* onlyKind) {
+bool SeamlessSubworldManager::peek_prop_near(
+        float x, float y, float z, float maxDist,
+        int& outMacroCx, int& outMacroCy, Structure* outProp,
+        const Structure::Kind* onlyKind) const {
     // Nearest standing lootable prop in composite space (props never move, so
     // a plain linear scan over the composite is exact; harvesting is a
     // per-swing event, not a per-tick one — O(structures) is fine).
@@ -468,8 +467,18 @@ bool SeamlessSubworldManager::fell_prop_near(float x, float y, float z,
         if (d2 <= bestD2) { bestD2 = d2; best = int(i); }
     }
     if (best < 0) return false;
+    const Structure& victim = composite_struct_[std::size_t(best)];
+    const int ox = std::clamp(int(victim.x) / kCellSize, 0, 2);
+    const int oy = std::clamp(int(victim.y) / kCellSize, 0, 2);
+    const auto& cell = cells_[std::size_t(oy * 3 + ox)];
+    if (cell.placeholder) return false; // composite/cell raced a shift: bail
+    outMacroCx = cell.cx;
+    outMacroCy = cell.cy;
+    if (outProp) *outProp = victim;
+    return true;
+}
 
-    const Structure victim = composite_struct_[std::size_t(best)];
+bool SeamlessSubworldManager::remove_prop(const Structure& victim) {
     const int ox = std::clamp(int(victim.x) / kCellSize, 0, 2);
     const int oy = std::clamp(int(victim.y) / kCellSize, 0, 2);
     const int idx = oy * 3 + ox;
@@ -492,6 +501,17 @@ bool SeamlessSubworldManager::fell_prop_near(float x, float y, float z,
         }
     }
     if (cellEntry < 0) return false;
+    int best = -1;
+    for (std::size_t i = 0; i < composite_struct_.size(); ++i) {
+        const Structure& s = composite_struct_[i];
+        if (s.kind == victim.kind
+            && std::fabs(s.x - victim.x) < 0.01f
+            && std::fabs(s.y - victim.y) < 0.01f) {
+            best = int(i);
+            break;
+        }
+    }
+    if (best < 0) return false;
     cell.data.structures.erase(cell.data.structures.begin() + cellEntry);
     composite_struct_.erase(composite_struct_.begin() + best);
     ++structRevision_;   // список строений сменился (struct_revision)
@@ -512,9 +532,20 @@ bool SeamlessSubworldManager::fell_prop_near(float x, float y, float z,
     compositeDirty_ = true;
     dirtyStructs_ = true;
     dirtyMaterialCells_[std::size_t(idx)] = true;
+    return true;
+}
 
-    outMacroCx = cell.cx;
-    outMacroCy = cell.cy;
+bool SeamlessSubworldManager::fell_prop_near(float x, float y, float z,
+                                             float maxDist,
+                                             int& outMacroCx, int& outMacroCy,
+                                             Structure* outFelled,
+                                             const Structure::Kind* onlyKind) {
+    Structure victim{};
+    if (!peek_prop_near(x, y, z, maxDist, outMacroCx, outMacroCy, &victim,
+                        onlyKind)) {
+        return false;
+    }
+    if (!remove_prop(victim)) return false;
     if (outFelled) *outFelled = victim;
     return true;
 }
