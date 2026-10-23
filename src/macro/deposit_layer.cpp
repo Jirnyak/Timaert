@@ -51,16 +51,21 @@ struct DepositGenRow {
 // «это оч тупая система ВЫРЕЗАТЬ И УНИЧТОЖИТЬ ЭТО ОШИБКА… ТАКОГО ЗАМЫСЛА
 // НЕТ»). Компонента редка тем, что её несут НЕМНОГИЕ КЛЕТКИ (порог +
 // сродство). Сколько лежит в клетке — один закон на все компоненты.
+// ПОРОГИ ПЕРЕКАЛИБРОВАНЫ 2026-10-23 (вердикт: «число шахт должно быть
+// пропорционально числу поселений (не по точному числу а по порядку)») —
+// прежняя геология давала 147 кластеров на мир против ~2270 поселений, то
+// есть шахта была на полтора порядка реже города. Числа — баланс (ЗАКОН
+// ПРИОРИТЕТА СТРУКТУРЫ), подобраны замером [mines] clusters/near.
 constexpr DepositGenRow kDepositGen[] = {
     //  profile            affinity                     period thresh  salt
-    {OreProfile::Blob,  OreAffinity::RiverMoisture, 16.0f, 0.60f, 0xC1A70000u},
-    {OreProfile::Ridge, OreAffinity::MountainHeight, 8.0f, 0.82f, 0x1F0E0000u},
-    {OreProfile::Blob,  OreAffinity::MountainHeight, 8.0f, 0.60f, 0x570E0000u},
-    // The rare crests: the lowest period and the highest bar — few nests,
-    // truly rare, but a found one is a mining town's whole reason.
-    {OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.96f, 0x517E0000u},
-    {OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.90f, 0xC0BB0000u},
-    {OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.995f, 0x901D0000u},
+    {OreProfile::Blob,  OreAffinity::RiverMoisture, 96.0f, 0.40f, 0xC1A70000u},
+    {OreProfile::Ridge, OreAffinity::MountainHeight, 64.0f, 0.55f, 0x1F0E0000u},
+    {OreProfile::Blob,  OreAffinity::MountainHeight, 64.0f, 0.40f, 0x570E0000u},
+    // The rare crests: the highest bars — few nests, truly rare, but a
+    // found one is a mining town's whole reason.
+    {OreProfile::Ridge, OreAffinity::MountainHeight, 48.0f, 0.74f, 0x517E0000u},
+    {OreProfile::Ridge, OreAffinity::MountainHeight, 48.0f, 0.66f, 0xC0BB0000u},
+    {OreProfile::Ridge, OreAffinity::MountainHeight, 48.0f, 0.82f, 0x901D0000u},
 };
 constexpr int kDepositGenCount =
     int(sizeof(kDepositGen) / sizeof(kDepositGen[0]));
