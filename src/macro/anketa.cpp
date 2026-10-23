@@ -19,7 +19,7 @@ bool craft_item(Inventory& inv, int defIdx, int n) {
     if (n <= 0) return false;
     const auto parts = item_parts(defIdx);
     if (parts.empty()) return false;             // terminal: nothing composes it
-    // All-or-nothing on a copy (the barter_swap idiom): remove_of can succeed
+    // All-or-nothing on a copy (the deal-door idiom, macro/deal.h): remove_of can succeed
     // partially across stacks before a later part runs short, and add_of can
     // refuse a full bag after the materials already left it.
     Inventory work = inv;

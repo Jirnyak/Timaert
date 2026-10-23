@@ -1843,10 +1843,13 @@ namespace sm::ui
                     // ВТОРАЯ ПОЛОВИНА СДЕЛКИ — ДВЕРЬ ПАСТВЫ, И ТА ЖЕ, ЧТО У
                     // НАЙМА (M-292, ЗАКОН КОНТЕЙНЕРА п.3). Контейнер и число
                     // фичи суть ДВА носителя одной души, и писать их порознь
-                    // запрещено: `barter_swap` пишет контейнер, значит число
+                    // запрещено: дверь `deal` пишет контейнер, значит число
                     // обязано догнать измеренный факт — иначе место
                     // продолжало бы кормить и облагать данью проданного,
                     // ровно тот дефект, который у найма уже чинили.
+                    // САМА ДВЕРЬ ПАСТВЫ НЕ ПИШЕТ — вердикт владельца
+                    // 2026-10-23: «паства это только ответ АИ модуля»; до
+                    // модулей мест (ломти 4–5) пара — долг ЭТОГО звонящего.
                     //
                     // Паства мерится ДО тела панели: сделка настаёт внутри
                     // него, в `onDeal`, и спрашивать «сколько было» после неё
@@ -1860,15 +1863,22 @@ namespace sm::ui
                     // же адрес, которым ходит смерть
                     // (`kill_fallen_squad_creatures`).
                     const int folkBefore = count_human_souls(sInv);
-                    draw_barter_body(
-                        "Subject stock", g_subjectTrade,
-                        playerBag, sInv,
-                        buyUnit, sellUnit, [&](int gave, int took) {
-                            flock_left_home(gs, st, slot, folkBefore);
-                            record_subject_deal_fact(
-                                gs, st, st.spawnId[slot].index, sx, sy,
-                                gave, took);
-                        });
+                    // Сделка адресуется СЛОТАМИ (deal.h): сторона игрока —
+                    // его сквад под флагом; мира без него прилавку нет.
+                    const MacroHandle pf = player_flag_handle(gs);
+                    if (st.valid(pf)) {
+                        draw_barter_body(
+                            "Subject stock", g_subjectTrade,
+                            st, pf.slot, slot,
+                            buyUnit, sellUnit, [&](int gave, int took) {
+                                flock_left_home(gs, st, slot, folkBefore);
+                                record_subject_deal_fact(
+                                    gs, st, st.spawnId[slot].index, sx, sy,
+                                    gave, took);
+                            });
+                    } else {
+                        ImGui::TextDisabled("No player squad - no counter.");
+                    }
                     ImGui::EndTabItem();
                 }
                 }   // acts & kMapActTrade
@@ -1932,8 +1942,8 @@ namespace sm::ui
                 if (recruitOpen)
                 {
                     // ЗДЕСЬ ИМЕННО ПЛАТЁЖНОЕ ЧИСЛО, И НАЗВАНО ОНО ТАК ЖЕ
-                    // (M-292): оно ГЕЙТИТ кнопку ниже и уходит в `hire_npc`
-                    // кошельком, поэтому показать здесь полную стоимость
+                    // (M-292): оно ГЕЙТИТ кнопку ниже — оплата найма
+                    // стейджится по нему, поэтому показать здесь полную стоимость
                     // контейнера значило бы включить «Hire» на непокрытую
                     // сделку — существа в сумке игрока не монета.
                     ImGui::Text("Payable: %d", inventory_value(playerBag));
@@ -1948,7 +1958,6 @@ namespace sm::ui
                             ? hire_price_for(std::uint16_t(t), offer->level)
                             : npc_hire_price_base(t);
                         int avail = creature_count_of(sInv, t);
-                        Inventory* playerArmy = &playerBag;
                         int owned = creature_count_of(playerBag, t);
                         ImGui::PushID(static_cast<int>(t));
                         bool can = avail > 0
@@ -1957,36 +1966,35 @@ namespace sm::ui
                             ImGui::BeginDisabled();
                         if (ImGui::Button("Hire"))
                         {
-                            int purse = inventory_value(playerBag);
-                            // Паства мерится ДО сделки: нанятый уходит в
-                            // армию игрока НАВСЕГДА (у его сквада свой дом),
-                            // то есть покидает паству этого места — ровно
-                            // случай, для которого `leave_home_flock` и
-                            // написан. Откат неудачной сделки ниже возвращает
-                            // голову в состав, и замер до/после это учитывает.
+                            // НАЙМ — ОДНА СДЕЛКА (ломоть 2 M-72): рекрут и
+                            // оплата по закону плотности — exact-лоты одной
+                            // `deal`, атомарность по построению. Здесь жила
+                            // трёхходовка hire_npc (скретч-кошелёк, цена
+                            // читалась и НЕ списывалась) + transfer_value_
+                            // dense + ручной возврат головы — все умерли.
+                            // The fee is REAL coin into the subject's own
+                            // store — the treasury IS the inventory
+                            // (CANON S10), not a sink.
+                            //
+                            // Паства мерится ДО сделки: дверь её НЕ пишет
+                            // (вердикт 2026-10-23 «паства это только ответ
+                            // АИ модуля») — пара остаётся долгом ЭТОГО
+                            // звонящего до модулей мест (ломти 4–5).
                             const int folkBefore = count_human_souls(sInv);
-                            const int paid = playerArmy
-                                ? hire_npc(*playerArmy, sInv, t, purse)
-                                : 0;
-                            if (paid > 0)
-                            {
-                                // The fee is REAL coin into the subject's own
-                                // store — the treasury IS the inventory
-                                // (CANON S10), not a sink. A store that cannot
-                                // take the whole fee refuses the deal: coin
-                                // back, recruit back.
-                                const int moved = transfer_value_dense(
-                                    playerBag, sInv, paid);
-                                if (moved != paid)
-                                {
-                                    if (moved > 0)
-                                        transfer_value_dense(sInv,
-                                                             playerBag, moved);
-                                    SoldierRecord back{};
-                                    if (creatures_pop_back(*playerArmy, back))
-                                        creatures_push(sInv, back);
-                                }
-                            }
+                            const MacroHandle pf = player_flag_handle(gs);
+                            DealLine recruit[1];
+                            recruit[0] = DealLine{};
+                            recruit[0].want = 1;
+                            recruit[0].def = world_row_of_creature(t);
+                            recruit[0].exact = 1;
+                            DealLine pay[16];
+                            const StagedValue sv =
+                                stage_value_lines(playerBag, cost, pay);
+                            if (st.valid(pf) && sv.value >= cost)
+                                deal(st, pf.slot, slot,
+                                     std::span<DealLine>(
+                                         pay, std::size_t(sv.lines)),
+                                     recruit);
                             flock_left_home(gs, st, slot, folkBefore);
                         }
                         if (!can)

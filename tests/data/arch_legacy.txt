@@ -117,7 +117,6 @@ minus	src/macro/state.cpp	v -= village_pressure(pv.score, d);
 minus	src/macro/state.cpp	r.pressed -= village_pressure(c.raw, d);
 minus	src/macro/threat_field.cpp	delta[r] -= std::int64_t(per);
 minus	src/macro/upkeep_window.h	r.wageDebt -= canPay;
-minus	src/macro/world_row.h	playerGold -= cost;
 minus	src/macro/world_tick.cpp	wb.popGrowthCarry -= float(whole);
 minus	src/macro/zones.cpp	z -= civPull[i];
 minus	src/sub/ai.cpp	a.aiTimer -= dt;

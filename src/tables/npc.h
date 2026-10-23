@@ -2374,8 +2374,8 @@ inline int npc_xp_reward(NPCType t, int level) {
 // патрульной строки реестра мест: «вырезан не вид, а то, что город его
 // спавнит». Её носят авто-бой, сцена и двадцать тестов.
 //
-// (raise_flock_into_container и hire_npc переехали в macro/world_row.h
-// слиянием M-71 — обе двери двигают души между едиными контейнерами.)
+// (raise_flock_into_container переехала в macro/world_row.h слиянием M-71;
+// найм стал exact-лотом одной сделки — deal@src/macro/deal.h, ломоть 2 M-72.)
 
 // Case-insensitive token → registry row, matched against the row's stable
 // machine `id` FIRST ("tax_collector" → NPCType::TaxCollector) — that column

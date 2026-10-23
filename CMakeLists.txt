@@ -416,6 +416,7 @@ add_executable(balance_run tests/balance_run.cpp
     src/macro/knowledge.cpp
     src/macro/npc_spawn.cpp
     src/macro/npc_ai.cpp
+    src/macro/deal.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
@@ -470,6 +471,7 @@ add_executable(road_reach_census tests/road_reach_census.cpp
     src/macro/knowledge.cpp
     src/macro/npc_spawn.cpp
     src/macro/npc_ai.cpp
+    src/macro/deal.cpp
     src/macro/recovery.cpp
     src/macro/nav_field.cpp
     src/macro/world_tick.cpp
@@ -655,6 +657,7 @@ timaert_test(world_tick_parity_test
         src/macro/scent_field.cpp
         # the daily labour rotation lives with the working AI (npc_ai.h)
         src/macro/npc_ai.cpp
+        src/macro/deal.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
@@ -693,6 +696,7 @@ timaert_test(flock_pairing_law_test
         # Дневной тик спрашивает тир орба ОДНИМ выводом (M-233 п.8).
         src/macro/spires.cpp
         src/macro/npc_ai.cpp
+        src/macro/deal.cpp
         src/macro/macro_stock.cpp
         src/macro/econ_day.cpp
         src/macro/anketa.cpp
@@ -830,7 +834,10 @@ timaert_test(combat_squad_test
         # one solidity authority linked, exactly as the game does.
         src/sub/collide.cpp
         src/macro/fauna.cpp
-    PIN "OK combat_squad_test .24 checks.")
+        # Найм — одна сделка дверью deal (ломоть 2 M-72).
+        src/macro/deal.cpp
+        src/macro/econ_day.cpp
+    PIN "OK combat_squad_test .23 checks.")
 
 # The melee reach law: range + body_radius(target), hostiles-first by surface
 # gap, grid-arm/full-scan parity. Pure targeting TU — the body table it reads
@@ -879,6 +886,7 @@ timaert_test(squad_creatures_test
 timaert_test(caravan_deal_test
     SOURCES
         src/macro/npc_ai.cpp
+        src/macro/deal.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
@@ -898,6 +906,7 @@ timaert_test(macro_npc_ai_parity_test
         src/macro/squad_index.cpp   # каркас клеток (ломтик F)
         src/ui/macro_eyes.cpp       # глаза карты — свидетель глайда (M-244a)
         src/macro/npc_ai.cpp
+        src/macro/deal.cpp
         # effective_sheet_of (squad.h, посадка Б) sums worn gear via
         # anatomy.cpp worn_bonuses — the daily bread law walks it now.
         # The tick drivers now settle the dead THROUGH the pool's own
@@ -951,7 +960,10 @@ timaert_test(torus_wrap_test
 timaert_test(world_row_test
     SOURCES
         src/macro/anketa.cpp
-        src/tables/items.cpp)
+        src/tables/items.cpp
+        # Пересадка области существ — лот двери deal (ломоть 2 M-72).
+        src/macro/deal.cpp
+        src/macro/econ_day.cpp)
 
 # Закон порядка обхода сквадов (эпик 2 шаг 1а): дверь чисто заголовочная,
 # тест — реестр + сортировка, продакшен-TU не нужны.
@@ -973,12 +985,16 @@ timaert_test(macro_store_test
 timaert_test(inventory_summary_test
     SOURCES
         src/macro/anketa.cpp
-        src/tables/items.cpp)
+        src/tables/items.cpp
+        # Сделка свидетеля тождества идёт дверью deal (ломоть 2 M-72).
+        src/macro/deal.cpp
+        src/macro/econ_day.cpp)
 
 timaert_test(squad_war_test
     SOURCES
         src/macro/squad_index.cpp   # каркас клеток (ломтик F)
         src/macro/npc_ai.cpp
+        src/macro/deal.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
@@ -1015,6 +1031,7 @@ timaert_test(macro_travel_parity_test
 timaert_test(design_characters_test
     SOURCES
         src/macro/npc_ai.cpp
+        src/macro/deal.cpp
         src/macro/recovery.cpp
         src/macro/nav_field.cpp
         src/macro/economy.cpp
@@ -1039,6 +1056,7 @@ timaert_test(squad_travel_test
         # settle_dead_squads unloads the pool through raise_deserter_bands (AI-2)
         src/macro/npc_spawn.cpp
         src/macro/npc_ai.cpp
+        src/macro/deal.cpp
         # effective_sheet_of (squad.h, посадка Б) sums worn gear via
         # anatomy.cpp worn_bonuses — the daily bread law walks it now.
         # ONE recovery law (CANON S14): the camp mends HP through the
@@ -1547,6 +1565,7 @@ timaert_test(trade_law_test
         # settle_dead_squads unloads the pool through raise_deserter_bands (AI-2)
         src/macro/npc_spawn.cpp
         src/macro/npc_ai.cpp
+        src/macro/deal.cpp
         # effective_sheet_of (squad.h, посадка Б) sums worn gear via
         # anatomy.cpp worn_bonuses — the daily bread law walks it now.
         # ONE recovery law (CANON S14): the camp mends HP through the
@@ -1658,7 +1677,11 @@ timaert_test(world_memory_test)
 timaert_test(barter_test
     SOURCES
         src/macro/anketa.cpp
-        src/tables/items.cpp)
+        src/tables/items.cpp
+        # Пакетная сделка настаёт дверью deal (ломоть 2 M-72); приход гасит
+        # долг места — econ_pay_debt живёт в econ_day.cpp.
+        src/macro/deal.cpp
+        src/macro/econ_day.cpp)
 
 timaert_test(crop_stock_test
     SOURCES
@@ -1672,6 +1695,7 @@ timaert_test(crop_stock_test
         src/macro/scent_field.cpp
         # the daily labour rotation lives with the working AI (npc_ai.h)
         src/macro/npc_ai.cpp
+        src/macro/deal.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
@@ -1713,6 +1737,7 @@ timaert_test(fauna_stock_test
         src/macro/scent_field.cpp
         # the daily labour rotation lives with the working AI (npc_ai.h)
         src/macro/npc_ai.cpp
+        src/macro/deal.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
@@ -1732,6 +1757,7 @@ timaert_test(woodcutter_gather_test
     SOURCES
         src/macro/squad_index.cpp   # каркас клеток (ломтик F)
         src/macro/npc_ai.cpp
+        src/macro/deal.cpp
         # effective_sheet_of (squad.h, посадка Б) sums worn gear via
         # anatomy.cpp worn_bonuses — the daily bread law walks it now.
         # ONE recovery law (CANON S14): the camp mends HP through the
@@ -1776,6 +1802,7 @@ timaert_test(threat_field_test
 timaert_test(scent_field_test
     SOURCES
         src/macro/npc_ai.cpp
+        src/macro/deal.cpp
         # effective_sheet_of (squad.h, посадка Б) sums worn gear via
         # anatomy.cpp worn_bonuses — the daily bread law walks it now.
         # ONE recovery law (CANON S14): the camp mends HP through the
@@ -1967,6 +1994,16 @@ timaert_test(delta_apply_test
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp)
 
+# Один глагол обмена (ломоть 2 M-72): кламп намерения до факта, exact-откат
+# обеих половин, сохранение, души той же дверью, долг места приходом.
+timaert_test(deal_doors_test
+    SOURCES
+        src/macro/deal.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
+        # Приход гасит долг места (CANON S10): дверь зовёт econ_pay_debt.
+        src/macro/econ_day.cpp)
+
 # Двери пульта полей (ломоть 1 M-72): факт движения, транзакция кредит→дебет,
 # выход по фиче клетки, снятие фичи значением FT_None.
 timaert_test(field_doors_test
@@ -1990,7 +2027,10 @@ timaert_test(macro_stock_test
         src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
-        src/macro/tree_layer.cpp)
+        src/macro/tree_layer.cpp
+        # Прилавок голов настаёт дверью deal (ломоть 2 M-72).
+        src/macro/deal.cpp
+        src/macro/econ_day.cpp)
 
 # Двери субъекта макрокарты: глаголы (actions_of@src/macro/squad.h, CANON S22)
 # и ОДИН контейнер — обе кинд-слепы и обе над ОДНОЙ формой адреса. Здесь стоял
@@ -2065,6 +2105,7 @@ timaert_test(player_is_a_squad_test
         src/macro/npc_spawn.cpp
         src/macro/player_entity.cpp
         src/macro/npc_ai.cpp
+        src/macro/deal.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp

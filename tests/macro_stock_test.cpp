@@ -19,7 +19,8 @@
 
 #include "macro/deposit_layer.h"
 #include "macro/world_row.h"
-#include "macro/currency.h"      // barter_swap — сделка идёт ТЕМ ЖЕ законом
+#include "macro/deal.h"          // deal — сделка идёт ТЕМ ЖЕ законом
+#include "macro/currency.h"
 #include "macro/macro_stock.h"
 #include "scene_objects_fixture.h"  // арена: квитанция — колонка слота (ломоть 4)
 #include "sub/spawn.h"            // stamp_macro_debt — дверь штампа (ломоть 4)
@@ -634,18 +635,29 @@ void test_a_creature_deal_moves_the_flock_both_ways() {
           "пастве");
 
     // ── ИГРОК ПОКУПАЕТ ГОЛОВЫ ──────────────────────────────────────────
-    Inventory playerBag;
+    // Сделка адресуется СЛОТАМИ стора (deal.h): сумка покупателя — чей-то
+    // слот, не бездомный Inventory.
+    const std::uint16_t buyer = town.slot == 1 ? 2 : 1;
+    Inventory& playerBag = st.inventory[buyer].inv;
     const int headSlot = shelf.creature_first();
     CHECK(headSlot < kMaxInventorySlots, "головы лежат областью сверху");
     const std::uint16_t headRow = shelf.slots[std::size_t(headSlot)].def;
     CHECK(value_of(shelf.slots[std::size_t(headSlot)]) > 0,
           "и прилавок видит их ценой — на нуле этой цены стоял весь дефект");
 
+    const auto head_line = [&](int slot, int n) {
+        DealLine l{};
+        l.want = n;
+        l.def = headRow;
+        l.slot = std::uint16_t(slot);
+        l.exact = 1;
+        return l;
+    };
     const int kBought = 7;
     int folkBefore = count_human_souls(shelf);
-    CHECK(barter_swap(playerBag, shelf, {},
-                      {BarterLine{headSlot, kBought, headRow}}),
-          "сделка настала ТЕМ ЖЕ barter_swap, второго прилавка нет");
+    DealLine takeHeads[] = {head_line(headSlot, kBought)};
+    CHECK(deal(st, buyer, town.slot, {}, takeHeads).settled,
+          "сделка настала ТОЙ ЖЕ дверью deal, второго прилавка нет");
     CHECK(flock_left_home(gs, st, town.slot, folkBefore) == kBought,
           "дверь паствы назвала ИЗМЕРЕННЫЙ факт, а не намерение");
     CHECK(souls_flock(gs, st, town.slot) == kSouls - kBought,
@@ -663,8 +675,8 @@ void test_a_creature_deal_moves_the_flock_both_ways() {
     const int backSlot = playerBag.creature_first();
     const int kGivenBack = 4;
     folkBefore = count_human_souls(shelf);
-    CHECK(barter_swap(playerBag, shelf,
-                      {BarterLine{backSlot, kGivenBack, headRow}}, {}),
+    DealLine giveHeads[] = {head_line(backSlot, kGivenBack)};
+    CHECK(deal(st, buyer, town.slot, giveHeads, {}).settled,
           "обратная сделка проходит тем же законом");
     CHECK(flock_left_home(gs, st, town.slot, folkBefore) == -kGivenBack,
           "дельта ЗНАКОВАЯ: пришло — значит минус ушло");

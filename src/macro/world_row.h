@@ -139,23 +139,9 @@ inline bool creatures_remove_one(Inventory& inv, const SoldierRecord& r) {
     return false;
 }
 
-// Пересадить область целиком, послотно, сколько возьмёт цель: отказанный
-// слот ОСТАЁТСЯ у истока (никто не уничтожается за то, что стоял за капом).
-// Возвращает пересаженные ГОЛОВЫ. Зеркало старого move_squad: снятие слота
-// приводит на его место непройденный новейший — индекс не шагает.
-inline int creatures_move(Inventory& dst, Inventory& src) {
-    int moved = 0;
-    for (int i = kMaxInventorySlots - 1; i >= src.creature_first();) {
-        const ItemRef s = src.slots[std::size_t(i)];
-        if (!dst.add_ref(s)) {
-            --i;                        // остаётся; следующий слот
-            continue;
-        }
-        moved += s.count;
-        src.remove_at(i, s.count);      // ремонт: сюда встал новейший
-    }
-    return moved;
-}
+// (`creatures_move` УМЕР ЗДЕСЬ в ломоть 2 M-72: пересадка области — лот
+// двери `deal@src/macro/deal.h` строками родов существ; прод-звонящих у
+// него не было — только тесты, и они переехали на дверь.)
 
 // ВСЕ ГИБНУТ — ОДНА ДВЕРЬ СМЕРТИ ОБЛАСТИ, БЕЗ ЕДИНОЙ ВЕТКИ ПО РОДУ (вердикт
 // владельца 2026-10-06: «просто убрать всё это просто универсально не важно
@@ -180,18 +166,9 @@ inline int creatures_kill_all(Inventory& inv) {
     return killed;
 }
 
-// Скопировать область (исток не трогается — форма отката). Возвращает
-// взятые головы; отказ капа рвёт цикл, как старый add_squad.
-inline int creatures_add(Inventory& dst, const Inventory& src) {
-    const int first = src.creature_first();   // читается ДО: src может БЫТЬ dst
-    int taken = 0;
-    for (int i = kMaxInventorySlots - 1; i >= first; --i) {
-        const ItemRef s = src.slots[std::size_t(i)];   // копия
-        if (!dst.add_ref(s)) break;
-        taken += s.count;
-    }
-    return taken;
-}
+// (`creatures_add` УМЕР ТАМ ЖЕ: «копия области» МИНТИТ головы и дверью
+// мира не является — сохранение есть первый закон сделки; прод-звонящих
+// ноль, тесты переехали на `deal`.)
 
 // ── ГОЛОВЫ ПОШТУЧНО — адресный обход для воплощения тел ───────────────────
 // Развёртка стаков: (slot, index) — адрес головы, по которому субмир вешает
@@ -329,29 +306,10 @@ inline int raise_flock_into_container(Inventory& inv, int souls) {
                : 0;
 }
 
-// Найм: рекрут ПЕРЕЕЗЖАЕТ между двумя контейнерами, и отказать может любой
-// конец. Ищется старейший слот рода (старый обход slots[0..n) = 1023 →
-// first). Возвращает цену или 0.
-inline int hire_npc(Inventory& playerInv, Inventory& garrison,
-                    NPCType kind, int& playerGold) {
-    if (!npc_hireable(kind)) return 0;
-    const std::uint16_t row = world_row_of_creature(kind);
-    const int first = garrison.creature_first();
-    for (int i = kMaxInventorySlots - 1; i >= first; --i) {
-        if (garrison.slots[std::size_t(i)].def != row) continue;
-        const int cost = hire_price_for(std::uint16_t(kind),
-                                        garrison.slots[std::size_t(i)].level);
-        if (playerGold < cost) return 0;
-        SoldierRecord recruit{};
-        if (!creatures_take_at(garrison, i, recruit)) return 0;
-        if (!creatures_push(playerInv, recruit)) {
-            creatures_push(garrison, recruit);   // no room: the man stays home
-            return 0;
-        }
-        playerGold -= cost;
-        return cost;
-    }
-    return 0;
-}
+// (`hire_npc` УМЕР ЗДЕСЬ в ломоть 2 M-72: найм — ОДНА сделка дверью
+// `deal@src/macro/deal.h` — рекрут и оплата exact-лотами, атомарно. Его
+// скретч-кошелёк int& «цену читал и НЕ списывал» — платила вторая,
+// несвязанная дверь у звонящего с ручным откатом; теперь откат невыразим.
+// Цена найма — закон звонящего: `hire_price_for` остаётся дверью цены.)
 
 } // namespace sm

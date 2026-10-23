@@ -409,7 +409,7 @@ inline MacroHandle place_handle_by_ordinal(const MacroStore& st,
 // Приход душ, у которого НЕТ второго носителя в контейнере, по-прежнему идёт
 // `settle_souls@src/macro/labour.h`: она ставит голову И поднимает число
 // разом. Эта дверь — для случая, когда контейнер УЖЕ записан кем-то другим
-// (сделка `barter_swap`, найм `hire_npc`, смерть), и числу осталось догнать
+// (сделка дверью `deal`, найм, смерть), и числу осталось догнать
 // измеренный факт.
 inline void shift_home_flock(GameState& gs, const MacroStore& st,
                              std::int32_t homeId, int delta) {

@@ -46,6 +46,10 @@
 //       (он про цену прохода, а не про сводку)
 #include "check.h"
 
+#include <memory>
+#include "macro/deal.h"
+#include "macro/store.h"
+
 #include "macro/anketa.h"
 #include "macro/currency.h"
 #include "macro/upkeep_window.h"
@@ -230,26 +234,33 @@ void test_each_creature_column_has_an_anchor() {
           "…и разница двух дверей — ровно они");
 }
 
-// ── 3. ПЕРЕСАДКА И КОПИЯ ОБЛАСТИ — ДВА КОНТЕЙНЕРА СРАЗУ ──────────────────
+// ── 3. ПЕРЕСАДКА ОБЛАСТИ — ДВА КОНТЕЙНЕРА СРАЗУ ──────────────────────────
+// (Секция «КОПИЯ области» умерла с creatures_add в ломоть 2 M-72: копия
+// МИНТИТ головы и дверью мира не является; прод-звонящих у неё не было.)
 void test_moving_between_containers() {
-    Inventory a{}, b{};
+    auto store = make_macro_store();
+    Inventory& a = store->inventory[1].inv;
+    Inventory& b = store->inventory[2].inv;
     CHECK(creatures_push_stack(a, NPCType::Peasant, 1, 4), "паства истока");
     CHECK(creatures_push_stack(a, NPCType::Horse, 1, 2), "табун истока");
     CHECK(a.add_ref(item("wood", 9)), "и дерево в предметной половине");
     settled(a, "исток собран");
 
-    const int added = creatures_add(b, a);
-    CHECK(added == 6, "копия области взяла шесть голов");
-    settled(a, "creatures_add: исток не тронут");
-    settled(b, "creatures_add: приёмник");
-
-    b.clear();
-    const int moved = creatures_move(b, a);
-    CHECK(moved == 6, "пересадка увела все шесть");
-    settled(a, "creatures_move: исток опустел");
-    settled(b, "creatures_move: приёмник полон");
+    DealLine heads[2];
+    heads[0] = DealLine{};
+    heads[0].want = 1 << 20;
+    heads[0].def = world_row_of_creature(NPCType::Peasant);
+    heads[1] = DealLine{};
+    heads[1].want = 1 << 20;
+    heads[1].def = world_row_of_creature(NPCType::Horse);
+    const DealFact mf = deal(*store, 1, 2, heads, {});
+    CHECK(mf.settled && mf.unitsAB == 6, "пересадка увела все шесть");
+    settled(a, "deal: исток опустел");
+    settled(b, "deal: приёмник полон");
     CHECK(creature_count(a) == 0 && creature_count(b) == 6,
           "головы не размножились и не испарились");
+    CHECK(a.count_of(item_index("wood")) == 9,
+          "предметы переносом существ не тронуты");
 }
 
 // ── 4. СДЕЛКА, КРАФТ И СКРАП — ОТКАТ НА КОПИИ СТРУКТУРЫ ──────────────────
@@ -279,21 +290,34 @@ void test_copy_and_commit_doors() {
     CHECK(scrap_at(bag, wagonSlot, 1), "и разбирается обратно");
     settled(bag, "scrap_at");
 
-    Inventory seller{}, buyer{};
+    // Сделка идёт дверью deal по СЛОТАМ стора (ломоть 2 M-72).
+    auto store = make_macro_store();
+    Inventory& seller = store->inventory[1].inv;
+    Inventory& buyer = store->inventory[2].inv;
     CHECK(seller.add_ref(item("wood", 10)), "товар продавца");
     CHECK(buyer.add_of(item_index("coin_empire_silver"), 40), "монета купца");
-    BarterPackage give{{0, 4, seller.slots[0].def}};
-    BarterPackage take{{0, 12, buyer.slots[0].def}};
-    CHECK(barter_swap(seller, buyer, give, take), "сделка проходит целиком");
-    settled(seller, "barter_swap: продавец");
-    settled(buyer, "barter_swap: покупатель");
+    const auto exact_line = [](const Inventory& inv, int slot, int n) {
+        DealLine l{};
+        l.want = n;
+        l.def = inv.slots[std::size_t(slot)].def;
+        l.slot = std::uint16_t(slot);
+        l.exact = 1;
+        return l;
+    };
+    DealLine give[] = {exact_line(seller, 0, 4)};
+    DealLine take[] = {exact_line(buyer, 0, 12)};
+    CHECK(deal(*store, 1, 2, give, take).settled, "сделка проходит целиком");
+    settled(seller, "deal: продавец");
+    settled(buyer, "deal: покупатель");
 
     // Отказанная сделка обязана оставить ОБЕ стороны ровно как были — и
     // сводку тоже.
     const InventorySummary before = seller.sum();
-    BarterPackage absurd{{0, 999999, seller.slots[0].def}};
-    CHECK(!barter_swap(seller, buyer, absurd, take), "непокрытая сделка отказывает");
-    settled(seller, "barter_swap: откат");
+    DealLine absurd[] = {exact_line(seller, 0, 999999)};
+    DealLine take2[] = {exact_line(buyer, 0, 12)};
+    CHECK(!deal(*store, 1, 2, absurd, take2).settled,
+          "непокрытая exact-сделка отказывает");
+    settled(seller, "deal: откат");
     CHECK(before == seller.sum(), "отказ не сдвинул сводку ни на единицу");
 }
 

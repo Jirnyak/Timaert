@@ -22,6 +22,7 @@
 #include "macro/econ_day.h"
 #include "macro/economy.h"
 #include "macro/anketa.h"
+#include "macro/deal.h"   // kNoCarryLimitG — «предела нет» живёт у двери deal
 #include "macro/npc_ai.h"
 #include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
 #include "macro/state.h"
@@ -88,7 +89,10 @@ int main() {
     // в NEXT_SESSION, она старше этой правки и ею не лечится.
     CHECK(shelf(mstore, city).add("coin_empire_copper", 6000), "fixture: city purse");
 
-    sm::Inventory hold;
+    // Трейдеры фикстур — высокие слоты стора (места рождаются снизу
+    // эмитентом): сделка адресуется СЛОТАМИ (deal.h, ломоть 2 M-72).
+    const std::uint16_t holdSlot = 16000;
+    sm::Inventory& hold = mstore.inventory[holdSlot].inv;
     CHECK(hold.add("food", 200), "fixture: hold food");
     // Кошелёк кроет закупку дров МОНЕТОЙ (весь глут 2000 дров стоит 10000
     // по после-сделочной полке): оплата идёт по плотности ценности, и
@@ -115,7 +119,7 @@ int main() {
     // наценки нет и границы ниже — границы САМОЙ кривой цены, без примеси
     // чьего-то преимущества. Перевес судится отдельной фикстурой в конце.
     const sm::CaravanDeal st = sm::trade_caravan_at_station(
-        mstore, hold, /*capacityG=*/sm::kNoCarryLimitG, city,
+        mstore, holdSlot, /*capacityG=*/sm::kNoCarryLimitG, city,
         /*myTradePct=*/0, /*theirTradePct=*/0);
 
     CHECK(sm::coin_census_value(hold) + sm::coin_census_value(shelf(mstore, city))
@@ -186,13 +190,14 @@ int main() {
     sm::raise_flock_into_container(shelf(mstore, home.slot), 50);
     CHECK(shelf(mstore, home.slot).add("food", 5000), "fixture: home food");
 
-    sm::Inventory bag;
+    const std::uint16_t bagSlot = 16001;
+    sm::Inventory& bag = mstore.inventory[bagSlot].inv;
     CHECK(bag.add("food", 300), "fixture: vendor food");
 
     const long long vCoinBefore =
         sm::coin_census_value(bag) + sm::coin_census_value(shelf(mstore, town));
     const sm::CaravanDeal vd = sm::trade_vendor_at_market(
-        mstore, bag, sm::kNoCarryLimitG, town, home,
+        mstore, bagSlot, sm::kNoCarryLimitG, town, home,
         /*myTradePct=*/0, /*theirTradePct=*/0);
 
     CHECK(sm::coin_census_value(bag) + sm::coin_census_value(shelf(mstore, town))
@@ -250,10 +255,12 @@ int main() {
             CHECK(shelf(mstore, mkt).add("coin_empire_copper", 20000),
                   "fixture: market purse");
 
-            sm::Inventory crew;
+            const std::uint16_t crewSlot = 16002;
+            sm::Inventory& crew = mstore.inventory[crewSlot].inv;
+            crew = sm::Inventory{};   // лямбда зовётся дважды — слот чистится
             CHECK(crew.add("food", 300), "fixture: crew load");
-            sm::trade_vendor_at_market(mstore, crew, sm::kNoCarryLimitG, mkt,
-                                       sm::handle_at(mstore, hm),
+            sm::trade_vendor_at_market(mstore, crewSlot, sm::kNoCarryLimitG,
+                                       mkt, sm::handle_at(mstore, hm),
                                        /*myTradePct=*/0,
                                        /*theirTradePct=*/0);
             return crew.count("food");
@@ -278,10 +285,11 @@ int main() {
         CHECK(shelf(mstore, mkt).add("tools", 50), "fixture: unlit market tools");
         CHECK(shelf(mstore, mkt).add("coin_empire_copper", 20000),
               "fixture: unlit market purse");
-        sm::Inventory bag4;
+        const std::uint16_t bag4Slot = 16003;
+        sm::Inventory& bag4 = mstore.inventory[bag4Slot].inv;
         CHECK(bag4.add("food", 300), "fixture: unlit crew load");
         const sm::CaravanDeal d = sm::trade_vendor_at_market(
-            mstore, bag4, sm::kNoCarryLimitG, mkt, sm::MacroHandle{},
+            mstore, bag4Slot, sm::kNoCarryLimitG, mkt, sm::MacroHandle{},
             /*myTradePct=*/0, /*theirTradePct=*/0);
         CHECK(d.soldValue > 0 && d.boughtValue == 0
                   && bag4.count("tools") == 0,
@@ -291,10 +299,11 @@ int main() {
     // ── Negative control: a coinless market buys nothing, loses nothing ──
     const std::uint16_t broke = fixture_place(mstore, gsFix, sm::SquadType::City);
     sm::raise_flock_into_container(shelf(mstore, broke), 64);
-    sm::Inventory bag2;
+    const std::uint16_t bag2Slot = 16004;
+    sm::Inventory& bag2 = mstore.inventory[bag2Slot].inv;
     CHECK(bag2.add("food", 50), "fixture: control food");
     const sm::CaravanDeal none = sm::trade_caravan_at_station(
-        mstore, bag2, sm::kNoCarryLimitG, broke, 0, 0);
+        mstore, bag2Slot, sm::kNoCarryLimitG, broke, 0, 0);
     CHECK(none.soldValue == 0 && bag2.count("food") == 50,
           "no coin, no sale, no confiscation");
 
@@ -316,10 +325,13 @@ int main() {
         // голодный счёт ≈ 20 400): упрись оба варианта в одну и ту же
         // казну — эдж стал бы невидим (оба заплатили бы всё, что есть).
         shelf(mstore, m).add("coin_empire_copper", 30000);
-        sm::Inventory h;
+        const std::uint16_t hSlot = 16005;
+        sm::Inventory& h = mstore.inventory[hSlot].inv;
+        h = sm::Inventory{};   // лямбда зовётся дважды — слот чистится
         h.add("food", 200);
         // Перевес — РАЗНИЦА сил (S25): рынок назван нулём, караван — edge.
-        return sm::trade_caravan_at_station(mstore, h, sm::kNoCarryLimitG, m, edge, 0);
+        return sm::trade_caravan_at_station(mstore, hSlot, sm::kNoCarryLimitG,
+                                            m, edge, 0);
     };
     const sm::CaravanDeal plain = run_fixture(0);
     const sm::CaravanDeal silver = run_fixture(10);

@@ -1,4 +1,5 @@
 #include "check.h"
+#include "macro/deal.h"
 #include "scene_objects_fixture.h"  // арена: флаг солдата — бит маски
 #include "tables/faction.h"
 #include "tables/npc.h"
@@ -38,32 +39,48 @@ int main() {
     CHECK(ok1, "soldier level normalization failed");
     if (!ok1) return 1;
 
-    // Единый контейнер (M-71): армия и гарнизон — области существ.
-    sm::Inventory player{};
-    sm::Inventory garrison{};
+    // Единый контейнер (M-71): армия и гарнизон — области существ. Найм —
+    // ОДНА сделка дверью deal (ломоть 2 M-72): hire_npc со скретч-кошельком
+    // мёртв; ЦЕНА — закон звонящего (вердикт п.3), и что цена головы ЕСТЬ
+    // hire_price_for — закон цены, его держит barter_test. Здесь охраняется
+    // ПЕРЕЕЗД КОНКРЕТНОЙ ЗАПИСИ: именная душа едет собой, старейшая первой.
+    auto hireStore_ = sm::make_macro_store();
+    sm::Inventory& player = hireStore_->inventory[1].inv;
+    sm::Inventory& garrison = hireStore_->inventory[2].inv;
     sm::creatures_push(garrison, sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 3, 42u));
     sm::creatures_push(garrison, sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Peasant), 1, 43u));
 
-    int gold = 1000;
     const int expectedPrice =
         sm::hire_price_for(std::uint16_t(sm::NPCType::Guard), 3);
-    const int paid = sm::hire_npc(player, garrison, sm::NPCType::Guard, gold);
-    const bool ok2 = !(paid != expectedPrice || gold != 1000 - expectedPrice);
-    CHECK(ok2, "hire_npc did not charge exact NPC-kind price");
+    sm::DealLine recruit[1];
+    recruit[0] = sm::DealLine{};
+    recruit[0].want = 1;
+    recruit[0].def = sm::world_row_of_creature(sm::NPCType::Guard);
+    recruit[0].exact = 1;
+    const sm::DealFact hired_ = sm::deal(*hireStore_, 1, 2, {}, recruit);
+    const bool ok2 = hired_.settled && hired_.unitsBA == 1
+                     && recruit[0].done == 1;
+    CHECK(ok2, "the recruit line settles with the fact of one head");
     if (!ok2) return 1;
     const sm::ItemRef* hired = &player.slots[sm::kMaxInventorySlots - 1];
     const bool ok3 = !(sm::creature_count(player) != 1
                        || sm::creature_of_world_row(hired->def) != sm::NPCType::Guard
                        || hired->entityId != 42u || sm::creature_count(garrison) != 1);
-    CHECK(ok3, "hire_npc did not move the concrete soldier record");
+    CHECK(ok3, "the deal did not move the concrete soldier record");
     if (!ok3) return 1;
 
-    const int denied = sm::hire_npc(player, garrison, sm::NPCType::Merchant, gold);
-    const bool ok4 = !(denied != 0 || sm::creature_count(player) != 1
+    // Строка рода, которого в гарнизоне нет, не везёт НИЧЕГО — «нанять
+    // отсутствующего» невыразимо фактом (0), а не веткой найма.
+    sm::DealLine absent[1];
+    absent[0] = sm::DealLine{};
+    absent[0].want = 1;
+    absent[0].def = sm::world_row_of_creature(sm::NPCType::Merchant);
+    const sm::DealFact denied = sm::deal(*hireStore_, 1, 2, {}, absent);
+    const bool ok4 = !(denied.settled || sm::creature_count(player) != 1
                        || sm::creature_count(garrison) != 1);
-    CHECK(ok4, "non-hireable NPC kind was recruitable");
+    CHECK(ok4, "an absent row ships nothing");
     if (!ok4) return 1;
 
     sm::Inventory duplicateIds{};
@@ -139,15 +156,9 @@ int main() {
     CHECK(ok13, "NPC XP reward does not scale by level");
     if (!ok13) return 1;
 
-    sm::Inventory selfAppend = flock;
-    const int selfAppendBase = sm::creature_count(selfAppend);
-    const int selfAppendSlots = sm::creature_slot_count(selfAppend);
-    sm::creatures_add(selfAppend, selfAppend);
-    const bool ok14 = !(sm::creature_count(selfAppend) != selfAppendBase * 2
-                        || sm::creature_slot_count(selfAppend) != selfAppendSlots);
-    CHECK(ok14, "self squad append is not stable: generic stacks must "
-                "merge, souls must double");
-    if (!ok14) return 1;
+    // (Проверка self-append умерла с creatures_add в ломоть 2 M-72: копия
+    // области минтит головы и дверью мира не является; закон слияния
+    // генерик-стаков держит add_ref и ok11/ok12 выше.)
 
     auto worldStore_ = sm::make_macro_store();
     // Арена сцены — предусловие рождения тел (§8 п.11); 38.3 МиБ, потому

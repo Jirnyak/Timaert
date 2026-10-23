@@ -1,26 +1,41 @@
 // The package deal (owner ruling 2026-08-07; PER-STACK lines, owner verdict
 // 2026-09-07 «торговля пер-стак»): trade is barter by PACKAGE — both sides
 // staged, ONE settlement, all-or-nothing. Lines are keyed by SLOT, so a
-// rolled instance and its bare twin are two lines with two prices. Pinned:
-//   · barter_swap moves BOTH packages or neither, validated against the
-//     PRE-DEAL bags — a short shelf on either side moves nothing;
-//   · repeated lines of one SLOT sum for validation (no double-spend of one
-//     stack across two lines);
+// rolled instance and its bare twin are two lines with two prices.
+// Исполнитель — дверь `deal@src/macro/deal.h` (ломоть 2 M-72, строки exact —
+// торговый экран точен). Pinned:
+//   · an exact package moves WHOLE or not at all — a short shelf on either
+//     side moves nothing;
+//   · repeated exact lines of one SLOT cannot double-spend one stack;
 //   · the same ware may travel both ways (food for food is a legal deal);
 //   · coin is not special: a currency row swaps like any ware, and item
 //     totals CONSERVE across every deal — nothing is minted;
 //   · a staged ROLLED stack travels AS ITSELF (seed + affixes), never as
 //     «a sword by id» — the Wear-bug class, now impossible by key shape;
 //   · a slot re-filled with a DIFFERENT row refuses the stale line (def
-//     rides the BarterLine as the sanity byte).
+//     rides the DealLine as the sanity byte).
 #include "check.h"
 
+#include <memory>
+
 #include "macro/currency.h"
+#include "macro/deal.h"
+#include "macro/store.h"
 #include "macro/world_row.h"   // creature_slot / creatures_push_stack — вторая половина
 
 namespace {
 
 using namespace sm;
+
+// Сделка адресуется СЛОТАМИ сквадов (deal.h) — свидетель рожает стор сам
+// (§8 п.11); два контейнера сделки живут в слотах 1 и 2 (0 служебен).
+struct Counter {
+    std::unique_ptr<MacroStore> store = make_macro_store();
+    std::uint16_t a = 1;
+    std::uint16_t b = 2;
+    Inventory& A() { return store->inventory[a].inv; }
+    Inventory& B() { return store->inventory[b].inv; }
+};
 
 // The staging panels stand on the slot they drew; a test finds it the same
 // honest way — by looking.
@@ -35,23 +50,29 @@ int slot_of(const Inventory& inv, const char* id) {
     return -1;
 }
 
-BarterLine line(const Inventory& inv, const char* id, int n) {
-    const int s = slot_of(inv, id);
-    return BarterLine{s, n, std::uint16_t(item_index(id))};
+// Строка торгового экрана: конкретный стак, exact — «ровно N или ничего».
+DealLine line(const Inventory& inv, const char* id, int n) {
+    DealLine l{};
+    l.want = n;
+    l.def = std::uint16_t(item_index(id));
+    l.slot = std::uint16_t(slot_of(inv, id));
+    l.exact = 1;
+    return l;
 }
 
 void test_swap_moves_both_packages() {
-    Inventory town, player;
+    Counter w;
+    Inventory& town = w.B();
+    Inventory& player = w.A();
     town.add("food", 10);
     town.add("cloth", 4);
     player.add("wood", 6);
     player.add("coin_empire_copper", 30);
 
-    CHECK(barter_swap(player, town,
-                      /*fromPlayer*/ {line(player, "wood", 5),
-                                      line(player, "coin_empire_copper", 7)},
-                      /*fromTown*/ {line(town, "food", 3),
-                                    line(town, "cloth", 1)}),
+    DealLine give[] = {line(player, "wood", 5),
+                       line(player, "coin_empire_copper", 7)};
+    DealLine take[] = {line(town, "food", 3), line(town, "cloth", 1)};
+    CHECK(deal(*w.store, w.a, w.b, give, take).settled,
           "a covered deal settles");
     CHECK(player.count("wood") == 1 && player.count("coin_empire_copper") == 23,
           "the given lines left the player");
@@ -64,56 +85,91 @@ void test_swap_moves_both_packages() {
 }
 
 void test_all_or_nothing() {
-    Inventory a, b;
+    Counter w;
+    Inventory& a = w.A();
+    Inventory& b = w.B();
     a.add("food", 2);
     b.add("wood", 8);
 
-    CHECK(!barter_swap(a, b, {line(a, "food", 3)}, {line(b, "wood", 1)}),
-          "a short GIVE side refuses the whole deal");
-    CHECK(!barter_swap(a, b, {line(a, "food", 1)}, {line(b, "wood", 9)}),
-          "a short TAKE side refuses the whole deal");
-    CHECK(!barter_swap(a, b, {line(a, "food", 0)}, {line(b, "wood", 1)}),
-          "a non-positive line is not a deal");
+    {
+        DealLine give[] = {line(a, "food", 3)};
+        DealLine take[] = {line(b, "wood", 1)};
+        CHECK(!deal(*w.store, w.a, w.b, give, take).settled,
+              "a short GIVE side refuses the whole deal");
+    }
+    {
+        DealLine give[] = {line(a, "food", 1)};
+        DealLine take[] = {line(b, "wood", 9)};
+        CHECK(!deal(*w.store, w.a, w.b, give, take).settled,
+              "a short TAKE side refuses the whole deal");
+    }
+    {
+        DealLine give[] = {line(a, "food", 0)};
+        DealLine take[] = {line(b, "wood", 1)};
+        CHECK(!deal(*w.store, w.a, w.b, give, take).settled,
+              "a non-positive exact line is not a deal");
+    }
     CHECK(a.count("food") == 2 && b.count("wood") == 8
               && a.count("wood") == 0 && b.count("food") == 0,
           "a refused deal moved NOTHING");
 }
 
 void test_repeated_lines_sum() {
-    Inventory a, b;
+    Counter w;
+    Inventory& a = w.A();
+    Inventory& b = w.B();
     a.add("food", 5);
 
-    CHECK(!barter_swap(a, b,
-                       {line(a, "food", 3), line(a, "food", 3)}, {}),
-          "two lines of one stack SUM - 6 from 5 refuses");
-    CHECK(a.count("food") == 5, "and nothing moved");
-    CHECK(barter_swap(a, b, {line(a, "food", 3), line(a, "food", 2)}, {}),
-          "5 from 5 across two lines settles");
-    CHECK(a.count("food") == 0 && b.count("food") == 5,
-          "both lines travelled");
+    {
+        DealLine give[] = {line(a, "food", 3), line(a, "food", 3)};
+        CHECK(!deal(*w.store, w.a, w.b, give, {}).settled,
+              "two exact lines of one stack cannot double-spend: 6 from 5 "
+              "refuses");
+        CHECK(a.count("food") == 5, "and nothing moved");
+    }
+    {
+        DealLine give[] = {line(a, "food", 3), line(a, "food", 2)};
+        CHECK(deal(*w.store, w.a, w.b, give, {}).settled,
+              "5 from 5 across two lines settles");
+        CHECK(a.count("food") == 0 && b.count("food") == 5,
+              "both lines travelled");
+    }
 }
 
 void test_same_ware_both_ways() {
-    Inventory a, b;
+    Counter w;
+    Inventory& a = w.A();
+    Inventory& b = w.B();
     a.add("food", 3);
     b.add("food", 5);
 
-    CHECK(barter_swap(a, b, {line(a, "food", 3)}, {line(b, "food", 5)}),
+    DealLine give[] = {line(a, "food", 3)};
+    DealLine take[] = {line(b, "food", 5)};
+    CHECK(deal(*w.store, w.a, w.b, give, take).settled,
           "food for food is a legal deal");
     CHECK(a.count("food") == 5 && b.count("food") == 3,
           "the two stacks crossed whole");
 }
 
-void test_empty_packages_are_a_noop() {
-    Inventory a, b;
-    a.add("food", 1);
-    CHECK(barter_swap(a, b, {}, {}), "an empty deal is trivially settled");
-    CHECK(a.count("food") == 1 && b.count("food") == 0, "and moved nothing");
+void test_empty_packages_move_nothing() {
+    // Закон ИЗМЕНЁН дверью сознательно: прежний barter_swap звал пустую
+    // сделку «trivially settled» (true); у deal факт честен — НИЧЕГО не
+    // уехало, значит settled ЛОЖЬ, и мир не тронут. Кнопку торгового экрана
+    // пустота гейтит раньше (st.empty()), так что живого читателя у «пустой
+    // правды» не было.
+    Counter w;
+    w.A().add("food", 1);
+    CHECK(!deal(*w.store, w.a, w.b, {}, {}).settled,
+          "an empty deal settles NOTHING - the fact is honest");
+    CHECK(w.A().count("food") == 1 && w.B().count("food") == 0,
+          "and moved nothing");
 }
 
 // ── The rolled instance trades AS ITSELF (verdict 2026-09-07) ─────────────
 void test_rolled_stack_travels_whole() {
-    Inventory seller, buyer;
+    Counter w;
+    Inventory& seller = w.A();
+    Inventory& buyer = w.B();
     ItemRef bare{};
     bare.def = std::uint16_t(item_index("wpn_sword"));
     bare.count = 1;
@@ -133,8 +189,13 @@ void test_rolled_stack_travels_whole() {
     // Stage the ROLLED slot; the bare one stays.
     const int rolledSlot =
         seller.slots[0].seed == 99u ? 0 : 1;
-    CHECK(barter_swap(seller, buyer,
-                      {BarterLine{rolledSlot, 1, rolled.def}}, {}),
+    DealLine rolledLine{};
+    rolledLine.want = 1;
+    rolledLine.def = rolled.def;
+    rolledLine.slot = std::uint16_t(rolledSlot);
+    rolledLine.exact = 1;
+    DealLine give[] = {rolledLine};
+    CHECK(deal(*w.store, w.a, w.b, give, {}).settled,
           "the rolled line settles");
     CHECK(buyer.used_slots() == 1
               && buyer.slots[std::size_t(slot_of(buyer, "wpn_sword"))]
@@ -149,14 +210,15 @@ void test_rolled_stack_travels_whole() {
 // A shelf slot re-filled with a DIFFERENT row under an open panel: the
 // stale line refuses instead of shipping the stranger.
 void test_stale_slot_refuses() {
-    Inventory a, b;
+    Counter w;
+    Inventory& a = w.A();
     a.add("food", 2);
-    const BarterLine stale = line(a, "food", 1);
+    DealLine stale[] = {line(a, "food", 1)};
     a = Inventory{};
     a.add("wood", 5);   // wood now sits where the food sat
-    CHECK(!barter_swap(a, b, {stale}, {}),
+    CHECK(!deal(*w.store, w.a, w.b, stale, {}).settled,
           "a re-filled slot refuses the stale line");
-    CHECK(a.count("wood") == 5 && b.total() == 0, "and nothing moved");
+    CHECK(a.count("wood") == 5 && w.B().total() == 0, "and nothing moved");
 }
 
 // ── СУЩЕСТВО ТОРГУЕТСЯ ТЕМ ЖЕ ПРИЛАВКОМ, ЧТО МЕЧ (M-292, вердикт владельца
@@ -374,7 +436,7 @@ int main() {
     test_all_or_nothing();
     test_repeated_lines_sum();
     test_same_ware_both_ways();
-    test_empty_packages_are_a_noop();
+    test_empty_packages_move_nothing();
     test_rolled_stack_travels_whole();
     test_stale_slot_refuses();
     test_a_creature_is_priced_by_its_own_row();

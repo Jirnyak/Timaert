@@ -6,8 +6,9 @@
 //   · trade is a PACKAGE: +/− stages lines from BOTH shelves (step = the
 //     shared Amount field, default 1, anything <= 1 READS as 1), the footer
 //     faces the two totals, and ONE Deal button settles the whole package
-//     through barter_swap — all-or-nothing. The law: the player's GIVEN
-//     value must cover the TAKEN; any excess is his own generosity.
+//     through the ONE deal door (macro/deal.h, exact lines) — all-or-
+//     nothing. The law: the player's GIVEN value must cover the TAKEN;
+//     any excess is his own generosity.
 //   · coin is a ware IN the package: currency rows list and stage like any
 //     line, at FACE value on both sides — letting charisma price a coin
 //     would mint money out of a round trip.
@@ -21,6 +22,8 @@
 
 #include "macro/anketa.h"
 #include "macro/currency.h"
+#include "macro/deal.h"    // ОДИН глагол обмена: кнопка Deal зовёт его
+#include "macro/store.h"   // стороны сделки адресуются СЛОТАМИ сквадов
 #include "macro/player_entity.h"   // player_effective_sheet — the haggler door
 #include "macro/squad.h"           // standing_bonuses_of
 #include "macro/state.h"
@@ -29,7 +32,7 @@
 namespace sm::ui {
 
 // ── THE one trade wrapper (Инк 5 меню-сессии, 2026-09-11) ────────────────
-// The DEAL was always one (barter_swap); what had split in two was the
+// The DEAL was always one (now literally: macro/deal.h); what had split in two was the
 // WRAPPER around it — the NPC window and the settlement tab each kept its
 // own statics, its own five-line haggler resolve and its own copy of the
 // two-column layout. These three pieces are that wrapper, once:
@@ -168,7 +171,9 @@ inline void draw_counterparty_gold(const Inventory& theirs) {
 // ── The package deal ─────────────────────────────────────────────────────
 
 // Staged lines of one open trade screen, unique per id (barter_stage keeps
-// the invariant).
+// the invariant). Строки — лот двери `deal`; стейджинг-вектор есть скрэтч
+// открытой панели (UI — граница мира), в тике он не живёт.
+using BarterPackage = std::vector<DealLine>;
 struct BarterState {
     BarterPackage take;   // their shelf → the player
     BarterPackage give;   // the player → them
@@ -202,25 +207,32 @@ struct BarterWrapState {
     }
 };
 
-// Lines are keyed by SLOT of the source shelf (currency.h BarterLine —
+// Lines are keyed by SLOT of the source shelf (deal.h DealLine —
 // «торговля пер-стак», owner verdict 2026-09-07): a rolled sword and its
 // bare twin are two lines with two prices, never one id.
 inline int barter_staged(const BarterPackage& pkg, int slot) {
-    for (const BarterLine& line : pkg)
-        if (line.slot == slot) return line.count;
+    for (const DealLine& line : pkg)
+        if (int(line.slot) == slot) return line.want;
     return 0;
 }
 
 inline void barter_stage(BarterPackage& pkg, int slot, std::uint16_t def,
                          int n) {
     for (auto it = pkg.begin(); it != pkg.end(); ++it) {
-        if (it->slot == slot) {
+        if (int(it->slot) == slot) {
             if (n <= 0) pkg.erase(it);
-            else { it->count = n; it->def = def; }
+            else { it->want = n; it->def = def; }
             return;
         }
     }
-    if (n > 0) pkg.push_back({slot, n, def});
+    if (n <= 0) return;
+    DealLine l{};
+    l.want = n;
+    l.def = def;
+    l.slot = std::uint16_t(slot);
+    l.exact = 1;   // торговый экран точен: staged-монеты против протухшего
+                   // товара не едут — непокрытая строка откатывает сделку
+    pkg.push_back(l);
 }
 
 // The shelf moved under an open panel (a caravan bought it out, the day
@@ -229,14 +241,14 @@ inline void barter_stage(BarterPackage& pkg, int slot, std::uint16_t def,
 // DIFFERENT row — drops its line; a shrunk stack clamps.
 inline void barter_clamp(BarterPackage& pkg, const Inventory& shelf) {
     for (std::size_t i = 0; i < pkg.size();) {
-        const int slot = pkg[i].slot;
+        const int slot = int(pkg[i].slot);
         const ItemRef* s = slot >= 0 && slot < kMaxInventorySlots
             ? &shelf.slots[std::size_t(slot)] : nullptr;
         if (!s || s->empty() || s->def != pkg[i].def) {
             pkg.erase(pkg.begin() + std::ptrdiff_t(i));
             continue;
         }
-        if (pkg[i].count > s->count) pkg[i].count = s->count;
+        if (pkg[i].want > s->count) pkg[i].want = s->count;
         ++i;
     }
 }
@@ -359,11 +371,11 @@ inline int barter_package_value(const BarterPackage& pkg,
                                 const Inventory& shelf,
                                 UnitPriceFn unitPrice) {
     int total = 0;
-    for (const BarterLine& line : pkg) {
-        if (line.slot < 0 || line.slot >= kMaxInventorySlots) continue;
+    for (const DealLine& line : pkg) {
+        if (int(line.slot) >= kMaxInventorySlots) continue;
         const ItemRef& ref = shelf.slots[std::size_t(line.slot)];
         if (ref.empty() || !world_row_exists(ref.def)) continue;
-        total += unitPrice(ref, line.count) * line.count;
+        total += unitPrice(ref, line.want) * line.want;
     }
     return total;
 }
@@ -375,8 +387,9 @@ inline int barter_package_value(const BarterPackage& pkg,
 // The footer: the two totals face each other and ONE button settles the
 // whole package. Returns true on a settled deal — the caller writes its
 // own message and log lines from the two values.
-inline bool draw_barter_deal_button(BarterState& st,
-                                    Inventory& yours, Inventory& theirs,
+inline bool draw_barter_deal_button(BarterState& st, MacroStore& store,
+                                    std::uint16_t yoursSlot,
+                                    std::uint16_t theirsSlot,
                                     int giveValue, int takeValue) {
     ImGui::Text("You give: %d g", giveValue);
     ImGui::SameLine();
@@ -389,7 +402,7 @@ inline bool draw_barter_deal_button(BarterState& st,
     bool dealt = false;
     if (!can) ImGui::BeginDisabled();
     if (ImGui::Button("Deal", ImVec2(80, 0)))
-        dealt = barter_swap(yours, theirs, st.give, st.take);
+        dealt = deal(store, yoursSlot, theirsSlot, st.give, st.take).settled;
     if (!can) ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
         if (st.empty())
@@ -415,9 +428,12 @@ inline bool draw_barter_deal_button(BarterState& st,
 // ITS fact and nothing else; the receipt message writes itself.
 template <class BuyFn, class SellFn, class OnDeal>
 inline void draw_barter_body(const char* stockLabel,
-                             BarterWrapState& st,
-                             Inventory& playerBag, Inventory& shelf,
+                             BarterWrapState& st, MacroStore& store,
+                             std::uint16_t playerSlot,
+                             std::uint16_t shelfSlot,
                              BuyFn buyUnit, SellFn sellUnit, OnDeal onDeal) {
+    Inventory& playerBag = store.inventory[playerSlot].inv;
+    Inventory& shelf = store.inventory[shelfSlot].inv;
     if (st.message[0] != '\0') {
         ImGui::Spacing();
         ImGui::TextWrapped("%s", st.message);
@@ -501,7 +517,7 @@ inline void draw_barter_body(const char* stockLabel,
         barter_package_value(st.barter.take, shelf, buyUnit);
     const int giveValue =
         barter_package_value(st.barter.give, playerBag, sellUnit);
-    if (draw_barter_deal_button(st.barter, playerBag, shelf,
+    if (draw_barter_deal_button(st.barter, store, playerSlot, shelfSlot,
                                 giveValue, takeValue)) {
         st.set_deal_message(giveValue, takeValue);
         onDeal(giveValue, takeValue);

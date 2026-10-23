@@ -199,17 +199,12 @@ struct CaravanDeal {
 // `sink`/`user` — канал фактов мира (Consumed при гашении долга рынка,
 // CANON S10): проданное в место по счёту съедается СРАЗУ. Тесты водят
 // сделку без канала — гашение то же, факты молчат.
-// «ПРЕДЕЛА НЕТ» — ИМЕНОВАННЫМ ЧИСЛОМ, А НЕ ЛИТЕРАЛОМ `1e9f`.
-// Приёмник сделки на рынке есть СКЛАД МЕСТА, а у склада спины нет вовсе:
-// обоз — свойство анкеты, которая идёт, а место не идёт никуда. Вывод числа
-// физический: `int64` держит 9.2·10¹⁸ г, то есть предел заведомо недостижим
-// любым контейнером (1024 слота × `int32` счёт × 64 кг самой тяжёлой строки
-// каталога ≈ 1.4·10¹⁴ г), и минимум в `haul_between` его просто никогда не
-// выбирает. Здесь стоял `1e9f` — километровое число без вывода, которое к
-// тому же в граммах значило всего 1000 т и могло СТАТЬ пределом.
-inline constexpr std::int64_t kNoCarryLimitG =
-    std::numeric_limits<std::int64_t>::max();
-CaravanDeal trade_caravan_at_station(MacroStore& st, Inventory& hold,
+// «ПРЕДЕЛА НЕТ» — `kNoCarryLimitG@src/macro/deal.h` (уехал к двери `deal`
+// вместе с клампом спины; вывод числа стоит там же).
+// Торговец — СЛОТ стора (ломоть 2 M-72): обе ноги — атомарные сделки
+// дверью deal (товар и оплата exact-лотами одним коммитом).
+CaravanDeal trade_caravan_at_station(MacroStore& st,
+                                     std::uint16_t traderSlot,
                                      std::int64_t capacityG,
                                      std::uint16_t marketSlot,
                                      int myTradePct, int theirTradePct,
@@ -239,7 +234,8 @@ CaravanDeal trade_caravan_at_station(MacroStore& st, Inventory& hold,
 // голодным и мир качал хлеб ВВЕРХ) вместе с `homeDebt`, `homePopulation` и
 // `homeSite`, которые существовали только чтобы пересчитать домашний спрос
 // по этому огрублённому снимку. Память сквада (ярус 3) веса не несёт нигде.
-CaravanDeal trade_vendor_at_market(MacroStore& st, Inventory& bag,
+CaravanDeal trade_vendor_at_market(MacroStore& st,
+                                   std::uint16_t traderSlot,
                                    std::int64_t capacityG,
                                    std::uint16_t marketSlot,
                                    MacroHandle home,

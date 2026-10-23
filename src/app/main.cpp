@@ -58,6 +58,7 @@
 #include "macro/npc_spawn.h"
 #include "macro/macro_snapshot.h"
 #include "macro/currency.h"
+#include "macro/deal.h"   // откуп встречи — exact-лот одной сделки
 #include "macro/squad.h"
 #include "macro/player_entity.h"
 #include "macro/journal.h"
@@ -763,15 +764,33 @@ const PreBattleAction kPreBattleActions[] = {
          const int cost = encounter_payoff_cost(app, npc);
          // The toll is REAL goods by the one value law (coin first by
          // density, №1) into the bandit's own bag — rob him back later and
-         // it is there. What his bag refuses stays yours, and the line
-         // reports what actually changed hands.
+         // it is there. Откуп — exact-лот ОДНОЙ сделки (ломоть 2 M-72):
+         // прежний transfer умел довезти ПОЛОВИНУ и всё равно купить дорогу
+         // (и даже ноль — «Paid 0 gold» с пропуском); теперь непокрытый
+         // откуп не покупает ничего, и модалка остаётся открытой.
          sm::MacroStore& st = (*app.macroStore);
-         int paid = cost;
-         if (st.valid(npc)) {
-             paid = sm::transfer_value_dense(
-                 player_bag(app), st.inventory[npc.slot].inv, cost);
+         const sm::MacroHandle pf = sm::player_flag_handle(app.gs);
+         int paid = 0;
+         if (st.valid(npc) && st.valid(pf)) {
+             sm::DealLine pay[16];
+             const sm::StagedValue sv =
+                 sm::stage_value_lines(player_bag(app), cost, pay);
+             if (sv.value >= cost
+                 && sm::deal(st, pf.slot, npc.slot,
+                             std::span<sm::DealLine>(pay,
+                                                     std::size_t(sv.lines)),
+                             {})
+                        .settled) {
+                 paid = sv.value;
+             }
          } else {
+             // Край без тела контрагента: цена ЖЖЁТСЯ той же дверью
+             // плотности — получателя нет, и везти некуда.
              paid = sm::pay_value_dense(player_bag(app), cost);
+         }
+         if (paid <= 0) {
+             push_combat_log(app, "Your purse cannot cover the toll.");
+             return false;   // непокрытый откуп дороги не покупает
          }
          char line[96];
          std::snprintf(line, sizeof(line),

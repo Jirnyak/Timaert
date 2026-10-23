@@ -678,7 +678,6 @@ jopus_prompts.md	zones.cpp:123
 macro-registry.md	:103
 macro-registry.md	:113-135
 macro-registry.md	:114
-macro-registry.md	:1157
 macro-registry.md	:124
 macro-registry.md	:1280-1320
 macro-registry.md	:1302
@@ -698,8 +697,6 @@ macro-registry.md	:2215
 macro-registry.md	:2245
 macro-registry.md	:2265-2268
 macro-registry.md	:2363-2393
-macro-registry.md	:2409
-macro-registry.md	:2588
 macro-registry.md	:265-276
 macro-registry.md	:293-294
 macro-registry.md	:295
@@ -712,7 +709,6 @@ macro-registry.md	:362
 macro-registry.md	:3688
 macro-registry.md	:3712
 macro-registry.md	:419
-macro-registry.md	:4214
 macro-registry.md	:4263
 macro-registry.md	:429
 macro-registry.md	:434-436

@@ -31,7 +31,7 @@ namespace sm {
 inline constexpr std::uint16_t kMapActTalk   = 1u << 0;
 inline constexpr std::uint16_t kMapActTrade  = 1u << 1;
 inline constexpr std::uint16_t kMapActAttack = 1u << 2;
-inline constexpr std::uint16_t kMapActHire   = 1u << 4;   // creatures_of ↔ hire_npc
+inline constexpr std::uint16_t kMapActHire   = 1u << 4;   // creatures_of ↔ найм-сделка (deal)
 inline constexpr std::uint16_t kMapActQuests = 1u << 5;   // the contract board
 
 } // namespace sm

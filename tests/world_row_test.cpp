@@ -7,6 +7,10 @@
 // пересказанные числа: ни одного литерала-границы в этом файле нет.
 #include "check.h"
 
+#include <memory>
+#include "macro/deal.h"
+#include "macro/store.h"
+
 #include "macro/world_row.h"
 
 #include <cstdint>
@@ -139,13 +143,24 @@ int main() {
                   "область существ плотна после снятия");
         }
 
-        // ПЕРЕНОС: слот уходит целиком, исток пустеет, порядок сохранён.
-        Inventory pool{};
-        const int moved = creatures_move(pool, inv);
-        CHECK(moved == 15, "пересажены все головы (15 генериков)");
-        CHECK(creatures_empty(inv), "исток пуст");
+        // ПЕРЕНОС ОБЛАСТИ — лотом двери deal (ломоть 2 M-72; creatures_move
+        // умер без прод-звонящих): «до N» клампится фактом, исток пустеет,
+        // предметная область не тронута.
+        auto moveStore_ = make_macro_store();
+        moveStore_->inventory[1].inv = inv;
+        DealLine moveLot[1];
+        moveLot[0] = DealLine{};
+        moveLot[0].want = 1 << 20;
+        moveLot[0].def = world_row_of_creature(NPCType::Peasant);
+        const DealFact mf = deal(*moveStore_, 1, 2, moveLot, {});
+        Inventory& src = moveStore_->inventory[1].inv;
+        Inventory& pool = moveStore_->inventory[2].inv;
+        CHECK(mf.settled && mf.unitsAB == 15,
+              "пересажены все головы (15 генериков)");
+        CHECK(creatures_empty(src), "исток пуст");
         CHECK(creature_count(pool) == 15, "цель приняла всех");
-        CHECK(inv.count_of(0) == 5, "предметы переносом существ не тронуты");
+        CHECK(src.count_of(0) == 5, "предметы переносом существ не тронуты");
+        inv = src;   // хвост секции продолжает на том же контейнере
 
         // ГОЛОВЫ ПОШТУЧНО: развёртка стака даёт адрес (slot, index).
         int heads = 0;
