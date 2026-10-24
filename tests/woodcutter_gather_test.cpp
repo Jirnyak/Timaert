@@ -483,12 +483,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime crt{};
     // Дом (деревня) — ребро Parent, ставится после пина ординала (M-245).
-    // РЫНОК — ИЗ ПОРУЧЕНИЯ (2026-09-19): рейс к рынку читает errandObject,
-    // а не феодальное ребро, — потому что тем же рейсом горожане едут
-    // закупаться В ДЕРЕВНЮ. Фикстура называет рынок так же, как его назвал
-    // бы аукцион.
     crt.squadType = std::uint8_t(SquadType::Caravan);
-    crt.errandObject = std::uint32_t(cityId);   // the city's ordinal
     crt.state = std::uint8_t(NPCState::Idle);
     crt.stateTimer = 0;
     ecs::Pools pools{};
@@ -497,6 +492,15 @@ void test_the_vendor_sells_at_the_nearest_city() {
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     st.runtime[h.slot] = crt;
+    // РЫНОК — ИЗ ЦЕЛИ (род Place, ломоть 4 M-72): рейс к рынку читает
+    // КОЛОНКУ ЦЕЛИ, а не феодальное ребро, — потому что тем же рейсом
+    // горожане едут закупаться В ДЕРЕВНЮ. Фикстура называет рынок РОВНО
+    // ТОЙ ЖЕ дверью и в той же форме, какой его назовёт сам рейс, решив
+    // следующее плечо: {клетка рынка, Place(ординал), 0, Working}.
+    ecs::goal_set(st.goal[h.slot], st.cell[city.slot].idx,
+                  ecs::goal_what(ecs::GoalKind::Place,
+                                 std::uint32_t(cityId)),
+                  0, std::uint8_t(NPCState::Working));
     sm::store_rename_ordinal(st, h, 13u);
     h = sm::handle_at(st, h.slot);
     sm::set_relation(st, int(h.id), vilId, sm::Stance::Parent);
