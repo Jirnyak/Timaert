@@ -83,10 +83,9 @@ sm::MacroHandle make_woodcutter(sm::MacroStore& st, float x, float y,
         NPCType::Peasant, 3, leader_sheet_seed(11u));
     refresh_body_from_sheet(pools, &rt, sheet, NPCType::Peasant);
     pools.sp = pools.maxSp;
-    // Работа именуется ПОРУЧЕНИЕМ, не типом (аукцион, CANON S10): рубка =
-    // Gather над строкой целей Trees — то, что рулетка ротации выдала бы.
+    // Поручений больше нет (ломоть 4 M-72): «что добыть» модуль решает
+    // сам — фикстура держит нужное рабочее место единственным кандидатом.
     rt.squadType = std::uint8_t(SquadType::Artel);
-    rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Trees));
     st.runtime[h.slot] = rt;
     sm::store_rename_ordinal(st, h, 11u);
     h = sm::handle_at(st, h.slot);
@@ -212,7 +211,6 @@ void test_the_farmer_works_the_field() {
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     prt.squadType = std::uint8_t(SquadType::Artel);
-    prt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Wheat));
     st.runtime[h.slot] = prt;
     sm::store_rename_ordinal(st, h, 12u);
     h = sm::handle_at(st, h.slot);
@@ -288,7 +286,6 @@ void test_farmer_without_terrain_conjures_nothing() {
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     prt.squadType = std::uint8_t(SquadType::Artel);
-    prt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Wheat));
     st.runtime[h.slot] = prt;
     sm::store_rename_ordinal(st, h, 12u);
     h = sm::handle_at(st, h.slot);
@@ -383,7 +380,6 @@ void test_the_mine_runs_while_the_player_is_away() {
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     rt.squadType = std::uint8_t(SquadType::Artel);
-    rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Vein));
     st.runtime[h.slot] = rt;
     sm::store_rename_ordinal(st, h, 13u);
     h = sm::handle_at(st, h.slot);
@@ -620,7 +616,6 @@ void test_the_miner_works_the_vein() {
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     rt.squadType = std::uint8_t(SquadType::Artel);
-    rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Vein));
     st.runtime[h.slot] = rt;
     sm::store_rename_ordinal(st, h, 13u);
     h = sm::handle_at(st, h.slot);
@@ -780,8 +775,6 @@ void test_the_catch_lands_as_creatures() {
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     prt.squadType = std::uint8_t(SquadType::Artel);
-    prt.errandObject =
-        std::uint32_t(gather_goal_row(ResourceFieldId::Livestock));
     prt.carryPerSoulG = 40'000;   // спина 40 кг в целых граммах
     st.runtime[h.slot] = prt;
     sm::store_rename_ordinal(st, h, 77u);

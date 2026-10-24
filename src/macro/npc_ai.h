@@ -245,33 +245,7 @@ CaravanDeal trade_vendor_at_market(MacroStore& st,
 
 // ТИП СКВАДА живёт в tables/squad_type.h — его называют двое: сквад
 // (колонкой) и СТРОКА РЕЕСТРА МЕСТА (объявляя, кого поднимает).
-// Строка таблицы целей, добывающая ресурс `row` — объект поручения Gather;
-// -1 = такой ресурс артелями не добывается. Порядок таблицы — деталь
-// npc_ai.cpp: снаружи цель называют РЕСУРСОМ, не индексом.
-enum class ResourceFieldId : std::uint8_t;
-int gather_goal_row(ResourceFieldId row);
 
-// ── The daily labour rotation (owner 2026-08-30; CANON S10) ──────────────
-// «Поселение поднимает рабочий сквад → сквад идёт к полю → возвращается,
-// кладёт на склад, растворяется в населении.» Souls are the stock every
-// working crew draws from and returns to; the creatures multiplies the take at
-// the squad's one SP price (ai_gatherer). Called once per game day:
-// yesterday's crews standing home in Idle DISSOLVE first (souls + leftovers
-// back to the landmark), then every settled landmark raises a fresh crew for
-// each ROW of its registry crew list with no crew already out — sized to
-// TODAY'S population. Genesis seeds no eternal gatherers any more: a crew
-// cut down on the road stays dead, and the town raises fewer souls
-// tomorrow.
-//
-// АУКЦИОН ЦЕЛЕЙ (CANON S10, владелец 2026-09-02): у рабочего сквада НЕТ
-// специализации — крестьянская артель строки CrewGate::Auction получает
-// поручение аукционом. Кандидаты = все строки таблицы целей (find_worksite)
-// + рейс сбыта; скор ДЕНЬГАМИ по закону цены: ценность дома (stock_price —
-// нужда сама дорожает дефицитом) × ожидаемый дневной тейк / (1 + маршрут).
-// РУЛЕТКА по скору — артели диверсифицируются без координации; нет цели с
-// положительным скором = вывод аукциона, артель не поднимается. Терм
-// опасности (Died-факты у маршрута) — добавить ПОСЛЕ, вес дубль-прогоном.
-// Returns crews raised.
 // ── ДВЕРЬ СТАНЦИИ: куда течёт товар отсюда ───────────────────────────────
 // Рулетка по весу 1/(1+дни пути) среди жилых мест соседних округ (CANON S7,
 // закон тора — расстояние меряется по кратчайшему пути на торе, а не по
@@ -311,8 +285,6 @@ void wake_from_rest(ecs::MacroNpcRuntime& rt);
 //
 // Возвращает 0 у строки, товаром не являющейся.
 int market_price_seen(int commodityIdx);
-
-int rotate_worker_squads(MacroWorld& mw, int day);
 
 // КЕМ ДУМАЕТ СКВАД БЕЗ ТИПА — лестница приоритетов, ЗАКОН (владелец,
 // 2026-09-10): приказ (маршрут в SquadOrders — его наличие И ЕСТЬ приказ)

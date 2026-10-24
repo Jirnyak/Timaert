@@ -257,10 +257,9 @@ void spawn_macro_npcs(GameState& gs, MacroStore& st,
         const int sy = ecs::cell_y(st.cell[cslot], gs.mapW);
 
         // No eternal gatherers here any more (owner 2026-08-30, CANON S10):
-        // working crews are TRANSIENT — raised from the population by the
-        // daily labour rotation (npc_ai.h rotate_worker_squads), returned
-        // to it at dusk. The genesis town wakes on day one and raises its
-        // own hands.
+        // working crews are TRANSIENT. Аукцион дневной ротации, который их поднимал,
+        // КАЗНЁН (ломоть 4 M-72): рабочие сквады не рождаются вовсе до
+        // модуля места (ломоть 5) — дыра открыта и названа.
         if (rng.next_f01() > 0.4f) {
             // Residents are born ON the town cell (owner 2026-08-31).
             make_npc(st, NPCType::Merchant, fIdx, sx, sy, gs.mapW,

@@ -107,9 +107,6 @@ minus	src/macro/npc_ai.cpp	owed -= dense;
 minus	src/macro/npc_ai.cpp	edge->owedValue -= took;
 minus	src/macro/npc_ai.cpp	if (dx > float(ctx.mapW) * 0.5f) dx -= float(ctx.mapW);
 minus	src/macro/npc_ai.cpp	if (dy > float(ctx.mapH) * 0.5f) dy -= float(ctx.mapH);
-minus	src/macro/npc_ai.cpp	freeG -= std::int64_t(fit) * unitG;
-minus	src/macro/npc_ai.cpp	purse -= buyable * therePrice;
-minus	src/macro/npc_ai.cpp	draw -= bids[b].score;
 minus	src/macro/recovery.cpp	accumulator -= float(whole);
 minus	src/macro/scent_field.cpp	d[yc + x] -= std::int32_t(per) * 8;
 minus	src/macro/spires.cpp	for (; gate >= int(def.minZone); gate -= relaxStep) {

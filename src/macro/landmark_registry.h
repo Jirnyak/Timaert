@@ -35,61 +35,6 @@ inline constexpr std::uint16_t kLandmarkFaunaGround    = 0xFFFFu;
 inline constexpr std::uint8_t  kLandmarkFaunaCapGround = 0xFFu;
 
 // ── Crew rows: WHO this place raises (owner 2026-08-31, CANON S10) ────────
-// «Какие сквады кто спавнит — таблично по видам ландмарков»: the landmark's
-// own registry row carries its labour law, so a future landmark kind (castle
-// patrols, a capital's own trains) is rows here, never engine code. The daily
-// rotation (npc_ai.cpp rotate_worker_squads) reads EXACTLY this list. The
-// gate is the row's PRECONDITION — the same predicates the old hardcodes
-// tested, now data. (Two spawns remain their own code as fold-targets: the
-// caravan fleet law `replenish_caravans` and the garrison recruiting in
-// world_tick — owner 2026-08-31: separate increments, «чтобы не разбухал».)
-enum class CrewGate : std::uint8_t {
-    // АУКЦИОН ЦЕЛЕЙ (CANON S10, владелец 2026-09-02): у артели НЕТ
-    // специализации — строка открыта, когда аукцион нашёл хоть одну цель с
-    // положительным скором (строки таблицы целей kGathererDefs + рейс
-    // сбыта); поручение выбирает рулетка по скору. Старые гейты профессий
-    // (Worksite/HomeCity) умерли вместе с профессиями — их предикаты живут
-    // внутри аукциона (find_worksite = кандидат, рынок = кандидат сбыта).
-    Auction  = 0,
-    Suzerain = 1,   // the realm has a capital that is not this town itself
-};
-struct LandmarkCrewRow {
-    // ДЕФОЛТ — НЕВАЛИДНОЕ ЗНАЧЕНИЕ, И ЭТО СВИДЕТЕЛЬ (грабля 2026-09-21).
-    // Здесь стоял `NPCType::Peasant`, то есть дефолтная строка была
-    // НЕОТЛИЧИМА от авторской крестьянской, — и когда патрульную строку
-    // города заменили комментарием, не убавив `crewCount`, город год
-    // поднимал ЛИШНЮЮ артель горожан, которой никто не писал. Невидимость
-    // была не в числе, а в том, что рукописная свёртка позиционного
-    // агрегата молча доливает дефолты (грабля «выпавшее из свёртки поле
-    // невидимо»). С `Count` дефолт перестаёт быть похожим на строку, и
-    // расхождение ловит компилятор — crew_rows_match_count ниже.
-    NPCType  npc  = NPCType::Count;
-    CrewGate gate = CrewGate::Auction;
-    // A solo row rides ALONE (the tax courier); otherwise the crew takes an
-    // even split of the place's crew pool (pop >> labourShift) across the
-    // rows whose gates are open today — even split = zero new constants.
-    bool     solo = false;
-    // ── СТРОКА ОБЪЯВЛЯЕТ ТИП СКВАДА, КОТОРЫЙ ПОДНИМАЕТ (CANON S4
-    //    «ЗАНЯТИЕ — ЭТО СТРОКА РОСТЕРА, А НЕ РОД МЕСТА», 2026-09-22) ──────
-    // Дословно у владельца: «крестьяне из деревни только добыча/
-    // строительство, корованы только торговля, стража только патруль,
-    // сборщик только дань». Это «строгое разделение» в форме ДАННЫХ, а не
-    // ветками по роду места: аукцион предлагает строке ТОЛЬКО заявки её
-    // типа, и деревне заявка сбыта не строится вовсе.
-    // `None` (0) = строка типа не объявляет — аукцион предлагает ей всё,
-    // как было до 2026-09-22. Так живут НЕаукционные строки (курьер дани
-    // идёт своим гейтом) и всякая будущая строка, которой разделение ещё не
-    // назначено.
-    SquadType type = SquadType::None;
-    // (КОЛОНКА `garrison` УМЕРЛА 2026-09-21 вместе с патрульной механикой.
-    // Она означала «строка комплектуется записями гарнизона, а не
-    // населением», и её единственная строка — патруль города — была
-    // вырезана 463170c6. После этого в таблице не осталось НИ ОДНОЙ строки
-    // с garrison=true, то есть колонка потеряла писателя, а вместе с ней
-    // стали недостижимы патрульная урна и вылазка гарнизона. Патруль
-    // вернётся своей строкой вместе со своей механикой — AGENTS §9.)
-};
-
 // ── Crowd role rows: fixed posts the street crowd fills FIRST (§42) ──────
 // The guard/merchant/woodcutter prefix used to be a City/Village branch in
 // the street spawner («первые N — стража» as code). Строки постов УМЕРЛИ
@@ -220,18 +165,15 @@ struct LandmarkDef {
     // перестал быть отдельной колонкой.)
 
     // ── The labour law of the place (owner 2026-08-31, CANON S10) ─────────
-    // Crew pool = population >> labourShift — the share of souls that walks
-    // out with the daily crews. Village = 1 («половина деревни на работу» —
-    // owner's word; the world-feeding arithmetic backs it: 32 souls per
-    // farmer × villages ≈ 1/6 of the world's souls ⇒ at least every fifth
-    // villager must farm, half gives slack for wood/clay/ore/vendor runs).
-    // City = 3 (= log2(kCreaturesPerCityWorker), the bench quota's own shift):
-    // the M&B doctrine — «деревня добывает ресурсы, город производит
-    // товары» — keeps a city's hands at its benches; its crew pool exists
-    // for couriers. Default 3 = the bench quota, inert while crewCount = 0.
+    // City = 3 = log2(kCreaturesPerCityWorker), the bench quota's own shift
+    // (the M&B doctrine — «деревня добывает ресурсы, город производит
+    // товары» — keeps a city's hands at its benches; the static_assert below
+    // the table ties the two laws together). Крю-половина закона — «crew
+    // pool = pop >> labourShift», строки crews и аукцион дневной ротации
+    // (НЕ путать с аукционом найма M-38/M-40 — тот ещё не построен) — КАЗНЕНА
+    // (ломоть 4 M-72, вердикт 2026-10-04 «уничтожить как систему»): рабочие
+    // сквады поднимет модуль места (ломоть 5), дыра открыта и названа.
     std::uint8_t     labourShift = 3;
-    LandmarkCrewRow  crews[8] = {};
-    std::uint8_t     crewCount = 0;
     // ── The interaction verbs this KIND offers (меню-сессия, 2026-09-11) ──
     // tables/map_actions.h bits: what the universal menu lists when the
     // player stands beside one of these. 0 = the walk-in minimum (info +
@@ -273,9 +215,9 @@ struct LandmarkDef {
 // Строки ниже стояли ПОЗИЦИОННЫМИ, и колонки им подписывали ad-hoc
 // комментарии (`/*wealth*/`, `/*hab*/`, `/*born*/`) — то есть имя поля
 // существовало для ЧИТАТЕЛЯ и не существовало для КОМПИЛЯТОРА. Цена этой
-// формы измерена и записана ниже, в самом шраме города: счётчик `crewCount`
-// не убавили, вырезая строку, её место занял ДЕФОЛТ, и призрачная артель
-// держала треть мировой добычи дерева много коммитов. Промах на единицу —
+// формы измерена (шрам города; сама система крю казнена ломтём 4 M-72):
+// счётчик `crewCount` не убавили, вырезая строку, её место занял ДЕФОЛТ, и
+// призрачная артель держала треть мировой добычи дерева. Промах на единицу —
 // родовой дефект позиционного агрегата: новая колонка в середине садится в
 // соседнее поле МОЛЧА, а мир остаётся правдоподобным.
 // С именованными инициализаторами этот класс дефекта ловит СБОРКА, и граница
@@ -296,81 +238,20 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
     {.type = SquadType::None, .id = "none", .label = "",
      .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u, .lightColor = 0x00000000u, .lightPop = 0.0f,
      .actions = kMapActTalk | kMapActTrade | kMapActAttack },
-    // Стража города — строка контейнера {Guard, Auction} с душами ИЗ ГАРНИЗОНА
-    // (CANON S10, 2026-09-02): патрульный аукцион открывает её только когда
-    // поле угрозы предъявило горячую округу дороже похода — тихий город
-    // держит гарнизон дома за полцены содержания.
     {.type = SquadType::City, .id = "city", .label = "City",
      .minZone = 0, .maxZone = 76, .glyph = '#', .feature = FT_City, .color = 0xFFE7D27Au, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
      .bornPopBase = 0, .bornPopPerScore = 0,
      .garrisonShift = 3, .labourShift = 3,
-     .crews = {{.npc = NPCType::Peasant, .gate = CrewGate::Auction,
-                .solo = false, .type = SquadType::Collector},
-                   // ПАТРУЛЬНАЯ СТРОКА ВЫРЕЗАНА 2026-09-21 (владелец:
-                   // «вырезаем бандитов, патрули — даже не временно; потом
-                   // по уму их всегда сможем норм добавить»). Строка
-                   // NPCType::Guard в таблице существ ОСТАЁТСЯ — вырезан
-                   // не вид, а то, что город его спавнит. Гарнизон места
-                   // жив: он контейнер ландмарка, а не вылазка.
-                   // АРТЕЛЬ ГОРОЖАН ЗА ПОКУПКАМИ (владелец 2026-09-19:
-                   // «добавим сквад горожан, которые типа идут в деревню
-                   // закупаться — бонусом разнообразие и доп контекст»).
-                   // Тот же аукцион, тот же рейс к рынку (ai_vendor), просто
-                   // ребро смотрит вниз: город едет к своему вассалу, где
-                   // еда изобильна и потому ДЁШЕВА, — на голодном конце
-                   // сделка арифметически невозможна (замер: 4035 рейсов
-                   // сбыта дали 45 сделок в день, деревни с 3.6 млн хлеба,
-                   // города выедены в ноль). Вид пока крестьянский — свой
-                   // спрайт горожанам придёт строкой таблицы видов (S16).
-                   // ЭТА СТРОКА И ЕСТЬ КОРОВАН ГОРОДА: рода NPCType::Caravan
-                   // в мире нет (умер в v106 — караван оказался сквадом,
-                   // притворившимся видом), и торговый рейс города едет той
-                   // же машиной ai_vendor по глаголу Sell, что рейс деревни.
-                   // «Горожане на рынок» и «корован» — одна строка, названная
-                   // с двух концов; второй торговой сущности у города нет.
-                   //
-                   // СТРОК У ГОРОДА ДВЕ, И ЭТО ПРОВЕРЯЕТ КОМПИЛЯТОР
-                   // (crew_rows_match_count ниже). Здесь стояло `3` — счётчик
-                   // не убавили, вырезая патрульную строку, и её место молча
-                   // занял ДЕФОЛТ: вторая копия артели горожан, которой никто
-                   // не писал. Она прожила так с 463170c6.
-                   // ЦЕНА ПРИЗРАКА ИЗМЕРЕНА ПЕРЕД СНОСОМ (64 дня, сид 7,
-                   // разошлись 77 колонок из 122): с ним `food_city`
-                   // 2 131 042 → 1 063 062 (−50 %), зато `starvedPops`
-                   // 3 291 → 744 душ (−78 %), `wood_gathered` 51 706 →
-                   // 76 961 (+49 %). То есть неавторенная строка держала
-                   // ТРЕТЬ мировой добычи дерева. Механика: perCrew = пул /
-                   // число живых строк, поэтому две строки дают вдвое больше
-                   // артелей вдвое меньшего размера.
-                   // ВЕРДИКТ ВЛАДЕЛЬЦА 2026-09-21 — СНОСИТЬ И ЖДАТЬ ДАНЬ:
-                   // «лучше сносим и ждём дани, мб она поможет с городом, и
-                   // потом у нас ещё будут рычаги — больше корованов, которые
-                   // меньше размером». Голод городов лечится Б-4 (дань кормит
-                   // город), а не строкой-призраком; названный рычаг «число
-                   // против размера» — это и есть реформа рождения крю, где
-                   // они перестают выводиться друг из друга.
-               {.npc = NPCType::Peasant, .gate = CrewGate::Auction,
-                .solo = false, .type = SquadType::Caravan}},
-     .crewCount = 2,
      .actions = kMapActTrade | kMapActHire | kMapActQuests,
      .seedComfortDays = 32, .seedRawMult = 1 },
-    // ОДНА строка артели — ШАБЛОН, а не слот (CANON S4, 2026-09-22). Здесь
-    // стояли ЧЕТЫРЕ одинаковые крестьянские строки, и четвёрка была
-    // крутилкой «одновременность артелей», то есть числом с потолка в
-    // таблице. Теперь число артелей говорит СПРОС — сколько целей добычи
-    // получили положительный скор, — а пул рук его урезает; строка же
-    // объявляет только КОГО поднимать и КАКОГО ТИПА.
     {.type = SquadType::Village, .id = "village", .label = "Village",
      .minZone = 0, .maxZone = 101, .glyph = 'v', .feature = FT_Village, .color = 0xFFCCB068u, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
      .bornPopBase = 0, .bornPopPerScore = 0,
      .garrisonShift = 3, .labourShift = 1,
-     .crews = {{.npc = NPCType::Peasant, .gate = CrewGate::Auction,
-                .solo = false, .type = SquadType::Artel}},
-     .crewCount = 1,
      .actions = kMapActTrade | kMapActHire | kMapActQuests,
      .seedComfortDays = 8, .seedRawMult = 2 },
     // Spire wild fauna returned to the GROUND (§42 Инк 5): its demons are
@@ -466,35 +347,6 @@ static_assert([] {
 }(), "строка оси объявляет свои глаголы сама: место не говорит и не бьётся, "
      "а ходок говорит, торгует и бьётся");
 
-// ── СВИДЕТЕЛЬ НА СВЁРТКУ: `crewCount` ПРОТИВ ЧИСЛА ВЫПИСАННЫХ СТРОК ───────
-// Два числа, которые обязаны совпадать, и рукописный позиционный агрегат их
-// НЕ СВЯЗЫВАЕТ: строку можно удалить, не тронув счётчик, — и тогда её место
-// молча занимает дефолт. Именно так город получил третью строку-призрак
-// (2026-09-21): патрульную строку заменили комментарием, `crewCount` остался
-// 3, и мир поднимал артель, которой никто не писал. Зелёная сюита этого не
-// говорит — говорит только сверка, и теперь её делает компилятор.
-//
-// Закон, который проверяется: строки [0, crewCount) — авторские (род назван),
-// строка crewCount и все за ней — дефолтные (род `Count`). Плотность здесь
-// часть формы, как у слотов реестра интересов: дырок в списке не бывает.
-inline constexpr bool crew_rows_match_count(const LandmarkDef* rows,
-                                            std::size_t n) {
-    for (std::size_t r = 0; r < n; ++r) {
-        const LandmarkDef& ld = rows[r];
-        constexpr std::size_t kCap =
-            sizeof(LandmarkDef::crews) / sizeof(LandmarkCrewRow);
-        if (std::size_t(ld.crewCount) > kCap) return false;
-        for (std::size_t i = 0; i < kCap; ++i) {
-            const bool authored = ld.crews[i].npc != NPCType::Count;
-            if (authored != (i < std::size_t(ld.crewCount))) return false;
-        }
-    }
-    return true;
-}
-static_assert(crew_rows_match_count(kLandmarks,
-                                    sizeof(kLandmarks) / sizeof(LandmarkDef)),
-              "crewCount must equal the number of AUTHORED crew rows");
-
 // РАЗМЕР СТРОКИ НАЗВАН — ЗНАЧИТ ПРИБИТ (DOD п.10). Замер: проба
 // static_assert на clang, дерево m39-faction, 2026-09-28 — 120 байт.
 // Свидетель тут не про байты: их девять строк и они constexpr, экономить
@@ -519,7 +371,12 @@ static_assert(crew_rows_match_count(kLandmarks,
 // строке НЕ ВЫВОДИТСЯ из числа байт колонки, а считается по раскладке; и к
 // сносу он отношения не имеет ни разу — обе колонки умерли за отсутствие
 // ЧИТАТЕЛЯ, а не за размер.
-static_assert(sizeof(LandmarkDef) == 112,
+// КАЗНЬ АУКЦИОНА (ломоть 4 M-72, вердикт 2026-10-04): `crews[8]` (48 Б
+// шестибайтных строк) и `crewCount` умерли вместе с аукционом дневной
+// ротации (не путать с аукционом найма M-38/M-40) —
+// 112 → 80, разница 32 = 49 байт данных минус хвостовое выравнивание до
+// кратного восьми (данных осталось 78).
+static_assert(sizeof(LandmarkDef) == 80,
               "LandmarkDef layout changed — say WHICH column and why, and "
               "never re-add a faction column: a KIND is not an OWNER (M-39)");
 
@@ -633,5 +490,4 @@ inline int landmark_born_population(int base, int perScore, int score,
 // сообщение назовёт тип поимённо (`core/row_law.h`, наряд M-169).
 // Новая структура в этом файле обязана появиться и в этом списке — за полнотой
 // списка следит `arch_guard_test`, иначе стену обходили бы молча, новым типом.
-TIMAERT_ROW(sm::LandmarkCrewRow);
 TIMAERT_ROW(sm::LandmarkDef);

@@ -153,12 +153,10 @@ void test_woodcutter_targets_nearest_tree() {
 
     auto e = spawn_ai(st, sm::NPCType::Peasant, 21.0f, 20.0f, homeId);
     {
-        // Работа именуется поручением (аукцион, CANON S10): рубка = Gather
-        // над строкой целей Trees; тип — лишь лист и спина.
+        // Поручений больше нет (ломоть 4 M-72): «что добыть» модуль решает
+        // сам — в фикстуре лес единственный кандидат.
         auto& wrt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
         wrt.squadType = std::uint8_t(sm::SquadType::Artel);
-        wrt.errandObject = std::uint32_t(
-            sm::gather_goal_row(sm::ResourceFieldId::Trees));
     }
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 20u);
@@ -618,96 +616,6 @@ void test_a_marching_body_does_not_mend() {
 // рождают. Тест, переживший свою механику, сторожил бы дефект, а не закон
 // (AGENTS, закон тестов §7).
 
-// The rotation half of the same defect: the dissolve view took any Idle crew
-// at home — dead included — and paid its souls back to the landmark (or, for
-// a garrison row, pushed dead records into the garrison). A dead crew is not
-// a crew coming home; it is a corpse-row awaiting the drain.
-void test_rotation_does_not_dissolve_the_dead() {
-    sm::GameState gs{};
-    gs.mapW = 128;
-    gs.mapH = 128;
-    // STORE — ДО ПЕРВОГО МЕСТА (M-90 шаг 5): плечо места живёт его колонками.
-    auto worldStore_ = sm::make_macro_store();
-    sm::MacroStore& st = *worldStore_;
-    const int cityId = push_settlement(gs, st, 50, 50);
-    const sm::MacroHandle cityBody =
-        sm::place_handle_by_ordinal(st, std::uint32_t(cityId));
-    sm::TerrainData terrain;
-    terrain.width = 8;
-    terrain.height = 8;
-    // УРОВНИ, а не байты: карта хранит слово (`kFieldWordMax`), и байтовый
-    // литерал 180 означал бы высоту 0.003 — то есть ВОДУ, молча.
-    terrain.rgba.assign(8u * 8u * 4u, std::uint16_t(sm::kFieldWordMax));
-    for (std::size_t i = 0; i < 8u * 8u; ++i)
-        terrain.rgba[i * 4u] = sm::field_word_of(180.0f / 255.0f);
-
-    // A DEAD crew standing at its home city, Idle — the exact state the
-    // dissolve used to swallow. Род взят ЖИВОЙ строкой контейнера города
-    // (Peasant, артель горожан): патрульная строка Guard вырезана
-    // 2026-09-21, и свидетель на ней проверял бы уже не закон, а пустоту —
-    // rotate_worker_squads не считает крю то, чего место не поднимает.
-    auto dead =
-        spawn_ai(st, sm::NPCType::Peasant, 50.0f, 50.0f, cityId);
-    {
-        sm::store_rename_ordinal(st, dead, 77u);
-        const std::uint16_t ds = dead.slot;
-        sm::creatures_push(
-            st.inventory[ds].inv,
-            sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2, 200u));
-        st.dead[ds] = 1;
-    }
-
-    const int popBefore =
-        sm::souls_flock(gs, st, cityBody.slot);
-    const int garrisonBefore =
-        sm::creature_count(st.inventory[cityBody.slot].inv);
-    sm::MacroWorld mw{.gs = &gs, .store = &st, .terrain = &terrain};
-    sm::rotate_worker_squads(mw, /*day=*/3);
-
-    CHECK(sm::souls_flock(gs, st, cityBody.slot) == popBefore,
-          "a dead crew's souls never return to the population");
-    CHECK(sm::creature_count(st.inventory[cityBody.slot].inv)
-              == garrisonBefore,
-          "and dead records never march into the garrison");
-    CHECK(st.valid(dead),
-          "the corpse-row is the drain's business, not the rotation's");
-
-    // Negative control: ЖИВЫЕ артели той же строки этот же проход РАСПУСКАЕТ
-    // — значит исключение выше про СМЕРТЬ, а не про мёртвую дверь. Город
-    // держит ОДНУ крестьянскую строку, поэтому из двух стоящих дома артелей
-    // одна занимает её, а лишняя распускается (суд границы, S19.2) —
-    // наблюдаем это прямо по смерти сущности, а не по арифметике населения,
-    // которую та же граница двигает ещё и набором.
-    for (std::uint32_t i = 0; i < 2u; ++i) {
-        auto alive =
-            spawn_ai(st, sm::NPCType::Peasant, 50.0f, 50.0f, cityId);
-        sm::store_rename_ordinal(st, alive, 78u + i);
-        const std::uint16_t as = alive.slot;
-        sm::creatures_push(
-            st.inventory[as].inv,
-            sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2,
-                             201u + i));
-    }
-    sm::rotate_worker_squads(mw, /*day=*/33);   // граница сезона
-    int livingLeft = 0;
-    {
-        // ТЕЛО МЕСТА — ТОТ ЖЕ STORE и нулевая строка существа (Peasant),
-        // поэтому счёт артелей исключает его ПО ИМЕНИ: место в своих
-        // крестьянах не числится.
-        const std::uint16_t placeSlot = cityBody.slot;
-        for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
-            if (st.alive[s32] == 0 || st.dead[s32] != 0) continue;
-            if (std::uint16_t(s32) == placeSlot) continue;
-            if (st.kind[s32].type == std::uint16_t(sm::NPCType::Peasant))
-                ++livingLeft;
-        }
-    }
-    CHECK(livingLeft < 2,
-          "negative control: лишняя ЖИВАЯ артель распущена тем же проходом");
-    CHECK(st.valid(dead),
-          "и труп пережил границу — растворение его по-прежнему не трогает");
-}
-
 int main() {
     test_home_wanderer_returns_when_far();
     test_woodcutter_targets_nearest_tree();
@@ -722,6 +630,5 @@ int main() {
     test_a_resting_lord_mends_at_the_players_rate();
     test_a_marching_body_does_not_mend();
     test_macro_visual_smoothing_and_snap();
-    test_rotation_does_not_dissolve_the_dead();
     return sm::test::report("macro_npc_ai_parity_test");
 }

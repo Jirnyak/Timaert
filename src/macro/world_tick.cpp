@@ -398,9 +398,6 @@ int process_world_daily_ticks(GameState& gs, MacroStore& st,
             // шаг 2: они были КЭШАМИ в колонках МЕСТА, а места больше
             // нет. Цена дома считается живьём в точке решения, цена
             // чужого рынка — абсолютная стоимость строки. CANON S10.)
-            // The labour rotation (npc_ai.h): yesterday's crews dissolve
-            // into the population, today's are raised to its size.
-            rotate_worker_squads(*macro, day);
             // Daily bag hygiene (the auto-scrap half of the old feed loop).
             squad_bags_hygiene_daily(*macro);
         }

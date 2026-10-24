@@ -744,6 +744,16 @@ inline void goal_set(SquadGoal& g, std::uint32_t cell, std::uint32_t what,
 inline void goal_arrive(const SquadGoal& g, MacroNpcRuntime& rt) {
     rt.state = g.onArrival;
 }
+// Остаток цели убывает ОДНОЙ дверью (вердикт №6: «amount — ОСТАТОК, убывает
+// до нуля, completed выводится из него», а не хранится флагом). 0 = «не
+// считаем» — бюджет не кончается никогда (значение, не отсутствие); иначе
+// цикл списывается, и false значит «остаток ВЫШЕЛ». Первый писатель и
+// читатель — модуль Artel (ломоть 4 M-72).
+inline bool goal_spend(SquadGoal& g) {
+    if (g.amount == 0) return true;
+    g.amount = std::uint16_t(g.amount - 1u);
+    return g.amount > 0;
+}
 
 // Deterministic spawn ordinal for a persistent macro NPC (Inc 5e-2), assigned
 // in creation order (0,1,2,…) by the SOLE creation path (make_npc) — the one
