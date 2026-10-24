@@ -185,6 +185,11 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // — не выдумывать). Фичи поселений ставит генерация.
     // Число на поселении — ПАСТВА, на шпиле — ординал спелла: ни то, ни
     // другое рядом реестра не является, поэтому здесь `Count` (см. колонку).
+    // Столица ходится как город: мощёная земля — тот же вес шага. Свой
+    // ВЕС ей не назначен, потому что веса здесь нет авторского вопроса —
+    // различие столицы живёт в её ГЕНЕРАТОРЕ субмира, ключом которого эта
+    // строка и является (вердикт владельца 2026-10-24, см. feature_type.h).
+    {FT_Capital, 1.0f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr},
     {FT_City,    1.0f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr},
     {FT_Village, 1.5f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr},
     {FT_Spire,   0.0f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr},

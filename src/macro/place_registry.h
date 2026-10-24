@@ -238,6 +238,29 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
     {.type = SquadType::None, .id = "none", .label = "",
      .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u, .lightColor = 0x00000000u, .lightPop = 0.0f,
      .actions = kMapActTalk | kMapActTrade | kMapActAttack },
+    // СТОЛИЦА — ГОРОД СТАРШЕГО РАНГА, И ПОКА ЧИСЛА У НЕЁ ГОРОДСКИЕ. Это
+    // не лень, а ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ: различие столицы — предмет
+    // ЕЁ МОДУЛЯ (ломоть 5) и ЕЁ ГЕНЕРАТОРА субмира (строка `FT_Capital`),
+    // а выдумывать ей сейчас второй набор балансных чисел значило бы
+    // назначить различие числом раньше, чем оно названо системой. Своё у
+    // неё ровно то, что уже СИСТЕМНО: фича-ключ генератора и глиф/цвет.
+    //
+    // ДО ЭТОЙ СТРОКИ СТОЛИЦА БЫЛА ГОРОДОМ БЕЗ СЮЗЕРЕНА — родом, выведенным
+    // из ОТСУТСТВИЯ ребра связи. Выведенный из отсутствия род невидим всем,
+    // кто читает колонку, и именно поэтому владелец дал ему строку.
+    //
+    // РОЖДАТЬ ЕЁ ПОКА НЕКОМУ, И ЭТО НАЗВАННАЯ ДЫРА, А НЕ КОСТЫЛЬ (§1):
+    // расселение ставит столицу модулем места (ломоть 5); до тех пор строка
+    // стоит голой, а `== SquadType::City`-гейты мира остаются верными по
+    // пустоте — переспросить их придётся ровно в день первой столицы.
+    {.type = SquadType::Capital, .id = "capital", .label = "Capital",
+     .minZone = 0, .maxZone = 76, .glyph = '@', .feature = FT_Capital, .color = 0xFFFFD98Cu, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
+     .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
+     .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
+     .bornPopBase = 0, .bornPopPerScore = 0,
+     .garrisonShift = 3, .labourShift = 3,
+     .actions = kMapActTrade | kMapActHire | kMapActQuests,
+     .seedComfortDays = 32, .seedRawMult = 1 },
     {.type = SquadType::City, .id = "city", .label = "City",
      .minZone = 0, .maxZone = 76, .glyph = '#', .feature = FT_City, .color = 0xFFE7D27Au, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
@@ -314,6 +337,17 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
      .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u, .lightColor = 0x00000000u, .lightPop = 0.0f,
      .actions = kMapActTalk | kMapActTrade | kMapActAttack },
     {.type = SquadType::Collector, .id = "collector", .label = "",
+     .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u, .lightColor = 0x00000000u, .lightPop = 0.0f,
+     .actions = kMapActTalk | kMapActTrade | kMapActAttack },
+    // ДРАКОН — ХОДОК, И КОЛОНКИ МЕСТА ЕМУ ТАК ЖЕ ЧУЖДЫ, как артели.
+    // Маска глаголов у него ПОЛНАЯ, и это выбор в пользу стража: соблазн
+    // был снять `Trade` («с драконом не торгуют»), но его снятие уронило бы
+    // ассерт ниже, который держит закон «у ходока глаголы ЕСТЬ». Ослаблять
+    // компиляторного стража ради вкусовой строки, которую пока никто не
+    // рождает, — ровно подгонка под свидетеля (§8 ЗАКОН НУЛЕВОЙ п.4).
+    // Верные глаголы дракону назовёт его модуль (ломоть 6), и тогда это
+    // будет решение о механике, а не о том, как позеленить сборку.
+    {.type = SquadType::Dragon, .id = "dragon", .label = "",
      .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u, .lightColor = 0x00000000u, .lightPop = 0.0f,
      .actions = kMapActTalk | kMapActTrade | kMapActAttack },
 };

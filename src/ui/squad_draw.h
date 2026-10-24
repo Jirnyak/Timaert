@@ -137,6 +137,11 @@ inline constexpr SquadDrawRow
     // размером 0 — невидимым, — поэтому разброс тот же, что у подвижных.
     {SquadType::None,    SpriteId::None, SpriteId::None,
      12.0f, 56.0f, 10.0f, 0.0f, MiniShape::Dot, 0.0f},
+    // Столица носит ГОРОДСКОЙ спрайт — своего арта у неё ещё нет, и
+    // «нет арта» не значит «не рисуется» (ассерт ниже): крупнее города на
+    // карте и тем отличима, пока художник не дал ей строку спрайта.
+    {SquadType::Capital, SpriteId::City, SpriteId::City,
+     32.0f, 224.0f, 0.0f, 6.0f, MiniShape::Ring, 3.0f},
     {SquadType::City,    SpriteId::City, SpriteId::City,
      28.0f, 192.0f, 0.0f, 6.0f, MiniShape::Ring, 3.0f},
     {SquadType::Village, SpriteId::Village, SpriteId::Village,
@@ -171,6 +176,11 @@ inline constexpr SquadDrawRow
     {SquadType::Caravan,   SpriteId::None, SpriteId::None,
      12.0f, 56.0f, 10.0f, 0.0f, MiniShape::Dot, 0.0f},
     {SquadType::Collector, SpriteId::None, SpriteId::None,
+     12.0f, 56.0f, 10.0f, 0.0f, MiniShape::Dot, 0.0f},
+    // Дракон — архетип Hero, и картинку он берёт С ТЕЛА, как всякий ходок
+    // (`pictureFromBody`): его строка существа несёт `SpriteId::Dragon`.
+    // Поэтому здесь не спрайт, а размеры и порог зума.
+    {SquadType::Dragon,    SpriteId::None, SpriteId::None,
      12.0f, 56.0f, 10.0f, 0.0f, MiniShape::Dot, 0.0f},
 };
 

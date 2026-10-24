@@ -3632,6 +3632,12 @@ struct AiModuleRow {
 };
 constexpr AiModuleRow kAiModuleRows[] = {
     { SquadType::None,      ai_untyped   },
+    // Столица и дракон СТОЯТ В ТАБЛИЦЕ С ПЕРВОГО ДНЯ СВОЕЙ ОСИ, и оба с
+    // `nullptr`: модуль места придёт ломтём 5, модуль дракона — ломтём 6.
+    // Строка с `nullptr` есть ЧЕСТНОЕ «род не думает», а не пропуск: без
+    // неё ассерт полноты ниже не собрался бы, и это ровно та стена, ради
+    // которой диспетч стал таблицей.
+    { SquadType::Capital,   nullptr      },
     { SquadType::City,      nullptr      },
     { SquadType::Village,   nullptr      },
     { SquadType::Spire,     nullptr      },
@@ -3643,6 +3649,7 @@ constexpr AiModuleRow kAiModuleRows[] = {
     { SquadType::Artel,     ai_artel     },
     { SquadType::Caravan,   ai_vendor    },
     { SquadType::Collector, ai_collector },
+    { SquadType::Dragon,    nullptr      },
 };
 static_assert(std::size(kAiModuleRows) == std::size_t(SquadType::Count),
               "kAiModuleRows must cover every SquadType: a new row of the "

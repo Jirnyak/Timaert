@@ -68,6 +68,15 @@ SubworldMode resolve_mode(const CellContext& ctx) {
         // honest answer until its TU exists. `default:` здесь ЗАПРЕЩЁН
         // (ЗАКОН СЛОВАРЯ п.4): он глушил -Wswitch, и новый род сквада падал
         // бы в землю МОЛЧА — теперь забытый род называет компилятор.
+        // СТОЛИЦА ЖДЁТ СВОЕГО МОДУЛЯ, И ЭТО ТОТ ЖЕ ЗАКОН, ЧТО ВЫШЕ.
+        // Владелец (2026-10-24): «ФИЧА КАПИТАЛ НАДО! ТАМ БУДЕТ ОСОБЫЙ
+        // ГЕНЕРАТОР!» — ключ модуля уже стоит строкой `FT_Capital`,
+        // а самого модуля (`SubworldMode::Capital` → `gen_capital`) ещё
+        // нет. Направить столицу в `SubworldMode::City` было бы ровно
+        // GEN-5: род без своего TU поднимал бы чужой город, и подмена
+        // осталась бы невидимой — поэтому до своего модуля клетка
+        // столицы показывает ЗЕМЛЮ, как логово и башня.
+        case SquadType::Capital:
         case SquadType::None:
         case SquadType::Lair:
         case SquadType::Shrine:
@@ -76,6 +85,7 @@ SubworldMode resolve_mode(const CellContext& ctx) {
         case SquadType::Artel:
         case SquadType::Caravan:
         case SquadType::Collector:
+        case SquadType::Dragon:
         case SquadType::Count:   break;
     }
     // Features come before the biome base: what men built on the cell decides
