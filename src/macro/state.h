@@ -452,7 +452,7 @@ namespace sm {
 // блоке `worked`, который и так писался. Ординалы рядов НЕ двинулись (ряд
 // остался на своём месте перед жилами), поэтому сдвига блоков нет — двигает
 // версию ровно смена ЖИЛЬЦА блока.
-constexpr int kSaveVersion = 145;   // 2026-10-23 (ломоть 3 M-72): цель сквада — колонка SquadGoal рода 2 (M-1); блок квестов умер (вариант А)
+constexpr int kSaveVersion = 146;   // 2026-10-24 (ломоть 4 M-72): колонка `errandObject` снесена — рантайм марша 56 → 48 Б, строка слота короче на 8 Б
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система

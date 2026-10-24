@@ -6,7 +6,7 @@
 //     души по строкам найма + ценность груза (одна таблица цен);
 //   · ОХОТА: вверх по градиенту чужой ЦЕНЫ под фильтром СИЛЫ; страшный след
 //     не преследуется, пылинки ниже пола не дёргают, локальный максимум =
-//     конец погони; макроцель (errand) отвлечением НЕ трогается.
+//     конец погони; макроцель и память роли отвлечением НЕ трогаются.
 #include "check.h"
 
 #include "ecs/components.h"
@@ -245,7 +245,7 @@ void test_fear_filter_and_scent_floor() {
     CHECK(int(p.x) == 10 && int(p.y) == 10, "ноги не тронуты");
 }
 
-void test_local_maximum_ends_the_hunt_and_keeps_errand() {
+void test_local_maximum_ends_the_hunt_and_keeps_role_memory() {
     HuntRig rig;
     const int fBandit = faction_idx("bandits");
     const int fPrey = faction_idx("timaert");
@@ -259,14 +259,16 @@ void test_local_maximum_ends_the_hunt_and_keeps_errand() {
     const auto& kind = (*sm::body_state<ecs::NPCKind>(*rig.wStore_, e));
 
     // Макроцель на месте до и после охоты: отвлечение — пауза, не амнезия.
-    // Глагол здесь — ЛЮБОЙ живой: закон не про патруль, а про то, что
-    // рефлекс не затирает поручение. Взят Sell, потому что его контракт
-    // объекта — ординал рынка (npc_ai.h), и 42 для него осмысленное число;
-    // у Gather объект это строка kGathererDefs, где 42 вне таблицы.
-    // (Прежде стоял ErrandVerb::Patrol — он снят 2026-09-21 вместе с
-    // патрульной механикой.)
+    // Колонка здесь — ЛЮБАЯ живая память роли: закон не про конкретную
+    // величину, а про то, что рефлекс не затирает решение роли. Взят
+    // `prevStationId` — «с какой станции крю пришло» многоскачкового рейса
+    // (components.h), ординал-идентичность, где 42 осмысленно, а 0 значило бы
+    // «никто» (ЗАКОН СЛОВАРЯ п.6) и закон бы не проверялся.
+    // (Прежде стоял ErrandVerb::Patrol — снят 2026-09-21 с патрульной
+    // механикой; затем `errandObject` — снесён 2026-10-24, ломоть 4 M-72,
+    // как второй носитель `SquadGoal::what`.)
     rt.squadType = std::uint8_t(SquadType::Caravan);
-    rt.errandObject = 42u;
+    rt.prevStationId = 42;
     sm::ecs::goal_set(rig.wStore_->goal[e.slot],
                       ecs::cell_index(50, 50, rig.ctx.mapW), 0, 0, 0);
 
@@ -280,10 +282,10 @@ void test_local_maximum_ends_the_hunt_and_keeps_errand() {
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u, 400u);
     CHECK(scent_hunt_step(e, p, kind, rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx), "охота пошла (фикстура)");
     CHECK(rt.squadType == std::uint8_t(SquadType::Caravan)
-              && rt.errandObject == 42u
+              && rt.prevStationId == 42
               && rig.wStore_->goal[e.slot].cell
                      == ecs::cell_index(50, 50, rig.ctx.mapW),
-          "макроцель не тронута: глагол, объект и курс поручения целы");
+          "макроцель не тронута: тип, память роли и курс целы");
 }
 
 void test_civilian_never_hunts() {
@@ -312,7 +314,7 @@ int main() {
     test_deposit_writes_both_channels();
     test_hunter_climbs_wealth_gradient();
     test_fear_filter_and_scent_floor();
-    test_local_maximum_ends_the_hunt_and_keeps_errand();
+    test_local_maximum_ends_the_hunt_and_keeps_role_memory();
     test_civilian_never_hunts();
     return sm::test::report("scent_field_test");
 }
