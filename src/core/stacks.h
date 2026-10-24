@@ -133,6 +133,7 @@ inline constexpr std::size_t kMacroStoreRowBytes =
     + sizeof(ecs::SquadName)          // имя анкеты (ход 2, вердикт 3)
     + sizeof(ecs::NpcTraits) + sizeof(ecs::Pools)   // NpcLevel умер: M-246а
     + sizeof(ecs::MacroNpcRuntime) + sizeof(SpellBook)
+    + sizeof(ecs::SquadGoal)          // цель {куда,что,сколько,чем стать} (M-1)
     + sizeof(ecs::SquadUpkeep)
     + sizeof(Wellbeing)               // благополучие анкеты (M-90 флип)
     + sizeof(Interests)               // связи любых сквадов (M-90 флип)
@@ -169,9 +170,9 @@ inline constexpr std::size_t kScarRows = 2u;
 // ── СТОРОЖ (1): РАЗМЕР СТРОКИ ────────────────────────────────────────────
 // Каждое число выведено из формы строки, а не замерено «как вышло». Разъехался
 // вывод с правдой — компилятор говорит об этом здесь, а не проза где-то.
-static_assert(sizeof(ecs::MacroNpcRuntime) == 68,
-              "строка марша: 68 Б × 16384 = 1.06 МиБ (M-245: дом стал "
-              "ребром Parent, колонка homeSettlementId умерла)");
+static_assert(sizeof(ecs::MacroNpcRuntime) == 56,
+              "строка марша: 56 Б × 16384 = 0.88 МиБ (ломоть 3 M-72: цель "
+              "уехала колонкой SquadGoal, логово — одним числом клетки)");
 static_assert(sizeof(ecs::Pools) == 36, "строка полос");
 static_assert(sizeof(ecs::CellSub) == 2, "доля клетки (M-244)");
 static_assert(sizeof(ecs::NpcCharacter) == 8,
@@ -254,7 +255,11 @@ static_assert(sizeof(TreeLayer) == 40, "заголовок слоя леса");
 // 2026-10-23, ломоть 1 M-72 «жилы единые»: −360 Б — ось рядов реестра 10 → 5
 // (шесть рядов жил схлопнулись в один), `ResourceFields` в составе состояния
 // похудел вдвое. 8760 → 8400.
-static_assert(sizeof(GameState) == 8400,
+// 2026-10-23, ломоть 3 M-72 (вариант А): −40 Б — умерли эмитент
+// `nextQuestOrdinal` (4), `settledQuestOffers` (вектор, 24) и два счётчика
+// квестов (8); названных байт 36, освободилось 40 — четыре добрала дыра
+// выравнивания. Квест-машина снесена целиком. 8400 → 8360.
+static_assert(sizeof(GameState) == 8360,
               "состояние мира: новое поле здесь = нарушение инварианта "
               "штабеля, пока не заведено строкой переписи");
 // 2026-09-25: +8 Б — указатель на MacroStore (гладкая память, M-106).

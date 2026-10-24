@@ -29,7 +29,6 @@ enum class UiElementId : std::uint8_t {
     PlayerHud,
     BottomToolbar,
     PanelCharacter,
-    PanelQuestLog,
     PanelCodex,
     PanelMap,
     MacroOverlay,

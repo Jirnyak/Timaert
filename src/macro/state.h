@@ -452,7 +452,7 @@ namespace sm {
 // блоке `worked`, который и так писался. Ординалы рядов НЕ двинулись (ряд
 // остался на своём месте перед жилами), поэтому сдвига блоков нет — двигает
 // версию ровно смена ЖИЛЬЦА блока.
-constexpr int kSaveVersion = 144;   // 2026-10-23: фичи один раз при генерации (перештампы умерли); товары 15 → 17 (медь/золото); залежь дорастает до капа связности
+constexpr int kSaveVersion = 145;   // 2026-10-23 (ломоть 3 M-72): цель сквада — колонка SquadGoal рода 2 (M-1); блок квестов умер (вариант А)
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -545,11 +545,9 @@ struct SessionFeed {
 // once per settlement per day). Defined here, not there, because the layer
 // order runs macro → events: player state stores it, the quest engine reads
 // it through this door.
-struct SettledQuestOffer {
-    std::int32_t giverSettlementId = 0;
-    std::int32_t bornDay = -1;
-    std::uint8_t offerSlot = 0;
-};
+// (SettledQuestOffer умерла 2026-10-23, ломоть 3 M-72 вариант А: квест-машина
+//  снесена целиком, задание игрока вернётся конструктором задач на форме цели
+//  рода 2 — ломоть 6.)
 
 struct PlayerState {
     std::string name;
@@ -655,12 +653,8 @@ struct PlayerState {
     // string vectors whose only living semantic was exactly this same-day
     // dedup (the day was baked into the id string, so an old entry never
     // matched anything again — dead weight growing in the save forever).
-    std::vector<SettledQuestOffer> settledQuestOffers;
-    // Lifetime tallies (the honest split: the old string lists filed a
-    // failure into BOTH, a TS relic). Display/stats only — dedup is the
-    // provenance list above; history will be the chronicle's job.
-    std::uint32_t completedQuestCount = 0;
-    std::uint32_t failedQuestCount = 0;
+    // (settledQuestOffers и оба счётчика квестов умерли с квест-машиной —
+    //  ломоть 3 M-72, вариант А.)
     // (No possessedMacroSpawnId since v87. "Whom do I control" has ONE store —
     // колонка playerFlag анкеты (5б), riding the snapshot as an
     // honest byte (MacroNpcRecord.playerFlag). The field was the flag's
@@ -813,12 +807,8 @@ struct GameState {
     // Производное состояние сессии, В СЕЙВ НЕ ЕДЕТ: загрузка поднимает
     // места через ту же дверь и тем самым честно взводит счётчик заново.
     std::uint32_t navEpoch = 0;
-    // The ONE issuer of QUEST ordinals (v63), same law again. Issued at
-    // ACCEPT (QuestEngine::accept) — the moment an offer stops being a
-    // seed-regenerated projection and becomes an object the world stores;
-    // 0 is reserved for "an offer not yet accepted". The FNV hash of the
-    // quest id string that used to ride events (quest_id_key) is dead.
-    std::uint32_t nextQuestOrdinal = 1;
+    // (Эмитент квестовых ординалов nextQuestOrdinal умер с квест-машиной —
+    //  ломоть 3 M-72: цель игрока — род 2, своей идентичности ей не нужно.)
     // The world's runtime rhythms (v24). worldTickRt is the LIVE runtime —
     // world_tick.cpp mutates it in place; macroAiRhythm is the staged image
     // of App::npcAi's persistent half (see the two sync doors in main.cpp).

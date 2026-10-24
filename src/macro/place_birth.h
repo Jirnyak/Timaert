@@ -57,8 +57,8 @@ inline MacroHandle birth_place(GameState& gs, MacroStore& st, SquadType kind,
                      sizeof st.name[h.slot].text - 1);
     st.sheet[h.slot]   = landmark_sheet(kind);
     ecs::MacroNpcRuntime rt{};            // pools — НУЛЯМИ (CANON S6)
-    rt.targetX   = float(x);
-    rt.targetY   = float(y);
+    // Цель новорождённого — «ничего» (kNoCell): колонку цели обнуляет сама
+    // дверь рождения, стоять на месте цели не требует (M-1).
     rt.state     = std::uint8_t(NPCState::Idle);
     rt.squadType = std::uint8_t(kind);
     st.runtime[h.slot] = rt;

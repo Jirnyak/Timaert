@@ -56,7 +56,6 @@ SKELETON.md	:1321
 SKELETON.md	:143
 SKELETON.md	:156-158
 SKELETON.md	:164-167
-SKELETON.md	:165-166
 SKELETON.md	:1823
 SKELETON.md	:1835
 SKELETON.md	:184-185
@@ -71,11 +70,9 @@ SKELETON.md	:2161
 SKELETON.md	:217
 SKELETON.md	:2192-2210
 SKELETON.md	:230
-SKELETON.md	:2339
 SKELETON.md	:240
 SKELETON.md	:243
 SKELETON.md	:244
-SKELETON.md	:2481
 SKELETON.md	:257
 SKELETON.md	:257-261
 SKELETON.md	:2582
@@ -221,7 +218,6 @@ SKELETON.md	economy.cpp:85
 SKELETON.md	ecs/components.h:218
 SKELETON.md	ecs/components.h:243
 SKELETON.md	ecs/components.h:362
-SKELETON.md	ecs/components.h:386
 SKELETON.md	ecs/components.h:441-442
 SKELETON.md	ecs/components.h:457
 SKELETON.md	effect_applicator.cpp:53-60
@@ -235,7 +231,6 @@ SKELETON.md	engine.cpp:232-234
 SKELETON.md	engine.cpp:2622
 SKELETON.md	engine.h:609
 SKELETON.md	event_bus.h:54-55
-SKELETON.md	events/quests/quest_engine.cpp:98
 SKELETON.md	faction.h:320
 SKELETON.md	features.h:131
 SKELETON.md	features.h:173
@@ -264,7 +259,6 @@ SKELETON.md	lighting.h:56-67
 SKELETON.md	logic_nodes.cpp:52
 SKELETON.md	macro/cell_facts.cpp:15-81
 SKELETON.md	macro/entry_context.h:29-85
-SKELETON.md	macro/save.cpp:10
 SKELETON.md	macro/state.h:856
 SKELETON.md	macro_stock.cpp:221
 SKELETON.md	macro_stock.cpp:225
@@ -311,8 +305,6 @@ SKELETON.md	node_registry.h:4
 SKELETON.md	npc.h:134
 SKELETON.md	npc_ai.cpp:1372
 SKELETON.md	npc_ai.cpp:1742
-SKELETON.md	npc_ai.cpp:1790
-SKELETON.md	npc_ai.cpp:1954
 SKELETON.md	npc_ai.cpp:2000
 SKELETON.md	npc_ai.cpp:2313
 SKELETON.md	npc_ai.cpp:2862
@@ -333,7 +325,6 @@ SKELETON.md	npc_ai.cpp:917
 SKELETON.md	npc_ai.cpp:946-949
 SKELETON.md	npc_ai.cpp:999
 SKELETON.md	npc_ai.h:102
-SKELETON.md	npc_spawn.cpp:141
 SKELETON.md	npc_spawn.cpp:216
 SKELETON.md	npc_spawn.cpp:304
 SKELETON.md	npc_spawn.cpp:396-399
@@ -358,11 +349,6 @@ SKELETON.md	politik.cpp:535-539
 SKELETON.md	politik.cpp:537-540
 SKELETON.md	politik.cpp:76
 SKELETON.md	politik.h:96-97
-SKELETON.md	quest_engine.cpp:114-116
-SKELETON.md	quest_engine.cpp:232
-SKELETON.md	quest_engine.cpp:234-235
-SKELETON.md	quest_engine.cpp:63
-SKELETON.md	quest_lifecycle_test.cpp:428
 SKELETON.md	resource_field.h:12-14
 SKELETON.md	resource_field.h:213-217
 SKELETON.md	resource_field.h:268
@@ -542,7 +528,6 @@ jopus_prompts.md	econ_day.cpp:46-51
 jopus_prompts.md	econ_day.h:139
 jopus_prompts.md	engine.h:619
 jopus_prompts.md	event_bus.h:27-40
-jopus_prompts.md	events/quests/quest_engine.cpp:179
 jopus_prompts.md	language.h:20-35
 jopus_prompts.md	lighting.h:324
 jopus_prompts.md	logic_nodes.h:23
@@ -577,8 +562,6 @@ jopus_prompts.md	pathfinding.h:207
 jopus_prompts.md	politik.cpp:192
 jopus_prompts.md	politik.h:62
 jopus_prompts.md	politik.h:77
-jopus_prompts.md	procedural.cpp:426
-jopus_prompts.md	quest_engine.cpp:203-204
 jopus_prompts.md	resource_field.h:284-289
 jopus_prompts.md	settlement_score.cpp:129
 jopus_prompts.md	smoke_suite.txt:65
@@ -604,15 +587,12 @@ jopus_prompts.md	src/app/smoke.cpp:346
 jopus_prompts.md	src/app/smoke.cpp:7155-7226
 jopus_prompts.md	src/app/smoke.cpp:7949
 jopus_prompts.md	src/app/smoke.cpp:9640-9650
-jopus_prompts.md	src/content/quests/procedural.cpp:420-430
 jopus_prompts.md	src/core/stacks.h:110-145
 jopus_prompts.md	src/core/stacks.h:140-170
 jopus_prompts.md	src/core/stacks.h:70-100
 jopus_prompts.md	src/events/event_types.h:20-64
 jopus_prompts.md	src/events/logic_nodes.h:20-26
 jopus_prompts.md	src/events/node_registry.cpp:15-25
-jopus_prompts.md	src/events/quests/quest_engine.cpp:170-190
-jopus_prompts.md	src/events/quests/quest_engine.cpp:195-210
 jopus_prompts.md	src/tables/biomes.h:40-76
 jopus_prompts.md	src/tables/commodity.h:30-60
 jopus_prompts.md	src/macro/econ_day.cpp:40-55
@@ -728,7 +708,6 @@ macro-registry.md	:6632
 macro-registry.md	:674
 macro-registry.md	:716
 macro-registry.md	:719-735
-macro-registry.md	:74
 macro-registry.md	:775
 macro-registry.md	:78
 macro-registry.md	:790-791
@@ -835,7 +814,6 @@ macro-registry.md	npc_spawn.cpp:247
 macro-registry.md	npc_spawn.cpp:283-328
 macro-registry.md	npc_spawn.cpp:512
 macro-registry.md	pools.h:46-51
-macro-registry.md	quest_engine.cpp:81
 macro-registry.md	resource_field.h:16-19
 macro-registry.md	resource_field.h:424
 macro-registry.md	scent_field.cpp:21-32

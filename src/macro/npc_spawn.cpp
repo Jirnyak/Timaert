@@ -117,9 +117,7 @@ MacroHandle make_npc(MacroStore& st, NPCType type,
     // ЛЕТУН (v93): кэш колонки строки по образцу travelRank — try_move
     // читает per-think, лукап строки там не нужен.
     rt.flying             = def.combat.cruiseM > 0.0f ? 1 : 0;
-    rt.targetSettlementId = 0;
-    rt.targetX            = float(x);
-    rt.targetY            = float(y);
+    // Цель новорождённого — «ничего» (kNoCell, колонка обнулена рождением).
     rt.state              = std::uint8_t(NPCState::Idle);
     rt.stateTimer         = 0;
     rt.teleportCooldown   = 0;
@@ -456,9 +454,9 @@ void spawn_design_characters(GameState& gs, MacroStore& st,
         st.designTag[slot] = ecs::DesignCharacterTag{ord};
 
         // Логово — дом-клетка модели вылетов: вершина и есть его дом.
+        // Адрес = одно число (M-3), сентинел ecs::kNoCell = логова нет.
         if (row.homePeak) {
-            st.runtime[slot].lairX = std::int16_t(hx);
-            st.runtime[slot].lairY = std::int16_t(hy);
+            st.runtime[slot].lairCell = ecs::cell_index(hx, hy, gs.mapW);
         }
 
         // Маршрут «дом ↔ ближайший ландмарк рода из агенды» — резолв

@@ -96,14 +96,15 @@ sm::MacroHandle make_walker(sm::MacroStore& st, int mapW, float x, float y,
                                    std::uint16_t{0}};
     ecs::MacroNpcRuntime rt{};
     rt.squadType = std::uint8_t(SquadType::Caravan);
-    rt.targetSettlementId = 0;
-    rt.targetX = tx;
-    rt.targetY = ty;
     rt.state = std::uint8_t(NPCState::Traveling);
     rt.travelRank = 0;
     rt.marathonRank = 0;
     rt.moveMult = 1.0f;
     st.runtime[h.slot] = rt;
+    // ЦЕЛЬ — колонка рода 2 (M-1): марш ходит по ней.
+    sm::ecs::goal_set(st.goal[h.slot],
+                      ecs::cell_index(int(tx), int(ty), mapW), 0, 0,
+                      std::uint8_t(NPCState::Idle));
     sm::store_rename_ordinal(st, h, 7u);
     h = sm::handle_at(st, h.slot);
     // Уровень — АНКЕТА (M-246а), той же дверью, какой рождает make_npc.
@@ -606,7 +607,6 @@ void test_banking_a_part_cell_is_not_resting() {
     PathCostData grid = make_grid(1024, 1024, 1.0f);   // one long road
 
     auto e = make_walker(st, gs.mapW, 10.0f, 4.0f, 400.0f, 4.0f, /*maxSp*/110);
-    auto& npc = (*sm::body_state<ecs::MacroNpcRuntime>(st, e));
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 91u);
 
@@ -633,8 +633,9 @@ void test_banking_a_part_cell_is_not_resting() {
           "one slice less, so no think on the road was quietly paid as rest");
 
     // The control: the SAME body, standing at its target, DOES recover.
-    npc.targetX = float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(st, e)), gs.mapW));
-    npc.targetY = 4.0f;
+    sm::ecs::goal_set(st.goal[e.slot],
+                      (*sm::body_state<ecs::MacroCell>(st, e)).idx, 0, 0,
+                      std::uint8_t(NPCState::Idle));
     const float restingFrom = float((*sm::body_state<ecs::Pools>(st, e)).sp) + (*sm::body_state<ecs::Pools>(st, e)).spCarry;
     for (int i = 0; i < 8; ++i) {
         MacroWorld mw{.gs = &gs, .store = &st, .pathCost = &grid};
@@ -671,8 +672,7 @@ void test_a_laden_squad_pays_for_its_load() {
                              /*hp*/1e6f);
     sm::store_rename_ordinal(st, heavy, 8u);
     heavy = sm::handle_at(st, heavy.slot);
-    (*sm::body_state<ecs::MacroNpcRuntime>(st, light)).targetY = 4.0f;
-    (*sm::body_state<ecs::MacroNpcRuntime>(st, heavy)).targetY = 6.0f;
+    // Цели уже положены make_walker в колонку рода 2 (ряды 4 и 6).
 
     // A back a person actually has, and a load well past it.
     // СПИНА КЛАДЕТСЯ В КОЛОНКУ АНКЕТЫ, а обоз складывает

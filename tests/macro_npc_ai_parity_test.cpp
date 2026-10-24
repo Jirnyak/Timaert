@@ -67,9 +67,8 @@ sm::MacroHandle spawn_ai(sm::MacroStore& st,
     st.kind[h.slot] = sm::ecs::NPCKind{std::uint16_t(type), std::uint16_t{0}};
 
     sm::ecs::MacroNpcRuntime rt{};
-    rt.targetSettlementId = 0;
-    rt.targetX = x;
-    rt.targetY = y;
+    // Цель новорождённого — «ничего» (kNoCell): колонку цели нулит дверь
+    // рождения, фикстура ставит её лишь там, где тест того требует.
     rt.stateTimer = std::int16_t(timer);
     rt.teleportCooldown = 0;
     rt.state = std::uint8_t(state);
@@ -100,8 +99,17 @@ bool close_enough(float a, float b) {
     return std::fabs(a - b) < 0.0001f;
 }
 
-bool targets(const sm::ecs::MacroNpcRuntime& rt, float x, float y) {
-    return close_enough(rt.targetX, x) && close_enough(rt.targetY, y);
+bool targets(const sm::MacroStore& st, sm::MacroHandle e, float x, float y,
+             int mapW = 128) {
+    return st.goal[e.slot].cell
+        == sm::ecs::cell_index(int(x), int(y), mapW);
+}
+
+// Ординал места из «чего ищу» цели (род Place), 0 = не место.
+int goal_place(const sm::MacroStore& st, sm::MacroHandle e) {
+    const sm::ecs::SquadGoal& g = st.goal[e.slot];
+    return sm::ecs::goal_kind(g.what) == sm::ecs::GoalKind::Place
+        ? int(sm::ecs::goal_ordinal(g.what)) : 0;
 }
 
 bool in_state(const sm::ecs::MacroNpcRuntime& rt, sm::NPCState s) {
@@ -125,7 +133,7 @@ void test_home_wanderer_returns_when_far() {
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     CHECK(in_state(rt, sm::NPCState::Returning),
           "a HomeWanderer 30 cells from home enters Returning");
-    CHECK(targets(rt, 50.0f, 50.0f),
+    CHECK(targets(st, e, 50.0f, 50.0f),
           "a returning HomeWanderer aims at its OWN home settlement");
 }
 
@@ -159,7 +167,7 @@ void test_woodcutter_targets_nearest_tree() {
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     CHECK(in_state(rt, sm::NPCState::Traveling),
           "a Woodcutter with a tree in range travels to it");
-    CHECK(targets(rt, 23.0f, 20.0f),
+    CHECK(targets(st, e, 23.0f, 20.0f),
           "a Woodcutter picks the NEAREST tree, not the far one");
 }
 
@@ -181,9 +189,9 @@ void test_trader_targets_other_settlement() {
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     CHECK(in_state(rt, sm::NPCState::Traveling),
           "a Trader standing at home sets out");
-    CHECK(rt.targetSettlementId == awayId,
+    CHECK(goal_place(st, e) == awayId,
           "a Trader trades AWAY from home: never its own settlement");
-    CHECK(targets(rt, 40.0f, 10.0f),
+    CHECK(targets(st, e, 40.0f, 10.0f),
           "the Trader's target cell is the chosen settlement's cell");
 }
 
@@ -204,7 +212,12 @@ void test_nomad_excludes_current_target() {
     auto e = spawn_ai(st, sm::NPCType::Peasant, 40.0f, 10.0f, -1);
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     rt.squadType = std::uint8_t(sm::SquadType::Caravan);
-    rt.targetSettlementId = standingId;
+    // «Стою у standing» — прежний ординал несёт сама цель (род Place).
+    sm::ecs::goal_set(st.goal[e.slot],
+                      sm::ecs::cell_index(40, 10, 128),
+                      sm::ecs::goal_what(sm::ecs::GoalKind::Place,
+                                         std::uint32_t(standingId)),
+                      0, std::uint8_t(sm::NPCState::Idle));
 
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 40u);
@@ -212,9 +225,9 @@ void test_nomad_excludes_current_target() {
 
     CHECK(in_state(rt, sm::NPCState::Traveling),
           "a Nomad that arrived picks a new leg immediately");
-    CHECK(rt.targetSettlementId == firstId,
+    CHECK(goal_place(st, e) == firstId,
           "a Nomad never re-picks the settlement it is already standing at");
-    CHECK(targets(rt, 10.0f, 10.0f),
+    CHECK(targets(st, e, 10.0f, 10.0f),
           "the Nomad's target cell follows the settlement it chose");
 }
 
@@ -270,7 +283,7 @@ void test_aggressive_chases_visible_player() {
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     CHECK(in_state(rt, sm::NPCState::Chasing),
           "an Aggressive NPC that can see the player gives chase");
-    CHECK(targets(rt, 12.0f, 10.0f),
+    CHECK(targets(st, e, 12.0f, 10.0f),
           "the chase aims at where the player actually is");
     // A multi-cell march never hops OVER the player — it stops ON the
     // meeting cell, where the forced-encounter door looks.
@@ -386,7 +399,7 @@ void test_wanderer_enters_wandering_state() {
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     CHECK(in_state(rt, sm::NPCState::Wandering),
           "a homeless Wanderer starts wandering rather than standing still");
-    CHECK(!targets(rt, 30.0f, 30.0f),
+    CHECK(!targets(st, e, 30.0f, 30.0f),
           "wandering picks somewhere ELSE: its own cell is not a destination");
 }
 

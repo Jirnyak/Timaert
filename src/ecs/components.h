@@ -438,10 +438,17 @@ struct LightEmitter {
 // a village, and the id alone says which place it is (0 = none). The v27
 // homeIsVillage register bit died with the second id space it existed to
 // disambiguate.
+// «Нет клетки» — последнее значение типа (ЗАКОН УЗКОГО ИНДЕКСА: клетка 0 —
+// законный адрес мира); имя — из продиктованной формы цели (M-1). Один
+// сентинел на всякий хранимый адрес-клетку рода 2 (цель, логово).
+inline constexpr std::uint32_t kNoCell = ~0u;
+
 struct MacroNpcRuntime {
     // (`homeSettlementId` умерла 2026-10-22, M-245: ДОМ = РОДИТЕЛЬ, ребро
     //  Parent реестра связей; читается дверью `parent_of@src/macro/store.h`.)
-    std::int32_t  targetSettlementId;
+    // (`targetSettlementId` умерла 2026-10-23, ломоть 3 M-72: ординал рынка
+    //  несёт колонка цели `SquadGoal::what` рода Place — второй носитель
+    //  «куда еду» рядом с целью был вторым словарём.)
     // РЕЙС, СТАНЦИЯ ЗА СТАНЦИЕЙ (владелец 2026-08-30: «решает с того рынка,
     // на котором стоит — никакого всеведения»).
     //
@@ -463,9 +470,13 @@ struct MacroNpcRuntime {
     //
     // `prevStationId` — ОЖИЛ 2026-09-22 вместе с многоскачковым рейсом:
     // станция, с которой крю пришло, чтобы рулетка соседей не гоняла его
-    // обратно на только что обслуженный рынок. -1 = рейс только начат.
-    std::int32_t  prevStationId = -1;
-    float         targetX, targetY;
+    // обратно на только что обслуженный рынок. 0 = рейс только начат —
+    // у ординала-идентичности ноль навсегда «никто» (ЗАКОН СЛОВАРЯ п.6;
+    // сентинел -1 сведён 2026-10-23, ломоть 3 M-72).
+    std::int32_t  prevStationId = 0;
+    // (`targetX`/`targetY` умерли 2026-10-23, ломоть 3 M-72: адрес цели —
+    //  ОДНО число `SquadGoal::cell` (ЗАКОН АДРЕСА п.2, M-3); пара float
+    //  жила 37 писателями и была налогом на хранении.)
     std::int16_t  stateTimer;
     std::int16_t  teleportCooldown;
     // STAMINA IS NOT HERE ANY MORE. `sp`, `maxSp` and the signed `spCarry`
@@ -633,9 +644,9 @@ struct MacroNpcRuntime {
     std::uint8_t  flying = 0;
     // ЛОГОВО — дом-КЛЕТКА для тех, чей дом не ландмарк (драконья гора,
     // стол анкет): модель вылетов (LairSorties) кружит вокруг неё и
-    // возвращается. -1 = логова нет. int16 расчётом: клетка карты ≤ 1023.
-    std::int16_t  lairX = -1;
-    std::int16_t  lairY = -1;
+    // возвращается. Адрес — ОДНО число (ЗАКОН АДРЕСА п.2, M-3; пара int16
+    // умерла 2026-10-23); kNoCell = логова нет.
+    std::uint32_t lairCell = kNoCell;
 };
 // РАЗМЕР ЗАКРЕПЛЁН КОМПИЛЯТОРОМ (AGENTS п.10, владелец 2026-09-21): шапка
 // этой структуры обещала «~36 bytes» — правда была 96, и разошлось это
@@ -664,8 +675,75 @@ struct MacroNpcRuntime {
 //   выравнивания, стоявшая за `int16` перед `float moveBudget`.
 //   72 → 68 (2026-10-22, M-245): ушла `homeSettlementId` (4 Б) — дом стал
 //   ребром Parent реестра связей, второй носитель одного вопроса умер.
-static_assert(sizeof(MacroNpcRuntime) == 68,
-              "рантайм марша: 68 Б × 16384 сквадов = 1.06 МиБ (AGENTS п.10)");
+//   68 → 56 (2026-10-23, ломоть 3 M-72): ушли `targetSettlementId` (4 Б),
+//   `targetX`/`targetY` (8 Б) — «куда и зачем» несёт колонка цели
+//   `SquadGoal` (M-1); пара `lairX`/`lairY` (4 Б) стала одним числом
+//   `lairCell` (4 Б) — адрес = индекс клетки (M-3).
+static_assert(sizeof(MacroNpcRuntime) == 56,
+              "рантайм марша: 56 Б × 16384 сквадов = 0.88 МиБ (AGENTS п.10)");
+
+// ── ЦЕЛЬ СКВАДА — РОД 2, ФОРМА ПРОДИКТОВАНА ВЛАДЕЛЬЦЕМ (M-1) ─────────────
+// 2026-09-22, восстановлено из git 5bf0edaa (CANON «ФОРМА ЦЕЛИ БЫЛА
+// ПРОДИКТОВАНА»): {куда, чего ищу, сколько, чем стать}. АДРЕС ЕСТЬ КЭШ
+// ПРЕДИКАТА — четыре случая без ветки: адрес без предиката (иди туда),
+// предикат без адреса (иди к ближайшему такому), оба (промах чинится
+// ПЕРЕРЕШЕНИЕМ, а не пустым рейсом домой), движущийся род (пересчёт).
+// Указатель на цель ЗАПРЕЩЁН: сейв, смерть цели между тиками, плоские
+// массивы — цель называет мир ОРДИНАЛОМ единого эмитента.
+// `amount` — ОСТАТОК, и его читает ЛЮБОЙ род цели (вердикт 2026-10-22 №6:
+// «сходить сколько раз и сколько мест»); первый читатель приходит с
+// модулями ломтя 4, до него колонка пишется нулём — «не считаем».
+struct SquadGoal {
+    std::uint32_t cell = kNoCell;  // разрешённый адрес — индекс клетки тора
+    std::uint32_t what = 0;        // тег рода (4 бита) + ординал (28 бит)
+    std::uint16_t amount = 0;      // остаток «сколько ещё»; 0 = не считаем
+    std::uint8_t  onArrival = 0;   // чем стать, когда пришёл — NPCState; 0 = Idle
+    // Дыра выравнивания, названная полем (образец M-183): колонка едет в
+    // сейв POD-ом, паддинг обязан быть детерминирован.
+    std::uint8_t  pad = 0;
+};
+static_assert(sizeof(SquadGoal) == 12,
+              "цель сквада: 12 Б × 16384 = 192 КиБ (M-1; DOD п.10)");
+
+// Роды цели — ЧЕТЫРЕ плюс «ничего», и «предмет» не из них (вердикт M-1):
+// у предмета нет адреса в мире — он лежит В инвентаре места или сквада,
+// то есть сводится к ним плюс строка товара.
+enum class GoalKind : std::uint8_t {
+    None = 0, Cell = 1, Feature = 2, Place = 3, Squad = 4
+};
+
+// Упаковка «чего ищу»: 28 бит ординала хватает единому эмитенту
+// идентичностей с запасом (монотонный nextSpawnId: 2^28 = 268 млн рождений
+// за жизнь мира; кап живых — 16 384).
+inline constexpr std::uint32_t goal_what(GoalKind k, std::uint32_t ordinal) {
+    return (std::uint32_t(k) << 28) | (ordinal & 0x0FFFFFFFu);
+}
+inline constexpr GoalKind goal_kind(std::uint32_t what) {
+    return GoalKind(what >> 28);
+}
+inline constexpr std::uint32_t goal_ordinal(std::uint32_t what) {
+    return what & 0x0FFFFFFFu;
+}
+
+// ── ДВЕ ДВЕРИ ЦЕЛИ (прецедент stateAfterRest/M-254: укладка и подъём) ────
+// Записать цель ЦЕЛИКОМ: поля порознь не пишутся — половина цели (адрес без
+// «чем стать») и есть тот дубль «куда + чем стать», что жил 12 парами строк
+// у писателей NS::Returning.
+inline void goal_set(SquadGoal& g, std::uint32_t cell, std::uint32_t what,
+                     std::uint16_t amount, std::uint8_t onArrival) {
+    g.cell = cell;
+    g.what = what;
+    g.amount = amount;
+    g.onArrival = onArrival;
+}
+// Прибытие: стать тем, что несла цель. Ноль onArrival = NPCState::Idle —
+// умолчание значением, не веткой. Сама цель НЕ гасится: адрес есть КЭШ
+// ПРЕДИКАТА, и работа по прибытии читает его же (клетка жилы у артели);
+// новая цель пишется ПОВЕРХ следующим решением — как и прежний носитель,
+// которого никто не «очищал». Гашение целей — закон диспетчера (M-2).
+inline void goal_arrive(const SquadGoal& g, MacroNpcRuntime& rt) {
+    rt.state = g.onArrival;
+}
 
 // Deterministic spawn ordinal for a persistent macro NPC (Inc 5e-2), assigned
 // in creation order (0,1,2,…) by the SOLE creation path (make_npc) — the one
@@ -854,6 +932,7 @@ TIMAERT_ROW(sm::ecs::SquadName);
 TIMAERT_ROW(sm::ecs::Sprite);
 TIMAERT_ROW(sm::ecs::LightEmitter);
 TIMAERT_ROW(sm::ecs::MacroNpcRuntime);
+TIMAERT_ROW(sm::ecs::SquadGoal);
 TIMAERT_ROW(sm::ecs::MacroSpawnId);
 TIMAERT_ROW(sm::ecs::SquadOrders);
 TIMAERT_ROW(sm::ecs::DesignCharacterTag);

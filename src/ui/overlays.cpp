@@ -328,33 +328,8 @@ namespace sm::ui
                                    /*buying*/ false);
         }
 
-        const char *objective_kind_label(ObjectiveKind k)
-        {
-            switch (k)
-            {
-            case ObjectiveKind::VisitCell:
-                return "Visit";
-            case ObjectiveKind::DeliverItems:
-                return "Deliver";
-            case ObjectiveKind::DestroyNpc:
-                return "Destroy";
-            }
-            return "?";
-        }
-
-        const char *quest_category_label(QuestCategory c)
-        {
-            switch (c)
-            {
-            case QuestCategory::Main:
-                return "main";
-            case QuestCategory::Side:
-                return "side";
-            case QuestCategory::Procedural:
-                return "procedural";
-            }
-            return "?";
-        }
+        // (Хелперы квестов objective_kind_label/quest_category_label
+        //  умерли с квест-машиной — ломоть 3 M-72, вариант А.)
 
         // (No `item_type_label` and no `is_equipment_item`. Whether a row can
         // be WORN is the row's own `slotMask` — an item that names no body
@@ -424,41 +399,7 @@ namespace sm::ui
             ImGui::Text("%d", value);
         }
 
-        void draw_objective_line(const Objective &o)
-        {
-            const char *done = o.completed ? "[x]" : "[ ]";
-            switch (o.kind)
-            {
-            case ObjectiveKind::VisitCell:
-                ImGui::BulletText("%s Visit (%d,%d) radius %.1f",
-                                  done, o.ix, o.iy, o.radius);
-                break;
-            case ObjectiveKind::DeliverItems:
-                ImGui::BulletText("%s Deliver %d x %s to settlement %d",
-                                  done, o.quantity, o.itemId.c_str(), o.targetSettlementId);
-                break;
-            case ObjectiveKind::DestroyNpc:
-                ImGui::BulletText("%s Defeat type %d: %d/%d",
-                                  done, o.npcType, o.killed, o.count);
-                break;
-            }
-        }
-
-        void draw_reward_line(const Reward &r)
-        {
-            switch (r.kind)
-            {
-            case RewardKind::Gold:
-                ImGui::BulletText("%d gold", r.amount);
-                break;
-            case RewardKind::Xp:
-                ImGui::BulletText("%d xp", r.amount);
-                break;
-            case RewardKind::Reputation:
-                ImGui::BulletText("%+d reputation: %s", r.delta, r.faction.c_str());
-                break;
-            }
-        }
+        // (draw_objective_line/draw_reward_line умерли с квест-машиной.)
 
         ImGuiTabItemFlags selected_tab(CharacterPanelTab current, CharacterPanelTab tab)
         {
@@ -1574,10 +1515,6 @@ namespace sm::ui
     void draw_settlement(GameState &gs,
                          MacroStore &st,
                          MacroHandle subject,
-                         const std::vector<Quest> &availableQuests,
-                         std::vector<Quest> &activeQuests,
-                         QuestEngine &questEngine,
-                         EventBus &bus,
                          SettlementPanelTab *tab,
                          bool *open,
                          MacroHandle *attackRequest,
@@ -2049,188 +1986,16 @@ namespace sm::ui
                 // The inn is gone (owner, 2026-09-11: «отдых таверны
                 // вырезать вообще»): a paid full restore beside the ONE
                 // macro rest law was a second, cheaper law of recovery.
-                // Quests — the contract board (actions column: Quests).
-                if (acts & kMapActQuests)
-                {
-                const bool questsOpen = ImGui::BeginTabItem("Quests", nullptr,
-                                                            selected_tab(current, SettlementPanelTab::Quests));
-                if (tab && ImGui::IsItemClicked())
-                    *tab = SettlementPanelTab::Quests;
-                if (questsOpen)
-                {
-                    ImGui::Text("Available today: %zu", availableQuests.size());
-                    ImGui::Separator();
-                    for (const auto &q : availableQuests)
-                    {
-                        const bool known = questEngine.is_known(activeQuests, gs.player, q);
-                        // Offers carry no ordinal yet — their provenance slot
-                        // is the unique per-row key (one offer per slot/day).
-                        ImGui::PushID(int(q.offerSlot));
-                        if (ImGui::TreeNode("quest", "%s%s", q.title.c_str(),
-                                            known ? " (known)" : ""))
-                        {
-                            ImGui::TextWrapped("%s", q.description.c_str());
-                            ImGui::Text("Difficulty: %d", q.difficulty);
-                            ImGui::TextUnformatted("Objectives");
-                            for (const auto &o : q.objectives)
-                                draw_objective_line(o);
-                            ImGui::TextUnformatted("Rewards");
-                            for (const auto &r : q.rewards)
-                                draw_reward_line(r);
-                            if (known)
-                                ImGui::BeginDisabled();
-                            if (ImGui::Button("Accept"))
-                            {
-                                questEngine.accept(activeQuests, q, gs, bus);
-                            }
-                            if (known)
-                                ImGui::EndDisabled();
-                            ImGui::TreePop();
-                        }
-                        ImGui::PopID();
-                    }
-                    ImGui::EndTabItem();
-                }
-                }   // acts & kMapActQuests
+                // (Доска контрактов умерла с квест-машиной — ломоть 3
+                //  M-72, вариант А: задание игрока вернётся
+                //  конструктором задач на форме цели рода 2.)
                 ImGui::EndTabBar();
             }
         }
         ImGui::End();
     }
 
-    void draw_quest_log(GameState &gs,
-                        std::vector<Quest> &quests,
-                        QuestEngine &questEngine,
-                        EventBus &bus,
-                        int *selectedQuestIndex,
-                        bool *open,
-                        float scale,
-                        const char *closeKeyName)
-    {
-        if (!open || !*open)
-            return;
-
-        int localSelected = 0;
-        int &selected = selectedQuestIndex ? *selectedQuestIndex : localSelected;
-        if (selected < 0)
-            selected = 0;
-        if (selected >= int(quests.size()))
-        {
-            selected = quests.empty() ? 0 : int(quests.size()) - 1;
-        }
-
-        int abandonIndex = -1;
-
-        ImGui::SetNextWindowSize(ImVec2(640 * scale, 430 * scale), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Quest Journal", open))
-        {
-            ImGui::SetWindowFontScale(scale);
-            // The button quotes the LIVE Quests binding, never a literal —
-            // the same honesty rule as the toolbar tooltips (CANON S22).
-            char closeLabel[32] = "Close";
-            if (closeKeyName && closeKeyName[0])
-                std::snprintf(closeLabel, sizeof(closeLabel), "Close [%s]",
-                              closeKeyName);
-            if (ImGui::Button(closeLabel))
-            {
-                *open = false;
-            }
-            ImGui::SameLine();
-            ImGui::TextDisabled("Active: %zu  Done: %u  Failed: %u",
-                                quests.size(), gs.player.completedQuestCount,
-                                gs.player.failedQuestCount);
-            ImGui::Separator();
-
-            if (quests.empty())
-            {
-                ImGui::Dummy(ImVec2(0.0f, 70.0f));
-                ImGui::TextDisabled("No active quests. Visit a settlement to find work.");
-            }
-            else
-            {
-                constexpr float kListW = 190.0f;
-                ImGui::BeginChild("##quest_list", ImVec2(kListW, 0.0f), true);
-                for (int i = 0; i < int(quests.size()); ++i)
-                {
-                    const Quest &q = quests[std::size_t(i)];
-                    ImGui::PushID(int(q.ordinal));
-                    if (ImGui::Selectable(q.title.c_str(), selected == i))
-                    {
-                        selected = i;
-                    }
-                    ImGui::TextDisabled("%s", quest_category_label(q.category));
-                    ImGui::Separator();
-                    ImGui::PopID();
-                }
-                ImGui::EndChild();
-
-                ImGui::SameLine();
-                ImGui::BeginChild("##quest_detail", ImVec2(0.0f, 0.0f), true);
-                const Quest &q = quests[std::size_t(selected)];
-                ImGui::Text("%s", q.title.c_str());
-                ImGui::TextDisabled("%s  Difficulty: %d",
-                                    quest_category_label(q.category), q.difficulty);
-                if (q.expireDay >= 0)
-                {
-                    ImGui::SameLine();
-                    ImGui::TextDisabled("Expires: day %d", q.expireDay);
-                }
-
-                ImGui::Spacing();
-                ImGui::TextWrapped("%s", q.description.c_str());
-                ImGui::Separator();
-
-                ImGui::TextUnformatted("Objectives");
-                if (q.objectives.empty())
-                {
-                    ImGui::TextDisabled("(none)");
-                }
-                else
-                {
-                    for (const auto &o : q.objectives)
-                    {
-                        ImGui::TextDisabled("%s", objective_kind_label(o.kind));
-                        ImGui::SameLine();
-                        draw_objective_line(o);
-                    }
-                }
-
-                ImGui::Spacing();
-                ImGui::TextUnformatted("Rewards");
-                if (q.rewards.empty())
-                {
-                    ImGui::TextDisabled("(none)");
-                }
-                else
-                {
-                    for (const auto &r : q.rewards)
-                        draw_reward_line(r);
-                }
-
-                ImGui::Separator();
-                if (ImGui::Button("Abandon Quest"))
-                {
-                    abandonIndex = selected;
-                }
-                if (ImGui::IsItemHovered())
-                {
-                    ImGui::SetTooltip("Uses QuestEngine::abandon; emits QuestFail(abandoned) and removes the active quest.");
-                }
-                ImGui::EndChild();
-            }
-        }
-        ImGui::End();
-
-        if (abandonIndex >= 0 && abandonIndex < int(quests.size()))
-        {
-            questEngine.abandon(
-                quests, quests[std::size_t(abandonIndex)].ordinal, bus);
-            if (selected >= int(quests.size()))
-            {
-                selected = quests.empty() ? 0 : int(quests.size()) - 1;
-            }
-        }
-    }
+    // (draw_quest_log умер с квест-машиной — ломоть 3 M-72.)
 
     void draw_codex(GameState &gs, bool *open, float scale)
     {

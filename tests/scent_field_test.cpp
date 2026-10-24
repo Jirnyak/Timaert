@@ -157,8 +157,6 @@ struct HuntRig {
                                        std::uint16_t(factionIdx)};
         ecs::MacroNpcRuntime rt{};
         rt.moveMult = 1.0f;
-        rt.targetX = x;
-        rt.targetY = y;
         st.runtime[h.slot] = rt;
         ecs::Pools pools{};
         pools.hp = pools.maxHp = 50;
@@ -269,8 +267,8 @@ void test_local_maximum_ends_the_hunt_and_keeps_errand() {
     // патрульной механикой.)
     rt.squadType = std::uint8_t(SquadType::Caravan);
     rt.errandObject = 42u;
-    rt.targetX = 50.0f;
-    rt.targetY = 50.0f;
+    sm::ecs::goal_set(rig.wStore_->goal[e.slot],
+                      ecs::cell_index(50, 50, rig.ctx.mapW), 0, 0, 0);
 
     // Сам стою на максимуме — подъёма нет, погоня окончена, думает роль.
     scent_deposit(rig.gs.scent, fPrey, 10, 10, 0u, 4000u);
@@ -283,7 +281,8 @@ void test_local_maximum_ends_the_hunt_and_keeps_errand() {
     CHECK(scent_hunt_step(e, p, kind, rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx), "охота пошла (фикстура)");
     CHECK(rt.squadType == std::uint8_t(SquadType::Caravan)
               && rt.errandObject == 42u
-              && int(rt.targetX) == 50 && int(rt.targetY) == 50,
+              && rig.wStore_->goal[e.slot].cell
+                     == ecs::cell_index(50, 50, rig.ctx.mapW),
           "макроцель не тронута: глагол, объект и курс поручения целы");
 }
 

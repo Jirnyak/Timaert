@@ -81,7 +81,6 @@ macro_npc_trace
 macro_glide_gap
 
 # Panels, spells, story.
-open_quests
 open_codex
 open_spells
 cast_spell

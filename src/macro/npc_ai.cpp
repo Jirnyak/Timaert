@@ -263,10 +263,22 @@ bool find_home_fauna(const TickContext& ctx, float px, float py,
     return found;
 }
 
-bool at_target(const MacroPos& p, const ecs::MacroNpcRuntime& rt,
-               const TickContext& ctx) {
-    return torus_dist_sq(p.x, p.y, rt.targetX, rt.targetY,
+bool at_goal(const MacroPos& p, const ecs::SquadGoal& g,
+             const TickContext& ctx) {
+    // Прибытие судится ЦЕЛЬЮ (M-1): адрес цели — клетка, близость меряется
+    // к её точке тем же порогом, что и прежде (< 2 клеток) — сменился
+    // НОСИТЕЛЬ адреса, закон посадки не менялся. Цели нет — прибытия нет.
+    if (g.cell == ecs::kNoCell) return false;
+    return torus_dist_sq(p.x, p.y, float(cell_x(g.cell, ctx.mapW)),
+                         float(cell_y(g.cell, ctx.mapW)),
                          float(ctx.mapW), float(ctx.mapH)) < 4.0f;
+}
+
+// Точка марша из адреса цели: ноги (try_move) ходят ГЕОМЕТРИЕЙ, и пара
+// координат законна ровно там (ЗАКОН АДРЕСА п.2 — в геометрии марша пара
+// на месте, на хранении она была налогом).
+XY goal_xy(const ecs::SquadGoal& g, const TickContext& ctx) {
+    return {float(cell_x(g.cell, ctx.mapW)), float(cell_y(g.cell, ctx.mapW))};
 }
 
 // Settle the fractional SP carry into whole points — BOTH directions (march
@@ -458,7 +470,7 @@ void settle_march_rhythm(MacroHandle e, const MacroPos& p,
     // Measured 2026-08-31: a silver crew froze at 48/110 SP for days at a
     // river bank — walking nowhere, resting never.
     const bool stopped = rt.state == std::uint8_t(NPCState::Resting)
-                         || at_target(p, rt, ctx)
+                         || at_goal(p, store_ctx(ctx).goal[e.slot], ctx)
                          || (!moved && rt.moveBudget >= 1.0f);
 
     // ...and `!moved` on top, because a think that arrived still MARCHED: you
@@ -721,6 +733,7 @@ void ai_home_wanderer(MacroHandle self, MacroPos& p,
                       [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
     XY home;
     if (!home_pos(self, ctx, home)) return;
+    ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
 
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
@@ -728,11 +741,13 @@ void ai_home_wanderer(MacroHandle self, MacroPos& p,
             float dsq = torus_dist_sq(p.x, p.y, home.x, home.y,
                                       float(ctx.mapW), float(ctx.mapH));
             if (dsq > 400.0f) {
-                rt.targetX = home.x; rt.targetY = home.y;
+                ecs::goal_set(g, cell_of(int(home.x), int(home.y), ctx.mapW),
+                              0, 0, std::uint8_t(NS::Idle));
                 rt.state = std::uint8_t(NS::Returning);
             } else {
                 XY t = pick_random_nearby(home.x, home.y, 12, ctx);
-                rt.targetX = t.x; rt.targetY = t.y;
+                ecs::goal_set(g, cell_of(int(t.x), int(t.y), ctx.mapW),
+                              0, 0, std::uint8_t(NS::Idle));
                 rt.state = std::uint8_t(NS::Wandering);
             }
         }
@@ -740,12 +755,13 @@ void ai_home_wanderer(MacroHandle self, MacroPos& p,
     }
     if (rt.state == std::uint8_t(NS::Wandering)
         || rt.state == std::uint8_t(NS::Returning)) {
-        if (at_target(p, rt, ctx)) {
-            rt.state = std::uint8_t(NS::Idle);
+        if (at_goal(p, g, ctx)) {
+            ecs::goal_arrive(g, rt);
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 20));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        const XY t = goal_xy(g, ctx);
+        try_move(p, rt, t.x, t.y, ctx);
     }
 }
 
@@ -1136,6 +1152,7 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
     (void)kind;   // the errand, not the type, names the work (CANON S10)
     XY home;
     if (!home_pos(self, ctx, home)) return;
+    ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
     // (ЗДЕСЬ СТОЯЛА ВЕТКА «squadType == Caravan → отдать управление
     // ai_vendor» — пятая машина ИИ, спрятанная ВНУТРИ первой. Снята
     // 2026-09-21: тип сквада разбирает `dispatch`, и корован попадает в свою
@@ -1178,8 +1195,9 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
                 // (a CREATURE yield rides the creatures, not the bag — there
                 // is no «full back» to send home early)
                 if (back_full_of_yield(*bagIdle)) {
-                    rt.targetX = home.x;
-                    rt.targetY = home.y;
+                    ecs::goal_set(g,
+                                  cell_of(int(home.x), int(home.y), ctx.mapW),
+                                  0, 0, std::uint8_t(NS::Idle));
                     rt.state = std::uint8_t(NS::Returning);
                     return;
                 }
@@ -1197,38 +1215,42 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
                 found = find_worksite(*def, ctx, p, home, site);
             }
             if (found) {
-                rt.targetX = site.x; rt.targetY = site.y;
+                ecs::goal_set(g, cell_of(int(site.x), int(site.y), ctx.mapW),
+                              0, 0, std::uint8_t(NS::Working));
                 rt.state = std::uint8_t(NS::Traveling);
             } else if (torus_dist_sq(p.x, p.y, home.x, home.y,
                                      float(ctx.mapW), float(ctx.mapH))
                        > 400.0f) {
                 // No work and far afield: come home first — the exact
                 // HomeWanderer rule every gatherer degrades to.
-                rt.targetX = home.x; rt.targetY = home.y;
+                ecs::goal_set(g, cell_of(int(home.x), int(home.y), ctx.mapW),
+                              0, 0, std::uint8_t(NS::Idle));
                 rt.state = std::uint8_t(NS::Returning);
             } else {
                 XY t = pick_random_nearby(home.x, home.y, 12, ctx);
-                rt.targetX = t.x; rt.targetY = t.y;
+                ecs::goal_set(g, cell_of(int(t.x), int(t.y), ctx.mapW),
+                              0, 0, std::uint8_t(NS::Idle));
                 rt.state = std::uint8_t(NS::Wandering);
             }
         }
         return;
     }
     if (rt.state == std::uint8_t(NS::Traveling)) {
-        if (at_target(p, rt, ctx)) {
-            rt.state = std::uint8_t(NS::Working);
+        if (at_goal(p, g, ctx)) {
+            ecs::goal_arrive(g, rt);   // → Working: цель несла «чем стать»
             rt.stateTimer = std::int16_t(8 + rand_int(ctx, 8));
             return;
         }
         const float ox = p.x, oy = p.y;
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        const XY t = goal_xy(g, ctx);
+        try_move(p, rt, t.x, t.y, ctx);
         // A leg that cannot advance gives the run up (the vendor's own
         // law): the reach wave keeps this rare, but a concave shore can
         // still wedge a greedy march — better home tonight than frozen at
         // the bank forever (measured 2026-08-31).
         if (march_is_stuck_(p, ox, oy, rt, pools)) {
-            rt.targetX = home.x;
-            rt.targetY = home.y;
+            ecs::goal_set(g, cell_of(int(home.x), int(home.y), ctx.mapW),
+                          0, 0, std::uint8_t(NS::Idle));
             rt.state = std::uint8_t(NS::Returning);
         }
         return;
@@ -1251,8 +1273,8 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
             const int cycleCost =
                 sp_price(int(pools.maxSp), def->perWorkerDay);
             if (int(pools.sp) < cycleCost) {
-                rt.targetX = home.x;
-                rt.targetY = home.y;
+                ecs::goal_set(g, cell_of(int(home.x), int(home.y), ctx.mapW),
+                              0, 0, std::uint8_t(NS::Idle));
                 rt.state = std::uint8_t(NS::Returning);
                 return;
             }
@@ -1262,8 +1284,10 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
             // the fail-closed rule every gatherer shares.
             bool tookSomething = false;
             if (ctx.mw.store) {
-                const int tx = int(rt.targetX);
-                const int ty = int(rt.targetY);
+                // Рабочее место — АДРЕС ЦЕЛИ: прибытие его не гасит (адрес
+                // есть кэш предиката), работа читает его клеткой.
+                const int tx = cell_x(g.cell, ctx.mapW);
+                const int ty = cell_y(g.cell, ctx.mapW);
                 // (ЗДЕСЬ АРТЕЛЬ СТРОИЛА ШАХТУ НАД ГОЛОЙ ЖИЛОЙ И ЗАГОН ПОД
                 // ТАБУН. ВЫРЕЗАНО 2026-09-22, сессия 14, вердикт владельца:
                 // «СТРОИТЕЛЬСТВО КРЕСТЬЯНАМИ НЕ РАБОТАЕТ НА НЕГО НЕЛЬЗЯ
@@ -1345,14 +1369,15 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
                     return;
                 }
             }
-            rt.targetX = home.x; rt.targetY = home.y;
+            ecs::goal_set(g, cell_of(int(home.x), int(home.y), ctx.mapW),
+                          0, 0, std::uint8_t(NS::Idle));
             rt.state = std::uint8_t(NS::Returning);
         }
         return;
     }
     if (rt.state == std::uint8_t(NS::Wandering)
         || rt.state == std::uint8_t(NS::Returning)) {
-        if (at_target(p, rt, ctx)) {
+        if (at_goal(p, g, ctx)) {
             // Home with the haul: everything gathered lands in the HOME
             // store — the same universal inventory the market sells from.
             if (rt.state == std::uint8_t(NS::Returning)) {
@@ -1369,11 +1394,12 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
                         deliver_bag_home(self, ctx, m);
                 }
             }
-            rt.state = std::uint8_t(NS::Idle);
+            ecs::goal_arrive(g, rt);   // → Idle
             rt.stateTimer = std::int16_t(6 + rand_int(ctx, 12));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        const XY t = goal_xy(g, ctx);
+        try_move(p, rt, t.x, t.y, ctx);
     }
 }
 
@@ -1392,7 +1418,7 @@ void ai_gatherer(MacroHandle self, MacroPos& p,
 // beside the legal one, so the hold neither grew with the leader's back nor
 // answered to the overload law that priced the very same cargo's march.
 
-void ai_nomad(MacroPos& p, ecs::MacroNpcRuntime& rt,
+void ai_nomad(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
               ecs::Pools& pools, const TickContext& ctx);
 
 // Move up to `maxUnits` of `id` between inventories, bounded by the cargo
@@ -1879,11 +1905,12 @@ void ai_vendor(MacroHandle self, MacroPos& p,
                const TickContext& ctx) {
     XY home;
     if (!home_pos(self, ctx, home) || !ctx.mw.store) {
-        ai_nomad(p, rt, pools, ctx);
+        ai_nomad(self, p, rt, pools, ctx);
         return;
     }
     MacroStore& st = store_ctx(ctx);
     Inventory* bag = &st.inventory[self.slot].inv;
+    ecs::SquadGoal& g = st.goal[self.slot];
     // Плечо дома — ребро Parent (M-245): один резолв слота на такт.
     const std::uint16_t homeSlot =
         place_slot_by_id(ctx, parent_of(st, self.slot));
@@ -1908,17 +1935,19 @@ void ai_vendor(MacroHandle self, MacroPos& p,
         // (измерено: артели 1299 заперты в поле 30 дней).
         if (torus_dist_sq(p.x, p.y, home.x, home.y,
                           float(ctx.mapW), float(ctx.mapH)) >= 4.0f) {
-            if (const std::uint16_t m2 =
-                    place_slot_by_id(ctx, rt.targetSettlementId);
-                m2 != kMacroNoSlot
+            const std::uint16_t m2 =
+                ecs::goal_kind(g.what) == ecs::GoalKind::Place
+                    ? place_slot_by_id(ctx, int(ecs::goal_ordinal(g.what)))
+                    : kMacroNoSlot;
+            if (m2 != kMacroNoSlot
                 && landmark_is_settlement(
                        SquadType(st.runtime[m2].squadType))) {
-                rt.targetX = float(slot_x(st, m2, ctx.mapW));
-                rt.targetY = float(slot_y(st, m2, ctx.mapW));
+                ecs::goal_set(g, st.cell[m2].idx, g.what, 0,
+                              std::uint8_t(NS::Working));
                 rt.state = std::uint8_t(NS::Traveling);
             } else {
-                rt.targetX = home.x;
-                rt.targetY = home.y;
+                ecs::goal_set(g, cell_of(int(home.x), int(home.y), ctx.mapW),
+                              0, 0, std::uint8_t(NS::Idle));
                 rt.state = std::uint8_t(NS::Returning);
             }
             return;
@@ -1956,23 +1985,25 @@ void ai_vendor(MacroHandle self, MacroPos& p,
             rt.stateTimer = std::int16_t(40 + rand_int(ctx, 40));
             return;
         }
-        rt.targetSettlementId = int(st.spawnId[market].index);
-        rt.targetX = float(slot_x(st, market, ctx.mapW));
-        rt.targetY = float(slot_y(st, market, ctx.mapW));
+        ecs::goal_set(g, st.cell[market].idx,
+                      ecs::goal_what(ecs::GoalKind::Place,
+                                     st.spawnId[market].index),
+                      0, std::uint8_t(NS::Working));
         rt.state = std::uint8_t(NS::Traveling);
         return;
     }
     if (rt.state == std::uint8_t(NS::Traveling)) {
-        if (at_target(p, rt, ctx)) {
-            rt.state = std::uint8_t(NS::Working);
+        if (at_goal(p, g, ctx)) {
+            ecs::goal_arrive(g, rt);   // → Working
             rt.stateTimer = std::int16_t(4 + rand_int(ctx, 4));
             return;
         }
         const float ox = p.x, oy = p.y;
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        const XY t = goal_xy(g, ctx);
+        try_move(p, rt, t.x, t.y, ctx);
         if (march_is_stuck_(p, ox, oy, rt, pools)) {
-            rt.targetX = home.x;
-            rt.targetY = home.y;
+            ecs::goal_set(g, cell_of(int(home.x), int(home.y), ctx.mapW),
+                          0, 0, std::uint8_t(NS::Idle));
             rt.state = std::uint8_t(NS::Returning);
         }
         return;
@@ -1981,7 +2012,9 @@ void ai_vendor(MacroHandle self, MacroPos& p,
         --rt.stateTimer;
         if (rt.stateTimer > 0) return;
         if (const std::uint16_t market =
-                place_slot_by_id(ctx, rt.targetSettlementId);
+                ecs::goal_kind(g.what) == ecs::GoalKind::Place
+                    ? place_slot_by_id(ctx, int(ecs::goal_ordinal(g.what)))
+                    : kMacroNoSlot;
             market != kMacroNoSlot
             && landmark_is_settlement(
                    SquadType(st.runtime[market].squadType))) {
@@ -1997,9 +2030,10 @@ void ai_vendor(MacroHandle self, MacroPos& p,
             if (leg.movedTableValue > 0) {
                 record_landmark_fact(st, *ctx.mw.gs, FactKind::Traded,
                                      parent_of(st, self.slot),
-                                     int(rt.targetX), int(rt.targetY),
+                                     cell_x(g.cell, ctx.mapW),
+                                     cell_y(g.cell, ctx.mapW),
                                      leg.movedTableValue,
-                                     rt.targetSettlementId);
+                                     int(ecs::goal_ordinal(g.what)));
             }
         // ── РАЗВИЛКА РЕЙСА: «ДАЛЬШЕ» ПРОТИВ «ДОМОЙ» (CANON S10) ──────────
         // Здесь до 2026-09-22 стоял безусловный разворот домой — рейс
@@ -2091,23 +2125,24 @@ void ai_vendor(MacroHandle self, MacroPos& p,
             if (goOn && next != kMacroNoSlot) {
                 rt.prevStationId = int(st.spawnId[market].index);
                 rt.errandObject = st.spawnId[next].index;
-                rt.targetSettlementId = int(st.spawnId[next].index);
-                rt.targetX = nextX;
-                rt.targetY = nextY;
+                ecs::goal_set(g, st.cell[next].idx,
+                              ecs::goal_what(ecs::GoalKind::Place,
+                                             st.spawnId[next].index),
+                              0, std::uint8_t(NS::Working));
                 rt.state = std::uint8_t(NS::Traveling);
                 return;
             }
         }
         }
-        rt.prevStationId = -1;
-        rt.targetX = home.x;
-        rt.targetY = home.y;
+        rt.prevStationId = 0;   // ноль = «никто» (ЗАКОН СЛОВАРЯ п.6)
+        ecs::goal_set(g, cell_of(int(home.x), int(home.y), ctx.mapW),
+                      0, 0, std::uint8_t(NS::Idle));
         rt.state = std::uint8_t(NS::Returning);
         return;
     }
     if (rt.state == std::uint8_t(NS::Wandering)
         || rt.state == std::uint8_t(NS::Returning)) {
-        if (at_target(p, rt, ctx)) {
+        if (at_goal(p, g, ctx)) {
             if (rt.state == std::uint8_t(NS::Returning)) {
                 // Home: purchases and earnings land on the home store; the
                 // rotation dissolves the crew at dawn. Вылив сумки — ОДНА
@@ -2125,11 +2160,12 @@ void ai_vendor(MacroHandle self, MacroPos& p,
                 transfer_value_dense(*bag, depot_(homeSlot, ctx.mw),
                                inventory_value(*bag));
             }
-            rt.state = std::uint8_t(NS::Idle);
+            ecs::goal_arrive(g, rt);   // → Idle
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        const XY t = goal_xy(g, ctx);
+        try_move(p, rt, t.x, t.y, ctx);
     }
 }
 
@@ -2157,7 +2193,7 @@ void ai_collector(MacroHandle self, MacroPos& p,
                   const TickContext& ctx) {
     XY home;
     if (!home_pos(self, ctx, home) || !ctx.mw.store) {
-        ai_nomad(p, rt, pools, ctx);
+        ai_nomad(self, p, rt, pools, ctx);
         return;
     }
     MacroStore& st = store_ctx(ctx);
@@ -2166,7 +2202,7 @@ void ai_collector(MacroHandle self, MacroPos& p,
     const std::uint16_t homeSlot =
         place_slot_by_id(ctx, parent_of(st, self.slot));
     if (homeSlot == kMacroNoSlot) {
-        ai_nomad(p, rt, pools, ctx);
+        ai_nomad(self, p, rt, pools, ctx);
         return;
     }
     const std::uint16_t vassal = place_slot_by_id(ctx, int(rt.errandObject));
@@ -2174,10 +2210,9 @@ void ai_collector(MacroHandle self, MacroPos& p,
         ai_home_wanderer(self, p, rt, pools, ctx);
         return;
     }
-    const int vassalX = slot_x(st, vassal, ctx.mapW);
-    const int vassalY = slot_y(st, vassal, ctx.mapW);
     Inventory& homeInv = st.inventory[homeSlot].inv;
     Inventory& vassalInv = st.inventory[vassal].inv;
+    ecs::SquadGoal& g = st.goal[self.slot];
 
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
@@ -2185,8 +2220,10 @@ void ai_collector(MacroHandle self, MacroPos& p,
         // Дома и с пустыми руками — идём за долгом; дома с грузом — сдаём.
         if (torus_dist_sq(p.x, p.y, home.x, home.y,
                           float(ctx.mapW), float(ctx.mapH)) >= 4.0f) {
-            rt.targetX = float(vassalX);
-            rt.targetY = float(vassalY);
+            ecs::goal_set(g, st.cell[vassal].idx,
+                          ecs::goal_what(ecs::GoalKind::Place,
+                                         st.spawnId[vassal].index),
+                          0, std::uint8_t(NS::Working));
             rt.state = std::uint8_t(NS::Traveling);
             return;
         }
@@ -2196,15 +2233,16 @@ void ai_collector(MacroHandle self, MacroPos& p,
             rt.stateTimer = std::int16_t(8 + rand_int(ctx, 8));
             return;
         }
-        rt.targetSettlementId = int(st.spawnId[vassal].index);
-        rt.targetX = float(vassalX);
-        rt.targetY = float(vassalY);
+        ecs::goal_set(g, st.cell[vassal].idx,
+                      ecs::goal_what(ecs::GoalKind::Place,
+                                     st.spawnId[vassal].index),
+                      0, std::uint8_t(NS::Working));
         rt.state = std::uint8_t(NS::Traveling);
         return;
     }
     if (rt.state == std::uint8_t(NS::Traveling)) {
-        if (at_target(p, rt, ctx)) {
-            rt.state = std::uint8_t(NS::Working);
+        if (at_goal(p, g, ctx)) {
+            ecs::goal_arrive(g, rt);   // → Working
             rt.stateTimer = std::int16_t(2 + rand_int(ctx, 3));
             return;
         }
@@ -2212,7 +2250,8 @@ void ai_collector(MacroHandle self, MacroPos& p,
         // ровно так и было при первой сборке 2026-09-22 — гистограмма
         // состояний показала Traveling 799 563 при Working РОВНО НОЛЬ, и
         // канал дани был пуст, хотя заявки и рождение работали.
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        const XY t = goal_xy(g, ctx);
+        try_move(p, rt, t.x, t.y, ctx);
         return;
     }
     if (rt.state == std::uint8_t(NS::Working)) {
@@ -2314,14 +2353,14 @@ void ai_collector(MacroHandle self, MacroPos& p,
                                  int(std::min<long long>(took, 1 << 30)),
                                  parent_of(st, self.slot));
         }
-        rt.targetX = home.x;
-        rt.targetY = home.y;
+        ecs::goal_set(g, cell_of(int(home.x), int(home.y), ctx.mapW),
+                      0, 0, std::uint8_t(NS::Idle));
         rt.state = std::uint8_t(NS::Returning);
         return;
     }
     if (rt.state == std::uint8_t(NS::Wandering)
         || rt.state == std::uint8_t(NS::Returning)) {
-        if (at_target(p, rt, ctx)) {
+        if (at_goal(p, g, ctx)) {
             // Вылив дани домой — ОДНА сделка (ломоть 2 M-72).
             DealLine dump[kCommodityCount];
             for (int i = 0; i < kCommodityCount; ++i) {
@@ -2334,11 +2373,12 @@ void ai_collector(MacroHandle self, MacroPos& p,
                  ctx.mw.econFacts, ctx.mw.econFactsUser);
             transfer_value_dense(*bag, depot_(homeSlot, ctx.mw),
                                  inventory_value(*bag));
-            rt.state = std::uint8_t(NS::Idle);
+            ecs::goal_arrive(g, rt);   // → Idle
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        const XY t = goal_xy(g, ctx);
+        try_move(p, rt, t.x, t.y, ctx);
         return;
     }
     rt.state = std::uint8_t(NS::Idle);
@@ -2350,6 +2390,7 @@ void ai_trader(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     XY home;
     if (!home_pos(self, ctx, home)) return;
     const MacroStore& st = store_ctx(ctx);
+    ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
     const int myHomeId = parent_of(st, self.slot);
 
     if (rt.state == std::uint8_t(NS::Idle)) {
@@ -2370,9 +2411,10 @@ void ai_trader(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                     if (taken || !is_other_city(st, slot, myHomeId))
                         return;
                     if (pick-- != 0) return;
-                    rt.targetSettlementId = int(st.spawnId[slot].index);
-                    rt.targetX = float(slot_x(st, slot, ctx.mapW));
-                    rt.targetY = float(slot_y(st, slot, ctx.mapW));
+                    ecs::goal_set(g, st.cell[slot].idx,
+                                  ecs::goal_what(ecs::GoalKind::Place,
+                                                 st.spawnId[slot].index),
+                                  0, std::uint8_t(NS::Working));
                     rt.state  = std::uint8_t(NS::Traveling);
                     taken = true;
                 });
@@ -2383,54 +2425,62 @@ void ai_trader(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
         return;
     }
     if (rt.state == std::uint8_t(NS::Traveling)) {
-        if (at_target(p, rt, ctx)) {
-            rt.state = std::uint8_t(NS::Working);
+        if (at_goal(p, g, ctx)) {
+            ecs::goal_arrive(g, rt);   // → Working
             rt.stateTimer = std::int16_t(15 + rand_int(ctx, 20));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        const XY t = goal_xy(g, ctx);
+        try_move(p, rt, t.x, t.y, ctx);
         return;
     }
     if (rt.state == std::uint8_t(NS::Working)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
-            rt.targetX = home.x; rt.targetY = home.y;
-            rt.targetSettlementId = 0;
+            ecs::goal_set(g, cell_of(int(home.x), int(home.y), ctx.mapW),
+                          0, 0, std::uint8_t(NS::Idle));
             rt.state = std::uint8_t(NS::Returning);
         }
         return;
     }
     if (rt.state == std::uint8_t(NS::Returning)) {
-        if (at_target(p, rt, ctx)) {
-            rt.state = std::uint8_t(NS::Idle);
+        if (at_goal(p, g, ctx)) {
+            ecs::goal_arrive(g, rt);   // → Idle
             rt.stateTimer = std::int16_t(20 + rand_int(ctx, 30));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        const XY t = goal_xy(g, ctx);
+        try_move(p, rt, t.x, t.y, ctx);
     }
 }
 
-void ai_nomad(MacroPos& p, ecs::MacroNpcRuntime& rt,
+void ai_nomad(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
               [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
     const MacroStore& st = store_ctx(ctx);
+    ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
+    // «Не тот город, где был» — прежний ординал несёт сама цель (род Place).
+    const int lastPlace = ecs::goal_kind(g.what) == ecs::GoalKind::Place
+                              ? int(ecs::goal_ordinal(g.what))
+                              : 0;
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
             int candidates = 0;
             for_each_place(st, [&](std::uint16_t slot) {
-                if (is_other_city(st, slot, rt.targetSettlementId))
+                if (is_other_city(st, slot, lastPlace))
                     ++candidates;
             });
             if (candidates > 0) {
                 int pick = rand_int(ctx, candidates);
                 bool taken = false;
                 for_each_place(st, [&](std::uint16_t slot) {
-                    if (taken || !is_other_city(st, slot, rt.targetSettlementId))
+                    if (taken || !is_other_city(st, slot, lastPlace))
                         return;
                     if (pick-- != 0) return;
-                    rt.targetSettlementId = int(st.spawnId[slot].index);
-                    rt.targetX = float(slot_x(st, slot, ctx.mapW));
-                    rt.targetY = float(slot_y(st, slot, ctx.mapW));
+                    ecs::goal_set(g, st.cell[slot].idx,
+                                  ecs::goal_what(ecs::GoalKind::Place,
+                                                 st.spawnId[slot].index),
+                                  0, std::uint8_t(NS::Idle));
                     rt.state  = std::uint8_t(NS::Traveling);
                     taken = true;
                 });
@@ -2441,16 +2491,17 @@ void ai_nomad(MacroPos& p, ecs::MacroNpcRuntime& rt,
         return;
     }
     if (rt.state == std::uint8_t(NS::Traveling)) {
-        if (at_target(p, rt, ctx)) {
-            rt.state = std::uint8_t(NS::Idle);
+        if (at_goal(p, g, ctx)) {
+            ecs::goal_arrive(g, rt);   // → Idle
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        const XY t = goal_xy(g, ctx);
+        try_move(p, rt, t.x, t.y, ctx);
     }
 }
 
-void ai_aggressive(MacroPos& p, ecs::MacroNpcRuntime& rt,
+void ai_aggressive(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                    [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
     // No private player-channel here any more (owner, 2026-08-29: «игрок
     // ничем не особенен»). Perception and pursuit are squad_threat_step's —
@@ -2464,22 +2515,25 @@ void ai_aggressive(MacroPos& p, ecs::MacroNpcRuntime& rt,
         rt.stateTimer = std::int16_t(5 + rand_int(ctx, 10));
         return;
     }
+    ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
             XY t = pick_random_nearby(p.x, p.y, 20, ctx);
-            rt.targetX = t.x; rt.targetY = t.y;
+            ecs::goal_set(g, cell_of(int(t.x), int(t.y), ctx.mapW),
+                          0, 0, std::uint8_t(NS::Idle));
             rt.state = std::uint8_t(NS::Wandering);
         }
         return;
     }
     if (rt.state == std::uint8_t(NS::Wandering)) {
-        if (at_target(p, rt, ctx)) {
-            rt.state = std::uint8_t(NS::Idle);
+        if (at_goal(p, g, ctx)) {
+            ecs::goal_arrive(g, rt);   // → Idle
             rt.stateTimer = std::int16_t(8 + rand_int(ctx, 15));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        const XY t = goal_xy(g, ctx);
+        try_move(p, rt, t.x, t.y, ctx);
     }
 }
 
@@ -2582,13 +2636,19 @@ void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                 }
                 return;
             }
-            rt.targetX = ep.x;
-            rt.targetY = ep.y;
+            // Добыча ДВИЖЕТСЯ — род цели «сквад», адрес пересчитывается
+            // каждую думку (кэш предиката, случай четвёртый).
+            ecs::goal_set(store_ctx(ctx).goal[self.slot],
+                          st.cell[prey.slot].idx,
+                          ecs::goal_what(ecs::GoalKind::Squad,
+                                         st.spawnId[prey.slot].index),
+                          0, std::uint8_t(NS::Idle));
             rt.state = std::uint8_t(NS::Chasing);
-            try_move(p, rt, rt.targetX, rt.targetY, ctx);
+            try_move(p, rt, ep.x, ep.y, ctx);
             return;
         }
     }
+    ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
     // Некого бить — чистый роам: дальняя случайная цель по ВСЕЙ карте, не
     // прогулка по околице. Поводка нет — слово владельца.
     if (rt.state == std::uint8_t(NS::Chasing)) {
@@ -2599,19 +2659,22 @@ void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
-            rt.targetX = float(rand_int(ctx, ctx.mapW));
-            rt.targetY = float(rand_int(ctx, ctx.mapH));
+            ecs::goal_set(g,
+                          cell_of(rand_int(ctx, ctx.mapW),
+                                  rand_int(ctx, ctx.mapH), ctx.mapW),
+                          0, 0, std::uint8_t(NS::Idle));
             rt.state = std::uint8_t(NS::Wandering);
         }
         return;
     }
     if (rt.state == std::uint8_t(NS::Wandering)) {
-        if (at_target(p, rt, ctx)) {
-            rt.state = std::uint8_t(NS::Idle);
+        if (at_goal(p, g, ctx)) {
+            ecs::goal_arrive(g, rt);   // → Idle
             rt.stateTimer = std::int16_t(8 + rand_int(ctx, 15));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        const XY t = goal_xy(g, ctx);
+        try_move(p, rt, t.x, t.y, ctx);
     }
 }
 
@@ -2665,10 +2728,11 @@ void ai_lair_sorties(MacroHandle self, MacroPos& p,
                      const TickContext& ctx) {
     // Логово самозалечивается: тело без дома объявляет домом место, где
     // проснулось (спавн-дверь анкеты пишет честную клетку раньше).
-    if (rt.lairX < 0 || rt.lairY < 0) {
-        rt.lairX = std::int16_t(wrap_axis(int(p.x), ctx.mapW));
-        rt.lairY = std::int16_t(wrap_axis(int(p.y), ctx.mapH));
+    if (rt.lairCell == ecs::kNoCell) {
+        rt.lairCell = cell_of(int(p.x), int(p.y), ctx.mapW);
     }
+    const float lairX = float(cell_x(rt.lairCell, ctx.mapW));
+    const float lairY = float(cell_y(rt.lairCell, ctx.mapW));
     // Радиус вылетов — агенда СТРОКИ анкеты (данные в строке — решения в
     // функции); тело без анкеты, если когда-то получит эту модель, кружит
     // дефолтной восьмёркой.
@@ -2683,7 +2747,7 @@ void ai_lair_sorties(MacroHandle self, MacroPos& p,
         }
     }
     const float fromLair = std::sqrt(torus_dist_sq(
-        p.x, p.y, float(rt.lairX), float(rt.lairY),
+        p.x, p.y, lairX, lairY,
         float(ctx.mapW), float(ctx.mapH)));
 
     if (ctx.squads && ctx.mw.store && ctx.mw.gs && fromLair < radius) {
@@ -2714,42 +2778,47 @@ void ai_lair_sorties(MacroHandle self, MacroPos& p,
                 }
                 return;
             }
-            rt.targetX = ep.x;
-            rt.targetY = ep.y;
+            // Добыча ДВИЖЕТСЯ — род цели «сквад», пересчёт каждую думку.
+            ecs::goal_set(store_ctx(ctx).goal[self.slot],
+                          st.cell[prey.slot].idx,
+                          ecs::goal_what(ecs::GoalKind::Squad,
+                                         st.spawnId[prey.slot].index),
+                          0, std::uint8_t(NS::Idle));
             rt.state = std::uint8_t(NS::Chasing);
-            try_move(p, rt, rt.targetX, rt.targetY, ctx);
+            try_move(p, rt, ep.x, ep.y, ctx);
             return;
         }
     }
 
+    ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
     // Улетел за радиус или добычи нет и стоит не дома — домой.
     if (fromLair >= radius
         || (rt.state != std::uint8_t(NS::Wandering)
-            && (int(p.x) != int(rt.lairX) || int(p.y) != int(rt.lairY)))) {
-        rt.targetX = float(rt.lairX);
-        rt.targetY = float(rt.lairY);
+            && (int(p.x) != int(lairX) || int(p.y) != int(lairY)))) {
+        ecs::goal_set(g, rt.lairCell, 0, 0, std::uint8_t(NS::Idle));
         rt.state = std::uint8_t(NS::Returning);
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, lairX, lairY, ctx);
         return;
     }
     // Дома и сыт: кружи по округе логова.
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
-            XY t = pick_random_nearby(float(rt.lairX), float(rt.lairY),
-                                      int(radius), ctx);
-            rt.targetX = float(t.x); rt.targetY = float(t.y);
+            XY t = pick_random_nearby(lairX, lairY, int(radius), ctx);
+            ecs::goal_set(g, cell_of(int(t.x), int(t.y), ctx.mapW),
+                          0, 0, std::uint8_t(NS::Idle));
             rt.state = std::uint8_t(NS::Wandering);
         }
         return;
     }
     if (rt.state == std::uint8_t(NS::Wandering)) {
-        if (at_target(p, rt, ctx)) {
-            rt.state = std::uint8_t(NS::Idle);
+        if (at_goal(p, g, ctx)) {
+            ecs::goal_arrive(g, rt);   // → Idle
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 20));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        const XY t = goal_xy(g, ctx);
+        try_move(p, rt, t.x, t.y, ctx);
         return;
     }
     rt.state = std::uint8_t(NS::Idle);
@@ -2773,8 +2842,9 @@ void ai_lair_sorties(MacroHandle self, MacroPos& p,
 // же `SubworldAi::Combat`.
 // Поле угрозы и страх артелей ЖИВЫ — kThreatFearShift ниже читает аукцион.)
 
-void ai_teleporter(MacroPos& p, ecs::MacroNpcRuntime& rt,
+void ai_teleporter(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                    [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
+    ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
     if (rt.teleportCooldown > 0) --rt.teleportCooldown;
     if (rt.teleportCooldown <= 0 && rand_f01(ctx) < 0.005f) {
         XY t = pick_random_nearby(p.x, p.y, 40, ctx);
@@ -2792,39 +2862,44 @@ void ai_teleporter(MacroPos& p, ecs::MacroNpcRuntime& rt,
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
             XY t = pick_random_nearby(p.x, p.y, 15, ctx);
-            rt.targetX = t.x; rt.targetY = t.y;
+            ecs::goal_set(g, cell_of(int(t.x), int(t.y), ctx.mapW),
+                          0, 0, std::uint8_t(NS::Idle));
             rt.state = std::uint8_t(NS::Wandering);
         }
         return;
     }
     if (rt.state == std::uint8_t(NS::Wandering)) {
-        if (at_target(p, rt, ctx)) {
-            rt.state = std::uint8_t(NS::Idle);
+        if (at_goal(p, g, ctx)) {
+            ecs::goal_arrive(g, rt);   // → Idle
             rt.stateTimer = std::int16_t(12 + rand_int(ctx, 20));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        const XY t = goal_xy(g, ctx);
+        try_move(p, rt, t.x, t.y, ctx);
     }
 }
 
-void ai_wanderer(MacroPos& p, ecs::MacroNpcRuntime& rt,
+void ai_wanderer(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                  [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
+    ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
             XY t = pick_random_nearby(p.x, p.y, 25, ctx);
-            rt.targetX = t.x; rt.targetY = t.y;
+            ecs::goal_set(g, cell_of(int(t.x), int(t.y), ctx.mapW),
+                          0, 0, std::uint8_t(NS::Idle));
             rt.state = std::uint8_t(NS::Wandering);
         }
         return;
     }
     if (rt.state == std::uint8_t(NS::Wandering)) {
-        if (at_target(p, rt, ctx)) {
-            rt.state = std::uint8_t(NS::Idle);
+        if (at_goal(p, g, ctx)) {
+            ecs::goal_arrive(g, rt);   // → Idle
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        const XY t = goal_xy(g, ctx);
+        try_move(p, rt, t.x, t.y, ctx);
     }
 }
 
@@ -3008,10 +3083,17 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
         if (dy > float(ctx.mapH) * 0.5f) dy -= float(ctx.mapH);
         if (dy < -float(ctx.mapH) * 0.5f) dy += float(ctx.mapH);
         const float len = std::max(1.0f, std::sqrt(dx * dx + dy * dy));
-        rt.targetX = wrapf(p.x + dx / len * 8.0f, float(ctx.mapW));
-        rt.targetY = wrapf(p.y + dy / len * 8.0f, float(ctx.mapH));
+        // Рефлекс пишет ТУ ЖЕ колонку цели, что и роль, — бегство и есть
+        // перерешение цели (кэш предиката), второго носителя «куда» нет.
+        // Свёртку даёт МАСКА cell_of (ЗАКОН АДРЕСА п.3), марш берёт точку
+        // из самой цели — рукописного wrapf здесь больше нет.
+        ecs::goal_set(st.goal[self.slot],
+                      cell_of(int(p.x + dx / len * 8.0f),
+                              int(p.y + dy / len * 8.0f), ctx.mapW),
+                      0, 0, std::uint8_t(NS::Idle));
         rt.state = std::uint8_t(NS::Fleeing);
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        const XY t = goal_xy(st.goal[self.slot], ctx);
+        try_move(p, rt, t.x, t.y, ctx);
         return true;
     }
 
@@ -3020,9 +3102,11 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
     const bool fighter = combatant_behaviour(kNpcTypeDefs[kind.type].ai);
     if (fighter && myPower > theirPower * kPursueMargin) {
         rt.state = std::uint8_t(NS::Chasing);
-        rt.targetX = ep.x;
-        rt.targetY = ep.y;
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        ecs::goal_set(st.goal[self.slot], st.cell[enemy.slot].idx,
+                      ecs::goal_what(ecs::GoalKind::Squad,
+                                     st.spawnId[enemy.slot].index),
+                      0, std::uint8_t(NS::Idle));
+        try_move(p, rt, ep.x, ep.y, ctx);
         return true;
     }
 
@@ -3200,18 +3284,20 @@ void ai_waypoints(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
     ecs::SquadOrders* orders = ctx.mw.store
         ? &store_ctx(ctx).orders[e.slot] : nullptr;
     if (!orders || orders->waypointCount == 0) {
-        ai_wanderer(p, rt, pools, ctx);
+        ai_wanderer(e, p, rt, pools, ctx);
         return;
     }
     const int i = orders->currentWaypoint % orders->waypointCount;
-    rt.targetX = wrapf(float(orders->waypoints[std::size_t(i * 2)]),
-                       float(ctx.mapW));
-    rt.targetY = wrapf(float(orders->waypoints[std::size_t(i * 2 + 1)]),
-                       float(ctx.mapH));
-    if (at_target(p, rt, ctx)) {
+    ecs::SquadGoal& g = store_ctx(ctx).goal[e.slot];
+    ecs::goal_set(g,
+                  cell_of(int(orders->waypoints[std::size_t(i * 2)]),
+                          int(orders->waypoints[std::size_t(i * 2 + 1)]),
+                          ctx.mapW),
+                  0, 0, std::uint8_t(NS::Idle));
+    if (at_goal(p, g, ctx)) {
         orders->currentWaypoint =
             std::uint8_t((i + 1) % orders->waypointCount);
-        rt.state = std::uint8_t(NS::Idle);
+        ecs::goal_arrive(g, rt);   // → Idle
         rt.stateTimer = std::int16_t(2 + rand_int(ctx, 4));
         return;
     }
@@ -3220,7 +3306,8 @@ void ai_waypoints(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
         return;
     }
     rt.state = std::uint8_t(NS::Traveling);
-    try_move(p, rt, rt.targetX, rt.targetY, ctx);
+    const XY t = goal_xy(g, ctx);
+    try_move(p, rt, t.x, t.y, ctx);
 }
 
 } // namespace
@@ -3368,17 +3455,17 @@ void dispatch(MacroHandle e, MacroPos& p,
         // сквада). Значение ещё несёт строка TaxCollector каталога тел,
         // поэтому ветка обязана существовать — но ведёт она туда же, куда
         // ведёт всякая роль без занятия. Умрёт вместе со строкой (Б-6).
-        case AIBehaviour::TaxRun:       ai_wanderer     (p, rt, pools, ctx); break;
+        case AIBehaviour::TaxRun:       ai_wanderer  (e, p, rt, pools, ctx); break;
         case AIBehaviour::Trader:       ai_trader    (e, p, rt, pools, ctx); break;
-        case AIBehaviour::Aggressive:   ai_aggressive   (p, rt, pools, ctx); break;
-        case AIBehaviour::Teleporter:   ai_teleporter   (p, rt, pools, ctx); break;
-        case AIBehaviour::Wanderer:     ai_wanderer     (p, rt, pools, ctx); break;
+        case AIBehaviour::Aggressive:   ai_aggressive(e, p, rt, pools, ctx); break;
+        case AIBehaviour::Teleporter:   ai_teleporter(e, p, rt, pools, ctx); break;
+        case AIBehaviour::Wanderer:     ai_wanderer  (e, p, rt, pools, ctx); break;
         // Prey. Running is not its own errand: the threat step above already
         // makes ANY row run from what it cannot beat (squad_power), so what
         // this column says about an untroubled day is "it roams" — the same
         // walk a wanderer takes. The difference between a fox and a rabbit is
         // what happens when something appears, and that is decided above.
-        case AIBehaviour::Flee:         ai_wanderer     (p, rt, pools, ctx); break;
+        case AIBehaviour::Flee:         ai_wanderer  (e, p, rt, pools, ctx); break;
         case AIBehaviour::Waypoints:    ai_waypoints (e, p, rt, pools, ctx); break;
         case AIBehaviour::MageHunt:     ai_mage_hunt (e, p, rt, pools, ctx); break;
         case AIBehaviour::LairSorties:  ai_lair_sorties(e, p, rt, pools, ctx); break;

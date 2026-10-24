@@ -399,12 +399,12 @@ if (!ok) return 1;
 спарены с `record_battle_facts` (`:932`, `:1058`). `report_death` других
 звонящих не имеет (`rg` 2026-09-25) — значит `WorldFact` в `raise_macro_fact`
 есть чистый дубль пути Б, а `GameEvent NpcDeath` — НЕ дубль: его читает
-счётчик убийств квестов (`events/quests/quest_engine.cpp:179`, `ev.ix ==
+счётчик убийств квестов (events/quests/quest_engine.cpp †179 (снесён, ломоть 3 M-72), `ev.ix ==
 o.npcType`, на каждую смерть) и `damage_door_test`.
 
 **1. Контекст.** Читать: `src/app/main.cpp:214-313` (`squad_is_named`,
 `raise_macro_fact`, `macro_identity_of` рядом), `src/macro/squad.h:630-660,
-705-735, 835-935, 995-1065`, `src/events/quests/quest_engine.cpp:170-190`.
+705-735, 835-935, 995-1065`, src/events/quests/quest_engine.cpp †170-190 (снесён, ломоть 3 M-72).
 Остальное — только `rg` по именам ниже.
 
 **2. Закон.** CANON S20.1 (летопись — факты, один факт на деяние), вердикт
@@ -938,15 +938,15 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 блок в `flush@src/events/event_bus.cpp`. Теги `EventTag` без
 производителя: `SettlementVisit` (читает `node_registry.cpp:20`, никто не
 шлёт), `LandmarkChangeOwner`, `WorldCellChange` (читает
-`quest_engine.cpp:203-204`, никто не шлёт), `Custom` (только дефолт
+quest_engine.cpp †203-204 (снесён), никто не шлёт), `Custom` (только дефолт
 инициализации `logic_nodes.h:23` и тесты). Теги с производителем, но без
-прод-читателя: `QuestStart`, `QuestUpdate@src/events/quests/quest_engine.cpp`,
-`SpellCast@src/app/main.cpp`, `PlayerLeaveSettlement` (main.cpp:474 «        sm::GameEvent leave{sm::EventTag::PlayerLeaveSettlement};»).
+прод-читателя: `QuestStart`, QuestUpdate (жил в quest_engine, снесён),
+`SpellCast@src/app/main.cpp`, `PlayerLeaveSettlement` (main.cpp:472 «        sm::GameEvent leave{sm::EventTag::PlayerLeaveSettlement};»).
 
 **1. Контекст.** Читать: `src/events/event_bus.h` целиком,
 `src/events/event_bus.cpp` целиком, `src/events/event_types.h:20-64`
 (enum), `src/events/node_registry.cpp:15-25`,
-`src/events/quests/quest_engine.cpp:195-210`, `src/events/logic_nodes.h:20-26`,
+src/events/quests/quest_engine.cpp †195-210 (снесён), `src/events/logic_nodes.h:20-26`,
 `src/app/main.cpp:1655-1662`; тесты `tests/quest_lifecycle_test.cpp` и
 `tests/save_roundtrip_test.cpp` — только строки с перечисленными тегами
 (`rg -n "EventTag::(SettlementVisit|WorldCellChange|Custom|QuestStart|LandmarkChangeOwner)"`).
@@ -968,7 +968,7 @@ DOD п.6 (второй ответ на один вопрос — дефект).
   канала — эпик M-116 (CANON S20)».
 - Теги без производителя: `SettlementVisit`, `LandmarkChangeOwner`,
   `WorldCellChange` — снести из enum и из читателей (ветки
-  `node_registry.cpp:20`, `quest_engine.cpp:203-204` — если после снятия
+  `node_registry.cpp:20`, quest_engine.cpp †203-204 (снесён) — если после снятия
   тегов условие пустеет, снять и ветку; если ветка — единственный
   носитель `ObjectiveKind`, для которого есть производитель контента, —
   остановиться и записать в отчёт, не резать объектив). `Custom` — оставить
@@ -1346,7 +1346,7 @@ libstdc++/MSVC (32 Б). Ещё две строки той же породы: `Ci
 (примитивы), читатели имени: `src/macro/landmark_iter.h:45-55`,
 `src/macro/state.cpp:180-192, 360-370`, `src/macro/politik.cpp:188-196,
 230-240, 290-300`, `src/app/main.cpp:3010-3018, 4110-4116, 4488-4494`,
-`src/app/smoke.cpp:7155-7226` (три `.c_str()`), `src/content/quests/procedural.cpp:420-430`,
+`src/app/smoke.cpp:7155-7226` (три `.c_str()`), src/content/quests/procedural.cpp †420-430 (снесён, ломоть 3 M-72),
 `src/ui/map_screen.cpp:148-200`, `src/ui/macro_overlay.cpp:255-260, 344-355`.
 Остальное не читать.
 
@@ -1367,10 +1367,10 @@ libstdc++/MSVC (32 Б). Ещё две строки той же породы: `Ci
 - Было: три `std::string name`. Стало: `NameCol name{}` в `Landmark`,
   `City`, `PlayerState`.
 - Писатели: `state.cpp:184-187,360`, `politik.cpp:192,235,295` —
-  `name_set(x.name, generate_name(...))`; src/app/main.cpp:3206 «    if (cs.name[0] != '\0') app.gs.player.name = cs.name;» —
+  `name_set(x.name, generate_name(...))`; src/app/main.cpp:3147 «    if (cs.name[0] != '\0') app.gs.player.name = cs.name;» —
   `name_set(app.gs.player.name, cs.name)`.
 - Читатели: `.c_str()` → само поле; `.empty()` → `name[0] == '\0'`;
-  `procedural.cpp:426` `ctx.name = s.name` — если `ctx.name` — `std::string`
+  procedural.cpp †426 (снесён) `ctx.name = s.name` — если `ctx.name` — `std::string`
   на объекте квеста (сущность ×4096 в сейве), это ТОТ ЖЕ дефект: заменить
   на `NameCol` тем же ходом, если объект — POD-сущность; если это временный
   контекст генерации (граница) — оставить `std::string(s.name)`. Сказать в

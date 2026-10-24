@@ -2,9 +2,9 @@
 // a free function that draws into the current ImGui frame and is toggled by
 // a boolean owned by the application. Mirrors svelte overlays in TS.
 #pragma once
+#include "events/event_bus.h"   // GameEvent/EventBus — диалог и сюжет
 #include "macro/state.h"
 #include "macro/store.h"   // MacroHandle — субъект-сквад после шага 1г
-#include "events/quests/quest_engine.h"
 #include <array>
 #include <cstdint>
 #include <cstddef>
@@ -45,12 +45,10 @@ enum class SettlementPanelTab : std::uint8_t {
     Garrison,
     Recruit,
     Inventory,
-    Quests,
 };
 
 struct Toggles {
     bool settlement  = false;
-    bool quest       = false;
     bool codex       = false;
     bool map         = false;
     bool character   = false;
@@ -63,7 +61,6 @@ struct Toggles {
     //  хэндл. «В каком поселении игрок СТОИТ» — другой вопрос и другое поле,
     //  `GameState::subState.settlementId`: это состояние мира, а не выбор
     //  окна, и оно живо.)
-    int  questSelection = 0;
     CharacterPanelTab characterTab = CharacterPanelTab::Stats;
     SettlementPanelTab settlementTab = SettlementPanelTab::Info;
 };
@@ -108,26 +105,11 @@ void draw_character_panel(GameState& gs, MacroStore& st,
 void draw_settlement(GameState& gs,
                      MacroStore& st,
                      MacroHandle subject,
-                     const std::vector<Quest>& availableQuests,
-                     std::vector<Quest>& activeQuests,
-                     QuestEngine& questEngine,
-                     EventBus& bus,
                      SettlementPanelTab* tab,
                      bool* open,
                      MacroHandle* attackRequest,
                      float scale = 1.0f);
-// `closeKeyName` is the LIVE name of the key that toggles this panel
-// (SDL_GetScancodeName of the Quests binding) — the Close button quotes it,
-// never a literal, so a rebind can't strand a stale hint (CANON S22).
-// nullptr/empty = the action is unbound, the button says just "Close".
-void draw_quest_log(GameState& gs,
-                    std::vector<Quest>& quests,
-                    QuestEngine& questEngine,
-                    EventBus& bus,
-                    int* selectedQuestIndex,
-                    bool* open,
-                    float scale = 1.0f,
-                    const char* closeKeyName = nullptr);
+// (draw_quest_log умер с квест-машиной — ломоть 3 M-72, вариант А.)
 void draw_codex(GameState& gs, bool* open, float scale = 1.0f);
 void draw_show_dialog(GameState& gs,
                       const Inventory* bag,

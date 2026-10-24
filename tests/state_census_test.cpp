@@ -404,7 +404,6 @@ constexpr Row kGameStateRows[] = {
     {"worldTime", Rod::WorldVars, "время — частный случай мировой переменной"},
     {"lastWorldRebakeDay", Rod::WorldVars, "фаза перепёка/автосейва"},
     {"navEpoch", Rod::Cache, "счётчик события состава; в сейв не едет"},
-    {"nextQuestOrdinal", Rod::WorldVars, "эмитент ординалов квестов"},
     {"worldTickRt", Rod::WorldVars, "очередь дневного тика + RNG"},
     {"macroAiRhythm", Rod::WorldVars,
      "ритм макро-ИИ + RNG; сейв-образ живой половины App::npcAi"},
@@ -437,9 +436,6 @@ constexpr Row kPlayerStateRows[] = {
     {"journalSeenSeq", Rod::Facts, "курсор той же системы"},
     {"journalFull", Rod::Facts, "громкий кап той же системы"},
     {"factionPeaceUntilDay", Rod::Factions, "перемирия по слотам фракций"},
-    {"settledQuestOffers", Rod::Facts, "дедуп предложений дня"},
-    {"completedQuestCount", Rod::Facts, "счётчик жизни"},
-    {"failedQuestCount", Rod::Facts, "счётчик жизни"},
 };
 
 // MacroStore@src/macro/store.h — гладкая память рода 2 целиком: колонки
@@ -458,6 +454,8 @@ constexpr Row kMacroStoreRows[] = {
     {"traits", Rod::Squads, ""},
     {"pools", Rod::Squads, "HP/MP/SP — ресурсы обоих миров"},
     {"runtime", Rod::Squads, ""},
+    {"goal", Rod::Squads,
+     "цель {cell,what,amount,onArrival} — форма M-1 (ломоть 3 M-72)"},
     {"spellBook", Rod::Squads, ""},
     {"upkeep", Rod::Squads, ""},
     {"wellbeing", Rod::Squads, "благополучие анкеты (M-90 флип: было плечом места)"},
@@ -551,12 +549,9 @@ constexpr Row kAppRows[] = {
     {"bus", Rod::Session, "шина событий кадра"},
     {"logic", Rod::Facts,
      "живая половина прогресса узлов; сейв-образ gs.logicNodes*"},
-    {"quests", Rod::Facts, "живая половина квестов"},
-    {"activeQuests", Rod::Facts, ""},
-    {"questMarkerSig", Rod::Cache, ""},
-    {"availableSettlementQuests", Rod::Cache, "перегенерируется от сида дня"},
-    {"availableQuestSettlementId", Rod::Cache, ""},
-    {"availableQuestDay", Rod::Cache, ""},
+    // (Квест-машина снесена целиком 2026-10-23 — ломоть 3 M-72, вариант А:
+    //  quests/activeQuests/questMarkerSig/доска офферов умерли; задание
+    //  игрока вернётся конструктором задач на форме цели рода 2.)
     {"appliedEventCount", Rod::Session, ""},
     {"appliedStoryResultCount", Rod::Session, ""},
     {"appliedSpawnEventCount", Rod::Session, ""},

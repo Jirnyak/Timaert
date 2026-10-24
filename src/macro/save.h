@@ -15,7 +15,6 @@
 namespace sm {
 
 struct GameState;
-struct Quest;
 struct MacroNpcRecord;
 
 enum class SaveInspectStatus : std::uint8_t {
@@ -52,12 +51,10 @@ struct SaveSummary {
 // ординалы мертвецов живут в летописи и интересах, и отставший эмитент выдал
 // бы новое рождение под именем мертвеца (19.24).
 bool save_game(const GameState& s, std::uint32_t storeNextSpawnId,
-               const std::vector<Quest>& activeQuests,
                const std::vector<MacroNpcRecord>& macroNpcs,
                const std::vector<std::uint16_t>& treeCounts,
                const std::string& path);
 bool load_game(GameState& s, std::uint32_t& storeNextSpawnId,
-               std::vector<Quest>& activeQuests,
                std::vector<MacroNpcRecord>& macroNpcs,
                std::vector<std::uint16_t>& treeCounts,
                const std::string& path);
@@ -95,7 +92,6 @@ std::uint64_t save_max_payload_bytes();
 // ordinal (macro_snapshot.cpp:47).
 std::uint32_t save_payload_fingerprint(
     const GameState& s, std::uint32_t storeNextSpawnId,
-    const std::vector<Quest>& activeQuests,
     const std::vector<MacroNpcRecord>& macroNpcs,
     const std::vector<std::uint16_t>& treeCounts);
 

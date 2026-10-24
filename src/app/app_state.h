@@ -30,7 +30,6 @@
 #include "events/effect_applicator.h"
 #include "events/logic_nodes.h"
 #include "events/node_registry.h"
-#include "events/quests/quest_engine.h"
 #include "bus/local_frame.h" // локальный фрейм пяти пакетов (M-171, ломоть 4)
 #include "macro/state.h"
 #include "macro/store.h"     // гладкая память макро-сквадов (M-106)
@@ -68,7 +67,6 @@
 #include "content/spells/spell_book.h"
 #include "content/plot/intro.h"
 #include "content/plot/scene.h"
-#include "content/quests/procedural.h"
 #include "sub/engine.h"
 #include "sub/damage.h"
 #include "sub/objects.h"     // единый массив объектов сцены (M-150)
@@ -212,16 +210,9 @@ struct App {
     std::unique_ptr<sm::sub::SubObjects> sceneObjects;
     sm::EventBus         bus;
     sm::LogicNodeEngine  logic;
-    sm::QuestEngine      quests;
-    std::vector<sm::Quest> activeQuests;
-    // Cache signature for the derived quest-marker set (gs.markers "quest_*"):
-    // the per-frame quest tick refreshes those pins only when this fingerprint
-    // of activeQuests changes, so an unchanged quest set never re-allocates
-    // markers. Reset to 0 whenever activeQuests is wholesale replaced.
-    std::uint64_t          questMarkerSig = 0;
-    std::vector<sm::Quest> availableSettlementQuests;
-    int                  availableQuestSettlementId = -1;
-    int                  availableQuestDay = -1;
+    // (Квест-машина снесена целиком 2026-10-23, ломоть 3 M-72 вариант А:
+    //  QuestEngine, activeQuests, доска офферов и кэш маркеров умерли.
+    //  Задание игрока вернётся конструктором задач на форме цели рода 2.)
     std::size_t          appliedEventCount = 0;
     std::size_t          appliedStoryResultCount = 0;
     // (appliedCombatEventCount died with EventTag::BattleStart — M-116,
@@ -485,7 +476,6 @@ int apply_rest_promotion(App& app, int ticks);
 void apply_pending_event_effects(App& app);
 void apply_pending_story_results(App& app);
 void capture_presentation_events(App& app);
-std::uint64_t quest_marker_signature(const std::vector<sm::Quest>& active);
 void process_world_events(App& app);
 // Play an authored scene over the standing world (release.md §3): raises
 // the row's pocket, places its cast, holds the map if it says so. Declared

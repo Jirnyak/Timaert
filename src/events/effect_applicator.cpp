@@ -22,7 +22,6 @@ namespace sm {
 void apply_events(std::span<const GameEvent> events, GameState& gs,
                   Inventory* bag, SpellBook* book,
                   std::vector<GameEvent>* followups) {
-    PlayerState& p = gs.player;
     for (auto& ev : events) {
         switch (ev.tag) {
             case EventTag::SpireDepleted:
@@ -46,26 +45,8 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
                     }
                 }
                 break;
-            case EventTag::QuestComplete:
-                // The engine settles its own quests (b marks that); this arm
-                // serves quest events raised by OTHER emitters — an authored
-                // chain completing a quest still counts in the tally. The
-                // event names the quest by ordinal only, so there is no
-                // offer provenance to settle here — and an authored quest
-                // has none (bornDay -1).
-                if (ev.b != kEventEffectAlreadyApplied) {
-                    ++p.completedQuestCount;
-                }
-                break;
-            case EventTag::QuestFail:
-                if (ev.s2 == "abandoned") {
-                    break;
-                }
-                if (ev.b == kEventEffectAlreadyApplied) {
-                    break;
-                }
-                ++p.failedQuestCount;
-                break;
+            // (Ветки QuestComplete/QuestFail умерли с квест-машиной —
+            //  ломоть 3 M-72, вариант А: эмитентов у тегов не осталось.)
             case EventTag::SpellLearned:
                 // The event still speaks the string id (the bus->chronicle
                 // merge will retire it); the book itself is ordinals only.

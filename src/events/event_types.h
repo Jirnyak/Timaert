@@ -51,10 +51,8 @@ namespace sm
                           // 2026-10-10 — сценная и макро; живая макро-
                           // цепочка идёт конвертом BattleFact мимо события;
                           // системная форма — эпиком событий/фрейма)
-        QuestStart,       // a = quest ordinal, s2 = title (feed display)
-        QuestUpdate,      // a = quest ordinal
-        QuestComplete,    // a = quest ordinal
-        QuestFail,        // a = quest ordinal, s2 = "expired"/"abandoned"
+        // (Четыре квестовых тега умерли с квест-машиной — ломоть 3 M-72,
+        //  вариант А: эмитентов не осталось ни одного.)
         SpellCast,
         SpellLearned,
         TimeAdvance,      // a = day, iy = hour, ix = 1 event per elapsed hour

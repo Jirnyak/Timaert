@@ -33,10 +33,6 @@ src/macro/map_generator.cpp	index	const std::size_t s = (std::size_t(y) * w + x)
 src/macro/map_generator.cpp	mod	path.push_back({source % w, source / w});
 src/macro/npc_ai.cpp	wrapf	float nx = wrapf(cx + float(rand_int(ctx, range * 2) - range),
 src/macro/npc_ai.cpp	wrapf	float ny = wrapf(cy + float(rand_int(ctx, range * 2) - range),
-src/macro/npc_ai.cpp	wrapf	rt.targetX = wrapf(float(orders->waypoints[std::size_t(i * 2)]),
-src/macro/npc_ai.cpp	wrapf	rt.targetX = wrapf(p.x + dx / len * 8.0f, float(ctx.mapW));
-src/macro/npc_ai.cpp	wrapf	rt.targetY = wrapf(float(orders->waypoints[std::size_t(i * 2 + 1)]),
-src/macro/npc_ai.cpp	wrapf	rt.targetY = wrapf(p.y + dy / len * 8.0f, float(ctx.mapH));
 src/macro/npc_spawn.cpp	index	terrain.rgba[(std::size_t(y) * mapW + x) * 4u + 0];
 src/macro/optics.h	index	return std::size_t(y) * std::size_t(width) + std::size_t(x);
 src/macro/pathfinding.cpp	index	const std::size_t cidx = std::size_t(cur.y) * W + cur.x;

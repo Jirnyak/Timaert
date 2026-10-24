@@ -125,9 +125,8 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
         // The march caches come from the player's OWN sheet, through the same
         // door every leader's do.
         ecs::MacroNpcRuntime rt{};
-        rt.targetSettlementId = 0;
-        rt.targetX = float(sx);
-        rt.targetY = float(sy);
+        // Цель — «ничего» (kNoCell): игрок рождается стоящим, как всякий
+        // сквад (колонку цели обнулила дверь рождения).
         rt.state = std::uint8_t(NPCState::Idle);
         {
             // One assembly of what stands on him, used for both halves: the

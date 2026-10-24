@@ -670,7 +670,6 @@ ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive,
     if (tbtn("Inv", tip("Inventory", ActionId::Character)))    r.inventory = true; ImGui::SameLine();
     if (tbtn("Map", tip("World Map", ActionId::Map)))          r.map       = true; ImGui::SameLine();
     if (tbtn("Stl", tip("Settlement", ActionId::Settlement)))  r.build     = true; ImGui::SameLine();
-    if (tbtn("Qst", tip("Quests", ActionId::Quests)))          r.quests    = true; ImGui::SameLine();
     if (tbtn("Par", tip("Party / Army", ActionId::ArmyTab)))   r.party     = true; ImGui::SameLine();
     if (tbtn("Eq",  subworldActive ? "Equipment"   // E interacts down here
                                    : tip("Equipment", ActionId::EquipmentTab)))

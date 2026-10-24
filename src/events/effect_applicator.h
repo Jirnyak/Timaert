@@ -2,7 +2,6 @@
 #pragma once
 #include <span>
 #include "events/event_bus.h"
-#include "events/quests/quest_types.h"
 #include "macro/state.h"
 
 namespace sm {

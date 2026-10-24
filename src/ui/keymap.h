@@ -33,7 +33,6 @@ enum class ActionId : std::uint8_t {
     SpellsTab,
     Codex,
     Map,
-    Quests,
     Settlement,
     EnterLeave,
     Save,

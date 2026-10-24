@@ -631,25 +631,6 @@ function(timaert_test _name)
     set_property(GLOBAL APPEND PROPERTY TIMAERT_TEST_TARGETS ${_name})
 endfunction()
 
-timaert_test(quest_lifecycle_test
-    SOURCES
-        src/events/event_bus.cpp
-        src/events/effect_applicator.cpp
-        src/events/logic_nodes.cpp
-        src/events/node_registry.cpp
-        src/events/quests/quest_engine.cpp
-        src/content/plot/intro.cpp
-        src/content/quests/procedural.cpp
-        # gen_delivery reads the one item catalog now (W2b-4).
-        src/macro/anketa.cpp
-        src/tables/items.cpp
-        # M-301: награда опытом идёт дверью класса «прокачка» по ХЭНДЛУ, и
-        # свидетель рождает своего игрока прод-дверью (§8 п.11).
-        src/macro/player_entity.cpp
-    # M-150 шаг 0: quest_engine.cpp → squad.h → macro_stock.h — печать займа
-    # на ТЕЛО сцены (stamp_macro_debt); умрёт с переездом тел
-    LINK_SDL)
-
 timaert_test(world_tick_parity_test
     SOURCES
         src/macro/world_tick.cpp
@@ -737,7 +718,6 @@ timaert_test(save_roundtrip_test
         # the deposit fixture sizes its vein FIELDS through the layer's door
         src/macro/deposit_layer.cpp
         src/events/event_bus.cpp
-        src/events/quests/quest_engine.cpp
         src/macro/save.cpp
         # the save carries the world's own memory (macro/chronicle.h)
         src/macro/chronicle.cpp

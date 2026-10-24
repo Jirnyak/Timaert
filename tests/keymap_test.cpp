@@ -93,7 +93,7 @@ int main() {
         Keymap m;
         m.set(ActionId::Map, SDL_SCANCODE_UNKNOWN);
         CHECK(m.get(ActionId::Map) == SDL_SCANCODE_UNKNOWN, "unbind applies");
-        CHECK(m.get(ActionId::Quests) == SDL_SCANCODE_Q,
+        CHECK(m.get(ActionId::Codex) == action_spec(ActionId::Codex).def,
                "unbind steals from nobody");
     }
 
@@ -141,7 +141,7 @@ int main() {
             "totally.unknown.key 30\n"     // unknown action -> ignored, no crash
             "act.map 17\n"                 // known: SDL_SCANCODE_N
             "act.codex 99999\n"            // out-of-range scancode -> ignored
-            "act.quests -3\n"              // negative -> ignored
+            "act.character -3\n"           // negative -> ignored
             "act.rest\n"                   // value-less line -> ignored
             "loose-token-no-fields\n");    // key-only unknown -> ignored
         Keymap m;
@@ -149,7 +149,7 @@ int main() {
         CHECK(m.get(ActionId::Map) == SDL_SCANCODE_N, "known key applies");
         CHECK(m.get(ActionId::Codex) == action_spec(ActionId::Codex).def,
                "out-of-range scancode keeps the default");
-        CHECK(m.get(ActionId::Quests) == action_spec(ActionId::Quests).def,
+        CHECK(m.get(ActionId::Character) == action_spec(ActionId::Character).def,
                "negative scancode keeps the default");
         CHECK(m.get(ActionId::Rest) == action_spec(ActionId::Rest).def,
                "value-less line keeps the default");

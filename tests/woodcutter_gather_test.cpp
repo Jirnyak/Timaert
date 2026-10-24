@@ -76,9 +76,6 @@ sm::MacroHandle make_woodcutter(sm::MacroStore& st, float x, float y,
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime rt{};
-    rt.targetSettlementId = 0;
-    rt.targetX = x;
-    rt.targetY = y;
     rt.state = std::uint8_t(NPCState::Idle);
     rt.stateTimer = 0;
     ecs::Pools pools{};
@@ -207,9 +204,6 @@ void test_the_farmer_works_the_field() {
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime prt{};
-    prt.targetSettlementId = 0;
-    prt.targetX = 10.0f;
-    prt.targetY = 10.0f;
     prt.state = std::uint8_t(NPCState::Idle);
     prt.stateTimer = 0;
     ecs::Pools pools{};
@@ -286,9 +280,6 @@ void test_farmer_without_terrain_conjures_nothing() {
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime prt{};
-    prt.targetSettlementId = 0;
-    prt.targetX = 10.0f;
-    prt.targetY = 10.0f;
     prt.state = std::uint8_t(NPCState::Idle);
     prt.stateTimer = 0;
     ecs::Pools pools{};
@@ -384,9 +375,6 @@ void test_the_mine_runs_while_the_player_is_away() {
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime rt{};
-    rt.targetSettlementId = 0;
-    rt.targetX = 10.0f;
-    rt.targetY = 10.0f;
     rt.state = std::uint8_t(NPCState::Idle);
     rt.stateTimer = 0;
     ecs::Pools pools{};
@@ -505,9 +493,6 @@ void test_the_vendor_sells_at_the_nearest_city() {
     // бы аукцион.
     crt.squadType = std::uint8_t(SquadType::Caravan);
     crt.errandObject = std::uint32_t(cityId);   // the city's ordinal
-    crt.targetSettlementId = 0;
-    crt.targetX = 10.0f;
-    crt.targetY = 10.0f;
     crt.state = std::uint8_t(NPCState::Idle);
     crt.stateTimer = 0;
     ecs::Pools pools{};
@@ -627,9 +612,6 @@ void test_the_miner_works_the_vein() {
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime rt{};
-    rt.targetSettlementId = 0;
-    rt.targetX = 10.0f;
-    rt.targetY = 10.0f;
     rt.state = std::uint8_t(NPCState::Idle);
     rt.stateTimer = 0;
     ecs::Pools pools{};
@@ -789,9 +771,6 @@ void test_the_catch_lands_as_creatures() {
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime prt{};
-    prt.targetSettlementId = 0;
-    prt.targetX = 10.0f;
-    prt.targetY = 10.0f;
     prt.state = std::uint8_t(NPCState::Idle);
     prt.stateTimer = 0;
     ecs::Pools pools{};

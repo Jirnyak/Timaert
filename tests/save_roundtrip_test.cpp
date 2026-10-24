@@ -8,8 +8,6 @@
 #include "tables/npc.h"
 #include "macro/entry_context.h"
 #include "events/event_bus.h"
-#include "events/quests/quest_engine.h"
-#include "events/quests/quest_types.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -167,9 +165,13 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     a.kind = {std::uint16_t(sm::NPCType::Bandit), 3};
     a.pools = {17, 42};
     a.sheet.levelData.level = 5;   // уровень — анкета (M-246а)
-    a.runtime.targetSettlementId = 4;
-    a.runtime.targetX = 100.0f;
-    a.runtime.targetY = 200.0f;
+    // ЦЕЛЬ — КОЛОНКА РОДА 2 (M-1, ломоть 3 M-72): все четыре колонки
+    // ставятся НЕНУЛЕВЫМИ и судятся на том берегу — потеря любой из них
+    // в проводе сейва обязана красить.
+    sm::ecs::goal_set(a.goal, sm::ecs::cell_index(100, 200, 512),
+                      sm::ecs::goal_what(sm::ecs::GoalKind::Place, 4u),
+                      7, std::uint8_t(sm::NPCState::Working));
+    a.runtime.lairCell = sm::ecs::cell_index(45, 46, 512);
     a.runtime.stateTimer = 11;
     a.runtime.teleportCooldown = 3;
     a.pools.sp = -25;                 // exhaustion DEBT must survive a load
@@ -434,10 +436,7 @@ sm::GameState make_state(sm::MacroStore& st) {
     // knowledge is a component and rides the snapshot like the pools do.)
     gs.player.factionPeaceUntilDay[
         std::size_t(sm::faction_index("magika"))] = 55;
-    gs.player.settledQuestOffers.push_back(
-        {/*giverSettlementId*/ 7, /*bornDay*/ 3, /*offerSlot*/ 2});
-    gs.player.completedQuestCount = 5u;
-    gs.player.failedQuestCount = 2u;
+    // (Офферы и счётчики квестов умерли с квест-машиной — ломоть 3 M-72.)
     // (No entry-side bytes since v88: the entry context is his squad's own
     // MacroNpcRuntime — record `a` above plants runtime.entryDir = 0x12 and
     // the record comparison proves the bytes ride.)
@@ -554,108 +553,9 @@ std::vector<std::uint16_t> make_tree_counts() {
 // производная терраина и сида, сейв его не возит; залежи шахт едут рядом
 // Worked, и его круговорот держит worked-свидетель ниже.)
 
-sm::Quest make_quest() {
-    sm::Quest q{};
-    // Identity/provenance (v63): the ordinal is issued by accept (left 0
-    // here); the offer triple must survive the trip.
-    q.offerSlot = 4;
-    q.bornDay = 3;
-    q.title = "Active Quest";
-    q.description = "Roundtrip active quest";
-    q.category = sm::QuestCategory::Procedural;
-    q.giverSettlementId = 7;
-
-    // Every Objective field non-default — a dropped field must redden.
-    sm::Objective objective{};
-    objective.kind = sm::ObjectiveKind::DestroyNpc;
-    objective.ix = 40;
-    objective.iy = 80;
-    objective.subX = 512;
-    objective.subY = 640;
-    objective.radius = 3.0f;
-    objective.itemId = "food";
-    objective.quantity = 4;
-    objective.targetSettlementId = 9;
-    objective.npcType = 11;
-    objective.count = 3;
-    objective.killed = 1;
-    q.objectives.push_back(objective);
-
-    sm::Reward reward{};
-    reward.kind = sm::RewardKind::Gold;
-    reward.amount = 170;
-    q.rewards.push_back(reward);
-
-    sm::GameEvent ev{sm::EventTag::QuestStart};
-    q.onAccept.push_back(ev);
-    sm::GameEvent spawn{sm::EventTag::SpawnEntity};
-    spawn.s1 = "bandit";
-    spawn.ix = 12;
-    spawn.iy = 14;
-    spawn.a = 3;
-    q.onAccept.push_back(spawn);
-    sm::GameEvent enter{sm::EventTag::PlayerEnterSettlement};
-    enter.s1 = "Round City";
-    enter.a = 7;
-    enter.ix = 7;
-    q.onAccept.push_back(enter);
-    sm::GameEvent leave{sm::EventTag::PlayerLeaveSettlement};
-    leave.s1 = "Round City";
-    leave.a = 7;
-    leave.ix = 7;
-    q.onAccept.push_back(leave);
-    // The battery below covers every payload FIELD (a, ix, iy, fx/fy, s1, s2).
-    // WHICH TAG carries which field is arbitrary by construction — `write_event`
-    // does not branch on the tag, it writes the whole envelope — so the law
-    // being guarded is the FIELDS' round trip, and a tag here is just a live
-    // label to hang them on. Slots get re-labelled whenever a tag dies, and
-    // that is bookkeeping, not a change of contract: 2026-09-28 (M-116 ч.1)
-    // WorldCellChange/SettlementVisit → SpireDepleted/ShowStory; the same day
-    // (M-116) BattleStart/ApplyEffect/CodexUnlock → ShowDialog/SpellCast/
-    // QuestUpdate, field for field.
-    sm::GameEvent rep{sm::EventTag::ReputationChange};
-    rep.a = 42;
-    rep.ix = -5;
-    q.onAccept.push_back(rep);
-    sm::GameEvent battle{sm::EventTag::ShowDialog};
-    battle.s1 = "Unrest";
-    battle.s2 = "Prosperous";
-    battle.a = 7;
-    battle.ix = 7;
-    q.onAccept.push_back(battle);
-    sm::GameEvent effect{sm::EventTag::SpellCast};
-    effect.s1 = "hp";
-    effect.ix = 10;
-    effect.iy = 12;
-    q.onAccept.push_back(effect);
-    sm::GameEvent codex{sm::EventTag::QuestUpdate};
-    codex.s1 = "Bandit";
-    codex.ix = 1;
-    codex.a = 23;
-    q.onAccept.push_back(codex);
-    sm::GameEvent spire{sm::EventTag::SpireDepleted};
-    spire.ix = 4;
-    spire.iy = 5;
-    spire.fx = 0.75f;
-    q.onAccept.push_back(spire);
-    sm::GameEvent story{sm::EventTag::ShowStory};
-    story.s1 = "realm_a";
-    story.s2 = "realm_b";
-    story.ix = -10;
-    story.iy = 15;
-    q.onAccept.push_back(story);
-    sm::GameEvent learned{sm::EventTag::SpellLearned};
-    learned.s1 = "dlg_intro";
-    learned.a = 42;
-    q.onAccept.push_back(learned);
-    sm::GameEvent advance{sm::EventTag::TimeAdvance};
-    advance.fx = 12.5f;
-    advance.fy = 18.25f;
-    q.onAccept.push_back(advance);
-    q.expireDay = 99;
-    q.difficulty = 2;
-    return q;
-}
+// (Фикстура квестов умерла с квест-машиной — ломоть 3 M-72, вариант А:
+//  батарея полей GameEvent жила на onAccept; конверт событий больше в
+//  сейв не ездит — его блок умер вместе с write_event.)
 
 void run_roundtrip() {
     // A pin reading `GameSubStateKind::Event != 4` stood here. It guarded the
@@ -687,18 +587,6 @@ void run_roundtrip() {
     auto gsOwn = std::make_unique<sm::GameState>(make_state(store));
     sm::GameState& gs = *gsOwn;
     const std::vector<std::uint16_t> treeCounts = make_tree_counts();
-    sm::EventBus bus;
-    sm::QuestEngine questEngine;
-    std::vector<sm::Quest> quests;
-    questEngine.accept(quests, make_quest(), gs, bus);
-    if (quests.size() != 1) FAIL_BAIL("QuestEngine::accept did not activate quest");
-    bool sawQuestStart = false;
-    for (const auto& ev : bus.tick_events())
-        sawQuestStart = sawQuestStart || ev.tag == sm::EventTag::QuestStart;
-    if (!sawQuestStart) {
-        FAIL_BAIL("QuestEngine::accept did not emit QuestStart");
-    }
-
     // v75: поля следов едут в сейве (CANON S10 «хищник-жертва») — след,
     // положенный до сохранения, обязан пахнуть и после загрузки.
     sm::scent_ensure(gs.scent, gs.mapW, gs.mapH);
@@ -716,7 +604,7 @@ void run_roundtrip() {
         }
         macroFixture.insert(macroFixture.end(), places.begin(), places.end());
     }
-    if (!sm::save_game(gs, store.nextSpawnId, quests, macroFixture,
+    if (!sm::save_game(gs, store.nextSpawnId, macroFixture,
                        treeCounts, path)) {
         FAIL_BAIL("save_game returned false");
     }
@@ -736,10 +624,9 @@ void run_roundtrip() {
     auto loadedOwn = std::make_unique<sm::GameState>();
     sm::GameState& loaded = *loadedOwn;
     std::uint32_t loadedNextSpawnId = 0;
-    std::vector<sm::Quest> loadedQuests;
     std::vector<sm::MacroNpcRecord> loadedMacro;
     std::vector<std::uint16_t> loadedTrees;
-    if (!sm::load_game(loaded, loadedNextSpawnId, loadedQuests, loadedMacro,
+    if (!sm::load_game(loaded, loadedNextSpawnId, loadedMacro,
                        loadedTrees, path)) {
         FAIL_BAIL("load_game failed");
     }
@@ -912,9 +799,7 @@ void run_roundtrip() {
         // переживали круг без свидетеля, и сюита была бы зелена при их
         // потере. Это ровно §8 п.3 на колонках: ставить и не спрашивать
         // значит мерить и не утверждать, что померил.
-        if (a.runtime.targetX != want.runtime.targetX
-            || a.runtime.targetY != want.runtime.targetY
-            || a.runtime.state != want.runtime.state
+        if (a.runtime.state != want.runtime.state
             || a.runtime.entryDir != want.runtime.entryDir
             || a.runtime.entryTicks != want.runtime.entryTicks
             || a.runtime.tickAccum != want.runtime.tickAccum
@@ -922,9 +807,17 @@ void run_roundtrip() {
             || a.runtime.moveBudget != want.runtime.moveBudget) {
             FAIL_BAIL("macro runtime state lost");
         }
-        if (a.runtime.targetSettlementId
-            != want.runtime.targetSettlementId) {
-            FAIL_BAIL("macro runtime errand ids lost");
+        // ЦЕЛЬ РОДА 2 ПЕРЕЖИВАЕТ СЕЙВ ВСЕМИ ЧЕТЫРЬМЯ КОЛОНКАМИ (M-1):
+        // фикстура ставит ненулевые cell/what/amount/onArrival и логово —
+        // снятая из провода `w.pod(m.goal)` эта проверка обязана краснеть.
+        if (a.goal.cell != want.goal.cell
+            || a.goal.what != want.goal.what
+            || a.goal.amount != want.goal.amount
+            || a.goal.onArrival != want.goal.onArrival) {
+            FAIL_BAIL("squad goal lost");
+        }
+        if (a.runtime.lairCell != want.runtime.lairCell) {
+            FAIL_BAIL("lair cell lost");
         }
         if (a.runtime.stateTimer != want.runtime.stateTimer
             || a.runtime.teleportCooldown != want.runtime.teleportCooldown) {
@@ -1057,15 +950,6 @@ void run_roundtrip() {
             FAIL_BAIL("sustained spell state lost");
         }
     }
-    if (p.completedQuestCount != 5u || p.failedQuestCount != 2u) {
-        FAIL_BAIL("quest completion tallies lost");
-    }
-    if (p.settledQuestOffers.size() != 1u
-        || p.settledQuestOffers[0].giverSettlementId != 7
-        || p.settledQuestOffers[0].bornDay != 3
-        || p.settledQuestOffers[0].offerSlot != 2) {
-        FAIL_BAIL("settled quest offers lost");
-    }
     // МЕСТА ПРИЕХАЛИ ЗАПИСЯМИ БЛОКА МАКРО-СКВАДОВ (ломтик F): место ЕСТЬ
     // неподвижный сквад, его тело возвращает restore, и сшивать с ним
     // больше нечего — строки места не существует. СТОИТ ПОСЛЕ скалярных
@@ -1194,69 +1078,7 @@ void run_roundtrip() {
             FAIL_BAIL("the worked layer's number did not round-trip");
         }
     }
-    if (loadedQuests.size() != 1 || loadedQuests[0].ordinal != 1u
-        || loadedQuests[0].offerSlot != 4
-        || loadedQuests[0].bornDay != 3
-        || loaded.nextQuestOrdinal < 2u) {
-        FAIL_BAIL("active quest lost");
-    }
-    if (!loadedQuests[0].objectives.empty()) {
-        const sm::Objective& o = loadedQuests[0].objectives[0];
-        if (o.subX != 512 || o.subY != 640
-            || o.itemId != "food" || o.quantity != 4
-            || o.targetSettlementId != 9 || o.npcType != 11
-            || o.count != 3 || o.killed != 1) {
-            FAIL_BAIL("objective fields lost");
-        }
-    }
-    if (loadedQuests[0].objectives.empty()
-        || loadedQuests[0].objectives[0].kind != sm::ObjectiveKind::DestroyNpc
-        || loadedQuests[0].rewards.empty()
-        || loadedQuests[0].rewards[0].amount != 170
-        || loadedQuests[0].onAccept.size() != 12
-        || loadedQuests[0].onAccept[0].tag != sm::EventTag::QuestStart
-        || loadedQuests[0].onAccept[1].tag != sm::EventTag::SpawnEntity
-        || loadedQuests[0].onAccept[1].s1 != "bandit"
-        || loadedQuests[0].onAccept[1].a != 3u
-        || loadedQuests[0].onAccept[2].tag != sm::EventTag::PlayerEnterSettlement
-        || loadedQuests[0].onAccept[2].s1 != "Round City"
-        || loadedQuests[0].onAccept[2].a != 7u
-        || loadedQuests[0].onAccept[2].ix != 7
-        || loadedQuests[0].onAccept[3].tag != sm::EventTag::PlayerLeaveSettlement
-        || loadedQuests[0].onAccept[3].s1 != "Round City"
-        || loadedQuests[0].onAccept[3].a != 7u
-        || loadedQuests[0].onAccept[3].ix != 7
-        || loadedQuests[0].onAccept[4].tag != sm::EventTag::ReputationChange
-        || loadedQuests[0].onAccept[4].a != 42u
-        || loadedQuests[0].onAccept[4].ix != -5
-        || loadedQuests[0].onAccept[5].tag != sm::EventTag::ShowDialog
-        || loadedQuests[0].onAccept[5].s1 != "Unrest"
-        || loadedQuests[0].onAccept[5].s2 != "Prosperous"
-        || loadedQuests[0].onAccept[6].tag != sm::EventTag::SpellCast
-        || loadedQuests[0].onAccept[6].s1 != "hp"
-        || loadedQuests[0].onAccept[6].ix != 10
-        || loadedQuests[0].onAccept[6].iy != 12
-        || loadedQuests[0].onAccept[7].tag != sm::EventTag::QuestUpdate
-        || loadedQuests[0].onAccept[7].s1 != "Bandit"
-        || loadedQuests[0].onAccept[7].ix != 1
-        || loadedQuests[0].onAccept[7].a != 23u
-        || loadedQuests[0].onAccept[8].tag != sm::EventTag::SpireDepleted
-        || loadedQuests[0].onAccept[8].ix != 4
-        || loadedQuests[0].onAccept[8].iy != 5
-        || loadedQuests[0].onAccept[8].fx != 0.75f
-        || loadedQuests[0].onAccept[9].tag != sm::EventTag::ShowStory
-        || loadedQuests[0].onAccept[9].s1 != "realm_a"
-        || loadedQuests[0].onAccept[9].s2 != "realm_b"
-        || loadedQuests[0].onAccept[9].ix != -10
-        || loadedQuests[0].onAccept[9].iy != 15
-        || loadedQuests[0].onAccept[10].tag != sm::EventTag::SpellLearned
-        || loadedQuests[0].onAccept[10].s1 != "dlg_intro"
-        || loadedQuests[0].onAccept[10].a != 42u
-        || loadedQuests[0].onAccept[11].tag != sm::EventTag::TimeAdvance
-        || loadedQuests[0].onAccept[11].fx != 12.5f
-        || loadedQuests[0].onAccept[11].fy != 18.25f) {
-        FAIL_BAIL("active quest details lost");
-    }
+    // (Ассерты активного квеста умерли с его блоком — ломоть 3 M-72.)
 
     if (!write_all(truncatedPath, bytes, bytes.size() / 2u)) {
         FAIL_BAIL("could not write truncated file");
@@ -1265,17 +1087,13 @@ void run_roundtrip() {
     sm::GameState& sentinel = *sentinelOwn;
     sentinel.mapW = 11;
     std::uint32_t sentinelNextSpawnId = 0;
-    std::vector<sm::Quest> sentinelQuests;
     std::vector<sm::MacroNpcRecord> sentinelMacro;
     std::vector<std::uint16_t> sentinelTrees(3, 42u);
-    sentinelQuests.push_back(make_quest());
-    sentinelQuests[0].ordinal = 777u;
-    if (sm::load_game(sentinel, sentinelNextSpawnId, sentinelQuests,
+    if (sm::load_game(sentinel, sentinelNextSpawnId,
                       sentinelMacro, sentinelTrees, truncatedPath)) {
         FAIL_BAIL("truncated payload accepted");
     }
-    if (sentinel.mapW != 11 || sentinelQuests[0].ordinal != 777u
-        || sentinelTrees.size() != 3) {
+    if (sentinel.mapW != 11 || sentinelTrees.size() != 3) {
         FAIL_BAIL("failed truncated load mutated state");
     }
 
@@ -1286,12 +1104,11 @@ void run_roundtrip() {
         FAIL_BAIL("could not write corrupt file");
     }
     sentinel.mapW = 22;
-    sentinelQuests[0].ordinal = 778u;
-    if (sm::load_game(sentinel, sentinelNextSpawnId, sentinelQuests,
+    if (sm::load_game(sentinel, sentinelNextSpawnId,
                       sentinelMacro, sentinelTrees, corruptPath)) {
         FAIL_BAIL("corrupt payload accepted");
     }
-    if (sentinel.mapW != 22 || sentinelQuests[0].ordinal != 778u) {
+    if (sentinel.mapW != 22) {
         FAIL_BAIL("failed corrupt load mutated state");
     }
 
@@ -1307,10 +1124,9 @@ void run_roundtrip() {
     auto badStateOwn = std::make_unique<sm::GameState>();
     sm::GameState& badState = *badStateOwn;
     std::uint32_t badNextSpawnId = 0;
-    std::vector<sm::Quest> badQuests;
     std::vector<sm::MacroNpcRecord> badMacro;
     std::vector<std::uint16_t> badTrees;
-    if (sm::load_game(badState, badNextSpawnId, badQuests, badMacro, badTrees,
+    if (sm::load_game(badState, badNextSpawnId, badMacro, badTrees,
                       badVersionPath)) {
         FAIL_BAIL("bad version accepted");
     }
@@ -1359,7 +1175,7 @@ void run_roundtrip() {
             FAIL_BAIL("порча не села в слот — свидетель судил бы пустоту");
         }
     }
-    if (sm::save_game(invalidSquadState, store.nextSpawnId, quests,
+    if (sm::save_game(invalidSquadState, store.nextSpawnId,
                       invalidMacro, treeCounts,
                       temp_save_path("timaert_invalid_squad_save.bin"))) {
         FAIL_BAIL("invalid squad kind saved");
@@ -1370,7 +1186,7 @@ void run_roundtrip() {
     {
         std::vector<sm::MacroNpcRecord> invalidMacro = make_macro_records();
         invalidMacro[0].kind.type = std::uint16_t(sm::NPCType::Count);
-        if (sm::save_game(gs, store.nextSpawnId, quests, invalidMacro,
+        if (sm::save_game(gs, store.nextSpawnId, invalidMacro,
                           treeCounts,
                           temp_save_path("timaert_invalid_macro_save.bin"))) {
             FAIL_BAIL("invalid macro npc kind saved");
@@ -1381,9 +1197,8 @@ void run_roundtrip() {
     // that never touches the save; the player's past is his journal of
     // chronicle records, round-tripped above.)
 
-    std::printf("OK save_roundtrip_test path=%s bytes=%zu map=%dx%d quest=%u\n",
-                path.c_str(), bytes.size(), loaded.mapW, loaded.mapH,
-                unsigned(loadedQuests[0].ordinal));
+    std::printf("OK save_roundtrip_test path=%s bytes=%zu map=%dx%d\n",
+                path.c_str(), bytes.size(), loaded.mapW, loaded.mapH);
 
     // КАЖДОЕ ПРИЕХАВШЕЕ МЕСТО НАХОДИТСЯ ПО СВОЕМУ ОРДИНАЛУ, и отказ честен.
     // Предмет сузился вместе с носителем (ломтик F): «ординал И ЕСТЬ адрес»
@@ -1447,20 +1262,18 @@ void run_every_sub_state_kind_survives() {
         gs.mapH = 16;
         gs.saveName = "substate";
         gs.subState.kind = kind;
-        const std::vector<sm::Quest> quests;
         const std::vector<sm::MacroNpcRecord> macro;
         const std::vector<std::uint16_t> trees(std::size_t(gs.mapW * gs.mapH), 0u);
-        CHECK_OR_RETURN(sm::save_game(gs, /*storeNextSpawnId*/ 1u, quests,
+        CHECK_OR_RETURN(sm::save_game(gs, /*storeNextSpawnId*/ 1u,
                                       macro, trees, path),
                         "a state in any live sub-state kind can be SAVED");
 
         auto loadedOwn = std::make_unique<sm::GameState>();
         sm::GameState& loaded = *loadedOwn;
         std::uint32_t loadedNextSpawnId = 0;
-        std::vector<sm::Quest> loadedQuests;
         std::vector<sm::MacroNpcRecord> loadedMacro;
         std::vector<std::uint16_t> loadedTrees;
-        CHECK_OR_RETURN(sm::load_game(loaded, loadedNextSpawnId, loadedQuests,
+        CHECK_OR_RETURN(sm::load_game(loaded, loadedNextSpawnId,
                                       loadedMacro, loadedTrees, path),
                         "...and LOADED — the reader's refusal bound is not "
                         "below the enum's highest live kind");
@@ -1565,8 +1378,7 @@ void run_payload_cap_is_a_fact() {
     const std::vector<sm::MacroNpcRecord> placeBodies =
         sm::snapshot_macro_ecs(store);
     const std::vector<std::uint16_t> noTrees;
-    const std::vector<sm::Quest> noQuests;
-    if (!sm::save_game(gs, store.nextSpawnId, noQuests, placeBodies,
+    if (!sm::save_game(gs, store.nextSpawnId, placeBodies,
                        noTrees, path)) {
         FAIL_BAIL("save_game refused a legal world at the census caps");
     }
@@ -1601,10 +1413,9 @@ void run_payload_cap_is_a_fact() {
     auto overStateOwn = std::make_unique<sm::GameState>();
     sm::GameState& overState = *overStateOwn;
     std::uint32_t overNextSpawnId = 0;
-    std::vector<sm::Quest> overQuests;
     std::vector<sm::MacroNpcRecord> overMacro;
     std::vector<std::uint16_t> overTrees;
-    CHECK(!sm::load_game(overState, overNextSpawnId, overQuests, overMacro,
+    CHECK(!sm::load_game(overState, overNextSpawnId, overMacro,
                          overTrees, overPath),
           "заголовок с payloadSize выше потолка обязан быть отвергнут");
     CHECK(sm::inspect_save(overPath).status

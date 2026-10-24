@@ -169,7 +169,7 @@ struct ToolbarResult {
     // `pause` is THE pause — the same world-stop the Space key toggles, never a
     // second one. `menu` opens the Esc screen.
     bool pause = false, resume = false, menu = false, speed4 = false, rest = false;
-    bool stats = false, inventory = false, map = false, build = false, quests = false;
+    bool stats = false, inventory = false, map = false, build = false;
     bool party = false, equipment = false, codex = false;
     bool toggleSubworld = false;
     bool zoomIn = false, zoomOut = false;

@@ -7,7 +7,6 @@
 #include "core/stacks.h"       // капы штабелей — один источник (перепись)
 #include "macro/macro_snapshot.h"
 #include "macro/characters.h"
-#include "events/quests/quest_types.h"
 
 #include <algorithm>
 #include <array>
@@ -31,9 +30,10 @@ constexpr std::uint32_t kMaxInventoryStacks =
     std::uint32_t(kMaxInventorySlots);
 constexpr std::uint32_t kMaxSmallVector = 8192u;
 constexpr std::uint32_t kMaxMarkers = 16384u;
-constexpr std::uint32_t kMaxQuests = 4096u;
+// (Капы квестов kMaxQuests/kMaxQuestParts 4096×4096 УМЕРЛИ 2026-10-23,
+//  ломоть 3 M-72 вариант А: блок квестов — 1.45 ГиБ потолка мимо шести
+//  родов (§10) — снесён вместе с машиной; цель игрока едет родом 2.)
 // (the field caps live with the rows: macro/world_fields.cpp)
-constexpr std::uint32_t kMaxQuestParts = 4096u;
 // (kMaxSoldiers 8192 died with v97; с v110 существа едут внутри инвентаря —
 // один кап слотов, один дом: kMaxInventoryStacks.)
 // The macro-ECS snapshot (v23): one record per living macro NPC. v127: кап
@@ -100,7 +100,6 @@ constexpr std::uint64_t kPrefixBytes =
     + sizeof(GameState::cityCountTarget) + sizeof(GameState::worldTime)
     + sizeof(GameState::lastWorldRebakeDay)
     + sizeof(std::uint32_t)   // nextSpawnId стора — эмитент едет с миром (M-220)
-    + sizeof(GameState::nextQuestOrdinal)
     + kStrBytes + kStrBytes;
     // (Скаляр v116 «ординал носителя флажка» умер в v117 — флаг едет
     // колонкой playerFlag записи снапшота, kMacroNpcBytes считает его там.)
@@ -109,9 +108,6 @@ constexpr std::uint64_t kPlayerBytes =               // write_player
     kStrBytes + sizeof(PlayerState::ageDays)
     + sizeof(PlayerState::codexUnlockedBits)
     + sizeof(PlayerState::factionPeaceUntilDay)
-    + kCountBytes + std::uint64_t(kMaxQuests) * sizeof(SettledQuestOffer)
-    + sizeof(PlayerState::completedQuestCount)
-    + sizeof(PlayerState::failedQuestCount)
     + kCountBytes
       + std::uint64_t(PlayerState::kJournalFactsCap) * sizeof(WorldFact)
     + sizeof(PlayerState::journalSeenSeq) + sizeof(PlayerState::journalFull);
@@ -148,7 +144,9 @@ constexpr std::uint64_t kMacroNpcBytes =             // write_macro_npc
     sizeof(MacroNpcRecord::spawnId) + sizeof(MacroNpcRecord::cell)
     + sizeof(MacroNpcRecord::sub) + sizeof(MacroNpcRecord::kind)
     + sizeof(MacroNpcRecord::pools)   // поле `level` умерло: M-246а
-    + sizeof(MacroNpcRecord::runtime) + sizeof(MacroNpcRecord::traits)
+    + sizeof(MacroNpcRecord::runtime)
+    + sizeof(MacroNpcRecord::goal)    // v145: цель сквада — колонка (M-1)
+    + sizeof(MacroNpcRecord::traits)
     + sizeof(MacroNpcRecord::character) + sizeof(MacroNpcRecord::name)
     + sizeof(MacroNpcRecord::orders)
     + kSpellBookBytes
@@ -200,34 +198,8 @@ constexpr std::uint64_t kScentBlockBytes =           // write_scent
 constexpr std::uint64_t kLogicNodesBlockBytes =      // write_string_vector ×2
     2ull * (kCountBytes + std::uint64_t(kMaxSmallVector) * kStrBytes);
 
-// Квесты. Кап квеста и кап его частей — литералы без вывода (kMaxQuests,
-// kMaxQuestParts выше): их произведение 4096 × 4096 и делает этот блок
-// крупнейшим слагаемым потолка. Это ОТЧЁТ, а не правка — вывод обоих чисел
-// остаётся за хвостом M-119.
-constexpr std::uint64_t kObjectiveBytes =            // write_objective
-    sizeof(std::uint8_t) + sizeof(std::uint8_t)
-    + sizeof(Objective::ix) + sizeof(Objective::iy)
-    + sizeof(Objective::subX) + sizeof(Objective::subY)
-    + sizeof(Objective::radius) + kStrBytes + sizeof(Objective::quantity)
-    + sizeof(Objective::targetSettlementId) + sizeof(Objective::npcType)
-    + sizeof(Objective::count) + sizeof(Objective::killed);
-constexpr std::uint64_t kRewardBytes =               // write_reward
-    sizeof(std::uint8_t) + sizeof(Reward::amount) + kStrBytes
-    + sizeof(Reward::delta);
-constexpr std::uint64_t kEventBytes =                // write_event
-    sizeof(std::uint16_t) + sizeof(GameEvent::a) + sizeof(GameEvent::b)
-    + sizeof(GameEvent::fx) + sizeof(GameEvent::fy) + sizeof(GameEvent::ix)
-    + sizeof(GameEvent::iy) + kStrBytes + kStrBytes;
-constexpr std::uint64_t kQuestBytes =                // write_quest
-    sizeof(Quest::ordinal) + sizeof(Quest::offerSlot)
-    + sizeof(Quest::bornDay) + kStrBytes + kStrBytes + sizeof(std::uint8_t)
-    + sizeof(Quest::giverSettlementId)
-    + kCountBytes + std::uint64_t(kMaxQuestParts) * kObjectiveBytes
-    + kCountBytes + std::uint64_t(kMaxQuestParts) * kRewardBytes
-    + kCountBytes + std::uint64_t(kMaxQuestParts) * kEventBytes
-    + sizeof(Quest::expireDay) + sizeof(Quest::difficulty);
-constexpr std::uint64_t kQuestsBlockBytes =
-    kCountBytes + std::uint64_t(kMaxQuests) * kQuestBytes;
+// (Слагаемые kObjectiveBytes/kRewardBytes/kEventBytes/kQuestBytes/
+// kQuestsBlockBytes умерли с блоком квестов — ломоть 3 M-72, вариант А.)
 
 // ПОРЯДОК СЛАГАЕМЫХ — ПОРЯДОК БЛОКОВ write_payload. Он держится глазами, а
 // не компилятором, и это сказано вслух: пропущенное слагаемое занизит
@@ -245,8 +217,7 @@ constexpr std::uint64_t kMaxPayloadBytes =
     + kRhythmBytes
     + kChronicleBlockBytes
     + kScentBlockBytes
-    + kLogicNodesBlockBytes
-    + kQuestsBlockBytes;
+    + kLogicNodesBlockBytes;
 
 // Вывод не смеет опустить порог ниже прежнего литерала — иначе правка была
 // бы регрессом, а не выводом.
@@ -256,7 +227,7 @@ static_assert(kMaxPayloadBytes >= 64ull * 1024ull * 1024ull,
 // слагаемого. `SaveHeader::payloadSize` — u64, так что расти потолку есть
 // куда: сегодняшняя сумма стоит ~25 МБ ниже границы u32, и следующий же
 // поднятый кап её перешагнёт.
-static_assert(kMaxPayloadBytes > kQuestsBlockBytes,
+static_assert(kMaxPayloadBytes > kMacroNpcsBlockBytes,
               "сумма капов блоков завернулась в uint64");
 
 struct SaveHeader {
@@ -283,21 +254,8 @@ std::uint32_t checksum32(const std::uint8_t* data, std::size_t n) {
 
 
 
-void write_bool(Writer& w, bool v) {
-    const std::uint8_t b = v ? 1u : 0u;
-    w.pod(b);
-}
-
-bool read_bool(Reader& r, bool& v) {
-    std::uint8_t b = 0;
-    r.pod(b);
-    if (!r.ok || b > 1u) {
-        r.ok = false;
-        return false;
-    }
-    v = b != 0;
-    return true;
-}
+// (write_bool/read_bool умерли с сериализаторами квестов — ломоть 3 M-72:
+//  других читателей булевого провода не было.)
 
 std::string current_timestamp_utc() {
     const auto now = std::chrono::system_clock::now();
@@ -654,6 +612,7 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     w.pod(m.kind);
     w.pod(m.pools);
     w.pod(m.runtime);
+    w.pod(m.goal);   // v145: цель сквада — колонка рода 2 (M-1)
     w.pod(m.traits);
     w.pod(m.character);
     w.pod(m.name);   // v119: имя анкеты — колонка (вердикт 3)
@@ -688,6 +647,7 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     r.pod(m.kind);
     r.pod(m.pools);
     r.pod(m.runtime);
+    r.pod(m.goal);   // v145
     r.pod(m.traits);
     r.pod(m.character);
     r.pod(m.name);   // v119
@@ -917,13 +877,7 @@ void write_player(Writer& w, const PlayerState& p) {
     // (No spellbook block since v89: his book is the SpellBook component on
     // his squad entity, riding its MacroNpcRecord like every body's.)
     w.pod(p.factionPeaceUntilDay);
-    // v63: settled quest OFFERS (same-day dedup PODs) + lifetime tallies —
-    // the two eternal id-string vectors left the format.
-    if (w.count(p.settledQuestOffers.size(), kMaxQuests)) {
-        for (const SettledQuestOffer& so : p.settledQuestOffers) w.pod(so);
-    }
-    w.pod(p.completedQuestCount);
-    w.pod(p.failedQuestCount);
+    // (Офферы и счётчики квестов умерли 2026-10-23 — ломоть 3 M-72.)
     // (No possessedMacroSpawnId since v87: "who is controlled" is the honest
     // playerFlag byte on the possessed record itself — one store, the world's.)
     // (No entry-side bytes since v88: the entry context lives in his
@@ -942,18 +896,6 @@ void read_player(Reader& r, PlayerState& p) {
     r.pod(p.ageDays);
     r.pod(p.codexUnlockedBits);   // v63
     r.pod(p.factionPeaceUntilDay);
-    std::uint32_t sn = 0;         // v63: settled offers ride as PODs
-    if (!read_count(r, sn, kMaxQuests)) return;
-    p.settledQuestOffers.clear();
-    p.settledQuestOffers.reserve(sn);
-    for (std::uint32_t i = 0; i < sn && r.ok; ++i) {
-        SettledQuestOffer so{};
-        r.pod(so);
-        p.settledQuestOffers.push_back(so);
-    }
-    r.pod(p.completedQuestCount);
-    r.pod(p.failedQuestCount);
-
     std::uint32_t jn = 0;             // v57: the journal rides whole
     if (!read_count(r, jn, PlayerState::kJournalFactsCap)) return;
     p.journal.clear();
@@ -1028,150 +970,12 @@ void read_sub_state(Reader& r, GameSubState& s) {
     r.pod(s.settlementId);
 }
 
-void write_event(Writer& w, const GameEvent& ev) {
-    const auto tag = static_cast<std::uint16_t>(ev.tag);
-    w.pod(tag);
-    w.pod(ev.a);
-    w.pod(ev.b);
-    w.pod(ev.fx);
-    w.pod(ev.fy);
-    w.pod(ev.ix);
-    w.pod(ev.iy);
-    w.str(ev.s1);
-    w.str(ev.s2);
-}
-
-void read_event(Reader& r, GameEvent& ev) {
-    std::uint16_t tag = 0;
-    r.pod(tag);
-    if (!r.ok || tag > static_cast<std::uint16_t>(EventTag::LastSerializable)) {
-        r.ok = false;
-        return;
-    }
-    ev.tag = static_cast<EventTag>(tag);
-    r.pod(ev.a);
-    r.pod(ev.b);
-    r.pod(ev.fx);
-    r.pod(ev.fy);
-    r.pod(ev.ix);
-    r.pod(ev.iy);
-    r.str(ev.s1);
-    r.str(ev.s2);
-}
-
-void write_objective(Writer& w, const Objective& o) {
-    write_enum8(w, o.kind);
-    write_bool(w, o.completed);
-    w.pod(o.ix);
-    w.pod(o.iy);
-    w.pod(o.subX);
-    w.pod(o.subY);
-    w.pod(o.radius);
-    w.str(o.itemId);
-    w.pod(o.quantity);
-    w.pod(o.targetSettlementId);
-    w.pod(o.npcType);
-    w.pod(o.count);
-    w.pod(o.killed);
-}
-
-void read_objective(Reader& r, Objective& o) {
-    read_enum8(r, o.kind, static_cast<std::uint8_t>(ObjectiveKind::DestroyNpc));
-    read_bool(r, o.completed);
-    r.pod(o.ix);
-    r.pod(o.iy);
-    r.pod(o.subX);
-    r.pod(o.subY);
-    r.pod(o.radius);
-    r.str(o.itemId);
-    r.pod(o.quantity);
-    r.pod(o.targetSettlementId);
-    r.pod(o.npcType);
-    r.pod(o.count);
-    r.pod(o.killed);
-}
-
-void write_reward(Writer& w, const Reward& reward) {
-    write_enum8(w, reward.kind);
-    w.pod(reward.amount);
-    w.str(reward.faction);
-    w.pod(reward.delta);
-}
-
-void read_reward(Reader& r, Reward& reward) {
-    read_enum8(r, reward.kind, static_cast<std::uint8_t>(RewardKind::Reputation));
-    r.pod(reward.amount);
-    r.str(reward.faction);
-    r.pod(reward.delta);
-}
-
-void write_quest(Writer& w, const Quest& q) {
-    w.pod(q.ordinal);      // v63: identity is the ordinal
-    w.pod(q.offerSlot);    // v63: offer provenance (dedup triple)
-    w.pod(q.bornDay);
-    w.str(q.title);
-    w.str(q.description);
-    write_enum8(w, q.category);
-    w.pod(q.giverSettlementId);
-
-    if (w.count(q.objectives.size(), kMaxQuestParts)) {
-        for (const auto& o : q.objectives) write_objective(w, o);
-    }
-    if (w.count(q.rewards.size(), kMaxQuestParts)) {
-        for (const auto& reward : q.rewards) write_reward(w, reward);
-    }
-    if (w.count(q.onAccept.size(), kMaxQuestParts)) {
-        for (const auto& ev : q.onAccept) write_event(w, ev);
-    }
-    w.pod(q.expireDay);
-    w.pod(q.difficulty);
-}
-
-void read_quest(Reader& r, Quest& q) {
-    r.pod(q.ordinal);      // v63
-    r.pod(q.offerSlot);
-    r.pod(q.bornDay);
-    r.str(q.title);
-    r.str(q.description);
-    read_enum8(r, q.category, static_cast<std::uint8_t>(QuestCategory::Procedural));
-    r.pod(q.giverSettlementId);
-
-    std::uint32_t n = 0;
-    if (!read_count(r, n, kMaxQuestParts)) return;
-    q.objectives.clear();
-    q.objectives.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        Objective o{};
-        read_objective(r, o);
-        q.objectives.push_back(std::move(o));
-    }
-
-    if (!read_count(r, n, kMaxQuestParts)) return;
-    q.rewards.clear();
-    q.rewards.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        Reward reward{};
-        read_reward(r, reward);
-        q.rewards.push_back(std::move(reward));
-    }
-
-    if (!read_count(r, n, kMaxQuestParts)) return;
-    q.onAccept.clear();
-    q.onAccept.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        GameEvent ev{};
-        read_event(r, ev);
-        q.onAccept.push_back(std::move(ev));
-    }
-
-    r.pod(q.expireDay);
-    r.pod(q.difficulty);
-}
+// (write/read_event, write/read_objective, write/read_reward,
+// write/read_quest умерли с блоком квестов — ломоть 3 M-72, вариант А.)
 
 void write_payload(Writer& w, const GameState& s,
                    const std::string& savedAt,
                    std::uint32_t storeNextSpawnId,
-                   const std::vector<Quest>& activeQuests,
                    const std::vector<MacroNpcRecord>& macroNpcs,
                    const std::vector<std::uint16_t>& treeCounts) {
     w.pod(s.worldSeed);
@@ -1182,7 +986,6 @@ void write_payload(Writer& w, const GameState& s,
     w.pod(s.worldTime);
     w.pod(s.lastWorldRebakeDay);   // v22: autosave/re-bake phase survives a load
     w.pod(storeNextSpawnId);        // v118/M-220: эмитент ординалов — у стора
-    w.pod(s.nextQuestOrdinal);      // v63: the ONE quest-identity issuer
     w.str(s.saveName);
     w.str(savedAt);
     // v67: the world's loot pool — the victorless dead's worth, ONE number
@@ -1243,14 +1046,10 @@ void write_payload(Writer& w, const GameState& s,
     // v25: story progress — which logic nodes still exist / are active.
     write_string_vector(w, s.logicNodesRegistered);
     write_string_vector(w, s.logicNodesActive);
-
-    if (w.count(activeQuests.size(), kMaxQuests)) {
-        for (const auto& q : activeQuests) write_quest(w, q);
-    }
+    // (Блок activeQuests умер 2026-10-23: цель игрока — род 2, ломоть 3.)
 }
 
 void read_payload(Reader& r, GameState& s, std::uint32_t& storeNextSpawnId,
-                  std::vector<Quest>& activeQuests,
                   std::vector<MacroNpcRecord>& macroNpcs,
                   std::vector<std::uint16_t>& treeCounts) {
     s.version = kSaveVersion;
@@ -1262,7 +1061,6 @@ void read_payload(Reader& r, GameState& s, std::uint32_t& storeNextSpawnId,
     r.pod(s.worldTime);
     r.pod(s.lastWorldRebakeDay);   // v22
     r.pod(storeNextSpawnId);        // v118/M-220: эмитент — у стора
-    r.pod(s.nextQuestOrdinal);      // v63
     r.str(s.saveName);
     r.str(s.savedAt);
     read_player(r, s.player);
@@ -1318,24 +1116,10 @@ void read_payload(Reader& r, GameState& s, std::uint32_t& storeNextSpawnId,
 
     read_string_vector(r, s.logicNodesRegistered);   // v25
     read_string_vector(r, s.logicNodesActive);
-
-    if (!read_count(r, n, kMaxQuests)) return;
-    activeQuests.clear();
-    activeQuests.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        Quest q{};
-        read_quest(r, q);
-        // Self-heal the issuer ABOVE every restored quest — the same law
-        // macro_snapshot applies to nextMacroSpawnOrdinal: an issuer behind
-        // a living ordinal would hand a new quest a used identity.
-        if (q.ordinal >= s.nextQuestOrdinal) s.nextQuestOrdinal = q.ordinal + 1u;
-        activeQuests.push_back(std::move(q));
-    }
 }
 
 bool load_payload_from_file(const std::string& path, GameState& s,
                             std::uint32_t& storeNextSpawnId,
-                            std::vector<Quest>& activeQuests,
                             std::vector<MacroNpcRecord>& macroNpcs,
                             std::vector<std::uint16_t>& treeCounts) {
     std::vector<std::uint8_t> file;
@@ -1348,17 +1132,14 @@ bool load_payload_from_file(const std::string& path, GameState& s,
 
     GameState loaded;
     std::uint32_t loadedNextSpawnId = 1;
-    std::vector<Quest> loadedQuests;
     std::vector<MacroNpcRecord> loadedMacro;
     std::vector<std::uint16_t> loadedTrees;
     Reader r{file.data() + kHeaderBytes, static_cast<std::size_t>(h.payloadSize)};
-    read_payload(r, loaded, loadedNextSpawnId, loadedQuests, loadedMacro,
-                 loadedTrees);
+    read_payload(r, loaded, loadedNextSpawnId, loadedMacro, loadedTrees);
     if (!r.ok || r.pos != r.size) return false;
 
     s = std::move(loaded);
     storeNextSpawnId = loadedNextSpawnId;
-    activeQuests = std::move(loadedQuests);
     macroNpcs = std::move(loadedMacro);
     treeCounts = std::move(loadedTrees);
     return true;
@@ -1367,7 +1148,6 @@ bool load_payload_from_file(const std::string& path, GameState& s,
 } // namespace
 
 bool save_game(const GameState& s, std::uint32_t storeNextSpawnId,
-               const std::vector<Quest>& activeQuests,
                const std::vector<MacroNpcRecord>& macroNpcs,
                const std::vector<std::uint16_t>& treeCounts,
                const std::string& path) {
@@ -1375,8 +1155,8 @@ bool save_game(const GameState& s, std::uint32_t storeNextSpawnId,
     payload.bytes.reserve(64u * 1024u);
     const std::string savedAt = save_timestamp_for(s);
     if (savedAt.empty()) return false;
-    write_payload(payload, s, savedAt, storeNextSpawnId, activeQuests,
-                  macroNpcs, treeCounts);
+    write_payload(payload, s, savedAt, storeNextSpawnId, macroNpcs,
+                  treeCounts);
     if (!payload.ok || payload.bytes.size() > kMaxPayloadBytes) return false;
 
     SaveHeader h;
@@ -1392,7 +1172,6 @@ std::uint64_t save_max_payload_bytes() { return kMaxPayloadBytes; }
 
 std::uint32_t save_payload_fingerprint(
     const GameState& s, std::uint32_t storeNextSpawnId,
-    const std::vector<Quest>& activeQuests,
     const std::vector<MacroNpcRecord>& macroNpcs,
     const std::vector<std::uint16_t>& treeCounts) {
     Writer payload;
@@ -1401,17 +1180,16 @@ std::uint32_t save_payload_fingerprint(
     // honest saves of one state differ in savedAt by construction (a fresh
     // UTC stamp per save, save.cpp:1272), and that is not state.
     write_payload(payload, s, std::string(), storeNextSpawnId,
-                  activeQuests, macroNpcs, treeCounts);
+                  macroNpcs, treeCounts);
     if (!payload.ok) return 0u;   // 0 = "no answer", never a real fingerprint
     return checksum32(payload.bytes.data(), payload.bytes.size());
 }
 
 bool load_game(GameState& s, std::uint32_t& storeNextSpawnId,
-               std::vector<Quest>& activeQuests,
                std::vector<MacroNpcRecord>& macroNpcs,
                std::vector<std::uint16_t>& treeCounts,
                const std::string& path) {
-    return load_payload_from_file(path, s, storeNextSpawnId, activeQuests,
+    return load_payload_from_file(path, s, storeNextSpawnId,
                                   macroNpcs, treeCounts);
 }
 
@@ -1466,8 +1244,6 @@ SaveSummary inspect_save(const std::string& path) {
     r.pod(lastWorldRebakeDay);
     std::uint32_t nextMacroSpawnOrdinal = 0;   // v118 — same
     r.pod(nextMacroSpawnOrdinal);
-    std::uint32_t nextQuestOrdinal = 0;        // v63 — same
-    r.pod(nextQuestOrdinal);
     r.str(out.saveName);
     r.str(out.savedAt);
     if (!r.ok) {

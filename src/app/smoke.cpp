@@ -327,9 +327,9 @@ static sm::MacroHandle smoke_birth_squad_at_player(App& app,
     const int pcy = int(smoke_player_y(app));
     st.cell[h.slot].idx = sm::ecs::cell_index(pcx, pcy, app.gs.mapW);
     st.sub[h.slot] = {};   // пин — прыжок: центр клетки (M-244a)
-    auto& rt = st.runtime[h.slot];
-    rt.targetX = float(pcx);
-    rt.targetY = float(pcy);
+    // «Стой тут» — цель на собственную клетку (M-1): прибытие уже истинно.
+    sm::ecs::goal_set(st.goal[h.slot], st.cell[h.slot].idx, 0, 0,
+                      std::uint8_t(sm::NPCState::Idle));
     std::fprintf(stderr,
                  "[smoke] squad spawned at player cell %d,%d faction=%d "
                  "ordinal=%u\n", pcx, pcy, factionIndex,
@@ -407,7 +407,6 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"timeadvance_burst", SmokeAction::TimeAdvanceBurst},
     {"chronicle_rate", SmokeAction::ChronicleRate},
     {"macro_npc_trace", SmokeAction::MacroNpcTrace},
-    {"open_quests", SmokeAction::OpenQuests},
     {"open_codex", SmokeAction::OpenCodex},
     {"open_spells", SmokeAction::OpenSpells},
     {"cast_spell", SmokeAction::CastSpell},
@@ -2446,11 +2445,11 @@ bool run_macro_npc_trace_smoke(App& app) {
     app.macroEyes.x[traceH.slot] = float(baseX);
     app.macroEyes.y[traceH.slot] = float(baseY);
     kind.type = std::uint16_t(sm::NPCType::Merchant);
-    rt.targetX = float(sm::cell_x(
-        sm::cell_step(sm::cell_of(baseX, baseY, app.gs.mapW), 3, 0,
-                      app.gs.mapW), app.gs.mapW));
-    rt.targetY = float(baseY);
-    rt.targetSettlementId = 0;
+    sm::ecs::goal_set(stt.goal[traceH.slot],
+                      std::uint32_t(sm::cell_step(
+                          sm::cell_of(baseX, baseY, app.gs.mapW), 3, 0,
+                          app.gs.mapW)),
+                      0, 0, std::uint8_t(sm::NPCState::Idle));
     rt.state = std::uint8_t(sm::NPCState::Traveling);
     hp.sp = std::int16_t(maxSp);
     rt.tickAccum = 0;
@@ -5625,7 +5624,6 @@ bool run_subworld_reputation_hit_smoke(App& app) {
 
 void smoke_close_gameplay_panels(App& app) {
     app.ui.settlement = false;
-    app.ui.quest = false;
     app.ui.codex = false;
     app.ui.map = false;
     app.ui.character = false;
@@ -6189,74 +6187,8 @@ bool run_console_smoke(App& app) {
         restore(); smoke_fail(app, "console unknown command produced no output"); return false;
     }
 
-    // ── Quest markers: quests project onto gs.markers as "quest_" pins ────
-    // markers.h + rebuild_quest_markers() is the universal producer wired into
-    // process_world_events via a per-frame signature guard. Prove the whole
-    // projection deterministically: an accepted quest with a world-anchored
-    // objective (VisitCell) yields exactly one gold Quest pin at that cell; a
-    // pure kill-count objective (no fixed cell) adds none; completing the located
-    // objective changes the signature and drops the pin on rebuild. Delta-based,
-    // so it is robust to any pre-existing markers; fully self-contained
-    // (snapshots + restores activeQuests / gs.markers / the sig cache).
-    {
-        const auto savedQuests  = app.activeQuests;
-        const auto savedMarkers = app.gs.markers;
-        const auto savedSig     = app.questMarkerSig;
-        auto bail = [&](const char* why) {
-            app.activeQuests   = savedQuests;
-            app.gs.markers     = savedMarkers;
-            app.questMarkerSig = savedSig;
-            restore(); smoke_fail(app, why);
-        };
-
-        app.activeQuests.clear();
-        sm::rebuild_quest_markers(app.gs, *app.macroStore, app.activeQuests);   // clean quest_* slate
-        const std::size_t base = app.gs.markers.size();
-
-        sm::Quest q;
-        q.ordinal = 999001u;   // any nonzero identity; markers key off it
-        q.title = "Smoke Marker Target";
-        sm::Objective vis;
-        vis.kind = sm::ObjectiveKind::VisitCell;
-        vis.ix = 42; vis.iy = 17; vis.radius = 1.0f;
-        q.objectives.push_back(vis);
-        sm::Objective kill;                                    // no fixed cell -> no pin
-        kill.kind = sm::ObjectiveKind::DestroyNpc;
-        kill.npcType = 1; kill.count = 3;
-        q.objectives.push_back(kill);
-        app.activeQuests.push_back(q);
-
-        sm::rebuild_quest_markers(app.gs, *app.macroStore, app.activeQuests);
-        if (app.gs.markers.size() != base + 1) {
-            bail("quest_markers: expected exactly one pin for one located objective");
-            return false;
-        }
-        const sm::Marker* pin = nullptr;
-        for (const auto& m : app.gs.markers)
-            if (m.id == "quest_999001_0") pin = &m;
-        if (!pin || pin->style != sm::MarkerStyle::Quest ||
-            pin->x != 42.0f || pin->y != 17.0f) {
-            bail("quest_markers: pin id/style/cell wrong"); return false;
-        }
-
-        const std::uint64_t sigOpen = quest_marker_signature(app.activeQuests);
-        app.activeQuests[0].objectives[0].completed = true;
-        if (quest_marker_signature(app.activeQuests) == sigOpen) {
-            bail("quest_markers: signature ignored objective completion"); return false;
-        }
-        sm::rebuild_quest_markers(app.gs, *app.macroStore, app.activeQuests);
-        if (app.gs.markers.size() != base) {
-            bail("quest_markers: completed objective pin not removed"); return false;
-        }
-
-        app.activeQuests   = savedQuests;
-        app.gs.markers     = savedMarkers;
-        app.questMarkerSig = savedSig;
-        std::fprintf(stderr,
-                     "[smoke] quest_markers pin@42,17 style=quest killcount=nopin "
-                     "complete->removed sig_changed=1\n");
-        std::fflush(stderr);
-    }
+    // (Смоук квест-маркеров умер с квест-машиной — ломоть 3 M-72,
+    //  вариант А: продюсера quest_* пинов больше нет.)
 
     // ── Spawn / teleport / subworld toggles (subworld context) ───
     enter_subworld(app);
@@ -6979,7 +6911,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             if (!sm::save_game(app.gs, app.macroStore->nextSpawnId,
-                               app.activeQuests, stage_save_state(app),
+                               stage_save_state(app),
                                app.treeLayer.data,
                                app.savePath)) {
                 smoke_fail(app, "save_game returned false");
@@ -8275,8 +8207,6 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.settlement = true;
             app.ui.codex = false;
             app.ui.map = false;
-            app.ui.quest = false;
-            refresh_available_settlement_quests(app);
             std::fprintf(stderr,
                          "[smoke] settlement_trade open id=%d name=\"%s\" wellbeing=%d stock=%d playerItems=%d gold=%d\n",
                          int(app.macroStore->spawnId[s].index),
@@ -8791,8 +8721,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.settlement = false;
             app.ui.codex = false;
             app.ui.map = false;
-            app.ui.quest = false;
-            sm::MacroStore& stv = (*app.macroStore);
+                    sm::MacroStore& stv = (*app.macroStore);
             sm::MacroHandle target{};
             int stock = 0;
             int type = -1;
@@ -9372,7 +9301,6 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.character = true;
             app.ui.characterTab = sm::ui::CharacterPanelTab::Stats;
             app.ui.map = false;
-            app.ui.quest = false;
             app.ui.codex = false;
             std::fprintf(stderr,
                          "[smoke] stats open attrPts=%d skillPts=%d end=%d bodybuilding=%d hpMax=%d\n",
@@ -9400,7 +9328,6 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.character = true;
             app.ui.characterTab = sm::ui::CharacterPanelTab::Craft;
             app.ui.map = false;
-            app.ui.quest = false;
             app.ui.codex = false;
             sm::Inventory& bag = player_bag(app);
             const int sword = sm::item_index("wpn_sword");
@@ -9594,24 +9521,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fflush(stderr);
             if (run_macro_npc_trace_smoke(app)) ++app.smoke.cursor;
             break;
-        case SmokeAction::OpenQuests:
-            std::fprintf(stderr, "[smoke] action=open_quests\n");
-            std::fflush(stderr);
-            if (!app.worldLoaded) {
-                smoke_fail(app, "open_quests without world");
-                break;
-            }
-            app.ui.quest = true;
-            app.ui.questSelection = 0;
-            std::fprintf(stderr,
-                         "[smoke] quest_journal open active=%zu done=%u first=%s\n",
-                         app.activeQuests.size(),
-                         app.gs.player.completedQuestCount,
-                         app.activeQuests.empty()
-                             ? "(none)" : app.activeQuests.front().title.c_str());
-            std::fflush(stderr);
-            ++app.smoke.cursor;
-            break;
+        // (open_quests умер с квест-машиной — ломоть 3 M-72.)
         case SmokeAction::OpenCodex:
             std::fprintf(stderr, "[smoke] action=open_codex\n");
             std::fflush(stderr);

@@ -46,9 +46,7 @@ sm::MacroHandle npc_squad(sm::MacroStore& st, float x, float y,
     sm::store_rename_ordinal(st, h, ordinal);
     h = sm::handle_at(st, h.slot);
     ecs::MacroNpcRuntime rt{};
-    rt.targetSettlementId = 0;
-    rt.targetX = x;
-    rt.targetY = y;
+    // Цель — «ничего» (kNoCell, колонку нулит рождение).
     rt.state = std::uint8_t(NPCState::Idle);
     st.runtime[h.slot] = rt;
     auto& bag = st.inventory[h.slot];
@@ -206,7 +204,7 @@ void test_ai_leaves_the_player_squad_standing() {
     const auto& after = wStore_->runtime[mineH.slot];
     CHECK(after.state == before.state,
           "the player's squad kept its state through eight AI sweeps");
-    CHECK(after.targetX == before.targetX && after.targetY == before.targetY,
+    CHECK(wStore_->goal[mineH.slot].cell == ecs::kNoCell,
           "nothing gave the player's squad somewhere to be");
     CHECK(ecs::cell_x(wStore_->cell[mineH.slot], 64) == 20 &&
           ecs::cell_y(wStore_->cell[mineH.slot], 64) == 20,

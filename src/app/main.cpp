@@ -30,7 +30,6 @@
 #include "events/effect_applicator.h"
 #include "events/logic_nodes.h"
 #include "events/node_registry.h"
-#include "events/quests/quest_engine.h"
 #include "macro/frame_fill.h"  // сборщик локального фрейма (M-171, ломоть 4)
 #include "macro/delta_apply.h"  // применение дельты шва (M-98, ломоть 5)
 #include "macro/state.h"
@@ -73,7 +72,6 @@
 #include "content/spells/spell_book.h"
 #include "content/plot/intro.h"
 #include "content/plot/scene.h"
-#include "content/quests/procedural.h"
 #include "sub/engine.h"
 #include "sub/damage.h"
 #include "sub/record.h"   // шовные slot_pools_of/
@@ -493,48 +491,8 @@ void refresh_player_settlement(App& app) {
     app.bus.emit(ev);
 }
 
-void refresh_available_settlement_quests(App& app) {
-    // Доска контрактов — у ТОГО, кого показывает панель; закрыта панель —
-    // у поселения, в котором игрок стоит. Ординал субъекта спрашивается у
-    // его слота, а не хранится рядом вторым полем.
-    const int id =
-        app.ui.settlement && app.macroStore->valid(app.subjectSquad)
-            ? int(app.macroStore->spawnId[app.subjectSquad.slot].index)
-            : app.gs.subState.settlementId;
-    if (id < 0) {
-        app.availableSettlementQuests.clear();
-        app.availableQuestSettlementId = -1;
-        app.availableQuestDay = -1;
-        return;
-    }
-    if (app.availableQuestSettlementId == id
-        && app.availableQuestDay == app.gs.worldTime.day()) {
-        return;
-    }
-    const sm::MacroHandle s = settlement_by_id(*app.macroStore, id);
-    if (!app.macroStore->valid(s)) {
-        app.availableSettlementQuests.clear();
-        app.availableQuestSettlementId = -1;
-        app.availableQuestDay = -1;
-        return;
-    }
-    const sm::SquadType sKind =
-        sm::SquadType(app.macroStore->runtime[s.slot].squadType);
-    // The board follows the actions column, asked through THE door (M-281):
-    // `landmark_def(sKind).actions` stood here — the second reader of the
-    // column past the one door CANON S22 names for these verbs.
-    if ((sm::actions_of(*app.macroStore, s) & sm::kMapActQuests) == 0) {
-        app.availableSettlementQuests.clear();
-    } else {
-        app.availableSettlementQuests = sKind == sm::SquadType::Village
-            ? sm::generate_quests_for_village(s.slot, *app.macroStore, app.gs,
-                                              app.gs.worldSeed)
-            : sm::generate_quests_for_settlement(s.slot, *app.macroStore,
-                                                 app.gs, app.gs.worldSeed);
-    }
-    app.availableQuestSettlementId = id;
-    app.availableQuestDay = app.gs.worldTime.day();
-}
+// (refresh_available_settlement_quests умерла с квест-машиной —
+//  ломоть 3 M-72, вариант А: доски контрактов больше нет.)
 
 // КОГО НАЗЫВАЕТ КЛАВИША: место под курсором, иначе то, в котором стоишь.
 // Один ответ, один носитель — хэндл субъекта (M-290).
@@ -549,14 +507,12 @@ sm::MacroHandle settlement_under_hand(App& app) {
 
 void toggle_settlement_panel(App& app) {
     app.subjectSquad = settlement_under_hand(app);
-    refresh_available_settlement_quests(app);
     app.ui.settlement = !app.ui.settlement;
 }
 
 void open_settlement_panel(App& app, sm::ui::SettlementPanelTab tab) {
     app.subjectSquad = settlement_under_hand(app);
     app.ui.settlementTab = tab;
-    refresh_available_settlement_quests(app);
     app.ui.settlement = true;
 }
 
@@ -1376,9 +1332,6 @@ void destroy_world(App& app) {
     app.pendingPresentationCount = 0;
     app.pendingPresentationTick = std::uint32_t(-1);
     app.pendingPresentationSeen = 0;
-    app.availableSettlementQuests.clear();
-    app.availableQuestSettlementId = -1;
-    app.availableQuestDay = -1;
     // Sight is a projection of a world that is about to die: the Visible-cell
     // list and the last-cell anchor must not survive into the next one (the
     // invalid anchor is what forces the first sweep of a fresh boot or load).
@@ -1389,8 +1342,6 @@ void destroy_world(App& app) {
     sm::destroy_terrain(app.terrain);
     app.terrain = {};
     app.gs = sm::GameState{};
-    app.activeQuests.clear();
-    app.questMarkerSig = 0;   // invalidate derived quest-marker cache
     // Арена сцены умирает вместе с миром (ломоть D; реестр умер ломтём E —
     // смерть мира и есть SubObjects::clear()).
     if (app.sceneObjects) app.sceneObjects->clear();
@@ -1443,7 +1394,7 @@ bool save_game_checked(App& app, bool autosave = false) {
     }
     const std::string& path = autosave ? app.autosavePath : app.savePath;
     const bool ok = sm::save_game(app.gs, app.macroStore->nextSpawnId,
-                                  app.activeQuests, stage_save_state(app),
+                                  stage_save_state(app),
                                   app.treeLayer.data, path);
     refresh_save_summary(app);
     if (!ok)
@@ -1751,9 +1702,6 @@ void boot_world(App& app, std::uint32_t seed,
     sm::reset_macro_npc_ai_runtime(app.npcAi, seed);
     app.appliedEventCount = 0;
     app.subjectSquad = {};
-    app.availableSettlementQuests.clear();
-    app.availableQuestSettlementId = -1;
-    app.availableQuestDay = -1;
     sm::register_builtin_nodes(app.logic);
     if (registerIntroStory) {
         sm::content::register_intro_story_nodes(app.logic);
@@ -1867,10 +1815,9 @@ void boot_world(App& app, std::uint32_t seed,
 bool boot_world_from_save(App& app, const std::string& path) {
     sm::GameState fresh;
     std::uint32_t loadedNextSpawnId = 1;
-    std::vector<sm::Quest> loadedQuests;
     std::vector<sm::MacroNpcRecord> loadedMacro;
     std::vector<std::uint16_t> loadedTrees;
-    if (!sm::load_game(fresh, loadedNextSpawnId, loadedQuests, loadedMacro,
+    if (!sm::load_game(fresh, loadedNextSpawnId, loadedMacro,
                        loadedTrees, path)) {
         return false;
     }
@@ -1878,7 +1825,7 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // applied. Compared against the living world at the bottom of this
     // function — see the fold witness there.
     const std::uint32_t fileFingerprint = sm::save_payload_fingerprint(
-        fresh, loadedNextSpawnId, loadedQuests, loadedMacro, loadedTrees);
+        fresh, loadedNextSpawnId, loadedMacro, loadedTrees);
     // registerIntroStory=TRUE even on load (v25): node definitions are code
     // and must all exist before the saved story progress is replayed below.
     // The old `false` here was the 3-nodes -> 1 bug: a loaded game lost the
@@ -1956,9 +1903,6 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // sight anchor. The features squads BUILT rode in too (v71): that list is
     // the truth, and it is re-stamped onto the seed-baked grid below, before
     // the rebaker reads it.)
-    app.activeQuests         = std::move(loadedQuests);
-    app.questMarkerSig       = 0;   // force quest-marker rebuild on next tick
-
     // ── THE fold witness (SAVE-1) ─────────────────────────────────────────
     //
     // Everything above is the APPLY half of a load: a file already parsed into
@@ -1985,8 +1929,7 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // re-derives a field, and a witness must compare the fold, not the
     // world's own thinking.
     const std::uint32_t liveFingerprint = sm::save_payload_fingerprint(
-        app.gs, app.macroStore->nextSpawnId, app.activeQuests, loadedMacro,
-        loadedTrees);
+        app.gs, app.macroStore->nextSpawnId, loadedMacro, loadedTrees);
     // A witness that answers "0" twice would agree with itself over a world it
     // never weighed: 0 is what the fingerprint returns when the writer FAILED.
     // Refuse that agreement out loud — a check that cannot fail is the defect
@@ -2070,7 +2013,6 @@ bool boot_world_from_save(App& app, const std::string& path) {
 // world move, and freezing it would blank the very numbers it is opened for.
 bool pausing_panel_open(const App& app) {
     return app.ui.settlement ||
-           app.ui.quest ||
            app.ui.codex ||
            app.ui.map ||
            app.ui.character ||
@@ -2117,7 +2059,7 @@ void reset_scene_session_state(App& app) {
     // Окна: открытая панель ПАУЗИТ мир (pausing_panel_open выше), так что
     // забытый инвентарь даёт ровно тот же замороженный вход, что и режим P.
     // Список — тот же, что судит пауза; расходиться им нечем.
-    app.ui.settlement = app.ui.quest = app.ui.codex =
+    app.ui.settlement = app.ui.codex =
         app.ui.map = app.ui.character = app.ui.settings = app.ui.controls =
             false;
 }
@@ -2740,7 +2682,6 @@ void handle_event_playing(App& app, const SDL_Event& e) {
                 app.navView = sm::next_nav_debug_view(app.navView);
             }
             else if (is(ActionId::Settlement)) { toggle_settlement_panel(app); }
-            else if (is(ActionId::Quests))     { app.ui.quest = !app.ui.quest; }
             else if (is(ActionId::Character)) {
                 app.ui.character = !app.ui.character;
                 app.ui.characterTab = sm::ui::CharacterPanelTab::Inventory;
@@ -3350,7 +3291,6 @@ bool modal_overlay_active(const App& app) {
 bool macro_overlay_blocks_npc_proximity(const App& app) {
     return modal_overlay_active(app) ||
            app.ui.settlement ||
-           app.ui.quest ||
            app.ui.codex ||
            app.ui.map ||
            app.ui.character;
@@ -3465,26 +3405,7 @@ void handle_dialog_node_activation(App& app) {
     app.logic.activate(nodeId);
 }
 
-// Cheap integer fingerprint of the active-quest set: changes iff the derived
-// quest-marker set could change (a quest added or removed, or one of its
-// objectives flips completed). No allocation — safe to compute every frame; it
-// gates the allocating rebuild_quest_markers() so only real changes pay for it.
-// Objective target cells are immutable after creation, so only the quest ids,
-// objective counts and completion bits need folding.
-std::uint64_t quest_marker_signature(const std::vector<sm::Quest>& active) {
-    std::uint64_t h = 1469598103934665603ull;            // FNV-1a offset basis
-    auto mix = [&](std::uint64_t v) { h ^= v; h *= 1099511628211ull; };
-    for (const sm::Quest& q : active) {
-        mix(std::uint64_t(q.ordinal) + 1u);
-        mix(q.objectives.size() + 1u);
-        std::uint64_t doneMask = 0;
-        for (std::size_t i = 0; i < q.objectives.size(); ++i)
-            if (q.objectives[i].completed) doneMask |= (1ull << (i & 63u));
-        mix(doneMask);
-    }
-    mix(active.size() + 1u);
-    return h;
-}
+// (quest_marker_signature умерла с квест-машиной — ломоть 3 M-72.)
 
 void process_world_events(App& app) {
     apply_pending_event_effects(app);
@@ -3495,33 +3416,8 @@ void process_world_events(App& app) {
     app.appliedStoryResultCount = 0;
     app.appliedSpawnEventCount = 0;
     app.logic.tick(app.bus, app.gs.player);
-    {
-        const sm::ecs::MacroCell* qc = sm::player_flag_cell(app.gs, *app.macroStore);
-        app.quests.tick(app.activeQuests, *app.macroStore, app.bus, app.gs,
-                        sm::player_inventory(app.gs, *app.macroStore),
-                        qc ? sm::ecs::cell_x(*qc, app.gs.mapW) : 0,
-                        qc ? sm::ecs::cell_y(*qc, app.gs.mapW) : 0);
-    }
-    // Refresh the derived quest-marker pins only when the active-quest set
-    // actually changed. tick() runs every render frame; the rebuild allocates,
-    // so the signature guard keeps steady-state frames allocation-free.
-    if (const std::uint64_t sig = quest_marker_signature(app.activeQuests);
-        sig != app.questMarkerSig) {
-        sm::rebuild_quest_markers(app.gs, *app.macroStore, app.activeQuests);
-        app.questMarkerSig = sig;
-        // A quest that points at the world OPENS it (Inc 4): every quest
-        // pin's surroundings join the map as MEMORY — the giver described
-        // the place — through the same reveal door and the same eye budget
-        // as the player's own sight. Re-revealing known ground is a cheap
-        // bounded no-op, so re-running on every marker-set change is fine.
-        for (const sm::Marker& m : app.gs.markers) {
-            if (m.style == sm::MarkerStyle::Quest) {
-                sm::reveal_area(app.gs.knowledge, optical_world(app),
-                                app.sightRt.scratch, m.x, m.y,
-                                player_sight_budget_cells());
-            }
-        }
-    }
+    // (Тик квестов, кэш подписи маркеров и раскрытие карты по пину
+    //  умерли с квест-машиной — ломоть 3 M-72, вариант А.)
     apply_pending_event_effects(app);
     apply_pending_story_results(app);
     handle_pending_spawn_entity_events(app);
@@ -6166,7 +6062,6 @@ void frame(App& app, int simSteps) {
         if (app.cursor.clickedSettlementId >= 0) {
             app.subjectSquad =
                 settlement_by_id(*app.macroStore, app.cursor.clickedSettlementId);
-            app.availableQuestSettlementId = -1;
         }
         // Resolve a click → pathfind here so the overlay stays purely visual.
         if (app.cursor.requestPath) {
@@ -6246,7 +6141,6 @@ void frame(App& app, int simSteps) {
                     aim_rest_until_rested(app);
                 if (tb.menu)          app.state          = sm::ui::AppState::Menu;
                 if (tb.build)         open_settlement_panel(app, sm::ui::SettlementPanelTab::Info);
-                if (tb.quests)        app.ui.quest       = !app.ui.quest;
                 if (tb.codex)         app.ui.codex       = !app.ui.codex;
                 if (tb.map)           app.ui.map         = !app.ui.map;
                 if (tb.stats) {
@@ -6291,8 +6185,6 @@ void frame(App& app, int simSteps) {
             draw_session_feed(app);
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelCharacter))
                 sm::ui::draw_character_panel(app.gs, *app.macroStore, app.sceneObjects.get(), &app.ui.character, &app.ui.characterTab, app.uiSettings.scale(sm::ui::UiElementId::PanelCharacter));
-            if (app.ui.settlement && app.subjectSquad.id == 0)
-                refresh_available_settlement_quests(app);
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelSettlement)) {
                 // ОДНА панель субъекта: сквад или ландмарк — окно, пауза и
                 // вкладочная система одни. Attack докладывается сюда, и
@@ -6303,10 +6195,6 @@ void frame(App& app, int simSteps) {
                 sm::ui::draw_settlement(app.gs,
                                         *app.macroStore,
                                         app.subjectSquad,
-                                        app.availableSettlementQuests,
-                                        app.activeQuests,
-                                        app.quests,
-                                        app.bus,
                                         &app.ui.settlementTab,
                                         &app.ui.settlement,
                                         &attackReq,
@@ -6332,21 +6220,7 @@ void frame(App& app, int simSteps) {
                     app.cursor.pathIdx = 0;
                 }
             }
-            if (app.uiSettings.visible(sm::ui::UiElementId::PanelQuestLog)) {
-                // The Close button quotes the LIVE Quests binding (S22).
-                const SDL_Scancode questsSc =
-                    app.keymap.get(sm::ui::ActionId::Quests);
-                sm::ui::draw_quest_log(app.gs,
-                                       app.activeQuests,
-                                       app.quests,
-                                       app.bus,
-                                       &app.ui.questSelection,
-                                       &app.ui.quest,
-                                       app.uiSettings.scale(sm::ui::UiElementId::PanelQuestLog),
-                                       questsSc != SDL_SCANCODE_UNKNOWN
-                                           ? SDL_GetScancodeName(questsSc)
-                                           : nullptr);
-            }
+            // (Журнал квестов умер с квест-машиной — ломоть 3 M-72.)
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelCodex))
                 sm::ui::draw_codex(app.gs, &app.ui.codex, app.uiSettings.scale(sm::ui::UiElementId::PanelCodex));
             if (app.ui.settings) {
@@ -6587,7 +6461,6 @@ void frame(App& app, int simSteps) {
                     && app.macroStore->valid(npcResult.openSubject)) {
                     app.subjectSquad = npcResult.openSubject;
                     app.ui.settlementTab = sm::ui::SettlementPanelTab::Info;
-                    refresh_available_settlement_quests(app);
                     app.ui.settlement = true;
                 }
             }

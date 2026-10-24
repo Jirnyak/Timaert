@@ -63,9 +63,7 @@ sm::MacroHandle make_squad_at(sm::MacroStore& st, NPCType type,
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(type),
                                    std::uint16_t(faction_index(faction))};
     ecs::MacroNpcRuntime rt{};
-    rt.targetSettlementId = 0;
-    rt.targetX = x;
-    rt.targetY = y;
+    // Цель новорождённого — «ничего» (kNoCell, колонку нулит рождение).
     rt.state = std::uint8_t(NPCState::Idle);
     const CharacterSheet sheet = make_character_sheet(
         type, level, leader_sheet_seed(ordinal));
