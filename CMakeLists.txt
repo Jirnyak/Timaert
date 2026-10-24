@@ -1733,6 +1733,27 @@ timaert_test(fauna_stock_test
         src/macro/npc_spawn.cpp
     LINK_SDL)
 
+# СВИДЕТЕЛЬ МОДУЛЯ Collector: до него род `Collector` не имел ни одного
+# утверждения — мутация «модуль отключён целиком» прошла 132/133 ЗЕЛЁНЫМИ.
+timaert_test(collector_tithe_test
+    SOURCES
+        src/macro/squad_index.cpp   # каркас клеток
+        src/macro/npc_ai.cpp
+        src/macro/deal.cpp          # вылив дани домой — один глагол обмена
+        src/macro/recovery.cpp
+        src/macro/nav_field.cpp
+        src/macro/economy.cpp       # цена дома решает срочность нужды
+        src/macro/chronicle.cpp
+        src/macro/macro_stock.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/macro/tree_layer.cpp
+        src/macro/npc_spawn.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
+        src/macro/econ_day.cpp
+    LINK_SDL)
+
 timaert_test(woodcutter_gather_test
     SOURCES
         src/macro/squad_index.cpp   # каркас клеток (ломтик F)

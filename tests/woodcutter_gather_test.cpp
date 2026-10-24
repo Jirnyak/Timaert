@@ -36,6 +36,12 @@ using namespace sm;
 
 constexpr int kMap = 32;
 
+// Стартовая полка города названа ЧИСЛОМ С ИМЕНЕМ, потому что её читают
+// ДВОЕ: фикстура, которая её кладёт, и проверка прироста, которая без неё
+// не могла бы упасть вовсе (§8 п.2). Литерал в двух местах разъехался бы
+// молча, и проверка снова стала бы тавтологией.
+constexpr int kCityStartFood = 2000;
+
 
 // Суша под дверью фичи: стена ломтя 1 закрыла сырой set — фикстура ставит
 // фичу той же дверью, что мир (feature_put; воду та спрашивает у карты).
@@ -441,7 +447,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     const int cityId = int(st.spawnId[city.slot].index);
     {
         sm::Inventory& row = st.inventory[city.slot].inv;
-        row.add("food", 2000);   // plenty: the export
+        row.add("food", kCityStartFood);   // plenty: the export
         // The deal PAYS now (owner 2026-08-30): a coinless fixture is the
         // deadlock the payment law exists to refuse. The purse covers the
         // food lot at the SEASONAL famine price (corridor died 2026-09-18) —
@@ -521,8 +527,15 @@ void test_the_vendor_sells_at_the_nearest_city() {
     const auto& bag = (*sm::body_state<ecs::NpcInventory>(st, e)).inv;
     const int cityFood = st.inventory[city.slot].inv.count("food");
     const int vilFood = st.inventory[vil.slot].inv.count("food");
-    CHECK(cityFood > 0,
-          "the vendor sold the village surplus at the nearest city");
+    // ПРОВЕРКА, КОТОРАЯ НЕ МОГЛА УПАСТЬ, ЗАМЕНЕНА НА ПРОВЕРКУ (§8 п.2).
+    // Здесь стояло `CHECK(cityFood > 0)` — и оно было ЗЕЛЁНЫМ ПО
+    // ПОСТРОЕНИЮ: фикстура сама кладёт городу 2000 еды строкой выше, так
+    // что ноль был недостижим даже при вендоре, вырезанном целиком. Закон
+    // же утверждался другой — «вендор ПРИВЁЗ сюда деревенский излишек», —
+    // и его видно только ПРИРОСТОМ над тем, что лежало.
+    CHECK(cityFood > kCityStartFood,
+          "the vendor sold the village surplus at the nearest city: the "
+          "city shelf GREW above the 2000 it started with");
     // ПОД ДОЛГОМ (CANON S10) «купил домой хлеб» видно СЧЁТОМ: привезённое
     // гасит его в дверях прихода и съедается — полка держит только излишек.
     const int vilFoodDebtPaid = 50 * kDaysPerSeason
