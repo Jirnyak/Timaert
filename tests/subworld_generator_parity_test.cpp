@@ -422,8 +422,8 @@ int main() {
     // Forest is a COUNT class now (macro/tree_layer.h): a massif-interior
     // count drives Forest mode, no feature byte involved.
     ctx.treeCount = kMaxTreesPerCell;
-    ctx.landmark.id = -1;
-    ctx.landmark.size = 0;
+    ctx.place.id = -1;
+    ctx.place.size = 0;
     ctx.seed = 0x12345678u;
 
     float nbH[9];
@@ -524,9 +524,9 @@ int main() {
     grassTrail.macroHeight = 0.62f;
     grassTrail.biome = Meadow;
     grassTrail.feature = FT_None;
-    grassTrail.landmark.id = -1;
-    grassTrail.landmark.size = 0;
-    grassTrail.landmark.kind = SquadType::None;
+    grassTrail.place.id = -1;
+    grassTrail.place.size = 0;
+    grassTrail.place.kind = SquadType::None;
     grassTrail.seed = 0x51525354u;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
     nbF[3] = std::uint8_t(FT_Road);
@@ -567,9 +567,9 @@ int main() {
     swampTrail.macroHeight = 0.57f;
     swampTrail.biome = Swamp;
     swampTrail.feature = FT_None;
-    swampTrail.landmark.id = -1;
-    swampTrail.landmark.size = 0;
-    swampTrail.landmark.kind = SquadType::None;
+    swampTrail.place.id = -1;
+    swampTrail.place.size = 0;
+    swampTrail.place.kind = SquadType::None;
     swampTrail.seed = 0x71727374u;
     fill_flat_neighbors(nbH, nbB, nbF, Swamp, FT_None);
     nbF[5] = std::uint8_t(FT_Road);
@@ -589,9 +589,9 @@ int main() {
     mountainTrail.macroHeight = 0.84f;
     mountainTrail.biome = Mountain;   // elevation-classified biome, not a feature
     mountainTrail.feature = FT_None;
-    mountainTrail.landmark.id = -1;
-    mountainTrail.landmark.size = 0;
-    mountainTrail.landmark.kind = SquadType::None;
+    mountainTrail.place.id = -1;
+    mountainTrail.place.size = 0;
+    mountainTrail.place.kind = SquadType::None;
     mountainTrail.seed = 0x81828384u;
     fill_flat_neighbors(nbH, nbB, nbF, Mountain, FT_None);
     nbF[1] = std::uint8_t(FT_Road);
@@ -611,16 +611,16 @@ int main() {
     spire.macroHeight = 0.62f;
     spire.biome = Meadow;
     spire.feature = FT_None;
-    spire.landmark.id = 77;
-    spire.landmark.size = 0;
-    spire.landmark.kind = SquadType::Spire;
+    spire.place.id = 77;
+    spire.place.size = 0;
+    spire.place.kind = SquadType::Spire;
     spire.seed = 0x2468ACE0u;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
     SubworldMapData spireOut{};
     dispatch_generate(spire, nbH, nbB, /*nbBiome5*/nullptr, nbF, spireOut);
     const bool ok12 = !(resolve_mode(spire) != SubworldMode::Spire);
-    CHECK(ok12, "spire landmark did not resolve to Spire mode");
+    CHECK(ok12, "spire place did not resolve to Spire mode");
     if (!ok12) return 1;
 
     // The tower is ONE round central cylinder of the dungeon layer's shared
@@ -843,16 +843,16 @@ int main() {
     ruin.macroHeight = 0.62f;
     ruin.biome = Meadow;
     ruin.feature = FT_None;
-    ruin.landmark.id = 88;
-    ruin.landmark.size = 4;
-    ruin.landmark.kind = SquadType::Ruin;
+    ruin.place.id = 88;
+    ruin.place.size = 4;
+    ruin.place.kind = SquadType::Ruin;
     ruin.seed = 0x13579BDFu;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
     SubworldMapData ruinOut{};
     dispatch_generate(ruin, nbH, nbB, /*nbBiome5*/nullptr, nbF, ruinOut);
     const bool ok24 = !(resolve_mode(ruin) != SubworldMode::Ruin);
-    CHECK(ok24, "ruin landmark did not resolve to Ruin mode");
+    CHECK(ok24, "ruin place did not resolve to Ruin mode");
     if (!ok24) return 1;
     int wallTiles = 0;
     int blockedWallTiles = 0;
@@ -898,16 +898,16 @@ int main() {
     city.macroHeight = 0.64f;
     city.biome = Meadow;
     city.feature = FT_None;
-    city.landmark.id = 101;
-    city.landmark.size = 6000;
-    city.landmark.kind = SquadType::City;
+    city.place.id = 101;
+    city.place.size = 6000;
+    city.place.kind = SquadType::City;
     city.seed = 0x0BADF00Du;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
     SubworldMapData cityOut{};
     dispatch_generate(city, nbH, nbB, /*nbBiome5*/nullptr, nbF, cityOut);
     const bool ok27 = !(resolve_mode(city) != SubworldMode::City);
-    CHECK(ok27, "city landmark did not resolve to City mode");
+    CHECK(ok27, "city place did not resolve to City mode");
     if (!ok27) return 1;
     int cityHouses = 0;
     int cityWalls = 0;
@@ -970,16 +970,16 @@ int main() {
     village.macroHeight = 0.59f;
     village.biome = Meadow;
     village.feature = FT_None;
-    village.landmark.id = 202;
-    village.landmark.size = 120;
-    village.landmark.kind = SquadType::Village;
+    village.place.id = 202;
+    village.place.size = 120;
+    village.place.kind = SquadType::Village;
     village.seed = 0x00C0FFEEu;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
     SubworldMapData villageOut{};
     dispatch_generate(village, nbH, nbB, /*nbBiome5*/nullptr, nbF, villageOut);
     const bool ok30 = !(resolve_mode(village) != SubworldMode::Village);
-    CHECK(ok30, "village landmark did not resolve to Village mode");
+    CHECK(ok30, "village place did not resolve to Village mode");
     if (!ok30) return 1;
     int villageHouses = 0;
     int villageWalls = 0;
@@ -1034,9 +1034,9 @@ int main() {
     road.macroHeight = 0.35f;
     road.biome = Water;
     road.feature = FT_Road;
-    road.landmark.id = -1;
-    road.landmark.size = 0;
-    road.landmark.kind = SquadType::None;
+    road.place.id = -1;
+    road.place.size = 0;
+    road.place.kind = SquadType::None;
     road.seed = 0x10203040u;
     fill_flat_neighbors(nbH, nbB, nbF, Water, FT_Road);
     // Honest water: a Water-biome cell's macro height sits BELOW the macro
@@ -1256,9 +1256,9 @@ int main() {
     grass.macroHeight = 0.62f;
     grass.biome = Meadow;
     grass.feature = FT_None;
-    grass.landmark.id = -1;
-    grass.landmark.size = 0;
-    grass.landmark.kind = SquadType::None;
+    grass.place.id = -1;
+    grass.place.size = 0;
+    grass.place.kind = SquadType::None;
     grass.seed = 0xAABBCCDDu;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
@@ -1336,9 +1336,9 @@ int main() {
     water.macroHeight = 0.28f;
     water.biome = Water;
     water.feature = FT_None;
-    water.landmark.id = -1;
-    water.landmark.size = 0;
-    water.landmark.kind = SquadType::None;
+    water.place.id = -1;
+    water.place.size = 0;
+    water.place.kind = SquadType::None;
     water.seed = 0x31415926u;
     fill_flat_neighbors(nbH, nbB, nbF, Water, FT_None);
     for (float& h : nbH) h = water.macroHeight;
@@ -1410,9 +1410,9 @@ int main() {
     swamp.macroHeight = 0.56f;
     swamp.biome = Swamp;
     swamp.feature = FT_None;
-    swamp.landmark.id = -1;
-    swamp.landmark.size = 0;
-    swamp.landmark.kind = SquadType::None;
+    swamp.place.id = -1;
+    swamp.place.size = 0;
+    swamp.place.kind = SquadType::None;
     swamp.seed = 0x27182818u;
     fill_flat_neighbors(nbH, nbB, nbF, Swamp, FT_None);
 
@@ -1434,9 +1434,9 @@ int main() {
     mountain.macroHeight = 0.84f;
     mountain.biome = Mountain;   // elevation-classified biome, not a feature
     mountain.feature = FT_None;
-    mountain.landmark.id = -1;
-    mountain.landmark.size = 0;
-    mountain.landmark.kind = SquadType::None;
+    mountain.place.id = -1;
+    mountain.place.size = 0;
+    mountain.place.kind = SquadType::None;
     mountain.seed = 0x55667788u;
     fill_flat_neighbors(nbH, nbB, nbF, Mountain, FT_None);
 
@@ -1467,9 +1467,9 @@ int main() {
     field.macroHeight = 0.62f;
     field.biome = Meadow;
     field.feature = FT_Field;
-    field.landmark.id = -1;
-    field.landmark.size = 0;
-    field.landmark.kind = SquadType::None;
+    field.place.id = -1;
+    field.place.size = 0;
+    field.place.kind = SquadType::None;
     field.seed = 0xf1e1d001u;
     field.treeCount = 64;
     field.fertility01 = 0.70f;

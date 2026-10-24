@@ -16,7 +16,7 @@
 #include "ecs/components.h"
 #include "macro/state.h"
 #include "macro/squad.h"   // record_deed — THE deed door (S20.1)
-#include "macro/landmark_iter.h"
+#include "macro/place_iter.h"
 #include "macro/spires.h"   // spire_orb — ОДИН вывод об орбе (M-233 п.8)
 #include "ui/squad_draw.h"
 #include "macro/markers.h"
@@ -141,7 +141,7 @@ ImU32 figure_tint_for_time(const WorldTime& time) {
 }
 
 // ОДНА ФОРМУЛА РАЗМЕРА НА ВСЕ РОДА (слияние проходов 2026-10-19). Прежде их
-// было две: у места `zoom * kLandmarkCellSpan` с полом и потолком своей
+// было две: у места `zoom * kPlaceCellSpan` с полом и потолком своей
 // строки, у фигурки — свой `clamp(zoom, 12, 56)` мимо всякой строки.
 // Разводило их ровно одно число — сколько клеток занимает метка, — и оно
 // стало КОЛОНКОЙ ГРУППЫ (`cellSpan@src/ui/squad_draw.h`): это и есть ответ
@@ -259,17 +259,17 @@ void draw_macro_overlay(const MacroWorld& mw,
 
     // ── Hover-cell highlight + tooltip (chrome) and settlement pick (input).
     if (cursor.hoverValid) {
-        // Landmark under the cursor is resolved ALWAYS — click-to-select
+        // Place under the cursor is resolved ALWAYS — click-to-select
         // must keep working even when the overlay chrome is hidden. One
         // visitor pass names EVERY kind (first hit wins, in the visitor's
         // resolve_context priority order) and picks the settlement id for
         // the click when the hit is a city.
-        const char* landmark = "";
+        const char* place = "";
         int hoverSettlementId = -1;
-        for_each_landmark(mw, [&](const LandmarkView& lm) {
+        for_each_place_view(mw, [&](const PlaceView& lm) {
             if (lm.x != cursor.hoverX || lm.y != cursor.hoverY) return;
-            if (!landmark[0]) landmark = lm.name;
-            // Any landmark is pickable — the City hardcode died with
+            if (!place[0]) place = lm.name;
+            // Any place is pickable — the City hardcode died with
             // PLAY-2; the panel itself decides which tabs the kind shows.
             if (lm.type != SquadType::None && hoverSettlementId < 0)
                 hoverSettlementId = lm.id;
@@ -283,7 +283,7 @@ void draw_macro_overlay(const MacroWorld& mw,
                                         camX, camY, zoom, viewW, viewH, mapW, mapH);
             dl->AddRect(tl, br, IM_COL32(255, 255, 255, 180), 0.0f, 0, 1.5f);
 
-            // Tooltip: biome / feature / landmark / coords — but only what
+            // Tooltip: biome / feature / place / coords — but only what
             // the player KNOWS (macro/knowledge.h). Terra incognita answers
             // its coordinates and nothing else.
             const std::uint8_t hoverKnow =
@@ -318,9 +318,9 @@ void draw_macro_overlay(const MacroWorld& mw,
                                            "Trees: %d", tc);
                     }
                 }
-                if (landmark[0])
+                if (place[0])
                     ImGui::TextColored(ImVec4(1.00f, 0.90f, 0.40f, 1), "%s",
-                                       landmark);
+                                       place);
             }
             ImGui::EndTooltip();
         }
@@ -335,7 +335,7 @@ void draw_macro_overlay(const MacroWorld& mw,
     // ── ОДИН ПРОХОД НА ВСЕ СКВАДЫ ─────────────────────────────────────────
     // Вердикт владельца 2026-10-19, дословно: «У НАС ЕДИНАЯ ССИЕМА СКВАДОВ
     // ПОЧЕМУ ИХ НЕ НАРИСУЕТ?». Здесь стояли ДВА прохода — обход мест
-    // `for_each_landmark` своей строкой и цикл по слотам строкой тела, — а
+    // `for_each_place` своей строкой и цикл по слотам строкой тела, — а
     // между ними ранний выход по архетипу, чтобы город не нарисовался
     // ДВАЖДЫ. Гейт был симптомом: он лечил существование второго прохода.
     //
@@ -419,7 +419,7 @@ void draw_macro_overlay(const MacroWorld& mw,
             // (выкачанный шпиль рисует тёмную башню — тот же закон, что у
             // ночного свечения, macro_lighting.cpp), а глиф-кружок берёт цвет
             // у ОДНОГО источника — строки реестра.
-            const std::uint32_t argb = landmark_def(type).color;
+            const std::uint32_t argb = place_def(type).color;
             const ImU32 fallback = IM_COL32((argb >> 16) & 0xFF,
                                             (argb >> 8) & 0xFF, argb & 0xFF,
                                             faded ? 120 : 230);
@@ -432,7 +432,7 @@ void draw_macro_overlay(const MacroWorld& mw,
                 // Безымянный показывает label своей строки реестра — один
                 // закон показа на все рода.
                 const char* name = st.name[slot].text;
-                if (name[0] == '\0') name = landmark_def(type).label.data();
+                if (name[0] == '\0') name = place_def(type).label.data();
                 if (name[0] == '\0') continue;
                 const ImVec2 ts = ImGui::CalcTextSize(name);
                 const ImVec2 tp(p.x - ts.x * 0.5f,
@@ -525,7 +525,7 @@ void draw_macro_overlay(const MacroWorld& mw,
     }
 
     // Player sprite — sized to fit one cell like other mobile entities.
-    // Half-cell offset matches the landmark / NPC convention
+    // Half-cell offset matches the place / NPC convention
     // (cell centre = X+0.5). Drawn at the flag holder's VISUAL — the same
     // glide every squad sprite rides (подпосадка 4); the cell is the truth,
     // the visual is what the eye may see between cells.
@@ -749,7 +749,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
         };
 
         // Соседи — РАМКОЙ 3×3 через каркас (ломоть 6, M-244): два скана —
-        // капа по сквадам и всех мест — умерли в одну дверь. Landmarks pop
+        // капа по сквадам и всех мест — умерли в одну дверь. Places pop
         // the same panel (owner's verdict: «деревни, города, ландмарки тоже
         // — если маркер игрока рядом, выскакивают их попапы»).
         //
@@ -831,7 +831,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                     // существа («Peasant»). У ходока ярлык рода пуст по
                     // построению, поэтому цепь сама приходит к телу — ветка
                     // по роду субъекта здесь была лишней.
-                    const char* rowRole = landmark_def(type).label.data();
+                    const char* rowRole = place_def(type).label.data();
                     if (rowRole[0] == '\0') rowRole = npc_def(t).label;
                     const char* rowName = st.name[slot].text;
                     if (rowName[0] == '\0') rowName = rowRole;
@@ -911,7 +911,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                         } else if (grp.pictureFromBody) {
                             ImGui::Dummy(side);
                         } else {
-                            const LandmarkDef& ldef = landmark_def(type);
+                            const PlaceDef& ldef = place_def(type);
                             const ImVec2 p = ImGui::GetCursorScreenPos();
                             ImGui::Dummy(side);
                             ImDrawList* dl = ImGui::GetWindowDrawList();

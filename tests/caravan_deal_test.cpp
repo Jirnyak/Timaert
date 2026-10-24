@@ -12,7 +12,7 @@
 //      (the [0.25…4] corridor died 2026-09-18).
 //   5. NEGATIVE CONTROL — a coinless market can buy nothing, and nothing is
 //      confiscated from it either.
-#include "macro/characters.h"   // landmark_sheet — руки места
+#include "macro/characters.h"   // place_sheet — руки места
 #include "check.h"
 #include "macro/labour.h"           // souls_home — рты места
 #include "macro/upkeep_window.h"   // upkeep_bill — счёт по таблице
@@ -110,10 +110,10 @@ int main() {
         need_debt(mstore, city)[sm::commodity_index("food")];
     const int foodDemand = sm::season_demand_for(
         sm::item_index("food"), need_debt(mstore, city), sm::souls_home(mstore, city),
-        sm::landmark_sheet(sm::SquadType::City).skills, &shelf(mstore, city));
+        sm::place_sheet(sm::SquadType::City).skills, &shelf(mstore, city));
     const int woodDemand = sm::season_demand_for(
         sm::item_index("wood"), need_debt(mstore, city), sm::souls_home(mstore, city),
-        sm::landmark_sheet(sm::SquadType::City).skills, &shelf(mstore, city));
+        sm::place_sheet(sm::SquadType::City).skills, &shelf(mstore, city));
 
     // РАВНЫЕ АНКЕТЫ (S25): обе стороны называют одну торговую силу, значит
     // наценки нет и границы ниже — границы САМОЙ кривой цены, без примеси

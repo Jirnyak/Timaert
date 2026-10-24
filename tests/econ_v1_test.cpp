@@ -15,11 +15,11 @@
 //      FamineStarted/FamineEnded were cut 2026-09-21 as emitterless,
 //      TRANSITIONS, not every day).
 
-#include "macro/characters.h"   // landmark_sheet — руки места
+#include "macro/characters.h"   // place_sheet — руки места
 #include "check.h"
 #include "macro/currency.h"
 #include "macro/econ_day.h"
-#include "macro/landmark_registry.h"  // строка рода — амбар рождения
+#include "macro/place_registry.h"  // строка рода — амбар рождения
 #include "macro/upkeep_window.h"  // upkeep_season_window — ОДНА дверь суда границы (M-233)
 #include "macro/world_row.h"   // raise_flock_into_container / count_human_souls
 #include "macro/anketa.h"
@@ -67,9 +67,9 @@ Boundary boundary_(sm::Inventory& store, std::int32_t* needDebt,
 }
 // Руки города и деревни — анкета их рода (characters.h), а не вид места.
 static const sm::Skills& CITY =
-    sm::landmark_sheet(sm::SquadType::City).skills;
+    sm::place_sheet(sm::SquadType::City).skills;
 static const sm::Skills& VILLAGE =
-    sm::landmark_sheet(sm::SquadType::Village).skills;
+    sm::place_sheet(sm::SquadType::Village).skills;
 
 int fail(const char* msg) {
     // Testing law #1: the verdict lives in the ONE check.h counter — the
@@ -262,7 +262,7 @@ int main() {
             }
         }
         // Умерших сняла дверь (их головы ушли из контейнера) — «как
-        // settle_landmark_day», где наверху остаётся только паства.
+        // settle_place_day», где наверху остаётся только паства.
         // Привоз в полсчёта: гасится СРАЗУ той же дверью, что в мире.
         poor.add_of(commodity_item_index(foodIdx),
                     poorDebt[foodIdx] / 2);
@@ -465,11 +465,11 @@ int main() {
         if (item->value <= 0) return fail("commodity item has no value");
     }
 
-    // ── 9. Birth stocks: a landmark is born mid-life (W2a) ──────────────
+    // ── 9. Birth stocks: a place is born mid-life (W2a) ──────────────
     {
         const int pop = 640;
         Inventory city;
-        seed_landmark_inventory(city, pop, landmark_def(SquadType::City));
+        seed_place_inventory(city, pop, place_def(SquadType::City));
         if (city.count("food") != pop * kDaysPerSeason) {
             return fail("birth larder must hold a SEASON of food — a place "
                         "seeded thinner dies of arithmetic at its first "
@@ -481,7 +481,7 @@ int main() {
                   "a consumed need row was born empty");
         }
         Inventory village;
-        seed_landmark_inventory(village, pop, landmark_def(SquadType::Village));
+        seed_place_inventory(village, pop, place_def(SquadType::Village));
         // ДЕЛО ДЕРЕВНИ — СЫРЬЁ, и мерить это надо СЫРЬЁМ (2026-09-20): пища
         // с этого дня не материал, а голодная строка, и её амбар рождения
         // равен сезону у всех — деревня перестала «держать больше еды» не
@@ -493,7 +493,7 @@ int main() {
             return fail("a crafting city banks deeper crafted stocks");
         }
         Inventory again;
-        seed_landmark_inventory(again, pop, landmark_def(SquadType::City));
+        seed_place_inventory(again, pop, place_def(SquadType::City));
         if (again.count("food") != city.count("food")
             || again.used_slots() != city.used_slots()) {
             return fail("birth stocks must be deterministic from population");
@@ -582,7 +582,7 @@ int main() {
 
     // ── 12. Zero workers craft nothing — the ghost-bench half of the
     // honest-death law (owner, 2026-08-29; the population side lives in
-    // world_tick_parity_test, which links settle_landmark_day).
+    // world_tick_parity_test, which links settle_place_day).
     {
         Inventory ghost;
         ghost.add("food", 100);

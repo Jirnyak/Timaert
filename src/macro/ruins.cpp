@@ -1,8 +1,8 @@
 #include "macro/ruins.h"
 #include "macro/labour.h"      // settle_souls — одна дверь поселения душ
 #include "macro/place_birth.h" // birth_place — место родится ТЕЛОМ
-#include "macro/landmark_iter.h"   // for_each_place — места по слотам
-#include "macro/landmark_registry.h"
+#include "macro/place_iter.h"   // for_each_place — места по слотам
+#include "macro/place_registry.h"
 #include "tables/faction.h"
 #include "macro/state.h"
 #include "macro/zones.h"
@@ -35,7 +35,7 @@ int torus_chebyshev_(int ax, int ay, int bx, int by, int w, int h) {
 }
 
 // Pre-grid occupancy scan, exactly like the spire pass (spires.cpp): the
-// baked cell→landmark index does not exist yet during worldgen, and a
+// baked cell→place index does not exist yet during worldgen, and a
 // co-located ruin would be silently shadowed by whatever stands on top.
 bool cell_occupied_(const GameState& gs, const MacroStore& st, int x, int y) {
     const std::uint32_t idx = ecs::cell_index(x, y, gs.mapW);
@@ -55,7 +55,7 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
         || !zones.has_complete_storage()) {
         return;
     }
-    const LandmarkDef& def = landmark_def(SquadType::Ruin);
+    const PlaceDef& def = place_def(SquadType::Ruin);
     int cities = 0;
     for_each_place(st, [&](std::uint16_t slot) {
         if (SquadType(st.runtime[slot].squadType) == SquadType::City)
@@ -70,7 +70,7 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
     // world), and the ordinal is what the world stores and ships.
     const std::int16_t haunted = std::int16_t(faction_index("demons"));
     // Own deterministic stream, distinct from the spire pass (0x59B12E50)
-    // and the landmark-naming salt (0xC1A05E1D).
+    // and the place-naming salt (0xC1A05E1D).
     Rng rng(gs.worldSeed ^ 0x2A15DEADu);
 
     int placed = 0;
@@ -134,7 +134,7 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
                        ^ (std::uint32_t(ecs::cell_index(bestX, bestY,
                                                         gs.mapW))
                           * 2654435761u));
-            settle_souls(gs, st, h.slot, landmark_born_population(
+            settle_souls(gs, st, h.slot, place_born_population(
                 int(def.bornPopBase), int(def.bornPopPerScore),
                 int(zones.at(bestX, bestY)), popRng));
         }

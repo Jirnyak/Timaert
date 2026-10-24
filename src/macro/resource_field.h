@@ -4,7 +4,7 @@
 //
 // A resource field is a per-cell quantity over the whole map whose BASELINE
 // is a pure function of terrain/climate + the world seed. Features and
-// landmarks NEVER enter a baseline: settlement is downstream of resources
+// places NEVER enter a baseline: settlement is downstream of resources
 // (a village sits by good land; good land does not appear because a village
 // sat down). What settlement does is decide WHERE a resource gets embodied
 // (ploughed parcels manifest the wheat a cell could always grow).

@@ -44,7 +44,7 @@ RoadAxisSet settlement_road_axes(const std::uint8_t nbFeature[9]) {
     return out;
 }
 
-void carve_landmark_anchor_roads(SubworldMapData& out,
+void carve_place_anchor_roads(SubworldMapData& out,
                                         const CellContext& ctx,
                                         const RoadDirSet& dirs,
                                         int center,

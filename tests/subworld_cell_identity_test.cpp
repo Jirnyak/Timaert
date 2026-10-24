@@ -3,7 +3,7 @@
 // The subworld is a 3×3 frame of macro cells (CANON.md S2), and the frame's
 // centre used to be a running counter that never wrapped: walk east off the
 // last column and the cell called itself 1024 while reading macro cell 0's
-// biome, height and landmark. Everything keyed off that number — the detail
+// biome, height and place. Everything keyed off that number — the detail
 // noise offset, the road anchor seed, the tile hash — therefore built a
 // DIFFERENT subworld for the same place depending on how the player arrived.
 // Measured before the fix: 100 % of tiles differed and heights by up to 63 m,

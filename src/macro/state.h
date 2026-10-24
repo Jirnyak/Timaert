@@ -15,7 +15,7 @@
 #include "macro/anketa.h"
 #include "macro/upkeep.h"   // Upkeep — ОДИН счёт содержания на место и на сквад (S4)
 #include "macro/interests.h"   // Interests — ВСЕ связи субъекта одной таблицей
-#include "macro/landmark_registry.h"
+#include "macro/place_registry.h"
 #include "macro/resource_field.h"
 #include "tables/npc.h"
 #include "macro/economy.h"
@@ -89,7 +89,7 @@ namespace sm {
 // what a leader remembers (a caravan's market snapshot, a raided village)
 // survives the save, 136 padding-free bytes per agent.
 // v29: the OLD economy is gone (W2b-4): EconomyState's float arrays, the
-// abstract TradeRoute system and cityLastTradeDay leave the save; landmarks
+// abstract TradeRoute system and cityLastTradeDay leave the save; places
 // carry the honest day's readouts instead (starved/unmet/famine + the
 // logistic population carry).
 // v30: deposit overrides carry the KIND (packed u64, W2c) — a discovered
@@ -198,15 +198,15 @@ namespace sm {
 // POD block of the macro record, so its layout is the format.
 // v53: RENOWN belongs to every MACRO entity with an identity, not to squads
 // alone (owner, 2026-08-27) — a band, a city, a people. Settlements and
-// villages carry theirs, so the landmark blocks grew a field. And what a deed
+// villages carry theirs, so the place blocks grew a field. And what a deed
 // is worth became CONTEXTUAL: the base its row gives plus a share of what the
 // victim was worth, which is a number the world already kept about them.
-// v54: ONE landmark identity (owner, 2026-08-28). Cities, villages and spires
+// v54: ONE place identity (owner, 2026-08-28). Cities, villages and spires
 // used to be numbered from zero in three independent registers, so an id
 // alone never named a place — the chronicle paid a village's renown to the
 // city wearing the same number, and two crutch bits (MacroNpcRuntime
 // homeIsVillage, MacroStockKey subjectIsVillage) existed only to disambiguate.
-// Now every landmark draws its id from GameState::nextLandmarkOrdinal — the
+// Now every place draws its id from GameState::nextLandmarkOrdinal — the
 // same monotonic-ordinal law MacroSpawnId already lives by — and both
 // crutches are dead, which changes the NPC runtime POD's layout.
 // v55: ANNIHILATION of worked-out veins (owner, 2026-08-28: «истощённая жила
@@ -237,7 +237,7 @@ namespace sm {
 // four bytes, different meaning, so the version moves. Every seed the game
 // ever wrote was < 100000 (the UI decimation), exactly representable in
 // both types: the worlds themselves are bit-identical.
-// v62: ONE landmark list (CANON S9, owner 2026-08-29). The three vectors
+// v62: ONE place list (CANON S9, owner 2026-08-29). The three vectors
 // (settlements / villages / spires) and their three serializers became one
 // `std::vector<Landmark>` with a kind column and one serializer; every kind
 // writes every column, unused ones ride at zero defaults. A S9 transition
@@ -262,7 +262,7 @@ namespace sm {
 // v72: the FIELD law of geology (owner 2026-08-31) — deposits derive from
 // noise-field nests, not per-cell hash rolls. Nothing new is serialized,
 // but an old slot's veins would sit in a subtly different world.
-// v73 (2026-09-02): дань по позициям — Landmark несёт titheOwedGoods[15] +
+// v73 (2026-09-02): дань по позициям — Place несёт titheOwedGoods[15] +
 // titheOwedCoin вместо стоимостного titheOwed (вердикт «по 1/8 каждого
 // запаса с округлением вниз»).
 // v74 (2026-09-02): корабли через фичу — gs.shipsAtCell (счётчик кораблей
@@ -335,11 +335,11 @@ namespace sm {
 // v93 (2026-09-10): ПОЛЁТ + ЛОГОВО — MacroNpcRuntime вырос тремя полями
 // (flying-кэш колонки cruiseM, lairX/lairY дом-клетка модели LairSorties);
 // runtime едет в записи POD-ом, его раскладка = формат.
-// v95 (2026-09-17): СЕЗОННОЕ ОКНО БАЛАНСОВ (CANON S19.2) — Landmark carries
+// v95 (2026-09-17): СЕЗОННОЕ ОКНО БАЛАНСОВ (CANON S19.2) — Place carries
 // seasonWellbeing (the boundary window's verdict the daily population law
 // lives off until the next boundary).
 // v96 (2026-09-18, сессия В — снятие спецпутей): SettlementHistory вырезана
-// из Landmark (вердикт №4 — одна память места, летопись S20.1); монета —
+// из Place (вердикт №4 — одна память места, летопись S20.1); монета —
 // просто товар (12 фракционных монет данными, ворота и список валют мертвы);
 // слой разработки + счётчики кораблей полем (shipsAtCell/resourceScars
 // умирают); металлы медь/золото. Старые сейвы ничего не стоят (закон P1).
@@ -351,7 +351,7 @@ namespace sm {
 // FT_Pasture = байт 14, таблица NPC выросла строкой Horse. Старые сейвы
 // ничего не стоят (закон P1). (Собственного ПОЛЯ у этого ряда не стало в
 // v137: стадо — число фичи, см. хвост списка.)
-// v99 (2026-09-19): ПОТРЕБЛЕНИЕ — ДОЛГ (CANON S10) — Landmark несёт
+// v99 (2026-09-19): ПОТРЕБЛЕНИЕ — ДОЛГ (CANON S10) — Place несёт
 // needDebt[kCommodityCount]: сезонный счёт лестницы нужд, гасится приходом.
 // v100 (2026-09-19): ПЕРКИ — ТРЕТЬЯ ВАЛЮТА (CANON S14 5-5-5/1-1-1, заглушка
 // по вердикту владельца: графа осознанно нет) — LevelData вырос perkPoints,
@@ -457,13 +457,13 @@ constexpr int kSaveVersion = 146;   // 2026-10-24 (ломоть 4 M-72): кол�
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
 // фактов и событий». One memory of a place exists — the chronicle, CANON
-// S20.1; a second per-landmark diary was a parallel memory system.)
+// S20.1; a second per-place diary was a parallel memory system.)
 
-// ── THE landmark record (CANON S9, owner verdict 2026-08-29) ─────────────
+// ── THE place record (CANON S9, owner verdict 2026-08-29) ─────────────
 // One struct, one vector, a KIND COLUMN. City, village and spire used to be
 // three structs in three GameState vectors — which made "what stands on a
 // cell" a switch, made a S9 transition (village→city, spire→ruin) a record
-// MOVE between types, and made every new landmark kind a new vector plus
+// MOVE between types, and made every new place kind a new vector plus
 // save code. Now the kind is data: a transition flips `type` (plus a grid
 // rebake), and a new kind is its registry row plus the columns it reads.
 // Fields a kind does not use sit at their zero defaults — the zero
@@ -488,7 +488,7 @@ constexpr int kSaveVersion = 146;   // 2026-10-24 (ломоть 4 M-72): кол�
 // его идентичность — колонки ТЕЛА в MacroStore: spawnId, runtime.squadType,
 // name, cell, kind.factionIdx. Рождение — birth_place@src/macro/place_birth.h,
 // резолв по ординалу — macro_handle_by_spawn_id@src/macro/squad.h, обход —
-// for_each_place@src/macro/landmark_iter.h.)
+// for_each_place@src/macro/place_iter.h.)
 
 enum class GameSubStateKind : std::uint8_t {
     Exploring, Paused, Trading, ViewingMap,
@@ -725,8 +725,8 @@ struct GameState {
     LayerParameters mapParams{};
     int cityCountTarget = 0;
 
-    // МЕТКИ ИГРОКА НА КАРТЕ — и только они. Здесь стояла шапка «THE landmark
-    // list … every placed landmark of every kind, one vector», описывавшая
+    // МЕТКИ ИГРОКА НА КАРТЕ — и только они. Здесь стояла шапка «THE place
+    // list … every placed place of every kind, one vector», описывавшая
     // ВЕКТОР МЕСТ; он умер 2026-10-04 (неподвижный сквад — слот `MacroStore`),
     // а проза осталась и читалась как документация к меткам. Ровно тот род
     // лжи шапки, из-за которого §0 п.2 запрещает ей верить.
@@ -974,7 +974,7 @@ inline void worked_add(GameState& gs, int x, int y, int delta) {
     worked_write(gs, x, y, worked_read(gs, x, y) + delta);
 }
 
-// (record_landmark_fact УЕХАЛА в macro/squad.h флипом M-90 шаг 5: слава
+// (record_place_fact УЕХАЛА в macro/squad.h флипом M-90 шаг 5: слава
 // места — колонка runtime.renown его ТЕЛА, то есть двери нужен MacroStore,
 // которого state.h не видит и видеть не должен.)
 
@@ -1064,13 +1064,13 @@ GameState  default_game_state(std::uint32_t seed, int mapW, int mapH,
                               const LayerParameters& mapParams = LayerParameters{},
                               int cityCountTarget = 0);
 
-// Bridge the politik PLAN → the landmark list. After `generate_politik`
+// Bridge the politik PLAN → the place list. After `generate_politik`
 // (and the `snap_cities_to_land` post-pass) the `cities` plan holds the
-// world's capitals and major cities. This turns each plan row into a landmark
+// world's capitals and major cities. This turns each plan row into a place
 // of the one list and settles villages on the best-scoring cells of each
 // city's hinterland (R2: resources are primary, settlement is derived —
 // macro/settlement_score.h), so the tree and deposit layers must exist BEFORE
-// this runs. Idempotent — clears prior landmarks before populating.
+// this runs. Idempotent — clears prior places before populating.
 //
 // The plan arrives as a PARAMETER and not off `gs` (M-90): it is the
 // generator's scratch, the caller owns it for the length of genesis, and the
@@ -1079,7 +1079,7 @@ struct TerrainData;  // fwd
 struct TreeLayer;
 struct DepositLayer;
 struct MacroStore;   // fwd — тела мест рождаются в store (M-90 шаг 5)
-void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
+void populate_places_from_politik(GameState& gs, MacroStore& st,
                                      const std::vector<City>& cities,
                                      const TerrainData& terrain,
                                      TreeLayer& trees,

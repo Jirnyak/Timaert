@@ -1,8 +1,8 @@
 // КАК СКВАД ВЫГЛЯДИТ НА МАКРОКАРТЕ — ОДНА ТАБЛИЦА НА ВСЕ РОДА ОСИ.
 //
-// Здесь стояла `kLandmarkDraw` — «презентация МЕСТА», и подвижные рода были в
+// Здесь стояла `kPlaceDraw` — «презентация МЕСТА», и подвижные рода были в
 // ней тремя нулевыми строками. Нули держали не пустоту, а ВТОРОЙ ПРОХОД
-// РИСОВКИ: места рисовал обход `for_each_landmark` своей строкой, сквады —
+// РИСОВКИ: места рисовал обход `for_each_place` своей строкой, сквады —
 // свой цикл по слотам строкой тела, и чтобы город не нарисовался ДВАЖДЫ,
 // между ними стоял ранний выход по архетипу — ровно тот гейт, который
 // запрещает шапка `squad_archetype@src/tables/squad_type.h` (M-280).
@@ -53,7 +53,7 @@ struct ArchetypeDrawRow {
 
     // СКОЛЬКО КЛЕТОК ЗАНИМАЕТ МЕТКА. Вопрос владельца («у городов спрайт
     // вылезает на соседние клетки») получил здесь свою колонку: прежде 2.0
-    // было ГЛОБАЛЬНОЙ константой `kLandmarkCellSpan`, то есть ответом за всех
+    // было ГЛОБАЛЬНОЙ константой `kPlaceCellSpan`, то есть ответом за всех
     // сразу, а ходок обходил её своей отдельной формулой размера.
     float cellSpan;
 
@@ -119,7 +119,7 @@ static_assert(kArchetypeDraw[std::size_t(SquadArchetype::Place)].layer
 struct SquadDrawRow {
     SquadType type;        // MUST equal its index — asserted below
     SpriteId sprite;          // None = no art, glyph-circle fallback
-    SpriteId spriteDepleted;  // variant for a consumed landmark (== sprite
+    SpriteId spriteDepleted;  // variant for a consumed place (== sprite
                               // when the kind cannot deplete)
     float basePx;             // mark_size() floor at low zoom
     float maxPx;              // mark_size() cap at high zoom

@@ -178,7 +178,7 @@ void test_a_dead_horse_is_not_a_dead_soul() {
 void test_a_dungeon_has_no_second_carrier() {
     World w;
     const std::uint16_t slot = born_place(w, sm::SquadType::Spire, 40, 40, 6);
-    CHECK(sm::landmark_def(sm::SquadType::Spire).bornPopBase != 0,
+    CHECK(sm::place_def(sm::SquadType::Spire).bornPopBase != 0,
           "фикстура: шпиль есть данж по колонке строки, а не по имени");
     // Чужое число на клетке шпиля — ровно то, что дверь обязана не трогать.
     sm::worked_write(w.gs, 40, 40, 7);

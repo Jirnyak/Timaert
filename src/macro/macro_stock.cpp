@@ -79,7 +79,7 @@ void write_population(MacroWorld& w, MacroStockKey k, int delta) {
     // ПАСТВЫ эта ветка больше не касается — её снимает `flock_left_home`,
     // который про данж знает сам.
     const bool dungeon =
-        landmark_def(SquadType(w.store->runtime[slot].squadType))
+        place_def(SquadType(w.store->runtime[slot].squadType))
             .bornPopBase != 0;
     if (delta < 0) {
         // A place can be emptied but never owe people: списывается ФАКТ.

@@ -469,11 +469,11 @@ namespace sm
     // into the highways instead of twinning beside them. The old tracer
     // (spiral scan for the nearest road cell + straight lerp that knew
     // nothing of the world but "not water") is dead; what survives of the
-    // spiral is the nearest-TARGET choice for the landmark row.
+    // spiral is the nearest-TARGET choice for the place row.
     int trace_dirt_roads(FeatureLayer &features, const TerrainData &td,
                          const std::vector<VillageRoadSite> &villages,
-                         const std::vector<RoadSite> &landmarks,
-                         int landmarkReach,
+                         const std::vector<RoadSite> &places,
+                         int placeReach,
                          const TreeLayer *treeLayer)
     {
         const std::size_t totalCells = td.cell_count();
@@ -563,12 +563,12 @@ namespace sm
                     if (v.hasCity)
                         lay(vx, vy, wrap_axis(v.cityX, W), wrap_axis(v.cityY, H));
                     break;
-                case RoadLink::VillageNearestLandmark:
+                case RoadLink::VillageNearestPlace:
                 {
                     // Nearest-target CHOICE (the spiral's surviving job);
                     // torus Chebyshev, ties to the earlier row.
-                    int bestD = landmarkReach, bx = -1, by = -1;
-                    for (const RoadSite &lm : landmarks)
+                    int bestD = placeReach, bx = -1, by = -1;
+                    for (const RoadSite &lm : places)
                     {
                         const int lx = wrap_axis(lm.x, W);
                         const int ly = wrap_axis(lm.y, H);

@@ -104,7 +104,7 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
 
     const int centre = kCellSize / 2;
     const float cf = float(centre);
-    const int population = ctx.landmark.size;   // floored by city_wall_radius
+    const int population = ctx.place.size;   // floored by city_wall_radius
     // The garrison's houses stand in the upper quarter, not on the town's
     // streets: the town lays the REST (sub/city_layout.h).
     const int upperHouses = city_upper_houses(population);
@@ -359,7 +359,7 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     const int keepBase = std::clamp(4 + population / 1500, 6, 16);
     const int keepW = keepBase + int(rBuild.next_u32() % 3u);
     const int keepH = keepBase + int(rBuild.next_u32() % 3u);
-    const bool keepPlaced = stamp_landmark_house(
+    const bool keepPlaced = stamp_place_house(
         out, rBuild, castleX, castleY, keepW, keepH,
         city_curtain_height() + structure_min_height(Structure::Wall) * 2.0f);
 

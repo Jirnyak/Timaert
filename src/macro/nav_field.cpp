@@ -9,7 +9,7 @@
 
 #include "core/torus.h"
 #include "macro/features.h"
-#include "macro/landmark_iter.h"   // for_each_place — места по слотам
+#include "macro/place_iter.h"   // for_each_place — места по слотам
 #include "macro/pathfinding.h"
 #include "macro/state.h"
 
@@ -143,15 +143,15 @@ void nav_bake(const MacroWorld& mw, NavWorld& nv) {
     // ── Сиды: каждое МЕСТО — своя округа ─────────────────────────────────
     // Гейт «род не None» больше не нужен: обход мест и есть ответ оси рода
     // (squad_archetype == Place), а бестиповых мест в популяции не бывает.
-    nv.regionLandmarkId.clear();
+    nv.regionPlaceId.clear();
     nv.regionCell.clear();
     for_each_place(st, [&](std::uint16_t slot) {
-        nv.regionLandmarkId.push_back(int(st.spawnId[slot].index));
+        nv.regionPlaceId.push_back(int(st.spawnId[slot].index));
         nv.regionCell.push_back(
             int(nv.cell(ecs::cell_x(st.cell[slot], gs.mapW),
                         ecs::cell_y(st.cell[slot], gs.mapW))));
     });
-    const int R = int(nv.regionLandmarkId.size());
+    const int R = int(nv.regionPlaceId.size());
     if (R == 0 || R >= int(kNavNoRegion)) {
         nv.regionOf.clear();
         return;
@@ -520,7 +520,7 @@ bool nav_ensure(const MacroWorld& mw, NavWorld& nv) {
 std::uint32_t nav_path_cost(const NavWorld& nv, int ax, int ay,
                             int bx, int by) {
     if (!nv.baked()) return kNavFar;
-    const std::size_t R = nv.regionLandmarkId.size();
+    const std::size_t R = nv.regionPlaceId.size();
     const std::uint16_t ra = nav_region_at(nv, ax, ay);
     const std::uint16_t rb = nav_region_at(nv, bx, by);
     if (std::size_t(ra) >= R || std::size_t(rb) >= R) return kNavFar;
@@ -605,7 +605,7 @@ bool nav_step(const NavWorld& nv, int x, int y, int tx, int ty,
     // Чужая округа: таблица → соседняя округа → портал → спуск. ОДНА
     // таблица: профилей в коде никогда и не было (`nav_step` профиля не
     // принимает), а морская работала фолбэком — см. надгробие выше.
-    const std::size_t R2 = nv.regionLandmarkId.size();
+    const std::size_t R2 = nv.regionPlaceId.size();
     const std::uint16_t nr = nv.routeNext[std::size_t(rc) * R2 + rt];
     if (nr == kNavNoRegion) return false;   // честно недостижимо
     const std::uint32_t begin = nv.portalBegin[rc];

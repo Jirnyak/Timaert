@@ -3,7 +3,7 @@
 //
 // Every mechanic that wants a cell's facts asks HERE and gets the contribution
 // of EVERY system that has one — biome (the one cascade), feature, the
-// landmark standing on it with its live fields, trees, fertility, elevation,
+// place standing on it with its live fields, trees, fertility, elevation,
 // danger zone, land owner, the season's temperature shift. A system that does
 // not apply contributes its zero through a null envelope layer — data, not a
 // second code path. Before this door the subworld's resolve_context, the
@@ -23,7 +23,7 @@
 
 namespace sm {
 
-// (Формы строк CellFacts/LandmarkFacts ПЕРЕЕХАЛИ в bus/cell_row.h ломтём 3
+// (Формы строк CellFacts/PlaceFacts ПЕРЕЕХАЛИ в bus/cell_row.h ломтём 3
 // эпика фрейма: строка клетки — род 1 локального фрейма, а bus/ не включает
 // macro/. Здесь остался СБОРЩИК — он читает конверт слоёв мира.)
 

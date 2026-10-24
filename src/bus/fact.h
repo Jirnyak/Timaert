@@ -13,7 +13,7 @@ enum class FactSubject : std::uint8_t {
     None = 0,
     Squad,      // ecs::MacroSpawnId — the macro world's actors, and the main
                 // authors of its history
-    Landmark,   // landmark id — settlements, villages, spires share the ONE
+    Place,   // place id — settlements, villages, spires share the ONE
                 // subject-ordinal space (nextMacroSpawnOrdinal, M-37)
     Cell,       // the place itself did or suffered it
     Faction,    // faction_index()

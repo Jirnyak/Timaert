@@ -13,7 +13,7 @@
 #include "macro/upkeep_window.h"   // upkeep_bill — счёт по таблице
 
 #include "macro/npc_ai.h"
-#include "macro/landmark_iter.h"  // for_each_place — перепись мест
+#include "macro/place_iter.h"  // for_each_place — перепись мест
 #include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
 #include "macro/world_row.h"
 #include "macro/chronicle.h"
@@ -570,11 +570,11 @@ void test_the_vendor_sells_at_the_nearest_city() {
     CHECK(traded.n >= 1, "a completed exchange left a Traded fact");
     CHECK(traded.last.subject == std::uint32_t(vilId)
               && traded.last.subjectKind
-                     == std::uint8_t(FactSubject::Landmark),
+                     == std::uint8_t(FactSubject::Place),
           "the fact's subject is the home village whose vendor dealt");
     CHECK(traded.last.object == std::uint32_t(cityId)
               && traded.last.objectKind
-                     == std::uint8_t(FactSubject::Landmark),
+                     == std::uint8_t(FactSubject::Place),
           "the fact's object is the city it traded AT");
     CHECK(traded.last.amount > 0,
           "the deal's worth is real: table value of what changed hands");
@@ -666,7 +666,7 @@ void test_the_miner_works_the_vein() {
           "one dead vein = ONE Drained fact, not one per haul");
     CHECK(drained.last.subject == std::uint32_t(vilId)
               && drained.last.subjectKind
-                     == std::uint8_t(FactSubject::Landmark),
+                     == std::uint8_t(FactSubject::Place),
           "the fact names the village whose man worked the vein out");
     CHECK(drained.last.x == 14 && drained.last.y == 10,
           "the fact stands on the vein's own cell");

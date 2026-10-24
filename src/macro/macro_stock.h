@@ -101,7 +101,7 @@ struct MacroStockKey {
     // too; the strike door prefers the entityId when one exists.
     std::uint16_t detailKind = 0;
     std::int16_t  detailLevel = 0;
-    // (v54/M-37) The register bit is gone: every landmark draws its id from
+    // (v54/M-37) The register bit is gone: every place draws its id from
     // the ONE subject issuer (nextMacroSpawnOrdinal), so the id names the place.
     // The bit existed because cities and villages were numbered from zero
     // independently — killing ten peasants in village 3 took ten souls off

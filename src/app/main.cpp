@@ -40,7 +40,7 @@
 #include "macro/settlement_score.h"
 #include "macro/spawners.h"
 #include "macro/tree_layer.h"
-#include "macro/landmark_iter.h"
+#include "macro/place_iter.h"
 #include "macro/place_birth.h"
 #include "macro/deposit_layer.h"
 #include "macro/spires.h"
@@ -219,8 +219,8 @@ bool squad_is_named(const App& app, sm::MacroHandle h) {
 }
 
 // (STANDING and THE deed door moved to the macro layer — macro/squad.h
-// renown_slot / renown_of / grant_renown / record_deed, beside their landmark
-// twin record_landmark_fact in state.h — so the app, the UI and the subworld
+// renown_slot / renown_of / grant_renown / record_deed, beside their place
+// twin record_place_fact in state.h — so the app, the UI and the subworld
 // engine all knock on ONE door. The one-door law of S20.1 had drifted across
 // two layers, and the drift was writers that filed facts for free.)
 
@@ -248,7 +248,7 @@ sm::FactNaming app_fact_naming(App& app) {
         // безымянный субъект не вправе получить его местоимение.
         return (home != 0 && ordinal == home) ? "You" : nullptr;
     };
-    n.landmark = [](void* u, std::uint32_t id) -> const char* {
+    n.place = [](void* u, std::uint32_t id) -> const char* {
         // Имя места — колонка его ТЕЛА (ломтик F); конверт летописи несёт
         // store, потому что строк мест больше нет.
         auto& st = *static_cast<App*>(u)->macroStore;
@@ -452,7 +452,7 @@ int settlement_at_player(const sm::GameState& gs, const sm::MacroStore& st,
     sm::squads_in_frame(idx, st, px, py, radius,
                         [&](std::uint16_t slot, int dx, int dy) {
         const sm::SquadType kind = sm::SquadType(st.runtime[slot].squadType);
-        if (!sm::landmark_is_settlement(kind)) return;
+        if (!sm::place_is_settlement(kind)) return;
         const int d2 = dx * dx + dy * dy;
         if (d2 > r2 || d2 >= bestD2) return;
         bestD2 = d2;
@@ -1467,7 +1467,7 @@ float player_sight_budget_cells() {
 }
 
 // Bake the macroworld night-light field from the CURRENT world state: enumerate
-// every emitting landmark (settlements/villages/active spires + any future
+// every emitting place (settlements/villages/active spires + any future
 // opt-in POI) and rasterise the terrain-occluded glow the macro shader adds at
 // night. The single source of truth for the bake — shared by the boot path and
 // every mid-session refresh so the two can never drift apart. The optical
@@ -1501,14 +1501,14 @@ void rebake_macro_lights(App& app) {
 // second algorithm. The saved truths (world_fields.h rows + the macro
 // snapshot) are its inputs; nothing here invents state. Stages:
 //   1. danger zones     (read features, settlements/villages, living trees)
-//   2. landmark grid    (reads the landmark registers)
-//   3. night glow       (reads landmarks + the optical world)
+//   2. place grid    (reads the place registers)
+//   3. night glow       (reads places + the optical world)
 //   4. travel cost grid (reads terrain, features, living trees)
 //   5. GPU zone field   (light uploads inside its own stage; tree/knowledge
 //                        fields ride their revisions)
 // Callers: every LOAD (the derived fields used to describe the seed's virgin
 // world after one — canon-audit G2), the seasonal settle, and — the day
-// places live and die (S9) — every landmark transition. Genesis composes the
+// places live and die (S9) — every place transition. Genesis composes the
 // same stages inline because spire placement must read zones mid-sequence.
 // Roads/fields (FeatureLayer) are still generation-owned: deterministic from
 // the seed today; they move here the day places can change.
@@ -1750,9 +1750,9 @@ void boot_world(App& app, std::uint32_t seed,
     } else {
         boot_trace("macro renderer initialized");
     }
-    // Universal night-light field: enumerate every emitting landmark
+    // Universal night-light field: enumerate every emitting place
     // (settlements, villages, active spires, and any future opt-in POI via its
-    // LandmarkDef.lightColor) and bake the per-cell RGB glow the macro shader
+    // PlaceDef.lightColor) and bake the per-cell RGB glow the macro shader
     // adds at night. Baked here on world-change only, never per frame; handed to
     // the renderer as raw bytes so the GPU target keeps its minimal link set.
     // app.features is built above (build_feature_layer), so the bake sees real
@@ -1840,9 +1840,9 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // This used to be a hand-written list of 21 assignments, and a hand-written
     // list is a fold that can drop a field: five of them rode the save and were
     // simply not in it (SAVE-1 — the resource scars, the loot pool, the ships
-    // at cell, the scent fields, the landmark issuer). Nothing could see it.
+    // at cell, the scent fields, the place issuer). Nothing could see it.
     // The forest a squad felled regrew on load, moored ships evaporated with
-    // the wood they cost, and the one landmark-id issuer restarted below its
+    // the wood they cost, and the one place-id issuer restarted below its
     // own living ids.
     //
     // So the direction is INVERTED. The file owns thirty of GameState's
@@ -2813,7 +2813,7 @@ void handle_event_playing(App& app, const SDL_Event& e) {
                         // backdrop tiles for ever (the shader takes fract of
                         // the world coordinate), so an un-wrapped camera drifts
                         // silently until the overlay's toroidal fold is a whole
-                        // world out and every landmark, pin and player mark is
+                        // world out and every place, pin and player mark is
                         // culled off-screen. The ground looks fine the whole
                         // time, which is what made it hard to see.
                         app.mapScreen.camX = sm::wrapf(
@@ -5431,7 +5431,7 @@ void draw_debug_panels(App& app) {
 // ── Frame ─────────────────────────────────────────────────────
 
 // Build a small biome-coloured RGBA preview of the currently-loaded
-// terrain + landmark list and upload it to `app.customPreviewTex`. Cheap
+// terrain + place list and upload it to `app.customPreviewTex`. Cheap
 // CPU loop — same biome rule as the macro shader (`Water` if h<sea, else
 // 3×3 climate matrix). Cities drawn as 3×3 yellow stamps.
 void build_world_preview(App& app, int side = 384) {

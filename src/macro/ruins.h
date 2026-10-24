@@ -1,4 +1,4 @@
-// Ruin placement — worldgen pass for the Ruin landmark (landmark_registry.h
+// Ruin placement — worldgen pass for the Ruin place (place_registry.h
 // row "ruin"), §42 Инк 5. Half the registry could never be born: the row,
 // the subworld route (SubworldMode::Ruin) and the surface generator
 // (gen_ruin) all stood ready while no pass pushed a Ruin record — which is
@@ -8,7 +8,7 @@
 // distance law, and a Mitchell best-candidate pick spreads the ruins over
 // it without a tuned separation constant. Souls at birth come from the
 // registry row's born columns × the site's danger byte
-// (landmark_born_population) — a ruin in redder land haunts harder.
+// (place_born_population) — a ruin in redder land haunts harder.
 #pragma once
 #include <cstdint>
 
@@ -19,7 +19,7 @@ struct FeatureLayer;
 struct TerrainData;
 struct ZoneLayer;
 
-// Push Ruin landmarks into gs.landmarks — one per city the world raised
+// Push Ruin places into gs.places — one per city the world raised
 // plus a base handful, so ruin density follows civilization's own scale.
 // Deterministic from gs.worldSeed. Requires zones — call AFTER
 // generate_zones (and after the settlement passes, whose cells it avoids).

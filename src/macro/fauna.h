@@ -1,4 +1,4 @@
-// Subworld fauna — biome / feature / landmark spawn tables. Pure data:
+// Subworld fauna — biome / feature / place spawn tables. Pure data:
 // each entry says what to spawn, how often, with what stats / colour.
 // Faithful port of `src/game/subworld/fauna.ts`.
 //
@@ -14,14 +14,14 @@
 #include "macro/features.h"
 #include "macro/anketa.h"
 #include "tables/behaviour.h"
-#include "macro/landmark_registry.h"
+#include "macro/place_registry.h"
 #include "tables/npc.h"
 #include "tables/sprite_rows.h"
 
 namespace sm {
 
-// The landmark vocabulary is SquadType (macro/landmark_registry.h) — the
-// one registry enum. A private five-value "LandmarkKind" lived here until
+// The place vocabulary is SquadType (macro/place_registry.h) — the
+// one registry enum. A private five-value "PlaceKind" lived here until
 // 2026-08-24; it was the third copy of the same idea, and the kinds it could
 // not name (Lair, Shrine, Mine, Tower) could not route fauna at all.
 
@@ -70,20 +70,20 @@ using FaunaEntry = NpcTypeDef;
 // Биты ареала (kHabForest/kHabRuin/kHabSpire/kHabTown, hab(Biome)) переехали
 // в macro/npc.h 2026-09-22 — к колонке строки, которую они описывают. Здесь
 // они остались только ЦИТАТОЙ в двух свидетелях ниже.
-// The landmark registry's faunaHabitat column quotes these bits as data
+// The place registry's faunaHabitat column quotes these bits as data
 // (its header cannot include this one) — a drifted quote refuses to compile.
 // (The Spire line died with §42 Инк 5: its wild fauna returned to the
 // ground — the spire's demons are its POPULATION, not the cell's game.)
-static_assert(landmark_def(SquadType::Ruin).faunaHabitat == kHabRuin,
-              "kLandmarks fauna columns must quote fauna.h's habitat bits");
+static_assert(place_def(SquadType::Ruin).faunaHabitat == kHabRuin,
+              "kPlaces fauna columns must quote fauna.h's habitat bits");
 // Same guard for the CROWD column (§42): the crowd's family is the place's
 // registry row, and the quoted bits must be the real ones.
-static_assert(landmark_def(SquadType::City).crowdHabitat == kHabTown
-           && landmark_def(SquadType::Village).crowdHabitat == kHabTown
-           && landmark_def(SquadType::Spire).crowdHabitat == kHabSpire
-           && landmark_def(SquadType::Ruin).crowdHabitat == kHabRuin
-           && landmark_def(SquadType::Lair).crowdHabitat == kHabRuin,
-              "kLandmarks crowd column must quote fauna.h's habitat bits");
+static_assert(place_def(SquadType::City).crowdHabitat == kHabTown
+           && place_def(SquadType::Village).crowdHabitat == kHabTown
+           && place_def(SquadType::Spire).crowdHabitat == kHabSpire
+           && place_def(SquadType::Ruin).crowdHabitat == kHabRuin
+           && place_def(SquadType::Lair).crowdHabitat == kHabRuin,
+              "kPlaces crowd column must quote fauna.h's habitat bits");
 
 // Halving distance of the match law. Derived, not tuned: ten halvings span
 // the whole 0..255 continuum (a full-span mismatch lands at 2^-10 of the
@@ -103,7 +103,7 @@ std::uint32_t danger_match_weight(std::uint8_t strength, std::uint8_t danger);
 struct SpawnContext {
     Biome        biome = Biome::Meadow;
     bool         forest = false;          // is_forest_cell(treeCount)
-    SquadType landmark = SquadType::None;
+    SquadType place = SquadType::None;
     std::uint8_t danger = 0;              // the cell's danger byte (zones)
     // Live deposit kinds within the profession reach (bit per DepositKind):
     // the ground that raises a macro miner also puts him in the street crowd.
@@ -157,8 +157,8 @@ inline double row_power(NPCType t) {
 // В ЗАГОЛОВКЕ ОНА ПОТОМУ, ЧТО ЕЁ ЗОВЁТ ДВЕРЬ ЗАСЕЛЕНИЯ (labour.h
 // settle_souls), а та живёт в заголовке рядом с прочими дверями душ; цена
 // тела — O(строк каталога), то есть константа, а не кап мира (§5 п.13).
-inline NPCType weakest_crowd_kind(SquadType landmark) {
-    const std::uint16_t stripe = landmark_def(landmark).crowdHabitat;
+inline NPCType weakest_crowd_kind(SquadType place) {
+    const std::uint16_t stripe = place_def(place).crowdHabitat;
     NPCType out = NPCType::Count;
     double best = 0.0;
     for (std::size_t i = 0; i < std::size_t(NPCType::Count); ++i) {
@@ -179,11 +179,11 @@ inline NPCType weakest_crowd_kind(SquadType landmark) {
 // (the winning table's maxCount). This is the derived baseline of the
 // fauna_count macro stock (macro/macro_stock.h): what stands in a cell
 // nobody has hunted yet.
-int fauna_cell_capacity(Biome biome, int treeCount, SquadType landmark);
+int fauna_cell_capacity(Biome biome, int treeCount, SquadType place);
 
 // The same capacity resolved from the macro cell's own data, through THE
 // layer envelope (macro_stock.h MacroWorld): biome via the one biome_at
-// cascade, forest class from the tree layer, landmark from the baked
+// cascade, forest class from the tree layer, place from the baked
 // cell frame over squads (macro/squad_index.h — this function carried its
 // own hand-written scan of the named places until 2026-08-24, the drifted
 // second implementation of "what stands here", canon-audit C2). Missing

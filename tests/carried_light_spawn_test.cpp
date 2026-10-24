@@ -52,9 +52,9 @@ sm::sub::CellContext meadow_cell(int cx, int cy) {
     c.macroHeight = 0.62f;
     c.biome = sm::Biome::Meadow;
     c.feature = sm::FT_None;
-    c.landmark.id = -1;
-    c.landmark.size = 0;
-    c.landmark.kind = sm::SquadType::None;
+    c.place.id = -1;
+    c.place.size = 0;
+    c.place.kind = sm::SquadType::None;
     c.seed = 0x24680000u
         ^ sm::sub::cell_seed(0u, cx, cy);
     return c;
@@ -115,8 +115,8 @@ void run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
                              /*worldSeed*/0xC0FFEE11u,
                              /*settlementFaction*/
                              std::uint16_t(sm::faction_index("empire")),
-                             /*landmarkPop*/4000,
-                             /*landmarkSubjectId*/0,
+                             /*placePop*/4000,
+                             /*placeSubjectId*/0,
                              /*macroCellX*/0, /*macroCellY*/0,
                              /*faunaCount*/-1, &wall,
                              // Noon: the fullest street a town ever fields,

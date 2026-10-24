@@ -81,10 +81,10 @@ void carve_organic_road(SubworldMapData& out, int x1, int y1, int x2, int y2,
 
 // A place's main roads: one lane from its heart to each road-bearing
 // neighbour's edge anchor. The two spellings differ only in their seed salt —
-// `landmark_anchor` is what a ruin's remembered road uses, `settlement_main`
+// `place_anchor` is what a ruin's remembered road uses, `settlement_main`
 // what a living town's does — so a ruin and a town on the same cell seed do
 // not lay the same tracks.
-void carve_landmark_anchor_roads(SubworldMapData& out, const CellContext& ctx,
+void carve_place_anchor_roads(SubworldMapData& out, const CellContext& ctx,
                                  const RoadDirSet& dirs, int center,
                                  std::uint32_t seed);
 void carve_settlement_main_roads(SubworldMapData& out, const CellContext& ctx,

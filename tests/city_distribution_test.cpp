@@ -75,9 +75,9 @@ Spread measure_city(int cx, int cy, std::uint32_t seed, int population) {
     city.macroHeight = 0.64f;
     city.biome = Meadow;
     city.feature = FT_None;
-    city.landmark.id = 101;
-    city.landmark.size = population;
-    city.landmark.kind = SquadType::City;
+    city.place.id = 101;
+    city.place.size = population;
+    city.place.kind = SquadType::City;
     city.seed = seed;
 
     float nbH[9];

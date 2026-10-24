@@ -356,7 +356,7 @@ sm::GameState make_state(sm::MacroStore& st) {
         conquest.subjectKind = sm::fact_subject(sm::FactSubject::Squad, true);
         conquest.subject = 4242u;
         conquest.objectKind =
-            sm::fact_subject(sm::FactSubject::Landmark, true);
+            sm::fact_subject(sm::FactSubject::Place, true);
         conquest.object = 9u;
         conquest.x = 41; conquest.y = 41;
         sm::chronicle_record(gs.chronicle, conquest);
@@ -1202,7 +1202,7 @@ void run_roundtrip() {
 
     // КАЖДОЕ ПРИЕХАВШЕЕ МЕСТО НАХОДИТСЯ ПО СВОЕМУ ОРДИНАЛУ, и отказ честен.
     // Предмет сузился вместе с носителем (ломтик F): «ординал И ЕСТЬ адрес»
-    // был законом ВЕКТОРА мест (`landmarks[id-1]`), а вектора больше нет —
+    // был законом ВЕКТОРА мест (`places[id-1]`), а вектора больше нет —
     // резолв идёт колонкой spawnId живого тела плюс гейт оси рода. Остаётся
     // то, что от этого закона не зависело ни тогда: дверь обязана найти
     // ВСЯКОЕ место круга и не отвечать за небывалый ординал и за «никто».
@@ -1305,7 +1305,7 @@ void run_every_sub_state_kind_survives() {
 void run_payload_cap_is_a_fact() {
     constexpr std::uint64_t kOldLiteralCap = 64ull * 1024ull * 1024ull;
     constexpr std::uint32_t kHeaderBytes = 4u + 4u + 8u + 4u;
-    constexpr int kCensusLandmarks = 1880;   // core/stacks.h, замеренный мир
+    constexpr int kCensusPlaces = 1880;   // core/stacks.h, замеренный мир
 
     const std::string path = temp_save_path("timaert_save_payload_cap.bin");
     const std::string overPath = temp_save_path("timaert_save_payload_over.bin");
@@ -1358,7 +1358,7 @@ void run_payload_cap_is_a_fact() {
     // Ординалы этих мест выдаёт тот же эмитент, что назвал места make_state
     // (ломтик F): одно пространство ординалов (M-37), и выдача монотонна —
     // столкновений в нём не бывает по построению.
-    for (int i = 0; i < kCensusLandmarks; ++i) {
+    for (int i = 0; i < kCensusPlaces; ++i) {
         // Душ здесь нет намеренно: предмет этой фикстуры — ХУДШИЙ ВЕС
         // мест, и все слоты забиты неслипающимися стаками. Паства живёт в
         // worked-слое (v122), её вес считает блок полей, а не запись места.

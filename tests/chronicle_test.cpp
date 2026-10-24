@@ -37,7 +37,7 @@ WorldFact killing(int day, int x, int y, std::uint32_t who, int bodies) {
     f.kind = std::uint16_t(FactKind::Killed);
     f.subjectKind = std::uint8_t(FactSubject::Squad);
     f.subject = who;
-    f.objectKind = std::uint8_t(FactSubject::Landmark);
+    f.objectKind = std::uint8_t(FactSubject::Place);
     f.object = 3u;
     f.x = std::int16_t(x);
     f.y = std::int16_t(y);
@@ -257,7 +257,7 @@ void test_the_annals_are_loud_when_they_fill() {
 // ── TWO TIERS: the world forgets weather and remembers figures ───────────
 // Owner's ruling: «вечно помнятся дела ИМЕНОВАННЫХ — лордов, игрока, городов;
 // безымянная массовка растворяется». In this world that is not a heuristic
-// but a consequence — a squad IS a lord and carries an ordinal, a landmark and
+// but a consequence — a squad IS a lord and carries an ordinal, a place and
 // a faction likewise, while the crowd below has no ordinal at all and can only
 // appear as `amount`.
 void test_the_annals_keep_figures_and_forget_weather() {
@@ -283,7 +283,7 @@ void test_the_annals_keep_figures_and_forget_weather() {
     conquest.kind = std::uint16_t(FactKind::OwnerChanged);
     conquest.subjectKind = fact_subject(FactSubject::Squad, /*named*/true);
     conquest.subject = 42u;
-    conquest.objectKind = fact_subject(FactSubject::Landmark, /*named*/true);
+    conquest.objectKind = fact_subject(FactSubject::Place, /*named*/true);
     conquest.object = 3u;
     conquest.x = 10; conquest.y = 10;
     chronicle_record(c, conquest);
@@ -332,7 +332,7 @@ void test_the_annals_are_asked_about_a_figure() {
         // Figures both, said outright: the bit is marked for everyone now.
         f.subjectKind = fact_subject(FactSubject::Squad, /*named*/true);
         f.subject = lord;
-        f.objectKind = fact_subject(FactSubject::Landmark, /*named*/true);
+        f.objectKind = fact_subject(FactSubject::Place, /*named*/true);
         f.object = city;
         f.x = 20; f.y = 20;
         chronicle_record(c, f);
@@ -351,7 +351,7 @@ void test_the_annals_are_asked_about_a_figure() {
     // a fact about both parties, and history does not care which side of the
     // verb you were on.
     Collected city;
-    chronicle_annals_of(c, std::uint8_t(FactSubject::Landmark), 3u, 100,
+    chronicle_annals_of(c, std::uint8_t(FactSubject::Place), 3u, 100,
                         collect, &city);
     CHECK(city.facts.size() == 1u,
           "the city remembers being taken, though it did nothing");
@@ -442,14 +442,14 @@ void test_a_band_becomes_a_figure_by_its_deeds() {
           "and the bit is the only thing that differs");
 
     // FIGURE-NESS IS DERIVED FROM RENOWN FOR EVERYONE (owner, 2026-08-28):
-    // a landmark has a NAME by construction, but a name is a word, not
+    // a place has a NAME by construction, but a name is a word, not
     // historical weight. A fresh hamlet's hunger is weather; the same hunger
     // of a renowned city is legend — and the caller marks the bit from the
     // place's own renown, exactly like a band's.
     WorldFact hamlet{};
     hamlet.day = 1;
     hamlet.kind = std::uint16_t(FactKind::Starved);
-    hamlet.subjectKind = fact_subject(FactSubject::Landmark, /*named*/false);
+    hamlet.subjectKind = fact_subject(FactSubject::Place, /*named*/false);
     hamlet.subject = 2u;
     hamlet.x = 8; hamlet.y = 8;
     chronicle_record(c, hamlet);
@@ -457,7 +457,7 @@ void test_a_band_becomes_a_figure_by_its_deeds() {
           "a weightless place's hunger is weather, name or no name");
 
     WorldFact city = hamlet;
-    city.subjectKind = fact_subject(FactSubject::Landmark, /*named*/true);
+    city.subjectKind = fact_subject(FactSubject::Place, /*named*/true);
     chronicle_record(c, city);
     CHECK(c.annals.size() == 2u,
           "the SAME hunger of a renowned city is history");
@@ -468,9 +468,9 @@ void test_a_band_becomes_a_figure_by_its_deeds() {
     WorldFact deal{};
     deal.day = 1;
     deal.kind = std::uint16_t(FactKind::Traded);
-    deal.subjectKind = fact_subject(FactSubject::Landmark, /*named*/true);
+    deal.subjectKind = fact_subject(FactSubject::Place, /*named*/true);
     deal.subject = 2u;
-    deal.objectKind = fact_subject(FactSubject::Landmark, /*named*/true);
+    deal.objectKind = fact_subject(FactSubject::Place, /*named*/true);
     deal.object = 3u;
     deal.x = 8; deal.y = 8;
     deal.amount = 999;
@@ -492,7 +492,7 @@ void test_a_band_becomes_a_figure_by_its_deeds() {
 const char* name_squad(void*, std::uint32_t o) {
     return o == 42u ? "Bloody Karl" : nullptr;
 }
-const char* name_landmark(void*, std::uint32_t id) {
+const char* name_place(void*, std::uint32_t id) {
     return id == 3u ? "Ryazan" : nullptr;
 }
 
@@ -502,12 +502,12 @@ void test_a_fact_says_itself() {
     f.kind = std::uint16_t(FactKind::OwnerChanged);
     f.subjectKind = fact_subject(FactSubject::Squad, true);
     f.subject = 42u;
-    f.objectKind = std::uint8_t(FactSubject::Landmark);
+    f.objectKind = std::uint8_t(FactSubject::Place);
     f.object = 3u;
 
     FactNaming naming{};
     naming.squad = name_squad;
-    naming.landmark = name_landmark;
+    naming.place = name_place;
 
     char line[128];
     const int n = fact_sentence(f, naming, line, int(sizeof(line)));

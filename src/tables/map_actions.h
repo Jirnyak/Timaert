@@ -4,7 +4,7 @@
 //
 // Bits of ONE u16, because a subject OFFERS a set: a city offers trade and
 // hire and its contract board at once. Deliberately its own tiny header —
-// the landmark registry declares its column in these bits and the squad side
+// the place registry declares its column in these bits and the squad side
 // answers in the same bits, and neither should have to include the other.
 //
 // DECLARED here is not AVAILABLE: the bit says the kind of object speaks the

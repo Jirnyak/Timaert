@@ -4,7 +4,7 @@
 #include "tables/biomes.h"
 #include "tables/npc.h"
 #include "macro/deposit_layer.h"
-#include "macro/landmark_iter.h"   // for_each_place — обход мест по слотам
+#include "macro/place_iter.h"   // for_each_place — обход мест по слотам
 #include "macro/npc_ai.h"
 #include "macro/politik.h"
 #include "macro/squad.h"
@@ -234,7 +234,7 @@ void spawn_macro_npcs(GameState& gs, MacroStore& st,
                       const DepositLayer* deposits) {
     Rng rng(seed + 7777u);
     // The ONE ordinal stream (v23) begins EARLIER now (§42 Инк 7): the
-    // landmark genesis already issued identities to every born garrison
+    // place genesis already issued identities to every born garrison
     // (state.cpp), so the boot spawn CONTINUES the counter instead of
     // resetting it — a reset here would re-deal the garrisons' names to
     // walkers. The counter rides the save; an identity is never issued
@@ -531,7 +531,7 @@ MacroHandle spawn_squad(GameState& gs, MacroStore& store,
     Rng rng(hash3(std::uint32_t(spec.x), std::uint32_t(spec.y),
                   gs.worldSeed ^ 0x50AD5EEDu));
     // Born ON the named cell (owner 2026-08-31: «пусть все рождаются именно
-    // на клетке ландмарка») — a landmark is dry by construction, so a crew
+    // на клетке ландмарка») — a place is dry by construction, so a crew
     // raised by one starts exactly where its home stands. The scatter
     // fallback survives only for a WET spec cell (a blood-field band whose
     // field peak lies on a river).

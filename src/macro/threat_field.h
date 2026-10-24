@@ -10,7 +10,7 @@
 //
 //   · ИСТОЧНИК — Died-факты летописи, ни одного нового писателя: поле
 //     ЧИТАЕТ хвост кольца (threatSeenSeq), а пишут его те же двери, что и
-//     раньше (record_battle_facts, record_landmark_fact). Бандиты бездомны
+//     раньше (record_battle_facts, record_place_fact). Бандиты бездомны
 //     — их смерти поле не поднимают ПО ПОСТРОЕНИЮ (Died пишет только
 //     осиротевший дом): стража перебила банду → округа остывает распадом.
 //   · ДИФФУЗИЯ — po2-доля соседям по рёбрам графа порталов раз в день
@@ -67,7 +67,7 @@ inline std::uint32_t threat_of(const NavWorld& nv, std::uint16_t region) {
 // максимум).
 inline std::uint32_t threat_on_route(const NavWorld& nv, std::uint16_t from,
                                      std::uint16_t to) {
-    const std::size_t R = nv.regionLandmarkId.size();
+    const std::size_t R = nv.regionPlaceId.size();
     if (nv.threat.size() != R || std::size_t(from) >= R
         || std::size_t(to) >= R)
         return 0u;

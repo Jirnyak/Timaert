@@ -22,7 +22,7 @@ using CellResolver = sm::SmallFunction<CellContext(int cx, int cy)>;
 // context, and the only one the generator's WIDER RING asks (base_generator.h
 // nbBiome5: sixteen cells whose biome decides a neighbour count and nothing
 // else). Asking the full resolver for them cost 79 µs of a 2.2 ms crossing,
-// measured — a CellContext carries landmark, features, trees, fertility,
+// measured — a CellContext carries place, features, trees, fertility,
 // scars and seeds, and the ring wanted one enum. The seam's number only ever
 // goes down, so the ring gets its own door.
 using BiomeResolver = sm::SmallFunction<Biome(int cx, int cy)>;
@@ -415,7 +415,7 @@ private:
         // ring the finished cell will hand the dither.
         Biome nbGround[9]{};
         std::uint8_t nbFeature[9]{};
-        SquadType nbLandmark[9]{};
+        SquadType nbPlace[9]{};
         // Macro tree counts (CellContext.treeCount); -1 = unknown/derive.
         int nbTreeCount[9] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
         // Neighbour fertility (CellContext.fertility01) — the field-plot

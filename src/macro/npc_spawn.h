@@ -122,7 +122,7 @@ struct SquadSpec {
 MacroHandle spawn_squad(GameState& gs, MacroStore& store,
                         const TerrainData& terrain, const SquadSpec& spec);
 
-// (birth_landmark / relink_place_bodies живут в macro/place_birth.h —
+// (birth_place / relink_place_bodies живут в macro/place_birth.h —
 //  рождению тела места хватает header-only дверей, и тесты генезиса не
 //  обязаны линковать цепь npc_spawn.cpp.)
 

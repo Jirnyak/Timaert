@@ -1,17 +1,17 @@
-// Landmark registry — every macroworld point-of-interest type the game can
-// place lives in this single table. Adding a landmark = one entry (CANON S16).
+// Place registry — every macroworld point-of-interest type the game can
+// place lives in this single table. Adding a place = one entry (CANON S16).
 //
-// This is also THE landmark vocabulary (2026-08-24): the subworld's
-// "CellLandmarkKind" and the fauna router's "LandmarkKind" were two more
+// This is also THE place vocabulary (2026-08-24): the subworld's
+// "CellPlaceKind" and the fauna router's "PlaceKind" were two more
 // five-value copies of this enum, joined by a hand-written bridge — and the
 // four kinds the copies could not name (Lair, Shrine, Mine, Tower) physically
 // could not reach the microworld (canon-audit C1). One enum, everywhere.
-// (The header's former first half — collect_landmarks and its string-typed
-// LandmarkEntry — had no callers and is gone with landmark_registry.cpp.)
+// (The header's former first half — collect_places and its string-typed
+// PlaceEntry — had no callers and is gone with place_registry.cpp.)
 #pragma once
 #include "tables/feature_type.h"   // колонка фичи рода (FT_*)
 #include <cstdint>
-#include "core/rng.h"    // the ONE generator (landmark_born_population)
+#include "core/rng.h"    // the ONE generator (place_born_population)
 #include "core/table_guard.h"
 #include "macro/econ_day.h"     // kCreaturesPerCityWorker — the bench quota the
                                 // city's labourShift is log2 of (guard below)
@@ -25,14 +25,14 @@ namespace sm {
 // (Алиас `using SquadType = SquadType` УМЕР ломтиком F вместе со
 // `std::vector<Landmark>` — ось рода одна и зовётся своим именем.)
 
-// (kLandmarkYieldOrder — приоритет владения спорной клеткой — УЕХАЛ к оси
+// (kPlaceYieldOrder — приоритет владения спорной клеткой — УЕХАЛ к оси
 // рода, tables/squad_type.h: его читает и обход мест, и ответ каркаса
 // «кто здесь живёт», а ось — их единственный общий нижний слой.)
 
 // Sentinels of the fauna columns below: "the GROUND answers" — the cell's own
 // forest/biome row decides, the place states no override of its own.
-inline constexpr std::uint16_t kLandmarkFaunaGround    = 0xFFFFu;
-inline constexpr std::uint8_t  kLandmarkFaunaCapGround = 0xFFu;
+inline constexpr std::uint16_t kPlaceFaunaGround    = 0xFFFFu;
+inline constexpr std::uint8_t  kPlaceFaunaCapGround = 0xFFu;
 
 // ── Crew rows: WHO this place raises (owner 2026-08-31, CANON S10) ────────
 // ── Crowd role rows: fixed posts the street crowd fills FIRST (§42) ──────
@@ -43,8 +43,8 @@ inline constexpr std::uint8_t  kLandmarkFaunaCapGround = 0xFFu;
 // стояла пустой У ВСЕХ РОДОВ до единого — читатель в субмире был
 // недостижим по данным. Пост как данные вернётся строкой, у которой есть
 // хозяин, а не заготовкой в реестре.
-struct LandmarkDef {
-    // MUST equal the row's index in kLandmarks (guard below the table).
+struct PlaceDef {
+    // MUST equal the row's index in kPlaces (guard below the table).
     SquadType     type;
     std::string_view id;
     std::string_view label;
@@ -101,20 +101,20 @@ struct LandmarkDef {
     // (CANON S16, 2026-08-29).
     //
     // faunaHabitat — the habitat bit the place asks the body table for.
-    //   kLandmarkFaunaGround = no override (forest/biome answer); 0 = no wild
+    //   kPlaceFaunaGround = no override (forest/biome answer); 0 = no wild
     //   fauna at all (a town's crowd is the settlement spawner's kHabTown
     //   stripe). The Ruin/Spire values are cross-checked against fauna.h's
     //   kHabRuin/kHabSpire right beside those bits' definitions.
-    std::uint16_t    faunaHabitat = kLandmarkFaunaGround;
+    std::uint16_t    faunaHabitat = kPlaceFaunaGround;
     // The place's own head-count roll, min/max; faunaMax 0 = no override
     // (the forest/biome counts row rolls).
     std::uint8_t     faunaMin = 0;
     std::uint8_t     faunaMax = 0;
     // The honest-headcount capacity (fauna_cell_capacity, macro_stock
-    // baseline). kLandmarkFaunaCapGround = the winning counts row's max; a
+    // baseline). kPlaceFaunaCapGround = the winning counts row's max; a
     // number is the place's own cap — a town is the poorest hunting ground
     // that still is one (the old ruin row's minCount, 2).
-    std::uint8_t     faunaCap = kLandmarkFaunaCapGround;
+    std::uint8_t     faunaCap = kPlaceFaunaCapGround;
     // crowdHabitat — the habitat bit of this place's CROWD: its population
     // made visible (street folk, a household behind a door, a garrisoned
     // hall). A SECOND dictionary from faunaHabitat above, deliberately: a
@@ -134,7 +134,7 @@ struct LandmarkDef {
     // ── Born souls (§42 Инк 5): the genesis law's own columns ─────────────
     // mean = bornPopBase + bornPopPerScore × the kind's context score (a
     // spire's spell tier, a ruin's danger byte), rolled as a discrete bell
-    // (settlement_score.h landmark_born_population). 0/0 = the kind is not
+    // (settlement_score.h place_born_population). 0/0 = the kind is not
     // born with souls this way (settlements keep their own site-score law).
     std::uint16_t    bornPopBase = 0;
     std::uint16_t    bornPopPerScore = 0;
@@ -159,7 +159,7 @@ struct LandmarkDef {
     std::uint8_t     garrisonShift = 0xFF;
     // (`econSite` УМЕР 2026-09-18 вместе с EconSite. Он отвечал «по какой
     // ТАБЛИЦЕ это место работает», то есть на вопрос «что оно умеет» — а
-    // отвечает на него теперь АНКЕТА места: characters.h landmark_sheet,
+    // отвечает на него теперь АНКЕТА места: characters.h place_sheet,
     // ранги ремёсел против ремесла и ранга рецепта. Место, которое не умеет
     // ничего, — анкета в нулях; законный ноль S6 остался на месте, просто
     // перестал быть отдельной колонкой.)
@@ -183,7 +183,7 @@ struct LandmarkDef {
     // прилавок + найм + доска контрактов; отдых таверны вырезан вообще.
     std::uint16_t     actions = 0;
     // ── АМБАР РОЖДЕНИЯ: ДВА ЧИСЛА РОДА, А НЕ БУЛЕВ РОД В АРГУМЕНТЕ ────────
-    // Здесь их не было: `seed_landmark_inventory(..., bool isCity)` тащил
+    // Здесь их не было: `seed_place_inventory(..., bool isCity)` тащил
     // РОД булевым параметром и сам решал по нему оба числа (`isCity ? 32 : 8`
     // и `isCity ? 1 : 2`) — ветка по роду внутри фундаментальной двери,
     // ровно то, что запрещает ЗАКОН СТРОКИ КАТАЛОГА. А оба звонящих
@@ -191,7 +191,7 @@ struct LandmarkDef {
     // только что его туда и записали.
     //
     // ЗАЧЕМ ИМЕННО ЭТИ ДВА (DOD п.9 «кто читает и зачем»): их читает
-    // `seed_landmark_inventory@src/macro/econ_day.cpp` — единственный
+    // `seed_place_inventory@src/macro/econ_day.cpp` — единственный
     // читатель, — чтобы ответить «с чем сквад рождается посреди жизни».
     // Числа БАЛАНСНЫЕ (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ: не по-двойки, значит
     // контент), и по вердикту владельца 2026-10-06 они СОДЕРЖИМОЕ модуля
@@ -228,7 +228,7 @@ struct LandmarkDef {
 // дописанных шпилю значениями их же дефолтов, не двинули ни одного из четырёх
 // TSV замера). Переезд строк в ИИ-модули рода (M-235) становится
 // механическим: поля называются, значит их нельзя пересчитать.
-inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
+inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
     // ТИП БЕЗ НАЗНАЧЕНИЯ — ХОДОК, И ГЛАГОЛЫ У НЕГО ХОДОЧЬИ (M-281). Здесь
     // стояла строка в нулях при `walkable = true`, то есть бестиповый сквад
     // объявлял ВХОД и не объявлял ни разговора, ни торга, ни драки — и это
@@ -262,22 +262,22 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
     // honestly crawls.
     {.type = SquadType::Spire, .id = "spire", .label = "Spire",
      .minZone = 128, .maxZone = 255, .glyph = 'I', .feature = FT_Spire, .color = 0xFFA86CFFu, .lightColor = 0xFFA86CFFu, .lightPop = 200.0f,
-     .faunaHabitat = kLandmarkFaunaGround, .faunaMin = 0, .faunaMax = 0,
-     .faunaCap = kLandmarkFaunaCapGround,
+     .faunaHabitat = kPlaceFaunaGround, .faunaMin = 0, .faunaMax = 0,
+     .faunaCap = kPlaceFaunaCapGround,
      .crowdHabitat = 1u << 13, .crowdInsideShift = 2,
      .bornPopBase = 128, .bornPopPerScore = 64,
      },
     {.type = SquadType::Ruin, .id = "ruin", .label = "Ruin",
      .minZone = 51, .maxZone = 229, .glyph = 'r', .feature = FT_Ruin, .color = 0xFF8E8576u, .lightColor = 0xFF8E8576u, .lightPop = 40.0f,
      .faunaHabitat = 1u << 12, .faunaMin = 2, .faunaMax = 6,
-     .faunaCap = kLandmarkFaunaCapGround,
+     .faunaCap = kPlaceFaunaCapGround,
      .crowdHabitat = 1u << 12, .crowdInsideShift = 0,
      .bornPopBase = 64, .bornPopPerScore = 1,
      },
     {.type = SquadType::Lair, .id = "lair", .label = "Lair",
      .minZone = 102, .maxZone = 255, .glyph = 'L', .color = 0xFF883A3Au, .lightColor = 0xFF883A3Au, .lightPop = 70.0f,
-     .faunaHabitat = kLandmarkFaunaGround, .faunaMin = 0, .faunaMax = 0,
-     .faunaCap = kLandmarkFaunaCapGround,
+     .faunaHabitat = kPlaceFaunaGround, .faunaMin = 0, .faunaMax = 0,
+     .faunaCap = kPlaceFaunaCapGround,
      .crowdHabitat = 1u << 12 },
     {.type = SquadType::Shrine, .id = "shrine", .label = "Shrine",
      .minZone = 25, .maxZone = 178, .glyph = '+', .color = 0xFFE2E2E2u, .lightColor = 0xFFE2E2E2u, .lightPop = 90.0f },
@@ -296,7 +296,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
     // молчаливое расхождение таблицы с собственным ключом; (2) пустая
     // строка обязана быть ВИДНА как решение, а не как пропуск. Это цена,
     // названная в шапке `squad_type.h`: платим пустотой за то, что
-    // `landmark_def` остаётся ПОЛНОЙ функцией без гейта по роду.
+    // `place_def` остаётся ПОЛНОЙ функцией без гейта по роду.
     //
     // НО КОЛОНКА `actions` У НИХ БОЛЬШЕ НЕ НУЛЕВАЯ (M-281), И ЭТО ТОТ ЖЕ
     // ХОД, ЧТО С `kSquadDraw` 2026-10-19. Нуль здесь держал не пустоту, а
@@ -317,8 +317,8 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(SquadType::Count)] = {
      .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u, .lightColor = 0x00000000u, .lightPop = 0.0f,
      .actions = kMapActTalk | kMapActTrade | kMapActAttack },
 };
-static_assert(rows_in_enum_order(kLandmarks, &LandmarkDef::type),
-              "kLandmarks row order must mirror SquadType");
+static_assert(rows_in_enum_order(kPlaces, &PlaceDef::type),
+              "kPlaces row order must mirror SquadType");
 
 // ── ЗАКОН ГЛАГОЛОВ — ПОД КОМПИЛЯТОРОМ, А НЕ В ПРОГОНЕ (M-281) ────────────
 // Здесь проверяется ровно то, что раньше утверждал прогон над мёртвой
@@ -334,7 +334,7 @@ static_assert(rows_in_enum_order(kLandmarks, &LandmarkDef::type),
 // полярности): снятие `.actions` у любой подвижной строки роняет СБОРКУ,
 // а не тест.
 static_assert([] {
-    for (const LandmarkDef& d : kLandmarks) {
+    for (const PlaceDef& d : kPlaces) {
         const bool place = squad_archetype(d.type) == SquadArchetype::Place;
         if (place && (d.actions & (kMapActTalk | kMapActAttack)) != 0)
             return false;                                           // (1)
@@ -376,8 +376,8 @@ static_assert([] {
 // ротации (не путать с аукционом найма M-38/M-40) —
 // 112 → 80, разница 32 = 49 байт данных минус хвостовое выравнивание до
 // кратного восьми (данных осталось 78).
-static_assert(sizeof(LandmarkDef) == 80,
-              "LandmarkDef layout changed — say WHICH column and why, and "
+static_assert(sizeof(PlaceDef) == 80,
+              "PlaceDef layout changed — say WHICH column and why, and "
               "never re-add a faction column: a KIND is not an OWNER (M-39)");
 
 // ── СТРАЖ ПОЗИЦИОННОЙ СТРОКИ: ДВА АМБАРНЫХ ЧИСЛА СТОЯТ ГДЕ ОБЕЩАНО ───────
@@ -388,13 +388,13 @@ static_assert(sizeof(LandmarkDef) == 80,
 // перестаёт СОБИРАТЬСЯ (§8 п.6 — лучшая форма свидетеля).
 // Числа БАЛАНСНЫЕ и менять их можно; менять ВМЕСТЕ с этой строкой.
 static_assert(
-    kLandmarks[std::size_t(SquadType::City)].seedComfortDays == 32
-        && kLandmarks[std::size_t(SquadType::City)].seedRawMult == 1
-        && kLandmarks[std::size_t(SquadType::Village)].seedComfortDays == 8
-        && kLandmarks[std::size_t(SquadType::Village)].seedRawMult == 2,
+    kPlaces[std::size_t(SquadType::City)].seedComfortDays == 32
+        && kPlaces[std::size_t(SquadType::City)].seedRawMult == 1
+        && kPlaces[std::size_t(SquadType::Village)].seedComfortDays == 8
+        && kPlaces[std::size_t(SquadType::Village)].seedRawMult == 2,
     "амбар рождения: город — сезон комфорта и одинарное сырьё, деревня — "
     "восемь дней и двойное (значения перенесены из булева параметра "
-    "seed_landmark_inventory один в один)");
+    "seed_place_inventory один в один)");
 
 // THE two labour laws of a city meet at the same eighth of its people, and
 // until now that meeting was a claim in a COMMENT: the crew pool's shift
@@ -403,12 +403,12 @@ static_assert(
 // them. Retune either alone and a city raises crews on one eighth while its
 // benches staff another — silently, because both numbers stay plausible.
 static_assert(
-    (1 << kLandmarks[std::size_t(SquadType::City)].labourShift)
+    (1 << kPlaces[std::size_t(SquadType::City)].labourShift)
         == kCreaturesPerCityWorker,
     "city labourShift must be log2(kCreaturesPerCityWorker)");
 
-inline constexpr const LandmarkDef& landmark_def(SquadType t) {
-    return kLandmarks[std::size_t(t)];
+inline constexpr const PlaceDef& place_def(SquadType t) {
+    return kPlaces[std::size_t(t)];
 }
 
 // Is this KIND a SETTLEMENT — a place the player «прибывает в», with enter/
@@ -416,7 +416,7 @@ inline constexpr const LandmarkDef& landmark_def(SquadType t) {
 // который держит прилавок, найм или доску контрактов.
 // This predicate killed the SquadType::City hardcode (PLAY-2): a village
 // answers the same door a city does. The subject PANEL itself opens for ANY
-// landmark by click — which tabs it shows is the actions column's business.
+// place by click — which tabs it shows is the actions column's business.
 //
 // ЗДЕСЬ СТОЯЛО `actions != 0`, И ЭТО БЫЛО ВТОРОЕ ЗНАЧЕНИЕ КОЛОНКИ, ЖИВШЕЕ НА
 // ЧУЖОМ НУЛЕ (M-281). Колонка объявляет «какие ГЛАГОЛЫ у рода»; «ноль
@@ -434,9 +434,9 @@ inline constexpr const LandmarkDef& landmark_def(SquadType t) {
 // архетипом (КЛЮЧОМ классификатора, не гейтом прохода), «торгует ли» —
 // поселенческими битами, а не любыми. Ни один из двенадцати родов не сменил
 // ответа: поселения — ровно City и Village, как и было.
-inline constexpr bool landmark_is_settlement(SquadType t) {
+inline constexpr bool place_is_settlement(SquadType t) {
     return squad_archetype(t) == SquadArchetype::Place
-        && (landmark_def(t).actions
+        && (place_def(t).actions
             & (kMapActTrade | kMapActHire | kMapActQuests)) != 0;
 }
 
@@ -447,16 +447,16 @@ static_assert([] {
     for (std::size_t i = 0; i < std::size_t(SquadType::Count); ++i) {
         const SquadType t = SquadType(i);
         if (squad_archetype(t) != SquadArchetype::Place
-            && landmark_is_settlement(t))
+            && place_is_settlement(t))
             return false;
     }
-    return landmark_is_settlement(SquadType::City)
-        && landmark_is_settlement(SquadType::Village)
-        && !landmark_is_settlement(SquadType::Spire);
+    return place_is_settlement(SquadType::City)
+        && place_is_settlement(SquadType::Village)
+        && !place_is_settlement(SquadType::Spire);
 }(), "поселение — СТОЯЩИЙ род с прилавком/наймом/доской; подвижный род "
      "поселением не бывает ни при каких глаголах");
 
-// ── Born souls of a DUNGEON landmark (§42 Инк 5, CANON S28) ──────────────
+// ── Born souls of a DUNGEON place (§42 Инк 5, CANON S28) ──────────────
 // mean = base + perScore × the kind's own context number (a spire's spell
 // tier, a ruin's danger byte) — the row's columns above, never literals in
 // a genesis pass. The roll is a DISCRETE BELL around the mean (two dice
@@ -464,7 +464,7 @@ static_assert([] {
 // tier differ, two ruins of one zone differ, and the caller seeds the
 // stream from the world salt and the place's own identity so no two cells
 // repeat.
-inline int landmark_born_population(int base, int perScore, int score,
+inline int place_born_population(int base, int perScore, int score,
                                     Rng& rng) {
     const int mean = base + perScore * (score > 0 ? score : 0);
     if (mean <= 0) return 0;
@@ -490,4 +490,4 @@ inline int landmark_born_population(int base, int perScore, int score,
 // сообщение назовёт тип поимённо (`core/row_law.h`, наряд M-169).
 // Новая структура в этом файле обязана появиться и в этом списке — за полнотой
 // списка следит `arch_guard_test`, иначе стену обходили бы молча, новым типом.
-TIMAERT_ROW(sm::LandmarkDef);
+TIMAERT_ROW(sm::PlaceDef);

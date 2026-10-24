@@ -672,7 +672,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // The wider ring asks only "what biome stands here", so it gets the macro
     // map's own CLASSIFIER — one wrapped index into the terrain image and the
     // climate matrix — instead of an assembled context. Going through
-    // cell_facts would drag the landmark, the features, the trees, the
+    // cell_facts would drag the place, the features, the trees, the
     // fertility, the vein reach and the season along for an enum, and the
     // seam would pay for all of it sixteen times per generated cell.
     auto biomeResolver = [this](int x, int y) {
@@ -868,7 +868,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // (macro/cell_facts.h) — тот же, из которого собирается весь контекст
     // генерации; скан населения мира этот вопрос не задаёт.
     if (const CellFacts cf = facts_at(cx, cy);
-        cf.landmark.type == SquadType::Spire) {
+        cf.place.type == SquadType::Spire) {
         // The amount IS the cell's worked number — already spell ordinal + 1
         // (0 = drained spire: the spell is forgotten, the fact files unknown,
         // exactly the chronicle's «unknown subjects as 0»). И оно приезжает
@@ -876,7 +876,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
         // `gs` был чтением макро-состояния мимо канала (M-233 п.8).
         add_sub_zone(cf.x, cf.y, kSpireTowerLocalCenter, kSpireTowerLocalCenter,
                      float(kCellSize) * 0.5f, FactKind::Explored,
-                     cf.landmark.spell);
+                     cf.place.spell);
     }
     // ── СЦЕНА СДАЁТ МИРУ АРЕНДУ ОКНА (AGENTS ЗАКОН ШВА, M-226) ─────────
     // Последним действием входа: окно собрано, центр установлен, значит мир
@@ -1668,23 +1668,23 @@ CellContext SubworldEngine::context_from_facts(const CellFacts& f) const {
     c.zone = f.zone;
     c.depositsNear = f.depositsNear;
     c.cropHarvested = f.cropHarvested;
-    c.landmark.kind       = f.landmark.type;
-    c.landmark.id         = f.landmark.id;
-    c.landmark.size       = f.landmark.size;
-    c.landmark.tier       = f.landmark.tier;
-    c.landmark.factionIdx = f.landmark.factionIdx;
-    c.landmark.depleted   = f.landmark.depleted;
+    c.place.kind       = f.place.type;
+    c.place.id         = f.place.id;
+    c.place.size       = f.place.size;
+    c.place.tier       = f.place.tier;
+    c.place.factionIdx = f.place.factionIdx;
+    c.place.depleted   = f.place.depleted;
     c.seed = cell_seed(frame_->worldSeed, f.x, f.y);
     c.worldSeed = frame_->worldSeed;
     return c;
 }
 
-// (The `to_landmark_kind` bridge lived here until 2026-08-24 — the toll
+// (The `to_place_kind` bridge lived here until 2026-08-24 — the toll
 // between two five-value copies of the registry enum. One SquadType now;
 // the context's kind IS the spawn table's kind.)
 
 // Populate ONE window cell (offset ox,oy ∈ {-1,0,1} from centre) from that
-// cell's ABSOLUTE macro context — biome/feature/landmark/pop/zone/seed all
+// cell's ABSOLUTE macro context — biome/feature/place/pop/zone/seed all
 // resolved at its true macro coordinate. This is why an off-centre city fills
 // with citizens (it no longer depends on being the centre cell), and why the
 // procedural fauna is deterministic per cell (seeded from ctx.seed).
@@ -1719,7 +1719,7 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
     // GameState is, and handed to the spawner as a plain index so
     // sub/spawn.cpp stays free of macro state.
     const std::uint16_t settlementFaction =
-        faction_or_freefolk(ctx.landmark.factionIdx);
+        faction_or_freefolk(ctx.place.factionIdx);
     // The wild headcount standing on this cell — the honest CAP on how many
     // creatures embody (macro/macro_stock.h fauna row: spawn-table capacity
     // minus what the hunt has taken). Asked HERE, where the GameState is,
@@ -1730,18 +1730,18 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
     // The place's standing army, embodied beside its crowd (§42 Инк 7):
     // the LIVE garrison creatures travels down so the street shows exactly
     // who is home today — patrol out, hired away, killed = not here.
-    const MacroHandle lmRec = (ctx.landmark.id >= 0 && mw_.store)
-        ? place_handle_by_ordinal(*mw_.store, std::uint32_t(ctx.landmark.id))
+    const MacroHandle lmRec = (ctx.place.id >= 0 && mw_.store)
+        ? place_handle_by_ordinal(*mw_.store, std::uint32_t(ctx.place.id))
         : MacroHandle{};
     spawn_cell_npcs((*objects_),
-                    ctx.biome, ctx.treeCount, ctx.landmark.kind,
+                    ctx.biome, ctx.treeCount, ctx.place.kind,
                     ctx.zone, ctx.depositsNear, mgr_,
                     ox, oy, ctx.seed, ctx.worldSeed,
-                    settlementFaction, ctx.landmark.size,
+                    settlementFaction, ctx.place.size,
                     // The macro stock these citizens are borrowed from: this
                     // cell's named place. Killing one of them pays the map back
                     // (macro/macro_stock.h) instead of vanishing without trace.
-                    ctx.landmark.id,
+                    ctx.place.id,
                     wcx, wcy, faunaCount,
                     mw_.store && mw_.store->valid(lmRec)
                         ? &mw_.store->inventory[lmRec.slot].inv
@@ -1940,8 +1940,8 @@ void SubworldEngine::tick_day_pump(float dt) {
     pumpTick_ = nowTick;
 
     const CellContext ctx = resolve_context(mgr_.center_cx(), mgr_.center_cy());
-    if (ctx.landmark.id < 0) return;
-    if (landmark_def(ctx.landmark.kind).crowdHabitat == 0) return;
+    if (ctx.place.id < 0) return;
+    if (place_def(ctx.place.kind).crowdHabitat == 0) return;
 
     // ЕДИНИЦА УЛИЦЫ — ГОЛОВЫ инвентаря места, не паства (D-хвост): паства
     // (worked) считает и ушедших в поле, и помпа, меренная ею, рождала бы на
@@ -1949,7 +1949,7 @@ void SubworldEngine::tick_day_pump(float dt) {
     // 11774 тела». Воплощаются только домашние души; улица = головы − резерв.
     const MacroStore& st = (*mw_.store);
     const MacroHandle ph = place_handle_by_ordinal(
-        st, std::uint32_t(ctx.landmark.id));
+        st, std::uint32_t(ctx.place.id));
     const Inventory* souls =
         st.valid(ph) ? &st.inventory[ph.slot].inv : nullptr;
     const int heads = souls ? home_creatures(*souls) : 0;
@@ -1958,7 +1958,7 @@ void SubworldEngine::tick_day_pump(float dt) {
     const float originX = float(kCellSize);
     const float originY = float(kCellSize);
     const int reserve = interior_reserve_for_cell(
-        mgr_.structures(), ctx.landmark.kind, ctx.worldSeed,
+        mgr_.structures(), ctx.place.kind, ctx.worldSeed,
         mgr_.center_cx(), mgr_.center_cy(), originX, originY, heads,
         WorldTime{frame_->worldTick});
     const int target = std::max(0, heads - reserve);
@@ -2018,7 +2018,7 @@ void SubworldEngine::tick_day_pump(float dt) {
         const auto* dp = sub::slot_debt(objs, s);
         if (dp == nullptr) return false;
         if (dp->stock != std::uint8_t(MacroStock::Population)) return false;
-        if (dp->subject != ctx.landmark.id) return false;
+        if (dp->subject != ctx.place.id) return false;
         return !(objs.is_avatar_slot(s)
                  || sub::slot_flag(objs, s, sub::kObjPlayerSoldier));
     };
@@ -2112,7 +2112,7 @@ void SubworldEngine::tick_day_pump(float dt) {
                     std::fprintf(stderr,
                                  "[sub] ОТКАЗ: именных душ на улице больше, "
                                  "чем слотов контейнера (%d) — место %d\n",
-                                 int(kMaxInventorySlots), ctx.landmark.id);
+                                 int(kMaxInventorySlots), ctx.place.id);
                 } else {
                     liveNamed[std::size_t(liveNamedCount++)] = id;
                 }
@@ -2124,8 +2124,8 @@ void SubworldEngine::tick_day_pump(float dt) {
             ++liveByKind[std::size_t(kind->type)];
         }
     }
-    const std::uint16_t faction = faction_or_freefolk(ctx.landmark.factionIdx);
-    const MacroStockKey popKey{ctx.landmark.id,
+    const std::uint16_t faction = faction_or_freefolk(ctx.place.factionIdx);
+    const MacroStockKey popKey{ctx.place.id,
                                std::int16_t(mgr_.center_cx()),
                                std::int16_t(mgr_.center_cy())};
     spawn_street_arrivals((*objects_),
@@ -2180,7 +2180,7 @@ void SubworldEngine::tick_zones() {
 }
 
 void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
-                                       int amount, int objectLandmarkId) {
+                                       int amount, int objectPlaceId) {
     if (!gs_) return;
     WorldFact f{};
     f.day = frame_ ? frame_->worldDay : 0;
@@ -2196,10 +2196,10 @@ void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
     f.subjectKind = std::uint8_t(FactSubject::Squad);
     f.subject = objects_ ? player_flag_ordinal(*gs_, (*mw_.store)) : 0u;
     // When the deed was done TO a named place, the place rides as the object
-    // by its landmark ordinal (v54: one id space names it alone).
-    if (objectLandmarkId > 0) {
-        f.objectKind = std::uint8_t(FactSubject::Landmark);
-        f.object = std::uint32_t(objectLandmarkId);
+    // by its place ordinal (v54: one id space names it alone).
+    if (objectPlaceId > 0) {
+        f.objectKind = std::uint8_t(FactSubject::Place);
+        f.object = std::uint32_t(objectPlaceId);
     }
     f.x = std::int16_t(cellX);
     f.y = std::int16_t(cellY);
@@ -3303,7 +3303,7 @@ std::uint16_t SubworldEngine::ground_faction_at(float fx, float fy) const {
 // swamp is a swamp whether you cross it as a dot on the map or on foot.
 // The window cache behind the per-tick price: nine weights, resolved once
 // per scene change. Before it, EVERY simulation tick of walking paid a full
-// facts assembly — terrain sample, landmark find, scar read — for two fields
+// facts assembly — terrain sample, place find, scar read — for two fields
 // (the door's performance contract said never; now it holds).
 void SubworldEngine::refresh_window_step_weights() {
     winStepWeightValid_ = false;
@@ -4128,8 +4128,8 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     ses.floorHeight = doorCtx.macroHeight;
     // Settlement context for the interior's own population — the same
     // numbers the street spawner reads (spawn_cell), captured once here.
-    ses.settlementId = doorCtx.landmark.id;   // ONE landmark id space (v54)
-    ses.landmarkKind = doorCtx.landmark.kind;
+    ses.settlementId = doorCtx.place.id;   // ONE place id space (v54)
+    ses.placeKind = doorCtx.place.kind;
     // Отрезки голов интерьера — ПО ЯРУСАМ, пока город ещё в окне (см.
     // DungeonSession): единица партиции — головы инвентаря места, прогулка
     // долей — та же, которой улица считает свой резерв.
@@ -4141,7 +4141,7 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
             ? home_creatures(st.inventory[ph.slot].inv) : 0;
         for (int l = 0; l < DungeonSession::kMaxInteriorStoreys; ++l) {
             const InteriorSegment seg = interior_segment_for_door(
-                mgr_.structures(), ses.landmarkKind, doorCtx.worldSeed,
+                mgr_.structures(), ses.placeKind, doorCtx.worldSeed,
                 doorCx, doorCy,
                 float(winCellX * kCellSize), float(winCellY * kCellSize),
                 heads, frame_ ? WorldTime{frame_->worldTick} : WorldTime{},
@@ -4150,7 +4150,7 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
             ses.segShare[l] = seg.share;
         }
     }
-    ses.faction = faction_or_freefolk(doorCtx.landmark.factionIdx);
+    ses.faction = faction_or_freefolk(doorCtx.place.factionIdx);
     // In off the street — or down through the crown, which lands on the roof
     // pad instead of the south threshold (a storey above the ground has no
     // threshold to land on at all).
@@ -4261,9 +4261,9 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         ctx.macroHeight = floorH;
         ctx.biome = sceneBiome;  // ground material (rock ring / green)
         ctx.feature = FT_None;
-        ctx.landmark.id = -1;
-        ctx.landmark.size = 0;
-        ctx.landmark.factionIdx = -1;
+        ctx.place.id = -1;
+        ctx.place.size = 0;
+        ctx.place.factionIdx = -1;
         ctx.worldSeed = worldSeed;
         if (wrapCells > 0) {
             // TOROIDAL pocket: the scene is an N×N block of variant cells
@@ -4357,10 +4357,10 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         const MacroStockKey popKey{ses.settlementId,
                                    std::int16_t(ses.doorCx),
                                    std::int16_t(ses.doorCy)};
-        // Население — колонка строки снимка (landmark.size = souls_flock
+        // Население — колонка строки снимка (place.size = souls_flock
         // того же слота, что отвечает за клетку двери); ключ остаётся
         // адресом РАСПИСОК займа тел, он не чтение (ломоть 5).
-        const int popNow = doorFacts.landmark.size;
+        const int popNow = doorFacts.place.size;
         // THE household law lives in ONE place (spawn.cpp
         // walk_interior_shares, CANON S28): the street spawner subtracts
         // the same shares as its reserve, so a soul at a hearth is a soul
@@ -4394,7 +4394,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
             float(kCellSize), float(kCellSize), popKey);
     }
     // THE PLACE'S OWN GARRISON (§42 Инк 4, CANON S28): a scene that IS its
-    // landmark's interior (kind row placeGarrison) draws its storey's share
+    // place's interior (kind row placeGarrison) draws its storey's share
     // of the PLACE's population — its crowd family, fighting — through the
     // same residents spawner and the same Population loan, so clearing the
     // climb thins the spire itself, not the mountain's game. Which storey
@@ -4403,12 +4403,12 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // its reserve: outside picket + Σ storeys == population, always.
     const bool placeGarrison = kindRow.placeGarrison
         && ses.settlementId > 0
-        && landmark_def(ses.landmarkKind).crowdHabitat != 0;
+        && place_def(ses.placeKind).crowdHabitat != 0;
     if (placeGarrison && objects_) {
         const MacroStockKey popKey{ses.settlementId,
                                    std::int16_t(ses.doorCx),
                                    std::int16_t(ses.doorCy)};
-        const int popNow = doorFacts.landmark.size;   // строка снимка (4в)
+        const int popNow = doorFacts.place.size;   // строка снимка (4в)
         // Ярус мансуется СВОИМ ОТРЕЗКОМ голов места — та же партиция, что у
         // очага: пикет снаружи + Σ ярусов == головы, всегда (D-хвост).
         // Отрезок снят на пороге (DungeonSession).
@@ -4449,7 +4449,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         const MacroStockKey faunaKey{-1, std::int16_t(ses.doorCx),
                                      std::int16_t(ses.doorCy)};
         const int budget = fauna_stock_at(ses.doorCx, ses.doorCy);
-        // The den's table is its landmark's: a spire storey draws the Spire
+        // The den's table is its place's: a spire storey draws the Spire
         // family (demons), a cellar and a cave the Ruin family — the same
         // ONE law the open cell runs (fauna.h roll_spawns). Whose family is
         // the kind row's column. Placement is the scene's floor catalog: a
@@ -4496,13 +4496,13 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     // Шпиль клетки спрашивается у ОДНОГО сборщика фактов (macro/cell_facts.h),
     // как его спрашивает `read_sign` ниже; ординал места — его колонка.
     const CellFacts cf = facts_at(cx, cy);
-    const bool spire = cf.landmark.type == SquadType::Spire;
-    const int spireOrdinal = cf.landmark.id;
+    const bool spire = cf.place.type == SquadType::Spire;
+    const int spireOrdinal = cf.place.id;
     // The spell is the cell's worked number (spires.h: ordinal + 1, 0 =
     // drained). A drained spire forgot its spell — the orb has nothing left.
     // И это КОЛОНКА сборщика, а не прямой `worked_read` по `*gs_`: вывод
     // «выкачан» живёт ОДНИМ местом в мире (M-233 п.8), а сцена его читает.
-    const int charge = cf.landmark.spell;
+    const int charge = cf.place.spell;
     if (!spire || charge == 0) {
         // A stale scene can outlive the fact (the world remembers, the
         // composite does not, yet): the prop answers, the spire does not.
@@ -4553,7 +4553,7 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     // MECHANISM the subworld hangs on anything, while what the world remembers
     // is that a spire went out of it forever. The context chooses the deed;
     // the deed carries the weight (macro/chronicle.h, the note above the enum).
-    // The spire itself is the OBJECT, by its landmark ordinal (v54) — WHAT
+    // The spire itself is the OBJECT, by its place ordinal (v54) — WHAT
     // went out of the world is resolved from the spire, not smuggled through
     // `amount` in a vocabulary of its own (owner, 2026-08-28: unify through
     // annihilation — a drained thing is the place itself changed, and the
@@ -4581,11 +4581,11 @@ bool SubworldEngine::read_sign(const Structure& sign) {
     if (cy < 0) cy += mapH;
     const CellContext ctx = resolve_context(cx, cy);
     const char* place = nullptr;
-    if (ctx.landmark.kind == SquadType::City
-        || ctx.landmark.kind == SquadType::Village) {
+    if (ctx.place.kind == SquadType::City
+        || ctx.place.kind == SquadType::Village) {
         const MacroHandle lm = mw_.store
             ? place_handle_by_ordinal(*mw_.store,
-                                      std::uint32_t(ctx.landmark.id))
+                                      std::uint32_t(ctx.place.id))
             : MacroHandle{};
         if (mw_.store && mw_.store->valid(lm)
             && mw_.store->name[lm.slot].text[0] != '\0')

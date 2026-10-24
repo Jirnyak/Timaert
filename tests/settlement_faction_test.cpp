@@ -45,9 +45,9 @@ sm::sub::CellContext meadow_cell(int cx, int cy) {
     c.macroHeight = 0.62f;
     c.biome = sm::Biome::Meadow;
     c.feature = sm::FT_None;
-    c.landmark.id = -1;
-    c.landmark.size = 0;
-    c.landmark.kind = sm::SquadType::None;
+    c.place.id = -1;
+    c.place.size = 0;
+    c.place.kind = sm::SquadType::None;
     c.seed = 0x13570000u
         ^ sm::sub::cell_seed(0u, cx, cy);
     return c;
@@ -153,8 +153,8 @@ void run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
                              0xB105A11u,
                              /*worldSeed*/0xB105A11u,
                              /*settlementFaction*/magica,
-                             /*landmarkPop*/2000,
-/*landmarkSubjectId*/-1,
+                             /*placePop*/2000,
+/*placeSubjectId*/-1,
                              /*macroCellX*/0, /*macroCellY*/0,
                              /*faunaCount*/-1, &homeSouls,
                              sm::world_time_at(1, 12, 0));
@@ -209,8 +209,8 @@ void run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
                              0xB105A12u,
                              /*worldSeed*/0xB105A12u,
                              /*settlementFaction*/empire,
-                             /*landmarkPop*/400,
-                             /*landmarkSubjectId*/-1,
+                             /*placePop*/400,
+                             /*placeSubjectId*/-1,
                              /*macroCellX*/0, /*macroCellY*/0,
                              /*faunaCount*/-1, &homeSouls,
                              sm::world_time_at(1, 12, 0));

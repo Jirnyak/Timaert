@@ -20,8 +20,8 @@ sm::sub::CellContext resolve_cell(int cx, int cy) {
     c.macroHeight = 0.58f;
     c.biome = sm::Biome::Meadow;
     c.feature = (cx == 2 || cx == 3) ? sm::FT_Road : sm::FT_None;
-    c.landmark.id = -1;
-    c.landmark.size = 0;
+    c.place.id = -1;
+    c.place.size = 0;
     c.seed = 0x5eed0000u
         ^ sm::sub::cell_seed(0u, cx, cy);
     return c;
@@ -40,9 +40,9 @@ sm::sub::CellContext resolve_water_plane_cell(int cx, int cy) {
     const int my = ((cy % 3) + 3) % 3;
     const int slot = my * 3 + mx;
     c.feature = sm::FT_None;
-    c.landmark.id = -1;
-    c.landmark.size = 0;
-    c.landmark.kind = sm::SquadType::None;
+    c.place.id = -1;
+    c.place.size = 0;
+    c.place.kind = sm::SquadType::None;
     c.seed ^= 0x4a71f00du ^ (std::uint32_t(slot) * 0x9e3779b9u);
 
     if (slot == 0 || slot == 4 || slot == 8) {

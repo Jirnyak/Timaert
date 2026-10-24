@@ -2,7 +2,7 @@
 //
 // One byte per cell, three states:
 //   0  Unknown   terra incognita — the world draws BLACK, nothing overlays.
-//   1  Explored  memory — grey relief and roads, faded landmarks, markers.
+//   1  Explored  memory — grey relief and roads, faded places, markers.
 //   2  Visible   in sight right now — the full living picture.
 //
 // Only the EXPLORED bit is persistent (the save clamps 2 → 1 on write, v40):

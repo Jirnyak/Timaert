@@ -65,7 +65,7 @@ struct Attributes {
     std::array<std::uint8_t, kMaxAttributes> score = attribute_bases();
 
     // constexpr, как у Skills ниже: анкета МЕСТА — таблица времени
-    // компиляции (characters.h kLandmarkSheets), и атрибут в ней должен
+    // компиляции (characters.h kPlaceSheets), и атрибут в ней должен
     // писаться там же, где скилл. Асимметрия двух соседних операторов была
     // случайной — одна из них просто не понадобилась раньше.
     constexpr std::uint8_t& operator[](AttributeId id) {
@@ -100,7 +100,7 @@ static_assert(int(SkillId::Count) <= kMaxSkills,
 struct Skills {
     std::array<std::uint8_t, kMaxSkills> rank{};
 
-    // constexpr: анкеты МЕСТ (characters.h kLandmarkSheets) собираются на
+    // constexpr: анкеты МЕСТ (characters.h kPlaceSheets) собираются на
     // этапе компиляции — одна на род, ни байта в рантайме и в сейве.
     constexpr std::uint8_t& operator[](SkillId id) {
         return rank[std::size_t(id)];
@@ -208,7 +208,7 @@ struct LevelData {
     //  ответа на один вопрос; синхронизировали их ТРИ места, а
     //  value-инициализация давала 0 — то есть НУЛЕВОЙ ПОРОГ, и
     //  `try_level_up` выдавал уровень за единицу опыта. Так и было у всякой
-    //  анкеты, собранной таблицей мимо двери рождения (`kLandmarkSheets@
+    //  анкеты, собранной таблицей мимо двери рождения (`kPlaceSheets@
     //  src/macro/characters.h` строит строки `a{}`): первая же победа
     //  неподвижного сквада давала ему даровой уровень. Дверь — `exp_to_next_of`
     //  ниже; свидетель — `squad_war_test` «один опыт НЕ даёт уровня».)

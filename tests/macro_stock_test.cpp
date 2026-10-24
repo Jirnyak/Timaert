@@ -24,7 +24,7 @@
 #include "macro/macro_stock.h"
 #include "scene_objects_fixture.h"  // арена: квитанция — колонка слота (ломоть 4)
 #include "sub/spawn.h"            // stamp_macro_debt — дверь штампа (ломоть 4)
-#include "macro/landmark_iter.h"  // for_each_place — места по слотам
+#include "macro/place_iter.h"  // for_each_place — места по слотам
 #include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
 #include "macro/squad.h"
 #include "macro/state.h"
@@ -87,7 +87,7 @@ World make_world() {
         wld.otherId = int(st.spawnId[h.slot].index);
         sm::settle_souls(gs, st, h.slot, 300);
     }
-    // ONE landmark id space (v54): every place draws on the one issuer, so a
+    // ONE place id space (v54): every place draws on the one issuer, so a
     // fixture with two places wearing one number would no longer be a world
     // this game can generate. The collision fixture (village 7 beside city 7)
     // guarded the register-bit crutch; the invariant now is that the id ALONE

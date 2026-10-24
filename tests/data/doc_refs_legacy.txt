@@ -573,7 +573,7 @@ jopus_prompts.md	src/tables/commodity.h:30-60
 jopus_prompts.md	src/macro/econ_day.cpp:40-55
 jopus_prompts.md	src/macro/econ_day.h:70-80
 jopus_prompts.md	src/macro/features.h:165-295
-jopus_prompts.md	src/macro/landmark_iter.h:45-55
+jopus_prompts.md	src/macro/place_iter.h:45-55
 jopus_prompts.md	src/macro/language.cpp:136-180
 jopus_prompts.md	src/macro/macro_stock.cpp:340-460
 jopus_prompts.md	src/macro/macro_stock.cpp:480-565
@@ -733,10 +733,10 @@ macro-registry.md	items.h:199
 macro-registry.md	labour.h:16
 macro-registry.md	labour.h:36-45
 macro-registry.md	labour.h:44-45
-macro-registry.md	landmark_registry.h:220-221
-macro-registry.md	landmark_registry.h:244-247
-macro-registry.md	landmark_registry.h:253
-macro-registry.md	landmark_registry.h:303
+macro-registry.md	place_registry.h:220-221
+macro-registry.md	place_registry.h:244-247
+macro-registry.md	place_registry.h:253
+macro-registry.md	place_registry.h:303
 macro-registry.md	macro_overlay.cpp:257
 macro-registry.md	macro_stock.cpp:263-278
 macro-registry.md	macro_stock.cpp:264

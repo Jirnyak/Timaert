@@ -64,7 +64,7 @@ struct NpcProximityResult {
 using MacroWalkReachedFn = void (*)(void* user, int x, int y);
 
 // Draw overlay markers + hover tooltip + click-to-travel polyline. Reads
-// `terrain` / `features` so it can show biome / feature / landmark in the
+// `terrain` / `features` so it can show biome / feature / place in the
 // tooltip. Mutates `cursor` (hover, click request).
 //
 // `showMarkers` gates only the navigation CHROME — the hover-cell highlight,
@@ -105,10 +105,10 @@ std::size_t step_macro_walk(GameState& gs, MacroStore& st, MacroCursor& cursor,
 
 // Right-edge stack of clickable badges for every INTERACTABLE map object on
 // the player's cell or any of the 8 adjacent cells (Chebyshev distance <= 1,
-// with torus wrap): squads AND landmarks, one row shape (меню-сессия). A row
+// with torus wrap): squads AND places, one row shape (меню-сессия). A row
 // is ONE button — clicking it opens the subject's OWN tabbed panel directly
 // (владелец: «меню города — хороший пример, его обобщить»): a squad the
-// Squad window (Info/Trade tabs + Talk/Attack buttons), a landmark the
+// Squad window (Info/Trade tabs + Talk/Attack buttons), a place the
 // settlement panel. The old per-row button scatter (PLAY-1) and the interim
 // generic verb window are both dead.
 // Конверт — тот же закон (M-233 п.8): панели нужен слой фич, чтобы спросить

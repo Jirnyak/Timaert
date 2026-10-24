@@ -10,7 +10,7 @@
 //
 // What is NOT here, deliberately:
 //   - DERIVED fields (terrain, features, zones, cost grid, glow, the
-//     landmark grid) are never saved — they are rebaked from what IS saved.
+//     place grid) are never saved — they are rebaked from what IS saved.
 //     Their list lives with the rebaker, because a rebake is a dependency
 //     CHAIN (zones read features, glow reads optics) and a flat table cannot
 //     express an order.

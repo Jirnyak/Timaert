@@ -1,5 +1,5 @@
 // Locks the HOUSE-PAD FLATTEN in sub/gens/dispatch.cpp (flatten_footprint,
-// applied by add_house_rect + stamp_landmark_house). The 3D renderer seats each
+// applied by add_house_rect + stamp_place_house). The 3D renderer seats each
 // house/keep box at a SINGLE elevation — a bilinear sample of the heightmap at
 // the footprint centre (`SubworldHeightField::sample`, sub/height.h) —
 // while the terrain MESH under the box follows the per-tile heightmap. If those
@@ -21,7 +21,7 @@
 // negative control, proves the metric can still see an un-flattened pad.
 //
 // Seam safety: footprints are always strictly cell-interior (>=2-tile margin
-// from every edge, enforced by rect_clear_for_urban / stamp_landmark_house), and
+// from every edge, enforced by rect_clear_for_urban / stamp_place_house), and
 // the flatten is baked into out.heightmap before the road smoother and before
 // the 3x3 composite is assembled (the composite just memcpy's per-cell
 // heightmaps). So a flattened pad is byte-identical on the per-cell and
@@ -68,9 +68,9 @@ PadStat measure(int cx, int cy, std::uint32_t seed, int population,
     ctx.macroHeight = 0.72f;              // elevated -> real slope under the town
     ctx.biome = Meadow;
     ctx.feature = FT_None;
-    ctx.landmark.id = 55;
-    ctx.landmark.size = population;
-    ctx.landmark.kind = kind;
+    ctx.place.id = 55;
+    ctx.place.size = population;
+    ctx.place.kind = kind;
     ctx.seed = seed;
 
     // Deliberately sloped neighbourhood so footprints land on a genuine incline

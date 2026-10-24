@@ -671,7 +671,7 @@ void test_politik_malformed_terrain_fails_closed()
 
 // The dirt law (road-class registry, 2026-08-29): lanes are laid by THE A*
 // over the step-cost law — a village reaches its home city and the nearest
-// landmark in reach, never overwrites stone, never touches water, and a
+// place in reach, never overwrites stone, never touches water, and a
 // village with no reachable target honestly gets NO lane (the old lerp
 // stamped one across anything that was not water).
 void test_dirt_roads_lay_a_star_lanes()
@@ -737,29 +737,29 @@ void test_dirt_roads_refuse_unreachable_targets()
     CHECK(wetDirt == 0, "dirt lanes must never stamp water cells");
 }
 
-void test_dirt_roads_reach_gates_landmark_lane()
+void test_dirt_roads_reach_gates_place_lane()
 {
     sm::TerrainData td = make_terrain(16, 16, kPlainLand01);
 
     std::vector<sm::VillageRoadSite> villages(1);
     villages[0].x = 2;
     villages[0].y = 2;
-    villages[0].hasCity = false; // orphan of a city; the landmark row alone
-    const std::vector<sm::RoadSite> landmarks{{10, 2}}; // torus distance 8
+    villages[0].hasCity = false; // orphan of a city; the place row alone
+    const std::vector<sm::RoadSite> places{{10, 2}}; // torus distance 8
 
     sm::FeatureLayer nearFeatures;
     nearFeatures.resize(td.width, td.height);
     const int laidNear =
-        sm::trace_dirt_roads(nearFeatures, td, villages, landmarks, 9);
+        sm::trace_dirt_roads(nearFeatures, td, villages, places, 9);
     CHECK(laidNear > 1 && nearFeatures.at(10, 2) == sm::FT_DirtRoad,
-          "a landmark within reach must get a lane ending at the landmark");
+          "a place within reach must get a lane ending at the place");
 
     sm::FeatureLayer farFeatures;
     farFeatures.resize(td.width, td.height);
     const int laidFar =
-        sm::trace_dirt_roads(farFeatures, td, villages, landmarks, 4);
+        sm::trace_dirt_roads(farFeatures, td, villages, places, 4);
     CHECK(laidFar == 1 && farFeatures.at(10, 2) == sm::FT_None,
-          "a landmark beyond reach gets no lane — only the village cell");
+          "a place beyond reach gets no lane — only the village cell");
 }
 
 void test_dirt_roads_fail_closed_on_malformed_inputs()
@@ -813,7 +813,7 @@ int main()
     test_politik_malformed_terrain_fails_closed();
     test_dirt_roads_lay_a_star_lanes();
     test_dirt_roads_refuse_unreachable_targets();
-    test_dirt_roads_reach_gates_landmark_lane();
+    test_dirt_roads_reach_gates_place_lane();
     test_dirt_roads_fail_closed_on_malformed_inputs();
     return sm::test::report("road_river_generation_test");
 }

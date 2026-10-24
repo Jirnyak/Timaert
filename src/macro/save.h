@@ -76,7 +76,7 @@ std::uint64_t save_max_payload_bytes();
 // It exists because the load applies a file to a LIVING world, and that apply
 // was a hand-written list of assignments. A hand-written fold drops fields
 // silently: five of them rode the file and died on the way in (SAVE-1 —
-// resource scars, the loot pool, the ships, the scent fields, the landmark
+// resource scars, the loot pool, the ships, the scent fields, the place
 // issuer), and nothing could see it, because the round-trip test proves
 // file→GameState, which is the half that worked.
 //

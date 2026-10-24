@@ -3,7 +3,7 @@
 // basemap is the CHART composition of the macro shader (pc.mapStyle: flat
 // atlas colours, cell-sharp inked water, ink roads, fixed relief light — no
 // clock, no motion); everything on top is this module's OWN drawing, in
-// primitives only: landmark MiniShapes at the ONE registry colour, marker
+// primitives only: place MiniShapes at the ONE registry colour, marker
 // ink, a plain position mark for the player. The world overlay — paperdolls,
 // walkers, travel routes, click-to-travel — is NOT drawn while the page is
 // open; a map click ANNOTATES (pin toggle) and commands nothing.
@@ -46,7 +46,7 @@ struct MapScreenState {
 float map_fit_zoom(int viewHPx, int mapH);
 
 // The WHOLE page above the chart basemap: hover + tooltip + click-pin,
-// landmark primitives, marker ink, the player mark, and the chrome (readout,
+// place primitives, marker ink, the player mark, and the chrome (readout,
 // legend, pin list). Writes *open = false when the user closes the page.
 // `gs` is mutable for exactly one reason: pins edit gs.markers. `viewW/viewH`
 // and `zoomLogical` in logical points (the page camera's zoom / dpr), like

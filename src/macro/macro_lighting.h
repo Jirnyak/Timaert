@@ -1,6 +1,6 @@
 // Macroworld dynamic night lighting — the universal, data-driven light-source
 // system for the 2D world map. Every cell that emits light (settlements,
-// villages, active spires, and any future landmark type) is enumerated by
+// villages, active spires, and any future place type) is enumerated by
 // `collect_macro_lights`, then `bake_light_field` rasterises the summed glow
 // into a per-cell RGB field texture the macro fragment shader samples once and
 // adds at night (scaled by the day/night `nightDarken` curve).
@@ -11,7 +11,7 @@
 // renderer.ts parity); increment B replaces the bake with terrain-occluded
 // propagation (open land carries light far, forest/mountain cells absorb it).
 //
-// L1 macro layer: depends only on GameState + the landmark data table. The
+// L1 macro layer: depends only on GameState + the place data table. The
 // Vulkan renderer consumes the baked bytes, not this header, so the GPU target
 // keeps its minimal link set.
 #pragma once
@@ -50,11 +50,11 @@ inline constexpr float kMacroGlowCeil = 1.5f;
 // towns, lower for a darker night. Director-tunable — the one knob to turn.
 inline constexpr float kMacroGlowGain = 0.45f;
 
-// Data-driven emitter census. Inhabited landmarks (settlements, villages) scale
+// Data-driven emitter census. Inhabited places (settlements, villages) scale
 // radius + intensity by population via the TS curve; fixed POIs (active spires,
-// and any landmark type whose LandmarkDef carries a non-zero lightColor) use
-// their table tint + synthetic strength (LandmarkDef.lightPop). Adding a new
-// emitting landmark type is one table row plus, once it has world instances,
+// and any place type whose PlaceDef carries a non-zero lightColor) use
+// their table tint + synthetic strength (PlaceDef.lightPop). Adding a new
+// emitting place type is one table row plus, once it has world instances,
 // one loop here — never an engine branch in the renderer or shader.
 struct MacroStore;   // паства мест — склад ТЕЛА (M-90 шаг 5)
 // КОНВЕРТ, А НЕ ПАРА СЛОЁВ (M-233 п.8): выкачанность шпиля гасит его свет, а

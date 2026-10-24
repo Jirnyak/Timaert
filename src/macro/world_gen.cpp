@@ -15,7 +15,7 @@
 #include "macro/deposit_layer.h"
 #include "macro/knowledge.h"
 #include "macro/squad_index.h"
-#include "macro/landmark_iter.h"
+#include "macro/place_iter.h"
 #include "macro/map_generator.h"
 #include "macro/npc_ai.h"
 #include "macro/npc_spawn.h"
@@ -124,7 +124,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
                          p.targetTotalCities, &siteCtx);
     snap_cities_to_land(cityPlan, *out.terrain);
     finalize_politik(cityPlan, gs.cellOwner, gs.mapW, gs.mapH, *out.terrain);
-    populate_landmarks_from_politik(gs, *out.store, cityPlan, *out.terrain,
+    populate_places_from_politik(gs, *out.store, cityPlan, *out.terrain,
                                     *out.treeLayer, *out.deposits,
                                     *out.features);
     if (p.trace) {
@@ -243,7 +243,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
 
     // Spires need the zone field (their placement law), so they are the one
     // place born after generate_zones rather than in
-    // populate_landmarks_from_politik. One spire per registered spell; a load
+    // populate_places_from_politik. One spire per registered spell; a load
     // restores every place as a record of the macro-squad block
     // (boot_world_from_save), spires with everything else — one population,
     // one block, no creatures of its own (ломтик F).
@@ -256,14 +256,14 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         // stillborn. After the settlement passes, whose cells it avoids.
         generate_ruins(gs, *out.store, *out.zones, *out.terrain,
                        *out.features);
-        // The landmark set is complete — stamp the settlement FEATURES
+        // The place set is complete — stamp the settlement FEATURES
         // (вердикт 2026-09-30: город/деревня/шпиль/руина — байты слоя фич,
         // ставятся ПОСЛЕ дорог) and build the cell frame over squads —
         // «кто на клетке» мира (macro/squad_index.h; сетка мест умерла
         // ломтиком F, тот же закон свежести: генезис, перепёк, драйв).
         // (Перештамп фич из тел УМЕР 2026-10-23, вердикт «фичи делают 1 раз
         // при генерации»: фичу рода ставит дверь рождения места В МОМЕНТ
-        // ВЫБОРА клетки — birth_place, колонка kLandmarks.feature.)
+        // ВЫБОРА клетки — birth_place, колонка kPlaces.feature.)
         build_squad_index(*out.squadIndex, st, gs.mapW, gs.mapH);
         if (p.trace) {
             // The placement report card: every spell offered, every spire in
@@ -299,7 +299,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
 
     // Dirt lanes — the FT_DirtRoad rows of the road-class registry
     // (spawners.h kRoadClasses): village → its home city, village → the
-    // nearest landmark within reach. Laid by THE find_path over the cost grid
+    // nearest place within reach. Laid by THE find_path over the cost grid
     // that already prices the stone above at its bed, so lanes merge into the
     // highways; a village with no reachable target honestly gets no lane.
     {
@@ -318,19 +318,19 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
             }
             villageSites.push_back(site);
         });
-        std::vector<RoadSite> landmarkSites;
+        std::vector<RoadSite> placeSites;
         for_each_place(st, [&](std::uint16_t slot) {
             if (place_kind(slot) == SquadType::Spire)
-                landmarkSites.push_back({place_x(slot), place_y(slot)});
+                placeSites.push_back({place_x(slot), place_y(slot)});
         });
         // Reach comes from THE distance law of the settled world
         // (politik.h derive_city_spacing) — one city spacing, not a magic
         // radius: a village's world ends about where the next town's begins.
-        const int landmarkReach = derive_city_spacing(
+        const int placeReach = derive_city_spacing(
             out.terrain, gs.mapW, gs.mapH, int(cityPlan.size()));
         const int dirtStamped = trace_dirt_roads(
-            *out.features, *out.terrain, villageSites, landmarkSites,
-            landmarkReach, out.treeLayer);
+            *out.features, *out.terrain, villageSites, placeSites,
+            placeReach, out.treeLayer);
         if (p.trace) {
             std::size_t stoneCells = 0, dirtCells = 0, bridgeCells = 0;
             int bridgeX = -1, bridgeY = -1; // first span, for MACROPOS repros
@@ -372,7 +372,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
                          "bridge cells=%zu first_bridge=%d,%d "
                          "fork_bridge=%d,%d stamped=%d reach=%d\n",
                          stoneCells, dirtCells, bridgeCells, bridgeX, bridgeY,
-                         forkX, forkY, dirtStamped, landmarkReach);
+                         forkX, forkY, dirtStamped, placeReach);
             std::fflush(stderr);
         }
     }

@@ -1,10 +1,10 @@
 // Spire placement (macro/spires.cpp). Pinned promises:
 //   · one spire per kSpellDefs row (the generator asks the spell registry
-//     itself — Rule 13), id drawn from the ONE landmark issuer (v54); the
+//     itself — Rule 13), id drawn from the ONE place issuer (v54); the
 //     spell is the spire cell's WORKED number (v120: ordinal + 1, 0 =
 //     drained), born charged;
-//   · a spire stands on land, inside the landmark table's own zone band
-//     (landmark_def(Spire).minZone), and the top-tier spell's spire stands at
+//   · a spire stands on land, inside the place table's own zone band
+//     (place_def(Spire).minZone), and the top-tier spell's spire stands at
 //     the band's CAP — the doom spell lives where the world is at its worst;
 //   · no spire shares a cell with any named place (a co-located spire would
 //     be shadowed by resolve_context's scan order), and the pick spreads:
@@ -16,9 +16,9 @@
 #include "check.h"
 #include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
-#include "macro/landmark_registry.h"
+#include "macro/place_registry.h"
 #include "macro/map_generator.h"
-#include "macro/landmark_iter.h"  // for_each_place — перепись мест
+#include "macro/place_iter.h"  // for_each_place — перепись мест
 #include "macro/place_birth.h"  // birth_place — место родится ТЕЛОМ
 #include "macro/ruins.h"
 #include "macro/anketa.h"
@@ -176,12 +176,12 @@ void test_one_spire_per_spell_in_the_band() {
     sm::FeatureLayer flA = fresh_features(terrain.width, terrain.height);
     generate_spires(gs, places(), zones, terrain, flA);
 
-    const LandmarkDef& def = landmark_def(SquadType::Spire);
+    const PlaceDef& def = place_def(SquadType::Spire);
     const std::vector<PlaceRow> all = census(gs, places());
     const std::vector<PlaceRow> spires = spires_in(all);
     CHECK_OR_RETURN(spires.size() == std::size_t(kSpellCount),
                     "every learnable spell got its spire");
-    // Ids come from the ONE landmark issuer (v54): unique across every kind
+    // Ids come from the ONE place issuer (v54): unique across every kind
     // of place, monotonic in creation order — never the list index.
     std::set<int> seenIds;
     for (const PlaceRow& r : all)
@@ -189,18 +189,18 @@ void test_one_spire_per_spell_in_the_band() {
     for (std::size_t i = 0; i < spires.size(); ++i) {
         const PlaceRow& sp = spires[i];
         CHECK(sp.id > 0 && seenIds.insert(sp.id).second,
-              "a spire's id is unique across all landmarks (one issuer)");
+              "a spire's id is unique across all places (one issuer)");
         if (i > 0) {
             CHECK(sp.id > spires[i - 1].id,
                   "the issuer is monotonic: later spire, later ordinal");
         }
         // v120: the spell is the cell's WORKED number (ordinal + 1; 0 =
-        // drained — закон нуля-ординала), never a Landmark column.
+        // drained — закон нуля-ординала), never a Place column.
         CHECK(worked_read(gs, sp.x, sp.y) == int(i) + 1,
               "the spire's cell works its spell: registry ordinal + 1");
         CHECK(!terrain.is_water(sp.x, sp.y), "a spire stands on land");
         CHECK(int(zones.at(sp.x, sp.y)) >= int(def.minZone),
-              "a spire stands inside the landmark table's zone band");
+              "a spire stands inside the place table's zone band");
     }
     // The top-tier spell demands the band's cap (the table's maxZone), and
     // this world has free zone-9 ground, so no relaxation may kick in.
@@ -358,7 +358,7 @@ void test_genesis_births_souls_and_ruins() {
 
     // Ruins exist — the §42 stillborn kind lives, inside its own band, born
     // haunted from the site's danger byte.
-    const LandmarkDef& ruinDef = landmark_def(SquadType::Ruin);
+    const PlaceDef& ruinDef = place_def(SquadType::Ruin);
     int ruins = 0;
     for (const PlaceRow& r : all) {
         if (r.type != SquadType::Ruin) continue;
@@ -379,7 +379,7 @@ void test_genesis_births_souls_and_ruins() {
     generate_ruins(b, places(), zones, terrain, flB2);
     const std::vector<PlaceRow> allB = census(b, places());
     CHECK_OR_RETURN(allB.size() == all.size(),
-                    "same seed, same landmark census");
+                    "same seed, same place census");
     bool same = true;
     for (std::size_t i = 0; i < all.size(); ++i) {
         const PlaceRow& p = all[i];
@@ -442,8 +442,8 @@ void test_one_answer_to_the_drained_orb() {
                                         40, 40, std::int16_t(freefolk),
                                         nullptr, &feat, &terrain);
     CHECK_OR_RETURN(places().valid(city), "фикстура родила себе город");
-    CHECK(landmark_def(SquadType::City).bornPopBase == 0
-              && landmark_def(SquadType::Spire).bornPopBase != 0,
+    CHECK(place_def(SquadType::City).bornPopBase == 0
+              && place_def(SquadType::Spire).bornPopBase != 0,
           "ЛОВУШКА ЖИВА В СТРОКАХ: у города паства ЕСТЬ worked-число клетки, "
           "у шпиля worked-число — спелл; одно поле, два смысла");
     CHECK(souls_flock(gs, places(), city.slot) == 0,
@@ -532,7 +532,7 @@ void test_one_answer_to_the_drained_orb() {
           "ЗАБЫЛ свой спелл, как выработанная жила — свою руду");
 
     int seenVictim = 0, viewDisagreed = 0, cityViewDepleted = 0;
-    for_each_landmark(mw, [&](const LandmarkView& lv) {
+    for_each_place_view(mw, [&](const PlaceView& lv) {
         const bool byKind = lv.type == SquadType::Spire;
         if (lv.id == victimId) {
             ++seenVictim;

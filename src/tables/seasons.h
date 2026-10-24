@@ -8,7 +8,7 @@
 // same "derive, don't store" discipline as the possessed-macro identity remap.
 //
 // Adding a season, or retuning one, is ONE row in kSeasons — no engine change,
-// no if-chain (matches the landmark_registry.h / biomes.h table idiom). Each row
+// no if-chain (matches the place_registry.h / biomes.h table idiom). Each row
 // carries the modifiers its consumers read; a consumer that wants a new seasonal
 // effect adds a column here and one multiply at its own site. The first live
 // consumer is subworld foliage: season_temp_offset() nudges the temperature that
@@ -74,7 +74,7 @@ inline constexpr const SeasonDef& season_def(Season s) {
 // The season BOUNDARY — the one day the world settles its balances and
 // rebakes its slow truths (CANON S19.2: единое окно мира — food and pay for
 // every container a season ahead, the 1/8 arrears cut, the tithe charge, the
-// landmarks' squad court, the expensive field rebakes). Day 1 is the first
+// places' squad court, the expensive field rebakes). Day 1 is the first
 // boundary: a new world pays for its first season the morning it is born,
 // off the mid-life stores it was seeded with. Total over any day, like
 // season_at.

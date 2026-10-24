@@ -42,7 +42,7 @@ bool add_house_obb(SubworldMapData& out, float cx, float cy,
 // The one building a place is BUILT AROUND — a keep, a chapter house, a
 // barrack block. Placed regardless of what is under it (it was there first, in
 // the fiction) with a modest random lean so it does not read as a diagram.
-bool stamp_landmark_house(SubworldMapData& out, Rng& r,
+bool stamp_place_house(SubworldMapData& out, Rng& r,
                           float cx, float cy, int w, int h, float height);
 
 // GROUND THE PLOTS MAY NOT TAKE. Plain discs, handed in by whoever knows what

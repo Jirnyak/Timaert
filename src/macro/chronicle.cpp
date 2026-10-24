@@ -220,8 +220,8 @@ int append_who(char* out, int cap, int len, std::uint8_t packed,
         case std::uint8_t(FactSubject::Squad):
             if (naming.squad) name = naming.squad(naming.user, id);
             return append(out, cap, len, name ? name : "a band");
-        case std::uint8_t(FactSubject::Landmark):
-            if (naming.landmark) name = naming.landmark(naming.user, id);
+        case std::uint8_t(FactSubject::Place):
+            if (naming.place) name = naming.place(naming.user, id);
             return append(out, cap, len, name ? name : "a place");
         case std::uint8_t(FactSubject::Faction):
             if (naming.faction) name = naming.faction(naming.user, id);

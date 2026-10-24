@@ -429,13 +429,13 @@ inline float wall_inner_bound(float radius, float roughness) {
 //
 // Who lives there decides how big it is, and that number is already in the
 // world: a place's GARRISON is `population >> garrisonShift` (macro/
-// landmark_registry.h — «гарнизон = армия ландмарка», §42). The garrison and
+// place_registry.h — «гарнизон = армия ландмарка», §42). The garrison and
 // its lord are the upper town's population; its hearths follow by the same
 // hearth law as the city's, and its ground by the same ground-per-house. So a
 // quarter is a fraction of the city only as a CONSEQUENCE — never as a chosen
 // share.
 inline int city_upper_population(int population) {
-    const LandmarkDef& def = landmark_def(SquadType::City);
+    const PlaceDef& def = place_def(SquadType::City);
     if (def.garrisonShift == 0xFF) return 0;          // a kind with no garrison
     const int p = population > 0 ? population : 0;
     return p >> def.garrisonShift;

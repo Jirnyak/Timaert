@@ -100,9 +100,9 @@ struct DungeonSession {
     static constexpr int kMaxInteriorStoreys = 5;
     std::int32_t segOffset[kMaxInteriorStoreys] = {-1, -1, -1, -1, -1};
     std::int32_t segShare[kMaxInteriorStoreys] = {0, 0, 0, 0, 0};
-    // The door cell's landmark KIND — whose crowd stripe the household rolls
+    // The door cell's place KIND — whose crowd stripe the household rolls
     // (§42: the interior's people are the PLACE's people, not always a town's).
-    SquadType landmarkKind = SquadType::None;
+    SquadType placeKind = SquadType::None;
     std::uint16_t faction = 0;    // owning kingdom's registry faction index
 };
 
@@ -250,7 +250,7 @@ public:
     // interior. Read by the HUD (way-out marker) and the smokes.
     bool dungeon_exit_point(float& x, float& y) const;
     // Search a chest: hands over ONE stack from the store of the place that
-    // owns this interior (a landmark's store is its Inventory — owner ruling
+    // owns this interior (a place's store is its Inventory — owner ruling
     // W2), charging the theft to the player's standing with that realm. An
     // empty town has empty chests; nothing is conjured, so nothing can be
     // farmed by leaving and coming back. False when there is nothing to
@@ -1096,7 +1096,7 @@ private:
     // is filed in the world's ONE memory, at the macro cell that contains this
     // subworld. One memory, and the place is the seam between the layers.
     void record_world_fact(FactKind kind, int cellX, int cellY, int amount,
-                           int objectLandmarkId = 0);
+                           int objectPlaceId = 0);
 
     // Watch for the player crossing INTO a zone. Called from tick().
     void tick_zones();

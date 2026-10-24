@@ -107,7 +107,7 @@ constexpr std::string_view kRowHeaders[] = {
     "src/tables/spells.h",         "src/tables/sprite_rows.h",
     "src/tables/commodity.h",      "src/tables/faction.h",
     "src/tables/celestial.h",      "src/tables/seasons.h",
-    "src/macro/landmark_registry.h",
+    "src/macro/place_registry.h",
 };
 
 constexpr std::string_view kSubDir = "src/sub";

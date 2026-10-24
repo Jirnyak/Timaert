@@ -1,6 +1,6 @@
 // МОДУЛЬ ШПИЛЯ: расстановка в генезисе и ОДИН вывод о его орбе в живом мире.
 //
-// Spire placement — worldgen pass for the Spire landmark (landmark_registry.h
+// Spire placement — worldgen pass for the Spire place (place_registry.h
 // row "spire"). One learnable spell = one spire the world must offer; the
 // spire's site is decided by the danger-zone field, not by dice against
 // civilization: zones already encode "far from cities" (civ BFS pulls danger
@@ -18,7 +18,7 @@ struct FeatureLayer;
 struct TerrainData;
 struct ZoneLayer;
 
-// Fill gs.spires (assumed cleared by populate_landmarks_from_politik) — one
+// Fill gs.spires (assumed cleared by populate_places_from_politik) — one
 // spire per kSpellDefs row; the spell is the spire cell's WORKED number
 // (state.h gs.worked: row ordinal + 1, 0 = drained — закон нуля-ординала).
 // Deterministic from gs.worldSeed. Requires zones — call AFTER

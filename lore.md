@@ -590,7 +590,7 @@ of them there is**.
 
 | Era | What the cults are |
 |---|---|
-| **Game start** | Barely expressed. They **live and wander around their own landmarks** — the places where the artifacts are. Few, weak, and **largely passive and non-aggressive**: you can walk past one |
+| **Game start** | Barely expressed. They **live and wander around their own places** — the places where the artifacts are. Few, weak, and **largely passive and non-aggressive**: you can walk past one |
 | **As the years pass** | **More cultists, more squads, and the squads themselves get stronger.** Nothing announces it; the roads simply have more strangers on them |
 | **Late — many years in** | Where the whisper field has settled over a village or a city, the cults **take the settlement outright.** Whole cities change hands |
 
@@ -642,7 +642,7 @@ The rules of the field (owner's ruling):
   long**: a normal playthrough sees roughly **a tenth** of that pressure. The
   darkness is real, visible and moving, and it is nowhere near able to end the
   world on its own within your lifetime — *unless you feed it*.
-- **A source is any place holding artifacts, universally** — a cult landmark
+- **A source is any place holding artifacts, universally** — a cult place
   that still has its own, a stash, a chest in a house the player bought. The
   rule is "where they are kept", so nothing needs a special case for the player.
 - **A carrier leaves a trail.** Walk the world with artifacts on you and the
@@ -654,7 +654,7 @@ The rules of the field (owner's ruling):
 
 | Artifact's state | Effect on the field |
 |---|---|
-| **Left where it lies** (its cult landmark) | A fixed local source, thickening the cells around it |
+| **Left where it lies** (its cult place) | A fixed local source, thickening the cells around it |
 | **Stashed by the player** | The stash becomes the source — same rule, new place |
 | **Carried** | A moving source: the trail thickens behind the carrier, everywhere he goes |
 | **Destroyed** | Source gone, area cleaned at once — the Sacrilegist's thousand-year policy, re-enacted by hand |
@@ -1050,7 +1050,7 @@ chosen over Ruach.
 
 ### 3.8 The Cemeteries and the Crypts — the quiet dead
 
-*A macro landmark of barrows, graves, and subterranean mausoleums.*
+*A macro place of barrows, graves, and subterranean mausoleums.*
 
 - **Atmosphere: desolation and dread.** A sprawling cemetery set beneath a dead,
   pale grey sky and creeping ground mist, dotted with weathered gravestones,
@@ -1855,15 +1855,15 @@ the ten years.
 **Fiction with no system yet (`NOT BUILT`), roughly in order of leverage:**
 
 1. **The cult growth curve** (§3.5) — from passive wanderers around their own
-   landmarks, through more and stronger squads, to **taking settlements** where
+   places, through more and stronger squads, to **taking settlements** where
    the field has settled; a captured city keeps trading but plays by new rules.
    Silent throughout; no meter, ever.
 2. **THE FIELD** (§1.1, §3.5) — ONE signed per-cell world layer, −127 black energy …
    +127 magic, diffusing and saturating, in the family of `zones.h` and
    the night-glow bake. **Annihilation is the addition operator, not a rule.**
-   NEGATIVE sources: cults, cult landmarks, cultist squads, black artifacts wherever
+   NEGATIVE sources: cults, cult places, cultist squads, black artifacts wherever
    they are kept (plus a carrier's trail). POSITIVE sources: strong mages — magical
-   landmarks above all — and dragons; and whoever destroys a black artifact. **Calibration: unopposed → whole world in ~100 game
+   places above all — and dragons; and whoever destroys a black artifact. **Calibration: unopposed → whole world in ~100 game
    years**, i.e. ~10 % of it over a full playthrough. Does not touch the
    ten-year clock.
 3. **The Peasant King as a roaming, respawning, magic-immune elite NPC** (§5),
@@ -2001,7 +2001,7 @@ Systems that carry the fiction: factions and relations
 (time.md (time.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)); the plot arc, endings and events
 (progression.md (progression.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/), quests.md (quests.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)); the archetypes and
 the nine attributes (rpg.md (rpg.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/), [design.md](history/design.md) §14.5); the mage's
-spire grind (zones.md (zones.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/), landmarks.md (landmarks.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/),
+spire grind (zones.md (zones.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/), places.md (places.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/),
 spells.md (spells.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)); the class-defining feel of each faction's army
 ([microcombat.md](microcombat.md), macrosim.md (macrosim.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)); the visible
 prosperity of a freed village (economy.md (economy.md снесён 2026-09-25 — см. CANON.md / SKELETON.md / history/recon-2026-09-25/)); killing and becoming

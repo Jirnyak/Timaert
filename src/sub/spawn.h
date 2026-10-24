@@ -185,7 +185,7 @@ bool refresh_body_strike(SubObjects& objs, const MacroStore* st, int s);
 // per-entity storage. Settlement citizens are re-derived from the persistent
 // macro context, so cities are preserved across re-entry by construction.
 //
-// `landmarkPop` is settlement population (0 if none). It decides HOW MANY people
+// `placePop` is settlement population (0 if none). It decides HOW MANY people
 // stand here and nothing else: a big town simply has more guards on its streets,
 // and each of them is the same guard his row describes. There is no level bonus
 // and no stat multiplier on this path — a creature's strength IS its row (CANON.md
@@ -202,7 +202,7 @@ bool refresh_body_strike(SubObjects& objs, const MacroStore* st, int s);
 void spawn_cell_npcs(SubObjects& objs,
                      Biome biome,
                      int treeCount,
-                     SquadType landmark,
+                     SquadType place,
                      std::uint8_t danger,
                      std::uint8_t depositsNear,
                      const SeamlessSubworldManager& mgr,
@@ -213,13 +213,13 @@ void spawn_cell_npcs(SubObjects& objs,
                      // (interior_household_share keys households off it).
                      std::uint32_t worldSeed,
                      std::uint16_t settlementFaction,
-                     int landmarkPop,
+                     int placePop,
                      // Which macro stock the citizens are borrowed FROM: the
                      // settlement/village id and the cell it stands in. Every
                      // citizen is stamped with it (macro/macro_stock.h), so a
                      // death in the subworld is paid back to the map above.
                      // -1 means "no named place here" — nothing is borrowed.
-                     int landmarkSubjectId,
+                     int placeSubjectId,
                      int macroCellX,
                      int macroCellY,
                      // The wild headcount standing on this cell — the honest
@@ -259,7 +259,7 @@ void spawn_cell_npcs(SubObjects& objs,
 // (worldSeed, door cell, building ordinal, storey).
 int interior_household_share(std::uint32_t worldSeed, int cellX, int cellY,
                              std::uint16_t ordinal, int level,
-                             int landmarkPop, int doorsInCell,
+                             int placePop, int doorsInCell,
                              const WorldTime& now);
 
 // How many doors this cell actually has to keep people behind.
@@ -282,7 +282,7 @@ int doors_in_cell(const std::vector<Structure>& structures,
 // crowdOutsideShift)`, split evenly over the storeys with the remainder to
 // the lower floors. Pure arithmetic of the LIVE population — clearing a
 // floor thins the place, and every re-derived share thins with it.
-int interior_garrison_share(SquadType landmark, int landmarkPop,
+int interior_garrison_share(SquadType place, int placePop,
                             int storeys, int level);
 
 // The interior reserve of ONE CELL: the sum of every soul its doors keep
@@ -292,11 +292,11 @@ int interior_garrison_share(SquadType landmark, int landmarkPop,
 // columns: householdAbove / placeGarrison). Street crowd = population −
 // this (the §42 partition witness asserts the sum exactly).
 int interior_reserve_for_cell(const std::vector<Structure>& structures,
-                              SquadType landmark,
+                              SquadType place,
                               std::uint32_t worldSeed,
                               int cellX, int cellY,
                               float originX, float originY,
-                              int landmarkPop, const WorldTime& now);
+                              int placePop, const WorldTime& now);
 
 // ОТРЕЗОК ГОЛОВ ОДНОЙ ДВЕРИ внутри резервного префикса [0, reserve) — ТЕМ ЖЕ
 // обходом, которым резерв считает себя (один закон партиции, вторая прогулка
@@ -311,7 +311,7 @@ struct InteriorSegment {
 };
 InteriorSegment interior_segment_for_door(
     const std::vector<Structure>& structures,
-    SquadType landmark,
+    SquadType place,
     std::uint32_t worldSeed,
     int cellX, int cellY,
     float originX, float originY,

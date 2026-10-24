@@ -89,7 +89,7 @@ void test_participation_locality_and_silence() {
     // NOT: this is S11 applied to history, and the whole point of a journal.
     chronicle_record(gs.chronicle,
                      fact(1, FactKind::Starved,
-                          std::uint8_t(FactSubject::Landmark), 3u, 40, 40));
+                          std::uint8_t(FactSubject::Place), 3u, 40, 40));
 
     player_journal_capture(gs, *wStore_);
     CHECK(gs.player.journal.size() == 2,
@@ -269,7 +269,7 @@ void test_the_deed_door_files_and_pays_as_one_action() {
     WorldFact f{};
     f.day = 1;
     f.kind = std::uint16_t(FactKind::Killed);
-    f.objectKind = std::uint8_t(FactSubject::Landmark);
+    f.objectKind = std::uint8_t(FactSubject::Place);
     f.object = stB.spawnId[hTown.slot].index;
     f.x = 10;
     f.y = 10;

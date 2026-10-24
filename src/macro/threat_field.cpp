@@ -22,7 +22,7 @@ void threat_field_daily(const MacroWorld& mw, int day) {
     NavWorld* nv = mw.nav;
     if (!nv || !mw.gs || !nv->baked()) return;
     const Chronicle& c = mw.gs->chronicle;
-    const std::size_t R = nv->regionLandmarkId.size();
+    const std::size_t R = nv->regionPlaceId.size();
     if (R == 0) return;
 
     // РЕПЛЕЙ: загрузка и перепёк графа приходят сюда одинаково — поле не
@@ -36,7 +36,7 @@ void threat_field_daily(const MacroWorld& mw, int day) {
 
     // ИСТОЧНИК: новые Died-факты кольца. Один писатель поля — этот читатель
     // летописи; сами факты пишут прежние двери (record_battle_facts,
-    // record_landmark_fact), так что игрок-мясник поднимает поле наравне с
+    // record_place_fact), так что игрок-мясник поднимает поле наравне с
     // любым лордом, а бездомные банды не поднимают его по построению.
     if (c.ready()) {
         const std::uint32_t price = std::uint32_t(threat_soul_price());

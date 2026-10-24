@@ -10,19 +10,19 @@
 //
 // Дверь делает ДВЕ вещи — рождает тело и объявляет СОБЫТИЕ (navEpoch),
 // по которому поднимается всё запечённое от состава (закон прежней
-// add_landmark, перенесён дословно).
+// add_place, перенесён дословно).
 //
 // Свой заголовок, а не npc_spawn: рождению тела места хватает header-only
-// дверей (store_birth, cell_index, landmark_sheet) — тянуть за ним весь
+// дверей (store_birth, cell_index, place_sheet) — тянуть за ним весь
 // спавн сквадов значило бы заставить каждый тест генезиса линковать цепь
 // npc_spawn.cpp ради нескольких присваиваний.
 #pragma once
 
 #include <cstring>
 
-#include "macro/characters.h"     // landmark_sheet — анкета места по роду
+#include "macro/characters.h"     // place_sheet — анкета места по роду
 #include "macro/features.h"    // feature_put — фича ДО тела
-#include "macro/landmark_registry.h" // колонка фичи рода
+#include "macro/place_registry.h" // колонка фичи рода
 #include "macro/state.h"
 #include "macro/store.h"
 
@@ -30,11 +30,11 @@ namespace sm {
 
 // kind.type остаётся НУЛЕВОЙ строкой: вопрос «каким листом дерётся лидер»
 // месту не задаёт никто — бой места ведут ГОЛОВЫ его контейнера
-// (auto_battle.h), а анкета берётся строкой стола по роду (landmark_sheet).
+// (auto_battle.h), а анкета берётся строкой стола по роду (place_sheet).
 // СНАЧАЛА ФИЧА, СКВАД ПОВЕРХ (вердикт владельца 2026-10-23: «ДЕРЕВНИ ГОРОДА
 // это сначало фичи ВСЁ ТОЛЬКО ФИЧИ потом поверх них ложатся сквады»; фичи
 // делаются ОДИН РАЗ при генерации). Дверь рождения места ставит фичу рода
-// (колонка строки kLandmarks) В МОМЕНТ ВЫБОРА КЛЕТКИ — до тела; слой фич
+// (колонка строки kPlaces) В МОМЕНТ ВЫБОРА КЛЕТКИ — до тела; слой фич
 // производен от сида и тел не читает никогда. nullptr-слой — фикстура без
 // фич, законно (fail-open как у всякого слоя конверта).
 inline MacroHandle birth_place(GameState& gs, MacroStore& st, SquadType kind,
@@ -43,7 +43,7 @@ inline MacroHandle birth_place(GameState& gs, MacroStore& st, SquadType kind,
                                FeatureLayer* fl = nullptr,
                                const TerrainData* td = nullptr) {
     if (fl && td) {
-        const FeatureType ft = landmark_def(kind).feature;
+        const FeatureType ft = place_def(kind).feature;
         if (ft != FT_None) feature_put(*fl, *td, x, y, ft);
     }
     const MacroHandle h = store_birth(st);
@@ -55,7 +55,7 @@ inline MacroHandle birth_place(GameState& gs, MacroStore& st, SquadType kind,
     if (name != nullptr)
         std::strncpy(st.name[h.slot].text, name,
                      sizeof st.name[h.slot].text - 1);
-    st.sheet[h.slot]   = landmark_sheet(kind);
+    st.sheet[h.slot]   = place_sheet(kind);
     ecs::MacroNpcRuntime rt{};            // pools — НУЛЯМИ (CANON S6)
     // Цель новорождённого — «ничего» (kNoCell): колонку цели обнуляет сама
     // дверь рождения, стоять на месте цели не требует (M-1).

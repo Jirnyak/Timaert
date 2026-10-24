@@ -169,9 +169,9 @@ void part_b_generated_city() {
     city.macroHeight = 0.64f;
     city.biome = Meadow;
     city.feature = FT_None;
-    city.landmark.id = 101;
-    city.landmark.size = 6000;
-    city.landmark.kind = SquadType::City;
+    city.place.id = 101;
+    city.place.size = 6000;
+    city.place.kind = SquadType::City;
     city.seed = 0x0BADF00Du;
     city.treeCount = 0;
 
@@ -255,7 +255,7 @@ void part_b_generated_city() {
     // a perfect circle — so an organically grown ring is always longer than
     // this. Measured for pop 6000: 1838 tiles of chord against a floor of 1493.
     constexpr float kPi = 3.14159265f;
-    const int population = int(city.landmark.size);
+    const int population = int(city.place.size);
     const float ringFloor =
         2.0f * std::sqrt(kPi * city_target_area(population));
 

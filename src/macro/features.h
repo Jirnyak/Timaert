@@ -1,4 +1,4 @@
-// Per-cell feature byte grid (between biome and landmark).
+// Per-cell feature byte grid (between biome and place).
 //
 // Features are MAN-MADE structures composed ON TOP of the biome ground:
 // roads and dirt roads today, future railways / fields / canals tomorrow.

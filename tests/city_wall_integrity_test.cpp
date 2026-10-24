@@ -64,9 +64,9 @@ Town make_town(SquadType kind, std::uint32_t seed, int population,
     c.macroHeight = 0.64f;
     c.biome = Meadow;
     c.feature = FT_None;
-    c.landmark.id = 101;
-    c.landmark.size = population;
-    c.landmark.kind = kind;
+    c.place.id = 101;
+    c.place.size = population;
+    c.place.kind = kind;
     c.seed = seed;
 
     float nbH[9];

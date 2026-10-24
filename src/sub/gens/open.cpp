@@ -90,7 +90,7 @@ void gen_open(const GenInput& in, SubworldMapData& out) {
     desert_dunes(in, out);
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
     // Plain wilderness: no road stitching. TS only grows connecting roads when
-    // the cell itself is road-like (road feature or landmark); a bare
+    // the cell itself is road-like (road feature or place); a bare
     // grassland/open cell next to a road must stay road-free.
     // fill_base_tiles already stamps decorative trees but with a local RNG
     // — overwrite with the global stitched scatter so neighbouring open

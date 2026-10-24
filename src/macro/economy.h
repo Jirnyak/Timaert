@@ -5,7 +5,7 @@
 // a good (every recipe demanded two resources while every village gathered
 // only grain), update_prices nobody could pay, TradeRoutes that minted money
 // on arrival — is GONE. The honest economy is macro/econ_day.h (the day's
-// laws over the landmark's universal Inventory) plus AGENTS: woodcutters
+// laws over the place's universal Inventory) plus AGENTS: woodcutters
 // and farmers gather (macro/npc_ai.cpp), caravans carry real cargo in their
 // own bags. Prices from STOCK arrive with the treasury increment (W2d) —
 // until then the ONE player price law below serves every trade screen.

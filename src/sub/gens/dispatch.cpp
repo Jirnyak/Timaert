@@ -54,14 +54,14 @@ SubworldMode resolve_mode(const CellContext& ctx) {
     // BEHIND a door, not the land the door stands on (sub/dgn/).
     if (ctx.dungeon.kind != DungeonRef::None) return SubworldMode::Dungeon;
     const FeatureType feature = FeatureLayer::decode(std::uint8_t(ctx.feature));
-    switch (ctx.landmark.kind) {
+    switch (ctx.place.kind) {
         case SquadType::City:    return SubworldMode::City;
         case SquadType::Village: return SubworldMode::Village;
         case SquadType::Ruin:    return SubworldMode::Ruin;
         case SquadType::Spire:   return SubworldMode::Spire;
         // Registry kinds no world places yet (Lair/Shrine/Mine/Tower): the
         // cell shows its LAND until each kind's generator module lands. It
-        // used to fall through to a `landmark.id >= 0 -> City` catch-all one
+        // used to fall through to a `place.id >= 0 -> City` catch-all one
         // line below, which meant the day a castle was placed on the map it
         // would raise a city — walls, keep and four hundred houses (GEN-5).
         // A kind with no module is a kind with no buildings, and that is the
@@ -105,7 +105,7 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
                        const Biome nbBiome[9], const Biome* nbBiome5,
                        const std::uint8_t nbFeature[9],
                        SubworldMapData& out,
-                       const SquadType* nbLandmark,
+                       const SquadType* nbPlace,
                        const int* nbTreeCount,
                        const float* nbFertility) {
     CellContext safeCtx = ctx;
@@ -145,14 +145,14 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
     }
 
     // Universal terrain flattening: one TerrainMod per neighbour, resolved
-    // from its effective landmark + feature (roads/settlements calm the
+    // from its effective place + feature (roads/settlements calm the
     // terrain they stand on — see base_generator.h). Without neighbour
-    // landmark data the centre cell still flattens itself.
+    // place data the centre cell still flattens itself.
     TerrainMod nbMods[9]{};
     for (int i = 0; i < 9; ++i) {
-        const SquadType lm = nbLandmark
-            ? nbLandmark[i]
-            : (i == 4 ? safeCtx.landmark.kind : SquadType::None);
+        const SquadType lm = nbPlace
+            ? nbPlace[i]
+            : (i == 4 ? safeCtx.place.kind : SquadType::None);
         nbMods[i] = terrain_mod_for(lm, FeatureType(safeFeature[i]));
     }
 

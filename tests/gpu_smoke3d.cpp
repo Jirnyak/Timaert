@@ -782,8 +782,8 @@ int main(int, char**)
     }
 
     // Structure meshes: a small walled settlement of instanced boxes. Extensible
-    // to any landmark -- each new structure kind is one more `type` value fed to
-    // the same pipeline, mirroring how more biomes/features/landmarks will add
+    // to any place -- each new structure kind is one more `type` value fed to
+    // the same pipeline, mirroring how more biomes/features/places will add
     // context without new engine code.
     std::vector<StructInstance> structs;
     {

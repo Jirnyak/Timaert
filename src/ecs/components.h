@@ -433,7 +433,7 @@ struct LightEmitter {
 // (mirrors fields on TS `NPC` not already covered by Position / NPCKind).
 // Pure POD; its size is stated ONLY by the assert below (84 B) — the prose here
 // said «96 bytes» long after the assert said 92, which is exactly how a number
-// that lives in two places goes stale. The home/target landmark ids draw on the ONE
+// that lives in two places goes stale. The home/target place ids draw on the ONE
 // subject-ordinal space (nextMacroSpawnOrdinal, M-37) — a home may be a city or
 // a village, and the id alone says which place it is (0 = none). The v27
 // homeIsVillage register bit died with the second id space it existed to

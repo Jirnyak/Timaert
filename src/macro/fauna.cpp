@@ -90,12 +90,12 @@ static_assert(rows_in_enum_order(kBiomeSpawnCounts, &BiomeSpawnCountRow::biome),
               "kBiomeSpawnCounts row order must mirror Biome");
 constexpr SpawnCounts kForestSpawnCounts{3, 8};
 
-// The place's own counts COLUMN wins (landmark registry faunaMin/faunaMax —
+// The place's own counts COLUMN wins (place registry faunaMin/faunaMax —
 // the ruin's 2..6 and the spire's 4..9 live there now); faunaMax 0 = the
 // ground answers. The SquadType switch that stood here was an if-chain
 // over the registry (CANON S16).
 SpawnCounts spawn_counts(const SpawnContext& ctx) {
-    const LandmarkDef& def = landmark_def(ctx.landmark);
+    const PlaceDef& def = place_def(ctx.place);
     if (def.faunaMax != 0) return {def.faunaMin, def.faunaMax};
     if (ctx.forest) return kForestSpawnCounts;
     const auto b = std::size_t(ctx.biome);
@@ -107,8 +107,8 @@ SpawnCounts spawn_counts(const SpawnContext& ctx) {
 // it states one (a town's 0 rolls no wild fauna at all: its crowd is the
 // kHabTown stripe, rolled by the settlement spawner), else the ground's.
 std::uint16_t context_bit(const SpawnContext& ctx) {
-    const LandmarkDef& def = landmark_def(ctx.landmark);
-    if (def.faunaHabitat != kLandmarkFaunaGround) return def.faunaHabitat;
+    const PlaceDef& def = place_def(ctx.place);
+    if (def.faunaHabitat != kPlaceFaunaGround) return def.faunaHabitat;
     if (ctx.forest) return kHabForest;
     return hab(ctx.biome);
 }
@@ -166,7 +166,7 @@ std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
     // row's own wildFaction — one rung, no place column above it. (M-39: the
     // registry's spawnFaction used to override this for a ruin and a spire,
     // which is how a spire's slope deer became Demonic Hordes — the very
-    // garrison-vs-game ambiguity landmark_registry.h claimed to have killed.
+    // garrison-vs-game ambiguity place_registry.h claimed to have killed.
     // A place's banner reaches its CROWD and its GARRISON, which are its
     // population; it does not reach the game on the hillside. The demons of a
     // ruin still roll demons because 18 of the 22 rows that a ruin or spire
@@ -265,20 +265,20 @@ const FaunaEntry* creature_def_from_kind(std::uint16_t kindType) {
 // ── The honest headcount (Session 16) ────────────────────────────────
 
 int fauna_cell_capacity(Biome biome, int treeCount,
-                        SquadType landmark) {
-    // The place's own cap COLUMN wins (landmark registry faunaCap — a town is
+                        SquadType place) {
+    // The place's own cap COLUMN wins (place registry faunaCap — a town is
     // the poorest hunting ground that still is one); everywhere else the
     // winning counts row caps it.
-    const LandmarkDef& def = landmark_def(landmark);
-    if (def.faunaCap != kLandmarkFaunaCapGround) return int(def.faunaCap);
+    const PlaceDef& def = place_def(place);
+    if (def.faunaCap != kPlaceFaunaCapGround) return int(def.faunaCap);
     SpawnContext ctx{};
     ctx.biome = biome;
     ctx.forest = is_forest_cell(treeCount);
-    ctx.landmark = landmark;
+    ctx.place = place;
     return int(spawn_counts(ctx).maxCount);
 }
 
-// (A hand-written City/Village/Spire scan named `landmark_kind_at` lived here
+// (A hand-written City/Village/Spire scan named `place_kind_at` lived here
 // until 2026-08-24 — the drifted second implementation of "what stands on
 // this cell". The baked index answers now, in the same priority order.)
 
@@ -301,13 +301,13 @@ int fauna_cell_capacity_at(const MacroWorld& w, int x, int y) {
     // settlement_at). Колонка runtime.squadType и есть та самая колонка
     // записи, которую читал второй читатель сетки (`cell_facts`): носитель
     // один, копий рода больше нет нигде.
-    SquadType landmark = SquadType::None;
+    SquadType place = SquadType::None;
     if (w.squads && w.store) {
         const MacroHandle who = settlement_at(*w.squads, *w.store, wx, wy);
         if (w.store->valid(who))
-            landmark = SquadType(w.store->runtime[who.slot].squadType);
+            place = SquadType(w.store->runtime[who.slot].squadType);
     }
-    return fauna_cell_capacity(biome, treeCount, landmark);
+    return fauna_cell_capacity(biome, treeCount, place);
 }
 
 } // namespace sm

@@ -18,8 +18,8 @@
 //   * a city's OWNER — City::factionIdx and Landmark::factionIdx, a direct
 //     registry index (was the kingdomIdx → kingdoms[i].id indirection);
 //   * the SUZERAIN edge — a Stance::Suzerain row of Landmark::interests (was
-//     Kingdom::capitalLandmarkId + the village's nearestCityId, then the lone
-//     column suzerainLandmarkId; since 2026-09-21 the feudal tie is a CASE of
+//     Kingdom::capitalPlaceId + the village's nearestCityId, then the lone
+//     column suzerainPlaceId; since 2026-09-21 the feudal tie is a CASE of
 //     the one interest registry, CANON S24 with both halves);
 //   * the naming LANGUAGE — derived per faction (language.h
 //     faction_language), never stored;
@@ -83,7 +83,7 @@ struct City {
 //     едет никогда (`save.cpp` не знает слова «политика»), поэтому он теперь
 //     ЛОКАЛЬНЫЙ БУФЕР `generate_macro_world` — ровно та форма, которую ЗАКОН
 //     ГЕНЕРАЦИИ разрешает прямо. Мест он больше не дублирует: живой мир
-//     спрашивает о городе СКВАД-МЕСТО (`gs.landmarks`, род 2);
+//     спрашивает о городе СКВАД-МЕСТО (`gs.places`, род 2);
 //   · `cellOwner` — ПОЛЕ НАД ТОРОМ (род 3), и оно уехало в `GameState`
 //     колонкой мира рядом со `knowledge`/`scent`, где у поля единая форма;
 //   · `mapW`/`mapH` — второй ответ на «какого размера мир» рядом с
@@ -141,7 +141,7 @@ int derive_city_spacing(const TerrainData* terrain,
 //
 // THE RETURN IS THE GENERATOR'S PLAN, NOT A LAYER OF THE WORLD: the caller
 // holds it for the length of genesis (settlement, roads, zone seeds) and
-// drops it. Nothing living reads a `City` — the world's city is a landmark.
+// drops it. Nothing living reads a `City` — the world's city is a place.
 struct SettlementSiteContext;
 std::vector<City> generate_politik(std::uint32_t seed, int mapW, int mapH,
                         const TerrainData* terrain = nullptr,

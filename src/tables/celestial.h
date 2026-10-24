@@ -4,7 +4,7 @@
 // world clock (macro/state.h WorldTime): a moon's phase is derived from the
 // absolute `day`, so nothing new is serialized and kSaveVersion does not move
 // ("derive, don't store"). The tables here are the same constexpr-array +
-// inline-accessor idiom as seasons.h / landmark_registry.h / biomes.h: adding a
+// inline-accessor idiom as seasons.h / place_registry.h / biomes.h: adding a
 // moon or a constellation is ONE row, no engine change, no if-chain.
 //
 // Ownership seam: this header is pure gameplay DATA and pure lookups with zero

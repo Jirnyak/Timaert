@@ -1,11 +1,11 @@
 #include "macro/econ_day.h"
-#include "macro/landmark_registry.h"  // строка рода — амбар рождения
+#include "macro/place_registry.h"  // строка рода — амбар рождения
 #include "macro/labour.h"   // souls_home / souls_flock — две двери душ места
 #include "macro/upkeep_window.h"   // upkeep_bill — ОДИН счёт содержания (M-140)
 
 #include "macro/economy.h"    // stock_price — ranking asks THE price law
 #include "tables/faction.h"    // монетная семья фракции — ординалы номиналов
-#include "macro/state.h"      // GameState/Landmark — ведомость пишется в место
+#include "macro/state.h"      // GameState/Place — ведомость пишется в место
 
 #include <algorithm>
 #include <bit>
@@ -349,8 +349,8 @@ int commodity_of_item(int itemIdx) {
         ? int(kBack[std::size_t(itemIdx)]) : -1;
 }
 
-void seed_landmark_inventory(Inventory& inv, int population,
-                            const LandmarkDef& row) {
+void seed_place_inventory(Inventory& inv, int population,
+                            const PlaceDef& row) {
     if (population <= 0) return;
     // Born MID-LIFE means born with LAST SEASON'S HARVEST IN THE BARN: the
     // first boundary (`upkeep_season_window`) bills a whole season of harch and

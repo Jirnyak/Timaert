@@ -8,7 +8,7 @@
 // них не остался без свидетеля при сносе (§5 п.6).
 //
 // ЧТО СНЕСЕНО И ПОЧЕМУ ОНО БЫЛО ВТОРЫМ ОТВЕТОМ. `MapSubject` нёс ХРАНИМЫЙ
-// enum рода {None, Squad, Landmark} плюс ДВА адреса, и три его двери
+// enum рода {None, Squad, Place} плюс ДВА адреса, и три его двери
 // ветвились по этому роду. Перепись 2026-10-19 назвала цену: у всех трёх
 // дверей было НОЛЬ прод-звонящих — они жили только в этом тесте, — а живые
 // читатели тех же двух вопросов читали колонки НАПРЯМУЮ в трёх местах. То
@@ -28,7 +28,7 @@
 #include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
 #include "ecs/components.h"   // MacroSpawnId — ординал слота store
-#include "macro/landmark_registry.h"
+#include "macro/place_registry.h"
 #include "macro/place_birth.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "macro/squad.h"         // actions_of + place_handle_by_ordinal
 #include "macro/state.h"
@@ -154,7 +154,7 @@ void test_verbs_are_declared_by_the_row() {
 
     // ВОЙНА — ОТДЕЛЬНЫЙ ТРЕК: через это меню место не говорит и не бьётся.
     // Тот же закон стоит `static_assert`-ом над таблицей
-    // (`landmark_registry.h`); здесь он проверяется НА ВЫХОДЕ ДВЕРИ.
+    // (`place_registry.h`); здесь он проверяется НА ВЫХОДЕ ДВЕРИ.
     CHECK((actions_of(st, city) & (kMapActTalk | kMapActAttack)) == 0
               && (actions_of(st, sp) & (kMapActTalk | kMapActAttack)) == 0,
           "ни одно стоящее не предлагает разговор или удар этим меню");

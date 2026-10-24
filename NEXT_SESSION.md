@@ -14,8 +14,8 @@
    `AIBehaviour` целиком внутри модуля `ai_untyped`); гейтов архетипа в думке
    3 → 0.
 2. **Аукцион дневной ротации КАЗНЁН** (−~1250 строк): `rotate_worker_squads`,
-   `run_auction`, `LandmarkCrewRow`, `crews[8]`+`crewCount`, `CrewGate`,
-   `kMaxCrewInstances`, `bids[10]` мертвы; `LandmarkDef` 112 → 80 Б.
+   `run_auction`, `PlaceCrewRow`, `crews[8]`+`crewCount`, `CrewGate`,
+   `kMaxCrewInstances`, `bids[10]` мертвы; `PlaceDef` 112 → 80 Б.
    **ДЫРА НАЗВАНА: рабочие сквады не рождаются вовсе до модуля места
    (ломоть 5)** — костыль не ставить (§1). НЕ путать с аукционом найма
    M-38/M-40 — тот не построен и жив как замысел.
@@ -64,7 +64,7 @@
    колонку рантайма.
 4. **Ось +`Capital` +`Dragon`**: строки `SquadType@src/tables/squad_type.h`
    (вердикт №7 2026-10-22; архетип `Hero` заселяется `Dragon`), строки в
-   `kLandmarks` и `kAiModuleRows` (nullptr/модуль), static_assert'ы отрезков
+   `kPlaces` и `kAiModuleRows` (nullptr/модуль), static_assert'ы отрезков
    поправить. Компилятор назовёт все switch без default.
 5. **Течь `kNpcTypeDefs` в думке — 3 чтения** (`npc_ai.cpp`: лестница
    `untyped_squad_behaviour` :3345-регион и два `combatant_behaviour` в

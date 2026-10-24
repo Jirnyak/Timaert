@@ -102,14 +102,14 @@ sm::sub::CellResolver settlement_resolver(sm::SquadType kind,
         c.macroTemperature = 0.5f;
         c.biome = sm::Biome::Meadow;
         c.feature = sm::FT_None;
-        c.landmark.id = -1;
-        c.landmark.size = 0;
-        c.landmark.kind = sm::SquadType::None;
+        c.place.id = -1;
+        c.place.size = 0;
+        c.place.kind = sm::SquadType::None;
         c.treeCount = 0;
         if (cx == 0 && cy == 0) {
-            c.landmark.id = 7;
-            c.landmark.size = pop;
-            c.landmark.kind = kind;
+            c.place.id = 7;
+            c.place.size = pop;
+            c.place.kind = kind;
         }
         c.seed = sm::sub::cell_seed(0x5E771EDu, cx, cy);
         return c;
@@ -160,7 +160,7 @@ std::array<float, kWallBins> outer_wall_profile(
 }
 
 Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
-               sm::SquadType landmark, int pop, std::uint32_t seed,
+               sm::SquadType place, int pop, std::uint32_t seed,
                const sm::WorldTime& now) {
     Spread s{};
     auto worldArena_ = sm::test::make_scene_arena();
@@ -173,7 +173,7 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
     sm::sub::spawn_cell_npcs(objs,
                              sm::Biome::Meadow,
                              /*treeCount*/0,
-                             landmark,
+                             place,
                              /*danger*/0,
                              /*depositsNear*/0,
                              mgr,
@@ -182,13 +182,13 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
                              /*worldSeed*/seed,
                              std::uint16_t(sm::faction_index("empire")),
                              pop,
-                             /*landmarkSubjectId*/-1,
+                             /*placeSubjectId*/-1,
                              /*macroCellX*/0, /*macroCellY*/0,
                              /*faunaCount*/-1,
                              &homeSouls,
                              now);
 
-    const bool city = landmark == sm::SquadType::City;
+    const bool city = place == sm::SquadType::City;
     const float radius = sm::sub::settlement_population_radius(city, pop);
     // The furthest a place of this size may ever reach (sub/city_layout.h).
     // For a village that is its palisade, which stands OUTSIDE the guaranteed

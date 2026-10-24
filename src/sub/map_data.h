@@ -10,7 +10,7 @@
 #include "core/table_guard.h"
 #include "tables/biomes.h"
 #include "macro/features.h"
-#include "macro/landmark_registry.h"   // landmark_def — транзит city_layout
+#include "macro/place_registry.h"   // place_def — транзит city_layout
                                        //   (нитку снимет M-38, не ломтик F)
 // THE step law: the subworld prices ground in the same units the macro march
 // does (biome beds, feature beds, the canopy term, speed = base/√weight).
@@ -266,8 +266,8 @@ enum class SubworldMode : std::uint8_t {
     Dungeon,
 };
 
-// The landmark vocabulary is SquadType (macro/landmark_registry.h) — the
-// one registry enum. A private five-value "CellLandmarkKind" lived here until
+// The place vocabulary is SquadType (macro/place_registry.h) — the
+// one registry enum. A private five-value "CellPlaceKind" lived here until
 // 2026-08-24 (second copy; the fauna router carried a third), joined by a
 // hand-written bridge in engine.cpp — and Lair/Shrine/Mine/Tower physically
 // could not reach the microworld (canon-audit C1).
@@ -305,13 +305,13 @@ struct DungeonRef {
     float footHy = 0.0f;
 };
 
-// The landmark standing on a cell — ONE payload, not a field per fact
+// The place standing on a cell — ONE payload, not a field per fact
 // (owner ruling 2026-08-14: at two tenants ad-hoc fields were fine, at five
-// they fold). A new landmark fact is a member here, not another CellContext
+// they fold). A new place fact is a member here, not another CellContext
 // column.
-struct LandmarkContext {
+struct PlaceContext {
     SquadType kind = SquadType::None;
-    int  id   = -1;   // the landmark's id within its kind; -1 = none
+    int  id   = -1;   // the place's id within its kind; -1 = none
     // POPULATION, for every kind (§42: the spire's spell tier used to ride
     // in here — see `tier` below, its own field now).
     int  size = 0;
@@ -319,7 +319,7 @@ struct LandmarkContext {
     int  tier = 0;
     // Owning faction (registry index; -1 = none / unowned — resolves to the
     // free folk through faction_or_freefolk). The kingdoms died 2026-09-11;
-    // the landmark's own column rides down here so the citizens' faction is
+    // the place's own column rides down here so the citizens' faction is
     // the place's, instead of every settlement fielding imperial guards.
     int  factionIdx = -1;
     // Consumed (today: a depleted spire — the orb is gone and its light with
@@ -399,7 +399,7 @@ struct CellContext {
     // (owner report 2026-08-29). Meadow default keeps bare fixtures green.
     Biome groundBiome = Biome::Meadow;
     FeatureType feature;
-    LandmarkContext landmark{};
+    PlaceContext place{};
     std::uint32_t seed;
     // Macro TreeLayer count for this cell (0..16384); -1 = unknown — the
     // generator re-derives it from biome/features (tests, bare resolvers).
@@ -434,8 +434,8 @@ struct CellContext {
     DungeonRef dungeon{};
 };
 
-// ЗДЕСЬ СТОЯЛ `effective_landmark` — ВТОРОЙ ОТВЕТ НА «КАКОГО РОДА КЛЕТКА».
-// Он фабриковал `SquadType::City` из одного ординала (`landmark.id >= 0`), а
+// ЗДЕСЬ СТОЯЛ `effective_place` — ВТОРОЙ ОТВЕТ НА «КАКОГО РОДА КЛЕТКА».
+// Он фабриковал `SquadType::City` из одного ординала (`place.id >= 0`), а
 // его собственный комментарий оправдывал это тем, что он «зеркалит ветку
 // `resolve_mode`» — ветку, СНЕСЁННУЮ ещё по GEN-5 (некролог стоит на месте, в
 // `resolve_mode@src/sub/gens/dispatch.cpp`: «the day a castle was placed on
@@ -444,7 +444,7 @@ struct CellContext {
 // где род клетки ВЫДУМЫВАЛСЯ.
 //
 // В продакшене ветка была недостижима ПО ПОСТРОЕНИЮ, и это свойство пакета:
-// `.type` и `.id` у `LandmarkFacts` пишутся ОДНОЙ строкой из ОДНОЙ ветки
+// `.type` и `.id` у `PlaceFacts` пишутся ОДНОЙ строкой из ОДНОЙ ветки
 // (`cell_facts@src/macro/cell_facts.cpp`, единственный писатель в мире, под
 // `lmId != 0`), а род там берётся у `settlement_at@src/macro/squad_index.h`,
 // которая сама гейтится архетипом Place ⇒ `None` не отдаёт никогда.
@@ -495,7 +495,7 @@ enum class InteractId : std::uint8_t {
     // no consequence proves the table carries flavour as cheaply as force.
     Read,
     // A household chest: what it holds is not invented, it is TAKEN from the
-    // store of the place that owns the house (owner ruling W2: a landmark's
+    // store of the place that owns the house (owner ruling W2: a place's
     // store IS its inventory), so an emptied town has empty chests and a
     // chest cannot be farmed by walking out and back in.
     Search,
@@ -865,7 +865,7 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
                   kWalkTileTransparent},
     // SpireOrb: the spell on the crown — a waist-high plinth (solid: you walk
     // around a shrine, not through it) burning the spire's cold blue, the
-    // same tint the macro map glows at night (landmark_registry.h spire row,
+    // same tint the macro map glows at night (place_registry.h spire row,
     // 0xA86CFF family). Lantern-law light: the emissive head reads from any
     // distance, the point light is the row below.
     { Structure::SpireOrb, "",     0.8f, 1.6f,  0.0f, true,  "",

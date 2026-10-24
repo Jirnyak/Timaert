@@ -97,9 +97,9 @@ CellContext make_city_ctx(std::uint32_t seed) {
     ctx.macroHeight = 0.64f;
     ctx.biome = Meadow;
     ctx.feature = FT_None;
-    ctx.landmark.id = 101;
-    ctx.landmark.size = 2000;
-    ctx.landmark.kind = SquadType::City;
+    ctx.place.id = 101;
+    ctx.place.size = 2000;
+    ctx.place.kind = SquadType::City;
     ctx.seed = seed;
     return ctx;
 }
@@ -111,8 +111,8 @@ CellContext make_house_ctx(float footHx, float footHy, std::int8_t level) {
     ctx.macroHeight = 0.62f;
     ctx.biome = Meadow;
     ctx.feature = FT_None;
-    ctx.landmark.id = -1;
-    ctx.landmark.size = 0;
+    ctx.place.id = -1;
+    ctx.place.size = 0;
     ctx.seed = 0xD00DCAFEu;
     ctx.dungeon.kind = DungeonRef::House;
     ctx.dungeon.level = level;
@@ -447,7 +447,7 @@ void generate_with_trees(const CellContext& ctx, int treeCount,
         nbT[i] = treeCount;
     }
     dispatch_generate(ctx, nbH, nbB, /*nbBiome5*/nullptr, nbF, out,
-                      /*nbLandmark*/nullptr, nbT, /*nbFertility*/nullptr);
+                      /*nbPlace*/nullptr, nbT, /*nbFertility*/nullptr);
 }
 
 void test_revisit_is_regeneration() {
@@ -457,8 +457,8 @@ void test_revisit_is_regeneration() {
     ctx.macroHeight = 0.58f;
     ctx.biome = Meadow;
     ctx.feature = FT_None;
-    ctx.landmark.id = -1;
-    ctx.landmark.size = 0;
+    ctx.place.id = -1;
+    ctx.place.size = 0;
     ctx.seed = 0x7A1DF00Du;
 
     // ОБА СЧЁТА НИЖЕ ЛЕСНОГО ПОРОГА И БЕРУТСЯ ИЗ ТАБЛИЦЫ, а не с потолка:

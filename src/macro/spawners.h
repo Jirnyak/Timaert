@@ -44,11 +44,11 @@ enum class RoadLink : std::uint8_t {
     CityConnections,
     // Village → its own city (Village::nearestCityId).
     VillageHomeCity,
-    // Village → the closest landmark of its province within reach (spires
-    // today; ruins etc. join by being appended to the landmark list, not by
+    // Village → the closest place of its province within reach (spires
+    // today; ruins etc. join by being appended to the place list, not by
     // code). The nearest-TARGET choice is the old spiral's surviving job;
     // the LAYING is A* only.
-    VillageNearestLandmark,
+    VillageNearestPlace,
 };
 struct RoadClassDef {
     FeatureType surface;   // the bed it lays (feature_def(surface).bedWeight)
@@ -57,7 +57,7 @@ struct RoadClassDef {
 inline constexpr RoadClassDef kRoadClasses[] = {
     {FT_Road,     RoadLink::CityConnections},
     {FT_DirtRoad, RoadLink::VillageHomeCity},
-    {FT_DirtRoad, RoadLink::VillageNearestLandmark},
+    {FT_DirtRoad, RoadLink::VillageNearestPlace},
 };
 
 // One-time road tracing between connected cities (the FT_Road rows above).
@@ -89,8 +89,8 @@ struct VillageRoadSite {
 };
 
 // Dirt lanes (the FT_DirtRoad rows of kRoadClasses): for every village, a
-// lane to its home city and one to the nearest landmark within
-// `landmarkReach` cells (derive it from the world's own distance law —
+// lane to its home city and one to the nearest place within
+// `placeReach` cells (derive it from the world's own distance law —
 // derive_city_spacing — not from a constant). Runs AFTER stone is already in
 // `features`, over the same cost grid the stone pass used (water rejected,
 // canopy priced), so lanes climb around ridges and bogs at honest cost and
@@ -102,8 +102,8 @@ struct VillageRoadSite {
 // that does not cover it.
 int trace_dirt_roads(FeatureLayer& features, const TerrainData& td,
                      const std::vector<VillageRoadSite>& villages,
-                     const std::vector<RoadSite>& landmarks,
-                     int landmarkReach,
+                     const std::vector<RoadSite>& places,
+                     int placeReach,
                      const TreeLayer* treeLayer = nullptr);
 
 // Build the FeatureLayer from terrain + roads. Features are the MAN-MADE

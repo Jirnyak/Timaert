@@ -425,13 +425,13 @@ void name_creature_in_loan(MacroStockKey& key, const CreatureRef& head) {
     key.detailLevel = head.level;
 }
 
-void spawn_landmark_population(SubObjects& objs,
-                               SquadType landmark,
+void spawn_place_population(SubObjects& objs,
+                               SquadType place,
                                const SeamlessSubworldManager& mgr,
                                std::uint32_t seed,
                                std::uint32_t worldSeed,
                                std::uint16_t settlementFaction,
-                               int landmarkPop,
+                               int placePop,
                                const Inventory* homeSouls,
                                int originX,
                                int originY,
@@ -442,7 +442,7 @@ void spawn_landmark_population(SubObjects& objs,
     // `!= City && != Village` that stood here outlived the refactor that
     // universalised the record underneath it, and no test reddened because
     // zero bodies is a legal count.
-    const LandmarkDef& def = landmark_def(landmark);
+    const PlaceDef& def = place_def(place);
     // ДВА ЧИСЛА, ДВА СМЫСЛА (переворот v122).
     //   `pop`   — ПАСТВА места (worked-число фичи: дома + ушедшие в поле). Она
     //             отвечает за ГЕОМЕТРИЮ: стены строились на всех, и город с
@@ -450,7 +450,7 @@ void spawn_landmark_population(SubObjects& objs,
     //   `heads` — ДОМАШНИЕ ДУШИ, головы инвентаря места. Только они
     //             ВОПЛОЩАЮТСЯ: ушедшие в поле стоят на карте своими сквадами,
     //             и воплотить их здесь значило бы поставить одну душу дважды.
-    const int pop = std::max(0, landmarkPop);
+    const int pop = std::max(0, placePop);
     if (pop == 0 || def.crowdHabitat == 0 || homeSouls == nullptr) return;
     const int heads = creature_count(*homeSouls);
     if (heads == 0) return;
@@ -462,7 +462,7 @@ void spawn_landmark_population(SubObjects& objs,
     // улице, и клампить их числом, включающим ушедших в поле, значило бы
     // запирать в домах людей, которых в месте нет.
     const int reserve = interior_reserve_for_cell(
-        mgr.structures(), landmark, worldSeed,
+        mgr.structures(), place, worldSeed,
         int(populationKey.cellX), int(populationKey.cellY),
         float(originX), float(originY), heads, now);
     const int target = std::max(0, heads - reserve);
@@ -485,7 +485,7 @@ void spawn_landmark_population(SubObjects& objs,
     // population (the walls were built for everyone), never of the street
     // remainder: souls at their hearths do not shrink the town.
     const float populationRadius =
-        settlement_population_radius(landmark == SquadType::City, pop);
+        settlement_population_radius(place == SquadType::City, pop);
     // …and the shape the generator actually built, measured once off the
     // ground. The scalar above stays the FLOOR (an unwalled hamlet has no
     // masonry to measure, and a place whose walls did not reach still holds
@@ -508,7 +508,7 @@ void spawn_landmark_population(SubObjects& objs,
     // квартал — свойство города, а не сословия.
     float keepX = centerX, keepY = centerY;
     bool haveKeep = false;
-    if (landmark == SquadType::City) {
+    if (place == SquadType::City) {
         const Structure* keep = nullptr;
         for (const Structure& st : mgr.structures()) {
             if (st.kind != Structure::House) continue;
@@ -595,7 +595,7 @@ void spawn_landmark_population(SubObjects& objs,
             BodyLoan::from(MacroStock::Population, key));
     }
     if (refused > 0) {
-        const std::string_view id = landmark_def(landmark).id;
+        const std::string_view id = place_def(place).id;
         std::fprintf(stderr,
                      "[spawn] WARN %.*s crowd at cell (%d,%d): %d of %d "
                      "bodies found no ground\n",
@@ -813,7 +813,7 @@ int doors_in_cell(const std::vector<Structure>& structures,
 
 int interior_household_share(std::uint32_t worldSeed, int cellX, int cellY,
                              std::uint16_t ordinal, int level,
-                             int landmarkPop, int doorsInCell,
+                             int placePop, int doorsInCell,
                              const WorldTime& now) {
     const std::uint32_t dSeed = dungeon_scene_seed(
         worldSeed, cellX, cellY, ordinal, std::int8_t(level));
@@ -827,8 +827,8 @@ int interior_household_share(std::uint32_t worldSeed, int cellX, int cellY,
     // A hamlet of few doors therefore packs them; a town that got all its
     // houses runs at the layout's own figure.
     const int mean = doorsInCell > 0
-        ? std::max(1, landmarkPop / doorsInCell)
-        : hearth_souls_mean(landmarkPop);
+        ? std::max(1, placePop / doorsInCell)
+        : hearth_souls_mean(placePop);
     const int souls = 1 + int((dSeed >> 8) % std::uint32_t(2 * mean - 1));
     // …and HOW MANY OF THEM ARE IN at this hour. The same population, moved
     // by the sun between the street and the hearth (city_layout.h
@@ -843,13 +843,13 @@ int interior_household_share(std::uint32_t worldSeed, int cellX, int cellY,
 // the THRONG is outside — Σ over storeys + street == pop, and every term
 // re-derives from the LIVE number, so a cleared floor thins the whole
 // place the way one organism thins.
-int interior_garrison_share(SquadType landmark, int landmarkPop,
+int interior_garrison_share(SquadType place, int placePop,
                             int storeys, int level) {
-    if (landmarkPop <= 0 || storeys <= 0 || level < 0 || level >= storeys) {
+    if (placePop <= 0 || storeys <= 0 || level < 0 || level >= storeys) {
         return 0;
     }
-    const LandmarkDef& def = landmark_def(landmark);
-    const int inside = landmarkPop >> def.crowdInsideShift;
+    const PlaceDef& def = place_def(place);
+    const int inside = placePop >> def.crowdInsideShift;
     return inside / storeys + (level < inside % storeys ? 1 : 0);
 }
 
@@ -867,11 +867,11 @@ int interior_garrison_share(SquadType landmark, int landmarkPop,
 namespace {
 template <typename Visit>   // Visit(ordinal, level, share) -> true = стоп
 void walk_interior_shares(const std::vector<Structure>& structures,
-                          SquadType landmark,
+                          SquadType place,
                           std::uint32_t worldSeed,
                           int cellX, int cellY,
                           float originX, float originY,
-                          int landmarkPop, const WorldTime& now,
+                          int placePop, const WorldTime& now,
                           Visit&& visit) {
     const int doors = doors_in_cell(structures, originX, originY);
     const float x1 = originX + float(kCellSize);
@@ -892,20 +892,20 @@ void walk_interior_shares(const std::vector<Structure>& structures,
         if (row.householdAbove) {
             if (visit(s.tag, 0,
                       interior_household_share(worldSeed, cellX, cellY,
-                                               s.tag, 0, landmarkPop,
+                                               s.tag, 0, placePop,
                                                doors, now))) return;
             if (dungeon_has_upper(ref)) {
                 if (visit(s.tag, 1,
                           interior_household_share(worldSeed, cellX, cellY,
-                                                   s.tag, 1, landmarkPop,
+                                                   s.tag, 1, placePop,
                                                    doors, now))) return;
             }
         } else if (row.placeGarrison
-                   && landmark_def(landmark).crowdHabitat != 0) {
+                   && place_def(place).crowdHabitat != 0) {
             const int storeys = dungeon_storey_count(ref);
             for (int level = 0; level < storeys; ++level) {
                 if (visit(s.tag, level,
-                          interior_garrison_share(landmark, landmarkPop,
+                          interior_garrison_share(place, placePop,
                                                   storeys, level))) return;
             }
         }
@@ -914,14 +914,14 @@ void walk_interior_shares(const std::vector<Structure>& structures,
 } // namespace
 
 int interior_reserve_for_cell(const std::vector<Structure>& structures,
-                              SquadType landmark,
+                              SquadType place,
                               std::uint32_t worldSeed,
                               int cellX, int cellY,
                               float originX, float originY,
-                              int landmarkPop, const WorldTime& now) {
+                              int placePop, const WorldTime& now) {
     int reserve = 0;
-    walk_interior_shares(structures, landmark, worldSeed, cellX, cellY,
-                         originX, originY, landmarkPop, now,
+    walk_interior_shares(structures, place, worldSeed, cellX, cellY,
+                         originX, originY, placePop, now,
                          [&](std::uint16_t, int, int share) {
                              reserve += share;
                              return false;
@@ -936,12 +936,12 @@ int interior_reserve_for_cell(const std::vector<Structure>& structures,
     //
     // The door-open path pays the same respect from its own side, clamping its
     // household by the LIVE stock — so an emptied town opens on empty houses.
-    return std::min(reserve, std::max(0, landmarkPop));
+    return std::min(reserve, std::max(0, placePop));
 }
 
 InteriorSegment interior_segment_for_door(
     const std::vector<Structure>& structures,
-    SquadType landmark,
+    SquadType place,
     std::uint32_t worldSeed,
     int cellX, int cellY,
     float originX, float originY,
@@ -949,7 +949,7 @@ InteriorSegment interior_segment_for_door(
     std::uint16_t ordinal, int level) {
     InteriorSegment seg{};
     int prefix = 0;
-    walk_interior_shares(structures, landmark, worldSeed, cellX, cellY,
+    walk_interior_shares(structures, place, worldSeed, cellX, cellY,
                          originX, originY, headsTotal, now,
                          [&](std::uint16_t ord, int lvl, int share) {
                              if (ord == ordinal && lvl == level) {
@@ -1017,7 +1017,7 @@ int spawn_dungeon_residents(SubObjects& objs,
     if (homeSouls == nullptr) return 0;
     if (floorCatalog.empty()) {
         std::fprintf(stderr,
-                     "[spawn] WARN interior of landmark %d: empty floor "
+                     "[spawn] WARN interior of place %d: empty floor "
                      "catalog — %d residents refused\n",
                      int(populationKey.subject), count);
         return 0;
@@ -1026,7 +1026,7 @@ int spawn_dungeon_residents(SubObjects& objs,
     FloorDraw draw(floorCatalog.size());
     // ЖИЛЕЦ — ГОЛОВА СВОЕГО ОТРЕЗКА [segmentStart, segmentStart + count)
     // той же детерминированной последовательности, которую улица ПРОПУСКАЕТ
-    // (`seen < reserve` в spawn_landmark_population): род, уровень и лицо —
+    // (`seen < reserve` в spawn_place_population): род, уровень и лицо —
     // ФАКТ ГОЛОВЫ, как на площади; займ называет ИМЕННО эту голову. Ролл
     // рода (pick_crowd_row) здесь уничтожен — душа лежит в мире записью, и
     // выдумывать её род на каждом входе было побочной системой (вердикт
@@ -1137,7 +1137,7 @@ int spawn_dungeon_vermin(SubObjects& objs,
     SpawnContext sctx{};
     sctx.biome = biome;
     sctx.forest = is_forest_cell(treeCount);
-    sctx.landmark = tableKind;
+    sctx.place = tableKind;
     sctx.danger = danger;
     std::uint32_t rngState = seed ^ 0xCE11A5u;
     auto picks = roll_spawns(sctx, rngState);
@@ -1191,7 +1191,7 @@ void clear_subworld_world_entities(SubObjects& objs) {
 void spawn_cell_npcs(SubObjects& objs,
                      Biome biome,
                      int treeCount,
-                     SquadType landmark,
+                     SquadType place,
                      std::uint8_t danger,
                      std::uint8_t depositsNear,
                      const SeamlessSubworldManager& mgr,
@@ -1200,8 +1200,8 @@ void spawn_cell_npcs(SubObjects& objs,
                      std::uint32_t cellSeed,
                      std::uint32_t worldSeed,
                      std::uint16_t settlementFaction,
-                     int landmarkPop,
-                     int landmarkSubjectId,
+                     int placePop,
+                     int placeSubjectId,
                      int macroCellX,
                      int macroCellY,
                      int faunaCount,
@@ -1223,7 +1223,7 @@ void spawn_cell_npcs(SubObjects& objs,
     SpawnContext townCtx{};
     townCtx.biome = biome;
     townCtx.forest = is_forest_cell(treeCount);
-    townCtx.landmark = landmark;
+    townCtx.place = place;
     townCtx.danger = danger;
     townCtx.depositsNear = depositsNear;
     // ОДИН ПУТЬ ВОПЛОЩЕНИЯ: инвентарь существ места (вердикт владельца
@@ -1233,10 +1233,10 @@ void spawn_cell_npcs(SubObjects& objs,
     // тела на паству 6 272 (1.88×, 72 % капа тел одним городом), и ни один
     // свидетель этого не видел, потому что «citizens > 0» верно и при
     // двойном счёте.
-    spawn_landmark_population(objs, landmark, mgr, cellSeed, worldSeed,
+    spawn_place_population(objs, place, mgr, cellSeed, worldSeed,
                               settlementFaction,
-                              landmarkPop, homeSouls, originX, originY,
-                              MacroStockKey{landmarkSubjectId,
+                              placePop, homeSouls, originX, originY,
+                              MacroStockKey{placeSubjectId,
                                             std::int16_t(macroCellX),
                                             std::int16_t(macroCellY)},
                               now);
@@ -1248,7 +1248,7 @@ void spawn_cell_npcs(SubObjects& objs,
     SpawnContext sctx{};
     sctx.biome = biome;
     sctx.forest = is_forest_cell(treeCount);
-    sctx.landmark = landmark;
+    sctx.place = place;
     sctx.danger = danger;
     std::uint32_t rngState = cellSeed ^ 0xFAEAu;
     auto picks = roll_spawns(sctx, rngState);

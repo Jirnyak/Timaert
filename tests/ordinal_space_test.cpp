@@ -19,7 +19,7 @@
 //     испорченный справочник умеет только ПРОМОЛЧАТЬ, и негативный контроль
 //     ниже портит его руками.
 //     НОСИТЕЛЬ ЭТОГО ЗАКОНА МЕНЯЛСЯ ДВАЖДЫ, А ЗАКОН НЕТ: append-only вектор
-//     мест (`landmark_index_by_id`, умер со строкой места) → порядок закона,
+//     мест (`place_index_by_id`, умер со строкой места) → порядок закона,
 //     который звонящий приносил С СОБОЙ отдельным параметром (умер с M-271,
 //     потому что был ВТОРОЙ дверью одного вопроса) → справочник у эмитента.
 //     Прежняя редакция этого свидетеля охраняла «скан-фолбэк прощает
@@ -125,7 +125,7 @@ void test_one_space_for_places_and_squads() {
               && place_handle_by_ordinal(*store,
                                          std::uint32_t(placeB)).slot == b.slot,
           "place_handle_by_ordinal находит оба места при номерах вперемешку "
-          "со сквадами (плотности landmarks[id-1] больше нет)");
+          "со сквадами (плотности places[id-1] больше нет)");
     CHECK(!store->valid(place_handle_by_ordinal(*store, 0u))
               && !store->valid(place_handle_by_ordinal(*store, 0xFFFFFFFFu))
               && !store->valid(place_handle_by_ordinal(*store, squadOrdinal)),

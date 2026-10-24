@@ -106,7 +106,7 @@ GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
     return gs;
 }
 
-// ── Politik → landmark bridge ────────────────────────────────
+// ── Politik → place bridge ────────────────────────────────
 //
 // `generate_politik()` knows where capitals + cities sit but not how
 // they relate to the player-facing `Settlement` / `Village` records the
@@ -124,7 +124,7 @@ GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
 // became bodies (ломтик F): there is no list of its own to clear — a second
 // call births a second world on top of the first, and the one caller
 // (genesis) runs it on a freshly born store.
-void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
+void populate_places_from_politik(GameState& gs, MacroStore& st,
                                      const std::vector<City>& cities,
                                      const TerrainData& terrain,
                                      TreeLayer& trees,
@@ -189,9 +189,9 @@ void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
         // town has stocks to live on while the first caravans find their legs.
         // (The old EconomyState "archetype" strings died with it, W2b-4 —
         // what a town actually HAS now lives in this one inventory.)
-        seed_landmark_inventory(
+        seed_place_inventory(
             st.inventory[slot].inv, souls,
-            landmark_def(SquadType(st.runtime[slot].squadType)));
+            place_def(SquadType(st.runtime[slot].squadType)));
         const int id = int(st.spawnId[slot].index);
         cityRefs.push_back(CityRef{id, c.x, c.y, c.factionIdx});
         if (c.isCapital && c.factionIdx >= 0)
@@ -337,9 +337,9 @@ void populate_landmarks_from_politik(GameState& gs, MacroStore& st,
             if (!st.valid(vh)) continue;   // отказ капа уже прозвучал вслух
             const std::uint16_t vslot = vh.slot;
             settle_souls(gs, st, vslot, vilSouls);
-            seed_landmark_inventory(
+            seed_place_inventory(
                 st.inventory[vslot].inv, vilSouls,
-                landmark_def(SquadType(st.runtime[vslot].squadType)));
+                place_def(SquadType(st.runtime[vslot].squadType)));
             set_relation(st, int(st.spawnId[vslot].index), suzerainId,
                          Stance::Suzerain);
         }

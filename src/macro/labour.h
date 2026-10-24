@@ -28,7 +28,7 @@
 #include "macro/state.h"   // worked_read — паства
 #include "macro/store.h"   // склад места — колонка его ТЕЛА (слот)
 #include "macro/world_row.h"          // count_human_souls / creature_count
-#include "macro/landmark_registry.h"  // bornPopBase — признак данжа
+#include "macro/place_registry.h"  // bornPopBase — признак данжа
 #include "macro/fauna.h"              // weakest_crowd_kind — душа данжа
 
 namespace sm {
@@ -77,7 +77,7 @@ inline int souls_flock(const GameState& gs, const MacroStore& st,
                        std::uint16_t slot) {
     const SquadType kind = SquadType(st.runtime[slot].squadType);
     const auto& c = st.cell[slot];
-    return landmark_def(kind).bornPopBase == 0
+    return place_def(kind).bornPopBase == 0
         ? worked_read(gs, ecs::cell_x(c, gs.mapW), ecs::cell_y(c, gs.mapW))
         : creature_count(st.inventory[slot].inv);
 }
@@ -102,7 +102,7 @@ inline int settle_souls(GameState& gs, MacroStore& st, std::uint16_t slot,
     if (souls <= 0) return 0;
     Inventory& store = st.inventory[slot].inv;
     const SquadType placeKind = SquadType(st.runtime[slot].squadType);
-    if (landmark_def(placeKind).bornPopBase != 0) {
+    if (place_def(placeKind).bornPopBase != 0) {
         const NPCType kind = weakest_crowd_kind(placeKind);
         if (kind == NPCType::Count) return 0;   // у рода нет толпы — нет и душ
         return creatures_push_stack(store, kind,

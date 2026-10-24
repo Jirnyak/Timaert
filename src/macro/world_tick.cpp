@@ -13,8 +13,8 @@
 #include "macro/world_tick.h"
 #include "macro/econ_day.h"
 #include "macro/labour.h"   // souls_home / souls_flock — две двери душ места
-#include "macro/landmark_iter.h"  // for_each_place — обход мест по слотам
-#include "macro/squad.h"        // record_landmark_fact — летопись места
+#include "macro/place_iter.h"  // for_each_place — обход мест по слотам
+#include "macro/squad.h"        // record_place_fact — летопись места
 #include "macro/currency.h"
 #include "macro/fauna.h"
 #include "macro/macro_stock.h"
@@ -68,7 +68,7 @@ namespace {
 //
 // Благополучие теперь ЧИТАЕТСЯ здесь, а пишется там — один писатель на
 // величину, как и было, только дверь другая.
-void settle_landmark_day(GameState& gs, MacroStore& st, std::uint16_t slot,
+void settle_place_day(GameState& gs, MacroStore& st, std::uint16_t slot,
                          int day, EconFactSink sink, void* user) {
     (void)day;   // сутки больше не ветвятся: границу судит одна дверь мира
     // Плечо сквада — колонки его ТЕЛА (ломтик F): склад, счёт нужд и
@@ -150,19 +150,19 @@ void tithe_daily_(GameState& gs, MacroStore& st, int day) {
     }
 }
 
-// The pure econ steps are landmark-blind (they see one Inventory); this relay
-// stamps the landmark id onto every fact on its way to the listener — the
+// The pure econ steps are place-blind (they see one Inventory); this relay
+// stamps the place id onto every fact on its way to the listener — the
 // daily tick is the ONE caller that knows whose store it handed in.
 struct EconFactRelay {
     EconFactSink sink = nullptr;
     void* user = nullptr;
-    int landmarkId = -1;
+    int placeId = -1;
 };
 
 void relay_econ_fact_(void* user, const EconFact& fact) {
     const auto* r = static_cast<const EconFactRelay*>(user);
     EconFact stamped = fact;
-    stamped.landmarkId = r->landmarkId;
+    stamped.placeId = r->placeId;
     r->sink(r->user, stamped);
 }
 
@@ -228,7 +228,7 @@ void tick_squads_day_(GameState& gs, MacroStore& st, int day,
         // летопись голода пишется там же, где суд.
         // (Дань ушла из пер-местного дня: её ведёт один проход пула
         // феодальных рёбер tithe_daily_ — v121, род 6.)
-        settle_landmark_day(gs, st, slot, day, rs, ru);
+        settle_place_day(gs, st, slot, day, rs, ru);
     });
 }
 
@@ -253,7 +253,7 @@ void tick_player_daily_(PlayerState& p) {
 // — the cell_facts precedent: the score's source is inherently per-kind
 // context, and it is recomputed rather than stored so the save never
 // carries a second copy of what the world already knows.
-static int landmark_context_score(const MacroWorld& w, int x, int y) {
+static int place_context_score(const MacroWorld& w, int x, int y) {
     // Тир орба — ОДИН вывод на весь мир (spire_orb@src/macro/spires.h,
     // M-233 п.8): здесь стояло ВТОРОЕ его написание, побайтово то же, что в
     // сборщике фактов клетки. Выкачанный шпиль забыл свой спелл, поэтому
@@ -269,7 +269,7 @@ void regrow_dungeon_populations(const MacroWorld& w, MacroStore& st, int day) {
     const GameState& gs = *w.gs;
     for_each_place(st, [&](std::uint16_t slot) {
         const SquadType kind = SquadType(st.runtime[slot].squadType);
-        const LandmarkDef& def = landmark_def(kind);
+        const PlaceDef& def = place_def(kind);
         if (def.bornPopBase == 0) return;   // settlements keep their own law
         if (souls_flock(gs, st, slot) <= 0) return;  // wiped clean stays dead
         const int id = int(st.spawnId[slot].index);
@@ -278,7 +278,7 @@ void regrow_dungeon_populations(const MacroWorld& w, MacroStore& st, int day) {
         const int y = ecs::cell_y(st.cell[slot], gs.mapW);
         const int mean = int(def.bornPopBase)
                        + int(def.bornPopPerScore)
-                             * landmark_context_score(w, x, y);
+                             * place_context_score(w, x, y);
         if (souls_flock(gs, st, slot) < mean) {
             // Отросшая душа данжа — ГОЛОВА его толпы (переворот v122,
             // вердикт 3): слабейшая строка полосы crowdHabitat, тем же

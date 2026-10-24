@@ -7,7 +7,7 @@
 // loop are a rendering artifact and are skipped), and writes per-day TSV:
 //
 //   <out>/world_<seed>.tsv     one row per day: totals + per-commodity flows
-//   <out>/landmarks_<seed>.tsv one row per landmark per day: pop/wellbeing/stocks
+//   <out>/places_<seed>.tsv one row per place per day: pop/wellbeing/stocks
 //
 // Usage: balance_run [seedsCsv] [days] [outDir]
 //        defaults:    12345      256    balance_out
@@ -38,7 +38,7 @@
 #include "macro/spawners.h"
 #include "macro/state.h"
 #include "macro/labour.h"
-#include "macro/landmark_iter.h"   // for_each_place — обход мест по слотам
+#include "macro/place_iter.h"   // for_each_place — обход мест по слотам
 #include "macro/squad.h"           // place_handle_by_ordinal — резолв места
 #include "macro/store.h"
 #include "macro/tree_layer.h"
@@ -49,7 +49,7 @@
 namespace {
 
 // One game day of econ facts, folded flat. World-aggregate on purpose: the
-// per-landmark cut comes from sampling the place bodies at day end;
+// per-place cut comes from sampling the place bodies at day end;
 // facts carry the FLOWS the stocks alone cannot show.
 struct DayAccum {
     long long gathered[sm::kCommodityCount] = {};
@@ -154,7 +154,7 @@ long long coins_in(const sm::Inventory& inv, const std::vector<int>& coinIdx) {
 //   places    — из множества думки те, у кого архетип Place: их дневная думка
 //               кончается ранним возвратом гейта `squad_archetype(…) ==
 //               SquadArchetype::Place` в `npc_ai.cpp`. Счёт идёт ДВЕРЬЮ
-//               `for_each_place@src/macro/landmark_iter.h` — второго написания
+//               `for_each_place@src/macro/place_iter.h` — второго написания
 //               закона «что есть место» прибор не заводит.
 struct SlotCensus {
     long long alive = 0;
@@ -298,7 +298,7 @@ int main(int argc, char** argv) {
         std::snprintf(path, sizeof path, "%s/world_%u.tsv", outDir.c_str(),
                       seed);
         FILE* fw = std::fopen(path, "w");
-        std::snprintf(path, sizeof path, "%s/landmarks_%u.tsv",
+        std::snprintf(path, sizeof path, "%s/places_%u.tsv",
                       outDir.c_str(), seed);
         FILE* fl = std::fopen(path, "w");
         if (!fw || !fl) {
@@ -314,7 +314,7 @@ int main(int argc, char** argv) {
         // со своими величинами: казна пула и пул дезертиров были половинами
         // контура — писатель живой, читателей ноль. Прибор не печатает то,
         // чего в мире нет; колонки читать ПО ИМЕНИ, §5 п.7.)
-        std::fprintf(fw, "day\tpop\tcoinLandmarks\tcoinSquads"
+        std::fprintf(fw, "day\tpop\tcoinPlaces\tcoinSquads"
                          "\tstarvedPops\tminted\ttrades\ttradedValue\tfoodHolds"
                          "\tcrewsGather\tcrewsSell\tcrewsOther"
                          // ЛОШАДЬ-ЮНИТ (2026-09-19): свидетель контура —
@@ -465,7 +465,7 @@ int main(int argc, char** argv) {
                               std::chrono::steady_clock::now() - a0).count();
             }
 
-            // Day-end sampling: stocks from the landmarks, flows from facts.
+            // Day-end sampling: stocks from the places, flows from facts.
             long long popTotal = 0, coinLm = 0;
             // Склады душ мест по родам. Логово выделено отдельной колонкой
             // не для красоты: по вердикту владельца «банды это население

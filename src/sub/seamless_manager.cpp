@@ -253,7 +253,7 @@ void SeamlessSubworldManager::worker_loop(std::stop_token stop) {
             done.macroTemperature = job.ctx.macroTemperature;
             done.fieldFurrowsVert = job.ctx.fieldFurrowsVert;
             dispatch_generate(job.ctx, job.nbHeights, job.nbBiome, job.nbBiome5,
-                              job.nbFeature, done.data, job.nbLandmark,
+                              job.nbFeature, done.data, job.nbPlace,
                               job.nbTreeCount, job.nbFertility);
             // (ЗДЕСЬ СЛИВАЛСЯ СНИМОК КЛЕТКИ ИЗ КЭША СЕССИИ. Снесён 2026-10-19,
             // M-262: клетка есть ПРОЕКЦИЯ своей идентичности, а память
@@ -287,7 +287,7 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
     Biome nbBiome5[25];
     Biome nbGround[9];
     std::uint8_t nbFeature[9];
-    SquadType nbLandmark[9];
+    SquadType nbPlace[9];
     int nbTreeCount[9];
     float nbFertility[9];
     for (int yy = 0; yy < 3; ++yy) {
@@ -297,7 +297,7 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
             nbBiome   [yy * 3 + xx] = nctx.biome;
             nbGround  [yy * 3 + xx] = ground_biome(nctx);
             nbFeature [yy * 3 + xx] = std::uint8_t(nctx.feature);
-            nbLandmark[yy * 3 + xx] = nctx.landmark.kind;
+            nbPlace[yy * 3 + xx] = nctx.place.kind;
             nbTreeCount[yy * 3 + xx] = nctx.treeCount;
             nbFertility[yy * 3 + xx] = nctx.fertility01;
         }
@@ -327,7 +327,7 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
     cell.fieldFurrowsVert = ctx.fieldFurrowsVert;
     cell.placeholder = false;
     cell.generation = 0;
-    dispatch_generate(ctx, nb, nbBiome, nbBiome5, nbFeature, cell.data, nbLandmark,
+    dispatch_generate(ctx, nb, nbBiome, nbBiome5, nbFeature, cell.data, nbPlace,
                       nbTreeCount, nbFertility);
     collect_road_indices(cell.data.tiles,
                          cell.roadIndices,
@@ -621,7 +621,7 @@ void SeamlessSubworldManager::queue_generation(const CellContext& ctx,
             job.nbBiome[ni] = nctx.biome;
             job.nbGround[ni] = ground_biome(nctx);
             job.nbFeature[ni] = std::uint8_t(nctx.feature);
-            job.nbLandmark[ni] = nctx.landmark.kind;
+            job.nbPlace[ni] = nctx.place.kind;
             job.nbTreeCount[ni] = nctx.treeCount;
             job.nbFertility[ni] = nctx.fertility01;
         }

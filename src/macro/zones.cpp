@@ -29,7 +29,7 @@ static constexpr float CIV_CITY_STRENGTH     = 1.10f;
 static constexpr float CIV_VILLAGE_STRENGTH  = 0.55f;
 // Feature civ strengths (roads) are the registry's column now —
 // macro/features.h kFeatureDefs.civStrength. City/village strengths stay
-// here: those are LANDMARKS, not feature bytes.
+// here: those are PLACES, not feature bytes.
 static constexpr float MOUNTAIN_BASE_BOOST   = 0.08f;
 static constexpr float MOUNTAIN_DEPTH_SCALE  = 0.04f;
 static constexpr float MOUNTAIN_DEPTH_CAP    = 0.45f;

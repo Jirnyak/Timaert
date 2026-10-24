@@ -59,7 +59,7 @@ constexpr DungeonKindRow kDungeonKindRows[] = {
                               false, false, 0.0f, DungeonRef::Void,
                               Biome::Mountain, 0 },
     // A cave garrisons from its place the day a Lair stands on the map; on
-    // a wild cell (no landmark) the same row falls through to FaunaCount.
+    // a wild cell (no place) the same row falls through to FaunaCount.
     { DungeonRef::Cave,       "cave",   nullptr,
                               false, true,  /*garrison*/true,
                               SquadType::Ruin,

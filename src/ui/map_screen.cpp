@@ -2,7 +2,7 @@
 
 #include "tables/biomes.h"
 #include "core/caps.h"              // kUnifiedCap — проход по слотам, не по числу
-#include "macro/landmark_registry.h"
+#include "macro/place_registry.h"
 #include "macro/map_generator.h"
 #include "macro/markers.h"
 #include "macro/player_entity.h"
@@ -43,7 +43,7 @@ ImU32 argb_im(std::uint32_t argb, int alpha) {
 }
 
 // The chart's ONE shape vocabulary — primitives only (owner ruling: no
-// sprites, no paperdolls on a document). Landmarks use their presentation
+// sprites, no paperdolls on a document). Places use their presentation
 // row's MiniShape; the same routine draws the legend swatches, so map and
 // legend can never drift.
 void chart_shape(ImDrawList* dl, ImVec2 c, MiniShape shape, float r,
@@ -188,7 +188,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
                 ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1), "%s",
                                    kBiomes[std::size_t(b)].name);
                 // КТО НА ЭТОЙ КЛЕТКЕ — КАРКАСОМ, И ДВЕРЬ КИНД-СЛЕПА (M-288).
-                // Здесь стоял `for_each_landmark` — ПОЛНЫЙ СКАН КАПА (8 родов
+                // Здесь стоял `for_each_place` — ПОЛНЫЙ СКАН КАПА (8 родов
                 // × 16384 слота = 131 072 посещения) на вопрос об ОДНОЙ
                 // клетке, то есть ровно то, что ЗАКОН КЛЕТОЧНОГО КАРКАСА
                 // называет нарушением дословно. Теперь спрашивается
@@ -210,7 +210,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
                             SquadType(st.runtime[slot].squadType);
                         if (!stands_on_the_chart(t)) return;
                         const char* nm = st.name[slot].text;
-                        if (nm[0] == '\0') nm = landmark_def(t).label.data();
+                        if (nm[0] == '\0') nm = place_def(t).label.data();
                         if (nm[0] == '\0') return;
                         ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.4f, 1), "%s",
                                            nm);
@@ -233,7 +233,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
 
     // ── ОДИН ПРОХОД ПО СЛОТАМ: МЕТКИ ЧАРТА И СЧЁТ ЛЕГЕНДЫ ───────────────
     // Главная карта перестала рисовать двумя проходами 2026-10-19 (M-280);
-    // страница шла ещё тремя обходами `for_each_landmark`, то есть на один
+    // страница шла ещё тремя обходами `for_each_place`, то есть на один
     // вопрос мира — «как сквад выглядит на карте» — два экрана отвечали
     // по-разному (DOD п.6). Проход теперь один и той же формы, что у
     // главной карты: слоты гладкой памяти, колонки вместо обхода по роду.
@@ -244,7 +244,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
     // про текущий кадр, — и тем же предикатом `stands_on_the_chart`.
     //
     // ПОРЯДОК РИСОВКИ — СЛОТОВЫЙ, И ЭТО СКАЗАНО ВСЛУХ. Прежний обход шёл в
-    // `kLandmarkYieldOrder`, но тот порядок есть закон ВЛАДЕНИЯ СПОРНОЙ
+    // `kPlaceYieldOrder`, но тот порядок есть закон ВЛАДЕНИЯ СПОРНОЙ
     // КЛЕТКОЙ, а не закон рисования: брать его сюда значило занимать чужой
     // закон под косметику. Метки чарта — плоские примитивы одного класса
     // размера, и ни одна не укрывает другую так, как 192-пиксельный спрайт
@@ -274,7 +274,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
         // remembered. The mark grows to half its cell when zoomed in, floored
         // at the row's legend radius so it never dissolves at world-fit.
         const float r = std::max(row.miniR * 2.0f, zoomLogical * 0.5f);
-        const std::uint32_t argb = landmark_def(type).color;
+        const std::uint32_t argb = place_def(type).color;
         // Depleted = half strength, remembered = reduced alpha — the same
         // derivations the old panel used; ONE colour authority throughout.
         // Выкачанность — ОДИН вывод на весь мир (spire_orb, M-233 п.8).
@@ -287,7 +287,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
             // Безымянный показывает label своей строки реестра — один закон
             // показа на все рода, тот же, что у главной карты.
             const char* nm = store.name[slot].text;
-            if (nm[0] == '\0') nm = landmark_def(type).label.data();
+            if (nm[0] == '\0') nm = place_def(type).label.data();
             if (nm[0] == '\0') continue;
             const ImVec2 ts = ImGui::CalcTextSize(nm);
             const ImVec2 tp(p.x - ts.x * 0.5f, p.y - r - ts.y - 3.0f);
@@ -342,7 +342,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
     const double exploredPct =
         cells > 0.0 ? 100.0 * double(st.exploredCells) / cells : 0.0;
 
-    // (Третий обход `for_each_landmark` стоял здесь и считал `discovered[]`
+    // (Третий обход `for_each_place` стоял здесь и считал `discovered[]`
     //  заново. Счёт уехал В ПРОХОД МЕТОК выше — он обязан считать ровно то,
     //  что нарисовано, и отдельный обход этого не гарантировал ничем.)
     bool styleSeen[4] = {};
@@ -376,7 +376,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
         const float sw = rowH * 0.45f;
         for (std::size_t t = 0; t < std::size_t(SquadType::Count); ++t) {
             if (discovered[t] == 0) continue;
-            const LandmarkDef& def = kLandmarks[t];
+            const PlaceDef& def = kPlaces[t];
             const SquadDrawRow& row = kSquadDraw[t];
             const ImVec2 cur = ImGui::GetCursorScreenPos();
             chart_shape(wdl, ImVec2(cur.x + sw, cur.y + rowH * 0.42f),

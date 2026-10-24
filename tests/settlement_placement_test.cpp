@@ -33,7 +33,7 @@
 #include "macro/npc_ai.h"          // kGathererReach — the crews' working box
 #include "macro/politik.h"
 #include "macro/squad_index.h"     // каркас клеток: «кто здесь живёт»
-#include "macro/landmark_iter.h"   // штамп фич поселений
+#include "macro/place_iter.h"   // штамп фич поселений
 #include "macro/place_birth.h"     // место рождается СО СВОИМ ТЕЛОМ (M-90)
 #include "macro/settlement_score.h"
 #include "macro/spawners.h"
@@ -180,7 +180,7 @@ void make_settled_world(World& w) {
     w.cityPlan.push_back(a);
     w.cityPlan.push_back(b);
 
-    populate_landmarks_from_politik(w.gs, places(), w.cityPlan, w.td, w.trees,
+    populate_places_from_politik(w.gs, places(), w.cityPlan, w.td, w.trees,
                                     w.deposits, w.features);
 }
 
@@ -625,12 +625,12 @@ void test_cities_read_the_ground() {
 //
 // Согласие это НЕ дано по построению, и шаг 4 нашёл причину: спорную клетку
 // два носителя разрешают РАЗНЫМИ правилами. Сетка отдаёт её ПЕРВОМУ по
-// приоритету `kLandmarkYieldOrder` (город → деревня → шпиль → руина), а штамп
+// приоритету `kPlaceYieldOrder` (город → деревня → шпиль → руина), а штамп
 // фич идёт по контейнеру в порядке РОЖДЕНИЯ и перекрывает, то есть отдаёт
 // ПОСЛЕДНЕМУ. Пока спорных клеток нет, расхождение латентно; свидетель
 // называет их ЧИСЛО вслух, поэтому день, когда они появятся, виден сразу.
 //
-// Третий носитель рода — копия в строке индекса (`LandmarkRef::type`) — умер
+// Третий носитель рода — копия в строке индекса (`PlaceRef::type`) — умер
 // этим шагом: её единственный читатель спрашивал у неё «есть ли тут кто-то»,
 // а род всё равно брал из колонки записи.
 FeatureType settlement_feature_of(SquadType t) {

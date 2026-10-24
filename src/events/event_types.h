@@ -32,7 +32,7 @@ namespace sm
     // NpcSpawn, NpcGreeted, Encounter, SettlementChangeOwner, QuestAbandoned,
     // Trade, NpcHpChange, SettlementMoodChange, PlayerStatChange, BattleEnd,
     // MagicSurge, FactionRelationChange, DialogStart, CameraMove) and three
-    // more (M-116 part 1: SettlementVisit, LandmarkChangeOwner, WorldCellChange).
+    // more (M-116 part 1: SettlementVisit, PlaceChangeOwner, WorldCellChange).
     // Values are DENSE and implicit: the old TS-parity numeric anchors died
     // with the parity, and every renumbering invalidates saves (kSaveVersion).
     //

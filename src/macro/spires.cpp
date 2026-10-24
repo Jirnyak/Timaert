@@ -1,8 +1,8 @@
 #include "macro/spires.h"
 #include "macro/labour.h"      // settle_souls — одна дверь поселения душ
 #include "macro/place_birth.h" // birth_place — место родится ТЕЛОМ
-#include "macro/landmark_iter.h"   // for_each_place — места по слотам
-#include "macro/landmark_registry.h"
+#include "macro/place_iter.h"   // for_each_place — места по слотам
+#include "macro/place_registry.h"
 #include "macro/features.h"      // FT_Spire — смысл числу задаёт ФИЧА (п.8)
 #include "macro/macro_world.h"   // конверт слоёв: закон его собственной шапки
 #include "tables/faction.h"
@@ -34,8 +34,8 @@ int torus_chebyshev(int ax, int ay, int bx, int by, int w, int h) {
     return std::max(dx, dy);
 }
 
-// A spire may not share a cell with any named place: the baked cell→landmark
-// frame (settlement_at, macro/squad_index.h) awards a shared cell to the FIRST landmark
+// A spire may not share a cell with any named place: the baked cell→place
+// frame (settlement_at, macro/squad_index.h) awards a shared cell to the FIRST place
 // its builder yields (settlements → villages → spires), so a co-located spire
 // would be silently shadowed by the town on top of it. This scan stays
 // hand-written because it runs DURING world-gen, before the grid exists —
@@ -58,7 +58,7 @@ void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
         || !zones.has_complete_storage()) {
         return;
     }
-    const LandmarkDef& def = landmark_def(SquadType::Spire);
+    const PlaceDef& def = place_def(SquadType::Spire);
     // WHOSE the tower is, answered ONCE and stored on the instance (owner
     // 2026-09-21). The generator is the EDITOR: it names the banner, the
     // registry row carries no faction column, and the string never leaves
@@ -66,8 +66,8 @@ void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
     // garrison-vs-game line below true — the demons are the POPULATION,
     // stamped through this index, while the slope's beasts stay wildlife.
     const std::int16_t infernal = std::int16_t(faction_index("demons"));
-    // Own deterministic stream, distinct from the landmark-naming salt in
-    // populate_landmarks_from_politik (0xC1A05E1D).
+    // Own deterministic stream, distinct from the place-naming salt in
+    // populate_places_from_politik (0xC1A05E1D).
     Rng rng(gs.worldSeed ^ 0x59B12E50u);
 
     for (int ord = 0; ord < kSpellCount; ++ord) {
@@ -146,7 +146,7 @@ void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
         {
             Rng popRng(gs.worldSeed ^ 0xB0125EEDu
                        ^ (std::uint32_t(ord) * 2654435761u));
-            settle_souls(gs, st, h.slot, landmark_born_population(
+            settle_souls(gs, st, h.slot, place_born_population(
                 int(def.bornPopBase), int(def.bornPopPerScore), tier,
                 popRng));
         }

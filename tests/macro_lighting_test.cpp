@@ -14,11 +14,11 @@
 #include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
 #include "macro/macro_lighting.h"
-#include "macro/landmark_iter.h"   // stamp_settlement_features — дверь штампа
+#include "macro/place_iter.h"   // stamp_settlement_features — дверь штампа
 #include "macro/macro_world.h"    // конверт слоёв — вход переписи (M-233 п.8)
 #include "macro/map_generator.h"  // field_word_of / kDefaultSeaLevel
 #include "macro/features.h"
-#include "macro/landmark_registry.h"
+#include "macro/place_registry.h"
 #include "macro/place_birth.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "macro/state.h"
 #include "macro/store.h"

@@ -25,7 +25,7 @@ namespace sm::sub {
 // The kit is this module's vocabulary — primitives, never a sibling module.
 using namespace kit;
 
-// Spire landmark: tower footprint plus scorch and crater tiles.
+// Spire place: tower footprint plus scorch and crater tiles.
 void gen_spire(const GenInput& in, SubworldMapData& out) {
     const CellContext& ctx = in.ctx;
     const Biome* nbBiome = in.nbBiome;
@@ -191,7 +191,7 @@ void gen_spire(const GenInput& in, SubworldMapData& out) {
         hatch.zWorld = true;
         hatch.zBase = crownM;
         hatch.height = structure_min_height(Structure::SpireHatch);
-        hatch.tag = std::uint16_t(std::clamp(ctx.landmark.tier, 1, 5));
+        hatch.tag = std::uint16_t(std::clamp(ctx.place.tier, 1, 5));
         out.structures.push_back(hatch);
     }
     // The gate on the south face — the CaveMouth pattern: a Door-verb prop
@@ -208,14 +208,14 @@ void gen_spire(const GenInput& in, SubworldMapData& out) {
         gate.hy = structure_min_half_xy(Structure::SpireGate);
         gate.radius = std::max(gate.hx, gate.hy);
         gate.height = structure_min_height(Structure::SpireGate);
-        gate.tag = std::uint16_t(std::clamp(ctx.landmark.tier, 1, 5));
+        gate.tag = std::uint16_t(std::clamp(ctx.place.tier, 1, 5));
         out.structures.push_back(gate);
     }
     // The prize on the crown: the orb, seated on the tower top (zBase = the
     // shared tower height) — visible from the ground as a blue star, reached
     // through the climb. A CONSUMED spire raises no orb: the scene shows
-    // what the macro world remembers (ctx.landmark.depleted).
-    if (!ctx.landmark.depleted) {
+    // what the macro world remembers (ctx.place.depleted).
+    if (!ctx.place.depleted) {
         Structure orb{};
         orb.kind = Structure::SpireOrb;
         orb.shape = Structure::Cylinder;

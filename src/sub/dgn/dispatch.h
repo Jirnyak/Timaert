@@ -22,7 +22,7 @@ std::uint32_t dungeon_scene_seed(std::uint32_t worldSeed, int cx, int cy,
 // crown) — one authority or the roof and the tower disagree by metres.
 // 128 m = 32 courses of the 4 m wall module (structure_min_height(Wall)):
 // tall enough to crest the treeline (~30 m species tops) from anywhere in
-// the 3×3 window — a spire the player cannot see is not a landmark.
+// the 3×3 window — a spire the player cannot see is not a place.
 inline constexpr float kSpireTowerHeightM = 128.0f;
 // 12-tile exterior radius (24-tile crown). The floor is what the CROWN must
 // seat, because the crown is a place a body stands: a parapet one wall module
@@ -141,7 +141,7 @@ struct DungeonKindRow {
     bool householdAbove;     // storeys ≥0 borrow RESIDENTS from Population
     bool verminAbove;        // storeys ≥0 draw VERMIN from FaunaCount
                              //   (a cellar, level<0, is always a den)
-    bool placeGarrison;      // this scene IS its landmark's own interior
+    bool placeGarrison;      // this scene IS its place's own interior
                              //   (§42/CANON S28): when the door cell names a
                              //   place that keeps a crowd, storeys draw the
                              //   PLACE's population — its crowd family, as

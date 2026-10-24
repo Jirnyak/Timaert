@@ -43,9 +43,9 @@ sm::sub::CellContext resolve_relief_cell(int cx, int cy) {
     c.macroHeight = 0.50f + 0.06f * float(slot);
     c.biome = (slot == 4) ? sm::Biome::Mountain : sm::Biome::Meadow;
     c.feature = (slot == 1 || slot == 7) ? sm::FT_Road : sm::FT_None;
-    c.landmark.id = -1;
-    c.landmark.size = 0;
-    c.landmark.kind = sm::SquadType::None;
+    c.place.id = -1;
+    c.place.size = 0;
+    c.place.kind = sm::SquadType::None;
     c.seed = 0x4e1d0000u ^ sm::sub::cell_seed(0u, cx, cy);
     return c;
 }

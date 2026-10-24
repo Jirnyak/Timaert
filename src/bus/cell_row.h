@@ -1,5 +1,5 @@
 // СТРОКА КЛЕТКИ — род 1 канонического фрейма (M-171, ломоть 3).
-// Формы CellFacts/LandmarkFacts переехали сюда из macro/cell_facts.h:
+// Формы CellFacts/PlaceFacts переехали сюда из macro/cell_facts.h:
 // строка пакета обязана жить ниже обоих миров (ЗАКОН КАНОНИЧЕСКОГО ФРЕЙМА
 // п.7 — стена возможна, только пока bus/ не включает macro/). Сборщик
 // остался макро-дверью: cell_facts@src/macro/cell_facts.h.
@@ -13,12 +13,12 @@
 
 namespace sm {
 
-// The landmark standing on the cell, with its LIVE fields resolved from
+// The place standing on the cell, with its LIVE fields resolved from
 // GameState at the moment of asking (population and ownership drift daily;
 // the frame only answers WHO — settlement_at, macro/squad_index.h).
-struct LandmarkFacts {
+struct PlaceFacts {
     SquadType type = SquadType::None;   // ось рода (алиас SquadType умирает ломтиком F)
-    int  id = -1;          // WORLD-unique landmark ordinal (v54); -1 = none
+    int  id = -1;          // WORLD-unique place ordinal (v54); -1 = none
     // POPULATION, for every kind (§42: this field used to carry a spire's
     // spell TIER instead — an overload that would have handed a tier-3
     // spire a crowd of three demons the day the population door opened).
@@ -46,10 +46,10 @@ struct LandmarkFacts {
 // которая гейтится архетипом Place и `None` не возвращает никогда.
 // Стена нужна ровно на ВТОРОЙ половине пары — на дефолтах: разъехавшись, они
 // сделали бы «ординал без рода» ВЫРАЗИМЫМ, а именно из этой щели и вырос
-// снесённый `effective_landmark`, который фабриковал City из одного ординала
+// снесённый `effective_place`, который фабриковал City из одного ординала
 // (см. некролог в `src/sub/map_data.h`). Мутация «id = 0» роняет сборку.
-static_assert(LandmarkFacts{}.type == SquadType::None
-                  && LandmarkFacts{}.id < 0,
+static_assert(PlaceFacts{}.type == SquadType::None
+                  && PlaceFacts{}.id < 0,
               "незаданное место обязано быть незаданным ОБОИМИ полями: род "
               "None и ординал < 0 — иначе «ординал без рода» выразимо, и "
               "фабрикация рода из ординала вернётся");
@@ -59,7 +59,7 @@ struct CellFacts {
     int y = 0;
     Biome        biome = Biome::Water;   // the one cascade (biome_at_cell)
     FeatureType  feature = FT_None;      // road / dirt road / field
-    LandmarkFacts landmark{};
+    PlaceFacts place{};
     int   treeCount = 0;      // macro tree count; -1 = layer not wired
     float height01 = 0.0f;    // normalized elevation (terrain R)
     float fertility01 = 0.0f; // moisture (terrain G) — the wheat driver

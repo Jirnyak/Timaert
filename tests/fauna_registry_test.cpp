@@ -140,7 +140,7 @@ int main() {
             sm::SpawnContext ctx{};
             ctx.biome = biome;
             ctx.forest = forest;
-            ctx.landmark = place;
+            ctx.place = place;
             ctx.danger = danger;
             // Deposits all in reach: the profession rows of a town stripe are
             // gated on ground, and this sweep asks "can it ever", not "here".
@@ -173,7 +173,7 @@ int main() {
         // Союз полос толпы ВСЕХ родов мест — вторая земля, структурная.
         std::uint16_t crowdUnion = 0;
         for (std::size_t k = 0; k < std::size_t(sm::SquadType::Count); ++k) {
-            crowdUnion |= sm::landmark_def(sm::SquadType(k)).crowdHabitat;
+            crowdUnion |= sm::place_def(sm::SquadType(k)).crowdHabitat;
         }
         CHECK(crowdUnion != 0, "хоть один род мест держит толпу");
         int reachable = 0;
@@ -205,16 +205,16 @@ int main() {
     // Закон (§7 «ОДИН РЕЕСТР ФРАКЦИЙ», DOD п.6): на вопрос «чей это зверь»
     // отвечает ОДНА ступень — строка вида, колонкой `wildFaction`. До M-39
     // над ней стояла строковая колонка `spawnFaction` ВИДА МЕСТА, и она
-    // побеждала: у шпиля `faunaHabitat = kLandmarkFaunaGround`, то есть его
+    // побеждала: у шпиля `faunaHabitat = kPlaceFaunaGround`, то есть его
     // дикие ролы — обычные звери склона, и колонка штамповала их
     // Демоническими Ордами. Ровно ту двусмысленность «гарнизон или дичь»
-    // landmark_registry.h объявлял убитой тремя строками выше колонки.
+    // place_registry.h объявлял убитой тремя строками выше колонки.
     // Знамя места достаёт до его ТОЛПЫ и ГАРНИЗОНА (это его население) и не
     // достаёт до зверя на холме.
     {
         sm::SpawnContext ruinCell{};
         ruinCell.biome = sm::Biome::Meadow;
-        ruinCell.landmark = sm::SquadType::Ruin;
+        ruinCell.place = sm::SquadType::Ruin;
         ruinCell.danger = 128;   // середина руинной полосы реестра (51..229)
         int picks = 0, nonDemon = 0, mismatched = 0;
         for (std::uint32_t s = 0; s < 256u; ++s) {

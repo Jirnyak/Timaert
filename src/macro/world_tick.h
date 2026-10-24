@@ -44,7 +44,7 @@ struct WorldTickResult {
 struct EconFact;
 using EconFactSink = void (*)(void* user, const EconFact& fact);
 
-// One landmark's daily tail: the debt boundary off the universal inventory,
+// One place's daily tail: the debt boundary off the universal inventory,
 // then the population law. No floor and no ceiling (CANON S25 + owner
 // 2026-08-29): supply is the only cap, and population falls honestly to an
 // absorbing zero. The out-flags are what the chronicle files: souls the
@@ -52,7 +52,7 @@ using EconFactSink = void (*)(void* user, const EconFact& fact);
 // `sink` receives the day's Consumed/Starved facts (null = silence).
 //
 // SEASONAL since 2026-09-17 (CANON S19.2): the boundary runs only on
-// season_boundary(day) and parks ONE number on the landmark — благополучие
+// season_boundary(day) and parks ONE number on the place — благополучие
 // (seasonWellbeing), доля оплаченных нужд; every other day reads that number
 // into the population law. Второй меры «как живётся» в мире нет: настроение
 // и восстания вырезаны вердиктом владельца 2026-09-19. Daily slot hygiene
@@ -68,7 +68,7 @@ using EconFactSink = void (*)(void* user, const EconFact& fact);
 // (`upkeep_season_window`) судила его ВТОРЫМ по счёту, только что ею
 // же перезаписанному. Голод и вымирание теперь говорит летопись в
 // точке суда; этой функции остались СУТКИ: гашение, гигиена, рост.
-void settle_landmark_day(GameState& gs, MacroStore& st, std::uint16_t slot,
+void settle_place_day(GameState& gs, MacroStore& st, std::uint16_t slot,
                          int day,
                          EconFactSink sink = nullptr, void* user = nullptr);
 
@@ -78,7 +78,7 @@ void settle_landmark_day(GameState& gs, MacroStore& st, std::uint16_t slot,
 // below its born MEAN (recomputed from the registry's born columns × the
 // kind's context score — nothing stored, nothing to fold into the save).
 // A place cleared to zero never regrows — resurrection belongs to the S9
-// transition. Each landmark regrows on its own day of the epoch
+// transition. Each place regrows on its own day of the epoch
 // (id-staggered, the growth_cell_due pattern), so the world never pulses
 // in lockstep. Public so the genesis test can witness the law directly.
 void regrow_dungeon_populations(const MacroWorld& w, MacroStore& st, int day);

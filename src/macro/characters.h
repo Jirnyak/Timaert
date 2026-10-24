@@ -178,7 +178,7 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
 // родом. Незаполненный род = анкета в нулях: место, которое не умеет ничего,
 // — честный случай, а не дыра.
 inline constexpr std::array<CharacterSheet, std::size_t(SquadType::Count)>
-kLandmarkSheets = [] {
+kPlaceSheets = [] {
     std::array<CharacterSheet, std::size_t(SquadType::Count)> a{};
     CharacterSheet& city = a[std::size_t(SquadType::City)];
     // Город умеет ВСЁ, чем сегодня живёт экономика, и чеканит: кузнечный
@@ -240,8 +240,8 @@ kLandmarkSheets = [] {
     return a;
 }();
 
-inline constexpr const CharacterSheet& landmark_sheet(SquadType t) {
-    return kLandmarkSheets[std::size_t(t) < std::size_t(SquadType::Count)
+inline constexpr const CharacterSheet& place_sheet(SquadType t) {
+    return kPlaceSheets[std::size_t(t) < std::size_t(SquadType::Count)
                                ? std::size_t(t) : 0];
 }
 

@@ -30,7 +30,7 @@ namespace sm {
 // Строка рода — только по ССЫЛКЕ (§12: forward-declare в заголовке,
 // include в .cpp): тянуть сюда весь реестр ради одного параметра
 // значило бы заставить каждого включившего парсить его.
-struct LandmarkDef;
+struct PlaceDef;
 
 // ── State ────────────────────────────────────────────────────────────────
 
@@ -39,7 +39,7 @@ struct LandmarkDef;
 // THE store of a place is its INVENTORY — there is no second container and no
 // second index space (owner's ruling, 2026-08-27: полное слияние). A flat
 // `Stockpile` of 14 commodity counts used to live here and be converted to and
-// from the landmark's inventory TWICE PER GAME DAY per landmark, through a
+// from the place's inventory TWICE PER GAME DAY per place, through a
 // string lookup each way, because the same noun was addressed by two different
 // ordinals. Каждое существительное мира — одна строка одного каталога.
 //
@@ -251,7 +251,7 @@ int season_comfort_units(int population, int commodityIdx);
 // пищевая строка словаря» прибито `static_assert`ом ВНУТРИ `items.cpp`, а
 // дверь ниже отвечает -1, если каталог этому закону противоречит.
 // Товарным ординалом — то, ЧЕМ голод адресуется в СЧЁТЕ (`needDebt`
-// индексируется товарным ординалом: state.h Landmark, ecs::SquadUpkeep).
+// индексируется товарным ординалом: state.h Place, ecs::SquadUpkeep).
 int hunger_commodity_ordinal();
 
 // Она же каталожным ОРДИНАЛОМ — то, ЧЕМ её списывают из закромов.
@@ -269,7 +269,7 @@ constexpr int season_hunger_units(int population) {
 
 // One worker per this many heads (po2) — the BENCH quota: the share of
 // hands staffing the recipes (econ_produce_day). The daily CREWS are the
-// landmark's own law since 2026-08-31 (landmark_registry: crews rows +
+// place's own law since 2026-08-31 (place_registry: crews rows +
 // labourShift — «какие сквады кто спавнит — таблично»); the city's
 // labourShift = log2 of this number, so the two laws meet at the same
 // eighth of a town.
@@ -361,7 +361,7 @@ struct EconFact {
         // прибора, и сдвигать их ради плотности значило бы переписать
         // историю замеров.
         SoulsDesertedUnpaid = 8,  // amount = души, ушедшие за НЕВЫПЛАТУ
-                                  // жалованья; landmarkId = дом состава.
+                                  // жалованья; placeId = дом состава.
                                   // Один факт = один контейнер, провалив-
                                   // ший окно сезона по ПЛАТЕ. Единственный
                                   // законный путь в пул дезертиров.
@@ -388,11 +388,11 @@ struct EconFact {
     Kind kind{};
     int commodity = -1;
     int amount = 0;
-    // Which landmark's day this was. The pure steps are landmark-BLIND (they
+    // Which place's day this was. The pure steps are place-BLIND (they
     // see one Inventory); the id is stamped by the relay in world_tick.cpp —
     // the one caller that knows whose store it handed in. -1 = unattributed
     // (a direct pure-step call, e.g. econ_v1_test).
-    int landmarkId = -1;
+    int placeId = -1;
 };
 using EconFactSink = void (*)(void* user, const EconFact& fact);
 
@@ -402,7 +402,7 @@ using EconFactSink = void (*)(void* user, const EconFact& fact);
 // дверей прихода (haul_between, transfer_value_dense): сумка проходит
 // голым инвентарём (needDebt == nullptr, неявная конверсия), МЕСТО отдаёт
 // свой счёт и канал фактов — и дверь гасит долг СРАЗУ тем, что упало
-// (econ_pay_debt после кредита). Дневной такт settle_landmark_day остаётся
+// (econ_pay_debt после кредита). Дневной такт settle_place_day остаётся
 // СТРАХОВКОЙ для путей мимо дверей (торговая панель игрока).
 struct Depot {
     Inventory& inv;
@@ -512,7 +512,7 @@ inline float population_delta_per_day(int population, float wellbeing) {
 
 // ── Birth stocks ─────────────────────────────────────────────────────────
 
-// A landmark is born MID-LIFE, not at hour zero (owner's ruling): worldgen
+// A place is born MID-LIFE, not at hour zero (owner's ruling): worldgen
 // seeds its universal Inventory as if it had been living for years, so the
 // market has wares on day one and nobody starves while the first caravans
 // find their legs. One law, deterministic from population:
@@ -532,8 +532,8 @@ inline float population_delta_per_day(int population, float wellbeing) {
 // читает (ЗАКОН АГНОСТИЧНОСТИ: фундаментальная система не знает, кто и
 // зачем её позвал). Оба прежних звонящих передавали ТАВТОЛОГИЮ —
 // спрашивали род у слота там, где литералом только что его записали.
-void seed_landmark_inventory(Inventory& inv, int population,
-                            const LandmarkDef& row);
+void seed_place_inventory(Inventory& inv, int population,
+                            const PlaceDef& row);
 
 
 } // namespace sm

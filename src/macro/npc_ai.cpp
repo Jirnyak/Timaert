@@ -13,8 +13,8 @@
 #include "macro/entry_context.h"
 #include "tables/faction.h"
 #include "macro/labour.h"           // ОДИН пул рук места (CANON S4)
-#include "macro/landmark_iter.h"    // for_each_place — обход мест по оси рода
-#include "macro/landmark_registry.h"
+#include "macro/place_iter.h"    // for_each_place — обход мест по оси рода
+#include "macro/place_registry.h"
 #include "macro/movement_cost.h"
 #include "tables/npc.h"
 #include "macro/nav_field.h"        // локальные поля-округи (CANON S7)
@@ -96,7 +96,7 @@ inline std::uint16_t place_slot_by_id(const TickContext& ctx, int id) {
 // ДВУМЯ побайтово одинаковыми лямбдами в двух соседних поведениях, и это был
 // второй ответ на один вопрос мира (DOD п.6), просто спрятанный в области
 // видимости функции. Обход мест — одна дверь (`for_each_place`,
-// `macro/landmark_iter.h`): ось рода ТЕЛА отвечает «город ли это», второго
+// `macro/place_iter.h`): ось рода ТЕЛА отвечает «город ли это», второго
 // списка городов в мире нет. `notId` — ординал, который спрашивающий
 // исключает (свой дом у торговца, текущая цель у кочевника).
 inline bool is_other_city(const MacroStore& st, std::uint16_t slot,
@@ -190,7 +190,7 @@ void deliver_bag_home(MacroHandle self, const TickContext& ctx, int defIdx) {
         f.kind = EconFact::Kind::Gathered;
         f.commodity = commodity_of_item(defIdx);
         f.amount = fact.unitsAB;
-        f.landmarkId = parent_of(st, self.slot);
+        f.placeId = parent_of(st, self.slot);
         ctx.mw.econFacts(ctx.mw.econFactsUser, f);
     }
 }
@@ -1255,7 +1255,7 @@ public:
         return store_ctx(ctx_).cell[slot].idx;
     }
     bool is_settlement(std::uint16_t slot) const {
-        return landmark_is_settlement(
+        return place_is_settlement(
             SquadType(store_ctx(ctx_).runtime[slot].squadType));
     }
     XY place_xy(std::uint16_t slot) const {
@@ -1323,7 +1323,7 @@ public:
     }
     // Летопись: выработанная жила — факт мира (FactKind::Drained).
     void drained_fact(MacroHandle self, int x, int y, ResourceFieldId row) {
-        record_landmark_fact(store_ctx(ctx_), *ctx_.mw.gs, FactKind::Drained,
+        record_place_fact(store_ctx(ctx_), *ctx_.mw.gs, FactKind::Drained,
                              parent_of(store_ctx(ctx_), self.slot),
                              x, y, int(row) + 1);
     }
@@ -1358,7 +1358,7 @@ public:
     // Летопись: состоявшийся обмен — факт мира (FactKind::Traded).
     void traded_fact(AiSelf& s, int x, int y, int value, int marketId) {
         MacroStore& st = store_ctx(ctx_);
-        record_landmark_fact(st, *ctx_.mw.gs, FactKind::Traded,
+        record_place_fact(st, *ctx_.mw.gs, FactKind::Traded,
                              parent_of(st, s.h.slot), x, y, value, marketId);
     }
     // СЛЕДУЮЩАЯ СТАНЦИЯ — рулетка по весу `1/(1 + дни)` среди жилых мест
@@ -1484,7 +1484,7 @@ public:
         if (took > 0 && edge) {
             edge->owedValue -= took;
             if (edge->owedValue < 0) edge->owedValue = 0;
-            record_landmark_fact(st, *ctx_.mw.gs, FactKind::Taxed,
+            record_place_fact(st, *ctx_.mw.gs, FactKind::Taxed,
                                  int(st.spawnId[vassal].index),
                                  int(s.pos.x), int(s.pos.y),
                                  int(std::min<long long>(took, 1 << 30)),
@@ -1847,7 +1847,7 @@ int pick_next_station_(const TickContext& ctx, const MacroPos& p,
                        int currentId, int prevId, float& outX, float& outY) {
     if (!ctx.mw.gs) return -1;
     const NavWorld* nv = ctx.mw.nav;
-    const std::size_t R = nv ? nv->regionLandmarkId.size() : 0;
+    const std::size_t R = nv ? nv->regionPlaceId.size() : 0;
     const bool baked = nv && nv->baked();
     const std::uint16_t here = baked ? nav_region_at(*nv, int(p.x), int(p.y))
                                      : kNavNoRegion;
@@ -1902,7 +1902,7 @@ int pick_next_station_(const TickContext& ctx, const MacroPos& p,
         for_each_place(stp, [&](std::uint16_t slot) {
             const int id = int(stp.spawnId[slot].index);
             if (id == currentId || id == prevId) return;
-            if (!landmark_is_settlement(SquadType(stp.runtime[slot].squadType))
+            if (!place_is_settlement(SquadType(stp.runtime[slot].squadType))
                 || souls_flock(*ctx.mw.gs, stp, slot) <= 0)
                 return;
             offer_(slot);
@@ -1924,11 +1924,11 @@ int pick_next_station_(const TickContext& ctx, const MacroPos& p,
         for (int s = 0; s < seenCount; ++s) dup = dup || seen[s] == to;
         if (dup) continue;
         if (seenCount < kNavMaxPortalsPerRegion) seen[seenCount++] = to;
-        const int lmId = int(nv->regionLandmarkId[to]);
+        const int lmId = int(nv->regionPlaceId[to]);
         if (lmId < 0 || lmId == currentId || lmId == prevId) continue;
         const std::uint16_t slot = place_slot_by_id(ctx, lmId);
         if (slot == kMacroNoSlot
-            || !landmark_is_settlement(SquadType(stp.runtime[slot].squadType))
+            || !place_is_settlement(SquadType(stp.runtime[slot].squadType))
             || souls_flock(*ctx.mw.gs, stp, slot) <= 0)
             continue;
         offer_(slot);
@@ -2010,11 +2010,11 @@ float route_fear_(const TickContext& ctx, int ax, int ay, int bx, int by) {
     return float(threat_on_route(*nv, ra, rb) >> kThreatFearShift);
 }
 
-// (Параметр `const Landmark& at` снят вместе со строкой места, ломтик F:
+// (Параметр `const Place& at` снят вместе со строкой места, ломтик F:
 // у него не было ни одного читателя в теле — цену «там» даёт прейскурант
 // каталога, а не адрес рынка.)
 // (`mw`, `fromX`, `fromY` снят ы 2026-10-09 — ТОТ ЖЕ класс, что снятый выше
-// `const Landmark& at`: цену спрашивают у `market_price_seen(c)`, которая
+// `const Place& at`: цену спрашивают у `market_price_seen(c)`, которая
 // отвечает абсолютной стоимостью строки ВСЕМ И ВСЕГДА, то есть «где я»
 // этой ставке сегодня не известно вовсе. Это НАЗВАННАЯ ДЫРА M-191
 // (ближняя половина яруса 2 знания о цене), и теперь она видна в подписи,
@@ -2046,7 +2046,7 @@ long long trade_bid_value_(const int* mine,
 }
 
 // (ДВЕ ПРИВАТНЫЕ КОПИИ ТОРГОВОЙ СИЛЫ УМЕРЛИ 2026-10-18. Здесь стояли
-//  `leader_trade_power_` и `landmark_trade_power_`, и их возвращающая строка
+//  `leader_trade_power_` и `place_trade_power_`, и их возвращающая строка
 //  СОВПАДАЛА ПОБАЙТОВО — обе считали `calculate_derived(...).tradeDiscountPct`,
 //  то есть ЧЕТВЁРТОЕ и ПЯТОЕ написание одного выражения при живой двери
 //  `trade_power_of@src/macro/anketa.h`. Шапка той двери предупреждает ровно об
@@ -2447,7 +2447,7 @@ void ai_vendor(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
     caravan_think(self, view, pult);
 }
 
-// The SUZERAIN landmark a town owes — a place's Stance::Suzerain row in its
+// The SUZERAIN place a town owes — a place's Stance::Suzerain row in its
 // (`capital_of_` СНЕСЁН 2026-09-22 вместе с дорогой дани ВВЕРХ: он отвечал
 //  «кому этот город платит», а платить наверх больше некому — сюзерен сам
 //  посылает сборщика вниз. Наряд сессии 7 требовал этого сноса, и вот он.)
@@ -3620,7 +3620,7 @@ void ai_untyped(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
 // РОД → МОДУЛЬ: диспетч есть ТАБЛИЦА по ординалу SquadType, не ветвление
 // (ломоть 4 M-72; образец формы — kGenKindRows@src/sub/gens/dispatch.cpp).
 // nullptr = «у рода думки нет»: место не ходит, его день идёт своим проходом
-// (settle_landmark_day) — это ДАННЫЕ строки, а не гейт по архетипу (шапка
+// (settle_place_day) — это ДАННЫЕ строки, а не гейт по архетипу (шапка
 // squad_type.h: архетип законен КЛЮЧОМ таблиц и ЗАПРЕЩЁН ГЕЙТОМ в проходе
 // симуляции — прежний гейт M-90 шага 5 умер в эту колонку). Модуль места
 // придёт ломтём 5: заполнится строка, диспетч не изменится.
@@ -4043,7 +4043,7 @@ struct UpkeepFactRelay {
 void relay_upkeep_fact_(void* user, const EconFact& fact) {
     const auto* r = static_cast<const UpkeepFactRelay*>(user);
     EconFact stamped = fact;
-    stamped.landmarkId = r->homeId;
+    stamped.placeId = r->homeId;
     r->sink(r->user, stamped);
 }
 }   // namespace
@@ -4122,13 +4122,13 @@ int squad_season_window(GameState& gs, MacroStore& st, int day,
         if (out.starved > 0) {
             const int px = ecs::cell_x(st.cell[slot], gs.mapW);
             const int py = ecs::cell_y(st.cell[slot], gs.mapW);
-            record_landmark_fact(st, gs, FactKind::Starved,
+            record_place_fact(st, gs, FactKind::Starved,
                                  int(st.spawnId[slot].index), px, py,
                                  out.starved);
             // ВЫМЕР — это «был состав и не стало», и судится он ПОСЛЕ
             // взыскания: до него спрашивать нечего, после — некого.
             if (creatures_empty(bag.inv)) {
-                record_landmark_fact(st, gs, FactKind::Died,
+                record_place_fact(st, gs, FactKind::Died,
                                      int(st.spawnId[slot].index), px, py,
                                      folkBefore);
             }
@@ -4164,7 +4164,7 @@ int squad_bags_hygiene_daily(MacroWorld& mw) {
         if (slot != flagSlot) melted += auto_scrap_overflow(bag.inv);
         // ── ПРИХОД ГАСИТ СЧЁТ ВЕСЬ СЕЗОН (CANON S10, v105) ───────────────
         // Страховочный дневной такт гашения — ровно тот же, что у места
-        // (world_tick settle_landmark_day). Двери прихода у сквада разные
+        // (world_tick settle_place_day). Двери прихода у сквада разные
         // (добыл, купил, отнял), и городить у каждой свою уплату значило бы
         // писать закон пятый раз; вместо этого контейнер ест то, что приехало,
         // тем же вечером. «Добыча привезла — часть съелась» (владелец,

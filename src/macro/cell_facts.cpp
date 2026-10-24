@@ -88,7 +88,7 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
         // ПОЗИЦИОННАЯ выкладка, и это ровно грабля, купленная прошлой
         // сессией: новая колонка в середине садится в соседнее поле МОЛЧА,
         // а мир остаётся правдоподобным.
-        f.landmark = {.type = kind,
+        f.place = {.type = kind,
                       .id = lmId,
                       .size = souls_flock(*w.gs, *w.store, slot),
                       .tier = orb.tier,

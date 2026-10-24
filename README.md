@@ -148,7 +148,7 @@ TIMAERT_SMOKE_HOUR=1 TIMAERT_SMOKE_YAW=180 TIMAERT_SHOT_PATH=/tmp/moon.png \
 
 **Приборы.** `balance_run [seedsCsv] [days] [outDir]` (по умолчанию `12345 256
 balance_out`; `tests/balance_run.cpp:1-13`) — мир играет сам себя без окна и
-пишет `world_<seed>.tsv`, `landmarks_<seed>.tsv`; код выхода 1 = сломан закон
+пишет `world_<seed>.tsv`, `places_<seed>.tsv`; код выхода 1 = сломан закон
 мира; `check` его не собирает. `TIMAERT_BOOT_TRACE=1` (в Debug всегда,
 `src/app/main.cpp:155-162`) печатает отчёт генезиса `[worldgen] …`, `[roads] …`.
 **Консоль** (`` ` `` в игре) — ЕДИНАЯ тест-система (вердикт владельца

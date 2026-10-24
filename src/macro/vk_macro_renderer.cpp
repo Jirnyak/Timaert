@@ -498,7 +498,7 @@ void MacroRendererVk::upload_zone_field(const gpu::VulkanDevice& dev,
     // Same discipline as upload_tree_field: nothing to patch before the first
     // full upload(); idle the device before replacing the live image. Zones
     // were baked once per PROCESS until the one rebaker landed (2026-08-24) —
-    // this surgical path is what lets a load, a season or a living landmark
+    // this surgical path is what lets a load, a season or a living place
     // move the danger the map shows (binding 2, u_zoneMap).
     if (!uploaded_) return;
     vkDeviceWaitIdle(dev.device);

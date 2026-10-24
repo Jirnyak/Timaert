@@ -289,7 +289,7 @@ if (!ok) return 1;
 **3. Хирургическая правка — что снести (проверено по коду 2026-09-25; перепроверить `file:line`):**
 - потолок гарнизона `garrison_cap_` (СНЕСЁН 2026-09-30, v122)
   (потолок = цель набора + `inventory_value / perSoulSeason`);
-- `garrison_trim_(GameState&, Landmark&, EconFactSink, void*)` —
+- `garrison_trim_(GameState&, Place&, EconFactSink, void*)` —
   `:347-399` (снимает излишек со слабейших строк: зверь → мясо на полку
   + `econ_pay_debt`, человек → `gs.deserterPool`);
 - оба вызова: `:247` (города, `tick_settlements_`) и `:443` (деревни);
@@ -301,9 +301,9 @@ if (!ok) return 1;
 снести вместе с потолком — тогда до аукциона найма (M-38/M-40) места стоят
 голыми; НАПОМИНАЮ ИГРА НЕ ИГРАБЕЛЬНА СЕЙЧАС ПОЛИРОВКА ЯДРА ВРМЕННЫНЕ
 КОСТЫЛИ НЕ НУЖНЫ»):** `garrison_recruit_` (`:293-304`) и оба вызова
-(`:246`, `:442`), `garrison_wants_recruits` (`settle_landmark_day@src/macro/world_tick.h`) и его
+(`:246`, `:442`), `garrison_wants_recruits` (`settle_place_day@src/macro/world_tick.h`) и его
 проверки в блок «потолок» в `trade_law_test` (СНЕСЁН 2026-09-30 вместе с подсистемой). `garrison_target_strength`
-(`world_tick.h:38-42`) и колонка `garrisonShift@src/macro/landmark_registry.h`
+(`world_tick.h:38-42`) и колонка `garrisonShift@src/macro/place_registry.h`
 — ОСТАЮТСЯ, у них жильцы вне дневного набора: РОЖДЕНИЕ места
 (`state.cpp:166-173` — состав при генезисе, число у редактора по ЗАКОНУ
 АГНОСТИЧНОСТИ) и планировка города (`sub/city_layout.h:431-441`);
@@ -481,7 +481,7 @@ o.npcType`, на каждую смерть) и `damage_door_test`.
 **1. Контекст.** Читать: `src/macro/save.cpp:26-60` (капы сторожа),
 `:1031-1250` (`write_payload` — порядок блоков; из каждого блока нужен только
 КАП и размер записи), `:1251-1270`; `src/core/stacks.h:70-100` (капы мира:
-`kWorldCells`, `kWorldLandmarks`, `kWorldSquads`, `kMacroEntityCap`);
+`kWorldCells`, `kWorldPlaces`, `kWorldSquads`, `kMacroEntityCap`);
 `src/macro/save_stream.h` — только ширину примитивов (`u8/u16/u32/u64`,
 `count`). Остальное не читать.
 
@@ -494,7 +494,7 @@ o.npcType`, на каждую смерть) и `damage_door_test`.
 - Было: `constexpr std::uint64_t kMaxPayloadBytes = 64ull * 1024ull * 1024ull;`
   Стало: `constexpr std::uint64_t kMaxPayloadBytes = <сумма>` из слагаемых,
   каждое — `кап_блока × размер_записи_блока` по ТЕМ ЖЕ константам, что
-  читает `write_payload` (пример формы: `kWorldLandmarks * kLandmarkRecordBytes
+  читает `write_payload` (пример формы: `kWorldPlaces * kPlaceRecordBytes
   + kWorldSquads * kMacroNpcRecordBytes + kWorldCells * (…полей ByCell…) +
   kChronicleCap * kFactBytes + …`). Размер записи блока — `constexpr`,
   посчитанный по примитивам, которыми блок пишется (не `sizeof` структуры:
@@ -898,7 +898,7 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 `Scalars`); `rowBytes` — `sizeof` типа элемента, `cap` — константа кода.
 Буферы ПРЕДСТАВЛЕНИЯ (оптический кэш, A\* скрэтч) — отдельным подразделом с
 пометкой «представление/скрэтч, не мир» в `name`. Структуры с названным в
-шапке размером без `static_assert` (`nav_field.h`, `landmark_grid.h`,
+шапке размером без `static_assert` (`nav_field.h`, `place_grid.h`,
 `chronicle.h`, `politik.h`) — добавить `static_assert(sizeof)` в их файлах
 рядом с объявлением, число — посчитанное по выравниванию (если реальный
 `sizeof` расходится с шапкой — шапку исправить, ассерт на реальное; это и
@@ -937,7 +937,7 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 поля `chronicle_`, `frameFirstSeq_`, `lastFrameFirstSeq_` (`:85-87`) и
 блок в `flush@src/events/event_bus.cpp`. Теги `EventTag` без
 производителя: `SettlementVisit` (читает `node_registry.cpp:20`, никто не
-шлёт), `LandmarkChangeOwner`, `WorldCellChange` (читает
+шлёт), `PlaceChangeOwner`, `WorldCellChange` (читает
 quest_engine.cpp †203-204 (снесён), никто не шлёт), `Custom` (только дефолт
 инициализации `logic_nodes.h:23` и тесты). Теги с производителем, но без
 прод-читателя: `QuestStart`, QuestUpdate (жил в quest_engine, снесён),
@@ -949,7 +949,7 @@ quest_engine.cpp †203-204 (снесён), никто не шлёт), `Custom` 
 src/events/quests/quest_engine.cpp †195-210 (снесён), `src/events/logic_nodes.h:20-26`,
 `src/app/main.cpp:1655-1662`; тесты `tests/quest_lifecycle_test.cpp` и
 `tests/save_roundtrip_test.cpp` — только строки с перечисленными тегами
-(`rg -n "EventTag::(SettlementVisit|WorldCellChange|Custom|QuestStart|LandmarkChangeOwner)"`).
+(`rg -n "EventTag::(SettlementVisit|WorldCellChange|Custom|QuestStart|PlaceChangeOwner)"`).
 Остальное не читать.
 
 **2. Закон.** AGENTS §6 «Легаси не живёт» (мёртвый путь удаляется
@@ -966,7 +966,7 @@ src/events/quests/quest_engine.cpp †195-210 (снесён), `src/events/logic_
   канал событий кадра (`GameEvent`, опрос `tick_events`). Летопись фактов
   мира пишется в `macro/` (`chronicle_record`/`record_deed`); слить два
   канала — эпик M-116 (CANON S20)».
-- Теги без производителя: `SettlementVisit`, `LandmarkChangeOwner`,
+- Теги без производителя: `SettlementVisit`, `PlaceChangeOwner`,
   `WorldCellChange` — снести из enum и из читателей (ветки
   `node_registry.cpp:20`, quest_engine.cpp †203-204 (снесён) — если после снятия
   тегов условие пустеет, снять и ветку; если ветка — единственный
@@ -986,7 +986,7 @@ src/events/quests/quest_engine.cpp †195-210 (снесён), `src/events/logic_
 
 **4. Приёмка.**
 - `rg -n "record\(|attach_chronicle|frame_first_seq" src/events` = 0;
-  `rg -n "EventTag::(SettlementVisit|LandmarkChangeOwner|WorldCellChange)" src tests` = 0.
+  `rg -n "EventTag::(SettlementVisit|PlaceChangeOwner|WorldCellChange)" src tests` = 0.
 - `check` зелёный; `quest_lifecycle_test`, `save_roundtrip_test`,
   `logic_nodes`-тесты зелёные с переписанными свойствами (диф тестов — в
   отчёте с объяснением каждого).
@@ -1330,20 +1330,20 @@ DOD п.6 (две записи одной фичи — второй ответ). 
 
 **Как сейчас (SKELETON I.10):** `Landmark::name` — `std::string`
 (`state.h:469`), единственная строка на сущности ×32768; из-за неё
-`static_assert(sizeof(Landmark) == 42400)` и `sizeof(GameState) == 49456`
+`static_assert(sizeof(Place) == 42400)` и `sizeof(GameState) == 49456`
 (`core/stacks.h:125,141`) верны ТОЛЬКО на libc++ (24 Б) и падают на
 libstdc++/MSVC (32 Б). Ещё две строки той же породы: `City::name`
 (`politik.h:62`), `PlayerState::name@src/macro/state.h`. Генератор —
 `generate_name` (`language.cpp:164-177`, возвращает `std::string` —
 граница мира, законно); ввод игрока — `char name[25]` (`ui/screens.h:70`,
-24 + NUL). Сейв пишет строки `w.str`/`r.str` (`write_landmark` (умер в v128 — место едет записью тела) и соседние блоки).
+24 + NUL). Сейв пишет строки `w.str`/`r.str` (`write_place` (умер в v128 — место едет записью тела) и соседние блоки).
 
 **1. Контекст.** Читать: `src/macro/state.h:462-475, 670-682`,
 `src/macro/politik.h:55-70`, `src/macro/language.cpp:136-180` и
 `language.h:20-35` (`minSyllables/maxSyllables`, шаблоны слогов — для
 расчёта N), `src/core/stacks.h:110-145` (сторожа `sizeof`),
 `src/macro/save.cpp:665-680, 715-725, 750-785`, `src/macro/save_stream.h:20-75`
-(примитивы), читатели имени: `src/macro/landmark_iter.h:45-55`,
+(примитивы), читатели имени: `src/macro/place_iter.h:45-55`,
 `src/macro/state.cpp:180-192, 360-370`, `src/macro/politik.cpp:188-196,
 230-240, 290-300`, `src/app/main.cpp:3010-3018, 4110-4116, 4488-4494`,
 `src/app/smoke.cpp:7155-7226` (три `.c_str()`), src/content/quests/procedural.cpp †420-430 (снесён, ломоть 3 M-72),
@@ -1377,7 +1377,7 @@ libstdc++/MSVC (32 Б). Ещё две строки той же породы: `Ci
   отчёте, что выбрано и почему.
 - Сейв: `w.str(lm.name)` → запись фиксированных `kNameBytes` байт
   (`w.bytes`/`pod` массива) — формат ломается молча, версию бампнуть.
-- Сторожа `stacks.h:125,141`: пересчитать `sizeof(Landmark)` и
+- Сторожа `stacks.h:125,141`: пересчитать `sizeof(Place)` и
   `sizeof(GameState)` по новой раскладке (число — расчётом, проверить
   сборкой), комментарий про «libc++ 24 / libstdc++ 32» — снять: теперь
   размер платформенно-независим (это и есть цель шага).
@@ -1395,13 +1395,13 @@ libstdc++/MSVC (32 Б). Ещё две строки той же породы: `Ci
   (перебор 4096 сидов) — AGENTS §8 п.3 (цикл, который меряет, утверждает,
   что померил); негативный контроль — `name_set` со строкой длиной
   `kNameBytes` даёт ровно `kNameBytes-1` символов и NUL.
-- Замер: `sizeof(Landmark)` ДО/ПОСЛЕ и итог штабеля мест по капу (МиБ) в
+- Замер: `sizeof(Place)` ДО/ПОСЛЕ и итог штабеля мест по капу (МиБ) в
   отчёте (DOD п.10).
 - Доки: SKELETON I.10 строки «`Landmark::name`», «`sizeof` под
   `static_assert` — ПРАВДА на libc++» → ПРАВДА без оговорки; реестр
   `M-115` → ПОЛОВИНА, остаток назвать (`GameEvent` строки, `logicNodes*`,
   `Marker`, `Quest`, пять `std::string` в `GameState`).
-- Коммит: `refactor(macro): имя — колонка char[N] в Landmark, City,
+- Коммит: `refactor(macro): имя — колонка char[N] в Place, City,
   PlayerState; sizeof не зависит от stdlib (M-115, шаг 1)`.
 
 ---
@@ -1436,7 +1436,7 @@ src/sub`); `src/sub/dgn/dispatch.h` — колонки рода интерьер
 только ногами». Остальное не читать.
 
 **2. Закон.** Вердикт выше; ЗАКОН СТРОКИ КАТАЛОГА (кто живёт в интерьере —
-колонка строки рода интерьера, не ветка по `LandmarkType`); ЗАКОН
+колонка строки рода интерьера, не ветка по `PlaceType`); ЗАКОН
 АГНОСТИЧНОСТИ (интерьер не знает, сколько людей в городе — ему дают
 ростер); ЗАКОН ШВА («вход по сводке»: интерьер строит из снимка, который ему
 передали, — не читает `macro_stock` сам).

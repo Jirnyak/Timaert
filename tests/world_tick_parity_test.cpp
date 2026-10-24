@@ -472,7 +472,7 @@ void test_a_famine_is_recorded_once_when_it_begins() {
           "the boundary that took the souls is ONE fact, not thirty-two");
     CHECK(c.total >= 1, "the world remembered something about this place");
 
-    // A landmark has a NAME the day it is founded, but figure-ness is
+    // A place has a NAME the day it is founded, but figure-ness is
     // RENOWN (owner, 2026-08-28): this fresh fixture town has done and
     // suffered nothing the world was told of before, so its misfortune is
     // weather — the ring holds it (asserted above), the annals do not.
@@ -507,7 +507,7 @@ void test_population_dies_honestly_to_zero() {
     bool sawBelowOldFloor = false;
     // ИСХОД ЧИТАЕТСЯ ИЗ ЛЕТОПИСИ, А НЕ ИЗ out-ПАРАМЕТРА (M-233). Флаги
     // `famine`/`diedOut` рождала ВТОРАЯ дверь содержания, стоявшая внутри
-    // `settle_landmark_day`; она уничтожена, и голод с вымиранием говорит
+    // `settle_place_day`; она уничтожена, и голод с вымиранием говорит
     // теперь строка летописи в точке суда. ЗАКОН, который судит этот
     // свидетель, не изменился ни на слово: пол населения мёртв, спад идёт до
     // нуля, ноль поглощающий, переход в смерть срабатывает РОВНО один раз.
@@ -526,7 +526,7 @@ void test_population_dies_honestly_to_zero() {
     // порознь ни одна из них мир не убивает (прежде обе жили в одной, и
     // поселение этим судилось дважды).
     for (int day = 1; day <= 2048 && dayOfDeath < 0; ++day) {
-        sm::settle_landmark_day(gs, st, v, day);
+        sm::settle_place_day(gs, st, v, day);
         sm::squad_season_window(gs, st, day);
         if (sm::souls_flock(gs, st, v) < 5) sawBelowOldFloor = true;
         if (died_facts() > 0) dayOfDeath = day;
@@ -539,7 +539,7 @@ void test_population_dies_honestly_to_zero() {
     CHECK(sawBelowOldFloor,
           "population passed the old floor: no crutch is back");
     for (int day = 1; day <= 100; ++day) {
-        sm::settle_landmark_day(gs, st, v, day);
+        sm::settle_place_day(gs, st, v, day);
         sm::squad_season_window(gs, st, day);
     }
     deaths = died_facts();
@@ -580,7 +580,7 @@ void test_dungeon_population_regrows_like_fauna() {
     const int dueDay = liveId % sm::kGrowthEpochDays;
     sm::regrow_dungeon_populations(w, st, dueDay + 1);
     CHECK(sm::souls_flock(gs, st, live.slot) == 10,
-          "a landmark regrows only on its own day of the epoch");
+          "a place regrows only on its own day of the epoch");
     sm::regrow_dungeon_populations(w, st, dueDay);
     CHECK(sm::souls_flock(gs, st, live.slot) == 11,
           "on its due day a living garrison regrows one soul");

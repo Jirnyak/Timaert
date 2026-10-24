@@ -118,7 +118,7 @@ bool add_house_obb(SubworldMapData& out, float cx, float cy,
     return true;
 }
 
-bool stamp_landmark_house(SubworldMapData& out, Rng& r,
+bool stamp_place_house(SubworldMapData& out, Rng& r,
                                  float cx, float cy, int w, int h,
                                  float height) {
     // The keep gets a modest random lean — enough to break the axis-aligned

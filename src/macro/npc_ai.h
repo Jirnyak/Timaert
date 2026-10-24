@@ -183,7 +183,7 @@ bool scent_hunt_step(MacroHandle self, MacroPos& p,
 // — no omniscience, no rumours. Two strategies over the ONE price law
 // (economy.h stock_price at post-trade supply; transfer_value moves coin —
 // nothing minted, nothing confiscated). At namespace scope (the
-// settle_landmark_day pattern) so caravan_deal_test can drive one deal.
+// settle_place_day pattern) so caravan_deal_test can drive one deal.
 struct CaravanDeal {
     int boughtValue = 0;      // coin paid INTO the market for goods taken
     int soldValue   = 0;      // coin the market paid for goods delivered
@@ -336,7 +336,7 @@ int squad_season_window(GameState& gs, MacroStore& st, int day,
 int squad_bags_hygiene_daily(MacroWorld& mw);
 
 // A creatures's SEASON of needs — the one arithmetic the boundary window bills
-// by and the landmark's crew-loading fills by (drift between the two would
+// by and the place's crew-loading fills by (drift between the two would
 // be a second truth of содержание). Борд идёт по РАЦИОНУ СВОЕЙ СТРОКИ на
 // каждую душу контейнера; жалованье — один закон содержания × сезон. (Здесь
 // стояло «per soul whose own row is on upkeep, foraging-scaled by the leader's

@@ -2,7 +2,7 @@
 #include "macro/macro_lighting.h"
 
 #include "macro/features.h"
-#include "macro/landmark_iter.h"
+#include "macro/place_iter.h"
 #include "macro/optics.h"
 #include "macro/state.h"
 
@@ -14,7 +14,7 @@
 namespace sm {
 namespace {
 
-// Unpack the low 24 bits of an ARGB tint (as stored in LandmarkDef.color /
+// Unpack the low 24 bits of an ARGB tint (as stored in PlaceDef.color /
 // lightColor) into linear 0..1 RGB. Alpha is ignored — emission is additive.
 inline void unpack_rgb(std::uint32_t argb, float& r, float& g, float& b) {
     r = float((argb >> 16) & 0xFFu) / 255.0f;
@@ -32,7 +32,7 @@ inline float pop_radius(float pop) {
     return 1.5f + std::sqrt(std::max(1.0f, pop)) * 0.35f;
 }
 
-// Append one emitter. `tint == 0` means the landmark type opts out of night
+// Append one emitter. `tint == 0` means the place type opts out of night
 // light, so nothing is emitted — the single data-driven gate.
 void push_light(std::vector<MacroLight>& out, int w, int h,
                 float cellX, float cellY, float pop, std::uint32_t tint) {
@@ -115,16 +115,16 @@ std::vector<MacroLight> collect_macro_lights(const MacroWorld& mw) {
     const GameState& gs = *mw.gs;
     const int w = gs.mapW;
     const int h = gs.mapH;
-    // THE enumeration (landmark_iter.h) × THE registry row: the kind's row
+    // THE enumeration (place_iter.h) × THE registry row: the kind's row
     // says whether it glows (lightColor, 0 = opt-out inside push_light) and
     // HOW — population-scaled hearth (lightPop == 0) or a fixed synthetic
     // strength. `depleted` is the one live opt-out (a spire whose orb is gone
     // lost its light with it). This used to be three hand-written loops, one
-    // per kind (canon-audit C2) — a new landmark kind now glows by its row
+    // per kind (canon-audit C2) — a new place kind now glows by its row
     // alone, with no line here.
-    for_each_landmark(mw, [&](const LandmarkView& lv) {
+    for_each_place_view(mw, [&](const PlaceView& lv) {
         if (lv.depleted) return;
-        const LandmarkDef& def = landmark_def(lv.type);
+        const PlaceDef& def = place_def(lv.type);
         const float strength =
             def.lightPop > 0.0f ? def.lightPop : float(lv.population);
         push_light(out, w, h, float(lv.x), float(lv.y), strength,

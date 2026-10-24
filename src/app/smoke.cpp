@@ -107,7 +107,7 @@ static void smoke_give_visual(sm::sub::SubObjects& objs, int s,
 #include "macro/currency.h"   // coin_census_value — монетная перепись сумки
 #include "macro/anketa.h"
 #include "macro/labour.h"   // souls_flock — паства через ТЕЛО (M-90)
-#include "macro/landmark_iter.h"   // for_each_place — обход мест по слотам
+#include "macro/place_iter.h"   // for_each_place — обход мест по слотам
 #include "macro/squad.h"           // place_handle_by_ordinal — резолв места
 #include "macro/squad_index.h"     // settlement_at — «кто живёт на клетке»
 #include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP witness
@@ -1607,7 +1607,7 @@ bool smoke_find_open_subworld_cell(const App& app, int& outX, int& outY) {
         || app.terrain.height <= 0) {
         return false;
     }
-    auto hasLandmark = [&](int x, int y) {
+    auto hasPlace = [&](int x, int y) {
         bool here = false;
         sm::for_each_place(*app.macroStore, [&](std::uint16_t slot) {
             const auto& c = app.macroStore->cell[slot];
@@ -1640,7 +1640,7 @@ bool smoke_find_open_subworld_cell(const App& app, int& outX, int& outY) {
                     || y >= app.gs.mapH - 64) {
                     continue;
                 }
-                if (hasLandmark(x, y)) continue;
+                if (hasPlace(x, y)) continue;
                 const float h = sm::field01_of(app.terrain.height_at(x, y));
                 // The [minH, 0.72] band sits below kMountainBiomeLevel (0.75),
                 // so Mountain-biome cells are already excluded here.
@@ -2784,7 +2784,7 @@ bool run_dungeon_house_smoke(App& app) {
     // снималась ОДИН раз и переиспользовалась после выхода из дома — держалось
     // это на кэше снимков клеток, который возвращал улице прежние позиции. Кэш
     // снесён, и обнажилось вот что: геометрия города есть функция ЖИВОГО
-    // населения (`city.cpp` берёт `population = ctx.landmark.size`, от него
+    // населения (`city.cpp` берёт `population = ctx.place.size`, от него
     // радиус стены, число домов и полос), поэтому смерть ОДНОГО жителя из
     // 6272 ниже по сценарию двигает **4690 пропов из 71 039 (6.6 %)**, и
     // прицельная дверь уезжает на 9.55 м. ЗДЕСЬ ЭТО НЕ УТВЕРЖДАЕТСЯ НИКАК:

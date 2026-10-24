@@ -12,7 +12,7 @@
 #include <cstdio>
 #include "macro/currency.h"
 #include "macro/econ_day.h"   // EconFact/EconFactSink — ведомость склада душ
-#include "macro/landmark_registry.h"
+#include "macro/place_registry.h"
 #include "macro/macro_stock.h"
 #include "macro/player_entity.h"
 #include "macro/spell_book_state.h"
@@ -292,13 +292,13 @@ inline void set_visual_speed(ecs::MacroNpcRuntime& rt, float dist,
 // умершего целиком, и при переезде перестала ветвиться по РОДУ СУБЪЕКТА.
 //
 // ЧТО ИМЕННО УМЕРЛО, И ПОЧЕМУ ЭТО БЫЛ ВТОРОЙ ОТВЕТ. Прежняя дверь брала
-// `MapSubject` — хранимый enum {None, Squad, Landmark} плюс два адреса — и
+// `MapSubject` — хранимый enum {None, Squad, Place} плюс два адреса — и
 // по нему выбирала одно из двух: неподвижному отдавала КОЛОНКУ его строки
 // реестра, ходоку — МАСКУ, вписанную литералом в код. То есть на один
 // вопрос мира («какие глаголы у этого сквада») в дереве стояло два ответа
 // в разных формах (DOD п.6), а хранимый род мог с ними разойтись — ровно
 // дефект M-246а, где хранение выводимого и держало живой баг. Литерал
-// переехал строками в `kLandmarks` (там же `static_assert` на закон), род
+// переехал строками в `kPlaces` (там же `static_assert` на закон), род
 // субъекта не хранится и не выводится, и осталась ОДНА строка кода.
 //
 // ПОДМЕС `Enter` ОТСЮДА УШЁЛ ВМЕСТЕ С САМИМ ГЛАГОЛОМ (M-290): вход в субмир
@@ -309,8 +309,8 @@ inline void set_visual_speed(ecs::MacroNpcRuntime& rt, float dist,
 // нулевая маска, нулевой вклад S6, как у всякой макро-двери.
 inline std::uint16_t actions_of(const MacroStore& st, MacroHandle h) {
     if (!st.valid(h)) return 0;
-    const LandmarkDef& def =
-        landmark_def(SquadType(st.runtime[h.slot].squadType));
+    const PlaceDef& def =
+        place_def(SquadType(st.runtime[h.slot].squadType));
     return def.actions;
 }
 
@@ -417,7 +417,7 @@ inline void shift_home_flock(GameState& gs, const MacroStore& st,
     const MacroHandle home = place_handle_by_ordinal(st, std::uint32_t(homeId));
     if (!st.valid(home)) return;
     const SquadType kind = SquadType(st.runtime[home.slot].squadType);
-    if (landmark_def(kind).bornPopBase != 0) return;
+    if (place_def(kind).bornPopBase != 0) return;
     const auto& c = st.cell[home.slot];
     const int x = ecs::cell_x(c, gs.mapW), y = ecs::cell_y(c, gs.mapW);
     worked_write(gs, x, y, std::max(0, worked_read(gs, x, y) + delta));
@@ -442,7 +442,7 @@ inline void shift_home_flock(GameState& gs, const MacroStore& st,
 // идёт людьми (`settle_souls` → `raise_flock_into_container`, строка
 // Peasant). Значит и убыль обязана считаться людьми: конь в стойле —
 // имущество, и его падёж человеческую паству уменьшать не смеет. До этой
-// двери `settle_landmark_day` вычитал из worked ЛЮБУЮ павшую голову, считая
+// двери `settle_place_day` вычитал из worked ЛЮБУЮ павшую голову, считая
 // её душой (латентно: табун у мест сегодня нулевой).
 //
 // ВЕТКИ ПО РОДУ ЗДЕСЬ НЕТ И НЕ НУЖНО: у данжа паства И ЕСТЬ головы, поэтому
@@ -673,7 +673,7 @@ inline CharacterSheet* owned_sheet(MacroStore& st, MacroHandle h) {
 // предикат владения ложен по всем трём термам (строка существа нулевая и не
 // именная, тег анкеты −1, бит дома 0), поэтому дверь ИГНОРИРОВАЛА его
 // анкету и отдавала бросок строки `Peasant`. Город и деревня — ровно два
-// непустых листа таблицы `kLandmarkSheets@src/macro/characters.h`, и все их
+// непустых листа таблицы `kPlaceSheets@src/macro/characters.h`, и все их
 // 12 заполненных ячеек (Blacksmith/Tailoring/Masonry/Alchemy/Trade + Cha)
 // дверь не видела НИ РАЗУ: числа жили только для прямых читателей колонки.
 // Веса роли `Peasant` дают этим пяти ремёслам вес 0 (`tables/npc.h`), так
@@ -778,7 +778,7 @@ inline void refresh_squad_body(MacroStore& st, MacroHandle h) {
 // Owner's ruling, 2026-08-27: renown is not a squad's private counter — every
 // MACRO entity with an identity carries one. A band, a city, a people. Where
 // it lives, by participant kind: a squad's rides its runtime component, a
-// landmark's answers through the one landmark door (landmark_renown_slot,
+// place's answers through the one place door (place_renown_slot,
 // state.h). A CELL has none and never will — the land has no standing — and
 // a FACTION's is the politics track's to add: one field, read through this
 // same door. `renown_of` is what makes a deed contextual — killing a legend
@@ -795,7 +795,7 @@ inline std::uint32_t* renown_slot(MacroStore& st,
             const MacroHandle h = macro_handle_by_spawn_id(st, ordinal);
             return st.valid(h) ? &st.runtime[h.slot].renown : nullptr;
         }
-        case std::uint8_t(FactSubject::Landmark): {
+        case std::uint8_t(FactSubject::Place): {
             // Слава места — колонка runtime.renown его ТЕЛА; строки нет,
             // резолв тот же, что у сквада (одно пространство ординалов,
             // M-37), род субъекта остаётся словом ЛЕТОПИСИ.
@@ -835,7 +835,7 @@ inline void grant_renown(MacroStore& st,
 // becomes somebody; a writer that paid renown without filing would be a
 // legend nobody can read. Here neither is expressible: you hand over the
 // sentence and the doer, and both happen. It lives on the MACRO layer beside
-// its landmark twin (record_landmark_fact, state.h) so the app, the UI and
+// its place twin (record_place_fact, state.h) so the app, the UI and
 // the subworld engine all knock on the same door — the one-door law had
 // drifted across two layers, and the drift was writers that filed for free.
 //
@@ -888,18 +888,18 @@ inline std::uint32_t record_deed(MacroStore& st, GameState& gs,
 // его ТЕЛА). Та же одна дверь S20.1: figure-ность из ДО-дельной славы, файл,
 // плата — всё внутри record_deed_filed, вторая копия закона умерла с
 // переездом.
-inline std::uint32_t record_landmark_fact(MacroStore& st, GameState& gs,
-                                          FactKind kind, int landmarkId,
+inline std::uint32_t record_place_fact(MacroStore& st, GameState& gs,
+                                          FactKind kind, int placeId,
                                           int x, int y, int amount,
-                                          int objectLandmarkId = 0) {
+                                          int objectPlaceId = 0) {
     WorldFact f{};
     f.day = gs.worldTime.day();
     f.kind = std::uint16_t(kind);
-    f.subjectKind = std::uint8_t(FactSubject::Landmark);
-    f.subject = std::uint32_t(landmarkId < 0 ? 0 : landmarkId);
-    if (objectLandmarkId > 0) {
-        f.objectKind = std::uint8_t(FactSubject::Landmark);
-        f.object = std::uint32_t(objectLandmarkId);
+    f.subjectKind = std::uint8_t(FactSubject::Place);
+    f.subject = std::uint32_t(placeId < 0 ? 0 : placeId);
+    if (objectPlaceId > 0) {
+        f.objectKind = std::uint8_t(FactSubject::Place);
+        f.object = std::uint32_t(objectPlaceId);
     }
     f.x = std::int16_t(x);
     f.y = std::int16_t(y);
@@ -1347,7 +1347,7 @@ inline void loot_fallen_owner(MacroStore& st, MacroHandle fallen,
 //   · Killed — the winner over the fallen loser. Renown flows by the one
 //     deed law (record_deed), and «who kills near this village» becomes
 //     a chronicle_near_kind question with no new storage.
-//   · Died — each bereaved HOME landmark's own loss, object = the killer
+//   · Died — each bereaved HOME place's own loss, object = the killer
 //     (a NAMED band by its ordinal, a nameless one by its faction —
 //     owner's ruling): the record hatred, revenge quests and the danger
 //     term of the refusal price all READ instead of keeping counters.
@@ -1385,7 +1385,7 @@ inline void record_battle_facts(MacroStore& st, GameState& gs,
         WorldFact f{};
         f.day = gs.worldTime.day();
         f.kind = std::uint16_t(FactKind::Died);
-        f.subjectKind = std::uint8_t(FactSubject::Landmark);
+        f.subjectKind = std::uint8_t(FactSubject::Place);
         f.subject = std::uint32_t(homeId);
         const std::uint32_t foeOrd =
             st.valid(foe) ? st.spawnId[foe.slot].index : 0u;

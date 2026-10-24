@@ -10,8 +10,8 @@
 #include "macro/map_generator.h"
 #include "tables/biomes.h"
 #include "tables/codex.h"
-#include "macro/landmark_registry.h"
-#include "macro/landmark_iter.h"
+#include "macro/place_registry.h"
+#include "macro/place_iter.h"
 #include "ui/squad_draw.h"
 #include "tables/npc.h"
 #include "tables/commodity.h"   // the raw rows the scrap variant byte names
@@ -1558,7 +1558,7 @@ namespace sm::ui
         const ecs::Pools &pools = st.pools[slot];
         const auto &kindCol = st.kind[slot];
         const SquadType sKind = SquadType(st.runtime[slot].squadType);
-        const LandmarkDef &row = landmark_def(sKind);
+        const PlaceDef &row = place_def(sKind);
         const NPCType bodyKind =
             kindCol.type < std::uint16_t(NPCType::Count)
                 ? NPCType(std::uint8_t(kindCol.type)) : NPCType::Peasant;
@@ -1626,7 +1626,7 @@ namespace sm::ui
             }
             // ГЛАГОЛЫ БАННЕРА — ПО МАСКЕ, И ЭТО СТРОЖЕ, ЧЕМ БЫЛО: ветка
             // сквада рисовала обе кнопки безусловно, мимо колонки, которая
-            // уже объявляла их строкой (`kLandmarks`). Место Talk и Attack
+            // уже объявляла их строкой (`kPlaces`). Место Talk и Attack
             // не объявляет — и не рисует, ровно как прежде.
             if (acts & kMapActTalk)
             {
@@ -1749,7 +1749,7 @@ namespace sm::ui
                     //
                     // АНКЕТА ЭТОГО СКВАДА, А НЕ СТОЛ ЕГО РОДА: таблица рода —
                     // только ШАБЛОН РОЖДЕНИЯ (`birth_place` ставит
-                    // `st.sheet[slot] = landmark_sheet(kind)`), после него
+                    // `st.sheet[slot] = place_sheet(kind)`), после него
                     // истина у анкеты — она качается (ЗАКОН АНКЕТЫ).
                     const auto buyUnit = [&](const ItemRef &ref, int n) {
                         return trade_overlay_buy_price(

@@ -100,7 +100,7 @@ struct MacroWorld {
     BattleFactSink facts     = nullptr;
     void*          factsUser = nullptr;
     // The economy's fact channel (econ_day.h EconFact): gathered / produced /
-    // consumed / famine, stamped with the landmark id by the world_tick relay.
+    // consumed / famine, stamped with the place id by the world_tick relay.
     // Same law as `facts` above — null means nobody is listening. The balance
     // harness is the first listener; the app may plug the bus in later.
     EconFactSink   econFacts     = nullptr;

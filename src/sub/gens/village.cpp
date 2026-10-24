@@ -40,7 +40,7 @@ void gen_village(const GenInput& in, SubworldMapData& out) {
     const int centre = kCellSize / 2;
     const float cf = float(centre);
     const int population = std::max(kSettlementFootprint.villagePopFloor,
-                                    ctx.landmark.size);
+                                    ctx.place.size);
     // How tall the village's wall stands — asked of the trunk the village
     // fells, because that is what the wall IS (gens/village_palisade.h). The
     // berm and the postern's reach are measured off it, so a stockade keeps a

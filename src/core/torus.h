@@ -133,7 +133,7 @@ inline float wrapf(float v, float size) {
 //
 // The UI carried two copies of this (macro_overlay.cpp, map_screen.cpp) written
 // as a single conditional subtraction, which corrects exactly ONE period: pan a
-// map page past ~1.5 world widths and every landmark, pin and player mark
+// map page past ~1.5 world widths and every place, pin and player mark
 // silently misses by a whole world and is culled off-screen — the "a marker
 // cannot be found across the seam" report.
 inline float torus_delta(float d, float period) {

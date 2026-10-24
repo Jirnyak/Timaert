@@ -205,8 +205,8 @@ int main() {
 
     // Запекание: шесть округ, вся достижимая суша разобрана.
     CHECK(base.nav.baked(), "nav bakes on the synthetic torus");
-    CHECK(int(base.nav.regionLandmarkId.size()) == 6,
-          "every landmark seeds a region");
+    CHECK(int(base.nav.regionPlaceId.size()) == 6,
+          "every place seeds a region");
     // Кап порталов НЕ резал переходы — счётчик, не stderr (грабля «кричит
     // в лог, grep не ловит» убита механизмом).
     CHECK(base.nav.portalOverflows == 0,
@@ -243,7 +243,7 @@ int main() {
             const Place& A = base.seeded[std::size_t(a)];
             const Place& B = base.seeded[std::size_t(b)];
             const int steps = base.walk(A.x, A.y, B.x, B.y);
-            CHECK(steps > 0, "landmark pair arrives");
+            CHECK(steps > 0, "place pair arrives");
             pairSteps[a][b] = steps;
         }
     }
@@ -294,14 +294,14 @@ int main() {
         Fixture sea;
         sea.build_island();
         CHECK(sea.nav.baked(), "island world bakes");
-        CHECK(int(sea.nav.regionLandmarkId.size()) == 2,
+        CHECK(int(sea.nav.regionPlaceId.size()) == 2,
               "mainland and island each seed a region");
         const auto rm = sm::nav_region_at(sea.nav, 5, 32);
         const auto ri = sm::nav_region_at(sea.nav, 40, 32);
         CHECK(rm != sm::kNavNoRegion && ri != sm::kNavNoRegion && rm != ri,
               "the strait still SPLITS the partition: water is dear, so the "
               "two shores remain two округи with a portal between them");
-        const std::size_t R = sea.nav.regionLandmarkId.size();
+        const std::size_t R = sea.nav.regionPlaceId.size();
         CHECK(sea.nav.routeNext[std::size_t(ri) * R + rm]
                   != sm::kNavNoRegion,
               "THE ISLAND IS REACHABLE ON FOOT: the one table knows the "
@@ -437,7 +437,7 @@ int main() {
         CHECK(f.nav.regionOf[0] != mark,
               "рождение в окне перепекает округи");
         bool sawDead = false, sawBorn = false;
-        for (std::int32_t lid : f.nav.regionLandmarkId) {
+        for (std::int32_t lid : f.nav.regionPlaceId) {
             sawDead = sawDead || lid == ruinId;
             sawBorn = sawBorn || lid == bornId;
         }

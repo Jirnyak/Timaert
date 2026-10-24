@@ -2,7 +2,7 @@
 #include "ecs/components.h"
 #include "ecs/npc_character.h"
 #include "macro/entry_context.h"
-#include "macro/landmark_iter.h"   // for_each_place — места по слотам
+#include "macro/place_iter.h"   // for_each_place — места по слотам
 #include "tables/faction.h"
 #include "tables/npc.h"
 #include "macro/spell_book_state.h"

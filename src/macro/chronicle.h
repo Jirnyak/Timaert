@@ -236,7 +236,7 @@ static_assert(kRenownToBeNamed > 0,
 // помнятся дела ИМЕНОВАННЫХ — лордов, игрока, городов; безымянная массовка
 // растворяется; как в DF, история — это история ФИГУР»). In this world that
 // rule is not a heuristic but a consequence: a squad IS a lord and carries an
-// ordinal identity (MacroSpawnId); a landmark and a faction likewise. The
+// ordinal identity (MacroSpawnId); a place and a faction likewise. The
 // nameless crowd — creature rows, bodies below, the peasants of a city — has no
 // ordinal at all and can only appear as `amount`. So the test is simply
 // whether a fact has a named participant, and the volume follows: deeds
@@ -283,10 +283,10 @@ inline constexpr std::uint8_t fact_subject(FactSubject kind, bool named) {
 // while, and then the world will forget, which is what forgetting is for.
 //
 // FIGURE-NESS IS DERIVED FROM RENOWN FOR EVERYONE (owner, 2026-08-28) — a
-// band, a city, a people. A landmark HAS a name the day it is founded, but a
+// band, a city, a people. A place HAS a name the day it is founded, but a
 // name is a word, not historical weight: a fresh hamlet's hunger is weather,
 // a renowned city's is legend. The caller marks the bit from the subject's
-// own renown (record_deed for squads, record_landmark_fact for places) —
+// own renown (record_deed for squads, record_place_fact for places) —
 // only the world knows how much this one has done and suffered.
 inline constexpr bool subject_is_named(std::uint8_t packed) {
     return fact_subject_kind(packed) != std::uint8_t(FactSubject::None)
@@ -355,7 +355,7 @@ void chronicle_init(Chronicle& c, int mapW, int mapH);
 // world yet). Every field is a number, so this is a store and two links.
 std::uint32_t chronicle_record(Chronicle& c, const WorldFact& fact);
 
-// (The landmark-fact door lives in state.h `record_landmark_fact` — it must
+// (The place-fact door lives in state.h `record_place_fact` — it must
 // resolve the place's RENOWN to mark figure-ness and to pay the deed, and a
 // chronicle of ordinals must not learn where renown lives.)
 
@@ -412,7 +412,7 @@ struct FactNaming {
     // Each returns a display name for an ordinal, or nullptr if it cannot say
     // — in which case the sentence falls back to what it does know.
     const char* (*squad)(void* user, std::uint32_t ordinal) = nullptr;
-    const char* (*landmark)(void* user, std::uint32_t id) = nullptr;
+    const char* (*place)(void* user, std::uint32_t id) = nullptr;
     const char* (*faction)(void* user, std::uint32_t index) = nullptr;
     void* user = nullptr;
 };

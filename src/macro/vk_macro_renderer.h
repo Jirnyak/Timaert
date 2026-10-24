@@ -86,7 +86,7 @@ public:
 
     // Refresh ONLY the danger-zone field (binding 2), same surgical
     // discipline. Called by the one rebaker (rebake_world) when the zone
-    // layer is rebaked — load, season, a landmark's death — never per frame.
+    // layer is rebaked — load, season, a place's death — never per frame.
     void upload_zone_field(const gpu::VulkanDevice& dev,
                            const ZoneLayer& zones);
 

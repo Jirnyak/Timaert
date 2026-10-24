@@ -521,8 +521,8 @@ const char* affix_suffix(const ItemRef& item) noexcept;
 // 2026-10-18 (M-223) — та же болезнь, что лечил этот абзац, только пережившая
 // его на три недели, потому что у неё был ЧИТАТЕЛЬ и не было ПИСАТЕЛЯ.
 // (generate_settlement_inventory is gone: the unified-container moment it was
-// kept for arrived — landmark stocks are seeded by the ECONOMY's own law,
-// econ_day.h seed_landmark_inventory, from the one commodity dictionary.)
+// kept for arrived — place stocks are seeded by the ECONOMY's own law,
+// econ_day.h seed_place_inventory, from the one commodity dictionary.)
 
 // ── Unified loot table ─────────────────────────────────────────
 // ONE loot registry keyed by a stable string `lootId`. Зарегистрированы
