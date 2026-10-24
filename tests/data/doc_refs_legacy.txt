@@ -82,7 +82,6 @@ SKELETON.md	:299
 SKELETON.md	:300-304
 SKELETON.md	:3054
 SKELETON.md	:309
-SKELETON.md	:3113-3146
 SKELETON.md	:320-330
 SKELETON.md	:3208
 SKELETON.md	:3250
@@ -291,16 +290,11 @@ SKELETON.md	node_registry.cpp:19
 SKELETON.md	node_registry.h:4
 SKELETON.md	npc.h:134
 SKELETON.md	npc_ai.cpp:1372
-SKELETON.md	npc_ai.cpp:1742
-SKELETON.md	npc_ai.cpp:2000
 SKELETON.md	npc_ai.cpp:2313
 SKELETON.md	npc_ai.cpp:2862
-SKELETON.md	npc_ai.cpp:3468
 SKELETON.md	npc_ai.cpp:3479
 SKELETON.md	npc_ai.cpp:3608
 SKELETON.md	npc_ai.cpp:917
-SKELETON.md	npc_ai.cpp:946-949
-SKELETON.md	npc_ai.cpp:999
 SKELETON.md	npc_ai.h:102
 SKELETON.md	npc_spawn.cpp:216
 SKELETON.md	npc_spawn.cpp:304
