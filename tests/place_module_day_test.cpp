@@ -42,6 +42,9 @@
 #include "check.h"
 
 #include "macro/npc_ai.h"
+#include "macro/pathfinding.h"   // PathCostData — вес земли под стоящим
+#include "macro/movement_cost.h"  // burn/rest per hour — якорь предусловия
+#include "macro/travel.h"         // overload_burden_from_capacity
 #include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
 #include "macro/labour.h"        // settle_souls — одна дверь прихода душ
 #include "macro/store.h"         // parent_of / tithe_of / set_relation
@@ -119,10 +122,26 @@ void tally_sink(void* user, const EconFact& f) {
 
 // Мир фикстуры — одна структура, чтобы все четыре теста рождали СВОИ
 // предусловия одной и той же дверью, а не четырьмя списаниями друг у друга.
+// ВЕС ЗЕМЛИ ФИКСТУРЫ — И БЕЗ НЕГО ЗАКОН ПЛАНКИ НЕ ПРОВЕРЯЕТСЯ ВОВСЕ.
+// `cell_weight@src/macro/npc_ai.cpp` читает запечённую сетку, а при её
+// отсутствии честно отвечает **1.0** — «мир без рельефа». На весе 1.0 жжение
+// получается меньше регена, планка не садится НИ У КОГО, и всякая проверка
+// про SP становится ТАВТОЛОГИЕЙ (§8 п.2: прибор обязан утверждать, что
+// помЕрил). Поймала это ровно ТАБЛИЦА МУТАЦИЙ: снос строки цели в
+// `birth_place` ронял только проверки про саму цель, а проверки про планку
+// оставались зелёными — то есть не проверяли ничего.
+//
+// ЧИСЛО ВЗЯТО ИЗ ЗАМЕРА ЖИВОГО МИРА, А НЕ С ПОТОЛКА: зонд в самой точке
+// ритма дал вес клетки под местами **3.48–5.59** (`balance_run`, сид 7,
+// 40 дней). 5.0 — середина этой полосы, то есть земля фикстуры не легче и не
+// тяжелее той, на которой стоят настоящие деревни.
+constexpr float kFixtureCellWeight = 5.0f;
+
 struct Fixture {
     GameState gs{};
     TerrainData terrain = all_land();
     TreeLayer trees;
+    PathCostData pathCost;
     std::unique_ptr<MacroStore> storeOwner = make_macro_store();
     FactTally tally{};
 
@@ -133,12 +152,23 @@ struct Fixture {
         trees.width = kMap;
         trees.height = kMap;
         trees.data.assign(std::size_t(kMap) * kMap, 0);
+        // Сетка весов — плоская и НЕ водная: предмет проверки есть цена
+        // ДОРОГИ у стоящего, и подмешивать сюда воду значило бы мерить две
+        // величины одной проверкой. Высоты НЕ печём нарочно: `climb`
+        // возвращает 0 при незапечённых высотах (его собственный закон), и
+        // подъёма в цене стоящего быть не должно вовсе.
+        pathCost.width = kMap;
+        pathCost.height = kMap;
+        pathCost.costGrid.assign(std::size_t(kMap) * kMap,
+                                 kFixtureCellWeight);
+        pathCost.water.assign(std::size_t(kMap) * kMap, 0u);
     }
     MacroStore& st() { return *storeOwner; }
 
     MacroWorld world() {
         return MacroWorld{.gs = &gs, .trees = &trees, .store = storeOwner.get(),
                           .terrain = &terrain,
+                          .pathCost = &pathCost,
                           .econFacts = &tally_sink,
                           .econFactsUser = &tally};
     }
@@ -387,6 +417,105 @@ void test_no_duplicate_child_however_long_the_world_runs() {
           "рождение с возвратом");
 }
 
+// ═════ 5. СТОЯЩЕЕ МЕСТО НЕ ЖЖЁТ ПЛАНКУ И НЕ ЛОЖИТСЯ В ПРИВАЛ ════════════
+// M-313, ветка Б (вердикт владельца 2026-10-25). Закон: тело, которое никуда
+// не шло, за дорогу не платит. Носитель — цель на СВОЮ клетку, которую пишет
+// `birth_place@src/macro/place_birth.h`: `at_goal` делается истинным по
+// построению, `resting` — истинным, и половина жжения в
+// `settle_pools_over_time@src/macro/recovery.cpp` не берётся вовсе.
+//
+// ПОЧЕМУ ЭТОТ СВИДЕТЕЛЬ ОБЯЗАН БЫЛ ПОЯВИТЬСЯ: дефект прошёл мимо ВСЕХ 135
+// приборов и нашёлся только замером приёмки (`placeResting` 1505 из 2458).
+// Ни один прибор не спрашивал, цела ли планка у того, кто стоит.
+void test_a_standing_place_pays_nothing_for_the_road() {
+    Fixture f;
+    const MacroHandle vil = f.place(SquadType::Village, 10, 10, 64);
+    const MacroHandle city = f.place(SquadType::City, 20, 20, 64);
+
+    // ── ИНВЕНТАРЬ СКВАДА ПОЛОН, И БЕЗ ЭТОГО ПРОВЕРКА БЫЛА БЫ ТАВТОЛОГИЕЙ ─
+    // «Склада» как рода вещей НЕ СУЩЕСТВУЕТ (владелец, дословно: «никакого
+    // склада нет универсальная система сквадов с инвентареём плоские
+    // массивы») — есть ОДИН контейнер сквада в единой системе, и ровно его
+    // массу ритм марша читает как носимый ПЕРЕГРУЗ (шрам M-310). Он и
+    // поднимает жжение выше регена: у живых мест `overload` замерен **3.6**,
+    // потому что масса их инвентаря кратно обходит спину. Пустой контейнер
+    // даёт перегруз **1.0**, жжение 5.0 × 2.0 = 10.0 SP/час против регена
+    // 13.75 — планка НЕ САДИТСЯ НИ У КОГО, и всё, что ниже, зеленеет само.
+    // Поймала это таблица мутаций, а не глаза: снос строки цели в
+    // `birth_place` ронял только проверки про саму цель.
+    for (const MacroHandle h : {vil, city}) {
+        CHECK(f.st().inventory[h.slot].inv.add_of(item_index("stone"), 4096),
+              "контейнер сквада набит камнем — предусловие рождено прибором, а не "
+              "выпрошено у генератора (§8 п.11)");
+    }
+
+    // ЯКОРЬ ПРЕДУСЛОВИЯ, И ОН СЧИТАЕТСЯ ПУБЛИЧНЫМИ ДВЕРЬМИ ЗАКОНА, А НЕ
+    // ПЕРЕСКАЗОМ ЕГО ФОРМУЛЫ: «на этой земле с этим грузом МАРШИРУЮЩЕЕ тело
+    // теряло бы планку». Без этого утверждения закон ниже («а стоящее —
+    // не теряет») не отличался бы от «тут вообще никто ничего не теряет».
+    for (const MacroHandle h : {vil, city}) {
+        const ecs::Pools& hp = f.st().pools[h.slot];
+        const Inventory& inv = f.st().inventory[h.slot].inv;
+        const float burn = burn_stamina_per_hour(
+            kFixtureCellWeight,
+            overload_burden_from_capacity(
+                carry_capacity_g(f.st().runtime[h.slot], inv), inv));
+        const float rest = rest_stamina_per_hour(
+            int(hp.maxSp), int(f.st().runtime[h.slot].marathonRank));
+        CHECK(burn > rest,
+              "ПРЕДУСЛОВИЕ ЖИВО: жжение ПУТИ на этой земле с этим грузом "
+              "обгоняет реген — значит «планка цела» ниже есть РЕЗУЛЬТАТ "
+              "закона, а не свойство беззубой фикстуры");
+    }
+
+    // ЯКОРЬ ПЕРВЫЙ — ЦЕЛЬ ЕСТЬ, И ОНА СВОЯ КЛЕТКА. Утверждается НОСИТЕЛЬ, а
+    // не следствие: пустая цель (`kNoCell`) и была тем, что предикат привала
+    // читал как «тело в пути».
+    for (const MacroHandle h : {vil, city}) {
+        CHECK(f.st().goal[h.slot].cell != ecs::kNoCell,
+              "у места ЦЕЛЬ ЕСТЬ — пустота заполнена ЗНАЧЕНИЕМ, а не "
+              "оставлена умолчанием");
+        CHECK(f.st().goal[h.slot].cell == f.st().cell[h.slot].idx,
+              "и цель эта — РОВНО своя клетка: «стой тут», прибытие истинно "
+              "по построению");
+        // `what` = 0 есть `GoalKind::None`: целью-МЕСТОМ эту запись не примет
+        // никто, и спор за колонку невыразим.
+        CHECK(ecs::goal_kind(f.st().goal[h.slot].what) == ecs::GoalKind::None,
+              "род цели — None, поэтому `AiView::goal_place` отвечает «нет "
+              "места» и запись не путается с целью-местом");
+    }
+
+    const int vilSpStart = int(f.st().pools[vil.slot].sp);
+    const int citySpStart = int(f.st().pools[city.slot].sp);
+    CHECK(vilSpStart == int(f.st().pools[vil.slot].maxSp) && vilSpStart > 0,
+          "место рождено с ПОЛНОЙ планкой — иначе просадка ниже мерилась бы "
+          "от неизвестной базы");
+
+    // ЧЕТВЕРО СУТОК СТОЯНИЯ. Горизонт не с потолка: при жжении 25–37 SP/час
+    // против регена 13.75 планка 110 выедается до камп-порога (1/8 = 13.75)
+    // за ~2.5 игровых часа, то есть первые же сутки обязаны были бы уронить
+    // её в привал. Четверо суток — запас вчетверо.
+    f.think(4 * kThinksPerDay);
+
+    for (const MacroHandle h : {vil, city}) {
+        CHECK(int(f.st().pools[h.slot].sp) == int(f.st().pools[h.slot].maxSp),
+              "ПЛАНКА СТОЯЩЕГО МЕСТА ЦЕЛА ЧЕТВЕРО СУТОК: за дорогу, которой "
+              "не было, оно не заплатило ничем");
+        CHECK(f.st().runtime[h.slot].state
+                  != std::uint8_t(NPCState::Resting),
+              "и в ПРИВАЛ оно не легло — а лёгшее перестаёт ДУМАТЬ "
+              "(`ThinkGate::Rest`), то есть перестаёт и производить");
+        CHECK(f.st().runtime[h.slot].state
+                  != std::uint8_t(NPCState::Traveling),
+              "и в путь не ушло: цель на своей клетке ног не зовёт");
+        CHECK(f.st().cell[h.slot].idx == f.st().goal[h.slot].cell,
+              "и с места не сдвинулось — клетка та же, что цель");
+    }
+    CHECK(citySpStart == int(f.st().pools[city.slot].sp),
+          "у города та же планка, что в начале — закон один на оба рода, "
+          "ветки «а городу иначе» нет");
+}
+
 }  // namespace
 
 int main() {
@@ -394,5 +523,6 @@ int main() {
     test_village_raises_an_artel_and_pays_in_souls();
     test_city_raises_a_collector_only_for_a_debtor();
     test_no_duplicate_child_however_long_the_world_runs();
+    test_a_standing_place_pays_nothing_for_the_road();
     return sm::test::report("place_module_day_test");
 }
