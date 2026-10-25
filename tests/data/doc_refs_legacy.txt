@@ -193,7 +193,6 @@ SKELETON.md	econ_day.cpp:176
 SKELETON.md	econ_day.cpp:194
 SKELETON.md	econ_day.cpp:209
 SKELETON.md	econ_day.cpp:394-401
-SKELETON.md	econ_day.cpp:70
 SKELETON.md	econ_day.cpp:95-99
 SKELETON.md	econ_day.h:114-115
 SKELETON.md	econ_day.h:18-19

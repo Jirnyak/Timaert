@@ -150,11 +150,53 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
         st.inventory[vil.slot].inv.count("wood");
     const int inBag =
         (*sm::body_state<ecs::NpcInventory>(st, wc)).inv.count("wood");
+    // ── ЧЕТВЁРТОЕ МЕСТО, ГДЕ ТЕПЕРЬ БЫВАЕТ ДЕРЕВО: ОНО САМО СТАЛО ВЕЩЬЮ ──
+    //
+    // Ломоть 5а M-72 дал деревне МОДУЛЬ, и она производит из того, что ей
+    // привезли: её анкета знает Masonry 30, а `furniture` = {wood 2} и
+    // `carving` = {wood 1} — рецепты ровно под эту полку. То есть у дерева
+    // появился ЗАКОННЫЙ СТОК, которого у ведомости ниже не было, и прежняя
+    // сумма «склад + спина» перестала быть полной: она мерила ОСТАТОК
+    // сырья там, где теперь стоит ПРОИЗВОДИТЕЛЬ.
+    //
+    // ЗАМЕР, НАЗВАВШИЙ ПРИЧИНУ: срублено 16, на полке осталось дерева 2,
+    // мебели 4 (по 2 дерева) и резьбы 6 (по 1) — 2 + 8 + 6 = РОВНО 16.
+    // Материя не потерялась ни на единицу, то есть закон цел, а неполна
+    // была ВЕДОМОСТЬ. Поэтому чинится она, а не мир (ЗАКОН НУЛЕВОЙ п.3:
+    // причина найдена, и лечение — в свидетеле).
+    //
+    // СКОЛЬКО ДЕРЕВА ЛЕЖИТ В ГОТОВЫХ ВЕЩАХ — спрашивается у ЕДИНОЙ ТАБЛИЦЫ
+    // МАТЕРИИ (`item_parts@src/tables/items.h`), той же, по которой считает
+    // производство. Это не копия продакшен-логики (§8 п.5): копией было бы
+    // перевычислить РАНЖИРОВАНИЕ рук, а здесь складывается состав — то есть
+    // ведомость читает авторскую строку, как и велит §8 п.4.
+    //
+    // ШАГ ОДИН НАРОЧНО, И ЭТО СКАЗАНО ВСЛУХ: единственные стоки дерева в
+    // этой фикстуре — односоставные вещи. Углубится цепочка (дерево → часть
+    // → изделие) — сумма ниже РАЗОЙДЁТСЯ И ПОКРАСНЕЕТ, и это правильное
+    // поведение ведомости: она потребует себя продлить, а не промолчит.
+    const int woodIdx = sm::item_index("wood");
+    int woodInGoods = 0;
+    {
+        const auto cat = sm::item_catalog();
+        const sm::Inventory& shelf = st.inventory[vil.slot].inv;
+        for (int i = 0; i < int(cat.size()); ++i) {
+            const int have = shelf.count_of(i);
+            if (have <= 0) continue;
+            for (const sm::ItemPart& part : sm::item_parts(i))
+                if (int(part.def) == woodIdx)
+                    woodInGoods += have * int(part.count);
+        }
+    }
 
     CHECK(layerLost > 0, "the chop really fell trees in the layer");
     CHECK(storeGained > 0, "the haul reached the village store");
-    CHECK(layerLost == storeGained + inBag,
-          "CONSERVATION: layer loss == store gain + what still rides the bag");
+    CHECK(woodInGoods > 0,
+          "деревня ПУСТИЛА привезённое в дело — иначе слагаемое ниже было бы "
+          "нулевым и ведомость снова мерила бы только сырьё");
+    CHECK(layerLost == storeGained + inBag + woodInGoods,
+          "CONSERVATION: layer loss == сырьё на складе + сырьё в спине + "
+          "дерево, УЖЕ СТАВШЕЕ ВЕЩЬЮ — ничего не чеканится и не исчезает");
     CHECK(layer.revision > 0,
           "the chop moved the grid revision - the map sprite and the save "
           "(which carries the grid whole) both see the stump");

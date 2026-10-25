@@ -12,7 +12,7 @@
 
 #include "macro/world_tick.h"
 #include "macro/econ_day.h"
-#include "macro/labour.h"   // souls_home / souls_flock — две двери душ места
+#include "macro/labour.h"   // souls_flock / settle_souls — паства и её приход
 #include "macro/place_iter.h"  // for_each_place — обход мест по слотам
 #include "macro/squad.h"        // record_place_fact — летопись места
 #include "macro/currency.h"
@@ -77,8 +77,14 @@ void settle_place_day(GameState& gs, MacroStore& st, std::uint16_t slot,
     Wellbeing& wb = st.wellbeing[slot];
     // ДНЕВНОЕ ГАШЕНИЕ — страховочный такт той же двери (двери прихода гасят
     // долг сразу; этот такт кроет пути мимо них): вчерашний привоз и
-    // сегодняшняя выпечка (econ_produce_day идёт ПЕРЕД этим днём) платят
-    // по счёту не позже суток.
+    // выпечка платят по счёту не позже суток.
+    // ПОРЯДКА «ВЫПЕЧКА ПЕРЕД ЭТИМ ДНЁМ» БОЛЬШЕ НЕТ, и обещать его нельзя:
+    // выпуск стал занятием сквада (`AiPult::craft@src/macro/npc_ai.cpp`) и
+    // падает на склад в СВОЙ момент думки — раз в `kCraftThinksPerDay`
+    // думок каждого места, то есть по его собственному счётчику, а не по
+    // границе суток. Такту это безразлично ровно потому, что он
+    // страховочный: он гасит то, что на складе ЛЕЖИТ, и в каком порядке оно
+    // туда попало, не спрашивает.
     econ_pay_debt(store, st.upkeep[slot].needDebt, sink, user);
     // Daily slot hygiene (CANON «Крафт/Скрап») — hygiene, not a balance.
     econ_store_hygiene(store, sink, user);
@@ -201,27 +207,33 @@ void tick_squads_day_(GameState& gs, MacroStore& st, int day,
                       EconFactSink sink, void* user) {
     for_each_place(st, [&](std::uint16_t slot) {
         const int id = int(st.spawnId[slot].index);
-        Inventory& store = st.inventory[slot].inv;
         EconFactRelay relay{sink, user, id};
         const EconFactSink rs = sink ? &relay_econ_fact_ : nullptr;
         void* ru = sink ? static_cast<void*>(&relay) : nullptr;
-        // Сквад КРАФТИТ прежде, чем ест: сегодняшний стол первым, с того же
-        // единственного инвентаря, который набивают корованы и с которого
-        // торгует рынок. Руки ранжируются по стоимости выхода на день
-        // (econ_day.h), рецепт берётся из АНКЕТЫ — её скилы и есть «что
-        // этот сквад умеет».
-        // Ноль душ держит ноль верстаков: один `max(1, …)` печатал
-        // призрачного работника пустому городу — то же рождение из воздуха,
-        // что делал пол населения.
-        const int heads = souls_home(st, slot);
-        econ_produce_day(store, st.upkeep[slot].needDebt,
-                         st.sheet[slot].skills,
-                         heads > 0
-                             ? std::max(1, heads / kCreaturesPerCityWorker)
-                             : 0,
-                         heads, rs, ru,
-                         faction_or_freefolk(
-                             std::int16_t(st.kind[slot].factionIdx)));
+        // ── ДНЕВНОЙ ВЫПУСК УШЁЛ ОТСЮДА В ДУМКУ СКВАДА (ломоть 5а M-72) ───
+        // Здесь стоял `econ_produce_day` — и стоял он ВТОРЫМ ПУТЁМ к одному
+        // акту мира. «Произвёл» есть ЗАНЯТИЕ сквада, а занятия сквад решает
+        // СВОИМ модулем: решение принимают `village_think`/`city_think`,
+        // исполняет глагол `AiPult::craft@src/macro/npc_ai.cpp`, и он же
+        // ставит восстановление (одна дверь заряда — ЗАКОН СПОСОБНОСТИ п.4),
+        // поэтому «произвёл дважды за сутки» стало невыразимо. Держать оба
+        // пути «пока, на всякий случай» запрещено прямо (§5 п.14): два
+        // ответа на один вопрос мира и есть тот mess, которым это кончается.
+        //
+        // ЧТО ЭТИМ НЕ ПОТЕРЯНО, И ЭТО ПРОВЕРЕНО АНКЕТАМИ, А НЕ НАДЕЖДОЙ:
+        // проход идёт `for_each_place`, то есть по ВСЕМ родам мест, а модули
+        // выпуска есть у трёх — Village, City, Capital. Остальные шесть
+        // (шпиль, руина, логово, святилище, шахта, башня) не производили
+        // НИКОГДА и не могли: их строка в `kPlaceSheets@src/macro/characters.h`
+        // — анкета в нулях, `recipe_known` не пускает ни одну строку
+        // `kRecipes`, кандидатов ноль, выпуск ноль. То есть выпуск имели ровно
+        // те три рода, что его теперь и имеют; для шести остальных вызов
+        // крутился вхолостую.
+        //
+        // ЛЕСТНИЦА РЕЦЕПТОВ ОСТАЛАСЬ ТАМ, ГДЕ ЖИВУТ РЕЦЕПТЫ
+        // (`econ_produce_day@src/macro/econ_day.h`) — переписывать и удваивать
+        // её нечем и незачем: глагол зовёт её ДВЕРЬЮ, собирая входы из своей
+        // строки. Двух путей больше нет; путь ОДИН, и он идёт через думку.
 
         // Сутки: гашение счёта, гигиена склада, рост по благополучию.
         // Границу сезона судит ОДНА дверь мира (upkeep_season_window), и

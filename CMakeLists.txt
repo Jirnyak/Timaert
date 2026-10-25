@@ -1779,6 +1779,30 @@ timaert_test(woodcutter_gather_test
         src/macro/econ_day.cpp
     LINK_SDL)
 
+# МИР ПРОИЗВОДИТ (И3, ломоть 5а M-72): закон «из мира вышла вещь» не держал
+# НИ ОДИН из 134 приборов — `bricks_produced` ушёл 169 578 → 0 при зелёной
+# сюите. Прибор спрашивает выпуск через ДУМКУ модуля типа (второго пути в
+# мире нет), плату душами за рождение крю и гейт дубля. Список исходников —
+# тот же, что у woodcutter_gather_test: тот же npc_ai + econ_day + рождение.
+timaert_test(place_module_day_test
+    SOURCES
+        src/macro/squad_index.cpp
+        src/macro/npc_ai.cpp
+        src/macro/deal.cpp
+        src/macro/recovery.cpp
+        src/macro/nav_field.cpp
+        src/macro/economy.cpp
+        src/macro/chronicle.cpp
+        src/macro/macro_stock.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/macro/tree_layer.cpp
+        src/macro/npc_spawn.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
+        src/macro/econ_day.cpp
+    LINK_SDL)
+
 # (goal_auction_test СНЕСЁН вердиктом владельца 2026-10-04: «глупо гонять
 # 100 дней экономику, которой ещё нет». Свидетель охранял аукцион поручений
 # ротации — модель, уже записанную РАСХОЖДЕНИЕМ под снос («поручений дня не
