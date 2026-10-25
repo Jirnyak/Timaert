@@ -274,6 +274,16 @@ void test_aggressive_chases_visible_player() {
     const float perThink =
         sm::kMacroWalkCellsPerHour * sm::kAiTickGameHours;
     const int thinksToClose = int(std::ceil(2.0f / perThink));
+    // THE LEDGER IS READ FROM A HALF BAR, and that is the 2026-10-24 inversion
+    // arriving here: the regen is passive, a march over featureless ground
+    // NETS a gain, and a full bar discards the gain at its ceiling — so a
+    // chase begun at full would read «0 paid» whatever it did.
+    const int chaserMaxSp =
+        (*sm::body_state<sm::ecs::Pools>(st, e)).maxSp;
+    (*sm::body_state<sm::ecs::Pools>(st, e)).sp = chaserMaxSp / 2;
+    (*sm::body_state<sm::ecs::Pools>(st, e)).spCarry = 0.0f;
+    const float spBefore =
+        float((*sm::body_state<sm::ecs::Pools>(st, e)).sp);
     for (int i = 0; i < thinksToClose; ++i) tick_once(gs, st, runtime);
 
     const auto& pcell = (*sm::body_state<sm::ecs::MacroCell>(st, e));
@@ -287,23 +297,32 @@ void test_aggressive_chases_visible_player() {
     // meeting cell, where the forced-encounter door looks.
     CHECK(sm::ecs::cell_x(pcell, 128) == 12 && sm::ecs::cell_y(pcell, 128) == 10,
           "the chase closes the two-cell gap and stops on the player");
-    // The march debt is the trip's true price, and since 2026-10-06 that
-    // price is HOURS, not cells: every think burns the ground under the body
-    // for a slice of the day, and a marching body earns no regen back. The
-    // chase spent exactly `thinksToClose` slices on featureless ground
-    // (weight 1.0 — this fixture has no baked cost grid).
+    // The march ledger is the trip's true price, and since 2026-10-06 that
+    // price is HOURS, not cells: every think settles the ground under the body
+    // for a slice of the day. Since 2026-10-24 the slice carries BOTH
+    // processes — the ground's burn and the passive regen — so the chase's net
+    // is their difference over `thinksToClose` slices of featureless ground
+    // (weight 1.0 — this fixture bakes no cost grid). NEGATIVE here, and
+    // legally so: closing two cells of open country leaves a bandit fresher
+    // than he started.
     const auto& chaserPools = (*sm::body_state<sm::ecs::Pools>(st, e));
-    const float paid = float(100 - chaserPools.sp) - chaserPools.spCarry;
-    const float marched = sm::burn_stamina_per_hour(1.0f)
-                          * sm::kAiTickGameHours * float(thinksToClose);
+    const float paid = spBefore - (float(chaserPools.sp) + chaserPools.spCarry);
+    const float marched =
+        (sm::burn_stamina_per_hour(1.0f)
+         - sm::rest_stamina_per_hour(chaserMaxSp, 0))
+        * sm::kAiTickGameHours * float(thinksToClose);
     CHECK(std::fabs(paid - marched) < 0.01f,
-          "chasing pays the HOURS it marched, at its ground's burn rate");
+          "chasing settles the HOURS it marched: its ground's burn against the "
+          "passive regen, to the point");
     // ...and the line that catches a per-STEP price coming back. The dead law
-    // charged `weight × kStaminaPerWeightHour` per CELL — 4.0 SP for this
-    // trip against 0.56 for its hours — so the two cannot be confused by
-    // accident, and this inequality says so out loud rather than leaving the
-    // equality above to be re-derived from whatever the code does next.
-    CHECK(paid < 2.0f * sm::kStaminaPerWeightHour,
+    // charged `weight × kStaminaPerWeightHour` per CELL — 4.0 SP for this trip
+    // against 0.56 for its hours — so the two cannot be confused by accident.
+    // Stated on the GROSS burn, because that is where the two laws differ: the
+    // net above also carries the regen, and a per-cell price with a regen on
+    // top would still have been a per-cell price.
+    CHECK(sm::burn_stamina_per_hour(1.0f) * sm::kAiTickGameHours
+                  * float(thinksToClose)
+              < 2.0f * sm::kStaminaPerWeightHour,
           "the trip costs its hours, which is far less than the two cells "
           "used to cost: the per-step price is gone and must stay gone");
     CHECK(rt.visualSpeed > 0.0f,
@@ -563,7 +582,7 @@ void test_a_resting_lord_mends_at_the_players_rate() {
     // the lord's sixteen slices of it.
     sm::settle_pools_over_time(player, 90.0f / 60.0f, 0,
                                sm::burn_stamina_per_hour(1.0f),
-                               /*regenerates=*/true);
+                               /*resting=*/true);
 
     CHECK(hp.hp == player.hp,
           "one recovery law: lord and player mend the SAME points per hour");

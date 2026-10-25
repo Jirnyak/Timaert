@@ -1289,12 +1289,11 @@ bool run_subworld_recovery_smoke(App& app) {
     // minutes were worth whole points to a resting macro body, which is what
     // makes their buying ZERO underground a statement instead of a rounding.
     // A hypothetical BODY, not the player's: the same bars, the same minutes,
-    // through the very door the macro branch calls — STANDING STILL ON A ROAD,
-    // which is the cheapest ground there is, so the control measures the
-    // regen half at its best. `burn_stamina_per_hour` of the road bed is the
-    // honest rate for such a body rather than a zero: the two processes always
-    // both run up there, and the road's compile-time guarantee (it must heal
-    // more than it burns) is what makes this control sound.
+    // through the very door the macro branch calls — STANDING STILL ON A ROAD.
+    // The rate of its ground is passed exactly as production passes it (the
+    // door, not the caller, decides what a standing body owes — since
+    // 2026-10-24 the burn is the half that `resting` gates, so a standing body
+    // owes nothing and this control measures the pure passive regen).
     sm::ecs::Pools reference{};
     reference.hp = 5;
     reference.mp = 5;
@@ -1305,7 +1304,7 @@ bool run_subworld_recovery_smoke(App& app) {
     sm::settle_pools_over_time(
         reference, float(minutesAdvanced) / 60.0f, /*marathonRank=*/0,
         sm::burn_stamina_per_hour(sm::feature_bed_weight(sm::FT_Road)),
-        /*regenerates=*/true);
+        /*resting=*/true);
 
     std::fprintf(stderr,
                  "[smoke] subworld_recovery steps=%d minutes=%d "
@@ -1768,11 +1767,21 @@ bool run_macro_travel_sp_smoke(App& app) {
                            path.path.begin() + kSmokeMacroTravelSteps + 1);
     app.cursor.pathIdx = 1;
     // THE WITNESS BUILDS ITS OWN PRECONDITION (§8 п.11): the HP/MP remainders
-    // are zeroed here, so the one turn of regen the loop allows cannot tip an
-    // INHERITED fraction into a whole point and make the equality below flake.
-    // One tick buys 0.00037 of a bar; 2730 would be needed to move one point.
+    // are zeroed here, so the regen cannot tip an INHERITED fraction into a
+    // whole point and make the equality below flake. One tick buys 0.00037 of
+    // a bar; 2730 would be needed to move one point.
     player_pools(app).hpCarry = 0.0f;
     player_pools(app).mpCarry = 0.0f;
+    // ...AND IT DRAWS HIS LEGS DOWN TO HALF, which is the other half of the
+    // same duty since 2026-10-24. The regen is passive now, so this road march
+    // ENDS RICHER than it began — and a full bar cannot bank the gain
+    // (`settle_pools_over_time` drops the positive remainder at the ceiling),
+    // so a walk begun at full reads «0 accounted» whatever the law did, and
+    // the bracket below would be comparing a measurement against a clamp.
+    // Measured before the line existed: accounted 0.000 against a bracket of
+    // −5.013..−4.447.
+    player_pools(app).sp = player_pools(app).maxSp / 2;
+    player_sp_carry(app) = 0.0f;
     const int beforeSp = player_pools(app).sp;
     const int beforeHp = player_pools(app).hp;
     const float beforeX = smoke_player_x(app);
@@ -1812,11 +1821,11 @@ bool run_macro_travel_sp_smoke(App& app) {
     // Travel rank while the burn priced it at the cached one. They happen to
     // agree, and «happen to» is not a witness.
     const sm::ecs::MacroNpcRuntime* prt = player_march_cache(app);
-    const int overloadCost = prt
-        ? sm::overload_charge_from_capacity(
+    const float burden = prt
+        ? sm::overload_burden_from_capacity(
               sm::carry_capacity_g(*prt, player_bag(app)),
-              player_bag(app)).cost
-        : 0;
+              player_bag(app))
+        : 1.0f;
     const float eff = sm::skill_mult_of(sm::SkillId::Travel,
                                         prt ? int(prt->travelRank) : 0);
     // ...AND ONE WHOLE GAME MINUTE OF SLACK, because that is the quantum the
@@ -1825,15 +1834,20 @@ bool run_macro_travel_sp_smoke(App& app) {
     // bracket missed by exactly that rounding before the slack was named.
     // The slack is DERIVED from the quantum, not fitted to the miss.
     constexpr float kMinuteSlack = 1.0f / 60.0f;
+    const float hoursLo = std::max(0.0f, hours - kMinuteSlack);
+    const float hoursHi = hours + kMinuteSlack;
+    // THE PASSIVE REGEN IS NOW PART OF THE WALK, and that is the 2026-10-24
+    // inversion arriving at the ruler: SP comes back while he marches, so what
+    // the bar shows end to end is the NET of two processes, never the burn
+    // alone. Read through the one rate door, not re-spelled here.
+    const float restRate = sm::rest_stamina_per_hour(
+        player_pools(app).maxSp, prt ? int(prt->marathonRank) : 0);
     const float floorBurn =
-        sm::burn_stamina_per_hour(cheapest, overloadCost, eff)
-            * std::max(0.0f, hours - kMinuteSlack)
-        // the one turn of regen the loop's exit condition allows in
-        - float(player_pools(app).maxSp) * sm::kRestRegenPctPerHour
-              * sm::kGameHoursPerTick;
+        sm::burn_stamina_per_hour(cheapest, burden, eff) * hoursLo
+        - restRate * hoursHi;
     const float ceilBurn =
-        sm::burn_stamina_per_hour(dearest, overloadCost, eff)
-            * (hours + kMinuteSlack);
+        sm::burn_stamina_per_hour(dearest, burden, eff) * hoursHi
+        - restRate * hoursLo;
 
     // Print BEFORE judging. A harness that reports its numbers only when it
     // passes is useless exactly when it matters; this line is the first thing
@@ -1879,17 +1893,24 @@ bool run_macro_travel_sp_smoke(App& app) {
                         "asks per hour — the march stopped paying");
         return false;
     }
-    // Travel must COST something end to end — the guard against a wiring change
-    // that silently makes walking free again.
-    if (ceilBurn >= 1.0f && accounted <= 0.0f) {
-        smoke_fail(app, "macro_travel_sp charged nothing for a walk");
+    // WALKING MUST COST MORE THAN STANDING — the guard against a wiring change
+    // that silently makes the march free, said in the frame the law has had
+    // since 2026-10-24. It CANNOT be `accounted <= 0` any more: on cheap ground
+    // the passive regen outruns the burn, so an honest walk ends with a bar
+    // HIGHER than it started and the old reading would fail on a working
+    // world. What is still a law is the DIFFERENCE from standing still — the
+    // same hours spent stopped would have paid `restRate × hours`, and a walk
+    // must keep strictly less of it.
+    if (accounted <= -restRate * hoursHi) {
+        smoke_fail(app, "macro_travel_sp gained as much as STANDING would — "
+                        "the burn half of the law is gone");
         return false;
     }
     // Health must not DROP: with stamina in the bar, a walk costs no blood.
-    // Since 2026-10-06 it must not RISE either, and that is the stronger
-    // statement — «марш не лечит НИЧЕГО» now covers all three bars through one
-    // argument of one door, where before it covered only stamina and a
-    // marching lord quietly mended. Equality is the assertion.
+    // It must not RISE either, and since 2026-10-24 that is the stronger
+    // statement for HP and MP ALONE — «марш не лечит НИЧЕГО» survives on those
+    // two bars and is SNATO on SP by the owner's inversion, so this is the
+    // witness of what is left of that law. Equality is the assertion.
     if (afterHp != beforeHp) {
         smoke_fail(app, "macro_travel_sp cost health while stamina remained");
         return false;

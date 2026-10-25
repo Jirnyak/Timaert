@@ -1553,8 +1553,15 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
         const std::uint16_t slot = std::uint16_t(s32);
         if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
         if (slot == flagSlot) continue;
-        if (squad_archetype(SquadType(st.runtime[slot].squadType))
-            == SquadArchetype::Place) continue;
+        // АВАТАРА АНКЕТЫ У НЕПОДВИЖНОГО РОДА НЕТ — ОДНА ДВЕРЬ НА ВСЮ ИГРУ
+        // (`squad_has_avatar@src/tables/squad_type.h`). Здесь стояло
+        // `squad_archetype(...) == SquadArchetype::Place` СВОИМ
+        // правописанием, то есть второй ответ на тот же вопрос, на который
+        // отвечает авторезолв (DOD п.6). Семантика не изменилась ни на бит:
+        // отсекается ровно тот же отрезок оси. И НЕ ПУТАТЬ С ТОЛПОЙ: головы
+        // контейнера города воплощаются агностично своим проходом (ЗАКОН
+        // КОНТЕЙНЕРА) — этот гейт про АВАТАРА сквада, не про его инвентарь.
+        if (!squad_has_avatar(SquadType(st.runtime[slot].squadType))) continue;
         const MacroHandle macro = handle_at(st, slot);
         const auto& mcell = st.cell[macro.slot];
         const int mcx = ecs::cell_x(mcell, mapW);

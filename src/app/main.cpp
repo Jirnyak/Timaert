@@ -1071,35 +1071,19 @@ float macro_cell_cost_weight(const App& app) {
 // predicate — read from the same `water` column, asking the same question the
 // weight table already answered — and it died with its macro twin on
 // 2026-10-06. He can pitch camp anywhere; what the open sea does to him is
-// burn 20 SP an hour against 13.75 of rest, so the crossing is priced rather
-// than forbidden, and the price is lethal if he keeps standing in it.)
+// burn 20 SP of every swum hour against 13.75 of rest, so the crossing is
+// priced rather than forbidden — and since 2026-10-24 the price is paid only
+// while he SWIMS: stopping recovers him even out there.)
 
-// Forward declarations for the hour's two rates — defined with the world-query
-// helpers below, read by the rest aim above them.
-float macro_cell_cost_weight(const App& app);
-sm::ecs::MacroNpcRuntime* player_march_cache(App& app);
-sm::Inventory& player_bag(App& app);
-
-// WOULD AN HOUR OF CAMP REPAY ITS OWN HOUR OF BURN, where he stands? THE one
-// door of that question (movement_cost.h camp_repays_its_hour), the very one
-// a squad's think asks — one law, two drivers of time, because the macro AI
-// sweep never walks the player. It is not the dead standing predicate: it
-// names no place and forbids nothing. He may stand in the sea as long as he
-// likes; what it refuses is COMPRESSING TIME while he does, because «rest
-// until rested» cannot end where rest does not rest.
-bool player_camp_repays_its_hour(App& app) {
-    const sm::ecs::MacroNpcRuntime* prt = player_march_cache(app);
-    if (!prt) return true;   // no body yet: nothing says the camp is futile
-    const sm::ecs::Pools& pools = player_pools(app);
-    return sm::camp_repays_its_hour(
-        sm::burn_stamina_per_hour(
-            macro_cell_cost_weight(app),
-            sm::overload_charge_from_capacity(
-                sm::carry_capacity_g(*prt, player_bag(app)),
-                player_bag(app)).cost,
-            sm::skill_mult_of(sm::SkillId::Travel, int(prt->travelRank))),
-        pools.maxSp, int(prt->marathonRank));
-}
+// (НЕТ `player_camp_repays_its_hour`. Он спрашивал «окупается ли час привала
+// его собственным часом жжения» ОДНОЙ дверью с думкой сквада — и умер вместе с
+// ней 2026-10-24, когда вердикт владельца вынул жжение из стоянки: у привала
+// жжение РОВНО НУЛЬ, значит он окупается везде, и предикат стал тождественно
+// истинным. Эпитафия и арифметика вырождения —
+// `rest_stamina_per_hour@src/macro/movement_cost.h`. Его двое звонящих —
+// отказ прицела отдыха и отмена промоушена времени — ушли с ним: «rest until
+// rested» теперь доезжает до полной планки где угодно, включая открытое море,
+// и компрессия времени не может привести в конец, которого нет.)
 
 // HIS march caches, the same two columns every squad carries (travelRank,
 // marathonRank, carryPerSoulG) — filled by the ONE sheet door
@@ -2557,19 +2541,19 @@ void set_paused(App& app, bool on) {
 // apply_rest_promotion. Already-full SP arms nothing: Z is then just the
 // stop it always was.
 //
-// NOTHING REFUSES THE AIM BY PLACE any more — what refuses it is ARITHMETIC.
-// Z in the open sea still stops the squad, as Z always did; what it will not
-// do is compress two days of a bar that only falls (20 SP/h of burn against
-// 13.75 of rest) into one keypress and bury him at the far end of the
-// fast-forward. He may stand there in real time and drown — «ночёвка в море не
-// запрещена, она смертельна» (CANON S7) — but time is not compressed towards
-// an end that cannot arrive.
+// NOTHING REFUSES THE AIM AT ALL any more, and the last refusal died with the
+// arithmetic that justified it (2026-10-24). Until then Z in the open sea was
+// refused because a standing bar only FELL there (20 SP/h of burn against
+// 13.75 of rest), so compressing two days of it would have buried him at the
+// far end of the fast-forward. The owner's inversion took the burn out of
+// standing: a bar now rises wherever the body stops, the aim's own end is
+// always reachable, and the only thing left to check is whether there is
+// anything to recover.
 void aim_rest_until_rested(App& app) {
     app.cursor.path.clear();
     app.cursor.pathIdx = 0;
     const sm::ecs::Pools& pools = player_pools(app);
     if (pools.sp >= pools.maxSp) return;
-    if (!player_camp_repays_its_hour(app)) return;
     app.restUntilTick = app.gs.worldTime.tick + 2 * sm::kTicksPerDay;
 }
 
@@ -2590,10 +2574,10 @@ int apply_rest_promotion(App& app, int ticks) {
         || app.gs.subState.kind != sm::GameSubStateKind::Exploring
         || !app.cursor.path.empty()
         || cs.sp >= cs.maxSp
-        // ...and the ground turning against him mid-rest cancels too: a
-        // flooded cell, a re-centre, a bridge gone. The aim ends the moment
-        // its own end becomes unreachable.
-        || !player_camp_repays_its_hour(app)
+        // (Здесь стояла отмена «грунт обернулся против него посреди отдыха» —
+        // затопленная клетка, ре-центр, снесённый мост. Отменять нечего:
+        // стоящее тело жжения не платит с 2026-10-24, значит планка растёт на
+        // любом грунте и конец прицела недостижимым не становится.)
         || app.gs.worldTime.tick >= app.restUntilTick;
     if (cancelled) {
         app.restUntilTick = 0;
@@ -3657,24 +3641,26 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                 rebake_world(app);
             }
         }
-        // THE two always-on processes over the player's own Pools — the very
-        // door a lord's think calls (macro/recovery.h settle_pools_over_time),
-        // asked UNCONDITIONALLY, which is the whole 2026-10-06 law: the BURN
-        // runs whether he marches, stands or sleeps, and only the REGEN half
-        // reads `marching`. Marching is still not resting — no bar comes back
-        // while he walks a route (CANON S14) — but that is now one argument
-        // instead of an `if` around the call, and the ocean is lethal by the
-        // SIGN of the difference instead of by a camp predicate.
+        // THE two processes over the player's own Pools — the very door a
+        // lord's think calls (macro/recovery.h settle_pools_over_time), asked
+        // UNCONDITIONALLY. Since the owner's inversion of 2026-10-24 the
+        // always-on half is the SP REGEN — it runs whether he marches, stands
+        // or sleeps — and what `marching` gates is the BURN (and HP/MP, where
+        // «марш не лечит» still stands). The sea is still priced rather than
+        // forbidden, by the SIGN of the difference, but the price is paid
+        // ВПЛАВЬ: stopping in it recovers him.
         //
-        // The hour is priced from the one baked cost grid under his feet, plus
-        // the two terms the dead per-cell charge used to carry: his training
-        // (`travelRank`) and his load. The rank comes from the runtime cache
-        // the one sheet door fills (refresh_player_body, called every macro
-        // turn by ensure_macro_player_entity), so no derived sheet is rebuilt
-        // 64 times a second; the load is asked of the bag directly, by the
-        // same price door every squad's sweep asks (M-302 — the column
+        // The hour is priced from the one baked cost grid under his feet, times
+        // the two FACTORS the dead per-cell charge used to carry as terms: his
+        // training (`travelRank`) and his load. The rank comes from the runtime
+        // cache the one sheet door fills (refresh_player_body, called every
+        // macro turn by ensure_macro_player_entity), so no derived sheet is
+        // rebuilt 64 times a second; the load is asked of the bag directly, by
+        // the same burden door every squad's sweep asks (M-302 — the column
         // `overloadCost` that used to stand between them is gone, so there is
-        // no longer a stored total here to be stale OR to be truncated).
+        // no stored total here to be stale OR to be truncated; M-310 — and
+        // what the door returns is a dimensionless multiplier, so an empty
+        // burn stays empty however heavy the pack).
         //
         // ON THE FLAG, NOT ON HIS HOME SQUAD, and that is a fix riding along:
         // the rest law this replaces settled `player_squad_handle`'s bars,
@@ -3695,12 +3681,12 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                     int(prt.marathonRank),
                     sm::burn_stamina_per_hour(
                         macro_cell_cost_weight(app),
-                        sm::overload_charge_from_capacity(
+                        sm::overload_burden_from_capacity(
                             sm::carry_capacity_g(prt, player_bag(app)),
-                            player_bag(app)).cost,
+                            player_bag(app)),
                         sm::skill_mult_of(sm::SkillId::Travel,
                                           int(prt.travelRank))),
-                    /*regenerates=*/!marching);
+                    /*resting=*/!marching);
             }
         }
         sm::tick_macro_npc_ai(macroTickWorld, app.npcAi,

@@ -1367,7 +1367,7 @@ libstdc++/MSVC (32 Б). Ещё две строки той же породы: `Ci
 - Было: три `std::string name`. Стало: `NameCol name{}` в `Landmark`,
   `City`, `PlayerState`.
 - Писатели: `state.cpp:184-187,360`, `politik.cpp:192,235,295` —
-  `name_set(x.name, generate_name(...))`; src/app/main.cpp:3147 «    if (cs.name[0] != '\0') app.gs.player.name = cs.name;» —
+  `name_set(x.name, generate_name(...))`; src/app/main.cpp:3131 «    if (cs.name[0] != '\0') app.gs.player.name = cs.name;» —
   `name_set(app.gs.player.name, cs.name)`.
 - Читатели: `.c_str()` → само поле; `.empty()` → `name[0] == '\0'`;
   procedural.cpp †426 (снесён) `ctx.name = s.name` — если `ctx.name` — `std::string`
@@ -2236,8 +2236,9 @@ UI, все в области трат очков (греп `refresh_player_body@
 чтению: надетый аффикс `CarryKg` («of the Mule») идёт в `carryPerSoulG` через
 `standing_bonuses_of`, то есть ПАНЕЛЬ покажет новый вес свежо (она зовёт
 `get_carry_capacity@src/macro/anketa.h` на кадр), а МАРШ будет считать по
-старой колонке (`camp_repays_its_hour@src/app/main.cpp` читает
-`carry_capacity_g(*prt, …)`). **ПЕРВОЕ ДЕЛО — ЗАМЕРИТЬ
+старой колонке (часовая трата игрока в `src/app/main.cpp` читает
+`carry_capacity_g(*prt, …)`; второй её читатель, предикат привала, снесён
+2026-10-24 — см. `rest_stamina_per_hour@src/macro/movement_cost.h`). **ПЕРВОЕ ДЕЛО — ЗАМЕРИТЬ
 ЭТО, А НЕ ЧИНИТЬ:** расхождение панели и мира — ровно та слепота §8 п.6 (пятая
 форма), которую ни паритет, ни `ctest` не видят по построению, потому что числа
 симуляции от правоты картинки не меняются. Проверяется живым стендом с

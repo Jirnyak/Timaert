@@ -25,6 +25,8 @@
 #include "macro/npc_ai.h"
 #include "macro/world_row.h"
 #include "macro/movement_cost.h"
+#include "macro/recovery.h"
+#include "macro/travel.h"
 #include "macro/pathfinding.h"
 #include "macro/squad.h"
 #include "tables/npc.h"
@@ -40,6 +42,10 @@
 namespace {
 
 using namespace sm;
+
+bool nearf(float a, float b, float eps = 0.001f) {
+    return std::fabs(a - b) <= eps;
+}
 
 // A hand-built cost world: uniform `base` weight, cells painted wet get the
 // water weight AND the water flag — the same pairing build_cost_grid bakes.
@@ -159,9 +165,51 @@ bool drive_to_arrival(GameState& gs, sm::MacroStore& st, MacroNpcAiRuntime& rt,
 }
 
 // SP the whole trip charged, fractional carry included — the ledger that sees
-// every sub-step a per-think position trace cannot.
-float sp_spent(const ecs::Pools& pools, int maxSp) {
-    return float(maxSp) - (float(pools.sp) + pools.spCarry);
+// every sub-step a per-think position trace cannot. NEGATIVE is a legal
+// reading since 2026-10-24: the regen is passive, so a march over ground
+// cheaper than 13.75 SP/h ENDS WITH MORE than it started with.
+float sp_spent(const ecs::Pools& pools, int fromSp) {
+    return float(fromSp) - (float(pools.sp) + pools.spCarry);
+}
+
+// HALF A BAR, AND IT IS A CONDITION OF MEASURABILITY RATHER THAN A TASTE.
+// Since the regen went passive a cheap march CLIMBS, and a full bar cannot
+// bank rest (`settle_pools_over_time` drops the positive remainder at the
+// ceiling) — so a trip begun at full reads «0 spent» whatever it did, and any
+// two such trips compare as two zeros. Every ledger fixture below therefore
+// starts its walker at half, and the halves are what `sp_spent` is told.
+constexpr int kLedgerStartSp = 55;
+void start_at_half(sm::MacroStore& st, sm::MacroHandle h) {
+    st.pools[h.slot].sp = kLedgerStartSp;
+    st.pools[h.slot].spCarry = 0.0f;
+}
+
+// What ONE CELL of ground this weight costs, derived from the same two doors
+// the march reads (§8 п.4) rather than quoted: the hour's rate spread over the
+// cells an hour covers on it. Gross — the regen belongs to the body.
+float sp_per_cell(float weight) {
+    return burn_stamina_per_hour(weight)
+           / (kMacroWalkCellsPerHour * terrain_speed_mult(weight));
+}
+
+// A PACK THAT MAKES THE MARCH DRAIN, built the way the world builds one: a
+// named back in the runtime cache and real catalogue rows in the bag, so the
+// burden the sweep prices is the burden the fixture intends.
+//
+// It exists because of the 2026-10-24 inversion: a bare body walking ordinary
+// country no longer tires AT ALL (meadow asks 4 SP/h against 13.75 of passive
+// regen), so the only honest way to witness exhaustion on land is the lever
+// the owner named — «если какоето метсо будет ходить то сразу перегруз будет
+// жечь сп». Returns the burden, so the fixture can state it.
+float load_until_the_legs_pay(sm::MacroStore& st, sm::MacroHandle h,
+                              std::int32_t backG, int ironUnits) {
+    (*sm::body_state<ecs::MacroNpcRuntime>(st, h)).carryPerSoulG = backG;
+    auto& bag = st.inventory[h.slot].inv;
+    bag.add("iron", ironUnits);             // 4 kg a row (tables/items.cpp)
+    return sm::overload_burden_from_capacity(
+        sm::carry_capacity_g((*sm::body_state<ecs::MacroNpcRuntime>(st, h)),
+                             bag),
+        bag);
 }
 
 // ── Water is walked around when dry progress exists ────────────────────────
@@ -187,12 +235,13 @@ void test_greedy_walks_around_a_wet_cell() {
             paint_water(grid, 16, 10);   // one wet cell dead on the line
         }
         auto e = make_walker(st, gs.mapW, 13.0f, 10.0f, 20.0f, 10.0f, 110);
+        start_at_half(st, e);
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, fullRiver ? 32u : 21u);
         const bool arrived =
             drive_to_arrival(gs, st, rt, &grid, e, 20.0f, 10.0f, 64);
         const float spent =
-            sp_spent((*sm::body_state<ecs::Pools>(st, e)), 110);
+            sp_spent((*sm::body_state<ecs::Pools>(st, e)), kLedgerStartSp);
         return std::pair<bool, float>{arrived, spent};
     };
 
@@ -202,10 +251,17 @@ void test_greedy_walks_around_a_wet_cell() {
     CHECK(through.first,
           "and reaches it ACROSS a full river too — water is a PRICE, not a "
           "wall (owner 2026-10-06: «ВЕСА БЫЛО ЕДИНОЕ РЕШЕНИЕ»)");
-    CHECK(through.second > around.second * 1.5f,
-          "and the ford costs strictly more than the detour: the ledger is "
-          "what proves the detour was taken for a REASON. If this fires with "
-          "the two equal, the weight grid is not being read at all");
+    // THE FORD COSTS STRICTLY MORE, and the margin is now DERIVED instead of
+    // being a 1.5× band: since the passive regen made a road trip a net GAIN,
+    // both ledgers read negative, and a multiplicative band on negatives says
+    // the opposite of what it used to. Half a water cell is the floor of the
+    // difference, read from the same doors the march reads.
+    CHECK(through.second > around.second
+                               + sp_per_cell(biome_sp_weight(Water)) * 0.5f,
+          "and the ford costs strictly more than the detour, by at least half "
+          "a water cell: the ledger is what proves the detour was taken for a "
+          "REASON. If this fires with the two equal, the weight grid is not "
+          "being read at all");
 }
 
 // ── No dry way: the river is FORDED, and a bridge is the cheaper crossing ──
@@ -228,6 +284,7 @@ void test_river_is_forded_and_a_bridge_is_cheaper() {
         for (int y = 0; y < 32; ++y) paint_water(grid, 16, y);   // full river
         if (bridged) paint_bridge(grid, 16, 10);   // dead on the straight line
         auto e = make_walker(st, gs.mapW, 13.0f, 10.0f, 20.0f, 10.0f, 110);
+        start_at_half(st, e);
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, seed);
         bool crossed = false;
@@ -239,8 +296,8 @@ void test_river_is_forded_and_a_bridge_is_cheaper() {
                           gs.mapW)) >= 18.0f;
         }
         const auto& pools = (*sm::body_state<ecs::Pools>(st, e));
-        return std::tuple<bool, float, int>{crossed, sp_spent(pools, 110),
-                                            pools.hp};
+        return std::tuple<bool, float, int>{
+            crossed, sp_spent(pools, kLedgerStartSp), pools.hp};
     };
 
     const auto bare = cross(/*bridged=*/false, 22u);
@@ -259,15 +316,25 @@ void test_river_is_forded_and_a_bridge_is_cheaper() {
           "of 1.0 over water is a cheap crossing instead of the only one");
 }
 
-// ── Deep water: the crossing is paid in blood, and an unpayable one kills ─
-// A walker DOES enter water since 2026-10-06 (the ford test above), so this
-// is no longer about «whoever is already floating» — it is the ordinary price
-// of a wide crossing. Near the shore a body wades out bleeding; a shore its
-// flesh cannot reach kills it, and the dead squad leaves the map. What makes
-// the sea lethal is arithmetic, not a veto: 20 SP of burn an hour against
-// 13.75 of rest, so camp cannot repay it and the automaton does not pitch one
-// (movement_cost.h camp_repays_its_hour) — it keeps wading and pays the debt.
-void test_ocean_drowns_who_cannot_reach_the_shore() {
+// ── Deep water: the crossing is paid in BLOOD, and DROWNING is a question ─
+// A walker DOES enter water since 2026-10-06 (the ford test above), so this is
+// the ordinary price of a wide crossing: a body wades out bleeding, because
+// the sea burns 20 SP an hour against 13.75 of regen and the quadratic bite
+// follows every point of the debt.
+//
+// WHAT THIS FILE NO LONGER ASSERTS, AND WHY IT IS A COMMENT RATHER THAN A
+// CHECK (§8 п.7 — a witness states what is honestly promised and says aloud
+// what it deliberately leaves alone). Until 2026-10-24 the second half of this
+// test drowned a squad outright: `camp_repays_its_hour` refused a camp in open
+// water, so a body whose legs ran out at sea kept wading and died. The owner's
+// inversion took the burn out of standing — a camp in the sea now RECOVERS
+// (witnessed in test_road_bar_lasts_a_days_march) — so the automaton pitches
+// one, wakes at half a bar, wades on, and the ocean has become slow rather
+// than lethal. **CANON S7 «неоплатный океан топит лорда» / «ночёвка в море
+// смертельна» is therefore no longer true of the code**, and whether it should
+// be is the owner's verdict, not this file's: asserting EITHER polarity here
+// would freeze an answer nobody has given.
+void test_ocean_crossing_is_paid_in_blood() {
     GameState gs{};
     gs.mapW = 64;
     gs.mapH = 64;
@@ -278,69 +345,110 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
     for (int y = 0; y < 64; ++y)
         for (int x = 0; x < 26; ++x) paint_water(grid, x, y);
 
-    {   // Near the shore: out in debt, bled but alive.
-        // The bar is what makes a shore NEAR — not the cell count. Water
-        // burns 20 SP a game HOUR since 2026-10-06, and a water cell takes
-        // √10/8 ≈ 0.4 h to wade, so three cells of strait cost ≈ 24 SP. A bar
-        // of 14 therefore reaches the beach owing ≈ 10, and the QUADRATIC
-        // bite (CANON S14.1, «как в Elin») takes that debt point by point —
-        // deep enough to bleed, shallow enough to live.
-        auto e = make_walker(st, gs.mapW, 23.0f, 10.0f, 30.0f, 10.0f, /*maxSp*/14,
-                             /*hp*/30.0f);
+    // THE TWO CLAIMS SPLIT INTO TWO BODIES ON 2026-10-24, and the split is the
+    // law talking. They used to be one fixture — «wades out AND bleeds doing
+    // it» — and that fixture is now unbuildable: what makes a body bleed is a
+    // pack heavy enough to clear the camp margin in a single think, and a pack
+    // that heavy makes the same body too slow to reach any shore inside a test
+    // budget (measured: one march-camp cycle per ~50 thinks, two cells of
+    // progress in sixty). Forcing both into one body would have meant tuning a
+    // pack until the two barely coexisted — a fixture balanced on a knife, red
+    // on the next recalibration for no reason about the world.
+    {   // A BARE body fords the strait and comes out whole.
+        auto e = make_walker(st, gs.mapW, 23.0f, 10.0f, 30.0f, 10.0f,
+                             /*maxSp*/110, /*hp*/30.0f);
+        start_at_half(st, e);
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, 23u);
-        // THE LOW-WATER MARK, not the final reading. Since the one recovery
-        // law reached the NPC camp (2026-09-09, CANON S14), a body that
-        // reaches its target CAMPS THERE and mends — so by think 60 this
-        // survivor is whole again and a probe of his final HP measures the
-        // rest, not the bite. The promise here is that the sea BIT him; the
-        // honest place to read that is while it is happening.
-        int lowest = (*sm::body_state<ecs::Pools>(st, e)).hp;
         for (int i = 0; i < 60 && st.valid(e); ++i) {
             MacroWorld mw{.gs = &gs, .store = &st, .pathCost = &grid};
             tick_macro_npc_ai(mw, rt, kAiTicks);
-            if (st.valid(e))
-                lowest = std::min(lowest, (*sm::body_state<ecs::Pools>(st, e)).hp);
         }
-        CHECK(st.valid(e) && float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(st, e)), gs.mapW)) >= 26.0f,
+        CHECK(st.valid(e)
+                  && float(ecs::cell_x(
+                         (*sm::body_state<ecs::MacroCell>(st, e)), gs.mapW))
+                         >= 26.0f,
               "a floating body wades OUT: water is exited, never entered");
-        CHECK(lowest < 30,
-              "and the unpayable steps out were paid in blood — the sea "
-              "bite lives");
-        CHECK((*sm::body_state<ecs::Pools>(st, e)).hp > lowest,
-              "and ashore the wound MENDS: the one recovery law reaches an "
-              "NPC in camp, not only the player");
+        CHECK((*sm::body_state<ecs::Pools>(st, e)).hp == 30,
+              "and a BARE body pays the strait in sweat alone: three cells of "
+              "open water against a 110-SP bar never reach the debt the "
+              "quadratic bite needs");
     }
-    {   // Far from shore: the crossing is unpayable by design and kills.
-        auto e = make_walker(st, gs.mapW, 2.0f, 40.0f, 30.0f, 40.0f, /*maxSp*/8,
-                             /*hp*/30.0f);
-        sm::MacroStore& std_ = st;
-        sm::store_rename_ordinal(std_, e, 55u);   // дверь обновляет хэндл
-        sm::MacroHandle eh = e;
-        auto& bag = std_.inventory[eh.slot];
-        creatures_push(bag.inv, make_soldier(
-            std::uint8_t(NPCType::Peasant), 1, 101u));
-        creatures_push(bag.inv, make_soldier(
-            std::uint8_t(NPCType::Peasant), 1, 102u));
+    {   // A LADEN body in the same water goes into debt and BLEEDS for it.
+        // The pack is the owner's own lever («если какоето метсо будет ходить
+        // то сразу перегруз будет жечь сп»): fifty backs of iron multiply the
+        // sea's hour to 1000 SP, 92 of them in one think, so the bar clears the
+        // camp margin (maxSp/kCampBarDivisor = 13) in a single stride and lands
+        // deep in debt instead of stopping just short of it. The bar is drawn
+        // to JUST ABOVE the margin so the depth is arithmetic rather than
+        // wherever a descending sequence happens to land.
+        auto e = make_walker(st, gs.mapW, 10.0f, 30.0f, 20.0f, 30.0f,
+                             /*maxSp*/110, /*hp*/1000000);
+        const float burden = load_until_the_legs_pay(st, e, 10'000, 125);
+        st.pools[e.slot].sp = 20;
+        const int margin = 110 / kCampBarDivisor;
+        const float drainPerThink =
+            (burn_stamina_per_hour(biome_sp_weight(Water), burden)
+             - rest_stamina_per_hour(110, 0)) * kAiTickGameHours;
+        CHECK(drainPerThink > float(20 - margin) + 32.0f,
+              "фикстура честна: одна думка под этой пачкой перешагивает маржу "
+              "лагеря и уходит ГЛУБОКО за ноль — иначе тело встало бы лагерем "
+              "и долга не увидело вовсе (порог укуса — 32, kExhaustion"
+              "BiteDivisor)");
+        const int hpBefore = (*sm::body_state<ecs::Pools>(st, e)).hp;
         MacroNpcAiRuntime rt{};
-        reset_macro_npc_ai_runtime(rt, 24u);
-        int thinks = 0;
-        // 6.3: смерть сквада — смерть СЛОТА store (свип конца тика), суд по
-        // хэндлу; entt-тела у макро-сквада больше нет.
-        while (std_.valid(eh) && std_.dead[eh.slot] == 0 && thinks < 400) {
-            MacroWorld mw{.gs = &gs, .store = &std_, .pathCost = &grid};
+        reset_macro_npc_ai_runtime(rt, 23u);
+        {
+            MacroWorld mw{.gs = &gs, .store = &st, .pathCost = &grid};
             tick_macro_npc_ai(mw, rt, kAiTicks);
-            ++thinks;
         }
-        CHECK(!std_.valid(eh),
-              "an ocean the bar cannot pay kills, and the dead squad leaves "
-              "the map: there is no Resting at sea and no corpse-row after");
-        // (Прежде здесь стояло `creature_count(gs.deserterPool) == 0` —
-        // «павшие ГИБНУТ, а в пул дезертиров идёт только неоплата сезона
-        // (M-228)». Пул уничтожен 2026-10-11, и утверждать про его
-        // содержимое нечего; закон «павшие гибнут» держит строка выше —
-        // сквад ушёл с карты целиком, а не сменил хозяина.)
+        CHECK((*sm::body_state<ecs::Pools>(st, e)).sp < 0,
+              "одна думка марша под пачкой увела планку за ноль");
+        CHECK((*sm::body_state<ecs::Pools>(st, e)).hp < hpBefore - 100,
+              "and the unpayable stride was paid in blood — the quadratic "
+              "bite reaches an NPC through the sweep, not only the player");
     }
+    {   // THE NEGATIVE CONTROL OF THE WHOLE VERDICT, at the SWEEP level: the
+        // SAME pack, the SAME open water, and the body is STANDING WHERE IT
+        // MEANT TO BE. It must lose nothing — not a point of stamina, not a
+        // drop of blood. This is «город может быть технически перегружен, но
+        // ему всё равно» said about a squad instead of a place, and it is the
+        // one assertion in this file that the 2026-10-06 order forbade.
+        auto e = make_walker(st, gs.mapW, 10.0f, 50.0f, 10.0f, 50.0f,
+                             /*maxSp*/110, /*hp*/1000000);
+        load_until_the_legs_pay(st, e, 10'000, 125);
+        st.pools[e.slot].sp = 20;
+        const int hpBefore = (*sm::body_state<ecs::Pools>(st, e)).hp;
+        MacroNpcAiRuntime rt{};
+        reset_macro_npc_ai_runtime(rt, 77u);
+        for (int i = 0; i < 8; ++i) {
+            MacroWorld mw{.gs = &gs, .store = &st, .pathCost = &grid};
+            tick_macro_npc_ai(mw, rt, kAiTicks);
+        }
+        CHECK((*sm::body_state<ecs::Pools>(st, e)).hp == hpBefore,
+              "a HALTED body under fifty backs of iron, adrift in open water, "
+              "loses no blood at all: the burden is a factor of a burn it does "
+              "not pay");
+        CHECK((*sm::body_state<ecs::Pools>(st, e)).sp > 20,
+              "...and it RECOVERS while it stands there — the passive regen "
+              "runs for the overloaded exactly as for the empty-handed");
+    }
+    // (ЗДЕСЬ СТОЯЛ ВТОРОЙ БЛОК — «далеко от берега: переправа неоплатна и
+    // УБИВАЕТ», со сквадом на баре 8 и двумя душами в сумке, и он утверждал
+    // `!valid(eh)`: сквад обязан был умереть и уйти с карты. Он СНЯТ, а не
+    // перевёрнут, вердиктом владельца 2026-10-24.
+    //
+    // ПОЧЕМУ СНЯТ, А НЕ ПЕРЕПИСАН НА «НЕ УБИВАЕТ»: умирал этот сквад РОВНО
+    // потому, что `camp_repays_its_hour` отказывал лагерю в воде, и тело,
+    // которому кончились ноги, продолжало брести. Предикат мёртв (у привала
+    // жжения нет вовсе), и теперь такое тело встаёт лагерем, добирает
+    // половину планки и бредёт дальше — океан стал МЕДЛЕННЫМ, а не
+    // смертельным. Утверждать «не убивает» значило бы ОХРАНЯТЬ исход, который
+    // владелец не выбирал: он менял форму двух процессов, а не закон CANON S7
+    // «ночёвка в море смертельна». Пока он не сказал, какой из двух миров
+    // ему нужен, у этого вопроса не должно быть свидетеля ни одной полярности
+    // — §8 п.7, «утверждай честно обещанное и скажи, что остальное
+    // сознательно не утверждается». Вопрос лежит в отчёте сессии.)
 }
 
 // ── One exhaustion law: the step in debt bleeds, the camp does not ────────
@@ -363,11 +471,22 @@ void test_land_exhaustion_makes_camp_without_blood() {
     // a bar of FOUR to reach the margin in a handful of thinks, and since
     // 2026-10-06 that body is not a body: the regen is a PERCENT of the bar
     // while the burn is ABSOLUTE, so four points of bar earn 0.5 SP/h against
-    // the meadow's 4 and camp repays nowhere — it would march until the debt
-    // killed it. Measured over all 46 creature rows: the smallest real maxSp
-    // is 110 and a road repays from 16 up, so no body in the game is in that
-    // class. The fixture had to stop being one.
+    // the meadow's 4 and no real creature row is in that class.
+    //
+    // ...AND SINCE 2026-10-24 IT ALSO CARRIES A PACK, for the reason the whole
+    // inversion exists: a bare body on open country no longer tires at ALL
+    // (meadow asks 4 SP/h against 13.75 of passive regen), so the leg would
+    // never end and this test would hang on its own cap. Six backs of iron
+    // bring the meadow's hour to 28 SP, which outruns the regen and makes the
+    // camp arrive — the owner's own lever, «если какоето метсо будет ходить то
+    // сразу перегруз будет жечь сп», standing in for a law the ground alone no
+    // longer carries.
     auto e = make_walker(st, gs.mapW, 10.0f, 10.0f, 60.0f, 10.0f, /*maxSp*/110);
+    const float packBurden = load_until_the_legs_pay(st, e, 10'000, 18);
+    CHECK(burn_stamina_per_hour(2.0f, packBurden)
+              > rest_stamina_per_hour(110, 0),
+          "фикстура честна: с этой пачкой луг наконец дороже пассивного "
+          "регена, иначе марш был бы бесконечным и лагеря не случилось бы");
     st.pools[e.slot].sp = 20;   // a leg's worth above the margin
     auto& npc = (*sm::body_state<ecs::MacroNpcRuntime>(st, e));
     MacroNpcAiRuntime rt{};
@@ -506,14 +625,18 @@ void test_road_bar_lasts_a_days_march() {
     gs.mapH = 1024;
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
-    // MEADOW, not road: the leg has to END, and on a road it never would —
-    // standing still there repays more than walking burns, so the automaton
-    // keeps its legs forever. That is not a defect to work around but the law
-    // this fixture has to respect, and it is why the bed moved to open
-    // country: 4 SP/h of burn against 13.75 of rest means a MARCHING body
-    // still runs out (the regen is off for legs in motion) while a camped one
-    // profits.
-    const float bed = biome_sp_weight(Meadow);
+    // OPEN WATER, and the bed has moved TWICE for the same reason — the leg
+    // has to END. Until 2026-10-06 it was a road; then a road's own hour
+    // (2 SP) fell below the hour of rest (13.75) and the bed moved to MEADOW,
+    // whose 4 SP a marching body still paid in full because the regen was off
+    // for legs in motion. On 2026-10-24 the regen became passive, so the
+    // meadow's 4 is now paid against the same 13.75 and open country sustains
+    // an endless march too. WATER is the one row of the weight table left
+    // where a march outruns the regen (20 against 13.75), which makes it the
+    // only honest bed for a fixture about a leg that ends from the GROUND
+    // alone — and it is why the laden fixtures elsewhere in this file carry
+    // packs instead.
+    const float bed = biome_sp_weight(Water);
     PathCostData grid = make_grid(1024, 1024, bed);
 
     // Target 300 cells EAST — well beyond what the bar can pay, and well
@@ -533,11 +656,13 @@ void test_road_bar_lasts_a_days_march() {
     const float hours = float(thinks) * kAiTickGameHours;
     // The leg ends at the CAMP MARGIN, not at zero (npc_ai.h
     // kCampBarDivisor — the same number the automaton reads), and the hours
-    // it lasts are the margin over the BURN RATE. The pace does not appear:
-    // that is the hour quantum, stated by its absence.
+    // it lasts are the margin over the NET DRAIN. The pace does not appear:
+    // that is the hour quantum, stated by its absence. NET since 2026-10-24 —
+    // the passive regen runs under the marching body too, and leaving it out
+    // would predict a leg three times shorter than the world walks.
     const float expectHours =
         (110.0f - 110.0f / float(kCampBarDivisor))
-        / burn_stamina_per_hour(bed);
+        / (burn_stamina_per_hour(bed) - rest_stamina_per_hour(110, 0));
     // ...and the CELLS are those hours walked at the ground's own pace, which
     // is the only place terrain_speed_mult enters the economy now.
     const float expectCells =
@@ -572,17 +697,25 @@ void test_road_bar_lasts_a_days_march() {
               == int(kFreshBarSp),
           "kFreshBarSp is the bare level-1 bar the sheet actually builds");
 
-    // THE CAMP DECISION IS ARITHMETIC, NOT PLACE (movement_cost.h
-    // camp_repays_its_hour) — the door that replaced the standing wall in the
-    // automaton. Without it the demolition would have defeated itself: a body
-    // low on legs in open water would pitch camp there, never reach the
-    // half-bar wake-up, and drown on the spot.
-    CHECK(camp_repays_its_hour(
-              burn_stamina_per_hour(feature_bed_weight(FT_Road)), 110, 0),
-          "a road is worth camping on");
-    CHECK(!camp_repays_its_hour(
-              burn_stamina_per_hour(biome_sp_weight(Water)), 110, 0),
-          "open water is not, and the automaton must not pitch one there");
+    // THE CAMP DECISION HAS NO SECOND QUESTION LEFT (снос `camp_repays_its_hour`
+    // 2026-10-24). It asked «окупается ли здесь привал», and the inversion made
+    // the answer yes everywhere: a halted body has no burn, so its bar can only
+    // rise. What used to need a predicate is now ARITHMETIC OF THE DOOR, and
+    // that is asserted rather than assumed — on the WORST ground in the world,
+    // because the whole point of the dead predicate was that one row.
+    sm::ecs::Pools camper{};
+    camper.maxSp = 110;
+    camper.maxHp = 1;
+    camper.hp = 1;
+    camper.sp = 110 / kCampBarDivisor;   // ровно порог лагеря автоматом
+    const int campedFrom = camper.sp;
+    sm::settle_pools_over_time(
+        camper, 1.0f, 0, burn_stamina_per_hour(biome_sp_weight(Water)),
+        /*resting=*/true);
+    CHECK(camper.sp > campedFrom,
+          "a camp in the OPEN SEA gains stamina, so the half-bar wake-up is "
+          "reachable from anywhere and the drown-in-your-sleep deadlock the "
+          "dead predicate guarded against is now unexpressible");
 }
 
 // ── The regen gate is «остановился», not «не сдвинулся в этот раз» ────────
@@ -607,11 +740,20 @@ void test_banking_a_part_cell_is_not_resting() {
     PathCostData grid = make_grid(1024, 1024, 1.0f);   // one long road
 
     auto e = make_walker(st, gs.mapW, 10.0f, 4.0f, 400.0f, 4.0f, /*maxSp*/110);
+    // TEN BACKS OF IRON, so that the road DRAINS and the ledger below has a
+    // signal at all. Since 2026-10-24 a bare body gains stamina on a road
+    // (2 SP/h of burn against 13.75 of passive regen) and a full bar cannot
+    // bank the gain, so an unladen fixture would read exactly zero spent
+    // whatever the gate did — the measurement, not the law, is what the pack
+    // restores. The burden is a FACTOR, so the road's ladder position is
+    // untouched: this is still the cheapest ground in the world, just carried
+    // across under a load.
+    const float packBurden = load_until_the_legs_pay(st, e, 10'000, 25);
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 91u);
 
-    // Forty thinks of unbroken marching, far short of the ~110 cells the bar
-    // can pay, so nothing here is confused by exhaustion or camp.
+    // Forty thinks of unbroken marching, far short of what the bar can pay, so
+    // nothing here is confused by exhaustion or camp.
     for (int i = 0; i < 40; ++i) {
         MacroWorld mw{.gs = &gs, .store = &st, .pathCost = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
@@ -621,16 +763,26 @@ void test_banking_a_part_cell_is_not_resting() {
 
     CHECK(cells > 0.0f, "the walker is on the road");
     // THE gate, measured in the quantum it is paid in: forty thinks of
-    // marching cost forty thinks of BURN, to the point — not one slice less.
-    // A think quietly settled as rest would show up as a shortfall here, and
-    // that is exactly the defect this test was built for (the first cut of the
-    // law let the road pay for itself, because a marcher banking a part-cell
-    // stands still on roughly a quarter of its thinks).
+    // marching cost forty thinks of NET drain, to the point — not one slice
+    // less. A think quietly settled as rest would cost nothing AND earn a full
+    // slice of regen, so it shows up here as a double shortfall, which is
+    // exactly the defect this test was built for (the first cut of the law let
+    // the road pay for itself, because a marcher banking a part-cell stands
+    // still on roughly a quarter of its thinks).
+    //
+    // NET, because since 2026-10-24 both processes run on a marching body: the
+    // expectation is burn MINUS regen, and that difference is what the bar
+    // actually moves by.
     const float expectBurn =
-        burn_stamina_per_hour(1.0f) * kAiTickGameHours * 40.0f;
+        (burn_stamina_per_hour(1.0f, packBurden)
+         - rest_stamina_per_hour(110, 0)) * kAiTickGameHours * 40.0f;
+    CHECK(expectBurn > 1.0f,
+          "негативный контроль фикстуры: под этой пачкой дорога ЧЕСТНО тает, "
+          "значит у измерения ниже есть что измерять");
     CHECK(std::fabs(ledgerSpent - expectBurn) < 0.01f,
-          "forty thinks of marching cost exactly forty thinks of burn — not "
-          "one slice less, so no think on the road was quietly paid as rest");
+          "forty thinks of marching cost exactly forty thinks of net drain — "
+          "not one slice less, so no think on the road was quietly paid as "
+          "rest");
 
     // The control: the SAME body, standing at its target, DOES recover.
     sm::ecs::goal_set(st.goal[e.slot],
@@ -670,6 +822,12 @@ void test_a_laden_squad_pays_for_its_load() {
                              /*hp*/1e6f);
     auto heavy = make_walker(st, gs.mapW, 10.0f, 6.0f, 60.0f, 6.0f, /*maxSp*/110,
                              /*hp*/1e6f);
+    // Both from HALF a bar: on a road the passive regen now outruns either
+    // body's burn, and a full bar discards the gain at its ceiling — so two
+    // full-bar walkers would both read «0 spent» and the gap below would be a
+    // comparison of two zeros (see start_at_half).
+    start_at_half(st, light);
+    start_at_half(st, heavy);
     sm::store_rename_ordinal(st, heavy, 8u);
     heavy = sm::handle_at(st, heavy.slot);
     // Цели уже положены make_walker в колонку рода 2 (ряды 4 и 6).
@@ -702,11 +860,16 @@ void test_a_laden_squad_pays_for_its_load() {
 
     const auto& lrt = (*sm::body_state<ecs::Pools>(st, light));
     const auto& hrt = (*sm::body_state<ecs::Pools>(st, heavy));
-    const float lightSpent = 110.0f - (float(lrt.sp) + lrt.spCarry);
-    const float heavySpent = 110.0f - (float(hrt.sp) + hrt.spCarry);
+    const float lightSpent = sp_spent(lrt, kLedgerStartSp);
+    const float heavySpent = sp_spent(hrt, kLedgerStartSp);
     const float lightCells = float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(st, light)), gs.mapW)) - 10.0f;
     const float heavyCells = float(ecs::cell_x((*sm::body_state<ecs::MacroCell>(st, heavy)), gs.mapW)) - 10.0f;
 
+    // STRICTLY MORE, and both numbers may legally be NEGATIVE now: on a road
+    // the passive regen outruns either burn, so both bodies END UP RICHER and
+    // what the pack buys is a SMALLER gain. The claim is the ordering, which is
+    // the claim it always was — «the pack is a cost» means «the laden body is
+    // worse off than the bare one», never «the laden body loses points».
     CHECK(heavySpent > lightSpent,
           "the laden squad paid more for the same road — the pack is a cost");
     // НОСИТЕЛЬ ЭТОГО УТВЕРЖДЕНИЯ ПЕРЕЕХАЛ, А ЗАКОН ОСТАЛСЯ (§5 п.6). Здесь
@@ -784,7 +947,13 @@ void test_an_engine_cap_load_is_priced_whole() {
           "самая тяжёлая строка каталога — статуя, 64 000 г");
 
     auto& rtOx = (*sm::body_state<ecs::MacroNpcRuntime>(st, ox));
-    rtOx.carryPerSoulG = 0;   // спины нет вовсе: весь трюм есть перегруз
+    // СПИНА РОВНО В ОДНУ СТРОКУ ГРУЗА — и это не удобство, а то, что делает
+    // якорь независимым: трюм из `kMaxInventorySlots` таких же строк есть
+    // РОВНО столько же спин, то есть множитель равен НАЗВАННОМУ капу слотов.
+    // Прежде здесь стояло `carryPerSoulG = 0` («спины нет вовсе»), и под новой
+    // дверью это больше не фикстура перегруза, а страж области деления: без
+    // спины делить не на что, и множитель честно нейтрален.
+    rtOx.carryPerSoulG = std::int32_t(heaviest->massG);
     auto& hold = st.inventory[ox.slot].inv;
     hold.add(heaviest->id, sm::kMaxInventorySlots);
 
@@ -793,8 +962,13 @@ void test_an_engine_cap_load_is_priced_whole() {
     const std::int64_t holdG = inventory_mass_g(hold);
     CHECK(holdG == std::int64_t(sm::kMaxInventorySlots) * 64'000,
           "трюм на капах движка: 1024 слота × 64 кг = 65 536 000 г");
-    CHECK(sm::carry_capacity_g(rtOx, hold) == 0,
-          "фикстура: спины нет, значит перегруз равен всему трюму");
+    CHECK(sm::carry_capacity_g(rtOx, hold) == 64'000,
+          "фикстура: спина ровно одна статуя, значит трюм есть 1024 спины");
+    const float burden = sm::overload_burden_from_capacity(
+        sm::carry_capacity_g(rtOx, hold), hold);
+    CHECK(nearf(burden, float(sm::kMaxInventorySlots)),
+          "множитель на капах движка равен КАПУ СЛОТОВ: тысяча двадцать "
+          "четыре спины — тысяча двадцать четыре раза дороже час");
 
     const auto& pools0 = (*sm::body_state<ecs::Pools>(st, ox));
     const float spBefore = float(pools0.sp) + pools0.spCarry;
@@ -810,22 +984,26 @@ void test_an_engine_cap_load_is_priced_whole() {
     const float spAfter = float(pools1.sp) + pools1.spCarry;
     const float burned = spBefore - spAfter;
 
-    // ЧТО ОБЯЗАН БЫЛ СЖЕЧЬ ОДИН ПЕРЕГРУЗ: цена входит в час СЛАГАЕМЫМ, и
-    // навык её не сбивает никогда (`burn_stamina_per_hour` — «ПЕРЕГРУЗ,
-    // который навык не сбивает»), поэтому вклад есть ровно цена × часы думки.
+    // ЧТО ОБЯЗАН БЫЛ СЖЕЧЬ ОДИН ПЕРЕГРУЗ: множитель входит в час СРЕДИ
+    // МНОЖИТЕЛЕЙ (M-310), поэтому вклад есть ровно грунт × множитель × часы
+    // думки, минус пассивный реген того же часа.
     const float hours = sm::kAiTickGameHours;
-    const float wholePrice = float(holdG / 1000) * hours;
-    const float cappedPrice = 32767.0f * hours;
-    CHECK(burned > cappedPrice * 1.5f,
-          "цена перегруза на капах движка сгорела ЦЕЛИКОМ: сожжённое выше "
-          "того, что мог бы дать обрезанный потолок int16 (M-302)");
-    CHECK(burned >= wholePrice,
-          "и она не меньше полной цены трюма: 65 536 SP/ч × часы думки");
+    const float wholePrice =
+        (burn_stamina_per_hour(1.0f, burden) - rest_stamina_per_hour(110, 0))
+        * hours;
+    // ЕСЛИ МНОЖИТЕЛЬ НЕ ДОЕДЕТ ДО ЖЖЕНИЯ — а это ровно дефект M-310 наизнанку
+    // и ровно то, что обрезанный носитель сделал бы молча, — час будет стоить
+    // НЕЙТРАЛЬНУЮ дорогу, то есть уйдёт в ПЛЮС (реген её обгоняет).
+    const float neutralPrice =
+        (burn_stamina_per_hour(1.0f) - rest_stamina_per_hour(110, 0)) * hours;
+    CHECK(burned > wholePrice * 0.99f && burned < wholePrice * 1.01f,
+          "множитель перегруза на капах движка дошёл до жжения ЦЕЛИКОМ: "
+          "сожжённое есть грунт × 1024 × часы думки, с точностью до процента");
     // НЕГАТИВНЫЙ КОНТРОЛЬ САМОГО ДЕТЕКТОРА: два кандидата обязаны РАЗЛИЧАТЬСЯ
     // в наблюдаемом, иначе утверждение выше не способно покраснеть.
-    CHECK(wholePrice > cappedPrice * 1.9f,
-          "негативный контроль: полная и обрезанная цены различаются вдвое, "
-          "значит у детектора есть что различать");
+    CHECK(wholePrice > 100.0f && neutralPrice < 0.0f,
+          "негативный контроль: целый множитель жжёт, а потерянный — ВОЗВРАЩАЕТ "
+          "планку, значит два исхода различаются даже знаком");
 }
 
 } // namespace
@@ -833,7 +1011,7 @@ void test_an_engine_cap_load_is_priced_whole() {
 int main() {
     test_greedy_walks_around_a_wet_cell();
     test_river_is_forded_and_a_bridge_is_cheaper();
-    test_ocean_drowns_who_cannot_reach_the_shore();
+    test_ocean_crossing_is_paid_in_blood();
     test_land_exhaustion_makes_camp_without_blood();
     test_banking_a_part_cell_is_not_resting();
     test_a_laden_squad_pays_for_its_load();

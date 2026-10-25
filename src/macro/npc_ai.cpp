@@ -308,6 +308,16 @@ void settle_exhaustion(MacroHandle e, const ecs::Pools& hp,
 // before the stepping code is written.
 float cell_weight(const TickContext& ctx, int x, int y);
 
+// РЕФЛЕКС УГРОЗЫ — ОБЪЯВЛЕН ЗДЕСЬ, ПОТОМУ ЧТО ЕГО ЗОВУТ МОДУЛИ, А НЕ ДИСПЕТЧ
+// (первая половина M-307, ломоть 5а M-72). Преамбула рефлексов переехала из
+// `dispatch` в головы четырёх думающих модулей, и три из них написаны ВЫШЕ
+// определения этого тела — та же причина, по которой выше объявлены ритм и
+// вес клетки. Два других рефлекса (`scent_squad_deposit`, `scent_hunt_step`)
+// объявления здесь не просят: они публичны и приезжают из `npc_ai.h`.
+bool squad_threat_step(MacroHandle self, MacroPos& p,
+                       const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
+                       ecs::Pools& pools, const TickContext& ctx);
+
 // (No can_stand_at, and no nav_can_stand behind it. THE standing predicate
 // died 2026-10-06 — «да уничтодить вторую стену она портит всё (ВЕСА БЫЛО
 // ЕДИНОЕ РЕШЕНИЕ», владелец: a cell a walker could not stop on was a SECOND
@@ -316,12 +326,18 @@ float cell_weight(const TickContext& ctx, int x, int y);
 // now possible everywhere and lethality is a CONSEQUENCE of the two always-on
 // processes — macro/recovery.h settle_pools_over_time.)
 
-// ЧТО НЕСОМЫЙ ГРУЗ СТОИТ ЭТОМУ СКВАДУ В ЧАС — ЧИСЛО ОДНОЙ ДУМКИ, И ХРАНИЛИЩА
-// У НЕГО НЕТ (вердикт владельца 2026-10-21, дословно: «убирай нафиг нам
-// хранить скока перегруз ест сели просто достатчно хранить 2 значения вес
-// который может нести сквад и вес который несёт»).
+// ВО СКОЛЬКО РАЗ НЕСОМЫЙ ГРУЗ ДОРОЖИТ ЭТОМУ СКВАДУ ЧАС ПУТИ — ЧИСЛО ОДНОЙ
+// ДУМКИ, И ХРАНИЛИЩА У НЕГО НЕТ (вердикт владельца 2026-10-21, дословно:
+// «убирай нафиг нам хранить скока перегруз ест сели просто достатчно хранить
+// 2 значения вес который может нести сквад и вес который несёт»).
 //
-// ЗДЕСЬ СТОЯЛА `refresh_overload_cost`, ПИСАВШАЯ КОЛОНКУ `overloadCost`
+// ВО СКОЛЬКО РАЗ, А НЕ СКОЛЬКО SP — вердикт владельца 2026-10-24: перегруз
+// есть МНОЖИТЕЛЬ жжения (вывод — `overload_burden_from_capacity@src/macro/
+// travel.h`). Прежняя абсолютная цена в SP входила в жжение слагаемым и
+// потому жгла стоящего, у которого жжения нет: именно этим мир стирал свои
+// места (M-310, мест 2275 → 90). Множителю это невыразимо.
+//
+// А ЕЩЁ РАНЬШЕ ЗДЕСЬ СТОЯЛА `refresh_overload_cost`, ПИСАВШАЯ КОЛОНКУ `overloadCost`
 // (`int16`), и последним её шагом был НЕМОЙ КЛАМП `std::clamp(cost, 0, 32767)`
 // — M-302. Вся цепочка выше считала честно (`carry_capacity_g` отдаёт `int64`,
 // цена есть точное `(g + 999) / 1000`), обрезал РОВНО последний шаг, на ширине
@@ -342,11 +358,11 @@ float cell_weight(const TickContext& ctx, int x, int y);
 // — своя колонка анкеты плюс граммы голов из сводки) и несомый вес
 // (`inventory_mass_g` — тотал сводки, разряд А). Перегруз есть их разница, и
 // третьего носителя у него больше нет.
-inline int overload_cost_of(const ecs::MacroNpcRuntime& rt,
-                            const ecs::NpcInventory* bag) {
-    if (!bag) return 0;
-    return overload_charge_from_capacity(carry_capacity_g(rt, bag->inv),
-                                         bag->inv).cost;
+inline float overload_burden_of(const ecs::MacroNpcRuntime& rt,
+                                const ecs::NpcInventory* bag) {
+    if (!bag) return 1.0f;   // нет сумки — нечего нести, множитель нейтрален
+    return overload_burden_from_capacity(carry_capacity_g(rt, bag->inv),
+                                         bag->inv);
 }
 
 ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
@@ -388,10 +404,12 @@ ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
 // Now both ask the one question the law actually asks: did you move?
 //
 // WHERE a body stands no longer enters the question (2026-10-06): rest is owed
-// to anything that stopped, ocean included, and the ocean stays lethal because
-// its HOUR burns 20 SP against 13.75 of rest — the sign of the difference, not
-// a predicate. The old «standing where no camp is possible is not rest» was the
-// second half of the wall, and it died with the first.
+// to anything that stopped, ocean included. Until 2026-10-24 the ocean stayed
+// lethal to a STANDING body too, by the sign of 20 SP of burn against 13.75 of
+// rest; the owner's inversion took the burn out of standing altogether, so what
+// the open sea now costs is paid ВПЛАВЬ and nowhere else. The old «standing
+// where no camp is possible is not rest» was the second half of the wall, and
+// it died with the first.
 //
 // STOPPED is not the same question as "did not change cell this think", and
 // getting that wrong is how the first cut of this law paid marchers to march:
@@ -402,63 +420,52 @@ ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
 // it meant to be, or when it has DECIDED to stop — which is exactly the
 // player's own gate, «маршрут пуст», said in the squads' words.
 //
-// `overloadCost` — ЦЕНА ГРУЗА ПАРАМЕТРОМ, А НЕ КОЛОНКОЙ (M-302): свип считает
-// её дверью `overload_cost_of` выше в той же думке, ДО поведения, и передаёт
-// сюда. МОМЕНТ РАСЧЁТА ОСТАВЛЕН ТОТ ЖЕ, что был у снесённой колонки, именно
-// чтобы единственным изменением поведения осталось снятие обрезания, — и
-// паритет это ДОКАЗАЛ атрибуцией: два сида из трёх побайтово идентичны (там
-// кламп не срабатывал), а на третьем возврат ОДНОГО клампа складывает мир
-// обратно байт в байт. `int` вместо `int16` делает прежнее немое обрезание на
-// 32 767 невыразимым.
+// `overloadBurden` — МНОЖИТЕЛЬ ГРУЗА ПАРАМЕТРОМ, А НЕ КОЛОНКОЙ (M-302 +
+// M-310): свип считает его дверью `overload_burden_of` выше в той же думке, ДО
+// поведения, и передаёт сюда. МОМЕНТ РАСЧЁТА ОСТАВЛЕН ТОТ ЖЕ, что был у
+// снесённой колонки `overloadCost`, — менялись с тех пор только тип числа
+// (`int16` → `int` → `float`) и его РОЛЬ в формуле (слагаемое → множитель).
 void settle_march_rhythm(MacroHandle e, const MacroPos& p,
                          ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
                          bool moved, const TickContext& ctx,
-                         int overloadCost) {
+                         float overloadBurden) {
     const int maxSp = std::max<int>(1, hp.maxSp);
 
-    // THE two rates of this body, in this cell, this hour — computed ONCE and
-    // read by both halves below, so the decision and the settle can never
-    // disagree about what standing here is worth.
+    // ЧТО ЧАС ПУТИ СТОИТ ЭТОМУ ТЕЛУ В ЭТОЙ КЛЕТКЕ. Цена берётся с грунта ПОД
+    // ТЕЛОМ и множится на два множителя, бывшие другой половиной мёртвой
+    // пошаговой цены: собственный груз сквада (`overloadBurden`, оценённый по
+    // его сумке свипом ДО поведения — параметр, никогда колонка) и выучка
+    // (`travelRank`, кэш листа, который читал сам марш, так что лист в думке
+    // не пересобирается).
     //
-    // The hour is priced from the ground UNDER THE BODY plus the two terms
-    // that were the dead per-step price's other half: the squad's own load
-    // (`overloadCost`, priced from its bag by the sweep before the behaviour
-    // ran — a parameter, never a column, M-302) and its training
-    // (`travelRank`, a sheet cache the march itself read, so no sheet is
-    // rebuilt per think).
+    // СТОЯЩЕЕ ТЕЛО ЭТОГО НЕ ПЛАТИТ, и гейт стоит не здесь, а в двери
+    // (`settle_pools_over_time` берёт `resting` и решает сама) — поэтому
+    // ставку можно считать безусловно, одной строкой, не спрашивая заранее,
+    // пойдёт ли тело.
     const float burnRate = burn_stamina_per_hour(
-        cell_weight(ctx, int(p.x), int(p.y)), overloadCost,
+        cell_weight(ctx, int(p.x), int(p.y)), overloadBurden,
         skill_mult_of(SkillId::Travel, int(rt.travelRank)));
-    const bool campRepays =
-        camp_repays_its_hour(burnRate, maxSp, int(rt.marathonRank));
 
     // The automaton's CAMP decision (npc_ai.h kCampBarDivisor): legs below an
-    // eighth of the bar pitch camp — WHERE CAMP IS WORTH PITCHING. The
-    // half-bar wake-up (prepare_) resumes the leg.
+    // eighth of the bar pitch camp. The half-bar wake-up (prepare_) resumes
+    // the leg.
     //
-    // `camp_repays_its_hour` is THE door of that question
-    // (movement_cost.h) — one law, and the player's own driver asks the same
-    // one. Why it is not the standing wall coming back, and why the demolition
-    // would defeat its own purpose without it, is written there.
+    // БЕЗ ВОПРОСА «А ОКУПИТСЯ ЛИ ЗДЕСЬ ПРИВАЛ» (снос 2026-10-24): привал
+    // окупается ВЕЗДЕ по построению — у стоящего тела жжения нет, а реген
+    // пассивен, значит планка в лагере только растёт и порог пробуждения в
+    // половину планки достигается всегда. Эпитафия предиката и четырёх его
+    // ветвей — у `rest_stamina_per_hour@src/macro/movement_cost.h`.
     //
     // ONE camp decision, and it used to be TWO: settle_exhaustion took the
     // same decision again for a body already in debt, each behind its own
     // copy of the standing predicate. A bar at or below an eighth already
     // includes every negative bar there is, so the second site was answering a
     // question this one had answered — it went with the predicate.
-    if (campRepays
-        && int(hp.sp) <= maxSp / kCampBarDivisor
+    if (int(hp.sp) <= maxSp / kCampBarDivisor
         && rt.state != std::uint8_t(NPCState::Resting)) {
         rt.stateAfterRest = rt.state;   // пауза, не амнезия (components.h)
         rt.state = std::uint8_t(NPCState::Resting);
         rt.stateTimer = 0;
-    }
-    // ...and a body ALREADY camped where the ground turned against it is woken
-    // on the spot, for the same reason: the rising tide of a flooded cell, a
-    // re-centred frame, a bridge washed away. Sleeping through that is the
-    // deadlock above with one extra step.
-    if (!campRepays && rt.state == std::uint8_t(NPCState::Resting)) {
-        wake_from_rest(rt);
     }
 
     // A body is STOPPED when it is where it meant to be, when it DECIDED to
@@ -479,16 +486,17 @@ void settle_march_rhythm(MacroHandle e, const MacroPos& p,
     // begins on the first think after the legs stop.
     const bool resting = stopped && !moved;
 
-    // THE two always-on processes, THE one door (recovery.h
-    // settle_pools_over_time), asked UNCONDITIONALLY — which is the shape of
-    // the 2026-10-06 law and not a widening of it. The burn runs for a body
-    // that marched, a body that stood and a body asleep in camp alike; only
-    // the REGEN half reads `resting`. Before this it was an `if` around the
-    // whole call, and the price of a step lived in try_move below — two laws
-    // of one quantity, the thing §5 п.14 is written about.
+    // THE two processes, THE one door (recovery.h settle_pools_over_time),
+    // asked UNCONDITIONALLY — which is the shape of the law and not a widening
+    // of it. Since the 2026-10-24 inversion the REGEN half runs for a body
+    // that marched, a body that stood and a body asleep in camp alike, and
+    // what `resting` now gates is the BURN (plus HP/MP, where «марш не лечит»
+    // still stands). Before all this it was an `if` around the whole call, and
+    // the price of a step lived in try_move below — two laws of one quantity,
+    // the thing §5 п.14 is written about.
     const int bite = settle_pools_over_time(
         hp, kAiTickGameHours, int(rt.marathonRank), burnRate,
-        /*regenerates=*/resting);
+        /*resting=*/resting);
 
     // ...and a body the BITE killed is buried here. Gated on the bite itself,
     // not on `hp <= 0`: a squad cut down by an auto-battle earlier in this
@@ -1276,6 +1284,63 @@ public:
     bool owes_tithe(std::uint16_t placeSlot) const {
         return sm::owes_tithe(store_ctx(ctx_), placeSlot);
     }
+    // МОЙ ДОЛЖНИК — ПЕРВЫЙ ВАССАЛ С НЕПОГАШЕННЫМ ДОЛГОМ, И ВОПРОС ЭТОТ
+    // ЗАДАЁТСЯ СВОИМ РЕЕСТРОМ СВЯЗЕЙ, А НЕ ПОИСКОМ ПО МИРУ. Зеркало
+    // `Stance::Vassal` пишет та же дверь, что ставит `Suzerain`
+    // (`set_relation@src/macro/store.h`) — роль несимметрична по природе
+    // (ФРЕЙМ род 6), поэтому «кому я сюзерен» лежит колонкой МОЕЙ строки, и
+    // обходить мир незачем. Обход плотный: занятые записи идут подряд от
+    // нуля, первая `Stance::None` закрывает проход — тот же стоп, которым
+    // ходит `tithe_of@src/macro/store.h`.
+    // kMacroNoSlot = должника нет, и это ЗНАЧЕНИЕ: сборщику некого доить.
+    std::uint16_t owing_vassal(std::uint16_t suzerainSlot) const {
+        if (suzerainSlot == kMacroNoSlot) return kMacroNoSlot;
+        const MacroStore& st = store_ctx(ctx_);
+        const Interests& in = st.interests[suzerainSlot];
+        for (int i = 0; i < kMaxInterests; ++i) {
+            const Interest& it = in.slots[i];
+            if (it.stance == std::uint8_t(Stance::None)) break;
+            if (it.stance != std::uint8_t(Stance::Vassal)) continue;
+            // Ординал → слот одной дверью резолва (M-271); мёртвый вассал
+            // отвечает kMacroNoSlot и просто пропускается.
+            const std::uint16_t slot = place_slot_by_id(ctx_, it.object);
+            if (slot != kMacroNoSlot && sm::owes_tithe(st, slot)) return slot;
+        }
+        return kMacroNoSlot;
+    }
+    // ЕСТЬ ЛИ У МЕНЯ ЖИВОЙ РЕБЁНОК ЭТОГО ТИПА — гейт дубля перед рождением.
+    // Ребро `Child` зеркалит `Parent`, но ТИП ребёнка на ребре не лежит:
+    // связь говорит «кто», а «что он делает» есть колонка его строки
+    // (`runtime.squadType`, ЗАКОН АНКЕТЫ п.1), — поэтому ответ собирается
+    // проходом по строкам, а не по рёбрам.
+    //
+    // ХОЛОДНЫЙ ПУТЬ, И ЭТО СКАЗАНО ВСЛУХ: проход идёт КАПОМ (ЗАКОН
+    // СТАБИЛЬНОСТИ — цена не зависит от населения), зовётся ТОЛЬКО на
+    // каденсе решения рождения (~раз в день на место) и ГОРЯЧЕМУ ЦИКЛУ
+    // ЗАПРЕЩЁН: думка каждого сквада платила бы капом за вопрос, который
+    // мир задаёт раз в сутки (§6 граница O(N)).
+    //
+    // SELF-РЕБРО НЕ ИСКЛЮЧАЕТСЯ, И ЭТО НЕ ОГОВОРКА: у места дом — оно само
+    // (`Parent` на себя, `store.h`), поэтому на СВОЙ тип вопрос честно
+    // отвечает «да». Спрашивают его о том, кого рожают (ходоки), а завести
+    // ветку «кроме меня» значило бы написать исключение под случай, которого
+    // мир не задаёт.
+    //
+    // ⚠ ЧИТАТЕЛЯ СЕГОДНЯ НЕТ: вопрос задают модули типов, а они ждут вердикта
+    // M-310 (см. `craft`/`spawn` у пульта ниже). Он гейт ДУБЛЯ перед
+    // рождением — «у меня уже есть артель, второй не нужно», — и колонку
+    // «число рождённых» он же делает ненужной (выводимое не хранится).
+    bool has_child(MacroHandle self, SquadType t) const {
+        const MacroStore& st = store_ctx(ctx_);
+        if (!st.valid(self)) return false;
+        const int myId = int(st.spawnId[self.slot].index);
+        for (std::size_t slot = 0; slot < kUnifiedCap; ++slot) {
+            if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
+            if (st.runtime[slot].squadType != std::uint8_t(t)) continue;
+            if (parent_of(st, std::uint16_t(slot)) == myId) return true;
+        }
+        return false;
+    }
     // ДНИ ПУТИ и СТРАХ МАРШРУТА — две меры решения «дальше или домой», обе
     // над одной дверью навигации (nav_path_cost), обе чистое чтение.
     float march_days(int ax, int ay, int bx, int by) const {
@@ -1287,6 +1352,31 @@ public:
 private:
     const TickContext& ctx_;
 };
+
+// КЛЕЙМО АДРЕСА НА ФАКТАХ ПРОИЗВОДСТВА. Дверь выпуска судит ОДИН контейнер
+// и адресов не знает (`econ_produce_day` видит инвентарь, скилы и счёт);
+// единственный, кто знает, ЧЕЙ это склад, — звонящий глагол. Та же форма,
+// что у релея содержания ниже (`UpkeepFactRelay`) и у дневного релея
+// `world_tick.cpp`, и тот из трёх умрёт вместе со своим вызовом (И2).
+struct CraftFactRelay {
+    EconFactSink sink = nullptr;
+    void* user = nullptr;
+    int placeId = -1;
+};
+void relay_craft_fact_(void* user, const EconFact& fact) {
+    const auto* r = static_cast<const CraftFactRelay*>(user);
+    EconFact stamped = fact;
+    stamped.placeId = r->placeId;
+    r->sink(r->user, stamped);
+}
+
+// ПЕРИОД ПРОИЗВОДСТВЕННОГО АКТА — ДЕНЬ, СЧИТАННЫЙ В ДУМКАХ, И ОН ВЫВЕДЕН, А
+// НЕ НАЗНАЧЕН (ЗАКОН КОНСТАНТ + «калибровать только в тиках игры»): думка
+// сквада идёт раз в `kAiTicks` мировых тиков, в сутках `kTicksPerDay`
+// тиков — значит сутки есть ровно их отношение, 8192/32 = 256 думок.
+// Делимость уже прибита `static_assert@src/macro/npc_ai.h` при `kAiTicks`,
+// поэтому остатка здесь не бывает по построению.
+inline constexpr int kCraftThinksPerDay = int(kTicksPerDay / kAiTicks);
 
 // ПУЛЬТ: глаголы-двери — всё, чем модуль касается мира и соседей.
 class AiPult {
@@ -1490,6 +1580,112 @@ public:
                                  int(std::min<long long>(took, 1 << 30)),
                                  parent_of(st, s.h.slot));
         }
+    }
+    // ── ПРОИЗВОДСТВЕННЫЙ АКТ — ОДИН ГЛАГОЛ НА ДНЕВНОЙ ВЫПУСК ─────────────
+    // «Произвёл» есть РАБОТА, и решает её модуль, а ИСПОЛНЯЕТ дверь: сама
+    // лестница рецептов (`econ_produce_day@src/macro/econ_day.h`) не
+    // переписана и не удвоена — глагол лишь собирает ей входы ИЗ СВОЕЙ
+    // СТРОКИ и закрывает акт восстановлением.
+    //
+    // ВСЕ ВХОДЫ — СВОИ КОЛОНКИ, МИРА В НИХ НЕТ НИ ОДНОГО: склад — свой
+    // контейнер, счёт — свой `needDebt`, руки — скилы СВОЕЙ анкеты (ЗАКОН
+    // АНКЕТЫ п.2: «анкета источник»), верстаки — своя паства на квоту
+    // `kCreaturesPerCityWorker`, семья монет — своя колонка фракции
+    // (`faction_or_freefolk` сводит вольных к имперской; -1 глушит минтовый
+    // рецепт fail-closed). Ноль душ держит НОЛЬ верстаков: `max(1, …)` без
+    // этого гейта печатал призрачного работника пустому складу.
+    //
+    // И ГЛАГОЛ САМ СТАВИТ ВОССТАНОВЛЕНИЕ — ОДНА ДВЕРЬ ЗАРЯДА (ЗАКОН
+    // СПОСОБНОСТИ п.4): период производства назначает не модуль, а эта
+    // точка, поэтому «произвёл дважды за сутки» невыразимо. Носитель —
+    // существующий `stateTimer`, четвёртого рукописного таймера не
+    // заводится.
+    //
+    // ⚠ ЗВОНЯЩЕГО У ЭТОГО ГЛАГОЛА СЕГОДНЯ НЕТ, И ЭТО НАЗВАННАЯ ДЫРА, А НЕ
+    // ЗАБЫТЫЙ ПУТЬ (§1: дыра стоит открытой и названной до настоящей
+    // системы). Звать его должны модули типов Village/City/Capital, а они
+    // ЗАБЛОКИРОВАНЫ нарядом M-310: тело месту пускает его в ритм марша, а
+    // тот читает СКЛАД места как носимый перегруз (379 361 кг против спины
+    // 99 560 кг → цена 279 801 при `maxSp` 110) и сжигает 2185 мест из 2275
+    // за 32 дня. Пока вердикта о смысле «несёт» у склада нет, строки
+    // диспетча стоят `nullptr`, и дневной выпуск идёт прежней дверью из
+    // `tick_squads_day_@src/macro/world_tick.cpp` — ОДНИМ путём, не двумя
+    // (§5 п.14). Снимать глагол при этом нельзя: он и есть та форма, к
+    // которой вердикт прилагается.
+    // Возвращает единиц выпущено (ответ двери, не свой счёт).
+    int craft(AiSelf& s) {
+        MacroStore& st = store_ctx(ctx_);
+        const std::uint16_t slot = s.h.slot;
+        const int heads = count_human_souls(s.bag);
+        CraftFactRelay relay{ctx_.mw.econFacts, ctx_.mw.econFactsUser,
+                             int(st.spawnId[slot].index)};
+        const EconFactSink rs =
+            ctx_.mw.econFacts ? &relay_craft_fact_ : nullptr;
+        void* ru = ctx_.mw.econFacts ? static_cast<void*>(&relay) : nullptr;
+        const int made = econ_produce_day(
+            s.bag, st.upkeep[slot].needDebt, st.sheet[slot].skills,
+            heads > 0 ? std::max(1, heads / kCreaturesPerCityWorker) : 0,
+            heads, rs, ru,
+            faction_or_freefolk(std::int16_t(st.kind[slot].factionIdx)));
+        s.rt.stateTimer = std::int16_t(kCraftThinksPerDay);
+        return made;
+    }
+    // ── РОЖДЕНИЕ ПАРЫ РОДИТЕЛЬ↔РОЖДЁННЫЙ — ОДИН ГЛАГОЛ ──────────────────
+    // «Родил» есть ПАРА, а не узел (вердикт владельца 2026-10-24 №3):
+    // родитель называет СЕБЯ в данных рождаемого (`parentId`), и ребро
+    // `Parent`/`Child` ставит сама дверь рождения. Отдельной колонки «число
+    // рождённых» нет — выводимое не хранится (ЗАКОН АНКЕТЫ п.2, шрам трёх
+    // носителей); сколько детей есть, отвечает `AiView::has_child`.
+    //
+    // ОТКАЗ — В ТОЧКЕ РОЖДЕНИЯ И ВСЛУХ (§5 п.3): душ дома меньше, чем просит
+    // крю, — пары не возникает ВОВСЕ, и возврат это говорит невалидным
+    // хэндлом. Fail-closed на чтении соврал бы потише: сквад без своих душ
+    // был бы рождён из воздуха.
+    //
+    // РОЖДЕНИЕ ПЛАТИТ ДУШАМИ РОДИТЕЛЯ, И ПЛАТИТ ПО ФАКТУ УСПЕХА
+    // (`bleed_flock@src/macro/world_row.h` — дверь drain, берёт сколько
+    // есть и возвращает факт): лидер и члены СХОДЯТ головами из своего
+    // контейнера. Это и есть предел рождения по построению — потолка числа
+    // детей колонкой не заводится (ЗАКОН КЛАМПА: предел наступает обратной
+    // связью, и убыль паствы её даёт). Паству (worked-число клетки)
+    // рождение НЕ трогает: души ушли В ПОЛЕ, а не умерли.
+    //
+    // ФРАКЦИЯ НЕ ЗАДАЁТСЯ НАРОЧНО: дефолт спеки (-1) означает «решает
+    // земля», и рождённый у дома наследует дом через родителя — второго
+    // носителя «чей он» рядом не ставится.
+    // Тип рождённому ставится ПОСЛЕ успеха: спека типа не несёт вовсе.
+    //
+    // ⚠ ЗВОНЯЩЕГО НЕТ ПО ТОЙ ЖЕ ПРИЧИНЕ, ЧТО У `craft` ВЫШЕ — модули типов
+    // ждут вердикта M-310 («что значит НЕСЁТ у сквада, чей инвентарь есть
+    // склад»). Рабочие сквады поэтому в мире не рождаются вовсе, и это
+    // ЗАМЫСЕЛ ломтя, а не регресс: аукцион ротации казнён (ломоть 4), а
+    // костыля на его место не ставится (§1).
+    MacroHandle spawn(AiSelf& s, SquadType bornType, int crewSouls) {
+        if (crewSouls <= 0 || !ctx_.mw.gs || !ctx_.mw.terrain)
+            return MacroHandle{};
+        MacroStore& st = store_ctx(ctx_);
+        if (count_human_souls(s.bag) < crewSouls) return MacroHandle{};
+        const std::uint16_t slot = s.h.slot;
+        SquadSpec spec{};
+        spec.leaderType = NPCType::Peasant;
+        spec.x = slot_x(st, slot, ctx_.mapW);
+        spec.y = slot_y(st, slot, ctx_.mapW);
+        spec.parentId = int(st.spawnId[slot].index);
+        for (int m = 1; m < crewSouls; ++m) {
+            // ГЕНЕРИК (CANON S4): члены — ОДИН стак, не пер-душевые
+            // ординалы (`SquadSpecMembers::push` сливает равные записи);
+            // поток имён остаётся лидерам и душам с историей.
+            SoldierRecord rec{};
+            rec.kind = std::uint16_t(spec.leaderType);
+            rec.level = 1;
+            if (!spec.members.push(rec)) break;
+        }
+        const MacroHandle born =
+            spawn_squad(*ctx_.mw.gs, st, *ctx_.mw.terrain, spec);
+        if (!st.valid(born)) return MacroHandle{};
+        st.runtime[born.slot].squadType = std::uint8_t(bornType);
+        bleed_flock(s.bag, 1 + spec.members.size());
+        return born;
     }
 private:
     const TickContext& ctx_;
@@ -1735,6 +1931,24 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
 void ai_artel(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
               ecs::Pools& pools, const TickContext& ctx) {
     if (!ctx.mw.store || !ctx.mw.gs) return;
+    // РЕФЛЕКСЫ — ВЫБОР МОДУЛЯ, А НЕ ПЕРЕХВАТ ДИСПЕТЧА (первая половина
+    // M-307): преамбула приехала сюда дословно и тем же порядком, каким
+    // стояла в `dispatch`. Повтор у четырёх модулей — НОРМА (DOD п.5).
+    // СТОИТ ПОСЛЕ ГЕЙТА МИРА, И ЭТО НЕ СМЕНА ПОРЯДКА: все три рефлекса
+    // сами начинаются с `!ctx.mw.store || !ctx.mw.gs` и на пустом мире были
+    // пустышками, а `store_ctx` ниже разыменовывает store без проверки —
+    // то есть «рефлексы раньше гейта» было бы ровно UB вместо тех же нулей.
+    const ecs::NPCKind& kind = store_ctx(ctx).kind[e.slot];
+    // Каждый думающий сквад следит — писатель полей следов один (CANON S10).
+    scent_squad_deposit(e, p, kind, ctx);
+    if (squad_threat_step(e, p, kind, rt, pools, ctx)) return;
+    // Визуального врага нет — может, есть запах: охота съедает think, роль
+    // ждёт. Прежде здесь стояло «макроцель в rt не тронута — пауза, не
+    // амнезия»: это было ВЕРНО и перестало быть, когда охота научилась
+    // писать своё «куда» в колонку цели (хвост ломтя 3). Рефлекс запаха
+    // теперь ведёт себя как визуальный — забирает цель на время погони и
+    // оставляет роль решать заново, — и двух законов у реакции больше нет.
+    if (scent_hunt_step(e, p, kind, rt, pools, ctx)) return;
     AiSelf self{e, p, rt, pools, store_ctx(ctx).goal[e.slot],
                 store_ctx(ctx).inventory[e.slot].inv};
     const AiView view(ctx);
@@ -2440,6 +2654,11 @@ void ai_vendor(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
         ai_nomad(e, p, rt, pools, ctx);
         return;
     }
+    // Преамбула рефлексов — та же и в том же порядке (M-307, см. ai_artel).
+    const ecs::NPCKind& kind = store_ctx(ctx).kind[e.slot];
+    scent_squad_deposit(e, p, kind, ctx);
+    if (squad_threat_step(e, p, kind, rt, pools, ctx)) return;
+    if (scent_hunt_step(e, p, kind, rt, pools, ctx)) return;
     AiSelf self{e, p, rt, pools, store_ctx(ctx).goal[e.slot],
                 store_ctx(ctx).inventory[e.slot].inv};
     const AiView view(ctx);
@@ -2522,10 +2741,31 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
         return;
     }
 
-    const std::uint16_t vassal = view.goal_place(g);
+    // ДОЛЖНИКА СБОРЩИК НАХОДИТ САМ, И ЭТО ПОЧИНКА МЁРТВОГО ПИСАТЕЛЯ, А НЕ
+    // НОВАЯ МЕХАНИКА (ломоть 5а M-72). Цель сборщика ставил АУКЦИОН, а он
+    // казнён ломтём 4 — то есть у колонки цели этого рода не осталось
+    // писателя ни одного, и всякий рождённый сборщик падал в `home_wander`
+    // НАВСЕГДА: род был жив, канал дани пуст. Спрашивать «кто мне должен»
+    // есть вопрос о СВОИХ рёбрах (`AiView::owing_vassal` — обход своих
+    // `interests` по `Stance::Vassal`, не скан мира), поэтому решение
+    // принадлежит МОДУЛЮ, а не внешнему распределителю.
+    //
+    // ФОРМА ЦЕЛИ — ТА ЖЕ, ЧТО У ДВУХ ВЕТОК Idle НИЖЕ (род Place, ординал
+    // вассала, `onArrival = Working`): второго способа назвать должника не
+    // заводится, иначе у одной величины станет два носителя (DOD п.6).
+    std::uint16_t vassal = view.goal_place(g);
     if (vassal == kMacroNoSlot || vassal == homeSlot) {
-        pult.home_wander(s);
-        return;
+        const std::uint16_t owing = view.owing_vassal(homeSlot);
+        if (owing == kMacroNoSlot || owing == homeSlot) {
+            // Дом никому не сюзерен (или все рассчитались) — ждать нечего.
+            pult.home_wander(s);
+            return;
+        }
+        ecs::goal_set(g, view.place_cell(owing),
+                      ecs::goal_what(ecs::GoalKind::Place,
+                                     view.place_id(owing)),
+                      0, std::uint8_t(NS::Working));
+        vassal = owing;
     }
 
     if (rt.state == std::uint8_t(NS::Idle)) {
@@ -2601,6 +2841,11 @@ void ai_collector(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
         ai_nomad(e, p, rt, pools, ctx);
         return;
     }
+    // Преамбула рефлексов — та же и в том же порядке (M-307, см. ai_artel).
+    const ecs::NPCKind& kind = store_ctx(ctx).kind[e.slot];
+    scent_squad_deposit(e, p, kind, ctx);
+    if (squad_threat_step(e, p, kind, rt, pools, ctx)) return;
+    if (scent_hunt_step(e, p, kind, rt, pools, ctx)) return;
     AiSelf self{e, p, rt, pools, store_ctx(ctx).goal[e.slot],
                 store_ctx(ctx).inventory[e.slot].inv};
     const AiView view(ctx);
@@ -3647,6 +3892,12 @@ void settle_exhaustion(MacroHandle e, const ecs::Pools& hp,
 void ai_untyped(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
                 ecs::Pools& pools, const TickContext& ctx) {
     const ecs::NPCKind& kind = store_ctx(ctx).kind[e.slot];
+    // Преамбула рефлексов — та же и в том же порядке (M-307, см. ai_artel).
+    // Гейта мира у этого модуля нет и не было: его зовёт тот же свип, что
+    // уже проверил store и gs на входе.
+    scent_squad_deposit(e, p, kind, ctx);
+    if (squad_threat_step(e, p, kind, rt, pools, ctx)) return;
+    if (scent_hunt_step(e, p, kind, rt, pools, ctx)) return;
     switch (untyped_squad_behaviour(store_ctx(ctx), e, kind)) {
         // ПОСЛЕДНИЕ ДВЕ МАКРО-РОЛИ, ЕЩЁ ЖИВУЩИЕ В КАТАЛОГЕ ТЕЛ (CANON S2):
         // `Gatherer` на строке Peasant и `Trader` на строке Merchant. Они
@@ -3683,11 +3934,10 @@ void ai_untyped(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
 
 // РОД → МОДУЛЬ: диспетч есть ТАБЛИЦА по ординалу SquadType, не ветвление
 // (ломоть 4 M-72; образец формы — kGenKindRows@src/sub/gens/dispatch.cpp).
-// nullptr = «у рода думки нет»: место не ходит, его день идёт своим проходом
+// nullptr = «у рода думки нет»: его день идёт своим проходом
 // (settle_place_day) — это ДАННЫЕ строки, а не гейт по архетипу (шапка
 // squad_type.h: архетип законен КЛЮЧОМ таблиц и ЗАПРЕЩЁН ГЕЙТОМ в проходе
-// симуляции — прежний гейт M-90 шага 5 умер в эту колонку). Модуль места
-// придёт ломтём 5: заполнится строка, диспетч не изменится.
+// симуляции — прежний гейт M-90 шага 5 умер в эту колонку).
 using AiModuleFn = void (*)(MacroHandle, MacroPos&, ecs::MacroNpcRuntime&,
                             ecs::Pools&, const TickContext&);
 struct AiModuleRow {
@@ -3696,11 +3946,17 @@ struct AiModuleRow {
 };
 constexpr AiModuleRow kAiModuleRows[] = {
     { SquadType::None,      ai_untyped   },
-    // Столица и дракон СТОЯТ В ТАБЛИЦЕ С ПЕРВОГО ДНЯ СВОЕЙ ОСИ, и оба с
-    // `nullptr`: модуль места придёт ломтём 5, модуль дракона — ломтём 6.
-    // Строка с `nullptr` есть ЧЕСТНОЕ «род не думает», а не пропуск: без
-    // неё ассерт полноты ниже не собрался бы, и это ровно та стена, ради
-    // которой диспетч стал таблицей.
+    // Дракон СТОИТ В ТАБЛИЦЕ С ПЕРВОГО ДНЯ СВОЕЙ ОСИ с `nullptr`: его модуль
+    // придёт ломтём 6. Строка с `nullptr` есть ЧЕСТНОЕ «род не думает», а не
+    // пропуск: без неё ассерт полноты ниже не собрался бы, и это ровно та
+    // стена, ради которой диспетч стал таблицей.
+    //
+    // СТОЛИЦЕ ДАНА ФУНКЦИЯ ГОРОДА — ОДНА ФУНКЦИЯ ДВУМ СТРОКАМ ЗАКОННА,
+    // ПОТОМУ ЧТО ЭТО ДАННЫЕ: различие столицы ещё не названо системой
+    // (её строка `kPlaces` тоже носит городские числа), и выдумывать ей
+    // второе поведение раньше вердикта владельца значило бы назначить
+    // различие кодом (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ). Придёт различие —
+    // поменяется ЭТА СТРОКА, и больше ничего.
     { SquadType::Capital,   nullptr      },
     { SquadType::City,      nullptr      },
     { SquadType::Village,   nullptr      },
@@ -3725,26 +3981,37 @@ static_assert(sm::rows_in_enum_order(kAiModuleRows, &AiModuleRow::type),
 // знать, кто он — тип задаёт поведение аи агента»). Ответ — ОДНА строка
 // kAiModuleRows: прежние два switch (по типу и по AIBehaviour) умерли в
 // таблицу и в модуль None-строки (ломоть 4 M-72).
-void dispatch(MacroHandle e, MacroPos& p,
-              const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
+//
+// И ДИСПЕТЧ ЗОВЁТ МОДУЛЬ ПО КОЛОНКЕ, И БОЛЬШЕ НИЧЕГО (первая половина M-307,
+// ломоть 5а M-72). Здесь стояла ПРЕАМБУЛА РЕФЛЕКСОВ — след, угроза, охота, —
+// и она была второй системой РЯДОМ с модулем: диспетч решал за всякий род
+// сразу, что тот сперва понюхает и испугается, а модуль получал уже
+// израсходованную думку. Тексты рефлексов не изменились ни на букву —
+// изменилось, ЧЬИ они: преамбула уехала дословно и тем же порядком в головы
+// четырёх думающих модулей (`ai_untyped`, `ai_artel`, `ai_vendor`,
+// `ai_collector`), и повтор между ними есть НОРМА (DOD п.5), а не долг.
+//
+// ПОЧЕМУ ЭТО БЫЛО НЕОБХОДИМО СДЕЛАТЬ ПЕРВЫМ, ЧИСЛОМ И АДРЕСОМ: страж, не
+// пускавший рефлексы к неподвижному сквадy, был САМ `nullptr` в строке
+// диспетча, и заполнение строк Village/City/Capital его снимало. Ветка
+// БЕГСТВА `squad_threat_step` предиката бойца не имеет вовсе, у места
+// `traits.count == 0` ⇒ `bravery_of` = 1.5, а `moveMult` по умолчанию
+// 1.0f (`src/ecs/components.h`) и гейта неподвижности у `try_move` нет, —
+// то есть город, увидевший в 6 клетках что-то в 1.5× сильнее, ПОСТАВИЛ БЫ
+// ЦЕЛЬ В 8 КЛЕТКАХ И УШЁЛ, оставив свою фичу позади. Две другие ветки
+// (погоня, охота по запаху) гаснут на `combatant_behaviour` сами.
+//
+// `kind` ИЗ ПОДПИСИ УШЁЛ ВМЕСТЕ С ПРЕАМБУЛОЙ: каталог тел спрашивали ровно
+// рефлексы, а ось, по которой диспетч выбирает модуль, — `rt.squadType`.
+void dispatch(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
               ecs::Pools& pools, const TickContext& ctx) {
     const std::size_t row = std::size_t(rt.squadType);
     const AiModuleFn module =
         row < std::size(kAiModuleRows) ? kAiModuleRows[row].module : nullptr;
-    // БЕЗ МОДУЛЯ ТЕЛО НЕ ДУМАЕТ ВООБЩЕ: ни следа, ни угрозы, ни охоты — его
-    // день идёт своим проходом; без этого squad_threat_step погнал бы ГОРОД
-    // преследовать врага.
+    // БЕЗ МОДУЛЯ ТЕЛО НЕ ДУМАЕТ ВООБЩЕ — его день идёт своим проходом; это
+    // по-прежнему правда, и правдой осталась ЦЕЛИКОМ: строка `nullptr` есть
+    // честное «род не думает».
     if (module == nullptr) return;
-    // Каждый думающий сквад следит — писатель полей следов один (CANON S10).
-    scent_squad_deposit(e, p, kind, ctx);
-    if (squad_threat_step(e, p, kind, rt, pools, ctx)) return;
-    // Визуального врага нет — может, есть запах: охота съедает think, роль
-    // ждёт. Прежде здесь стояло «макроцель в rt не тронута — пауза, не
-    // амнезия»: это было ВЕРНО и перестало быть, когда охота научилась
-    // писать своё «куда» в колонку цели (хвост ломтя 3). Рефлекс запаха
-    // теперь ведёт себя как визуальный — забирает цель на время погони и
-    // оставляет роль решать заново, — и двух законов у реакции больше нет.
-    if (scent_hunt_step(e, p, kind, rt, pools, ctx)) return;
     module(e, p, rt, pools, ctx);
 }
 
@@ -4394,11 +4661,12 @@ void tick_macro_npc_ai(MacroWorld& mw,
         if (st.dead[slot] != 0) continue;
         const ThinkGate gate = prepare_macro_npc_tick(rt, hp);
         if (gate == ThinkGate::Dead) continue;
-        // Цена груза — ДО поведения, тем же моментом, каким её брала
+        // Множитель груза — ДО поведения, тем же моментом, каким цену брала
         // снесённая колонка (M-302): час, который оплатит ритм ниже, пройден
         // с ТОЙ сумкой, какая была на входе думки, а не с той, какую сквад
         // набрал на рынке внутри неё.
-        const int overloadCost = overload_cost_of(rt, &st.inventory[slot]);
+        const float overloadBurden =
+            overload_burden_of(rt, &st.inventory[slot]);
         // Decode → think in fractional scratch → encode (the scale split):
         // the STORE is one whole-cell number; the march's own float math
         // lives only on this think's stack.
@@ -4406,9 +4674,9 @@ void tick_macro_npc_ai(MacroWorld& mw,
                    float(ecs::cell_y(cell, gs.mapW))};
         const float x0 = p.x, y0 = p.y;
         if (gate == ThinkGate::Think)
-            dispatch(h, p, kind, rt, hp, ctx);
+            dispatch(h, p, rt, hp, ctx);
         settle_march_rhythm(h, p, rt, hp, p.x != x0 || p.y != y0, ctx,
-                            overloadCost);
+                            overloadBurden);
         const std::uint32_t newIdx = ecs::cell_index(int(p.x), int(p.y),
                                                      gs.mapW);
         // ДОЛЯ КЛЕТКИ ПОСЛЕ ХОДА (M-244): клетка сменилась — сквад стоит у
@@ -4501,19 +4769,19 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
                 && st.dead[slot] == 0) {   // may have died this sweep
                 const ThinkGate gate = prepare_macro_npc_tick(rt, hp);
                 if (gate != ThinkGate::Dead) {
-                    // Цена груза — ДО поведения, тот же момент (M-302).
-                    const int overloadCost =
-                        overload_cost_of(rt, &st.inventory[slot]);
+                    // Множитель груза — ДО поведения, тот же момент (M-302).
+                    const float overloadBurden =
+                        overload_burden_of(rt, &st.inventory[slot]);
                     // Decode → fractional scratch → encode (the scale split).
                     MacroPos p{float(ecs::cell_x(cell, gs.mapW)),
                                float(ecs::cell_y(cell, gs.mapW))};
                     const float x0 = p.x, y0 = p.y;
                     if (gate == ThinkGate::Think) {
-                        dispatch(h, p, kind, rt, hp, ctx);
+                        dispatch(h, p, rt, hp, ctx);
                     }
                     settle_march_rhythm(h, p, rt, hp,
                                         p.x != x0 || p.y != y0, ctx,
-                                        overloadCost);
+                                        overloadBurden);
                     const std::uint32_t newIdx =
                         ecs::cell_index(int(p.x), int(p.y), gs.mapW);
                     // Та же дверь доли, что у полного свипа выше (M-244).

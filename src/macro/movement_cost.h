@@ -1,11 +1,42 @@
 // Movement stamina — what standing in the world costs a body per hour of it,
 // and what happens when the body cannot pay.
 //
-// ONE UNIT: THE GAME HOUR (owner, 2026-10-06). A body BURNS `cell weight ×
-// kStaminaPerWeightHour` every game hour, moving or not, and RECOVERS a flat
-// percent of its bars per hour whenever it is not moving (macro/recovery.h
-// settle_pools_over_time). Two always-on processes, added by SIGN, no branch
-// between them.
+// ONE UNIT: THE GAME HOUR (owner, 2026-10-06). Two processes, added by SIGN,
+// settled in one door (macro/recovery.h settle_pools_over_time) — but WHICH of
+// the two is the always-on one was INVERTED by the owner on 2026-10-24, and
+// both of his formulations stand here on purpose, so the next reader sees the
+// pair and knows which one rules.
+//
+// ПРЕЖНЯЯ (2026-10-06, ОТМЕНЕНА), дословно: «можно чтобы даже жгло сп всегда
+// просто при движении реген откл».
+//
+// ДЕЙСТВУЮЩАЯ (2026-10-24), дословно: «а я понял возможно в чём проблема если
+// у нас всегда пассивно жжёт и при отдыхе его перебивает апассивный реген -
+// надо наоборот всегда пассивный реген и при передвижение жжот сп по весу -
+// уточнить в общем вот решение (элегатное чистое ты понял? или нет?».
+//
+// Значит: РЕГЕН SP ПАССИВНЫЙ И БЕЗУСЛОВНЫЙ, ЖЖЕНИЕ — ТОЛЬКО В ПУТИ, по весу
+// клетки под телом. Почему переворот, а не вкус: при прежнем порядке ЖЖЕНИЕ
+// было безусловным, то есть у всякого стоящего тела всегда был отрицательный
+// член, который отдых лишь ПЕРЕБИВАЛ, — и всё, что умело стоять на дорогой
+// клетке или с тяжёлой сумкой, мир молча стирал (M-310: мест 2275 → 90). При
+// новом порядке «стоящий не получает негатива» есть свойство АРИФМЕТИКИ: у
+// него жжения нет вовсе, а не «есть, но перебито».
+//
+// И ТРЕТИЙ ЧЛЕН УШЁЛ ИЗ СЛАГАЕМЫХ В МНОЖИТЕЛИ ТОЙ ЖЕ ПРАВКОЙ (тот же вердикт,
+// дословно: «перегруз будет множитель этому жиганию так что все кто стоят не
+// смогут получить негатив по перегрузу по построениею»): жжение есть
+// ПРОИЗВЕДЕНИЕ — вес клетки × квант × выучка × перегруз, — и у произведения
+// нет члена, который жил бы мимо нуля.
+//
+// ЧТО ПЕРЕВОРОТ СТОИТ, НАЗВАНО ВСЛУХ: марш по дешёвой земле теперь НЕ
+// ОТРИЦАТЕЛЕН (дорога 2.0 жжения против 13.75 отдыха на свежей планке), то
+// есть «марш не лечит НИЧЕГО» (CANON S14) держится только на HP/MP — у SP
+// этот закон СНЯТ вердиктом. И океан топит ТОЛЬКО ПЛЫВУЩЕГО: встал — регенишь
+// даже в море. Это и есть «всё решают веса» в чистом виде (вода остаётся
+// самой дорогой строкой и втрое медленнее дороги), но строка CANON S7
+// «ночёвка в море смертельна» этим вердиктом ПЕРЕСТАЛА БЫТЬ ПРАВДОЙ, и это
+// вопрос владельцу, а не правка агента.
 //
 // THERE IS NO PRICE OF A STEP, and that is the point. A march is dear because
 // heavy ground is SLOWER (terrain_speed_mult below, from the same weight row),
@@ -37,10 +68,12 @@
 
 namespace sm {
 
-// SP per weight-unit per GAME HOUR. THE knob for how long a body can stand
+// SP per weight-unit per GAME HOUR. THE knob for how far a body can WALK
 // anywhere at all: this number × the cell's weight, and every modifier
-// (travel skill, overload) rides ON TOP, never folded in — the owner's shape,
-// 2026-08-24, unchanged by the move to the hour.
+// (travel skill, overload burden) rides ON TOP as a FACTOR, never folded in —
+// the owner's shape, 2026-08-24, unchanged by the move to the hour and
+// sharpened by the 2026-10-24 inversion (what used to be an added SP term is
+// now one more factor of the same product).
 //
 // TWO, and the two keeps a compile-time gate under it
 // (kWaterDriftHoursPerFreshBar, below the bed tables) because THIS NUMBER
@@ -60,10 +93,16 @@ namespace sm {
 // So `travel` (price of ground) and `spd` (pace) still never fight: one buys
 // the rate down, the other shortens the exposure.
 //
-// With the terrain speed law folded in, a fresh level-1 bar (110 SP —
-// attributes.h, the bare sheet) is worth, per cell crossed, about
+// With the terrain speed law folded in, a cell crossed costs about
 //
-//    road 0.25 · meadow 0.7 · full thicket 1.2 · mountain 1.4 · water 7.9 SP
+//    road 0.25 · meadow 0.70 · full thicket 2.39 · mountain 2.77 · water 7.83
+//
+// (gross SP, before the passive regen, which is a property of the BODY and not
+// of the cell — `burn_per_cell@tests/macro_travel_parity_test.cpp` prints this
+// row on every run. The two middle numbers read «1.2» and «1.4» here until
+// 2026-10-24: the arithmetic is weight^1.5 × kStaminaPerWeightHour /
+// kMacroWalkCellsPerHour, and for 4.5 and 5.0 that is 2.4 and 2.8, never 1.2
+// and 1.4. Prose rot, found by a witness that prints the row it asserts.)
 //
 // — a road costs 8× less than the per-cell law charged, and the owner ruled
 // the shift accepted rather than tuned («если сдвинет мир не важно не надо
@@ -74,18 +113,27 @@ namespace sm {
 constexpr float kStaminaPerWeightHour = 2.0f;
 
 // (No kMarchRecoveryPct, and no «the march simply never calls the rest law»
-// either. «Марш не лечит НИЧЕГО» is now ONE ARGUMENT of the one door
-// (settle_pools_over_time's `regenerates`), asked of every body on every
-// slice: moving bodies pass false. A rate knob that could be set to 0.2 was a
-// door back to the road healing for free; a caller-shaped law was a door to
-// the opposite — a body nobody remembered to call simply stopped living.)
+// either. «Марш не лечит НИЧЕГО» is ONE ARGUMENT of the one door
+// (settle_pools_over_time's `resting`), asked of every body on every slice —
+// and since 2026-10-24 that argument governs HP and MP only: SP regen is
+// unconditional by the owner's inversion, and what moving bodies now pass is
+// the BURN. A rate knob that could be set to 0.2 was a door back to the road
+// healing for free; a caller-shaped law was a door to the opposite — a body
+// nobody remembered to call simply stopped living.)
 
 // What the `travel` skill does, and the only thing it does: it buys down the
 // stamina cost of ground, one percent per rank, under THE skill law
 // (macro/attributes.h): rank == percent, capped at kMaxSkillRank. At mastery the
 // terrain costs nothing — a hundred levels poured into travelling, and the world
-// stops resisting you. What that does NOT buy is a free ride: an overloaded pack
-// is a separate term in the cost, and the exhaustion curve is untouched.
+// stops resisting you.
+//
+// И С 2026-10-24 ОНО СБИВАЕТ ТАКЖЕ ПЕРЕГРУЗ, ЧЕГО НЕ ДЕЛАЛО НИКОГДА. Здесь
+// стояло «What that does NOT buy is a free ride: an overloaded pack is a
+// separate term in the cost» — и это было верно ровно пока перегруз был
+// СЛАГАЕМЫМ. Вердикт владельца сделал его МНОЖИТЕЛЕМ того же жжения, а
+// множители коммутируют: мастер пути тащит перегруз даром так же, как даром
+// идёт по горе. Снято не наблюдением, а ФОРМОЙ, и названо здесь затем, чтобы
+// прежнюю оговорку не восстановили как «потерянный закон» (§5 п.14).
 //
 // One skill, one effect. The RATE of ground is this skill's business; SPEED is
 // `spd` and `athletics`. The two never fight, and under the hour quantum they
@@ -256,11 +304,13 @@ inline constexpr float feature_bed_weight(FeatureType f) {
 // away from the sheet in silence either.
 inline constexpr float kFreshBarSp = 110.0f;
 
-// ── ЖЖЕНИЕ — ВТОРОЙ ВСЕГДА-ВКЛЮЧЁННЫЙ ПРОЦЕСС ────────────────────────────
+// ── ЖЖЕНИЕ — ПРОЦЕСС ПУТИ, И ТОЛЬКО ПУТИ (переворот 2026-10-24) ──────────
 // Вердикт владельца 2026-10-06, дословно: «можно просто сделать реген от веса
 // гладкую функцию … можно чтобы даже жгло сп всегда просто при движении реген
 // откл … 2 процесса агностичных системных — реген который всегда одинаковый
-// НЕ от веса … и жжение которое от веса».
+// НЕ от веса … и жжение которое от веса». **ПОРЯДОК ПРОЦЕССОВ ЭТОГО ВЕРДИКТА
+// ОТМЕНЁН 2026-10-24** — оба текста владельца стоят в шапке файла; здесь
+// остаётся то, что вердикт не тронул: реген НЕ от веса, жжение ОТ веса.
 //
 // ЭТИМ УМИРАЕТ СТЕНА, И ЭТО ГЛАВНОЕ. До этого дня на вопрос «можно ли тут
 // встать» отвечал ОТДЕЛЬНЫЙ предикат (`nav_can_stand`: по воде нельзя, кроме
@@ -271,78 +321,123 @@ inline constexpr float kFreshBarSp = 110.0f;
 // СЛЕДСТВИЕ двух процессов, идущих всегда. Предел наступает обратной связью,
 // как и требует ЗАКОН КЛАМПА, а не стеной.
 //
-// ОДИН СКАЛЯР И ОДИН КВАНТ — ЧАС. Три члена — ровно те, что несла мёртвая
-// `travel_stamina_cost`, минус `cells`: грунт под телом, НАВЫК, сбивающий
-// цену грунта, и ПЕРЕГРУЗ, который навык не сбивает никогда (владелец
-// 2026-08-27: «да, перегруз универсальный всем»). Переезд был вынужден:
-// пошаговая цена была их единственным плательщиком, и оставить их без двери
-// значило снять два стоячих закона молча.
+// ОДИН СКАЛЯР, ОДИН КВАНТ — ЧАС, И ОДНО ПРОИЗВЕДЕНИЕ. Три множителя — ровно
+// те три члена, что несла мёртвая `travel_stamina_cost`, минус `cells`: грунт
+// под телом, НАВЫК, сбивающий цену грунта, и ПЕРЕГРУЗ (владелец 2026-08-27:
+// «да, перегруз универсальный всем»). Переезд был вынужден: пошаговая цена
+// была их единственным плательщиком.
+//
+// ПЕРЕГРУЗ — МНОЖИТЕЛЬ, А НЕ СЛАГАЕМОЕ (вердикт владельца 2026-10-24,
+// дословно: «перегруз будет множитель этому жиганию так что все кто стоят не
+// смогут получить негатив по перегрузу по построениею»). Вывод числа и его
+// пропорциональность — у двери, которая его считает
+// (`overload_burden_from_capacity@src/macro/travel.h`: `1 + перегруз/спина`,
+// вдвое сверх спины — вдвое дороже час). ЗДЕСЬ важно ровно одно: он стоит
+// СРЕДИ МНОЖИТЕЛЕЙ, поэтому нулевое жжение остаётся нулевым при любом грузе,
+// и «стоящий город не получает негатива» есть свойство арифметики.
+//
+// ОБЛАСТИ ДВУХ МНОЖИТЕЛЕЙ РАЗОШЛИСЬ, И ЭТО ВСЁ, ЧТО ОТЛИЧАЕТ ИХ ДРУГ ОТ
+// ДРУГА: выучка живёт в [0, 1] (cost-down строка каталога покупает цену ВНИЗ
+// и упирается в даром), перегруз — в [1, ∞) (спина покупает цену ВВЕРХ и
+// упирается в нейтральную единицу). Обе границы ставятся В ТОЧКЕ РОЖДЕНИЯ
+// числа — `skill_mult_of@src/tables/attributes.h` и
+// `overload_burden_from_capacity@src/macro/travel.h`, — а не здесь: страж на
+// ЧТЕНИИ умеет только соврать потише (§5 п.3), и единица, подставленная
+// вместо чужого нуля, спрятала бы дефект звонящего вместо того, чтобы его
+// назвать.
 inline constexpr float burn_stamina_per_hour(float cellWeight,
-                                             int overloadCost = 0,
+                                             float overloadBurden = 1.0f,
                                              float efficiency = 1.0f) {
-    return cellWeight * kStaminaPerWeightHour * efficiency
-           + float(overloadCost);
+    return cellWeight * kStaminaPerWeightHour * efficiency * overloadBurden;
 }
+// НЕЙТРАЛЬНЫЙ ЭЛЕМЕНТ ПЕРЕГРУЗА — ЕДИНИЦА, А НЕ НОЛЬ, И ОН ПОД КОМПИЛЯТОРОМ.
+// Пока перегруз был СЛАГАЕМЫМ, «нет перегруза» писалось нулём, и этот ноль
+// стоит в коде и в свидетелях двух лет; попавший на новое место, он обнуляет
+// ВСЁ произведение — бесплатный час на любом грунте. Это в точности тот класс
+// дефекта, который купил ЗАКОН АНКЕТЫ п.2: нулевой `expToNext` обнулял кривую
+// роста и был виден только тем, что «порог достигнут всегда». Строка ниже
+// заставляет перепутанный нейтральный элемент НЕ СОБРАТЬСЯ.
+static_assert(burn_stamina_per_hour(1.0f) == kStaminaPerWeightHour
+                  && burn_stamina_per_hour(1.0f, 1.0f, 1.0f)
+                         == burn_stamina_per_hour(1.0f)
+                  && burn_stamina_per_hour(1.0f, 2.0f)
+                         == 2.0f * burn_stamina_per_hour(1.0f)
+                  && burn_stamina_per_hour(1.0f, 0.0f) == 0.0f,
+              "перегруз МНОЖИТ: его нейтральный элемент 1, он пропорционален "
+              "(вдвое сверх спины — вдвое дороже час), а ноль на его месте "
+              "означает БЕСПЛАТНЫЙ час — последняя строка держит эту "
+              "ловушку названной, а не исправленной втихую");
 
-// ЛЕСТНИЦА ПРИБИТА КОМПИЛЯТОРОМ, А НЕ НАБЛЮДЕНИЕМ. Два конца таблицы весов
-// задают её целиком, и между ними она выходит сама (реген 13.75 SP/ч на
-// свежей планке): дорога и мост 1.0 → +11.75, луг 2.0 → +9.75, болото 4.0 →
-// +5.75, полный лес 4.5 → +4.75, гора 5.0 → +3.75, вода 10.0 → −6.25.
+// ЛЕСТНИЦА ПРИБИТА КОМПИЛЯТОРОМ, А НЕ НАБЛЮДЕНИЕМ, И С 2026-10-24 ОНА ПРО
+// МАРШ, А НЕ ПРО СТОЯНКУ. Два конца таблицы весов задают её целиком, и между
+// ними она выходит сама (реген 13.75 SP/ч на свежей планке — он идёт ВСЕГДА,
+// в том числе в пути): дорога и мост 1.0 → +11.75, луг 2.0 → +9.75, болото
+// 4.0 → +5.75, полный лес 4.5 → +4.75, гора 5.0 → +3.75, вода 10.0 → −6.25.
+// Стоящее тело на любой из этих клеток идёт в +13.75 по построению, поэтому
+// прежний смысл второй строки («иначе отдохнуть нельзя нигде») ею больше не
+// охраняется — он стал невыразим.
 static_assert(burn_stamina_per_hour(biome_sp_weight(Biome::Water))
                   > kFreshBarSp * kRestRegenPctPerHour,
-              "ВОДА ОБЯЗАНА ТОПИТЬ: жжение больше отдыха. Иначе океан "
-              "становится медленной, но БЕЗОПАСНОЙ дорогой, и закон "
-              "«неоплатный океан топит лорда» (CANON S7) умирает молча");
+              "ВОДА ОБЯЗАНА ТОПИТЬ ПЛЫВУЩЕГО: жжение марша больше отдыха. "
+              "Иначе океан становится медленной, но БЕЗОПАСНОЙ дорогой даже "
+              "для того, кто плывёт без остановки");
 static_assert(burn_stamina_per_hour(feature_bed_weight(FT_Road))
                   < kFreshBarSp * kRestRegenPctPerHour,
-              "ДОРОГА ОБЯЗАНА ЛЕЧИТЬ: жжение меньше отдыха. Иначе "
-              "отдохнуть нельзя нигде и мир встаёт");
+              "ДОРОГА ОБЯЗАНА БЫТЬ ДЕШЕВЛЕ ОТДЫХА: иначе ходок тает даже на "
+              "лучшем грунте мира, и дальние рейсы мира не доезжают никогда");
 
-// ДОЕЗЖАЕТ ЛИ ОТДЫХ ЗДЕСЬ ДО ЖЖЕНИЯ — ОДИН ВОПРОС, ОДНА ДВЕРЬ, ДВА ВОДИТЕЛЯ.
-// Не «можно ли тут встать» (на это отвечает ВЕС, и ответ всегда «да»), а
-// «стоит ли тут стоять»: окупается ли час привала его собственным часом
-// жжения. Место в вопросе не названо ни разу — названы две ставки, которые у
-// тела и так есть.
-//
-// ЗАЧЕМ ОТДЕЛЬНАЯ ДВЕРЬ, А НЕ ДВА СРАВНЕНИЯ НА МЕСТАХ: решение принимают ДВА
-// водителя времени — свип макро-ИИ для сквадов и ход главного цикла для
-// игрока (свип игрока не водит никогда), — и это один закон, а не дубль. Две
-// рукописные копии сравнения разъехались бы первой же правкой ставки отдыха.
-//
-// И ЭТО НЕ ВОЗВРАТ СТЕНЫ, купленной сносом в тот же день. Стена ВЕТИРОВАЛА
-// проход и привал по роду клетки; это ничего не запрещает — тело, которому
-// стоянка невыгодна, идёт дальше и платит долг кровью («pressing on is
-// priced, never gated», CANON S14.1). Без этого вопроса снос стены убил бы
-// собственную цель: пробуждение требует ПОЛОВИНЫ планки, а там, где жжение
-// обгоняет отдых, планка только падает — значит сквад, у которого ноги
-// кончились в клетке от берега острова, встал бы лагерем В МОРЕ, не проснулся
-// никогда и утонул на месте. То же «от любого места до любого не добраться»,
-// только смертью вместо запрета.
+// ПАССИВНЫЙ РЕГЕН SP — ТА ЖЕ СТАВКА, ЧТО У ВСЕХ, И ТЕПЕРЬ ЭТО ЕДИНСТВЕННОЕ
+// ЕЁ ПРАВОПИСАНИЕ. Дверь стояла здесь и прежде, но читал её ОДИН вырожденный
+// предикат (`camp_repays_its_hour`, снос ниже), а сама ставка была ВТОРОЙ
+// РАЗ выписана от руки в `settle_pools_over_time@src/macro/recovery.cpp` —
+// два ответа на один вопрос (DOD п.6). Теперь дверь зовёт именно он.
 inline float rest_stamina_per_hour(int maxSp, int marathonRank) {
     return float(maxSp > 1 ? maxSp : 1) * kRestRegenPctPerHour
            * skill_mult_of(SkillId::Marathon, marathonRank);
 }
-inline bool camp_repays_its_hour(float burnPerHour, int maxSp,
-                                 int marathonRank) {
-    return rest_stamina_per_hour(maxSp, marathonRank) > burnPerHour;
-}
 
-// ЧАСОВОЙ ЯКОРЬ НОВОГО ЗАКОНА — он заменил `kRoadHoursPerFreshBar`, и замена
-// НЕ косметическая: прежний якорь мерил, сколько ДОРОГИ покупает планка, а
-// дорога теперь дешевле отдыха, то есть её часы бесконечны и мерить там
-// нечего. Мерить стало смысл у ХУДШЕГО конца лестницы: сколько планка держит
-// в открытом море, где жжение честно обгоняет отдых. Это и есть то число,
-// которым владелец балансирует «океан топит, но не стеной».
+// (НЕТ `camp_repays_its_hour`, И НЕТ `player_camp_repays_its_hour` НАД НИМ.
+// Предикат отвечал «окупается ли час привала его собственным часом жжения», и
+// вопрос имел смысл ровно пока жжение шло СТОЯ. Переворот 2026-10-24 сделал
+// жжение процессом пути, то есть у привала жжение РОВНО НУЛЬ, и предикат стал
+// ТОЖДЕСТВЕННО ИСТИННЫМ: `rest_stamina_per_hour` = `max(maxSp,1) × 0.125 ×
+// skill_mult_of(Marathon, rank)`, где `Marathon` — не cost-down строка
+// каталога, значит множитель ≥ 1, значит ставка ≥ 0.125 > 0 = жжение привала.
+// Вырожденный предикат «на всякий случай» не оставляют (§5 п.14).
 //
-// 17.6 ч: 110 SP / (20 жжения − 13.75 отдыха). Дальше долг и квадратичный
-// укус (exhaustion_bite ниже). Река в одну-две клетки стоит 8–16 SP из 110 —
-// брод открыт всем и без моста, ровно как требует вердикт «вода — ВЕС».
+// С ним ушли четыре ветки, и каждая лечила болезнь, которой больше нет:
+//  · гейт решения о лагере в `settle_march_rhythm@src/macro/npc_ai.cpp` —
+//    лагерь теперь выгоден везде, потому что всегда возвращает планку;
+//  · пробуждение «грунт обернулся против спящего» там же — дедлок «встал
+//    лагерем в море и не проснулся» НЕВЫРАЗИМ: планка в лагере только растёт,
+//    значит порог пробуждения в половину планки достигается всегда;
+//  · отказ прицела отдыха и отмена промоушена времени у игрока
+//    (`aim_rest_until_rested`/`apply_rest_promotion@src/app/main.cpp`) — им
+//    нечего отказывать, «rest until rested» доезжает до конца где угодно.)
+
+// ЧАСОВОЙ ЯКОРЬ ЗАКОНА — он заменил `kRoadHoursPerFreshBar`, и замена НЕ
+// косметическая: прежний якорь мерил, сколько ДОРОГИ покупает планка, а
+// дорога дешевле отдыха, то есть её часы бесконечны и мерить там нечего.
+// Мерить стало смысл у ХУДШЕГО конца лестницы: сколько планка держит ВПЛАВЬ
+// в открытом море, где жжение честно обгоняет отдых. Это и есть то число,
+// которым владелец балансирует «океан дорог, но не стена».
+//
+// АРИФМЕТИКА НЕ ДВИНУЛАСЬ ПЕРЕВОРОТОМ 2026-10-24, А СУБЪЕКТ СМЕНИЛСЯ. Было:
+// «сколько планка держит, пока тело СТОИТ в море» (жжение шло стоя, отдых его
+// перебивал). Стало: «сколько планка держит, пока тело ПЛЫВЁТ» (жжение идёт в
+// пути, отдых идёт всегда). Разность та же — 110 SP / (20 жжения − 13.75
+// отдыха) = 17.6 ч, — потому что в обоих мирах это ровно час, в котором
+// работают оба процесса; сменилось то, какой это час.
+//
+// Дальше долг и квадратичный укус (exhaustion_bite ниже). Река в одну-две
+// клетки стоит 8–16 SP из 110 — брод открыт всем и без моста, ровно как
+// требует вердикт «вода — ВЕС».
 inline constexpr float kWaterDriftHoursPerFreshBar =
     kFreshBarSp / (burn_stamina_per_hour(biome_sp_weight(Biome::Water))
                    - kFreshBarSp * kRestRegenPctPerHour);
 static_assert(kWaterDriftHoursPerFreshBar > 8.0f
                   && kWaterDriftHoursPerFreshBar < 32.0f,
-              "полная планка обязана держать в море ПОЧТИ СУТКИ, но не "
+              "полная планка обязана держать ВПЛАВЬ ПОЧТИ СУТКИ, но не "
               "больше: меньше восьми часов — и море стена, больше суток — и "
               "оно безопасно. Двинули kStaminaPerWeightHour, вес воды или "
               "ставку отдыха — эта строка говорит об этом вслух");

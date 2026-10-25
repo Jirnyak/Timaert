@@ -936,6 +936,13 @@ inline AutoBattleSide auto_battle_side_of(const MacroStore& st, MacroHandle h) {
     if (!st.valid(h)) return s;
     const std::uint16_t slot = h.slot;
     s.leaderType = squad_row_type(st, slot);
+    // ЧТО СКВАД ДЕЛАЕТ — КОЛОНКА ЕГО СТРОКИ, и резолвер спрашивает ею ровно
+    // один вопрос: есть ли у рода АВАТАР, чей лист вправе добавить силы
+    // (`squad_has_avatar@src/tables/squad_type.h`; вердикт владельца
+    // 2026-10-24 — «за всех дерутся головы их инвентаря»). Ставится ЗДЕСЬ, в
+    // единственной двери сборки стороны, чтобы ни один звонящий не отвечал за
+    // мир сам.
+    s.type = SquadType(st.runtime[slot].squadType);
     {
         const ecs::Pools& hp = st.pools[slot];
         s.leaderHealthFraction = hp.maxHp > 0
