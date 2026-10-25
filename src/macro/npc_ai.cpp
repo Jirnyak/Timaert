@@ -190,7 +190,6 @@ void deliver_bag_home(MacroHandle self, const TickContext& ctx, int defIdx) {
         f.kind = EconFact::Kind::Gathered;
         f.commodity = commodity_of_item(defIdx);
         f.amount = fact.unitsAB;
-        f.placeId = parent_of(st, self.slot);
         ctx.mw.econFacts(ctx.mw.econFactsUser, f);
     }
 }
@@ -1401,23 +1400,6 @@ private:
     const TickContext& ctx_;
 };
 
-// КЛЕЙМО АДРЕСА НА ФАКТАХ ПРОИЗВОДСТВА. Дверь выпуска судит ОДИН контейнер
-// и адресов не знает (`econ_produce_day` видит инвентарь, скилы и счёт);
-// единственный, кто знает, ЧЕЙ это склад, — звонящий глагол. Та же форма,
-// что у релея содержания ниже (`UpkeepFactRelay`) и у дневного релея
-// `world_tick.cpp`, и тот из трёх умрёт вместе со своим вызовом (И2).
-struct CraftFactRelay {
-    EconFactSink sink = nullptr;
-    void* user = nullptr;
-    int placeId = -1;
-};
-void relay_craft_fact_(void* user, const EconFact& fact) {
-    const auto* r = static_cast<const CraftFactRelay*>(user);
-    EconFact stamped = fact;
-    stamped.placeId = r->placeId;
-    r->sink(r->user, stamped);
-}
-
 // ПЕРИОД ПРОИЗВОДСТВЕННОГО АКТА — ДЕНЬ, СЧИТАННЫЙ В ДУМКАХ, И ОН ВЫВЕДЕН, А
 // НЕ НАЗНАЧЕН (ЗАКОН КОНСТАНТ + «калибровать только в тиках игры»): думка
 // сквада идёт раз в `kAiTicks` мировых тиков, в сутках `kTicksPerDay`
@@ -1661,15 +1643,13 @@ public:
         MacroStore& st = store_ctx(ctx_);
         const std::uint16_t slot = s.h.slot;
         const int heads = count_human_souls(s.bag);
-        CraftFactRelay relay{ctx_.mw.econFacts, ctx_.mw.econFactsUser,
-                             int(st.spawnId[slot].index)};
-        const EconFactSink rs =
-            ctx_.mw.econFacts ? &relay_craft_fact_ : nullptr;
-        void* ru = ctx_.mw.econFacts ? static_cast<void*>(&relay) : nullptr;
+        // СТОК ФАКТОВ — НАПРЯМУЮ: клеймовщик адреса умер вместе с колонкой
+        // `EconFact::placeId` (2026-10-25, вердикт «да сноси»), и посредника
+        // между дверью и слушателем больше нет.
         const int made = econ_produce_day(
             s.bag, st.upkeep[slot].needDebt, st.sheet[slot].skills,
             heads > 0 ? std::max(1, heads / kCreaturesPerCityWorker) : 0,
-            heads, rs, ru,
+            heads, ctx_.mw.econFacts, ctx_.mw.econFactsUser,
             faction_or_freefolk(std::int16_t(st.kind[slot].factionIdx)));
         s.rt.stateTimer = std::int16_t(kCraftThinksPerDay);
         return made;
@@ -4546,24 +4526,6 @@ CaravanDeal trade_vendor_at_market(MacroStore& st,
 //     апдейтом после демо, — но до тех пор строки в листе нет вовсе.
 // Счёт теперь один: `upkeep_bill` (macro/upkeep_window.h).
 
-// КЛЕЙМО АДРЕСА НА ФАКТАХ ОДНОЙ ДВЕРИ СОДЕРЖАНИЯ. Дверь судит ОДИН
-// контейнер и адресов не знает; окно — единственный, кто знает, чей это
-// склад. Та же форма, что у дневного релея (world_tick.cpp): по канону S9
-// ушедший ресурс принадлежит ДОМУ судимого, а не «миру».
-namespace {
-struct UpkeepFactRelay {
-    EconFactSink sink = nullptr;
-    void* user = nullptr;
-    std::int32_t homeId = 0;
-};
-void relay_upkeep_fact_(void* user, const EconFact& fact) {
-    const auto* r = static_cast<const UpkeepFactRelay*>(user);
-    EconFact stamped = fact;
-    stamped.placeId = r->homeId;
-    r->sink(r->user, stamped);
-}
-}   // namespace
-
 // ВХОД — `gs` И `st`, И БОЛЬШЕ НИЧЕГО. Здесь стоял конверт `MacroWorld`, из
 // которого окно брало ОДНУ вещь — `store_of(reg)`, то есть тот самый store,
 // который звонящий уже держит в руках, — и платило за это зависимостью от
@@ -4609,17 +4571,12 @@ int squad_season_window(GameState& gs, MacroStore& st, int day,
         // списанной ни на одну душу. Мир кормил, растил, поднимал сквады и
         // облагал данью людей, которых у него нет.
         const int folkBefore = count_human_souls(bag.inv);
-        // АДРЕС ФАКТА — ДОМ СУДИМОГО, И ШТАМПУЕТ ЕГО РЕЛЕЙ. Дверь про адреса
-        // не знает (и не должна: она видит один контейнер), а звонящий —
-        // единственный, кто знает, чей это склад. Тот же приём, которым
-        // дневной проход клеймит факты своего места. Клеймятся ВСЕ факты
-        // двери, включая `Consumed` её гашения: до релея они уезжали в
-        // ведомость безадресными.
-        UpkeepFactRelay relay{sink, user, parent_of(st, slot)};
-        const EconFactSink us = sink ? &relay_upkeep_fact_ : nullptr;
-        void* uu = sink ? static_cast<void*>(&relay) : nullptr;
+        // СТОК ФАКТОВ — НАПРЯМУЮ. Здесь стоял клеймовщик адреса, и умер он
+        // вместе с колонкой `EconFact::placeId` (2026-10-25): дверь про
+        // адреса не знает и не должна, а колонку, в которую он штамповал,
+        // не читал никто.
         const UpkeepWindowOutcome out = upkeep_season_window(
-            creatures, bag.inv, st.wellbeing[slot], us, uu);
+            creatures, bag.inv, st.wellbeing[slot], sink, user);
         flock_left_home(gs, st, slot, folkBefore);
         deserted += out.walked;
         // (ВЕДОМОСТЬ СКЛАДА ДУШ переехала В САМУ ДВЕРЬ, M-233: событие

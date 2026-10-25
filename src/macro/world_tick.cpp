@@ -156,22 +156,6 @@ void tithe_daily_(GameState& gs, MacroStore& st, int day) {
     }
 }
 
-// The pure econ steps are place-blind (they see one Inventory); this relay
-// stamps the place id onto every fact on its way to the listener — the
-// daily tick is the ONE caller that knows whose store it handed in.
-struct EconFactRelay {
-    EconFactSink sink = nullptr;
-    void* user = nullptr;
-    int placeId = -1;
-};
-
-void relay_econ_fact_(void* user, const EconFact& fact) {
-    const auto* r = static_cast<const EconFactRelay*>(user);
-    EconFact stamped = fact;
-    stamped.placeId = r->placeId;
-    r->sink(r->user, stamped);
-}
-
 // ── ДЕНЬ СКВАДА — ОДИН ПРОХОД, НИ ОДНОГО ГЕЙТА ПО РОДУ (M-233) ───────────
 //
 // Здесь стояли ДВА БЛИЗНЕЦА — `tick_settlements_` и `tick_villages_`, — и
@@ -206,10 +190,9 @@ void relay_econ_fact_(void* user, const EconFact& fact) {
 void tick_squads_day_(GameState& gs, MacroStore& st, int day,
                       EconFactSink sink, void* user) {
     for_each_place(st, [&](std::uint16_t slot) {
-        const int id = int(st.spawnId[slot].index);
-        EconFactRelay relay{sink, user, id};
-        const EconFactSink rs = sink ? &relay_econ_fact_ : nullptr;
-        void* ru = sink ? static_cast<void*>(&relay) : nullptr;
+        // (КЛЕЙМОВЩИК АДРЕСА УМЕР 2026-10-25 вместе с колонкой
+        // `EconFact::placeId` — у неё не было читателей ни одного. Сток
+        // фактов идёт слушателю НАПРЯМУЮ, посредника нет.)
         // ── ДНЕВНОЙ ВЫПУСК УШЁЛ ОТСЮДА В ДУМКУ СКВАДА (ломоть 5а M-72) ───
         // Здесь стоял `econ_produce_day` — и стоял он ВТОРЫМ ПУТЁМ к одному
         // акту мира. «Произвёл» есть ЗАНЯТИЕ сквада, а занятия сквад решает
@@ -240,7 +223,7 @@ void tick_squads_day_(GameState& gs, MacroStore& st, int day,
         // летопись голода пишется там же, где суд.
         // (Дань ушла из пер-местного дня: её ведёт один проход пула
         // феодальных рёбер tithe_daily_ — v121, род 6.)
-        settle_place_day(gs, st, slot, day, rs, ru);
+        settle_place_day(gs, st, slot, day, sink, user);
     });
 }
 

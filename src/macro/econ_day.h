@@ -361,7 +361,7 @@ struct EconFact {
         // прибора, и сдвигать их ради плотности значило бы переписать
         // историю замеров.
         SoulsDesertedUnpaid = 8,  // amount = души, ушедшие за НЕВЫПЛАТУ
-                                  // жалованья; placeId = дом состава.
+                                  // жалованья.
                                   // Один факт = один контейнер, провалив-
                                   // ший окно сезона по ПЛАТЕ. Единственный
                                   // законный путь в пул дезертиров.
@@ -388,11 +388,13 @@ struct EconFact {
     Kind kind{};
     int commodity = -1;
     int amount = 0;
-    // Which place's day this was. The pure steps are place-BLIND (they
-    // see one Inventory); the id is stamped by the relay in world_tick.cpp —
-    // the one caller that knows whose store it handed in. -1 = unattributed
-    // (a direct pure-step call, e.g. econ_v1_test).
-    int placeId = -1;
+    // (КОЛОНКА АДРЕСА `placeId` СНЕСЕНА 2026-10-25 вердиктом владельца «да
+    // сноси» — КОЛОНКА-СИРОТА в чистейшем виде, DOD п.9. Её писали ЧЕТЫРЕ
+    // сайта через ТРИ структуры-клеймовщика, а читателей не было НИ ОДНОГО
+    // во всём дереве: ни в `src/`, ни в `tests/`, ни в `ui/`. Вместе с
+    // колонкой умерли все три релея — у них не было иной работы, кроме
+    // штампа, поэтому сток фактов теперь идёт звонящему НАПРЯМУЮ. Понадобится
+    // адрес факта — он вернётся ВМЕСТЕ С НАЗВАННЫМ ЧИТАТЕЛЕМ, а не раньше.)
 };
 using EconFactSink = void (*)(void* user, const EconFact& fact);
 
