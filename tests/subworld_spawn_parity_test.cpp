@@ -605,7 +605,7 @@ MacroSeeds seed_macro_npcs(sm::MacroStore& st, int mapW) {
         st.pools[h.slot] = sm::ecs::Pools{hp, maxHp};
         // Уровень — АНКЕТА (M-246а), той же дверью, какой рождает make_npc.
         st.sheet[h.slot] = sm::make_character_sheet(
-            type, level, sm::leader_sheet_seed(st.spawnId[h.slot].index));
+            type, level, sm::avatar_sheet_seed(st.spawnId[h.slot].index));
         sm::ecs::NpcCharacter ch{};
         ch.visualSeed = vseed;
         // Отличимое от дефолта телосложение: лицо на теле не хранится
@@ -627,7 +627,7 @@ MacroSeeds seed_macro_npcs(sm::MacroStore& st, int mapW) {
     return s;
 }
 
-// A squad is a squad whatever it is made of (CANON.md S4/S16). A pack leader's
+// A squad is a squad whatever it is made of (CANON.md S4/S16). A pack avatar's
 // creatures may name BEASTS, and each of them must come down as its own catalog
 // row — a sheet-less creature body — while a man in the same creatures still comes
 // down a man. Before the kind field was widened this was not expressible: the
@@ -662,7 +662,7 @@ bool run_beast_member_projection_case(
     const int projected = sm::sub::project_macro_npcs_into_subworld(
         objs, stl, mgr, /*cx*/0, /*cy*/0, kMapW, kMapH, 0xBEA57u,
         sm::sub::WATER_LEVEL);
-    if (projected != 3) return false;   // the leader and both of his members
+    if (projected != 3) return false;   // the avatar and both of his members
 
     int beasts = 0, men = 0;
     // Свип плоской арены (ломоть D): гейт — колонка рода, и он же держит
@@ -687,7 +687,7 @@ bool run_beast_member_projection_case(
             ++men;
         }
     }
-    // One wolf, two men (the leader and his guard) — the creatures was honoured
+    // One wolf, two men (the avatar and his guard) — the creatures was honoured
     // member by member, not flattened to one kind.
     return beasts == 1 && men == 2;
 }

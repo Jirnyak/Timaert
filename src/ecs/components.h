@@ -485,10 +485,10 @@ struct MacroNpcRuntime {
     // second pool store. What stayed are the sheet CACHES the march reads per
     // think — the ranks and the pace — which are not bars.
     //
-    // The leader's sheet, cached as the scalars the macro march actually reads
+    // The avatar's sheet, cached as the scalars the macro march actually reads
     // (Session 21). The full CharacterSheet is derived, never stored: make_npc
     // and the level-up recompute both re-derive it from
-    // leader_sheet_seed(MacroSpawnId) and refresh these through ONE helper
+    // avatar_sheet_seed(MacroSpawnId) and refresh these through ONE helper
     // (squad.h refresh_body_from_sheet), so the cache cannot drift from
     // the sheet law. travelRank/marathonRank: the two SP skills (cost discount
     // / recovery rate). moveMult: spd × athletics, the sheet's own pace.
@@ -500,7 +500,7 @@ struct MacroNpcRuntime {
     // business. Same one refresh door, so it cannot drift either.
     std::uint8_t  scoutRank = 0;
     float         moveMult = 1.0f;
-    // What this leader's back can hold (attributes.h get_carry_capacity), the
+    // What this avatar's back can hold (attributes.h get_carry_capacity), the
     // fifth scalar of the same sheet cache — and the SP surcharge his current
     // load is costing him, recomputed each think from his bag because a bag
     // changes at every market while a sheet does not. Owner's ruling
@@ -804,19 +804,19 @@ struct MacroSpawnId { std::uint32_t index = 0; };   // 0 = «никто»: эм�
 
 // THE macro entity is a SQUAD, not a person (owner's design, CANON S4/S13 (бывший macrosim.md)
 // "Squad as THE macro entity"). This component is that ruling made structural:
-// every macro NPC carries one, and `members` holds everyone EXCEPT the leader
-// — the leader IS the carrying entity, with its sheet, inventory, wounds and
+// every macro NPC carries one, and `members` holds everyone EXCEPT the avatar
+// — the avatar IS the carrying entity, with its sheet, inventory, wounds and
 // MacroSpawnId exactly as before. An empty creatures is not a special case, it is
-// the common one: a peasant on the road is a squad of one, its own leader.
-// The player is the same shape — his entity is the leader, PlayerState::army
-// is his creatures — so possession of a leader is acquisition of its squad by
+// the common one: a peasant on the road is a squad of one, its own avatar.
+// The player is the same shape — his entity is the avatar, PlayerState::army
+// is his creatures — so possession of a avatar is acquisition of its squad by
 // construction, not by code.
 //
 // Members are procedural rows (macro/army.h SoldierRecord), embodied through
-// the one body birth as DERIVED bodies; only the leader is TRACKED. The creatures
+// the one body birth as DERIVED bodies; only the avatar is TRACKED. The creatures
 // is a macro STOCK (macro/macro_stock.h): members embodied below are borrowed
 // from it and their deaths are paid back up, and a squad whose members are
-// gone and whose leader is dead is gone from the map by that general rule.
+// gone and whose avatar is dead is gone from the map by that general rule.
 // Runtime-only until the macro snapshot save (Session 17) — the ECS is never
 // serialized, so no kSaveVersion cost today.
 // ЭТО НЕ «ТАКОЙ ЖЕ» СЧЁТ, ЧТО У МЕСТА — ЭТО БУКВАЛЬНО ОДИН ТИП

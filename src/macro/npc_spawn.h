@@ -105,8 +105,8 @@ struct SquadSpecMembers {
 };
 
 struct SquadSpec {
-    NPCType leaderType  = NPCType::Peasant;
-    int     leaderLevel = -1;          // -1 = the row's default + roll
+    NPCType avatarType  = NPCType::Peasant;
+    int     avatarLevel = -1;          // -1 = the row's default + roll
     int     x = 0, y = 0;              // macro cell (wrapped, nudged to land)
     int     factionIndex = -1;         // -1 = the land decides (politik)
     int     parentId = 0;   // кто породил; дом = родитель (M-245); 0 = без
@@ -116,7 +116,7 @@ struct SquadSpec {
     std::array<std::int16_t, 16> waypoints{};   // 8 × (x, y)
 };
 
-// Returns the leader HANDLE (the squad IS its leader; 6.3 — рождение без
+// Returns the avatar HANDLE (the squad IS its avatar; 6.3 — рождение без
 // entt), invalid on a bad map. Runtime ordinals continue past the current
 // maximum — the same rule as spawn_npc_at.
 MacroHandle spawn_squad(GameState& gs, MacroStore& store,

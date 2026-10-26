@@ -171,7 +171,7 @@ void test_every_squad_body_is_a_whole_body() {
     CHECK(bodies > 0 && missingSprite == 0,
           "every body has something to draw");
     CHECK(bodies > 0 && wrongFaction == 0,
-          "a squad fights for whoever raised it: the leader's faction, not its own kind's");
+          "a squad fights for whoever raised it: the avatar's faction, not its own kind's");
     CHECK(bodies > 0 && wrongSpriteKind == 0,
           "a body is drawn as the kind it actually is");
     CHECK(bodies > 0 && deadOnArrival == 0,
@@ -200,7 +200,7 @@ sm::MacroHandle make_macro_lord(sm::MacroStore& st, sm::NPCType type,
     st.pools[h.slot] = sm::ecs::Pools{hp, maxHp};
     // Уровень — АНКЕТА (M-246а), той же дверью, какой рождает make_npc.
     st.sheet[h.slot] = sm::make_character_sheet(
-        type, level, sm::leader_sheet_seed(st.spawnId[h.slot].index));
+        type, level, sm::avatar_sheet_seed(st.spawnId[h.slot].index));
     sm::ecs::NpcCharacter face{};
     face.visualSeed = visualSeed;
     // Отличимое от дефолта телосложение: продукт лица (рост спрайта) обязан
@@ -343,14 +343,14 @@ void test_a_body_that_is_not_an_entity_is_refused() {
           "a monster id cannot pass for a humanoid row");
 }
 
-// A leader's buff reaches a trooper THROUGH THE SHEET, and it is not one
+// A avatar's buff reaches a trooper THROUGH THE SHEET, and it is not one
 // number (Session 15, owner ruling №2). It is not a SYSTEM either any more
 // (owner, 2026-08-27: «хватит контекста макросквада — просто скиллы и перки
 // сквада, это и есть лидер, модифицируют юнитов в бою»): the aura's own type,
 // header and add/collect/apply verbs are gone, and what is left is one
 // function producing the same BonusTotals every other modifier in the game
 // produces. Perk rows today; charisma, skills and carried gear are a few
-// (СВИДЕТЕЛЬ `test_a_leaders_aura_reaches_his_men` СНЕСЁН
+// (СВИДЕТЕЛЬ `test_an_avatars_aura_reaches_his_men` СНЕСЁН
 //  2026-10-18 вместе со своим СУБЪЕКТОМ: он охранял применение АУРЫ
 //  лидера в лист тела, а `squad_bonuses` возвращала константу-нули с
 //  перковой чистки 2026-09-03 и снесена вердиктом владельца «снести,
@@ -359,8 +359,8 @@ void test_a_body_that_is_not_an_entity_is_refused() {
 //  носитель; здесь умер сам закон, и это сказано вслух, а не
 //  замаскировано ослабленной проверкой).
 
-// A squad on the map projects its СУЩЕСТВ КОНТЕЙНЕРА, not just its leader (Session 15):
-// the leader arrives as the tracked body it always was, and every creature row
+// A squad on the map projects its СУЩЕСТВ КОНТЕЙНЕРА, not just its avatar (Session 15):
+// the avatar arrives as the tracked body it always was, and every creature row
 // arrives as a derived body wearing the OWNER's faction and carrying the
 // receipt that pays its death back into the creatures — the same one-table,
 // one-door law as every other borrowed thing.
@@ -392,15 +392,15 @@ void test_a_squad_on_the_map_projects_its_creatures() {
         /*mapW*/64, /*mapH*/64, /*seed*/5u,
         sm::sub::WATER_LEVEL);
     CHECK(projected == 3,
-          "a squad of three projects three bodies: the leader and both members");
+          "a squad of three projects three bodies: the avatar and both members");
 
-    int leaders = 0, members = 0, wrongFaction = 0, wholeMembers = 0;
+    int avatars = 0, members = 0, wrongFaction = 0, wholeMembers = 0;
     bool saw77 = false, saw88 = false;
     // Свип арены по биту (ломоть D): бэклинк и займ отсекают не-тела.
     for (int s = 0; s < int(kMaxSubObjects); ++s) {
         if ((arena.flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
         if (sm::sub::slot_macro_origin(arena, s).id != 0) {
-            ++leaders;
+            ++avatars;
             continue;
         }
         const auto* debt = sm::sub::slot_debt(arena, s);
@@ -420,7 +420,7 @@ void test_a_squad_on_the_map_projects_its_creatures() {
             ++wholeMembers;
         }
     }
-    CHECK(leaders == 1, "the leader is the one tracked body");
+    CHECK(avatars == 1, "the avatar is the one tracked body");
     CHECK(members == 2 && saw77 && saw88,
           "every member arrives once, each receipt naming its own man");
     CHECK(wrongFaction == 0,
@@ -429,7 +429,7 @@ void test_a_squad_on_the_map_projects_its_creatures() {
           "a projected member is as whole a body as any other");
 
     // The return trip, end to end: a member's death pays the creature row, the
-    // second death empties it — and an empty creatures around a LIVE leader is a
+    // second death empties it — and an empty creatures around a LIVE avatar is a
     // squad of one, alive and well, not a special case anyone must clean up.
     MacroWorld w{.store = worldStore_.get()};
     for (int s = 0; s < int(kMaxSubObjects); ++s) {
@@ -440,7 +440,7 @@ void test_a_squad_on_the_map_projects_its_creatures() {
     CHECK(creatures_empty(worldStore_->inventory[macro.slot].inv),
           "both deaths below emptied the creatures above, by name");
     CHECK(worldStore_->dead[macro.slot] == 0,
-          "the leader outlives his men: an empty creatures is a squad of one");
+          "the avatar outlives his men: an empty creatures is a squad of one");
 }
 
 void test_a_derived_body_stores_only_what_its_seed_cannot_say() {

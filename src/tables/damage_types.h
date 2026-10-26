@@ -251,7 +251,7 @@ inline StrikeRoll roll_strike(Rng& rng, Dice dice, int flatAdd, int multPct,
 // (dice_mean_x2 keeps the half-point without floats: ×2 throughout, halved
 // once at the end). Crit expectation is deliberately uncredited, like the
 // threshold branch: it depends on the victim's armour, which a per-fighter
-// scalar does not know (see auto_battle.h leader_power/head_power).
+// scalar does not know (see auto_battle.h avatar_power/head_power).
 constexpr int strike_mean_x2(Dice dice, int flatAdd, int multPct) {
     const int rawX2 = dice_mean_x2(dice) + flatAdd * 2;
     return rawX2 > 0 ? rawX2 * multPct / 100 : 0;

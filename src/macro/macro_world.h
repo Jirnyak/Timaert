@@ -35,7 +35,7 @@ struct BattleFact {
     std::uint16_t npcType = 0;       // the fallen body's row (NpcDeath.ix)
     MacroHandle   victim{};          // {slot, id}; пустой = строка существа
     MacroHandle   killer{};          // {slot, id} победителя
-    std::int32_t  detail  = -1;      // the creatures record id, -1 for a leader
+    std::int32_t  detail  = -1;      // the creatures record id, -1 for a avatar
     int           level   = 1;
     const char*   factionId = "";    // whose colours the fallen wore
 };

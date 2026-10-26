@@ -308,12 +308,12 @@ inline constexpr int sp_price(int maxSp, int ratePerDay) {
 }
 
 // HOW MANY HANDS a production has. Hands multiply the YIELD and never the
-// price: the bar belongs to the SQUAD (it is the leader body's own bar and
+// price: the bar belongs to the SQUAD (it is the avatar body's own bar and
 // does not grow with the creatures), so N souls do N workers' work for one
 // action's price. Owner, verbatim: «каждый работник рубит по дереву, SP
 // тратится как у игрока, просто деревьев в число людей больше».
 //
-// The leader is a hand too — that is the +1, and it is why a lone walker is
+// The avatar is a hand too — that is the +1, and it is why a lone walker is
 // not a special case of anything.
 inline constexpr int production_hands(int creatureCount) {
     return 1 + (creatureCount > 0 ? creatureCount : 0);

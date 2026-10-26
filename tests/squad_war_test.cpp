@@ -7,7 +7,7 @@
 //     and answered by the strength law — the weak flee, fighters pursue;
 //   · a hostile squad ON THE SAME CELL is a battle, resolved by the one
 //     auto-battle law and settled through the one ledger: creature rows die by
-//     name, a fallen leader is hp=0 + Dead, the victor takes the spoils and
+//     name, a fallen avatar is hp=0 + Dead, the victor takes the spoils and
 //     the XP — and levels by the same curve the player climbs;
 //   · neutral squads ignore each other, and the underground drive
 //     (allowAutoBattle=false) perceives but does not resolve.
@@ -36,7 +36,7 @@ using namespace sm;
 
 constexpr int kMap = 64;
 
-// Both leaders wear real registry factions; the fixture then writes the
+// Both avatars wear real registry factions; the fixture then writes the
 // relation it wants between them — through the same ensure_faction_row door
 // the game uses — so hostility is data here exactly as it is in the world.
 GameState make_world(int relation) {
@@ -66,7 +66,7 @@ sm::MacroHandle make_squad_at(sm::MacroStore& st, NPCType type,
     // Цель новорождённого — «ничего» (kNoCell, колонку нулит рождение).
     rt.state = std::uint8_t(NPCState::Idle);
     const CharacterSheet sheet = make_character_sheet(
-        type, level, leader_sheet_seed(ordinal));
+        type, level, avatar_sheet_seed(ordinal));
     const int hp = std::max(
         1, int(project_combat(sheet, npc_def(type).combat).hp));
     ecs::Pools pools{};
@@ -309,12 +309,12 @@ void test_a_meeting_in_the_leased_window_is_not_resolved_upstairs() {
     }
 }
 
-// The wandering-tsar seed: any leader that wins fights levels by the same
+// The wandering-tsar seed: any avatar that wins fights levels by the same
 // curve the player climbs - a data row, not a branch. Battle XP inflow is
 // pinned by the first test; here the CONSUMPTION law: enough experience
 // turns into a level and a bigger macro ceiling, wounds preserved as the
 // fraction they always travel in.
-void test_a_victorious_leader_levels() {
+void test_a_victorious_avatar_levels() {
     GameState gs = make_world(-80);
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
@@ -330,7 +330,7 @@ void test_a_victorious_leader_levels() {
     CHECK(squad_award_exp(st, tsar, exp_to_next_level(1)) >= 1,
           "a full bar turns into a level by the player's own curve");
     CHECK(sm::squad_level(st, tsar.slot) >= 2,
-          "the level landed on the leader — В ЕГО АНКЕТЕ (M-246а)");
+          "the level landed on the avatar — В ЕГО АНКЕТЕ (M-246а)");
     const auto& hp1 = (*sm::body_state<ecs::Pools>(st, tsar));
     // Under the 1:1 economy a single level pays ONE attribute point, and the
     // role's weighted roll may legally land it outside END/Bodybuilding — so
@@ -516,14 +516,14 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     (*sm::body_state<ecs::NpcInventory>(st, enemy)).inv.add("wood", 4);
 
     // The player WINS: one of his men fell, he limps out at 60%; the enemy
-    // is wiped — creatures and leader both.
+    // is wiped — creatures and avatar both.
     AutoBattleOutcome win{};
     win.winner = 0;                       // player is side A
     win.casualtiesA = {make_soldier(std::uint8_t(NPCType::Guard), 3, 501u)};
     win.casualtiesB = {make_soldier(std::uint8_t(NPCType::Bandit), 2, 31u),
                        make_soldier(std::uint8_t(NPCType::Bandit), 2, 32u)};
-    win.leaderFractionA = 0.6f;
-    win.leaderFractionB = 0.0f;
+    win.avatarFractionA = 0.6f;
+    win.avatarFractionB = 0.0f;
     // The settle takes THE envelope now (damage-door Inc 6): it needs the
     // world's own layers to price the spoils, and its facts leave through
     // the envelope's channel. A fixture that plugs in no channel is the
@@ -547,7 +547,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
           "victory paid the player experience through award_exp");
 
     // The player LOSES with a man still standing: wounded, never dead — the
-    // leader rule holds for the player exactly as for any lord.
+    // avatar rule holds for the player exactly as for any lord.
     GameState gs2 = make_world(-80);
     auto w2Store_ = sm::make_macro_store();
     sm::MacroStore& st2 = *w2Store_;
@@ -566,8 +566,8 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     loss.winner = 1;
     loss.casualtiesA = {                  // one of two fell — not a wipe
         make_soldier(std::uint8_t(NPCType::Guard), 3, 601u)};
-    loss.leaderFractionA = 0.15f;
-    loss.leaderFractionB = 0.9f;
+    loss.avatarFractionA = 0.15f;
+    loss.avatarFractionB = 0.9f;
     MacroWorld mw2{}; mw2.gs = &gs2; mw2.store = &st2;
     settle_player_auto_battle(mw2, victor, loss, /*playerIsA*/true);
     CHECK(creature_count(*army2) == 1,
@@ -579,7 +579,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
           "the victor rides on");
 }
 
-// Squad creation as data (Inc 7): one spec, one door. The leader comes out
+// Squad creation as data (Inc 7): one spec, one door. The avatar comes out
 // of make_npc whole (the ONE creation path), the creatures and the route are
 // fields of the spec — and the ROUTE'S PRESENCE overrides the type row's ai
 // (owner's ruling: one knob), which is what makes a player patrol a data
@@ -595,8 +595,8 @@ void test_spawn_squad_is_one_spec_one_door() {
     SquadSpec spec{};
     // A Peasant row's ai is HomeWanderer with no home (homeId -1 does
     // nothing) — so any march this squad makes is the ROUTE acting.
-    spec.leaderType = NPCType::Peasant;
-    spec.leaderLevel = 4;
+    spec.avatarType = NPCType::Peasant;
+    spec.avatarLevel = 4;
     spec.x = 20;
     spec.y = 20;
     spec.factionIndex = faction_index("timaert");
@@ -609,30 +609,30 @@ void test_spawn_squad_is_one_spec_one_door() {
     spec.waypoints[2] = 20; spec.waypoints[3] = 20;   // and back
 
     sm::MacroStore& st = *wStore_;
-    const MacroHandle leader = spawn_squad(gs, st, absent, spec);
-    CHECK_OR_RETURN(st.valid(leader),
+    const MacroHandle avatar = spawn_squad(gs, st, absent, spec);
+    CHECK_OR_RETURN(st.valid(avatar),
                     "the spec became a squad (одна дверь рождения отвечает "
                     "хэндлом — слот store несёт все колонки по построению)");
-    CHECK(sm::squad_level(st, leader.slot) == 4,
-          "the spec's level pinned the leader's level — в анкете (M-246а)");
-    CHECK(creature_count(st.inventory[leader.slot].inv) == 2,
+    CHECK(sm::squad_level(st, avatar.slot) == 4,
+          "the spec's level pinned the avatar's level — в анкете (M-246а)");
+    CHECK(creature_count(st.inventory[avatar.slot].inv) == 2,
           "the creature rows are the spec's rows");
-    CHECK(st.orders[leader.slot].waypointCount == 2,
+    CHECK(st.orders[avatar.slot].waypointCount == 2,
           "the route landed as data on the squad");
 
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 50u);
-    const float x0 = float(ecs::cell_x(st.cell[leader.slot], kMap));
+    const float x0 = float(ecs::cell_x(st.cell[avatar.slot], kMap));
     drive(gs, st, rt, 3);
-    const float p1x = float(ecs::cell_x(st.cell[leader.slot], kMap));
+    const float p1x = float(ecs::cell_x(st.cell[avatar.slot], kMap));
     CHECK(p1x > x0,
           "waypoint orders MARCH the squad east toward its route - the "
           "override, not the row, is steering");
 
     // Reaching a waypoint advances the route.
     for (int i = 0; i < 20; ++i) drive(gs, st, rt, 1);
-    CHECK(st.orders[leader.slot].currentWaypoint != 0
-              || float(ecs::cell_x(st.cell[leader.slot], kMap)) < 23.0f,
+    CHECK(st.orders[avatar.slot].currentWaypoint != 0
+              || float(ecs::cell_x(st.cell[avatar.slot], kMap)) < 23.0f,
           "the route advances at a reached waypoint (or is already homing "
           "back on the second leg)");
 
@@ -641,7 +641,7 @@ void test_spawn_squad_is_one_spec_one_door() {
     other.x = 40;
     const MacroHandle second = spawn_squad(gs, st, absent, other);
     CHECK_OR_RETURN(st.valid(second), "the second squad spawned");
-    CHECK(st.spawnId[second.slot].index != st.spawnId[leader.slot].index,
+    CHECK(st.spawnId[second.slot].index != st.spawnId[avatar.slot].index,
           "each created squad gets its own save-stable ordinal");
 
     // ── ПРИКАЗ РУКОЙ ХОДИТ ТОЙ ЖЕ ДВЕРЬЮ, ЧТО ЧИТАЕТ МИР (M-136) ─────────
@@ -652,17 +652,17 @@ void test_spawn_squad_is_one_spec_one_door() {
     // выводе, — и спрашивает у ЧИТАТЕЛЯ МИРА, а не у писателя. Марш по
     // маршруту утверждён выше (маршрут из спеки), здесь он не переутверждается
     // сознательно: эта секция про ДОМ приказа, не про ноги.
-    const std::uint32_t ord = st.spawnId[leader.slot].index;
+    const std::uint32_t ord = st.spawnId[avatar.slot].index;
     CHECK(sm::order_squad_route(st, ord, ecs::SquadOrders{}),
           "дверь нашла сквад по его ординалу");
-    CHECK(st.orders[leader.slot].waypointCount == 0,
+    CHECK(st.orders[avatar.slot].waypointCount == 0,
           "«released to its own life» видно ЧИТАТЕЛЮ: колонка пуста");
     ecs::SquadOrders hand{};
     hand.waypointCount = 2;
     hand.waypoints[0] = 31; hand.waypoints[1] = 29;
     hand.waypoints[2] = 20; hand.waypoints[3] = 20;
     CHECK(sm::order_squad_route(st, ord, hand), "приказ рукой принят");
-    const auto& live = st.orders[leader.slot];
+    const auto& live = st.orders[avatar.slot];
     CHECK(live.waypointCount == 2 && live.waypoints[0] == 31
               && live.waypoints[1] == 29 && live.waypoints[2] == 20,
           "«now patrols 2 waypoint(s)» — те самые клетки в колонке мира");
@@ -671,19 +671,19 @@ void test_spawn_squad_is_one_spec_one_door() {
     // не трогает ничей приказ, промахнувшись адресом.
     CHECK(!sm::order_squad_route(st, 0xFFFFFFFFu, ecs::SquadOrders{}),
           "негативный контроль: неизвестный ординал получает отказ");
-    CHECK(st.orders[leader.slot].waypointCount == 2,
+    CHECK(st.orders[avatar.slot].waypointCount == 2,
           "...и отказ ничего не переписал");
 }
 
 } // namespace
 
-// ── Phase 6: the leader's TRAINING reads at the three new doors ──────────
+// ── Phase 6: the avatar's TRAINING reads at the three new doors ──────────
 // Trade → the price law's bargaining argument (a literal 0 since the law
 // was written), Scouting → the runtime's sight cache. Each with a negative
 // control. (Третьей дверью здесь стоял «харч по рангу фуражирования» — она
 // умерла 2026-09-22 вместе со скидкой, а сам навык 2026-10-12, M-144. Блок 3
 // ниже охраняет то, что встало на её место: лист ведущего счёт НЕ меняет.)
-void test_the_leaders_training_reads_at_the_new_doors() {
+void test_the_avatars_training_reads_at_the_new_doors() {
     // 1. The scouting rank rides the runtime cache through the ONE refresh
     // door — the same door the march caches cannot drift through.
     {
@@ -757,9 +757,9 @@ void test_the_leaders_training_reads_at_the_new_doors() {
         // ненулевая у богатого листа и строго меньше у бедного.
         int richRanks = 0, poorRanks = 0;
         const CharacterSheet richSheet = make_character_sheet(
-            NPCType::Peasant, kRichLevel, leader_sheet_seed(1u));
+            NPCType::Peasant, kRichLevel, avatar_sheet_seed(1u));
         const CharacterSheet poorSheet = make_character_sheet(
-            NPCType::Guard, kPoorLevel, leader_sheet_seed(999u));
+            NPCType::Guard, kPoorLevel, avatar_sheet_seed(999u));
         for (int i = 0; i < int(SkillId::Count); ++i) {
             richRanks += richSheet.skills.of(SkillId(i));
             poorRanks += poorSheet.skills.of(SkillId(i));
@@ -883,11 +883,11 @@ void test_a_victory_does_not_erase_a_table_born_sheet() {
 int main() {
     test_hostiles_on_one_cell_fight_and_the_ledger_pays();
     test_a_victory_does_not_erase_a_table_born_sheet();
-    test_the_leaders_training_reads_at_the_new_doors();
+    test_the_avatars_training_reads_at_the_new_doors();
     test_the_weak_flee_and_fighters_pursue();
     test_neutral_squads_ignore_each_other();
     test_a_meeting_in_the_leased_window_is_not_resolved_upstairs();
-    test_a_victorious_leader_levels();
+    test_a_victorious_avatar_levels();
     test_a_level_does_not_strip_what_is_worn();
     test_wearing_alone_refreshes_the_derived_columns();
     test_player_auto_resolve_settles_through_the_same_doors();

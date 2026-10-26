@@ -3843,7 +3843,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     macro_mark_dead(st, reaped);
                     // …and his men stop being a squad THE MOMENT he falls,
                     // exactly as they do when the auto-resolve kills him
-                    // (CANON S4: a leaderless squad's survivors fall into the
+                    // (CANON S4: a avatarless squad's survivors fall into the
                     // deserter pool). This used to wait for leave(), so a
                     // beheaded warband stayed a live squad on the map for as
                     // long as the player kept exploring — and the pool that
@@ -3885,31 +3885,31 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 // ОДИН закон оплаты килла (§41 корень 5, владелец
                 // 2026-09-10: «байт умирает; жнец резолвит лидера убийцы
                 // для ВСЕХ — игрок просто лидер своего сквада»). The
-                // killer's own BODY names its macro leader: a projected
-                // leader carries MacroOrigin (a possessed projection pays
+                // killer's own BODY names its macro avatar: a projected
+                // avatar carries MacroOrigin (a possessed projection pays
                 // ITS OWN lord — body-native), a creatures member's receipt
-                // names its leader's spawn ordinal, and the hero husk /
+                // names its avatar's spawn ordinal, and the hero husk /
                 // the player's soldiers name the player's squad — the
-                // ordinary leader he is. The leader is then paid through
+                // ordinary avatar he is. The avatar is then paid through
                 // THE one kill-XP door (squad.h squad_award_exp): an owned
                 // sheet grows like the player's, a transient rolls.
-                MacroHandle leader{};
+                MacroHandle avatar{};
                 if (const MacroHandle killerOrigin =
                         sub::slot_macro_origin(arena, killerSlot);
                     killerOrigin.id != 0) {
-                    leader = killerOrigin;
+                    avatar = killerOrigin;
                 } else if (const auto* debt =
                                sub::slot_debt(arena, killerSlot);
                            debt && debt->stock
                                == std::uint8_t(MacroStock::Creatures)) {
-                    leader = macro_handle_by_spawn_id(
+                    avatar = macro_handle_by_spawn_id(
                         *mw_.store, std::uint32_t(debt->subject));
                 } else if (arena.is_avatar_slot(killerSlot)
                            || sub::slot_flag(arena, killerSlot,
                                              sub::kObjPlayerSoldier)) {
                     if (frame_) {
                         const MacroHandle ps = frame_->playerSquad;
-                        if (mw_.store->valid(ps)) leader = ps;
+                        if (mw_.store->valid(ps)) avatar = ps;
                     }
                 }
                 // «Рука игрока» — сценная правда для репутации: его
@@ -3918,11 +3918,11 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     || sub::slot_flag(arena, killerSlot,
                                       sub::kObjPlayerSoldier);
                 MacroStore& mst = *mw_.store;
-                if (mst.valid(leader) && !macro_dead(mst, leader)) {
+                if (mst.valid(avatar) && !macro_dead(mst, avatar)) {
                     // One row, one formula (owner, 2026-08-29): what a kill
                     // is worth is npc_xp_reward — the row's own xpReward
                     // stepped by level, for EVERY row and EVERY killer.
-                    squad_award_exp(mst, leader,
+                    squad_award_exp(mst, avatar,
                                   npc_xp_reward(NPCType(std::uint8_t(
                                                     kind ? kind->type : 0)),
                                                 lvl));
@@ -3967,7 +3967,7 @@ void SubworldEngine::leave(bool force) {
     if (active_) {
         resolve_subworld_deaths(true);
         // The fight is over when the player leaves (owner ruling 3,
-        // CANON S4/S13 (бывший macrosim.md)): a squad whose leader died fought on FACELESS to this
+        // CANON S4/S13 (бывший macrosim.md)): a squad whose avatar died fought on FACELESS to this
         // moment; now its survivors stop being a squad and fall into the
         // deserter pool, out of which the macro sim later raises deserter and
         // bandit bands. First gameplay writer that pool has ever had.

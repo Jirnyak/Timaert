@@ -60,7 +60,7 @@ void maybe_emplace_carried_light(SubObjects& objs, int s,
 //   his seed already decides. A city of five thousand is five thousand integers
 //   and no bags.
 //
-//   TRACKED — the visible form of a macro ENTITY. A lord, a squad leader, a
+//   TRACKED — the visible form of a macro ENTITY. A lord, a squad avatar, a
 //   caravan master. His face, his wounds and his belongings are STATE that lives
 //   above; the body copies them down, and what happens to the body is written
 //   back up. He is the only body that remembers anything, because he is the only
@@ -124,7 +124,7 @@ inline void stamp_macro_debt(SubObjects& objs, int s,
 
 // Form 1 — DERIVED. `faceSalt` separates two bodies drawn from the same seed
 // (slot index, ordinal in the crowd). Stamps the loan's receipt, if any.
-// `squadBonuses` is what this body's LEADER gives it (character_sheet.h
+// `squadBonuses` is what this body's AVATAR gives it (character_sheet.h
 // (Параметр ауры лидера `squadBonuses` снесён 2026-10-18 вместе с
 //  `squad_bonuses`: та возвращала константу-нули с перковой чистки
 //  2026-09-03 — см. некролог в macro/anketa.h.)
@@ -428,12 +428,12 @@ void despawn_subworld_entities_outside_window(SubObjects& objs);
 // That is why the faction is a parameter and not a literal: it is derived at the
 // call site from whoever owns the squad (the player → the "player" registry row;
 // a garrison → its settlement's kingdom), so no new persisted field is needed and
-// a party — which is its leader NPC — simply passes its leader's faction.
+// a party — which is its avatar NPC — simply passes its avatar's faction.
 //
-// `squadBonuses` follows the same logic as the faction: the LEADER's gift,
+// `squadBonuses` follows the same logic as the faction: the AVATAR's gift,
 // collected once at the call site from whoever leads the squad (the player →
 // squad_bonuses over his owned component, squad.h sheet_of) and applied into
-// every member's sheet at birth. nullptr = a leaderless context, nothing
+// every member's sheet at birth. nullptr = a avatarless context, nothing
 // applied.
 // `creaturesSubject`/`creaturesCx`/`creaturesCy` — WHOSE creatures stock the members'
 // death receipts strike (macro/macro_stock.h "creatures"): the FLAG record's own
@@ -491,8 +491,8 @@ void spawn_player_squad(SubObjects& objs,
 // cell's sub-region, dodging water.
 //
 // A macro NPC IS a squad (ecs::SquadUpkeep doctrine): the entity itself is the
-// leader — projected as the TRACKED body — and every creature row is one unit of
-// the squad's creatures STOCK made visible, projected around the leader as a
+// avatar — projected as the TRACKED body — and every creature row is one unit of
+// the squad's creatures STOCK made visible, projected around the avatar as a
 // DERIVED body wearing the OWNER's faction (the banner rule above) and
 // carrying the receipt (MacroStock::Creatures, subject = the squad's MacroSpawnId
 // ordinal, detail = the member's entityId) that pays its death back into the

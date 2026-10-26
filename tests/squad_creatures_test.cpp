@@ -1,7 +1,7 @@
 // THE macro entity is a squad (Session 15, Inc 1). This test pins the doctrine
 // structurally: every macro NPC born through the one creation path carries an
 // ecs::SquadUpkeep, and it is born EMPTY — a lone wanderer is a squad of one
-// whose leader is the entity itself, not a special kind of thing. Both spawn
+// whose avatar is the entity itself, not a special kind of thing. Both spawn
 // doors are checked (the boot spawner and the runtime console/event spawner),
 // because a doctrine that holds at one door and not the other is two dialects.
 // The reverse direction guards against orphan containers: a SquadUpkeep on a
@@ -70,7 +70,7 @@ void test_every_macro_npc_is_a_squad_of_one() {
             ++macroNpcs;
             CHECK(sm::creatures_empty(st.inventory[s32].inv),
                   "a freshly spawned wanderer is a squad of ONE: empty creatures, "
-                  "the slot itself is the leader");
+                  "the slot itself is the avatar");
         }
     }
     CHECK(macroNpcs > 0, "fixture must spawn macro NPCs to say anything");

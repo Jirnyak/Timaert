@@ -603,18 +603,18 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
     //
     // ЭТО ЕДИНСТВЕННЫЙ ОВЕРРАЙД, ОСТАВШИЙСЯ В ИГРЕ (M-300): потолок HP теперь
     // приезжает самой анкетой через `auto_battle_side_of` выше и читается
-    // общей дверью `leader_power`, поэтому пара «hp+dps» больше не нужна.
+    // общей дверью `avatar_power`, поэтому пара «hp+dps» больше не нужна.
     // Число игрока при этом НЕ СДВИНУЛОСЬ: прежний `leaderHpOverride` и был
     // `body_max_hp(eff, combat)`, а та дверь есть `floor(project_combat(…).hp)`
     // — ровно то, что общая дверь и считает; а строка `Adventurer` несёт
     // нулевую защиту, так что множитель брони-как-эффективных-HP у него 1.
-    s.leaderDpsOverride =
+    s.avatarDpsOverride =
         swing / sm::seconds_from_steps(std::uint32_t(hs.recoverySteps));
     return s;
 }
 
-// What the leader asks to let you pass: scaled by his squad's strength, and
-// a Greedy leader asks double — the trait is data on the entity. Balance
+// What the avatar asks to let you pass: scaled by his squad's strength, and
+// a Greedy avatar asks double — the trait is data on the entity. Balance
 // knob (owner: retune after playtests).
 int encounter_payoff_cost(App& app, sm::MacroHandle npc) {
     const sm::MacroStore& st = (*app.macroStore);
@@ -690,7 +690,7 @@ struct PreBattleAction {
 };
 
 const PreBattleAction kPreBattleActions[] = {
-    // Talk: hear the leader out — his row's own lines. The seed of the
+    // Talk: hear the avatar out — his row's own lines. The seed of the
     // negotiation/relations rows to come.
     {[](App&, sm::MacroHandle, char* out, std::size_t n) {
          std::snprintf(out, n, "Talk");
@@ -927,7 +927,7 @@ void detect_forced_encounter(App& app) {
 }
 
 // The screen itself — the modal shape of draw_encounter_modal, filled from
-// the squad's own data: the leader's name and rank from his row and face,
+// the squad's own data: the avatar's name and rank from his row and face,
 // the creatures summarised by kind, the odds read through squad_power.
 void draw_pre_battle_modal(App& app) {
     if (app.gs.subState.kind != sm::GameSubStateKind::PreBattle) return;
@@ -1899,7 +1899,7 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // store, а их строки файл только что заменил своими. Store умирает
     // ЗДЕСЬ, по построению, а не по совпадению флага: записи файла несут
     // ВСЕХ (сквады и тела мест), и restore вселяет их в пустой store. A
-    // killed lord stays killed, a levelled leader keeps his campaigns.
+    // killed lord stays killed, a levelled avatar keeps his campaigns.
     sm::store_reset(*app.macroStore);
     sm::restore_macro_ecs(loadedMacro, *app.macroStore, loadedNextSpawnId);
 
@@ -4261,9 +4261,9 @@ void register_console_commands(App& app) {
         });
 
     con.register_cmd("spawn_squad",
-        "spawn_squad <leader> [level] [members] [memberKind] [faction]",
-        "spawn a SQUAD on your macro cell: a leader of <leader> kind with "
-        "[members] creature rows of [memberKind] (default: the leader's kind); "
+        "spawn_squad <avatar> [level] [members] [memberKind] [faction]",
+        "spawn a SQUAD on your macro cell: a avatar of <avatar> kind with "
+        "[members] creature rows of [memberKind] (default: the avatar's kind); "
         "[faction] any registry id, omitted -> the land decides. Prints the "
         "squad's ordinal for squad_orders.",
         [&app](Con& c, const std::vector<std::string>& a) {
@@ -4273,15 +4273,15 @@ void register_console_commands(App& app) {
                 return true;
             }
             sm::SquadSpec spec{};
-            if (!sm::npc_type_from_label(a[0].c_str(), spec.leaderType)) {
+            if (!sm::npc_type_from_label(a[0].c_str(), spec.avatarType)) {
                 c.error("unknown NPC type (see the registry labels)");
                 return true;
             }
             int level = -1; sm::dev::arg_int(a, 1, level);
-            spec.leaderLevel = level;
+            spec.avatarLevel = level;
             int members = 0; sm::dev::arg_int(a, 2, members);
             members = std::clamp(members, 0, 64);
-            sm::NPCType memberKind = spec.leaderType;
+            sm::NPCType memberKind = spec.avatarType;
             if (a.size() > 3 && !a[3].empty()
                 && !sm::npc_type_from_label(a[3].c_str(), memberKind)) {
                 c.error("unknown member kind");
@@ -4311,16 +4311,16 @@ void register_console_commands(App& app) {
                     std::uint8_t(memberKind), mlvl,
                     0x40000000u | (seq << 8) | std::uint32_t(i)));
             }
-            const sm::MacroHandle leader = sm::spawn_squad(
+            const sm::MacroHandle avatar = sm::spawn_squad(
                 app.gs, *app.macroStore, app.terrain, spec);
-            if (!app.macroStore->valid(leader)) {
+            if (!app.macroStore->valid(avatar)) {
                 c.error("spawn_squad failed (bad map)");
                 return true;
             }
             c.printfln(Lvl::Ok, "squad #%u: %s (level %d) + %d x %s",
-                       app.macroStore->spawnId[leader.slot].index,
-                       sm::npc_def(spec.leaderType).label,
-                       sm::squad_level(*app.macroStore, leader.slot),
+                       app.macroStore->spawnId[avatar.slot].index,
+                       sm::npc_def(spec.avatarType).label,
+                       sm::squad_level(*app.macroStore, avatar.slot),
                        members, sm::npc_def(memberKind).label);
             return true;
         });

@@ -657,7 +657,7 @@ void test_a_dying_place_rewrites_the_feature_under_itself() {
     };
     // Смерть ОДНОЙ дверью мира, той же, которой кончает автобой.
     const auto kill = [](Fixture& f, const MacroHandle h) {
-        settle_leader_fraction(f.st(), h, 0.0f);
+        settle_avatar_fraction(f.st(), h, 0.0f);
     };
 
     // ── ГОРОД → РУИНА ───────────────────────────────────────────────────

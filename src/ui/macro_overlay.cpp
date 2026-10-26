@@ -761,7 +761,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
         // И ВМЕСТЕ С ГЕЙТОМ УМЕР ФИЛЬТР `hp <= 0` — ОН БЫЛ ВТОРЫМ ОТВЕТОМ НА
         // «МЁРТВ ЛИ ОН». Носитель смерти один — колонка `dead` (`macro_dead`
         // @src/macro/store.h), и ВСЕ ТРИ макро-двери смерти ставят её ВМЕСТЕ
-        // с нулевым hp: `settle_leader_fraction@src/macro/squad.h` («zero is
+        // с нулевым hp: `settle_avatar_fraction@src/macro/squad.h` («zero is
         // the tracked-death shape (hp=0 + Dead)»), истощение через неё же
         // (`settle_exhaustion@src/macro/npc_ai.cpp`) и жнец субмира
         // (`src/sub/engine.cpp`). То есть проверка повторяла уже заданный

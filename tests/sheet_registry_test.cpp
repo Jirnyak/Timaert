@@ -319,7 +319,7 @@ void test_the_third_currency_accrues() {
     // A level-N procedural sheet is budget-identical to a level-N player;
     // the perk pool accrues UNSPENT while the graph is a stub.
     const CharacterSheet cs =
-        make_character_sheet(NPCType(0), 6, leader_sheet_seed(1u));
+        make_character_sheet(NPCType(0), 6, avatar_sheet_seed(1u));
     CHECK(cs.levelData.perkPoints == 5 + 5,
           "an NPC sheet accrues the perk pool it cannot spend yet");
     // ЗДЕСЬ СТОЯЛИ ТРИ УТВЕРЖДЕНИЯ О `PerkMask` — у них УМЕР НОСИТЕЛЬ
@@ -334,7 +334,7 @@ void test_the_third_currency_accrues() {
 
 // ── An NPC hits with his SHEET (CANON S13/S14, session Е 2026-09-19) ─────
 // The largest «игрок == НПЦ» asymmetry: both consumers (spawn's
-// combat_from_sheet and auto_battle's leader_power) hardcoded multPct 100,
+// combat_from_sheet and auto_battle's avatar_power) hardcoded multPct 100,
 // so the points the generator spent into weapon skills and schools
 // multiplied nothing. One door now — project_combat.multPct, the
 // best-trained skill of the attack's domain — and both ends read it.
@@ -413,7 +413,7 @@ void test_npc_strikes_with_his_sheet() {
 void test_every_role_rates_every_skill() {
     for (int r = 0; r < int(NPCType::Count); ++r) {
         const CharacterSheet sheet =
-            make_character_sheet(NPCType(r), 6, leader_sheet_seed(std::uint32_t(r)));
+            make_character_sheet(NPCType(r), 6, avatar_sheet_seed(std::uint32_t(r)));
         int spent = 0;
         for (std::uint8_t rank : sheet.skills.rank) spent += int(rank);
         CHECK(spent > 0, "every role trains SOMETHING by level six");

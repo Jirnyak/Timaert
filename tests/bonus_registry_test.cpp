@@ -17,7 +17,7 @@
 //   2. a standing bonus is REMOVABLE, because it is read through a modified
 //      COPY instead of being written into the sheet. The old `apply_aura`
 //      wrote its deltas into the member's stored sheet at birth, with no
-//      source and no way back, so a squad that outlived its leader's perk kept
+//      source and no way back, so a squad that outlived its avatar's perk kept
 //      the buff forever.
 #include "check.h"
 
@@ -226,13 +226,13 @@ void test_instant_bonuses_move_pools_and_tell_the_truth() {
     CHECK(mp == 5, "negative control: and it did not quietly hit another pool");
 }
 
-// ── A leader's gift is not a second system ───────────────────────────────
+// ── A avatar's gift is not a second system ───────────────────────────────
 // It was one: its own header, its own `AuraMods` type, its own add/collect/
 // apply verbs — all of it saying what these three lines say. Owner, 2026-08-27:
 // «хватит контекста макросквада (минимум систем)... просто скиллы и перки
-// СКВАДА (это и есть лидер) модифицируют юнитов в бою». Squad == leader is
-// CANON S4, so the leader's sheet was always the only source, and the second
-// (СВИДЕТЕЛЬ `test_a_leaders_gift_is_the_same_totals_as_everything_else` СНЕСЁН
+// СКВАДА (это и есть лидер) модифицируют юнитов в бою». Squad == avatar is
+// CANON S4, so the avatar's sheet was always the only source, and the second
+// (СВИДЕТЕЛЬ `test_an_avatars_gift_is_the_same_totals_as_everything_else` СНЕСЁН
 //  2026-10-18 вместе со своим СУБЪЕКТОМ: он охранял применение АУРЫ
 //  лидера в лист тела, а `squad_bonuses` возвращала константу-нули с
 //  перковой чистки 2026-09-03 и снесена вердиктом владельца «снести,

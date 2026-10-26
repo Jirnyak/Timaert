@@ -346,7 +346,7 @@ AIBehaviour untyped_squad_behaviour(const MacroStore& st, MacroHandle h,
                                     const ecs::NPCKind& kind);
 
 // THE SQUAD SEASON WINDOW (owner 2026-08-30/31 + 2026-09-17; CANON S10,
-// S19.2, реф M&B): board and pay are for the СУЩЕСТВ КОНТЕЙНЕРА only — the leader is a
+// S19.2, реф M&B): board and pay are for the СУЩЕСТВ КОНТЕЙНЕРА only — the avatar is a
 // SUBJECT and needs nothing by himself («0 бойцов = 0 хлеба и жалования» —
 // why a lone rider is honestly immune to hunger). On the season BOUNDARY
 // every squad with a creatures settles BOTH needs a season ahead, out of its
@@ -364,7 +364,7 @@ AIBehaviour untyped_squad_behaviour(const MacroStore& st, MacroHandle h,
 // Each need is covered WHOLE or not debited at all; ANY miss bleeds an
 // eighth of the creatures into the deserter pool ONCE per window («ВСЕ НУЖДЫ
 // ДОЛЖНЫ БЫТЬ ПОКРЫТЫ, иначе потеря 1/8»). The judge is the SOLDIER'S own
-// row, never the leader's — the old leader-typed gate was the player-special
+// row, never the avatar's — the old avatar-typed gate was the player-special
 // Adventurer.upkeep=0 door, dead by «игрок == нпц»: the player's squad pays
 // here through the very same loop. Returns souls deserted.
 int squad_season_window(GameState& gs, MacroStore& st, int day,
@@ -379,7 +379,7 @@ int squad_bags_hygiene_daily(MacroWorld& mw);
 // by and the place's crew-loading fills by (drift between the two would
 // be a second truth of содержание). Борд идёт по РАЦИОНУ СВОЕЙ СТРОКИ на
 // каждую душу контейнера; жалованье — один закон содержания × сезон. (Здесь
-// стояло «per soul whose own row is on upkeep, foraging-scaled by the leader's
+// стояло «per soul whose own row is on upkeep, foraging-scaled by the avatar's
 // effective sheet» — оба гейта умерли 2026-09-22 вместе с функцией, которую
 // этот абзац описывал, а сам навык фуражирования — 2026-10-12, M-144.)
 // БОРД и ПЛАТА — ровно две нужды армии, и это вердикт, а не упрощение

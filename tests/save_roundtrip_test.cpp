@@ -148,7 +148,7 @@ void remove_slot_files(const std::string& path) {
 }
 
 // The macro-ECS snapshot fixture (v23): two records, every field non-default —
-// one living leader with debt, orders and a creatures; one dead one, because the
+// one living avatar with debt, orders and a creatures; one dead one, because the
 // whole point of the snapshot is that a killed lord STAYS dead across a load.
 std::vector<sm::MacroNpcRecord> make_macro_records() {
     std::vector<sm::MacroNpcRecord> out;
@@ -186,7 +186,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     a.runtime.entryTicks = 9;
     a.runtime.visualSpeed = 0.25f;
     a.runtime.tickAccum = 77;
-    a.sheet.levelData.exp = 555;      // the leader's campaigns (M-246а:
+    a.sheet.levelData.exp = 555;      // the avatar's campaigns (M-246а:
                                       // опыт — колонка анкеты, не рантайма)
     a.traits.count = 2;
     a.traits.traits[0] = 1;
@@ -792,7 +792,7 @@ void run_roundtrip() {
         if (a.sheet.levelData.level != want.sheet.levelData.level)
             FAIL_BAIL("macro level lost");
         if (a.pools.sp != -25) FAIL_BAIL("macro SP debt lost");
-        if (a.sheet.levelData.exp != 555) FAIL_BAIL("macro leader xp lost");
+        if (a.sheet.levelData.exp != 555) FAIL_BAIL("macro avatar xp lost");
         // ВЕСЬ РАНТАЙМ, КОТОРЫЙ ФИКСТУРА СТАВИТ, ЗДЕСЬ И СУДИТСЯ (M-254,
         // 2026-10-12). До этой правки фикстура ставила ТРИНАДЦАТЬ полей
         // `MacroNpcRuntime`, а вердикт спрашивал ЧЕТЫРЕ — остальные девять

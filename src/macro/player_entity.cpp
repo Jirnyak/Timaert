@@ -123,7 +123,7 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
         // Память/контейнер/сумка/черты уже обнулены рождением слота.
         spellbook_learn(st.spellBook[h.slot], spell_ordinal("magic_bolt"));
         // The march caches come from the player's OWN sheet, through the same
-        // door every leader's do.
+        // door every avatar's do.
         ecs::MacroNpcRuntime rt{};
         // Цель — «ничего» (kNoCell): игрок рождается стоящим, как всякий
         // сквад (колонку цели обнулила дверь рождения).

@@ -27,7 +27,7 @@
 // The old doors encoded this in WHICH FUNCTION applied them, which is why the
 // aura could never be taken off: `apply_aura` wrote its deltas straight into
 // the member's stored sheet at birth, with no source tracking and no way back,
-// so a squad that outlived its leader's perk kept the buff forever. Here the
+// so a squad that outlived its avatar's perk kept the buff forever. Here the
 // difference is a column, and the two verbs are different by construction:
 //
 //   · STANDING bonuses accumulate into `BonusTotals` and are read through

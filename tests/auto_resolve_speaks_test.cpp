@@ -10,7 +10,7 @@
 //
 // Pinned here, each with its negative control:
 //   * every death is REPORTED once — creature rows by their record ids, the
-//     leader by his entity — and a survivor is never reported;
+//     avatar by his entity — and a survivor is never reported;
 //   * the kill price is the registry's column: a lawful faction charges
 //     kKillRepPenalty per body, an outlaw charges nothing (killIsNoCrime);
 //   * the spoils are the fallen's OWN goods, moved once: победителю
@@ -49,20 +49,20 @@ void collect(void* user, const BattleFact& f) {
     static_cast<FactLog*>(user)->facts.push_back(f);
 }
 
-// A macro squad: leader entity + creatures records, the shape every macro body
-// has (squad == leader, CANON S4).
-sm::MacroHandle squad(sm::MacroStore& st, NPCType leaderType,
+// A macro squad: avatar entity + creatures records, the shape every macro body
+// has (squad == avatar, CANON S4).
+sm::MacroHandle squad(sm::MacroStore& st, NPCType avatarType,
                       const char* factionId,
                       int level, int members, std::uint32_t spawnIndex) {
     sm::MacroHandle h = sm::store_birth(st);
-    st.kind[h.slot] = ecs::NPCKind{std::uint16_t(leaderType),
+    st.kind[h.slot] = ecs::NPCKind{std::uint16_t(avatarType),
                                    std::uint16_t(faction_index(factionId))};
     st.pools[h.slot] = ecs::Pools{100, 100};
     store_rename_ordinal(st, h, spawnIndex);
     // Уровень — АНКЕТА (M-246а), той же дверью, какой рождает make_npc.
     // Ординал уже выдан строкой выше — сид анкеты обязан читать ЕГО.
     st.sheet[h.slot] = make_character_sheet(
-        leaderType, level, leader_sheet_seed(spawnIndex));
+        avatarType, level, avatar_sheet_seed(spawnIndex));
     h = sm::handle_at(st, h.slot);
     auto& bag = st.inventory[h.slot];
     for (int i = 0; i < members; ++i) {
@@ -74,7 +74,7 @@ sm::MacroHandle squad(sm::MacroStore& st, NPCType leaderType,
 }
 
 // An outcome that kills the whole enemy side: every creature row plus the
-// leader. Hand-built so the test states the law, not the resolver's dice.
+// avatar. Hand-built so the test states the law, not the resolver's dice.
 AutoBattleOutcome wipe_of(sm::MacroStore& st, sm::MacroHandle loser,
                           bool loserIsB) {
     AutoBattleOutcome o{};
@@ -84,8 +84,8 @@ AutoBattleOutcome wipe_of(sm::MacroStore& st, sm::MacroHandle loser,
          creatures_range(st.inventory[loser.slot].inv)) {
         cas.push_back(make_soldier(r.kind, r.level, r.entityId));
     }
-    (loserIsB ? o.leaderFractionB : o.leaderFractionA) = 0.0f;
-    (loserIsB ? o.leaderFractionA : o.leaderFractionB) = 0.75f;
+    (loserIsB ? o.avatarFractionB : o.avatarFractionA) = 0.0f;
+    (loserIsB ? o.avatarFractionA : o.avatarFractionB) = 0.75f;
     return o;
 }
 
@@ -108,16 +108,16 @@ squad(*wStore_, NPCType::Bandit, "bandits", 2, 3, 2u);
     settle_auto_battle(mw, a, b, wipe_of(*wStore_, b, /*loserIsB*/true));
 
     CHECK(log.facts.size() == 4,
-          "three creature rows and the leader — four deaths, four facts");
-    int leaderFacts = 0, creatureFacts = 0;
+          "three creature rows and the avatar — four deaths, four facts");
+    int avatarFacts = 0, creatureFacts = 0;
     for (const BattleFact& f : log.facts) {
         CHECK(f.kind == BattleFact::Kind::Death, "the fact is a death");
-        if (f.detail < 0) ++leaderFacts; else ++creatureFacts;
+        if (f.detail < 0) ++avatarFacts; else ++creatureFacts;
     }
-    CHECK(leaderFacts == 1, "the fallen leader is reported by his entity");
+    CHECK(avatarFacts == 1, "the fallen avatar is reported by his entity");
     CHECK(creatureFacts == 3, "each creature row is reported by its record id");
     CHECK(log.facts.back().npcType == std::uint16_t(NPCType::Bandit),
-          "the leader's fact carries HIS row, not a member's");
+          "the avatar's fact carries HIS row, not a member's");
 
     // The negative control: the victor lost nobody, so the victor says
     // nothing. A settle that reported both sides regardless would double the
@@ -236,8 +236,8 @@ squad(*wStore_, NPCType::Merchant, "empire", 4, 3, 7u);
 squad(*w2Store_, NPCType::Merchant, "empire", 4, 3, 8u);
     AutoBattleOutcome loss{};
     loss.winner = 1;                    // the enemy (side B) won
-    loss.leaderFractionA = 0.0f;        // the player fell
-    loss.leaderFractionB = 0.8f;
+    loss.avatarFractionA = 0.0f;        // the player fell
+    loss.avatarFractionB = 0.8f;
     settle_player_auto_battle(mw2, enemy2, loss, /*playerIsA*/true);
     CHECK(coin_census_value(player_bag_of(gs, *w2Store_)) == 0,
           "a defeat pays the player nothing");

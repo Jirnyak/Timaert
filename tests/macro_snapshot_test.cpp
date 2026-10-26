@@ -1,7 +1,7 @@
 // The macro-ECS snapshot (Session 17): the living map survives the save.
 //
 // Before this, a load cleared the registry and re-spawned lords from the
-// seed: a killed squad rose again, a levelled leader forgot his campaigns,
+// seed: a killed squad rose again, a levelled avatar forgot his campaigns,
 // and the runtime ordinal issuer (max-over-living) could hand a dead man's
 // identity to a stranger (problems.md 19.24). What is pinned here:
 //   · snapshot -> save -> load -> restore round-trips the ENTITIES — wounds,
@@ -60,8 +60,8 @@ void test_snapshot_round_trips_the_living_map() {
 
     // Squad A: a bandit lord with two guards and a route.
     SquadSpec specA{};
-    specA.leaderType = NPCType::Bandit;
-    specA.leaderLevel = 5;
+    specA.avatarType = NPCType::Bandit;
+    specA.avatarLevel = 5;
     specA.x = 20;
     specA.y = 20;
     specA.factionIndex = faction_index("bandits");
@@ -73,10 +73,10 @@ void test_snapshot_round_trips_the_living_map() {
     const MacroHandle a = spawn_squad(gs, *wStore_, absent, specA);
     CHECK_OR_RETURN(wStore_->valid(a), "squad A spawned");
 
-    // Squad B: a lone peasant — a squad of one, its own leader.
+    // Squad B: a lone peasant — a squad of one, its own avatar.
     SquadSpec specB{};
-    specB.leaderType = NPCType::Peasant;
-    specB.leaderLevel = 2;
+    specB.avatarType = NPCType::Peasant;
+    specB.avatarLevel = 2;
     specB.x = 40;
     specB.y = 40;
     specB.factionIndex = faction_index("timaert");
@@ -144,11 +144,11 @@ void test_snapshot_round_trips_the_living_map() {
     resolve_player_handles_after_load(gs2, *w2Store_);
 
     const MacroHandle a2 = find_by_ordinal(*w2Store_, ordinalA);
-    CHECK_OR_RETURN(w2Store_->valid(a2), "leader A restored under his ordinal");
+    CHECK_OR_RETURN(w2Store_->valid(a2), "avatar A restored under his ordinal");
     CHECK(w2Store_->sheet[a2.slot].levelData.exp == 777,
-          "the leader's campaigns (xp) survive the save");
+          "the avatar's campaigns (xp) survive the save");
     CHECK(w2Store_->pools[a2.slot].sp == -15,
-          "the leader's exhaustion debt survives the save");
+          "the avatar's exhaustion debt survives the save");
     CHECK(ecs::cell_x(w2Store_->cell[a2.slot], 64) == 25
               && ecs::cell_y(w2Store_->cell[a2.slot], 64) == 21,
           "the march stands - the cell is the saved one, not the spawn one");
@@ -160,7 +160,7 @@ void test_snapshot_round_trips_the_living_map() {
           "the creature rows survive");
     CHECK(w2Store_->orders[a2.slot].waypointCount == 2,
           "the squad's route survives");
-    CHECK(!sm::macro_dead(*w2Store_, a2), "the living leader is not dead");
+    CHECK(!sm::macro_dead(*w2Store_, a2), "the living avatar is not dead");
     // The flag rode the snapshot honestly and landed on the SAME lord — and
     // on nobody else (the negative control: B carried no flag and must not
     // grow one; a restore that stamps everyone would also pass a bare
@@ -179,7 +179,7 @@ void test_snapshot_round_trips_the_living_map() {
           "exactly one player flag restored — the handle is live");
 
     const MacroHandle b2 = find_by_ordinal(*w2Store_, ordinalB);
-    CHECK_OR_RETURN(w2Store_->valid(b2), "the dead leader is still ON the map");
+    CHECK_OR_RETURN(w2Store_->valid(b2), "the dead avatar is still ON the map");
     CHECK(sm::macro_dead(*w2Store_, b2)
               && w2Store_->pools[b2.slot].hp == 0.0f,
           "the KILLED lord stays dead across the save");
@@ -193,8 +193,8 @@ void test_snapshot_round_trips_the_living_map() {
     sm::store_death(*w2Store_, doomed);
 
     SquadSpec specC{};
-    specC.leaderType = NPCType::Bandit;
-    specC.leaderLevel = 1;
+    specC.avatarType = NPCType::Bandit;
+    specC.avatarLevel = 1;
     specC.x = 10;
     specC.y = 10;
     specC.factionIndex = faction_index("bandits");
@@ -228,8 +228,8 @@ void test_resnapshot_is_byte_identical() {
     // приказами и владеемым листом + убитый транзиент — обе ветки формата
     // (hasOrders, дивергенция листа, байт судьбы) живые.
     SquadSpec specA{};
-    specA.leaderType = NPCType::Bandit;
-    specA.leaderLevel = 5;
+    specA.avatarType = NPCType::Bandit;
+    specA.avatarLevel = 5;
     specA.x = 20;
     specA.y = 20;
     specA.factionIndex = faction_index("bandits");
@@ -247,8 +247,8 @@ void test_resnapshot_is_byte_identical() {
     owned_sheet(*wStore_, a)->attributes[AttributeId::End] = 13;
 
     SquadSpec specB{};
-    specB.leaderType = NPCType::Peasant;
-    specB.leaderLevel = 2;
+    specB.avatarType = NPCType::Peasant;
+    specB.avatarLevel = 2;
     specB.x = 40;
     specB.y = 40;
     specB.factionIndex = faction_index("timaert");

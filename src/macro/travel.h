@@ -45,7 +45,7 @@ struct Inventory;
 // «да, перегруз универсальный всем».
 float overload_burden(const CharacterSheet& sheet, const Inventory& inventory);
 
-// The same law from the CACHED capacity a macro leader carries on his runtime
+// The same law from the CACHED capacity a macro avatar carries on his runtime
 // (ecs::MacroNpcRuntime::carryPerSoulG + the bag's haul grams), so a think
 // prices its load without rebuilding a derived sheet it does not store.
 // Inline: the macro AI is the caller, and it must not have to link the travel

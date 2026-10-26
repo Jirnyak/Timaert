@@ -86,7 +86,7 @@ sm::MacroHandle make_woodcutter(sm::MacroStore& st, float x, float y,
     rt.stateTimer = 0;
     ecs::Pools pools{};
     const CharacterSheet sheet = make_character_sheet(
-        NPCType::Peasant, 3, leader_sheet_seed(11u));
+        NPCType::Peasant, 3, avatar_sheet_seed(11u));
     refresh_body_from_sheet(pools, &rt, sheet, NPCType::Peasant);
     pools.sp = pools.maxSp;
     // Поручений больше нет (ломоть 4 M-72): «что добыть» модуль решает
@@ -98,7 +98,7 @@ sm::MacroHandle make_woodcutter(sm::MacroStore& st, float x, float y,
     sm::set_relation(st, int(h.id), homeVillageId, sm::Stance::Parent);
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(
-        NPCType::Peasant, 3, leader_sheet_seed(st.spawnId[h.slot].index));
+        NPCType::Peasant, 3, avatar_sheet_seed(st.spawnId[h.slot].index));
     pools.hp = pools.maxHp = 30;
     st.pools[h.slot] = pools;
     return h;
@@ -255,7 +255,7 @@ void test_the_farmer_works_the_field() {
     prt.stateTimer = 0;
     ecs::Pools pools{};
     refresh_body_from_sheet(
-        pools, &prt, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)),
+        pools, &prt, make_character_sheet(NPCType::Peasant, 2, avatar_sheet_seed(12u)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     prt.squadType = std::uint8_t(SquadType::Artel);
@@ -267,7 +267,7 @@ void test_the_farmer_works_the_field() {
     e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(
-        NPCType::Peasant, 2, leader_sheet_seed(st.spawnId[h.slot].index));
+        NPCType::Peasant, 2, avatar_sheet_seed(st.spawnId[h.slot].index));
     pools.hp = pools.maxHp = 20;
     st.pools[h.slot] = pools;
 
@@ -330,7 +330,7 @@ void test_farmer_without_terrain_conjures_nothing() {
     prt.stateTimer = 0;
     ecs::Pools pools{};
     refresh_body_from_sheet(
-        pools, &prt, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)),
+        pools, &prt, make_character_sheet(NPCType::Peasant, 2, avatar_sheet_seed(12u)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     prt.squadType = std::uint8_t(SquadType::Artel);
@@ -341,7 +341,7 @@ void test_farmer_without_terrain_conjures_nothing() {
                      sm::Stance::Parent);
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(
-        NPCType::Peasant, 2, leader_sheet_seed(st.spawnId[h.slot].index));
+        NPCType::Peasant, 2, avatar_sheet_seed(st.spawnId[h.slot].index));
     pools.hp = pools.maxHp = 20;
     st.pools[h.slot] = pools;
 
@@ -424,7 +424,7 @@ void test_the_mine_runs_while_the_player_is_away() {
     rt.stateTimer = 0;
     ecs::Pools pools{};
     refresh_body_from_sheet(
-        pools, &rt, make_character_sheet(NPCType::Peasant, 3, leader_sheet_seed(13u)),
+        pools, &rt, make_character_sheet(NPCType::Peasant, 3, avatar_sheet_seed(13u)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     rt.squadType = std::uint8_t(SquadType::Artel);
@@ -435,7 +435,7 @@ void test_the_mine_runs_while_the_player_is_away() {
                      sm::Stance::Parent);
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(
-        NPCType::Peasant, 3, leader_sheet_seed(st.spawnId[h.slot].index));
+        NPCType::Peasant, 3, avatar_sheet_seed(st.spawnId[h.slot].index));
     pools.hp = pools.maxHp = 30;
     st.pools[h.slot] = pools;
 
@@ -536,7 +536,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     crt.stateTimer = 0;
     ecs::Pools pools{};
     refresh_body_from_sheet(
-        pools, &crt, make_character_sheet(NPCType::Peasant, 3, leader_sheet_seed(13u)),
+        pools, &crt, make_character_sheet(NPCType::Peasant, 3, avatar_sheet_seed(13u)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     st.runtime[h.slot] = crt;
@@ -555,7 +555,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(
-        NPCType::Peasant, 3, leader_sheet_seed(st.spawnId[h.slot].index));
+        NPCType::Peasant, 3, avatar_sheet_seed(st.spawnId[h.slot].index));
     pools.hp = pools.maxHp = 25;
     st.pools[h.slot] = pools;
 
@@ -671,7 +671,7 @@ void test_the_miner_works_the_vein() {
     rt.stateTimer = 0;
     ecs::Pools pools{};
     refresh_body_from_sheet(
-        pools, &rt, make_character_sheet(NPCType::Peasant, 3, leader_sheet_seed(13u)),
+        pools, &rt, make_character_sheet(NPCType::Peasant, 3, avatar_sheet_seed(13u)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     rt.squadType = std::uint8_t(SquadType::Artel);
@@ -682,7 +682,7 @@ void test_the_miner_works_the_vein() {
     e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(
-        NPCType::Peasant, 3, leader_sheet_seed(st.spawnId[h.slot].index));
+        NPCType::Peasant, 3, avatar_sheet_seed(st.spawnId[h.slot].index));
     pools.hp = pools.maxHp = 30;
     st.pools[h.slot] = pools;
 
@@ -749,7 +749,7 @@ void test_the_miner_works_the_vein() {
     h2 = sm::handle_at(st2, h2.slot);
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st2.sheet[h2.slot] = make_character_sheet(
-        NPCType::Peasant, 3, leader_sheet_seed(st2.spawnId[h2.slot].index));
+        NPCType::Peasant, 3, avatar_sheet_seed(st2.spawnId[h2.slot].index));
     {
         ecs::Pools p2{};
         p2.hp = p2.maxHp = 30;
@@ -830,7 +830,7 @@ void test_the_catch_lands_as_creatures() {
     ecs::Pools pools{};
     refresh_body_from_sheet(
         pools, &prt,
-        make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(77u)),
+        make_character_sheet(NPCType::Peasant, 2, avatar_sheet_seed(77u)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     prt.squadType = std::uint8_t(SquadType::Artel);
@@ -843,7 +843,7 @@ void test_the_catch_lands_as_creatures() {
     e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
     // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(
-        NPCType::Peasant, 2, leader_sheet_seed(st.spawnId[h.slot].index));
+        NPCType::Peasant, 2, avatar_sheet_seed(st.spawnId[h.slot].index));
     pools.hp = pools.maxHp = 20;
     st.pools[h.slot] = pools;
 
@@ -1038,7 +1038,7 @@ void test_a_hauless_head_does_not_grow_the_train() {
     // SP-долг на первом же трофее. Теперь колонки в этом числе нет вовсе.
     {
         const sm::CharacterSheet ds = make_character_sheet(
-            NPCType::Dragon, 10, leader_sheet_seed(5u));
+            NPCType::Dragon, 10, avatar_sheet_seed(5u));
         ecs::Pools dp{};
         ecs::MacroNpcRuntime drt{};
         refresh_body_from_sheet(dp, &drt, ds, NPCType::Dragon);

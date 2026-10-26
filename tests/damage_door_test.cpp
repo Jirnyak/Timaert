@@ -516,7 +516,7 @@ void test_survivor_protocol() {
           "a survivable blow's DamageFx is not lethal");
     CHECK(last_hit_of(objs, s) == (sm::sub::ObjRef{5, 7u}),
           "LastHit carries the killer's BODY — the reaper resolves its "
-          "leader through the one kill-XP door (§41 root 5)");
+          "avatar through the one kill-XP door (§41 root 5)");
 }
 
 // A dead player is a game-over, not an NPC kill — from EVERY weapon. The

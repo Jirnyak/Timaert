@@ -307,7 +307,7 @@ int emplace_body(SubObjects& arena, const BodySpec& body,
     CharacterSheet sheet = body.sheet
         ? *body.sheet
         : make_character_sheet(body.type, body.level, body.seed);
-    // The leader's buff lands IN the sheet, before anything is projected from
+    // The avatar's buff lands IN the sheet, before anything is projected from
     // it (character_sheet.h, ruling №2): from here down a buffed soldier is simply
     // a soldier whose sheet says more, and no formula ever meets a second
     // source of strength standing beside it.
@@ -652,7 +652,7 @@ int spawn_tracked_body(SubObjects& objs, MacroStore& st, MacroHandle macro,
     const auto& kind = st.kind[macro.slot];
     // A kind that names no row at all is refused; a kind that names one is
     // trackable, whatever it is. The extra refusal that stood here — "not a
-    // creature" — died with the second birth: a pack leader is a macro record
+    // creature" — died with the second birth: a pack avatar is a macro record
     // like a lord, and his body copies his face and his wounds down the same
     // way (CANON.md S4).
     if (!valid_npc_kind(kind.type)) return -1;
@@ -1416,7 +1416,7 @@ void spawn_player_squad(SubObjects& objs,
 
         // The squad is born through the ONE birth every subworld humanoid gets.
         // A squad is not a kind of creature — it is CONTEXT from the map above:
-        // whoever the leader raised, embodied here under the leader's faction.
+        // whoever the avatar raised, embodied here under the avatar's faction.
         // Put a goblin or a dragon in the creatures on the macro layer and that is
         // what walks beside you, drawn from the same table as everything else.
         // Before this, the squad had its own hand-written birth that forgot
@@ -1630,11 +1630,11 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
         // hand — the sheet, the combat template, the hostility from the row, the
         // copied identity — is the one birth now, so a lord and a townsman can
         // no longer differ in anything but what the axis says they differ in.
-        const int leaderSlot =
+        const int avatarSlot =
             spawn_tracked_body(objs, st, macro, fx, fy,
                                seed ^ salt ^ 0x5D0F11u,
                                /*combatant*/false);
-        if (leaderSlot < 0) {
+        if (avatarSlot < 0) {
             continue;   // not a body-shaped macro entity; nothing was created
         }
         ++projected;
@@ -1644,15 +1644,15 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
         //  комментарий здесь это признавал сам — «collects empty and changes
         //  nothing». Вернётся вместе с перк-графом, строками, а не кодом.)
 
-        // The leader's troops. Each creature row is one unit of the squad's
+        // The avatar's troops. Each creature row is one unit of the squad's
         // creatures STOCK made visible: a DERIVED body — the row says WHO stands
         // here, the seed says everything else — wearing the OWNER's faction
         // (the banner rule, spawn.h) and carrying the receipt that pays its
         // death back into the container (macro/macro_stock.h "creatures": subject =
         // the squad's MacroSpawnId ordinal, detail = this member's entityId).
-        // Placed on a tight ring around the leader, dodging water like every
+        // Placed on a tight ring around the avatar, dodging water like every
         // other placement here; a member that finds no land stands ON the
-        // leader's spot rather than being lost. The whole creatures walks in —
+        // avatar's spot rather than being lost. The whole creatures walks in —
         // no ceiling (§42 Инк 6): an army of hundreds meets you as hundreds.
         {
             const auto* mbag = &st.inventory[macro.slot];
@@ -1698,7 +1698,7 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                     : BodyLoan::none();
                 // ONE birth for every member — the sheet-less second birth is
                 // dead: man or beast, the row and level project a sheet through
-                // spawn_derived_body (leader's bonuses applied in it), and every
+                // spawn_derived_body (avatar's bonuses applied in it), and every
                 // body carries the same creatures receipt, so a wolf's death pays
                 // the pack back exactly like a spearman's.
                 spawn_derived_body(objs,

@@ -107,7 +107,7 @@ MacroHandle make_collector(MacroStore& st, int x, int y,
     ecs::Pools pools{};
     refresh_body_from_sheet(
         pools, &rt,
-        make_character_sheet(NPCType::Peasant, 3, leader_sheet_seed(ordinal)),
+        make_character_sheet(NPCType::Peasant, 3, avatar_sheet_seed(ordinal)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     st.runtime[h.slot] = rt;
@@ -119,7 +119,7 @@ MacroHandle make_collector(MacroStore& st, int x, int y,
     h = handle_at(st, h.slot);
     set_relation(st, int(h.id), homeId, Stance::Parent);
     st.sheet[h.slot] = make_character_sheet(
-        NPCType::Peasant, 3, leader_sheet_seed(st.spawnId[h.slot].index));
+        NPCType::Peasant, 3, avatar_sheet_seed(st.spawnId[h.slot].index));
     pools.hp = pools.maxHp = 30;
     st.pools[h.slot] = pools;
     return h;

@@ -56,21 +56,21 @@ Inventory creatures_of(NPCType kind, int level, int n,
 
 // Сид анкеты лидера фикстуры — тот же способ, которым её пишет рождение
 // сквада (`npc_spawn.cpp`: `make_character_sheet(type, lvl,
-// leader_sheet_seed(ordinal))`). У ЛИДЕРА анкета есть, и M-300 её не отменял:
+// avatar_sheet_seed(ordinal))`). У ЛИДЕРА анкета есть, и M-300 её не отменял:
 // отменена анкета ГОЛОВЫ.
-std::uint32_t fixture_leader_seed(NPCType leader) {
-    return 0xABCDu ^ std::uint32_t(leader);
+std::uint32_t fixture_avatar_seed(NPCType avatar) {
+    return 0xABCDu ^ std::uint32_t(avatar);
 }
 
-AutoBattleSide side_of(NPCType leader, int leaderLevel,
+AutoBattleSide side_of(NPCType avatar, int avatarLevel,
                        const Inventory* creatures) {
     AutoBattleSide s{};
-    s.leaderType = leader;
+    s.avatarType = avatar;
     // ЛИСТ ЕДЕТ В СТОРОНЕ (M-300): резолвер его больше не катает, и это
     // половина наряда — лидер обязан судиться ТЕМ листом, который у него
     // есть, а не новым человеком того же рода и ранга.
-    s.leaderSheet = make_character_sheet(leader, leaderLevel,
-                                         fixture_leader_seed(leader));
+    s.avatarSheet = make_character_sheet(avatar, avatarLevel,
+                                         fixture_avatar_seed(avatar));
     s.creatures = creatures;
     return s;
 }
@@ -129,7 +129,7 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
         bodies.push_back(f);
     };
     // Лидер — СВОИМ листом (тем же, которым его судит резолвер).
-    const auto add_leader = [&add_body](const CharacterSheet& sheet,
+    const auto add_avatar = [&add_body](const CharacterSheet& sheet,
                                         NPCType type, float frac, int side) {
         add_body(sheet, type, frac, side);
     };
@@ -142,7 +142,7 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
     const AutoBattleSide* sides[2] = {&a, &b};
     for (int side = 0; side < 2; ++side) {
         const AutoBattleSide& s = *sides[side];
-        add_leader(s.leaderSheet, s.leaderType, s.leaderHealthFraction, side);
+        add_avatar(s.avatarSheet, s.avatarType, s.avatarHealthFraction, side);
         if (s.creatures) {
             // ТЕЛО МАССОВКИ ВНИЗУ — ЭТО ВНИЗ, И M-300 ЕГО НЕ ТРОГАЛ (охват
             // наряда — макро, вердикт владельца 2026-10-21). Сид анкеты тела
@@ -292,7 +292,7 @@ void test_power_grows_with_the_sheet() {
 // (§8 п.6, шестая форма слепоты: тождество двух вычислений с ОДНОЙ формулой
 // слепо к самой формуле). Каждое утверждение ниже — НЕЗАВИСИМО ИЗВЕСТНЫЙ
 // факт мира или ОТНОШЕНИЕ, и каждое было ЛОЖНЫМ до наряда.
-void test_a_head_is_its_row_and_a_leader_is_his_sheet() {
+void test_a_head_is_its_row_and_an_avatar_is_his_sheet() {
     using namespace sm;
 
     // ЯКОРЬ 1 — ЛИНЕЙНОСТЬ. «Десять одинаковых солдат стоят десяти одного» —
@@ -303,9 +303,9 @@ void test_a_head_is_its_row_and_a_leader_is_his_sheet() {
     const auto ten  = creatures_of(NPCType::Guard, 3, 10, 700u);
     AutoBattleSide sOne = side_of(NPCType::Peasant, 1, &one);
     AutoBattleSide sTen = side_of(NPCType::Peasant, 1, &ten);
-    const float leaderOnly = squad_power(side_of(NPCType::Peasant, 1, nullptr));
-    const float headOne = squad_power(sOne) - leaderOnly;
-    const float headTen = squad_power(sTen) - leaderOnly;
+    const float avatarOnly = squad_power(side_of(NPCType::Peasant, 1, nullptr));
+    const float headOne = squad_power(sOne) - avatarOnly;
+    const float headTen = squad_power(sTen) - avatarOnly;
     CHECK(headOne > 0.0f, "одна голова что-то да стоит (иначе якорь слеп)");
     CHECK(std::fabs(headTen - 10.0f * headOne) < 0.01f,
           "ЛИНЕЙНОСТЬ: десять одинаковых голов стоят РОВНО десяти одной — "
@@ -324,7 +324,7 @@ void test_a_head_is_its_row_and_a_leader_is_his_sheet() {
     AutoBattleSide sShifted = side_of(NPCType::Peasant, 1, &shifted);
     // Кролик силы не несёт (ЯКОРЬ 4 ниже), значит сдвинутый состав обязан
     // сойтись с несдвинутым ровно по десяти стражникам.
-    CHECK(std::fabs((squad_power(sShifted) - leaderOnly) - headTen) < 0.01f,
+    CHECK(std::fabs((squad_power(sShifted) - avatarOnly) - headTen) < 0.01f,
           "АДРЕС: тот же состав в других слотах — та же сила");
 
     // ЯКОРЬ 3 — У ОБЪЕКТА НЕТ ВЕТЕРАНОВ (вердикт владельца 2026-10-21).
@@ -342,20 +342,20 @@ void test_a_head_is_its_row_and_a_leader_is_his_sheet() {
     // по адресу у него доходил до 10×.
     const auto herd = creatures_of(NPCType::Rabbit, 3, 50, 700u);
     AutoBattleSide sHerd = side_of(NPCType::Peasant, 1, &herd);
-    CHECK(squad_power(sHerd) == leaderOnly,
+    CHECK(squad_power(sHerd) == avatarOnly,
           "СТРОКА БЕЗ КОСТЕЙ: пятьдесят кроликов добавляют НОЛЬ силы");
 
     // ЯКОРЬ 5 — ДВЕРИ РАЗНЫЕ. Лидер строки Guard и голова строки Guard при
     // одном уровне стоят РАЗНОГО: у лидера есть анкета, у головы нет.
     const auto oneGuard = creatures_of(NPCType::Guard, 3, 1, 700u);
-    const float asLeader =
+    const float asAvatar =
         squad_power(side_of(NPCType::Guard, 3, nullptr));
     const float asHead =
-        squad_power(side_of(NPCType::Peasant, 1, &oneGuard)) - leaderOnly;
-    CHECK(asLeader != asHead,
+        squad_power(side_of(NPCType::Peasant, 1, &oneGuard)) - avatarOnly;
+    CHECK(asAvatar != asHead,
           "ДВЕ ДВЕРИ: та же строка стоит разного лидером и головой — "
           "анкета есть ровно у одного из них");
-    CHECK(asLeader > asHead,
+    CHECK(asAvatar > asHead,
           "и лидер дороже: обученная анкета поднимает его потолок и удар");
 
     // ЯКОРЬ 6 — ЛИДЕР СУДИТСЯ СВОИМ ЛИСТОМ, И ЭТО НЕДОВЕЗЁННАЯ ПОЛОВИНА
@@ -366,11 +366,11 @@ void test_a_head_is_its_row_and_a_leader_is_his_sheet() {
     const auto band = creatures_of(NPCType::Guard, 3, 3, 700u);
     const float plain = squad_power(side_of(NPCType::Guard, 3, &band));
     AutoBattleSide grown = side_of(NPCType::Guard, 3, &band);
-    grown.leaderSheet.attributes[AttributeId::End] += 20;
+    grown.avatarSheet.attributes[AttributeId::End] += 20;
     CHECK(squad_power(grown) > plain,
           "ЛИСТ ЛИДЕРА ЧИТАЕТСЯ: поднятый END двигает силу сквада");
     AutoBattleSide trained = side_of(NPCType::Guard, 3, &band);
-    trained.leaderSheet.attributes[AttributeId::Str] += 20;
+    trained.avatarSheet.attributes[AttributeId::Str] += 20;
     CHECK(squad_power(trained) > plain,
           "и STR тоже — читается АНКЕТА, а не одна её колонка");
 }
@@ -390,8 +390,8 @@ void test_a_clear_advantage_cannot_be_rolled_away() {
         if (o.winner == 0) ++strongWins;
         if (int(o.casualtiesB.size()) * 2 >= creature_count(weakR))
             ++loserBled;
-        CHECK(o.leaderFractionA > 0.0f,
-              "a winner's leader limps out - only a broken side can lose its head");
+        CHECK(o.avatarFractionA > 0.0f,
+              "a winner's avatar limps out - only a broken side can lose its head");
     }
     CHECK(strongWins == 32, "bounded fortune cannot flip a clear advantage");
     CHECK(loserBled == 32, "a broken side loses most of its men, every time");
@@ -405,15 +405,15 @@ void test_a_clear_advantage_cannot_be_rolled_away() {
     CHECK(o1.winner == o2.winner
               && o1.casualtiesA == o2.casualtiesA
               && o1.casualtiesB == o2.casualtiesB
-              && o1.leaderFractionA == o2.leaderFractionA
-              && o1.leaderFractionB == o2.leaderFractionB,
+              && o1.avatarFractionA == o2.avatarFractionA
+              && o1.avatarFractionB == o2.avatarFractionB,
           "same inputs, same seed, same battle - resumable and testable");
 }
 
-// Owner ruling (2026-08-06): a leader's head is never given to chance. He
+// Owner ruling (2026-08-06): a avatar's head is never given to chance. He
 // dies in an auto-battle ONLY when he lost AND his whole creatures died with
 // him; while one of his men still stands, defeat costs him HP — above zero.
-void test_a_leaders_head_is_never_given_to_chance() {
+void test_an_avatars_head_is_never_given_to_chance() {
     using namespace sm;
     const auto strongR = creatures_of(NPCType::Guard, 5, 8, 100u);
     const auto weakR   = creatures_of(NPCType::Peasant, 1, 6, 200u);
@@ -429,18 +429,18 @@ void test_a_leaders_head_is_never_given_to_chance() {
         const bool wiped =
             int(o.casualtiesB.size()) >= creature_count(weakR);
         if (wiped) {
-            CHECK(o.leaderFractionB == 0.0f,
+            CHECK(o.avatarFractionB == 0.0f,
                   "a loser with no men left falls with the last of them");
             ++checkedDead;
         } else {
-            CHECK(o.leaderFractionB > 0.0f,
-                  "while one of his men stands, defeat wounds the leader - "
+            CHECK(o.avatarFractionB > 0.0f,
+                  "while one of his men stands, defeat wounds the avatar - "
                   "it never kills him");
             ++checkedAlive;
         }
     }
     CHECK(checkedAlive + checkedDead == 64,
-          "every resolved battle judged the leader rule");
+          "every resolved battle judged the avatar rule");
 
     // A squad of one is its own whole creatures: a lone loser has nobody left
     // to stand between him and the field.
@@ -448,7 +448,7 @@ void test_a_leaders_head_is_never_given_to_chance() {
     const AutoBattleSide lone = side_of(NPCType::Peasant, 1, nullptr);
     const AutoBattleOutcome o =
         resolve_auto_battle(strong, lone, Ambush::None, rng);
-    CHECK(o.winner == 0 && o.leaderFractionB == 0.0f,
+    CHECK(o.winner == 0 && o.avatarFractionB == 0.0f,
           "a beaten squad of one is gone from the map, by the same rule");
 }
 
@@ -562,9 +562,9 @@ void test_auto_and_fought_agree() {
 
 int main() {
     test_power_grows_with_the_sheet();
-    test_a_head_is_its_row_and_a_leader_is_his_sheet();
+    test_a_head_is_its_row_and_an_avatar_is_his_sheet();
     test_a_clear_advantage_cannot_be_rolled_away();
-    test_a_leaders_head_is_never_given_to_chance();
+    test_an_avatars_head_is_never_given_to_chance();
     test_context_tips_the_scales();
     test_auto_and_fought_agree();
     return sm::test::report("auto_battle_test");

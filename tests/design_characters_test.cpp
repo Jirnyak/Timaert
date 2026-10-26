@@ -209,7 +209,7 @@ void test_snapshot_carries_the_ordinal() {
     // Обычный сквад рядом — негативный контроль на −1. Через ту же одну
     // дверь создания (spawn_squad → make_npc).
     SquadSpec plain{};
-    plain.leaderType = NPCType::Bandit;
+    plain.avatarType = NPCType::Bandit;
     plain.x = 30;
     plain.y = 30;
     plain.factionIndex = faction_index("bandits");

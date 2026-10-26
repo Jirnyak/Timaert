@@ -381,7 +381,7 @@ void test_one_door_assembles_every_battle_side() {
     // ПОСТАВЛЕНО, что оно не равно игроковому и что оно растёт от END. Все
     // три были ПРАВДОЙ — и поверх ЖИВОГО дефекта: это поле НИКТО НЕ ЧИТАЛ.
     // Гейт `squad_power` требовал ОБА оверрайда, а второй
-    // (`leaderDpsOverride`) ставил ровно один сайт в игре — игрок, — значит
+    // (`avatarDpsOverride`) ставил ровно один сайт в игре — игрок, — значит
     // у каждого НПЦ ветка уходила в перекат листа из (строка, уровень, сид),
     // и выросшая или табличная анкета в бою не участвовала вовсе. Замер
     // headless-мира назвал дыру числом: 1 088 038 постановок за игровой
@@ -412,7 +412,7 @@ void test_one_door_assembles_every_battle_side() {
     CHECK(squad_power(auto_battle_side_of(*wStore_, transient))
               > squad_power(tougher),
           "и STR тоже: читается ЛИСТ, а не одна его колонка");
-    CHECK(mine.leaderHealthFraction > 0.45f && mine.leaderHealthFraction < 0.55f,
+    CHECK(mine.avatarHealthFraction > 0.45f && mine.avatarHealthFraction < 0.55f,
           "his wound walks in with him, read off the entity the merge made "
           "honest");
     CHECK(mine.fatigue > 0.2f && mine.fatigue < 0.3f,
@@ -423,8 +423,8 @@ void test_one_door_assembles_every_battle_side() {
 
 // ── 8. Его рана оседает через ту же дверь ────────────────────────────────
 // The last of the four player-specific battle paths: `settle_player_auto_battle`
-// used to do the leader-wound arithmetic itself, in three lines that read
-// PlayerState's ceiling while `settle_leader_fraction` read the entity's — two
+// used to do the avatar-wound arithmetic itself, in three lines that read
+// PlayerState's ceiling while `settle_avatar_fraction` read the entity's — two
 // copies of one sum, free to round differently about one man.
 void test_the_players_wound_settles_through_the_one_door() {
     GameState gs{};
@@ -444,8 +444,8 @@ void test_the_players_wound_settles_through_the_one_door() {
 
     AutoBattleOutcome o{};
     o.winner = 0;                 // the player's side takes it
-    o.leaderFractionA = 0.5f;     // ...limping
-    o.leaderFractionB = 0.0f;
+    o.avatarFractionA = 0.5f;     // ...limping
+    o.avatarFractionB = 0.0f;
     for (const CreatureRef r :
          creatures_range(wStore_->inventory[foe.slot].inv)) {
         o.casualtiesB.push_back(make_soldier(r.kind, r.level, r.entityId));

@@ -122,13 +122,13 @@ void write_population(MacroWorld& w, MacroStockKey k, int delta) {
 }
 
 // ── creatures: the members of a squad standing on the map ─────────────────────
-// The squad IS its leader entity (ecs::SquadUpkeep doctrine), so the subject
+// The squad IS its avatar entity (ecs::SquadUpkeep doctrine), so the subject
 // of this row is the squad's save-stable MacroSpawnId ordinal — the one
 // identity that survives the ECS never being serialized — and `detail` names
 // the member (SoldierRecord::entityId, compared as a bit pattern because ids
 // may use the high bit). This is what makes "a squad cannot hold zero members"
 // a consequence instead of a special case: members die through this row, the
-// leader dies through the tracked-body path, and a Dead leader with an empty
+// avatar dies through the tracked-body path, and a Dead avatar with an empty
 // creatures simply is no squad any more — nothing extra removes it.
 // Слияние M-71: члены сквада живут в области существ ЕДИНОГО контейнера
 // (NpcInventory), обвязка счетов (SquadUpkeep) им больше не дом.

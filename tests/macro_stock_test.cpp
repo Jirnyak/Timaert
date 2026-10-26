@@ -296,7 +296,7 @@ void test_malformed_receipts_do_nothing() {
 
 // ── The creature row: a squad's members are a stock like anyone else ─────────
 
-// One squad the way the overworld shapes them: the entity IS the leader, the
+// One squad the way the overworld shapes them: the entity IS the avatar, the
 // ordinal is its save-stable name, the creatures holds everyone else.
 sm::MacroHandle make_squad(sm::MacroStore& st, std::uint32_t ordinal,
                            std::initializer_list<std::uint32_t> memberIds) {
@@ -424,7 +424,7 @@ void test_the_fallen_squads_creatures_die() {
     CHECK(macro_stock_read(w, MacroStock::Creatures, MacroStockKey{10, 0, 0}) == 0,
           "контейнер павшего пуст: платить второй раз не из чего");
     CHECK(macro_stock_read(w, MacroStock::Creatures, MacroStockKey{11, 0, 0}) == 1,
-          "a live leader keeps his men");
+          "a live avatar keeps his men");
 
     CHECK(kill_fallen_squad_creatures(*worldStore_, gs, sink, &tally)
                   == 0

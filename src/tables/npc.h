@@ -306,7 +306,7 @@ struct NpcTypeDef {
     // существа вообще не должно быть фракции»). Faction is an INSTANCE
     // property (ecs::NPCKind.factionIdx), assigned at birth by the SPAWNER's
     // context, and the ladder is ONE rung high (M-39): a place's crowd and
-    // garrison wear THAT PLACE's own factionIdx, a squad wears its leader's,
+    // garrison wear THAT PLACE's own factionIdx, a squad wears its avatar's,
     // and everything the LAND rolls wears this row's wildFaction column
     // (macro/fauna.cpp). The same wolf can be wildlife in a meadow or the
     // player's own; what it can no longer be is a demon because the KIND of

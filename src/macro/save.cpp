@@ -599,8 +599,8 @@ void read_spell_book(Reader& r, SpellBook& spellBook) {
 // change and pays a kSaveVersion bump, the same discipline Skills already
 // lives under.
 void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
-    // A macro entity may be a man or a beast: the leader of a wolf pack is a
-    // squad leader like any lord (CANON.md S4/S16). What is refused is a kind
+    // A macro entity may be a man or a beast: the avatar of a wolf pack is a
+    // squad avatar like any lord (CANON.md S4/S16). What is refused is a kind
     // that names NO row at all — that is a corrupt entity, not a monster.
     if (!valid_npc_kind(m.kind.type)) {
         w.ok = false;

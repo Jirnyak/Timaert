@@ -97,7 +97,7 @@ World make_world() {
     rt.squadType = std::uint8_t(SquadType::Artel);
     st.runtime[h.slot] = rt;
     st.sheet[h.slot] = make_character_sheet(NPCType::Peasant, 3,
-                                            leader_sheet_seed(7u));
+                                            avatar_sheet_seed(7u));
     ecs::Pools pools{};
     refresh_body_from_sheet(pools, &st.runtime[h.slot], st.sheet[h.slot],
                             NPCType::Peasant);

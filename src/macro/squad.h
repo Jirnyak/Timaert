@@ -1,6 +1,6 @@
 // Squad lifecycle helpers — the macro side of "THE macro entity is a squad"
-// (CANON S4/S13 (бывший macrosim.md), ecs::SquadUpkeep doctrine). The squad IS its leader entity;
-// what lives here is what happens to the creatures around the leader's own
+// (CANON S4/S13 (бывший macrosim.md), ecs::SquadUpkeep doctrine). The squad IS its avatar entity;
+// what lives here is what happens to the creatures around the avatar's own
 // life and death. Header-only: pure ECS + army.h record moves, no engine,
 // no renderer, so every layer (subworld leave, the coming auto-resolve,
 // tests) settles squads through the same functions.
@@ -39,14 +39,14 @@ namespace sm {
 // rescale for all three bars of every body — before that the player's
 // ceilings moved by «keep the number, clamp» in one place and a full heal in
 // another, while the lord's kept the fraction: three laws for one event.
-// The KIND is required, not defaulted: the back this leader hauls with is a
+// The KIND is required, not defaulted: the back this avatar hauls with is a
 // column of his row (npc.h NpcTypeDef::haulMult), and a default of "a person"
 // would be silently wrong for exactly the rows that matter — a caravan given a
 // man's shoulders is a caravan that can no longer afford to travel. A missing
 // argument should be a compile error, not a stranded trade route.
 // `standing` — what stands on the body beyond its sheet (worn Derived rows:
 // MovePct, CarryKg — bonus.h affix tail). nullptr = nothing stands, which is
-// every leader until macro NPCs wear gear; the sheet passed in is already the
+// every avatar until macro NPCs wear gear; the sheet passed in is already the
 // EFFECTIVE one, so only the derived cells are read from it here.
 // `pools` is the body whose bars this sheet caps: the ceiling and the value
 // it caps must be refreshed by one door, or `maxSp` drifts away from the `sp`
@@ -508,7 +508,7 @@ inline int kill_fallen_squad_creatures(MacroStore& st, GameState& gs,
 // безусловно, и вопрос «остался ли труп с людьми» миру не задаётся.)
 
 // ── The END of a dead squad's story (CANON S4, canon audit 2026-08-29) ────
-// «Убили всех — сквада на карте нет». A tracked death marks the leader
+// «Убили всех — сквада на карте нет». A tracked death marks the avatar
 // entity Dead (the subworld reaper, the auto-resolve, the exhaustion bite)
 // and the drain above moves his men to the deserter pool — but nothing ever
 // DESTROYED the entity: the corpse-row lived in the ECS and rode every save
@@ -700,7 +700,7 @@ inline CharacterSheet* owned_sheet(MacroStore& st, MacroHandle h) {
 // — «владеет ли сквад своим листом», то есть надо ли писать в него рост.
 inline CharacterSheet sheet_of(const MacroStore& st, MacroHandle h) {
     if (!st.valid(h))
-        return make_character_sheet(NPCType::Peasant, 1, leader_sheet_seed(0));
+        return make_character_sheet(NPCType::Peasant, 1, avatar_sheet_seed(0));
     return st.sheet[h.slot];
 }
 
@@ -928,16 +928,16 @@ inline std::uint32_t record_place_fact(MacroStore& st, GameState& gs,
 // Assemble one resolver side from a live macro squad entity. Everything the
 // side needs is read from the entity — the same components every other
 // consumer reads — so the resolver and the subworld can never disagree about
-// what a squad IS. The leader's sheet seed is derived from his save-stable
+// what a squad IS. The avatar's sheet seed is derived from his save-stable
 // ordinal: the macro layer never stored his birth sheet seed, and both body
 // births already re-derive sheets from their own context seeds, so the
 // fraction-based wound law is what keeps the layers agreeing (sub/spawn.h).
-// A leader whose sheet is AUTHORED rather than rolled — a named character
+// A avatar whose sheet is AUTHORED rather than rolled — a named character
 // with an OWNED component (посадка А/Б) — fights with his own build: the
 // component is read right here, so the player and every named lord get it
-// through one line and no caller can forget to pass it. A transient leader
+// through one line and no caller can forget to pass it. A transient avatar
 // has no component and the row is derived from (type, level, seed) inside
-// the resolver, as a generic leader's always was.
+// the resolver, as a generic avatar's always was.
 //
 // (The `storedSheet` parameter this replaced is what killed the twin: the
 // app used to assemble the player's side by hand in
@@ -950,7 +950,7 @@ inline AutoBattleSide auto_battle_side_of(const MacroStore& st, MacroHandle h) {
     AutoBattleSide s{};
     if (!st.valid(h)) return s;
     const std::uint16_t slot = h.slot;
-    s.leaderType = squad_row_type(st, slot);
+    s.avatarType = squad_row_type(st, slot);
     // ЧТО СКВАД ДЕЛАЕТ — КОЛОНКА ЕГО СТРОКИ, и резолвер спрашивает ею ровно
     // один вопрос: есть ли у рода АВАТАР, чей лист вправе добавить силы
     // (`squad_has_avatar@src/tables/squad_type.h`; вердикт владельца
@@ -960,7 +960,7 @@ inline AutoBattleSide auto_battle_side_of(const MacroStore& st, MacroHandle h) {
     s.type = SquadType(st.runtime[slot].squadType);
     {
         const ecs::Pools& hp = st.pools[slot];
-        s.leaderHealthFraction = hp.maxHp > 0
+        s.avatarHealthFraction = hp.maxHp > 0
             ? std::clamp(float(hp.hp) / float(hp.maxHp), 0.0f, 1.0f) : 1.0f;
         // sp may be a NEGATIVE debt (exhaustion); the 0.1 floor already
         // says "a squad never fights at literal zero". Same block as the
@@ -987,27 +987,27 @@ inline AutoBattleSide auto_battle_side_of(const MacroStore& st, MacroHandle h) {
     // лист, которым его судит очный бой, обязан судить и авторезолв, иначе
     // два исполнения одного закона боя расходятся (CANON S13).
     //
-    // `leaderDpsOverride` по-прежнему НЕ ставится: удар оценивает ближняя
+    // `avatarDpsOverride` по-прежнему НЕ ставится: удар оценивает ближняя
     // идентичность субмира (sub/engine.h), а макро — L1 и наверх не тянется.
     // Это говорит звонящий, который знает оба мира.
     //
     // ЛИСТ ЕДЕТ ЦЕЛИКОМ, А НЕ ОДНИМ ПОТОЛКОМ (M-300, 2026-10-21). Здесь
     // стояло `s.leaderHpOverride = body_max_hp(eff, …)` — ОДНО число из
     // листа, — и оно НЕ ЧИТАЛОСЬ НИКОМУ: гейт `squad_power` требовал ОБА
-    // оверрайда, а второй (`leaderDpsOverride`) ставит ровно один сайт в
+    // оверрайда, а второй (`avatarDpsOverride`) ставит ровно один сайт в
     // игре — игрок. Замер headless-мира назвал дыру числом: 1 088 038
     // постановок за игровой день, попаданий в ветку — 0, то есть
     // эффективный лист считался миллион раз в день и выбрасывался, а
     // авторезолв судил лидера ПЕРЕКАТАННЫМ генерик-листом. Это и была
     // недовезённая половина M-282: его свидетель утверждал, что поле
     // ПОСТАВЛЕНО, и ни одна строка не утверждала, что его кто-то ЧИТАЕТ
-    // (§8 п.6). Теперь едет сама анкета, и `leader_power` читает её всегда —
+    // (§8 п.6). Теперь едет сама анкета, и `avatar_power` читает её всегда —
     // «тот же лист, которым его судит очный бой, обязан судить и
     // авторезолв» (CANON S13) стало правдой, а не обещанием.
     //
     // Вместе с потолком умерли `leaderLevel` и `leaderSeed` выше: они
     // существовали РОВНО затем, чтобы резолвер катал лист заново.
-    s.leaderSheet = effective_sheet_of(st, h);
+    s.avatarSheet = effective_sheet_of(st, h);
     return s;
 }
 
@@ -1250,13 +1250,13 @@ inline const char* squad_faction_id(const MacroStore& st, MacroHandle h) {
 // контексту (дыра названа в M-139).
 
 // Every death this side suffered, told once: the creature rows by their fallen
-// records and the leader by his entity. The casualty coin carries its own
+// records and the avatar by his entity. The casualty coin carries its own
 // kind and level (CANON S4) — no creatures scan; the resolver drew these FROM
 // the creatures, and a generic record has no id a scan could match anyway.
 inline void report_battle_deaths(const MacroWorld& mw, const MacroStore& st,
                                  MacroHandle side,
                                  const std::vector<SoldierRecord>& casualties,
-                                 bool leaderFell, MacroHandle killer) {
+                                 bool avatarFell, MacroHandle killer) {
     if (!mw.facts) return;
     const char* factionId = squad_faction_id(st, side);
     for (const SoldierRecord& r : casualties) {
@@ -1265,7 +1265,7 @@ inline void report_battle_deaths(const MacroWorld& mw, const MacroStore& st,
                      std::int32_t(r.entityId),
                      normalize_soldier_level(r.level), factionId);
     }
-    if (leaderFell) {
+    if (avatarFell) {
         report_death(mw,
                      st.valid(side) ? st.kind[side.slot].type
                                     : std::uint16_t(0),
@@ -1299,11 +1299,11 @@ inline void settle_squad_casualties(GameState& gs,
     }
 }
 
-// A leader's post-battle fraction lands in the macro Health; zero is the
+// A avatar's post-battle fraction lands in the macro Health; zero is the
 // tracked-death shape (hp=0 + Dead), the same mark the subworld reaper
 // leaves — so an auto-battle death and a fought death are indistinguishable
 // to everything upstream.
-inline void settle_leader_fraction(MacroStore& st, MacroHandle h,
+inline void settle_avatar_fraction(MacroStore& st, MacroHandle h,
                                    float fraction) {
     if (!st.valid(h)) return;
     ecs::Pools& hp = st.pools[h.slot];
@@ -1317,17 +1317,17 @@ inline void settle_leader_fraction(MacroStore& st, MacroHandle h,
 
 // What the fallen of `loser` are worth, through the ONE reward law. Read
 // BEFORE the deaths settle — the reward needs the rows, settling removes
-// them. Includes the leader's own worth when the outcome killed him.
+// them. Includes the avatar's own worth when the outcome killed him.
 inline int xp_for_fallen(const MacroStore& st, MacroHandle loser,
                          const std::vector<SoldierRecord>& casualties,
-                         bool leaderFell) {
+                         bool avatarFell) {
     int xp = 0;
     for (const SoldierRecord& r : casualties) {
         if (!valid_npc_kind(r.kind)) continue;
         xp += npc_xp_reward(NPCType(r.kind),
                             normalize_soldier_level(r.level));
     }
-    if (leaderFell && st.valid(loser)
+    if (avatarFell && st.valid(loser)
         && st.kind[loser.slot].type < std::uint16_t(NPCType::Count)) {
         xp += npc_xp_reward(
             NPCType(std::uint8_t(st.kind[loser.slot].type)),
@@ -1374,9 +1374,9 @@ inline void loot_fallen_owner(MacroStore& st, MacroHandle fallen,
 //     owner's ruling): the record hatred, revenge quests and the danger
 //     term of the refusal price all READ instead of keeping counters.
 inline std::int32_t battle_dead(const std::vector<SoldierRecord>& casualties,
-                                float leaderFraction) {
+                                float avatarFraction) {
     return std::int32_t(casualties.size())
-           + (leaderFraction <= 0.0f ? 1 : 0);
+           + (avatarFraction <= 0.0f ? 1 : 0);
 }
 
 inline void record_battle_facts(MacroStore& st, GameState& gs,
@@ -1430,10 +1430,10 @@ inline void record_battle_facts(MacroStore& st, GameState& gs,
 }
 
 // Settle a resolved AI↔AI auto-battle — the composition of the halves
-// above: deaths by name, leader fractions, spoils to the victor when the
-// owner fell (a caravan raid PAYS), survivors of a dead leader into the
+// above: deaths by name, avatar fractions, spoils to the victor when the
+// owner fell (a caravan raid PAYS), survivors of a dead avatar into the
 // deserter pool (the auto-battle IS the whole fight, so its end is here),
-// and the winner's leader paid XP through the one reward law.
+// and the winner's avatar paid XP through the one reward law.
 inline void settle_auto_battle(const MacroWorld& mw,
                                MacroHandle ha, MacroHandle hb,
                                const AutoBattleOutcome& o) {
@@ -1443,19 +1443,19 @@ inline void settle_auto_battle(const MacroWorld& mw,
     const MacroHandle loser  = o.winner == 0 ? hb : ha;
     const auto& loserCasualties = o.winner == 0 ? o.casualtiesB
                                                 : o.casualtiesA;
-    const float loserFraction = o.winner == 0 ? o.leaderFractionB
-                                              : o.leaderFractionA;
+    const float loserFraction = o.winner == 0 ? o.avatarFractionB
+                                              : o.avatarFractionA;
 
     int xp = xp_for_fallen(st, loser, loserCasualties, loserFraction <= 0.0f);
     report_battle_deaths(mw, st, ha, o.casualtiesA,
-                         o.leaderFractionA <= 0.0f, hb);
+                         o.avatarFractionA <= 0.0f, hb);
     report_battle_deaths(mw, st, hb, o.casualtiesB,
-                         o.leaderFractionB <= 0.0f, ha);
+                         o.avatarFractionB <= 0.0f, ha);
 
     settle_squad_casualties(gs, st, ha, o.casualtiesA);
     settle_squad_casualties(gs, st, hb, o.casualtiesB);
-    settle_leader_fraction(st, ha, o.leaderFractionA);
-    settle_leader_fraction(st, hb, o.leaderFractionB);
+    settle_avatar_fraction(st, ha, o.avatarFractionA);
+    settle_avatar_fraction(st, hb, o.avatarFractionB);
 
     if (macro_dead(st, loser) && st.valid(winner)) {
         loot_fallen_owner(st, loser, st.inventory[winner.slot].inv);
@@ -1471,12 +1471,12 @@ inline void settle_auto_battle(const MacroWorld& mw,
                         battle_dead(loserCasualties, loserFraction),
                         battle_dead(o.winner == 0 ? o.casualtiesA
                                                   : o.casualtiesB,
-                                    o.winner == 0 ? o.leaderFractionA
-                                                  : o.leaderFractionB));
+                                    o.winner == 0 ? o.avatarFractionA
+                                                  : o.avatarFractionB));
 }
 
 // Settle the PLAYER's auto-resolve against a macro squad (Inc 6 — the M&B
-// button). The player is the same shape as any leader — and «the player» is
+// button). The player is the same shape as any avatar — and «the player» is
 // the FLAG record (A3, 2026-09-17): the man he is on the map, his own squad
 // as himself, the worn lord's while he wears one. Until then the sheet
 // priced the fight by the flag while creatures, wound and facts settled into
@@ -1497,9 +1497,9 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     const auto& playerCas = playerIsA ? o.casualtiesA : o.casualtiesB;
     const auto& enemyCas  = playerIsA ? o.casualtiesB : o.casualtiesA;
     const float playerFraction =
-        playerIsA ? o.leaderFractionA : o.leaderFractionB;
+        playerIsA ? o.avatarFractionA : o.avatarFractionB;
     const float enemyFraction =
-        playerIsA ? o.leaderFractionB : o.leaderFractionA;
+        playerIsA ? o.avatarFractionB : o.avatarFractionA;
     const bool playerWon = (o.winner == 0) == playerIsA;
     // «Игрок» — запись ФЛАЖКА (A3): его хэндл — биты GameState (1е кл.5).
     const MacroHandle playerH = player_flag_handle(gs);
@@ -1520,13 +1520,13 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     // hand-written removal that used to stand here was one of the four
     // player-specific paths.
     settle_squad_casualties(gs, st, playerH, playerCas);
-    // His wound settles through THE door every leader's does
-    // (settle_leader_fraction), not through a second copy of the same three
+    // His wound settles through THE door every avatar's does
+    // (settle_avatar_fraction), not through a second copy of the same three
     // lines of arithmetic — and it lands in THE store (his squad's Pools),
     // because since landing 4 there is nowhere else for a bar to live. The
     // back-copy onto PlayerState that used to follow this call was the last
     // breath of the two-store era.
-    settle_leader_fraction(st, playerH,
+    settle_avatar_fraction(st, playerH,
                            std::clamp(playerFraction, 0.0f, 1.0f));
 
     // The enemy's dead are FACTS, and killing them has a PRICE — the same two
@@ -1551,7 +1551,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     // не роняют ничего.
 
     settle_squad_casualties(gs, st, enemy, enemyCas);
-    settle_leader_fraction(st, enemy, enemyFraction);
+    settle_avatar_fraction(st, enemy, enemyFraction);
     if (playerWon && macro_dead(st, enemy)) {
         loot_fallen_owner(st, enemy, *playerBag);
     }

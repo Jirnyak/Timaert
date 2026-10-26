@@ -127,12 +127,12 @@ inline MacroHandle birth_place(GameState& gs, MacroStore& st, SquadType kind,
     //  · `auto_battle_side_of@src/macro/squad.h` считал бестелесному
     //    `fatigue = clamp(sp/max(1,maxSp), 0.1, 1)` = 0.1 — КАЖДЫЙ ГОРОД
     //    МИРА ДРАЛСЯ НА 10 % СИЛЫ, и это следствие нулей, а не вердикт;
-    //  · там же `leaderHealthFraction` при `maxHp == 0` отдавал 1.0 —
+    //  · там же `avatarHealthFraction` при `maxHp == 0` отдавал 1.0 —
     //    ложная единица «полностью здоров» поверх hp = 0;
     //  · сила места была НЕМОНОТОННА по успеху: первый же поднятый уровень
     //    делал долю здоровья `0/maxHp` = 0, и лидерский вклад ИСЧЕЗАЛ —
     //    город, выигравший бой, слабел;
-    //  · `settle_leader_fraction@src/macro/squad.h` при `maxHp == 0` звал
+    //  · `settle_avatar_fraction@src/macro/squad.h` при `maxHp == 0` звал
     //    `std::clamp(0, 1, 0)` — lo > hi, UB по стандарту, достижимое из
     //    автобоя.
     //
@@ -145,7 +145,7 @@ inline MacroHandle birth_place(GameState& gs, MacroStore& st, SquadType kind,
     // дверь ПЕРЕСБОРКИ (рост уровня, смена снаряжения), и у новорождённого
     // ей нечего снимать: его гир только что обнулён `store_birth`, а шапка
     // самого примитива говорит про `standing` прямо — «nullptr = nothing
-    // stands, which is every leader until macro NPCs wear gear».
+    // stands, which is every avatar until macro NPCs wear gear».
     // И обёртка здесь НЕ ПРОСТО ИЗБЫТОЧНА — ОНА НЕ ЛИНКУЕТСЯ: её цепь
     // (`standing_bonuses_of` → `worn_bonuses`) живёт в .cpp, и ровно об этом
     // предупреждает шапка этого файла («рождению тела места хватает

@@ -124,8 +124,8 @@ MacroHandle make_npc(MacroStore& st, NPCType type,
     rt.visualSpeed        = 0.0f;
     rt.tickAccum          = std::uint32_t(rng.next_int(0, int(kAiTicks)));  // de-sync
     // The march caches (maxSp/travel/marathon/pace) come from the ORDINAL
-    // sheet — the one every other consumer of "the leader as a sheet" derives
-    // (leader_sheet_seed: auto-resolve, level-up recompute) — NOT from the
+    // sheet — the one every other consumer of "the avatar as a sheet" derives
+    // (avatar_sheet_seed: auto-resolve, level-up recompute) — NOT from the
     // birth sheet above, whose seed is an unstored RNG draw. The two sheets
     // differ by seed only; hp stays with the birth sheet so the boot RNG
     // stream and every world stays byte-identical, and cross-layer state
@@ -142,7 +142,7 @@ MacroHandle make_npc(MacroStore& st, NPCType type,
     ecs::Pools pools{};
     refresh_body_from_sheet(
         pools, &rt,
-        make_character_sheet(type, lvl, leader_sheet_seed(ordinal)), type);
+        make_character_sheet(type, lvl, avatar_sheet_seed(ordinal)), type);
     pools.hp = pools.maxHp = hp;
     pools.mp = pools.maxMp = body_max_mp(sheet, npc_def(type).combat);
     pools.sp = pools.maxSp;   // born rested
@@ -158,10 +158,10 @@ MacroHandle make_npc(MacroStore& st, NPCType type,
     // на каждое чтение (sheet_of): хранение с рождения = байт в байт то же
     // поведение, дуализм owned/derived умер здесь.
     st.sheet[h.slot] =
-        make_character_sheet(type, lvl, leader_sheet_seed(ordinal));
+        make_character_sheet(type, lvl, avatar_sheet_seed(ordinal));
 
     // Every macro entity IS a squad; born alone, it is a squad of one and its
-    // own leader (ecs::SquadUpkeep doctrine). Draws no RNG — streams untouched.
+    // own avatar (ecs::SquadUpkeep doctrine). Draws no RNG — streams untouched.
     // Creatures/память/книга/приказы/гир/тег-анкеты/судьба уже обнулены
     // рождением слота (store_birth, единый X-список колонок).
     //
@@ -559,16 +559,16 @@ MacroHandle spawn_squad(GameState& gs, MacroStore& store,
             ? settlement_faction_index(store, home.slot)
             : faction_index_for_cell(gs.cellOwner, gs.mapW, gs.mapH, p.x, p.y);
 
-    const MacroHandle leader =
-        make_npc(store, spec.leaderType, f, p.x, p.y, gs.mapW,
+    const MacroHandle avatar =
+        make_npc(store, spec.avatarType, f, p.x, p.y, gs.mapW,
                  spec.parentId, rng,
-                 spec.leaderLevel);
-    if (!store.valid(leader)) return {};
+                 spec.avatarLevel);
+    if (!store.valid(avatar)) return {};
 
     // The creature rows — through the same append every other producer uses:
     // души встают в область существ ЕДИНОГО контейнера лидера (M-71),
     // генерик-заявка — стаком, душа с историей — записью.
-    auto& bag = store.inventory[leader.slot];
+    auto& bag = store.inventory[avatar.slot];
     for (const SquadSpecMembers::Stack& st : spec.members) {
         if (!valid_npc_kind(st.rec.kind)) continue;
         const bool ok = st.rec.entityId == 0
@@ -593,9 +593,9 @@ MacroHandle spawn_squad(GameState& gs, MacroStore& store,
         orders.waypointCount = std::uint8_t(
             std::min<int>(spec.waypointCount, 8));
         orders.waypoints = spec.waypoints;
-        store.orders[leader.slot] = orders;
+        store.orders[avatar.slot] = orders;
     }
-    return leader;
+    return avatar;
 }
 
 

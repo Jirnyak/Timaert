@@ -304,18 +304,18 @@ static bool smoke_possess_via_spell(App& app, int targetSlot) {
 // Возвращает лидера (сквад ЕСТЬ его лидер) хэндлом; «никого» — невалидный
 // хэндл (6.2: свидетели держат запись store, не entt-мост).
 static sm::MacroHandle smoke_birth_squad_at_player(App& app,
-                                                   sm::NPCType leader,
+                                                   sm::NPCType avatar,
                                                    int factionIndex) {
     if (app.subworld.active()) return {};   // рождение — макро-дело
     sm::SquadSpec spec{};
-    spec.leaderType = leader;
-    spec.leaderLevel = 3;
+    spec.avatarType = avatar;
+    spec.avatarLevel = 3;
     spec.x = int(smoke_player_x(app));
     spec.y = int(smoke_player_y(app));
     spec.factionIndex = factionIndex;
     // Фикстурный id души: ни один из этих сценариев не спрашивает о личности
     // рядового, поэтому он один на все рождения.
-    spec.members.push(sm::make_soldier(std::uint8_t(leader), 2, 0x50000001u));
+    spec.members.push(sm::make_soldier(std::uint8_t(avatar), 2, 0x50000001u));
     const sm::MacroHandle h = sm::spawn_squad(
         app.gs, *app.macroStore, app.terrain, spec);
     if (!app.macroStore->valid(h)) return {};
@@ -2425,7 +2425,7 @@ bool run_macro_npc_trace_smoke(App& app) {
     cell.idx = sm::ecs::cell_index(baseX, baseY, app.gs.mapW);
     stt.sub[traceH.slot] = {};
 
-    // The leader's bar is his SHEET's (Session 21): the cached maxSp the
+    // The avatar's bar is his SHEET's (Session 21): the cached maxSp the
     // regen law fills, not the retired 2×maxHp dialect. Since the pools
     // landing the bar lives in the body's own block beside the wound, so this
     // trace stomps ALL of it there — a carry left behind in another struct is
@@ -8867,11 +8867,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             // Нейтральный сосед: `-1` — земля решает фракцию, поэтому встречи
             // он не форсирует (её форсирует враждебность, а не присутствие).
-            const sm::MacroHandle leader = smoke_birth_squad_at_player(
+            const sm::MacroHandle avatar = smoke_birth_squad_at_player(
                 app, sm::NPCType::Peasant, /*factionIndex*/-1);
-            SMOKE_CHECK(app, app.macroStore->valid(leader),
+            SMOKE_CHECK(app, app.macroStore->valid(avatar),
                         "дверь рождения даёт сквад на клетке игрока");
-            if (!app.macroStore->valid(leader)) break;
+            if (!app.macroStore->valid(avatar)) break;
             ++app.smoke.cursor;
             break;
         }

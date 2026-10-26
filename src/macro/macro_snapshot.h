@@ -4,7 +4,7 @@
 // (AGENTS.md → Persistence). Until this header the macro ECS was the one part
 // of that world the save could not see: every load cleared the registry and
 // re-spawned lords from the seed, so a killed squad rose again, a levelled
-// leader forgot his campaigns, and a runtime ordinal could be reissued to a
+// avatar forgot his campaigns, and a runtime ordinal could be reissued to a
 // stranger (problems.md 19.24).
 //
 // A MacroNpcRecord is ONE macro entity flattened to rows: the POD components

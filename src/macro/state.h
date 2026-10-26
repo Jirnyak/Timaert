@@ -86,7 +86,7 @@ namespace sm {
 // id SPACE, so a village woodcutter is finally the village's man; the
 // runtime rides the macro snapshot as a POD block, so the layout is format.
 // v28: AgentMemory joins the macro record (W2b, macro/agent_memory.h) —
-// what a leader remembers (a caravan's market snapshot, a raided village)
+// what a avatar remembers (a caravan's market snapshot, a raided village)
 // survives the save, 136 padding-free bytes per agent.
 // v29: the OLD economy is gone (W2b-4): EconomyState's float arrays, the
 // abstract TradeRoute system and cityLastTradeDay leave the save; places
@@ -142,9 +142,9 @@ namespace sm {
 // v44: the player is an ordinary squad, so his goods and his head stopped
 // being fields of PlayerState. His bag is the NpcInventory and his memory the
 // AgentMemory on his squad entity, both written by the macro-snapshot record
-// that already carries every other leader's — two blocks left the player
+// that already carries every other avatar's — two blocks left the player
 // section of the file and no block replaced them.
-// v45: a macro leader's runtime carries his back — `carryPerSoulG` (the
+// v45: a macro avatar's runtime carries his back — `carryPerSoulG` (the
 // sheet's carry capacity in WHOLE GRAMS, cached beside
 // travelRank/marathonRank/moveMult). (v140, 2026-10-20: единица стала
 // граммом, а вторая колонка `carryCap` — весь обоз — СНЕСЕНА: сумму спины и
@@ -575,7 +575,7 @@ struct PlayerState {
     // that made him a different kind of body from the squads around him.)
     // (No `combatStats` field. The player's three bars are the ordinary
     // ecs::Pools on his squad entity — macro/player_entity.h player_pools()
-    // — refreshed from this sheet through the one door every leader's are
+    // — refreshed from this sheet through the one door every avatar's are
     // (squad.h refresh_body_from_sheet). It sat here as a nine-field private
     // store with three cached rest rates until 2026-09-10, and it was the
     // last field that made him a different kind of body from the squads
@@ -666,7 +666,7 @@ struct PlayerState {
     // tick is that runtime's tickAccum, free on an input-driven squad the
     // AI sweep never thinks for.)
     // (No `memory` field. The player's head is the ordinary AgentMemory on
-    // his squad entity — the same component every squad leader carries, saved
+    // his squad entity — the same component every squad avatar carries, saved
     // by the same macro record. It sat here as a second store with ZERO
     // readers in src/: everything that remembers anything about the player
     // was already going through the entity.)

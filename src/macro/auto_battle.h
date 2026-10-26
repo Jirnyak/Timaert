@@ -12,8 +12,8 @@
 //
 // Like sub/movement.h this is a PURE law: it computes who won and who fell and
 // touches nothing. The CALLER settles the world — creature rows through the
-// macro-stock creature row, the leader through the tracked-death path, the
-// creatures of a dead leader through kill_fallen_squad_creatures, loot and XP
+// macro-stock creature row, the avatar through the tracked-death path, the
+// creatures of a dead avatar through kill_fallen_squad_creatures, loot and XP
 // through their one registries — so the auto-battle and the fought battle
 // pay their debts through the very same doors.
 //
@@ -35,8 +35,8 @@
 namespace sm {
 
 // One side of an auto-battle: the squad as the macro layer holds it — the
-// leader (the entity itself) plus the creature rows. The aura is COLLECTED BY
-// THE CALLER from the leader's sheet (character_sheet.h squad_bonuses), exactly as the body
+// avatar (the entity itself) plus the creature rows. The aura is COLLECTED BY
+// THE CALLER from the avatar's sheet (character_sheet.h squad_bonuses), exactly as the body
 // births do, so a Leader-perk lord is stronger here and below by the same
 // modifiers. Context multipliers are per-side because terrain and fatigue
 // are: a squad on its hill fights the value of its hill.
@@ -50,9 +50,9 @@ struct AutoBattleSide {
     // дизайн-персонаж) или ВЫРОСЛА победами, перекат давал ДРУГОГО человека
     // того же рода и ранга, то есть авторезолв судил не того, кого судит
     // очный бой, — а CANON S13 требует обратного.
-    NPCType        leaderType = NPCType::Peasant;
-    CharacterSheet leaderSheet{};
-    float          leaderHealthFraction = 1.0f;  // wounds walk in with him
+    NPCType        avatarType = NPCType::Peasant;
+    CharacterSheet avatarSheet{};
+    float          avatarHealthFraction = 1.0f;  // wounds walk in with him
     // ЧТО СКВАД ДЕЛАЕТ — И ЗДЕСЬ ЭТО СПРАШИВАЮТ РОВНО ОДИН РАЗ, ОДНИМ
     // ПРЕДИКАТОМ: есть ли у рода АВАТАР (`squad_has_avatar@src/tables/
     // squad_type.h`). Вердикт владельца 2026-10-24, дословно: «за всех
@@ -80,7 +80,7 @@ struct AutoBattleSide {
     // headless-мира: 1 088 038 постановок за день, попаданий в ветку — 0.
     // Теперь лист едет полем выше и читается всегда, а оверрайд остался один
     // — на один вопрос, которому вправду нужен нижний мир.
-    float          leaderDpsOverride = -1.0f;
+    float          avatarDpsOverride = -1.0f;
     // ЕДИНЫЙ КОНТЕЙНЕР сквада (M-71): бой читает только область существ,
     // предметная область для него не существует.
     const Inventory* creatures = nullptr;   // may be empty/null
@@ -105,16 +105,16 @@ struct AutoBattleOutcome {
     // generic ever was. The bare id list died with the creatures-as-inventory
     // (CANON S4): a generic death has no id to be listed by.
     std::vector<SoldierRecord> casualtiesA, casualtiesB;
-    // The leaders' post-battle health as the FRACTION wounds already travel
+    // The avatars' post-battle health as the FRACTION wounds already travel
     // in (sub/spawn.h): 0 = dead, and the caller routes that through the one
-    // tracked-death path. A winner limps out; a loser's leader dies ONLY if
+    // tracked-death path. A winner limps out; a loser's avatar dies ONLY if
     // his whole creatures died with him — never by dice (owner ruling).
-    float leaderFractionA = 1.0f, leaderFractionB = 1.0f;
+    float avatarFractionA = 1.0f, avatarFractionB = 1.0f;
 };
 
 namespace auto_battle_detail {
 
-// The armour a LEADER brings to a macro battle, as ONE number: physical
+// The armour a AVATAR brings to a macro battle, as ONE number: physical
 // blows are what macro armies trade today, so the credit is the mean of the
 // TWO physical columns (Pierce and Blunt — Slash folded into Pierce
 // 2026-10-01, M-193). When auto-resolve learns attack types, the pairing
@@ -158,7 +158,7 @@ inline int auto_battle_armor(const Defense& d, const Skills& skills) {
 // гейт требовал ОБА оверрайда, а второй ставил ровно один сайт в игре. Это и
 // есть недовезённая половина M-282 — его свидетель проверял, что поле
 // ПОСТАВЛЕНО, и ни одна строка не утверждала, что его кто-то ЧИТАЕТ (§8 п.6).
-inline float leader_power(const CharacterSheet& sheet, NPCType type,
+inline float avatar_power(const CharacterSheet& sheet, NPCType type,
                           float healthFraction, float dpsOverride) {
     const NpcTypeDef& def = npc_def(type);
     const CombatTemplate pc = project_combat(sheet, def.combat);
@@ -281,8 +281,8 @@ inline float squad_power(const AutoBattleSide& s) {
     // `birth_place@src/macro/place_birth.h`, множитель в
     // `overload_burden_from_capacity@src/macro/travel.h`, гейт здесь.
     float power = squad_has_avatar(s.type)
-        ? leader_power(s.leaderSheet, s.leaderType,
-                       s.leaderHealthFraction, s.leaderDpsOverride)
+        ? avatar_power(s.avatarSheet, s.avatarType,
+                       s.avatarHealthFraction, s.avatarDpsOverride)
         : 0.0f;
     if (s.creatures) {
         // ПО СТАКАМ, А НЕ ПО ДУШАМ (M-300) — тот же проход, что у
@@ -339,7 +339,7 @@ inline AutoBattleOutcome resolve_auto_battle(const AutoBattleSide& a,
     // decides how many fell — that is the law above, and it must hold for a
     // band of three as surely as for a thousand — while the rng decides WHO,
     // because the ledger settles deaths by name (the creature row's `detail`).
-    // The leader is not a creature row: he takes the battle as wounds (winner)
+    // The avatar is not a creature row: he takes the battle as wounds (winner)
     // and only a broken side can lose him outright.
     auto distribute = [&rng](const AutoBattleSide& side, float lossFrac,
                              std::vector<SoldierRecord>& casualties) {
@@ -365,8 +365,8 @@ inline AutoBattleOutcome resolve_auto_battle(const AutoBattleSide& a,
     distribute(a, aWins ? winnerLoss : loserLoss, out.casualtiesA);
     distribute(b, aWins ? loserLoss : winnerLoss, out.casualtiesB);
 
-    // Leaders. The winner walks out wounded in proportion to how hard the
-    // fight was. The loser's leader dies ONLY when his whole creatures died
+    // Avatars. The winner walks out wounded in proportion to how hard the
+    // fight was. The loser's avatar dies ONLY when his whole creatures died
     // with him (owner ruling, 2026-08-06): a lord's head is never given to
     // chance, or lords would fall regularly to dice in a war of auto-battles
     // — defeat costs him HP, not his life, while a single man of his still
@@ -396,10 +396,10 @@ inline AutoBattleOutcome resolve_auto_battle(const AutoBattleSide& a,
     const float loserFraction = creaturesWipedOut
         ? 0.0f
         : std::clamp(0.25f * (1.0f - ratio) + 0.05f, 0.05f, 1.0f);
-    const float startA = std::clamp(a.leaderHealthFraction, 0.0f, 1.0f);
-    const float startB = std::clamp(b.leaderHealthFraction, 0.0f, 1.0f);
-    out.leaderFractionA = startA * (aWins ? winnerFraction : loserFraction);
-    out.leaderFractionB = startB * (aWins ? loserFraction : winnerFraction);
+    const float startA = std::clamp(a.avatarHealthFraction, 0.0f, 1.0f);
+    const float startB = std::clamp(b.avatarHealthFraction, 0.0f, 1.0f);
+    out.avatarFractionA = startA * (aWins ? winnerFraction : loserFraction);
+    out.avatarFractionB = startB * (aWins ? loserFraction : winnerFraction);
     return out;
 }
 

@@ -14,7 +14,7 @@
 //   · an ocean the bar cannot pay KILLS the lord (he IS the squad): camp
 //     cannot repay a sea hour, so the automaton does not pitch one, the debt
 //     bites his HP by the one exhaustion law, and his death settles through
-//     the standing dead-leader doors;
+//     the standing dead-avatar doors;
 //   · on LAND a spent squad makes camp: Resting, debt kept, no blood;
 //   · the calibration anchor, restated on the DEAR end of the ladder: a leg
 //     lasts the camp margin over its ground's burn rate, and a full bar keeps
@@ -115,7 +115,7 @@ sm::MacroHandle make_walker(sm::MacroStore& st, int mapW, float x, float y,
     h = sm::handle_at(st, h.slot);
     // Уровень — АНКЕТА (M-246а), той же дверью, какой рождает make_npc.
     st.sheet[h.slot] = make_character_sheet(
-        NPCType::Peasant, 1, leader_sheet_seed(st.spawnId[h.slot].index));
+        NPCType::Peasant, 1, avatar_sheet_seed(st.spawnId[h.slot].index));
     // Three bars, one block (pools landing): the legs' bar is filled here
     // beside the wound, not in the march runtime.
     ecs::Pools pools{};

@@ -100,7 +100,7 @@ void test_one_space_for_places_and_squads() {
 
     // Сквад — единственной дверью рождения сквадов.
     SquadSpec spec{};
-    spec.leaderType = NPCType::Peasant;
+    spec.avatarType = NPCType::Peasant;
     spec.x = 3;
     spec.y = 4;
     const MacroHandle h = spawn_squad(gs, *store, terrain, spec);

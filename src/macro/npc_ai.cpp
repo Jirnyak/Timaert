@@ -500,7 +500,7 @@ void settle_march_rhythm(MacroHandle e, const MacroPos& p,
     // ...and a body the BITE killed is buried here. Gated on the bite itself,
     // not on `hp <= 0`: a squad cut down by an auto-battle earlier in this
     // very think already went through its own death door, and a second funeral
-    // would settle its leader and kill its creatures twice.
+    // would settle its avatar and kill its creatures twice.
     if (bite > 0) settle_exhaustion(e, hp, ctx);
 }
 
@@ -555,7 +555,7 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
     const float mapWf = float(ctx.mapW), mapHf = float(ctx.mapH);
 
     // Cells this think may cover — the SAME march the player walks
-    // (kMacroWalkCellsPerHour per game hour), paced by the leader's own sheet
+    // (kMacroWalkCellsPerHour per game hour), paced by the avatar's own sheet
     // (moveMult: spd × athletics) and by the ground underfoot
     // (terrain_speed_mult of the CURRENT cell — one sample per think, the
     // same approximation the player's per-frame walk makes). Base numbers:
@@ -1720,7 +1720,7 @@ public:
         if (count_human_souls(s.bag) < crewSouls) return MacroHandle{};
         const std::uint16_t slot = s.h.slot;
         SquadSpec spec{};
-        spec.leaderType = NPCType::Peasant;
+        spec.avatarType = NPCType::Peasant;
         spec.x = slot_x(st, slot, ctx_.mapW);
         spec.y = slot_y(st, slot, ctx_.mapW);
         spec.parentId = int(st.spawnId[slot].index);
@@ -1729,7 +1729,7 @@ public:
             // ординалы (`SquadSpecMembers::push` сливает равные записи);
             // поток имён остаётся лидерам и душам с историей.
             SoldierRecord rec{};
-            rec.kind = std::uint16_t(spec.leaderType);
+            rec.kind = std::uint16_t(spec.avatarType);
             rec.level = 1;
             if (!spec.members.push(rec)) break;
         }
@@ -2021,7 +2021,7 @@ void ai_artel(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
 // get_carry_capacity(sheet) × the row's haulMult (squad.h
 // refresh_leader_travel_stats — a caravan is wagons and mules, ×32). A flat
 // `kCaravanCapacityKg = 256` lived here until 2026-08-29: a SECOND capacity
-// beside the legal one, so the hold neither grew with the leader's back nor
+// beside the legal one, so the hold neither grew with the avatar's back nor
 // answered to the overload law that priced the very same cargo's march.
 
 // (Объявление `ai_nomad` переехало к пульту выше: фолбэк стал ГЛАГОЛОМ, и
@@ -3573,7 +3573,7 @@ constexpr float kSquadSightCells = 6.0f;
 
 // ВОСПРИЯТИЕ — свойство сквада, не спец-механика (владелец 2026-09-03,
 // CANON S10: «это контекстно … из свойств самого сквада и ролевой системы»).
-// Phase 6: the ROLE layer arrived — the leader's Scouting rank widens the
+// Phase 6: the ROLE layer arrived — the avatar's Scouting rank widens the
 // base radius by THE skill law (the row's pctPerRank, through the table
 // door — never an inline percent), read off the runtime's cached rank
 // (refresh_leader_travel_stats, the one refresh door) because this query
@@ -4049,7 +4049,7 @@ void settle_exhaustion(MacroHandle e, const ecs::Pools& hp,
     if (hp.hp > 0) return;
     if (!ctx.mw.store || !ctx.mw.gs) return;
     MacroStore& st = store_ctx(ctx);
-    settle_leader_fraction(st, e, 0.0f);
+    settle_avatar_fraction(st, e, 0.0f);
     kill_fallen_squad_creatures(st, *ctx.mw.gs,
                                 ctx.mw.econFacts,
                                 ctx.mw.econFactsUser);

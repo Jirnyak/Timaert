@@ -1329,7 +1329,7 @@ std::string use_item(Inventory& inv, const std::string& itemId, PlayerCombatSlic
 //
 // EVERY body carries one — humanoid, creature and player alike (CANON S14).
 // The one birth door (`emplace_body`, sub/spawn.cpp) builds the sheet from the
-// body's `kNpcTypeDefs` row, applies the leader's aura, then projects combat
+// body's `kNpcTypeDefs` row, applies the avatar's aura, then projects combat
 // numbers from it; "monsters are sheet-less" died with the second table
 // (2026-08-20).
 //
@@ -1413,15 +1413,15 @@ int weighted_pick(const std::uint8_t (&w)[N], std::uint32_t roll) {
 
 } // namespace csheet_detail
 
-// THE seed of a macro leader's sheet, derived from his save-stable spawn
+// THE seed of a macro avatar's sheet, derived from his save-stable spawn
 // ordinal (ecs::MacroSpawnId — the one identity that survives save/load).
-// The macro layer never stored a leader's birth sheet seed, so every consumer
-// that needs the leader AS A SHEET — the auto-resolve, the level-up ceiling
+// The macro layer never stored a avatar's birth sheet seed, so every consumer
+// that needs the avatar AS A SHEET — the auto-resolve, the level-up ceiling
 // recompute, the SP/travel caches — must derive it from the ordinal, and must
 // derive it IDENTICALLY. This function is that law's single home; it used to
 // be restated at each call site (squad.h twice, tests once), which is exactly
 // how twin formulas drift.
-inline std::uint32_t leader_sheet_seed(std::uint32_t spawnOrdinal) {
+inline std::uint32_t avatar_sheet_seed(std::uint32_t spawnOrdinal) {
     return spawnOrdinal * 2654435761u + 0x51ADu;
 }
 
@@ -1456,11 +1456,11 @@ inline CharacterSheet make_character_sheet(NPCType role, int level,
     const AttrWeights&  attrW  = npc_attr_weights(role);
     const SkillWeights& skillW = npc_skill_weights(role);
     // TWO streams, and LEVEL is in NEITHER seed — this is what makes a
-    // levelling leader's sheet MONOTONIC: the level-N sheet is the level-N-1
+    // levelling avatar's sheet MONOTONIC: the level-N sheet is the level-N-1
     // sheet plus exactly one more attribute pick and one more skill pick
     // (each loop below draws a prefix-stable sequence). The old generator
     // mixed the level into one stream, so every level-up RE-ROLLED the whole
-    // sheet and a leader could visibly get WEAKER by growing — the perversity
+    // sheet and a avatar could visibly get WEAKER by growing — the perversity
     // hid under the fat legacy +3/level and surfaced with the 1:1 economy.
     // Растёт то, что мир хранит (S14) — a sheet only ever grows.
     csheet_detail::SheetRng attrRng{
@@ -1539,7 +1539,7 @@ inline CharacterSheet effective_sheet(const CharacterSheet& base,
     return out;
 }
 
-// ── What a LEADER's sheet gives his squad ────────────────────────────────
+// ── What a AVATAR's sheet gives his squad ────────────────────────────────
 //
 // Owner, 2026-08-27: «хватит контекста макросквада (минимум систем) — при
 // загрузке отряда в субмире они всё равно берутся из сквада/ландмарка/зон/
@@ -1548,14 +1548,14 @@ inline CharacterSheet effective_sheet(const CharacterSheet& base,
 //
 // So there is no aura SYSTEM. There was one — its own header, its own
 // `AuraMods` type, its own add/collect/apply verbs — and every bit of it said
-// the same thing this one function says: the leader's sheet contributes
+// the same thing this one function says: the avatar's sheet contributes
 // bonuses, and bonuses are rows of the one registry. A second container for a
 // number that already had one is exactly what CANON S26 forbids; killing it
-// costs the game nothing because squad == leader (S4) and the leader's sheet
+// costs the game nothing because squad == avatar (S4) and the avatar's sheet
 // was always the only source.
 //
 // SOURCES are the extension axis: perk rows (returning with the perk
-// redesign, CANON S14), and the leader's skills, charisma and carried gear
+// redesign, CANON S14), and the avatar's skills, charisma and carried gear
 // when their turns come. Each is a few lines appending into the same totals,
 // and no consumer ever learns where a modifier came from.
 //
@@ -1685,7 +1685,7 @@ inline CombatTemplate project_combat(const CharacterSheet& sheet,
     // The POWER half of the same split: the typed skill multiplies the dice
     // (the door above already gave the generic pair to TEMPO — one handle,
     // one lever). Both consumers read THIS field now: the fought body
-    // (spawn combat_from_sheet) and the auto-resolve (leader_power) — the
+    // (spawn combat_from_sheet) and the auto-resolve (avatar_power) — the
     // two ends of S13's one law of battle, moved in one commit on purpose.
     out.multPct = std::int16_t(sheet_strike_mult_pct(sheet, base));
     return out;
@@ -1804,7 +1804,7 @@ BonusTotals worn_bonuses(const Gear& g, const Inventory& inv);
 // анкету без реестра существ за ней.
 //
 // ОДНА ДВЕРЬ, ДВА ЧИТАТЕЛЯ: сцена (`defense_of@src/sub/damage.cpp`) и
-// авторезолв (`leader_power@src/macro/auto_battle.h`). Два ответа на «сколько
+// авторезолв (`avatar_power@src/macro/auto_battle.h`). Два ответа на «сколько
 // держит тело» были бы двумя законами боя (S13), поэтому сборка живёт здесь, а
 // не по разу на каждой стороне.
 DefenseSum body_defense(const Defense& row, const Skills& skills,
