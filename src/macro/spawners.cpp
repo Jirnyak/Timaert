@@ -4,6 +4,7 @@
 #include "tables/biomes.h"
 #include "tables/items.h"          // вес рода шахты = 1/стоимость выхода
 #include "macro/macro_stock.h"      // MacroWorld — the registry's context
+#include "macro/place_registry.h"   // place_kind_of_feature — занята ли клетка местом
 #include "macro/settlement_score.h" // kSettlementReach — the home-field box
 #include "macro/pathfinding.h"
 #include "macro/resource_field.h"
@@ -779,14 +780,23 @@ namespace sm
         std::vector<std::uint8_t> seen(std::size_t(W) * std::size_t(H), 0);
         std::vector<std::uint32_t> frontier;
         int stamped[std::size_t(FT_Count)] = {};
-        int clustersTotal = 0, clustersNear = 0;
+        int clustersTotal = 0, clustersNear = 0, clustersBuried = 0;
         deposits.cells.for_each_live([&](std::uint32_t root, std::int32_t) {
             if (seen[root]) return;
             seen[root] = 1;
             ++clustersTotal;
             frontier.assign(1, root);
+            // ПИК ИЩЕТСЯ СРЕДИ СВОБОДНЫХ КЛЕТОК КЛАСТЕРА, А НЕ СРЕДИ ВСЕХ
+            // (M-321, вердикт владельца 2026-10-26). Слой фич — ОДИН БАЙТ НА
+            // КЛЕТКУ, и число фичи тоже одно; поставить шахту на клетку
+            // поселения значило бы разрабатывать клетку ДВУМЯ способами, чего
+            // ЗАКОН ПОЛЯ п.3 не допускает прямо: «клетка разрабатывается ровно
+            // одним способом, поэтому второго числа там быть не может».
+            // Сентинель −1 значит «свободной клетки ещё не встретили» и
+            // отличает её от клетки с нулём единиц; все клетки кластера живые
+            // по построению обхода, так что ноль сюда не приходит.
             std::uint32_t peak = root;
-            std::int32_t peakUnits = 0;
+            std::int32_t peakUnits = -1;
             // «деревня рядом или город» судится от ЛЮБОЙ клетки кластера:
             // жила — месторождение целиком, а не одна его вершина (ответ на
             // «почему так мало шахт», 2026-10-23).
@@ -795,7 +805,16 @@ namespace sm
                 const std::uint32_t c = frontier.back();
                 frontier.pop_back();
                 const std::int32_t units = deposits.cells.at_index(c);
-                if (units > peakUnits) { peakUnits = units; peak = c; }
+                // Занятость судится КОЛОНКОЙ строки места, а не списком имён
+                // байтов: обратная дверь `place_kind_of_feature` отвечает
+                // «чьё это место, если на клетке такой байт», и `None` у неё
+                // значит «местом клетка не занята» (ЗАКОН СТРОКИ КАТАЛОГА —
+                // новый род места закрывает клетку сам, без правки здесь).
+                if (units > peakUnits
+                    && place_kind_of_feature(fl.at(c)) == SquadType::None) {
+                    peakUnits = units;
+                    peak = c;
+                }
                 if (!near) {
                     for (const std::uint32_t t : towns) {
                         if (torus_cheb(c, t) <= kGathererReach) {
@@ -816,6 +835,9 @@ namespace sm
                 }
             }
             if (!near) return;
+            // Весь кластер лежит под местами — шахте встать НЕКУДА, и это
+            // законный исход, а не ошибка: клетка уже разрабатывается.
+            if (peakUnits < 0) { ++clustersBuried; return; }
             ++clustersNear;
             // Род — сеяный рандом по весу; сид мешается с ПИКОМ кластера,
             // чтобы два мира одного сида совпали, а два кластера — нет.
@@ -842,8 +864,8 @@ namespace sm
 
         // Отпечаток генерации — по строкам, которые реально встали; счёт
         // кластеров отвечает «почему так мало шахт» числом, не догадкой.
-        std::fprintf(stderr, "[mines] clusters=%d near=%d:",
-                     clustersTotal, clustersNear);
+        std::fprintf(stderr, "[mines] clusters=%d near=%d buried=%d:",
+                     clustersTotal, clustersNear, clustersBuried);
         for (const MineRow& m : mines) {
             std::fprintf(stderr, " %s=%d",
                          kFeatureDefs[std::size_t(m.ft)].yieldItem,
