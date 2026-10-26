@@ -4,6 +4,7 @@
 #include "macro/deposit_layer.h"
 #include "macro/map_generator.h"
 #include "macro/npc_ai.h"
+#include "macro/place_registry.h"   // place_kind_of_feature — род едет из ФИЧИ (M-318 Б)
 #include "macro/politik.h"   // faction_index_for_cell — владелец земли клетки
 #include "macro/resource_field.h"
 #include "macro/spires.h"   // spire_orb — ОДИН вывод об орбе (M-233 п.8)
@@ -78,7 +79,25 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
         // `size` used to carry the spire's tier, which was harmless only
         // while the population door was locked.
         const std::uint16_t slot = who.slot;
-        const SquadType kind = SquadType(w.store->runtime[slot].squadType);
+        // РОД МЕСТА ЕДЕТ ВНИЗ ИЗ ФИЧИ, А НЕ ИЗ КОЛОНКИ СКВАДА (M-318 часть Б,
+        // вердикт владельца 2026-10-26: «лучше сами фичи агностичны (у них
+        // честно есть ген модуль для субмира) и тип и поле на этом всё»).
+        // Здесь стояло `SquadType(w.store->runtime[slot].squadType)`, и это
+        // был ЕДИНСТВЕННЫЙ оставшийся способ, которым субмир читал макро-ответ
+        // О СКВАДЕ: стоящие рядом `.tier`/`.spell` честно приходят из фичи и
+        // говорят это вслух двумя строками ниже. Один вопрос — один носитель
+        // (DOD п.6), и носитель выбран владельцем — БАЙТ ФИЧИ.
+        //
+        // ПЕРЕКЛЮЧЕНИЕ ПОБАЙТОВО НЕЙТРАЛЬНО, И ЭТО ЗАМЕРЕНО, А НЕ ОБЕЩАНО:
+        // перепись трёх миров (сиды 12345 / 7 / 2026) сравнила два ответа на
+        // КАЖДОЙ клетке, где эта ветка пишет `.place`, и дала расхождений
+        // **0 / 0 / 0**. До M-321 их было 20 / 45 / 36 — шахта затирала байт
+        // поселения, — и ровно поэтому часть Б ждала M-321, а не наоборот.
+        //
+        // И ЭТО РАЗВЯЗЫВАЕТ РОД ОТ СУЩЕСТВОВАНИЯ СКВАДА: клетка с `FT_Ruin`
+        // отвечает «руина» и тогда, когда сквада на ней нет вовсе, — то есть
+        // снос сквадов шпиля и руины (M-320) становится выразим.
+        const SquadType kind = place_kind_of_feature(f.feature);
         // Орб шпиля — ОДИН вывод на весь мир (spire_orb@src/macro/spires.h,
         // M-233 п.8). Здесь он СТОЯЛ, и шесть соседей писали его заново;
         // теперь сборщик его ПУБЛИКУЕТ, а вывод живёт в модуле шпиля и
