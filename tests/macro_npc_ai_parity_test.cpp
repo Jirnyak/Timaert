@@ -422,7 +422,7 @@ void test_wanderer_enters_wandering_state() {
 
 // ── ЛАГЕРЬ — ПАУЗА, НЕ АМНЕЗИЯ: ОДНА ДВЕРЬ ПОДЪЁМА (M-254, 2026-10-12) ───
 // До этой правки у всей механики не было НИ ОДНОГО ассерта ни в одном тесте
-// дерева: `stateAfterRest` только ставили. А тройка строк подъёма стояла
+// дерева: `stateAfterPause` только ставили. А тройка строк подъёма стояла
 // списком в ДВУХ местах с разными условиями, то есть мир имел два ответа на
 // вопрос «как тело просыпается» (DOD п.6). Теперь дверь одна, и свидетель
 // судит ЕЁ, а не одно из двух мест.
@@ -431,7 +431,7 @@ void test_the_camp_is_a_pause_not_amnesia() {
 
     // Прерванная нога — возврат домой; лагерь её ЗАПОМНИЛ.
     rt.state = std::uint8_t(sm::NPCState::Resting);
-    rt.stateAfterRest = std::uint8_t(sm::NPCState::Returning);
+    rt.stateAfterPause = std::uint8_t(sm::NPCState::Returning);
     rt.stateTimer = 42;
 
     sm::wake_from_rest(rt);
@@ -439,7 +439,7 @@ void test_the_camp_is_a_pause_not_amnesia() {
           "подъём возвращает ПРЕРВАННУЮ ногу, а не Idle — иначе артель "
           "посреди дороги домой «продолжает рейс к рынку» и не завершает его "
           "никогда");
-    CHECK(rt.stateAfterRest == std::uint8_t(sm::NPCState::Idle),
+    CHECK(rt.stateAfterPause == std::uint8_t(sm::NPCState::Idle),
           "и память о ноге ТРАТИТСЯ подъёмом: второй подъём не вернёт её "
           "снова");
     CHECK(rt.stateTimer == 0,
@@ -449,7 +449,7 @@ void test_the_camp_is_a_pause_not_amnesia() {
     // то есть дверь не выдумывает ногу, которой не было.
     sm::ecs::MacroNpcRuntime bare{};
     bare.state = std::uint8_t(sm::NPCState::Resting);
-    CHECK(bare.stateAfterRest == std::uint8_t(sm::NPCState::Idle),
+    CHECK(bare.stateAfterPause == std::uint8_t(sm::NPCState::Idle),
           "контроль: у свежего рантайма прерванной ноги нет (0 = Idle)");
     sm::wake_from_rest(bare);
     CHECK(bare.state == std::uint8_t(sm::NPCState::Idle),

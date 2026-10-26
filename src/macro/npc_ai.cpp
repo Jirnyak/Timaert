@@ -462,7 +462,7 @@ void settle_march_rhythm(MacroHandle e, const MacroPos& p,
     // question this one had answered — it went with the predicate.
     if (int(hp.sp) <= maxSp / kCampBarDivisor
         && rt.state != std::uint8_t(NPCState::Resting)) {
-        rt.stateAfterRest = rt.state;   // пауза, не амнезия (components.h)
+        rt.stateAfterPause = rt.state;   // пауза, не амнезия (components.h)
         rt.state = std::uint8_t(NPCState::Resting);
         rt.stateTimer = 0;
     }
@@ -976,7 +976,7 @@ bool find_home_pasture(const TickContext& ctx, float px, float py,
 } // namespace
 
 // ПОДЪЁМ ИЗ ЛАГЕРЯ — ОДНА ДВЕРЬ, И ЭТО НЕ СТИЛЬ (DOD п.6; сведено 2026-10-12,
-// M-254). ЛАГЕРЬ — ПАУЗА, НЕ АМНЕЗИЯ (`stateAfterRest@src/ecs/components.h`):
+// M-254). ЛАГЕРЬ — ПАУЗА, НЕ АМНЕЗИЯ (`stateAfterPause@src/ecs/components.h`):
 // подъём возвращает ПРЕРВАННУЮ ногу — Returning остаётся Returning. Старая
 // побудка в Idle посреди дороги домой отдавала артель правилу «Idle вне дома =
 // продолжить рейс к рынку», и рейс не завершался никогда.
@@ -987,8 +987,8 @@ bool find_home_pasture(const TickContext& ctx, float px, float py,
 // мира («как тело просыпается»), из которых правка одного молча расходится с
 // другим. Условий по-прежнему два; ПОДЪЁМ — один.
 void wake_from_rest(ecs::MacroNpcRuntime& rt) {
-    rt.state = rt.stateAfterRest;
-    rt.stateAfterRest = std::uint8_t(NPCState::Idle);
+    rt.state = rt.stateAfterPause;
+    rt.stateAfterPause = std::uint8_t(NPCState::Idle);
     rt.stateTimer = 0;
 }
 
