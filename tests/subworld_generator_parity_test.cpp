@@ -837,6 +837,57 @@ int main() {
     CHECK(ok23, "spire scorch radius still contains tree structures");
     if (!ok23) return 1;
 
+    // ── ЧЕРЕЗ-ДОРОГА НЕ СМЕЕТ ЛОМАТЬСЯ ОТ СОСЕДА-ФИЧИ (регрессия 2026-10-26) ──
+    // ШРАМ: общий предикат связности подставили в сбор МАРШРУТА, и сосед-место
+    // стал считаться «концом маршрута». Клетка с двумя дорожными концами
+    // получала 3+ и падала в ветку хаба — полотно пошло прямыми лучами через
+    // ЦЕНТРЫ клеток, органика через-дороги исчезла. Поймал владелец ГЛАЗАМИ
+    // («теперь дороги прямые линии что неприемлемо»), ни один прибор — нет.
+    // ЗАКОН, который теперь под свидетелем: МАРШРУТ есть вопрос дорожной
+    // топологии, СТЫКОВКА с фичей — отросток; добавление недорожного соседа
+    // обязано ДОБАВЛЯТЬ съезд, а не ПЕРЕКЛАДЫВАТЬ трассу. Форма утверждения —
+    // ПОДМНОЖЕСТВО: все дорожные тайлы чистой через-дороги обязаны уцелеть,
+    // когда рядом появляется город.
+    {
+        CellContext road{};
+        road.cx = 3; road.cy = 3;
+        road.macroHeight = 0.60f;
+        road.biome = Meadow;
+        road.feature = FT_Road;
+        road.seed = 0x51A7u;
+
+        float rH[9]; sm::Biome rB[9]; std::uint8_t rF[9];
+        // Два дорожных конца — запад и восток: чистая через-дорога.
+        fill_flat_neighbors(rH, rB, rF, Meadow, FT_None);
+        rF[3] = std::uint8_t(FT_Road);
+        rF[5] = std::uint8_t(FT_Road);
+        SubworldMapData through{};
+        dispatch_generate(road, rH, rB, nullptr, rF, through);
+
+        // То же самое ПЛЮС город на юге: обязан появиться съезд, трасса — та же.
+        rF[7] = std::uint8_t(FT_City);
+        SubworldMapData withCity{};
+        dispatch_generate(road, rH, rB, nullptr, rF, withCity);
+
+        int baseTiles = 0, kept = 0, lost = 0, added = 0;
+        for (std::size_t i = 0; i < through.tiles.size(); ++i) {
+            const bool a = through.tiles[i] == TILE_ROAD;
+            const bool b = withCity.tiles[i] == TILE_ROAD;
+            if (a) { ++baseTiles; if (b) ++kept; else ++lost; }
+            else if (b) ++added;
+        }
+        CHECK(baseTiles > 0,
+              "чистая через-дорога обязана была что-то прорезать — иначе "
+              "свидетель меряет пустоту");
+        CHECK(lost == 0,
+              "сосед-фича ДОБАВЛЯЕТ съезд, но НЕ перекладывает трассу: ни один "
+              "тайл через-дороги не смеет пропасть (иначе вернулся хаб и прямые)");
+        CHECK(added > 0,
+              "съезд к городу обязан появиться — ради него связность и делалась");
+        std::printf("through_road: трасса %d · уцелело %d · потеряно %d · "
+                    "съезд %d\n", baseTiles, kept, lost, added);
+    }
+
     CellContext ruin{};
     ruin.cx = 8;
     ruin.cy = -5;

@@ -1193,7 +1193,7 @@ timaert_test(subworld_generator_parity_test
     # то есть пин на ту форму был бы пином на выход одного сида — ровно то, что
     # владелец назвал бредом («ДОЛЖНО БЫТЬ 301 предмет»). Теперь 21 гейт
     # утверждает ПОСЛЕ обхода, счёт структурен, и тот же сид его не двигает.
-    PIN "OK subworld_generator_parity_test .102 checks.")
+    PIN "OK subworld_generator_parity_test .105 checks.")
 
 timaert_test(tree_layer_test
     SOURCES
@@ -1593,6 +1593,27 @@ timaert_test(item_parts_test
 timaert_test(deposit_layer_test
     SOURCES
         src/macro/deposit_layer.cpp)
+# Шахта не встаёт на клетку места (наряд M-321, вердикт владельца 2026-10-26):
+# слой фич — один байт на клетку, и число фичи одно, поэтому поселение под
+# шахтой есть ДВА ЗАКОНА НАД ОДНИМ ЧИСЛОМ, а не спорная клетка. Куплено
+# числом: 20/45/36 съеденных поселений на трёх сидах, паства 128 -> 25-32 тыс.
+# (bugs.md Л7). Свидетель САМ РОЖАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11) — кладёт
+# максимум жилы ровно под деревню, вместо надежды на везение генератора.
+timaert_test(mine_settlement_collision_test
+    SOURCES
+        src/macro/spawners.cpp
+        src/macro/pathfinding.cpp
+        src/macro/politik.cpp
+        src/macro/language.cpp
+        src/macro/settlement_score.cpp
+        src/macro/macro_stock.cpp
+        src/macro/chronicle.cpp
+        src/macro/tree_layer.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/macro/state.cpp
+        src/tables/items.cpp
+    PIN "OK mine_settlement_collision_test .10 checks")
 # The reach field the vein layer stamps (problems.md §52): the field is only
 # true while EVERY door that moves a vein also moves its disc, and a door that
 # forgets fails silently. Drives all of them and re-checks the invariant.

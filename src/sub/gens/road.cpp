@@ -250,8 +250,7 @@ static void gen_bridge_crossing(const CellContext& ctx,
     const int cx = kCellSize / 2;
     const int cy = kCellSize / 2;
     const auto road_at = [&](int dx, int dy) {
-        return features_link(std::uint8_t(ctx.feature),
-                             nbFeature[(dy + 1) * 3 + (dx + 1)]);
+        return is_road_feature(nbFeature[(dy + 1) * 3 + (dx + 1)]);
     };
     // A span is straight: masonry does not meander.
     const auto carve = [&](int x1, int y1, int x2, int y2, std::uint32_t seed) {
@@ -287,8 +286,7 @@ static void gen_bridge_crossing(const CellContext& ctx,
         for (int yy = 0; yy < 3; ++yy) {
             for (int xx = 0; xx < 3; ++xx) {
                 if (xx == 1 && yy == 1) continue;
-                if (!features_link(std::uint8_t(ctx.feature), nbFeature[yy * 3 + xx]))
-                continue;
+                if (!is_road_feature(nbFeature[yy * 3 + xx])) continue;
                 int ex, ey;
                 edge_anchor_target(ctx, xx - 1, yy - 1, ex, ey);
                 carve(ex, ey, cx, cy, ctx.seed);
@@ -393,8 +391,7 @@ static void gen_bridge_crossing(const CellContext& ctx,
     for (int yy = 0; yy < 3; ++yy) {
         for (int xx = 0; xx < 3; ++xx) {
             if (xx == 1 && yy == 1) continue;
-            if (!features_link(std::uint8_t(ctx.feature), nbFeature[yy * 3 + xx]))
-                continue;
+            if (!is_road_feature(nbFeature[yy * 3 + xx])) continue;
             const int adx = xx - 1;
             const int ady = yy - 1;
             bool consumed = false;
@@ -450,13 +447,24 @@ void gen_road(const GenInput& in, SubworldMapData& out) {
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
     out.structures.clear();
 
+    // МАРШРУТ СПРАШИВАЕТ ТОЛЬКО ДОРОЖНУЮ ТОПОЛОГИЮ, И ЭТО НЕ ТО ЖЕ, ЧТО
+    // СТЫКОВКА. Ветки ниже (0/1/2/3+) решают, КАК полотно идёт СКВОЗЬ клетку:
+    // два дорожных конца дают ЧЕРЕЗ-ДОРОГУ от края до края, которая вольна
+    // вилять по рельефу, а три и больше — хаб с радиальными лучами ИЗ ЦЕНТРА.
+    // Съезд к нефичевому соседу (пашня, место) маршрутом НЕ является — он
+    // отросток, и у него свой цикл ниже.
+    // ШРАМ, КУПИВШИЙ ЭТО РАЗДЕЛЕНИЕ (2026-10-26): сюда подставили общий
+    // предикат связности `features_link`, и сосед-пашня с соседом-местом стали
+    // считаться «концами маршрута». Клетки, у которых было ровно два дорожных
+    // конца, получили 3+ и свалились в хаб: полотно пошло через ЦЕНТРЫ клеток
+    // прямыми лучами, и органика через-дороги пропала. Владелец поймал глазами
+    // («теперь дороги прямые линии что неприемлемо»), приборы — нет.
     // Collect road-bearing neighbours (skip the centre, idx 4).
     int connectedDx[8], connectedDy[8], nConnected = 0;
     for (int yy = 0; yy < 3; ++yy) {
         for (int xx = 0; xx < 3; ++xx) {
             if (xx == 1 && yy == 1) continue;
-            if (!features_link(std::uint8_t(ctx.feature), nbFeature[yy * 3 + xx]))
-                continue;
+            if (!is_road_feature(nbFeature[yy * 3 + xx])) continue;
             connectedDx[nConnected] = xx - 1;
             connectedDy[nConnected] = yy - 1;
             ++nConnected;
@@ -522,8 +530,15 @@ void gen_road(const GenInput& in, SubworldMapData& out) {
     for (int yy = 0; yy < 3; ++yy) {
         for (int xx = 0; xx < 3; ++xx) {
             if (xx == 1 && yy == 1) continue;
-            if (FeatureLayer::decode(nbFeature[yy * 3 + xx]) != FT_Field)
-                continue;
+            // ОТРОСТОК ИДЁТ К ЛЮБОМУ СВЯЗАННОМУ НЕДОРОЖНОМУ СОСЕДУ, а не
+            // только к пашне: дорога связывается с ЛЮБОЙ ненулевой фичей
+            // (владелец 2026-10-26: «дорога дорога частный случай дорога
+            // фича»). Дорожный сосед исключён нарочно — он уже обслужен
+            // МАРШРУТОМ выше, и второй проход положил бы поверх него луч из
+            // центра, то есть ту самую прямую.
+            const std::uint8_t nbf = nbFeature[yy * 3 + xx];
+            if (!features_link(std::uint8_t(ctx.feature), nbf)) continue;
+            if (is_road_feature(nbf)) continue;
             int ax = 0, ay = 0;
             edge_anchor_target(ctx, xx - 1, yy - 1, ax, ay);
             carve_organic_road(out, cx, cy, ax, ay,
