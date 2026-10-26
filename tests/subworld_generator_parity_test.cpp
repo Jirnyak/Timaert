@@ -884,6 +884,50 @@ int main() {
               "тайл через-дороги не смеет пропасть (иначе вернулся хаб и прямые)");
         CHECK(added > 0,
               "съезд к городу обязан появиться — ради него связность и делалась");
+
+        // СВЯЗНОСТЬ СЕТИ КЛЕТКИ — ОДИН КУСОК, А НЕ ТРАССА ПЛЮС ВИСЯЩИЙ СЪЕЗД.
+        // ЗАМЕР, КУПИВШИЙ СВИДЕТЕЛЯ (2026-10-26): через-дорога центра НЕ
+        // ЗАДЕВАЕТ (ближайший тайл в 38.8 тайла от него), а съезд стартовал
+        // ИЗ центра — и повисал оторванным. Владелец видел это как обрыв на
+        // перекрёстке. Утверждается не геометрия, а ЗАКОН: всё, что клетка
+        // прорезала, обязано быть достижимо одно из другого.
+        {
+            const std::size_t n = withCity.tiles.size();
+            std::vector<std::uint8_t> seen(n, 0u);
+            std::vector<std::size_t> stack;
+            std::size_t roadTiles = 0, first = n;
+            for (std::size_t i = 0; i < n; ++i)
+                if (withCity.tiles[i] == TILE_ROAD) {
+                    ++roadTiles;
+                    if (first == n) first = i;
+                }
+            if (first != n) { stack.push_back(first); seen[first] = 1u; }
+            std::size_t reached = 0;
+            while (!stack.empty()) {
+                const std::size_t i = stack.back();
+                stack.pop_back();
+                ++reached;
+                const int x = int(i % std::size_t(kCellSize));
+                const int y = int(i / std::size_t(kCellSize));
+                for (int k = 0; k < 8; ++k) {
+                    static const int ox[8] = {1,-1,0,0,1,1,-1,-1};
+                    static const int oy[8] = {0,0,1,-1,1,-1,1,-1};
+                    const int nx2 = x + ox[k], ny2 = y + oy[k];
+                    if (nx2 < 0 || ny2 < 0 || nx2 >= kCellSize || ny2 >= kCellSize)
+                        continue;
+                    const std::size_t j = std::size_t(ny2) * kCellSize + std::size_t(nx2);
+                    if (seen[j] || withCity.tiles[j] != TILE_ROAD) continue;
+                    seen[j] = 1u;
+                    stack.push_back(j);
+                }
+            }
+            CHECK(roadTiles > 0, "клетка обязана была прорезать дорогу");
+            CHECK(reached == roadTiles,
+                  "дорожная сеть клетки обязана быть СВЯЗНОЙ: съезд, начатый не "
+                  "от трассы, повисает оторванным — это и есть обрыв на перекрёстке");
+            std::printf("connected: road-тайлов %zu · достижимо %zu\n",
+                        roadTiles, reached);
+        }
         std::printf("through_road: трасса %d · уцелело %d · потеряно %d · "
                     "съезд %d\n", baseTiles, kept, lost, added);
     }

@@ -166,6 +166,7 @@
 природа	src/sub/gens/mountain.cpp	(hR-hL)/(hU-hD)
 природа	src/sub/gens/road.cpp	dx/dy
 природа	src/sub/gens/road.cpp	ddx/ddy
+природа	src/sub/gens/road.cpp	ddx/ddy
 природа	src/sub/gens/road.cpp	lx/ly
 природа	src/sub/gens/ruin.cpp	dx/dy
 природа	src/sub/gens/ruin.cpp	ddx/ddy

@@ -1193,7 +1193,7 @@ timaert_test(subworld_generator_parity_test
     # то есть пин на ту форму был бы пином на выход одного сида — ровно то, что
     # владелец назвал бредом («ДОЛЖНО БЫТЬ 301 предмет»). Теперь 21 гейт
     # утверждает ПОСЛЕ обхода, счёт структурен, и тот же сид его не двигает.
-    PIN "OK subworld_generator_parity_test .105 checks.")
+    PIN "OK subworld_generator_parity_test .107 checks.")
 
 timaert_test(tree_layer_test
     SOURCES
