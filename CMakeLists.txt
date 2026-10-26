@@ -2011,6 +2011,26 @@ timaert_test(resource_growth_test
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp)
 
+# Личность места едет вниз ИЗ ФИЧИ (M-318 часть Б). Прибор заведён потому,
+# что сюита охраняла этот закон НИКАК: мутация «род места ВСЕГДА None»
+# оставила check ЗЕЛЁНЫМ 137/137, краснели только два смоука из 63. Прибор
+# РОЖАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11) — разводит фичу и колонку сквада НАРОЧНО,
+# потому что в живом мире они согласны (0 расхождений за 623 171 осмотр), и
+# свидетель на согласном мире был бы тавтологией (§8 п.6, шестая форма).
+timaert_test(place_identity_test
+    SOURCES
+        src/macro/cell_facts.cpp
+        src/macro/spires.cpp
+        src/macro/squad_index.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
+        src/macro/macro_stock.cpp
+        src/macro/chronicle.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/macro/tree_layer.cpp
+    PIN "OK place_identity_test .6 checks")
+
 timaert_test(frame_fill_test
     SOURCES
         # сборщик локального фрейма (M-171 ломоть 3) и двери, которыми он
