@@ -49,6 +49,7 @@
 #include "macro/movement_cost.h"  // burn/rest per hour — якорь предусловия
 #include "macro/travel.h"         // overload_burden_from_capacity
 #include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
+#include "macro/features.h"      // FeatureLayer — фича ПОД местом
 #include "macro/labour.h"        // settle_souls — одна дверь прихода душ
 #include "macro/store.h"         // parent_of / tithe_of / set_relation
 #include "macro/world_row.h"     // count_human_souls
@@ -145,6 +146,10 @@ struct Fixture {
     TerrainData terrain = all_land();
     TreeLayer trees;
     PathCostData pathCost;
+    // СЛОЙ ФИЧ — НЕ УКРАШЕНИЕ ФИКСТУРЫ: без него `birth_place` фичу не
+    // ставит вовсе (её постановка гейтится `fl && td`), и закон «умирающий
+    // переписывает фичу под собой» проверять было бы НЕ НА ЧЁМ.
+    FeatureLayer features;
     std::unique_ptr<MacroStore> storeOwner = make_macro_store();
     FactTally tally{};
 
@@ -165,12 +170,14 @@ struct Fixture {
         pathCost.costGrid.assign(std::size_t(kMap) * kMap,
                                  kFixtureCellWeight);
         pathCost.water.assign(std::size_t(kMap) * kMap, 0u);
+        features.resize(kMap, kMap);
     }
     MacroStore& st() { return *storeOwner; }
 
     MacroWorld world() {
         return MacroWorld{.gs = &gs, .trees = &trees, .store = storeOwner.get(),
                           .terrain = &terrain,
+                          .features = &features,
                           .pathCost = &pathCost,
                           .econFacts = &tally_sink,
                           .econFactsUser = &tally};
@@ -180,7 +187,8 @@ struct Fixture {
     MacroHandle place(SquadType kind, int x, int y, int souls) {
         const MacroHandle h = birth_place(
             gs, st(), kind, x, y,
-            std::int16_t(faction_index("timaert")));
+            std::int16_t(faction_index("timaert")), /*name*/nullptr,
+            &features, &terrain);   // ФИЧА СТАВИТСЯ ДО ТЕЛА (ЗАКОН ГЕНЕРАЦИИ)
         CHECK(st().valid(h), "фикстура родила место (дверь рождения дала "
                              "валидный хэндл)");
         // ДВЕРЬ ДУШ ВОЗВРАЩАЕТ ФАКТ, И ИГНОРИРОВАТЬ ЕГО НЕЛЬЗЯ: нулевая
@@ -634,6 +642,96 @@ void test_the_last_shift_of_hands_is_never_written_out() {
     }
 }
 
+// ═════ 7. УМИРАЮЩИЙ ОСТАВЛЯЕТ ПО СЕБЕ ПРАВДУ В ФИЧЕ ═════════════════════
+// Вердикт владельца 2026-10-25: строка смерти есть ДАННЫЕ рода, а не общий
+// закон («это не какотой общий закон а чисто внутри каждого модуля своё»).
+// Город → РУИНА, деревня → СНЯТЬ ФИЧУ (поле заросло), подвижный род → ничего.
+//
+// ПОЧЕМУ ЭТОТ СВИДЕТЕЛЬ ОБЯЗАН БЫЛ ПОЯВИТЬСЯ — ЧИСЛОМ: замер 128 дней (сид 7)
+// нашёл 35 ушедших строк мест, и ФИЧА ОСТАВАЛАСЬ ЖИВА **35 из 35**. То есть
+// мир держал фичу деревни, на которой не живёт никто, — а фича есть РЕСУРС
+// клетки (ЗАКОН ПОЛЯ п.3), и соврать ею дороже, чем потерять строку.
+void test_a_dying_place_rewrites_the_feature_under_itself() {
+    const auto feature_of = [](Fixture& f, const MacroHandle h) {
+        return f.features.at(f.st().cell[h.slot].idx);
+    };
+    // Смерть ОДНОЙ дверью мира, той же, которой кончает автобой.
+    const auto kill = [](Fixture& f, const MacroHandle h) {
+        settle_leader_fraction(f.st(), h, 0.0f);
+    };
+
+    // ── ГОРОД → РУИНА ───────────────────────────────────────────────────
+    {
+        Fixture f;
+        const MacroHandle city = f.place(SquadType::City, 10, 10, 64);
+        CHECK(feature_of(f, city) == FT_City,
+              "ПРЕДУСЛОВИЕ: под городом стоит ФИЧА ГОРОДА — иначе проверка "
+              "ниже не отличала бы «переписал» от «тут и так было»");
+        kill(f, city);
+        f.think(1);
+        CHECK(!f.st().valid(city) || f.st().dead[city.slot] != 0,
+              "строка города ушла из мира — свип её прибрал");
+        CHECK(feature_of(f, city) == FT_Ruin,
+              "ГОРОД ОСТАВИЛ ПО СЕБЕ РУИНУ: фича говорит «здесь ЖИЛИ», а не "
+              "«здесь город», и это строка ЕГО рода, а не закон свипа");
+    }
+
+    // ── ДЕРЕВНЯ → ФИЧИ НЕТ ВОВСЕ ────────────────────────────────────────
+    // Второе плечо И ЕСТЬ контроль первого: если бы строка смерти была ОДНА
+    // на всех, здесь стояла бы руина, и тест покраснел бы.
+    {
+        Fixture f;
+        const MacroHandle vil = f.place(SquadType::Village, 10, 10, 64);
+        CHECK(feature_of(f, vil) == FT_Village,
+              "ПРЕДУСЛОВИЕ: под деревней стоит ФИЧА ДЕРЕВНИ");
+        kill(f, vil);
+        f.think(1);
+        CHECK(feature_of(f, vil) == FT_None,
+              "ДЕРЕВНЮ ЗАТЯНУЛО: фича снята ВОВСЕ, и это ДРУГОЙ ответ, не "
+              "копия городского — руин деревня по себе не оставляет");
+    }
+
+    // ── ПОДВИЖНЫЙ РОД НА СМЕРТИ НЕ ПИШЕТ НИЧЕГО ─────────────────────────
+    // Строка `nullptr` обязана МОЛЧАТЬ, и проверяется это там, где молчание
+    // видно: артель умирает НА КЛЕТКЕ СВОЕЙ ДЕРЕВНИ, и фича деревни обязана
+    // остаться деревней. Без этого плеча «фича переписана» могло бы значить
+    // «её переписывает кто угодно, кто тут умер».
+    {
+        Fixture f;
+        const MacroHandle vil = f.place(SquadType::Village, 10, 10, 200);
+        const int vilId = int(f.st().spawnId[vil.slot].index);
+        f.st().upkeep[vil.slot].needDebt[hunger_commodity_ordinal()] = 1 << 20;
+        f.think(kThinksPerDay + 2);
+        CHECK(f.children_of(vilId, SquadType::Artel) == 1,
+              "деревня подняла артель — предусловие рождено прибором");
+        int artel = -1;
+        for (std::size_t sl = 0; sl < kUnifiedCap; ++sl) {
+            if (f.st().alive[sl] == 0 || f.st().dead[sl] != 0) continue;
+            if (f.st().runtime[sl].squadType != std::uint8_t(SquadType::Artel))
+                continue;
+            if (parent_of(f.st(), std::uint16_t(sl)) == vilId) artel = int(sl);
+        }
+        CHECK(artel >= 0, "артель нашлась слотом");
+        const MacroHandle ah = handle_at(f.st(), std::uint16_t(artel));
+        // АРТЕЛЬ СТАВИТСЯ НА КЛЕТКУ ДЕРЕВНИ ПРИБОРОМ, И ЭТО НЕ ПОДГОНКА, А
+        // ПРЕДУСЛОВИЕ (§8 п.11). Рождается она действительно у родителя
+        // (`AiPult::spawn` берёт его клетку), но к этому дню УЖЕ УШЛА —
+        // она ходок с целью добычи, и это правда мира, а не дефект. Чтобы
+        // молчание строки `nullptr` было ВИДНО, умирать она обязана там, где
+        // фича есть: на пустой клетке «фича не изменилась» зелено само собой.
+        f.st().cell[ah.slot] = f.st().cell[vil.slot];
+        CHECK(f.st().cell[ah.slot].idx == f.st().cell[vil.slot].idx
+                  && f.features.at(f.st().cell[ah.slot].idx) == FT_Village,
+              "артель поставлена НА КЛЕТКУ ДЕРЕВНИ, и под ней ЕСТЬ фича — "
+              "значит её молчание проверяется там, где оно было бы видно");
+        kill(f, ah);
+        f.think(1);
+        CHECK(feature_of(f, vil) == FT_Village,
+              "ФИЧА ДЕРЕВНИ ЦЕЛА: у подвижного рода строка смерти `nullptr`, "
+              "и `nullptr` значит «не пишет НИЧЕГО», а не «пишет пустоту»");
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -643,5 +741,6 @@ int main() {
     test_no_duplicate_child_however_long_the_world_runs();
     test_a_standing_place_pays_nothing_for_the_road();
     test_the_last_shift_of_hands_is_never_written_out();
+    test_a_dying_place_rewrites_the_feature_under_itself();
     return sm::test::report("place_module_day_test");
 }

@@ -1686,6 +1686,33 @@ public:
     // аукцион ротации казнён ломтём 4 и не воскрешён. Замер приёмки,
     // 70 дней × 2 сида: `artel` 2313/2129, `caravan` 66/66, `collector`
     // 66/65 — по ОДНОМУ на родителя, то есть гейт дубля держит.
+    // ── ПЕРЕПИСАТЬ ФИЧУ ПОД СОБОЙ — ГЛАГОЛ, А НЕ ПРАВКА СЛОЯ ────────────
+    // Вердикт владельца 2026-10-25, дословно: «можно сделать через модуль —
+    // если сквад умирает он в своём модуле пишет что переписыает фичу под
+    // собой её тип в фичу руина … он это должен мочь сделать (это идёт через
+    // систему работа/способность)»; и о границе: «это не какотой общий закон
+    // а чисто внутри каждого модуля своё — например город переписывает фичу
+    // под собой в руины / а допустим будут потом сквады места без фичи под
+    // собой (так можно кто сказал чт онет — всё агностично) и он в модуле не
+    // будет ничего пистаь».
+    //
+    // ПОЭТОМУ ЗДЕСЬ ГЛАГОЛ, А НЕ ЗАКОН: пульт умеет переписать фичу, а ЧТО
+    // писать и писать ли вообще — дело модуля рода. Слой фич модуль не
+    // видит и видеть не должен (DOD-инкапсуляция пульта), дверь одна —
+    // `feature_put@src/macro/features.h`, та же, которой фичи ставит
+    // генерация, и вода у неё решает ровно у ПОСТАНОВКИ.
+    //
+    // ВОЗВРАТ — ФАКТ, А НЕ НАМЕРЕНИЕ: `feature_put` отдаёт, ЧТО встало
+    // (вода может отказать), и `FT_None` значит «не встало ничего». Модуль,
+    // которому ответ не нужен, его просто не читает.
+    FeatureType reshape_feature(MacroHandle self, FeatureType want) {
+        if (!ctx_.mw.features || !ctx_.mw.terrain || !ctx_.mw.store)
+            return FT_None;
+        const MacroStore& st = store_ctx(ctx_);
+        if (!st.valid(self)) return FT_None;
+        return feature_put(*ctx_.mw.features, *ctx_.mw.terrain,
+                           st.cell[self.slot].idx, want);
+    }
     MacroHandle spawn(AiSelf& s, SquadType bornType, int crewSouls) {
         if (crewSouls <= 0 || !ctx_.mw.gs || !ctx_.mw.terrain)
             return MacroHandle{};
@@ -4094,12 +4121,48 @@ void ai_untyped(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
 // симуляции — прежний гейт M-90 шага 5 умер в эту колонку).
 using AiModuleFn = void (*)(MacroHandle, MacroPos&, ecs::MacroNpcRuntime&,
                             ecs::Pools&, const TickContext&);
+
+// ── ПОСЛЕДНЕЕ СЛОВО УМИРАЮЩЕГО — ВТОРАЯ КОЛОНКА ТОЙ ЖЕ СТРОКИ ───────────
+// Вердикт владельца 2026-10-25: «это не какотой общий закон а чисто внутри
+// каждого модуля своё». Значит это НЕ закон свипа и НЕ ветка по роду, а
+// ДАННЫЕ строки: `nullptr` = «этот род на своей смерти не пишет ничего», и
+// читать из него «у места нет X» запрещено ровно так же, как у колонки
+// думки (ЗАКОН ИМЕНИ).
+//
+// ПОДПИСЬ УЖЕ, ЧЕМ У ДУМКИ, И ЭТО НЕ ЭКОНОМИЯ, А ПРАВДА О МОМЕНТЕ: у
+// умирающего нет ни хода, ни кванта думки, ни позы — у него есть СЕБЯ и
+// ПУЛЬТ. Передать ему `MacroPos&` значило бы обещать марш трупу.
+//
+// ЗАЧЕМ ВООБЩЕ: замер 128 дней (сид 7) нашёл, что из обхода мест ушло 35
+// строк, и ФИЧА ОСТАЛАСЬ ЖИВА 35 раз из 35 — то есть мир оставлял за собой
+// фичу деревни, на которой никто не живёт. Фича есть РЕСУРС клетки (ЗАКОН
+// ПОЛЯ п.3), и соврать ею дороже, чем потерять строку.
+using AiDeathFn = void (*)(MacroHandle, AiPult&);
+
 struct AiModuleRow {
     SquadType type;      // своя ось колонкой — под страж порядка строк
     AiModuleFn module;   // nullptr = род не думает
+    AiDeathFn death;     // nullptr = род на своей смерти не пишет ничего
 };
+// ГОРОД И СТОЛИЦА ОСТАВЛЯЮТ ПО СЕБЕ РУИНУ (вердикт владельца: «например
+// город переписывает фичу под собой в руины»). Руина — ЖИВАЯ строка оси и
+// фичи, то есть мир честно говорит «здесь ЖИЛИ», а не «здесь город».
+void city_death(MacroHandle self, AiPult& pult) {
+    pult.reshape_feature(self, FT_Ruin);
+}
+
+// ДЕРЕВНЯ СНИМАЕТ ФИЧУ ВОВСЕ — ПОЛЕ ЗАРОСЛО (вердикт владельца 2026-10-25,
+// строка смерти деревни). `FT_None` здесь ЗНАЧЕНИЕ, а не отказ: у снятия
+// вода не спрашивается вовсе (`feature_put` судит воду только у постановки),
+// поэтому деревня исчезает с карты фич на любой земле одинаково. Руины она
+// по себе не оставляет, и это не копия городской строки, а ДРУГОЙ ответ:
+// деревня есть пашня с домами, и без рук её затягивает, а не рушит.
+void village_death(MacroHandle self, AiPult& pult) {
+    pult.reshape_feature(self, FT_None);
+}
+
 constexpr AiModuleRow kAiModuleRows[] = {
-    { SquadType::None,      ai_untyped   },
+    { SquadType::None,      ai_untyped,   nullptr       },
     // Дракон СТОИТ В ТАБЛИЦЕ С ПЕРВОГО ДНЯ СВОЕЙ ОСИ с `nullptr`: его модуль
     // придёт ломтём 6. Строка с `nullptr` есть ЧЕСТНОЕ «род не думает», а не
     // пропуск: без неё ассерт полноты ниже не собрался бы, и это ровно та
@@ -4111,19 +4174,19 @@ constexpr AiModuleRow kAiModuleRows[] = {
     // второе поведение раньше вердикта владельца значило бы назначить
     // различие кодом (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ). Придёт различие —
     // поменяется ЭТА СТРОКА, и больше ничего.
-    { SquadType::Capital,   ai_city      },
-    { SquadType::City,      ai_city      },
-    { SquadType::Village,   ai_village   },
-    { SquadType::Spire,     nullptr      },
-    { SquadType::Ruin,      nullptr      },
-    { SquadType::Lair,      nullptr      },
-    { SquadType::Shrine,    nullptr      },
-    { SquadType::Mine,      nullptr      },
-    { SquadType::Tower,     nullptr      },
-    { SquadType::Artel,     ai_artel     },
-    { SquadType::Caravan,   ai_vendor    },
-    { SquadType::Collector, ai_collector },
-    { SquadType::Dragon,    nullptr      },
+    { SquadType::Capital,   ai_city,      city_death    },
+    { SquadType::City,      ai_city,      city_death    },
+    { SquadType::Village,   ai_village,   village_death },
+    { SquadType::Spire,     nullptr,      nullptr       },
+    { SquadType::Ruin,      nullptr,      nullptr       },
+    { SquadType::Lair,      nullptr,      nullptr       },
+    { SquadType::Shrine,    nullptr,      nullptr       },
+    { SquadType::Mine,      nullptr,      nullptr       },
+    { SquadType::Tower,     nullptr,      nullptr       },
+    { SquadType::Artel,     ai_artel,     nullptr       },
+    { SquadType::Caravan,   ai_vendor,    nullptr       },
+    { SquadType::Collector, ai_collector, nullptr       },
+    { SquadType::Dragon,    nullptr,      nullptr       },
 };
 static_assert(std::size(kAiModuleRows) == std::size_t(SquadType::Count),
               "kAiModuleRows must cover every SquadType: a new row of the "
@@ -4734,11 +4797,40 @@ namespace {
 // out of a dead creatures. Spawning here is safe: both drivers call this AFTER
 // their sweep, где никто не держит ссылок на компоненты (грабля посадки 4:
 // спавн реаллоцирует хранилище).
+// ТРАМПЛИН СТРОКИ СМЕРТИ. Это НЕ клеймовщик вроде снесённых релеев факта —
+// у тех не было работы, кроме штампа в колонку без читателя; у этого работа
+// есть и она одна: перевести «слот уходит» в «спроси строку его рода». Форма
+// вынуждена указателем на функцию — свип живёт слоем НИЖЕ таблицы модулей
+// (`squad.h` не смеет её включить), и это ровно та дверь, которой слой
+// отдаёт момент наверх, не узнавая, что с ним сделают.
+struct SweptDeathRelay {
+    AiPult* pult = nullptr;
+    const MacroStore* st = nullptr;
+};
+void relay_swept_death_(MacroHandle h, void* user) {
+    const auto* r = static_cast<const SweptDeathRelay*>(user);
+    if (!r->st->valid(h)) return;
+    const std::size_t row = std::size_t(r->st->runtime[h.slot].squadType);
+    const AiDeathFn fn =
+        row < std::size(kAiModuleRows) ? kAiModuleRows[row].death : nullptr;
+    if (fn) fn(h, *r->pult);
+}
+
 void settle_dead_squads(MacroWorld& mw) {
     GameState& gs = *mw.gs;
     MacroStore& st = *mw.store;
     kill_fallen_squad_creatures(st, gs, mw.econFacts, mw.econFactsUser);
-    destroy_dead_macro_squads(st, gs);
+    // КОНТЕКСТ СОБИРАЕТСЯ ЗДЕСЬ, И ОН МИНИМАЛЬНЫЙ ПО ЧЕСТНОЙ ПРИЧИНЕ: у
+    // свипа мёртвых нет ни кванта думки, ни позиции игрока, ни индекса
+    // сквадов — и глаголу `reshape_feature` ничего из этого не нужно. Пустые
+    // поля суть «этого в момент смерти не существует», а не забытые входы.
+    TickContext ctx{};
+    ctx.mw   = mw;
+    ctx.mapW = gs.mapW;
+    ctx.mapH = gs.mapH;
+    AiPult pult(ctx);
+    SweptDeathRelay relay{&pult, &st};
+    destroy_dead_macro_squads(st, gs, nullptr, &relay_swept_death_, &relay);
 }
 
 } // namespace

@@ -548,8 +548,19 @@ inline int kill_fallen_squad_creatures(MacroStore& st, GameState& gs,
 // ИЗЪЯТИЕ АДРЕСУЕТСЯ КЛЕТКАМИ, НИКОГДА РОДОМ СЦЕНЫ: `cell_is_leased` читает
 // ОДНО число мира, а рамку строит `cell_step` по восьми румбам (ЗАКОН
 // АДРЕСА). Флага «игрок внизу» у свипа нет и быть не должно.
+// ПОСЛЕДНЕЕ СЛОВО УМИРАЮЩЕГО — ЧУЖОЙ ОТВЕТ, И СВИП ЕГО НЕ ЗНАЕТ. Свип
+// умеет ровно одно: он ЕДИНСТВЕННЫЙ, кто знает момент «эта строка уходит
+// СЕЙЧАС», и он отдаёт его наружу. Что в этот момент делается — решает
+// строка рода (`kAiModuleRows@src/macro/npc_ai.cpp`, колонка `death`), и
+// этот файл о ней не знает ни байта: иначе `squad.h` пришлось бы включить
+// таблицу модулей, то есть завести цикл слоёв ради одной ветки.
+// `nullptr` = никто не слушает, и это законное значение.
+using SquadSweptFn = void (*)(MacroHandle, void* user);
+
 inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
-                                     std::int64_t* lootPoolValue = nullptr) {
+                                     std::int64_t* lootPoolValue = nullptr,
+                                     SquadSweptFn onSwept = nullptr,
+                                     void* sweptUser = nullptr) {
     // Снос по ординалу (squad_walk.h) — снимок и так был обязателен
     // (destroy под собственным view незаконен), закон порядка достался ему
     // бесплатно. Игрок исключается КОЛОНКАМИ (1е кластер 5): родной сквад —
@@ -591,6 +602,10 @@ inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
         if (is_folk_kind(st.kind[slot].type)) {
             shift_home_flock(gs, st, parent_of(st, slot), -1);
         }
+        // ПОСЛЕДНЕЕ СЛОВО — СТРОГО ДО СНОСА СЛОТА: слушателю нужны КОЛОНКИ
+        // уходящего (его клетка прежде всего), а `store_death` ниже их
+        // обнуляет. Порядок здесь не вкус, а условие существования хука.
+        if (onSwept) onSwept(handle_at(st, slot), sweptUser);
         // 6.3: сквад ЕСТЬ слот store — смерть слота и есть вся смерть.
         store_death(st, handle_at(st, slot));
         ++swept;
