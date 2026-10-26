@@ -81,7 +81,6 @@ SKELETON.md	:2967
 SKELETON.md	:299
 SKELETON.md	:300-304
 SKELETON.md	:3054
-SKELETON.md	:309
 SKELETON.md	:320-330
 SKELETON.md	:3208
 SKELETON.md	:3250
@@ -92,7 +91,6 @@ SKELETON.md	:331
 SKELETON.md	:334
 SKELETON.md	:335
 SKELETON.md	:3367
-SKELETON.md	:337
 SKELETON.md	:345
 SKELETON.md	:348
 SKELETON.md	:355
@@ -165,7 +163,6 @@ SKELETON.md	base_generator.cpp:268
 SKELETON.md	bb_instance.h:22-23
 SKELETON.md	body.frag:32
 SKELETON.md	body.frag:45-57
-SKELETON.md	cell_facts.cpp:15
 SKELETON.md	cell_facts.cpp:21-22
 SKELETON.md	cell_facts.h:13-17
 SKELETON.md	chronicle.cpp:14-15
