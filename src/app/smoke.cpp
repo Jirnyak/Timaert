@@ -4100,38 +4100,42 @@ bool run_spire_climb_smoke(App& app) {
     // The TALLEST spire whose spell is still unlearned (the starter spell
     // owns one too — skip it, its orb would be a no-gain touch): the top
     // tier exercises the whole shaft ladder, not just one climb.
-    // The spell is the spire cell's worked number (spires.h: ordinal + 1,
-    // 0 = drained) — the selection reads the layer, not columns.
-    sm::MacroHandle target{};
+    //
+    // ШПИЛЬ ИЩЕТСЯ ПО БАЙТУ ФИЧИ, А НЕ ПО СКВАДАМ (M-320): сквада у шпиля
+    // нет ни одного, он ЕСТЬ клетка со своим числом. Здесь стоял скан
+    // `for_each_place` по роду `Spire`, и после сноса он находил пустоту —
+    // смоук краснел «found no unlearned spire» не потому, что закон нарушен,
+    // а потому, что спрашивал не у того носителя.
+    //
+    // ПРОХОД ПО СЛОЮ ЗАКОНЕН ЗДЕСЬ И НИГДЕ БОЛЬШЕ: это смоук-свидетель, у
+    // которого на руках весь мир и ни одного горячего цикла; живой код
+    // спрашивает клетку АДРЕСОМ (`spire_orb`), а не переписью слоя.
     int targetSpell = -1;
     int targetX = 0, targetY = 0;
-    sm::for_each_place(*app.macroStore, [&](std::uint16_t slot) {
-        if (sm::SquadType(app.macroStore->runtime[slot].squadType)
-            != sm::SquadType::Spire)
-            return;
-        const auto& c = app.macroStore->cell[slot];
-        const int sx = sm::ecs::cell_x(c, app.gs.mapW);
-        const int sy = sm::ecs::cell_y(c, app.gs.mapW);
-        const int orb = sm::worked_read(app.gs, sx, sy);
-        if (orb <= 0 || orb > sm::kSpellCount) return;
-        const int spell = orb - 1;
-        if (sm::spellbook_has_learned(smoke_player_book(app), spell))
-            return;
-        if (!app.macroStore->valid(target)
-            || sm::kSpellDefs[spell].tier > sm::kSpellDefs[targetSpell].tier) {
-            target = sm::handle_at(*app.macroStore, slot);
-            targetSpell = spell;
-            targetX = sx;
-            targetY = sy;
+    const int mapW = app.gs.mapW, mapH = app.gs.mapH;
+    for (int sy = 0; sy < mapH; ++sy) {
+        for (int sx = 0; sx < mapW; ++sx) {
+            if (app.features.at(sx, sy) != sm::FT_Spire) continue;
+            const int orb = sm::worked_read(app.gs, sx, sy);
+            if (orb <= 0 || orb > sm::kSpellCount) continue;
+            const int spell = orb - 1;
+            if (sm::spellbook_has_learned(smoke_player_book(app), spell))
+                continue;
+            if (targetSpell < 0
+                || sm::kSpellDefs[spell].tier
+                       > sm::kSpellDefs[targetSpell].tier) {
+                targetSpell = spell;
+                targetX = sx;
+                targetY = sy;
+            }
         }
-    });
-    if (!app.macroStore->valid(target)) {
+    }
+    if (targetSpell < 0) {
         smoke_fail(app, "spire_climb found no unlearned spire");
         return false;
     }
     const sm::SpellDef& def = sm::kSpellDefs[targetSpell];
     const int tier = def.tier;
-    const int spireId = int(app.macroStore->spawnId[target.slot].index);
 
     // Stand on the spire's cell and enter its open-air scene.
         smoke_teleport_player(app, targetX, targetY);
@@ -4309,15 +4313,11 @@ bool run_spire_climb_smoke(App& app) {
         // Дренаж орба — строка дельты ряда Worked: число фичи гаснет на
         // ГРАНИЦЕ тика, не в кадре нажатия (ломоть 5).
         smoke_advance_to_macro_tick(app);
-        if (const sm::MacroHandle sph = sm::place_handle_by_ordinal(
-                *app.macroStore, std::uint32_t(spireId));
-            app.macroStore->valid(sph)) {
-            const auto& c = app.macroStore->cell[sph.slot];
-            depletedFlag = sm::worked_read(app.gs,
-                                           sm::ecs::cell_x(c, app.gs.mapW),
-                                           sm::ecs::cell_y(c, app.gs.mapW))
-                == 0;
-        }
+        // ВЫКАЧАННОСТЬ СПРАШИВАЕТСЯ У КЛЕТКИ, КОТОРУЮ ОБОБРАЛИ (M-320).
+        // Здесь стоял резолв сквада по ординалу (`place_handle_by_ordinal`),
+        // чтобы узнать адрес шпиля, — а у шпиля нет ни сквада, ни ординала,
+        // и адрес у смоука уже на руках: это та клетка, на которую он встал.
+        depletedFlag = sm::worked_read(app.gs, targetX, targetY) == 0;
         orbsAfter = 0;
         for (const auto& s : app.subworld.mgr().structures()) {
             if (s.kind == sm::sub::Structure::SpireOrb) ++orbsAfter;

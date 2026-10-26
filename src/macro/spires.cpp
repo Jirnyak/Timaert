@@ -1,11 +1,7 @@
 #include "macro/spires.h"
-#include "macro/labour.h"      // settle_souls — одна дверь поселения душ
-#include "macro/place_birth.h" // birth_place — место родится ТЕЛОМ
-#include "macro/place_iter.h"   // for_each_place — места по слотам
 #include "macro/place_registry.h"
-#include "macro/features.h"      // FT_Spire — смысл числу задаёт ФИЧА (п.8)
+#include "macro/features.h"      // feature_put — фича просто ЕСТЬ в мире
 #include "macro/macro_world.h"   // конверт слоёв: закон его собственной шапки
-#include "tables/faction.h"
 #include "macro/map_generator.h"
 #include "macro/anketa.h"
 #include "macro/state.h"
@@ -14,6 +10,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 namespace sm {
 
@@ -34,24 +31,19 @@ int torus_chebyshev(int ax, int ay, int bx, int by, int w, int h) {
     return std::max(dx, dy);
 }
 
-// A spire may not share a cell with any named place: the baked cell→place
-// frame (settlement_at, macro/squad_index.h) awards a shared cell to the FIRST place
-// its builder yields (settlements → villages → spires), so a co-located spire
-// would be silently shadowed by the town on top of it. This scan stays
-// hand-written because it runs DURING world-gen, before the grid exists —
-// the one legitimate pre-grid reader.
-bool cell_occupied(const GameState& gs, const MacroStore& st, int x, int y) {
-    const std::uint32_t idx = ecs::cell_index(x, y, gs.mapW);
-    bool taken = false;
-    for_each_place(st, [&](std::uint16_t slot) {
-        if (st.cell[slot].idx == idx) taken = true;
-    });
-    return taken;
+// ЗАНЯТА ЛИ КЛЕТКА — ВОПРОС К ФИЧЕ, А НЕ К СКВАДУ (вердикт владельца
+// 2026-10-26: «ФИЧИ ПРОСТО ЕСТЬ В МИРЕ»). Клетка разрабатывается РОВНО ОДНИМ
+// способом (ЗАКОН ПОЛЯ п.3), и отвечает об этом БАЙТ — та же дверь и тот же
+// носитель, которыми этот же вопрос задаёт постановка шахт (M-321). Прежде
+// здесь сканировался стор сквадов, и после сноса сквадов шпиля скан отвечал
+// бы «свободно» про клетку, на которой фича шпиля уже стоит.
+bool cell_taken(const FeatureLayer& fl, int x, int y) {
+    return place_kind_of_feature(fl.at(x, y)) != SquadType::None;
 }
 
 } // namespace
 
-void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
+void generate_spires(GameState& gs, const ZoneLayer& zones,
                      const TerrainData& terrain,
                     FeatureLayer& features) {
     if (gs.mapW <= 0 || gs.mapH <= 0 || !terrain.has_rgba_storage()
@@ -59,16 +51,17 @@ void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
         return;
     }
     const PlaceDef& def = place_def(SquadType::Spire);
-    // WHOSE the tower is, answered ONCE and stored on the instance (owner
-    // 2026-09-21). The generator is the EDITOR: it names the banner, the
-    // registry row carries no faction column, and the string never leaves
-    // the generation path (ЗАКОН СЛОВАРЯ). This is also what makes the
-    // garrison-vs-game line below true — the demons are the POPULATION,
-    // stamped through this index, while the slope's beasts stay wildlife.
-    const std::int16_t infernal = std::int16_t(faction_index("demons"));
     // Own deterministic stream, distinct from the place-naming salt in
     // populate_places_from_politik (0xC1A05E1D).
     Rng rng(gs.worldSeed ^ 0x59B12E50u);
+
+    // ШПИЛИ ЭТОГО ПРОХОДА — БУФЕР ГЕНЕРАЦИИ (ЗАКОН ГЕНЕРАЦИИ п.3): разброс
+    // Mitchell мерит расстояние до уже поставленных шпилей, и мерил он его
+    // сканом стора по сквадам рода `Spire`. Сквада у шпиля больше нет, и без
+    // буфера разброс выродился бы в случайную выборку. Длина известна
+    // построением — один шпиль на строку каталога спеллов.
+    std::vector<std::uint32_t> placedCells;
+    placedCells.reserve(std::size_t(kSpellCount));
 
     for (int ord = 0; ord < kSpellCount; ++ord) {
         // The tier walks the gate through the table's own band: tier 1 opens
@@ -94,18 +87,12 @@ void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
                 const int y = int(rng.next_u32() % std::uint32_t(gs.mapH));
                 if (terrain.is_water(x, y)) continue;
                 if (int(zones.at(x, y)) < gate) continue;
-                if (cell_occupied(gs, st, x, y)) continue;
+                if (cell_taken(features, x, y)) continue;
                 int score = gs.mapW + gs.mapH;   // no spires yet: any site wins
-                for_each_place(st, [&](std::uint16_t slot) {
-                    if (SquadType(st.runtime[slot].squadType)
-                            != SquadType::Spire)
-                        return;
+                for (const std::uint32_t c : placedCells)
                     score = std::min(score, torus_chebyshev(
-                        x, y,
-                        ecs::cell_x(st.cell[slot], gs.mapW),
-                        ecs::cell_y(st.cell[slot], gs.mapW),
+                        x, y, cell_x(c, gs.mapW), cell_y(c, gs.mapW),
                         gs.mapW, gs.mapH));
-                });
                 if (score > bestScore) {
                     bestScore = score;
                     bestX = x;
@@ -123,33 +110,32 @@ void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
                          ord, int(def.minZone));
             continue;
         }
+        // ── ШПИЛЬ ЕСТЬ ЧИСТАЯ ФИЧА СО СВОИМ ЧИСЛОМ (M-320, вердикт
+        // владельца: «да под снос») ───────────────────────────────────────
+        //
+        // ЗДЕСЬ РОЖДАЛСЯ СКВАД (`birth_place`) И САДИЛСЯ ГАРНИЗОН
+        // (`settle_souls` по колонкам `bornPop*`). Замер 256 дней (сид
+        // 12345): байт `FT_Spire` держался **10 плоско ВСЕ 256 дней**, а
+        // сквадов шпиля оставалось **10 → 2** (у руины 70 → 26) — их сносит
+        // первый прохожий макро-автобоем, потому что гарнизон такого сквада
+        // есть ОДНА ГОЛОВА (`bugs.md` Л6). Вместе со сквадом из мира уходил
+        // вход в данж, потому что род клетки спрашивали У СКВАДА; сама фича
+        // стояла нетронутой — строка шпиля в `kAiModuleRows` несёт `nullptr`
+        // на смерти, байт не снимал никто. Наполнение башни — дело ЕГО
+        // СОБСТВЕННОГО генератора (CANON S28), не инвентаря сквада сверху.
+        //
+        // ПОРЯДОК: ФИЧА, ПОТОМ ЕЁ ЧИСЛО. Число принадлежит фиче (ЗАКОН ПОЛЯ
+        // п.3), поэтому спелл пишется ТОЛЬКО после того, как байт реально
+        // встал: иначе отказ двери оставил бы в мире осиротевшее число под
+        // чужой клеткой. Прежде `worked_write` стоял ПЕРЕД постановкой.
+        if (feature_put(features, terrain, bestX, bestY, FT_Spire)
+                != FT_Spire)
+            continue;
         // The spell is the spire's WORKED number («у поля урожай, у шахты
         // залежи, у порта корабли — у шпиля спелл»): kSpellDefs ordinal + 1
         // under FT_Spire, 0 = drained (закон нуля-ординала).
         worked_write(gs, bestX, bestY, ord + 1);
-        // Место родится ТЕЛОМ одной дверью (ломтик F); ординал эмитит она —
-        // шпиль есть макро-субъект как всякий другой, и берёт его из того же
-        // единого эмитента, что сквады (M-37).
-        const MacroHandle h = birth_place(gs, st, SquadType::Spire,
-                                          bestX, bestY, infernal,
-                                          /*name*/ nullptr,
-                                          &features, &terrain);
-        if (!st.valid(h)) continue;   // отказ капа уже прозвучал вслух
-        // Born with its haunt (§42 Инк 5): the registry row's own born
-        // columns × the spell's tier, a discrete bell around the mean. Its
-        // OWN stream (world salt × spell ordinal) so the placement draws
-        // above stay bit-for-bit what they were.
-        //
-        // ПЕРЕВОРОТ v122 (вердикт 3): души данжа — ГОЛОВАМИ, вид стака
-        // ВЫВОДИТСЯ — слабейшая строка полосы толпы (шпиль → Imp); worked
-        // клетки не трогается — под FT_Spire там живёт СПЕЛЛ (ломтик B).
-        {
-            Rng popRng(gs.worldSeed ^ 0xB0125EEDu
-                       ^ (std::uint32_t(ord) * 2654435761u));
-            settle_souls(gs, st, h.slot, place_born_population(
-                int(def.bornPopBase), int(def.bornPopPerScore), tier,
-                popRng));
-        }
+        placedCells.push_back(cell_of(bestX, bestY, gs.mapW));
     }
 }
 

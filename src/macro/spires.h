@@ -18,15 +18,21 @@ struct FeatureLayer;
 struct TerrainData;
 struct ZoneLayer;
 
-// Fill gs.spires (assumed cleared by populate_places_from_politik) — one
-// spire per kSpellDefs row; the spell is the spire cell's WORKED number
-// (state.h gs.worked: row ordinal + 1, 0 = drained — закон нуля-ординала).
-// Deterministic from gs.worldSeed. Requires zones — call AFTER
-// generate_zones. A spell whose zone band does not exist on this world gets
-// its gate relaxed down to the table minimum; a world with no admissible land
-// at all simply lacks that spire (logged).
-struct MacroStore;   // fwd — тело места рождается в store (M-90 шаг 5)
-void generate_spires(GameState& gs, MacroStore& st, const ZoneLayer& zones,
+// ШПИЛЬ ЕСТЬ ЧИСТАЯ ФИЧА СО СВОИМ ЧИСЛОМ — СКВАДА У НЕГО НЕТ НИ ОДНОГО
+// (M-320, вердикт владельца 2026-10-26: «да под снос»; и о форме мира:
+// «ФИЧИ ПРОСТО ЕСТЬ В МИРЕ»). Один шпиль на строку kSpellDefs: байт
+// `FT_Spire` плюс спелл ЧИСЛОМ ФИЧИ (state.h gs.worked: ординал строки + 1,
+// 0 = выкачан — закон нуля-ординала). Deterministic from gs.worldSeed.
+// Requires zones — call AFTER generate_zones. A spell whose zone band does
+// not exist on this world gets its gate relaxed down to the table minimum; a
+// world with no admissible land at all simply lacks that spire (logged).
+//
+// `MacroStore` В ПОДПИСИ НЕТ, И ЕГО ОТСУТСТВИЕ ЕСТЬ ВЫСКАЗЫВАНИЕ: проход
+// шпилей не касается стора сквадов ВОВСЕ — ни рождением, ни чтением, —
+// поэтому дать ему стор значило бы обещать то, чего он не делает. Сквад,
+// стоящий на клетке шпиля, к шпилю не относится никак; его дела решает его
+// собственный модуль.
+void generate_spires(GameState& gs, const ZoneLayer& zones,
                      const TerrainData& terrain,
                     FeatureLayer& features);
 

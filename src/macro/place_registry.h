@@ -11,7 +11,6 @@
 #pragma once
 #include "tables/feature_type.h"   // колонка фичи рода (FT_*)
 #include <cstdint>
-#include "core/rng.h"    // the ONE generator (place_born_population)
 #include "core/table_guard.h"
 #include "macro/econ_day.h"     // kCreaturesPerCityWorker — the bench quota the
                                 // city's labourShift is log2 of (guard below)
@@ -132,10 +131,27 @@ struct PlaceDef {
     // surface). A po2 shift, not a percentage.
     std::uint8_t     crowdInsideShift = 0;
     // ── Born souls (§42 Инк 5): the genesis law's own columns ─────────────
-    // mean = bornPopBase + bornPopPerScore × the kind's context score (a
-    // spire's spell tier, a ruin's danger byte), rolled as a discrete bell
-    // (settlement_score.h place_born_population). 0/0 = the kind is not
-    // born with souls this way (settlements keep their own site-score law).
+    // ── ЧТО ЭТИ КОЛОНКИ ЗНАЧАТ ПОСЛЕ M-320 ────────────────────────────
+    // Прежде они были ЗАКОНОМ РОЖДЕНИЯ ДУШ ДАНЖА (mean = base + perScore ×
+    // своё число рода, колоколом), и считала его `place_born_population`.
+    // Дверь УМЕРЛА вместе с рождением сквадов шпиля и руины — надгробие и
+    // причина стоят в конце этого файла.
+    //
+    // ЖИВОГО СМЫСЛА У НИХ ДВА, И ОБА НАЗВАНЫ ЧИТАТЕЛЯМИ (DOD п.9):
+    //   1. `bornPopBase != 0` — ПРЕДИКАТ «души этого рода суть ГОЛОВЫ его
+    //      инвентаря, а НЕ worked-число его клетки». Спрашивают
+    //      `souls_flock` и `settle_souls@src/macro/labour.h`,
+    //      `write_population@src/macro/macro_stock.cpp`,
+    //      `regrow_dungeon_populations@src/macro/world_tick.cpp`;
+    //   2. сами ЗНАЧЕНИЯ — цель отрастания у `regrow_dungeon_populations`.
+    // 0/0 = род живёт своим законом площадки (поселения).
+    //
+    // ⚠ ОБНУЛИТЬ ИХ У ШПИЛЯ И РУИНЫ НЕЛЬЗЯ БЕЗ ВТОРОЙ ПРАВКИ, и вот почему
+    // числом: нуль переключает предикат 1, то есть объявляет «паства = worked
+    // клетки», а под `FT_Spire` в worked лежит СПЕЛЛ (ординал + 1). Шпиль
+    // ответил бы населением «5» на спелл №4. Сегодня это недостижимо в
+    // продакшене (сквадов этих родов нет ни одного), но достижимо из фикстур,
+    // которые рождают шпиль телом.
     std::uint16_t    bornPopBase = 0;
     std::uint16_t    bornPopPerScore = 0;
     // (Колонка `worldPlaces` УМЕРЛА 2026-10-18, вердикт владельца «снести».
@@ -541,24 +557,29 @@ static_assert([] {
 }(), "поселение — СТОЯЩИЙ род с прилавком/наймом/доской; подвижный род "
      "поселением не бывает ни при каких глаголах");
 
-// ── Born souls of a DUNGEON place (§42 Инк 5, CANON S28) ──────────────
-// mean = base + perScore × the kind's own context number (a spire's spell
-// tier, a ruin's danger byte) — the row's columns above, never literals in
-// a genesis pass. The roll is a DISCRETE BELL around the mean (two dice
-// summed — the house gauss, no float), spread = mean/4: two spires of one
-// tier differ, two ruins of one zone differ, and the caller seeds the
-// stream from the world salt and the place's own identity so no two cells
-// repeat.
-inline int place_born_population(int base, int perScore, int score,
-                                    Rng& rng) {
-    const int mean = base + perScore * (score > 0 ? score : 0);
-    if (mean <= 0) return 0;
-    const std::uint32_t s = std::uint32_t(mean >= 4 ? mean >> 2 : 1);
-    const int bell = int(rng.next_u32() % (s + 1u))
-                   + int(rng.next_u32() % (s + 1u)) - int(s);
-    const int born = mean + bell;
-    return born > 1 ? born : 1;
-}
+// ── ЗДЕСЬ СТОЯЛА `place_born_population`, И ОНА УМЕРЛА С M-320 ────────────
+//
+// Дверь считала души, с которыми ДАНЖ РОЖДАЕТСЯ: mean = base + perScore ×
+// своё число рода (тир спелла у шпиля, байт опасности у руины), дискретным
+// колоколом вокруг среднего. Звонящих у неё было РОВНО ДВА — генезис шпиля и
+// генезис руины, — и оба сняты вердиктом владельца 2026-10-26: шпиль «да под
+// снос», руина «под снос как шпиль, чистая фича без сквада». Рождать души
+// стало некому, потому что рождать СКВАД стало некому.
+//
+// УДАЛЕНА, А НЕ ОСТАВЛЕНА «НА ПОТОМ» (§6: легаси не живёт; §5 п.14: форма
+// владельца подразумевает снос — значит снос и есть работа). Понадобится
+// данжу население — его даст ЕГО СОБСТВЕННЫЙ ГЕНЕРАТОР (CANON S28, второй
+// механизм наполнения), а не колонка строки сквада, которого нет.
+//
+// КОЛОНКИ `bornPopBase`/`bornPopPerScore` ПРИ ЭТОМ ЖИВЫ, И ЭТО НЕ НЕДОСМОТР:
+// их читает не только мёртвая дверь. `bornPopBase != 0` есть ПРЕДИКАТ «души
+// этого рода суть ГОЛОВЫ, а не worked-число клетки», и его спрашивают четыре
+// живых места — `souls_flock` и `settle_souls@src/macro/labour.h`,
+// `write_population@src/macro/macro_stock.cpp`,
+// `regrow_dungeon_populations@src/macro/world_tick.cpp`. Обнулить их у шпиля
+// значило бы сказать «паства шпиля есть worked-число его клетки», а под
+// `FT_Spire` там лежит СПЕЛЛ — то есть выдать ординал заклинания за население.
+// Разбор развилки — в отчёте шага M-320.
 
 } // namespace sm
 

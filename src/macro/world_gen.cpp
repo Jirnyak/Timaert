@@ -248,8 +248,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // (boot_world_from_save), spires with everything else — one population,
     // one block, no creatures of its own (ломтик F).
     {
-        generate_spires(gs, *out.store, *out.zones, *out.terrain,
-                        *out.features);
+        generate_spires(gs, *out.zones, *out.terrain, *out.features);
         // Ruins follow the same zone-field law (§42 Инк 5): the row, the
         // subworld route and the surface generator stood ready for months —
         // this call is the ONE missing genesis pass that kept the kind

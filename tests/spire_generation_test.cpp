@@ -1,32 +1,66 @@
 // Spire placement (macro/spires.cpp). Pinned promises:
+//   · ШПИЛЬ И РУИНА — ЧИСТЫЕ ФИЧИ, СКВАДА У НИХ НЕТ НИ ОДНОГО (M-320,
+//     вердикт владельца 2026-10-26). Поэтому ВСЁ, что ниже, спрашивается у
+//     БАЙТА КЛЕТКИ, а не у стора сквадов, и отсутствие сквада утверждается
+//     ПРЯМО — это негативный контроль самого сноса;
 //   · one spire per kSpellDefs row (the generator asks the spell registry
-//     itself — Rule 13), id drawn from the ONE place issuer (v54); the
-//     spell is the spire cell's WORKED number (v120: ordinal + 1, 0 =
-//     drained), born charged;
+//     itself — Rule 13); the spell is the spire cell's WORKED number (v120:
+//     ordinal + 1, 0 = drained), born charged. Проверяется МНОЖЕСТВОМ
+//     {1..kSpellCount}, а не порядком рождения тел, которого больше нет;
 //   · a spire stands on land, inside the place table's own zone band
 //     (place_def(Spire).minZone), and the top-tier spell's spire stands at
 //     the band's CAP — the doom spell lives where the world is at its worst;
-//   · no spire shares a cell with any named place (a co-located spire would
-//     be shadowed by resolve_context's scan order), and the pick spreads:
-//     best-candidate sampling never stacks two spires side by side;
+//   · занятая клетка ветирует шпиль, и занятость спрашивается у БАЙТА
+//     (`place_kind_of_feature`, та же дверь, что у постановки шахт M-321);
+//     the pick spreads: best-candidate sampling never stacks two side by side;
 //   · placement is a fact of the world seed (the spell rows are compile-time
 //     constants): same seed reproduces the sites, another seed moves them;
 //   · a world with no admissible ground places NOTHING (negative control for
 //     the zone gate and the occupancy veto both).
+//
+// ── ТАБЛИЦА МУТАЦИЙ M-320, ОБЕ ПОЛЯРНОСТИ, С ЧИСЛОМ (§8 п.6) ─────────────
+// Незаписанный контроль доказывает, что детектор видел дефект ОДИН РАЗ — в
+// голове автора; следующий правит прибор вслепую. Поэтому числа здесь:
+//
+//   ОБЯЗАНЫ КРАСНИТЬ:
+//   · фикстура рожает руине сквад (`birth_place(…Ruin…)` перед переписью)
+//       → КРАСНЫЙ, **1 из 77** — утверждение «сквадов ноль» имеет зубы;
+//   · гейт сквада возвращён над родом клетки (`cell_facts`: `.type` только
+//     при `manned`) — то есть ровно тот дефект, который наряд и лечил
+//       → `check` **138/138 ЗЕЛЁНЫЙ**, краснеет ОДИН смоук из 63
+//         (`spire_climb`). **СЮИТА ЭТОТ ЗАКОН НЕ ОХРАНЯЕТ**, и это тот же
+//         класс слепоты, что замерен в M-318 Б («род ВСЕГДА None» → 137/137
+//         зелено): ctest судит ЧИСЛА, а здесь ломается ОТВЕТ О КЛЕТКЕ,
+//         которого не спрашивает ни один прибор сюиты;
+//
+//   ОБЯЗАНА МОЛЧАТЬ (детектор, краснеющий на всё, — не детектор):
+//   · `kRuinBaseCount` 4 → 5 (балансное число, закона не нарушает)
+//       → `check` 138/138, смоуки 63/63 — МОЛЧАТ, как и должны;
+//
+//   НЕ ЗАСЧИТАНЫ:
+//   · снос вызова `cell_taken_` целиком → `-Werror -Wunused-function`, то
+//     есть проверен КОМПИЛЯТОР, а не прибор;
+//   · вето занятости никогда не срабатывает (`== SquadType::Count`)
+//       → `check` 138/138 и смоуки 63/63 МОЛЧАТ, но это НЕ дыра прибора:
+//         замер показал, что размещение 70 руин ИДЕНТИЧНО с вето и без него
+//         (сид 12345, 0 коллизий), то есть эффект мутации ниже порога
+//         наблюдения. Вето есть страж редкого случая (занятых клеток ~0.2 %
+//         мира), а не несущее поведение, — и сказано это ЧИСЛОМ, а не
+//         «мутация прошла, значит прибор слеп».
 #include "check.h"
-#include "macro/labour.h"   // settle_souls / souls_flock — двери душ
+#include "macro/labour.h"   // souls_flock — паства ГОРОДА (живая половина)
 
 #include "macro/place_registry.h"
 #include "macro/map_generator.h"
-#include "macro/place_iter.h"  // for_each_place — перепись мест
-#include "macro/place_birth.h"  // birth_place — место родится ТЕЛОМ
+#include "macro/place_iter.h"  // for_each_place — перепись СКВАДОВ (их ноль)
+#include "macro/place_birth.h"  // birth_place — сквад города/деревни фикстуры
 #include "macro/ruins.h"
 #include "macro/anketa.h"
 #include "macro/spires.h"
 #include "macro/state.h"
 #include "macro/store.h"
 #include "macro/zones.h"
-#include "tables/faction.h"    // faction_index / faction_or_freefolk (M-39)
+#include "tables/faction.h"    // faction_index — знамя ГОРОДА фикстуры
 
 #include <algorithm>
 #include <cstdint>
@@ -58,37 +92,38 @@ MacroStore& places() {
     return *st;
 }
 
-// Перепись мест мира — КОЛОНКИ ТЕЛ (ломтик F: строки места больше нет). Род,
-// адрес, ординал, паства и фракция суть колонки одного слота, поэтому один
-// проход отвечает на все пять вопросов. Порядок обхода слотов на свежем store
-// И ЕСТЬ порядок рождения (свободный список отдаёт слоты по возрастанию), так
-// что «позже рождён — позже в переписи» остаётся утверждением, а не удачей.
-struct PlaceRow {
-    SquadType type = SquadType::None;
-    int x = 0, y = 0;
-    int id = 0;
-    int flock = 0;
-    std::int16_t faction = -1;
-};
-
-std::vector<PlaceRow> census(const GameState& gs, const MacroStore& st) {
-    std::vector<PlaceRow> out;
-    for_each_place(st, [&](std::uint16_t slot) {
-        out.push_back(PlaceRow{
-            SquadType(st.runtime[slot].squadType),
-            ecs::cell_x(st.cell[slot], gs.mapW),
-            ecs::cell_y(st.cell[slot], gs.mapW),
-            int(st.spawnId[slot].index),
-            souls_flock(gs, st, slot),
-            std::int16_t(st.kind[slot].factionIdx)});
-    });
-    return out;
-}
-
-std::vector<PlaceRow> spires_in(const std::vector<PlaceRow>& all) {
-    std::vector<PlaceRow> out;
-    for (const PlaceRow& r : all)
-        if (r.type == SquadType::Spire) out.push_back(r);
+// ── ПЕРЕПИСЬ ШПИЛЕЙ И РУИН — ПО БАЙТУ ФИЧИ, А НЕ ПО СКВАДАМ (M-320) ──────
+//
+// ЗДЕСЬ СТОЯЛА `census` ПО КОЛОНКАМ ТЕЛ (род, адрес, ординал, паства,
+// фракция одним проходом), И ОНА УМЕРЛА ЦЕЛИКОМ ВМЕСТЕ С ПРЕДМЕТОМ: четыре
+// её пятых — ординал, паства, фракция и сам род сквада — у шпиля и руины
+// больше не существуют. Снёс её КОМПИЛЯТОР, а не глаза: после переезда всех
+// утверждений на байт она осталась без звонящих и упала `-Wunused-function`.
+// Это и есть доказательство, что переезд ПОЛНЫЙ, — ни одно утверждение
+// файла не осталось висеть на сквадах.
+//
+// Вердикт владельца 2026-10-26: шпиль — «да под снос», руина — «под снос как
+// шпиль, чистая фича без сквада»; и о форме мира: «МЕСТ НЕТ! СКВАДЫ ЭТО
+// СКВАДЫ ФИЧИ АГНОСТИЧНЫЙ НЕЗАВИСИМЫЙ СКВАД МОДУЛЬ РЕШАЕТ ЧТО ТАМ
+// ПРОИСХОДИТ С НИМ И МИРОМ ФИЧИ ПРОСТО ЕСТЬ В МИРЕ».
+//
+// ПОЧЕМУ СВИДЕТЕЛЬ ПЕРЕЕХАЛ, А НЕ ПОДОГНАН: он спрашивал о шпиле У СКВАДА, а
+// сквада у шпиля больше нет ни одного — то есть умер НОСИТЕЛЬ его вопроса,
+// а не закон (§5 п.6). Законы те же: один шпиль на строку каталога, на земле,
+// в полосе своей строки, врозь, по сиду. Спрашиваются они теперь у того, чем
+// шпиль ЯВЛЯЕТСЯ, — у байта клетки.
+//
+// И ЭТО СИЛЬНЕЕ ПРЕЖНЕГО СВИДЕТЕЛЯ, А НЕ СЛАБЕЕ: раньше «спелл есть ординал
+// + 1» проверялось по ПОРЯДКУ РОЖДЕНИЯ тел (`spires[i]` ↔ `i + 1`), то есть
+// держалось на том, что свободный список отдаёт слоты по возрастанию. Теперь
+// утверждается МНОЖЕСТВО: числа под байтами шпилей обязаны быть РОВНО
+// {1..kSpellCount} без повторов — порядок обхода в это утверждение не входит.
+std::vector<std::uint32_t> feature_cells(const FeatureLayer& fl,
+                                         FeatureType want) {
+    std::vector<std::uint32_t> out;
+    for (std::size_t c = 0; c < fl.data.size(); ++c)
+        if (FeatureLayer::decode(fl.data[c]) == want)
+            out.push_back(std::uint32_t(c));
     return out;
 }
 
@@ -174,47 +209,71 @@ void test_one_spire_per_spell_in_the_band() {
     const ZoneLayer zones = banded_zones();
     store_reset(places());
     sm::FeatureLayer flA = fresh_features(terrain.width, terrain.height);
-    generate_spires(gs, places(), zones, terrain, flA);
+    generate_spires(gs, zones, terrain, flA);
 
     const PlaceDef& def = place_def(SquadType::Spire);
-    const std::vector<PlaceRow> all = census(gs, places());
-    const std::vector<PlaceRow> spires = spires_in(all);
+    const std::vector<std::uint32_t> spires = feature_cells(flA, FT_Spire);
     CHECK_OR_RETURN(spires.size() == std::size_t(kSpellCount),
                     "every learnable spell got its spire");
-    // Ids come from the ONE place issuer (v54): unique across every kind
-    // of place, monotonic in creation order — never the list index.
-    std::set<int> seenIds;
-    for (const PlaceRow& r : all)
-        if (r.type != SquadType::Spire) seenIds.insert(r.id);
-    for (std::size_t i = 0; i < spires.size(); ++i) {
-        const PlaceRow& sp = spires[i];
-        CHECK(sp.id > 0 && seenIds.insert(sp.id).second,
-              "a spire's id is unique across all places (one issuer)");
-        if (i > 0) {
-            CHECK(sp.id > spires[i - 1].id,
-                  "the issuer is monotonic: later spire, later ordinal");
-        }
-        // v120: the spell is the cell's WORKED number (ordinal + 1; 0 =
-        // drained — закон нуля-ординала), never a Place column.
-        CHECK(worked_read(gs, sp.x, sp.y) == int(i) + 1,
-              "the spire's cell works its spell: registry ordinal + 1");
-        CHECK(!terrain.is_water(sp.x, sp.y), "a spire stands on land");
-        CHECK(int(zones.at(sp.x, sp.y)) >= int(def.minZone),
+    // СКВАДА У ШПИЛЯ НЕТ НИ ОДНОГО, И ЭТО УТВЕРЖДАЕТСЯ ПРЯМО — иначе снос
+    // проверялся бы только отсутствием красного, а отсутствие красного
+    // доказывает лишь то, что никто не смотрел.
+    int spireSquads = 0;
+    for_each_place(places(), [&](std::uint16_t slot) {
+        if (SquadType(places().runtime[slot].squadType) == SquadType::Spire)
+            ++spireSquads;
+    });
+    CHECK(spireSquads == 0,
+          "шпиль есть ЧИСТАЯ ФИЧА: сквада он не рождает ни одного (M-320)");
+
+    // ЗДЕСЬ СТОЯЛИ ДВА УТВЕРЖДЕНИЯ ОБ ОРДИНАЛЕ («уникален у одного эмитента»,
+    // «эмитент монотонен»), И ОНИ СНЯТЫ ВМЕСТЕ СО СВОИМ НОСИТЕЛЕМ: ординал
+    // выдаёт РОЖДЕНИЕ СКВАДА, а шпиль сквада не рождает, значит ординала у
+    // него нет вовсе — не ноль, не -1, а нет как вопроса. Сам закон одного
+    // эмитента ЖИВ и судится там, где жив его предмет: `ordinal_space_test`
+    // (города и деревни). Снимать его здесь — не ослабление сюиты, а отказ
+    // спрашивать о несуществующем.
+    //
+    // СПЕЛЛ ПРОВЕРЯЕТСЯ МНОЖЕСТВОМ, А НЕ ПОРЯДКОМ: числа под байтами шпилей
+    // обязаны составить РОВНО {1..kSpellCount}. Повтор означал бы, что два
+    // шпиля несут один спелл, пропуск — что спелл не предложен миру.
+    std::set<int> spells;
+    for (const std::uint32_t c : spires) {
+        const int x = cell_x(c, gs.mapW), y = cell_y(c, gs.mapW);
+        const int spell = worked_read(gs, x, y);
+        CHECK(spell >= 1 && spell <= kSpellCount
+                  && spells.insert(spell).second,
+              "клетка шпиля работает СВОЙ спелл: ординал реестра + 1, и два "
+              "шпиля одного спелла не несут");
+        CHECK(!terrain.is_water(x, y), "a spire stands on land");
+        CHECK(int(zones.at(x, y)) >= int(def.minZone),
               "a spire stands inside the place table's zone band");
     }
+    CHECK(spells.size() == std::size_t(kSpellCount),
+          "каждый спелл каталога получил РОВНО один шпиль");
     // The top-tier spell demands the band's cap (the table's maxZone), and
     // this world has free zone-9 ground, so no relaxation may kick in.
-    const PlaceRow& doom = spires[std::size_t(top_tier_ordinal())];
-    CHECK(int(zones.at(doom.x, doom.y)) == int(def.maxZone),
-          "the top-tier spire stands at the band's cap");
+    // Клетка ищется ПО СВОЕМУ ЧИСЛУ — порядка рождения больше нет.
+    const int doomSpell = top_tier_ordinal() + 1;
+    int doomSeen = 0;
+    for (const std::uint32_t c : spires) {
+        const int x = cell_x(c, gs.mapW), y = cell_y(c, gs.mapW);
+        if (worked_read(gs, x, y) != doomSpell) continue;
+        ++doomSeen;
+        CHECK(int(zones.at(x, y)) == int(def.maxZone),
+              "the top-tier spire stands at the band's cap");
+    }
+    CHECK(doomSeen == 1, "шпиль старшего спелла нашёлся, и ровно один");
     // Best-candidate spread: with the whole wild half free, spires never end
     // up stacked or adjacent (the veto alone only forbids the same cell).
     int minPair = kW + kH;
     for (std::size_t a = 0; a < spires.size(); ++a)
         for (std::size_t b = a + 1; b < spires.size(); ++b)
             minPair = std::min(minPair,
-                               torus_cheb(spires[a].x, spires[a].y,
-                                          spires[b].x, spires[b].y));
+                               torus_cheb(cell_x(spires[a], gs.mapW),
+                                          cell_y(spires[a], gs.mapW),
+                                          cell_x(spires[b], gs.mapW),
+                                          cell_y(spires[b], gs.mapW)));
     CHECK(minPair >= 2, "spires spread - no two side by side");
 }
 
@@ -222,35 +281,25 @@ void test_placement_is_a_fact_of_the_seed() {
     const TerrainData terrain = banded_terrain();
     const ZoneLayer zones = banded_zones();
     GameState a = world(12345u), b = world(12345u), c = world(777u);
-    // Перепись снимается СРАЗУ: следующий генезис начинается с пустого мира,
-    // и чужих тел в нём стоять не должно.
-    store_reset(places());
+    // Слой на прогон СВОЙ: сид есть факт мира, и мир у каждого прогона свой.
     sm::FeatureLayer flB = fresh_features(terrain.width, terrain.height);
-    generate_spires(a, places(), zones, terrain, flB);
-    const std::vector<PlaceRow> sa = spires_in(census(a, places()));
-    store_reset(places());
+    generate_spires(a, zones, terrain, flB);
+    const std::vector<std::uint32_t> sa = feature_cells(flB, FT_Spire);
     sm::FeatureLayer flC = fresh_features(terrain.width, terrain.height);
-    generate_spires(b, places(), zones, terrain, flC);
-    const std::vector<PlaceRow> sb = spires_in(census(b, places()));
-    store_reset(places());
+    generate_spires(b, zones, terrain, flC);
+    const std::vector<std::uint32_t> sb = feature_cells(flC, FT_Spire);
     sm::FeatureLayer flD = fresh_features(terrain.width, terrain.height);
-    generate_spires(c, places(), zones, terrain, flD);
-    const std::vector<PlaceRow> sc = spires_in(census(c, places()));
+    generate_spires(c, zones, terrain, flD);
+    const std::vector<std::uint32_t> sc = feature_cells(flD, FT_Spire);
 
     CHECK_OR_RETURN(sa.size() == sb.size()
                         && sa.size() == std::size_t(kSpellCount),
                     "both same-seed runs placed the full registry");
-    bool identical = true;
-    for (std::size_t i = 0; i < sa.size(); ++i)
-        identical = identical && sa[i].x == sb[i].x
-                              && sa[i].y == sb[i].y;
-    CHECK(identical, "same seed reproduces the same sites");
-
-    bool moved = sc.size() != sa.size();
-    for (std::size_t i = 0; !moved && i < sa.size(); ++i)
-        moved = sa[i].x != sc[i].x
-             || sa[i].y != sc[i].y;
-    CHECK(moved, "another seed is another world - some spire moved");
+    // Перепись идёт по слою, то есть УЖЕ отсортирована по адресу клетки:
+    // сравнение множеств адресов и есть «те же площадки», без оговорки о
+    // порядке рождения, которой прежняя форма молча пользовалась.
+    CHECK(sa == sb, "same seed reproduces the same sites");
+    CHECK(sa != sc, "another seed is another world - some spire moved");
 }
 
 void test_no_admissible_ground_places_nothing() {
@@ -262,10 +311,9 @@ void test_no_admissible_ground_places_nothing() {
         tame.width = kW;
         tame.height = kH;
         tame.data.assign(std::size_t(kW * kH), 0);
-        store_reset(places());
         sm::FeatureLayer flE = fresh_features(terrain.width, terrain.height);
-        generate_spires(gs, places(), tame, terrain, flE);
-        CHECK(spires_in(census(gs, places())).empty(),
+        generate_spires(gs, tame, terrain, flE);
+        CHECK(feature_cells(flE, FT_Spire).empty(),
               "no wild land = no spires");
     }
     // Negative control 2: an all-ocean world offers no site either.
@@ -275,10 +323,9 @@ void test_no_admissible_ground_places_nothing() {
         ocean.width = kW;
         ocean.height = kH;
         ocean.rgba.assign(std::size_t(kW * kH) * 4u, 0);
-        store_reset(places());
         sm::FeatureLayer flF = fresh_features(ocean.width, ocean.height);
-        generate_spires(gs, places(), banded_zones(), ocean, flF);
-        CHECK(spires_in(census(gs, places())).empty(),
+        generate_spires(gs, banded_zones(), ocean, flF);
+        CHECK(feature_cells(flF, FT_Spire).empty(),
               "no land = no spires");
     }
 }
@@ -301,95 +348,113 @@ void test_named_places_veto_their_cells() {
 
     {
         GameState gs = world(12345u);
-        store_reset(places());
         sm::FeatureLayer flG = fresh_features(terrain.width, terrain.height);
-        generate_spires(gs, places(), pin, terrain, flG);
-        const std::vector<PlaceRow> spires = spires_in(census(gs, places()));
+        generate_spires(gs, pin, terrain, flG);
+        const std::vector<std::uint32_t> spires = feature_cells(flG, FT_Spire);
         CHECK_OR_RETURN(spires.size() == std::size_t(kSpellCount),
                         "the wild block hosts every spire");
         int inside = 0;
-        for (const PlaceRow& sp : spires)
-            if (sp.x >= 32 && sp.x < 48 && sp.y >= 32 && sp.y < 48)
-                ++inside;
+        for (const std::uint32_t c : spires) {
+            const int x = cell_x(c, gs.mapW), y = cell_y(c, gs.mapW);
+            if (x >= 32 && x < 48 && y >= 32 && y < 48) ++inside;
+        }
         CHECK(inside == kSpellCount,
               "every spire stands inside the only admissible ground");
     }
     {
+        // ПРЕДУСЛОВИЕ РОЖДАЕТСЯ ПОЛНОСТЬЮ, И ЭТО ПОПРАВКА M-320 (§8 п.11).
+        // Здесь `birth_place` звалась БЕЗ слоя фич, то есть деревни вставали
+        // телами, а байтов `FT_Village` в мире не появлялось ни одного —
+        // предусловие было рождено ПОЛОВИНОЙ. Прежний вето-скан смотрел в
+        // стор и этого не замечал; новый спрашивает БАЙТ, и половинная
+        // фикстура покраснела бы честно. Деревня здесь — носитель вето, а не
+        // украшение, значит рождается она со всем, чем является.
         GameState gs = world(12345u);
         store_reset(places());
+        sm::FeatureLayer flI = fresh_features(terrain.width, terrain.height);
         for (int y = 32; y < 48; ++y)
             for (int x = 32; x < 48; ++x)
-                birth_place(gs, places(), SquadType::Village, x, y);
-        sm::FeatureLayer flI = fresh_features(terrain.width, terrain.height);
-        generate_spires(gs, places(), pin, terrain, flI);
-        CHECK(spires_in(census(gs, places())).empty(),
-              "named places on every admissible cell veto the spire");
+                birth_place(gs, places(), SquadType::Village, x, y, -1,
+                            nullptr, &flI, &terrain);
+        int vetoCells = 0;
+        for (int y = 32; y < 48; ++y)
+            for (int x = 32; x < 48; ++x)
+                if (flI.at(x, y) == FT_Village) ++vetoCells;
+        CHECK_OR_RETURN(vetoCells == 16 * 16,
+                        "фикстура заняла ВСЮ пригодную землю — иначе вето "
+                        "нечем проверять, и пустой результат ничего не значит");
+        generate_spires(gs, pin, terrain, flI);
+        CHECK(feature_cells(flI, FT_Spire).empty(),
+              "занятая клетка ветирует шпиль — вопрос задан БАЙТУ");
     }
 }
 
 } // namespace
 
-// ── §42 Инк 5: places are BORN WITH SOULS, ruins exist, the watchman ──────
-void test_genesis_births_souls_and_ruins() {
+// ── M-320: ШПИЛЬ И РУИНА — ЧИСТЫЕ ФИЧИ, И НИ ОДНОГО СКВАДА НА НИХ ─────────
+//
+// ЗДЕСЬ УТВЕРЖДАЛОСЬ «МЕСТА РОЖДАЮТСЯ С ДУШАМИ» (§42 Инк 5): у шпиля
+// гарнизон колоколом, у руины — наваждение от байта опасности. ОБА
+// УТВЕРЖДЕНИЯ СНЯТЫ ВМЕСТЕ СО СВОИМ НОСИТЕЛЕМ, и это не ослабление сюиты, а
+// вердикт владельца 2026-10-26: шпиль «да под снос», руина «под снос как
+// шпиль — чистая фича без сквада».
+//
+// ЧТО ИМЕННО ОНИ ОХРАНЯЛИ, И ПОЧЕМУ ЭТО БЫЛО ВРЕДНО: гарнизон такого сквада
+// есть ОДНА ГОЛОВА, поэтому его сносил первый прохожий макро-автобоем —
+// замер 256 дней (сид 12345) дал сквадов руины **70 → 26**, шпиля **10 → 2**,
+// при том что байт фичи держался **70 и 10 ПЛОСКО все 256 дней**. То есть
+// старое утверждение «рождён с гарнизоном» было верным ровно в день ноль и
+// охраняло механику, которая убивала вход в данж.
+//
+// ВМЕСТО НИХ УТВЕРЖДАЕТСЯ ОБРАТНОЕ, И ПРЯМО: сквадов у этих родов НОЛЬ, а
+// фичи на месте. Это негативный контроль самого сноса — он краснеет, если
+// рождение сквада вернётся.
+void test_genesis_places_ruins_and_spires_as_features() {
     const TerrainData terrain = banded_terrain();
     const ZoneLayer zones = banded_zones();
     GameState gs = world(12345u);
     store_reset(places());
     sm::FeatureLayer flH = fresh_features(terrain.width, terrain.height);
-    generate_spires(gs, places(), zones, terrain, flH);
+    generate_spires(gs, zones, terrain, flH);
     generate_ruins(gs, places(), zones, terrain, flH);
-    const std::vector<PlaceRow> all = census(gs, places());
 
-    // Spires are born garrisoned: the registry's born columns × the spell's
-    // tier, a bell — never zero, never one fixed number for all.
-    int spirePops = 0, distinctPops = 0;
-    std::set<int> seenPop;
-    for (const PlaceRow& r : all) {
-        if (r.type != SquadType::Spire) continue;
-        // Души данжа — ГОЛОВЫ его толпы (v122): паства шпиля и есть они,
-        // а worked его клетки занят СПЕЛЛОМ (ломтик B).
-        CHECK(r.flock > 0, "a spire is born with its garrison");
-        ++spirePops;
-        if (seenPop.insert(r.flock).second) ++distinctPops;
-    }
-    CHECK(spirePops > 0, "the sweep saw spires at all");
-    CHECK(distinctPops > 1,
-          "born garrisons differ spire to spire (a bell, not a constant)");
+    int ruinSquads = 0, spireSquads = 0;
+    for_each_place(places(), [&](std::uint16_t slot) {
+        const SquadType k = SquadType(places().runtime[slot].squadType);
+        if (k == SquadType::Ruin) ++ruinSquads;
+        else if (k == SquadType::Spire) ++spireSquads;
+    });
+    CHECK(ruinSquads == 0 && spireSquads == 0,
+          "ни руина, ни шпиль не рождают сквада — они ЧИСТЫЕ ФИЧИ (M-320)");
 
-    // Ruins exist — the §42 stillborn kind lives, inside its own band, born
-    // haunted from the site's danger byte.
+    // Ruins exist — the §42 stillborn kind lives, inside its own band, on
+    // land. Спрашивается это у БАЙТА: им руина и является.
     const PlaceDef& ruinDef = place_def(SquadType::Ruin);
-    int ruins = 0;
-    for (const PlaceRow& r : all) {
-        if (r.type != SquadType::Ruin) continue;
-        ++ruins;
-        CHECK(!terrain.is_water(r.x, r.y), "a ruin stands on land");
-        const int z = int(zones.at(r.x, r.y));
+    const std::vector<std::uint32_t> ruinCells = feature_cells(flH, FT_Ruin);
+    for (const std::uint32_t c : ruinCells) {
+        const int x = cell_x(c, gs.mapW), y = cell_y(c, gs.mapW);
+        CHECK(!terrain.is_water(x, y), "a ruin stands on land");
+        const int z = int(zones.at(x, y));
         CHECK(z >= int(ruinDef.minZone) && z <= int(ruinDef.maxZone),
               "a ruin stands inside its registry zone band");
-        CHECK(r.flock > 0, "a ruin is born haunted");
     }
-    CHECK(ruins > 0, "the world places ruins");
+    CHECK(!ruinCells.empty(), "the world places ruins");
+    // РУИНА И ШПИЛЬ НЕ ДЕЛЯТ КЛЕТКУ — вето спрашивает БАЙТ, и шпили в этом
+    // прогоне встали ПЕРВЫМИ, то есть у руин было чем подавиться.
+    CHECK(feature_cells(flH, FT_Spire).size()
+              == std::size_t(kSpellCount),
+          "шпили прохода руин не потеряли: байт шпиля руина не затирает");
 
-    // Determinism: the same seed births the same ruins, souls included.
+    // Determinism: the same seed stamps the same cells.
     GameState b = world(12345u);
     store_reset(places());
     sm::FeatureLayer flB2 = fresh_features(terrain.width, terrain.height);
-    generate_spires(b, places(), zones, terrain, flB2);
+    generate_spires(b, zones, terrain, flB2);
     generate_ruins(b, places(), zones, terrain, flB2);
-    const std::vector<PlaceRow> allB = census(b, places());
-    CHECK_OR_RETURN(allB.size() == all.size(),
-                    "same seed, same place census");
-    bool same = true;
-    for (std::size_t i = 0; i < all.size(); ++i) {
-        const PlaceRow& p = all[i];
-        const PlaceRow& q = allB[i];
-        if (p.type != q.type || p.x != q.x || p.y != q.y
-            || p.flock != q.flock) {
-            same = false;
-        }
-    }
-    CHECK(same, "genesis is a fact of the seed, souls included");
+    CHECK(feature_cells(flB2, FT_Ruin) == ruinCells
+              && feature_cells(flB2, FT_Spire)
+                     == feature_cells(flH, FT_Spire),
+          "genesis is a fact of the seed: те же клетки под теми же байтами");
 
     // THE REGISTRY WATCHMAN (§42): what genesis placed obeys the column,
     // and the placing kinds this harness ran really do declare themselves —
@@ -433,7 +498,7 @@ void test_one_answer_to_the_drained_orb() {
     feat.width = kW;
     feat.height = kH;
     feat.data.assign(std::size_t(kW) * std::size_t(kH), std::uint8_t(FT_None));
-    generate_spires(gs, places(), zones, terrain, feat);
+    generate_spires(gs, zones, terrain, feat);
 
     // ── НЕГАТИВНЫЙ КОНТРОЛЬ С ЗУБАМИ: свидетель рождает его САМ (§8 п.11).
     const int freefolk = faction_index("freefolk");
@@ -462,21 +527,11 @@ void test_one_answer_to_the_drained_orb() {
     // клетки ОДИН, и пишет его не только штамп поселений: `plough_field_cell`
     // ставит `FT_Field`. Затёртая фича молча превращает число орба в чужое
     // число — шпиль читается «не шпиль», выкачанный выглядит заряженным.
-    // Клетку шпиля затирать сегодня некому (`cell_occupied` ветирует
-    // совместную клетку с названным местом), и вот это утверждение:
-    int spiresSeen = 0, featureLost = 0;
-    for_each_place(places(), [&](std::uint16_t slot) {
-        if (SquadType(places().runtime[slot].squadType) != SquadType::Spire)
-            return;
-        ++spiresSeen;
-        if (feat.at(ecs::cell_x(places().cell[slot], gs.mapW),
-                    ecs::cell_y(places().cell[slot], gs.mapW)) != FT_Spire)
-            ++featureLost;
-    });
-    CHECK(spiresSeen > 0, "штамп прошёл по настоящим шпилям");
-    CHECK(featureLost == 0,
-          "У КАЖДОГО ШПИЛЯ НА КЛЕТКЕ СТОИТ `FT_Spire` — иначе вопрос «выкачан "
-          "ли» задан не той клетке, и выкачанный орб выглядит заряженным");
+    // Клетку шпиля затирать сегодня некому (`cell_taken` ветирует занятую
+    // клетку по БАЙТУ), и вот это утверждение:
+    const std::vector<std::uint32_t> spireCells = feature_cells(feat, FT_Spire);
+    CHECK(spireCells.size() == std::size_t(kSpellCount),
+          "штамп прошёл по настоящим шпилям, и их столько же, сколько спеллов");
     CHECK(feat.at(40, 40) == FT_City,
           "а на клетке города стоит ЕГО фича — значит ключ различает их");
 
@@ -490,17 +545,14 @@ void test_one_answer_to_the_drained_orb() {
     // ── ЗАРЯЖЕННЫЙ ШПИЛЬ: тир выводится из ТОЙ ЖЕ таблицы, что читает мир
     // (§8 п.4 — никогда пересказанным числом).
     int charged = 0, wrongTier = 0, wrongSpell = 0, falseDepleted = 0;
-    for_each_place(places(), [&](std::uint16_t slot) {
-        if (SquadType(places().runtime[slot].squadType) != SquadType::Spire)
-            return;
+    for (const std::uint32_t c : spireCells) {
         ++charged;
-        const SpireOrb o = spire_orb(mw,
-                                     ecs::cell_x(places().cell[slot], gs.mapW),
-                                     ecs::cell_y(places().cell[slot], gs.mapW));
+        const SpireOrb o = spire_orb(mw, cell_x(c, gs.mapW),
+                                     cell_y(c, gs.mapW));
         if (o.depleted) ++falseDepleted;
         if (o.spell <= 0 || o.spell > kSpellCount) ++wrongSpell;
         else if (o.tier != kSpellDefs[o.spell - 1].tier) ++wrongTier;
-    });
+    }
     CHECK(charged > 0, "мир действительно поставил шпили — иначе цикл ничего "
                        "не померил (§8 п.2-3)");
     CHECK(falseDepleted == 0, "рождённый шпиль ЗАРЯЖЕН, а не выкачан");
@@ -511,103 +563,69 @@ void test_one_answer_to_the_drained_orb() {
     // который публикует визитор мест, обязан перевернуться ВМЕСТЕ с ней —
     // это и есть проверка ПРОВОДКИ, а не тавтология: написание, оторванное
     // от двери, здесь расходится.
-    std::uint16_t victim = 0;
-    bool found = false;
-    for_each_place(places(), [&](std::uint16_t slot) {
-        if (found) return;
-        if (SquadType(places().runtime[slot].squadType) != SquadType::Spire)
-            return;
-        victim = slot;
-        found = true;
-    });
-    CHECK_OR_RETURN(found, "нашёлся шпиль, у которого можно забрать орб");
-    const int vx = ecs::cell_x(places().cell[victim], gs.mapW);
-    const int vy = ecs::cell_y(places().cell[victim], gs.mapW);
-    const int victimId = int(places().spawnId[victim].index);
+    CHECK_OR_RETURN(!spireCells.empty(),
+                    "нашёлся шпиль, у которого можно забрать орб");
+    const int vx = cell_x(spireCells[0], gs.mapW);
+    const int vy = cell_y(spireCells[0], gs.mapW);
     worked_write(gs, vx, vy, 0);   // ровно то, что делает рука игрока внизу
 
     const SpireOrb drained = spire_orb(mw, vx, vy);
     CHECK(drained.depleted && drained.spell == 0 && drained.tier == 0,
           "забранный орб: выкачан, спелла нет, тир ноль — выкачанный шпиль "
           "ЗАБЫЛ свой спелл, как выработанная жила — свою руду");
+    // ОСТАЛЬНЫЕ ШПИЛИ НЕ ТРОНУТЫ: дверь отвечает О КЛЕТКЕ, а не о роде вообще.
+    int otherDepleted = 0;
+    for (std::size_t i = 1; i < spireCells.size(); ++i)
+        if (spire_orb(mw, cell_x(spireCells[i], gs.mapW),
+                      cell_y(spireCells[i], gs.mapW)).depleted)
+            ++otherDepleted;
+    CHECK(otherDepleted == 0,
+          "обобран РОВНО один шпиль — выкачанность есть факт КЛЕТКИ");
 
-    int seenVictim = 0, viewDisagreed = 0, cityViewDepleted = 0;
+    // ЗДЕСЬ СТОЯЛА ПРОВЕРКА ВИЗИТОРА МЕСТ (`for_each_place_view`) НА ТОМ ЖЕ
+    // ОБОБРАННОМ ШПИЛЕ, И ЕЁ ПРЕДМЕТ СНЯТ M-320: визитор обходит СКВАДЫ, а
+    // сквада у шпиля нет ни одного, значит «вид места несёт ту же
+    // выкачанность, что дверь» — утверждение о пустом множестве.
+    //
+    // ⚠ И ЭТО НАЗВАННАЯ ДЫРА, А НЕ ЗАКРЫТЫЙ ВОПРОС: колонка
+    // `PlaceView::depleted@src/macro/place_iter.h` после сноса ВСЕГДА ложна,
+    // то есть стала сиротой (DOD п.9), а её читатель
+    // `macro_lighting.cpp` тем самым перестал зажигать шпили в ночи.
+    // Разбор и число — в отчёте шага; снос колонки трогает ui/ и свет, то
+    // есть ДРУГУЮ поверхность, и в этот наряд не входит.
+    //
+    // ЖИВАЯ ПОЛОВИНА ЗАКОНА ОСТАЁТСЯ, И ОНА ПРО ГОРОД: пустая паства НЕ
+    // значит «выкачан», и у города это по-прежнему судится визитором.
+    int cityViewDepleted = 0, cityViewSeen = 0;
     for_each_place_view(mw, [&](const PlaceView& lv) {
-        const bool byKind = lv.type == SquadType::Spire;
-        if (lv.id == victimId) {
-            ++seenVictim;
-            if (!lv.depleted) ++viewDisagreed;
-        } else if (byKind && lv.depleted) {
-            ++viewDisagreed;   // остальные шпили заряжены
-        }
-        if (lv.type == SquadType::City && lv.depleted) ++cityViewDepleted;
+        if (lv.type != SquadType::City) return;
+        ++cityViewSeen;
+        if (lv.depleted) ++cityViewDepleted;
     });
-    CHECK(seenVictim == 1, "визитор мест выдал обобранный шпиль РОВНО один раз");
-    CHECK(viewDisagreed == 0,
-          "вид места несёт ТУ ЖЕ выкачанность, что дверь — он её читает, а "
-          "не выводит заново");
+    CHECK(cityViewSeen == 1, "визитор выдал город фикстуры — цикл померил");
     CHECK(cityViewDepleted == 0,
-          "и город с пустой паствой у визитора тоже НЕ выкачан");
+          "город с пустой паствой у визитора НЕ выкачан: выкачанность есть "
+          "вопрос о ШПИЛЕ, и у не-шпиля она ЛОЖЬ всегда");
 }
 
-// ── M-39: ОДИН ОТВЕТ НА «ЧЬЯ ЭТО РУИНА» ──────────────────────────────────
-// Закон (§7 «ОДИН РЕЕСТР ФРАКЦИЙ», DOD п.6, вердикт владельца 2026-09-21
-// «руине надо дать фракцию»): владельца места называет ЭКЗЕМПЛЯР, и только
-// он. До M-39 отвечали двое — строковая колонка `spawnFaction` ВИДА места и
-// колонка `factionIdx` экземпляра, — и второй ответ держался лишь тем, что
-// генераторы руин и шпилей не ставили индекс вовсе. Свидетеля у этого не
-// было ни одного: `rg spawnFaction tests/` не давал ни строки.
+// ── M-39 «ЧЬЯ ЭТО РУИНА» — ВОПРОС СНЯТ ВМЕСТЕ С ВЛАДЕЛЬЦЕМ (M-320) ───────
 //
-// Здесь утверждается СТОРОНА ГЕНЕЗИСА: каждая рождённая руина и каждый шпиль
-// несут индекс демонов, и его видит та самая дверь, которой спрашивает
-// заселение. Вторая половина закона — что знамя места НЕ достаёт до дичи на
-// земле — живёт у своего предмета, в fauna_registry_test.
-// Негативный контроль встроен: прежнее поведение давало `-1`, то есть
-// freefolk через дверь бесхозной земли, и утверждение про демонов краснеет.
-// Сам контроль проверяется — счётчики руин и шпилей обязаны быть > 0, иначе
-// цикл ничего не померил (§8 п.2-3).
-void test_place_faction_is_the_instance_only() {
-    const TerrainData terrain = banded_terrain();
-    const ZoneLayer zones = banded_zones();
-
-    // ОРДИНАЛ ВЫВОДИТСЯ ИЗ ТОГО ЖЕ РЕЕСТРА, что читает мир, никогда не
-    // переписывается числом (§8 п.4).
-    const int demons = faction_index("demons");
-    CHECK_OR_RETURN(demons >= 0, "the faction registry carries the demons row");
-    const int freefolk = faction_index("freefolk");
-    CHECK_OR_RETURN(freefolk >= 0 && freefolk != demons,
-                    "freefolk is a DIFFERENT row — the negative control has "
-                    "something to be wrong about");
-
-    // Один сид — не число: три мира (§5 п.4).
-    int ruins = 0, spires = 0, wrong = 0;
-    for (std::uint32_t seed : {12345u, 777u, 2026u}) {
-        GameState gs = world(seed);
-        store_reset(places());
-        sm::FeatureLayer flJ = fresh_features(terrain.width, terrain.height);
-        generate_spires(gs, places(), zones, terrain, flJ);
-        generate_ruins(gs, places(), zones, terrain, flJ);
-        for (const PlaceRow& r : census(gs, places())) {
-            if (r.type != SquadType::Ruin
-                && r.type != SquadType::Spire) {
-                continue;
-            }
-            if (r.type == SquadType::Ruin) ++ruins; else ++spires;
-            // Хранимый индекс И ответ двери, которой спрашивает заселение
-            // (sub/engine.cpp spawn_cell / enter_dungeon_scene). Раньше тут
-            // стоял бы freefolk, а демонов доставала колонка вида.
-            if (int(r.faction) != demons
-                || int(faction_or_freefolk(r.faction)) != demons) {
-                ++wrong;
-            }
-        }
-    }
-    CHECK(ruins > 0 && spires > 0,
-          "the three worlds really did place ruins AND spires");
-    CHECK(wrong == 0,
-          "every ruin and spire is BORN with its own faction index — the "
-          "kind's column is not what answers");
-}
+// ЗДЕСЬ СТОЯЛ `test_place_faction_is_the_instance_only`, и он утверждал, что
+// каждая рождённая руина и каждый шпиль несут индекс демонов СВОЕЙ колонкой
+// экземпляра, а не колонкой вида. Утверждение снято НЕ ослаблением, а тем,
+// что у него больше нет предмета: руина и шпиль — чистые фичи, экземпляра у
+// них нет ни одного, значит и знамени нет — не `-1`, не freefolk, а нет как
+// вопроса. Фича не бывает чья-то: она просто есть в мире (вердикт владельца
+// 2026-10-26). Генератор руин перестал спрашивать `faction_index("demons")`
+// вовсе — с ним ушла и единственная строка на этом пути (ЗАКОН СЛОВАРЯ).
+//
+// ЧТО ИЗ ЗАКОНА ОСТАЛОСЬ ЖИТЬ И ГДЕ ЕГО СУДЯТ, чтобы его не искали заново:
+//   · «владельца называет ЭКЗЕМПЛЯР, не вид» — предмет жив у ГОРОДА и
+//     ДЕРЕВНИ (их рождает `populate_places_from_politik@src/macro/state.cpp`
+//     с `c.factionIdx`), и колонки вида `spawnFaction`, против которой M-39
+//     был направлен, в дереве нет вовсе — её снёс сам M-39;
+//   · «знамя не достаёт до дичи на земле» — `fauna_registry_test`, как и
+//     было.
 
 // ── СТЕНА: ВТОРОГО ВЫВОДА О ОРБЕ В ДЕРЕВЕ НЕТ ────────────────────────────
 //
@@ -700,8 +718,7 @@ int main() {
     test_placement_is_a_fact_of_the_seed();
     test_no_admissible_ground_places_nothing();
     test_named_places_veto_their_cells();
-    test_genesis_births_souls_and_ruins();
-    test_place_faction_is_the_instance_only();
+    test_genesis_places_ruins_and_spires_as_features();
     test_one_answer_to_the_drained_orb();
     test_no_second_orb_derivation_in_the_tree();
     return sm::test::report("spire_generation_test");
