@@ -240,7 +240,8 @@ void gen_field(const GenInput& in, SubworldMapData& out) {
     for (int dy = -1; dy <= 1; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {
             if (dx == 0 && dy == 0) continue;
-            if (!is_road_feature(nbFeature[(dy + 1) * 3 + (dx + 1)])) continue;
+            if (!features_link(std::uint8_t(ctx.feature),
+                               nbFeature[(dy + 1) * 3 + (dx + 1)])) continue;
             int ax = 0, ay = 0;
             edge_anchor_target(ctx, dx, dy, ax, ay);
             carve_organic_road(out, ax, ay, kCellSize / 2, kCellSize / 2,

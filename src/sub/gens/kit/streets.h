@@ -42,10 +42,36 @@ namespace sm::sub::kit {
 // quantity would let a town sprawl up a hillside its own roads refuse to climb.
 inline constexpr float kGradePenalty = 18.0f;
 
-// Is this macro feature byte a road for CONNECTIVITY purposes? A bridge is —
-// the banks' roads aim their edge anchors at it and its own carve line runs
-// bank to bank. Wooden or stone, the crossing connects either way (v72).
+// Is this macro feature byte a road ITSELF? A bridge is — the banks' roads aim
+// their edge anchors at it and its own carve line runs bank to bank. Wooden or
+// stone, the crossing connects either way (v72).
+// ЭТО ВОПРОС ОБ ОДНОЙ КЛЕТКЕ. Вопрос «ведёт ли сюда дорога» — другой, и у него
+// своя дверь ниже; путать их и стоило проекту разорванного полотна.
 bool is_road_feature(std::uint8_t f);
+
+// СВЯЗНОСТЬ ЕСТЬ СВОЙСТВО ПАРЫ КЛЕТОК, И СПРАШИВАТЬ ЕЁ ОБЯЗАНЫ ОБЕ СТОРОНЫ ОДНОЙ
+// ДВЕРЬЮ. Замысел назван владельцем 2026-10-26, дословно: «дорога дорога частный
+// случай дорога фича» — то есть ДОРОГА СВЯЗЫВАЕТСЯ С ЛЮБОЙ НЕНУЛЕВОЙ ФИЧЕЙ, а
+// «дорога ↔ дорога» выпадает частным случаем, а не правилом.
+//
+// ШРАМ, КУПИВШИЙ ДВЕРЬ (bugs.md Б3, кадры владельца 2026-10-26). Обе стороны шва
+// читают ОДИН массив `nbFeature[9]`, но спрашивали его по-разному: место и поле
+// резали полосу к дорожному соседу, а `gen_road` решал, куда резать, ТОЛЬКО
+// через `is_road_feature`, где городов, деревень и пашен нет. Полосу резала одна
+// сторона, встречной не было, и полотно кончалось ВНУТРИ дорожной клетки — то
+// самое «обрывается на середине». Второй экземпляр того же: шапка `gen_field`
+// обещает, что «the road cell's own field spur aims at from its side», а дорога
+// в поле не целилась никогда.
+//
+// СИММЕТРИЯ ЗДЕСЬ ПО ПОСТРОЕНИЮ, А НЕ ПО ДИСЦИПЛИНЕ: `||` симметрично, проверка
+// нуля симметрична, поэтому несимметричной эту дверь НЕЛЬЗЯ НАПИСАТЬ. Свидетель
+// `road_link_symmetry_test` перебирает ВЕСЬ квадрат словаря фич, а не выборку.
+//
+// РАСШИРЯЕМОСТЬ ДАРОМ: новая фича связывается с дорогами БЕЗ единой новой
+// строки — критерий «ненулевая», а не список родов. И «нет дорог вокруг — дороги
+// не тянутся» выполняется само: пара без дороги (место↔место, поле↔поле) не
+// связана, потому что ни одна сторона не дорога.
+bool features_link(std::uint8_t a, std::uint8_t b);
 
 // The neighbour directions (of the 8) that carry a road. Order is the
 // kDirOffsets order, so it is stable across runs and across cells.
@@ -66,8 +92,12 @@ struct RoadAxisSet {
     bool anchored = false;   // false ⇒ an unconnected place: internal lanes only
 };
 
-RoadDirSet  connected_road_dirs(const std::uint8_t nbFeature[9]);
-RoadAxisSet settlement_road_axes(const std::uint8_t nbFeature[9]);
+// Обе двери берут СВОЮ фичу первым аргументом, потому что связность — свойство
+// ПАРЫ: без своей стороны вопрос «связан ли сосед» не имеет смысла.
+RoadDirSet  connected_road_dirs(std::uint8_t selfFeature,
+                                const std::uint8_t nbFeature[9]);
+RoadAxisSet settlement_road_axes(std::uint8_t selfFeature,
+                                 const std::uint8_t nbFeature[9]);
 
 // THE seam rendezvous: the edge tile a lane toward neighbour (dx, dy) must
 // hit. Symmetric in the two cells, so both sides derive the same point without

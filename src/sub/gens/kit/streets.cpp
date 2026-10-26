@@ -11,13 +11,14 @@
 
 namespace sm::sub::kit {
 
-RoadDirSet connected_road_dirs(const std::uint8_t nbFeature[9]) {
+RoadDirSet connected_road_dirs(std::uint8_t selfFeature,
+                               const std::uint8_t nbFeature[9]) {
     RoadDirSet out{};
     for (int d = 0; d < 8; ++d) {
         const int dx = kDirOffsets[d][0];
         const int dy = kDirOffsets[d][1];
         const int idx = (dy + 1) * 3 + (dx + 1);
-        if (!is_road_feature(nbFeature[idx])) continue;
+        if (!features_link(selfFeature, nbFeature[idx])) continue;
         out.dx[std::size_t(out.count)] = dx;
         out.dy[std::size_t(out.count)] = dy;
         out.angle[std::size_t(out.count)] = std::atan2(float(dy), float(dx));
@@ -26,20 +27,22 @@ RoadDirSet connected_road_dirs(const std::uint8_t nbFeature[9]) {
     return out;
 }
 
-RoadAxisSet settlement_road_axes(const std::uint8_t nbFeature[9]) {
+RoadAxisSet settlement_road_axes(std::uint8_t selfFeature,
+                                const std::uint8_t nbFeature[9]) {
     RoadAxisSet out{};
-    const RoadDirSet dirs = connected_road_dirs(nbFeature);
+    const RoadDirSet dirs = connected_road_dirs(selfFeature, nbFeature);
     for (int i = 0; i < dirs.count; ++i) {
         out.dx[std::size_t(out.count)] = dirs.dx[std::size_t(i)];
         out.dy[std::size_t(out.count)] = dirs.dy[std::size_t(i)];
         out.angle[std::size_t(out.count)] = dirs.angle[std::size_t(i)];
         ++out.count;
     }
-    // Main roads reach ONLY edges that connect to a road / settlement
-    // neighbour, always via the symmetric edge anchor so both sides of the seam
-    // meet (identical to gen_road's neighbour-only carving). No cardinal
-    // fallback -> a settlement never carves a road toward a road-less neighbour
-    // ("into the void"); an unconnected settlement grows internal streets only.
+    // Main roads reach ONLY edges whose PAIR is linked (features_link), always
+    // via the symmetric edge anchor so both sides of the seam meet — и теперь
+    // это правда с обеих сторон, а не только с этой: та же дверь стоит у
+    // `gen_road`. No cardinal fallback -> a settlement never carves a road
+    // toward an unlinked neighbour ("into the void"); an unconnected settlement
+    // grows internal streets only.
     out.anchored = out.count > 0;
     return out;
 }
@@ -281,6 +284,16 @@ void edge_anchor_target(const CellContext& ctx, int dx, int dy,
         ox = dx > 0 ? kCellSize - 2 : 1;
         oy = dy > 0 ? kCellSize - 2 : 1;
     }
+}
+
+bool features_link(std::uint8_t a, std::uint8_t b) {
+    // Пустая клетка не связывается ни с чем: «ненулевая фича» и есть условие
+    // того, что стыковать вообще есть что.
+    if (FeatureLayer::decode(a) == FT_None) return false;
+    if (FeatureLayer::decode(b) == FT_None) return false;
+    // Дорога на ЛЮБОЙ из сторон делает пару связанной. Симметрия отсюда по
+    // построению: `||` не различает порядок.
+    return is_road_feature(a) || is_road_feature(b);
 }
 
 bool is_road_feature(std::uint8_t f) {

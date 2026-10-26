@@ -842,7 +842,16 @@ int main() {
     ruin.cy = -5;
     ruin.macroHeight = 0.62f;
     ruin.biome = Meadow;
-    ruin.feature = FT_None;
+    // ФИКСТУРЫ ЭТОГО ТЕСТА ВРАЛИ О МИРЕ (вскрыто 2026-10-26, bugs.md Б3): клетка
+    // ставилась с НУЛЕВОЙ фичей, тогда как в мире у неё фича есть. Авторитет
+    // здесь — ПОЛЕ ФИЧ, одна из двух законных систем (вердикт владельца
+    // 2026-10-26: «у нас есть только система поля фич и система сквады всё (у
+    // них есть архетипы)»); «род места» — ЛЕГАСИ ПОД СНОС, и на него опираться
+    // нельзя. Пока связность спрашивали односторонне, нулевая фича была
+    // бесплатной ложью; теперь связность есть свойство ПАРЫ
+    // (`features_link@src/sub/gens/kit/streets.h`), и клетка с нулём не связана
+    // ни с чем по построению.
+    ruin.feature = FT_Ruin;
     ruin.place.id = 88;
     ruin.place.size = 4;
     ruin.place.kind = SquadType::Ruin;
@@ -897,7 +906,7 @@ int main() {
     city.cy = 6;
     city.macroHeight = 0.64f;
     city.biome = Meadow;
-    city.feature = FT_None;
+    city.feature = FT_City;      // см. заметку о фикстурах-лжецах выше
     city.place.id = 101;
     city.place.size = 6000;
     city.place.kind = SquadType::City;
@@ -969,7 +978,7 @@ int main() {
     village.cy = -3;
     village.macroHeight = 0.59f;
     village.biome = Meadow;
-    village.feature = FT_None;
+    village.feature = FT_Village;  // см. заметку о фикстурах-лжецах выше
     village.place.id = 202;
     village.place.size = 120;
     village.place.kind = SquadType::Village;

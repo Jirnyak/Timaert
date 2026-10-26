@@ -118,7 +118,7 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     Rng rBuild(ctx.seed ^ 0xC1C1C1u);
 
     // ── 1. The tract ──────────────────────────────────────────────────────
-    const RoadAxisSet axes = settlement_road_axes(nbFeature);
+    const RoadAxisSet axes = settlement_road_axes(std::uint8_t(in.ctx.feature), nbFeature);
     carve_settlement_main_roads(out, ctx, axes, centre, ctx.seed ^ 0x7711AAu);
 
     // ── The SHAPE ─────────────────────────────────────────────────────────

@@ -250,7 +250,8 @@ static void gen_bridge_crossing(const CellContext& ctx,
     const int cx = kCellSize / 2;
     const int cy = kCellSize / 2;
     const auto road_at = [&](int dx, int dy) {
-        return is_road_feature(nbFeature[(dy + 1) * 3 + (dx + 1)]);
+        return features_link(std::uint8_t(ctx.feature),
+                             nbFeature[(dy + 1) * 3 + (dx + 1)]);
     };
     // A span is straight: masonry does not meander.
     const auto carve = [&](int x1, int y1, int x2, int y2, std::uint32_t seed) {
@@ -286,7 +287,8 @@ static void gen_bridge_crossing(const CellContext& ctx,
         for (int yy = 0; yy < 3; ++yy) {
             for (int xx = 0; xx < 3; ++xx) {
                 if (xx == 1 && yy == 1) continue;
-                if (!is_road_feature(nbFeature[yy * 3 + xx])) continue;
+                if (!features_link(std::uint8_t(ctx.feature), nbFeature[yy * 3 + xx]))
+                continue;
                 int ex, ey;
                 edge_anchor_target(ctx, xx - 1, yy - 1, ex, ey);
                 carve(ex, ey, cx, cy, ctx.seed);
@@ -391,7 +393,8 @@ static void gen_bridge_crossing(const CellContext& ctx,
     for (int yy = 0; yy < 3; ++yy) {
         for (int xx = 0; xx < 3; ++xx) {
             if (xx == 1 && yy == 1) continue;
-            if (!is_road_feature(nbFeature[yy * 3 + xx])) continue;
+            if (!features_link(std::uint8_t(ctx.feature), nbFeature[yy * 3 + xx]))
+                continue;
             const int adx = xx - 1;
             const int ady = yy - 1;
             bool consumed = false;
@@ -452,7 +455,8 @@ void gen_road(const GenInput& in, SubworldMapData& out) {
     for (int yy = 0; yy < 3; ++yy) {
         for (int xx = 0; xx < 3; ++xx) {
             if (xx == 1 && yy == 1) continue;
-            if (!is_road_feature(nbFeature[yy * 3 + xx])) continue;
+            if (!features_link(std::uint8_t(ctx.feature), nbFeature[yy * 3 + xx]))
+                continue;
             connectedDx[nConnected] = xx - 1;
             connectedDy[nConnected] = yy - 1;
             ++nConnected;

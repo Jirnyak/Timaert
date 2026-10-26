@@ -53,7 +53,7 @@ void gen_village(const GenInput& in, SubworldMapData& out) {
     Rng rBuild(ctx.seed ^ 0xABCDEFu);
 
     // ── 1. The tract ──────────────────────────────────────────────────────
-    const RoadAxisSet axes = settlement_road_axes(nbFeature);
+    const RoadAxisSet axes = settlement_road_axes(std::uint8_t(in.ctx.feature), nbFeature);
     carve_settlement_main_roads(out, ctx, axes, centre, ctx.seed ^ 0xA115EEDu);
 
     // Village footprint from the same authority the city uses and the citizen
