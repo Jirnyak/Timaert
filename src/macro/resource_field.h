@@ -114,10 +114,23 @@ constexpr int kMaxWheatStandsPerCell = 4096;   // po2 scale of the estimate
 // to be its own literal 32 that merely HAPPENED to equal the season.
 constexpr int kGrowthEpochDays = kDaysPerSeason;
 
-inline bool growth_cell_due(std::uint32_t cellIdx, int day) {
-    return int(cellIdx % std::uint32_t(kGrowthEpochDays))
-        == day % kGrowthEpochDays;
-}
+// ── ЗДЕСЬ ЖИЛА `growth_cell_due`, И ОНА СНЕСЕНА КАК ВТОРОЙ ОТВЕТ (M-324) ──
+//
+// Вопрос «подошла ли эта клетка сегодня» у мира ОДИН, а ответов стояло ДВА:
+// предикат `growth_cell_due(idx, day)` здесь и ШАГОВЫЙ ОБХОД среза в самом
+// ходоке (`idx = day % kGrowthEpochDays; idx += kGrowthEpochDays` —
+// `resource_fields_daily_growth@src/macro/macro_stock.cpp`, обе ветки
+// `CarrierSpread` и `HealToBaseline`). Это DOD п.6 в чистом виде, и жив из
+// двоих был ровно один: у предиката **НОЛЬ вызовов** в `src/` и в `tests/`.
+//
+// ПОЧЕМУ ШАГОВЫЙ ОБХОД ПРАВИЛЬНЕЕ, А НЕ ПРОСТО «ПОБЕДИЛ». Предикат заставляет
+// СПРОСИТЬ каждую клетку карты, чтобы отсеять 31/32; шаг перечисляет ровно
+// свой срез и не касается остальных — та же выборка за 1/32 работы. Поэтому
+// снесён предикат, а не обход.
+//
+// Диагноз стоял в `SKELETON.md` («мёртвый дубль закона роста») и в наряде
+// M-112 («`growth_cell_due` снести») — здесь он исполнен. Подтверждено
+// КОМПИЛЯТОРОМ: переименование символа оставило сборку зелёной.
 
 // ОДИН ЗАКОН РОСТА: ЗАЛЕЧИВАНИЕ К БАЗОВОЙ (владелец, 2026-09-22, дословно:
 // «давай тогда метал не убывает как и фертильность… то есть та же механика с
