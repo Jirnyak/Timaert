@@ -150,43 +150,77 @@ struct FeatureDef {
     std::uint32_t mapColor;
 };
 
+// ── ПОЛЯ НАЗЫВАЮТСЯ, А НЕ СЧИТАЮТСЯ (DOD п.9) ────────────────────────────
+// Строки ниже стояли ПОЗИЦИОННЫМИ, и колонки им подписывала шапка-линейка
+// («bed optics civ на воде чьё число · выход») — то есть имя поля
+// существовало для ЧИТАТЕЛЯ и не существовало для КОМПИЛЯТОРА. Цена этой
+// формы в проекте уже измерена на таблице-сестре (`kPlaces`, шрам города:
+// счётчик крю не убавили, вырезая строку, её место занял ДЕФОЛТ, и
+// призрачная артель держала треть мировой добычи дерева). Промах на единицу
+// — родовой дефект позиционного агрегата: новая колонка в середине садится в
+// соседнее поле МОЛЧА, а мир остаётся правдоподобным.
+// Поймал владелец, глядя на эту таблицу, — прибор такого не ловит вовсе.
+// Теперь порядок полей судит `-Wreorder-init-list` (`timaert_build_flags`),
+// а пропуск поля даёт его ноль ЯВНО. Значения перенесены ОДИН В ОДИН:
+// сверено машинно, последовательность литералов до и после совпала.
 inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
-    //                     bed   optics  civ    на воде   чьё число · выход
-    {FT_None,     0.0f, 1.00f, 0.0f,  FT_None,
-     ResourceFieldId::Count, nullptr, 0x00000000u},
-    {FT_Road,     1.0f, 0.65f, 0.35f, FT_Bridge,
-     ResourceFieldId::Count, nullptr, 0xFF8A8276u},
-    {FT_DirtRoad, 1.5f, 0.85f, 0.22f, FT_Bridge,
-     ResourceFieldId::Count, nullptr, 0xFF9C8259u},
+    {.type = FT_None, .bedWeight = 0.0f, .opticalCost = 1.00f,
+     .civStrength = 0.0f, .onWater = FT_None,
+     .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
+     .mapColor = 0x00000000u},
+    {.type = FT_Road, .bedWeight = 1.0f, .opticalCost = 0.65f,
+     .civStrength = 0.35f, .onWater = FT_Bridge,
+     .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
+     .mapColor = 0xFF8A8276u},
+    {.type = FT_DirtRoad, .bedWeight = 1.5f, .opticalCost = 0.85f,
+     .civStrength = 0.22f, .onWater = FT_Bridge,
+     .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
+     .mapColor = 0xFF9C8259u},
     // Вспаханная парцелла. Какой культурой засеяна — вопрос ТИПА фичи, а не
     // второго ресурсного ряда: картофельное и маковое поля будут новыми
     // строками ЭТОЙ таблицы, работающими то же число. Выход пашни — умолчание
     // ряда Wheat («food»), поэтому оверрайда у неё нет.
-    {FT_Field,    1.8f, 1.00f, 0.0f,  FT_None,
-     ResourceFieldId::Count, nullptr, 0xFFC9A54Eu},
+    {.type = FT_Field, .bedWeight = 1.8f, .opticalCost = 1.00f,
+     .civStrength = 0.0f, .onWater = FT_None,
+     .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
+     .mapColor = 0xFFC9A54Eu},
     // Мост несёт колонки каменной дороги: его настил И ЕСТЬ мощёное ложе
     // (марш не замечает реки под ним), тот же коридор свету и взгляду, та же
     // тяга цивилизации. Кладёт его планировщик дорог при генерации мира.
-    {FT_Bridge,   1.0f, 0.65f, 0.35f, FT_Bridge,
-     ResourceFieldId::Count, nullptr, 0xFF8A8276u},
+    {.type = FT_Bridge, .bedWeight = 1.0f, .opticalCost = 0.65f,
+     .civStrength = 0.35f, .onWater = FT_Bridge,
+     .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
+     .mapColor = 0xFF8A8276u},
     // Шахты делят колонки пашни: разработанная земля, не инженерное ложе
     // (0 = своё основание биома), прятаться не за чем, и рабочее место,
     // которое возделывают, а не держат гарнизоном. ВЫХОД — СТРОКА ШАХТЫ, а
     // не рода жилы: жилы единые (вердикт 2026-10-22), род ресурса решает
     // ровно эта колонка. А ЧИСЛО НА ШАХТЕ ЕСТЬ ЕЁ ЗАЛЕЖЬ (numberRow = Vein,
     // M-78/M-88): кап связного кластера, свёрнутый генерацией шахт.
-    {FT_ClayPit,    0.0f, 1.00f, 0.0f, FT_None,
-     ResourceFieldId::Vein, "clay", 0xFFB06A4Au},
-    {FT_IronMine,   0.0f, 1.00f, 0.0f, FT_None,
-     ResourceFieldId::Vein, "iron", 0xFF6E5A52u},
-    {FT_Quarry,     0.0f, 1.00f, 0.0f, FT_None,
-     ResourceFieldId::Vein, "stone", 0xFF9A9A94u},
-    {FT_SilverMine, 0.0f, 1.00f, 0.0f, FT_None,
-     ResourceFieldId::Vein, "silver", 0xFFC8CDD4u},
-    {FT_CopperMine, 0.0f, 1.00f, 0.0f, FT_None,
-     ResourceFieldId::Vein, "copper", 0xFFB87333u},
-    {FT_GoldMine,   0.0f, 1.00f, 0.0f, FT_None,
-     ResourceFieldId::Vein, "gold", 0xFFD4AF37u},
+    {.type = FT_ClayPit, .bedWeight = 0.0f, .opticalCost = 1.00f,
+     .civStrength = 0.0f, .onWater = FT_None,
+     .numberRow = ResourceFieldId::Vein, .yieldItem = "clay",
+     .mapColor = 0xFFB06A4Au},
+    {.type = FT_IronMine, .bedWeight = 0.0f, .opticalCost = 1.00f,
+     .civStrength = 0.0f, .onWater = FT_None,
+     .numberRow = ResourceFieldId::Vein, .yieldItem = "iron",
+     .mapColor = 0xFF6E5A52u},
+    {.type = FT_Quarry, .bedWeight = 0.0f, .opticalCost = 1.00f,
+     .civStrength = 0.0f, .onWater = FT_None,
+     .numberRow = ResourceFieldId::Vein, .yieldItem = "stone",
+     .mapColor = 0xFF9A9A94u},
+    {.type = FT_SilverMine, .bedWeight = 0.0f, .opticalCost = 1.00f,
+     .civStrength = 0.0f, .onWater = FT_None,
+     .numberRow = ResourceFieldId::Vein, .yieldItem = "silver",
+     .mapColor = 0xFFC8CDD4u},
+    {.type = FT_CopperMine, .bedWeight = 0.0f, .opticalCost = 1.00f,
+     .civStrength = 0.0f, .onWater = FT_None,
+     .numberRow = ResourceFieldId::Vein, .yieldItem = "copper",
+     .mapColor = 0xFFB87333u},
+    {.type = FT_GoldMine, .bedWeight = 0.0f, .opticalCost = 1.00f,
+     .civStrength = 0.0f, .onWater = FT_None,
+     .numberRow = ResourceFieldId::Vein, .yieldItem = "gold",
+     .mapColor = 0xFFD4AF37u},
     // Пастбище и льняное поле несут колонки пашни: та же возделанная земля,
     // та же трава по пояс, которая ничего не прячет.
     // А ЧИСЛО НА ПАСТБИЩЕ ЕСТЬ СТАДО — единственная строка таблицы, чьё
@@ -194,11 +228,15 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // M-258): собственного массива у ряда больше нет, его носитель — поле
     // чисел фич, и смысл числу задаёт ВОТ ЭТА колонка. Выход пастбища —
     // умолчание ряда Livestock (конь-душа), оверрайд не нужен.
-    {FT_Pasture,  1.8f, 1.00f, 0.0f,  FT_None,
-     ResourceFieldId::Livestock, nullptr, 0xFF8FA85Cu},
+    {.type = FT_Pasture, .bedWeight = 1.8f, .opticalCost = 1.00f,
+     .civStrength = 0.0f, .onWater = FT_None,
+     .numberRow = ResourceFieldId::Livestock, .yieldItem = nullptr,
+     .mapColor = 0xFF8FA85Cu},
     // ЛЁН — оверрайд выхода поверх ряда Wheat: та же земля, своя культура.
-    {FT_FlaxField, 1.8f, 1.00f, 0.0f, FT_None,
-     ResourceFieldId::Count, "fibre", 0xFF9FB0C4u},
+    {.type = FT_FlaxField, .bedWeight = 1.8f, .opticalCost = 1.00f,
+     .civStrength = 0.0f, .onWater = FT_None,
+     .numberRow = ResourceFieldId::Count, .yieldItem = "fibre",
+     .mapColor = 0xFF9FB0C4u},
     // ── Поселения. Ложе — по прецеденту моста («мост несёт колонки
     // каменной дороги»): город есть МОЩЁНЫЙ узел дорожной сети — его клетка
     // несёт ложе камня (1.0); деревня — грунтовый двор (ложе грунтовки,
@@ -213,11 +251,26 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // ВЕС ей не назначен, потому что веса здесь нет авторского вопроса —
     // различие столицы живёт в её ГЕНЕРАТОРЕ субмира, ключом которого эта
     // строка и является (вердикт владельца 2026-10-24, см. feature_type.h).
-    {FT_Capital, 1.0f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr, 0xFFFFD98Cu},
-    {FT_City,    1.0f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr, 0xFFE7D27Au},
-    {FT_Village, 1.5f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr, 0xFFCCB068u},
-    {FT_Spire,   0.0f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr, 0xFFA86CFFu},
-    {FT_Ruin,    0.0f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr, 0xFF8E8576u},
+    {.type = FT_Capital, .bedWeight = 1.0f, .opticalCost = 1.00f,
+     .civStrength = 0.0f, .onWater = FT_None,
+     .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
+     .mapColor = 0xFFFFD98Cu},
+    {.type = FT_City, .bedWeight = 1.0f, .opticalCost = 1.00f,
+     .civStrength = 0.0f, .onWater = FT_None,
+     .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
+     .mapColor = 0xFFE7D27Au},
+    {.type = FT_Village, .bedWeight = 1.5f, .opticalCost = 1.00f,
+     .civStrength = 0.0f, .onWater = FT_None,
+     .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
+     .mapColor = 0xFFCCB068u},
+    {.type = FT_Spire, .bedWeight = 0.0f, .opticalCost = 1.00f,
+     .civStrength = 0.0f, .onWater = FT_None,
+     .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
+     .mapColor = 0xFFA86CFFu},
+    {.type = FT_Ruin, .bedWeight = 0.0f, .opticalCost = 1.00f,
+     .civStrength = 0.0f, .onWater = FT_None,
+     .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
+     .mapColor = 0xFF8E8576u},
 };
 static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
               "kFeatureDefs row order must mirror FeatureType — a new "
