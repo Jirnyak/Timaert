@@ -126,7 +126,7 @@ std::vector<MacroLight> collect_macro_lights(const MacroWorld& mw) {
         if (lv.depleted) return;
         const PlaceDef& def = place_def(lv.type);
         const float strength =
-            def.lightPop > 0.0f ? def.lightPop : float(lv.population);
+            def.lightPop > 0.0f ? def.lightPop : float(lv.worked);
         push_light(out, w, h, float(lv.x), float(lv.y), strength,
                    def.lightColor);
     });

@@ -12,6 +12,10 @@
 #include "tables/codex.h"
 #include "macro/place_registry.h"
 #include "macro/place_iter.h"
+#include "macro/labour.h"   // souls_home — головы инвентаря места (M-324:
+                            // бралось ТРАНЗИТОМ через place_iter.h, и это
+                            // держалось на включении, чей комментарий называл
+                            // уже мёртвый символ; зависимость сделана прямой)
 #include "ui/squad_draw.h"
 #include "tables/npc.h"
 #include "tables/commodity.h"   // the raw rows the scrap variant byte names
