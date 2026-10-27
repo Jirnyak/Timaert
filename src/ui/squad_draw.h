@@ -92,11 +92,10 @@ struct ArchetypeDrawRow {
 
 inline constexpr ArchetypeDrawRow
     kArchetypeDraw[std::size_t(SquadArchetype::Count)] = {
-    //                        клеток  помнит  картинка с тела  слой  цифры тела
-    {SquadArchetype::Place,   2.0f,   true,   false,           0,    false},
-    {SquadArchetype::Worker,  1.0f,   false,  true,            1,    true},
-    {SquadArchetype::Roamer,  1.0f,   false,  true,            1,    true},
-    {SquadArchetype::Hero,    1.0f,   false,  true,            1,    true},
+    {.arch = SquadArchetype::Place, .cellSpan = 2.0f, .remembered = true, .pictureFromBody = false, .layer = 0, .figuresFromPools = false},
+    {.arch = SquadArchetype::Worker, .cellSpan = 1.0f, .remembered = false, .pictureFromBody = true, .layer = 1, .figuresFromPools = true},
+    {.arch = SquadArchetype::Roamer, .cellSpan = 1.0f, .remembered = false, .pictureFromBody = true, .layer = 1, .figuresFromPools = true},
+    {.arch = SquadArchetype::Hero, .cellSpan = 1.0f, .remembered = false, .pictureFromBody = true, .layer = 1, .figuresFromPools = true},
 };
 
 static_assert(rows_in_enum_order(kArchetypeDraw, &ArchetypeDrawRow::arch),
@@ -135,29 +134,49 @@ inline constexpr SquadDrawRow
     // «точка течи границы миров» (шапка оси): бестиповый сквад, чей архетип
     // Roamer, то есть картинка у него с тела. Нулевой `maxPx` оставил бы его
     // размером 0 — невидимым, — поэтому разброс тот же, что у подвижных.
-    {SquadType::None,    SpriteId::None, SpriteId::None,
-     12.0f, 56.0f, 10.0f, 0.0f, MiniShape::Dot, 0.0f},
+    {.type = SquadType::None, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None,
+     .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
+     .mini = MiniShape::Dot, .miniR = 0.0f},
     // Столица носит ГОРОДСКОЙ спрайт — своего арта у неё ещё нет, и
     // «нет арта» не значит «не рисуется» (ассерт ниже): крупнее города на
     // карте и тем отличима, пока художник не дал ей строку спрайта.
-    {SquadType::Capital, SpriteId::City, SpriteId::City,
-     32.0f, 224.0f, 0.0f, 6.0f, MiniShape::Ring, 3.0f},
-    {SquadType::City,    SpriteId::City, SpriteId::City,
-     28.0f, 192.0f, 0.0f, 6.0f, MiniShape::Ring, 3.0f},
-    {SquadType::Village, SpriteId::Village, SpriteId::Village,
-     22.0f, 144.0f, 3.0f, 0.0f, MiniShape::Dot, 1.6f},
-    {SquadType::Spire,   SpriteId::SpireActive, SpriteId::SpireSpent,
-     26.0f, 160.0f, 0.0f, 0.0f, MiniShape::Diamond, 4.0f},
-    {SquadType::Ruin,    SpriteId::None, SpriteId::None,
-     22.0f, 144.0f, 0.0f, 0.0f, MiniShape::Dot, 1.6f},
-    {SquadType::Lair,    SpriteId::None, SpriteId::None,
-     22.0f, 144.0f, 0.0f, 0.0f, MiniShape::Dot, 1.6f},
-    {SquadType::Shrine,  SpriteId::None, SpriteId::None,
-     22.0f, 144.0f, 0.0f, 0.0f, MiniShape::Dot, 1.6f},
-    {SquadType::Mine,    SpriteId::None, SpriteId::None,
-     22.0f, 144.0f, 0.0f, 0.0f, MiniShape::Dot, 1.6f},
-    {SquadType::Tower,   SpriteId::None, SpriteId::None,
-     22.0f, 144.0f, 0.0f, 0.0f, MiniShape::Dot, 1.6f},
+    {.type = SquadType::Capital, .sprite = SpriteId::City,
+     .spriteDepleted = SpriteId::City,
+     .basePx = 32.0f, .maxPx = 224.0f, .minZoom = 0.0f, .labelZoom = 6.0f,
+     .mini = MiniShape::Ring, .miniR = 3.0f},
+    {.type = SquadType::City, .sprite = SpriteId::City,
+     .spriteDepleted = SpriteId::City,
+     .basePx = 28.0f, .maxPx = 192.0f, .minZoom = 0.0f, .labelZoom = 6.0f,
+     .mini = MiniShape::Ring, .miniR = 3.0f},
+    {.type = SquadType::Village, .sprite = SpriteId::Village,
+     .spriteDepleted = SpriteId::Village,
+     .basePx = 22.0f, .maxPx = 144.0f, .minZoom = 3.0f, .labelZoom = 0.0f,
+     .mini = MiniShape::Dot, .miniR = 1.6f},
+    {.type = SquadType::Spire, .sprite = SpriteId::SpireActive,
+     .spriteDepleted = SpriteId::SpireSpent,
+     .basePx = 26.0f, .maxPx = 160.0f, .minZoom = 0.0f, .labelZoom = 0.0f,
+     .mini = MiniShape::Diamond, .miniR = 4.0f},
+    {.type = SquadType::Ruin, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None,
+     .basePx = 22.0f, .maxPx = 144.0f, .minZoom = 0.0f, .labelZoom = 0.0f,
+     .mini = MiniShape::Dot, .miniR = 1.6f},
+    {.type = SquadType::Lair, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None,
+     .basePx = 22.0f, .maxPx = 144.0f, .minZoom = 0.0f, .labelZoom = 0.0f,
+     .mini = MiniShape::Dot, .miniR = 1.6f},
+    {.type = SquadType::Shrine, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None,
+     .basePx = 22.0f, .maxPx = 144.0f, .minZoom = 0.0f, .labelZoom = 0.0f,
+     .mini = MiniShape::Dot, .miniR = 1.6f},
+    {.type = SquadType::Mine, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None,
+     .basePx = 22.0f, .maxPx = 144.0f, .minZoom = 0.0f, .labelZoom = 0.0f,
+     .mini = MiniShape::Dot, .miniR = 1.6f},
+    {.type = SquadType::Tower, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None,
+     .basePx = 22.0f, .maxPx = 144.0f, .minZoom = 0.0f, .labelZoom = 0.0f,
+     .mini = MiniShape::Dot, .miniR = 1.6f},
     // ── ПОДВИЖНЫЕ РОДА: СВОИ ЗНАЧЕНИЯ, А НЕ НУЛИ ────────────────────────
     // Здесь стояли три нулевые строки с надписью «не рисуются этой таблицей»
     // — то есть таблица отказывалась отвечать, и за неё отвечал второй
@@ -171,17 +190,25 @@ inline constexpr SquadDrawRow
     // ответ до пикселя. minZoom 10 — прежний ОБЩИЙ гейт прохода фигурок
     // («ниже 10 px/клетку 256-пиксельный спрайт схлопывается в пятно и спорит
     // с процедурными фичами»), ставший колонкой РОДА, как у деревни.
-    {SquadType::Artel,     SpriteId::None, SpriteId::None,
-     12.0f, 56.0f, 10.0f, 0.0f, MiniShape::Dot, 0.0f},
-    {SquadType::Caravan,   SpriteId::None, SpriteId::None,
-     12.0f, 56.0f, 10.0f, 0.0f, MiniShape::Dot, 0.0f},
-    {SquadType::Collector, SpriteId::None, SpriteId::None,
-     12.0f, 56.0f, 10.0f, 0.0f, MiniShape::Dot, 0.0f},
+    {.type = SquadType::Artel, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None,
+     .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
+     .mini = MiniShape::Dot, .miniR = 0.0f},
+    {.type = SquadType::Caravan, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None,
+     .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
+     .mini = MiniShape::Dot, .miniR = 0.0f},
+    {.type = SquadType::Collector, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None,
+     .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
+     .mini = MiniShape::Dot, .miniR = 0.0f},
     // Дракон — архетип Hero, и картинку он берёт С ТЕЛА, как всякий ходок
     // (`pictureFromBody`): его строка существа несёт `SpriteId::Dragon`.
     // Поэтому здесь не спрайт, а размеры и порог зума.
-    {SquadType::Dragon,    SpriteId::None, SpriteId::None,
-     12.0f, 56.0f, 10.0f, 0.0f, MiniShape::Dot, 0.0f},
+    {.type = SquadType::Dragon, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None,
+     .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
+     .mini = MiniShape::Dot, .miniR = 0.0f},
 };
 
 // РАЗМЕР СТРОКИ НАЗВАН — ЗНАЧИТ ПРИБИТ (DOD п.10). Он был НАЗВАН в ряду M-235
@@ -199,22 +226,21 @@ inline constexpr SquadDrawRow
 // ДА, `mini` СТОИТ ОДИН МЕЖДУ ДВУМЯ `float` И СТОИТ 4 БАЙТА ВМЕСТО 1 — это
 // ровно форма шрама DOD п.2 («одинокий узкий член рядом с широким не
 // экономит НИЧЕГО»). Переставить его к трём головным байтам дало бы 24, и
-// это НЕ СДЕЛАНО по двум причинам, обе названы вслух:
-//   1) ВЫИГРЫШ НОЛЬ. Это `constexpr`-таблица в бинарнике: 14 строк × 28 =
-//      392 байта, и на кап мира она не умножается. DOD п.2 требует достигать
-//      `sizeof` там, где узкий тип покупает память НА ЭНТИТИ; здесь он не
-//      покупает ничего, а лишняя правка без своего выигрыша устраняется, а
-//      не обосновывается (ЗАКОН КОНСТАНТ, ЗАКОН КАПА п.4).
-//   2) СТРОКИ НИЖЕ ПОЗИЦИОННЫЕ, и перестановка полей села бы значениями в
-//      соседние поля МОЛЧА — ровно тот дефект, которым 2026-10-27 была
-//      поймана таблица-сестра `kFeatureDefs` (её поля теперь называются).
-//      Перестановка здесь законна ТОЛЬКО после того, как поля этой таблицы
-//      начнут НАЗЫВАТЬСЯ (DOD п.9), и тогда её судит `-Wreorder-init-list`.
-// Пин при этом нужен независимо от обеих: он запрещает доливать колонку
-// МОЛЧА — строку меняют осознанно, вместе с этим числом (§8 п.6).
+// это НЕ СДЕЛАНО, причина ОДНА и она про выигрыш: это `constexpr`-таблица в
+// бинарнике — 14 строк × 28 = 392 байта, на кап мира она не умножается, а
+// DOD п.2 требует достигать `sizeof` там, где узкий тип покупает память НА
+// ЭНТИТИ. Здесь он не покупает ничего, а правка без своего выигрыша
+// устраняется, а не обосновывается (ЗАКОН КОНСТАНТ, ЗАКОН КАПА п.4).
+//
+// ЗДЕСЬ СТОЯЛА ВТОРАЯ ПРИЧИНА — «строки позиционные, перестановка села бы в
+// соседние поля молча», — И ОНА СНЯТА В ТОТ ЖЕ ДЕНЬ: поля обеих таблиц этого
+// файла теперь НАЗЫВАЮТСЯ, порядок судит `-Wreorder-init-list`. Значит
+// перестановка стала ТЕХНИЧЕСКИ безопасной и всё равно не делается — по
+// первой причине. Так и должно читаться: запрет снят, выигрыша нет.
+// Пин нужен независимо от всего этого: он запрещает доливать колонку МОЛЧА —
+// строку меняют осознанно, вместе с этим числом (§8 п.6).
 static_assert(sizeof(SquadDrawRow) == 28,
-              "SquadDrawRow layout changed — say WHICH column and why; "
-              "перестановка полей запрещена, пока строки позиционные");
+              "SquadDrawRow layout changed — say WHICH column and why");
 
 static_assert(rows_in_enum_order(kSquadDraw, &SquadDrawRow::type),
               "kSquadDraw row order must mirror SquadType — the enum "
