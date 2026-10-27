@@ -658,7 +658,7 @@ void test_cities_read_the_ground() {
 // записанный при рождении, и сетка сквадов, знающая, кто где стоит.
 // Колонка — это то, о чём закон, а не второй его исполнитель.
 FeatureType settlement_feature_of(SquadType t) {
-    return place_def(t).feature;
+    return feature_of_place_kind(t);
 }
 
 // Сколько клеток мира два носителя назвали ПО-РАЗНОМУ. Отдельная функция,

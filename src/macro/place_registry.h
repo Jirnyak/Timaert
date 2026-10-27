@@ -9,7 +9,6 @@
 // (The header's former first half — collect_places and its string-typed
 // PlaceEntry — had no callers and is gone with place_registry.cpp.)
 #pragma once
-#include "tables/feature_type.h"   // колонка фичи рода (FT_*)
 #include <cstdint>
 #include "core/table_guard.h"
 #include "macro/econ_day.h"     // kCreaturesPerCityWorker — the bench quota the
@@ -50,12 +49,17 @@ struct PlaceDef {
     std::uint8_t     minZone;     // minimum difficulty zone to spawn
     std::uint8_t     maxZone;
     std::uint8_t     glyph;       // ASCII glyph for fallback rendering
-    // ФИЧА РОДА — что встаёт на клетку В МОМЕНТ ВЫБОРА (вердикт 2026-10-23:
-    // «ДЕРЕВНИ ГОРОДА это сначало фичи ВСЁ ТОЛЬКО ФИЧИ потом поверх них
-    // ложатся сквады»). Читает дверь рождения места (birth_place); FT_None =
-    // род фичу не ставит (подвижные). Бывший switch по роду в
-    // stamp_settlement_features умер в эту колонку (ЗАКОН СТРОКИ КАТАЛОГА).
-    FeatureType      feature = FT_None;
+    // ── КОЛОНКА `feature` УЕХАЛА 2026-10-27 В СТРОКУ ФИЧИ (вариант В
+    // M-235, вердикт владельца) ──────────────────────────────────────────
+    // Она отвечала «какую фичу ставит этот род». Теперь на тот же вопрос
+    // отвечает колонка `kind@src/macro/features.h` со стороны ФИЧИ, а оба
+    // направления дают двери `place_kind_of_feature` и
+    // `feature_of_place_kind` там же. Три довода за инверсию стоят у самой
+    // колонки; коротко: фича по ЗАКОНУ ГЕНЕРАЦИИ п.6 ставится ДО сквада, у
+    // мира на руках всегда БАЙТ, а не род, и строка фичи уже является ключом
+    // модуля генерации субмира (вердикт 2026-10-24 про `FT_Capital`).
+    // Включение `tables/feature_type.h` ушло вместе с колонкой: роду этой
+    // таблицы словарь фич больше не нужен ни на байт.
     std::uint32_t    color;       // ARGB tint
     // (КОЛОНКА `walkable` УНИЧТОЖЕНА 2026-10-19, M-290, вердикт владельца
     //  «снести оба»: она объявляла «можно ли сюда войти», а вход в субмир
@@ -269,21 +273,21 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
     // стоит голой, а `== SquadType::City`-гейты мира остаются верными по
     // пустоте — переспросить их придётся ровно в день первой столицы.
     {.type = SquadType::Capital, .id = "capital", .label = "Capital",
-     .minZone = 0, .maxZone = 76, .glyph = '@', .feature = FT_Capital, .color = 0xFFFFD98Cu, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
+     .minZone = 0, .maxZone = 76, .glyph = '@', .color = 0xFFFFD98Cu, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
      .garrisonShift = 3, .labourShift = 3,
      .actions = kMapActTrade | kMapActHire | kMapActQuests,
      .seedComfortDays = 32, .seedRawMult = 1 },
     {.type = SquadType::City, .id = "city", .label = "City",
-     .minZone = 0, .maxZone = 76, .glyph = '#', .feature = FT_City, .color = 0xFFE7D27Au, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
+     .minZone = 0, .maxZone = 76, .glyph = '#', .color = 0xFFE7D27Au, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
      .garrisonShift = 3, .labourShift = 3,
      .actions = kMapActTrade | kMapActHire | kMapActQuests,
      .seedComfortDays = 32, .seedRawMult = 1 },
     {.type = SquadType::Village, .id = "village", .label = "Village",
-     .minZone = 0, .maxZone = 101, .glyph = 'v', .feature = FT_Village, .color = 0xFFCCB068u, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
+     .minZone = 0, .maxZone = 101, .glyph = 'v', .color = 0xFFCCB068u, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
      .garrisonShift = 3, .labourShift = 1,
@@ -296,13 +300,13 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
     // dictionary (what creeps into cellars and caves), and a ruin's ground
     // honestly crawls.
     {.type = SquadType::Spire, .id = "spire", .label = "Spire",
-     .minZone = 128, .maxZone = 255, .glyph = 'I', .feature = FT_Spire, .color = 0xFFA86CFFu, .lightColor = 0xFFA86CFFu, .lightPop = 200.0f,
+     .minZone = 128, .maxZone = 255, .glyph = 'I', .color = 0xFFA86CFFu, .lightColor = 0xFFA86CFFu, .lightPop = 200.0f,
      .faunaHabitat = kPlaceFaunaGround, .faunaMin = 0, .faunaMax = 0,
      .faunaCap = kPlaceFaunaCapGround,
      .crowdHabitat = 1u << 13, .crowdInsideShift = 2,
      },
     {.type = SquadType::Ruin, .id = "ruin", .label = "Ruin",
-     .minZone = 51, .maxZone = 229, .glyph = 'r', .feature = FT_Ruin, .color = 0xFF8E8576u, .lightColor = 0xFF8E8576u, .lightPop = 40.0f,
+     .minZone = 51, .maxZone = 229, .glyph = 'r', .color = 0xFF8E8576u, .lightColor = 0xFF8E8576u, .lightPop = 40.0f,
      .faunaHabitat = 1u << 12, .faunaMin = 2, .faunaMax = 6,
      .faunaCap = kPlaceFaunaCapGround,
      .crowdHabitat = 1u << 12, .crowdInsideShift = 0,
@@ -426,6 +430,14 @@ static_assert([] {
 // байта хвостового выравнивания до кратного восьми, которые эти колонки
 // собой занимали. Третий случай подряд, где число не выводится из ширины
 // колонки, — и снова снос не ради байт: у колонок умер ПРЕДМЕТ.
+// ОТЪЕЗД КОЛОНКИ `feature` (2026-10-27, вариант В M-235) ЧИСЛО НЕ ДВИНУЛ
+// ВОВСЕ: снятый байт целиком съело ХВОСТОВОЕ выравнивание — последнее поле
+// `seedRawMult` стояло на 70, данных было 71, и 72 есть ближайшее кратное
+// восьми что до, что после. Четвёртый случай подряд в этой строке, где
+// довод «уберём колонку — станет меньше» НЕ ВЫВОДИТСЯ из ширины колонки;
+// и к отъезду он отношения не имел ни разу — колонка уехала за ПОРЯДОК
+// ЗАКОНА (фича ставится до сквада), а не за байты. На приёмной стороне
+// картина та же: `sizeof(FeatureDef)` 40 → 40, колонка села в паддинг.
 static_assert(sizeof(PlaceDef) == 72,
               "PlaceDef layout changed — say WHICH column and why, and "
               "never re-add a faction column: a KIND is not an OWNER (M-39)");
@@ -461,57 +473,18 @@ inline constexpr const PlaceDef& place_def(SquadType t) {
     return kPlaces[std::size_t(t)];
 }
 
-// ── ОБРАТНАЯ СТОРОНА КОЛОНКИ `feature`: ЧЕЙ ЭТО РОД, ЕСЛИ ИЗВЕСТНА ФИЧА ──
-// Наряд M-318 часть А. Колонка выше отвечает «какую фичу ставит этот род»;
-// мир спрашивает и ОБРАТНОЕ — «чья это клетка, если на ней стоит такой
-// байт», — потому что по вердикту владельца 2026-10-26 личность данжа едет
-// вниз БАЙТОМ ФИЧИ, а не колонкой сквада («лучше сами фичи агностичны (у них
-// честно есть ген модуль для субмира) и тип и поле на этом всё»).
-//
-// ВЫВЕДЕНА ИЗ ТЕХ ЖЕ СТРОК, А НЕ ВТОРЫМ СПИСКОМ, И ЭТО ВЕСЬ СМЫСЛ ФОРМЫ.
-// Второй список был бы ровно «у двух таблиц один и тот же ключ» (DOD п.9) и
-// разошёлся бы с первым МОЛЧА — в день, когда у рода правят фичу и забывают
-// правый столбец. Выведенная не может разъехаться с источником ПО
-// ПОСТРОЕНИЮ: правка колонки правит обе стороны одним движением.
-//
-// `FT_None` → `SquadType::None` НАЗВАНО ЯВНО, А НЕ ОСТАВЛЕНО НА ПОРЯДОК
-// СТРОК. Пустую фичу носят девять строк (логово, святилище, шахта, башня и
-// все четыре подвижных рода плюс сам `None`), и обход вернул бы ПЕРВУЮ из
-// них — сегодня это нулевой ряд, то есть верный ответ, но верный СЛУЧАЙНО:
-// он держался бы на том, что `None` стоит первым в оси. Закон «нет фичи —
-// нет рода» сказан строкой, а не унаследован от раскладки.
-//
-// ЗВОНЯЩИХ У ДВЕРИ ЧЕТВЕРО, И ВСЕ ПРОДАКШН (перепись 2026-10-27; здесь
-// стояло «продакшн-звонящего пока нет» — часть Б наряда СДЕЛАНА, и проза
-// отстала от неё на сутки): `cell_facts@src/macro/cell_facts.cpp` — род
-// клетки едет вниз ИЗ ФИЧИ, а не из колонки сквада (та самая часть Б);
-// `cell_taken@src/macro/spires.cpp` и `cell_taken_@src/macro/ruins.cpp` —
-// «занята ли клетка местом» при генезисе; `src/macro/spawners.cpp` — то же
-// при постановке шахт (M-321). Сверх них читатель КОМПИЛЯТОРНЫЙ: страж под
-// дверью держит согласие двух направлений одной колонки на КАЖДОЙ строке
-// оси, поэтому дверь работала прибором ещё до первого звонка.
-inline constexpr SquadType place_kind_of_feature(FeatureType f) {
-    if (f == FT_None) return SquadType::None;   // нет фичи — нет рода
-    for (const PlaceDef& d : kPlaces)
-        if (d.feature == f) return d.type;
-    return SquadType::None;                     // фичу не ставит никто
-}
-
-// ── КРУГОВОЙ ОБХОД ПОД КОМПИЛЯТОРОМ (§8 п.6 — лучшая форма свидетеля) ────
-// Утверждается ОТНОШЕНИЕ, а не сегодняшние значения: для КАЖДОЙ строки с
-// непустой фичей `род → фича → род` обязано сойтись. Этим же одним
-// утверждением ловится и ДВОЙНОЕ КЛЕЙМО — два рода, назвавшие одну фичу:
-// обход вернёт первого, и круг второго разомкнётся, то есть сборка назовёт
-// коллизию вместо того, чтобы молча отдать данж чужому модулю.
-// Негативный контроль обеих полярностей — в теле коммита.
-static_assert([] {
-    for (const PlaceDef& d : kPlaces) {
-        if (d.feature == FT_None) continue;
-        if (place_kind_of_feature(d.feature) != d.type) return false;
-    }
-    return place_kind_of_feature(FT_None) == SquadType::None;
-}(), "колонка `feature` обязана читаться в ОБЕ стороны: род → фича → род "
-     "сходится на каждой строке, и двух родов на одной фиче не бывает");
+// ── ЗДЕСЬ ЖИЛА `place_kind_of_feature`, И ОНА УЕХАЛА К СВОЕЙ КОЛОНКЕ ─────
+// Вариант В M-235 (2026-10-27). Дверь отвечала «чей это род, если на клетке
+// стоит такой байт», и делала это ОБХОДОМ строк этой таблицы в поисках
+// совпавшей фичи — то есть частый вопрос мира (сборка фактов клетки, два
+// генезиса, постановка шахт) платил обходом, пока редкий вопрос рождения
+// читал колонку. После инверсии всё наоборот и дешевизна стоит там, где
+// спрашивают часто: дверь живёт в `src/macro/features.h` и ЧИТАЕТ КОЛОНКУ
+// `kind` строки фичи, а её круговой страж переехал туда же — он тот же, но
+// обходит таблицу фич и ловит заодно двойное клеймо с другой стороны.
+// Имя у двери не изменилось НАРОЧНО: четыре прод-звонящих не тронуты ни
+// одним символом, двинулось только включение (ЗАКОН ИМЕНИ п.5 — важно не
+// имя, а смысл и системность).
 
 // Is this KIND a SETTLEMENT — a place the player «прибывает в», with enter/
 // leave events and the T-key panel default? The data answers: СТОЯЩИЙ род,

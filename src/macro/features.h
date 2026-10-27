@@ -17,6 +17,10 @@
 // Колонка `numberRow` ниже называет РЯД РЕЕСТРА, чьё число стоит на фиче.
 // Цикла нет: реестр полей знает про клетки и сезоны, про фичи — ничего.
 #include "macro/resource_field.h"
+// Колонка `kind` ниже называет РОД СКВАДА, который эту фичу ставит (вариант В
+// M-235). Ось рода живёт НЕЙТРАЛЬНЫМ слоем (§11, M-181), поэтому включение
+// идёт вниз по слоям и цикла быть не может: `tables/` о фичах не знает.
+#include "tables/squad_type.h"
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -89,6 +93,41 @@ struct FeatureDef {
     // `FT_City`/`FT_Village`/`FT_Spire`/`FT_Ruin` несут эту колонку наравне со
     // всеми: отдельного «водного правила для мест» не существует.
     FeatureType onWater;
+
+    // ── ЧЕЙ ЭТО РОД, ЕСЛИ НА КЛЕТКЕ ЛЕЖИТ МОЙ БАЙТ ───────────────────────
+    // Вариант В наряда M-235 (вердикт владельца 2026-10-27). Колонка ПРИЕХАЛА
+    // ОТСЮДА НАОБОРОТ: до неё ответ жил колонкой `PlaceDef::feature` в
+    // таблице СКВАДОВ («какую фичу ставит этот род»), и у этой формы было три
+    // структурных изъяна, каждый — не вкус:
+    //
+    //   1) ПОРЯДОК ГЕНЕРАЦИИ БЫЛ ВЫВЕРНУТ. ЗАКОН ГЕНЕРАЦИИ п.6: мир → поля →
+    //      ФИЧИ (столицы → города → деревни → дороги) → СКВАДЫ этих фич;
+    //      «фича ставится ДО сквада и без него». А байт земли штамповала
+    //      дверь РОЖДЕНИЯ СКВАДА, спрашивая таблицу сквадов, — то есть фичу
+    //      ставил тот, кого на этот момент по закону ещё нет.
+    //   2) У МИРА НА РУКАХ ВСЕГДА БАЙТ, А НЕ РОД. Клетка не знает, кто на ней
+    //      стоит, пока не спросили сквада, поэтому «байт → род» есть частый
+    //      вопрос мира (четыре прод-звонящих, один из них на пути сборки
+    //      фактов клетки), а «род → байт» — вопрос одного мгновения рождения.
+    //      Дешёвая форма (чтение колонки) обязана обслуживать ЧАСТЫЙ вопрос;
+    //      до инверсии она обслуживала редкий, а частый платил обходом.
+    //   3) ЭТО РОВНО ТО, ЧТО ЕДЕТ ВНИЗ. Вердикт владельца 2026-10-24 про
+    //      `FT_Capital`: «ФИЧА КАПИТАЛ НАДО! ТАМ БУДЕТ ОСОБЫЙ ГЕНЕРАТОР! У НАС
+    //      ФИЧИ ЭТО ДОД ИНКАПС НЕЗАВИСИМЫЕ МОДУЛИ ДЛЯ ГЕНЕРАЦИИ В СУБМИРЕ» —
+    //      строка фичи УЖЕ ключ модуля генерации субмира. Теперь ключ
+    //      генератора и ответ «чей это род» — ОДНА строка, а не две таблицы
+    //      по двум ключам (DOD п.9).
+    //
+    // `SquadType::None` = «меня не ставит ни один род»: дорога, пашня, мост,
+    // шахта, парцелла. Это ЗНАЧЕНИЕ, а не пустота, и держит его тот же закон,
+    // что `numberRow = Count` ниже.
+    //
+    // ЦЕНА — НОЛЬ БАЙТ: колонка села между `onWater` и `numberRow`, в
+    // паддинг, который строка и так несла до указателя `yieldItem` (пин
+    // `sizeof` под таблицей). И ЕЁ ЖЕ ЗАМЕР: `sizeof(PlaceDef)` 72 → 72 —
+    // снятый оттуда байт целиком съело хвостовое выравнивание, третий такой
+    // случай подряд в той таблице.
+    SquadType kind = SquadType::None;
 
     // ── ЧЕЙ РЯД НЕСЁТ ЧИСЛО, СТОЯЩЕЕ НА ЭТОЙ ФИЧЕ ────────────────────────
     // ЗАКОН ПОЛЯ п.3, сделанный СТРУКТУРОЙ. Владелец, дословно: «ЧИСЛО В
@@ -166,14 +205,17 @@ struct FeatureDef {
 inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     {.type = FT_None, .bedWeight = 0.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
+     .kind = SquadType::None,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
      .mapColor = 0x00000000u},
     {.type = FT_Road, .bedWeight = 1.0f, .opticalCost = 0.65f,
      .civStrength = 0.35f, .onWater = FT_Bridge,
+     .kind = SquadType::None,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
      .mapColor = 0xFF8A8276u},
     {.type = FT_DirtRoad, .bedWeight = 1.5f, .opticalCost = 0.85f,
      .civStrength = 0.22f, .onWater = FT_Bridge,
+     .kind = SquadType::None,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
      .mapColor = 0xFF9C8259u},
     // Вспаханная парцелла. Какой культурой засеяна — вопрос ТИПА фичи, а не
@@ -182,6 +224,7 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // ряда Wheat («food»), поэтому оверрайда у неё нет.
     {.type = FT_Field, .bedWeight = 1.8f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
+     .kind = SquadType::None,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
      .mapColor = 0xFFC9A54Eu},
     // Мост несёт колонки каменной дороги: его настил И ЕСТЬ мощёное ложе
@@ -189,6 +232,7 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // тяга цивилизации. Кладёт его планировщик дорог при генерации мира.
     {.type = FT_Bridge, .bedWeight = 1.0f, .opticalCost = 0.65f,
      .civStrength = 0.35f, .onWater = FT_Bridge,
+     .kind = SquadType::None,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
      .mapColor = 0xFF8A8276u},
     // Шахты делят колонки пашни: разработанная земля, не инженерное ложе
@@ -199,26 +243,32 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // M-78/M-88): кап связного кластера, свёрнутый генерацией шахт.
     {.type = FT_ClayPit, .bedWeight = 0.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
+     .kind = SquadType::None,
      .numberRow = ResourceFieldId::Vein, .yieldItem = "clay",
      .mapColor = 0xFFB06A4Au},
     {.type = FT_IronMine, .bedWeight = 0.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
+     .kind = SquadType::None,
      .numberRow = ResourceFieldId::Vein, .yieldItem = "iron",
      .mapColor = 0xFF6E5A52u},
     {.type = FT_Quarry, .bedWeight = 0.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
+     .kind = SquadType::None,
      .numberRow = ResourceFieldId::Vein, .yieldItem = "stone",
      .mapColor = 0xFF9A9A94u},
     {.type = FT_SilverMine, .bedWeight = 0.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
+     .kind = SquadType::None,
      .numberRow = ResourceFieldId::Vein, .yieldItem = "silver",
      .mapColor = 0xFFC8CDD4u},
     {.type = FT_CopperMine, .bedWeight = 0.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
+     .kind = SquadType::None,
      .numberRow = ResourceFieldId::Vein, .yieldItem = "copper",
      .mapColor = 0xFFB87333u},
     {.type = FT_GoldMine, .bedWeight = 0.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
+     .kind = SquadType::None,
      .numberRow = ResourceFieldId::Vein, .yieldItem = "gold",
      .mapColor = 0xFFD4AF37u},
     // Пастбище и льняное поле несут колонки пашни: та же возделанная земля,
@@ -230,11 +280,13 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // умолчание ряда Livestock (конь-душа), оверрайд не нужен.
     {.type = FT_Pasture, .bedWeight = 1.8f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
+     .kind = SquadType::None,
      .numberRow = ResourceFieldId::Livestock, .yieldItem = nullptr,
      .mapColor = 0xFF8FA85Cu},
     // ЛЁН — оверрайд выхода поверх ряда Wheat: та же земля, своя культура.
     {.type = FT_FlaxField, .bedWeight = 1.8f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
+     .kind = SquadType::None,
      .numberRow = ResourceFieldId::Count, .yieldItem = "fibre",
      .mapColor = 0xFF9FB0C4u},
     // ── Поселения. Ложе — по прецеденту моста («мост несёт колонки
@@ -253,22 +305,27 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // строка и является (вердикт владельца 2026-10-24, см. feature_type.h).
     {.type = FT_Capital, .bedWeight = 1.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
+     .kind = SquadType::Capital,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
      .mapColor = 0xFFFFD98Cu},
     {.type = FT_City, .bedWeight = 1.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
+     .kind = SquadType::City,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
      .mapColor = 0xFFE7D27Au},
     {.type = FT_Village, .bedWeight = 1.5f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
+     .kind = SquadType::Village,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
      .mapColor = 0xFFCCB068u},
     {.type = FT_Spire, .bedWeight = 0.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
+     .kind = SquadType::Spire,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
      .mapColor = 0xFFA86CFFu},
     {.type = FT_Ruin, .bedWeight = 0.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
+     .kind = SquadType::Ruin,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
      .mapColor = 0xFF8E8576u},
 };
@@ -295,6 +352,72 @@ inline constexpr const FeatureDef& feature_def(FeatureType t) {
                ? kFeatureDefs[std::size_t(t)]
                : kFeatureDefs[std::size_t(FT_None)];   // fail-open ground
 }
+
+// РАЗМЕР СТРОКИ НАЗВАН — ЗНАЧИТ ПРИБИТ (DOD п.10). Замер `offsetof`/`alignof`
+// у clang, а не рассуждение: `alignof` = 8 из-за указателя `yieldItem`, и
+// колонка `kind` встала ВО УЖЕ СУЩЕСТВОВАВШИЙ паддинг — `onWater` на 16,
+// `kind` на 17, `numberRow` на 18, дальше шесть байт выравнивания до
+// указателя на 24. Поэтому вариант В стоил НОЛЬ байт: 40 до колонки, 40
+// после. Свидетель не про байты — он про то, что сюда нельзя доливать
+// колонку МОЛЧА: строку меняют осознанно, вместе с этим числом.
+static_assert(sizeof(FeatureDef) == 40,
+              "FeatureDef layout changed — say WHICH column and why");
+
+// ── ЧЕЙ РОД СТОИТ НА КЛЕТКЕ, ЕСЛИ НА НЕЙ ЛЕЖИТ ЭТОТ БАЙТ ─────────────────
+// ЧТЕНИЕ КОЛОНКИ, а не обход: это ЧАСТЫЙ вопрос мира (сборка фактов клетки,
+// «занята ли клетка местом» у двух генезисов и у постановки шахт), и у мира
+// на руках всегда байт. До варианта В здесь стоял обход 14 строк таблицы
+// СКВАДОВ, то есть частый вопрос платил за редкий.
+// `SquadType::None` — «этот байт не ставит никакой род» (дорога, пашня,
+// мост, шахта, парцелла, пустая клетка); `feature_def` fail-open, поэтому
+// невалидный байт честно отвечает «никакой».
+inline constexpr SquadType place_kind_of_feature(FeatureType f) {
+    return feature_def(f).kind;
+}
+
+// ── И ОБРАТНОЕ: КАКУЮ ФИЧУ СТАВИТ ЭТОТ РОД ───────────────────────────────
+// ОБХОД, и это правильная сторона платить: вопрос звучит РОВНО ОДИН РАЗ за
+// рождение сквада (`birth_place@src/macro/place_birth.h`), на руках у
+// звонящего род, а не байт, и цена — O(строк таблицы фич), константа.
+// ВЫВЕДЕНА ИЗ ТЕХ ЖЕ СТРОК, А НЕ ВТОРЫМ СПИСКОМ: второй список был бы «у
+// двух таблиц один и тот же ключ» (DOD п.9) и разошёлся бы МОЛЧА в день,
+// когда у фичи правят род и забывают правый столбец.
+// `SquadType::None` → `FT_None` названо ЯВНО, а не оставлено на порядок
+// строк: пустой род несут 13 строк из 18, и обход вернул бы ПЕРВУЮ из них —
+// сегодня это нулевой ряд, то есть верный ответ, но верный СЛУЧАЙНО.
+inline constexpr FeatureType feature_of_place_kind(SquadType k) {
+    if (k == SquadType::None) return FT_None;   // нет рода — нет фичи
+    for (const FeatureDef& d : kFeatureDefs)
+        if (d.kind == k) return d.type;
+    return FT_None;                             // род фичи не ставит
+}
+
+// ── КРУГОВОЙ ОБХОД ПОД КОМПИЛЯТОРОМ (§8 п.6 — лучшая форма свидетеля) ────
+// Утверждается ОТНОШЕНИЕ, а не сегодняшние значения, и каждое из трёх ловит
+// свой класс дефекта:
+//   1) фича → род → фича сходится на каждой строке с непустым родом. Этим же
+//      ловится ДВОЙНОЕ КЛЕЙМО — две фичи, назвавшие один род: обход вернёт
+//      первую, и круг второй разомкнётся, то есть сборка назовёт коллизию
+//      вместо того, чтобы молча отдать клетку чужому модулю;
+//   2) род → фича → род сходится для каждого рода оси, который фичу ставит:
+//      строка фичи не вправе отрекаться от рода, который на неё указал;
+//   3) пустые концы сходятся друг с другом в обе стороны.
+// Переехал сюда из `place_registry.h` вместе с колонкой: форма та же, таблица
+// другая. Негативный контроль обеих полярностей — в теле коммита.
+static_assert([] {
+    for (const FeatureDef& d : kFeatureDefs) {
+        if (d.kind == SquadType::None) continue;
+        if (feature_of_place_kind(d.kind) != d.type) return false;      // (1)
+    }
+    for (std::size_t i = 0; i < std::size_t(SquadType::Count); ++i) {
+        const SquadType k = SquadType(i);
+        const FeatureType f = feature_of_place_kind(k);
+        if (f != FT_None && place_kind_of_feature(f) != k) return false; // (2)
+    }
+    return place_kind_of_feature(FT_None) == SquadType::None             // (3)
+        && feature_of_place_kind(SquadType::None) == FT_None;
+}(), "колонка `kind` обязана читаться в ОБЕ стороны: фича → род → фича и "
+     "род → фича → род сходятся, и двух фич на одном роде не бывает");
 
 struct FeatureLayer {
     int width = 0, height = 0;

@@ -4,7 +4,7 @@
 #include "macro/deposit_layer.h"
 #include "macro/map_generator.h"
 #include "macro/npc_ai.h"
-#include "macro/place_registry.h"   // place_kind_of_feature — род едет из ФИЧИ (M-318 Б)
+#include "macro/features.h"   // place_kind_of_feature — род едет из ФИЧИ (M-318 Б)
 #include "macro/politik.h"   // faction_index_for_cell — владелец земли клетки
 #include "macro/resource_field.h"
 #include "macro/spires.h"   // spire_orb — ОДИН вывод об орбе (M-233 п.8)

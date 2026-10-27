@@ -4,7 +4,7 @@
 #include "tables/biomes.h"
 #include "tables/items.h"          // вес рода шахты = 1/стоимость выхода
 #include "macro/macro_stock.h"      // MacroWorld — the registry's context
-#include "macro/place_registry.h"   // place_kind_of_feature — занята ли клетка местом
+#include "macro/features.h"   // place_kind_of_feature — занята ли клетка местом
 #include "macro/settlement_score.h" // kSettlementReach — the home-field box
 #include "macro/pathfinding.h"
 #include "macro/resource_field.h"

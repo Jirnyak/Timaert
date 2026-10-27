@@ -25,8 +25,7 @@
 #include <cstring>
 
 #include "macro/characters.h"     // place_sheet — анкета места по роду
-#include "macro/features.h"    // feature_put — фича ДО тела
-#include "macro/place_registry.h" // колонка фичи рода
+#include "macro/features.h"    // feature_put + feature_of_place_kind — фича ДО тела
 #include "macro/squad.h"       // refresh_body_from_sheet — тело той же дверью
 #include "macro/state.h"
 #include "macro/store.h"
@@ -39,7 +38,9 @@ namespace sm {
 // СНАЧАЛА ФИЧА, СКВАД ПОВЕРХ (вердикт владельца 2026-10-23: «ДЕРЕВНИ ГОРОДА
 // это сначало фичи ВСЁ ТОЛЬКО ФИЧИ потом поверх них ложатся сквады»; фичи
 // делаются ОДИН РАЗ при генерации). Дверь рождения места ставит фичу рода
-// (колонка строки kPlaces) В МОМЕНТ ВЫБОРА КЛЕТКИ — до тела; слой фич
+// (`feature_of_place_kind@src/macro/features.h` — обход строк ФИЧ по их
+// колонке `kind`; до варианта В M-235 здесь читалась колонка строки СКВАДА,
+// и порядок закона был вывернут) В МОМЕНТ ВЫБОРА КЛЕТКИ — до тела; слой фич
 // производен от сида и тел не читает никогда. nullptr-слой — фикстура без
 // фич, законно (fail-open как у всякого слоя конверта).
 inline MacroHandle birth_place(GameState& gs, MacroStore& st, SquadType kind,
@@ -48,7 +49,7 @@ inline MacroHandle birth_place(GameState& gs, MacroStore& st, SquadType kind,
                                FeatureLayer* fl = nullptr,
                                const TerrainData* td = nullptr) {
     if (fl && td) {
-        const FeatureType ft = place_def(kind).feature;
+        const FeatureType ft = feature_of_place_kind(kind);
         if (ft != FT_None) feature_put(*fl, *td, x, y, ft);
     }
     const MacroHandle h = store_birth(st);
