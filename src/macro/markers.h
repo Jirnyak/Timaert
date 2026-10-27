@@ -1,6 +1,5 @@
 // Universal markers (quests, POI, danger, waypoints). Mirrors markers.ts.
 #pragma once
-#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -73,10 +72,12 @@ inline bool remove_marker(std::vector<Marker>& m, const std::string& id) {
     return false;
 }
 
-inline void remove_markers_by_prefix(std::vector<Marker>& m, const std::string& prefix) {
-    m.erase(std::remove_if(m.begin(), m.end(),
-        [&](const Marker& mk) { return mk.id.rfind(prefix, 0) == 0; }),
-        m.end());
-}
+// (`remove_markers_by_prefix` снесена 2026-10-27, M-324: НОЛЬ вызовов в
+//  `src/` и в `tests/`, подтверждено компилятором. Снятие метки в игре — одно
+//  место и одна дверь, `remove_marker` по ТОЧНОМУ id: двойной клик карты
+//  (`map_screen.cpp`) ею же и переключает. Групповое снятие по ПРЕФИКСУ
+//  требовало читать id как структурированный ключ — второй, строковый способ
+//  адресовать метки рядом с единственным законным, — и ни один звонящий его
+//  так и не попросил.)
 
 } // namespace sm
