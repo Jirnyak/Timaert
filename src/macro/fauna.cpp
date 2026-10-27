@@ -124,9 +124,10 @@ std::uint8_t spawn_strength(NPCType t) {
             std::array<double, std::size_t(NPCType::Count)> L{};
             double lo = 1e30, hi = -1e30;
             for (std::size_t i = 0; i < L.size(); ++i) {
-                // МОЩЬ СЧИТАЕТ ОДНА ДВЕРЬ (fauna.h row_power): «кто слабее»
-                // (weakest_crowd_kind) и «насколько силён» отвечаются одним
-                // числом, иначе это два счёта силы (DOD п.6).
+                // МОЩЬ СЧИТАЕТ ОДНА ДВЕРЬ (fauna.h row_power) — та же, по
+                // которой строка дерётся, иначе это два счёта силы (DOD п.6).
+                // Второй её потребитель, `weakest_crowd_kind`, снесён
+                // 2026-10-27 вместе со своим вопросом.
                 L[i] = std::log2(row_power(NPCType(i)));
                 lo = std::min(lo, L[i]);
                 hi = std::max(hi, L[i]);
