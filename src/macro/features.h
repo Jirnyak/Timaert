@@ -124,27 +124,51 @@ struct FeatureDef {
     // на каждый случай. Строка — ключ авторства; ординал кэшируется лениво
     // у двери (ЗАКОН СЛОВАРЯ).
     const char* yieldItem;
+
+    // ── ВИД ФИЧИ НА КАРТЕ — КОЛОНКА СТРОКИ, А НЕ ЛИТЕРАЛ В ШЕЙДЕРЕ ───────
+    // Вердикт владельца 2026-10-26: «дорога это фича — она всегда рисовалась;
+    // через ту же систему все остальные рисовать».
+    //
+    // ЗАЧЕМ КОЛОНКА, А НЕ ВЕТКА: до неё вид фичи жил ЧЕТЫРЬМЯ литералами
+    // ординалов внутри `shaders/macro.frag` (`featureId > 2.5 && featureId <
+    // 3.5` и ещё три), то есть switch по роду, спрятанный в GLSL, куда не
+    // смотрит ни один прибор дерева. Цена замерена: из 17 непустых байтов вид
+    // имели ЧЕТЫРЕ, а 13 не рисовались ничем — в живом мире это 1107 клеток
+    // (1027 шахт, 70 руин, 10 шпилей). Новый байт фичи был невидим ПО
+    // ПОСТРОЕНИЮ, и заметить это могли только глаза.
+    //
+    // ФОРМА ВЗЯТА У БИОМОВ, А НЕ ВЫДУМАНА: `kBiomes` уже отдаёт свою строку
+    // шейдеру палитрой (`u_biomePal`, RGBA32F Nx1), и счёт берётся оттуда
+    // `textureSize`, а не числом. Фичи идут тем же путём — значит систем не
+    // прибавляется ни одной.
+    //
+    // 0 = СВОЕГО ВИДА НЕТ (так отвечает `FT_None`): земля под ней говорит
+    // сама. Это ЗНАЧЕНИЕ, а не сентинел для ветки — тот же немой ноль, что у
+    // `bedWeight` выше. Цвета — БАЛАНС (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ), меняются
+    // свободно; у поселений они взяты из их же строк `kPlaces`, чтобы один
+    // род не красился двумя разными ответами.
+    std::uint32_t mapColor;
 };
 
 inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     //                     bed   optics  civ    на воде   чьё число · выход
     {FT_None,     0.0f, 1.00f, 0.0f,  FT_None,
-     ResourceFieldId::Count, nullptr},
+     ResourceFieldId::Count, nullptr, 0x00000000u},
     {FT_Road,     1.0f, 0.65f, 0.35f, FT_Bridge,
-     ResourceFieldId::Count, nullptr},
+     ResourceFieldId::Count, nullptr, 0xFF8A8276u},
     {FT_DirtRoad, 1.5f, 0.85f, 0.22f, FT_Bridge,
-     ResourceFieldId::Count, nullptr},
+     ResourceFieldId::Count, nullptr, 0xFF9C8259u},
     // Вспаханная парцелла. Какой культурой засеяна — вопрос ТИПА фичи, а не
     // второго ресурсного ряда: картофельное и маковое поля будут новыми
     // строками ЭТОЙ таблицы, работающими то же число. Выход пашни — умолчание
     // ряда Wheat («food»), поэтому оверрайда у неё нет.
     {FT_Field,    1.8f, 1.00f, 0.0f,  FT_None,
-     ResourceFieldId::Count, nullptr},
+     ResourceFieldId::Count, nullptr, 0xFFC9A54Eu},
     // Мост несёт колонки каменной дороги: его настил И ЕСТЬ мощёное ложе
     // (марш не замечает реки под ним), тот же коридор свету и взгляду, та же
     // тяга цивилизации. Кладёт его планировщик дорог при генерации мира.
     {FT_Bridge,   1.0f, 0.65f, 0.35f, FT_Bridge,
-     ResourceFieldId::Count, nullptr},
+     ResourceFieldId::Count, nullptr, 0xFF8A8276u},
     // Шахты делят колонки пашни: разработанная земля, не инженерное ложе
     // (0 = своё основание биома), прятаться не за чем, и рабочее место,
     // которое возделывают, а не держат гарнизоном. ВЫХОД — СТРОКА ШАХТЫ, а
@@ -152,17 +176,17 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // ровно эта колонка. А ЧИСЛО НА ШАХТЕ ЕСТЬ ЕЁ ЗАЛЕЖЬ (numberRow = Vein,
     // M-78/M-88): кап связного кластера, свёрнутый генерацией шахт.
     {FT_ClayPit,    0.0f, 1.00f, 0.0f, FT_None,
-     ResourceFieldId::Vein, "clay"},
+     ResourceFieldId::Vein, "clay", 0xFFB06A4Au},
     {FT_IronMine,   0.0f, 1.00f, 0.0f, FT_None,
-     ResourceFieldId::Vein, "iron"},
+     ResourceFieldId::Vein, "iron", 0xFF6E5A52u},
     {FT_Quarry,     0.0f, 1.00f, 0.0f, FT_None,
-     ResourceFieldId::Vein, "stone"},
+     ResourceFieldId::Vein, "stone", 0xFF9A9A94u},
     {FT_SilverMine, 0.0f, 1.00f, 0.0f, FT_None,
-     ResourceFieldId::Vein, "silver"},
+     ResourceFieldId::Vein, "silver", 0xFFC8CDD4u},
     {FT_CopperMine, 0.0f, 1.00f, 0.0f, FT_None,
-     ResourceFieldId::Vein, "copper"},
+     ResourceFieldId::Vein, "copper", 0xFFB87333u},
     {FT_GoldMine,   0.0f, 1.00f, 0.0f, FT_None,
-     ResourceFieldId::Vein, "gold"},
+     ResourceFieldId::Vein, "gold", 0xFFD4AF37u},
     // Пастбище и льняное поле несут колонки пашни: та же возделанная земля,
     // та же трава по пояс, которая ничего не прячет.
     // А ЧИСЛО НА ПАСТБИЩЕ ЕСТЬ СТАДО — единственная строка таблицы, чьё
@@ -171,10 +195,10 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // чисел фич, и смысл числу задаёт ВОТ ЭТА колонка. Выход пастбища —
     // умолчание ряда Livestock (конь-душа), оверрайд не нужен.
     {FT_Pasture,  1.8f, 1.00f, 0.0f,  FT_None,
-     ResourceFieldId::Livestock, nullptr},
+     ResourceFieldId::Livestock, nullptr, 0xFF8FA85Cu},
     // ЛЁН — оверрайд выхода поверх ряда Wheat: та же земля, своя культура.
     {FT_FlaxField, 1.8f, 1.00f, 0.0f, FT_None,
-     ResourceFieldId::Count, "fibre"},
+     ResourceFieldId::Count, "fibre", 0xFF9FB0C4u},
     // ── Поселения. Ложе — по прецеденту моста («мост несёт колонки
     // каменной дороги»): город есть МОЩЁНЫЙ узел дорожной сети — его клетка
     // несёт ложе камня (1.0); деревня — грунтовый двор (ложе грунтовки,
@@ -189,11 +213,11 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // ВЕС ей не назначен, потому что веса здесь нет авторского вопроса —
     // различие столицы живёт в её ГЕНЕРАТОРЕ субмира, ключом которого эта
     // строка и является (вердикт владельца 2026-10-24, см. feature_type.h).
-    {FT_Capital, 1.0f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr},
-    {FT_City,    1.0f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr},
-    {FT_Village, 1.5f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr},
-    {FT_Spire,   0.0f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr},
-    {FT_Ruin,    0.0f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr},
+    {FT_Capital, 1.0f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr, 0xFFFFD98Cu},
+    {FT_City,    1.0f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr, 0xFFE7D27Au},
+    {FT_Village, 1.5f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr, 0xFFCCB068u},
+    {FT_Spire,   0.0f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr, 0xFFA86CFFu},
+    {FT_Ruin,    0.0f, 1.00f, 0.0f, FT_None, ResourceFieldId::Count, nullptr, 0xFF8E8576u},
 };
 static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
               "kFeatureDefs row order must mirror FeatureType — a new "
