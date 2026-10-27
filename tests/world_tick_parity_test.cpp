@@ -551,47 +551,20 @@ void test_population_dies_honestly_to_zero() {
 
 } // namespace
 
-// §42: dungeon garrisons regrow by the fauna law — one soul per epoch
-// while ALIVE and under the born mean; wiped clean stays dead forever.
-void test_dungeon_population_regrows_like_fauna() {
-    sm::GameState gs{};
-    auto storePtr = sm::make_macro_store();
-    sm::MacroStore& st = *storePtr;
-    gs.mapW = 8;
-    gs.mapH = 8;
-    const sm::MacroHandle live =
-        sm::birth_place(gs, st, sm::SquadType::Ruin, 1, 1);
-    // Души данжа — ГОЛОВЫ его толпы (v122, вердикт 3): род НЕ
-    // выдумывается, его даёт полоса crowdHabitat этого рода мест
-    // (руина → слабейшая строка).
-    sm::settle_souls(gs, st, live.slot, 10);
-    // выбита до последней души: ноль голов
-    const sm::MacroHandle dead =
-        sm::birth_place(gs, st, sm::SquadType::Ruin, 2, 2);
-    sm::MacroWorld w{};
-    w.gs = &gs;   // no zones layer: the ruin's score is the honest zero,
-                  // so its mean is the born base alone (64)
-
-    // ДЕНЬ ОТРОСТА — ФУНКЦИЯ ОРДИНАЛА (world_tick.cpp: id % эпоха), а
-    // ординал выдаёт эмитент (ломтик F) — он и спрашивается, вместо прежнего
-    // рукописного `5`.
-    const int liveId = int(st.spawnId[live.slot].index);
-    const int deadId = int(st.spawnId[dead.slot].index);
-    const int dueDay = liveId % sm::kGrowthEpochDays;
-    sm::regrow_dungeon_populations(w, st, dueDay + 1);
-    CHECK(sm::souls_flock(gs, st, live.slot) == 10,
-          "a place regrows only on its own day of the epoch");
-    sm::regrow_dungeon_populations(w, st, dueDay);
-    CHECK(sm::souls_flock(gs, st, live.slot) == 11,
-          "on its due day a living garrison regrows one soul");
-    sm::regrow_dungeon_populations(w, st, deadId % sm::kGrowthEpochDays);
-    CHECK(sm::souls_flock(gs, st, dead.slot) == 0,
-          "wiped clean stays dead — resurrection is the S9 transition's");
-    sm::settle_souls(gs, st, live.slot, 53);   // 11 + 53 = born mean 64
-    sm::regrow_dungeon_populations(w, st, dueDay);
-    CHECK(sm::souls_flock(gs, st, live.slot) == 64,
-          "the born mean is the regrow ceiling");
-}
+// ── ЗДЕСЬ СТОЯЛ `test_dungeon_population_regrows_like_fauna`, И ОН УМЕР ──
+//
+// M-320, вердикт владельца «снести колонки целиком». Свидетель утверждал,
+// что гарнизон отрастает по одной душе за эпоху до своего рождённого
+// среднего, а выбитый подчистую не воскресает. Умер не закон — умер
+// ПРЕДМЕТ, и дважды:
+//   · гарнизона как механизма больше нет вовсе (владелец, дословно: «да
+//     гарнзионов больше нет - субмиры и данжы заполгняются ЧЕРЕЗ 4
+//     УНИВЕРСЛЬНЫХ МЕХАНИЗМА», и гарнизона среди них нет);
+//   · его фикстура рождала СКВАД рода `Ruin`, а руина стала ФИЧЕЙ: сквада
+//     у неё нет ни одного, рождать свидетелю больше нечего.
+// Вместе с ним ушли `regrow_dungeon_populations` и колонки `bornPop*`.
+// Населять и отращивать данж будет ЕГО СОБСТВЕННЫЙ модуль (CANON S28,
+// механизм 2) — там же появится и его свидетель.
 
 // ── ПОТОЛОК ГАРНИЗОНА — ФУНКЦИЯ КОНТЕКСТА (CANON S4, 2026-09-19) ─────────
 // Цель набора была только целью НАБОРА: стойло, растущее двухтактным
@@ -682,7 +655,6 @@ void test_one_upkeep_door_judges_every_squad_once() {
 }
 
 int main() {
-    test_dungeon_population_regrows_like_fauna();
     test_hour_rollover();
     test_many_small_advances_equal_one_big_one();
     test_subworld_steps_lose_nothing_when_split();

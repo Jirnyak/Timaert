@@ -74,13 +74,10 @@ void write_population(MacroWorld& w, MacroStockKey k, int delta) {
     if (!w.store || !w.store->valid(h)) return;
     const std::uint16_t slot = h.slot;
     Inventory& store = w.store->inventory[slot].inv;
-    // Колонка, а не род: у данжа «душа» — голова его толпы и человеком не
-    // является по природе (Imp), поэтому дверь убыли у него другая. Самой
-    // ПАСТВЫ эта ветка больше не касается — её снимает `flock_left_home`,
-    // который про данж знает сам.
-    const bool dungeon =
-        place_def(SquadType(w.store->runtime[slot].squadType))
-            .bornPopBase != 0;
+    // (Развилка «у данжа душа — голова его толпы, дверь убыли другая»
+    //  СНЕСЕНА с колонкой `bornPopBase` — M-320. Руина и шпиль стали
+    //  ФИЧАМИ: слотов у них нет, квитанций на их души не приходит, и у
+    //  убыли остался один закон.)
     if (delta < 0) {
         // A place can be emptied but never owe people: списывается ФАКТ.
         //
@@ -109,8 +106,7 @@ void write_population(MacroWorld& w, MacroStockKey k, int delta) {
                 if (!creatures_remove_one(store, who)) break;
             }
         } else {
-            if (dungeon) bleed_creatures(store, -delta);
-            else         bleed_flock(store, -delta);
+            bleed_flock(store, -delta);
         }
         flock_left_home(*w.gs, *w.store, slot, folkBefore);
     } else {

@@ -171,64 +171,27 @@ void test_a_dead_horse_is_not_a_dead_soul() {
           "и в worked его никогда не вносили");
 }
 
-// ── 4. У ДАНЖА ПАРЫ НЕТ, И ЭТО ЗНАЧЕНИЕ, А НЕ ИСКЛЮЧЕНИЕ ─────────────────
-// Паства данжа И ЕСТЬ головы его толпы, а `worked` под его клеткой занят
-// чужим числом (под FT_Spire живёт спелл). Дверь пары уходит оттуда пустой
-// по КОЛОНКЕ `bornPopBase`, без единой ветки по роду у звонящих.
-void test_a_dungeon_has_no_second_carrier() {
-    World w;
-    const std::uint16_t slot = born_place(w, sm::SquadType::Spire, 40, 40, 6);
-    CHECK(sm::place_def(sm::SquadType::Spire).bornPopBase != 0,
-          "фикстура: шпиль есть данж по колонке строки, а не по имени");
-    // Чужое число на клетке шпиля — ровно то, что дверь обязана не трогать.
-    sm::worked_write(w.gs, 40, 40, 7);
-    const int before = sm::worked_read(w.gs, 40, 40);
-
-    sm::MacroWorld mw = w.envelope();
-    const int id = int(w.store->spawnId[slot].index);
-    const sm::NPCType crowd = sm::weakest_crowd_kind(sm::SquadType::Spire);
-    CHECK(crowd != sm::NPCType::Count,
-          "фикстура: у полосы толпы шпиля есть слабейшая строка");
-    sm::MacroStockKey key{id, 0, 0, -1, std::uint16_t(crowd),
-                          std::int16_t(sm::npc_def(crowd).baseLevel)};
-    sm::macro_stock_apply(mw, sm::MacroStock::Creatures, key, -2);
-
-    CHECK(sm::worked_read(w.gs, 40, 40) == before,
-          "душа данжа ушла, а чужое число клетки не шевельнулось — списать "
-          "там значило бы гасить спелл шпиля");
-
-    // ── И ВТОРОЙ ПУТЬ К ТОЙ ЖЕ КЛЕТКЕ, БЕЗ КОТОРОГО УТВЕРЖДЕНИЕ ВЫШЕ СЛЕПО
-    // Толпа шпиля НЕ ЧЕЛОВЕЧЕСКАЯ (слабейшая строка полосы — Imp), поэтому
-    // счёт людей у неё ноль с обоих концов, и до выхода по колонке
-    // `bornPopBase` дело не доходит вовсе: мутация «выход снят» прошла
-    // ЗЕЛЁНОЙ. А путь, который этот выход правда охраняет, другой — СКВАД С
-    // ЧЕЛОВЕЧЕСКИМИ ДУШАМИ, ЧЕЙ ДОМ ЕСТЬ ДАНЖ (банда из логова: «банды это
-    // население ландмарка логово бандитов»). Его убыль человеческая, дом
-    // разрешается, и только колонка не пускает списание в чужое число.
-    const sm::MacroHandle band =
-        sm::birth_place(w.gs, *w.store, sm::SquadType::Artel, 41, 41, 0,
-                        "Band");
-    // Дом банды — шпиль: ребро Parent той же дверью (заменяет self-ребро
-    // рождения места, M-245).
-    sm::set_relation(*w.store, int(w.store->spawnId[band.slot].index), id,
-                     sm::Stance::Parent);
-    CHECK(sm::creatures_push_stack(
-              w.store->inventory[band.slot].inv, sm::NPCType::Peasant,
-              sm::npc_def(sm::NPCType::Peasant).baseLevel, 3),
-          "фикстура: в банде три ЧЕЛОВЕЧЕСКИЕ души");
-    const int spellBefore = sm::worked_read(w.gs, 40, 40);
-    sm::MacroStockKey bandKey{int(w.store->spawnId[band.slot].index), 0, 0, -1,
-                              std::uint16_t(sm::NPCType::Peasant),
-                              std::int16_t(sm::npc_def(
-                                  sm::NPCType::Peasant).baseLevel)};
-    sm::macro_stock_apply(mw, sm::MacroStock::Creatures, bandKey, -3);
-    CHECK(sm::count_human_souls(w.store->inventory[band.slot].inv) == 0,
-          "фикстура: банда действительно потеряла всех трёх — иначе списывать "
-          "было бы нечего и утверждение ниже проверяло бы не то");
-    CHECK(sm::worked_read(w.gs, 40, 40) == spellBefore,
-          "человеческие души банды вышли из мира, а число клетки ДАНЖА не "
-          "двинулось: под FT_Spire живёт спелл, и паствы там нет вовсе");
-}
+// ── 4. ЗДЕСЬ СТОЯЛ `test_a_dungeon_has_no_second_carrier`, И ОН УМЕР ────
+//
+// M-320, вердикт владельца «снести колонки целиком». Свидетель утверждал: у
+// данжа пары «число + голова» нет, потому что worked под клеткой входа занят
+// ЧУЖИМ числом (под `FT_Spire` живёт спелл), и дверь пары уходит оттуда
+// пустой по колонке `bornPopBase`. Колонка снесена, а её предмет — СКВАД
+// рода `Spire`, которого рождала фикстура, — исчез: руина и шпиль стали
+// ФИЧАМИ (сквадами они и не были по замыслу, а данж — тем более: он
+// карманный субмир, не актор макромира).
+//
+// ЖИВАЯ ПОЛОВИНА ЗАКОНА ОСТАЛАСЬ И ДЕРЖИТСЯ ТЕПЕРЬ ПОСТРОЕНИЕМ, А НЕ
+// КОЛОНКОЙ: двери паствы пишут worked по КЛЕТКЕ ЖИВОГО СЛОТА, а живого
+// слота на клетке со спеллом не бывает — у руины и шпиля слотов нет вовсе,
+// а чужой сквад на их клетку не встаёт (`cell_taken@src/macro/spires.cpp`
+// и `cell_taken_@src/macro/ruins.cpp` ветируют занятую клетку по байту, и
+// фичи ставятся ПОСЛЕ поселений). Спелл недостижим для дверей паствы ПО
+// ПОСТРОЕНИЮ.
+//
+// ⚠ СТРАЖА У ЭТОГО ПОСТРОЕНИЯ НЕТ, И ЭТО НАЗВАННАЯ ДЫРА, а не умолчание:
+// утверждение «ни один живой слот не стоит на клетке со спеллом» адреса в
+// коде не имеет и требует СВОЕГО теста (§0 п.2). Наряд — в реестре.
 
 // ── 5. ОТКАЗ ПРИЁМНИКА — ЗАКОН УМЕР ВМЕСТЕ С ПРИЁМНИКОМ (2026-10-11) ─────
 // Здесь стоял `test_a_refused_walker_stays_in_the_flock`: ходок, которого пул
@@ -252,6 +215,5 @@ int main() {
     test_the_season_window_pays_the_flock();
     test_the_creature_receipt_pays_the_flock();
     test_a_dead_horse_is_not_a_dead_soul();
-    test_a_dungeon_has_no_second_carrier();
     return sm::test::report("flock_pairing_law_test");
 }

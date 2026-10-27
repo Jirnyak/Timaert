@@ -243,49 +243,24 @@ void tick_player_daily_(PlayerState& p) {
 
 } // namespace
 
-// The kind's own context score, resolved the way its GENESIS pass resolved
-// it (spires.cpp reads the spell's tier, ruins.cpp the site's danger byte)
-// — the cell_facts precedent: the score's source is inherently per-kind
-// context, and it is recomputed rather than stored so the save never
-// carries a second copy of what the world already knows.
-static int place_context_score(const MacroWorld& w, int x, int y) {
-    // Тир орба — ОДИН вывод на весь мир (spire_orb@src/macro/spires.h,
-    // M-233 п.8): здесь стояло ВТОРОЕ его написание, побайтово то же, что в
-    // сборщике фактов клетки. Выкачанный шпиль забыл свой спелл, поэтому
-    // падает на байт зоны ниже — гейт расстановки и так заставил зону
-    // следовать тиру. Род сквада этой функции больше не нужен ВОВСЕ: смысл
-    // числу задаёт фича клетки, а она здесь и спрашивается.
-    if (const int tier = spire_orb(w, x, y).tier; tier > 0) return tier;
-    return w.zones ? int(w.zones->at(x, y)) : 0;
-}
+// (`place_context_score` УМЕРЛА ТЕМ ЖЕ ШАГОМ, M-320: она отвечала «каков
+//  контекстный балл этого рода» — тир орба у шпиля, байт опасности у руины,
+//  — и спрашивал её ТОЛЬКО проход отращивания ниже. Снёс её компилятор
+//  (`-Wunused-function`), а не глаза: предмета у вопроса не осталось.)
 
-void regrow_dungeon_populations(const MacroWorld& w, MacroStore& st, int day) {
-    if (!w.gs) return;
-    const GameState& gs = *w.gs;
-    for_each_place(st, [&](std::uint16_t slot) {
-        const SquadType kind = SquadType(st.runtime[slot].squadType);
-        const PlaceDef& def = place_def(kind);
-        if (def.bornPopBase == 0) return;   // settlements keep their own law
-        if (souls_flock(gs, st, slot) <= 0) return;  // wiped clean stays dead
-        const int id = int(st.spawnId[slot].index);
-        if ((id % kGrowthEpochDays) != (day % kGrowthEpochDays)) return;
-        const int x = ecs::cell_x(st.cell[slot], gs.mapW);
-        const int y = ecs::cell_y(st.cell[slot], gs.mapW);
-        const int mean = int(def.bornPopBase)
-                       + int(def.bornPopPerScore)
-                             * place_context_score(w, x, y);
-        if (souls_flock(gs, st, slot) < mean) {
-            // Отросшая душа данжа — ГОЛОВА его толпы (переворот v122,
-            // вердикт 3): слабейшая строка полосы crowdHabitat, тем же
-            // выводом, что и генезис (шпиль → Imp, руина → CaveBat).
-            const NPCType crowd = weakest_crowd_kind(kind);
-            if (crowd != NPCType::Count) {
-                creatures_push_stack(st.inventory[slot].inv, crowd,
-                                     npc_def(crowd).baseLevel, 1);
-            }
-        }
-    });
-}
+// ── ЗДЕСЬ ЖИЛ `regrow_dungeon_populations`, И ОН УМЕР С M-320 ────────────
+//
+// Проход отращивал гарнизон ДАНЖА — по одной голове за эпоху, пока он ниже
+// своего рождённого среднего (`bornPopBase + bornPopPerScore × контекст`).
+// Гейтом ему служила колонка `bornPopBase != 0`, то есть «этот род —
+// данжевый», и носителей у этого гейта было ровно два: руина и шпиль.
+// Оба перестали быть сквадами (вердикты владельца 2026-10-26), значит проход
+// обходил кап слотов, чтобы не найти НИ ОДНОГО субъекта.
+//
+// ОТРАЩИВАТЬ НАСЕЛЕНИЕ ДАНЖА БУДЕТ ЕГО СОБСТВЕННЫЙ МОДУЛЬ (CANON S28,
+// механизм 2 из четырёх: «модуль фичи субмира/данжа — своим дизайном,
+// внутри себя»). Гарнизона как механизма больше нет вовсе — владелец сказал
+// это прямо: «да гарнзионов больше нет».
 
 void reset_world_tick_runtime(WorldTickRuntime& runtime, std::uint32_t seed) {
     runtime = WorldTickRuntime{};
@@ -385,9 +360,6 @@ int process_world_daily_ticks(GameState& gs, MacroStore& st,
             // что и threat; вклады пишет think-свип, здесь только физика.
             scent_ensure(gs.scent, gs.mapW, gs.mapH);
             scent_field_daily(gs.scent, day);
-            // The dungeon garrisons regrow by the fauna law (§42): one
-            // soul per epoch while alive, wiped clean stays dead.
-            regrow_dungeon_populations(*macro, st, day);
             // (ЗДЕСЬ СТОЯЛИ ДВА СЕЗОННЫХ ПРОХОДА — опись округи и
             // ведомость цен, — и оба уничтожены 2026-09-30, ломтик E
             // шаг 2: они были КЭШАМИ в колонках МЕСТА, а места больше

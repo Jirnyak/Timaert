@@ -72,16 +72,11 @@ void settle_place_day(GameState& gs, MacroStore& st, std::uint16_t slot,
                          int day,
                          EconFactSink sink = nullptr, void* user = nullptr);
 
-// The dungeon garrisons' regrowth (§42, owner: «как фауна — медленно,
-// выбитое подчистую мертво»): one soul per kGrowthEpochDays (32 days, the
-// fauna epoch) while the place still LIVES (population > 0) and stands
-// below its born MEAN (recomputed from the registry's born columns × the
-// kind's context score — nothing stored, nothing to fold into the save).
-// A place cleared to zero never regrows — resurrection belongs to the S9
-// transition. Each place regrows on its own day of the epoch
-// (id-staggered, the growth_cell_due pattern), so the world never pulses
-// in lockstep. Public so the genesis test can witness the law directly.
-void regrow_dungeon_populations(const MacroWorld& w, MacroStore& st, int day);
+// (`regrow_dungeon_populations` УМЕРЛА 2026-10-26, M-320: её гейтом была
+//  колонка `bornPopBase != 0`, носителями гейта — руина и шпиль, а они
+//  больше не сквады. Население данжа отращивает его СОБСТВЕННЫЙ модуль,
+//  CANON S28 механизм 2; гарнизона как механизма нет — «да гарнзионов
+//  больше нет».)
 
 void reset_world_tick_runtime(WorldTickRuntime& runtime, std::uint32_t seed);
 

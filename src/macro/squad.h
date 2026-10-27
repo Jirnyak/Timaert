@@ -416,8 +416,10 @@ inline void shift_home_flock(GameState& gs, const MacroStore& st,
     if (homeId <= 0 || delta == 0) return;
     const MacroHandle home = place_handle_by_ordinal(st, std::uint32_t(homeId));
     if (!st.valid(home)) return;
-    const SquadType kind = SquadType(st.runtime[home.slot].squadType);
-    if (place_def(kind).bornPopBase != 0) return;
+    // (Ранний возврат «у данжа числа не трогаем» снесён с колонкой
+    //  `bornPopBase` — M-320. Руина и шпиль стали ФИЧАМИ, слотов у них нет,
+    //  значит домом для чужих душ им не стать: `place_handle_by_ordinal`
+    //  к ним не резолвит. Одна дверь, один закон.)
     const auto& c = st.cell[home.slot];
     const int x = ecs::cell_x(c, gs.mapW), y = ecs::cell_y(c, gs.mapW);
     worked_write(gs, x, y, std::max(0, worked_read(gs, x, y) + delta));

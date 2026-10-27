@@ -584,7 +584,6 @@ jopus_prompts.md	src/macro/state.cpp:180-192
 jopus_prompts.md	src/macro/state.h:462-475
 jopus_prompts.md	src/macro/state.h:810-830
 jopus_prompts.md	src/macro/vk_macro_renderer.cpp:153-165
-jopus_prompts.md	src/macro/world_tick.cpp:190-450
 jopus_prompts.md	src/sub/engine.cpp:3685-3720
 jopus_prompts.md	src/sub/movement.h:60-90
 jopus_prompts.md	src/sub/spell_effects.cpp:75-90

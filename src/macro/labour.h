@@ -73,13 +73,22 @@ namespace sm {
 inline int souls_home(const MacroStore& st, std::uint16_t slot) {
     return count_human_souls(st.inventory[slot].inv);
 }
+// ПАСТВА ЕСТЬ ЧИСЛО ФИЧИ ПОД КЛЕТКОЙ, И ВТОРОГО ОТВЕТА БОЛЬШЕ НЕТ (M-320).
+//
+// Здесь стояла развилка по колонке `bornPopBase`: «у данжа паства — ГОЛОВЫ
+// его инвентаря, у поселения — worked-число». Развилка жила ровно потому,
+// что данж БЫЛ СКВАДОМ; после сноса сквадов руины и шпиля носителей у
+// данжевой стороны не осталось ни одного — все роды оси отвечают одинаково,
+// и ветка была двумя законами на один вопрос (DOD п.6).
+//
+// ЧТО ЭТО ЗНАЧИТ ПО ЗАКОНУ ПОЛЯ п.3: число в фиче ОДНО, а смысл ему придаёт
+// ЧИТАЮЩИЙ МОДУЛЬ — модуль города читает его как свою популяцию, модуль
+// артели этого вопроса себе не задаёт. Дверь поэтому не «считает паству», а
+// отдаёт ЧИСЛО КЛЕТКИ; как его понимать, решает звонящий.
 inline int souls_flock(const GameState& gs, const MacroStore& st,
                        std::uint16_t slot) {
-    const SquadType kind = SquadType(st.runtime[slot].squadType);
     const auto& c = st.cell[slot];
-    return place_def(kind).bornPopBase == 0
-        ? worked_read(gs, ecs::cell_x(c, gs.mapW), ecs::cell_y(c, gs.mapW))
-        : creature_count(st.inventory[slot].inv);
+    return worked_read(gs, ecs::cell_x(c, gs.mapW), ecs::cell_y(c, gs.mapW));
 }
 
 // ── ПОСЕЛИТЬ ДУШИ — ОДНА ДВЕРЬ НА ВСЯКОЕ ИХ ПОЯВЛЕНИЕ (v122) ─────────────
@@ -93,22 +102,16 @@ inline int souls_flock(const GameState& gs, const MacroStore& st,
 // (кап областей), и паства растёт ровно на вставших — иначе число копило бы
 // призраков, которых ни одна дверь не найдёт.
 //
-// У ДАНЖА ПАСТВА И ЕСТЬ ГОЛОВЫ (bornPopBase != 0), поэтому worked не
-// трогается: под FT_Spire там живёт СПЕЛЛ, и приписать ему души значило бы
-// гасить чужое число. Род головы данжа НЕ ВЫДУМЫВАЕТСЯ — он слабейшая строка
-// полосы толпы этого рода мест (weakest_crowd_kind: шпиль → Imp).
+// ЗДЕСЬ СТОЯЛА ВТОРАЯ ПОЛОВИНА ТОЙ ЖЕ РАЗВИЛКИ, И ОНА СНЕСЕНА С НЕЙ (M-320):
+// «у данжа паства и есть головы, поэтому worked не трогается — под FT_Spire
+// там живёт СПЕЛЛ». Утверждение было верным, но его субъект исчез: данж
+// сквадом больше не является, и поселить души в шпиль некому. Заселение
+// данжа — дело ЕГО СОБСТВЕННОГО модуля (CANON S28, механизм 2), а не этой
+// двери; сюда приходят только сквады, у которых паства есть число их клетки.
 inline int settle_souls(GameState& gs, MacroStore& st, std::uint16_t slot,
                         int souls) {
     if (souls <= 0) return 0;
     Inventory& store = st.inventory[slot].inv;
-    const SquadType placeKind = SquadType(st.runtime[slot].squadType);
-    if (place_def(placeKind).bornPopBase != 0) {
-        const NPCType kind = weakest_crowd_kind(placeKind);
-        if (kind == NPCType::Count) return 0;   // у рода нет толпы — нет и душ
-        return creatures_push_stack(store, kind,
-                                    npc_def(kind).baseLevel, souls)
-                   ? souls : 0;
-    }
     const int stood = raise_flock_into_container(store, souls);
     if (stood > 0) {
         const auto& c = st.cell[slot];

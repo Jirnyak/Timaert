@@ -131,29 +131,27 @@ struct PlaceDef {
     // surface). A po2 shift, not a percentage.
     std::uint8_t     crowdInsideShift = 0;
     // ── Born souls (§42 Инк 5): the genesis law's own columns ─────────────
-    // ── ЧТО ЭТИ КОЛОНКИ ЗНАЧАТ ПОСЛЕ M-320 ────────────────────────────
-    // Прежде они были ЗАКОНОМ РОЖДЕНИЯ ДУШ ДАНЖА (mean = base + perScore ×
-    // своё число рода, колоколом), и считала его `place_born_population`.
-    // Дверь УМЕРЛА вместе с рождением сквадов шпиля и руины — надгробие и
-    // причина стоят в конце этого файла.
+    // ── КОЛОНКИ `bornPopBase`/`bornPopPerScore` УНИЧТОЖЕНЫ 2026-10-26 ────
+    // (M-320, вердикт владельца: «Снести колонки целиком».)
     //
-    // ЖИВОГО СМЫСЛА У НИХ ДВА, И ОБА НАЗВАНЫ ЧИТАТЕЛЯМИ (DOD п.9):
-    //   1. `bornPopBase != 0` — ПРЕДИКАТ «души этого рода суть ГОЛОВЫ его
-    //      инвентаря, а НЕ worked-число его клетки». Спрашивают
-    //      `souls_flock` и `settle_souls@src/macro/labour.h`,
-    //      `write_population@src/macro/macro_stock.cpp`,
-    //      `regrow_dungeon_populations@src/macro/world_tick.cpp`;
-    //   2. сами ЗНАЧЕНИЯ — цель отрастания у `regrow_dungeon_populations`.
-    // 0/0 = род живёт своим законом площадки (поселения).
+    // Они объявляли, с каким населением рождается ДАНЖ, и попутно служили
+    // ПРЕДИКАТОМ «души этого рода суть головы его инвентаря, а не число
+    // клетки». Оба смысла умерли вместе с предметом: руина и шпиль стали
+    // чистыми фичами, сквада у них нет ни одного, а прочие роды оси несли в
+    // этих колонках ноль — то есть предикат не был истинен НИГДЕ.
     //
-    // ⚠ ОБНУЛИТЬ ИХ У ШПИЛЯ И РУИНЫ НЕЛЬЗЯ БЕЗ ВТОРОЙ ПРАВКИ, и вот почему
-    // числом: нуль переключает предикат 1, то есть объявляет «паства = worked
-    // клетки», а под `FT_Spire` в worked лежит СПЕЛЛ (ординал + 1). Шпиль
-    // ответил бы населением «5» на спелл №4. Сегодня это недостижимо в
-    // продакшене (сквадов этих родов нет ни одного), но достижимо из фикстур,
-    // которые рождают шпиль телом.
-    std::uint16_t    bornPopBase = 0;
-    std::uint16_t    bornPopPerScore = 0;
+    // ЧТО УШЛО ВМЕСТЕ С НИМИ, ПОИМЁННО: `place_born_population` (дверь
+    // рождения душ данжа), `regrow_dungeon_populations@src/macro/world_tick.h`
+    // (проход отращивания), и ЧЕТЫРЕ двухсторонние ветки, ставшие
+    // односторонними — `souls_flock` и `settle_souls@src/macro/labour.h`,
+    // `shift_home_flock@src/macro/squad.h`,
+    // `write_population@src/macro/macro_stock.cpp`.
+    //
+    // ЧТО ЭТО КУПИЛО: паства перестала быть вопросом с двумя ответами.
+    // Теперь она ЧИСЛО ФИЧИ под клеткой, и смысл ему придаёт ЧИТАЮЩИЙ
+    // МОДУЛЬ (ЗАКОН ПОЛЯ п.3) — ровно то, что канон и требовал.
+    // Населять и отращивать данж будет его СОБСТВЕННЫЙ модуль
+    // (CANON S28, механизм 2); гарнизона как механизма нет вовсе.
     // (Колонка `worldPlaces` УМЕРЛА 2026-10-18, вердикт владельца «снести».
     //  Она объявляла, РАССТАВЛЯЕТ ли генезис этот род, — то есть говорила
     //  о том, КАК эту таблицу используют, при нуле прод-читателей: сами
@@ -273,7 +271,6 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
      .minZone = 0, .maxZone = 76, .glyph = '@', .feature = FT_Capital, .color = 0xFFFFD98Cu, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
-     .bornPopBase = 0, .bornPopPerScore = 0,
      .garrisonShift = 3, .labourShift = 3,
      .actions = kMapActTrade | kMapActHire | kMapActQuests,
      .seedComfortDays = 32, .seedRawMult = 1 },
@@ -281,7 +278,6 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
      .minZone = 0, .maxZone = 76, .glyph = '#', .feature = FT_City, .color = 0xFFE7D27Au, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
-     .bornPopBase = 0, .bornPopPerScore = 0,
      .garrisonShift = 3, .labourShift = 3,
      .actions = kMapActTrade | kMapActHire | kMapActQuests,
      .seedComfortDays = 32, .seedRawMult = 1 },
@@ -289,7 +285,6 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
      .minZone = 0, .maxZone = 101, .glyph = 'v', .feature = FT_Village, .color = 0xFFCCB068u, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
-     .bornPopBase = 0, .bornPopPerScore = 0,
      .garrisonShift = 3, .labourShift = 1,
      .actions = kMapActTrade | kMapActHire | kMapActQuests,
      .seedComfortDays = 8, .seedRawMult = 2 },
@@ -304,14 +299,12 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
      .faunaHabitat = kPlaceFaunaGround, .faunaMin = 0, .faunaMax = 0,
      .faunaCap = kPlaceFaunaCapGround,
      .crowdHabitat = 1u << 13, .crowdInsideShift = 2,
-     .bornPopBase = 128, .bornPopPerScore = 64,
      },
     {.type = SquadType::Ruin, .id = "ruin", .label = "Ruin",
      .minZone = 51, .maxZone = 229, .glyph = 'r', .feature = FT_Ruin, .color = 0xFF8E8576u, .lightColor = 0xFF8E8576u, .lightPop = 40.0f,
      .faunaHabitat = 1u << 12, .faunaMin = 2, .faunaMax = 6,
      .faunaCap = kPlaceFaunaCapGround,
      .crowdHabitat = 1u << 12, .crowdInsideShift = 0,
-     .bornPopBase = 64, .bornPopPerScore = 1,
      },
     {.type = SquadType::Lair, .id = "lair", .label = "Lair",
      .minZone = 102, .maxZone = 255, .glyph = 'L', .color = 0xFF883A3Au, .lightColor = 0xFF883A3Au, .lightPop = 70.0f,
@@ -426,7 +419,13 @@ static_assert([] {
 // ротации (не путать с аукционом найма M-38/M-40) —
 // 112 → 80, разница 32 = 49 байт данных минус хвостовое выравнивание до
 // кратного восьми (данных осталось 78).
-static_assert(sizeof(PlaceDef) == 80,
+// СНОС РОЖДЕНИЯ ДУШ ДАНЖА (M-320, 2026-10-26, вердикт владельца «снести
+// колонки целиком»): `bornPopBase` и `bornPopPerScore` (два u16 = 4 Б
+// данных) — 80 → 72. Разница 8, а не 4: четыре байта данных плюс четыре
+// байта хвостового выравнивания до кратного восьми, которые эти колонки
+// собой занимали. Третий случай подряд, где число не выводится из ширины
+// колонки, — и снова снос не ради байт: у колонок умер ПРЕДМЕТ.
+static_assert(sizeof(PlaceDef) == 72,
               "PlaceDef layout changed — say WHICH column and why, and "
               "never re-add a faction column: a KIND is not an OWNER (M-39)");
 
@@ -571,15 +570,9 @@ static_assert([] {
 // данжу население — его даст ЕГО СОБСТВЕННЫЙ ГЕНЕРАТОР (CANON S28, второй
 // механизм наполнения), а не колонка строки сквада, которого нет.
 //
-// КОЛОНКИ `bornPopBase`/`bornPopPerScore` ПРИ ЭТОМ ЖИВЫ, И ЭТО НЕ НЕДОСМОТР:
-// их читает не только мёртвая дверь. `bornPopBase != 0` есть ПРЕДИКАТ «души
-// этого рода суть ГОЛОВЫ, а не worked-число клетки», и его спрашивают четыре
-// живых места — `souls_flock` и `settle_souls@src/macro/labour.h`,
-// `write_population@src/macro/macro_stock.cpp`,
-// `regrow_dungeon_populations@src/macro/world_tick.cpp`. Обнулить их у шпиля
-// значило бы сказать «паства шпиля есть worked-число его клетки», а под
-// `FT_Spire` там лежит СПЕЛЛ — то есть выдать ординал заклинания за население.
-// Разбор развилки — в отчёте шага M-320.
+// И КОЛОНКИ `bornPopBase`/`bornPopPerScore` УШЛИ СЛЕДОМ В ТОТ ЖЕ ДЕНЬ
+// (вердикт владельца: «Снести колонки целиком») — надгробие и полный список
+// того, что с ними умерло, стоит на их месте в `PlaceDef` выше.
 
 } // namespace sm
 
