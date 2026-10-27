@@ -46,6 +46,26 @@ static int cell_number_at(const sm::GameState& gs, const sm::MacroStore& st,
 
 namespace {
 
+// ── КВИТАНЦИЯ НАЗЫВАЕТ ГОЛОВУ, ПОТОМУ ЧТО ШОВ ИНАЧЕ НЕ УМЕЕТ (M-324) ──────
+// Ряд `population` снесён: «существо вышло из контейнера сквада» есть ОДИН
+// вопрос мира, и отвечает на него ряд `creatures`. Он требует ИМЕНИ — по
+// `entityId` у именной души, по паре {род, уровень} у генерика, — и это не
+// строгость теста, а форма шва: все три места займа (`sub/spawn.cpp`) зовут
+// `name_creature_in_loan`, потому что тело воплощается ИЗ ГОЛОВЫ инвентаря.
+// Безымянная квитанция в мире не рождается ни одна, поэтому и здесь её нет.
+//
+// РОД И УРОВЕНЬ ВЫВОДЯТСЯ ИЗ ТОЙ ЖЕ ТАБЛИЦЫ, ЧТО ЧИТАЕТ КОД (§8 п.4: не
+// пересказанное число, а инвариант): души фикстуры ставит `settle_souls` →
+// `raise_flock_into_container` строкой `Peasant` с её `baseLevel`, а
+// `creature_slot` гонит уровень через `normalize_soldier_level` (пол = 1).
+inline sm::MacroStockKey peasant_key(std::int32_t subject, int x, int y) {
+    sm::MacroStockKey k{subject, std::int16_t(x), std::int16_t(y)};
+    k.detailKind  = std::uint16_t(sm::NPCType::Peasant);
+    k.detailLevel = std::int16_t(sm::normalize_soldier_level(
+        sm::npc_def(sm::NPCType::Peasant).baseLevel));
+    return k;
+}
+
 // РАСПИСКА ПРИМЕНЯЕТСЯ ТАК ЖЕ, КАК ЕЁ ПРИМЕНЯЕТ ДЕЛЬТА (писатель строки —
 // push_stock_op@src/sub/engine.cpp, те же гейты и тот же ключ): дверь
 // settle_macro_debt умерла 2026-10-23 (0 прод-звонящих, ломоть 1 M-72), а
@@ -169,25 +189,54 @@ void test_borrow_and_return_are_symmetric() {
     trees.data.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH), 500);
     MacroWorld w{.gs = &gs, .trees = &trees, .store = wld.store.get()};
 
-    const MacroStockKey town{wld.cityId, 10, 10};
+    const MacroStockKey town = peasant_key(wld.cityId, 10, 10);
     const MacroStockKey cell{-1, 3, 4};
 
-    const int pop0  = macro_stock_read(w, MacroStock::Population, town);
+    // ЧТЕНИЕ РЯДА СУЩЕСТВ ОТВЕЧАЕТ ИЗ ИНВЕНТАРЯ (`creature_count`), а не
+    // числом поля под клеткой: толкователя «число фичи ЕСТЬ популяция этого
+    // сквада» в мире больше нет (M-324). У фикстуры оба равны 300, потому
+    // что `settle_souls` пишет пару согласованно, — и ниже это утверждается
+    // ОБОИМИ носителями, чтобы согласие было предметом проверки, а не
+    // совпадением.
+    const int pop0  = macro_stock_read(w, MacroStock::Creatures, town);
     const int tree0 = macro_stock_read(w, MacroStock::TreeCount, cell);
     CHECK(pop0 == 300 && tree0 == 500,
           "read reports what the macro world actually holds");
+    CHECK(population_of(wld, wld.cityId) == pop0,
+          "пара согласована у рождения: голов в контейнере столько же, "
+          "сколько числа в поле под клеткой");
 
-    macro_stock_apply(w, MacroStock::Population, town, -12);
+    macro_stock_apply(w, MacroStock::Creatures, town, -12);
     macro_stock_apply(w, MacroStock::TreeCount,  cell, -30);
-    CHECK(macro_stock_read(w, MacroStock::Population, town) == pop0 - 12
+    CHECK(macro_stock_read(w, MacroStock::Creatures, town) == pop0 - 12
               && macro_stock_read(w, MacroStock::TreeCount, cell) == tree0 - 30,
           "spending a stock lowers exactly what was spent");
+    // ЯКОРЬ НА ВТОРОЙ НОСИТЕЛЬ (§8 п.6, шестая форма слепоты): мало того,
+    // что счёт голов упал — число поля обязано упасть НА СТОЛЬКО ЖЕ, иначе
+    // пара разъехалась, а сверка одного носителя с самим собой этого не
+    // увидит никогда.
+    CHECK(population_of(wld, wld.cityId) == pop0 - 12,
+          "убыль пишется ПАРОЙ: число поля упало ровно на снятые головы");
 
-    macro_stock_apply(w, MacroStock::Population, town, +12);
-    macro_stock_apply(w, MacroStock::TreeCount,  cell, +30);
-    CHECK(macro_stock_read(w, MacroStock::Population, town) == pop0
-              && macro_stock_read(w, MacroStock::TreeCount, cell) == tree0,
-          "returning what was borrowed restores the world exactly");
+    // ВОЗВРАТ ЗАЙМА ЗДЕСЬ БОЛЬШЕ НЕ УТВЕРЖДАЕТСЯ, И ЭТО НЕ ОСЛАБЛЕНИЕ.
+    // Ряд существ отказывает положительной дельте НАРОЧНО: «+1» не называет
+    // никого, а голова есть род и уровень, которые голым числом не
+    // восстановить. Прежний свидетель стоял на ряду `population`, чья
+    // положительная ветка (`settle_souls`) из шва НЕДОСТИЖИМА — долг гасится
+    // ровно в одной точке (`push_stock_op` у смерти тела) и всегда `-amount`.
+    // То есть проверялась способность, которой у мира нет; §8 п.7 — свидетель
+    // не охраняет дефект. ЗНАКОВОСТЬ как ЗАКОН жива и проверяется там, где у
+    // неё есть носитель: `flock_left_home` обеими сторонами (ниже в этом же
+    // файле, вклад прилавка M-292).
+    macro_stock_apply(w, MacroStock::Creatures, town, +12);
+    CHECK(macro_stock_read(w, MacroStock::Creatures, town) == pop0 - 12,
+          "ряд существ НЕ принимает безымянный плюс: голову нельзя вернуть "
+          "числом, и отказ тут — закон, а не пропуск");
+
+    macro_stock_apply(w, MacroStock::TreeCount, cell, +30);
+    CHECK(macro_stock_read(w, MacroStock::TreeCount, cell) == tree0,
+          "а у ЧИСЛОВОГО ряда возврат есть: лес кладётся обратно ровно тем, "
+          "чем был взят");
 }
 
 // A place can be emptied. It can never owe people, and a cell can never hold
@@ -202,10 +251,9 @@ void test_stocks_are_bounded() {
     trees.data.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH), 10);
     MacroWorld w{.gs = &gs, .trees = &trees, .store = wld.store.get()};
 
-    macro_stock_apply(w, MacroStock::Population,
-                      MacroStockKey{wld.cityId, 10, 10}, -100000);
-    CHECK(macro_stock_read(w, MacroStock::Population,
-                           MacroStockKey{wld.cityId, 10, 10}) == 0,
+    macro_stock_apply(w, MacroStock::Creatures,
+                      peasant_key(wld.cityId, 10, 10), -100000);
+    CHECK(population_of(wld, wld.cityId) == 0,
           "a town can be emptied to zero and never below it");
 
     macro_stock_apply(w, MacroStock::TreeCount, MacroStockKey{-1, 1, 1}, -100000);
@@ -233,8 +281,8 @@ void test_debts_bill_their_own_subject() {
     sm::sub::SubObjects& objs = *arena_;
     const int sCitizen = sm::test::give_body(objs);   // тело = слот (ломоть D)
     sub::stamp_macro_debt(objs, sCitizen,
-                          MacroStock::Population,
-                          MacroStockKey{wld.cityId, 10, 10}, 1);
+                          MacroStock::Creatures,
+                          peasant_key(wld.cityId, 10, 10), 1);
     const auto* debt = sub::slot_debt(objs, sCitizen);
     CHECK_OR_RETURN(debt != nullptr, "stamping leaves a receipt on the body");
 
@@ -249,8 +297,8 @@ void test_debts_bill_their_own_subject() {
     // the id alone names it, no register bit rides the receipt.
     const int sVillager = sm::test::give_body(objs);
     sub::stamp_macro_debt(objs, sVillager,
-                          MacroStock::Population,
-                          MacroStockKey{wld.hamletId, 20, 20}, 3);
+                          MacroStock::Creatures,
+                          peasant_key(wld.hamletId, 20, 20), 3);
     settle_like_the_delta(w, *sub::slot_debt(objs, sVillager), -1);
     CHECK(population_of(wld, wld.hamletId) == 37,
           "a village pays from its own people, by the amount the receipt says");
@@ -260,8 +308,8 @@ void test_debts_bill_their_own_subject() {
     // left them — the id alone finds the village, never a city.
     const int sTwinVillager = sm::test::give_body(objs);
     sub::stamp_macro_debt(objs, sTwinVillager,
-                          MacroStock::Population,
-                          MacroStockKey{wld.twinId, 40, 40}, 2);
+                          MacroStock::Creatures,
+                          peasant_key(wld.twinId, 40, 40), 2);
     settle_like_the_delta(w, *sub::slot_debt(objs, sTwinVillager), -1);
     CHECK(village_population_of(wld, wld.twinId) == 78,
           "a village pays its own dead through the one id space");
@@ -269,10 +317,18 @@ void test_debts_bill_their_own_subject() {
               && city_population_of(wld, wld.otherId) == 300,
           "and no city is billed for them");
 
-    // Signed both ways (owner's ruling): the same row settles creation.
+    // ЗДЕСЬ СТОЯЛО «Signed both ways: the same row settles creation» — СНЯТО
+    // С РЯДОМ `population` (M-324). Вердикт владельца о ЗНАКОВОСТИ никуда не
+    // делся, но его носитель — не этот ряд, а `flock_left_home`/
+    // `shift_home_flock` (M-292, прилавок двусторонен), и обе их стороны
+    // проверяются ниже в этом же файле. Ряд существ плюс отвергает НАРОЧНО:
+    // «+1» не называет никого, а голова есть род и уровень. Та ветка, что
+    // здесь проверялась, из шва недостижима — долг гасится ровно в одной
+    // точке и всегда минусом.
     settle_like_the_delta(w, *sub::slot_debt(objs, sVillager), +1);
-    CHECK(population_of(wld, wld.hamletId) == 40,
-          "handing the borrowed thing back credits the same place");
+    CHECK(population_of(wld, wld.hamletId) == 37,
+          "безымянный плюс не воскрешает: деревня осталась там, где её "
+          "оставила смерть");
 }
 
 // A receipt that names nothing must change nothing: the system fails closed,
@@ -284,12 +340,12 @@ void test_malformed_receipts_do_nothing() {
     MacroWorld w{.gs = &gs, .store = wld.store.get()};
     const int before = population_of(wld, wld.cityId);
 
-    ecs::MacroDebt zeroAmount{std::uint8_t(MacroStock::Population),
+    ecs::MacroDebt zeroAmount{std::uint8_t(MacroStock::Creatures),
                               wld.cityId, 10, 10, 0};
     ecs::MacroDebt unknownStock{std::uint8_t(MacroStock::Count),
                                 wld.cityId, 10, 10, 5};
-    ecs::MacroDebt noSubject{std::uint8_t(MacroStock::Population), 0, 10, 10, 5};
-    ecs::MacroDebt strangerId{std::uint8_t(MacroStock::Population), 9999, 0, 0, 5};
+    ecs::MacroDebt noSubject{std::uint8_t(MacroStock::Creatures), 0, 10, 10, 5};
+    ecs::MacroDebt strangerId{std::uint8_t(MacroStock::Creatures), 9999, 0, 0, 5};
 
     settle_like_the_delta(w, zeroAmount,   -1);
     settle_like_the_delta(w, unknownStock, -1);

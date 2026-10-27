@@ -145,7 +145,8 @@ struct PlaceDef {
     // (проход отращивания), и ЧЕТЫРЕ двухсторонние ветки, ставшие
     // односторонними — `souls_flock` и `settle_souls@src/macro/labour.h`,
     // `shift_home_flock@src/macro/squad.h`,
-    // `write_population@src/macro/macro_stock.cpp`.
+    // `write_creatures@src/macro/macro_stock.cpp` (ряд `population` снесён
+    //  целиком M-324 — он дублировал её же).
     //
     // ЧТО ЭТО КУПИЛО: паства перестала быть вопросом с двумя ответами.
     // Теперь она ЧИСЛО ФИЧИ под клеткой, и смысл ему придаёт ЧИТАЮЩИЙ

@@ -45,80 +45,40 @@ void write_tree_count(MacroWorld& w, MacroStockKey k, int delta) {
     field_move(w, ResourceFieldId::Trees, k.cellX, k.cellY, delta);
 }
 
-// ── population: the people of a named place ────────────────────────────────
-// A settlement and a village are the same kind of subject here — a named place
-// with people in it — and the ORDINAL alone names it: every place draws on the
-// one subject issuer (nextMacroSpawnOrdinal, M-37), so the resolve is the one
-// store door (place_handle_by_ordinal).
+// ── ЗДЕСЬ ЖИЛ РЯД `population`, И ОН УНИЧТОЖЕН КАК ВТОРОЙ СЛОВАРЬ (M-324) ──
 //
-// ПЕРЕВОРОТ v122: колонки population больше нет — чтение отвечает ПАСТВОЙ
-// (souls_flock: worked-число у поселения, головы толпы у данжа), запись-
-// назад субмира «убил людей» идёт ПАРОЙ дверей: умирают ДОМАШНИЕ головы
-// (bleed), и у поселения то же число сходит с worked-паствы. Прибыль
-// (delta > 0 — вернувшееся тело) — той же парой в обратную сторону.
-MacroHandle find_population_subject(const MacroWorld& w,
-                                    std::int32_t subject) {
-    if (!w.gs || !w.store || subject <= 0) return MacroHandle{};
-    return place_handle_by_ordinal(*w.store, std::uint32_t(subject));
-}
-
-int read_population(const MacroWorld& w, MacroStockKey k) {
-    const MacroHandle h = find_population_subject(w, k.subject);
-    if (!w.gs || !w.store || !w.store->valid(h)) return 0;
-    // ЧИСЛО ПОЛЯ ФИЧ ПО КЛЕТКЕ СУБЪЕКТА (M-320: `souls_flock` снесена).
-    const auto& c = w.store->cell[h.slot];
-    return worked_read(*w.gs, ecs::cell_x(c, w.gs->mapW),
-                       ecs::cell_y(c, w.gs->mapW));
-}
-
-void write_population(MacroWorld& w, MacroStockKey k, int delta) {
-    if (delta == 0) return;
-    const MacroHandle h = find_population_subject(w, k.subject);
-    if (!w.store || !w.store->valid(h)) return;
-    const std::uint16_t slot = h.slot;
-    Inventory& store = w.store->inventory[slot].inv;
-    // (Развилка «у данжа душа — голова его толпы, дверь убыли другая»
-    //  СНЕСЕНА с колонкой `bornPopBase` — M-320. Руина и шпиль стали
-    //  ФИЧАМИ: слотов у них нет, квитанций на их души не приходит, и у
-    //  убыли остался один закон.)
-    if (delta < 0) {
-        // A place can be emptied but never owe people: списывается ФАКТ.
-        //
-        // КВИТАНЦИЯ НАЗЫВАЕТ СВОЮ ДУШУ — и тогда снимается РОВНО она:
-        // именная по entityId, генерик по {роду, уровню} (detailLevel > 0 —
-        // живость пары, потому что kind один не может ею быть: Peasant есть
-        // строка 0). Так сюда влился сток `Garrison`, уничтоженный вместе с
-        // сословием: «душа места умерла» есть ОДИН вопрос мира, и два ответа
-        // на него были вторым словарём (DOD п.6).
-        //
-        // Безымянная квитанция берёт ЛЮБУЮ душу — это законный случай, а не
-        // недосмотр: голод места и запись-назад «убил людей» без адреса
-        // называют ЧИСЛО, а не человека.
-        SoldierRecord who{};
-        who.entityId = k.detail == -1 ? 0u : std::uint32_t(k.detail);
-        who.kind = k.detailKind;
-        who.level = k.detailLevel;
-        // Паства мерится ДО убыли и списывается ФАКТОМ — одной дверью на все
-        // пути души (`flock_left_home`). Здесь стоял свой счётчик `died` и
-        // своя запись worked, и у счётчика был изъян: именная квитанция
-        // инкрементировала его на ЛЮБОЕ снятое существо, то есть названный
-        // конь списывал человеческую паству.
-        const int folkBefore = count_human_souls(store);
-        if (who.entityId != 0 || who.level > 0) {
-            for (int i = 0; i < -delta; ++i) {
-                if (!creatures_remove_one(store, who)) break;
-            }
-        } else {
-            bleed_flock(store, -delta);
-        }
-        flock_left_home(*w.gs, *w.store, slot, folkBefore);
-    } else {
-        // Вернувшееся тело — то же событие «место получило душу», одной
-        // дверью (labour.h settle_souls): второй писатель пары
-        // «число + голова» был бы вторым законом появления души.
-        settle_souls(*w.gs, *w.store, slot, delta);
-    }
-}
+// Вердикт владельца 2026-10-27, дословно: «никакого закона шва не может быть
+// популяции — смотри пример у нас есть город (это сквад с инвентарём) ты
+// пришёл в субмире убил когото и по еиной системе это вычитается из инвентаря
+// сквада / зачем нужна популяция в законе шва?».
+//
+// ЧЕМ ОН БЫЛ: вторым ответом на вопрос, на который отвечает ряд `creatures`
+// ниже, — «существо вышло из контейнера сквада». При именной отрицательной
+// квитанции (единственная, какую шлёт шов) оба делали строка в строку одно и
+// то же: резолв субъекта по ординалу → `count_human_souls` до → снятие голов
+// по квитанции → `flock_left_home` парной записью числа. Субъект у них был
+// ОДИН: `place_handle_by_ordinal` есть `macro_handle_by_spawn_id` плюс фильтр
+// `archetype == Place`, то есть остаток рода, которого нет (ЗАКОН ПОЛЯ п.4).
+// Хуже того, шапка соседнего ряда УЖЕ объявляла этот дубль закрытым («теперь
+// ответ один»), пока он жил строкой ниже, — ровно тот род лжи, из-за которого
+// §0 запрещает считать шапку доказательством.
+//
+// ДВА ЕГО УНИКАЛЬНЫХ ПОВЕДЕНИЯ ИЗ ШВА НЕДОСТИЖИМЫ, И ЭТО ПРОВЕРЕНО ПОИМЁННО:
+//   · delta > 0 (`settle_souls`) — долг гасится ровно в одной точке
+//     (`push_stock_op` у смерти тела, `sub/engine.cpp`) и ВСЕГДА `-amount`;
+//     возврата займа в мире нет, плюс трогал только тест;
+//   · безымянная квитанция (`bleed_flock`) — все три места займа
+//     (`sub/spawn.cpp`) зовут `name_creature_in_loan`, потому что тело
+//     воплощается ИЗ ГОЛОВЫ инвентаря.
+// А отказной гейт `creatures` (`entityId == 0 && level <= 0`) шов не ловит:
+// `creature_slot` гонит уровень через `normalize_soldier_level` с полом 1.
+//
+// ЧТО ЭТО ДАЛО СВЕРХ СНОСА ДУБЛЯ: чтение перестало быть ТОЛКОВАТЕЛЕМ.
+// `read_population` брал СУБЪЕКТА и отвечал числом поля фич под его клеткой —
+// та же улика, что у снесённой M-320 `souls_flock`; `read_creatures` отвечает
+// `creature_count(inv)`, то есть ИЗ ИНВЕНТАРЯ. Пара «голова + число» не
+// потеряна — её пишет `flock_left_home` внутри `write_creatures`
+// (ЗАКОН КОНТЕЙНЕРА п.3), и в шов отдельным рядом она не выносится.
 
 // ── creatures: the members of a squad standing on the map ─────────────────────
 // The squad IS its avatar entity (ecs::SquadUpkeep doctrine), so the subject
@@ -178,7 +138,8 @@ void write_creatures(MacroWorld& w, MacroStockKey k, int delta) {
     who.kind = k.detailKind;
     who.level = k.detailLevel;
     if (who.entityId == 0 && who.level <= 0) return;
-    // ПАСТВА — ТОЙ ЖЕ ПАРОЙ, ЧТО У СТРОКИ `population` РЯДОМ. Эта строка
+    // ПАСТВА — ТОЙ ЖЕ ПАРОЙ, И ТЕПЕРЬ ЭТА СТРОКА ЕДИНСТВЕННАЯ, КТО ЕЁ ПИШЕТ
+    // (M-324 снёс ряд `population`, который делал то же самое). Эта строка
     // субъекта НЕ ФИЛЬТРУЕТ (скан по ординалу берёт любой живой слот), а
     // квитанции авто-боя приходят и на поселения: индекс сквадов их тоже не
     // отсеивает, так что набег на деревню снимал головы из её инвентаря и
@@ -199,9 +160,9 @@ void write_creatures(MacroWorld& w, MacroStockKey k, int delta) {
 }
 
 // (Сток `garrison` УНИЧТОЖЕН 2026-09-30, v122 — вместе с сословием: он
-// адресовал ТОТ ЖЕ инвентарь места, что строка `population` рядом, то есть
+// адресовал ТОТ ЖЕ инвентарь места, что снесённая строка `population`, то есть
 // был вторым ответом на вопрос «душа места умерла». Именная адресация
-// квитанции не потеряна — она переехала в `write_population` выше, где и
+// квитанции не потеряна — она переехала в `write_creatures` ниже, где и
 // стала единственной.)
 
 // ── The ONE resource-field container (macro/resource_field.h) ─────────────
@@ -819,7 +780,6 @@ void write_worked(MacroWorld& w, MacroStockKey k, int delta) {
 
 constexpr MacroStockRow kRows[] = {
     {"tree_count",  &read_tree_count,  &write_tree_count},
-    {"population",  &read_population,  &write_population},
     {"creatures",   &read_creatures,   &write_creatures},
     {"fauna_count", &read_fauna_count, &write_fauna_count},
     {"crop_count",  &read_crop_count,  &write_crop_count},

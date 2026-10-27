@@ -475,11 +475,11 @@ void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
     const int borrowedSlot = sub::spawn_derived_body(arena,
         sub::BodySpec{NPCType::Guard, 8.0f, 9.0f, 1, 2, 99u, false},
         /*faceSalt*/1u,
-        sub::BodyLoan::from(MacroStock::Population, MacroStockKey{7, 3, 4}));
+        sub::BodyLoan::from(MacroStock::Creatures, MacroStockKey{7, 3, 4}));
     CHECK_OR_RETURN(borrowedSlot >= 0, "a borrowed body is born");
     const auto* debt = sm::sub::slot_debt(arena, borrowedSlot);
     CHECK(debt != nullptr
-              && debt->stock == std::uint8_t(MacroStock::Population)
+              && debt->stock == std::uint8_t(MacroStock::Creatures)
               && debt->subject == 7 && debt->amount == 1,
           "a borrowed body carries the receipt naming what lent it");
 
@@ -597,7 +597,7 @@ void test_a_reused_slot_is_born_clean() {
     const int a = arena.alloc(ecs::Position{5.0f, 6.0f, 7.0f});
     CHECK_OR_RETURN(a >= 0, "the arena lends a slot");
     arena.debt[std::size_t(a)] = ecs::MacroDebt{
-        std::uint8_t(MacroStock::Population), 7, 1, 1, 1, -1, 0, 0};
+        std::uint8_t(MacroStock::Creatures), 7, 1, 1, 1, -1, 0, 0};
     arena.origin[std::size_t(a)] = ecs::MacroOrigin{MacroHandle{3, 0}};
     arena.lastHitBy[std::size_t(a)] = sub::ObjRef{4, 99u};
     arena.free(a);

@@ -62,11 +62,13 @@ inline constexpr int kWheatSeasonsToRegrow = 1;
 // so the ECS layer never has to learn this header exists.
 enum class MacroStock : std::uint8_t {
     TreeCount = 0,   // macro/tree_layer.h — the forest standing in one cell
-    Population,      // the people of a settlement or village
-    Creatures,       // существа инвентаря сквада, стоящего на карте: ординал
-                     //   не двинулся (2), двинулось только ИМЯ — слово
-                     //   «ростер» снесено целиком (M-227), а строка всегда
-                     //   была про содержимое ЕДИНОГО контейнера
+    Creatures,       // СУЩЕСТВО ВЫШЛО ИЗ КОНТЕЙНЕРА СКВАДА — один вопрос мира
+                     //   и ОДИН ряд на него (M-324). Город, деревня, корован,
+                     //   артель: все они сквады с инвентарём, и горожанин,
+                     //   убитый в субмире, списывается ровно так же, как
+                     //   охранник корована. Здесь стоял второй ряд
+                     //   `Population`, делавший то же самое через
+                     //   place-фильтр субъекта, — снесён вместе с фильтром
     FaunaCount,      // the wild headcount of one cell (macro/fauna.h capacity
                      //   + GameState::faunaOverrides — the hunted delta)
     CropCount,       // the standing wheat of one cell (fertility-derived
@@ -78,8 +80,9 @@ enum class MacroStock : std::uint8_t {
                      //   строка адресует ведомость, не голую дверь worked_write.
     // (Garrison УНИЧТОЖЕН 2026-09-30, v122: сословия «гарнизон» больше нет —
     // все души места лежат головами в ОДНОМ его инвентаре, и строка
-    // `Population` выше адресует их всех, именную по entityId и генерика по
-    // {роду, уровню}. Две строки на один контейнер были вторым словарём.)
+    // `Creatures` выше адресует их всех, именную по entityId и генерика по
+    // {роду, уровню}. Две строки на один контейнер были вторым словарём —
+    // и `Population` была ТРЕТЬЕЙ, пережившей этот же приговор на год.)
     Count,
 };
 

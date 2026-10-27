@@ -85,7 +85,7 @@ int main() {
         op.cell = sm::cell_of(cx, cy, gs.mapW);
         op.subject = 31337;                       // ординал без записи
         op.amount = -4;
-        op.stock = std::uint8_t(sm::MacroStock::Population);
+        op.stock = std::uint8_t(sm::MacroStock::Creatures);
         push_worked(d, cx + 1, cy, -2, gs.mapW);  // живая строка следом
         sm::apply_local_delta(mw, d);
         CHECK(sm::worked_read(gs, cx + 1, cy) == 10,
