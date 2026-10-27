@@ -592,7 +592,7 @@ void spawn_place_population(SubObjects& objs,
                 seed ^ (soulId * 2654435761u),
                 /*combatant*/true},
             /*faceSalt*/soulId * 7919u,
-            BodyLoan::from(MacroStock::Population, key));
+            BodyLoan::from(MacroStock::Creatures, key));
     }
     if (refused > 0) {
         const std::string_view id = place_def(place).id;
@@ -1057,7 +1057,7 @@ int spawn_dungeon_residents(SubObjects& objs,
                 seed ^ (soulId * 2654435761u),
                 combatant},
             /*faceSalt*/soulId * 7919u,
-            BodyLoan::from(MacroStock::Population, key));
+            BodyLoan::from(MacroStock::Creatures, key));
         ++placed;
     }
     return placed;
@@ -1108,7 +1108,7 @@ int spawn_street_arrivals(SubObjects& objs,
                      seed ^ (soulId * 2654435761u),
                      /*combatant*/false},
             /*faceSalt*/soulId * 7919u,
-            BodyLoan::from(MacroStock::Population, key));
+            BodyLoan::from(MacroStock::Creatures, key));
         ++placed;
     }
     return placed;

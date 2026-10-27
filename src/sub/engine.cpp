@@ -2017,7 +2017,7 @@ void SubworldEngine::tick_day_pump(float dt) {
         if (sub::slot_ai(objs, s) == nullptr) return false;
         const auto* dp = sub::slot_debt(objs, s);
         if (dp == nullptr) return false;
-        if (dp->stock != std::uint8_t(MacroStock::Population)) return false;
+        if (dp->stock != std::uint8_t(MacroStock::Creatures)) return false;
         if (dp->subject != ctx.place.id) return false;
         return !(objs.is_avatar_slot(s)
                  || sub::slot_flag(objs, s, sub::kObjPlayerSoldier));

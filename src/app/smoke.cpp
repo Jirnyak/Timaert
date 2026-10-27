@@ -3251,7 +3251,7 @@ bool run_dungeon_house_smoke(App& app) {
         const auto* dp = sm::sub::slot_debt(*rObjs, s);
         if (dp == nullptr) continue;
         const auto& d = *dp;
-        if (d.stock != std::uint8_t(sm::MacroStock::Population)) continue;
+        if (d.stock != std::uint8_t(sm::MacroStock::Creatures)) continue;
         ++residents;
         if (victimSlot < 0) {
             victimSlot = s;
@@ -3263,14 +3263,14 @@ bool run_dungeon_house_smoke(App& app) {
         sm::MacroWorld mw = macro_world(app);
         const sm::MacroStockKey key{victimDebt.subject, victimDebt.cellX,
                                     victimDebt.cellY};
-        popBefore = sm::macro_stock_read(mw, sm::MacroStock::Population, key);
+        popBefore = sm::macro_stock_read(mw, sm::MacroStock::Creatures, key);
         sm::sub::apply_lethal_damage(*rObjs, app.macroStore.get(), victimSlot,
                                      sm::sub::DamageSource{},
                                      sm::sub::DamageKind::Script, &app.bus);
         app.subworld.tick(0.016f);
         // Расписка смерти — строка дельты; город худеет на ГРАНИЦЕ тика.
         smoke_advance_to_macro_tick(app);
-        popAfter = sm::macro_stock_read(mw, sm::MacroStock::Population, key);
+        popAfter = sm::macro_stock_read(mw, sm::MacroStock::Creatures, key);
     }
 
     // The player spawned ON the exit pad — E walks back out. A corpse in
@@ -4220,7 +4220,7 @@ bool run_spire_climb_smoke(App& app) {
 
     // Climb: every storey holds its guard (counted on arrival, then cleared —
     // the stairs obey the danger law, so a climb IS a fight). The storeys
-    // are manned by the SPIRE'S OWN SOULS (§42 Инк 4: MacroStock::Population
+    // are manned by the SPIRE'S OWN SOULS (§42 Инк 4: квитанция MacroStock::Creatures
     // of the spire, its crowd family) — the FaunaCount this used to count
     // was the old world, where a tower's guard was the mountain's game.
     auto count_guards = [&]() {
@@ -4234,7 +4234,7 @@ bool run_spire_climb_smoke(App& app) {
             const auto* dStk = sm::sub::slot_debt(gObjs, s);
             if (dStk == nullptr) continue;
             if (dStk->stock
-                == std::uint8_t(sm::MacroStock::Population)) {
+                == std::uint8_t(sm::MacroStock::Creatures)) {
                 ++n;
             }
         }
@@ -8459,7 +8459,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     const auto* dq = sm::sub::slot_debt(gObjs, s);
                     if (dq == nullptr) continue;
                     const auto& d = *dq;
-                    if (d.stock != std::uint8_t(sm::MacroStock::Population))
+                    if (d.stock != std::uint8_t(sm::MacroStock::Creatures))
                         continue;
                     ++watch;
                     const sm::ecs::Position& p = gObjs.pos[std::size_t(s)];
@@ -8669,7 +8669,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     const auto* dS = sm::sub::slot_debt(*stObjs, ss);
                     if (dS == nullptr) continue;
                     const auto& d = *dS;
-                    if (d.stock != std::uint8_t(sm::MacroStock::Population)) {
+                    if (d.stock != std::uint8_t(sm::MacroStock::Creatures)) {
                         continue;
                     }
                     ++n;
