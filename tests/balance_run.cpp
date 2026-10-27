@@ -46,6 +46,17 @@
 #include "macro/world_tick.h"
 #include "macro/zones.h"
 
+// ЧИСЛО ПОЛЯ ФИЧ ПОД КЛЕТКОЙ СЛОТА — помощник ЭТОГО свидетеля, не дверь мира.
+// M-320 снёс `souls_flock`: она брала слот и тем утверждала, будто популяция
+// есть атрибут сквада. Имя здесь говорит, ЧТО функция делает (читает число
+// поля по клетке), а не чем это число для кого-то значит.
+static int cell_number_at(const sm::GameState& gs, const sm::MacroStore& st,
+                          std::uint16_t slot) {
+    const auto& c = st.cell[slot];
+    return sm::worked_read(gs, sm::ecs::cell_x(c, gs.mapW),
+                           sm::ecs::cell_y(c, gs.mapW));
+}
+
 namespace {
 
 // One game day of econ facts, folded flat. World-aggregate on purpose: the
@@ -485,7 +496,7 @@ int main(int argc, char** argv) {
                 const sm::Inventory& bag = macroStore->inventory[slot].inv;
                 // ПАСТВА — дверью мира (labour.h souls_flock): у поселения
                 // worked-число фичи, у данжа головы его толпы (v122).
-                const long long flock = sm::souls_flock(gs, *macroStore, slot);
+                const long long flock = cell_number_at(gs, *macroStore, slot);
                 popTotal += flock;
                 switch (kind) {
                     case sm::SquadType::City: popCity += flock;
@@ -764,7 +775,7 @@ int main(int argc, char** argv) {
                 sm::SquadType(macroStore->runtime[slot].squadType);
             if (kind != sm::SquadType::City
                 && kind != sm::SquadType::Village) return;
-            const int flock = sm::souls_flock(gs, *macroStore, slot);
+            const int flock = cell_number_at(gs, *macroStore, slot);
             popEnd += flock;
             alive += flock > 0 ? 1 : 0;
         });

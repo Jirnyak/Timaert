@@ -85,8 +85,11 @@ void for_each_place_view(const MacroWorld& w, F&& fn) {
             const auto& c = st.cell[slot];
             const int x = ecs::cell_x(c, gs.mapW);
             const int y = ecs::cell_y(c, gs.mapW);
+            // Число поля фич читается ПО КЛЕТКЕ, которая уже на руках
+            // (M-320: `souls_flock` снесена — она брала слот и тем
+            // утверждала, будто популяция есть атрибут сквада).
             fn(PlaceView{t, int(st.spawnId[slot].index), x, y, name,
-                            souls_flock(gs, st, std::uint16_t(slot)),
+                            worked_read(gs, x, y),
                             spire_orb(w, x, y).depleted});
         }
     }

@@ -89,8 +89,14 @@ void settle_place_day(GameState& gs, MacroStore& st, std::uint16_t slot,
     // Daily slot hygiene (CANON «Крафт/Скрап») — hygiene, not a balance.
     econ_store_hygiene(store, sink, user);
 
+    // РОСТ ЕСТЬ РАБОТА МОДУЛЯ НАД ПОЛЕМ ПОД СОБОЙ (владелец: «через закон
+    // работы сквад может по своему модулю менять число поля фич под собой —
+    // например рост популяции»). Читается ЧИСЛО КЛЕТКИ; `souls_flock`,
+    // объявлявшая его «паствой сквада», снесена (M-320).
+    const int popX = ecs::cell_x(st.cell[slot], gs.mapW);
+    const int popY = ecs::cell_y(st.cell[slot], gs.mapW);
     wb.popGrowthCarry += population_delta_per_day(
-        souls_flock(gs, st, slot), float(wb.seasonWellbeing) / 255.0f);
+        worked_read(gs, popX, popY), float(wb.seasonWellbeing) / 255.0f);
     const int whole = int(wb.popGrowthCarry);
     if (whole > 0) {
         wb.popGrowthCarry -= float(whole);

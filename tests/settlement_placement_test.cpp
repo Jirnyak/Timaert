@@ -48,6 +48,17 @@
 #include <memory>
 #include <vector>
 
+// ЧИСЛО ПОЛЯ ФИЧ ПОД КЛЕТКОЙ СЛОТА — помощник ЭТОГО свидетеля, не дверь мира.
+// M-320 снёс `souls_flock`: она брала слот и тем утверждала, будто популяция
+// есть атрибут сквада. Имя здесь говорит, ЧТО функция делает (читает число
+// поля по клетке), а не чем это число для кого-то значит.
+static int cell_number_at(const sm::GameState& gs, const sm::MacroStore& st,
+                          std::uint16_t slot) {
+    const auto& c = st.cell[slot];
+    return sm::worked_read(gs, sm::ecs::cell_x(c, gs.mapW),
+                           sm::ecs::cell_y(c, gs.mapW));
+}
+
 namespace {
 
 using namespace sm;
@@ -207,7 +218,7 @@ std::vector<PlaceRow> places_of(const GameState& gs, SquadType kind) {
             ecs::cell_x(places().cell[slot], gs.mapW),
             ecs::cell_y(places().cell[slot], gs.mapW),
             int(places().spawnId[slot].index), slot,
-            souls_flock(gs, places(), slot),
+            cell_number_at(gs, places(), slot),
             souls_home(places(), slot),
             creature_count(bag),
             suzerain_of(places(), slot)});

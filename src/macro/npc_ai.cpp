@@ -2169,8 +2169,15 @@ int pick_next_station_(const TickContext& ctx, const MacroPos& p,
         for_each_place(stp, [&](std::uint16_t slot) {
             const int id = int(stp.spawnId[slot].index);
             if (id == currentId || id == prevId) return;
+            // ВЫВОД ДЕЛАЕТ МОДУЛЬ ХОДОКА, ЧИТАЯ ЧУЖОЕ ЧИСЛО ПОЛЯ: «подо мной
+            // фича города, сверху стоит сквад города — значит это его
+            // популяция, и мне туда есть смысл идти». `souls_flock` снесена
+            // (M-320): она объявляла этот вывод МИРОВЫМ, а он принадлежит
+            // модулю читающего.
             if (!place_is_settlement(SquadType(stp.runtime[slot].squadType))
-                || souls_flock(*ctx.mw.gs, stp, slot) <= 0)
+                || worked_read(*ctx.mw.gs,
+                               ecs::cell_x(stp.cell[slot], ctx.mapW),
+                               ecs::cell_y(stp.cell[slot], ctx.mapW)) <= 0)
                 return;
             offer_(slot);
         });
@@ -2196,7 +2203,9 @@ int pick_next_station_(const TickContext& ctx, const MacroPos& p,
         const std::uint16_t slot = place_slot_by_id(ctx, lmId);
         if (slot == kMacroNoSlot
             || !place_is_settlement(SquadType(stp.runtime[slot].squadType))
-            || souls_flock(*ctx.mw.gs, stp, slot) <= 0)
+            || worked_read(*ctx.mw.gs,
+                           ecs::cell_x(stp.cell[slot], ctx.mapW),
+                           ecs::cell_y(stp.cell[slot], ctx.mapW)) <= 0)
             continue;
         offer_(slot);
     }

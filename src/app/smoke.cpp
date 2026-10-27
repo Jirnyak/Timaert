@@ -4082,6 +4082,15 @@ bool run_prologue_road_smoke(App& app) {
 // gate, climb every storey through its demon guard, take the roof hatch onto
 // the crown, touch the orb, and come away with the spell — the spire flipped
 // depleted, the orb burned out of the scene, the fact in the event log.
+// Число поля фич под клеткой слота — ПО КЛЕТКЕ (M-320: `souls_flock`
+// снесена как лишняя система; смысл числу даёт модуль, а свидетелю нужно
+// само число). Локальная функция смоука, не мировая дверь.
+static int smoke_cell_number(const App& app, std::uint16_t slot) {
+    const auto& c = app.macroStore->cell[slot];
+    return sm::worked_read(app.gs, sm::ecs::cell_x(c, app.gs.mapW),
+                           sm::ecs::cell_y(c, app.gs.mapW));
+}
+
 bool run_spire_climb_smoke(App& app) {
     if (!smoke_boot_invariants_hold(app)) {
         smoke_print_counts(app, "spire_climb_boot_failed");
@@ -8315,7 +8324,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // street. Counted over the centre cell only, so neighbours'
             // meadows do not dilute it.
             const int wantHouses =
-                sm::sub::city_house_target(sm::souls_flock(app.gs, *app.macroStore, s));
+                sm::sub::city_house_target(smoke_cell_number(app, s));
             int bare = 0, built = 0;
             {
                 // Bounded to the ground INSIDE THE WALL — the town's own
@@ -8326,7 +8335,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 const int o = sm::sub::kCellSize;
                 const float c = float(o) + float(o) * 0.5f;
                 const float r = float(
-                    sm::sub::city_wall_radius(sm::souls_flock(app.gs, *app.macroStore, s)));
+                    sm::sub::city_wall_radius(smoke_cell_number(app, s)));
                 for (int y = o; y < o * 2; ++y) {
                     for (int x = o; x < o * 2; ++x) {
                         const float dx = float(x) + 0.5f - c;
@@ -8343,7 +8352,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          "[smoke] settlement_subworld id=%d pop=%d houses=%d/%d "
                          "walls=%d citizens=%d built=%d bare=%d center=%d,%d\n",
                          sOrdinal,
-                         sm::souls_flock(app.gs, *app.macroStore, s), houses,
+                         smoke_cell_number(app, s), houses,
                          wantHouses, walls, citizens,
                          built, bare,
                          app.subworld.mgr().center_cx(),
@@ -8437,7 +8446,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             {
                 const sm::MacroHandle lm = smoke_first_city(app);
                 const int lmPop = app.macroStore->valid(lm)
-                    ? sm::souls_flock(app.gs, *app.macroStore, lm.slot) : 0;
+                    ? smoke_cell_number(app, lm.slot) : 0;
                 const float qr = sm::sub::city_upper_radius(lmPop);
                 int watch = 0, inQuarter = 0;
                 const sm::sub::SubObjects& gObjs =

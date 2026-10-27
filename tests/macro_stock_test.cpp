@@ -33,6 +33,17 @@
 
 #include <cstdio>
 
+// ЧИСЛО ПОЛЯ ФИЧ ПОД КЛЕТКОЙ СЛОТА — помощник ЭТОГО свидетеля, не дверь мира.
+// M-320 снёс `souls_flock`: она брала слот и тем утверждала, будто популяция
+// есть атрибут сквада. Имя здесь говорит, ЧТО функция делает (читает число
+// поля по клетке), а не чем это число для кого-то значит.
+static int cell_number_at(const sm::GameState& gs, const sm::MacroStore& st,
+                          std::uint16_t slot) {
+    const auto& c = st.cell[slot];
+    return sm::worked_read(gs, sm::ecs::cell_x(c, gs.mapW),
+                           sm::ecs::cell_y(c, gs.mapW));
+}
+
 namespace {
 
 // РАСПИСКА ПРИМЕНЯЕТСЯ ТАК ЖЕ, КАК ЕЁ ПРИМЕНЯЕТ ДЕЛЬТА (писатель строки —
@@ -116,7 +127,7 @@ int population_of_kind(const World& wld, sm::SquadType kind, int id) {
     sm::for_each_place(*wld.store, [&](std::uint16_t slot) {
         if (sm::SquadType(wld.store->runtime[slot].squadType) != kind) return;
         if (int(wld.store->spawnId[slot].index) != id) return;
-        found = sm::souls_flock(wld.gs, *wld.store, slot);
+        found = cell_number_at(wld.gs, *wld.store, slot);
     });
     return found;
 }
@@ -629,7 +640,7 @@ void test_a_creature_deal_moves_the_flock_both_ways() {
     CHECK(sm::settle_souls(gs, st, town.slot, kSouls) == kSouls,
           "паства встала дверью мира целиком");
     Inventory& shelf = st.inventory[town.slot].inv;
-    CHECK(souls_flock(gs, st, town.slot) == kSouls
+    CHECK(cell_number_at(gs, st, town.slot) == kSouls
               && souls_home(st, town.slot) == kSouls,
           "оба носителя души согласны ДО сделки: дома столько же, сколько в "
           "пастве");
@@ -660,7 +671,7 @@ void test_a_creature_deal_moves_the_flock_both_ways() {
           "сделка настала ТОЙ ЖЕ дверью deal, второго прилавка нет");
     CHECK(flock_left_home(gs, st, town.slot, folkBefore) == kBought,
           "дверь паствы назвала ИЗМЕРЕННЫЙ факт, а не намерение");
-    CHECK(souls_flock(gs, st, town.slot) == kSouls - kBought,
+    CHECK(cell_number_at(gs, st, town.slot) == kSouls - kBought,
           "паства места упала РОВНО на число ушедших голов: иначе город "
           "кормит и облагает данью проданного");
     CHECK(souls_home(st, town.slot) == kSouls - kBought,
@@ -680,9 +691,9 @@ void test_a_creature_deal_moves_the_flock_both_ways() {
           "обратная сделка проходит тем же законом");
     CHECK(flock_left_home(gs, st, town.slot, folkBefore) == -kGivenBack,
           "дельта ЗНАКОВАЯ: пришло — значит минус ушло");
-    CHECK(souls_flock(gs, st, town.slot) == kSouls - kBought + kGivenBack,
+    CHECK(cell_number_at(gs, st, town.slot) == kSouls - kBought + kGivenBack,
           "паства выросла ровно на пришедшие головы");
-    CHECK(souls_flock(gs, st, town.slot) == souls_home(st, town.slot),
+    CHECK(cell_number_at(gs, st, town.slot) == souls_home(st, town.slot),
           "и «в поле» осталось нулём, а не отрицательным числом");
 }
 

@@ -40,6 +40,17 @@
 #include "tables/npc.h"
 #include "tables/seasons.h"
 
+// ЧИСЛО ПОЛЯ ФИЧ ПОД КЛЕТКОЙ СЛОТА — помощник ЭТОГО свидетеля, не дверь мира.
+// M-320 снёс `souls_flock`: она брала слот и тем утверждала, будто популяция
+// есть атрибут сквада. Имя здесь говорит, ЧТО функция делает (читает число
+// поля по клетке), а не чем это число для кого-то значит.
+static int cell_number_at(const sm::GameState& gs, const sm::MacroStore& st,
+                          std::uint16_t slot) {
+    const auto& c = st.cell[slot];
+    return sm::worked_read(gs, sm::ecs::cell_x(c, gs.mapW),
+                           sm::ecs::cell_y(c, gs.mapW));
+}
+
 namespace {
 
 // ── ФИКСТУРА РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ САМА (§8 п.11) ─────────────────────
@@ -72,7 +83,7 @@ std::uint16_t born_place(World& w, sm::SquadType kind, int x, int y,
 }
 
 int flock_of(World& w, std::uint16_t slot) {
-    return sm::souls_flock(w.gs, *w.store, slot);
+    return cell_number_at(w.gs, *w.store, slot);
 }
 int folk_of(World& w, std::uint16_t slot) {
     return sm::count_human_souls(w.store->inventory[slot].inv);

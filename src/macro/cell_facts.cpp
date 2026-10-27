@@ -107,7 +107,12 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
     f.place = {.type = kind,
                   .id = manned
                       ? std::int32_t(w.store->spawnId[who.slot].index) : -1,
-                  .size = manned ? souls_flock(*w.gs, *w.store, who.slot) : 0,
+                  // ЧИСЛО ПОЛЯ ЕДЕТ ВНИЗ БЕЗУСЛОВНО, КАК И РОД: оно факт
+                  // КЛЕТКИ, а не сквада (M-320 снёс `souls_flock`, бравшую
+                  // слот). Под `FT_City` модуль города прочтёт его своей
+                  // популяцией, под `FT_Spire` там спелл — толкует ЧИТАЮЩИЙ
+                  // МОДУЛЬ, внутри себя.
+                  .size = w.gs ? worked_read(*w.gs, f.x, f.y) : 0,
                   .tier = orb.tier,
                   .spell = orb.spell,
                   .factionIdx = manned

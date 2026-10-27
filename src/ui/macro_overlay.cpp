@@ -981,7 +981,12 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                         ImGui::PopStyleColor();
                     } else {
                         ImGui::TextDisabled("Pop");
-                        ImGui::Text("%d", souls_flock(gs, store, slot));
+                        // Число поля фич ПО КЛЕТКЕ; подпись «Pop» — вывод
+                        // оверлея, а не мировой двери (M-320).
+                        ImGui::Text("%d",
+                            worked_read(gs,
+                                ecs::cell_x(store.cell[slot], gs.mapW),
+                                ecs::cell_y(store.cell[slot], gs.mapW)));
                     }
                     ImGui::EndGroup();
 

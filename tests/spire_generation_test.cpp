@@ -660,6 +660,23 @@ void test_one_answer_to_the_drained_orb() {
 // (рука игрока в субмире), и он не вывод.
 constexpr const char* kOrbDoor = "src/macro/spires.cpp";
 constexpr const char* kOrbWitness = "src/app/smoke.cpp";
+// ── ТРЕТЬЕ ИМЯ, И ОНО ОПЛАЧЕНО ПРИЧИНОЙ, А НЕ УДОБСТВОМ (M-320) ──────────
+// `src/macro/npc_ai.cpp` — ЛОЖНОЕ СРАБАТЫВАНИЕ ПАРЫ, и это проверяемо по
+// двум числам: имя шпиля стоит в нём РОВНО ОДИН раз, строкой `{ SquadType::
+// Spire, nullptr, nullptr }` таблицы модулей (её требует ассерт полноты
+// `kAiModuleRows`), а оба `worked_read` стоят ПОД ГЕЙТОМ
+// `place_is_settlement`, куда шпиль не проходит и где сквада у него нет
+// вовсе. Вывести «выкачан ли орб» этот файл не может по построению.
+//
+// ПОЧЕМУ ПАРА ВООБЩЕ ПОЯВИЛАСЬ, И ЭТО ЧЕСТНОЕ ОСЛАБЛЕНИЕ ЭВРИСТИКИ: до
+// M-320 читатели населения ходили через `souls_flock`, и `worked_read` был
+// редок — пара «worked_read + имя шпиля» почти всегда значила вывод об
+// орбе. Дверь снесена как лишняя система, читатели пошли к полю НАПРЯМУЮ,
+// и ложная поверхность правила структурно выросла. Правило остаётся
+// полезным (возврат к ключу-роду оно поймает), но список будет расти по
+// мере появления модулей родов — и тогда его чинить надо ПРАВИЛОМ
+// (например, требовать близости двух имён), а не длинным списком.
+constexpr const char* kOrbFalsePair = "src/macro/npc_ai.cpp";
 
 std::string strip_comments_and_strings(const std::string& line) {
     std::string out;
@@ -688,7 +705,8 @@ void test_no_second_orb_derivation_in_the_tree() {
         if (ext != ".h" && ext != ".cpp") continue;
         const std::string rel =
             fs::relative(e.path(), root).generic_string();
-        if (rel == kOrbDoor || rel == kOrbWitness) continue;
+        if (rel == kOrbDoor || rel == kOrbWitness
+            || rel == kOrbFalsePair) continue;
         std::ifstream in(e.path());
         if (!in) continue;
         ++scanned;

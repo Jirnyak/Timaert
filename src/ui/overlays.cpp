@@ -49,6 +49,19 @@ namespace sm::ui
 {
     namespace
     {
+        // Число поля фич под клеткой слота — ПО КЛЕТКЕ. M-320 снёс
+        // `souls_flock`: она брала СЛОТ и тем утверждала, будто популяция
+        // есть атрибут сквада. Подпись «Population» ниже — ВЫВОД ПАНЕЛИ из
+        // двух видимых ей фактов (фича города под клеткой + сквад города
+        // сверху), и живёт он здесь, внутри читающего, а не в мире.
+        int cell_number_of(const GameState &gs, const MacroStore &st,
+                           std::uint16_t slot)
+        {
+            const auto &c = st.cell[slot];
+            return worked_read(gs, ecs::cell_x(c, gs.mapW),
+                               ecs::cell_y(c, gs.mapW));
+        }
+
         float modal_width(const ImGuiViewport *vp,
                           float preferred,
                           float minimum)
@@ -1619,7 +1632,7 @@ namespace sm::ui
             }
             else
             {
-                ImGui::Text("Population: %d", souls_flock(gs, st, slot));
+                ImGui::Text("Population: %d", cell_number_of(gs, st, slot));
                 ImGui::Text("Wellbeing: %d%%", wellbeing_pct(st, slot));
                 ImGui::Text("Starved last boundary: %d",
                             int(st.wellbeing[slot].starvedYesterday));
@@ -1678,7 +1691,7 @@ namespace sm::ui
                         else
                         {
                             draw_info_overview_row("Population",
-                                                   souls_flock(gs, st, slot));
+                                                   cell_number_of(gs, st, slot));
                             draw_info_overview_row("Wellbeing %",
                                                    wellbeing_pct(st, slot));
                             draw_info_overview_row(

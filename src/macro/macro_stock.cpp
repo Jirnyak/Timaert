@@ -64,8 +64,11 @@ MacroHandle find_population_subject(const MacroWorld& w,
 
 int read_population(const MacroWorld& w, MacroStockKey k) {
     const MacroHandle h = find_population_subject(w, k.subject);
-    return w.store && w.store->valid(h)
-        ? souls_flock(*w.gs, *w.store, h.slot) : 0;
+    if (!w.gs || !w.store || !w.store->valid(h)) return 0;
+    // ЧИСЛО ПОЛЯ ФИЧ ПО КЛЕТКЕ СУБЪЕКТА (M-320: `souls_flock` снесена).
+    const auto& c = w.store->cell[h.slot];
+    return worked_read(*w.gs, ecs::cell_x(c, w.gs->mapW),
+                       ecs::cell_y(c, w.gs->mapW));
 }
 
 void write_population(MacroWorld& w, MacroStockKey k, int delta) {

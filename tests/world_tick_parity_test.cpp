@@ -25,6 +25,17 @@
 #include <cstdint>
 #include <cstdio>
 
+// ЧИСЛО ПОЛЯ ФИЧ ПОД КЛЕТКОЙ СЛОТА — помощник ЭТОГО свидетеля, не дверь мира.
+// M-320 снёс `souls_flock`: она брала слот и тем утверждала, будто популяция
+// есть атрибут сквада. Имя здесь говорит, ЧТО функция делает (читает число
+// поля по клетке), а не чем это число для кого-то значит.
+static int cell_number_at(const sm::GameState& gs, const sm::MacroStore& st,
+                          std::uint16_t slot) {
+    const auto& c = st.cell[slot];
+    return sm::worked_read(gs, sm::ecs::cell_x(c, gs.mapW),
+                           sm::ecs::cell_y(c, gs.mapW));
+}
+
 namespace {
 
 // One game minute forward from wherever the clock stands — exact from any
@@ -443,7 +454,7 @@ void test_a_famine_is_recorded_once_when_it_begins() {
 
     CHECK(st.wellbeing[town.slot].starvedYesterday > 0,
           "the fixture is honest: this town's bill took souls");
-    CHECK(sm::souls_flock(gs, st, town.slot) < 100,
+    CHECK(cell_number_at(gs, st, town.slot) < 100,
           "паства упала на съеденных: число фичи и головы идут ПАРОЙ");
     // БЛАГОПОЛУЧИЕ ЕСТЬ ДОЛЯ ОПЛАЧЕННОГО, и здесь утверждается ИМЕННО это,
     // а не круглый ноль. Прежде тут стояло `== 0`, и ноль держался на
@@ -464,7 +475,7 @@ void test_a_famine_is_recorded_once_when_it_begins() {
         CHECK(int(wb.starvedYesterday) > sm::souls_home(st, l),
               "взыскание забрало БОЛЬШЕ душ, чем осталось: место обезлюдело, "
               "а не поголодало");
-        CHECK(sm::souls_flock(gs, st, l) == sm::souls_home(st, l),
+        CHECK(cell_number_at(gs, st, l) == sm::souls_home(st, l),
               "паства упала вместе с головами: два носителя не расходятся "
               "(в поле этот город никого не держит)");
     }
@@ -528,11 +539,11 @@ void test_population_dies_honestly_to_zero() {
     for (int day = 1; day <= 2048 && dayOfDeath < 0; ++day) {
         sm::settle_place_day(gs, st, v, day);
         sm::squad_season_window(gs, st, day);
-        if (sm::souls_flock(gs, st, v) < 5) sawBelowOldFloor = true;
+        if (cell_number_at(gs, st, v) < 5) sawBelowOldFloor = true;
         if (died_facts() > 0) dayOfDeath = day;
     }
     int deaths = died_facts();
-    CHECK(dayOfDeath >= 0 && sm::souls_flock(gs, st, v) == 0,
+    CHECK(dayOfDeath >= 0 && cell_number_at(gs, st, v) == 0,
           "a starving settlement dies honestly to zero");
     CHECK(sm::souls_home(st, v) == 0,
           "…и головы ушли вместе с числом: пара носителей не расходится");
@@ -543,7 +554,7 @@ void test_population_dies_honestly_to_zero() {
         sm::squad_season_window(gs, st, day);
     }
     deaths = died_facts();
-    CHECK(sm::souls_flock(gs, st, v) == 0,
+    CHECK(cell_number_at(gs, st, v) == 0,
           "zero population is absorbing: nobody is minted from air");
     CHECK(deaths == 1,
           "the death transition fires exactly once");

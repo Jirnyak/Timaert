@@ -56,6 +56,17 @@ static_assert(kFixturePlayerOrdinal < kFixtureIssuerBase,
 #include <vector>
 #include <cstring>
 
+// ЧИСЛО ПОЛЯ ФИЧ ПОД КЛЕТКОЙ СЛОТА — помощник ЭТОГО свидетеля, не дверь мира.
+// M-320 снёс `souls_flock`: она брала слот и тем утверждала, будто популяция
+// есть атрибут сквада. Имя здесь говорит, ЧТО функция делает (читает число
+// поля по клетке), а не чем это число для кого-то значит.
+static int cell_number_at(const sm::GameState& gs, const sm::MacroStore& st,
+                          std::uint16_t slot) {
+    const auto& c = st.cell[slot];
+    return sm::worked_read(gs, sm::ecs::cell_x(c, gs.mapW),
+                           sm::ecs::cell_y(c, gs.mapW));
+}
+
 namespace {
 
 // The charged `int fail()` is dead (Testing law #1: tests/check.h is the
@@ -968,7 +979,7 @@ void run_roundtrip() {
     if (!loadedStore.valid(cityLm)
         || sm::SquadType(loadedStore.runtime[cityLm.slot].squadType)
                != sm::SquadType::City
-        || sm::souls_flock(loaded, loadedStore, cityLm.slot)
+        || cell_number_at(loaded, loadedStore, cityLm.slot)
                != kFixtureCitySouls
         || sm::souls_home(loadedStore, cityLm.slot) < kFixtureCitySouls) {
         FAIL_BAIL("settlement lost");
