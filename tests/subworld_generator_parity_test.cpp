@@ -1,5 +1,6 @@
 #include "check.h"
 #include "sub/gens/dispatch.h"
+#include "sub/gens/gens.h"   // gen_* — свидетель утверждает МОДУЛЬ, не номер
 #include "sub/dgn/dispatch.h"   // the tower's shared dimensions
 #include "macro/tree_layer.h"
 #include "sub/base_generator.h"
@@ -436,8 +437,8 @@ int main() {
     SubworldMapData out{};
     dispatch_generate(ctx, nbH, nbB, /*nbBiome5*/nullptr, nbF, out, nbForest);
 
-    const bool ok1 = !(resolve_mode(ctx) != SubworldMode::Forest);
-    CHECK(ok1, "forest-class tree count did not resolve to Forest mode");
+    const bool ok1 = !(open_air_gen_for(ctx) != gen_forest);
+    CHECK(ok1, "forest-class tree count did not resolve to the Forest module");
     if (!ok1) return 1;
     const bool ok2 = !(out.tiles.size() != std::size_t(kCellSize) * kCellSize);
     CHECK(ok2, "forest generator produced wrong tile count");
@@ -533,7 +534,7 @@ int main() {
     nbF[5] = std::uint8_t(FT_DirtRoad);
     SubworldMapData grassTrailOut{};
     dispatch_generate(grassTrail, nbH, nbB, /*nbBiome5*/nullptr, nbF, grassTrailOut);
-    const bool ok8 = !(resolve_mode(grassTrail) != SubworldMode::Grassland
+    const bool ok8 = !(open_air_gen_for(grassTrail) != gen_open
                        || anchor_is_road(grassTrailOut, grassTrail, -1, 0)
                        || anchor_is_road(grassTrailOut, grassTrail, 1, 0)
                        || grassTrailOut.tiles[std::size_t(center) * kCellSize + center]
@@ -574,7 +575,7 @@ int main() {
     nbF[5] = std::uint8_t(FT_Road);
     SubworldMapData swampTrailOut{};
     dispatch_generate(swampTrail, nbH, nbB, /*nbBiome5*/nullptr, nbF, swampTrailOut);
-    const bool ok10 = !(resolve_mode(swampTrail) != SubworldMode::Swamp
+    const bool ok10 = !(open_air_gen_for(swampTrail) != gen_swamp
                         || anchor_is_road(swampTrailOut, swampTrail, 1, 0)
                         || swampTrailOut.tiles[std::size_t(center) * kCellSize + center]
                             == TILE_ROAD);
@@ -596,7 +597,7 @@ int main() {
     nbF[1] = std::uint8_t(FT_Road);
     SubworldMapData mountainTrailOut{};
     dispatch_generate(mountainTrail, nbH, nbB, /*nbBiome5*/nullptr, nbF, mountainTrailOut);
-    const bool ok11 = !(resolve_mode(mountainTrail) != SubworldMode::Mountain
+    const bool ok11 = !(open_air_gen_for(mountainTrail) != gen_mountain
                         || anchor_is_road(mountainTrailOut, mountainTrail, 0, -1)
                         || mountainTrailOut.tiles[std::size_t(center) * kCellSize + center]
                             == TILE_ROAD);
@@ -624,8 +625,8 @@ int main() {
 
     SubworldMapData spireOut{};
     dispatch_generate(spire, nbH, nbB, /*nbBiome5*/nullptr, nbF, spireOut);
-    const bool ok12 = !(resolve_mode(spire) != SubworldMode::Spire);
-    CHECK(ok12, "spire place did not resolve to Spire mode");
+    const bool ok12 = !(open_air_gen_for(spire) != gen_spire);
+    CHECK(ok12, "spire place did not resolve to the Spire module");
     if (!ok12) return 1;
 
     // The tower is ONE round central cylinder of the dungeon layer's shared
@@ -960,8 +961,8 @@ int main() {
 
     SubworldMapData ruinOut{};
     dispatch_generate(ruin, nbH, nbB, /*nbBiome5*/nullptr, nbF, ruinOut);
-    const bool ok24 = !(resolve_mode(ruin) != SubworldMode::Ruin);
-    CHECK(ok24, "ruin place did not resolve to Ruin mode");
+    const bool ok24 = !(open_air_gen_for(ruin) != gen_ruin);
+    CHECK(ok24, "ruin place did not resolve to the Ruin module");
     if (!ok24) return 1;
     int wallTiles = 0;
     int blockedWallTiles = 0;
@@ -1015,8 +1016,8 @@ int main() {
 
     SubworldMapData cityOut{};
     dispatch_generate(city, nbH, nbB, /*nbBiome5*/nullptr, nbF, cityOut);
-    const bool ok27 = !(resolve_mode(city) != SubworldMode::City);
-    CHECK(ok27, "city place did not resolve to City mode");
+    const bool ok27 = !(open_air_gen_for(city) != gen_city);
+    CHECK(ok27, "city place did not resolve to the City module");
     if (!ok27) return 1;
     int cityHouses = 0;
     int cityWalls = 0;
@@ -1087,8 +1088,8 @@ int main() {
 
     SubworldMapData villageOut{};
     dispatch_generate(village, nbH, nbB, /*nbBiome5*/nullptr, nbF, villageOut);
-    const bool ok30 = !(resolve_mode(village) != SubworldMode::Village);
-    CHECK(ok30, "village place did not resolve to Village mode");
+    const bool ok30 = !(open_air_gen_for(village) != gen_village);
+    CHECK(ok30, "village place did not resolve to the Village module");
     if (!ok30) return 1;
     int villageHouses = 0;
     int villageWalls = 0;
@@ -1174,8 +1175,8 @@ int main() {
 
     SubworldMapData roadOut{};
     dispatch_generate(road, nbH, nbB, /*nbBiome5*/nullptr, nbF, roadOut);
-    const bool ok33 = !(resolve_mode(road) != SubworldMode::Road);
-    CHECK(ok33, "water road feature did not resolve to Road mode");
+    const bool ok33 = !(open_air_gen_for(road) != gen_road);
+    CHECK(ok33, "water road feature did not resolve to the Road module");
     if (!ok33) return 1;
 
     int roadWestX, roadWestY, roadEastX, roadEastY;
@@ -1373,7 +1374,7 @@ int main() {
 
     SubworldMapData grassOut{};
     dispatch_generate(grass, nbH, nbB, /*nbBiome5*/nullptr, nbF, grassOut);
-    const bool ok40 = !(resolve_mode(grass) != SubworldMode::Grassland
+    const bool ok40 = !(open_air_gen_for(grass) != gen_open
                         || std::fabs(grassOut.waterLevel - WATER_LEVEL) > 0.0001f);
     CHECK(ok40,
           "a cell with no feature resolves to Grassland and sits on the one water plane");
@@ -1462,7 +1463,7 @@ int main() {
     for (const Structure& s : waterOut.structures) {
         if (s.kind == Structure::Tree) ++waterTrees;
     }
-    const bool ok44 = !(resolve_mode(water) != SubworldMode::Water
+    const bool ok44 = !(open_air_gen_for(water) != gen_water
                         || std::fabs(waterOut.waterLevel - WATER_LEVEL) > 0.0001f
                         || waterTiles != int(waterOut.tiles.size())
                         || waterTrees != 0);
@@ -1531,7 +1532,7 @@ int main() {
     for (const Structure& s : swampOut.structures) {
         if (s.kind == Structure::Tree) ++swampTrees;
     }
-    const bool ok46 = !(resolve_mode(swamp) != SubworldMode::Swamp
+    const bool ok46 = !(open_air_gen_for(swamp) != gen_swamp
                         || std::fabs(swampOut.waterLevel - WATER_LEVEL) > 0.0001f
                         || swampTrees <= 0);
     CHECK(ok46, "swamp generator invariants failed");
@@ -1557,7 +1558,7 @@ int main() {
         mountainMin = std::min(mountainMin, h);
         mountainMax = std::max(mountainMax, h);
     }
-    const bool ok47 = !(resolve_mode(mountain) != SubworldMode::Mountain
+    const bool ok47 = !(open_air_gen_for(mountain) != gen_mountain
                         || std::fabs(mountainOut.waterLevel - WATER_LEVEL) > 0.0001f
                         || mountainMax <= mountainMin);
     CHECK(ok47, "mountain generator invariants failed");
@@ -1587,9 +1588,36 @@ int main() {
     int nbFewTrees[9];
     for (int i = 0; i < 9; ++i) nbFewTrees[i] = 64;
 
-    const bool ok48 = !(resolve_mode(field) != SubworldMode::Field);
-    CHECK(ok48, "FT_Field did not resolve to Field mode");
+    const bool ok48 = !(open_air_gen_for(field) != gen_field);
+    CHECK(ok48, "FT_Field did not resolve to the Field module");
     if (!ok48) return 1;
+
+    // ── ВЫГОН И ЛЁН НЕ ПОЛУЧАЮТ ЧУЖОЙ МОДУЛЬ (вердикт владельца 2026-10-28)
+    // Дословно: «выгон — ТРАВА, колосья убрать»; и о форме: «пасбище барашей и
+    // коней тоже должныч быть от ледьными типами фич со своими ген модулями»,
+    // «это всё фичи полей у кажлой свой подуль».
+    //
+    // ЗАКОН, А НЕ СЕГОДНЯШНЕЕ ПОВЕДЕНИЕ (§8 п.5): байт, своего модуля НЕ
+    // имеющий, обязан показывать свою ЗЕМЛЮ, а не чужую стройку — это GEN-5,
+    // тот же шрам, по которому «любой ландмарк = город» поднимал городу стены
+    // на пустом месте. `FT_Pasture` СТОЯЛ в модуле ПАШНИ и потому сеял хлеб на
+    // пастбище; у `FT_FlaxField` своего модуля тоже ещё нет.
+    //
+    // Свидетеля у этого не было НИ ОДНОГО: до 2026-10-28 оба байта не читал в
+    // `src/sub/` никто, поэтому подмена модуля была невидима. Утверждается
+    // ОТРИЦАНИЕ («не пшеничный модуль»), а не положительный вид, потому что
+    // вид — контент, которого ещё нет, и прибивать его числом рано.
+    CellContext pasture = field;
+    pasture.feature = FT_Pasture;
+    const bool ok48a = !(open_air_gen_for(pasture) == gen_field);
+    CHECK(ok48a, "FT_Pasture must NOT get the wheat module: a pasture is grass, "
+                 "not ploughed land (owner 2026-10-28). Its own module is "
+                 "pending; until then the cell shows its land (GEN-5)");
+    CellContext flax = field;
+    flax.feature = FT_FlaxField;
+    const bool ok48b = !(open_air_gen_for(flax) == gen_field);
+    CHECK(ok48b, "FT_FlaxField must NOT get the wheat module either: every "
+                 "field feature owns its module (owner 2026-10-28, M-335)");
 
     SubworldMapData fieldOut{};
     dispatch_generate(field, nbH, nbB, /*nbBiome5*/nullptr, nbF, fieldOut, nbFewTrees);
@@ -1857,7 +1885,7 @@ int main() {
     CellContext bareMeadow = field;
     bareMeadow.feature = FT_None;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
-    const bool ok63 = !(resolve_mode(bareMeadow) != SubworldMode::Grassland);
+    const bool ok63 = !(open_air_gen_for(bareMeadow) != gen_open);
     CHECK(ok63, "bare meadow stopped resolving to Grassland");
     if (!ok63) return 1;
     SubworldMapData bareOut{};

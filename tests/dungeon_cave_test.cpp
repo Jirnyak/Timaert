@@ -443,8 +443,8 @@ void test_no_storeys() {
 // ── 7. Determinism ─────────────────────────────────────────────────────────
 void test_determinism() {
     const CellContext ctx = make_cave_ctx(kSeeds[3]);
-    CHECK(resolve_mode(ctx) == SubworldMode::Dungeon,
-          "a context carrying a cave door resolves to SubworldMode::Dungeon");
+    CHECK(open_air_gen_for(ctx) == nullptr,
+          "a context carrying a cave door resolves to nullptr");
 
     SubworldMapData a{}, b{};
     generate(ctx, a);

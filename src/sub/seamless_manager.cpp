@@ -246,7 +246,6 @@ void SeamlessSubworldManager::worker_loop(std::stop_token stop) {
             done.acy = job.acy;
             done.seed = job.seed;
             done.generation = job.generation;
-            done.mode = resolve_mode(job.ctx);
             done.biome = job.ctx.biome;
             for (int i = 0; i < 9; ++i) done.nbBiome[i] = job.nbBiome[i];
             for (int i = 0; i < 9; ++i) done.nbGround[i] = job.nbGround[i];
@@ -317,7 +316,6 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
     cell.cx = ctx.cx;
     cell.cy = ctx.cy;
     cell.seed = ctx.seed;
-    cell.mode = resolve_mode(ctx);
     cell.biome = ctx.biome;
     for (int i = 0; i < 9; ++i) cell.nbBiome[i] = nbBiome[i];
     for (int i = 0; i < 9; ++i) cell.nbGround[i] = nbGround[i];
@@ -554,7 +552,6 @@ void SeamlessSubworldManager::place_placeholder(int idx, const CellContext& ctx,
     cell.cx = ctx.cx;
     cell.cy = ctx.cy;
     cell.seed = ctx.seed;
-    cell.mode = resolve_mode(ctx);
     cell.biome = ctx.biome;
     // Placeholder: uniform ring — flat placeholder material until the real
     // cell (with its captured macro ring) drains in.
@@ -681,7 +678,6 @@ bool SeamlessSubworldManager::drain_completed_jobs(int maxJobs) {
             continue;
         }
 
-        cell.mode = done.mode;
         cell.biome = done.biome;
         for (int i = 0; i < 9; ++i) cell.nbBiome[i] = done.nbBiome[i];
         for (int i = 0; i < 9; ++i) cell.nbGround[i] = done.nbGround[i];

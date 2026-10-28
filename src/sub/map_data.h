@@ -256,15 +256,29 @@ inline const std::array<float, std::size_t(TILE_COUNT)> kTileMovementSpeed = [] 
     return out;
 }();
 
-enum class SubworldMode : std::uint8_t {
-    Open, City, Village, Forest, Mountain, Swamp, Ruin, Water, Grassland, Road, Spire,
-    Field,
-    // An INTERIOR scene (house / castle / cave floor) projected behind a door
-    // of some subworld structure — not the open air of its macro cell. Routed
-    // to the self-contained sub/dgn/ generators; never produced by the macro
-    // resolver (see CellContext::DungeonRef).
-    Dungeon,
-};
+// ── ЗДЕСЬ ЖИЛ `SubworldMode`, И ОН БЫЛ ГОРИЗОНТАЛЬНОЙ СЦЕПКОЙ МОДУЛЕЙ ─────
+// Вердикт владельца 2026-10-28, дословно: «также это проблема если есть
+// режимы это плохо это значит модули генерацтора горищонтально переплетены
+// через какието режимы ЭТО БЕДА И НАСРАЛ».
+//
+// Перечисление СЛИВАЛО ТРИ РАЗНЫЕ ОСИ МИРА в один словарь: фичи (`City`,
+// `Village`, `Ruin`, `Spire`, `Road`, `Field`), биомы (`Forest`, `Mountain`,
+// `Swamp`, `Water`, `Grassland`, `Open`) и данж. Поэтому модуль пашни и
+// модуль горы сидели в ОДНОМ списке и знали друг о друге хотя бы номером
+// строки — а по закону инкапсуляции модули не могут общаться горизонтально
+// ВООБЩЕ («они не могут горизонатлньо общатсья вообще а могут либо писать то
+// угодно внутри себя - остаётся внутни ни хи брать боеле фундамнетальные
+// системы»). Теперь каждая ось отвечает СВОЕЙ таблицей, а модуль называет
+// себя указателем: `open_air_gen_for@src/sub/gens/dispatch.h`.
+//
+// С ним ушли: хранимые колонки `mode` (сироты DOD п.9 — три записи, ЧТЕНИЙ
+// НОЛЬ) и различие `Grassland`/`Open`, которое наблюдалось ТОЛЬКО через сам
+// словарь — оба режима звали один и тот же `gen_open`.
+//
+// Данж при этом остался вне обеих осей и это ЗАКОН, а не пропуск: он берёт
+// из макромира только таблицы (ЗАКОН ДВУХ МИРОВ п.4), поэтому клетку за
+// дверью пишет `dispatch_generate_dungeon@src/sub/dgn/dispatch.cpp`, а
+// открытая дверь отвечает о нём `nullptr`.
 
 // The place vocabulary is SquadType (macro/place_registry.h) — the
 // one registry enum. A private five-value "CellPlaceKind" lived here until
@@ -451,8 +465,9 @@ struct CellContext {
 // Незаданный полюс — дефолты структуры, и он прибит `static_assert` у самого
 // объявления (`src/macro/cell_facts.h`). Значит «род есть» и «ординал есть»
 // равносильны, и выдумывать второй ответ нечему.
-// Звонящие (`resolve_mode` и сборщик соседей шва) читают КОЛОНКУ напрямую:
-// функция, возвращавшая поле, была индирекцией без вопроса.
+// Звонящие читали КОЛОНКУ напрямую: функция, возвращавшая поле, была
+// индирекцией без вопроса. (Тех двух звонящих больше нет — ось мест ушла из
+// субмира целиком, M-318 Б; ряд оставлен как разбор СНЕСЁННОЙ фабрикации.)
 
 // The GROUND a cell shows where it is dry — the ground_biome pattern
 // for the material dither. Land is its biome (groundBiome is never consulted,

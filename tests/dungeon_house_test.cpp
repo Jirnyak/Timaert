@@ -221,8 +221,8 @@ PadOverlap pad_overlap(const std::vector<Structure>& structures,
 // ── 1. Determinism + footprint drives geometry ─────────────────────────────
 void test_determinism() {
     const CellContext ctx = make_ctx(DungeonRef::House, 8.0f, 6.0f);
-    CHECK(resolve_mode(ctx) == SubworldMode::Dungeon,
-          "a context carrying a door must resolve to SubworldMode::Dungeon");
+    CHECK(open_air_gen_for(ctx) == nullptr,
+          "a context carrying a door must resolve to nullptr");
 
     SubworldMapData a{}, b{};
     generate(ctx, a);

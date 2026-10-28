@@ -1,6 +1,6 @@
 // Ruin placement — worldgen pass for the Ruin place (place_registry.h
 // row "ruin"), §42 Инк 5. Half the registry could never be born: the row,
-// the subworld route (SubworldMode::Ruin) and the surface generator
+// the subworld route (строка `FT_Ruin` → `gen_ruin`) and the surface generator
 // (gen_ruin) all stood ready while no pass pushed a Ruin record — which is
 // why the demo's scene 4 («разведать руины») had no target in the world.
 // The site law mirrors generate_spires: the danger-zone field already

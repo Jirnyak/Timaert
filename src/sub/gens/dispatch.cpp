@@ -1,11 +1,12 @@
-// Open-air dispatch — resolve a cell's KIND, hand it to that kind's module,
-// and own the two passes that belong to no module: the terrain the modules
-// build on, and the reconciliation they all owe the water plane afterwards.
+// Open-air dispatch — назвать модуль, пишущий клетку, и отработать два
+// прохода, не принадлежащих ни одному модулю: терраин, на котором они
+// строят, и примирение с плоскостью воды после них.
 //
-// The registry is a TABLE, not a switch. The switch cost four edits per new
-// kind (enum, forward declaration, case, and a second case in resolve_mode)
-// and silently answered "city" for kinds nobody had written yet; a row costs
-// one, and the static_assert below refuses to build if a row goes missing.
+// РЕЕСТР ЕСТЬ ТАБЛИЦА, А НЕ SWITCH, И ТАБЛИЦ ДВЕ — ПО ЧИСЛУ ОСЕЙ МИРА.
+// Прежний switch стоил четырёх правок на новый род и МОЛЧА отвечал «город»
+// за роды, которых никто не написал; строка стоит одной, а `static_assert`
+// ниже отказывается собираться, если строка пропала. Третьего словаря
+// («режимов») между осью и модулем больше нет — почему, сказано у таблиц.
 #include "sub/gens/dispatch.h"
 
 #include "sub/gens/gens.h"
@@ -20,109 +21,120 @@
 
 namespace sm::sub {
 
-// One row per SubworldMode: which module writes a cell of this kind.
+// ── МОДУЛЬ НАЗЫВАЕТ СЕБЯ ИЗ СЛОВАРЯ МИРА, А НЕ ИЗ ТРЕТЬЕГО ПЕРЕЧИСЛЕНИЯ ───
 //
-// `gen` may be null for a mode that is not written by an open-air module —
-// Dungeon is routed to sub/dgn/ before dispatch ever reaches the table.
-struct GenKindRow {
-    SubworldMode mode;
-    void (*gen)(const GenInput&, SubworldMapData&);
-};
+// ЗДЕСЬ СТОЯЛ `SubworldMode` И ТАБЛИЦА ПО НЕМУ, И ЭТО БЫЛА ГОРИЗОНТАЛЬНАЯ
+// СЦЕПКА МОДУЛЕЙ (вердикт владельца 2026-10-28, дословно: «это проблема если
+// есть режимы это плохо это значит модули генерацтора горищонтально
+// переплетены через какието режимы ЭТО БЕДА И НАСРАЛ»). Перечисление
+// СЛИВАЛО ТРИ РАЗНЫЕ ОСИ в один словарь — фичи (City/Village/Ruin/Spire/
+// Road/Field), биомы (Forest/Mountain/Swamp/Water/Grassland/Open) и данж, —
+// поэтому модуль пашни и модуль горы сидели в ОДНОМ перечислении и знали
+// друг о друге хотя бы номером строки. Теперь каждая ось отвечает СВОЕЙ
+// таблицей, и ни один модуль не назван через соседа.
+//
+// ЗАКОН, НА КОТОРОМ ЭТО СТОИТ (владелец, там же): «МЫ ОСОЗНАННО
+// ИНКАПСУЛИРУЕМ ВСЕ МОДУЛИ ВНУТРИ СЕБЯ - они не могут горизонатлньо общатсья
+// вообще а могут либо писать то угодно внутри себя - остаётся внутни ни хи
+// брать боеле фундамнетальные системы»; и о контексте: «контекст не знает что
+// его модули берут это решение модуля как он зависит от котнектса». То есть
+// §11 «Модули, не паутина» плюс ЗАКОН АГНОСТИЧНОСТИ: вниз к фундаментальному
+// — можно, вбок — нет, а контекст своих читателей не знает.
+//
+// ОДНОРОДНОСТЬ МОДУЛЕЙ — ЗАМЫСЕЛ, А НЕ ДОЛГ (владелец: «это нормалнь очто
+// модули единообразнве и там внутри похожее то есть дод инкапсуляцяи
+// замысел»), ровно DOD п.5: похожий код в двух модулях есть НОРМА, дефект —
+// сцепление. Поэтому строка «у двух байтов один модуль» законна, а слияние
+// байтов в один ради DRY — нет.
 
-constexpr GenKindRow kGenKindRows[] = {
-    { SubworldMode::Open,      gen_open     },
-    { SubworldMode::City,      gen_city     },
-    { SubworldMode::Village,   gen_village  },
-    { SubworldMode::Forest,    gen_forest   },
-    { SubworldMode::Mountain,  gen_mountain },
-    { SubworldMode::Swamp,     gen_swamp    },
-    { SubworldMode::Ruin,      gen_ruin     },
-    { SubworldMode::Water,     gen_water    },
-    // Grassland is open ground that happens to carry no massif — the same
-    // module, kept as its own mode because the RESOLVER distinguishes them.
-    { SubworldMode::Grassland, gen_open     },
-    { SubworldMode::Road,      gen_road     },
-    { SubworldMode::Spire,     gen_spire    },
-    { SubworldMode::Field,     gen_field    },
-    { SubworldMode::Dungeon,   nullptr      },
+// ОСЬ ПЕРВАЯ — БАЙТ ФИЧИ. `nullptr` = «этот байт своего модуля ещё не имеет»,
+// и клетка честно показывает свою землю (GEN-5: род без своего TU не смеет
+// поднимать ЧУЖУЮ стройку).
+struct FeatureGenRow { FeatureType feature; GenFn gen; };
+constexpr FeatureGenRow kFeatureGenRows[] = {
+    { FT_None,       nullptr      },
+    { FT_Road,       gen_road     },
+    { FT_DirtRoad,   gen_road     },
+    { FT_Field,      gen_field    },
+    // Мост — дорога, продолженная над водой: `gen_road` режет линию, а его
+    // ветка `Biome::Water` поднимает пролёт.
+    { FT_Bridge,     gen_road     },
+    // Выемки: шахта и карьер — дыра в земле, своего модуля у них нет.
+    { FT_ClayPit,    nullptr      },
+    { FT_IronMine,   nullptr      },
+    { FT_Quarry,     nullptr      },
+    { FT_SilverMine, nullptr      },
+    { FT_CopperMine, nullptr      },
+    { FT_GoldMine,   nullptr      },
+    // ВЫГОН БОЛЬШЕ НЕ РАСТИТ КОЛОСЬЯ (вердикт владельца 2026-10-28: «выгон —
+    // ТРАВА, колосья убрать»; и о форме: «пасбище барашей и коней тоже
+    // должныч быть от ледьными типами фич со своими ген модулями»). Он СТОЯЛ
+    // в модуле ПАШНИ и потому сеял хлеб на пастбище — ровно шрам GEN-5, чужая
+    // стройка на своём байте. До своего модуля — голая земля.
+    { FT_Pasture,    nullptr      },
+    // Лён — своя фича со своим модулем, которого ещё нет; земля до него.
+    { FT_FlaxField,  nullptr      },
+    { FT_Capital,    nullptr      },   // «ТАМ БУДЕТ ОСОБЫЙ ГЕНЕРАТОР!»
+    { FT_City,       gen_city     },
+    { FT_Village,    gen_village  },
+    { FT_Spire,      gen_spire    },
+    { FT_Ruin,       gen_ruin     },
 };
-static_assert(rows_in_enum_order(kGenKindRows, &GenKindRow::mode),
-              "kGenKindRows row order must mirror SubworldMode");
+static_assert(rows_in_enum_order(kFeatureGenRows, &FeatureGenRow::feature),
+              "kFeatureGenRows обязана идти в порядке FeatureType");
+static_assert(std::size(kFeatureGenRows) == std::size_t(FT_Count),
+              "у КАЖДОГО байта слоя фич обязана быть своя строка модуля");
 
-SubworldMode resolve_mode(const CellContext& ctx) {
+// ОСЬ ВТОРАЯ — БИОМ, и он спрашивается ТОЛЬКО когда фича промолчала.
+// `nullptr` = «у биома своего модуля нет», и тогда решает КЛАСС СЧЁТА
+// деревьев, иначе открытая земля.
+struct BiomeGenRow { Biome biome; GenFn gen; };
+constexpr BiomeGenRow kBiomeGenRows[] = {
+    { Tundra,   nullptr      },
+    { Taiga,    nullptr      },
+    { Snow,     nullptr      },
+    { Valley,   nullptr      },
+    { Meadow,   nullptr      },
+    { Swamp,    gen_swamp    },
+    { Desert,   nullptr      },
+    { Steppe,   nullptr      },
+    { Tropics,  nullptr      },
+    { Water,    gen_water    },
+    { Mountain, gen_mountain },
+};
+static_assert(rows_in_enum_order(kBiomeGenRows, &BiomeGenRow::biome),
+              "kBiomeGenRows обязана идти в порядке Biome");
+
+GenFn open_air_gen_for(const CellContext& ctx) {
     // An interior context outranks everything: the cell shows what stands
-    // BEHIND a door, not the land the door stands on (sub/dgn/).
-    if (ctx.dungeon.kind != DungeonRef::None) return SubworldMode::Dungeon;
-    // ФИЧА ЕСТЬ КЛЮЧ МОДУЛЯ — ОДИН ВОПРОС, ОДИН ЯЗЫК (вердикт владельца
-    // 2026-10-28, дословно: «вместо мест он смотрит модули типов фич которые
-    // для этого и существуют»; и о порядке сборки: «надо генерацию сделать
-    // системно сборкой прям рельеф биомы поля фичи и потом уже вополощать
-    // сквады (агностично чисто)»).
+    // BEHIND a door, not the land the door stands on (sub/dgn/). `nullptr`
+    // ОТ ЭТОЙ ДВЕРИ значит РОВНО ОДНО — «клетку пишет данж-дверь, не
+    // открытый модуль»; `nullptr` ВНУТРИ таблиц выше значит другое («спроси
+    // следующую ось»), и смешаться они не могут, потому что обе таблицы
+    // полны, а последняя строка резолва безусловна.
+    if (ctx.dungeon.kind != DungeonRef::None) return nullptr;
+    // ОСЬ ПЕРВАЯ — ФИЧА: что люди построили, решает, ЧЕМ клетка является
+    // подо ногами (вердикт владельца 2026-10-28: «вместо мест он смотрит
+    // модули типов фич которые для этого и существуют»).
+    const FeatureType feature = FeatureLayer::decode(std::uint8_t(ctx.feature));
+    if (const GenFn f = kFeatureGenRows[std::size_t(feature)].gen) return f;
+    // ОСЬ ВТОРАЯ — БИОМ, и он спрашивается ТОЛЬКО когда фича промолчала:
+    // биом заполняет рельеф под постройкой. Порядок осей СОХРАНЁН в точности:
+    // гора, вода и болото бьют счёт деревьев, поэтому лесистый пик остаётся
+    // горой с разбросанными деревьями, а не становится лесом.
+    if (const GenFn f = kBiomeGenRows[std::size_t(ctx.biome)].gen) return f;
+    // ОСЬ ТРЕТЬЯ — КЛАСС СЧЁТА, а не фича и не биом: внутренности массива
+    // (деревьев ≥ половины золотого максимума) пишет лесной модуль, а кромка
+    // и ambience остаются открытой землёй с деревьями, разбросанными сверху.
+    if (is_forest_cell(ctx.treeCount)) return gen_forest;
+    // ОТКРЫТАЯ ЗЕМЛЯ — БЕЗУСЛОВНАЯ ПОСЛЕДНЯЯ СТРОКА, и потому `nullptr` от
+    // этой двери не может значить ничего, кроме данжа.
     //
-    // ЗДЕСЬ СТОЯЛ `switch (ctx.place.kind)` ПО МЁРТВОЙ ОСИ МЕСТ, а ниже —
-    // цепочка `if` по фичам: ОДИН вопрос «какой модуль пишет эту клетку»
-    // отвечался ДВУМЯ словарями в одной функции. Род места при этом не
-    // приносил ни одного бита, которого нет в байте фичи: макро-граница
-    // сама делает `place_kind_of_feature(f.feature)`
-    // (`cell_facts@src/macro/cell_facts.cpp`), а колонка `kind` строки фичи
-    // держит соответствие под круговым `static_assert`
-    // (`place_kind_of_feature@src/macro/features.h`). То есть субмир читал
-    // ПЕРЕВОД вместо оригинала, и перевод был точным — поэтому перевод оси
-    // не меняет ни одного кадра, он снимает мёртвый язык.
-    //
-    // `default:` ЗАПРЕЩЁН (ЗАКОН СЛОВАРЯ п.4): новая строка слоя фич обязана
-    // падать красным у компилятора, а не уходить в землю МОЛЧА.
-    switch (FeatureLayer::decode(std::uint8_t(ctx.feature))) {
-        case FT_City:     return SubworldMode::City;
-        case FT_Village:  return SubworldMode::Village;
-        case FT_Ruin:     return SubworldMode::Ruin;
-        case FT_Spire:    return SubworldMode::Spire;
-        case FT_Road:
-        case FT_DirtRoad: return SubworldMode::Road;
-        // A bridge is the road continued over a water cell: Road mode carves
-        // the line, and gen_road's Biome::Water branch raises the span.
-        case FT_Bridge:   return SubworldMode::Road;
-        case FT_Field:
-        case FT_Pasture:  return SubworldMode::Field;
-
-        // ── КЛЕТКА ПОКАЗЫВАЕТ ЗЕМЛЮ, И У КАЖДОЙ ГРУППЫ СВОЯ ПРИЧИНА ──────
-        // СТОЛИЦА ЖДЁТ СВОЕГО МОДУЛЯ. Владелец (2026-10-24): «ФИЧА КАПИТАЛ
-        // НАДО! ТАМ БУДЕТ ОСОБЫЙ ГЕНЕРАТОР!» — ключ модуля уже стоит
-        // строкой `FT_Capital`, а самого модуля (`SubworldMode::Capital` →
-        // `gen_capital`) ещё нет. Направить столицу в `SubworldMode::City`
-        // было бы ровно шрам GEN-5: род без своего TU поднимал бы чужой
-        // город («the day a castle was placed on the map it would raise a
-        // city — walls, keep and four hundred houses»), и подмена осталась
-        // бы невидимой. До своего модуля столица показывает ЗЕМЛЮ.
-        case FT_Capital:
-        // Выемки: своего модуля у шахты и карьера нет — клетка остаётся
-        // своей землёй, а выработка живёт числом поля под фичей.
-        case FT_ClayPit:
-        case FT_IronMine:
-        case FT_Quarry:
-        case FT_SilverMine:
-        case FT_CopperMine:
-        case FT_GoldMine:
-        // ЛЁН В `Field` НЕ ИДЁТ, И ЭТО СОХРАНЁННОЕ ПОВЕДЕНИЕ, А НЕ ВЫВОД:
-        // прежняя цепочка спрашивала `FT_Field` и `FT_Pasture` поимённо, а
-        // льняное поле не спрашивала вовсе. Перевод оси этого не менял;
-        // вопрос «пашня ли лён» идёт ВЛАДЕЛЬЦУ строкой наряда, а не правкой
-        // на ходу (§1 — самовольное «я решил, что так лучше» есть провал).
-        case FT_FlaxField:
-        case FT_None:
-        case FT_Count:    break;
-    }
-    // Биом под фичей: что люди построили, решает, ЧЕМ клетка является
-    // подо ногами; дальше биом заполняет рельеф, а деревья ложатся сверху
-    // (лесистый пик — это Mountain с разбросанными деревьями, не Forest).
-    if (ctx.biome == Biome::Mountain) return SubworldMode::Mountain;
-    if (ctx.biome == Biome::Water)    return SubworldMode::Water;
-    if (ctx.biome == Biome::Swamp)    return SubworldMode::Swamp;
-    // Forest is a COUNT class, not a feature: massif interiors (tree count ≥
-    // half the golden max) generate as Forest; edges/ambience stay open with
-    // their trees composed on top by the count-driven scatter.
-    if (is_forest_cell(ctx.treeCount)) return SubworldMode::Forest;
-    return SubworldMode::Grassland;
+    // ЗДЕСЬ УМЕРЛО РАЗЛИЧИЕ `Grassland`/`Open`: оба режима звали ОДИН И ТОТ
+    // ЖЕ `gen_open`, то есть различались ТОЛЬКО номером в мёртвом
+    // перечислении. Различие, наблюдаемое лишь через сам словарь, который
+    // его и породил, — не различие мира; с «режимами» оно ушло само.
+    return gen_open;
 }
 
 void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
@@ -198,12 +210,10 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
     out.waterLevel = safeCtx.seaLevel;
 
     const GenInput in{safeCtx, nbBiome, safeFeature, safeTreeCount, safeFertility};
-    const std::size_t row = std::size_t(resolve_mode(safeCtx));
-    if (row < std::size(kGenKindRows) && kGenKindRows[row].gen != nullptr) {
-        kGenKindRows[row].gen(in, out);
-    } else {
-        gen_open(in, out);
-    }
+    // Данж отработал выше и сюда не доходит, поэтому дверь обязана назвать
+    // модуль; `gen_open` страхует только невозможное.
+    const GenFn gen = open_air_gen_for(safeCtx);
+    (gen ? gen : gen_open)(in, out);
 
     // TS-faithful post-pass: smooth heightmap under road / square tiles so
     // paths look like they were carved into the relief instead of riding

@@ -6,8 +6,27 @@
 
 namespace sm::sub {
 
-// Resolve the SubworldMode from a CellContext (mirrors mode-resolver).
-SubworldMode resolve_mode(const CellContext& ctx);
+// КАКОЙ МОДУЛЬ ПИШЕТ ЭТУ КЛЕТКУ — одна дверь, и отвечает она УКАЗАТЕЛЕМ НА
+// МОДУЛЬ, а не номером в перечислении режимов.
+//
+// ЗДЕСЬ СТОЯЛ `SubworldMode resolve_mode(...)`, и само существование
+// «режимов» было горизонтальной сцепкой модулей (вердикт владельца
+// 2026-10-28: «если есть режимы это плохо это значит модули генерацтора
+// горищонтально переплетены через какието режимы ЭТО БЕДА И НАСРАЛ»).
+// Перечисление сливало ТРИ оси — фичи, биомы и данж — в один словарь, так
+// что модуль пашни и модуль горы знали друг о друге номером строки. Теперь
+// оси спрашиваются порознь, своими таблицами (`dispatch.cpp`), и модуль
+// называет себя сам.
+//
+// `nullptr` значит РОВНО «эту клетку пишет данж-дверь, не открытый модуль»
+// (`dispatch_generate_dungeon@src/sub/dgn/dispatch.cpp`): последняя строка
+// резолва безусловна, поэтому иного пустого ответа у двери не бывает.
+// `GenInput` живёт в `gens.h` (всё, что модулю дают на руки); указателю на
+// функцию полный тип не нужен, поэтому здесь форвард-декларация, а не
+// включение — заголовок остаётся минимальным (§12).
+struct GenInput;
+using GenFn = void (*)(const GenInput&, SubworldMapData&);
+GenFn open_air_gen_for(const CellContext& ctx);
 
 // Single entry point — dispatches to the right generator. `nbHeights` is
 // 9 macro heights, `nbBiome` is 9 macro biomes, `nbFeature` is 9 macro

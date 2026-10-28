@@ -30,7 +30,11 @@ using BiomeResolver = sm::SmallFunction<Biome(int cx, int cy)>;
 struct LoadedCell {
     int cx = 0, cy = 0;
     std::uint32_t seed = 0;
-    SubworldMode mode = SubworldMode::Open;
+    // ЗДЕСЬ СТОЯЛА КОЛОНКА `SubworldMode mode` — СИРОТА DOD п.9, И ЭТО
+    // ЗАМЕРЕНО: три записи, одна копия, ЧТЕНИЙ НОЛЬ во всём дереве. Она
+    // переживала «режимы» как хранимое состояние, не отвечая ни на один
+    // вопрос; какой модуль пишет клетку, спрашивается дверью
+    // (`open_air_gen_for@src/sub/gens/dispatch.h`) в момент генерации.
     Biome biome = Biome::Meadow;
     // 3×3 macro biome ring captured at generation (owner at index 4) — the
     // TRUE biomes, water included: generation (height remap, tree scatter)
@@ -426,7 +430,8 @@ private:
         int acx = 0;
         int acy = 0;
         std::uint64_t generation = 0;
-        SubworldMode mode = SubworldMode::Open;
+        // (та же сирота, что у `LoadedCell` выше — асинк-джоб возил её через
+        // поток ради нулевого числа читателей)
         Biome biome = Biome::Meadow;
         Biome nbBiome[9] = {Biome::Meadow, Biome::Meadow, Biome::Meadow,
                             Biome::Meadow, Biome::Meadow, Biome::Meadow,

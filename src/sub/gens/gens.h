@@ -1,4 +1,6 @@
-// The open-air generator modules — one per SubworldMode, one TU each.
+// The open-air generator modules — ОДИН НА СТРОКУ СВОЕЙ ОСИ, один TU each.
+// Ключ модуля — БАЙТ ФИЧИ, иначе БИОМ (`dispatch.cpp`, две таблицы);
+// промежуточного словаря «режимов» между осью и модулем нет.
 //
 // A module is SELF-CONTAINED: it owns its content, its numbers and its own
 // composition, and it never includes another module. What it may lean on is
@@ -29,7 +31,9 @@ struct GenInput {
     const float*         nbFertility;  // [9] macro moisture channel, 0..1
 };
 
-// The modules. Declared in SubworldMode order.
+// The modules. Каждый — вещь в себе: горизонтально они не общаются, а
+// внутри себя вольны делать что угодно и брать фундаментальные системы
+// и контекст (который своих читателей не знает — ЗАКОН АГНОСТИЧНОСТИ).
 void gen_open    (const GenInput& in, SubworldMapData& out);
 void gen_city    (const GenInput& in, SubworldMapData& out);
 void gen_village (const GenInput& in, SubworldMapData& out);
