@@ -15,6 +15,7 @@
 //   * a malformed receipt changes nothing (fail closed).
 #include "check.h"
 #include <memory>
+#include <vector>
 #include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
 #include "macro/deposit_layer.h"
@@ -162,6 +163,19 @@ int population_of(const World& wld, int id) {
     return c >= 0 ? c : village_population_of(wld, id);
 }
 
+// ── ДНЕВНОЙ ПРОХОД МОДУЛЯ МЕСТА (M-325) ──────────────────────────────────
+// Число поля под местом ведёт ЕГО МОДУЛЬ и сводит раз в день из контейнеров
+// (дом + все его артели); ведомость стока пишет ТОЛЬКО инвентарь. Поэтому
+// всякое утверждение о ЧИСЛЕ ниже сперва даёт модулю ход — отставание ≤
+// суток законно прямо (ЗАКОН ДВУХ ТЕМПОВ «размазывается фоном»), и охраняемый
+// закон от этого не слабеет: мир по-прежнему не смеет числить людей, которых
+// у него нет.
+void place_module_day(const World& wld) {
+    std::vector<std::int32_t> buf(sm::kUnifiedCap, 0);
+    sm::reconcile_place_flock(const_cast<sm::GameState&>(wld.gs),
+                              *wld.store, buf.data());
+}
+
 // The table must answer for EVERY stock the enum declares. A row that goes
 // missing does not crash — it silently stops paying the world back, which is
 // the exact failure this system exists to end.
@@ -215,8 +229,14 @@ void test_borrow_and_return_are_symmetric() {
     // что счёт голов упал — число поля обязано упасть НА СТОЛЬКО ЖЕ, иначе
     // пара разъехалась, а сверка одного носителя с самим собой этого не
     // увидит никогда.
+    // ВЕДОМОСТЬ ЧИСЛА НЕ ПИШЕТ — УТВЕРЖДАЕТСЯ ПРЯМО (M-325): до хода модуля
+    // число стоит там, где его оставил генезис.
+    CHECK(population_of(wld, wld.cityId) == pop0,
+          "ряд снял ГОЛОВЫ и только их: число — частность модуля места");
+    place_module_day(wld);
     CHECK(population_of(wld, wld.cityId) == pop0 - 12,
-          "убыль пишется ПАРОЙ: число поля упало ровно на снятые головы");
+          "ЗАКОН ПАРЫ: в СВОЁМ дневном проходе модуль свёл число ровно к "
+          "оставшимся головам");
 
     // ВОЗВРАТ ЗАЙМА ЗДЕСЬ БОЛЬШЕ НЕ УТВЕРЖДАЕТСЯ, И ЭТО НЕ ОСЛАБЛЕНИЕ.
     // Ряд существ отказывает положительной дельте НАРОЧНО: «+1» не называет
@@ -253,6 +273,7 @@ void test_stocks_are_bounded() {
 
     macro_stock_apply(w, MacroStock::Creatures,
                       peasant_key(wld.cityId, 10, 10), -100000);
+    place_module_day(wld);
     CHECK(population_of(wld, wld.cityId) == 0,
           "a town can be emptied to zero and never below it");
 
@@ -287,6 +308,7 @@ void test_debts_bill_their_own_subject() {
     CHECK_OR_RETURN(debt != nullptr, "stamping leaves a receipt on the body");
 
     settle_like_the_delta(w, *debt, -1);
+    place_module_day(wld);
     CHECK(population_of(wld, wld.cityId) == 299,
           "the dead citizen's own town shrinks by one");
     CHECK(population_of(wld, wld.otherId) == 300,
@@ -300,6 +322,7 @@ void test_debts_bill_their_own_subject() {
                           MacroStock::Creatures,
                           peasant_key(wld.hamletId, 20, 20), 3);
     settle_like_the_delta(w, *sub::slot_debt(objs, sVillager), -1);
+    place_module_day(wld);
     CHECK(population_of(wld, wld.hamletId) == 37,
           "a village pays from its own people, by the amount the receipt says");
 
@@ -311,6 +334,7 @@ void test_debts_bill_their_own_subject() {
                           MacroStock::Creatures,
                           peasant_key(wld.twinId, 40, 40), 2);
     settle_like_the_delta(w, *sub::slot_debt(objs, sTwinVillager), -1);
+    place_module_day(wld);
     CHECK(village_population_of(wld, wld.twinId) == 78,
           "a village pays its own dead through the one id space");
     CHECK(city_population_of(wld, wld.cityId) == 299
@@ -326,6 +350,7 @@ void test_debts_bill_their_own_subject() {
     // здесь проверялась, из шва недостижима — долг гасится ровно в одной
     // точке и всегда минусом.
     settle_like_the_delta(w, *sub::slot_debt(objs, sVillager), +1);
+    place_module_day(wld);
     CHECK(population_of(wld, wld.hamletId) == 37,
           "безымянный плюс не воскрешает: деревня осталась там, где её "
           "оставила смерть");
