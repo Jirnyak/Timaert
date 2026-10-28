@@ -74,7 +74,12 @@ Spread measure_city(int cx, int cy, std::uint32_t seed, int population) {
     city.cy = cy;
     city.macroHeight = 0.64f;
     city.biome = Meadow;
-    city.feature = FT_None;
+    // ФИЧА ЕСТЬ КЛЮЧ МОДУЛЯ (вердикт владельца 2026-10-28), а клетка с
+    // местом БЕЗ фичи — пара, которой генератор не рождает никогда
+    // (`birth_place@src/macro/place_birth.h` штампует фичу рода ДО тела).
+    // Здесь стоял `FT_None`, и ложь была бесплатной ровно пока ключом был
+    // род места.
+    city.feature = FT_City;
     city.place.id = 101;
     city.place.size = population;
     city.place.kind = SquadType::City;

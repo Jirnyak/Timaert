@@ -434,7 +434,7 @@ int main() {
     for (int i = 0; i < 9; ++i) nbForest[i] = kMaxTreesPerCell;
 
     SubworldMapData out{};
-    dispatch_generate(ctx, nbH, nbB, /*nbBiome5*/nullptr, nbF, out, nullptr, nbForest);
+    dispatch_generate(ctx, nbH, nbB, /*nbBiome5*/nullptr, nbF, out, nbForest);
 
     const bool ok1 = !(resolve_mode(ctx) != SubworldMode::Forest);
     CHECK(ok1, "forest-class tree count did not resolve to Forest mode");
@@ -551,8 +551,7 @@ int main() {
     nbF[1] = std::uint8_t(FT_Road);
     nbF[7] = std::uint8_t(FT_DirtRoad);
     SubworldMapData forestTrailOut{};
-    dispatch_generate(forestTrail, nbH, nbB, /*nbBiome5*/nullptr, nbF, forestTrailOut, nullptr,
-                      nbForest);
+    dispatch_generate(forestTrail, nbH, nbB, /*nbBiome5*/nullptr, nbF, forestTrailOut, nbForest);
     const bool ok9 = !(anchor_is_road(forestTrailOut, forestTrail, 0, -1)
                        || anchor_is_road(forestTrailOut, forestTrail, 0, 1)
                        || forestTrailOut.tiles[std::size_t(center) * kCellSize + center]
@@ -610,7 +609,13 @@ int main() {
     spire.cy = 3;
     spire.macroHeight = 0.62f;
     spire.biome = Meadow;
-    spire.feature = FT_None;
+    // ПОСЛЕДНИЙ ЛЖЕЦ ЭТОГО ТЕСТА (см. заметку ниже, у фикстуры руины): здесь
+    // стоял `FT_None` при роде `Spire`, то есть клетка без фичи с местом на
+    // ней — пара, которой генератор не рождает НИ РАЗУ (`birth_place` штампует
+    // фичу рода ДО тела). Трое соседей по тесту были поправлены 2026-10-26,
+    // шпиль пропустили, и ложь оставалась бесплатной ровно пока ключом модуля
+    // был род места. Теперь ключ — ФИЧА, и фикстура обязана быть честной.
+    spire.feature = FT_Spire;
     spire.place.id = 77;
     spire.place.size = 0;
     spire.place.kind = SquadType::Spire;
@@ -1587,7 +1592,7 @@ int main() {
     if (!ok48) return 1;
 
     SubworldMapData fieldOut{};
-    dispatch_generate(field, nbH, nbB, /*nbBiome5*/nullptr, nbF, fieldOut, nullptr, nbFewTrees);
+    dispatch_generate(field, nbH, nbB, /*nbBiome5*/nullptr, nbF, fieldOut, nbFewTrees);
     std::size_t fieldTiles = 0;
     std::size_t wetFieldTiles = 0;
     for (std::size_t i = 0; i < fieldOut.tiles.size(); ++i) {
@@ -1732,8 +1737,7 @@ int main() {
         nbRoadEast[4] = std::uint8_t(FT_Field);
         nbRoadEast[5] = std::uint8_t(FT_Road);   // east neighbour is a road
         SubworldMapData lanedOut{};
-        dispatch_generate(field, nbH, nbB, /*nbBiome5*/nullptr, nbRoadEast, lanedOut, nullptr,
-                          nbFewTrees);
+        dispatch_generate(field, nbH, nbB, /*nbBiome5*/nullptr, nbRoadEast, lanedOut, nbFewTrees);
         const bool ok56 = !(!anchor_is_road(lanedOut, field, 1, 0));
         CHECK(ok56, "field cell grew no lane at the shared road anchor");
         if (!ok56) return 1;
@@ -1748,8 +1752,7 @@ int main() {
         nbFieldWest[4] = std::uint8_t(FT_Road);
         nbFieldWest[3] = std::uint8_t(FT_Field);  // west neighbour = fields
         SubworldMapData roadOut2{};
-        dispatch_generate(roadCell, nbH, nbB, /*nbBiome5*/nullptr, nbFieldWest, roadOut2, nullptr,
-                          nbFewTrees);
+        dispatch_generate(roadCell, nbH, nbB, /*nbBiome5*/nullptr, nbFieldWest, roadOut2, nbFewTrees);
         const bool ok57 = !(!anchor_is_road(roadOut2, roadCell, -1, 0));
         CHECK(ok57, "road cell grew no spur at the shared field anchor");
         if (!ok57) return 1;
@@ -1764,8 +1767,8 @@ int main() {
         poor.fertility01 = 0.35f;
         SubworldMapData richOut{};
         SubworldMapData poorOut{};
-        dispatch_generate(rich, nbH, nbB, /*nbBiome5*/nullptr, nbF, richOut, nullptr, nbFewTrees);
-        dispatch_generate(poor, nbH, nbB, /*nbBiome5*/nullptr, nbF, poorOut, nullptr, nbFewTrees);
+        dispatch_generate(rich, nbH, nbB, /*nbBiome5*/nullptr, nbF, richOut, nbFewTrees);
+        dispatch_generate(poor, nbH, nbB, /*nbBiome5*/nullptr, nbF, poorOut, nbFewTrees);
         std::size_t richTiles = 0;
         std::size_t poorTiles = 0;
         for (const std::uint8_t t : richOut.tiles)
@@ -1792,10 +1795,8 @@ int main() {
         right.seed = 0x22222222u;
         SubworldMapData leftOut{};
         SubworldMapData rightOut{};
-        dispatch_generate(left, nbH, nbB, /*nbBiome5*/nullptr, nbAllField, leftOut, nullptr,
-                          nbFewTrees);
-        dispatch_generate(right, nbH, nbB, /*nbBiome5*/nullptr, nbAllField, rightOut, nullptr,
-                          nbFewTrees);
+        dispatch_generate(left, nbH, nbB, /*nbBiome5*/nullptr, nbAllField, leftOut, nbFewTrees);
+        dispatch_generate(right, nbH, nbB, /*nbBiome5*/nullptr, nbAllField, rightOut, nbFewTrees);
         dump_ppm(leftOut, "seam_left");
         dump_ppm(rightOut, "seam_right");
         int both = 0;
@@ -1835,8 +1836,7 @@ int main() {
         nbShoreB[i] = Biome::Water;
     }
     SubworldMapData shoreOut{};
-    dispatch_generate(shoreField, nbShoreH, nbShoreB, /*nbBiome5*/nullptr, nbShoreF, shoreOut,
-                      nullptr, nbFewTrees);
+    dispatch_generate(shoreField, nbShoreH, nbShoreB, /*nbBiome5*/nullptr, nbShoreF, shoreOut, nbFewTrees);
     std::size_t shoreUnderwater = 0;
     std::size_t shoreWetField = 0;
     for (std::size_t i = 0; i < shoreOut.tiles.size(); ++i) {
@@ -1861,7 +1861,7 @@ int main() {
     CHECK(ok63, "bare meadow stopped resolving to Grassland");
     if (!ok63) return 1;
     SubworldMapData bareOut{};
-    dispatch_generate(bareMeadow, nbH, nbB, /*nbBiome5*/nullptr, nbF, bareOut, nullptr, nbFewTrees);
+    dispatch_generate(bareMeadow, nbH, nbB, /*nbBiome5*/nullptr, nbF, bareOut, nbFewTrees);
     // Один вердикт на обход всего буфера тайлов (AGENTS §8 п.3). Непустота —
     // тавтология (буфер фиксированной длины), гейта на неё нет намеренно.
     int badBareField = 0;
@@ -1953,8 +1953,7 @@ int main() {
     const int scarK = std::min(5, cropStands);
     scarredField.cropHarvested = scarK;
     SubworldMapData scarOut{};
-    dispatch_generate(scarredField, nbH, nbB, /*nbBiome5*/nullptr, nbF, scarOut, nullptr,
-                      nbFewTrees);
+    dispatch_generate(scarredField, nbH, nbB, /*nbBiome5*/nullptr, nbF, scarOut, nbFewTrees);
     int scarStands = 0;
     for (const Structure& s : scarOut.structures) {
         if (s.kind == Structure::Crop) ++scarStands;
@@ -1965,8 +1964,7 @@ int main() {
     CellContext razedField = field;
     razedField.cropHarvested = 1 << 20;
     SubworldMapData razedOut{};
-    dispatch_generate(razedField, nbH, nbB, /*nbBiome5*/nullptr, nbF, razedOut, nullptr,
-                      nbFewTrees);
+    dispatch_generate(razedField, nbH, nbB, /*nbBiome5*/nullptr, nbF, razedOut, nbFewTrees);
     // Один вердикт на обход. НЕПУСТОТА НЕ УТВЕРЖДАЕТСЯ СОЗНАТЕЛЬНО — по той
     // же причине, что у голого луга выше: закон говорит «пшеницы НЕТ», и
     // выбитая клетка вправе не вырастить ничего.

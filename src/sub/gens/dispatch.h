@@ -14,11 +14,14 @@ SubworldMode resolve_mode(const CellContext& ctx);
 // features in row-major order for the 3×3 neighbourhood centred on this
 // cell. Generators use them to blend heightmap, carve organic roads /
 // dirt paths that line up across cell boundaries, etc.
-// `nbPlace` (optional, 9 entries) is the neighbours' own kind COLUMN
-// (`CellContext::place.kind`, map_data.h) — it drives the universal terrain
-// flattening around settlements (base_generator.h TerrainMod). Null keeps
-// the centre cell's own place (from `ctx`) and assumes bare neighbours,
-// which is exact for every synthetic/test context that has no neighbours.
+// ЗДЕСЬ СТОЯЛ ПАРАМЕТР `nbPlace` — 9-широкое кольцо `SquadType`, кормившее
+// универсальное ровнение рельефа вокруг поселений. Оно умерло вместе с осью
+// мест: род соседа ВЫВОДИМ из его же байта фичи
+// (`place_kind_of_feature@src/macro/features.h`), а байты соседей уже едут
+// кольцом `nbFeature` выше — то есть кольцо рода было второй копией той же
+// информации, протянутой через весь шов. Ровнение теперь ключуется ФИЧЕЙ
+// (`terrain_mod_for@src/sub/base_generator.h`), и у него нет ветки «нет
+// данных о соседях», которая прежде объявляла восьмерых соседей пустыми.
 // `nbTreeCount` (optional, 9 entries) is the neighbours' macro tree count
 // (macro/tree_layer.h) — THE per-cell tree-density target for the scatter.
 // Null or a negative entry means "unknown": the count is re-derived from the
@@ -37,7 +40,6 @@ void dispatch_generate(const CellContext& ctx,
                        const Biome* nbBiome5,
                        const std::uint8_t nbFeature[9],
                        SubworldMapData& out,
-                       const SquadType* nbPlace = nullptr,
                        const int* nbTreeCount = nullptr,
                        const float* nbFertility = nullptr);
 

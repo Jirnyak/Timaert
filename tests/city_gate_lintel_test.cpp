@@ -44,7 +44,12 @@ SubworldMapData make_town(std::uint32_t seed, int population,
     c.cy = 64;
     c.macroHeight = nbH[4];
     c.biome = Meadow;
-    c.feature = FT_None;
+    // ФИЧА ЕСТЬ КЛЮЧ МОДУЛЯ (вердикт владельца 2026-10-28), а клетка с
+    // местом БЕЗ фичи — пара, которой генератор не рождает никогда
+    // (`birth_place@src/macro/place_birth.h` штампует фичу рода ДО тела).
+    // Здесь стоял `FT_None`, и ложь была бесплатной ровно пока ключом был
+    // род места.
+    c.feature = FT_City;
     c.place.id = 101;
     c.place.size = population;
     c.place.kind = SquadType::City;

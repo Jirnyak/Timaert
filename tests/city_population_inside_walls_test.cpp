@@ -30,6 +30,7 @@
 #include "macro/world_row.h"   // raise_flock_into_container — души головами
 #include "ecs/components.h"
 #include "tables/faction.h"
+#include "macro/features.h"   // feature_of_place_kind — байт из колонки рода
 #include "sub/city_layout.h"
 #include "sub/map_data.h"
 #include "sub/seamless_manager.h"
@@ -110,6 +111,9 @@ sm::sub::CellResolver settlement_resolver(sm::SquadType kind,
             c.place.id = 7;
             c.place.size = pop;
             c.place.kind = kind;
+            // ...и ФИЧА вместе с родом: заселённая клетка без фичи в мире
+            // не рождается, а ключ модуля теперь байт (2026-10-28).
+            c.feature = sm::feature_of_place_kind(kind);
         }
         c.seed = sm::sub::cell_seed(0x5E771EDu, cx, cy);
         return c;

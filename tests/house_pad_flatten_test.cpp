@@ -28,6 +28,7 @@
 // composite paths — no new seam. (subworld_async_seam_test still passes.)
 
 #include "check.h"
+#include "macro/features.h"   // feature_of_place_kind — байт из колонки рода
 #include "sub/gens/dispatch.h"
 #include "sub/map_data.h"
 
@@ -67,7 +68,12 @@ PadStat measure(int cx, int cy, std::uint32_t seed, int population,
     ctx.cy = cy;
     ctx.macroHeight = 0.72f;              // elevated -> real slope under the town
     ctx.biome = Meadow;
-    ctx.feature = FT_None;
+    // Байт ВЫВОДИТСЯ из той же колонки, что читает прод
+    // (`feature_of_place_kind@src/macro/features.h` — колонка `kind`
+    // строки фичи под круговым `static_assert`), поэтому фикстура не
+    // может разойтись с миром, как разошлась до 2026-10-28: клетка с
+    // местом и НУЛЕВОЙ фичей в мире не рождается.
+    ctx.feature = sm::feature_of_place_kind(kind);
     ctx.place.id = 55;
     ctx.place.size = population;
     ctx.place.kind = kind;

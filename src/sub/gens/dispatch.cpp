@@ -53,54 +53,68 @@ SubworldMode resolve_mode(const CellContext& ctx) {
     // An interior context outranks everything: the cell shows what stands
     // BEHIND a door, not the land the door stands on (sub/dgn/).
     if (ctx.dungeon.kind != DungeonRef::None) return SubworldMode::Dungeon;
-    const FeatureType feature = FeatureLayer::decode(std::uint8_t(ctx.feature));
-    switch (ctx.place.kind) {
-        case SquadType::City:    return SubworldMode::City;
-        case SquadType::Village: return SubworldMode::Village;
-        case SquadType::Ruin:    return SubworldMode::Ruin;
-        case SquadType::Spire:   return SubworldMode::Spire;
-        // Registry kinds no world places yet (Lair/Shrine/Mine/Tower): the
-        // cell shows its LAND until each kind's generator module lands. It
-        // used to fall through to a `place.id >= 0 -> City` catch-all one
-        // line below, which meant the day a castle was placed on the map it
-        // would raise a city — walls, keep and four hundred houses (GEN-5).
-        // A kind with no module is a kind with no buildings, and that is the
-        // honest answer until its TU exists. `default:` здесь ЗАПРЕЩЁН
-        // (ЗАКОН СЛОВАРЯ п.4): он глушил -Wswitch, и новый род сквада падал
-        // бы в землю МОЛЧА — теперь забытый род называет компилятор.
-        // СТОЛИЦА ЖДЁТ СВОЕГО МОДУЛЯ, И ЭТО ТОТ ЖЕ ЗАКОН, ЧТО ВЫШЕ.
-        // Владелец (2026-10-24): «ФИЧА КАПИТАЛ НАДО! ТАМ БУДЕТ ОСОБЫЙ
-        // ГЕНЕРАТОР!» — ключ модуля уже стоит строкой `FT_Capital`,
-        // а самого модуля (`SubworldMode::Capital` → `gen_capital`) ещё
-        // нет. Направить столицу в `SubworldMode::City` было бы ровно
-        // GEN-5: род без своего TU поднимал бы чужой город, и подмена
-        // осталась бы невидимой — поэтому до своего модуля клетка
-        // столицы показывает ЗЕМЛЮ, как логово и башня.
-        case SquadType::Capital:
-        case SquadType::None:
-        case SquadType::Lair:
-        case SquadType::Shrine:
-        case SquadType::Mine:
-        case SquadType::Tower:
-        case SquadType::Artel:
-        case SquadType::Caravan:
-        case SquadType::Collector:
-        case SquadType::Dragon:
-        case SquadType::Count:   break;
+    // ФИЧА ЕСТЬ КЛЮЧ МОДУЛЯ — ОДИН ВОПРОС, ОДИН ЯЗЫК (вердикт владельца
+    // 2026-10-28, дословно: «вместо мест он смотрит модули типов фич которые
+    // для этого и существуют»; и о порядке сборки: «надо генерацию сделать
+    // системно сборкой прям рельеф биомы поля фичи и потом уже вополощать
+    // сквады (агностично чисто)»).
+    //
+    // ЗДЕСЬ СТОЯЛ `switch (ctx.place.kind)` ПО МЁРТВОЙ ОСИ МЕСТ, а ниже —
+    // цепочка `if` по фичам: ОДИН вопрос «какой модуль пишет эту клетку»
+    // отвечался ДВУМЯ словарями в одной функции. Род места при этом не
+    // приносил ни одного бита, которого нет в байте фичи: макро-граница
+    // сама делает `place_kind_of_feature(f.feature)`
+    // (`cell_facts@src/macro/cell_facts.cpp`), а колонка `kind` строки фичи
+    // держит соответствие под круговым `static_assert`
+    // (`place_kind_of_feature@src/macro/features.h`). То есть субмир читал
+    // ПЕРЕВОД вместо оригинала, и перевод был точным — поэтому перевод оси
+    // не меняет ни одного кадра, он снимает мёртвый язык.
+    //
+    // `default:` ЗАПРЕЩЁН (ЗАКОН СЛОВАРЯ п.4): новая строка слоя фич обязана
+    // падать красным у компилятора, а не уходить в землю МОЛЧА.
+    switch (FeatureLayer::decode(std::uint8_t(ctx.feature))) {
+        case FT_City:     return SubworldMode::City;
+        case FT_Village:  return SubworldMode::Village;
+        case FT_Ruin:     return SubworldMode::Ruin;
+        case FT_Spire:    return SubworldMode::Spire;
+        case FT_Road:
+        case FT_DirtRoad: return SubworldMode::Road;
+        // A bridge is the road continued over a water cell: Road mode carves
+        // the line, and gen_road's Biome::Water branch raises the span.
+        case FT_Bridge:   return SubworldMode::Road;
+        case FT_Field:
+        case FT_Pasture:  return SubworldMode::Field;
+
+        // ── КЛЕТКА ПОКАЗЫВАЕТ ЗЕМЛЮ, И У КАЖДОЙ ГРУППЫ СВОЯ ПРИЧИНА ──────
+        // СТОЛИЦА ЖДЁТ СВОЕГО МОДУЛЯ. Владелец (2026-10-24): «ФИЧА КАПИТАЛ
+        // НАДО! ТАМ БУДЕТ ОСОБЫЙ ГЕНЕРАТОР!» — ключ модуля уже стоит
+        // строкой `FT_Capital`, а самого модуля (`SubworldMode::Capital` →
+        // `gen_capital`) ещё нет. Направить столицу в `SubworldMode::City`
+        // было бы ровно шрам GEN-5: род без своего TU поднимал бы чужой
+        // город («the day a castle was placed on the map it would raise a
+        // city — walls, keep and four hundred houses»), и подмена осталась
+        // бы невидимой. До своего модуля столица показывает ЗЕМЛЮ.
+        case FT_Capital:
+        // Выемки: своего модуля у шахты и карьера нет — клетка остаётся
+        // своей землёй, а выработка живёт числом поля под фичей.
+        case FT_ClayPit:
+        case FT_IronMine:
+        case FT_Quarry:
+        case FT_SilverMine:
+        case FT_CopperMine:
+        case FT_GoldMine:
+        // ЛЁН В `Field` НЕ ИДЁТ, И ЭТО СОХРАНЁННОЕ ПОВЕДЕНИЕ, А НЕ ВЫВОД:
+        // прежняя цепочка спрашивала `FT_Field` и `FT_Pasture` поимённо, а
+        // льняное поле не спрашивала вовсе. Перевод оси этого не менял;
+        // вопрос «пашня ли лён» идёт ВЛАДЕЛЬЦУ строкой наряда, а не правкой
+        // на ходу (§1 — самовольное «я решил, что так лучше» есть провал).
+        case FT_FlaxField:
+        case FT_None:
+        case FT_Count:    break;
     }
-    // Features come before the biome base: what men built on the cell decides
-    // what the cell IS underfoot, then the biome fills in the terrain, then
-    // trees compose on top (a forested peak is a Mountain cell with scattered
-    // trees, not Forest mode). Features never fight each other — the layer is
-    // one byte per cell, a road OR a field, settled at macro stamp time
-    // (peasants plough around the road, stamp_field_features).
-    if (feature == FT_Road)     return SubworldMode::Road;
-    if (feature == FT_DirtRoad) return SubworldMode::Road;
-    // A bridge is the road continued over a water cell: Road mode carves the
-    // line, and gen_road's Biome::Water branch raises the span. The crews'
-    if (feature == FT_Bridge)     return SubworldMode::Road;
-    if (feature == FT_Field)    return SubworldMode::Field;
-    if (feature == FT_Pasture)  return SubworldMode::Field;
+    // Биом под фичей: что люди построили, решает, ЧЕМ клетка является
+    // подо ногами; дальше биом заполняет рельеф, а деревья ложатся сверху
+    // (лесистый пик — это Mountain с разбросанными деревьями, не Forest).
     if (ctx.biome == Biome::Mountain) return SubworldMode::Mountain;
     if (ctx.biome == Biome::Water)    return SubworldMode::Water;
     if (ctx.biome == Biome::Swamp)    return SubworldMode::Swamp;
@@ -115,7 +129,6 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
                        const Biome nbBiome[9], const Biome* nbBiome5,
                        const std::uint8_t nbFeature[9],
                        SubworldMapData& out,
-                       const SquadType* nbPlace,
                        const int* nbTreeCount,
                        const float* nbFertility) {
     CellContext safeCtx = ctx;
@@ -155,15 +168,19 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
     }
 
     // Universal terrain flattening: one TerrainMod per neighbour, resolved
-    // from its effective place + feature (roads/settlements calm the
-    // terrain they stand on — see base_generator.h). Without neighbour
-    // place data the centre cell still flattens itself.
+    // from ITS FEATURE BYTE (roads/settlements calm the terrain they stand
+    // on — see base_generator.h).
+    //
+    // ЗДЕСЬ СТОЯЛО 9-ШИРОКОЕ КОЛЬЦО `SquadType nbPlace`, И ОНО УМЕРЛО ВМЕСТЕ
+    // С ОСЬЮ: род соседа выводится из его же байта, а байты соседей каркас
+    // уже привёз кольцом `nbFeature`. Кольцо рода было ВТОРОЙ копией той же
+    // информации, которую приходилось тянуть через весь шов — и его ветка
+    // «нет данных о соседях» ставила восьми соседям `SquadType::None`, то
+    // есть врала о мире ровно там, где фикстура его не задала. Теперь
+    // такой ветки нет: байт соседа честен по построению.
     TerrainMod nbMods[9]{};
     for (int i = 0; i < 9; ++i) {
-        const SquadType lm = nbPlace
-            ? nbPlace[i]
-            : (i == 4 ? safeCtx.place.kind : SquadType::None);
-        nbMods[i] = terrain_mod_for(lm, FeatureType(safeFeature[i]));
+        nbMods[i] = terrain_mod_for(FeatureLayer::decode(safeFeature[i]));
     }
 
     out.heightmap.clear();

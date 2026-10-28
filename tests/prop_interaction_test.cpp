@@ -96,7 +96,12 @@ CellContext make_city_ctx(std::uint32_t seed) {
     ctx.cy = 9;
     ctx.macroHeight = 0.64f;
     ctx.biome = Meadow;
-    ctx.feature = FT_None;
+    // ФИЧА ЕСТЬ КЛЮЧ МОДУЛЯ (вердикт владельца 2026-10-28), а клетка с
+    // местом БЕЗ фичи — пара, которой генератор не рождает никогда
+    // (`birth_place@src/macro/place_birth.h` штампует фичу рода ДО тела).
+    // Здесь стоял `FT_None`, и ложь была бесплатной ровно пока ключом был
+    // род места.
+    ctx.feature = FT_City;
     ctx.place.id = 101;
     ctx.place.size = 2000;
     ctx.place.kind = SquadType::City;
@@ -447,7 +452,7 @@ void generate_with_trees(const CellContext& ctx, int treeCount,
         nbT[i] = treeCount;
     }
     dispatch_generate(ctx, nbH, nbB, /*nbBiome5*/nullptr, nbF, out,
-                      /*nbPlace*/nullptr, nbT, /*nbFertility*/nullptr);
+                      nbT, /*nbFertility*/nullptr);
 }
 
 void test_revisit_is_regeneration() {

@@ -310,10 +310,21 @@ namespace sm::sub
         float plateauR = 0.0f;
     };
 
-    // Combined mod for a cell: max(damp), max(plateauR) of its place class
-    // (City/Village/Ruin/Spire) and its feature (roads damp their whole cell —
-    // the carved corridor then reads as a pass, not a cliff stair).
-    TerrainMod terrain_mod_for(SquadType place, FeatureType feature);
+    // Mod for a cell, keyed on the ONE axis the world actually carries: THE
+    // FEATURE BYTE. A town, a road bed, a ploughed field calm the land they
+    // stand on (roads damp their whole cell — the carved corridor then reads
+    // as a pass, not a cliff stair).
+    //
+    // ЗДЕСЬ СТОЯЛ ВТОРОЙ ПАРАМЕТР `SquadType place`, И ОН БЫЛ ВЫВОДИМ ИЗ
+    // ПЕРВОГО (вердикт владельца 2026-10-28: «вместо мест он смотрит модули
+    // типов фич которые для этого и существуют»). Макро-граница сама делает
+    // `place_kind_of_feature(f.feature)` (`cell_facts@src/macro/cell_facts.cpp`),
+    // а колонка `kind` строки фичи держит соответствие под круговым
+    // `static_assert` (`place_kind_of_feature@src/macro/features.h`), поэтому
+    // род места НЕ МОГ принести сюда ни одного бита, которого нет в байте.
+    // Два языка на один вопрос стоили 9-широкого кольца `SquadType` через
+    // весь шов (`nbPlace`, 11 сайтов проводки) — оно умерло вместе с осью.
+    TerrainMod terrain_mod_for(FeatureType feature);
 
     // Relief uplift is derived from `nbBiome[9]` directly: mountain cells
     // (Biome::Mountain, elevation-classified) get a per-cell mountainScale of

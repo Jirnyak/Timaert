@@ -250,7 +250,7 @@ float crest_jitter01(int cellGX, int cellGY, std::uint32_t worldSeed) {
                             cell_seed(worldSeed, cellGX, cellGY) ^ 0x5A17u);
 }
 
-TerrainMod terrain_mod_for(SquadType place, FeatureType feature) {
+TerrainMod terrain_mod_for(FeatureType feature) {
     // ONE data table: how strongly each macro content class calms the terrain
     // it stands on. damp scales down ridge/noise for the whole cell; plateauR
     // is the radius (tiles) of the radial pull toward the cell-centre height.
@@ -264,52 +264,60 @@ TerrainMod terrain_mod_for(SquadType place, FeatureType feature) {
     // it. The outskirts keep their land. `plateauR` is therefore the market and
     // one block of approach on each side, and `damp` leaves the cell most of
     // its character instead of erasing it.
+    // ОДИН БАЙТ — ОДИН ОТВЕТ, И ПОТОМУ `max()` БОЛЬШЕ НЕТ. Слой фич есть
+    // ОДИН байт на клетку (дорога ИЛИ пашня, улажено на макро-штампе), значит
+    // «город И дорога на одной клетке» невыразимо, и прежнее сложение двух
+    // вкладов через `std::max` в проде не срабатывало НИ РАЗУ: род места сам
+    // выводился из этого же байта, так что ветка дороги не могла поднять
+    // damp городу. Каждая строка теперь называет своё число прямо.
     TerrainMod m{};
-    switch (place) {
-        case SquadType::City:    m = {0.6f,  96.0f}; break;
-        case SquadType::Village: m = {0.5f,  64.0f}; break;
-        case SquadType::Ruin:    m = {0.6f, 120.0f}; break;
-        case SquadType::Spire:   m = {0.6f, 120.0f}; break;
-        // Registry kinds no world places yet (Lair/Shrine/Mine/Tower): bare
-        // ground until each kind's generator module lands — a place calms
-        // the terrain only once something actually stands on it.
-        //
-        // ВЫПИСАНЫ ПОИМЁННО, И `default:` СНЯТ (ЗАКОН СЛОВАРЯ п.4): он был
-        // ЕДИНСТВЕННЫМ среди четырёх switch-ей по этой оси, а три соседних
-        // (`stamp_settlement_features`, диспетчер макро-ИИ,
-        // `resolve_mode`) держат полное покрытие намеренно и прямо
-        // запрещают `default` своими комментариями. Здесь он глушил
-        // `-Wswitch` ровно там, где тот нужен: следующий НЕПОДВИЖНЫЙ род
-        // получал бы `{0, 0}` молча — то есть «не трогать рельеф» вместо
-        // «про тебя забыли», и отличить одно от другого было бы нечем.
-        // Столица сюда же, и НАМЕРЕННО: свой генератор у неё БУДЕТ (вердикт
-        // владельца 2026-10-24, строка `FT_Capital`), а пока его нет —
-        // голая земля есть честный ответ по закону, записанному абзацем
-        // выше. Выдать ей городские числа значило бы повторить шрам GEN-5:
-        // род без модуля получал бы чужую стройку, и день, когда столица
-        // впервые встанет на карту, прошёл бы незамеченным.
-        case SquadType::Capital:
-        case SquadType::Lair:
-        case SquadType::Shrine:
-        case SquadType::Mine:
-        case SquadType::Tower:
-        // Подвижные роды оси: сквад, который ХОДИТ, рельеф не ровняет —
-        // он на клетке не стоит, он через неё идёт. Дракон — тот же случай.
-        case SquadType::Artel:
-        case SquadType::Caravan:
-        case SquadType::Collector:
-        case SquadType::Dragon:
-        case SquadType::Count:
-        case SquadType::None:    break;
+    switch (feature) {
+        // Поселения: ровняется СЕРДЦЕ, а не клетка (владелец, 2026-09-13).
+        case FT_City:     m = {0.6f,  96.0f}; break;
+        case FT_Village:  m = {0.5f,  64.0f}; break;
+        case FT_Ruin:     m = {0.6f, 120.0f}; break;
+        case FT_Spire:    m = {0.6f, 120.0f}; break;
+        // Дорожное полотно ровняет клетку целиком — прорезанный коридор
+        // читается как перевал, а не как лестница обрывов.
+        case FT_Road:
+        case FT_DirtRoad: m = {0.55f,  0.0f}; break;
+        // Пашня — обработанная земля: спокойнее дичи, но плуг следует
+        // рельефу охотнее дорожного полотна.
+        case FT_Field:    m = {0.35f,  0.0f}; break;
+
+        // ── ГОЛАЯ ЗЕМЛЯ, И У КАЖДОЙ ГРУППЫ СВОЯ ПРИЧИНА ─────────────────
+        // СТОЛИЦА ЖДЁТ СВОЕГО МОДУЛЯ, И ЭТО НАМЕРЕННО: свой генератор у неё
+        // БУДЕТ (вердикт владельца 2026-10-24: «ФИЧА КАПИТАЛ НАДО! ТАМ
+        // БУДЕТ ОСОБЫЙ ГЕНЕРАТОР!»), а пока его нет — голая земля есть
+        // честный ответ. Выдать ей городские числа значило бы повторить шрам
+        // GEN-5: род без модуля получал бы чужую стройку, и день, когда
+        // столица впервые встанет на карту, прошёл бы незамеченным.
+        case FT_Capital:
+        // Мост рельеф НЕ ровняет: он сам поднятый пролёт над водой, а
+        // ровнять дно под ним незачем (`seat_lifted_spans@src/sub/height.h`).
+        case FT_Bridge:
+        // Выемки: шахта и карьер — дыра в земле, а не площадка на ней.
+        case FT_ClayPit:
+        case FT_IronMine:
+        case FT_Quarry:
+        case FT_SilverMine:
+        case FT_CopperMine:
+        case FT_GoldMine:
+        // ВЫГОН И ЛЁН НЕ РОВНЯЮТ, И ЭТО СОХРАНЁННОЕ ПОВЕДЕНИЕ, А НЕ ВЫВОД:
+        // прежний код спрашивал РОВНО `FT_Field`, поэтому пастбище и льняное
+        // поле земли не касались. Перевод оси этого не менял и менять не
+        // вправе; пашня ли лён для рельефа — вопрос ВЛАДЕЛЬЦУ, и он стоит
+        // строкой наряда в `macro-registry.md`, а не правкой на ходу.
+        case FT_Pasture:
+        case FT_FlaxField:
+        // Пустая клетка — дичь, и ровнять нечего.
+        case FT_None:
+        case FT_Count:    break;
     }
-    if (feature == FT_Road || feature == FT_DirtRoad) {
-        m.damp = std::max(m.damp, 0.55f);
-    }
-    // Ploughed farmland is worked ground: calmer than wilderness, but the
-    // plough follows the land more than a road bed does.
-    if (feature == FT_Field) {
-        m.damp = std::max(m.damp, 0.35f);
-    }
+    // `default:` ЗДЕСЬ ЗАПРЕЩЁН (ЗАКОН СЛОВАРЯ п.4): он глушил бы `-Wswitch`
+    // ровно там, где тот нужен — новая строка слоя фич получала бы `{0, 0}`
+    // МОЛЧА, то есть «не трогать рельеф» вместо «про тебя забыли», и
+    // отличить одно от другого было бы нечем.
     return m;
 }
 
