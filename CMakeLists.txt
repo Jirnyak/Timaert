@@ -2441,6 +2441,16 @@ timaert_test(isotropy_law_test
 target_compile_definitions(isotropy_law_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
+# ХРАПОВИК ОСТАТКОВ РЕЕСТРА (M-337): «несделанное не пропадает». Судит СВЯЗНОСТЬ
+# ведомости долгов в `macro-registry.md` — закрытый ряд со словом остатка обязан
+# высказаться, а у токена обязан быть ДОМ, живой и знающий о нём. Пин — НОЛЬ по
+# всем пяти счётчикам дефекта и только убывает: белого списка здесь нет вовсе,
+# потому что вердикт владельца был «сначала разобрать все 73 руками».
+timaert_test(registry_debt_test
+    PIN "OK registry_debt_test .[0-9]+ checks. .рядов [0-9]+ · токенов остатка [0-9]+ · домов названо [0-9]+ · молчащих 0 · без дома 0 · дом не найден 0 · дом закрыт 0 · дом без обратной ссылки 0 — прибор судит СВЯЗНОСТЬ ведомости долгов, не годность остатка")
+target_compile_definitions(registry_debt_test
+    PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
 timaert_test(law_carrier_test
     PIN "OK law_carrier_test .20 checks. .носитель есть у [0-9]+ из [0-9]+ законов · прозы 3 .долг. · метод 3 .носитель непредставим. — ведомость судит СУЩЕСТВОВАНИЕ носителя, не годность")
 target_compile_definitions(law_carrier_test
