@@ -49,6 +49,8 @@
 #include "macro/movement_cost.h"  // burn/rest per hour — якорь предусловия
 #include "macro/travel.h"         // overload_burden_from_capacity
 #include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
+#include "macro/place_registry.h"  // place_is_settlement — дверь различения (M-333)
+#include "macro/world_tick.h"    // settle_place_day — дневной проход места
 #include "macro/features.h"      // FeatureLayer — фича ПОД местом
 #include "macro/labour.h"        // settle_souls — одна дверь прихода душ
 #include "macro/store.h"         // parent_of / tithe_of / set_relation
@@ -732,6 +734,120 @@ void test_a_dying_place_rewrites_the_feature_under_itself() {
     }
 }
 
+// ═════ 8. ЧИСЛО ПОД МЕСТОМ: У ПОСЕЛЕНИЯ — ЛЮДИ, У ШАХТЫ — РУДА (M-333) ═══
+//
+// ЧТО ЗА ЗАКОН. Смысл числу поля придаёт ЧИТАЮЩИЙ МОДУЛЬ, а не мир (ЗАКОН
+// ПОЛЯ п.3, вердикт владельца 2026-10-26: «ЧИСЛО ФИЧИ ЭТО ПРОСТО ЧИСЛО! ЕГО
+// СМЫСЛ ПРИДАЁТ МОДУЛЬ СКВАДА… для артели модуль крестьян поле фич шахт это
+// ресурс что он добывает»). Дневной проход `settle_place_day@src/macro/world_tick.cpp`
+// читает это число под клеткой ВСЯКОГО места и кормит им
+// `population_delta_per_day@src/macro/econ_day.h`, то есть растит его КАК
+// ЛЮДЕЙ, не спросив, что оно значит у ЭТОГО рода. Гейт стоит по УМОЛЧАНИЮ —
+// «рода, у которого число значит не людей, просто не бывает».
+//
+// ПОЧЕМУ СЕГОДНЯ НЕ СТРЕЛЯЕТ: сквадами-местами рождаются только City и
+// Village — `birth_place@src/macro/place_birth.h` зовут ДВЕ строки, обе в
+// `populate_places_from_politik@src/macro/state.cpp`. Шахта строку реестра
+// имеет, а сквадом не рождается; мина заряжена, спускового крючка нет.
+//
+// ЧТО ЭТОТ СВИДЕТЕЛЬ УТВЕРЖДАЕТ — ТОЛЬКО ЗАКОНЫ, ВЕРНЫЕ И ДО, И ПОСЛЕ
+// ПОЧИНКИ: (1) сытое поселение растёт, и оба носителя души ходят парой;
+// (2) голодное СТОИТ (ноль поглощающий — тот же закон, не кламп);
+// (3) дверь, различающая смысл числа, В МИРЕ ЕСТЬ и отвечает врозь
+// (`place_is_settlement@src/macro/place_registry.h`: деревня — поселение,
+// шахта — нет), значит день починки не потребует новой системы;
+// (4) число под шахтой НЕ ЕСТЬ счёт её голов — 512 руды против нуля людей.
+//
+// ЧЕГО ОН СОЗНАТЕЛЬНО НЕ УТВЕРЖДАЕТ, И ЭТО СКАЗАНО ВСЛУХ (§8 п.7): дрейф
+// рудного числа ПЕЧАТАЕТСЯ, но не судится. Утвердить сегодняшнее поведение
+// значило бы охранять дефект, а утвердить закон («руда не растёт по
+// благополучию и людей из себя не родит») значило бы оставить сюиту красной
+// на роде, которого мир не рождает, — тогда как ФОРМА гейта (колонка строки
+// рода против предиката) есть вопрос владельцу и уедет с модулями родов
+// (M-235). Печать и есть «число названо»: она показывает, ЧТО случится в день,
+// когда третья строка `birth_place` назовёт не поселение.
+void test_the_number_under_a_mine_is_ore_and_not_people() {
+    Fixture f;
+    const auto number_at = [](Fixture& fx, const MacroHandle h) {
+        const auto& c = fx.st().cell[h.slot];
+        return worked_read(fx.gs, ecs::cell_x(c, fx.gs.mapW),
+                           ecs::cell_y(c, fx.gs.mapW));
+    };
+    const auto one_day = [](Fixture& fx, const MacroHandle h) {
+        settle_place_day(fx.gs, fx.st(), h.slot, /*day*/1,
+                         &tally_sink, &fx.tally);
+    };
+    // ЧИСЛО ОДНО НА ОБА РОДА НАРОЧНО: под деревней это паства, под шахтой —
+    // руда, и ровно в том, что проход их не различает, всё дело.
+    constexpr int kNumber = 512;
+
+    // ── ПОЛОЖИТЕЛЬНЫЙ КОНТРОЛЬ: СЫТОЕ ПОСЕЛЕНИЕ РАСТЁТ, И ПАРА СХОДИТСЯ ──
+    const MacroHandle vil = f.place(SquadType::Village, 10, 10, kNumber);
+    CHECK(number_at(f, vil) == kNumber && f.heads(vil.slot) == kNumber,
+          "ПРЕДУСЛОВИЕ: у деревни оба носителя души согласны — число клетки "
+          "и головы контейнера по " "512");
+    one_day(f, vil);
+    const int flockGrew = number_at(f, vil) - kNumber;
+    const int headsGrew = f.heads(vil.slot) - kNumber;
+    CHECK(flockGrew > 0,
+          "СЫТОЕ ПОСЕЛЕНИЕ РАСТЁТ (CANON S25): благополучие рождено 255, и "
+          "сутки прохода дали приплод — иначе всё ниже мерило бы НЕРАБОТАЮЩИЙ "
+          "проход, то есть ничего");
+    CHECK(flockGrew == headsGrew,
+          "ЗАКОН ПАРЫ: приплод лёг в ОБА носителя ровно одинаково — число "
+          "выросло на тех же, кто встал головами");
+
+    // ── ВТОРОЙ КОНТРОЛЬ: ГОЛОДНОЕ СТОИТ. Ноль благополучия — ЗНАЧЕНИЕ, и
+    // рост от него нулевой по самому закону, а не обрезан клампом.
+    const MacroHandle hungry = f.place(SquadType::Village, 20, 20, kNumber);
+    f.st().wellbeing[hungry.slot].seasonWellbeing = 0;
+    one_day(f, hungry);
+    CHECK(number_at(f, hungry) == kNumber
+              && f.heads(hungry.slot) == kNumber,
+          "ГОЛОДНОЕ СТОИТ: при нулевом благополучии ни число, ни головы не "
+          "двинулись — рост есть ДОЛЯ достатка, а не плоская прибавка");
+
+    // ── ШАХТА: ТОТ ЖЕ ПРОХОД, НО ПОД НЕЙ РУДА ───────────────────────────
+    // Предусловие прибор рождает САМ (§8 п.11): мир шахту сквадом не
+    // рождает, поэтому её рождает фикстура — БЕЗ ДУШ, как и положено роду,
+    // у которого паствы не бывает. Число под ней кладётся дверью мира
+    // (`worked_write@src/macro/state.h`), ровно как его кладёт генерация жил.
+    const MacroHandle mine = f.place(SquadType::Mine, 30, 30, /*souls*/0);
+    const auto& mc = f.st().cell[mine.slot];
+    worked_write(f.gs, ecs::cell_x(mc, f.gs.mapW),
+                 ecs::cell_y(mc, f.gs.mapW), kNumber);
+    CHECK(number_at(f, mine) == kNumber && f.heads(mine.slot) == 0,
+          "ПРЕДУСЛОВИЕ ШАХТЫ: под ней 512 РУДЫ и НОЛЬ голов — число и счёт "
+          "душ здесь расходятся по построению");
+    CHECK(place_is_settlement(SquadType::Village)
+              && !place_is_settlement(SquadType::Mine),
+          "ДВЕРЬ РАЗЛИЧЕНИЯ СУЩЕСТВУЕТ И ОТВЕЧАЕТ ВРОЗЬ: деревня — "
+          "поселение, шахта — нет. Значит гейт, которого дневному проходу не "
+          "хватает, не требует новой системы — он требует ВОПРОСА");
+
+    const int oreBefore = number_at(f, mine);
+    one_day(f, mine);
+    const int oreAfter = number_at(f, mine);
+    const int mintedInMine = f.heads(mine.slot);
+    CHECK(oreAfter != mintedInMine,
+          "ЯКОРЬ: число под шахтой НЕ ЕСТЬ счёт её голов — 512 руды против "
+          "горстки тел, и свести их в одну величину мир не вправе");
+    // ПЕЧАТЬ, А НЕ ПРОВЕРКА — довод в комментарии к тесту. Это и есть
+    // «мина заряжена» числом: что проход делает с рудой, если род, у
+    // которого число значит не людей, всё-таки родится сквадом.
+    std::printf("  [M-333] шахта: руда %d → %d (%+d), людей народилось %d\n",
+                oreBefore, oreAfter, oreAfter - oreBefore, mintedInMine);
+
+    // ТА ЖЕ ОБЛАСТЬ У СВОДА M-325, И ЕГО ЦИФРА ПЕЧАТАЕТСЯ ТОЖЕ: свод
+    // приводит число к головам контейнера, а у шахты голов нет вовсе.
+    std::vector<std::int32_t> buf(kUnifiedCap, 0);
+    reconcile_place_flock(f.gs, f.st(), buf.data());
+    std::printf("  [M-333] свод модуля места: руда шахты %d → %d, "
+                "паства деревни %d при %d головах\n",
+                oreAfter, number_at(f, mine), number_at(f, vil),
+                f.heads(vil.slot));
+}
+
 }  // namespace
 
 int main() {
@@ -742,5 +858,6 @@ int main() {
     test_a_standing_place_pays_nothing_for_the_road();
     test_the_last_shift_of_hands_is_never_written_out();
     test_a_dying_place_rewrites_the_feature_under_itself();
+    test_the_number_under_a_mine_is_ore_and_not_people();
     return sm::test::report("place_module_day_test");
 }

@@ -1807,6 +1807,13 @@ timaert_test(woodcutter_gather_test
 # тот же, что у woodcutter_gather_test: тот же npc_ai + econ_day + рождение.
 timaert_test(place_module_day_test
     SOURCES
+        # ДНЕВНОЙ ПРОХОД МЕСТА (settle_place_day) — предмет теста 8 (M-333):
+        # число поля под местом растёт как ЛЮДИ у всякого рода, и свидетель
+        # обязан звать ту же дверь, что мир, а не её копию (§8 п.5).
+        src/macro/world_tick.cpp
+        src/macro/threat_field.cpp
+        src/macro/scent_field.cpp
+        src/macro/player_entity.cpp
         src/macro/squad_index.cpp
         src/macro/npc_ai.cpp
         src/macro/deal.cpp
