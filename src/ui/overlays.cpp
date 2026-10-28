@@ -62,7 +62,7 @@ namespace sm::ui
                            std::uint16_t slot)
         {
             const auto &c = st.cell[slot];
-            return worked_read(gs, ecs::cell_x(c, gs.mapW),
+            return feature_number_read(gs, ecs::cell_x(c, gs.mapW),
                                ecs::cell_y(c, gs.mapW));
         }
 

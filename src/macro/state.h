@@ -896,7 +896,7 @@ struct GameState {
     // `FeatureDef::numberRow` (features.h), а не ветка у читателя: стадо стало
     // рядом-НОСИТЕЛЕМ на это поле, и своего массива над миром у него больше
     // нет вовсе (вердикт владельца 2026-10-12: «сноси поле лошадей это бред»).
-    ResourceGrid worked;
+    ResourceGrid featureNumber;
 
     // (Вектор `builtFeatures` и структура `BuiltFeature` УНИЧТОЖЕНЫ в v130,
     // перепись сирот 2026-10-11. Шапка на этом месте обещала «appended when
@@ -960,18 +960,18 @@ inline bool cell_is_leased(const GameState& gs, std::uint32_t cell) noexcept {
 // The grid sizes itself from the world's own dimensions on the first write,
 // so no caller has to remember to allocate and a read off an unborn world
 // answers 0 — fail-closed by construction.
-inline int worked_read(const GameState& gs, int x, int y) {
-    return int(gs.worked.at(x, y));
+inline int feature_number_read(const GameState& gs, int x, int y) {
+    return int(gs.featureNumber.at(x, y));
 }
-inline void worked_write(GameState& gs, int x, int y, int value) {
-    if (!gs.worked.live()) {
+inline void feature_number_write(GameState& gs, int x, int y, int value) {
+    if (!gs.featureNumber.live()) {
         if (gs.mapW <= 0 || gs.mapH <= 0) return;   // no world, no field
-        gs.worked.allocate(gs.mapW, gs.mapH, 0);
+        gs.featureNumber.allocate(gs.mapW, gs.mapH, 0);
     }
-    gs.worked.write(x, y, std::int32_t(value < 0 ? 0 : value));
+    gs.featureNumber.write(x, y, std::int32_t(value < 0 ? 0 : value));
 }
-inline void worked_add(GameState& gs, int x, int y, int delta) {
-    worked_write(gs, x, y, worked_read(gs, x, y) + delta);
+inline void feature_number_add(GameState& gs, int x, int y, int delta) {
+    feature_number_write(gs, x, y, feature_number_read(gs, x, y) + delta);
 }
 
 // (record_place_fact УЕХАЛА в macro/squad.h флипом M-90 шаг 5: слава

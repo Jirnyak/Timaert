@@ -929,7 +929,7 @@ cellW=3.48–5.04 travelRank=0`) и **46 013 просадок SP на 4 000 000 
 
 **И ЭТО НЕ ПОЛОВИНА БЕДЫ, А МЕНЬШАЯ ЕЁ ЧАСТЬ: ТОЙ ЖЕ СТРОКОЙ ПЕРЕЗАПИСЫВАЕТСЯ
 ЧИСЛО ФИЧИ, А У ПОСЕЛЕНИЯ ЧИСЛО ФИЧИ ЕСТЬ ПАСТВА.** Сразу за постановкой идёт
-`worked_write(gs, px, py, vein_cluster_cap(deposits, px, py))`, а
+`feature_number_write(gs, px, py, vein_cluster_cap(deposits, px, py))`, а
 `souls_flock@src/macro/labour.h` у поселения (`bornPopBase == 0`) читает ровно
 `worked`. Замер обеих групп рядом:
 

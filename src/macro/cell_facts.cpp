@@ -112,7 +112,7 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
                   // слот). Под `FT_City` модуль города прочтёт его своей
                   // популяцией, под `FT_Spire` там спелл — толкует ЧИТАЮЩИЙ
                   // МОДУЛЬ, внутри себя.
-                  .size = w.gs ? worked_read(*w.gs, f.x, f.y) : 0,
+                  .size = w.gs ? feature_number_read(*w.gs, f.x, f.y) : 0,
                   .tier = orb.tier,
                   .spell = orb.spell,
                   .factionIdx = manned

@@ -396,8 +396,8 @@ private:
     friend void field_set(ResourceGrid&, std::uint32_t, int);
     friend void field_set_allocate(ResourceGrid&, int, int, int);
     friend void allocate_world_fields(GameState&, int, int);
-    friend void worked_write(GameState&, int, int, int);
-    friend void worked_add(GameState&, int, int, int);
+    friend void feature_number_write(GameState&, int, int, int);
+    friend void feature_number_add(GameState&, int, int, int);
     friend void allocate_deposit_fields(struct DepositLayer&, int, int);
     friend DepositLayer build_deposit_layer(const TerrainData&, std::uint32_t);
     friend void create_deposit(struct DepositLayer&, int, int, std::int32_t);

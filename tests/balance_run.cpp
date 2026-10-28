@@ -53,7 +53,7 @@
 static int cell_number_at(const sm::GameState& gs, const sm::MacroStore& st,
                           std::uint16_t slot) {
     const auto& c = st.cell[slot];
-    return sm::worked_read(gs, sm::ecs::cell_x(c, gs.mapW),
+    return sm::feature_number_read(gs, sm::ecs::cell_x(c, gs.mapW),
                            sm::ecs::cell_y(c, gs.mapW));
 }
 

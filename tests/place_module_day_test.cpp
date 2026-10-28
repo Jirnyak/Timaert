@@ -770,7 +770,7 @@ void test_the_number_under_a_mine_is_ore_and_not_people() {
     Fixture f;
     const auto number_at = [](Fixture& fx, const MacroHandle h) {
         const auto& c = fx.st().cell[h.slot];
-        return worked_read(fx.gs, ecs::cell_x(c, fx.gs.mapW),
+        return feature_number_read(fx.gs, ecs::cell_x(c, fx.gs.mapW),
                            ecs::cell_y(c, fx.gs.mapW));
     };
     const auto one_day = [](Fixture& fx, const MacroHandle h) {
@@ -811,10 +811,10 @@ void test_the_number_under_a_mine_is_ore_and_not_people() {
     // Предусловие прибор рождает САМ (§8 п.11): мир шахту сквадом не
     // рождает, поэтому её рождает фикстура — БЕЗ ДУШ, как и положено роду,
     // у которого паствы не бывает. Число под ней кладётся дверью мира
-    // (`worked_write@src/macro/state.h`), ровно как его кладёт генерация жил.
+    // (`feature_number_write@src/macro/state.h`), ровно как его кладёт генерация жил.
     const MacroHandle mine = f.place(SquadType::Mine, 30, 30, /*souls*/0);
     const auto& mc = f.st().cell[mine.slot];
-    worked_write(f.gs, ecs::cell_x(mc, f.gs.mapW),
+    feature_number_write(f.gs, ecs::cell_x(mc, f.gs.mapW),
                  ecs::cell_y(mc, f.gs.mapW), kNumber);
     CHECK(number_at(f, mine) == kNumber && f.heads(mine.slot) == 0,
           "ПРЕДУСЛОВИЕ ШАХТЫ: под ней 512 РУДЫ и НОЛЬ голов — число и счёт "

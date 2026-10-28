@@ -179,7 +179,7 @@ void test_refusal_leaves_field() {
     CHECK_OR_RETURN(feature_put(w.features, w.td, 30, 30, FT_Pasture)
                         == FT_Pasture,
                     "загон встал");
-    worked_write(w.gs, 30, 30, 7);   // стадо — число фичи (M-258)
+    feature_number_write(w.gs, 30, 30, 7);   // стадо — число фичи (M-258)
     Inventory& bag = w.store->inventory[w.artel.slot].inv;
     // Именная душа не сливается ни с кем (entityId — свой слот каждой),
     // поэтому область существ забивается честно, слот за слотом.
@@ -250,7 +250,7 @@ void test_feature_decides_yield() {
     CHECK_OR_RETURN(feature_put(w.features, w.td, 11, 8, FT_Pasture)
                         == FT_Pasture,
                     "загон встал");
-    worked_write(w.gs, 11, 8, 5);
+    feature_number_write(w.gs, 11, 8, 5);
     const int before = creature_count(bag);
     CHECK_OR_RETURN(field_harvest(mw, ResourceFieldId::Livestock, 11, 8, 1,
                                   w.artel.slot) == 1,

@@ -240,7 +240,7 @@ void test_one_spire_per_spell_in_the_band() {
     std::set<int> spells;
     for (const std::uint32_t c : spires) {
         const int x = cell_x(c, gs.mapW), y = cell_y(c, gs.mapW);
-        const int spell = worked_read(gs, x, y);
+        const int spell = feature_number_read(gs, x, y);
         CHECK(spell >= 1 && spell <= kSpellCount
                   && spells.insert(spell).second,
               "клетка шпиля работает СВОЙ спелл: ординал реестра + 1, и два "
@@ -258,7 +258,7 @@ void test_one_spire_per_spell_in_the_band() {
     int doomSeen = 0;
     for (const std::uint32_t c : spires) {
         const int x = cell_x(c, gs.mapW), y = cell_y(c, gs.mapW);
-        if (worked_read(gs, x, y) != doomSpell) continue;
+        if (feature_number_read(gs, x, y) != doomSpell) continue;
         ++doomSeen;
         CHECK(int(zones.at(x, y)) == int(def.maxZone),
               "the top-tier spire stands at the band's cap");
@@ -473,7 +473,7 @@ void test_genesis_places_ruins_and_spires_as_features() {
 // Закон (DOD п.6; ЗАКОН СТРОКИ КАТАЛОГА): у вопроса о мире один ответ. До
 // M-233 п.8 «шпиль выкачан» было написано ЧЕТЫРЕЖДЫ (сборщик фактов клетки,
 // визитор мест, панель поселения, макро-оверлей), а выведенный из того же
-// числа ТИР — дважды, и каждое написание само решало, что `worked_read == 0`
+// числа ТИР — дважды, и каждое написание само решало, что `feature_number_read == 0`
 // значит у НЕ-шпиля. Теперь вывод один — `spire_orb@src/macro/spires.h`.
 //
 // ЛОВУШКА, КОТОРУЮ СТЕРЕЖЁТ ЭТОТ СВИДЕТЕЛЬ, НАЗВАНА ЧИСЛОМ КОДА, А НЕ
@@ -515,7 +515,7 @@ void test_one_answer_to_the_drained_orb() {
     // утверждение теперь о ЧИСЛЕ, а не о колонке: у свежего города оно ноль
     // — ровно то значение, которое у шпиля значит «выкачан», — и ни один
     // вывод о выкачанности не смеет спутать их без вопроса о ФИЧЕ.
-    CHECK(worked_read(gs, 40, 40) == 0,
+    CHECK(feature_number_read(gs, 40, 40) == 0,
           "свежий город пуст — число поля под ним ноль, то есть ровно то "
           "число, которое под FT_Spire значит «выкачан»");
 
@@ -571,7 +571,7 @@ void test_one_answer_to_the_drained_orb() {
                     "нашёлся шпиль, у которого можно забрать орб");
     const int vx = cell_x(spireCells[0], gs.mapW);
     const int vy = cell_y(spireCells[0], gs.mapW);
-    worked_write(gs, vx, vy, 0);   // ровно то, что делает рука игрока внизу
+    feature_number_write(gs, vx, vy, 0);   // ровно то, что делает рука игрока внизу
 
     const SpireOrb drained = spire_orb(mw, vx, vy);
     CHECK(drained.depleted && drained.spell == 0 && drained.tier == 0,
@@ -639,10 +639,10 @@ void test_one_answer_to_the_drained_orb() {
 // нет вовсе — ни белого списка, ни тающего остатка.
 //
 // ПРАВИЛО, И ПОЧЕМУ ИМЕННО ОНО. Вывод о орбе опознаётся по ПАРЕ: файл
-// спрашивает `worked_read` И называет шпиль — `FT_Spire` (ключ по вердикту
+// спрашивает `feature_number_read` И называет шпиль — `FT_Spire` (ключ по вердикту
 // владельца 2026-10-07) ИЛИ `SquadType::Spire` (прежний ключ, чтобы возврат
 // к нему тоже был виден). Пара и есть преступление — у worked-числа ДВА
-// смысла (паства у поселения, спелл у шпиля), поэтому один `worked_read`
+// смысла (паства у поселения, спелл у шпиля), поэтому один `feature_number_read`
 // невинен, одно имя шпиля невинно, а вместе они значат «я вывожу состояние
 // орба сам». Комментарии и строковые литералы срезаются: иначе прибор ловил
 // бы собственные объяснения — и это ЗАМЕРЕНО, а не предположено: без стрижки
@@ -656,7 +656,7 @@ void test_one_answer_to_the_drained_orb() {
 //     истину слоя, чтобы проверить ею производный ответ (тот же приём, что
 //     объяснён в `tests/deposit_reach_test.cpp`: справа стоит ВОПРОС, а не
 //     вторая копия реализации).
-// `worked_write` под правило не попадает: у ЗАПИСИ орба один писатель-акт
+// `feature_number_write` под правило не попадает: у ЗАПИСИ орба один писатель-акт
 // (рука игрока в субмире), и он не вывод.
 constexpr const char* kOrbDoor = "src/macro/spires.cpp";
 constexpr const char* kOrbWitness = "src/app/smoke.cpp";
@@ -664,13 +664,13 @@ constexpr const char* kOrbWitness = "src/app/smoke.cpp";
 // `src/macro/npc_ai.cpp` — ЛОЖНОЕ СРАБАТЫВАНИЕ ПАРЫ, и это проверяемо по
 // двум числам: имя шпиля стоит в нём РОВНО ОДИН раз, строкой `{ SquadType::
 // Spire, nullptr, nullptr }` таблицы модулей (её требует ассерт полноты
-// `kAiModuleRows`), а оба `worked_read` стоят ПОД ГЕЙТОМ
+// `kAiModuleRows`), а оба `feature_number_read` стоят ПОД ГЕЙТОМ
 // `place_is_settlement`, куда шпиль не проходит и где сквада у него нет
 // вовсе. Вывести «выкачан ли орб» этот файл не может по построению.
 //
 // ПОЧЕМУ ПАРА ВООБЩЕ ПОЯВИЛАСЬ, И ЭТО ЧЕСТНОЕ ОСЛАБЛЕНИЕ ЭВРИСТИКИ: до
-// M-320 читатели населения ходили через `souls_flock`, и `worked_read` был
-// редок — пара «worked_read + имя шпиля» почти всегда значила вывод об
+// M-320 читатели населения ходили через `souls_flock`, и `feature_number_read` был
+// редок — пара «feature_number_read + имя шпиля» почти всегда значила вывод об
 // орбе. Дверь снесена как лишняя система, читатели пошли к полю НАПРЯМУЮ,
 // и ложная поверхность правила структурно выросла. Правило остаётся
 // полезным (возврат к ключу-роду оно поймает), но список будет расти по
@@ -710,23 +710,23 @@ void test_no_second_orb_derivation_in_the_tree() {
         std::ifstream in(e.path());
         if (!in) continue;
         ++scanned;
-        bool readsWorked = false, namesSpire = false;
+        bool readsFeatureNumber = false, namesSpire = false;
         std::string line;
         while (std::getline(in, line)) {
             const std::string code = strip_comments_and_strings(line);
-            if (code.find("worked_read") != std::string::npos) readsWorked = true;
+            if (code.find("feature_number_read") != std::string::npos) readsFeatureNumber = true;
             if (code.find("FT_Spire") != std::string::npos
                 || code.find("SquadType::Spire") != std::string::npos)
                 namesSpire = true;
         }
-        if (readsWorked && namesSpire) offenders.push_back(rel);
+        if (readsFeatureNumber && namesSpire) offenders.push_back(rel);
     }
 
     CHECK(scanned > 100,
           "стена прочла всё дерево, а не три файла — иначе ноль нарушений "
           "означает «не смотрел», а не «чисто»");
     for (const std::string& f : offenders) {
-        std::printf("  ВТОРОЙ ВЫВОД О ОРБЕ: %s спрашивает worked_read и "
+        std::printf("  ВТОРОЙ ВЫВОД О ОРБЕ: %s спрашивает feature_number_read и "
                     "называет шпиль (FT_Spire / SquadType::Spire)\n",
                     f.c_str());
     }

@@ -872,7 +872,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
         // The amount IS the cell's worked number — already spell ordinal + 1
         // (0 = drained spire: the spell is forgotten, the fact files unknown,
         // exactly the chronicle's «unknown subjects as 0»). И оно приезжает
-        // КОЛОНКОЙ сборщика, который уже в руках: прямой `worked_read` по
+        // КОЛОНКОЙ сборщика, который уже в руках: прямой `feature_number_read` по
         // `gs` был чтением макро-состояния мимо канала (M-233 п.8).
         add_sub_zone(cf.x, cf.y, kSpireTowerLocalCenter, kSpireTowerLocalCenter,
                      float(kCellSize) * 0.5f, FactKind::Explored,
@@ -4500,7 +4500,7 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     const int spireOrdinal = cf.place.id;
     // The spell is the cell's worked number (spires.h: ordinal + 1, 0 =
     // drained). A drained spire forgot its spell — the orb has nothing left.
-    // И это КОЛОНКА сборщика, а не прямой `worked_read` по `*gs_`: вывод
+    // И это КОЛОНКА сборщика, а не прямой `feature_number_read` по `*gs_`: вывод
     // «выкачан» живёт ОДНИМ местом в мире (M-233 п.8), а сцена его читает.
     const int charge = cf.place.spell;
     if (!spire || charge == 0) {
@@ -4509,13 +4509,13 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
         set_status("The orb is dark and silent.");
         return false;
     }
-    // The macro fact — СТРОКОЙ ДЕЛЬТЫ ряда Worked (ломоть 5): дренаж орба
+    // The macro fact — СТРОКОЙ ДЕЛЬТЫ ряда FeatureNumber (ломоть 5): дренаж орба
     // есть операция «−заряд» над числом фичи, применит граница тика. Клетка
     // в аренде — второго писателя у числа нет, снятие полного заряда
     // операцией эквивалентно нулю по построению. Only the player can stand
     // here (interactions are his alone), so this write is player-earned by
     // construction, not by a special case.
-    push_stock_op(delta_, MacroStock::Worked,
+    push_stock_op(delta_, MacroStock::FeatureNumber,
                   MacroStockKey{-1, std::int16_t(cx), std::int16_t(cy)},
                   -charge, cell_of(cx, cy, frame_ ? frame_->side : 1));
     // The orb burns out of the scene like a felled tree (owning cell data +

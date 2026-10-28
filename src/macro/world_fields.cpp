@@ -96,7 +96,7 @@ constexpr std::uint64_t kKnowledgeMaxBytes =
 
 // (Блоки жил УНИЧТОЖЕНЫ 2026-10-23, «жилы единые»: природное поле —
 // чистая функция терраина и сида, его не хранят; залежи шахт едут рядом
-// Worked числами фич.)
+// FeatureNumber числами фич.)
 // Клетка жилы на проводе — пара {индекс, остаток}; эту же пару пишут шрамы и
 // слой разработки, поэтому ширина названа один раз на три ряда.
 constexpr std::uint64_t kSparseCellBytes =
@@ -152,23 +152,23 @@ constexpr std::uint64_t kScarsMaxBytes =
     std::uint64_t(ResourceFieldId::Count)
     * (kBlockCountBytes + std::uint64_t(kMaxFieldCells) * kSparseCellBytes);
 
-// ── Worked: THE one layer of S5, sparse on the wire (v96) ───────────────
+// ── FeatureNumber: THE one layer of S5, sparse on the wire (v96) ───────────────
 // The number under a feature — hulls moored at a harbour today. One block,
 // because there is one layer: «1 шахта в клетке — одно поле в клетке».
-void worked_write_block(savefmt::Writer& w, const WorldFieldStores& st) {
+void feature_number_write_block(savefmt::Writer& w, const WorldFieldStores& st) {
     if (!st.gs) { w.count(0, kMaxFieldCells); return; }
-    const ResourceGrid& g = st.gs->worked;
+    const ResourceGrid& g = st.gs->featureNumber;
     if (!w.count(std::size_t(g.liveCells), kMaxFieldCells)) return;
     g.for_each_live([&](std::uint32_t idx, std::int32_t value) {
         w.pod(idx);
         w.pod(value);
     });
 }
-bool worked_read_block(savefmt::Reader& r, const WorldFieldStoresMut& st) {
+bool feature_number_read_block(savefmt::Reader& r, const WorldFieldStoresMut& st) {
     std::uint32_t n = 0;
     if (!savefmt::read_count(r, n, kMaxFieldCells)) return false;
     if (!st.gs) { r.ok = false; return false; }
-    ResourceGrid& g = st.gs->worked;
+    ResourceGrid& g = st.gs->featureNumber;
     if (n > 0 && !size_for_world(*st.gs, g)) { r.ok = false; return false; }
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
         std::uint32_t idx = 0;
@@ -179,7 +179,7 @@ bool worked_read_block(savefmt::Reader& r, const WorldFieldStoresMut& st) {
     }
     return r.ok;
 }
-constexpr std::uint64_t kWorkedMaxBytes =
+constexpr std::uint64_t kFeatureNumberMaxBytes =
     kBlockCountBytes + std::uint64_t(kMaxFieldCells) * kSparseCellBytes;
 
 // (Ряд `Built` и пара `built_write`/`built_read` УНИЧТОЖЕНЫ в v130 вместе с
@@ -203,8 +203,9 @@ constexpr WorldFieldRow kWorldFields[std::size_t(WorldField::Count)] = {
      kKnowledgeMaxBytes},
     {WorldField::Scars,     "scars",     scars_write,     scars_read,
      kScarsMaxBytes},
-    {WorldField::Worked,    "worked",    worked_write_block, worked_read_block,
-     kWorkedMaxBytes},
+    {WorldField::FeatureNumber, "feature_number",
+     feature_number_write_block, feature_number_read_block,
+     kFeatureNumberMaxBytes},
 };
 static_assert(rows_in_enum_order(kWorldFields, &WorldFieldRow::id),
               "every WorldField needs its row — the table IS the system");

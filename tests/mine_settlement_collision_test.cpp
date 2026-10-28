@@ -13,7 +13,7 @@
 // судит только воду. Перепись трёх миров (сиды 12345 / 7 / 2026) нашла
 // **20 / 45 / 36** съеденных поселений, и байт там всегда шахтный (ClayPit,
 // IronMine, Quarry, CopperMine). Хуже байта было ЧИСЛО: следом шёл
-// `worked_write(..., vein_cluster_cap(...))`, а `souls_flock` у поселения
+// `feature_number_write(..., vein_cluster_cap(...))`, а `souls_flock` у поселения
 // читает ровно `worked`, поэтому паства деревень 128 превращалась в
 // 25 000-32 000, а у города упиралась в потолок ширины клетки 65 535. И
 // дальше `numberRow` шахты = `Vein` делал клетку шахтной для
@@ -86,7 +86,7 @@ void build(Fixture& f, bool veinPeakUnderTown) {
     // Деревня: байт фичи + ПАСТВА числом той же клетки (souls_flock читает
     // worked при bornPopBase == 0 — это и есть носитель, который ломался).
     sm::feature_put(f.fl, f.td, kTownX, kTownY, sm::FT_Village);
-    sm::worked_write(f.gs, kTownX, kTownY, kVillageFlock);
+    sm::feature_number_write(f.gs, kTownX, kTownY, kVillageFlock);
 
     // Кластер из трёх связных клеток: деревня, её сосед и ещё один сосед.
     // Веса подобраны так, что САМАЯ ЖИРНАЯ клетка — под деревней, то есть
@@ -114,7 +114,7 @@ void test_mine_does_not_eat_the_village() {
 
     // И ЧИСЛО — вторая половина закона, и она ВАЖНЕЕ байта: именно его
     // перезапись превращала паству 128 в десятки тысяч.
-    CHECK(sm::worked_read(f.gs, kTownX, kTownY) == kVillageFlock,
+    CHECK(sm::feature_number_read(f.gs, kTownX, kTownY) == kVillageFlock,
           "паства деревни обязана остаться нетронутой — число фичи у неё "
           "значит души, а не залежь");
 
@@ -124,7 +124,7 @@ void test_mine_does_not_eat_the_village() {
     const sm::FeatureType onPeak = f.fl.at(kPeakX, kPeakY);
     CHECK(sm::feature_def(onPeak).numberRow == sm::ResourceFieldId::Vein,
           "шахта обязана встать на свободный максимум кластера, а не пропасть");
-    CHECK(sm::worked_read(f.gs, kPeakX, kPeakY) > 0,
+    CHECK(sm::feature_number_read(f.gs, kPeakX, kPeakY) > 0,
           "у переехавшей шахты обязана быть своя залежь числом её клетки");
 }
 
@@ -142,7 +142,7 @@ void test_free_peak_is_untouched() {
           "свободный максимум кластера обязан получить шахту как прежде");
     CHECK(f.fl.at(kTownX, kTownY) == sm::FT_Village,
           "деревня цела и в этом случае");
-    CHECK(sm::worked_read(f.gs, kTownX, kTownY) == kVillageFlock,
+    CHECK(sm::feature_number_read(f.gs, kTownX, kTownY) == kVillageFlock,
           "паства цела и в этом случае");
 }
 

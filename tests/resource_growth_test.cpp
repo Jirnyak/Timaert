@@ -243,7 +243,7 @@ void test_the_vein_field_is_inert_and_a_mine_does_not_regrow() {
     feature_put(features, td, vx, vy, FT_IronMine);
     const int cap = int(vein_cluster_cap(deposits, vx, vy));
     CHECK_OR_RETURN(cap > 5, "кластер фикстуры несёт честную связность");
-    worked_write(gs, vx, vy, cap);
+    feature_number_write(gs, vx, vy, cap);
     CHECK(field_move(w, ResourceFieldId::Vein, vx, vy, -5) == -5,
           "залежь шахты движется дверью и отвечает фактом");
     CHECK(resource_field_read(w, ResourceFieldId::Vein, vx, vy) == cap - 5,

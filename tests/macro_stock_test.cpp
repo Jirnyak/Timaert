@@ -41,7 +41,7 @@
 static int cell_number_at(const sm::GameState& gs, const sm::MacroStore& st,
                           std::uint16_t slot) {
     const auto& c = st.cell[slot];
-    return sm::worked_read(gs, sm::ecs::cell_x(c, gs.mapW),
+    return sm::feature_number_read(gs, sm::ecs::cell_x(c, gs.mapW),
                            sm::ecs::cell_y(c, gs.mapW));
 }
 
@@ -672,16 +672,16 @@ void test_vein_is_a_two_carrier_row() {
             td.rgba[c * 4u + 0] = field_word_of(140.0f / 255.0f);
         feature_put(features, td, 9, 9, FT_Quarry);
     }
-    worked_write(gs, 9, 9, 500);   // залежь, свёрнутая генерацией
+    feature_number_write(gs, 9, 9, 500);   // залежь, свёрнутая генерацией
     CHECK(resource_field_read(w, ResourceFieldId::Vein, 9, 9) == 500,
           "под шахтой ряд читает ЗАЛЕЖЬ — число фичи, не геологию");
     CHECK(field_move(w, ResourceFieldId::Vein, 9, 9, -60) == -60
-              && worked_read(gs, 9, 9) == 440,
+              && feature_number_read(gs, 9, 9) == 440,
           "выемка движет залежь и отвечает фактом");
     CHECK(deposits.vein_at(9, 9) == 1000,
           "и не трогает природное поле — метал не убывает");
     CHECK(field_move(w, ResourceFieldId::Vein, 9, 9, -1000) == -440
-              && worked_read(gs, 9, 9) == 0,
+              && feature_number_read(gs, 9, 9) == 0,
           "взять больше, чем лежит, невыразимо: факт — остаток");
 
     CHECK(!gs.resourceScarCells[std::size_t(ResourceFieldId::Vein)].live(),

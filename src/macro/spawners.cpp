@@ -1,6 +1,6 @@
 #include "macro/spawners.h"
 #include "macro/deposit_layer.h"   // генерация шахт: кластеры живых жил
-#include "macro/state.h"           // worked_write — залежь шахты числом фичи
+#include "macro/state.h"           // feature_number_write — залежь шахты числом фичи
 #include "tables/biomes.h"
 #include "tables/items.h"          // вес рода шахты = 1/стоимость выхода
 #include "macro/macro_stock.h"      // MacroWorld — the registry's context
@@ -858,7 +858,7 @@ namespace sm
             // потом дорастает (vein_cluster_cap: фундамент даёт кап, мир
             // рождается полным). На загрузке эти залежи живут в ГЕНЕЗИСНОМ
             // gs и честно гибнут при свёртке app.gs = move(fresh).
-            worked_write(gs, px, py, vein_cluster_cap(deposits, px, py));
+            feature_number_write(gs, px, py, vein_cluster_cap(deposits, px, py));
             ++stamped[std::size_t(ft)];
         });
 

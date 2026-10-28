@@ -406,7 +406,7 @@ void test_the_mine_runs_while_the_player_is_away() {
     FeatureLayer features;
     features.resize(kMap, kMap);
     feature_put(features, all_land(), 14, 10, FT_IronMine);
-    worked_write(gs, 14, 10, 20);
+    feature_number_write(gs, 14, 10, 20);
 
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
@@ -449,7 +449,7 @@ void test_the_mine_runs_while_the_player_is_away() {
 
     // Залежь шахты — число фичи: выработка видна там же, где её оставила
     // транзакция. Что добыто — решила ФИЧА (железная шахта → железо).
-    const int veinLeft = worked_read(gs, 14, 10);
+    const int veinLeft = feature_number_read(gs, 14, 10);
     CHECK(20 - veinLeft > 0,
           "the mine is worked while the player is underground, exactly as it "
           "is worked while he is on the map");
@@ -651,7 +651,7 @@ void test_the_miner_works_the_vein() {
     FeatureLayer features;
     features.resize(kMap, kMap);
     feature_put(features, all_land(), 14, 10, FT_IronMine);
-    worked_write(gs, 14, 10, 20);
+    feature_number_write(gs, 14, 10, 20);
 
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
@@ -693,7 +693,7 @@ void test_the_miner_works_the_vein() {
         tick_macro_npc_ai(mw, art, kAiTicks);
     }
 
-    const int veinLeft = worked_read(gs, 14, 10);
+    const int veinLeft = feature_number_read(gs, 14, 10);
     const int veinLost = 20 - veinLeft;
     const int storeGained = st.inventory[vil.slot].inv.count("iron");
     const int inBag = (*sm::body_state<ecs::NpcInventory>(st, e)).inv.count("iron");

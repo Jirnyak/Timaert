@@ -164,7 +164,7 @@ int main() {
 
         // v120: a spire's charge is its cell's worked number (ordinal + 1);
         // drained = 0 — the spent spire's cell simply stays unwritten.
-        worked_write(gs, 40, 40, 1);
+        feature_number_write(gs, 40, 40, 1);
 
         // СМЫСЛ ЧИСЛУ ЗАДАЁТ ФИЧА КЛЕТКИ (M-233 п.8, ЗАКОН ПОЛЯ п.3), и с
         // 2026-10-23 фичу рода ставит сама ДВЕРЬ РОЖДЕНИЯ места в момент

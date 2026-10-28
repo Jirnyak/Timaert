@@ -19,7 +19,7 @@
 // подвижные роды запрещено и куда они уедут.
 #pragma once
 
-#include "macro/state.h"      // GameState + worked_add — запись числа поля
+#include "macro/state.h"      // GameState + feature_number_add — запись числа поля
 #include "macro/store.h"      // MacroStore — колонки сквада по слоту
 #include "macro/world_row.h"  // count_human_souls / raise_flock_into_container
 
@@ -95,7 +95,7 @@ inline int souls_home(const MacroStore& st, std::uint16_t slot) {
 // свидетель-смоук. Довод за снос поэтому НЕ «мало читателей», а «ни один
 // читатель не спрашивает обещанного».
 //
-// ЧЕМ ЗАМЕНЕНА: `worked_read@src/macro/state.h` по КЛЕТКЕ — канонической
+// ЧЕМ ЗАМЕНЕНА: `feature_number_read@src/macro/state.h` по КЛЕТКЕ — канонической
 // дверью поля, чья собственная шапка говорит тот же закон («there is one of
 // it, and the feature on the cell says what its number means»). Четырнадцатой
 // двери не заведено ни одной. Повтор идиомы «клетка слота → число» на
@@ -128,7 +128,7 @@ inline int settle_souls(GameState& gs, MacroStore& st, std::uint16_t slot,
     const int stood = raise_flock_into_container(store, souls);
     if (stood > 0) {
         const auto& c = st.cell[slot];
-        worked_add(gs, ecs::cell_x(c, gs.mapW), ecs::cell_y(c, gs.mapW),
+        feature_number_add(gs, ecs::cell_x(c, gs.mapW), ecs::cell_y(c, gs.mapW),
                    stood);
     }
     return stood;

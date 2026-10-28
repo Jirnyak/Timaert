@@ -226,7 +226,7 @@ bool vein_mine_cell_(const MacroWorld& w, int x, int y) {
 }
 
 int vein_read(const MacroWorld& w, int x, int y) {
-    if (vein_mine_cell_(w, x, y)) return worked_read(*w.gs, x, y);
+    if (vein_mine_cell_(w, x, y)) return feature_number_read(*w.gs, x, y);
     return w.deposits ? int(w.deposits->vein_at(x, y)) : 0;
 }
 
@@ -259,9 +259,9 @@ void vein_apply(MacroWorld& w, int x, int y, int delta) {
     if (!vein_mine_cell_(w, x, y) || delta == 0) return;
     const int cap = w.deposits
         ? int(vein_cluster_cap(*w.deposits, x, y))
-        : worked_read(*w.gs, x, y);   // фикстура без геологии: тратить можно
-    worked_write(*w.gs, x, y,
-                 std::clamp(worked_read(*w.gs, x, y) + delta, 0,
+        : feature_number_read(*w.gs, x, y);   // фикстура без геологии: тратить можно
+    feature_number_write(*w.gs, x, y,
+                 std::clamp(feature_number_read(*w.gs, x, y) + delta, 0,
                             std::max(cap, 0)));
 }
 
@@ -380,16 +380,16 @@ int livestock_baseline(const MacroWorld& w, int x, int y) {
 int livestock_growth_at(const MacroWorld&, int, int) { return 1; }
 
 // ЧТЕНИЕ И ЗАПИСЬ — ЧЕРЕЗ ПОЛЕ ЧИСЕЛ ФИЧ. Выемка зажимается в [0, кап] ЗДЕСЬ,
-// у единственной двери ряда: `worked_write` сам по себе про кап стада не
+// у единственной двери ряда: `feature_number_write` сам по себе про кап стада не
 // знает ничего (под другой фичей там спелл или паства), и знать не должен.
 int livestock_read(const MacroWorld& w, int x, int y) {
-    return livestock_cell_(w, x, y) ? worked_read(*w.gs, x, y) : 0;
+    return livestock_cell_(w, x, y) ? feature_number_read(*w.gs, x, y) : 0;
 }
 void livestock_apply(MacroWorld& w, int x, int y, int delta) {
     if (!livestock_cell_(w, x, y)) return;
     const int cap = grass_feeds_head(w, x, y);
-    worked_write(*w.gs, x, y,
-                 std::clamp(worked_read(*w.gs, x, y) + delta, 0, cap));
+    feature_number_write(*w.gs, x, y,
+                 std::clamp(feature_number_read(*w.gs, x, y) + delta, 0, cap));
 }
 
 // (Здесь СТОЯЛО «роста у ряда жилы больше нет — одноразовый ком»; снято
@@ -467,9 +467,9 @@ void allocate_world_fields(GameState& gs, int width, int height) {
         // asked, own their reach inside the deposit layer).
         g.allocate(width, height, 0);
     }
-    if (!(gs.worked.width == width && gs.worked.height == height
-          && gs.worked.live())) {
-        gs.worked.allocate(width, height, 0);
+    if (!(gs.featureNumber.width == width && gs.featureNumber.height == height
+          && gs.featureNumber.live())) {
+        gs.featureNumber.allocate(width, height, 0);
     }
 }
 
@@ -776,12 +776,12 @@ void write_crop_count(MacroWorld& w, MacroStockKey k, int delta) {
     field_move(w, ResourceFieldId::Wheat, k.cellX, k.cellY, delta);
 }
 // Число фичи клетки — носитель GameState::worked (один на мир, ЗАКОН ПОЛЯ
-// п.3); worked_write клампит в ноль сам — ниже нуля числа фич не живут.
-int read_worked(const MacroWorld& w, MacroStockKey k) {
-    return w.gs ? worked_read(*w.gs, k.cellX, k.cellY) : 0;
+// п.3); feature_number_write клампит в ноль сам — ниже нуля числа фич не живут.
+int read_feature_number(const MacroWorld& w, MacroStockKey k) {
+    return w.gs ? feature_number_read(*w.gs, k.cellX, k.cellY) : 0;
 }
-void write_worked(MacroWorld& w, MacroStockKey k, int delta) {
-    if (w.gs) worked_add(*w.gs, k.cellX, k.cellY, delta);
+void write_feature_number(MacroWorld& w, MacroStockKey k, int delta) {
+    if (w.gs) feature_number_add(*w.gs, k.cellX, k.cellY, delta);
 }
 
 constexpr MacroStockRow kRows[] = {
@@ -789,7 +789,7 @@ constexpr MacroStockRow kRows[] = {
     {"creatures",   &read_creatures,   &write_creatures},
     {"fauna_count", &read_fauna_count, &write_fauna_count},
     {"crop_count",  &read_crop_count,  &write_crop_count},
-    {"worked",      &read_worked,      &write_worked},
+    {"feature_number", &read_feature_number, &write_feature_number},
 };
 static_assert(sizeof(kRows) / sizeof(kRows[0])
                   == std::size_t(MacroStock::Count),

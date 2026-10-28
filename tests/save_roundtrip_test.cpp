@@ -63,7 +63,7 @@ static_assert(kFixturePlayerOrdinal < kFixtureIssuerBase,
 static int cell_number_at(const sm::GameState& gs, const sm::MacroStore& st,
                           std::uint16_t slot) {
     const auto& c = st.cell[slot];
-    return sm::worked_read(gs, sm::ecs::cell_x(c, gs.mapW),
+    return sm::feature_number_read(gs, sm::ecs::cell_x(c, gs.mapW),
                            sm::ecs::cell_y(c, gs.mapW));
 }
 
@@ -500,7 +500,7 @@ sm::GameState make_state(sm::MacroStore& st) {
     // v120: the spire's spell rides the worked layer (ordinal + 1), which
     // the save carries as a world-field block — the roundtrip must bring
     // back the NUMBER at the cell, not columns.
-    sm::worked_write(gs, 12, 34, 7);
+    sm::feature_number_write(gs, 12, 34, 7);
 
     sm::Marker marker{};
     marker.id = "marker.round";
@@ -545,7 +545,7 @@ sm::GameState make_state(sm::MacroStore& st) {
                   sm::cell_of(5, 23, gs.mapW), 12);
     // v96: THE worked layer — hulls moored at a harbour, the number under
     // the feature (CANON S5/S10). The layer's first tenant is its witness.
-    sm::worked_write(gs, 9, 4, 2);
+    sm::feature_number_write(gs, 9, 4, 2);
 
     return gs;
 }
@@ -562,7 +562,7 @@ std::vector<std::uint16_t> make_tree_counts() {
 
 // (Фикстура жил УМЕРЛА 2026-10-23, «жилы единые»: природное поле жил —
 // производная терраина и сида, сейв его не возит; залежи шахт едут рядом
-// Worked, и его круговорот держит worked-свидетель ниже.)
+// FeatureNumber, и его круговорот держит worked-свидетель ниже.)
 
 // (Фикстура квестов умерла с квест-машиной — ломоть 3 M-72, вариант А:
 //  батарея полей GameEvent жила на onAccept; конверт событий больше в
@@ -1030,7 +1030,7 @@ void run_roundtrip() {
         FAIL_BAIL("spire lost");
     }
     // v120: the spell survives as the worked number at the spire's cell.
-    if (sm::worked_read(loaded, 12, 34) != 7) {
+    if (sm::feature_number_read(loaded, 12, 34) != 7) {
         FAIL_BAIL("spire spell (worked layer) lost");
     }
     if (loaded.markers.empty() || loaded.markers[0].id != "marker.round"
@@ -1082,10 +1082,10 @@ void run_roundtrip() {
         // гавани (9,4), спелл шпиля (12,34) — v120 сделал его квартирантом —
         // и ПАСТВА двух поселений фикстуры (40,80) и (45,85), третий род
         // жильца, пришедший с v122. Число фичи у каждого своё, а слой один.
-        if (sm::worked_read(loaded, 9, 4) != 2
-            || sm::worked_read(loaded, 40, 80) != kFixtureCitySouls
-            || sm::worked_read(loaded, 45, 85) != kFixtureVillageSouls
-            || loaded.worked.liveCells != 4) {
+        if (sm::feature_number_read(loaded, 9, 4) != 2
+            || sm::feature_number_read(loaded, 40, 80) != kFixtureCitySouls
+            || sm::feature_number_read(loaded, 45, 85) != kFixtureVillageSouls
+            || loaded.featureNumber.liveCells != 4) {
             FAIL_BAIL("the worked layer's number did not round-trip");
         }
     }

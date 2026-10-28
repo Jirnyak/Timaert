@@ -422,7 +422,7 @@ inline void shift_home_flock(GameState& gs, const MacroStore& st,
     //  к ним не резолвит. Одна дверь, один закон.)
     const auto& c = st.cell[home.slot];
     const int x = ecs::cell_x(c, gs.mapW), y = ecs::cell_y(c, gs.mapW);
-    worked_write(gs, x, y, std::max(0, worked_read(gs, x, y) + delta));
+    feature_number_write(gs, x, y, std::max(0, feature_number_read(gs, x, y) + delta));
 }
 
 // ── ВТОРАЯ ПОЛОВИНА ПАРЫ, ИЗМЕРЕННАЯ ФАКТОМ ──────────────────────────────
@@ -514,7 +514,7 @@ inline void reconcile_place_flock(GameState& gs, MacroStore& st,
             != SquadArchetype::Place)
             continue;
         const auto& c = st.cell[slot];
-        worked_write(gs, ecs::cell_x(c, gs.mapW), ecs::cell_y(c, gs.mapW),
+        feature_number_write(gs, ecs::cell_x(c, gs.mapW), ecs::cell_y(c, gs.mapW),
                      souls[slot]);
     }
 }

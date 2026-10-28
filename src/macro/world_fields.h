@@ -37,7 +37,7 @@ enum class WorldField : std::uint8_t {
                  //   on write, sight is recomputed after load (since v40)
     // (Ряд `Deposits` УНИЧТОЖЕН 2026-10-23, «жилы единые»: природное поле
     //   жил — ЧИСТАЯ ФУНКЦИЯ терраина и сида, геймплеем не мутируется и
-    //   потому не хранится; залежи шахт едут рядом Worked числами фич.)
+    //   потому не хранится; залежи шахт едут рядом FeatureNumber числами фич.)
     Scars,       // sparse u16 per resource row — harvest/hunt debts (v35)
     // (Ряд `Built` УНИЧТОЖЕН в v130, перепись сирот 2026-10-11: вектор
     //   `GameState::builtFeatures` не имел НИ ОДНОГО писателя из геймплея —
@@ -45,7 +45,7 @@ enum class WorldField : std::uint8_t {
     //   то есть сейв возил список, который мир никогда не писал. Когда
     //   стройка фич сквадами будет построена, свой факт она заведёт заново;
     //   дыра названа нарядом M-206.)
-    Worked,      // THE worked layer, one field for the world (v96): the
+    FeatureNumber,      // THE worked layer, one field for the world (v96): the
                  //   number under a feature — hulls moored at a harbour
                  //   today (CANON S5 «слой разработки — ОДНО поле на всё»).
     Count,

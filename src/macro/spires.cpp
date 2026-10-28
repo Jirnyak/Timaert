@@ -127,14 +127,14 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         // ПОРЯДОК: ФИЧА, ПОТОМ ЕЁ ЧИСЛО. Число принадлежит фиче (ЗАКОН ПОЛЯ
         // п.3), поэтому спелл пишется ТОЛЬКО после того, как байт реально
         // встал: иначе отказ двери оставил бы в мире осиротевшее число под
-        // чужой клеткой. Прежде `worked_write` стоял ПЕРЕД постановкой.
+        // чужой клеткой. Прежде `feature_number_write` стоял ПЕРЕД постановкой.
         if (feature_put(features, terrain, bestX, bestY, FT_Spire)
                 != FT_Spire)
             continue;
         // The spell is the spire's WORKED number («у поля урожай, у шахты
         // залежи, у порта корабли — у шпиля спелл»): kSpellDefs ordinal + 1
         // under FT_Spire, 0 = drained (закон нуля-ординала).
-        worked_write(gs, bestX, bestY, ord + 1);
+        feature_number_write(gs, bestX, bestY, ord + 1);
         placedCells.push_back(cell_of(bestX, bestY, gs.mapW));
     }
 }
@@ -151,7 +151,7 @@ SpireOrb spire_orb(const MacroWorld& w, int x, int y) {
     const int cx = wrap_axis(x, gs.mapW);
     const int cy = wrap_axis(y, gs.mapH);
     if (w.features->at(cx, cy) != FT_Spire) return o;
-    o.spell = worked_read(gs, cx, cy);
+    o.spell = feature_number_read(gs, cx, cy);
     // Выкачанный шпиль ЗАБЫЛ свой спелл, как выработанная жила — свою руду,
     // поэтому тир у него честно ноль, а не последний запомненный.
     o.tier = o.spell > 0

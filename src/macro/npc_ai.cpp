@@ -2175,7 +2175,7 @@ int pick_next_station_(const TickContext& ctx, const MacroPos& p,
             // (M-320): она объявляла этот вывод МИРОВЫМ, а он принадлежит
             // модулю читающего.
             if (!place_is_settlement(SquadType(stp.runtime[slot].squadType))
-                || worked_read(*ctx.mw.gs,
+                || feature_number_read(*ctx.mw.gs,
                                ecs::cell_x(stp.cell[slot], ctx.mapW),
                                ecs::cell_y(stp.cell[slot], ctx.mapW)) <= 0)
                 return;
@@ -2203,7 +2203,7 @@ int pick_next_station_(const TickContext& ctx, const MacroPos& p,
         const std::uint16_t slot = place_slot_by_id(ctx, lmId);
         if (slot == kMacroNoSlot
             || !place_is_settlement(SquadType(stp.runtime[slot].squadType))
-            || worked_read(*ctx.mw.gs,
+            || feature_number_read(*ctx.mw.gs,
                            ecs::cell_x(stp.cell[slot], ctx.mapW),
                            ecs::cell_y(stp.cell[slot], ctx.mapW)) <= 0)
             continue;

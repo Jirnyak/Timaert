@@ -4087,7 +4087,7 @@ bool run_prologue_road_smoke(App& app) {
 // само число). Локальная функция смоука, не мировая дверь.
 static int smoke_cell_number(const App& app, std::uint16_t slot) {
     const auto& c = app.macroStore->cell[slot];
-    return sm::worked_read(app.gs, sm::ecs::cell_x(c, app.gs.mapW),
+    return sm::feature_number_read(app.gs, sm::ecs::cell_x(c, app.gs.mapW),
                            sm::ecs::cell_y(c, app.gs.mapW));
 }
 
@@ -4125,7 +4125,7 @@ bool run_spire_climb_smoke(App& app) {
     for (int sy = 0; sy < mapH; ++sy) {
         for (int sx = 0; sx < mapW; ++sx) {
             if (app.features.at(sx, sy) != sm::FT_Spire) continue;
-            const int orb = sm::worked_read(app.gs, sx, sy);
+            const int orb = sm::feature_number_read(app.gs, sx, sy);
             if (orb <= 0 || orb > sm::kSpellCount) continue;
             const int spell = orb - 1;
             if (sm::spellbook_has_learned(smoke_player_book(app), spell))
@@ -4319,14 +4319,14 @@ bool run_spire_climb_smoke(App& app) {
         apply_pending_event_effects(app);
         learned = sm::spellbook_has_learned(smoke_player_book(app),
                                             sm::spell_ordinal(def.id));
-        // Дренаж орба — строка дельты ряда Worked: число фичи гаснет на
+        // Дренаж орба — строка дельты ряда FeatureNumber: число фичи гаснет на
         // ГРАНИЦЕ тика, не в кадре нажатия (ломоть 5).
         smoke_advance_to_macro_tick(app);
         // ВЫКАЧАННОСТЬ СПРАШИВАЕТСЯ У КЛЕТКИ, КОТОРУЮ ОБОБРАЛИ (M-320).
         // Здесь стоял резолв сквада по ординалу (`place_handle_by_ordinal`),
         // чтобы узнать адрес шпиля, — а у шпиля нет ни сквада, ни ординала,
         // и адрес у смоука уже на руках: это та клетка, на которую он встал.
-        depletedFlag = sm::worked_read(app.gs, targetX, targetY) == 0;
+        depletedFlag = sm::feature_number_read(app.gs, targetX, targetY) == 0;
         orbsAfter = 0;
         for (const auto& s : app.subworld.mgr().structures()) {
             if (s.kind == sm::sub::Structure::SpireOrb) ++orbsAfter;

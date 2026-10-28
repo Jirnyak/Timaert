@@ -50,7 +50,7 @@ struct PlaceView {
     // КЛЕТКЕ), врала только вывеска — ЗАКОН ИМЕНИ п.5, «дефект чисто в имени
     // лечится механической автосменой». Что это число ЗНАЧИТ, решает
     // читающий: модулю света под ним — сколько очагов горит.
-    int  worked;      // производное из рода 3, не колонка сквада
+    int  featureNumber;  // производное из рода 3, не колонка сквада
     bool depleted = false; // шпиль, чей орб забран — ОДИН вывод на весь мир
                            // (spire_orb@src/macro/spires.h); колонкой
                            // `Place` не был с v120, а СВОИМ написанием
@@ -112,7 +112,7 @@ void for_each_place_view(const MacroWorld& w, F&& fn) {
                          .x = x,
                          .y = y,
                          .name = name,
-                         .worked = worked_read(gs, x, y),
+                         .featureNumber = feature_number_read(gs, x, y),
                          .depleted = spire_orb(w, x, y).depleted});
         }
     }

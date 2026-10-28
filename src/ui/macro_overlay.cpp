@@ -984,7 +984,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                         // Число поля фич ПО КЛЕТКЕ; подпись «Pop» — вывод
                         // оверлея, а не мировой двери (M-320).
                         ImGui::Text("%d",
-                            worked_read(gs,
+                            feature_number_read(gs,
                                 ecs::cell_x(store.cell[slot], gs.mapW),
                                 ecs::cell_y(store.cell[slot], gs.mapW)));
                     }
