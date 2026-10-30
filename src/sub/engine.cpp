@@ -4581,8 +4581,20 @@ bool SubworldEngine::read_sign(const Structure& sign) {
     if (cy < 0) cy += mapH;
     const CellContext ctx = resolve_context(cx, cy);
     const char* place = nullptr;
-    if (ctx.place.kind == SquadType::City
-        || ctx.place.kind == SquadType::Village) {
+    // «ПОСЕЛЕНИЕ ЛИ ЭТО» СПРАШИВАЕТСЯ У ДАННЫХ, А НЕ У ПАРЫ ИМЁН РОДА (M-336).
+    // Здесь стояло `kind == City || kind == Village`, и предикат отвечает ровно
+    // то же СЕГОДНЯ (его собственная шапка: «ни один из двенадцати родов не
+    // сменил ответа»), поэтому правка побайтово нейтральна — и это не вкус.
+    // Столица УЖЕ едет (`FT_Capital`, свой генератор — вердикт владельца
+    // 2026-10-24): в день, когда её строка получит глаголы прилавка/найма,
+    // дверь ответит «поселение» САМА, а захардкоженная пара осталась бы ложной
+    // МОЛЧА — ровно тот дефект, который запрещает ЗАКОН СТРОКИ КАТАЛОГА.
+    // Пустая клетка отвечает «нет» по построению: у `SquadType::None` архетип
+    // Roamer, а поселение — СТОЯЩИЙ род с прилавком/наймом/доской.
+    // ДВЕРЬ ПРИШЛА БЕЗ НОВОЙ НИТКИ КАНАЛА: `macro/place_registry.h` уже виден
+    // в `src/sub` через `sub/map_data.h`, а §11 заводить здесь новое
+    // `#include "macro/…"` запрещает прямо.
+    if (place_is_settlement(ctx.place.kind)) {
         const MacroHandle lm = mw_.store
             ? place_handle_by_ordinal(*mw_.store,
                                       std::uint32_t(ctx.place.id))
