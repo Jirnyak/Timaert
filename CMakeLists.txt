@@ -1773,7 +1773,14 @@ timaert_test(collector_tithe_test
         src/macro/anketa.cpp
         src/tables/items.cpp
         src/macro/econ_day.cpp
-    LINK_SDL)
+    LINK_SDL
+    # ПИН СЧЁТА ЗАВЕДЁН ПО ЗАМЕРУ, А НЕ ПО ОБЫЧАЮ (M-308). Записанная мутация
+    # «ранний `return` до вердиктов третьего закона» прошла ЗЕЛЁНОЙ — 19 → 14
+    # проверок, код 0: §8 п.2 ловит только тест с НУЛЁМ проверок, а здесь
+    # остальные два закона свои проверки отдавали, и выпавшая треть была
+    # невидима. Пин закрывает это целиком — ctest краснеет на любой пропавшей
+    # проверке, не разбираясь, какая именно.
+    PIN "OK collector_tithe_test .19 checks")
 
 timaert_test(woodcutter_gather_test
     SOURCES

@@ -10,9 +10,12 @@
 // in THIS header prices and moves stacks by the one contextual value law,
 // and a coin wins purely by arithmetic — minimal weight at maximal value.
 #pragma once
+#include <algorithm>
+#include <cstdint>
 #include <string>
 #include <vector>
 
+#include "core/subtract.h"    // sub_sat — остаток спины приёмника (M-308)
 #include "macro/econ_day.h"   // Depot + econ_pay_debt — приход гасит долг (S10)
 #include "tables/faction.h"
 #include "macro/anketa.h"
@@ -147,15 +150,50 @@ inline int pay_value_dense(Inventory& inv, int value) {
 // Приёмник — Depot (CANON S10): платёж, упавший в МЕСТО, гасит его долг
 // СРАЗУ — город, взявший хлебом, хлеб тут же проел. Сумки проходят как
 // раньше (неявная конверсия, долга нет).
-inline int transfer_value_dense(Inventory& from, Depot to, int value) {
+//
+// ── СПИНА ПРИЁМНИКА — ПАРАМЕТР ПОДПИСИ, И ОН ОБЯЗАТЕЛЕН (M-308) ──────────
+// ЗДЕСЬ НЕ БЫЛО МАССЫ ВОВСЕ, и это были ДВА ЗАКОНА ЁМКОСТИ на один вопрос
+// мира (DOD п.6): `deal@src/macro/deal.h` мерит грузы МАССОЙ, а эта дверь
+// встала на отказе СЛОТА — `add_ref@src/macro/anketa.h` о массе не знает
+// ничего и отказывает лишь при переполнении стака или нехватке слота.
+// Поймано ЗАМЕРОМ в `collect_tithe@src/macro/npc_ai.cpp`: две половины
+// одной загрузки спрашивали спину ПО-РАЗНОМУ — ветка нужды дома честно
+// клампила `carry_capacity_g - inventory_mass_g`, а остаток долга по
+// плотности грузил сборщика БЕЗ ПРЕДЕЛА.
+//
+// ПОЧЕМУ ПАРАМЕТР БЕЗ УМОЛЧАНИЯ, в отличие от `deal`. Довод «звонящий и так
+// один» есть свойство СЕГОДНЯШНИХ звонящих, а не двери — это поправка
+// владельца к первому разбору («первое то ты написал выгрузка домой а если
+// это обмен? так что не работает да?»). Умолчание `kNoCarryLimitG` вернуло
+// бы ровно тот дефект, который чинится: забыть предел стало бы МОЛЧА
+// законно. Обязательный параметр заставляет каждого звонящего высказать
+// свой закон вслух, и «у склада места спины нет» становится НАПИСАННЫМ
+// `kNoCarryLimitG`, а не пропущенным аргументом.
+//
+// КЛАМП, А НЕ ОТКАЗ — тот же закон, что у `deal`: берётся столько, сколько
+// входит, и возвращается ФАКТ. Остаток спины тает `sub_sat` (ЗАКОН ТРЁХ
+// ДВЕРЕЙ): ниже нуля он не бывает по построению. Отрицательный вход значит
+// «места нет вовсе», и `max(0, …)` читает его именно так — буква в букву
+// как `deal`.
+inline int transfer_value_dense(Inventory& from, Depot to, int value,
+                                std::int64_t massCapG) {
     int left = value < 0 ? 0 : value;
     int moved = 0;
+    std::uint64_t massLeftG =
+        std::uint64_t(std::max<std::int64_t>(0, massCapG));
     while (left > 0) {
         const DensestSlot d = densest_value_slot(from);
         if (d.slot < 0) break;
         const ItemRef& s = from.slots[std::size_t(d.slot)];
         const int want = (left + d.value - 1) / d.value;
-        const int take = want < int(s.count) ? want : int(s.count);
+        // Делитель НИКОГДА не ноль, и ветки «а если ноль» поэтому нет:
+        // `item_mass_g@src/tables/items.h` держит массу не ниже
+        // `kMassStepG` стражем, а `static_assert(catalog_min_mass_g() >
+        // kMassStepG)` в `items.cpp` не даёт собрать каталог, где страж
+        // перестал быть тождественным. `d.massG` пришёл из той же двери.
+        const std::uint64_t byMass = massLeftG / std::uint64_t(d.massG);
+        const int take = int(std::min<std::uint64_t>(
+            {std::uint64_t(want), std::uint64_t(s.count), byMass}));
         if (take <= 0) break;
         ItemRef payload = s;
         payload.count = std::uint16_t(take);
@@ -163,6 +201,8 @@ inline int transfer_value_dense(Inventory& from, Depot to, int value) {
         if (!from.remove_at(d.slot, take)) break;
         moved += take * d.value;
         left -= take * d.value;
+        massLeftG =
+            sub_sat(massLeftG, std::uint64_t(take) * std::uint64_t(d.massG));
     }
     if (moved > 0 && to.needDebt) {
         econ_pay_debt(to.inv, to.needDebt, to.sink, to.user);

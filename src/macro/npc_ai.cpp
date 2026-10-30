@@ -1504,8 +1504,12 @@ public:
         deal(st, s.h.slot, homeSlot, dump, {},
              kNoCarryLimitG, kNoCarryLimitG,
              ctx_.mw.econFacts, ctx_.mw.econFactsUser);
+        // ВЫГРУЗКА ИЗ спины В СКЛАД: предела нет, и это ВЫСКАЗЫВАНИЕ, а не
+        // пропуск (M-308) — у склада места спины нет вовсе, потому что обоз
+        // есть свойство анкеты, которая идёт, а место не идёт никуда
+        // (`kNoCarryLimitG@src/macro/deal.h`).
         transfer_value_dense(s.bag, depot_(homeSlot, ctx_.mw),
-                             inventory_value(s.bag));
+                             inventory_value(s.bag), kNoCarryLimitG);
     }
     // ── ВЗЫСКАНИЕ ДАНИ — ОДИН ГЛАГОЛ, ПОТОМУ ЧТО ОДНА ТОЧКА ──────────────
     // ВЗЫСКАНИЕ И ПОГАШЕНИЕ — В ОДНОЙ ТОЧКЕ: сколько увёз, столько и
@@ -1593,9 +1597,15 @@ public:
         // вассала. Заплатить зерном, оставив серебро, нельзя ни с какой
         // стороны — нужда дома уже взяла своё зерно выше.
         if (owed > 0) {
+            // ЗАГРУЗКА В спину: предел — ОСТАТОК ЁМКОСТИ, тот же, что у
+            // ветки нужды выше (M-308). До этого наряда здесь не было
+            // предела вовсе, и две половины ОДНОЙ загрузки спрашивали спину
+            // по-разному — вассал, гасящий остаток по плотности, грузил
+            // сборщика без всякого предела.
             const int dense = transfer_value_dense(
                 st.inventory[vassal].inv, Depot(*bag),
-                int(std::min<long long>(owed, 1 << 30)));
+                int(std::min<long long>(owed, 1 << 30)),
+                carry_capacity_g(rt, *bag) - inventory_mass_g(*bag));
             if (dense > 0) {
                 owed -= dense;
                 took += dense;

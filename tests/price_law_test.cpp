@@ -18,6 +18,7 @@
 #include "macro/economy.h"
 #include "macro/econ_day.h"
 #include "macro/currency.h"
+#include "macro/deal.h"        // kNoCarryLimitG — «предела нет» ИМЕНЕМ (M-308)
 
 namespace {
 // Руки города и деревни — анкета их рода (characters.h), а не вид места.
@@ -230,10 +231,16 @@ void test_arbitrage_dies_two_ways() {
                 stock_price(100, supply, 0), 60, 0, false);
             if (sellUnit <= buyUnit) { farmDied = true; break; }   // profitless
             if (coin_census_value(player) < buyUnit) break;
-            if (!transfer_value_dense(player, merchant, buyUnit)) break;
+            // ПРЕДЕЛА СПИНЫ ЗДЕСЬ НЕТ СОЗНАТЕЛЬНО (M-308): прибор судит
+            // ЦЕНУ, и кошелёк — та стена, в которую круг обязан упереться.
+            // Введи здесь ёмкость — и стеной станет она, то есть свидетель
+            // начал бы охранять ДРУГОЙ закон.
+            if (!transfer_value_dense(player, merchant, buyUnit,
+                                      kNoCarryLimitG)) break;
             merchant.remove("food", 1);
             player.add("food", 1);
-            if (!transfer_value_dense(merchant, player, sellUnit)) {
+            if (!transfer_value_dense(merchant, player, sellUnit,
+                                      kNoCarryLimitG)) {
                 // He cannot pay: the deal does not happen — put it back.
                 player.remove("food", 1);
                 merchant.add("food", 1);
