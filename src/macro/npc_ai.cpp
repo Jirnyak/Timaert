@@ -4849,7 +4849,7 @@ void settle_dead_squads(MacroWorld& mw) {
     ctx.mapH = gs.mapH;
     AiPult pult(ctx);
     SweptDeathRelay relay{&pult, &st};
-    destroy_dead_macro_squads(st, gs, nullptr, &relay_swept_death_, &relay);
+    destroy_dead_macro_squads(st, gs, &relay_swept_death_, &relay);
 }
 
 } // namespace

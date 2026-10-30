@@ -620,8 +620,21 @@ inline int kill_fallen_squad_creatures(MacroStore& st, GameState& gs,
 // `nullptr` = никто не слушает, и это законное значение.
 using SquadSweptFn = void (*)(MacroHandle, void* user);
 
+// ── ЗДЕСЬ БЫЛ ПАРАМЕТР `std::int64_t* lootPoolValue`, И ОН СНЯТ КАК ВЕСТИГИЙ
+// РАЗРУШЕННОГО КОНТУРА (M-346, 2026-10-30). Он принимал указатель на КАЗНУ
+// ПУЛА ЛУТА, а `GameState::lootPoolValue` УНИЧТОЖЕН в v131 (перепись сирот
+// 2026-10-11, вердикт владельца «снести»): писатель был жив, читателей ноль.
+// Значит параметр обещал носитель, которого в мире НЕТ, и его единственный
+// прод-звонящий (`src/macro/npc_ai.cpp`) передавал в него `nullptr` — то есть
+// ветка `if (lootPoolValue)` была НЕДОСТИЖИМА из продакшена с самого сноса
+// казны. Это ровно колонка-сирота по DOD п.9, только в подписи: следующий
+// видит её, принимает за живой контур и пишет под неё код.
+//
+// КАЗНА ВЕРНЁТСЯ МИРОВОЙ ПЕРЕМЕННОЙ РОДА 4 (ЗАКОН КАНОНИЧЕСКОГО ФРЕЙМА
+// называет её поимённо), и тогда вернётся и приём безвикторного остатка — но
+// ОДНОЙ дверью вместе со своим расходным концом, а не указателем в подписи
+// свипа. Наряд — **M-225**/**M-17**; дыра названа в **M-346**.
 inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
-                                     std::int64_t* lootPoolValue = nullptr,
                                      SquadSweptFn onSwept = nullptr,
                                      void* sweptUser = nullptr) {
     // Снос по ординалу (squad_walk.h) — снимок и так был обязателен
@@ -646,16 +659,11 @@ inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
     for (const SquadWalkEntry& sw : snapshot) {
         const std::uint16_t slot = sw.slot;
         if (!creatures_empty(st.inventory[slot].inv)) continue;
-        // THE loot pool (owner 2026-08-30, CANON S5): a squad that died
-        // with no victor — exhaustion, drowning — FOLDS its belongings
-        // into their catalog worth and pays the world's loot pool (one
-        // number; a battle's loser was already emptied by
-        // loot_fallen_owner, so what folds here is exactly the victorless
-        // remainder). Ruins, dungeons and mob drops are the pool's future
-        // contextual outflow: loot is ROLLED from tables with a budget
-        // drawn off this value — variety by law, O(1) memory.
-        if (lootPoolValue)
-            *lootPoolValue += inventory_value(st.inventory[slot].inv);
+        // (ЗДЕСЬ БЕЗВИКТОРНЫЙ ОСТАТОК СКЛАДЫВАЛСЯ В КАЗНУ ПУЛА ЛУТА — приём
+        //  снят вместе с параметром, M-346: казны в мире нет с v131, и
+        //  складывать было некуда. Имущество сквада, умершего без победителя,
+        //  СЕГОДНЯ просто исчезает вместе с его слотом, и это названная дыра,
+        //  а не механика: §1 запрещает ставить на её место времянку.)
         // ЛИДЕР — СВОЯ ДУША, И ОН ТОЖЕ БЫЛ ВЗЯТ ИЗ ДОМА (v122: рождение
         // артели списывало `1 + members` голов; аукцион дневной ротации
         // казнён ломтём 4 M-72 — модуль места ломтя 5 обязан списывать той же дверью).
