@@ -226,22 +226,27 @@ static_assert(kRenownToBeNamed > 0,
 // it draws between an event and a legend, and that is the half taken here.
 //
 // So: ONE record type, two places it lives.
-//   · the RING — what the world is ASKED. Indexed by cell, sized to the
-//     longest `interestDays` above, and it forgets. This is the witcher's
-//     tier.
-//   · the ANNALS — what the world REMEMBERS. Append-only, no spatial index,
-//     rides the save. This is "the village was razed in year three".
+// So: ONE tier — the RING, what the world is ASKED. Indexed by cell, sized to
+// the longest `interestDays` above, and it FORGETS. This is the witcher's
+// tier, and today it is the only one.
 //
-// WHAT REACHES THE ANNALS is decided by WHO took part (owner's ruling: «вечно
-// помнятся дела ИМЕНОВАННЫХ — лордов, игрока, городов; безымянная массовка
-// растворяется; как в DF, история — это история ФИГУР»). In this world that
-// rule is not a heuristic but a consequence: a squad IS a lord and carries an
-// ordinal identity (MacroSpawnId); a place and a faction likewise. The
-// nameless crowd — creature rows, bodies below, the peasants of a city — has no
-// ordinal at all and can only appear as `amount`. So the test is simply
-// whether a fact has a named participant, and the volume follows: deeds
-// between figures are hundreds a day, not thousands.
-inline constexpr std::uint32_t kChronicleAnnals = 1u << 20;   // 1M x 32 B = 32 MB
+// ── ЗДЕСЬ ЖИЛ ВТОРОЙ ЯРУС — АННАЛЫ, «ЧТО МИР ПОМНИТ НАВСЕГДА», И ОН СНЕСЁН
+// ЦЕЛИКОМ (M-184, вердикт владельца 2026-10-30: «да сноси оба», довод его же
+// — «эти системы ещё не вписаны в новую системность»). Снос, а не уборка
+// потолка: с ярусом ушли `std::vector<WorldFact> annals` (кап 1M × 32 Б =
+// 32 МиБ), громкий `annalsFull`, дверь запроса `chronicle_annals_of`, закон
+// отбора «новость, выдыхающаяся за неделю, не претендует на вечность»
+// (`kChronicleWeatherDays`), свой блок сейва и своя строка переписи штабелей.
+//
+// ЧТО ЭТО ЗАКРЫЛО СВЕРХ СНОСА: у яруса был СВОЙ блок сейва, а §10 п.2 говорит
+// «новый род данных мира — это новый род ПАКЕТА, а не новый блок сейва».
+// Ярус, чья долговечность держалась собственным блоком, был ровно таким
+// носителем.
+//
+// ЗАГЛУШКИ НА ЕГО МЕСТЕ НЕТ СОЗНАТЕЛЬНО (§1: игра не играбельна, временные
+// костыли не нужны; вердикт владельца того же дня — «ничего, дыра стоит
+// открытой»): мир СЕГОДНЯ не помнит ничего дольше кольца, и это названо
+// вслух рядом M-184 реестра, а не прикрыто «пока-памятью».
 
 // The ring's size is a FORMULA with one unmeasured term, and it is written
 // down rather than hidden: it must hold `longest interestDays × the world's
@@ -260,54 +265,32 @@ inline constexpr std::uint32_t kChronicleFacts = 1u << 16;
 // index cell rather than to a map cell, and a query touches 3×3 of them.
 inline constexpr int kChronicleCellSize = 8;
 
-// A participant reference is a KIND plus one bit: is this one NAMED?
+// A participant reference is a KIND, and nothing else.
 //
-// The bit rides in the kind byte because the record is 32 bytes and bit 7 was
-// free (the kinds number five). It is a bit rather than a field for the same
-// reason everything here is packed: a fact is scanned by the thousand.
-inline constexpr std::uint8_t kFactSubjectNamed = 0x80u;
-
+// ── ЗДЕСЬ ЖИЛ БИТ «ИМЕНОВАН» (`kFactSubjectNamed` = 0x80), И ОН УМЕР ВМЕСТЕ С
+// АННАЛАМИ, А НЕ ЗАОДНО С НИМИ (M-184, DOD п.9). Бит ставили обе двери записи
+// дела (`record_deed_filed@src/macro/squad.h`), а ЧИТАЛ его РОВНО ОДИН гейт —
+// отбор в анналы. Ярус снесён, читателей у бита стало НОЛЬ, то есть он стал
+// колонкой-сиротой того самого рода, который §DOD п.9 запрещает: «данные на
+// будущее» видит следующий, принимает за закон и пишет под них код. Поэтому
+// снят и он, и его аксессор `fact_subject_marked_named`, и производный
+// предикат `subject_is_named`.
+//
+// ЧТО НЕ ТРОНУТО И ПОЧЕМУ: `renown_is_named@src/macro/chronicle.h` ЖИВА —
+// она отвечает на ДРУГОЙ вопрос («стал ли этот фигурой»), и читателей у неё
+// трое помимо летописи: `squad_is_named@src/app/main.cpp` и две двери
+// `src/macro/squad.h` (одна решает, называть ли врага объектом факта смерти).
+// Умер НОСИТЕЛЬ бита в записи, а не закон славы.
 inline constexpr std::uint8_t fact_subject_kind(std::uint8_t packed) {
     return std::uint8_t(packed & 0x7Fu);
 }
-inline constexpr bool fact_subject_marked_named(std::uint8_t packed) {
-    return (packed & kFactSubjectNamed) != 0u;
+inline constexpr std::uint8_t fact_subject(FactSubject kind) {
+    return std::uint8_t(kind);
 }
-inline constexpr std::uint8_t fact_subject(FactSubject kind, bool named) {
-    return std::uint8_t(std::uint8_t(kind)
-                        | (named ? kFactSubjectNamed : std::uint8_t(0)));
-}
-
-// Does this fact have a participant who IS somebody? Then it is history.
-// Otherwise it is weather: it happened, the ring will remember it for a
-// while, and then the world will forget, which is what forgetting is for.
-//
-// FIGURE-NESS IS DERIVED FROM RENOWN FOR EVERYONE (owner, 2026-08-28) — a
-// band, a city, a people. A place HAS a name the day it is founded, but a
-// name is a word, not historical weight: a fresh hamlet's hunger is weather,
-// a renowned city's is legend. The caller marks the bit from the subject's
-// own renown (record_deed for squads, record_place_fact for places) —
-// only the world knows how much this one has done and suffered.
-inline constexpr bool subject_is_named(std::uint8_t packed) {
-    return fact_subject_kind(packed) != std::uint8_t(FactSubject::None)
-        && fact_subject_marked_named(packed);
-}
-
-// News that stales within a week never claims eternity (owner, 2026-08-28:
-// «приём хлеба в город — не событие»). The table's own shortest interest
-// tier IS the line: a kind the world stops asking about in days (Traded,
-// Gathered — interestDays of 8) stays out of the annals no matter how famous
-// the parties, and no second "smallness" column had to be invented.
-inline constexpr std::uint16_t kChronicleWeatherDays = 8;
 
 struct Chronicle {
     std::vector<WorldFact>     ring;      // kChronicleFacts, written round
     std::vector<std::uint32_t> cellHead;  // newest fact of each index cell
-    // What the world remembers for good. Append-only; capped only so a
-    // runaway cannot eat the machine, and the cap is loud when it is reached
-    // (annalsFull) rather than silently dropping the past.
-    std::vector<WorldFact>     annals;
-    bool annalsFull = false;
     std::uint32_t nextSeq = 1;            // 0 is "no fact", so counting starts at 1
     int cols = 0, rows = 0;
     // Facts written on the current day, and the day it is counting — the
@@ -344,7 +327,13 @@ struct Chronicle {
 // вес летописи — её несут кольцо (2 МиБ) и анналы (32 МиБ), и обе стоят
 // своими строками в переписи штабелей (`core/stacks.h`); он сторожит, что
 // четвёртый ярус памяти мира не вырастет здесь молча, без строки переписи.
-static_assert(sizeof(Chronicle) == 104,
+// 2026-10-30, M-184: 104 → 72. Вывод, а не замер «как вышло»: с ярусом
+// анналов ушёл заголовок вектора (24 Б) и флаг `annalsFull` (1 Б, но
+// занимал 4 с выравниванием) — ровно 32 Б. Остаток считается по форме:
+// два заголовка вектора по 24 = 48, плюс шесть чисел по 4 (`nextSeq`,
+// `cols`, `rows`, `countingDay`, `factsToday`, `factsPeak`) = 24, итого 72
+// при выравнивании 8.
+static_assert(sizeof(Chronicle) == 72,
               "летопись: новый ярус = новая строка переписи штабелей");
 
 // Size it for a map. Safe to call again; a resize forgets, which is correct —
@@ -424,11 +413,5 @@ struct FactNaming {
 // world.
 int fact_sentence(const WorldFact& f, const FactNaming& naming,
                   char* out, int cap);
-
-// The ANNALS, newest first: what the world remembers about a figure, however
-// long ago. `subjectKind`/`subject` of 0 means "anyone" — the whole legend.
-int chronicle_annals_of(const Chronicle& c, std::uint8_t subjectKind,
-                        std::uint32_t subject, int limit,
-                        FactVisitor visit, void* user);
 
 } // namespace sm

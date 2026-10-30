@@ -77,13 +77,13 @@ void test_participation_locality_and_silence() {
     // (a) The player's own deed, far away — learned by PARTICIPATION.
     chronicle_record(gs.chronicle,
                      fact(1, FactKind::Killed,
-                          fact_subject(FactSubject::Squad, true),
+                          fact_subject(FactSubject::Squad),
                           sm::player_home_ordinal(gs, *wStore_),
                           50, 50));
     // (b) Somebody else's deed on the player's cell — learned by LOCALITY.
     chronicle_record(gs.chronicle,
                      fact(1, FactKind::Battle,
-                          fact_subject(FactSubject::Squad, false),
+                          fact_subject(FactSubject::Squad),
                           777u, 10, 10));
     // (c) Somebody else's deed far away — the world knows, the player DOES
     // NOT: this is S11 applied to history, and the whole point of a journal.
@@ -106,9 +106,9 @@ void test_participation_locality_and_silence() {
 
     // The player as the OBJECT of another's deed — his side of a done-to.
     WorldFact hit = fact(2, FactKind::Killed,
-                         fact_subject(FactSubject::Squad, false), 778u,
+                         fact_subject(FactSubject::Squad), 778u,
                          30, 30);
-    hit.objectKind = fact_subject(FactSubject::Squad, true);
+    hit.objectKind = fact_subject(FactSubject::Squad);
     hit.object = sm::player_home_ordinal(gs, *wStore_);
     chronicle_record(gs.chronicle, hit);
     player_journal_capture(gs, *wStore_);
@@ -122,7 +122,7 @@ void test_participation_locality_and_silence() {
     stand_at(gs, *wStore_, 40, 40);
     chronicle_record(gs.chronicle,
                      fact(3, FactKind::Battle,
-                          fact_subject(FactSubject::Squad, false),
+                          fact_subject(FactSubject::Squad),
                           779u, 40, 40));
     player_journal_capture(gs, *wStore_);
     CHECK(gs.player.journal.size() == 4,
@@ -148,7 +148,7 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
         for (std::uint32_t i = 0; i < slice; ++i) {
             chronicle_record(gs.chronicle,
                              fact(int(filed + i) / 256 + 1, FactKind::Battle,
-                                  fact_subject(FactSubject::Squad, false),
+                                  fact_subject(FactSubject::Squad),
                                   1000u + filed + i, 5, 5));
         }
         filed += slice;
@@ -162,7 +162,7 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
     // dropped (append-only is the owner's law: this is his whole game).
     chronicle_record(gs.chronicle,
                      fact(300, FactKind::Battle,
-                          fact_subject(FactSubject::Squad, false),
+                          fact_subject(FactSubject::Squad),
                           999999u, 5, 5));
     player_journal_capture(gs, *wStore_);
     CHECK(gs.player.journal.size() == std::size_t(cap)
@@ -184,7 +184,7 @@ void test_a_possessed_lords_deeds_are_his_participation() {
     // Not possessing: the lord's far-away deed is somebody else's.
     chronicle_record(gs.chronicle,
                      fact(1, FactKind::Killed,
-                          fact_subject(FactSubject::Squad, false),
+                          fact_subject(FactSubject::Squad),
                           42u, 50, 50));
     player_journal_capture(gs, *wStore_);
     CHECK(gs.player.journal.empty(),
@@ -202,7 +202,7 @@ void test_a_possessed_lords_deeds_are_his_participation() {
     sm::transfer_player_flag(stL, gs.playerFlagRef, hL);
     chronicle_record(gs.chronicle,
                      fact(2, FactKind::Killed,
-                          fact_subject(FactSubject::Squad, false),
+                          fact_subject(FactSubject::Squad),
                           42u, 50, 50));
     player_journal_capture(gs, *wStore_);
     CHECK(gs.player.journal.size() == 1
@@ -225,10 +225,10 @@ void test_a_captured_copy_carries_no_ring_link() {
     // Two facts on one cell: the second's ring slot LINKS to the first.
     chronicle_record(gs.chronicle,
                      fact(1, FactKind::Battle,
-                          fact_subject(FactSubject::Squad, false), 7u, 5, 5));
+                          fact_subject(FactSubject::Squad), 7u, 5, 5));
     chronicle_record(gs.chronicle,
                      fact(1, FactKind::Battle,
-                          fact_subject(FactSubject::Squad, false), 8u, 5, 5));
+                          fact_subject(FactSubject::Squad), 8u, 5, 5));
     player_journal_capture(gs, *wStore_);
     CHECK(gs.player.journal.size() == 2
               && gs.player.journal[0].nextInCell == 0u
@@ -285,17 +285,10 @@ void test_the_deed_door_files_and_pays_as_one_action() {
               && fact_subject_kind(filed.subjectKind)
                      == std::uint8_t(FactSubject::Squad),
           "the record carries the doer's save-stable ordinal");
-    CHECK(!fact_subject_marked_named(filed.subjectKind),
-          "figure-ness is marked from PRE-deed renown: a nobody's first deed "
-          "is a nobody's");
-
-    // A figure's next deed wears the bit — still from PRE-deed renown.
-    rt.renown = std::uint32_t(kRenownToBeNamed);
-    const std::uint32_t seq2 = record_deed(*wStore_, gs, f, hB);
-    const WorldFact& filed2 =
-        gs.chronicle.ring[std::size_t((seq2 - 1u) % kChronicleFacts)];
-    CHECK(fact_subject_marked_named(filed2.subjectKind),
-          "a figure's deed is marked as a figure's");
+    // (ЗДЕСЬ ПРОВЕРЯЛСЯ БИТ «ИМЕНОВАН» В ЗАПИСИ ФАКТА — он снят вместе с
+    //  анналами, своим единственным читателем (M-184, DOD п.9). Закон
+    //  «фигурность из ПРЕД-дельной славы» остался величиной `renown`, и
+    //  плата славой проверена двумя строками ВЫШЕ.)
 
     // NEGATIVE CONTROL: the raw chronicle door records but pays NOTHING — a
     // writer that bypasses record_deed is exactly the free filing this law

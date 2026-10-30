@@ -362,12 +362,11 @@ sm::GameState make_state(sm::MacroStore& st) {
         sm::WorldFact conquest{};
         conquest.day = 12;
         conquest.kind = std::uint16_t(sm::FactKind::OwnerChanged);
-        // Figure-ness is a marked bit for EVERYONE now (2026-08-28): the
-        // fixture says outright that this lord and this city are somebodies.
-        conquest.subjectKind = sm::fact_subject(sm::FactSubject::Squad, true);
+        // (Бит «именован» снят вместе с анналами — M-184: род участника
+        //  теперь всё, что несёт ссылка.)
+        conquest.subjectKind = sm::fact_subject(sm::FactSubject::Squad);
         conquest.subject = 4242u;
-        conquest.objectKind =
-            sm::fact_subject(sm::FactSubject::Place, true);
+        conquest.objectKind = sm::fact_subject(sm::FactSubject::Place);
         conquest.object = 9u;
         conquest.x = 41; conquest.y = 41;
         sm::chronicle_record(gs.chronicle, conquest);
@@ -431,7 +430,7 @@ sm::GameState make_state(sm::MacroStore& st) {
         sm::WorldFact jf{};
         jf.day = 12;
         jf.kind = std::uint16_t(sm::FactKind::Killed);
-        jf.subjectKind = sm::fact_subject(sm::FactSubject::Squad, true);
+        jf.subjectKind = sm::fact_subject(sm::FactSubject::Squad);
         jf.subject = kFixturePlayerOrdinal;
         jf.x = 3; jf.y = 4; jf.amount = 2;
         gs.player.journal.push_back(jf);
@@ -706,18 +705,13 @@ void run_roundtrip() {
         FAIL_BAIL("an unvisited cell invented knowledge across the save");
     }
 
-    // ── The world's own memory comes back, both tiers ────────────────────
+    // ── The world's own memory comes back — ONE tier (анналы снесены,
+    //    M-184: их блока в файле больше нет вовсе) ─────────────────────
     {
         const sm::Chronicle& ch = loaded.chronicle;
         if (ch.nextSeq != gs.chronicle.nextSeq) {
             FAIL_BAIL("the chronicle's sequence lost — every fact's identity "
                       "and every chain link is that number");
-        }
-        if (ch.annals.size() != 1u
-            || ch.annals[0].subject != 4242u
-            || ch.annals[0].object != 9u
-            || ch.annals[0].kind != std::uint16_t(sm::FactKind::OwnerChanged)) {
-            FAIL_BAIL("the annals lost the lord who took the city");
         }
         // The RING must come back ASKABLE, not merely present: the chains are
         // derived on load, and a chronicle whose links did not rebuild would
@@ -1303,9 +1297,8 @@ void run_every_sub_state_kind_survives() {
 // 64 МиБ был МЕНЬШЕ суммы капов блоков, которые сейв обязан вместить, — и
 // легальный мир `save_game` отвергал МОЛЧА, возвращая false.
 //
-// Мир фикстуры выбран не по вкусу, а по переписи: обе ступени памяти мира
-// стоят на СВОИХ капах (анналы — macro/chronicle.h kChronicleAnnals; журнал
-// игрока — PlayerState::kJournalFactsCap), а мест в нём столько, сколько их
+// Мир фикстуры выбран не по вкусу, а по переписи: ПАМЯТЬ ИГРОКА стоит на
+// СВОЁМ капе (`PlayerState::kJournalFactsCap`), а мест в нём столько, сколько их
 // насчитала перепись штабелей в ЗАМЕРЕННОМ мире (core/stacks.h: «~76 МиБ в
 // замеренном мире (~1 880 мест)»). Это законный мир, а не патология.
 //
@@ -1328,20 +1321,10 @@ void run_payload_cap_is_a_fact() {
     auto gsOwn = std::make_unique<sm::GameState>(make_state(store));
     sm::GameState& gs = *gsOwn;
 
-    // Вечная память мира — на капе.
-    gs.chronicle.annals.clear();
-    gs.chronicle.annals.reserve(sm::kChronicleAnnals);
-    for (std::uint32_t i = 0; i < sm::kChronicleAnnals; ++i) {
-        sm::WorldFact f{};
-        f.day = 1;
-        f.seq = i + 1u;
-        f.kind = std::uint16_t(sm::FactKind::Killed);
-        f.subjectKind = std::uint8_t(sm::FactSubject::Cell);
-        gs.chronicle.annals.push_back(f);
-    }
-    if (gs.chronicle.nextSeq <= sm::kChronicleAnnals) {
-        gs.chronicle.nextSeq = sm::kChronicleAnnals + 1u;
-    }
+    // (ЗДЕСЬ ФИКСТУРА НАБИВАЛА АННАЛЫ ДО КАПА — ярус снесён M-184, и 32 МиБ
+    //  потолка ушли из суммы блоков вместе с ним. Негативный контроль ниже
+    //  от этого НЕ ослаб: его несёт журнал игрока, который сам по себе
+    //  больше прежнего литерала 64 МиБ.)
 
     // Журнал игрока — его целая игра, тоже на капе (v57).
     gs.player.journal.clear();

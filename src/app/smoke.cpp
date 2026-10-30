@@ -5923,15 +5923,16 @@ bool run_chronicle_rate_smoke(App& app) {
     // (M-254). `factsToday` рядом оставлен нарочно: он отвечает на другой
     // вопрос — «сколько набежало в тот день, в который посмотрели», — и
     // путать их и значило бы калибровать не тем числом.
+    // (Поле `annals=` из этой строки убрано вместе с ярусом — M-184: мерить
+    //  стало нечего, а печатать ноль значило бы врать о носителе.)
     std::printf("[smoke] chronicle_rate day=%d->%d factsInDay=%u "
-                "factsToday=%u factsPeak=%u needRing=%u annals=%zu "
+                "factsToday=%u factsPeak=%u needRing=%u "
                 "ringCap=%u\n",
                 dayBefore, app.gs.worldTime.day(), unsigned(factsInDay),
                 unsigned(app.gs.chronicle.factsToday),
                 unsigned(app.gs.chronicle.factsPeak),
                 unsigned(app.gs.chronicle.factsPeak
                          * sm::kChronicleLongestInterestDays),
-                app.gs.chronicle.annals.size(),
                 unsigned(sm::kChronicleFacts));
     // The tuning information itself: WHICH kinds carry the volume. Walk the
     // ring for the window's records (they are the newest; eviction cannot

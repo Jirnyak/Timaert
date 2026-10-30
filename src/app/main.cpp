@@ -297,8 +297,7 @@ void raise_macro_fact(void* user, const sm::BattleFact& fact) {
     // below overwrites this when the killer turns out to be somebody.
     wf.subjectKind = std::uint8_t(sm::FactSubject::Cell);
     if (victimId != 0u) {
-        wf.objectKind = sm::fact_subject(sm::FactSubject::Squad,
-                                         squad_is_named(app, fact.victim));
+        wf.objectKind = sm::fact_subject(sm::FactSubject::Squad);
         wf.object = victimId;
     }
     wf.amount = 1;
@@ -314,10 +313,9 @@ void raise_macro_fact(void* user, const sm::BattleFact& fact) {
         wf.y = std::int16_t(sm::ecs::cell_y(*c, app.gs.mapW));
     }
     // Filed AND paid, through the one door (macro/squad.h): the deed makes
-    // something of the doer. A nameless band that keeps doing notable things
-    // crosses the bar and becomes a figure, after which its deeds go into the
-    // annals. Before that they are weather — which is exactly why sixteen
-    // thousand bands do not drown the world's memory.
+    // something of the doer. (Второй ярус памяти — анналы — снесён M-184,
+    // поэтому «станет фигурой → дела помнятся навсегда» больше не механика:
+    // кольцо забывает всех одинаково. Слава как величина ЖИВА.)
     sm::record_deed((*app.macroStore), app.gs, wf, killerH);
 }
 
@@ -5388,15 +5386,10 @@ void draw_debug_panels(App& app) {
                 ImGui::TextColored(ImVec4(1.f, 0.4f, 0.3f, 1.f),
                                    "[journal full]");
             }
-            // The annals' cap is LOUD by contract (chronicle.h annalsFull:
-            // a world whose legend outgrew its cap has a tuning problem, and
-            // dropping history quietly is how you never find out) — but the
-            // flag had no listener. Same channel as [journal full] above.
-            if (app.gs.chronicle.annalsFull) {
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(1.f, 0.4f, 0.3f, 1.f),
-                                   "[world annals full]");
-            }
+            // (Здесь стоял громкий колпак АННАЛОВ — «[world annals full]».
+            //  Ярус снесён M-184: у мира второго яруса памяти нет, значит и
+            //  переполниться ему нечем. Колпак журнала игрока выше ЖИВ — это
+            //  другой носитель и другой вопрос.)
             ImGui::Separator();
             if (ImGui::BeginChild("jlog")) {
                 const sm::FactNaming naming = app_fact_naming(app);

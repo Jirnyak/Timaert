@@ -483,13 +483,9 @@ void test_a_famine_is_recorded_once_when_it_begins() {
           "the boundary that took the souls is ONE fact, not thirty-two");
     CHECK(c.total >= 1, "the world remembered something about this place");
 
-    // A place has a NAME the day it is founded, but figure-ness is
-    // RENOWN (owner, 2026-08-28): this fresh fixture town has done and
-    // suffered nothing the world was told of before, so its misfortune is
-    // weather — the ring holds it (asserted above), the annals do not.
-    // History begins when the place is somebody.
-    CHECK(gs.chronicle.annals.empty(),
-          "a weightless town's misfortune is weather, not history");
+    // (ЗДЕСЬ УТВЕРЖДАЛОСЬ, ЧТО БЕДА БЕЗВЕСТНОГО ГОРОДА НЕ ПОПАДАЕТ В
+    //  АННАЛЫ, — ярус снесён M-184, и утверждать стало нечего. Кольцо
+    //  держит факт, и это проверено ВЫШЕ; второго яруса у памяти мира нет.)
 }
 
 // Population falls honestly to ZERO — the floor is dead (owner, 2026-08-29).

@@ -40,8 +40,6 @@ void chronicle_init(Chronicle& c, int mapW, int mapH) {
     c.rows = std::max(1, (mapH + kChronicleCellSize - 1) / kChronicleCellSize);
     c.ring.assign(kChronicleFacts, WorldFact{});
     c.cellHead.assign(std::size_t(c.cols) * std::size_t(c.rows), 0u);
-    c.annals.clear();
-    c.annalsFull = false;
     c.nextSeq = 1u;
     c.countingDay = -1;
     c.factsToday = 0u;
@@ -75,34 +73,8 @@ std::uint32_t chronicle_record(Chronicle& c, const WorldFact& fact) {
     // другой вопрос, чем тот, ради которого заведён (M-254).
     if (c.factsToday > c.factsPeak) c.factsPeak = c.factsToday;
 
-    // ...and if a FIGURE took part — and the kind itself is more than a
-    // week's news (kChronicleWeatherDays: a famous city's grain deliveries
-    // are still deliveries) — the world keeps it for good. The ring will
-    // forget this same fact in a season; the annals will not.
-    if (fact_kind_def(FactKind(fact.kind)).interestDays > kChronicleWeatherDays
-        && (subject_is_named(fact.subjectKind)
-            || subject_is_named(fact.objectKind))) {
-        if (c.annals.size() < std::size_t(kChronicleAnnals)) {
-            // ССЫЛКА КОЛЬЦА В АННАЛЫ НЕ ЕДЕТ (M-254, 2026-10-12). `slot` уже
-            // несёт живой `nextInCell` — его поставили двадцатью строками
-            // выше, — а анналы обходятся ЛИНЕЙНО и цепь не читают никогда.
-            // Хранить производное как факт запрещено (§10), и цена была не
-            // только в мёртвом поле: `write_fact` эту ссылку роняет, а
-            // `read_fact` зануляет, поэтому БАЙТЫ АННАЛОВ менялись через круг
-            // сейв→загрузка. Журнал игрока от ровно этой болезни вылечен
-            // явно и с объяснением (`journal.h`: «A live link here rode into
-            // the save as garbage»); анналы лечения не получили, и свидетель
-            // не видел, потому что сверяет у факта только subject/object/kind.
-            WorldFact kept = slot;
-            kept.nextInCell = 0u;
-            c.annals.push_back(kept);
-        } else {
-            // Loud rather than silent: a world whose legend outgrew its cap
-            // has a tuning problem, and dropping history quietly is how you
-            // never find out.
-            c.annalsFull = true;
-        }
-    }
+    // (ЗДЕСЬ СТОЯЛ ОТБОР В АННАЛЫ — ярус снесён целиком, M-184. Кольцо
+    //  забывает, и это теперь ЕДИНСТВЕННЫЙ закон памяти летописи.)
     return seq;
 }
 
@@ -259,37 +231,6 @@ int fact_sentence(const WorldFact& f, const FactNaming& naming,
     len = append(out, cap, len, ", day ");
     len = append_num(out, cap, len, long(f.day));
     return len;
-}
-
-int chronicle_annals_of(const Chronicle& c, std::uint8_t subjectKind,
-                        std::uint32_t subject, int limit,
-                        FactVisitor visit, void* user) {
-    if (!visit || limit <= 0) return 0;
-    int offered = 0;
-    // Newest first, like every other view on the past. A linear walk on
-    // purpose: the annals are asked rarely (a chronicle screen, a bard, a
-    // quest that wants a grudge), and a second index would be a second thing
-    // to keep true.
-    for (std::size_t i = c.annals.size(); i-- > 0 && offered < limit; ) {
-        const WorldFact& f = c.annals[i];
-        if (subjectKind != 0u) {
-            // Compare KINDS, not packed bytes: the named bit is the doer's
-            // standing at the moment of the deed, not part of who he is — a
-            // figure's early nameless deeds and his famous ones are one
-            // legend, asked by one ordinal.
-            const std::uint8_t want = fact_subject_kind(subjectKind);
-            const bool asSubject =
-                fact_subject_kind(f.subjectKind) == want
-                && f.subject == subject;
-            const bool asObject =
-                fact_subject_kind(f.objectKind) == want
-                && f.object == subject;
-            if (!asSubject && !asObject) continue;
-        }
-        visit(user, f);
-        ++offered;
-    }
-    return offered;
 }
 
 } // namespace sm

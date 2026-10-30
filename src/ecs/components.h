@@ -591,9 +591,13 @@ struct MacroNpcRuntime {
     // WHAT THE WORLD THINKS THIS BAND HAS DONE (macro/chronicle.h). A squad
     // starts as one more band on the map: its deeds are weather, remembered by
     // the ring for a season and then forgotten. Do enough, and it becomes a
-    // FIGURE — from that day its deeds go into the annals for good (owner,
-    // 2026-08-27: «безымянный сквад может стать именным, как лорд, если
-    // накопится деяний»).
+    // FIGURE (owner, 2026-08-27: «безымянный сквад может стать именным, как
+    // лорд, если накопится деяний»).
+    //
+    // ЧЕМ ФИГУРА БЫЛА И ЧЕМ СТАЛА (M-184): прежде с этого дня её дела шли в
+    // АННАЛЫ навсегда — второй ярус памяти снесён, и кольцо теперь забывает
+    // всех одинаково. Сама слава ЖИВА и читается (`renown_is_named`); что
+    // именно фигурность даёт миру, назовёт система памяти, когда придёт.
     //
     // ONE number, not a counter plus a flag: "is it named" is DERIVED
     // (`renown >= kRenownToBeNamed`), so the two can never disagree about the

@@ -181,9 +181,9 @@ constexpr std::uint64_t kFactBytes =                 // write_fact
 constexpr std::uint64_t kChronicleBlockBytes =       // write_chronicle
     sizeof(Chronicle::nextSeq) + sizeof(Chronicle::countingDay)
     + sizeof(Chronicle::factsToday) + sizeof(Chronicle::factsPeak)
-    + sizeof(std::uint8_t)
-    + kCountBytes + std::uint64_t(kChronicleFacts) * kFactBytes
-    + kCountBytes + std::uint64_t(kChronicleAnnals) * kFactBytes;
+    // v138, M-184: ярус АННАЛОВ снесён — ушли и его байт `annalsFull`, и его
+    // блок (`kCountBytes + kChronicleAnnals × kFactBytes` = 32 МиБ потолка).
+    + kCountBytes + std::uint64_t(kChronicleFacts) * kFactBytes;
 
 // Следы: ПЛАН НА ФРАКЦИЮ (scent_field.h — `[f*w*h + y*w + x]`), два канала,
 // клетка на проводе = {индекс, значение}. Плотный кап, хотя пишется
@@ -720,8 +720,6 @@ void write_chronicle(Writer& w, const Chronicle& c) {
     w.pod(c.countingDay);
     w.pod(c.factsToday);
     w.pod(c.factsPeak);          // v135: пик дня — величина формулы кольца
-    const std::uint8_t full = c.annalsFull ? 1u : 0u;
-    w.pod(full);
 
     // The ring's LIVE facts, oldest first, so the load can replay them in the
     // order they were written.
@@ -736,9 +734,6 @@ void write_chronicle(Writer& w, const Chronicle& c) {
             const WorldFact& f = c.ring[(seq - 1u) % kChronicleFacts];
             if (f.seq == seq) write_fact(w, f);
         }
-    }
-    if (w.count(c.annals.size(), kChronicleAnnals)) {
-        for (const WorldFact& f : c.annals) write_fact(w, f);
     }
 }
 
@@ -815,10 +810,6 @@ void read_chronicle(Reader& r, Chronicle& c) {
     r.pod(c.countingDay);
     r.pod(c.factsToday);
     r.pod(c.factsPeak);          // v135
-    std::uint8_t full = 0;
-    r.pod(full);
-    if (full > 1u) { r.ok = false; return; }
-    c.annalsFull = full != 0u;
 
     std::uint32_t n = 0;
     if (!read_count(r, n, kChronicleFacts)) return;
@@ -830,25 +821,8 @@ void read_chronicle(Reader& r, Chronicle& c) {
     }
     // The chains are DERIVED, so they are rebuilt rather than restored.
     chronicle_rebuild_links(c);
-
-    std::uint32_t an = 0;
-    if (!read_count(r, an, kChronicleAnnals)) return;
-    c.annals.clear();
-    c.annals.reserve(an);
-    for (std::uint32_t i = 0; i < an && r.ok; ++i) {
-        WorldFact f{};
-        read_fact(r, f);
-        // The annals get the RING's own refusal, loudly: a fact from nowhere
-        // (seq 0), from the future (>= nextSeq) or of a kind the table does
-        // not know is a broken file, and the world's eternal memory must not
-        // inherit it silently.
-        if (f.seq == 0u || f.seq >= c.nextSeq
-            || f.kind == 0u || f.kind >= std::uint16_t(FactKind::Count)) {
-            r.ok = false;
-            return;
-        }
-        c.annals.push_back(f);
-    }
+    // (ЗДЕСЬ ЧИТАЛСЯ БЛОК АННАЛОВ — ярус снесён, M-184. Формат сейва
+    //  ограничением не является: версия бампается молча, миграций нет.)
 }
 
 void write_player(Writer& w, const PlayerState& p) {
@@ -1030,9 +1004,8 @@ void write_payload(Writer& w, const GameState& s,
     w.pod(s.macroAiRhythm.pendingSweeps);
     w.pod(s.macroAiRhythm.sweepCursor);
 
-    // The world's own memory (macro/chronicle.h, CANON S20.1). Both tiers ride
-    // whole: the annals are not a cache, they are part of the world, and the
-    // legends mode will read exactly them (owner's ruling).
+    // The world's own memory (macro/chronicle.h, CANON S20.1) — ОДИН ярус:
+    // ярус анналов и его блок снесены (M-184, v138).
     //
     // The RING writes only its LIVE facts, not its capacity: a fresh world
     // costs four bytes here, not two megabytes of zeroes. The per-cell CHAINS

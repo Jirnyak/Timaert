@@ -225,143 +225,26 @@ void test_the_world_counts_its_own_facts() {
           "the formula's horizon IS the table's longest interestDays");
 }
 
-// ── КАП АННАЛОВ ГРОМКИЙ, А НЕ ТИХИЙ (chronicle.h: «loud rather than silent»)
-// Обещание прозы жило без свидетеля вовсе (M-254): флаг поднимается только на
-// 2^20 записей, поэтому ни один прогон мира его не поднимал, и проверить
-// «громкость» было нечем. Анналы набиваются ПРЯМО до капа — дверь записи тут
-// не предмет суда, предмет — что она делает НА капе.
-void test_the_annals_are_loud_when_they_fill() {
-    Chronicle c;
-    chronicle_init(c, 128, 128);
-
-    WorldFact deed{};
-    deed.day = 1;
-    deed.kind = std::uint16_t(FactKind::OwnerChanged);
-    deed.subjectKind = fact_subject(FactSubject::Squad, /*named*/true);
-    deed.subject = 7u;
-    deed.x = 5; deed.y = 5;
-
-    chronicle_record(c, deed);
-    CHECK(c.annals.size() == 1u && !c.annalsFull,
-          "негативный контроль: пока место есть, флаг молчит");
-
-    c.annals.resize(std::size_t(kChronicleAnnals), deed);
-    chronicle_record(c, deed);
-    CHECK(c.annalsFull,
-          "на капе анналы ГРОМКИЕ — иначе мир терял бы прошлое молча");
-    CHECK(c.annals.size() == std::size_t(kChronicleAnnals),
-          "и не растут за кап: громкость вместо тихой потери, а не вместо "
-          "предела");
-}
-
-// ── TWO TIERS: the world forgets weather and remembers figures ───────────
-// Owner's ruling: «вечно помнятся дела ИМЕНОВАННЫХ — лордов, игрока, городов;
-// безымянная массовка растворяется». In this world that is not a heuristic
-// but a consequence — a squad IS a lord and carries an ordinal, a place and
-// a faction likewise, while the crowd below has no ordinal at all and can only
-// appear as `amount`.
-void test_the_annals_keep_figures_and_forget_weather() {
-    Chronicle c;
-    chronicle_init(c, 128, 128);
-
-    // Weather: the land itself yielded wood. Nobody named took part.
-    WorldFact harvest{};
-    harvest.day = 5;
-    harvest.kind = std::uint16_t(FactKind::Gathered);
-    harvest.subjectKind = std::uint8_t(FactSubject::Cell);
-    harvest.x = 10; harvest.y = 10;
-    harvest.amount = 8;
-    for (int i = 0; i < 50; ++i) chronicle_record(c, harvest);
-
-    CHECK(c.annals.empty(),
-          "fifty harvests by nobody are weather: the world does not remember "
-          "them");
-
-    // History: a lord took a city.
-    WorldFact conquest{};
-    conquest.day = 6;
-    conquest.kind = std::uint16_t(FactKind::OwnerChanged);
-    conquest.subjectKind = fact_subject(FactSubject::Squad, /*named*/true);
-    conquest.subject = 42u;
-    conquest.objectKind = fact_subject(FactSubject::Place, /*named*/true);
-    conquest.object = 3u;
-    conquest.x = 10; conquest.y = 10;
-    chronicle_record(c, conquest);
-
-    CHECK(c.annals.size() == 1u,
-          "a deed between named figures is history, and one is enough");
-    CHECK(c.annals[0].subject == 42u && c.annals[0].object == 3u,
-          "and it remembers WHO, which is the whole of the rule");
-
-    // A nameless death still reaches the RING — the witcher must find it —
-    // and still does not reach the annals. That is the two tiers in one line.
-    WorldFact anonymous{};
-    anonymous.day = 6;
-    anonymous.kind = std::uint16_t(FactKind::Killed);
-    anonymous.subjectKind = std::uint8_t(FactSubject::Cell);
-    anonymous.x = 10; anonymous.y = 10;
-    anonymous.amount = 3;
-    chronicle_record(c, anonymous);
-
-    Collected near;
-    chronicle_near(c, 10, 10, 0, /*sinceDay*/0, collect, &near);
-    bool sawAnonymous = false;
-    for (const WorldFact& f : near.facts) {
-        if (f.kind == std::uint16_t(FactKind::Killed)
-            && f.subjectKind == std::uint8_t(FactSubject::Cell)) {
-            sawAnonymous = true;
-        }
-    }
-    CHECK(sawAnonymous,
-          "the nameless killing IS in the ring — otherwise the witcher could "
-          "never pick up the trail");
-    CHECK(c.annals.size() == 1u,
-          "negative control: and it is STILL not in the annals — the two tiers "
-          "answer two different questions about the same fact");
-}
-
-// ── The annals answer "what is known about this figure" ──────────────────
-void test_the_annals_are_asked_about_a_figure() {
-    Chronicle c;
-    chronicle_init(c, 128, 128);
-
-    auto deed = [&](int day, std::uint32_t lord, std::uint32_t city) {
-        WorldFact f{};
-        f.day = day;
-        f.kind = std::uint16_t(FactKind::OwnerChanged);
-        // Figures both, said outright: the bit is marked for everyone now.
-        f.subjectKind = fact_subject(FactSubject::Squad, /*named*/true);
-        f.subject = lord;
-        f.objectKind = fact_subject(FactSubject::Place, /*named*/true);
-        f.object = city;
-        f.x = 20; f.y = 20;
-        chronicle_record(c, f);
-    };
-    deed(1, 7u, 1u);
-    deed(2, 8u, 2u);
-    deed(3, 7u, 3u);
-
-    Collected his;
-    chronicle_annals_of(c, std::uint8_t(FactSubject::Squad), 7u, 100,
-                        collect, &his);
-    CHECK(his.facts.size() == 2u, "two of the three deeds are his");
-    CHECK(his.facts.front().day == 3, "newest first, like every view here");
-
-    // He is also findable as the OBJECT of someone else's deed — a grudge is
-    // a fact about both parties, and history does not care which side of the
-    // verb you were on.
-    Collected city;
-    chronicle_annals_of(c, std::uint8_t(FactSubject::Place), 3u, 100,
-                        collect, &city);
-    CHECK(city.facts.size() == 1u,
-          "the city remembers being taken, though it did nothing");
-
-    Collected all;
-    chronicle_annals_of(c, 0u, 0u, 100, collect, &all);
-    CHECK(all.facts.size() == 3u,
-          "negative control: asking about nobody returns the whole legend, so "
-          "the filter above really filtered");
-}
+// ── ЗДЕСЬ СТОЯЛИ ТРИ ЗАКОНА АННАЛОВ, И ОНИ СНЕСЕНЫ ВМЕСТЕ С ЯРУСОМ (M-184).
+//
+// Поимённо, чтобы снос был виден, а не угадывался:
+//   · `test_the_annals_are_loud_when_they_fill` — громкий кап вместо тихой
+//     потери прошлого (флаг `annalsFull` на 2^20 записях);
+//   · `test_the_annals_keep_figures_and_forget_weather` — отбор «помнится
+//     дело ИМЕНОВАННОГО, безымянная массовка растворяется»;
+//   · `test_the_annals_are_asked_about_a_figure` — дверь запроса
+//     `chronicle_annals_of`, «что мир знает об этой фигуре».
+//
+// ЭТО НЕ ЧИСТКА ПОКРЫТИЯ, А СНОС ОХРАНЯЕМОГО: законов, которые они
+// утверждали, в мире больше нет (вердикт владельца 2026-10-30 «да сноси
+// оба»). Свидетель, переживший свой закон, охранял бы ПУСТОТУ — и это та
+// самая форма, которую §8 п.7 называет «тест охраняет дефект».
+//
+// ЧТО ОСТАЛОСЬ ЖИВЫМ И ПОЧЕМУ: закон СЛАВЫ (`renown_is_named`,
+// `renown_for_deed`, `kRenownToBeNamed`) — он отвечает на другой вопрос
+// («стал ли этот фигурой») и читается тремя дверями помимо летописи.
+// Его свидетель — ниже, и из него убраны только те проверки, что спрашивали
+// снесённый ярус.
 
 // ── A NOBODY BECOMES SOMEBODY ────────────────────────────────────────────
 // Owner, 2026-08-27: a nameless squad can become named, like a lord, once it
@@ -410,77 +293,22 @@ void test_a_band_becomes_a_figure_by_its_deeds() {
     CHECK(!renown_is_named(kRenownToBeNamed - 1), "and almost is not enough");
     CHECK(renown_is_named(kRenownToBeNamed), "one great deed is enough");
 
-    // ...and the chronicle keeps the SAME fact differently depending on it.
-    Chronicle c;
-    chronicle_init(c, 64, 64);
-
-    WorldFact nobody{};
-    nobody.day = 1;
-    nobody.kind = std::uint16_t(FactKind::Killed);
-    nobody.subjectKind = fact_subject(FactSubject::Squad, /*named*/false);
-    nobody.subject = 5u;
-    nobody.x = 8; nobody.y = 8;
-    nobody.amount = 1;
-    chronicle_record(c, nobody);
-    CHECK(c.annals.empty(),
-          "a nameless band's killing is weather: the ring holds it, the world "
-          "does not remember it");
-
-    WorldFact somebody = nobody;
-    somebody.subjectKind = fact_subject(FactSubject::Squad, /*named*/true);
-    chronicle_record(c, somebody);
-    CHECK(c.annals.size() == 1u,
-          "the SAME deed by a figure is history — the difference is one bit "
-          "about the doer, not the deed");
-
-    // The bit rides in the kind byte, and reading the kind must not see it.
-    CHECK(fact_subject_kind(somebody.subjectKind)
-              == std::uint8_t(FactSubject::Squad),
-          "the packed reference still reads as a squad");
-    CHECK(fact_subject_marked_named(somebody.subjectKind)
-          && !fact_subject_marked_named(nobody.subjectKind),
-          "and the bit is the only thing that differs");
-
-    // FIGURE-NESS IS DERIVED FROM RENOWN FOR EVERYONE (owner, 2026-08-28):
-    // a place has a NAME by construction, but a name is a word, not
-    // historical weight. A fresh hamlet's hunger is weather; the same hunger
-    // of a renowned city is legend — and the caller marks the bit from the
-    // place's own renown, exactly like a band's.
-    WorldFact hamlet{};
-    hamlet.day = 1;
-    hamlet.kind = std::uint16_t(FactKind::Starved);
-    hamlet.subjectKind = fact_subject(FactSubject::Place, /*named*/false);
-    hamlet.subject = 2u;
-    hamlet.x = 8; hamlet.y = 8;
-    chronicle_record(c, hamlet);
-    CHECK(c.annals.size() == 1u,
-          "a weightless place's hunger is weather, name or no name");
-
-    WorldFact city = hamlet;
-    city.subjectKind = fact_subject(FactSubject::Place, /*named*/true);
-    chronicle_record(c, city);
-    CHECK(c.annals.size() == 2u,
-          "the SAME hunger of a renowned city is history");
-
-    // ...and NO fame makes a week's news eternal (kChronicleWeatherDays —
-    // owner: «приём хлеба в город — не событие»): a Traded row's interest
-    // dies in days, so even a figure's deal stays out of the annals.
-    WorldFact deal{};
-    deal.day = 1;
-    deal.kind = std::uint16_t(FactKind::Traded);
-    deal.subjectKind = fact_subject(FactSubject::Place, /*named*/true);
-    deal.subject = 2u;
-    deal.objectKind = fact_subject(FactSubject::Place, /*named*/true);
-    deal.object = 3u;
-    deal.x = 8; deal.y = 8;
-    deal.amount = 999;
-    chronicle_record(c, deal);
-    CHECK(c.annals.size() == 2u,
-          "a famous city's food deliveries are still deliveries: weather "
-          "kinds never claim eternity");
-    CHECK(fact_kind_def(FactKind::Traded).interestDays
-              <= kChronicleWeatherDays,
-          "the control is real: Traded IS a weather kind by its own row");
+    // ── ЗДЕСЬ ЛЕТОПИСЬ ХРАНИЛА ОДИН И ТОТ ЖЕ ФАКТ ПО-РАЗНОМУ В ЗАВИСИМОСТИ
+    // ОТ ЭТОГО БИТА, И ЭТА ПОЛОВИНА СВИДЕТЕЛЯ СНЕСЕНА (M-184). Она
+    // утверждала: безымянное убийство — погода (кольцо держит, мир не
+    // помнит), то же убийство фигурой — история; голод безвестного хутора —
+    // погода, тот же голод славного города — легенда; и никакая слава не
+    // делает недельную новость вечной (`kChronicleWeatherDays`). Все три
+    // утверждения спрашивали АННАЛЫ, а яруса больше нет.
+    //
+    // ВМЕСТЕ С НИМИ УШЛИ ДВЕ ПРОВЕРКИ БИТА («род читается без бита», «бит —
+    // единственное, что различает»): бит `kFactSubjectNamed` снят как
+    // колонка-сирота, и утверждать о нём стало НЕЧЕГО.
+    //
+    // ЧТО ЭТО ОСТАВИЛО ПОД ОХРАНОЙ: закон славы целиком — планка ИЗ ТАБЛИЦЫ,
+    // доля жертвы, «слава делается из славы», и предикат фигурности. Он
+    // читается `squad_is_named@src/app/main.cpp` и двумя дверями
+    // `src/macro/squad.h`, то есть охраняется живой закон, а не пустота.
 }
 
 // ── THE WORDS ARE DERIVED, NOT STORED ────────────────────────────────────
@@ -500,7 +328,7 @@ void test_a_fact_says_itself() {
     WorldFact f{};
     f.day = 77;
     f.kind = std::uint16_t(FactKind::OwnerChanged);
-    f.subjectKind = fact_subject(FactSubject::Squad, true);
+    f.subjectKind = fact_subject(FactSubject::Squad);
     f.subject = 42u;
     f.objectKind = std::uint8_t(FactSubject::Place);
     f.object = 3u;
@@ -586,9 +414,6 @@ int main() {
     test_recent_walks_time_without_an_index();
     test_the_chronicle_refuses_what_it_cannot_record();
     test_the_world_counts_its_own_facts();
-    test_the_annals_are_loud_when_they_fill();
-    test_the_annals_keep_figures_and_forget_weather();
-    test_the_annals_are_asked_about_a_figure();
     test_a_band_becomes_a_figure_by_its_deeds();
     test_a_fact_says_itself();
     test_the_kind_owns_its_own_window();

@@ -918,25 +918,19 @@ inline void grant_renown(MacroStore& st,
 // drifted across two layers, and the drift was writers that filed for free.
 //
 // `subject` is the ENTITY that did it, when the caller holds one: the door
-// resolves it to its save-stable ordinal (MacroSpawnId). Figure-ness is
-// DERIVED from renown for EVERYONE, and the bit is the participant's standing
-// AT THE MOMENT of the deed — marked from PRE-deed renown («с этого дня её
-// дела идут в анналы»), subject and object alike. No writer hand-marks it: a
-// hand-written `true` was how the player's deals filed him as a figure he had
-// not yet become.
-// Общий хвост обеих дверей записи дела: figure-ность из славы, летопись,
-// плата славой — субъект к этому моменту уже разрешён в ординал.
+// resolves it to its save-stable ordinal (MacroSpawnId).
+//
+// ── ЗДЕСЬ СТОЯЛА ПРОСТАВКА БИТА «ИМЕНОВАН» ОБОИМ УЧАСТНИКАМ, И ОНА УШЛА
+// ВМЕСТЕ С АННАЛАМИ (M-184). Бит ставился из ПРЕД-дельной славы, и его
+// единственным читателем был отбор в анналы; ярус снесён, читателей ноль —
+// значит это была бы колонка-сирота (DOD п.9), а не «данные на будущее».
+// Перепаковка стала бы тождественной: `fact_subject` теперь есть сам род.
+// Закон славы НЕ тронут — `renown_is_named` жива и читается тремя дверями,
+// включая выбор «называть ли врага объектом» в факте смерти ниже.
+// Общий хвост обеих дверей записи дела: летопись и плата славой — субъект к
+// этому моменту уже разрешён в ординал.
 inline std::uint32_t record_deed_filed(MacroStore& st, GameState& gs,
                                        WorldFact fact) {
-    fact.subjectKind = fact_subject(
-        FactSubject(fact_subject_kind(fact.subjectKind)),
-        renown_is_named(renown_of(st, fact.subjectKind, fact.subject)));
-    if (fact_subject_kind(fact.objectKind)
-        != std::uint8_t(FactSubject::None)) {
-        fact.objectKind = fact_subject(
-            FactSubject(fact_subject_kind(fact.objectKind)),
-            renown_is_named(renown_of(st, fact.objectKind, fact.object)));
-    }
     const std::uint32_t seq = chronicle_record(gs.chronicle, fact);
     if (seq != 0u) {
         // WHAT THE DEED WAS WORTH, asked of the world: the base its row gives

@@ -185,15 +185,15 @@ namespace sm {
 // by. The block's LENGTH changed, so the version had to move.
 // v51: the world's own memory rides the save (macro/chronicle.h, CANON S20.1).
 // Both tiers whole — the ring's LIVE facts (a fresh world costs four bytes,
-// not two megabytes of zeroes) and the annals entire, because the annals are
+// not two megabytes of zeroes). (Второй ярус — АННАЛЫ — снесён M-184.)
 // not a cache but part of the world and a legends mode will read exactly them
 // (owner's ruling: «сейв обязательно нёс историю»). The per-cell chains are
 // NOT written: a link is derived from the facts, and a stored derivative is a
 // second truth waiting to disagree.
 // v52: a squad carries RENOWN (ecs::MacroNpcRuntime). A band starts nameless —
 // its deeds are weather the ring forgets in a season — and BECOMES a figure by
-// doing enough, after which its deeds go into the annals for good (owner,
-// 2026-08-27). One number, not a counter plus a flag: "is it named" is derived
+// doing enough (owner, 2026-08-27; прежде с этого дня дела шли в АННАЛЫ —
+// ярус снесён M-184). One number, not a counter plus a flag: "is it named" is derived
 // from it, so the two can never disagree about the same band. The runtime is a
 // POD block of the macro record, so its layout is the format.
 // v53: RENOWN belongs to every MACRO entity with an identity, not to squads
@@ -452,7 +452,7 @@ namespace sm {
 // блоке `featureNumber`, который и так писался. Ординалы рядов НЕ двинулись (ряд
 // остался на своём месте перед жилами), поэтому сдвига блоков нет — двигает
 // версию ровно смена ЖИЛЬЦА блока.
-constexpr int kSaveVersion = 147;   // 2026-10-24 (ломоть 4 M-72): ось рода +Capital +Dragon и фича +FT_Capital — ординалы мест 1..8 → 1..9 и фич поселений 13..16 → 13..17 съехали, байты рода и фичи в файле значат другое
+constexpr int kSaveVersion = 148;   // 2026-10-30 (M-184): ярус АННАЛОВ снесён — из блока летописи ушли байт `annalsFull` и весь блок анналов, то есть раскладка файла за кольцом другая
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -608,9 +608,10 @@ struct PlayerState {
     // sessionFeed below; what the player LEARNED is the journal right here;
     // what the world remembers is the chronicle. Three questions, three
     // answers, no fourth store.)
-    // Loud cap of the journal below — kChronicleAnnals' own size (owner,
-    // 2026-08-28: «на века, не жалко»): the player's whole-game log gets no
-    // less room than the world's eternal memory. 2^20 copies × 32 B = 32 MB
+    // Loud cap of the journal below (owner, 2026-08-28: «на века, не
+    // жалко»). Прежде это число СРАВНИВАЛОСЬ с капом анналов («не меньше,
+    // чем вечная память мира»); ярус снесён M-184, и сравнивать больше не с
+    // чем — своё число у журнала осталось тем же. 2^20 copies × 32 B = 32 MB
     // at the END of a long life (the vector grows as it fills — size is no
     // argument either way, CANON S26); at even 100 learned facts a day that
     // is 80+ game years. Hitting it flips journalFull, never a silent drop.
@@ -736,11 +737,11 @@ struct GameState {
     // (update_player_sight) — save.cpp clamps it away on write.
     KnowledgeLayer knowledge;
     // WHAT HAPPENED (macro/chronicle.h, CANON S20.1). The world's own memory,
-    // in two tiers: a ring the world is ASKED (indexed by cell — this is what
-    // lets a witcher find a monster by the traces it left) and annals the
-    // world REMEMBERS. Both ride the save whole: the annals are not a cache,
-    // they are part of the world, and a legends mode will read exactly them
-    // (owner, 2026-08-27).
+    // in ONE tier: a ring the world is ASKED (indexed by cell — this is what
+    // lets a witcher find a monster by the traces it left), and it FORGETS.
+    // Второй ярус — АННАЛЫ, «что мир помнит навсегда», — снесён целиком
+    // (M-184). Значит режим легенд сегодня читать НЕЧЕГО, и это названо
+    // вслух, а не прикрыто заглушкой (§1).
     Chronicle chronicle;
     // ПОЛЯ СЛЕДОВ ФРАКЦИЙ (macro/scent_field.h, CANON S10 «хищник-жертва»,
     // v75): два клеточных канала на фракцию — сила (squad_power) и цена
