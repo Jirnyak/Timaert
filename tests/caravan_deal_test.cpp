@@ -73,7 +73,7 @@ int main() {
     // на полку ложится только излишек сверх счёта.
     const std::uint16_t city = fixture_place(mstore, gsFix, sm::SquadType::City);
     // Души — ГОЛОВАМИ в инвентарь записи (v122; запись живёт вне мира, так
-    // что паства-worked ей не нужна: торговля спрашивает РТЫ). Счёт еды —
+    // что паства числом фичи ей не нужна: торговля спрашивает РТЫ). Счёт еды —
     // `upkeep_bill` по таблице, а не «душа × сезон» литералом.
     sm::raise_flock_into_container(shelf(mstore, city), 64);
     need_debt(mstore, city)[sm::commodity_index("food")] =

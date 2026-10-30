@@ -992,7 +992,7 @@ void write_payload(Writer& w, const GameState& s,
     // (CANON S5, the deserter pool's sibling for things).
     // («Кем я на карте» с 5б едет КОЛОНКОЙ playerFlag записи снапшота —
     // свой скаляр v116 в скалярах мира умер, провод получает флаг даром.)
-    // (v74's own ship-counter block died in v96: hulls moored are the WORKED
+    // (v74's own ship-counter block died in v96: hulls moored are the FEATURE-NUMBER
     // layer's number under the harbour's feature, and that layer rides as a
     // world-field row — so the sort this block needed died with the hash it
     // was sorting.)

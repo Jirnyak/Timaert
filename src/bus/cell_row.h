@@ -26,7 +26,7 @@ struct PlaceFacts {
     // The spire's spell tier (its strength column, asked from the spell
     // registry); 0 for every other kind. Its OWN field, never smuggled.
     int  tier = 0;
-    // ЧИСЛО ОРБА — worked-число клетки шпиля (ординал kSpellDefs + 1, 0 =
+    // ЧИСЛО ОРБА — число фичи клетки шпиля (ординал kSpellDefs + 1, 0 =
     // выкачан); 0 у всякого другого рода. ЧИТАТЕЛИ НАЗВАНЫ (DOD п.9):
     // `learn_from_spire_orb@src/sub/engine.cpp` называет им спелл, который
     // орб держал (`ev.b = charge - 1`), а сборщик зон субмира — количество в

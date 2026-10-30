@@ -143,7 +143,7 @@ int main() {
         // Смерть клетки — дверью абсолютной установки (стена ломтя 1 закрыла
         // сырой write; в живом мире природное поле не умирает вовсе, но
         // структура ResourceGrid обязана держать счёт дисков и на нуле —
-        // этим же write живут шрамы и worked).
+        // этим же write живут шрамы и числа фич).
         field_set(layer.cells, layer.wrap_index(20, 52), 0);
         CHECK(disagreements(layer, examined) == 0,
               "a refill is not a second birth — one death still ends it");

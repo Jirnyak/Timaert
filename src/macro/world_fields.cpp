@@ -152,7 +152,7 @@ constexpr std::uint64_t kScarsMaxBytes =
     std::uint64_t(ResourceFieldId::Count)
     * (kBlockCountBytes + std::uint64_t(kMaxFieldCells) * kSparseCellBytes);
 
-// ── FeatureNumber: THE one layer of S5, sparse on the wire (v96) ───────────────
+// ── FeatureNumber: THE one layer of S5, sparse on the wire (v96) ────────
 // The number under a feature — hulls moored at a harbour today. One block,
 // because there is one layer: «1 шахта в клетке — одно поле в клетке».
 void feature_number_write_block(savefmt::Writer& w, const WorldFieldStores& st) {

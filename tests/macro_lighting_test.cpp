@@ -162,7 +162,7 @@ int main() {
             gs, st,
             sm::birth_place(gs, st, SquadType::Village, 30, 30).slot, 100);
 
-        // v120: a spire's charge is its cell's worked number (ordinal + 1);
+        // v120: a spire's charge is its cell's feature number (ordinal + 1);
         // drained = 0 — the spent spire's cell simply stays unwritten.
         feature_number_write(gs, 40, 40, 1);
 

@@ -73,7 +73,7 @@ enum class ResourceFieldId : std::uint8_t {
     // значить всё что ты тупишь сноси поле лошадей это бред»). Ряд остался
     // РЯДОМ ЗАКОНА — кап от фертильности, рост поголовья, выемка при ловле, —
     // но своего массива у него больше нет: он НОСИТЕЛЬ, и носитель его —
-    // единое поле чисел фич (`GameState::worked`), где смысл числу задаёт
+    // единое поле чисел фич (`GameState::featureNumber`), где смысл числу задаёт
     // колонка `numberRow` стоящей фичи.
     Livestock,
     // ЖИЛА — ОДНО ПРИРОДНОЕ ПОЛЕ (вердикт владельца 2026-10-22, дословно:
@@ -83,7 +83,7 @@ enum class ResourceFieldId : std::uint8_t {
     // НЕТ, род РЕСУРСА называет строка фичи шахты (её `yieldItem`). Носителей
     // два, и оба чужие (форма стада): дикая жила — производный грид
     // `DepositLayer` (чистая функция терраина и сида, геймплеем НЕ
-    // мутируется, в сейв не едет), залежь шахты — число фичи в `worked`,
+    // мутируется, в сейв не едет), залежь шахты — число фичи в `featureNumber`,
     // свёрнутое генерацией из связного кластера (кап шахты = связность жилы,
     // вердикт 2026-10-23).
     Vein,
@@ -205,7 +205,7 @@ const ResourceFieldDef& resource_field_def(ResourceFieldId f);
 
 // Give the world its own fields: the SCAR grid of every sparse-dialect row
 // (a carrier row's grid stays empty — its live state is its carrier) and the
-// ONE worked layer (CANON S5 «слой разработки — ОДНО поле на всё»). Called
+// ONE featureNumber layer (CANON S5 «слой разработки — ОДНО поле на всё»). Called
 // where the world is born; idempotent, so a second call costs nothing.
 // Which rows are sparse is the REGISTRY's answer, which is why this lives
 // with the table and not in the state header — the load path, which cannot
@@ -387,7 +387,7 @@ struct ResourceGrid {
 private:
     // ── СТЕНА ЛОМТЯ 1 M-72: СЫРЫЕ ВХОДЫ ЗАКРЫТЫ КОМПИЛЯТОРОМ ────────────
     // Пишут поле только НОСИТЕЛИ ДВЕРЕЙ — пульт (field_move, и только он в
-    // геймплее), рождение мира, провод сейва и двери носителей (worked,
+    // геймплее), рождение мира, провод сейва и двери носителей (числа фич,
     // жила). Пятая дверь не заводится одной строкой: ей нужна строка в этом
     // списке друзей, и компилятор молчать не будет. (12 сайтов write до
     // стены: 4 геймплейных ушли в двери, 1 генерация, 5 загрузка, 2 умерли

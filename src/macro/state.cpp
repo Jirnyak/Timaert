@@ -166,7 +166,7 @@ void populate_places_from_politik(GameState& gs, MacroStore& st,
         // Politik prices every city's souls from its ground (R2); the old
         // 200+rng%800 fallback was the last population dice standing.
         //
-        // ПЕРЕВОРОТ НАСЕЛЕНИЯ (v122): паства = worked-ЧИСЛО фичи города,
+        // ПЕРЕВОРОТ НАСЕЛЕНИЯ (v122): паства = ЧИСЛО фичи города,
         // ВСЕ души — ГОЛОВАМИ в инвентарь места одним стаком (раздачи в
         // гарнизон больше нет — M-8: раздел «гарнизон/мирные» умер, оборона
         // места вся толпа).
@@ -318,7 +318,7 @@ void populate_places_from_politik(GameState& gs, MacroStore& st,
             // Souls = the owner's scale, never the score (CANON S25):
             // a hundred-odd, the ~200 tail included.
             //
-            // ПЕРЕВОРОТ v122: паства деревни — worked-число её фичи, все
+            // ПЕРЕВОРОТ v122: паства деревни — число фичи её фичи, все
             // души головами в инвентарь (тот же один закон, что у города).
             const int vilSouls = kVillageBornBase
                                + int(rng.next_u32()

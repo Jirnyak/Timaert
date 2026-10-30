@@ -869,7 +869,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // генерации; скан населения мира этот вопрос не задаёт.
     if (const CellFacts cf = facts_at(cx, cy);
         cf.place.type == SquadType::Spire) {
-        // The amount IS the cell's worked number — already spell ordinal + 1
+        // The amount IS the cell's feature number — already spell ordinal + 1
         // (0 = drained spire: the spell is forgotten, the fact files unknown,
         // exactly the chronicle's «unknown subjects as 0»). И оно приезжает
         // КОЛОНКОЙ сборщика, который уже в руках: прямой `feature_number_read` по
@@ -1944,7 +1944,7 @@ void SubworldEngine::tick_day_pump(float dt) {
     if (place_def(ctx.place.kind).crowdHabitat == 0) return;
 
     // ЕДИНИЦА УЛИЦЫ — ГОЛОВЫ инвентаря места, не паства (D-хвост): паства
-    // (worked) считает и ушедших в поле, и помпа, меренная ею, рождала бы на
+    // (число фичи) считает и ушедших в поле, и помпа, меренная ею, рождала бы на
     // улицу тела БЕЗ голов — тот же класс двойного счёта, что «6272 паствы →
     // 11774 тела». Воплощаются только домашние души; улица = головы − резерв.
     const MacroStore& st = (*mw_.store);
@@ -4498,7 +4498,7 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     const CellFacts cf = facts_at(cx, cy);
     const bool spire = cf.place.type == SquadType::Spire;
     const int spireOrdinal = cf.place.id;
-    // The spell is the cell's worked number (spires.h: ordinal + 1, 0 =
+    // The spell is the cell's feature number (spires.h: ordinal + 1, 0 =
     // drained). A drained spire forgot its spell — the orb has nothing left.
     // И это КОЛОНКА сборщика, а не прямой `feature_number_read` по `*gs_`: вывод
     // «выкачан» живёт ОДНИМ местом в мире (M-233 п.8), а сцена его читает.
@@ -4532,7 +4532,7 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     // knows the registry, and this engine never will.
     GameEvent ev{EventTag::SpireDepleted};
     ev.a = spireOrdinal;
-    ev.b = charge - 1;   // the spell ordinal the orb held (worked = ordinal+1)
+    ev.b = charge - 1;   // the spell ordinal the orb held (feature number = ordinal+1)
     ev.ix = cx;
     ev.iy = cy;
     bus_->emit(ev);

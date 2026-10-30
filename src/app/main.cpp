@@ -1983,7 +1983,7 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // (Костыль «перештамп шахт после наката снимка» УМЕР 2026-10-23 тем же
     // вердиктом: генезис пути загрузки рождает места ПЛАНОМ сида — фичи
     // поселений и шахт встают в нём один раз, снимок кладёт сквады поверх,
-    // залежи приезжают сейвом рядом worked при свёртке app.gs.)
+    // залежи приезжают сейвом рядом чисел фич при свёртке app.gs.)
     app.macro.upload_tree_field(app.device, &app.treeLayer);
     app.uploadedTreeRev = app.treeLayer.revision;
     return true;

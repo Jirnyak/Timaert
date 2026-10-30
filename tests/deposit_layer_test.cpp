@@ -14,7 +14,7 @@
 //
 // (Прибор «quantity door / load path» УМЕР с самими дверьми 2026-10-23:
 // природное поле геймплеем не мутируется и в сейв не едет; залежь шахты —
-// число фичи worked, её транзакции держит field_doors_test.)
+// число фичи, её транзакции держит field_doors_test.)
 #include "check.h"
 
 #include "macro/deposit_layer.h"

@@ -471,7 +471,7 @@ sm::GameState make_state(sm::MacroStore& st) {
         sm::Wellbeing& wb = st.wellbeing[row.slot];
         wb.starvedYesterday = 12;
         wb.popGrowthCarry = 0.375f;
-        // Паства едет в сейв worked-СЛОЕМ полей (v122), а не колонкой
+        // Паства едет в сейв СЛОЕМ чисел фич (v122), а не колонкой
         // записи: фикстура селит души дверью мира, и круг сейва обязан
         // вернуть ИХ.
         sm::settle_souls(gs, st, row.slot, kFixtureCitySouls);
@@ -497,7 +497,7 @@ sm::GameState make_state(sm::MacroStore& st) {
     }
 
     sm::birth_place(gs, st, sm::SquadType::Spire, 12, 34);
-    // v120: the spire's spell rides the worked layer (ordinal + 1), which
+    // v120: the spire's spell rides the featureNumber layer (ordinal + 1), which
     // the save carries as a world-field block — the roundtrip must bring
     // back the NUMBER at the cell, not columns.
     sm::feature_number_write(gs, 12, 34, 7);
@@ -543,7 +543,7 @@ sm::GameState make_state(sm::MacroStore& st) {
                   sm::cell_of(17, 42, gs.mapW), 3);
     sm::field_set(gs.resourceScarCells[std::size_t(sm::ResourceFieldId::Wheat)],
                   sm::cell_of(5, 23, gs.mapW), 12);
-    // v96: THE worked layer — hulls moored at a harbour, the number under
+    // v96: THE featureNumber layer — hulls moored at a harbour, the number under
     // the feature (CANON S5/S10). The layer's first tenant is its witness.
     sm::feature_number_write(gs, 9, 4, 2);
 
@@ -562,7 +562,7 @@ std::vector<std::uint16_t> make_tree_counts() {
 
 // (Фикстура жил УМЕРЛА 2026-10-23, «жилы единые»: природное поле жил —
 // производная терраина и сида, сейв его не возит; залежи шахт едут рядом
-// FeatureNumber, и его круговорот держит worked-свидетель ниже.)
+// FeatureNumber, и его круговорот держит свидетель чисел фич ниже.)
 
 // (Фикстура квестов умерла с квест-машиной — ломоть 3 M-72, вариант А:
 //  батарея полей GameEvent жила на onAccept; конверт событий больше в
@@ -972,7 +972,7 @@ void run_roundtrip() {
 
     const sm::MacroHandle cityLm = sm::place_handle_by_ordinal(
         loadedStore, std::uint32_t(kFixtureCityId));
-    // ПАСТВА — worked-слой полей (v122), и круг сейва обязан вернуть её
+    // ПАСТВА — слой чисел фич (v122), и круг сейва обязан вернуть её
     // ровно. Домашние головы здесь НЕ равны пастве: фикстура досыпала в тот
     // же контейнер отряд (add_soldiers), и это законно — «в поле» и «дома»
     // считаются врозь.
@@ -1029,9 +1029,9 @@ void run_roundtrip() {
                != sm::SquadType::Spire) {
         FAIL_BAIL("spire lost");
     }
-    // v120: the spell survives as the worked number at the spire's cell.
+    // v120: the spell survives as the feature number at the spire's cell.
     if (sm::feature_number_read(loaded, 12, 34) != 7) {
-        FAIL_BAIL("spire spell (worked layer) lost");
+        FAIL_BAIL("spire spell (featureNumber layer) lost");
     }
     if (loaded.markers.empty() || loaded.markers[0].id != "marker.round"
         || loaded.markers[0].style != sm::MarkerStyle::Danger) {
@@ -1056,12 +1056,12 @@ void run_roundtrip() {
         FAIL_BAIL("sub-state lost");
     }
     // (Сверка блоков жил умерла с самими блоками: поле производно от сида,
-    // и файлу нечего о нём помнить. Залежи шахт сверяет worked ниже.)
+    // и файлу нечего о нём помнить. Залежи шахт сверяет число фичи ниже.)
     if (loadedTrees != treeCounts) FAIL_BAIL("tree grid lost");
     if (loadedTrees.at(7) != 0u || loadedTrees.at(17) != 12000u) {
         FAIL_BAIL("felled/thickened tree cells did not round-trip");
     }
-    {   // v96: the scar FIELDS and the worked layer
+    {   // v96: the scar FIELDS and the featureNumber layer
         const sm::ResourceGrid& fauna =
             loaded.resourceScarCells[std::size_t(sm::ResourceFieldId::Fauna)];
         const sm::ResourceGrid& wheat =
@@ -1086,7 +1086,7 @@ void run_roundtrip() {
             || sm::feature_number_read(loaded, 40, 80) != kFixtureCitySouls
             || sm::feature_number_read(loaded, 45, 85) != kFixtureVillageSouls
             || loaded.featureNumber.liveCells != 4) {
-            FAIL_BAIL("the worked layer's number did not round-trip");
+            FAIL_BAIL("the featureNumber layer's number did not round-trip");
         }
     }
     // (Ассерты активного квеста умерли с его блоком — ломоть 3 M-72.)
@@ -1372,7 +1372,7 @@ void run_payload_cap_is_a_fact() {
     for (int i = 0; i < kCensusPlaces; ++i) {
         // Душ здесь нет намеренно: предмет этой фикстуры — ХУДШИЙ ВЕС
         // мест, и все слоты забиты неслипающимися стаками. Паства живёт в
-        // worked-слое (v122), её вес считает блок полей, а не запись места.
+        // слое чисел фич (v122), её вес считает блок полей, а не запись места.
         const sm::MacroHandle row = sm::birth_place(
             gs, store, sm::SquadType::Village,
             i % gs.mapW, (i / gs.mapW) % gs.mapH);

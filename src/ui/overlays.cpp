@@ -1595,7 +1595,7 @@ namespace sm::ui
             sm::faction_def_by_index(sm::faction_or_freefolk(sFaction));
         // ЦИФРЫ СУБЪЕКТА — КОЛОНКА ГРУППЫ, НЕ ВЕТКА ПО РОДУ. Она же решает,
         // законно ли вообще спрашивать паству: `souls_flock` читает
-        // worked-слой КЛЕТКИ, и у ходока, стоящего на чужой клетке, ответ был
+        // слой чисел фич КЛЕТКИ, и у ходока, стоящего на чужой клетке, ответ был
         // бы чужим числом. Колонка это и предотвращает.
         const bool bodyFigures =
             archetype_draw(squad_archetype(sKind)).figuresFromPools;

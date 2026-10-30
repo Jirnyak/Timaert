@@ -349,7 +349,7 @@ int main(int argc, char** argv) {
                          // различает их только полный счёт по контейнерам.
                          // Контейнеров ЧЕТЫРЕ, и это поправка 2026-10-06:
                          // ПАСТВА мест (popCity/Vil/Lair/Else — число
-                         // worked, то есть дома И в поле), сквады БЕЗ дома
+                         // фичи, то есть дома И в поле), сквады БЕЗ дома
                          // (банды) и пул дезертиров. soulsWorld — их сумма,
                          // и падать она может ТОЛЬКО от смерти.
                          //
@@ -495,7 +495,7 @@ int main(int argc, char** argv) {
                 const int lmy = sm::ecs::cell_y(macroStore->cell[slot], gs.mapW);
                 const sm::Inventory& bag = macroStore->inventory[slot].inv;
                 // ПАСТВА — дверью мира (labour.h souls_flock): у поселения
-                // worked-число фичи, у данжа головы его толпы (v122).
+                // число фичи, у данжа головы его толпы (v122).
                 const long long flock = cell_number_at(gs, *macroStore, slot);
                 popTotal += flock;
                 switch (kind) {

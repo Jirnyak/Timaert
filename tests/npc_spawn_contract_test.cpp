@@ -16,7 +16,7 @@ void add_settlement(sm::GameState& gs, sm::MacroStore& st, int x, int y) {
     const sm::MacroHandle h = sm::birth_place(gs, st, sm::SquadType::City,
                                               x, y, 0, "Test Settlement");
     // Души — ГОЛОВАМИ в инвентарь тела (v122): фабрика мира не
-    // видит, поэтому пасту (worked-число фичи) ставит звонящий,
+    // видит, поэтому пасту (число фичи) ставит звонящий,
     // если она ему нужна; домашние души живут в теле места.
     sm::raise_flock_into_container(st.inventory[h.slot].inv, 1000);
 }

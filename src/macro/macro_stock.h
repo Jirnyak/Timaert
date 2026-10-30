@@ -73,7 +73,7 @@ enum class MacroStock : std::uint8_t {
                      //   + GameState::faunaOverrides — the hunted delta)
     CropCount,       // the standing wheat of one cell (fertility-derived
                      //   estimate − GameState::cropOverrides harvest scar)
-    FeatureNumber,          // ЧИСЛО ФИЧИ клетки (единое плоское поле GameState::worked,
+    FeatureNumber,          // ЧИСЛО ФИЧИ клетки (единое плоское поле GameState::featureNumber,
                      //   ЗАКОН ПОЛЯ п.3: смысл задаёт стоящая фича — заряд орба,
                      //   руда шахты, зерно пашни). Ряд рождён ломтём 5 эпика
                      //   фрейма: дренаж орба субмиром едет СТРОКОЙ ДЕЛЬТЫ, а

@@ -217,7 +217,7 @@ void trees_apply(MacroWorld& w, int x, int y, int delta) {
 // ЖИЛА: НА КАКОЙ КЛЕТКЕ ЧИСЛО ЕСТЬ ЗАЛЕЖЬ ШАХТЫ — колонкой строки фичи
 // (`FeatureDef::numberRow == Vein`), та же форма, что у стада. Носителей у
 // ряда два, и оба чужие: дикая жила — производный грид DepositLayer (чистая
-// геология, геймплеем не мутируется), залежь шахты — число фичи в `worked`
+// геология, геймплеем не мутируется), залежь шахты — число фичи в `featureNumber`
 // (кап связного кластера, свёрнутый генерацией шахт — вердикт 2026-10-23).
 bool vein_mine_cell_(const MacroWorld& w, int x, int y) {
     return w.gs && w.features
@@ -417,7 +417,7 @@ constexpr ResourceFieldDef kResourceFields[] = {
                  GrowthDomain::CarrierSpread, &trees_growth_at,
                  &trees_read, &trees_apply, 0, "wood", NPCType::Count},
     // СТАДО — РЯД-НОСИТЕЛЬ НА ПОЛЕ ЧИСЕЛ ФИЧ (M-258): базовая есть КАП, а
-    // живое число лежит в `worked` под фичей, которая объявила его своим.
+    // живое число лежит в `featureNumber` под фичей, которая объявила его своим.
     // Форма ровно та же, что у жилы ниже: своя базовая плюс чужой контейнер.
     // ЛОШАДЬ-ЮНИТ (CANON S10): выход — СУЩЕСТВО, добытое встаёт душой в
     // контейнер, спина сразу в обозе (сводка — разряд А).
@@ -592,7 +592,7 @@ int field_move(MacroWorld& w, ResourceFieldId f, int x, int y, int delta) {
     if (!w.gs || !w.terrain || w.terrain->width <= 0) return 0;
     ResourceGrid& scars = scars_of(*w.gs, f);
     // THE write sizes the field over THIS world if nobody did yet — the same
-    // fail-open the worked layer's door keeps. A caller that has to remember
+    // fail-open the featureNumber layer's door keeps. A caller that has to remember
     // to allocate is a caller that will forget, and a lost scar is invisible:
     // the read simply answers "whole" (the fold-up lesson, applied to the one
     // door instead of to every fixture).
@@ -775,7 +775,7 @@ int read_crop_count(const MacroWorld& w, MacroStockKey k) {
 void write_crop_count(MacroWorld& w, MacroStockKey k, int delta) {
     field_move(w, ResourceFieldId::Wheat, k.cellX, k.cellY, delta);
 }
-// Число фичи клетки — носитель GameState::worked (один на мир, ЗАКОН ПОЛЯ
+// Число фичи клетки — носитель GameState::featureNumber (один на мир, ЗАКОН ПОЛЯ
 // п.3); feature_number_write клампит в ноль сам — ниже нуля числа фич не живут.
 int read_feature_number(const MacroWorld& w, MacroStockKey k) {
     return w.gs ? feature_number_read(*w.gs, k.cellX, k.cellY) : 0;

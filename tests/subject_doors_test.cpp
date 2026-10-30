@@ -63,7 +63,7 @@ Fixture make_world(sm::MacroStore& st) {
     fx.cityId = int(st.spawnId[city.slot].index);
     sm::creatures_push(st.inventory[city.slot].inv,
         sm::make_soldier(std::uint8_t(sm::NPCType::Guard), 2, 11u));
-    // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число фичи,
+    // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в число фичи,
     // головы в инвентарь ТЕЛА — тем же законом, что генезис.
     sm::settle_souls(gs, st, city.slot, 300);
     // A VILLAGE and a SPIRE on the same one id space (v54): the doors must

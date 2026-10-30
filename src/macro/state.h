@@ -374,7 +374,7 @@ namespace sm {
 // v119 (ход 2, вердикт 3): имя анкеты — колонка char[32] КАЖДОГО сквада
 // (ecs::SquadName в MacroStore и в записи снапшота); индекс имени остался только
 // дефолтом генерации.
-// v120 (ход 2, ломтик B): спелл шпиля — число фичи в worked-слое под
+// v120 (ход 2, ломтик B): спелл шпиля — число фичи в слое чисел фич под
 // FT_Spire (ординал kSpellDefs + 1; 0 = выкачан — закон нуля-ординала);
 // колонки Landmark::spellId/depleted покидают формат. Выкачанный шпиль
 // забывает спелл, как истощённая жила (вердикт «выкачанность = 0»).
@@ -383,7 +383,7 @@ namespace sm {
 // отрезками общего пула; RelationMatrix и рантайм-имена хвоста уничтожены;
 // блок сейва — один pod FactionState.
 // v122 (ход 2, ломтик D — ПЕРЕВОРОТ НАСЕЛЕНИЯ, M-8/M-93): паства поселения
-// — ЧИСЛО ФИЧИ (worked под FT_City/FT_Village), домашние души — ГОЛОВЫ в
+// — ЧИСЛО ФИЧИ (`featureNumber` под FT_City/FT_Village), домашние души — ГОЛОВЫ в
 // инвентаре места (один вид — один стак), души данжа — головы его толпы
 // (слабейшая строка полосы crowdHabitat: шпиль → Imp). Колонки
 // Landmark::population и Landmark::garrison (гарнизон как отдельный
@@ -449,7 +449,7 @@ namespace sm {
 // поле лошадей это бред»). Файл стал КОРОЧЕ, и это тот же род причины: ряд
 // `Horses` → `Livestock` перестал быть шрамовым и стал НОСИТЕЛЕМ на поле
 // чисел фич, поэтому его скар-блок теперь всегда пуст, а поголовье едет в
-// блоке `worked`, который и так писался. Ординалы рядов НЕ двинулись (ряд
+// блоке `featureNumber`, который и так писался. Ординалы рядов НЕ двинулись (ряд
 // остался на своём месте перед жилами), поэтому сдвига блоков нет — двигает
 // версию ровно смена ЖИЛЬЦА блока.
 constexpr int kSaveVersion = 147;   // 2026-10-24 (ломоть 4 M-72): ось рода +Capital +Dragon и фича +FT_Capital — ординалы мест 1..8 → 1..9 и фич поселений 13..16 → 13..17 съехали, байты рода и фичи в файле значат другое
@@ -877,17 +877,19 @@ struct GameState {
     // has not yet returned, one grid per sparse-dialect row (wheat, fauna;
     // the baseline is derived from terrain/climate, the scar is the only
     // storage, a healed cell zeroes itself). Carrier rows (trees, the vein
-    // kinds, and since v137 the LIVESTOCK — its carrier is the worked layer
-    // below) keep their grid EMPTY: their live state is their own carrier.
+    // kinds, and since v137 the LIVESTOCK — its carrier is the
+    // featureNumber layer below) keep their grid EMPTY: their live state
+    // is their own carrier.
     ResourceGrid resourceScarCells[std::size_t(ResourceFieldId::Count)];
-    // THE WORKED LAYER — ONE field for the whole world («1 шахта в клетке —
-    // одно поле в клетке! в том и замысел!»): a number in it means whatever
-    // the FEATURE standing on that cell says it means, which is unambiguous
-    // because a cell is worked exactly one way. Its first honest tenant is
-    // the ships counter of a harbour or a beached hull («у поля урожай, у
-    // шахты залежи, у порта корабли — элегантно»); the standing crop of a
-    // parcel and the consolidated seam under a mine move here as their laws
-    // are rebuilt (CANON S5 «постройка — это перенос»). Tenants today: the
+    // THE FEATURE-NUMBER LAYER — ONE field for the whole world («1 шахта в
+    // клетке — одно поле в клетке! в том и замысел!»): a number in it
+    // means whatever the FEATURE standing on that cell says it means,
+    // which is unambiguous because a cell is worked exactly one way. Its
+    // first honest tenant is the ships counter of a harbour or a beached
+    // hull («у поля урожай, у шахты залежи, у порта корабли —
+    // элегантно»); the standing crop of a parcel and the consolidated seam
+    // under a mine move here as their laws are rebuilt (CANON S5
+    // «постройка — это перенос»). Tenants today: the
     // harbour's ships counter and — v120 — the SPIRE'S SPELL under FT_Spire
     // (kSpellDefs ordinal + 1; 0 = orb drained, закон нуля-ординала), паства
     // поселения (v122) и — v137, M-258 — ПОГОЛОВЬЕ ЗАГОНА.
@@ -905,7 +907,7 @@ struct GameState {
     // сквадами сегодня не строятся вовсе; когда будут — свой факт заведут
     // заново. Дыра названа нарядом M-206.
     // gs.shipsAtCell — третий хеш мира со сканом — умер 2026-09-18: счётчик
-    // пришвартованных стоит числом ФИЧИ в слое разработки `worked` выше.)
+    // пришвартованных стоит числом ФИЧИ в слое разработки `featureNumber` выше.)
 };
 
 // ── ДВЕРИ АРЕНДЫ ОКНА — ОДНА НА СДАЧУ, ОДНА НА СНЯТИЕ ────────────────────
@@ -948,12 +950,12 @@ inline bool cell_is_leased(const GameState& gs, std::uint32_t cell) noexcept {
 //  прод-вызовов; событие состава поднимает рождение)
 // navEpoch.)
 
-// ── THE WORKED LAYER'S DOOR (CANON S5, v96) ──────────────────────────────
+// ── THE FEATURE-NUMBER LAYER'S DOOR (CANON S5, v96) ─────────────────────
 // The number under the feature standing on this cell: hulls moored at a
 // harbour or a beached hull today; a mine's consolidated seam and a parcel's
 // standing crop as their laws move here. It lives beside the field itself so
 // every layer of the game can read it — the load path cannot link the field
-// REGISTRY (that table drags the ECS behind it), and the worked layer needs
+// REGISTRY (that table drags the ECS behind it), and the featureNumber layer needs
 // no registry: there is one of it, and the feature on the cell says what its
 // number means.
 //

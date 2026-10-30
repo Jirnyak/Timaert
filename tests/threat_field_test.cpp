@@ -51,7 +51,7 @@ World make_world() {
         const MacroHandle h =
             birth_place(gs, st, SquadType::City, 10, 10);
         w.cityId = int(st.spawnId[h.slot].index);
-        // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
+        // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в число фичи
         // фичи, головы в инвентарь — тем же законом, что генезис.
         sm::settle_souls(gs, st, h.slot, 500);
     }

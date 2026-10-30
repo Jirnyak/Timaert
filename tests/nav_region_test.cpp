@@ -101,7 +101,7 @@ struct Fixture {
                 gs, places(),
                 i % 2 ? sm::SquadType::City : sm::SquadType::Village,
                 x, y);
-            // Души — дверью мира (v122): паства в worked, головы
+            // Души — дверью мира (v122): паства в число фичи, головы
             // в инвентарь ТЕЛА; жилое место гейтится именно пастой.
             sm::settle_souls(gs, places(), h.slot, 100);
             seeded.push_back(

@@ -19,7 +19,7 @@ namespace {
 // thresholded — a vein exists where the field crests, and its richness is
 // the excess over the threshold, so nests are fat at the core and lean at
 // the rims: the natural deposit profile. Nests ARE the clusters the mine
-// generation folds into a worked cap («кап шахты использует локальное
+// generation folds into a feature-number cap («кап шахты использует локальное
 // значение связности жил», вердикт 2026-10-23).
 //
 // ШЕСТЬ КОМПОНЕНТ — НЮАНС ГЕНЕРАЦИИ, НЕ ОСЬ МИРА (вердикт 2026-10-22 «жилы

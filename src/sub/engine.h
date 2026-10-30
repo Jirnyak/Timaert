@@ -265,7 +265,7 @@ public:
     // nothing, and proves the interaction table carries flavour as cheaply as
     // it carries force.
     bool read_sign(const Structure& sign);
-    // The spire orb: zeroes the spire cell's worked number (the macro fact —
+    // The spire orb: zeroes the spire cell's feature number (the macro fact —
     // the spell was that number, drained = 0), burns
     // the orb out of the scene, and emits SpireDepleted — the app layer
     // resolves the spell ordinal and teaches the book (layering: only

@@ -58,7 +58,7 @@ int main() {
             birth_place(gs, st, SquadType::City, 60, 32);  // near east seam
         const int kHomeId = int(st.spawnId[home.slot].index);
         st.inventory[home.slot].inv.add("food", 2048);
-        // Души — дверью мира (v122): паства в worked, головы в инвентарь.
+        // Души — дверью мира (v122): паства в число фичи, головы в инвентарь.
         settle_souls(gs, st, home.slot, 100);
 
         // 30 cells west, same side — far enough that the comparable-distance

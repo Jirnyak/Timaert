@@ -45,7 +45,7 @@ enum class WorldField : std::uint8_t {
     //   то есть сейв возил список, который мир никогда не писал. Когда
     //   стройка фич сквадами будет построена, свой факт она заведёт заново;
     //   дыра названа нарядом M-206.)
-    FeatureNumber,      // THE worked layer, one field for the world (v96): the
+    FeatureNumber,      // THE featureNumber layer, one field for the world (v96): the
                  //   number under a feature — hulls moored at a harbour
                  //   today (CANON S5 «слой разработки — ОДНО поле на всё»).
     Count,

@@ -131,7 +131,7 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         if (feature_put(features, terrain, bestX, bestY, FT_Spire)
                 != FT_Spire)
             continue;
-        // The spell is the spire's WORKED number («у поля урожай, у шахты
+        // The spell is the spire's FEATURE NUMBER («у поля урожай, у шахты
         // залежи, у порта корабли — у шпиля спелл»): kSpellDefs ordinal + 1
         // under FT_Spire, 0 = drained (закон нуля-ординала).
         feature_number_write(gs, bestX, bestY, ord + 1);

@@ -70,7 +70,8 @@ int main() {
     CHECK(sm::feature_number_read(gs, cx, cy) == 12,
           "повторное применение пустого буфера мира не трогает");
 
-    // ── Ряд FeatureNumber клампит в ноль: передренированный орб не дюпит числом.
+    // ── Ряд FeatureNumber клампит в ноль: передренированный орб не дюпит
+    //    числом.
     push_feature_number(d, cx, cy, -1000, gs.mapW);
     sm::apply_local_delta(mw, d);
     CHECK(sm::feature_number_read(gs, cx, cy) == 0,

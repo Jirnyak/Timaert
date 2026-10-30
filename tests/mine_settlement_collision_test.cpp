@@ -14,7 +14,7 @@
 // **20 / 45 / 36** съеденных поселений, и байт там всегда шахтный (ClayPit,
 // IronMine, Quarry, CopperMine). Хуже байта было ЧИСЛО: следом шёл
 // `feature_number_write(..., vein_cluster_cap(...))`, а `souls_flock` у поселения
-// читает ровно `worked`, поэтому паства деревень 128 превращалась в
+// читает ровно `featureNumber`, поэтому паства деревень 128 превращалась в
 // 25 000-32 000, а у города упиралась в потолок ширины клетки 65 535. И
 // дальше `numberRow` шахты = `Vein` делал клетку шахтной для
 // `vein_apply@src/macro/macro_stock.cpp` — то есть артель, копавшая там
@@ -84,7 +84,7 @@ void build(Fixture& f, bool veinPeakUnderTown) {
     sm::allocate_deposit_fields(f.deposits, kSide, kSide);
 
     // Деревня: байт фичи + ПАСТВА числом той же клетки (souls_flock читает
-    // worked при bornPopBase == 0 — это и есть носитель, который ломался).
+    // число фичи при bornPopBase == 0 — это и есть носитель, который ломался).
     sm::feature_put(f.fl, f.td, kTownX, kTownY, sm::FT_Village);
     sm::feature_number_write(f.gs, kTownX, kTownY, kVillageFlock);
 

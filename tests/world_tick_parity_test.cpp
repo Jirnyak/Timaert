@@ -431,7 +431,7 @@ void test_a_famine_is_recorded_once_when_it_begins() {
     // два дня голодания вокруг него.
     const sm::MacroHandle town =
         sm::birth_place(gs, st, sm::SquadType::City, 8, 8, -1, "Hungry");
-    // Души селятся ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
+    // Души селятся ДВЕРЬЮ МИРА (labour.h settle_souls): паства в число фичи
     // фичи, головы в инвентарь — тем же законом, что генезис.
     sm::settle_souls(gs, st, town.slot, 100);
 

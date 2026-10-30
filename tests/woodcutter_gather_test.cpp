@@ -130,7 +130,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     const sm::MacroHandle vil =
         sm::birth_place(gs, st, SquadType::Village, 10, 10);
     const int vilId = int(st.spawnId[vil.slot].index);
-    // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
+    // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в число фичи
     // фичи, головы в инвентарь ТЕЛА — тем же законом, что генезис.
     sm::settle_souls(gs, st, vil.slot, 40);
     const sm::MacroHandle wc = make_woodcutter(st, 10.0f, 10.0f, vilId);
@@ -402,7 +402,7 @@ void test_the_mine_runs_while_the_player_is_away() {
     gs.mapH = kMap;
     // ЖИЛЫ ЕДИНЫЕ (2026-10-22): рабочее место шахтёра — ШАХТА (фича с
     // numberRow == Vein + залежь числом фичи), не голая геология. Свидетель
-    // рожает своё предусловие сам: фича + worked, как их ставит генерация.
+    // рожает своё предусловие сам: фича + число фичи, как их ставит генерация.
     FeatureLayer features;
     features.resize(kMap, kMap);
     feature_put(features, all_land(), 14, 10, FT_IronMine);
@@ -647,7 +647,7 @@ void test_the_miner_works_the_vein() {
     gs.mapH = kMap;
     chronicle_init(gs.chronicle, kMap, kMap);
     // ЖИЛЫ ЕДИНЫЕ (2026-10-22): рабочее место — ШАХТА (фича + залежь числом
-    // фичи worked); что добыто, решает СТРОКА фичи (железная шахта → iron).
+    // фичи); что добыто, решает СТРОКА фичи (железная шахта → iron).
     FeatureLayer features;
     features.resize(kMap, kMap);
     feature_put(features, all_land(), 14, 10, FT_IronMine);
@@ -815,7 +815,7 @@ void test_the_catch_lands_as_creatures() {
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
         sm::birth_place(gs, st, SquadType::Village, 10, 10);
-    // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в worked-число
+    // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в число фичи
     // фичи, головы в инвентарь ТЕЛА — тем же законом, что генезис.
     sm::settle_souls(gs, st, vil.slot, 40);
     sm::MacroHandle h = sm::store_birth(st);
