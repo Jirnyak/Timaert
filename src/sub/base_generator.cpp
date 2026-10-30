@@ -226,6 +226,12 @@ float far_height01(int gx, int gy, float macroH01, float peak01,
     if (minWavelengthTiles > 0.0f && heightScale > 0.0f && mtnScale > 0.0f) {
         const float noise = terrain_detail01(gx, gy, worldTiles,
                                              minWavelengthTiles);
+        // ВТОРОЕ НАПИСАНИЕ ОДНОГО ЗАКОНА, и квадрат здесь несущий по тем же
+        // трём замерам, что названы у близнеца в `generate_heightmap` ниже:
+        // снятие его роняет «суша остаётся сухой», «воро́та охраняются» и
+        // «гора доминирует над равниной» (M-192). Править эти два места
+        // врозь нельзя — чужая правка 2026-10-30 тронула оба и тем доказала,
+        // что это один закон, которому нужна одна дверь (DOD п.6).
         const float relief = macroH01 * macroH01 + gradient01;
         // DETAIL ON THE CURVE, not stretched by it — the same factor, from the
         // same door, that `generate_heightmap` puts on this very term. Without
@@ -686,6 +692,34 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             // squared concentrates noise on hills/peaks and keeps lowlands
             // calm; gradient lifts noise at biome edges so transitions
             // look natural.
+            //
+            // КВАДРАТ ЗДЕСЬ НЕСУЩИЙ, И ЭТО ЗАМЕРЕНО, А НЕ ПРЕДПОЛОЖЕНО
+            // (2026-10-30). Эту правку уже пробовали — `macroH * macroH` →
+            // `macroH` в ОБОИХ написаниях, — и шапка выше её не остановила,
+            // потому что говорила ЗАЧЕМ квадрат, но не говорила, ЧТО ломает его
+            // снятие. Числа: низины шершавеют ×2.5 (при `macroH` 0.2 множитель
+            // 0.04 → 0.2, то есть впятеро), пики ×1.19, и падают ТРИ названных
+            // закона разом — `river_generation_test` «adjacent land cell must
+            // stay dry» (суша уходит ПОД воду: 0.398 при `WATER_LEVEL` 0.40),
+            // `city_wall_integrity_test` «the gateway is watched» (0 помостов —
+            // деревенские воро́та перестают охраняться), и главный —
+            // `mountain_mesh_smoothness_test` «a mountain still DOMINATES the
+            // plains», то есть ровно та ИНВЕРСИЯ УКЛОНОВ, на убийство которой
+            // ушёл весь M-192 («уклоны в горном биоме выходили МЕНЬШЕ
+            // равнинных, p90 17.6 против 23.5»). Третий свидетель утверждает
+            // ОТНОШЕНИЕ, а не прибитое число (§8 п.4), поэтому «устаревшая
+            // калибровка» им не отговорка. Сверх тестов снятие квадрата ведёт
+            // прямо В СИМПТОМ `bugs.md` Б1 — «стало слишком холмисто, и даже не
+            // там где горы», закрытый вердиктом владельца 2026-10-03: усиление
+            // детали в низинах и есть то, на что он жаловался.
+            //
+            // ЗАКОНУ ЭТОМУ ХВАТАЕТ НОСИТЕЛЕЙ — три прибора выше краснеют на
+            // мутации сами, поэтому своего свидетеля он не просит. А вот что
+            // долг: ОДНО И ТО ЖЕ выражение написано ДВАЖДЫ — здесь и в
+            // `far_height01` ниже, — и чужая правка это доказала, потому что ей
+            // пришлось править оба места. Два написания одного закона (DOD п.6);
+            // прецедент сведения в одну дверь в этом же файле уже есть
+            // (`cell_mtn_scale01@src/sub/base_generator.h`, M-201).
             const float relief = macroH * macroH + localGrd;
             // DETAIL, placed on the curve rather than stretched by it — every
             // local term below carries this factor (sub/height.h
