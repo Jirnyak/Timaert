@@ -211,6 +211,75 @@ float terrain_detail01(int gx, int gy, float worldTiles,
     return std::clamp(sum / kDetail.norm, 0.0f, 1.0f);
 }
 
+// ── СКОЛЬКО ЗЕМЛИ НЕСЁТ СВОЯ ДЕТАЛЬ — ОДНА ДВЕРЬ, ПОТОМУ ЧТО БЫЛО ДВА
+//    НАПИСАНИЯ (M-365) ──────────────────────────────────────────────────────
+//
+// ЭТО АМПЛИТУДА, А НЕ ВЫСОТА, И ИМЯ ЗДЕСЬ НЕСУЩЕЕ. Оба звонящих множат на эту
+// величину `(noise - 0.5f)`, то есть она задаёт, НА СКОЛЬКО земля ходит вокруг
+// своей макровысоты; сама макровысота стоит ОТДЕЛЬНЫМ слагаемым и линейна
+// всегда. Прежде величина звалась `relief`, и это имя купило ложный диагноз:
+// присланный владельцу разбор («`d(h²)/dh = 2h`, поэтому у воды плоский стол»)
+// ВЕРЕН ПРО ВЫСОТУ и к этому числу неприменим — он принял амплитуду за высоту.
+// Квадрат базы не трогает уклон к воде НИКОГДА; он ГЛУШИТ деталь у уровня моря
+// (при `macroH` 0.4 — 0.16 против 0.40, то есть в 2.5 раза). Имя правлено по
+// ЗАКОНУ ИМЕНИ п.4-5 — арифметика не тронута ни на бит.
+//
+// ЗАЧЕМ ДВЕРЬ. Выражение стояло ДВАЖДЫ — в `far_height01` ниже и в
+// `generate_heightmap`, то есть у ближней и дальней земли ОДНОГО мира было два
+// ответа на один вопрос (DOD п.6). Доказано не глазами: правка рельефа
+// 2026-10-30 вынуждена была тронуть ОБА места, иначе развела бы миры МОЛЧА — а
+// шов near/far уже стоил 467 м (M-201). Прецеденты сведения лежат в
+// `base_generator.h`: `cell_mtn_scale01` и `apply_cell_damp`, оба по тому же
+// M-201. Дверь живёт ЗДЕСЬ, а не в заголовке, ровно потому, что читателей у
+// неё два и оба в этом TU; у тех двух есть читатели вне него
+// (`vk_renderer_3d.cpp`, `far_terrain_test`), и это вся разница.
+//
+// ⚠ СНЯТИЕ КВАДРАТА — НЕ ДЕФЕКТ, И ЭТО ВЕРДИКТ ВЛАДЕЛЬЦА (2026-10-30,
+// дословно): «это формально дефктом может быть но визуально я увидел улучшение
+// … я визуально проверил `macroH + grad` оставил горы но сделал более
+// разнообразный рельеф равнин берегов». Прежняя надпись на этом месте звала
+// правку дефектом; судить ВИЗУАЛЬНЫЙ вопрос сюитой было ошибкой рода — §8 п.7
+// отдаёт презумпцию вины СВИДЕТЕЛЮ при одобренном улучшении. Поэтому НЕ
+// восстанавливай квадрат как «закон» и не ссылайся на эту шапку, отказывая
+// правке: квадрат прятал пузыри ВМЕСТЕ С РАЗНООБРАЗИЕМ, и оба следствия — одно
+// усиление. Это предмет M-364, а не этой двери.
+//
+// ЦЕНА СНЯТИЯ НАЗВАНА ЧИСЛАМИ, И ЭТО СПИСОК РАБОТ, А НЕ ВОЗРАЖЕНИЕ: низины
+// шершавеют ×2.5, пики ×1.19, и падают три свидетеля — `river_generation_test`
+// «adjacent land cell must stay dry» (суша уходит ПОД воду: 0.398 при
+// `WATER_LEVEL` 0.40), `city_wall_integrity_test` «the gateway is watched» (0
+// помостов) и `mountain_mesh_smoothness_test` «a mountain still DOMINATES the
+// plains». ПЕРВЫЕ ДВА закрывает анизотропия берега (монотонный спуск ПОПЕРЁК
+// берега и есть «суша остаётся сухой» буквально); ТРЕТИЙ ею не лечится, и
+// владелец решил его СОКРАЩЕНИЕМ, а не амплитудой: «минимум систем … обрезав
+// всё лишнее … без особых спец законов». Своей амплитуды горам не заводить,
+// порог свидетеля не подкручивать — резать второй закон рядом
+// (`mountain_ridges01` против макро-гребня
+// `ridged_fbm@src/macro/map_generator.cpp`, M-192). Соседний симптом `bugs.md`
+// Б1 («слишком холмисто, и даже не там где горы») этим усилением задевается и
+// обязан быть ПЕРЕПРОВЕРЕН ГЛАЗАМИ, а не объявлен нарушенным: его закрывал тот
+// же владелец.
+//
+// СВОЕГО СВИДЕТЕЛЯ ЗАКОН НЕ ПРОСИТ, И ЭТО ПРОВЕРЕНО ТРЕМЯ МУТАЦИЯМИ (M-365):
+//   · дверь отдаёт `macroH + gradient` → `check` 139 → 136, красны РОВНО три
+//     прибора выше, а `far_terrain_test` ЗЕЛЁН — оба пути сдвинулись вместе,
+//     значит дверь стоит НА обоих;
+//   · дверь отдаёт `gradient + macroH * macroH` (слагаемые переставлены,
+//     значение бит в бит то же) → 139/139 — приборы судят ЗНАЧЕНИЕ, а не факт
+//     правки, то есть детектор не краснеет на всё;
+//   · дверь отдаёт `macroH + gradient`, А `far_height01` ОБХОДИТ ЕЁ и считает
+//     квадрат сам (состояние до этого наряда) → 139 → 135, и четвёртым
+//     краснеет `far_terrain_test`. Эта строка и есть доказательство: без неё
+//     зелёный паритет в первой мутации мог бы значить «паритет слеп».
+//
+// `gradient` — подъём детали на стыке двух родов земли, чтобы переход читался
+// природным; каждый звонящий блендит его СВОИМИ весами и отдаёт сюда готовым.
+// Диапазон результата НЕ 0..1 (макровысота доходит до ~1.05, градиент до 0.5),
+// поэтому суффикса `01` у имени нет — он был бы ложью.
+static constexpr float detail_amp(float macroH, float gradient) {
+    return macroH * macroH + gradient;
+}
+
 // THE FAR WORLD'S GROUND (base_generator.h). It lives here, next to the near
 // generator's own loop, so both reach the ONE transfer curve — which is the
 // whole of what M-201 was.
@@ -219,20 +288,14 @@ float far_height01(int gx, int gy, float macroH01, float peak01,
                    float gradient01, float heightScale, float mtnScale,
                    float minWavelengthTiles) {
     // The manifold, plus every octave of ground the mesh can carry. The
-    // relief term is the near generator's own: macroH² concentrates the
-    // ground's own variation on high land and keeps lowlands calm, and the
-    // biome-edge gradient lifts it where two kinds of land meet.
+    // detail amplitude is the near generator's own — THROUGH ITS OWN DOOR
+    // (`detail_amp` above), so «дальняя земля есть ближняя с убранной деталью»
+    // держится построением, а не совпадением двух написаний.
     float h = macroH01;
     if (minWavelengthTiles > 0.0f && heightScale > 0.0f && mtnScale > 0.0f) {
         const float noise = terrain_detail01(gx, gy, worldTiles,
                                              minWavelengthTiles);
-        // ВТОРОЕ НАПИСАНИЕ ОДНОГО ЗАКОНА (M-365). Что делает квадрат и почему
-        // его снятие НЕ дефект — у близнеца в `generate_heightmap` ниже; цена
-        // снятия там же тремя свидетелями. Править эти два места врозь нельзя:
-        // правка 2026-10-30 тронула оба и тем доказала, что закон один, а
-        // написаний два (DOD п.6) — сведение в одну дверь и есть M-365,
-        // предусловие всякой работы по рельефу.
-        const float relief = macroH01 * macroH01 + gradient01;
+        const float amp = detail_amp(macroH01, gradient01);
         // DETAIL ON THE CURVE, not stretched by it — the same factor, from the
         // same door, that `generate_heightmap` puts on this very term. Without
         // it the far ground's own noise was worth 2^((h−0.4)·10) times more
@@ -241,7 +304,7 @@ float far_height01(int gx, int gy, float macroH01, float peak01,
         // photographed round the 3×3 window, measured at a median 57.9 m of
         // near↔far disagreement on foothill cells against 5.6 m with the factor
         // in place (M-201, three seeds).
-        h += (noise - 0.5f) * relief * heightScale * mtnScale
+        h += (noise - 0.5f) * amp * heightScale * mtnScale
            * detail_field_scale(macroH01);
     }
     if (ridgeWeight <= 0.01f) return std::clamp(h, 0.0f, 2.0f);
@@ -688,57 +751,12 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             // разница между мирами исчерпывается.
             const float noise = terrain_detail01(gxi, gyi, worldTiles, 0.0f);
 
-            // Smooth manifold: relief = macroH² + gradient. Macro height
-            // squared concentrates noise on hills/peaks and keeps lowlands
-            // calm; gradient lifts noise at biome edges so transitions
-            // look natural.
-            //
-            // ЧТО ЭТОТ КВАДРАТ ДЕЛАЕТ НА САМОМ ДЕЛЕ: ОН ГЛУШИТЕЛЬ ШУМА, А НЕ
-            // ФОРМА УКЛОНА (замер 2026-10-30, M-364). Посмотри на строку ниже:
-            // `relief` множит `(noise - 0.5f)`, то есть он АМПЛИТУДА ДЕТАЛИ, а
-            // база высоты стоит ОТДЕЛЬНЫМ слагаемым `macroH` и линейна всегда.
-            // Значит квадрат базового уклона к воде НЕ ТРОГАЕТ НИКОГДА, и
-            // рассуждение «`d(h²)/dh = 2h`, поэтому у воды плоский стол» к этому
-            // коду НЕ ПРИМЕНИМО — оно принимает `relief` за высоту. Квадрат
-            // ГЛУШИТ шум у уровня моря: при `macroH` 0.4 — 0.16 против 0.40,
-            // то есть в 2.5 раза.
-            //
-            // ⚠ СНЯТИЕ КВАДРАТА — НЕ ДЕФЕКТ, И ЭТО ВЕРДИКТ ВЛАДЕЛЬЦА, ОТМЕНИВШИЙ
-            // ПРЕЖНЮЮ НАДПИСЬ НА ЭТОМ МЕСТЕ (2026-10-30, дословно: «это
-            // формально дефктом может быть но визуально я увидел улучшение … я
-            // визуально проверил `macroH + grad` оставил горы но сделал более
-            // разнообразный рельеф равнин берегов»). Здесь стояло «правку уже
-            // пробовали, и она ДЕФЕКТ»; так судить было ошибкой рода — вопрос
-            // визуальный, а §8 п.7 отдаёт презумпцию вины СВИДЕТЕЛЮ, когда
-            // улучшение одобрено. Поэтому НЕ ВОССТАНАВЛИВАЙ квадрат как «закон»
-            // и не ссылайся на эту шапку, отказывая правке: квадрат прятал
-            // пузыри ВМЕСТЕ С РАЗНООБРАЗИЕМ, и оба следствия — одно усиление.
-            //
-            // ЦЕНА СНЯТИЯ НАЗВАНА ЧИСЛАМИ, И ЭТО СПИСОК РАБОТ, А НЕ ВОЗРАЖЕНИЕ:
-            // низины шершавеют ×2.5, пики ×1.19, и падают три свидетеля —
-            // `river_generation_test` «adjacent land cell must stay dry» (суша
-            // уходит ПОД воду: 0.398 при `WATER_LEVEL` 0.40),
-            // `city_wall_integrity_test` «the gateway is watched» (0 помостов) и
-            // `mountain_mesh_smoothness_test` «a mountain still DOMINATES the
-            // plains». ПЕРВЫЕ ДВА закрывает анизотропия берега (монотонный спуск
-            // ПОПЕРЁК берега и есть «суша остаётся сухой» буквально); ТРЕТИЙ ею
-            // не лечится, и владелец решил его СОКРАЩЕНИЕМ, а не амплитудой:
-            // «минимум систем … обрезав всё лишнее … без особых спец законов».
-            // Своей амплитуды горам не заводить, порог свидетеля не подкручивать
-            // — резать второй закон рядом (`mountain_ridges01` против
-            // макро-гребня `ridged_fbm@src/macro/map_generator.cpp`, M-192).
-            // Соседний симптом `bugs.md` Б1 («слишком холмисто, и даже не там
-            // где горы») этим усилением задевается и обязан быть ПЕРЕПРОВЕРЕН
-            // ГЛАЗАМИ, а не объявлен нарушенным: его закрывал тот же владелец.
-            //
-            // ЗАКОНУ ЭТОМУ ХВАТАЕТ НОСИТЕЛЕЙ — три прибора выше краснеют на
-            // мутации сами, поэтому своего свидетеля он не просит. А вот что
-            // долг: ОДНО И ТО ЖЕ выражение написано ДВАЖДЫ — здесь и в
-            // `far_height01` ниже, — и чужая правка это доказала, потому что ей
-            // пришлось править оба места. Два написания одного закона (DOD п.6);
-            // прецедент сведения в одну дверь в этом же файле уже есть
-            // (`cell_mtn_scale01@src/sub/base_generator.h`, M-201).
-            const float relief = macroH * macroH + localGrd;
+            // Smooth manifold: the ground's detail AMPLITUDE comes from the
+            // one door (`detail_amp` above, M-365), where the whole law —
+            // what the square does, why removing it is the owner's call and
+            // what that costs — is written once. The far ground reads the
+            // SAME door, so the two worlds cannot drift apart silently.
+            const float amp = detail_amp(macroH, localGrd);
             // DETAIL, placed on the curve rather than stretched by it — every
             // local term below carries this factor (sub/height.h
             // detail_field_scale). The macro relief and the ridges do NOT:
@@ -746,7 +764,7 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             // the whole point of the curve.
             const float detail = detail_field_scale(macroH);
             float h = macroH
-                    + (noise - 0.5f) * relief * localHS * localMtn * detail;
+                    + (noise - 0.5f) * amp * localHS * localMtn * detail;
 
             if (rw > 0.0f) {
                 h = mountain_ridges01(h, gxi, gyi, macroH, localPeak, rw,
