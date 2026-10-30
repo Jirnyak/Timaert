@@ -138,6 +138,15 @@ private:
     // самих данных (`textureSize`), не из литерала.
     gpu::VulkanTexture biomePalette_{};   // kBiomes RGB, RGBA32F Nx1
     gpu::VulkanTexture navField_{};       // отладочный байт навигации R8 (binding 7)
+    // ПАЛИТРА ФИЧ — ТА ЖЕ ФОРМА, ЧТО У БИОМОВ, И ЭТО НЕ СОВПАДЕНИЕ (binding 8,
+    // M-323). Вид фичи был захардкожен ЧЕТЫРЬМЯ литералами ординалов внутри
+    // `shaders/macro.frag`, то есть switch по роду, спрятанный в GLSL, куда не
+    // смотрит ни один прибор дерева; тринадцать байтов из семнадцати просто не
+    // дописали, и в живом мире это 1107 клеток (1027 шахт, 70 руин, 10 шпилей).
+    // Новый байт фичи был невидим ПО ПОСТРОЕНИЮ. Теперь он СТРОКА: RGB — цвет,
+    // альфа — сила заливки (`mapColor@src/macro/features.h`), счёт строк шейдер
+    // берёт из `textureSize`, а не из литерала.
+    gpu::VulkanTexture featurePalette_{};  // kFeatureDefs RGBA, RGBA32F Nx1
     VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool pool_ = VK_NULL_HANDLE;
     VkDescriptorSet set_ = VK_NULL_HANDLE;

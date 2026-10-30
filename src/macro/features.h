@@ -181,11 +181,36 @@ struct FeatureDef {
     // `textureSize`, а не числом. Фичи идут тем же путём — значит систем не
     // прибавляется ни одной.
     //
-    // 0 = СВОЕГО ВИДА НЕТ (так отвечает `FT_None`): земля под ней говорит
-    // сама. Это ЗНАЧЕНИЕ, а не сентинел для ветки — тот же немой ноль, что у
-    // `bedWeight` выше. Цвета — БАЛАНС (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ), меняются
-    // свободно; у поселений они взяты из их же строк `kPlaces`, чтобы один
-    // род не красился двумя разными ответами.
+    // ФОРМА `0xAARRGGBB`, И АЛЬФА ЗДЕСЬ — СИЛА ЗАЛИВКИ, А НЕ ПРОЗРАЧНОСТЬ
+    // ВООБЩЕ (вердикт владельца 2026-10-30, M-323 шаги 2-3). Колонка отвечает
+    // на ОДИН вопрос: НАСКОЛЬКО клетка этой фичи перекрашивается в её цвет.
+    // Шейдер берёт `a/255` мерой подмеса и больше ничего не спрашивает.
+    //
+    // 0 = ЗЕМЛЯ НЕ ПЕРЕКРАШЕНА, и этот ноль говорят ДВА РОДА СТРОК, отвечая
+    // при этом ОДНО И ТО ЖЕ, а не два разных (иначе был бы один знак на два
+    // ответа — ЗАКОН ЛЕСТНИЦЫ п.7):
+    //   · `FT_None` — на клетке не построено ничего, земля говорит сама;
+    //   · дорога, грунтовка, мост, пашня — их земля ТОЖЕ не перекрашена: их
+    //     вид есть ЛЕНТА или БОРОЗДЫ, положенные ПОВЕРХ земли процедурно
+    //     (`roadOverlay@shaders/macro.frag`), и это их собственное дело.
+    // Ни в одном из двух случаев ноль не сентинел для ветки — он мера,
+    // равная нулю, тот же немой ноль, что у `bedWeight` выше.
+    //
+    // ПОЧЕМУ СИЛА ЖИВЁТ В КОЛОНКЕ, А НЕ ЧИСЛОМ В ШЕЙДЕРЕ: число в шейдере
+    // было бы одно на все роды и взято с потолка (ЗАКОН КОНСТАНТ), а ветка
+    // «какие роды рисуют себя сами» — switch по роду, спрятанный в GLSL
+    // (ЗАКОН СТРОКИ КАТАЛОГА). Строка отвечает за себя сама, и новый байт
+    // фичи становится видимым добавлением СТРОКИ.
+    //
+    // ЦЕНА ВЫБОРА НАЗВАНА ЗАМЕРОМ, А НЕ ВКУСОМ (сид 12345, `road_reach_census`):
+    // заливка «у кого есть цвет — тот красит» тронула бы 25 843 клетки ради
+    // 1 107 целевых — дорожная сеть это 23 646 клеток, поселения 2 197, — и
+    // дорожная лента кроет лишь ~37 % своей клетки (`hw` 3.0 из `BT_CELL` 16),
+    // то есть остальное получило бы бурый фон. Поэтому у ленточных родов ноль.
+    //
+    // Цвета и силы — БАЛАНС (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ), меняются свободно;
+    // RGB у поселений и у ленточных родов взяты из их же строк `kPlaces` и их
+    // процедурных камней, чтобы один род не красился двумя разными ответами.
     std::uint32_t mapColor;
 };
 
@@ -212,12 +237,12 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
      .civStrength = 0.35f, .onWater = FT_Bridge,
      .kind = SquadType::None,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
-     .mapColor = 0xFF8A8276u},
+     .mapColor = 0x008A8276u},
     {.type = FT_DirtRoad, .bedWeight = 1.5f, .opticalCost = 0.85f,
      .civStrength = 0.22f, .onWater = FT_Bridge,
      .kind = SquadType::None,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
-     .mapColor = 0xFF9C8259u},
+     .mapColor = 0x009C8259u},
     // Вспаханная парцелла. Какой культурой засеяна — вопрос ТИПА фичи, а не
     // второго ресурсного ряда: картофельное и маковое поля будут новыми
     // строками ЭТОЙ таблицы, работающими то же число. Выход пашни — умолчание
@@ -226,7 +251,7 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
      .civStrength = 0.0f, .onWater = FT_None,
      .kind = SquadType::None,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
-     .mapColor = 0xFFC9A54Eu},
+     .mapColor = 0x00C9A54Eu},
     // Мост несёт колонки каменной дороги: его настил И ЕСТЬ мощёное ложе
     // (марш не замечает реки под ним), тот же коридор свету и взгляду, та же
     // тяга цивилизации. Кладёт его планировщик дорог при генерации мира.
@@ -234,7 +259,7 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
      .civStrength = 0.35f, .onWater = FT_Bridge,
      .kind = SquadType::None,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
-     .mapColor = 0xFF8A8276u},
+     .mapColor = 0x008A8276u},
     // Шахты делят колонки пашни: разработанная земля, не инженерное ложе
     // (0 = своё основание биома), прятаться не за чем, и рабочее место,
     // которое возделывают, а не держат гарнизоном. ВЫХОД — СТРОКА ШАХТЫ, а
@@ -245,32 +270,32 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
      .civStrength = 0.0f, .onWater = FT_None,
      .kind = SquadType::None,
      .numberRow = ResourceFieldId::Vein, .yieldItem = "clay",
-     .mapColor = 0xFFB06A4Au},
+     .mapColor = 0x66B06A4Au},
     {.type = FT_IronMine, .bedWeight = 0.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
      .kind = SquadType::None,
      .numberRow = ResourceFieldId::Vein, .yieldItem = "iron",
-     .mapColor = 0xFF6E5A52u},
+     .mapColor = 0x666E5A52u},
     {.type = FT_Quarry, .bedWeight = 0.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
      .kind = SquadType::None,
      .numberRow = ResourceFieldId::Vein, .yieldItem = "stone",
-     .mapColor = 0xFF9A9A94u},
+     .mapColor = 0x669A9A94u},
     {.type = FT_SilverMine, .bedWeight = 0.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
      .kind = SquadType::None,
      .numberRow = ResourceFieldId::Vein, .yieldItem = "silver",
-     .mapColor = 0xFFC8CDD4u},
+     .mapColor = 0x66C8CDD4u},
     {.type = FT_CopperMine, .bedWeight = 0.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
      .kind = SquadType::None,
      .numberRow = ResourceFieldId::Vein, .yieldItem = "copper",
-     .mapColor = 0xFFB87333u},
+     .mapColor = 0x66B87333u},
     {.type = FT_GoldMine, .bedWeight = 0.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
      .kind = SquadType::None,
      .numberRow = ResourceFieldId::Vein, .yieldItem = "gold",
-     .mapColor = 0xFFD4AF37u},
+     .mapColor = 0x66D4AF37u},
     // Пастбище и льняное поле несут колонки пашни: та же возделанная земля,
     // та же трава по пояс, которая ничего не прячет.
     // А ЧИСЛО НА ПАСТБИЩЕ ЕСТЬ СТАДО — единственная строка таблицы, чьё
@@ -282,13 +307,13 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
      .civStrength = 0.0f, .onWater = FT_None,
      .kind = SquadType::None,
      .numberRow = ResourceFieldId::Livestock, .yieldItem = nullptr,
-     .mapColor = 0xFF8FA85Cu},
+     .mapColor = 0x4B8FA85Cu},
     // ЛЁН — оверрайд выхода поверх ряда Wheat: та же земля, своя культура.
     {.type = FT_FlaxField, .bedWeight = 1.8f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
      .kind = SquadType::None,
      .numberRow = ResourceFieldId::Count, .yieldItem = "fibre",
-     .mapColor = 0xFF9FB0C4u},
+     .mapColor = 0x4B9FB0C4u},
     // ── Поселения. Ложе — по прецеденту моста («мост несёт колонки
     // каменной дороги»): город есть МОЩЁНЫЙ узел дорожной сети — его клетка
     // несёт ложе камня (1.0); деревня — грунтовый двор (ложе грунтовки,
@@ -307,27 +332,27 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
      .civStrength = 0.0f, .onWater = FT_None,
      .kind = SquadType::Capital,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
-     .mapColor = 0xFFFFD98Cu},
+     .mapColor = 0x3CFFD98Cu},
     {.type = FT_City, .bedWeight = 1.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
      .kind = SquadType::City,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
-     .mapColor = 0xFFE7D27Au},
+     .mapColor = 0x3CE7D27Au},
     {.type = FT_Village, .bedWeight = 1.5f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
      .kind = SquadType::Village,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
-     .mapColor = 0xFFCCB068u},
+     .mapColor = 0x30CCB068u},
     {.type = FT_Spire, .bedWeight = 0.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
      .kind = SquadType::Spire,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
-     .mapColor = 0xFFA86CFFu},
+     .mapColor = 0x6EA86CFFu},
     {.type = FT_Ruin, .bedWeight = 0.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f, .onWater = FT_None,
      .kind = SquadType::Ruin,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
-     .mapColor = 0xFF8E8576u},
+     .mapColor = 0x5A8E8576u},
 };
 static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
               "kFeatureDefs row order must mirror FeatureType — a new "

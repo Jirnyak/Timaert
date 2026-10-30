@@ -33,6 +33,7 @@ layout(set = 0, binding = 6) uniform sampler2D u_biomePal;     // RGBA32F Nx1: �
 // Имён подсистем мира («округа», «дистанция») в шейдере нет намеренно —
 // поток идёт строго вниз, и рендер их знать не должен.
 layout(set = 0, binding = 7) uniform sampler2D u_navMap;       // R8: 0 = нет, 1..255 = величина
+layout(set = 0, binding = 8) uniform sampler2D u_featurePal;   // RGBA32F Nx1: строка kFeatureDefs (macro/features.h)
 
 layout(push_constant) uniform Push {
     vec2 resolution; // кадровый буфер в пикселях — И ЕСТЬ вьюпорт (§ЗАКОН
@@ -529,6 +530,38 @@ vec4 forestBlob(vec2 srcCell, vec2 p, vec2 ctr, float r, float alphaMul) {
     float edge = smoothstep(r, r - 0.8, d);   // tighter rim => crisper crown
     return vec4(leaf, edge * alphaMul);
 }
+// ВИД ФИЧИ — ИЗ СТРОКИ ТАБЛИЦЫ, А НЕ ИЗ ЛИТЕРАЛОВ ОРДИНАЛОВ (M-323).
+// Вердикт владельца 2026-10-26: «дорога это фича — она всегда рисовалась; через
+// ту же систему все остальные рисовать». До этой двери вид имели ЧЕТЫРЕ байта из
+// семнадцати — те, под которые ниже написаны процедурные обработки, — а
+// тринадцать не рисовались ничем: в живом мире 1107 клеток (1027 шахт, 70 руин,
+// 10 шпилей), и 1027 лежали так задолго до того, как руина и шпиль стали
+// фичами. Новый байт фичи был невидим ПО ПОСТРОЕНИЮ, и заметить это могли
+// только глаза — ни один прибор дерева в GLSL не смотрит.
+//
+// ФОРМА ВЗЯТА У БИОМОВ (`bt_baseColor` выше), а не выдумана: ординал И ЕСТЬ
+// адрес тексела, счёт строк берётся из САМИХ ДАННЫХ (`textureSize`), поэтому
+// литерала «восемнадцать» нет ни здесь, ни на хосте (ЗАКОН СЛОВАРЯ).
+//
+// ВЕТКИ «КАКИЕ РОДЫ РИСУЮТ СЕБЯ САМИ» ЗДЕСЬ НЕТ, И ЭТО ГЛАВНОЕ. Силу заливки
+// несёт АЛЬФА строки (`mapColor@src/macro/features.h`): у дороги, грунтовки,
+// моста и пашни она НОЛЬ, потому что их земля не перекрашена — их вид есть
+// лента или борозды ПОВЕРХ земли, и кладут их обработки ниже. Поэтому порядок
+// композиции отвечает за всё: тинт идёт ПЕРВЫМ, процедурное — НА НЕГО. Если
+// завести здесь `if` по роду, вернётся ровно тот switch в GLSL, который этот
+// наряд и снёс (ЗАКОН СТРОКИ КАТАЛОГА).
+//
+// Клетка снимается по ЦЕНТРУ тексела, как у дороги ниже: байт — ОРДИНАЛ, и
+// линейная фильтрация смешала бы два рода в третий, которого в мире нет.
+vec3 featureTint(vec2 mapUV, vec3 baseColor) {
+    vec2 cell   = floor(mapUV * pc.mapSize);
+    vec2 cellUV = (cell + 0.5) / pc.mapSize;
+    int  fid    = int(texture(u_featureMap, cellUV).r * 255.0 + 0.5);
+    int  last   = textureSize(u_featurePal, 0).x - 1;
+    vec4 row    = texelFetch(u_featurePal, ivec2(clamp(fid, 0, last), 0), 0);
+    return mix(baseColor, row.rgb, row.a);
+}
+
 vec3 roadOverlay(vec2 mapUV, vec3 baseColor) {
     vec2 pixelCoord = mapUV * pc.mapSize;
     vec2 cell = floor(pixelCoord);
@@ -1267,6 +1300,13 @@ void main() {
     col = mountainOverlay(worldPx, col);
     // Rivers need no overlay: carved below sea in generation, they render as
     // Biome::Water inside biomeTextureOverlay() -- crisp banks, exactly like the sea.
+    //
+    // ВИД ФИЧИ ИДЁТ ПЕРВЫМ ИЗ ДВУХ, И ПОРЯДОК ЗДЕСЬ НЕСЁТ ЗАКОН (M-323): плоская
+    // заливка по строке таблицы ложится на землю, а процедурные обработки
+    // (камень дороги, борозды пашни) кладутся НА НЕЁ. Так ветка «какие роды
+    // рисуют себя сами» не нужна ни одной из двух функций: ленточные роды
+    // несут альфу 0 и через `featureTint` проходят нетронутыми.
+    col = featureTint(mapUV, col);
     col = roadOverlay(mapUV, col);
     col = featureDecor(worldPx, col);
     col = zoneTintOverlay(mapUV, col);

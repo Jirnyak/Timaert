@@ -186,14 +186,28 @@ bool encode_nav_field(const NavWorld* nav, NavDebugView view,
     return true;
 }
 
+// СКОЛЬКО СЭМПЛЕРОВ В НАБОРЕ 0 — ОДНО ЧИСЛО НА ВЕСЬ ФАЙЛ. Выводится не из
+// воздуха: это длина списка текстур в `upload` ниже, и там стоит
+// `static_assert`, который не даст списку и этому числу разойтись.
+constexpr std::uint32_t kBindings = 9;
+
 } // namespace
 
 bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
-    // Descriptor set 0 = eight combined image samplers (master/feature/zone
-    // + night light field + tree field + knowledge + biome palette + nav
-    // debug field).
-    VkDescriptorSetLayoutBinding bindings[8]{};
-    for (std::uint32_t i = 0; i < 8; ++i) {
+    // Descriptor set 0 = `kBindings` combined image samplers (master/feature/
+    // zone + night light field + tree field + knowledge + biome palette + nav
+    // debug field + feature palette).
+    //
+    // СЧЁТ НАЗВАН ОДИН РАЗ, И ЭТО НЕ СТИЛЬ. До M-323 литерал стоял в СЕМИ
+    // местах двух функций — размер массива описаний, предел их цикла,
+    // `bindingCount`, размер пула, массив текстур, предел цикла записей и
+    // аргумент `vkUpdateDescriptorSets`, — то есть добавление биндинга
+    // требовало не забыть семь раз. Забытый седьмой не ломает сборку: лишний
+    // сэмплер остался бы непривязанным, а это поведение рантайма, которого не
+    // видит ни один прибор дерева. Теперь имя одно, а массив текстур в
+    // `upload` прибит к нему `static_assert` — рассинхрон НЕВЫРАЗИМ.
+    VkDescriptorSetLayoutBinding bindings[kBindings]{};
+    for (std::uint32_t i = 0; i < kBindings; ++i) {
         bindings[i].binding = i;
         bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[i].descriptorCount = 1;
@@ -201,12 +215,12 @@ bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
     }
     VkDescriptorSetLayoutCreateInfo dlci{};
     dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    dlci.bindingCount = 8;
+    dlci.bindingCount = kBindings;
     dlci.pBindings = bindings;
     if (vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &setLayout_) != VK_SUCCESS)
         return false;
 
-    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8};
+    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kBindings};
     VkDescriptorPoolCreateInfo dpci{};
     dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     dpci.maxSets = 1;
@@ -236,6 +250,7 @@ bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
 }
 
 void MacroRendererVk::free_textures(const gpu::VulkanDevice& dev) {
+    featurePalette_.destroy(dev);
     navField_.destroy(dev);
     biomePalette_.destroy(dev);
     knowledgeField_.destroy(dev);
@@ -358,14 +373,41 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
         navField_.create_r8(dev, 1, 1, &none, false, true);
     }
 
-    // Bind the eight textures into set 0.
-    const gpu::VulkanTexture* tex[8] = {&master_, &feature_, &zone_,
-                                        &lightField_, &treeField_,
-                                        &knowledgeField_, &biomePalette_,
-                                        &navField_};
-    VkDescriptorImageInfo dii[8]{};
-    VkWriteDescriptorSet writes[8]{};
-    for (std::uint32_t i = 0; i < 8; ++i) {
+    // ПАЛИТРА ФИЧ — прямая выгрузка авторской строки `kFeatureDefs`, РОВНО тем
+    // же путём, что палитра биомов выше (M-323). RGB берутся из `mapColor`,
+    // АЛЬФА — оттуда же, и она СИЛА ЗАЛИВКИ: ноль значит «земля этой фичи не
+    // перекрашена» и его говорят `FT_None` вместе с ленточными родами (дорога,
+    // грунтовка, мост, пашня), чей вид процедурен и лежит ПОВЕРХ земли. Ветки
+    // «какие роды процедурные» поэтому не существует ни здесь, ни в шейдере —
+    // она была бы switch по роду (ЗАКОН СТРОКИ КАТАЛОГА). Ширина образа И ЕСТЬ
+    // счёт строк: шейдер спрашивает её `textureSize`, литерала «восемнадцать»
+    // нет ни там, ни здесь (ЗАКОН СЛОВАРЯ).
+    {
+        std::vector<float> pal(std::size(kFeatureDefs) * 4u);
+        for (std::size_t i = 0; i < std::size(kFeatureDefs); ++i) {
+            const std::uint32_t c = kFeatureDefs[i].mapColor;
+            pal[i * 4 + 0] = float((c >> 16) & 0xFFu) / 255.0f;
+            pal[i * 4 + 1] = float((c >>  8) & 0xFFu) / 255.0f;
+            pal[i * 4 + 2] = float((c      ) & 0xFFu) / 255.0f;
+            pal[i * 4 + 3] = float((c >> 24) & 0xFFu) / 255.0f;
+        }
+        featurePalette_.create_rgba32f(dev,
+                                       std::uint32_t(std::size(kFeatureDefs)),
+                                       1, pal.data(), false, false);
+    }
+
+    // Bind the `kBindings` textures into set 0.
+    const gpu::VulkanTexture* tex[] = {&master_, &feature_, &zone_,
+                                       &lightField_, &treeField_,
+                                       &knowledgeField_, &biomePalette_,
+                                       &navField_, &featurePalette_};
+    static_assert(std::size(tex) == kBindings,
+                  "список текстур И ЕСТЬ счёт биндингов — разойтись им "
+                  "нельзя: лишний сэмплер остался бы непривязанным, а это "
+                  "молчаливое поведение рантайма");
+    VkDescriptorImageInfo dii[kBindings]{};
+    VkWriteDescriptorSet writes[kBindings]{};
+    for (std::uint32_t i = 0; i < kBindings; ++i) {
         dii[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         dii[i].imageView = tex[i]->view;
         dii[i].sampler = tex[i]->sampler;
@@ -376,7 +418,7 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
         writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[i].pImageInfo = &dii[i];
     }
-    vkUpdateDescriptorSets(dev.device, 8, writes, 0, nullptr);
+    vkUpdateDescriptorSets(dev.device, kBindings, writes, 0, nullptr);
     uploaded_ = true;
 }
 
