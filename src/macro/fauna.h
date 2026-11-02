@@ -76,14 +76,10 @@ using FaunaEntry = NpcTypeDef;
 // ground — the spire's demons are its POPULATION, not the cell's game.)
 static_assert(place_def(SquadType::Ruin).faunaHabitat == kHabRuin,
               "kPlaces fauna columns must quote fauna.h's habitat bits");
-// Same guard for the CROWD column (§42): the crowd's family is the place's
-// registry row, and the quoted bits must be the real ones.
-static_assert(place_def(SquadType::City).crowdHabitat == kHabTown
-           && place_def(SquadType::Village).crowdHabitat == kHabTown
-           && place_def(SquadType::Spire).crowdHabitat == kHabSpire
-           && place_def(SquadType::Ruin).crowdHabitat == kHabRuin
-           && place_def(SquadType::Lair).crowdHabitat == kHabRuin,
-              "kPlaces crowd column must quote fauna.h's habitat bits");
+// (Страж КОЛОНКИ ТОЛПЫ умер 2026-11-02 вместе с колонкой: раскладка толпы
+//  сцены уехала в данные субмира — `kCrowdLayout@src/sub/crowd_layout.h`, —
+//  и авторится там ИМЕНАМИ битов kHab* из tables/npc.h, так что второго
+//  правописания, которое этот страж сверял, больше не существует.)
 
 // Halving distance of the match law. Derived, not tuned: ten halvings span
 // the whole 0..255 continuum (a full-span mismatch lands at 2^-10 of the

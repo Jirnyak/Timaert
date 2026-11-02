@@ -10,6 +10,7 @@
 #include "macro/player_entity.h"
 #include "sub/vk_camera_math.h"
 #include "sub/lighting.h"
+#include "sub/crowd_layout.h"  // раскладка населения сцены по роду
 #include "gpu/vk_device.h"
 #include "sub/spawn.h"
 #include "sub/possess.h"
@@ -1941,7 +1942,7 @@ void SubworldEngine::tick_day_pump(float dt) {
 
     const CellContext ctx = resolve_context(mgr_.center_cx(), mgr_.center_cy());
     if (ctx.place.id < 0) return;
-    if (place_def(ctx.place.kind).crowdHabitat == 0) return;
+    if (sub::crowd_layout(ctx.place.kind).crowdHabitat == 0) return;
 
     // ЕДИНИЦА УЛИЦЫ — ГОЛОВЫ инвентаря места, не паства (D-хвост): паства
     // (число фичи) считает и ушедших в поле, и помпа, меренная ею, рождала бы на
@@ -4403,7 +4404,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // its reserve: outside picket + Σ storeys == population, always.
     const bool placeGarrison = kindRow.placeGarrison
         && ses.settlementId > 0
-        && place_def(ses.placeKind).crowdHabitat != 0;
+        && sub::crowd_layout(ses.placeKind).crowdHabitat != 0;
     if (placeGarrison && objects_) {
         const MacroStockKey popKey{ses.settlementId,
                                    std::int16_t(ses.doorCx),
@@ -4591,9 +4592,9 @@ bool SubworldEngine::read_sign(const Structure& sign) {
     // МОЛЧА — ровно тот дефект, который запрещает ЗАКОН СТРОКИ КАТАЛОГА.
     // Пустая клетка отвечает «нет» по построению: у `SquadType::None` архетип
     // Roamer, а поселение — СТОЯЩИЙ род с прилавком/наймом/доской.
-    // ДВЕРЬ ПРИШЛА БЕЗ НОВОЙ НИТКИ КАНАЛА: `macro/place_registry.h` уже виден
-    // в `src/sub` через `sub/map_data.h`, а §11 заводить здесь новое
-    // `#include "macro/…"` запрещает прямо.
+    // ДВЕРЬ ЖИВЁТ У ОСИ (`place_is_settlement@src/tables/squad_type.h`,
+    // переезд 2026-11-01): tables/ — общий слой L0, нитки канала здесь нет
+    // вовсе, а §11 заводить новое `#include "macro/…"` запрещает прямо.
     if (place_is_settlement(ctx.place.kind)) {
         const MacroHandle lm = mw_.store
             ? place_handle_by_ordinal(*mw_.store,

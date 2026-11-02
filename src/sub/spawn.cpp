@@ -1,5 +1,6 @@
 #include "sub/spawn.h"
 #include "sub/city_layout.h"
+#include "sub/crowd_layout.h"  // раскладка населения сцены по роду — данные субмира
 #include "sub/dgn/dispatch.h"   // dungeon_scene_seed, dungeon_has_upper —
                                 // the household/partition law (CANON S28)
 #include "macro/entry_context.h"
@@ -442,7 +443,6 @@ void spawn_place_population(SubObjects& objs,
     // `!= City && != Village` that stood here outlived the refactor that
     // universalised the record underneath it, and no test reddened because
     // zero bodies is a legal count.
-    const PlaceDef& def = place_def(place);
     // ДВА ЧИСЛА, ДВА СМЫСЛА (переворот v122).
     //   `pop`   — ПАСТВА места (число фичи: дома + ушедшие в поле). Она
     //             отвечает за ГЕОМЕТРИЮ: стены строились на всех, и город с
@@ -451,7 +451,8 @@ void spawn_place_population(SubObjects& objs,
     //             ВОПЛОЩАЮТСЯ: ушедшие в поле стоят на карте своими сквадами,
     //             и воплотить их здесь значило бы поставить одну душу дважды.
     const int pop = std::max(0, placePop);
-    if (pop == 0 || def.crowdHabitat == 0 || homeSouls == nullptr) return;
+    if (pop == 0 || sub::crowd_layout(place).crowdHabitat == 0
+        || homeSouls == nullptr) return;
     const int heads = creature_count(*homeSouls);
     if (heads == 0) return;
 
@@ -848,8 +849,7 @@ int interior_garrison_share(SquadType place, int placePop,
     if (placePop <= 0 || storeys <= 0 || level < 0 || level >= storeys) {
         return 0;
     }
-    const PlaceDef& def = place_def(place);
-    const int inside = placePop >> def.crowdInsideShift;
+    const int inside = placePop >> sub::crowd_layout(place).crowdInsideShift;
     return inside / storeys + (level < inside % storeys ? 1 : 0);
 }
 
@@ -901,7 +901,7 @@ void walk_interior_shares(const std::vector<Structure>& structures,
                                                    doors, now))) return;
             }
         } else if (row.placeGarrison
-                   && place_def(place).crowdHabitat != 0) {
+                   && sub::crowd_layout(place).crowdHabitat != 0) {
             const int storeys = dungeon_storey_count(ref);
             for (int level = 0; level < storeys; ++level) {
                 if (visit(s.tag, level,

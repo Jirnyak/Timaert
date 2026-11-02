@@ -10,7 +10,6 @@
 #include "core/table_guard.h"
 #include "tables/biomes.h"
 #include "macro/features.h"
-#include "macro/place_registry.h"   // place_def — транзит city_layout
                                        //   (нитку снимет M-38, не ломтик F)
 // THE step law: the subworld prices ground in the same units the macro march
 // does (biome beds, feature beds, the canopy term, speed = base/√weight).
@@ -280,7 +279,7 @@ inline const std::array<float, std::size_t(TILE_COUNT)> kTileMovementSpeed = [] 
 // дверью пишет `dispatch_generate_dungeon@src/sub/dgn/dispatch.cpp`, а
 // открытая дверь отвечает о нём `nullptr`.
 
-// The place vocabulary is SquadType (macro/place_registry.h) — the
+// The place vocabulary is SquadType (tables/squad_type.h) — the
 // one registry enum. A private five-value "CellPlaceKind" lived here until
 // 2026-08-24 (second copy; the fauna router carried a third), joined by a
 // hand-written bridge in engine.cpp — and Lair/Shrine/Mine/Tower physically

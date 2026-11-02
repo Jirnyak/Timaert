@@ -3,6 +3,7 @@
 #include "tables/faction.h"
 #include "macro/world_row.h"
 #include "macro/fauna.h"   // SpawnContext/roll_spawns — паритет зовёт закон логова сам
+#include "sub/crowd_layout.h"  // crowdInsideShift — данные субмира (2026-11-02)
 #include "sub/spawn.h"
 #include "sub/record.h"   // THE door: whose record is this body (mirror law)
 #include "sub/body.h"     // body_height_m — продукт лица головы (кусок 1)
@@ -1194,7 +1195,7 @@ int main() {
         for (int pop : pops) {
             for (int storeys = 1; storeys <= 5 && holds; ++storeys) {
                 const int insideTotal =
-                    pop >> sm::place_def(sm::SquadType::Spire)
+                    pop >> sm::sub::crowd_layout(sm::SquadType::Spire)
                                .crowdInsideShift;
                 const int outside = pop - insideTotal;
                 int inside = 0;

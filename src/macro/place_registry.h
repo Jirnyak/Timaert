@@ -118,22 +118,13 @@ struct PlaceDef {
     // number is the place's own cap — a town is the poorest hunting ground
     // that still is one (the old ruin row's minCount, 2).
     std::uint8_t     faunaCap = kPlaceFaunaCapGround;
-    // crowdHabitat — the habitat bit of this place's CROWD: its population
-    // made visible (street folk, a household behind a door, a garrisoned
-    // hall). A SECOND dictionary from faunaHabitat above, deliberately: a
-    // city has a town crowd and no wild fauna, a spire has a demon crowd AND
-    // the mountain's own beasts on its slopes. 0 = the place keeps no crowd
-    // (§42: the crowd's family is the place's COLUMN, never a name baked
-    // into the picker). Cross-checked against fauna.h beside the bits.
-    std::uint16_t    crowdHabitat = 0;
-    // For a kind whose interior GARRISONS from its population (dungeon kind
-    // rows, placeGarrison): how many souls man the STOREYS — pop >> this;
-    // the rest are the crowd OUTSIDE (the owner's eye, 2026-09-11: «снаружи
-    // больше сотни, внутри десятки на ярус» — the street is the throng, the
-    // tower keeps a quarter). 0 = everyone outside — the honest default for
-    // a kind with no garrisoned interior (a ruin's crowd haunts its
-    // surface). A po2 shift, not a percentage.
-    std::uint8_t     crowdInsideShift = 0;
+    // ── КОЛОНКИ `crowdHabitat`, `crowdInsideShift`, `garrisonShift` УЕХАЛИ
+    // 2026-11-02 В ДАННЫЕ СУБМИРА (`kCrowdLayout@src/sub/crowd_layout.h`,
+    // ломоть 5б M-235): раскладку населения СЦЕНЫ читал только субмир —
+    // это частность потребителя, и её числа живут у него (ЗАКОН
+    // АГНОСТИЧНОСТИ). С ними умерли четыре чтения `place_def` из src/sub и
+    // транзитное включение этого файла в `sub/map_data.h` — долг канала
+    // УПАЛ, а не перекрашен. ────────────────────────────────────────────────
     // ── Born souls (§42 Инк 5): the genesis law's own columns ─────────────
     // ── КОЛОНКИ `bornPopBase`/`bornPopPerScore` УНИЧТОЖЕНЫ 2026-10-26 ────
     // (M-320, вердикт владельца: «Снести колонки целиком».)
@@ -165,17 +156,9 @@ struct PlaceDef {
     //  п.3 запрещает это прямо: «в фундаментальной системе появилась
     //  константа, чей вывод упирается в СЦЕНАРИЙ использования». Решает
     //  «какие роды ставить» СЛОЙ ВЫШЕ — он и есть редактор.)
-    // ── The GARRISON law (§42 Инк 7, owner: «гарнизон = армия ландмарка»)
-    // Target strength = population >> this; 0xFF = the kind keeps no
-    // garrison (the honest default — a spire's «garrison» is its
-    // population, Инк 4). The garrison is the place's OWN army in the ONE
-    // container form (область существ его Inventory, M-71): born with the
-    // place, fed
-    // and paid by it, thinned by street deaths through the Garrison stock,
-    // hired from, patrolled out of. The old law — √pop×0.3 capped at 10 —
-    // sized a tavern recruit pool, not a defense force, and the pop/10
-    // street-guard fiction painted over it.
-    std::uint8_t     garrisonShift = 0xFF;
+    // (Закон гарнизона — «гарнизон = армия ландмарка», §42 Инк 7 — живёт
+    //  теперь колонкой `garrisonShift` раскладки субмира, см. надгробие
+    //  выше: его единственный читатель — верхний квартал города.)
     // (`econSite` УМЕР 2026-09-18 вместе с EconSite. Он отвечал «по какой
     // ТАБЛИЦЕ это место работает», то есть на вопрос «что оно умеет» — а
     // отвечает на него теперь АНКЕТА места: characters.h place_sheet,
@@ -263,20 +246,14 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
     {.type = SquadType::Capital,
      .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
-     .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
-     .garrisonShift = 3,
      .seedComfortDays = 32, .seedRawMult = 1 },
     {.type = SquadType::City,
      .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
-     .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
-     .garrisonShift = 3,
      .seedComfortDays = 32, .seedRawMult = 1 },
     {.type = SquadType::Village,
      .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
-     .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
-     .garrisonShift = 3,
      .seedComfortDays = 8, .seedRawMult = 2 },
     // Spire wild fauna returned to the GROUND (§42 Инк 5): its demons are
     // its POPULATION now — the mountain's own beasts roam the slopes, and
@@ -288,19 +265,16 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
      .lightColor = 0xFFA86CFFu, .lightPop = 200.0f,
      .faunaHabitat = kPlaceFaunaGround, .faunaMin = 0, .faunaMax = 0,
      .faunaCap = kPlaceFaunaCapGround,
-     .crowdHabitat = 1u << 13, .crowdInsideShift = 2,
      },
     {.type = SquadType::Ruin,
      .lightColor = 0xFF8E8576u, .lightPop = 40.0f,
      .faunaHabitat = 1u << 12, .faunaMin = 2, .faunaMax = 6,
      .faunaCap = kPlaceFaunaCapGround,
-     .crowdHabitat = 1u << 12, .crowdInsideShift = 0,
      },
     {.type = SquadType::Lair,
      .lightColor = 0xFF883A3Au, .lightPop = 70.0f,
      .faunaHabitat = kPlaceFaunaGround, .faunaMin = 0, .faunaMax = 0,
-     .faunaCap = kPlaceFaunaCapGround,
-     .crowdHabitat = 1u << 12 },
+     .faunaCap = kPlaceFaunaCapGround },
     {.type = SquadType::Shrine,
      .lightColor = 0xFFE2E2E2u, .lightPop = 90.0f },
     {.type = SquadType::Mine,
@@ -389,7 +363,10 @@ static_assert(rows_in_enum_order(kPlaces, &PlaceDef::type),
 // оба байта стояли в зазоре между `type` (офсет 0) и `lightColor` (офсет 4,
 // align 4) — их место заняло выравнивание. Пятый случай подряд, где довод
 // «уберём колонку — станет меньше» не выводится из ширины колонки.
-static_assert(sizeof(PlaceDef) == 24,
+// ОТЪЕЗД РАСКЛАДКИ ТОЛПЫ В СУБМИР (2026-11-02, та же сессия): 24 → 20 —
+// четыре байта данных (u16 + два u8), и хвост сложился ровно: последнее
+// поле `seedRawMult` на 18, данных 19, 20 — ближайшее кратное четырёх.
+static_assert(sizeof(PlaceDef) == 20,
               "PlaceDef layout changed — say WHICH column and why, and "
               "never re-add a faction column: a KIND is not an OWNER (M-39)");
 

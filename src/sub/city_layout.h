@@ -32,6 +32,7 @@
 // a table promotion, not a rewrite.
 #pragma once
 
+#include "sub/crowd_layout.h"  // гарнизонный сдвиг рода — данные субмира
 #include "sub/map_data.h"
 #include "sub/sky.h"       // time_of_day01 — the one clock the sun reads
 
@@ -428,17 +429,17 @@ inline float wall_inner_bound(float radius, float roughness) {
 // its own houses, holding the keep.
 //
 // Who lives there decides how big it is, and that number is already in the
-// world: a place's GARRISON is `population >> garrisonShift` (macro/
-// place_registry.h — «гарнизон = армия ландмарка», §42). The garrison and
+// world: a place's GARRISON is `population >> garrisonShift`
+// (sub/crowd_layout.h — «гарнизон = армия ландмарка», §42). The garrison and
 // its lord are the upper town's population; its hearths follow by the same
 // hearth law as the city's, and its ground by the same ground-per-house. So a
 // quarter is a fraction of the city only as a CONSEQUENCE — never as a chosen
 // share.
 inline int city_upper_population(int population) {
-    const PlaceDef& def = place_def(SquadType::City);
-    if (def.garrisonShift == 0xFF) return 0;          // a kind with no garrison
+    const sub::CrowdLayoutRow& row = sub::crowd_layout(SquadType::City);
+    if (row.garrisonShift == sub::kNoGarrison) return 0; // no garrison kind
     const int p = population > 0 ? population : 0;
-    return p >> def.garrisonShift;
+    return p >> row.garrisonShift;
 }
 
 inline int city_upper_houses(int population) {

@@ -13,6 +13,7 @@
 #include "check.h"
 
 #include "macro/fauna.h"
+#include "sub/crowd_layout.h"  // полосы толпы — данные субмира (2026-11-02)
 #include "tables/faction.h"   // faction_index — перевод имени в ординал (M-187)
 
 #include <cstdint>
@@ -173,7 +174,7 @@ int main() {
         // Союз полос толпы ВСЕХ родов мест — вторая земля, структурная.
         std::uint16_t crowdUnion = 0;
         for (std::size_t k = 0; k < std::size_t(sm::SquadType::Count); ++k) {
-            crowdUnion |= sm::place_def(sm::SquadType(k)).crowdHabitat;
+            crowdUnion |= sm::sub::crowd_layout(sm::SquadType(k)).crowdHabitat;
         }
         CHECK(crowdUnion != 0, "хоть один род мест держит толпу");
         int reachable = 0;
