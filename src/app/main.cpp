@@ -59,6 +59,8 @@
 #include "macro/currency.h"
 #include "macro/deal.h"   // откуп встречи — exact-лот одной сделки
 #include "macro/squad.h"
+#include "macro/tasks.h"   // доска контрактов: конструктор задач (6б M-72)
+#include "tables/map_actions.h"
 #include "macro/player_entity.h"
 #include "macro/journal.h"
 #include "macro/pathfinding.h"
@@ -1041,8 +1043,18 @@ void step_macro_walk_and_emit(App& app, float dt, float cellsPerSec) {
     const float prevY = before ? float(sm::ecs::cell_y(*before, app.gs.mapW))
                                : 0.0f;
     const std::size_t stepped =
-        sm::ui::step_macro_walk(app.gs, *app.macroStore, app.cursor, dt, cellsPerSec,
-                                nullptr, nullptr);
+        sm::ui::step_macro_walk(
+            app.gs, *app.macroStore, app.cursor, dt, cellsPerSec,
+            // Писатель визита (6б M-72): игрок пришёл в клетку своей
+            // цели-фичи — мир запоминает (Explored). Слот стоял пустым
+            // (nullptr) с рождения колбэка.
+            [](void* user, int x, int y) {
+                auto& a = *static_cast<App*>(user);
+                sm::task_note_player_arrival(*a.macroStore, a.gs,
+                                             sm::player_flag_handle(a.gs),
+                                             x, y);
+            },
+            &app);
     // Distance travelled = whole cells stepped; the walker stamped the entry
     // edge per step itself — nothing to re-derive from coordinates here.
     emit_player_move(app, prevX, prevY, float(stepped));
@@ -6177,13 +6189,63 @@ void frame(App& app, int simSteps) {
                 // ДОХОДИТ (player_jump_to_cell в клетку защитника) — вся
                 // встреча всегда одна клетка, позиции макромира целы.
                 sm::MacroHandle attackReq{};
+                // ── ДОСКА КОНТРАКТОВ (6б M-72): офферы собирает app —
+                // конструктору нужны каркас сквадов и слой фич, а панель
+                // конверта мира не несёт. Пересборка — на смену субъекта или
+                // дня (та же доска в тот же день детерминирована сидом);
+                // суды летописи идут здесь же, не каждый кадр.
+                static sm::MacroHandle s_boardFor{};
+                static int s_boardDay = -1;
+                static sm::ui::TaskBoardView s_boardView{};
+                sm::ui::TaskBoardView* boardPtr = nullptr;
+                sm::ui::TaskBoardRequest taskReq{};
+                if (sm::MacroStore& bst = *app.macroStore;
+                    bst.valid(app.subjectSquad)
+                    && (sm::actions_of(bst, app.subjectSquad)
+                        & sm::kMapActQuests) != 0) {
+                    const int today = app.gs.worldTime.day();
+                    if (!(s_boardFor == app.subjectSquad)
+                        || s_boardDay != today) {
+                        s_boardFor = app.subjectSquad;
+                        s_boardDay = today;
+                        s_boardView = {};
+                        s_boardView.count = sm::task_offers_for(
+                            bst, app.gs, app.npcAi.squadIndex, app.features,
+                            app.subjectSquad, s_boardView.offers,
+                            int(std::size(s_boardView.offers)));
+                        const sm::MacroHandle pf =
+                            sm::player_flag_handle(app.gs);
+                        s_boardView.active =
+                            sm::task_active_at(bst, app.gs, pf,
+                                               app.subjectSquad);
+                        s_boardView.judgedDone = sm::task_judged_done(
+                            bst, app.gs, pf, s_boardView.active);
+                    }
+                    boardPtr = &s_boardView;
+                }
                 sm::ui::draw_settlement(app.gs,
                                         *app.macroStore,
                                         app.subjectSquad,
                                         &app.ui.settlementTab,
                                         &app.ui.settlement,
                                         &attackReq,
+                                        boardPtr,
+                                        &taskReq,
                                         app.uiSettings.scale(sm::ui::UiElementId::PanelSettlement));
+                if (boardPtr) {
+                    const sm::MacroHandle pf = sm::player_flag_handle(app.gs);
+                    if (taskReq.take >= 0 && taskReq.take < s_boardView.count) {
+                        sm::task_take(*app.macroStore, app.gs, pf,
+                                      app.subjectSquad,
+                                      s_boardView.offers[taskReq.take]);
+                        s_boardDay = -1;   // активный контракт сменился
+                    }
+                    if (taskReq.turnIn) {
+                        sm::task_turn_in(*app.macroStore, app.gs, pf,
+                                         app.subjectSquad);
+                        s_boardDay = -1;   // контракт сдан — доска заново
+                    }
+                }
                 if (!app.ui.settlement) app.subjectSquad = {};
                 if (attackReq.id != 0) {
                     // Клетка защитника — колонка store (прежний try_get у

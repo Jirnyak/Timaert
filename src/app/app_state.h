@@ -447,7 +447,6 @@ struct RuntimeFrameStats {
 sm::Inventory& player_bag(App& app);
 sm::MacroWorld macro_world(App& app);
 long file_size_bytes(const std::string& path);
-void refresh_available_settlement_quests(App& app);
 bool route_macro_npc_attack(App& app, sm::MacroHandle npc);
 void perform_encounter_auto(App& app, sm::MacroHandle npc, sm::Ambush ambush);
 void detect_forced_encounter(App& app);

@@ -1812,6 +1812,35 @@ timaert_test(woodcutter_gather_test
         src/macro/econ_day.cpp
     LINK_SDL)
 
+# КОНСТРУКТОР ЗАДАЧ (ломоть 6б M-72): доска детерминирована сидом, оффер
+# называет настоящий контекст (оракул — season_demand_for), взятие = цель +
+# QuestTaken, суд ПО ХОДУ памятью мира, сдача = deal + QuestDone + опыт
+# чистой стоимостью. Список исходников — woodcutter + tasks.cpp + state.cpp
+# (create_factions: вражда фикстуры ставится дверью мира).
+timaert_test(task_constructor_test
+    SOURCES
+        src/macro/tasks.cpp
+        src/macro/state.cpp
+        src/macro/squad_index.cpp
+        src/macro/npc_ai.cpp
+        src/macro/deal.cpp
+        src/macro/recovery.cpp
+        src/macro/nav_field.cpp
+        src/macro/economy.cpp
+        src/macro/chronicle.cpp
+        src/macro/macro_stock.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/macro/tree_layer.cpp
+        src/macro/npc_spawn.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
+        src/macro/econ_day.cpp
+    LINK_SDL
+    # Пин по замеру чистого дерева (идиома M-308): выпавшая проверка краснит
+    # ctest, не разбираясь, которая.
+    PIN "OK task_constructor_test .52 checks")
+
 # МИР ПРОИЗВОДИТ (И3, ломоть 5а M-72): закон «из мира вышла вещь» не держал
 # НИ ОДИН из 134 приборов — `bricks_produced` ушёл 169 578 → 0 при зелёной
 # сюите. Прибор спрашивает выпуск через ДУМКУ модуля типа (второго пути в

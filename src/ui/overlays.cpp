@@ -12,6 +12,7 @@
 #include "tables/codex.h"
 #include "tables/squad_type.h"   // SquadType/squad_archetype — ось рода
 #include "macro/rooted_iter.h"
+#include "macro/features.h"   // имена фич для строк доски контрактов
 #include "macro/labour.h"   // souls_home — головы инвентаря места (M-324:
                             // бралось ТРАНЗИТОМ через rooted_iter.h, и это
                             // держалось на включении, чей комментарий называл
@@ -1535,6 +1536,8 @@ namespace sm::ui
                          SettlementPanelTab *tab,
                          bool *open,
                          MacroHandle *attackRequest,
+                         const TaskBoardView *board,
+                         TaskBoardRequest *taskRequest,
                          float scale)
     {
         if (!open || !*open)
@@ -1836,6 +1839,114 @@ namespace sm::ui
                     ImGui::EndTabItem();
                 }
                 }   // acts & kMapActTrade
+
+                // ── ДОСКА КОНТРАКТОВ (ломоть 6б M-72) ────────────────────
+                // Пятый бит маски исполнен: прежде kMapActQuests объявляли
+                // три строки оси, а ветки под него не было ни одной. Панель
+                // ЧИТАЕТ собранную приложением доску и просит действия
+                // аут-параметром — конверт мира в панель не входит.
+                if ((acts & kMapActQuests) && board && taskRequest)
+                {
+                const bool contractsOpen = ImGui::BeginTabItem("Contracts", nullptr,
+                                                               selected_tab(current, SettlementPanelTab::Contracts));
+                if (tab && ImGui::IsItemClicked())
+                    *tab = SettlementPanelTab::Contracts;
+                if (contractsOpen)
+                {
+                    // Строка оффера — слова на границе мира; рантайм доски
+                    // ходит ординалами (ЗАКОН СЛОВАРЯ п.1).
+                    const auto offerLine = [&](const TaskOffer &o, char *out,
+                                               std::size_t cap) {
+                        const TaskVerbDef &v = kTaskVerbs[o.verb];
+                        switch (v.object)
+                        {
+                        case TaskObjectSpace::Need: {
+                            const ItemDef *d = item_def_at(int(o.object));
+                            std::snprintf(out, cap, "%s %d x %s", v.label,
+                                          int(o.amount),
+                                          d ? d->name : "goods");
+                            return;
+                        }
+                        case TaskObjectSpace::Hostile: {
+                            const MacroHandle th =
+                                macro_handle_by_spawn_id(st, o.target);
+                            std::snprintf(out, cap, "%s %s", v.label,
+                                          st.valid(th)
+                                              ? st.name[th.slot].text
+                                              : "the marked quarry");
+                            return;
+                        }
+                        case TaskObjectSpace::Feature:
+                            // Различитель — руина, НЕ шпиль: стена орба
+                            // (spire_generation_test) считает имя шпиля
+                            // рядом с feature_number_read вторым выводом
+                            // о выкачанности, а ярлык — просто слово.
+                            std::snprintf(out, cap, "%s %s", v.label,
+                                          FeatureType(o.object) == FT_Ruin
+                                              ? "the old ruin"
+                                              : "the spire");
+                            return;
+                        }
+                    };
+
+                    if (board->active.valid)
+                    {
+                        const TaskActive &a = board->active;
+                        TaskOffer shown{};
+                        shown.verb = a.verb;
+                        shown.object = a.object;
+                        shown.amount = a.amount;
+                        shown.target =
+                            ecs::goal_ordinal(st.goal[/*player*/
+                                player_flag_handle(gs).slot].what);
+                        char line[96];
+                        offerLine(shown, line, sizeof(line));
+                        ImGui::Text("Contract: %s", line);
+                        const TaskVerbDef &v = kTaskVerbs[a.verb];
+                        if (v.deadlineDays > 0)
+                        {
+                            ImGui::SameLine();
+                            ImGui::TextDisabled(
+                                "(%d days left)",
+                                int(v.deadlineDays)
+                                    - (gs.worldTime.day() - a.takenDay));
+                        }
+                        if (a.expired)
+                        {
+                            ImGui::TextDisabled(
+                                "Expired - the contract is forfeit.");
+                        }
+                        else if (board->judgedDone)
+                        {
+                            if (ImGui::Button("Turn in"))
+                                taskRequest->turnIn = true;
+                        }
+                        else
+                        {
+                            ImGui::TextDisabled("In progress...");
+                        }
+                        ImGui::Separator();
+                    }
+
+                    if (board->count == 0)
+                        ImGui::TextDisabled("No work today.");
+                    for (int i = 0; i < board->count; ++i)
+                    {
+                        const TaskOffer &o = board->offers[i];
+                        char line[96];
+                        offerLine(o, line, sizeof(line));
+                        ImGui::Text("%s", line);
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("(xp %u)", unsigned(o.xp));
+                        ImGui::SameLine();
+                        char btn[16];
+                        std::snprintf(btn, sizeof(btn), "Take##%d", i);
+                        if (ImGui::Button(btn))
+                            taskRequest->take = i;
+                    }
+                    ImGui::EndTabItem();
+                }
+                }   // acts & kMapActQuests
 
                 // ── ДВЕ ВКЛАДКИ — ДВА ФИЛЬТРА ОДНОГО МАССИВА ─────────────
                 // Вердикт владельца 2026-10-20, дословно: «мне важно чтобы

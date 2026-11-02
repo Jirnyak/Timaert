@@ -5,6 +5,7 @@
 #include "events/event_bus.h"   // GameEvent/EventBus — диалог и сюжет
 #include "macro/state.h"
 #include "macro/store.h"   // MacroHandle — субъект-сквад после шага 1г
+#include "macro/tasks.h"   // доска контрактов — офферы и активный контракт
 #include <array>
 #include <cstdint>
 #include <cstddef>
@@ -42,6 +43,7 @@ enum class CharacterPanelTab : std::uint8_t {
 enum class SettlementPanelTab : std::uint8_t {
     Info,
     Trade,
+    Contracts,
     Garrison,
     Recruit,
     Inventory,
@@ -102,12 +104,28 @@ void draw_character_panel(GameState& gs, MacroStore& st,
 //
 // Конверта мира в сигнатуре НЕТ: его просила одна вкладка (`Map` с превью
 // планировки, снесена 2026-10-19), а панель читает колонки своего слота.
+//
+// ДОСКА КОНТРАКТОВ — ТОЙ ЖЕ УЗОСТЬЮ (ломоть 6б M-72): офферы собирает
+// ПРИЛОЖЕНИЕ (конструктору нужны каркас сквадов и слой фич — конверт мира),
+// панель их ЧИТАЕТ и просит действия аут-параметром, как attackRequest.
+struct TaskBoardView {
+    TaskOffer offers[4];
+    int count = 0;
+    TaskActive active{};      // активный контракт игрока у ЭТОГО места
+    bool judgedDone = false;  // суд на момент пересборки доски
+};
+struct TaskBoardRequest {
+    int take = -1;        // панель просит взять оффер N; исполняет app
+    bool turnIn = false;  // панель просит сдать активный контракт
+};
 void draw_settlement(GameState& gs,
                      MacroStore& st,
                      MacroHandle subject,
                      SettlementPanelTab* tab,
                      bool* open,
                      MacroHandle* attackRequest,
+                     const TaskBoardView* board = nullptr,
+                     TaskBoardRequest* taskRequest = nullptr,
                      float scale = 1.0f);
 // (draw_quest_log умер с квест-машиной — ломоть 3 M-72, вариант А.)
 void draw_codex(GameState& gs, bool* open, float scale = 1.0f);
