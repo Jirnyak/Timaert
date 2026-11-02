@@ -13,6 +13,7 @@
 #include "macro/player_entity.h"
 #include "macro/squad_index.h"  // squads_in_frame — кандидаты рамкой (ломоть 6)
 #include "ui/trade_widgets.h"
+#include "core/subtract.h"   // drain — кванты марша уходят дверью
 #include "ecs/components.h"
 #include "macro/state.h"
 #include "macro/squad.h"   // record_deed — THE deed door (S20.1)
@@ -34,6 +35,7 @@
 #include "macro/store.h"
 
 #include <cmath>
+#include <numbers>
 #include <algorithm>
 #include <array>
 #include <cfloat>
@@ -589,29 +591,54 @@ std::size_t step_macro_walk(GameState& gs, MacroStore& stw, MacroCursor& cursor,
                             float dt, float cellsPerSec,
                             MacroWalkReachedFn onReached,
                             void* onReachedUser) {
-    if (cursor.path.empty() || cursor.pathIdx >= cursor.path.size()) return 0u;
-
     // Input drives the FLAG HOLDER — «игрок это просто флажок для сквада,
     // что на него инпут» (owner, подпосадка 4). No flag standing = no legs.
     const MacroHandle fh = player_flag_handle(gs);
     if (!stw.valid(fh)) return 0u;
+
+    if (cursor.path.empty() || cursor.pathIdx >= cursor.path.size()) {
+        // МАРШРУТА НЕТ, А ДОЛЯ НЕ ДОМА — ДОЕЗД В ЦЕНТР (M-375): прибытие
+        // оставляет тело на краю входа, и без этого жеста игрок вечно стоит
+        // на углу четырёх клеток (стенд владельца, Б5). Тот же квантовый
+        // ход, тем же темпом; маршем не является.
+        ecs::MacroNpcRuntime* art = &stw.runtime[fh.slot];
+        if (art->sub.x != 0 || art->sub.y != 0) {
+            const float producedIdle = cellsPerSec * dt;
+            const std::uint32_t spentHome = ecs::cell_sub_walk_home(
+                art->sub,
+                std::uint32_t(std::lround(
+                    producedIdle * float(2 * ecs::kCellSubEdge))));
+            if (spentHome > 0u) {
+                set_visual_speed(*art,
+                                 float(spentHome)
+                                     / float(2 * ecs::kCellSubEdge),
+                                 dt);
+            }
+        }
+        return 0u;
+    }
     ecs::MacroCell* cell = &stw.cell[fh.slot];
     ecs::MacroNpcRuntime* rt = &stw.runtime[fh.slot];
 
     const int W = gs.mapW;
     const int H = gs.mapH;
 
-    // ONE law of the march (try_move, npc_ai.cpp): pace produces budget,
-    // a cell costs 1.0 of it, at most one spare cell banks across frames.
-    // The euclidean fraction the old walker priced a diagonal at was a
-    // second law of movement — «нужно вырезать любое специфическое для
-    // игрока» (owner verdict 1, 2026-09-10).
+    // ONE law of the march (try_move, npc_ai.cpp): pace produces whole
+    // QUANTA of the squad's own sub-coordinate, the march rides rt->sub to
+    // the edge (±kCellSubEdge) and only the edge changes the WORLD cell —
+    // «в макромире позиция это КЛЕТКА просто сквад локально хранит свою
+    // промежуточную позицю» (owner verdict 2026-11-02). The float budget
+    // bank died with that verdict; «нужно вырезать любое специфическое для
+    // игрока» (owner verdict 1, 2026-09-10) still holds: this is the same
+    // integer march try_move walks.
     const float produced = cellsPerSec * dt;
-    rt->moveBudget += produced;
-    if (rt->moveBudget > produced + 1.0f) rt->moveBudget = produced + 1.0f;
+    std::uint32_t quanta = std::uint32_t(
+        std::lround(produced * float(2 * ecs::kCellSubEdge)));
+    rt->marchFlags = 0;
+    float walked = 0.0f;   // евклидова дорога кадра — для скорости картинки
 
     std::size_t reached = 0u;
-    while (rt->moveBudget >= 1.0f && cursor.pathIdx < cursor.path.size()) {
+    while (quanta > 0 && cursor.pathIdx < cursor.path.size()) {
         const auto& nxt = cursor.path[cursor.pathIdx];
         const int cx = ecs::cell_x(*cell, W);
         const int cy = ecs::cell_y(*cell, W);
@@ -622,35 +649,66 @@ std::size_t step_macro_walk(GameState& gs, MacroStore& stw, MacroCursor& cursor,
         const float dy = wrap_delta(float(nxt.y) - float(cy), float(H));
         const int sdx = dx > 0.0f ? 1 : (dx < 0.0f ? -1 : 0);
         const int sdy = dy > 0.0f ? 1 : (dy < 0.0f ? -1 : 0);
+        if (sdx == 0 && sdy == 0) {   // вейпоинт — своя же клетка
+            ++cursor.pathIdx;
+            continue;
+        }
+        // Цена пересечения — доехать долей до края каждой активной оси
+        // (оси едут вместе: диагональ стоит те же 2×127 кванта).
+        const int costX =
+            sdx != 0 ? ecs::kCellSubEdge - sdx * int(rt->sub.x) : 0;
+        const int costY =
+            sdy != 0 ? ecs::kCellSubEdge - sdy * int(rt->sub.y) : 0;
+        const std::uint32_t cost = std::uint32_t(costX > costY ? costX : costY);
+        // Кванты уходят той же дверью drain, что у марша НПЦ (ЗАКОН ТРЁХ
+        // ДВЕРЕЙ): один закон хода — одна форма траты.
+        const std::uint32_t spent = drain(quanta, cost);
+        rt->marchFlags |= ecs::kMarchAdvanced;
+        // Дорога картинки ЕВКЛИДОВА: диагональный квант ведёт обе оси и
+        // стоит √2 дистанции — глаз, квотированный без этого, отставал на
+        // диагоналях (замер глайд-смоука: maxGap 3.54 клетки).
+        walked += float(spent) / float(2 * ecs::kCellSubEdge)
+                  * ((sdx != 0 && sdy != 0) ? std::numbers::sqrt2_v<float>
+                                            : 1.0f);
+        if (spent < cost) {
+            // Края не достигли: доля едет внутри ТЕКУЩЕЙ клетки, позиция
+            // мира (клетка) не меняется.
+            if (sdx != 0) {
+                const int nx = int(rt->sub.x) + sdx * int(spent);
+                rt->sub.x = std::int8_t(std::clamp(
+                    nx, -ecs::kCellSubEdge, ecs::kCellSubEdge));
+            }
+            if (sdy != 0) {
+                const int ny = int(rt->sub.y) + sdy * int(spent);
+                rt->sub.y = std::int8_t(std::clamp(
+                    ny, -ecs::kCellSubEdge, ecs::kCellSubEdge));
+            }
+            break;
+        }
+        // Пересечение края: клетка меняется, активные оси входят с
+        // противоположного края, пассивная долю сохраняет.
         rt->entryDir = pack_entry_dir(sdx, sdy);
         rt->entryTicks = 0;
         rt->tickAccum = 0;
+        rt->sub = ecs::cell_sub_after_step(sdx, sdy, rt->sub);
         cell->idx = ecs::cell_index(nxt.x, nxt.y, W);
-        // Доля клетки — та же дверь марша, что у всякого сквада (M-244):
-        // вошёл с запада — стоит у западного края.
-        const ecs::CellSub subBefore = stw.sub[fh.slot];
-        const ecs::CellSub subAfter = ecs::cell_sub_after_step(sdx, sdy);
-        stw.sub[fh.slot] = subAfter;
-        rt->moveBudget -= 1.0f;
-        // СКОРОСТЬ КАРТИНКИ — ТОЙ ЖЕ ДВЕРЬЮ, ЧТО У ДУМКИ НПЦ, И В ТОЙ ЖЕ
-        // ВЕЛИЧИНЕ: расстояние звена за время звена. Марш НЕ тронут — клетка
-        // по-прежнему стоит 1.0 бюджета в любом румбе; называется иначе ровно
-        // то, что говорит ПРЕДСТАВЛЕНИЮ, как быстро ему ехать. Смещение
-        // берётся настоящее (клетка плюс доля), а не 1 или √2 на глаз: смена
-        // румба двигает долю, и дуга звена выходит, например, 1.116.
-        // Пишется НА ШАГЕ, потому что глаз весь следующий промежуток едет
-        // ровно по этому, только что пройденному звену.
-        const float legX = float(sdx)
-            + float(subAfter.x - subBefore.x) / float(ecs::kCellSubQuantum);
-        const float legY = float(sdy)
-            + float(subAfter.y - subBefore.y) / float(ecs::kCellSubQuantum);
-        set_visual_speed(*rt, std::sqrt(legX * legX + legY * legY),
-                         1.0f / cellsPerSec);
         ++cursor.pathIdx;
         ++reached;
         if (onReached) {
             onReached(onReachedUser, nxt.x, nxt.y);
         }
+    }
+    // МАРШРУТ ИСЧЕРПАН ЭТИМ ЖЕ КАДРОМ — остаток квантов доезжает в центр
+    // клетки-финиша (M-375, вторая половина хода).
+    if (cursor.pathIdx >= cursor.path.size() && quanta > 0u) {
+        walked += float(ecs::cell_sub_walk_home(rt->sub, quanta))
+                  / float(2 * ecs::kCellSubEdge);
+    }
+    // СКОРОСТЬ КАРТИНКИ — той же дверью, что у думки НПЦ, и в той же
+    // величине: евклидова ДОРОГА кадра за его время. Истина едет квантами
+    // каждый кадр, глазам остаётся догладить порцию.
+    if (walked > 0.0f) {
+        set_visual_speed(*rt, walked, dt);
     }
 
     if (cursor.pathIdx >= cursor.path.size()) {

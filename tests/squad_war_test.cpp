@@ -59,7 +59,7 @@ sm::MacroHandle make_squad_at(sm::MacroStore& st, NPCType type,
                               NPCType memberKind, int memberLevel) {
     sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(int(x), int(y), kMap)};
-    st.sub[h.slot] = {};   // доля клетки: фикстура рождает в центре (M-244a)
+    st.runtime[h.slot].sub = {};   // доля клетки: фикстура рождает в центре (M-244a)
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(type),
                                    std::uint16_t(faction_index(faction))};
     ecs::MacroNpcRuntime rt{};

@@ -929,7 +929,7 @@ void SubworldEngine::fold_player_sub() {
         const int q = int((frac01 - 0.5f) * 256.0f);
         return std::int8_t(std::clamp(q, -127, 127));
     };
-    st.sub[fh.slot] = {quant(playerX_), quant(playerY_)};
+    st.runtime[fh.slot].sub = {quant(playerX_), quant(playerY_)};
 }
 
 // Квитанция app «фрейм заполнен заново». Здесь же достраивается генерация,

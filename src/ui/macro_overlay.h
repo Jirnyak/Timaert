@@ -94,7 +94,7 @@ void draw_macro_overlay(const MacroWorld& mw,
 
 // Advance auto-walk: the INPUT half of the one macro march (подпосадка 4).
 // Input is the flag holder's "AI": it banks `cellsPerSec * dt` into the SAME
-// `MacroNpcRuntime::moveBudget` every squad's try_move banks, and steps the
+// `MacroNpcRuntime::sub` — целые кванты доли, которые ведёт тот же марш, что у
 // squad's MacroCell whole cells at 1.0 budget each — a fractional macro
 // position is unrepresentable, the glide between cells is MacroVisual's.
 // Calls `onReached` once per entered path cell.

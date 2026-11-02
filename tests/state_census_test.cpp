@@ -451,8 +451,9 @@ constexpr Row kMacroStoreRows[] = {
     {"spawnId", Rod::Squads, ""},
     {"cell", Rod::Squads, "адрес — одно число (ЗАКОН АДРЕСА)"},
     {"kind", Rod::Squads, ""},
-    {"sub", Rod::Squads,
-     "доля клетки (CellSub, M-244a) — где внутри клетки стоит сквад"},
+    // (колонка `sub` умерла 2026-11-02: доля — СКВАДНАЯ величина и живёт
+    //  внутри runtime на месте умершего float-банка moveBudget — «сквадные
+    //  в скваде, чтобы мир не знал»)
     {"character", Rod::Squads, ""},
     {"name", Rod::Squads,
      "имя анкеты char[32], мутируемо (вердикт 3, 2026-09-30); Landmark::name "

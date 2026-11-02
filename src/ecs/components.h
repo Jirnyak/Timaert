@@ -49,17 +49,56 @@ struct VisualPos { float vx, vy, speed; };
 // оверлея), скорость глайда и прежде жила в MacroNpcRuntime::visualSpeed.
 struct CellSub { std::int8_t x = 0, y = 0; };
 static_assert(sizeof(CellSub) == 2, "доля клетки — два байта-кванта");
-// КВАНТ КЛЕТКИ — 256 (вердикт владельца M-244 «да норм»): мировая
-// подкоордината = клетка × 256 + sub, целая и без флоата на торе; хранение
-// int8 (−127..127, 0 = центр) оставляет один никогда не занимаемый квант у
-// края — цена названа вердиктом. ОДИН источник числа: развёртка точки
-// (player_flag_point) и целочисленная дистанция встреч читают его.
+// КВАНТ КЛЕТКИ — 256 (вердикт владельца M-244 «да норм»); хранение int8
+// (−127..127, 0 = центр) оставляет один никогда не занимаемый квант у
+// края — цена названа вердиктом. ПОЗИЦИЯ МИРА ПРИ ЭТОМ — КЛЕТКА (M-375):
+// доля — сквадная локаль, и мир её не читает НИ ОДНИМ вопросом; квант нужен
+// только развёртке ПРОЕКЦИИ (player_flag_point — вход в субмир и камера) и
+// глазам карты. Строка «дистанция встреч читает его» умерла — встречи
+// судятся клеткой.
 inline constexpr int kCellSubQuantum = 256;
+// КРАЙ ДОЛИ: ±127 (предел int8 минус никогда не занимаемый квант). Проход
+// клетки от края до края = 2×127 = 254 кванта — это и есть целочисленная
+// цена клетки марша (прежний «1.0 бюджета» в любом румбе: диагональ ведёт
+// обе оси разом и стоит те же 254).
+inline constexpr int kCellSubEdge = 127;
 
-// ДОЛЯ ПОСЛЕ ШАГА МАРША: вошёл с запада (шаг dx=+1) — стоит у ЗАПАДНОГО края
-// новой клетки (subX = −127). Прыжок/телепорт (шага нет) — центр.
-inline constexpr CellSub cell_sub_after_step(int dx, int dy) {
-    return CellSub{std::int8_t(-dx * 127), std::int8_t(-dy * 127)};
+// ДОЛЯ ПОСЛЕ ПЕРЕСЕЧЕНИЯ КРАЯ: вошёл с запада (шаг dx=+1) — стоит у
+// ЗАПАДНОГО края новой клетки (subX = −127); ось, по которой шага не было,
+// долю СОХРАНЯЕТ (шёл по северной трети — в ней и остался). Прыжок/телепорт
+// (шага нет вовсе) — центр, нулями (драйвер, kEntryDirNone).
+inline constexpr CellSub cell_sub_after_step(int dx, int dy,
+                                             CellSub prev = {}) {
+    return CellSub{dx != 0 ? std::int8_t(-dx * kCellSubEdge) : prev.x,
+                   dy != 0 ? std::int8_t(-dy * kCellSubEdge) : prev.y};
+}
+
+// Флаги марша одной думки (MacroNpcRuntime::marchFlags, вердикт 2026-11-02):
+inline constexpr std::uint8_t kMarchAdvanced = 1u;  // кванты проехали
+inline constexpr std::uint8_t kMarchRefused = 2u;   // шага к цели нет
+
+// ДОЕЗД В ЦЕНТР — вторая половина квантового хода (M-375): пересечение края
+// оставляет тело НА КРАЮ новой клетки, поэтому всякое ПРИБЫТИЕ (цель этой
+// клеткой достигнута, маршрут исчерпан, тело встало) доводит долю к центру
+// ТЕМ ЖЕ квантовым ходом — иначе финиш вечно паркует на углу четырёх клеток
+// (стенд владельца, Б5). Оси едут вместе; МАРШЕМ это не является: флагов не
+// ставит, жжения не несёт — тело уже стоит В СВОЕЙ клетке и «устраивается».
+// Возврат — потраченные кванты (картинке).
+inline constexpr std::uint32_t cell_sub_walk_home(CellSub& sub,
+                                                  std::uint32_t quanta) {
+    const std::uint32_t ax = std::uint32_t(sub.x < 0 ? -sub.x : sub.x);
+    const std::uint32_t ay = std::uint32_t(sub.y < 0 ? -sub.y : sub.y);
+    const std::uint32_t cost = ax > ay ? ax : ay;
+    const std::uint32_t spent = quanta < cost ? quanta : cost;
+    if (spent == 0u) return 0u;
+    const int step = int(spent);
+    sub.x = std::int8_t(sub.x > 0 ? (int(sub.x) > step ? int(sub.x) - step : 0)
+                                  : (-int(sub.x) > step ? int(sub.x) + step
+                                                        : 0));
+    sub.y = std::int8_t(sub.y > 0 ? (int(sub.y) > step ? int(sub.y) - step : 0)
+                                  : (-int(sub.y) > step ? int(sub.y) + step
+                                                        : 0));
+    return spent;
 }
 
 // THE CELL OF A MACRO SQUAD — one number (owner verdict 2026-09-10, CANON
@@ -559,11 +598,24 @@ struct MacroNpcRuntime {
     // ПАРАМЕТРОМ и `int`-ом от начала до конца, и обрезать её нечему.
     // Поднятие типа до `int32` было отклонено как форма: оно оставило бы
     // хранимый тотал РАЗРЯДА Б там, где закон (DOD п.9) требует разряда А.
-    // Fractional CELLS banked toward the next whole step: the march is quoted
-    // in cells per game hour (kMacroWalkCellsPerHour) but a think is discrete,
-    // so slow ground (water at a third of road pace) banks part-cells across
-    // thinks instead of rounding them away.
-    float         moveBudget = 0.0f;
+    // ── ЛОКАЛЬНЫЕ КООРДИНАТЫ СКВАДА (вердикт владельца 2026-11-02) ────────
+    // «в макромире позиция это КЛЕТКА просто сквад локально хранит свою
+    // промежуточную позицю НО это не уровень мира а уровень сквада типа
+    // дошол до 127 … и меняет клетку с другой стороны»; «никаких локлаьных
+    // кооординат дркгих систем СПЕИАЛЬНО СКВАДНЫЕ В СКВАДЕ ЧТОБЫ МИР НЕ
+    // ЗНАЛ». Доля живёт В РАНТАЙМЕ сквада (прежняя колонка мира st.sub
+    // умерла): марш ЕДЕТ по ней целыми квантами, край ±127 по румбу — смена
+    // клетки, вход с противоположного края. ВСЕ вопросы мира — ТОЛЬКО
+    // клеткой; долю читают лишь проекция вниз и глаза карты. Float-банк
+    // moveBudget умер вместе с колонкой: прогресс марша И ЕСТЬ доля
+    // (один носитель, DOD п.9), банкинга между думками больше нет.
+    CellSub       sub{};
+    // Флаги марша ЭТОЙ думки: пишет try_move/walker, читает ритм марша,
+    // драйвер зануляет перед думкой. ADVANCED — кванты проехали (это
+    // «moved» внутриклеточного хода); REFUSED — кванты были, а шага,
+    // приближающего к цели, нет (предикат стояния «ноги отказали»).
+    std::uint8_t  marchFlags = 0;
+    std::uint8_t  subPad = 0;   // дыра выравнивания названа полем (M-183)
     std::uint8_t  state;         // NPCState
     // Entry-side context (macro/entry_context.h): the packed signed step of the
     // last cell change (0xFF = none: spawned here / teleported), and a

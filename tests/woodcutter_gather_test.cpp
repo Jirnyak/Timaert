@@ -78,7 +78,7 @@ sm::MacroHandle make_woodcutter(sm::MacroStore& st, float x, float y,
                                 int homeVillageId) {
     sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(int(x), int(y), kMap)};
-    st.sub[h.slot] = {};   // доля клетки: центр (M-244a)
+    st.runtime[h.slot].sub = {};   // доля клетки: центр (M-244a)
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime rt{};
@@ -247,7 +247,7 @@ void test_the_farmer_works_the_field() {
     sm::MacroHandle h = sm::store_birth(st);
     sm::MacroHandle e = h;
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
-    st.sub[h.slot] = {};   // доля клетки: центр (M-244a)
+    st.runtime[h.slot].sub = {};   // доля клетки: центр (M-244a)
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime prt{};
@@ -322,7 +322,7 @@ void test_farmer_without_terrain_conjures_nothing() {
         sm::birth_squad(gs, st, SquadType::Village, 10, 10);
     sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
-    st.sub[h.slot] = {};   // доля клетки: центр (M-244a)
+    st.runtime[h.slot].sub = {};   // доля клетки: центр (M-244a)
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime prt{};
@@ -416,7 +416,7 @@ void test_the_mine_runs_while_the_player_is_away() {
         sm::birth_squad(gs, st, SquadType::Village, 10, 10);
     sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
-    st.sub[h.slot] = {};   // доля клетки: центр (M-244a)
+    st.runtime[h.slot].sub = {};   // доля клетки: центр (M-244a)
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime rt{};
@@ -526,7 +526,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     sm::MacroHandle h = sm::store_birth(st);
     sm::MacroHandle e = h;
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(16, 10, kMap)};
-    st.sub[h.slot] = {};   // доля клетки: центр (M-244a)
+    st.runtime[h.slot].sub = {};   // доля клетки: центр (M-244a)
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime crt{};
@@ -663,7 +663,7 @@ void test_the_miner_works_the_vein() {
     sm::MacroHandle h = sm::store_birth(st);
     sm::MacroHandle e = h;
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
-    st.sub[h.slot] = {};   // доля клетки: центр (M-244a)
+    st.runtime[h.slot].sub = {};   // доля клетки: центр (M-244a)
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime rt{};
@@ -741,7 +741,7 @@ void test_the_miner_works_the_vein() {
         sm::birth_squad(gs2, st2, SquadType::Village, 10, 10);
     sm::MacroHandle h2 = sm::store_birth(st2);
     st2.cell[h2.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
-    st2.sub[h2.slot] = {};   // доля клетки: центр (M-244a)
+    st2.runtime[h2.slot].sub = {};   // доля клетки: центр (M-244a)
     st2.kind[h2.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                      std::uint16_t(faction_index("timaert"))};
     st2.runtime[h2.slot] = rt;
@@ -821,7 +821,7 @@ void test_the_catch_lands_as_creatures() {
     sm::MacroHandle h = sm::store_birth(st);
     sm::MacroHandle e = h;
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
-    st.sub[h.slot] = {};   // доля клетки: центр (M-244a)
+    st.runtime[h.slot].sub = {};   // доля клетки: центр (M-244a)
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime prt{};

@@ -63,7 +63,7 @@ sm::MacroHandle spawn_ai(sm::MacroStore& st,
     sm::store_rename_ordinal(st, h, nextOrdinal++);
     st.cell[h.slot] = sm::ecs::MacroCell{
         sm::ecs::cell_index(int(x), int(y), mapW)};
-    st.sub[h.slot] = {};   // доля клетки: фикстура рождает в центре (M-244a)
+    st.runtime[h.slot].sub = {};   // доля клетки: фикстура рождает в центре (M-244a)
     st.kind[h.slot] = sm::ecs::NPCKind{std::uint16_t(type), std::uint16_t{0}};
 
     sm::ecs::MacroNpcRuntime rt{};
@@ -273,7 +273,10 @@ void test_aggressive_chases_visible_player() {
     // enough thinks to close the two-cell gap, never pinning a literal pace.
     const float perThink =
         sm::kMacroWalkCellsPerHour * sm::kAiTickGameHours;
-    const int thinksToClose = int(std::ceil(2.0f / perThink));
+    // КВАНТОВЫЙ МАРШ (2026-11-02): тело стартует в ЦЕНТРЕ клетки, и до
+    // первого края — полклетки; два перехода стоят 0.5 + 1.0 = 1.5 пролёта
+    // (прежний «2.0 бюджета» был кадансом целоклеточного марша).
+    const int thinksToClose = int(std::ceil(1.5f / perThink));
     // THE LEDGER IS READ FROM A HALF BAR, and that is the 2026-10-24 inversion
     // arriving here: the regen is passive, a march over featureless ground
     // NETS a gain, and a full bar discards the gain at its ceiling — so a
@@ -509,13 +512,13 @@ void test_macro_visual_smoothing_and_snap() {
 
     // Доля — часть цели: сквад, заявивший западный край, тянет глаз к
     // клетке МИНУС полклетки, а не к её центру (два кванта закона — одна цель).
-    st.sub[e.slot] = sm::ecs::cell_sub_after_step(+1, 0);   // вошёл с запада
+    st.runtime[e.slot].sub = sm::ecs::cell_sub_after_step(+1, 0);   // вошёл с запада
     sm::ui::tick_macro_eyes(st, eyes, 128, 128, 1.0f);
     CHECK(close_enough(eyes.x[e.slot], 12.0f - 127.0f / 256.0f)
               && close_enough(eyes.y[e.slot], 10.0f),
           "the stated intra-cell point is part of the glide target");
 
-    st.sub[e.slot] = {};
+    st.runtime[e.slot].sub = {};
     (*sm::body_state<sm::ecs::MacroCell>(st, e)).idx =
         sm::ecs::cell_index(30, 10, 128);
     sm::ui::tick_macro_eyes(st, eyes, 128, 128, 0.25f);

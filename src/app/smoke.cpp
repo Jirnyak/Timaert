@@ -326,7 +326,7 @@ static sm::MacroHandle smoke_birth_squad_at_player(App& app,
     const int pcx = int(smoke_player_x(app));
     const int pcy = int(smoke_player_y(app));
     st.cell[h.slot].idx = sm::ecs::cell_index(pcx, pcy, app.gs.mapW);
-    st.sub[h.slot] = {};   // пин — прыжок: центр клетки (M-244a)
+    st.runtime[h.slot].sub = {};   // пин — прыжок: центр клетки (M-244a)
     // «Стой тут» — цель на собственную клетку (M-1): прибытие уже истинно.
     sm::ecs::goal_set(st.goal[h.slot], st.cell[h.slot].idx, 0, 0,
                       std::uint8_t(sm::NPCState::Idle));
@@ -887,7 +887,7 @@ bool run_subworld_clock_smoke(App& app) {
                 const int q = int((frac01 - 0.5f) * 256.0f);
                 return std::int8_t(std::clamp(q, -127, 127));
             };
-            const auto sub = app.macroStore->sub[fh.slot];
+            const auto sub = app.macroStore->runtime[fh.slot].sub;
             folded = sub.x == quant(app.subworld.player_x())
                   && sub.y == quant(app.subworld.player_y());
         }
@@ -1951,6 +1951,7 @@ bool run_macro_glide_gap_smoke(App& app) {
     static float  prevEyeX = 0.0f, prevEyeY = 0.0f;
     static float  prevStX = 0.0f, prevStY = 0.0f;
     static int    legs = 0;
+    static bool   sawDiagonal = false;
 
     const sm::MacroHandle fh = sm::player_flag_handle(app.gs);
     if (!app.macroStore->valid(fh)) {
@@ -1959,9 +1960,9 @@ bool run_macro_glide_gap_smoke(App& app) {
     }
     const sm::MacroStore& st = *app.macroStore;
     const float tx = float(sm::ecs::cell_x(st.cell[fh.slot], app.gs.mapW))
-                   + float(st.sub[fh.slot].x) / float(sm::ecs::kCellSubQuantum);
+                   + float(st.runtime[fh.slot].sub.x) / float(sm::ecs::kCellSubQuantum);
     const float ty = float(sm::ecs::cell_y(st.cell[fh.slot], app.gs.mapW))
-                   + float(st.sub[fh.slot].y) / float(sm::ecs::kCellSubQuantum);
+                   + float(st.runtime[fh.slot].sub.y) / float(sm::ecs::kCellSubQuantum);
 
     if (!armed) {
         if (!smoke_boot_invariants_hold(app)) {
@@ -2019,6 +2020,14 @@ bool run_macro_glide_gap_smoke(App& app) {
                                                      float(app.gs.mapH)));
             statedArc += leg;
             if (leg > maxLeg) maxLeg = leg;
+            // Диагональ истины — обе оси двинулись в одном кадре (квантовый
+            // марш: звенья — слайсы кадра, а не целые клетки).
+            if (std::fabs(sm::torus_delta(tx - prevStX, float(app.gs.mapW)))
+                    > 1e-4f
+                && std::fabs(sm::torus_delta(ty - prevStY,
+                                             float(app.gs.mapH))) > 1e-4f) {
+                sawDiagonal = true;
+            }
             ++legs;
             prevStX = tx; prevStY = ty;
         }
@@ -2040,12 +2049,21 @@ bool run_macro_glide_gap_smoke(App& app) {
 
     SMOKE_CHECK(app, legs >= 16 && app.cursor.path.empty(),
                 "macro_glide_gap walked a long route to its end");
-    SMOKE_CHECK(app, maxLeg > 1.0,
-                "the route has DIAGONAL legs — without one the law is vacuous");
-    SMOKE_CHECK(app, eyeArc >= statedArc - maxLeg,
+    // КВАНТОВЫЙ МАРШ (M-375): звенья истины — слайсы кадра, не целые клетки
+    // (прежний «maxLeg > 1.0» умер вместе с прыжками). Диагональ обязана
+    // быть — без неё закон √2 пуст.
+    SMOKE_CHECK(app, sawDiagonal,
+                "the route has DIAGONAL motion — without one the law is "
+                "vacuous");
+    // ЗАКОН ГЛАЗА: картинка не отстаёт от истины дальше клетки — скорость
+    // квотируется ЕВКЛИДОВОЙ дорогой кадра (диагональный квант стоит √2;
+    // замер до починки: maxGap 3.54 клетки на диагоналях).
+    SMOKE_CHECK(app, maxGap < 1.0,
+                "the eye never trails the stated point by a whole cell");
+    SMOKE_CHECK(app, eyeArc >= statedArc - 1.0,
                 "the eye covered the stated point's arc: the glide speed is "
-                "quoted in DISTANCE per time, so a diagonal leg grants the "
-                "eye the whole diagonal");
+                "quoted in DISTANCE per time, so a diagonal quantum grants "
+                "the eye its sqrt2");
     return true;
 }
 
@@ -2423,7 +2441,7 @@ bool run_macro_npc_trace_smoke(App& app) {
         }
     }
     cell.idx = sm::ecs::cell_index(baseX, baseY, app.gs.mapW);
-    stt.sub[traceH.slot] = {};
+    stt.runtime[traceH.slot].sub = {};
 
     // The avatar's bar is his SHEET's (Session 21): the cached maxSp the
     // regen law fills, not the retired 2×maxHp dialect. Since the pools
@@ -2434,7 +2452,6 @@ bool run_macro_npc_trace_smoke(App& app) {
     rt.state = std::uint8_t(sm::NPCState::Resting);
     hp.sp = 0;
     hp.spCarry = 0.0f;
-    rt.moveBudget = 0.0f;
     rt.tickAccum = 0;
     rt.visualSpeed = 0.0f;
     // Resting exits at half the bar; the percent law (1/8 per game hour)
@@ -2459,7 +2476,7 @@ bool run_macro_npc_trace_smoke(App& app) {
         && rt.state == std::uint8_t(sm::NPCState::Idle);
 
     cell.idx = sm::ecs::cell_index(baseX, baseY, app.gs.mapW);
-    stt.sub[traceH.slot] = {};
+    stt.runtime[traceH.slot].sub = {};
     // Глаз — кэш представления (M-244a): сеем его на базу, чтобы глайд
     // мерился от известной точки, как прежде мерился от visual-колонки.
     app.macroEyes.primed = true;
@@ -2499,7 +2516,7 @@ bool run_macro_npc_trace_smoke(App& app) {
     // сквад стоит у края входа («вошёл с запада — стоит у западного края»),
     // и глаз обязан сойтись к НЕЙ, а не к центру клетки.
     const float statedX = logicalX
-        + float(stt.sub[traceH.slot].x) / 256.0f;
+        + float(stt.runtime[traceH.slot].sub.x) / 256.0f;
     const float visualBefore = app.macroEyes.x[traceH.slot];
     sm::ui::tick_macro_eyes(*app.macroStore, app.macroEyes,
                             app.gs.mapW, app.gs.mapH, 0.25f);
@@ -2528,17 +2545,15 @@ bool run_macro_npc_trace_smoke(App& app) {
                                          logicalX, logicalY,
                                          float(app.gs.mapW),
                                          float(app.gs.mapH));
-    // ДВЕРЬ МАРША ОБЯЗАНА ЗАЯВИТЬ ДОЛЮ (M-244a): шагнувший сквад стоит у
-    // края входа по румбу своего же entryDir. Отношение, не число: направление
-    // марша — факт раскладки мира, а связь «entryDir ⇒ sub» — закон. Без
-    // этой проверки мутация «дверь молчит» зелёная: и цель глайда, и глаз
-    // читают ту же колонку и соглашаются на любом её значении.
+    // (Детектор «entryDir ⇒ sub = край входа» УМЕР с квантовым маршем
+    // (M-375, 2026-11-02): кванты продолжают ехать ПОСЛЕ пересечения, и
+    // вставший стоит там, где они кончились, — края он не обязан. Ловить
+    // «дверь доли молчит» больше нечего: доля и есть механизм движения —
+    // немая дверь не сменит ни одной клетки, и это красит проверку шагов
+    // ниже. Вход всё ещё обязан быть проштампован — это и утверждаем.)
     int edx = 0, edy = 0;
     const bool hasEntry = sm::unpack_entry_dir(rt.entryDir, edx, edy);
-    const sm::ecs::CellSub wantSub = sm::ecs::cell_sub_after_step(edx, edy);
-    const bool subStamped =
-        !hasEntry || (stt.sub[traceH.slot].x == wantSub.x
-                      && stt.sub[traceH.slot].y == wantSub.y);
+    const bool subStamped = hasEntry;
     const float glidedMid = sm::torus_dist(float(baseX), float(baseY),
                                            visualMid,
                                            app.macroEyes.y[traceH.slot],
@@ -2611,7 +2626,14 @@ bool run_macro_npc_trace_smoke(App& app) {
                  folded.timeTick.ticksAdvanced, foldSteps, loopDt);
     std::fflush(stderr);
 
-    if (!recovered || !logicalMoved || !visualSmoothed
+    // ПРИБЫВШИЙ И ВСТАВШИЙ ДОЕХАЛ В ЦЕНТР (M-375, симптом стенда Б5: финиш
+    // вечно парковал тело на углу четырёх клеток): маршевые думки кончились
+    // простоями, и доля обязана быть нулями. Мутация «оба жеста доезда
+    // отключены» → КРАСНО ровно здесь (прогнано вживую 2026-11-02); чистое
+    // дерево — PASS.
+    const bool settledHome = stt.runtime[traceH.slot].sub.x == 0
+                             && stt.runtime[traceH.slot].sub.y == 0;
+    if (!recovered || !logicalMoved || !visualSmoothed || !settledHome
         || !foldCountsTicks || !loopDtIsLive) {
         smoke_fail(app, "macro_npc_trace invariant");
         return false;

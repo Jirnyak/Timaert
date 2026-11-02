@@ -142,7 +142,7 @@ constexpr std::uint64_t kSheetBytes =                // лист опциона�
     + sizeof(MacroNpcRecord::sheet.levelData);   // маска перков снесена (M-252)
 constexpr std::uint64_t kMacroNpcBytes =             // write_macro_npc
     sizeof(MacroNpcRecord::spawnId) + sizeof(MacroNpcRecord::cell)
-    + sizeof(MacroNpcRecord::sub) + sizeof(MacroNpcRecord::kind)
+    + sizeof(MacroNpcRecord::kind)   // поле `sub` умерло 2026-11-02: доля в runtime
     + sizeof(MacroNpcRecord::pools)   // поле `level` умерло: M-246а
     + sizeof(MacroNpcRecord::runtime)
     + sizeof(MacroNpcRecord::goal)    // v145: цель сквада — колонка (M-1)
@@ -608,7 +608,6 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     }
     w.pod(m.spawnId);
     w.pod(m.cell);   // v86: ОДНО число — клетка сквада (MacroCell)
-    w.pod(m.sub);    // v139: доля клетки (M-244a; здесь ехал MacroVisual)
     w.pod(m.kind);
     w.pod(m.pools);
     w.pod(m.runtime);
@@ -643,7 +642,6 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
 void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     r.pod(m.spawnId);
     r.pod(m.cell);   // v86
-    r.pod(m.sub);    // v139
     r.pod(m.kind);
     r.pod(m.pools);
     r.pod(m.runtime);

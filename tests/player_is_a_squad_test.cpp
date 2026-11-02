@@ -38,7 +38,7 @@ sm::MacroHandle npc_squad(sm::MacroStore& st, float x, float y,
     sm::MacroHandle h = sm::store_birth(st);
     // 64 — the fixture map side every test in this file boots (gs.mapW).
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(int(x), int(y), 64)};
-    st.sub[h.slot] = {};   // доля клетки: центр (M-244a)
+    st.runtime[h.slot].sub = {};   // доля клетки: центр (M-244a)
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Bandit),
                                    std::uint16_t(faction_index("bandits"))};
     st.sheet[h.slot].levelData.level = 2;   // уровень — анкета (M-246а)

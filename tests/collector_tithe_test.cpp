@@ -102,7 +102,7 @@ MacroHandle make_collector(MacroStore& st, int x, int y,
                            std::uint32_t ordinal) {
     MacroHandle h = store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(x, y, kMap)};
-    st.sub[h.slot] = {};   // доля клетки: центр (M-244a)
+    st.runtime[h.slot].sub = {};   // доля клетки: центр (M-244a)
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime rt{};

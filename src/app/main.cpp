@@ -867,26 +867,24 @@ void detect_forced_encounter(App& app) {
     // КАНДИДАТЫ — РАМКОЙ 3×3 ЧЕРЕЗ КАРКАС (вердикт владельца M-244
     // 2026-10-15: «согласен 3х3»), скан капа умер этим ломтём. Гейт —
     // ЦЕЛОЧИСЛЕННАЯ дистанция в мировом подкоординатном пространстве
-    // (клетка × kCellSubQuantum + sub, dx²+dy² ≤ R² в int32): работает
-    // через границу клетки и шов тора без флоата и веток. Прежний гейт
-    // «та же клетка» был отклонён владельцем поимённо: граница клетки —
-    // невидимая стена, а встреча через всю клетку — мгновенна.
-    //
-    // R — ПОЛКЛЕТКИ (128 квантов): сближение на осязаемую близость, не на
-    // «где-то в том же квадрате». ЧИСЛО — БАЛАНС (ЗАКОН ПРИОРИТЕТА
-    // СТРУКТУРЫ): двигать свободно, структуру гейта оно не держит.
-    constexpr int kEncounterReachSub = sm::ecs::kCellSubQuantum / 2;
+    // ВСТРЕЧА СУДИТСЯ КЛЕТКОЙ (вердикт владельца 2026-11-02, дословно:
+    // «ТОЛЬКО ПО КЛЕТКАМ ТОЛКЬО КВАНТОВАН! чтобы было агносттично и чисто…
+    // никаких локлаьных кооординат дркгих систем СПЕИАЛЬНО СКВАДНЫЕ В
+    // СКВАДЕ ЧТОБЫ МИР НЕ ЗНАЛ»). Здесь стояла суб-дистанция полклетки —
+    // и прежний вердикт, отклонявший клеточный гейт («граница клетки —
+    // невидимая стена»), СНЯТ этим новым: сегодня доля едет непрерывно, и
+    // вход в занятую клетку больше не мгновенный прыжок через неё.
     const std::uint16_t flagSlot = [&]() -> std::uint16_t {
         const sm::MacroHandle h = sm::player_flag_handle(app.gs);
         return app.macroStore->valid(h) ? h.slot : sm::kMacroNoSlot;
     }();
     if (flagSlot == sm::kMacroNoSlot) return;
-    const sm::ecs::CellSub psub = st.sub[flagSlot];
     sm::MacroHandle found{};
     sm::squads_in_frame(
         app.npcAi.squadIndex, st, px, py, 1,
         [&](std::uint16_t slot, int dxCell, int dyCell) {
             if (found.id != 0) return;
+            if (dxCell != 0 || dyCell != 0) return;   // встреча = ОДНА клетка
             if (st.alive[slot] == 0 || st.dead[slot] != 0) return;
             if (slot == flagSlot || st.playerFlag[slot].home != 0) return;
             if (sm::handle_at(st, slot) == app.encounterGraceNpc) return;
@@ -899,15 +897,6 @@ void detect_forced_encounter(App& app) {
                 return;
             }
             if (st.pools[slot].hp <= 0) return;
-            const sm::ecs::CellSub nsub = st.sub[slot];
-            const int dx = dxCell * sm::ecs::kCellSubQuantum
-                         + int(nsub.x) - int(psub.x);
-            const int dy = dyCell * sm::ecs::kCellSubQuantum
-                         + int(nsub.y) - int(psub.y);
-            if (dx * dx + dy * dy
-                > kEncounterReachSub * kEncounterReachSub) {
-                return;
-            }
             // Hostile to the PLAYER by the one relation law — the same
             // predicate the battle masks bake and the AI wars ask.
             if (!sm::player_hostile_to(
@@ -2999,7 +2988,19 @@ void poll_movement(App& app, float dt) {
     // changes how many game hours a journey takes, NOT what it costs — stamina
     // is priced per cell — so a fast traveller and a tough one are different
     // characters, not the same one twice.
-    if (!app.cursor.path.empty() && !paused) {
+    //
+    // ЦЕЛЬ КЛЕТКИ ПОДРАЗУМЕВАЕТ ЕЁ ЦЕНТР (вердикт владельца 2026-11-02:
+    // «когда сквад решает попасть в клетку это подразумевается центр её (в
+    // его лок 0 0)»; края — только ПРЕРВАННЫЕ состояния движения). Поэтому
+    // марш зовётся, пока есть маршрут ИЛИ доля не дома: гейт только по пути
+    // морил голодом доезд в центр, и финиш вечно стоял на краю входа.
+    const bool subAtHome = [&] {
+        const sm::MacroHandle fh = sm::player_flag_handle(app.gs);
+        if (!app.macroStore->valid(fh)) return true;
+        const sm::ecs::CellSub s = app.macroStore->runtime[fh.slot].sub;
+        return s.x == 0 && s.y == 0;
+    }();
+    if ((!app.cursor.path.empty() || !subAtHome) && !paused) {
         const sm::BonusTotals standing = player_standing_bonuses(app);
         const sm::CharacterSheet* base = sm::player_sheet(app.gs, *app.macroStore);
         const sm::CharacterSheet effSheet = base

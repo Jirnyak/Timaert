@@ -129,7 +129,9 @@ inline constexpr std::size_t kNavRegionCap = kUnifiedCap;
 // структура не могут разъехаться молча ни в одну сторону.
 inline constexpr std::size_t kMacroStoreRowBytes =
     sizeof(ecs::MacroSpawnId) + sizeof(ecs::MacroCell) + sizeof(ecs::NPCKind)
-    + sizeof(ecs::CellSub) + sizeof(ecs::NpcCharacter)
+    // (колонка CellSub умерла 2026-11-02: доля — СКВАДНАЯ величина и живёт
+    //  внутри MacroNpcRuntime, на месте умершего float-банка moveBudget)
+    + sizeof(ecs::NpcCharacter)
     + sizeof(ecs::SquadName)          // имя анкеты (ход 2, вердикт 3)
     + sizeof(ecs::NpcTraits) + sizeof(ecs::Pools)   // NpcLevel умер: M-246а
     + sizeof(ecs::MacroNpcRuntime) + sizeof(SpellBook)

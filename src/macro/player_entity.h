@@ -114,9 +114,9 @@ inline bool player_flag_point(const GameState& gs, const MacroStore& st,
     const MacroHandle h = player_flag_handle(gs);
     if (!st.valid(h)) return false;
     x = float(ecs::cell_x(st.cell[h.slot], gs.mapW))
-        + float(st.sub[h.slot].x) / float(ecs::kCellSubQuantum);
+        + float(st.runtime[h.slot].sub.x) / float(ecs::kCellSubQuantum);
     y = float(ecs::cell_y(st.cell[h.slot], gs.mapW))
-        + float(st.sub[h.slot].y) / float(ecs::kCellSubQuantum);
+        + float(st.runtime[h.slot].sub.y) / float(ecs::kCellSubQuantum);
     return true;
 }
 
@@ -137,7 +137,7 @@ inline void player_jump_to_cell(GameState& gs, MacroStore& st, int x, int y) {
     rt.entryDir = kEntryDirNone;
     rt.entryTicks = 0;
     rt.tickAccum = 0;
-    st.sub[h.slot] = {};   // прыжок — центр клетки (M-244)
+    st.runtime[h.slot].sub = {};   // прыжок — центр клетки (M-244)
 }
 
 // ОЧНУТЬСЯ В СВОЁМ ТЕЛЕ — the one thing that makes possession an EFFECT rather

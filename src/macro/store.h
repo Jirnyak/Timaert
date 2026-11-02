@@ -92,8 +92,7 @@ struct PlayerFlag {
     X(spawnId,   ecs::MacroSpawnId)                                          \
     X(cell,      ecs::MacroCell)                                             \
     X(kind,      ecs::NPCKind)                                               \
-    X(sub,       ecs::CellSub)     /* доля клетки, M-244 */                                           \
-    X(character, ecs::NpcCharacter)                                          \
+        X(character, ecs::NpcCharacter)                                          \
     X(name,      ecs::SquadName)                                             \
     X(traits,    ecs::NpcTraits)                                             \
     X(pools,     ecs::Pools)                                                 \
@@ -239,7 +238,7 @@ struct MacroStore {
 // есть колонка была ВТОРЫМ НОСИТЕЛЕМ одного ответа, DOD п.6). Названных байт
 // 4, освободилось 8 — четыре добрали дыры выравнивания рантайма (u8 перед
 // u32): 747 126 800 → 746 995 728, то есть **−131 072 Б = −128 КиБ**.
-static_assert(sizeof(MacroStore) == 746995728ull,    // кап 16384; 2026-10-23 (ломоть 3 M-72): ±0 Б/слот — колонка цели SquadGoal +12 оплачена ровно похудением рантайма −12 (68 → 56: цель и логово уехали из свалки runtime); до того +8 Б/слот (харч 15 → 17 товаров)
+static_assert(sizeof(MacroStore) == 746962960ull,    // кап 16384; 2026-11-02 (квантовый марш): −2 Б/слот — колонка CellSub уехала ВНУТРЬ рантайма на место float-банка moveBudget (сквадные координаты в скваде, мир их не знает); 746 995 728 → 746 962 960 = −32 КиБ. До того ±0 (цель SquadGoal +12 = рантайм −12)
               "гладкая память макромира: новая колонка = новая цена, "
               "названная вслух (AGENTS п.10)");
 

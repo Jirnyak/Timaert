@@ -172,7 +172,6 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     // (ниже эмитента 341, как и все остальные).
     a.spawnId.index = 200;
     a.cell = {sm::ecs::cell_index(33, 44, 512)};
-    a.sub = {17, -9};   // доля клетки едет сейвом (M-244a)
     a.kind = {std::uint16_t(sm::NPCType::Bandit), 3};
     a.pools = {17, 42};
     a.sheet.levelData.level = 5;   // уровень — анкета (M-246а)
@@ -191,7 +190,8 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     a.runtime.marathonRank = 4;
     a.runtime.moveMult = 1.25f;
     a.pools.spCarry = 0.5f;
-    a.runtime.moveBudget = 0.75f;
+    a.runtime.sub = {17, -9};   // сквадная доля едет сейвом (в рантайме, 2026-11-02)
+    a.runtime.marchFlags = 3;
     a.runtime.state = 2;
     a.runtime.entryDir = 0x12;
     a.runtime.entryTicks = 9;
@@ -231,7 +231,6 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     sm::MacroNpcRecord d{};
     d.spawnId.index = 9;
     d.cell = {sm::ecs::cell_index(1, 2, 512)};
-    d.sub = {};
     d.kind = {std::uint16_t(sm::NPCType::Guard), 1};
     d.pools = {0, 55};
     d.sheet.levelData.level = 3;   // уровень — анкета (M-246а)
@@ -251,7 +250,6 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     player.spawnId.index = kFixturePlayerOrdinal;
     player.playerHome = 1;
     player.cell = {sm::ecs::cell_index(12, 13, 512)};
-    player.sub = {};
     player.kind = {std::uint16_t(sm::NPCType::Adventurer),
                    std::uint16_t(sm::faction_index(sm::kPlayerFactionId))};
     player.pools = {40, 40};
@@ -809,7 +807,9 @@ void run_roundtrip() {
             || a.runtime.entryTicks != want.runtime.entryTicks
             || a.runtime.tickAccum != want.runtime.tickAccum
             || a.runtime.visualSpeed != want.runtime.visualSpeed
-            || a.runtime.moveBudget != want.runtime.moveBudget) {
+            || a.runtime.sub.x != want.runtime.sub.x
+            || a.runtime.sub.y != want.runtime.sub.y
+            || a.runtime.marchFlags != want.runtime.marchFlags) {
             FAIL_BAIL("macro runtime state lost");
         }
         // ЦЕЛЬ РОДА 2 ПЕРЕЖИВАЕТ СЕЙВ ВСЕМИ ЧЕТЫРЬМЯ КОЛОНКАМИ (M-1):

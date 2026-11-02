@@ -84,7 +84,7 @@ MacroHandle make_npc(MacroStore& st, NPCType type,
     const MacroHandle h = store_birth(st);
     if (!st.valid(h)) return {};   // отказ капа уже прозвучал вслух
     st.cell[h.slot]   = ecs::MacroCell{ecs::cell_index(x, y, mapW)};
-    st.sub[h.slot]    = {};   // рождение — центр клетки (M-244)
+    st.runtime[h.slot].sub    = {};   // рождение — центр клетки (M-244)
     st.kind[h.slot]   = ecs::NPCKind{std::uint16_t(type), factionIdx};
 
     const auto& def = npc_def(type);

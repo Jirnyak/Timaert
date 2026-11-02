@@ -33,7 +33,9 @@ struct MacroStore;
 struct MacroNpcRecord {
     ecs::MacroSpawnId    spawnId{};
     ecs::MacroCell       cell{};
-    ecs::CellSub           sub{};   // доля клетки (M-244; здесь ехал MacroVisual)
+    // (Поле `sub` умерло 2026-11-02: доля — СКВАДНАЯ величина и живёт в
+    //  runtime.sub, который едет этой же записью ниже; снимок вёз её дважды —
+    //  тот же класс дубля, что поле `level`.)
     ecs::NPCKind         kind{};
     ecs::Pools           pools{};
     // (Поле `level` умерло 2026-10-18, M-246а: уровень — `levelData.level`

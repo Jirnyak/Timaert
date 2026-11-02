@@ -90,7 +90,7 @@ World make_world() {
     MacroStore& st = *w.store;
     MacroHandle h = store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
-    st.sub[h.slot] = {};
+    st.runtime[h.slot].sub = {};
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime rt{};

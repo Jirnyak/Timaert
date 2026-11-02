@@ -1,5 +1,6 @@
 // Macroworld NPC AI — full behaviour set, faithful port of `npc-ai.ts`.
 #include "macro/npc_ai.h"
+#include <numbers>                 // sqrt2 — евклидова дорога картинки
 #include "core/stacks.h"           // kUnifiedCap — резерв скрэтчей порядка
 #include "macro/upkeep_window.h"   // ОДИН суд границы на всякий контейнер
 #include "macro/characters.h"  // стол анкет — ступень лестницы поведения
@@ -30,6 +31,7 @@
 #include "macro/threat_field.h"     // поле угрозы: скор патруля, страх артелей
 #include "macro/travel.h"
 #include "ecs/components.h"
+#include "core/subtract.h"   // drain — кванты марша уходят дверью
 #include "core/torus.h"
 #include "core/rng.h"
 #include "core/table_guard.h"  // страж порядка строк kAiModuleRows
@@ -478,12 +480,27 @@ void settle_march_rhythm(MacroHandle e, const MacroPos& p,
     // river bank — walking nowhere, resting never.
     const bool stopped = rt.state == std::uint8_t(NPCState::Resting)
                          || at_goal(p, store_ctx(ctx).goal[e.slot], ctx)
-                         || (!moved && rt.moveBudget >= 1.0f);
+                         || (!moved
+                             && (rt.marchFlags & ecs::kMarchRefused) != 0);
 
     // ...and `!moved` on top, because a think that arrived still MARCHED: you
     // do not walk two cells and take a slice of rest in the same breath. Rest
     // begins on the first think after the legs stop.
     const bool resting = stopped && !moved;
+
+    // ВСТАВШЕЕ ТЕЛО ДОЕЗЖАЕТ В ЦЕНТР СВОЕЙ КЛЕТКИ (M-375, «у нас вообще
+    // должно быть завершено стояние между клетками»): думка, чья машина
+    // марша не звалась (цель — своя клетка, ожидание, работа на месте),
+    // иначе навсегда оставила бы долю на краю входа. Темп — базовый шаг
+    // думки (та же величина, что производит марш); это НЕ марш — resting
+    // уже вычислен, жжения доезд не несёт.
+    if (resting) {
+        ecs::cell_sub_walk_home(
+            rt.sub,
+            std::uint32_t(std::lround(kMacroWalkCellsPerHour
+                                      * kAiTickGameHours
+                                      * float(2 * ecs::kCellSubEdge))));
+    }
 
     // THE two processes, THE one door (recovery.h settle_pools_over_time),
     // asked UNCONDITIONALLY — which is the shape of the law and not a widening
@@ -565,15 +582,20 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
                            * (flying ? 1.0f
                                      : terrain_speed_mult(
                                            cell_weight(ctx, ix, iy)));
-    rt.moveBudget += perThink;
-    // Banking bound, not a speed limit: at most one whole spare cell rides
-    // across thinks on top of this think's own production.
-    if (rt.moveBudget > perThink + 1.0f) rt.moveBudget = perThink + 1.0f;
+    // КВАНТОВЫЙ ХОД (вердикт владельца 2026-11-02: «никаких флоатов всё
+    // чисто инт», «дошол до 127 … и меняет клетку с другой стороны»).
+    // Производство думки — целые кванты доли; банка между думками умерла
+    // вместе с float-бюджетом: прогресс марша И ЕСТЬ доля rt.sub, а кванты,
+    // которым некуда идти, сгорают с думкой (kMarchRefused скажет ритму).
+        std::uint32_t quanta = std::uint32_t(
+        std::lround(perThink * float(2 * ecs::kCellSubEdge)));
+    rt.marchFlags = 0;
+    float walked = 0.0f;   // евклидова дорога думки — только для картинки
 
     const int playerCellX = wrap_axis(int(ctx.playerX), ctx.mapW);
     const int playerCellY = wrap_axis(int(ctx.playerY), ctx.mapH);
 
-    while (rt.moveBudget >= 1.0f && (ix != itx || iy != ity)) {
+    while (quanta > 0 && (ix != itx || iy != ity)) {
         // Greedy steering (Session 21, owner's choice over per-squad A*):
         // among the eight neighbours, keep those strictly CLOSER to the
         // target and step onto the cheapest by the one weight grid. The
@@ -646,7 +668,13 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
                 }
             }
         }
-        if (bx < 0) break;   // no step progresses: the leg ends here
+        if (bx < 0) {
+            // Шага, приближающего к цели, нет — кванты сгорают, а ритм
+            // марша узнаёт «ноги отказали» флагом (прежде это говорил
+            // банк `moveBudget >= 1.0f`, умерший с флоатом).
+            rt.marchFlags |= ecs::kMarchRefused;
+            break;
+        }
 
         // Entry-side stamp: the signed step of THIS cell change, torus-folded
         // (stepping east off the map's edge is still +1, not -(w-1)).
@@ -655,11 +683,47 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
         int dy = by - iy;
         if (dy > 1) dy = -1; else if (dy < -1) dy = 1;
 
+        // ЦЕНА ПЕРЕСЕЧЕНИЯ — доехать долей до края по каждой активной оси;
+        // оси едут ВМЕСТЕ, поэтому диагональ стоит те же 2×127 кванта от
+        // края до края, что и прямой ход, — прежний закон «клетка = 1.0
+        // бюджета в любом румбе», теперь целыми числами.
+        const int costX =
+            dx != 0 ? ecs::kCellSubEdge - dx * int(rt.sub.x) : 0;
+        const int costY =
+            dy != 0 ? ecs::kCellSubEdge - dy * int(rt.sub.y) : 0;
+        const std::uint32_t cost = std::uint32_t(costX > costY ? costX : costY);
+
+        // Кванты уходят ДВЕРЬЮ drain (ЗАКОН ТРЁХ ДВЕРЕЙ): взять сколько
+        // есть, факт честен — хватило на край или нет, решает возврат.
+        const std::uint32_t spent = drain(quanta, cost);
+        rt.marchFlags |= ecs::kMarchAdvanced;
+        walked += float(spent) / float(2 * ecs::kCellSubEdge)
+                  * ((dx != 0 && dy != 0) ? std::numbers::sqrt2_v<float>
+                                          : 1.0f);
+        if (spent < cost) {
+            // Края не достигли: доля едет ВНУТРИ текущей клетки (ось у
+            // своего края стоит клампом), позиция мира не меняется —
+            // «сквад локально хранит свою промежуточную позицию».
+            if (dx != 0) {
+                const int nx = int(rt.sub.x) + dx * int(spent);
+                rt.sub.x = std::int8_t(std::clamp(
+                    nx, -ecs::kCellSubEdge, ecs::kCellSubEdge));
+            }
+            if (dy != 0) {
+                const int ny = int(rt.sub.y) + dy * int(spent);
+                rt.sub.y = std::int8_t(std::clamp(
+                    ny, -ecs::kCellSubEdge, ecs::kCellSubEdge));
+            }
+            break;
+        }
+
+        // ПЕРЕСЕЧЕНИЕ КРАЯ: клетка меняется, активные оси входят с
+        // противоположного края, пассивная ось долю СОХРАНЯЕТ.
+        rt.sub = ecs::cell_sub_after_step(dx, dy, rt.sub);
         rt.entryDir = pack_entry_dir(dx, dy);
         rt.entryTicks = 0;
 
         ix = bx; iy = by;
-        rt.moveBudget -= 1.0f;
 
         // NOTHING IS CHARGED HERE, AND THAT IS THE LAW (2026-10-06). A step
         // has no price: what the body pays is the HOUR it spends on ground,
@@ -682,15 +746,21 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
         if (ix == playerCellX && iy == playerCellY) break;
     }
 
+    // ПРИБЫЛ — ДОЕЗЖАЕТ В ЦЕНТР (M-375, вторая половина хода): пересечение
+    // оставило тело на краю клетки-цели, остаток квантов думки доводит его
+    // внутрь. Это не марш (флагов и жжения не добавляет — тело уже дома).
+    if (ix == itx && iy == ity && quanta > 0u) {
+        walked += float(ecs::cell_sub_walk_home(rt.sub, quanta))
+                  / float(2 * ecs::kCellSubEdge);
+    }
+
     p.x = float(ix);
     p.y = float(iy);
-    // Скорость картинки — РАССТОЯНИЕ, пройденное этой думкой, за её период
-    // (одна дверь, `set_visual_speed@src/macro/squad.h`). Число то же, что
-    // здесь считалось своей парой строк до M-289; дверь общая с маршем
-    // игрока, потому что вопрос один.
-    set_visual_speed(rt, std::sqrt((p.x - oldX) * (p.x - oldX)
-                                   + (p.y - oldY) * (p.y - oldY)),
-                     kAiPeriodSeconds);
+    // Скорость картинки — евклидова ДОРОГА, пройденная этой думкой (клетки
+    // плюс кванты доли), за её период — одна дверь
+    // (`set_visual_speed@src/macro/squad.h`), общая с маршем игрока.
+    (void)oldX; (void)oldY;
+    set_visual_speed(rt, walked, kAiPeriodSeconds);
 
     // Exhaustion is settled by the DISPATCHER after the think (it owns the
     // entity + Health this function never sees): rest on land, the debt's
@@ -2053,13 +2123,15 @@ void ai_artel(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
 // the debt in grain while the silver stayed home, and no caller remains.)
 
 // A leg that cannot advance (every candidate step refused — the target is
-// beyond water with no bridge) reads as: position pinned while the move
-// budget stands whole and the bar is fresh. The rider gives the run up
-// instead of pacing the surf forever.
+// beyond water with no bridge) reads as: position pinned while the march
+// itself said REFUSED and the bar is fresh. The rider gives the run up
+// instead of pacing the surf forever. (The whole-budget check died with the
+// float bank: refusal is the march's own flag now.)
 bool march_is_stuck_(const MacroPos& p, float oldX, float oldY,
                      const ecs::MacroNpcRuntime& rt,
                      const ecs::Pools& pools) {
-    return p.x == oldX && p.y == oldY && rt.moveBudget >= 1.0f
+    return p.x == oldX && p.y == oldY
+           && (rt.marchFlags & ecs::kMarchRefused) != 0
            && int(pools.sp) > int(pools.maxSp) / 2;
 }
 
@@ -4917,20 +4989,24 @@ void tick_macro_npc_ai(MacroWorld& mw,
         MacroPos p{float(ecs::cell_x(cell, gs.mapW)),
                    float(ecs::cell_y(cell, gs.mapW))};
         const float x0 = p.x, y0 = p.y;
+        rt.marchFlags = 0;   // флаги марша живут одну думку
         if (gate == ThinkGate::Think)
             dispatch(h, p, rt, hp, ctx);
-        settle_march_rhythm(h, p, rt, hp, p.x != x0 || p.y != y0, ctx,
-                            overloadBurden);
+        // «moved» включает внутриклеточный ход: доля проехала — тело шло,
+        // даже если клетка (позиция мира) не сменилась.
+        settle_march_rhythm(h, p, rt, hp,
+                            p.x != x0 || p.y != y0
+                                || (rt.marchFlags & ecs::kMarchAdvanced) != 0,
+                            ctx, overloadBurden);
         const std::uint32_t newIdx = ecs::cell_index(int(p.x), int(p.y),
                                                      gs.mapW);
-        // ДОЛЯ КЛЕТКИ ПОСЛЕ ХОДА (M-244): клетка сменилась — сквад стоит у
-        // края входа по румбу последнего шага (ходок уже проштамповал
-        // entryDir); прыжок/телепорт штампует kEntryDirNone, и dx=dy=0
-        // честно дают центр. Клетка не сменилась — доля не трогается.
+        // Марш свою долю ведёт САМ (квантовый ход, вердикт 2026-11-02);
+        // драйверу остался только ПРЫЖОК: телепорт штампует kEntryDirNone,
+        // и такая смена клетки честно ставит центр.
         if (newIdx != cell.idx) {
             int sdx = 0, sdy = 0;
             unpack_entry_dir(rt.entryDir, sdx, sdy);
-            st.sub[slot] = ecs::cell_sub_after_step(sdx, sdy);
+            if (sdx == 0 && sdy == 0) st.runtime[slot].sub = {};
         }
         cell.idx = newIdx;
     }
@@ -5020,19 +5096,25 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
                     MacroPos p{float(ecs::cell_x(cell, gs.mapW)),
                                float(ecs::cell_y(cell, gs.mapW))};
                     const float x0 = p.x, y0 = p.y;
+                    rt.marchFlags = 0;   // флаги марша живут одну думку
                     if (gate == ThinkGate::Think) {
                         dispatch(h, p, rt, hp, ctx);
                     }
-                    settle_march_rhythm(h, p, rt, hp,
-                                        p.x != x0 || p.y != y0, ctx,
-                                        overloadBurden);
+                    settle_march_rhythm(
+                        h, p, rt, hp,
+                        p.x != x0 || p.y != y0
+                            || (rt.marchFlags & ecs::kMarchAdvanced) != 0,
+                        ctx, overloadBurden);
                     const std::uint32_t newIdx =
                         ecs::cell_index(int(p.x), int(p.y), gs.mapW);
-                    // Та же дверь доли, что у полного свипа выше (M-244).
+                    // Тот же закон, что у полного свипа выше: марш ведёт
+                    // долю сам, драйверу остался прыжок (kEntryDirNone →
+                    // центр).
                     if (newIdx != cell.idx) {
                         int sdx = 0, sdy = 0;
                         unpack_entry_dir(rt.entryDir, sdx, sdy);
-                        st.sub[slot] = ecs::cell_sub_after_step(sdx, sdy);
+                        if (sdx == 0 && sdy == 0)
+                            st.runtime[slot].sub = {};
                     }
                     cell.idx = newIdx;
                 }

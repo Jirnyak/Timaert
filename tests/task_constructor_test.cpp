@@ -107,7 +107,7 @@ MacroHandle make_walker(MacroStore& st, int x, int y, const char* factionId,
                         std::uint32_t ordinal) {
     MacroHandle h = store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(x, y, kMap)};
-    st.sub[h.slot] = {};
+    st.runtime[h.slot].sub = {};
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t(faction_index(factionId))};
     ecs::MacroNpcRuntime rt{};

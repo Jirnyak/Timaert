@@ -91,7 +91,7 @@ sm::MacroHandle make_walker(sm::MacroStore& st, int mapW, float x, float y,
                             int maxSp, int hp = 100) {
     sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(int(x), int(y), mapW)};
-    st.sub[h.slot] = {};   // доля клетки: фикстура рождает в центре (M-244a)
+    st.runtime[h.slot].sub = {};   // доля клетки: фикстура рождает в центре (M-244a)
     // НОСИТЕЛЬ МАРША — ЖИВОЙ (2026-09-22). Прежде ходок ехал на роли
     // TaxCollector и сваливался в ai_nomad фолбэком снесённого ai_taxrun:
     // роль умерла, фолбэк вместе с ней, и девятнадцать законов марша разом
@@ -254,10 +254,14 @@ void test_greedy_walks_around_a_wet_cell() {
     // THE FORD COSTS STRICTLY MORE, and the margin is now DERIVED instead of
     // being a 1.5× band: since the passive regen made a road trip a net GAIN,
     // both ledgers read negative, and a multiplicative band on negatives says
-    // the opposite of what it used to. Half a water cell is the floor of the
-    // difference, read from the same doors the march reads.
+    // the opposite of what it used to. КВАНТОВЫЙ МАРШ (2026-11-02) опустил
+    // пол с полклетки до ЧЕТВЕРТИ: границы думок больше не совпадают с
+    // границами клеток (тело входит в воду посреди слайса и выходит посреди
+    // следующего), поэтому гарантированное «вода под ногами» время честно
+    // ополовинилось — а отношение «брод дороже» живо (замер: +2.86 SP при
+    // поле 1.98).
     CHECK(through.second > around.second
-                               + sp_per_cell(biome_sp_weight(Water)) * 0.5f,
+                               + sp_per_cell(biome_sp_weight(Water)) * 0.25f,
           "and the ford costs strictly more than the detour, by at least half "
           "a water cell: the ledger is what proves the detour was taken for a "
           "REASON. If this fires with the two equal, the weight grid is not "

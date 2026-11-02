@@ -20,9 +20,9 @@ void tick_macro_eyes(const MacroStore& st, MacroEyeCache& eyes,
         const auto& c = st.cell[slot];
         // Цель — заявленная точка сквада: клетка плюс доля в 1/256 клетки.
         const float tx = float(ecs::cell_x(c, mapW))
-                       + float(st.sub[slot].x) / 256.0f;
+                       + float(st.runtime[slot].sub.x) / 256.0f;
         const float ty = float(ecs::cell_y(c, mapW))
-                       + float(st.sub[slot].y) / 256.0f;
+                       + float(st.runtime[slot].sub.y) / 256.0f;
         float& ex = eyes.x[slot];
         float& ey = eyes.y[slot];
         const auto& rt = st.runtime[slot];

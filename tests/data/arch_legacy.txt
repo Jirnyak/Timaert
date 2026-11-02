@@ -98,7 +98,6 @@ minus	src/macro/loot_pool.cpp	left -= paid;
 minus	src/macro/movement_cost.h	pools.hp -= lost;
 minus	src/macro/movement_cost.h	pools.sp -= cost;
 minus	src/macro/movement_cost.h	carry -= float(whole);
-minus	src/macro/npc_ai.cpp	rt.moveBudget -= 1.0f;
 minus	src/macro/npc_ai.cpp	pools.spCarry -= float(cycleCost);
 minus	src/macro/npc_ai.cpp	purse -= buyable * therePrice[c];
 minus	src/macro/npc_ai.cpp	owed -= (long long)moved * base;
