@@ -303,7 +303,7 @@ if (!ok) return 1;
 КОСТЫЛИ НЕ НУЖНЫ»):** `garrison_recruit_` (`:293-304`) и оба вызова
 (`:246`, `:442`), `garrison_wants_recruits` (`settle_place_day@src/macro/world_tick.h`) и его
 проверки в блок «потолок» в `trade_law_test` (СНЕСЁН 2026-09-30 вместе с подсистемой). `garrison_target_strength`
-(`world_tick.h:38-42`) и колонка `garrisonShift@src/macro/place_registry.h`
+(`world_tick.h:38-42`) и колонка `garrisonShift` (реестр мест уничтожен 2026-11-02, арк M-235)
 — ОСТАЮТСЯ, у них жильцы вне дневного набора: РОЖДЕНИЕ места
 (`state.cpp:166-173` — состав при генезисе, число у редактора по ЗАКОНУ
 АГНОСТИЧНОСТИ) и планировка города (`sub/city_layout.h:431-441`);

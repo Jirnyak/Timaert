@@ -1,14 +1,14 @@
-// Ruin placement — worldgen pass for the Ruin place (place_registry.h
-// row "ruin"), §42 Инк 5. Half the registry could never be born: the row,
+// Ruin placement — worldgen pass for the Ruin place (SquadType::Ruin,
+// tables/squad_type.h), §42 Инк 5. Half the axis could never be born: the row,
 // the subworld route (строка `FT_Ruin` → `gen_ruin`) and the surface generator
 // (gen_ruin) all stood ready while no pass pushed a Ruin record — which is
 // why the demo's scene 4 («разведать руины») had no target in the world.
 // The site law mirrors generate_spires: the danger-zone field already
-// encodes "far from civilization", so the row's own zone band IS the
+// encodes "far from civilization", so the zone band below IS the
 // distance law, and a Mitchell best-candidate pick spreads the ruins over
-// it without a tuned separation constant. Souls at birth come from the
-// registry row's born columns × the site's danger byte
-// (place_born_population) — a ruin in redder land haunts harder.
+// it without a tuned separation constant. (Souls at birth DIED with
+// `place_born_population`, M-320: a ruin is a pure feature with no squad,
+// and a dungeon's population comes from its own module, CANON S28.)
 #pragma once
 #include <cstdint>
 

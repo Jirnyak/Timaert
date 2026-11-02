@@ -876,8 +876,8 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
                   kWalkTileTransparent},
     // SpireOrb: the spell on the crown — a waist-high plinth (solid: you walk
     // around a shrine, not through it) burning the spire's cold blue, the
-    // same tint the macro map glows at night (place_registry.h spire row,
-    // 0xA86CFF family). Lantern-law light: the emissive head reads from any
+    // same tint the macro map glows at night (kLightSpire,
+    // tables/light_palette.h). Lantern-law: the emissive head reads from any
     // distance, the point light is the row below.
     { Structure::SpireOrb, "",     0.8f, 1.6f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,

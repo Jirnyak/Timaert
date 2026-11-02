@@ -107,7 +107,11 @@ constexpr std::string_view kRowHeaders[] = {
     "src/tables/spells.h",         "src/tables/sprite_rows.h",
     "src/tables/commodity.h",      "src/tables/faction.h",
     "src/tables/celestial.h",      "src/tables/seasons.h",
-    "src/macro/place_registry.h",
+    // (`src/macro/place_registry.h` УНИЧТОЖЕН 2026-11-02 вместе с `PlaceDef` —
+    //  арк ломтя 5б M-235: колонки разъехались адресатам, таблица дожила до
+    //  голого ключа. Строка списка УМЕРЛА С ФАЙЛОМ, а не растоплена: судить
+    //  контур несуществующего заголовка нечем. Ось рода — `tables/squad_type.h`;
+    //  её строки судит страж под `kSquadKinds` там же.)
 };
 
 constexpr std::string_view kSubDir = "src/sub";

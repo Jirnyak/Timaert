@@ -642,9 +642,7 @@ macro-registry.md	:2245
 macro-registry.md	:2265-2268
 macro-registry.md	:2363-2393
 macro-registry.md	:265-276
-macro-registry.md	:295
 macro-registry.md	:3031
-macro-registry.md	:304
 macro-registry.md	:3244
 macro-registry.md	:3581
 macro-registry.md	:3585
@@ -722,10 +720,6 @@ macro-registry.md	items.h:199
 macro-registry.md	labour.h:16
 macro-registry.md	labour.h:36-45
 macro-registry.md	labour.h:44-45
-macro-registry.md	place_registry.h:220-221
-macro-registry.md	place_registry.h:244-247
-macro-registry.md	place_registry.h:253
-macro-registry.md	place_registry.h:303
 macro-registry.md	macro_overlay.cpp:257
 macro-registry.md	macro_stock.cpp:263-278
 macro-registry.md	macro_stock.cpp:264

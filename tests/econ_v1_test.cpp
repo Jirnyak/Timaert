@@ -19,7 +19,8 @@
 #include "check.h"
 #include "macro/currency.h"
 #include "macro/econ_day.h"
-#include "macro/place_registry.h"  // строка рода — амбар рождения
+#include "tables/squad_type.h"  // SquadType — ось рода (амбар рождения уехал
+                                // в kSquadBirth@src/macro/characters.h)
 #include "macro/upkeep_window.h"  // upkeep_season_window — ОДНА дверь суда границы (M-233)
 #include "macro/world_row.h"   // raise_flock_into_container / count_human_souls
 #include "macro/anketa.h"

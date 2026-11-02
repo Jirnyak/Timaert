@@ -1,7 +1,7 @@
 // МОДУЛЬ ШПИЛЯ: расстановка в генезисе и ОДИН вывод о его орбе в живом мире.
 //
-// Spire placement — worldgen pass for the Spire place (place_registry.h
-// row "spire"). One learnable spell = one spire the world must offer; the
+// Spire placement — worldgen pass for the Spire place (SquadType::Spire,
+// tables/squad_type.h). One learnable spell = one spire the world offers; the
 // spire's site is decided by the danger-zone field, not by dice against
 // civilization: zones already encode "far from cities" (civ BFS pulls danger
 // down), so the zone gate IS the distance law. The spell's tier picks how deep

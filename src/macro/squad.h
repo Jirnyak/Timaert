@@ -12,7 +12,8 @@
 #include <cstdio>
 #include "macro/currency.h"
 #include "macro/econ_day.h"   // EconFact/EconFactSink — ведомость склада душ
-#include "macro/place_registry.h"
+#include "tables/squad_type.h"   // SquadType/squad_archetype — ось рода
+#include "tables/npc.h"          // NPCType — строка существа, база лидера
 #include "macro/macro_stock.h"
 #include "macro/player_entity.h"
 #include "macro/spell_book_state.h"
@@ -298,7 +299,7 @@ inline void set_visual_speed(ecs::MacroNpcRuntime& rt, float dist,
 // вопрос мира («какие глаголы у этого сквада») в дереве стояло два ответа
 // в разных формах (DOD п.6), а хранимый род мог с ними разойтись — ровно
 // дефект M-246а, где хранение выводимого и держало живой баг. Литерал
-// переехал строками в `kPlaces` (там же `static_assert` на закон), род
+// переехал строками в `kSquadKinds` (там же `static_assert` на закон), род
 // субъекта не хранится и не выводится, и осталась ОДНА строка кода.
 //
 // ПОДМЕС `Enter` ОТСЮДА УШЁЛ ВМЕСТЕ С САМИМ ГЛАГОЛОМ (M-290): вход в субмир

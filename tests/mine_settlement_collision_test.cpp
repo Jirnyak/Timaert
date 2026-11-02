@@ -32,7 +32,7 @@
 #include "core/torus.h"
 #include "macro/deposit_layer.h"
 #include "macro/features.h"
-#include "macro/place_registry.h"
+#include "tables/squad_type.h"
 #include "macro/spawners.h"
 #include "macro/state.h"
 #include "tables/feature_type.h"
@@ -159,7 +159,7 @@ void test_the_closure_is_by_column_not_by_kind() {
     }
     CHECK(closed == 5,
           "клетку закрывают ровно пять родов мест — столица, город, деревня, "
-          "шпиль, руина (строки kPlaces с непустой колонкой feature)");
+          "шпиль, руина (строки фич, чья колонка kind называет род места)");
     CHECK(open > 0 && closed + open == int(sm::FT_Count),
           "перебран ВЕСЬ словарь фич, а не выборка");
 }

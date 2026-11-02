@@ -8,7 +8,7 @@
 // same "derive, don't store" discipline as the possessed-macro identity remap.
 //
 // Adding a season, or retuning one, is ONE row in kSeasons — no engine change,
-// no if-chain (matches the place_registry.h / biomes.h table idiom). Each row
+// no if-chain (matches the squad_type.h / biomes.h table idiom). Each row
 // carries the modifiers its consumers read; a consumer that wants a new seasonal
 // effect adds a column here and one multiply at its own site. The first live
 // consumer is subworld foliage: season_temp_offset() nudges the temperature that

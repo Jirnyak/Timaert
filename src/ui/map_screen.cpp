@@ -2,7 +2,7 @@
 
 #include "tables/biomes.h"
 #include "core/caps.h"              // kUnifiedCap — проход по слотам, не по числу
-#include "macro/place_registry.h"
+#include "tables/squad_type.h"      // kSquadKinds/kPlaceYieldOrder — ось рода
 #include "macro/map_generator.h"
 #include "macro/markers.h"
 #include "macro/player_entity.h"

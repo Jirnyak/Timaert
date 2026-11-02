@@ -14,7 +14,7 @@
 #include "tables/faction.h"
 #include "macro/labour.h"           // ОДИН пул рук места (CANON S4)
 #include "macro/place_iter.h"    // for_each_place — обход мест по оси рода
-#include "macro/place_registry.h"
+#include "tables/squad_type.h"   // SquadType/place_is_settlement — ось рода
 #include "macro/movement_cost.h"
 #include "tables/npc.h"
 #include "macro/nav_field.h"        // локальные поля-округи (CANON S7)
@@ -4189,7 +4189,7 @@ constexpr AiModuleRow kAiModuleRows[] = {
     //
     // СТОЛИЦЕ ДАНА ФУНКЦИЯ ГОРОДА — ОДНА ФУНКЦИЯ ДВУМ СТРОКАМ ЗАКОННА,
     // ПОТОМУ ЧТО ЭТО ДАННЫЕ: различие столицы ещё не названо системой
-    // (её строка `kPlaces` тоже носит городские числа), и выдумывать ей
+    // (её строка `kSquadKinds` тоже носит городские числа), и выдумывать ей
     // второе поведение раньше вердикта владельца значило бы назначить
     // различие кодом (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ). Придёт различие —
     // поменяется ЭТА СТРОКА, и больше ничего.

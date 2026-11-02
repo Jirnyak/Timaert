@@ -273,7 +273,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         // ломтиком F, тот же закон свежести: генезис, перепёк, драйв).
         // (Перештамп фич из тел УМЕР 2026-10-23, вердикт «фичи делают 1 раз
         // при генерации»: фичу рода ставит дверь рождения места В МОМЕНТ
-        // ВЫБОРА клетки — birth_place, колонка kPlaces.feature.)
+        // ВЫБОРА клетки — birth_place, колонка kind@src/macro/features.h.)
         build_squad_index(*out.squadIndex, st, gs.mapW, gs.mapH);
         if (p.trace) {
             // The placement report card: every spell offered, every spire in

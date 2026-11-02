@@ -15,8 +15,8 @@
 namespace sm {
 namespace {
 
-// Unpack the low 24 bits of an ARGB tint (as stored in PlaceDef.color /
-// lightColor) into linear 0..1 RGB. Alpha is ignored — emission is additive.
+// Unpack the low 24 bits of an ARGB tint (a `kLightPalette` row,
+// tables/light_palette.h) into linear 0..1 RGB. Alpha is ignored — additive.
 inline void unpack_rgb(std::uint32_t argb, float& r, float& g, float& b) {
     r = float((argb >> 16) & 0xFFu) / 255.0f;
     g = float((argb >> 8) & 0xFFu) / 255.0f;

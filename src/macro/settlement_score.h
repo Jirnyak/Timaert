@@ -152,8 +152,8 @@ inline int village_pressure(int placedScore, int d) {
 inline constexpr int kVillageBornBase   = 64;
 inline constexpr int kVillageBornSpread = 128;
 
-// (place_born_population — the dungeon kinds' born-souls law — lives
-// beside its columns in macro/place_registry.h, §42 Инк 5.)
+// (`place_born_population` — the dungeon kinds' born-souls law — DIED with
+// its columns in M-320; a dungeon is populated by its own module, CANON S28.)
 
 // Cities live by the same law (the old 4000+rng%3000 / 800+rng%1500 /
 // 600+rng%1200 dice are dead): souls = per-score rate × site capacity,

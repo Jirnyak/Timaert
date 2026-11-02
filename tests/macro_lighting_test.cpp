@@ -18,7 +18,7 @@
 #include "macro/macro_world.h"    // конверт слоёв — вход переписи (M-233 п.8)
 #include "macro/map_generator.h"  // field_word_of / kDefaultSeaLevel
 #include "macro/features.h"
-#include "macro/place_registry.h"
+#include "tables/squad_type.h"
 #include "macro/place_birth.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "macro/state.h"
 #include "macro/store.h"

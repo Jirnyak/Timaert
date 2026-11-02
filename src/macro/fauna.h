@@ -19,7 +19,7 @@
 
 namespace sm {
 
-// The place vocabulary is SquadType (macro/place_registry.h) — the
+// The place vocabulary is SquadType (tables/squad_type.h) — the
 // one registry enum. A private five-value "PlaceKind" lived here until
 // 2026-08-24; it was the third copy of the same idea, and the kinds it could
 // not name (Lair, Shrine, Mine, Tower) could not route fauna at all.

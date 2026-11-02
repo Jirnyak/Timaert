@@ -15,7 +15,7 @@
 #include "macro/anketa.h"
 #include "macro/upkeep.h"   // Upkeep — ОДИН счёт содержания на место и на сквад (S4)
 #include "macro/interests.h"   // Interests — ВСЕ связи субъекта одной таблицей
-#include "macro/place_registry.h"
+#include "tables/squad_type.h"   // SquadType — ось рода сквада (реестр мест снесён)
 #include "macro/resource_field.h"
 #include "tables/npc.h"
 #include "macro/economy.h"

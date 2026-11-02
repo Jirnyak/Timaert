@@ -30,7 +30,6 @@
 #include "ecs/components.h"
 #include "macro/cell_facts.h"
 #include "macro/features.h"
-#include "macro/place_registry.h"
 #include "macro/squad_index.h"
 #include "macro/state.h"
 #include "macro/store.h"

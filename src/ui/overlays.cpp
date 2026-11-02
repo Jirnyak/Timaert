@@ -10,7 +10,7 @@
 #include "macro/map_generator.h"
 #include "tables/biomes.h"
 #include "tables/codex.h"
-#include "macro/place_registry.h"
+#include "tables/squad_type.h"   // SquadType/squad_archetype — ось рода
 #include "macro/place_iter.h"
 #include "macro/labour.h"   // souls_home — головы инвентаря места (M-324:
                             // бралось ТРАНЗИТОМ через place_iter.h, и это
@@ -1643,7 +1643,7 @@ namespace sm::ui
             }
             // ГЛАГОЛЫ БАННЕРА — ПО МАСКЕ, И ЭТО СТРОЖЕ, ЧЕМ БЫЛО: ветка
             // сквада рисовала обе кнопки безусловно, мимо колонки, которая
-            // уже объявляла их строкой (`kPlaces`). Место Talk и Attack
+            // уже объявляла их строкой (`kSquadKinds`). Место Talk и Attack
             // не объявляет — и не рисует, ровно как прежде.
             if (acts & kMapActTalk)
             {

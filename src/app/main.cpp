@@ -1738,9 +1738,9 @@ void boot_world(App& app, std::uint32_t seed,
     } else {
         boot_trace("macro renderer initialized");
     }
-    // Universal night-light field: enumerate every emitting place
-    // (settlements, villages, active spires, and any future opt-in POI via its
-    // PlaceDef.lightColor) and bake the per-cell RGB glow the macro shader
+    // Universal night-light field: read every live cell of the emission field
+    // (`GameState::lightEmission`, M-370 — authored by the feature row's
+    // light* columns) and bake the per-cell RGB glow the macro shader
     // adds at night. Baked here on world-change only, never per frame; handed to
     // the renderer as raw bytes so the GPU target keeps its minimal link set.
     // app.features is built above (build_feature_layer), so the bake sees real

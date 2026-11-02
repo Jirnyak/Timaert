@@ -28,7 +28,7 @@
 #include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
 #include "ecs/components.h"   // MacroSpawnId — ординал слота store
-#include "macro/place_registry.h"
+#include "tables/squad_type.h"
 #include "macro/place_birth.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "macro/squad.h"         // actions_of + place_handle_by_ordinal
 #include "macro/state.h"
@@ -153,8 +153,8 @@ void test_verbs_are_declared_by_the_row() {
           "ровно это: пустая маска — законное значение, а не дыра");
 
     // ВОЙНА — ОТДЕЛЬНЫЙ ТРЕК: через это меню место не говорит и не бьётся.
-    // Тот же закон стоит `static_assert`-ом над таблицей
-    // (`place_registry.h`); здесь он проверяется НА ВЫХОДЕ ДВЕРИ.
+    // Тот же закон стоит `static_assert`-ом над таблицей родов
+    // (`kSquadKinds@src/tables/squad_type.h`); здесь — НА ВЫХОДЕ ДВЕРИ.
     CHECK((actions_of(st, city) & (kMapActTalk | kMapActAttack)) == 0
               && (actions_of(st, sp) & (kMapActTalk | kMapActAttack)) == 0,
           "ни одно стоящее не предлагает разговор или удар этим меню");

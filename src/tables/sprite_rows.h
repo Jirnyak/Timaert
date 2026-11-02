@@ -95,7 +95,7 @@ inline CreatureAspect creature_arch_aspect(std::uint8_t archetype) {
 enum class SpriteId : std::uint8_t {
     None = 0,
     // Places — drawn art; no body plan, no tint (the ONE colour authority for a
-    // place is kPlaces[].color, owner ruling 2026-08-14).
+    // place is kSquadKinds[].color (tables/squad_type.h), owner 2026-08-14).
     City,
     Village,
     SpireActive,
