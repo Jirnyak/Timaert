@@ -19,6 +19,15 @@ struct FeatureLayer;
 struct TerrainData;
 struct ZoneLayer;
 
+// ПОЛОСА ОПАСНОСТИ РУИНЫ — ЧИСЛА ГЕНЕРАТОРА (ломоть 5б M-235, 2026-11-02:
+// колонки `minZone`/`maxZone` уехали из умирающего реестра мест — их читала
+// ТОЛЬКО генерация; ЗАКОН АГНОСТИЧНОСТИ). Вывод: байт опасности 0..255 —
+// перевод старых полос 0..9 краями min = band·256/10,
+// max = (band+1)·256/10 − 1; руина жила в полосе «2..8» ⇒ 51..229 — ближе
+// к жилью, чем шпиль, но не в самом огне. Числа БАЛАНС.
+inline constexpr std::uint8_t kRuinMinZone = 51;
+inline constexpr std::uint8_t kRuinMaxZone = 229;
+
 // Push Ruin places into gs.places — one per city the world raised
 // plus a base handful, so ruin density follows civilization's own scale.
 // Deterministic from gs.worldSeed. Requires zones — call AFTER

@@ -45,8 +45,11 @@ struct PlaceDef {
     // M-235, вердикт владельца: таблица родов ОДНА на все сквады, спрайт —
     // просто число). Туда же уехал предикат `place_is_settlement` со своими
     // стражами — его дом теперь ось, а не реестр мест. ──────────────────────
-    std::uint8_t     minZone;     // minimum difficulty zone to spawn
-    std::uint8_t     maxZone;
+    // ── КОЛОНКИ `minZone`/`maxZone` УЕХАЛИ 2026-11-02 К ГЕНЕРАТОРАМ
+    // (`kSpireMinZone@src/macro/spires.h`, `kRuinMinZone@src/macro/ruins.h`):
+    // их читала ТОЛЬКО генерация шпилей и руин, а числа сценария живут у
+    // редактора-генератора (ЗАКОН АГНОСТИЧНОСТИ). Значения прочих родов
+    // (город «0..76» и т.п.) не читал НИКТО — умерли молча. ────────────────
     // ── КОЛОНКА `feature` УЕХАЛА 2026-10-27 В СТРОКУ ФИЧИ (вариант В
     // M-235, вердикт владельца) ──────────────────────────────────────────
     // Она отвечала «какую фичу ставит этот род». Теперь на тот же вопрос
@@ -215,10 +218,9 @@ struct PlaceDef {
 // the TS warm hearth tint scaled by live population (lightPop = 0). Fixed POIs
 // emit their own tint at a synthetic strength. Set lightColor = 0 to opt a type
 // out of night glow entirely — the single data-driven gate.
-// minZone/maxZone are DANGER BYTES on the 0..255 continuum (owner,
-// 2026-08-24). The old 0..9 rows translate as band edges: min = band*256/10,
-// max = (band+1)*256/10 - 1 — City "0..2" became 0..76, Spire "5..9" became
-// 128..255, unchanged in meaning, finer in resolution.
+// (Перевод полос 0..9 в байты опасности — owner 2026-08-24 — уехал вместе с
+//  колонками зон к генераторам: kSpireMinZone/kRuinMinZone несут его в своих
+//  шапках.)
 // ── ПОЛЯ НАЗЫВАЮТСЯ, А НЕ СЧИТАЮТСЯ (DOD п.9) ───────────────────────────
 // Строки ниже стояли ПОЗИЦИОННЫМИ, и колонки им подписывали ad-hoc
 // комментарии (`/*wealth*/`, `/*hab*/`, `/*born*/`) — то есть имя поля
@@ -242,7 +244,7 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
     // (ломоть 5б M-235): зоны — генераторам, свет и фауна — строке фичи,
     // crowd*/garrison — модулям генерации субмира, seed* — модулю рода.
     {.type = SquadType::None,
-     .minZone = 0, .maxZone = 255, .lightColor = 0x00000000u, .lightPop = 0.0f },
+     .lightColor = 0x00000000u, .lightPop = 0.0f },
     // СТОЛИЦА — ГОРОД СТАРШЕГО РАНГА, И ПОКА ЧИСЛА У НЕЁ ГОРОДСКИЕ. Это
     // не лень, а ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ: различие столицы — предмет
     // ЕЁ МОДУЛЯ (ломоть 5) и ЕЁ ГЕНЕРАТОРА субмира (строка `FT_Capital`),
@@ -259,19 +261,19 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
     // стоит голой, а `== SquadType::City`-гейты мира остаются верными по
     // пустоте — переспросить их придётся ровно в день первой столицы.
     {.type = SquadType::Capital,
-     .minZone = 0, .maxZone = 76, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
+     .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
      .garrisonShift = 3,
      .seedComfortDays = 32, .seedRawMult = 1 },
     {.type = SquadType::City,
-     .minZone = 0, .maxZone = 76, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
+     .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
      .garrisonShift = 3,
      .seedComfortDays = 32, .seedRawMult = 1 },
     {.type = SquadType::Village,
-     .minZone = 0, .maxZone = 101, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
+     .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
      .garrisonShift = 3,
@@ -283,28 +285,28 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
     // dictionary (what creeps into cellars and caves), and a ruin's ground
     // honestly crawls.
     {.type = SquadType::Spire,
-     .minZone = 128, .maxZone = 255, .lightColor = 0xFFA86CFFu, .lightPop = 200.0f,
+     .lightColor = 0xFFA86CFFu, .lightPop = 200.0f,
      .faunaHabitat = kPlaceFaunaGround, .faunaMin = 0, .faunaMax = 0,
      .faunaCap = kPlaceFaunaCapGround,
      .crowdHabitat = 1u << 13, .crowdInsideShift = 2,
      },
     {.type = SquadType::Ruin,
-     .minZone = 51, .maxZone = 229, .lightColor = 0xFF8E8576u, .lightPop = 40.0f,
+     .lightColor = 0xFF8E8576u, .lightPop = 40.0f,
      .faunaHabitat = 1u << 12, .faunaMin = 2, .faunaMax = 6,
      .faunaCap = kPlaceFaunaCapGround,
      .crowdHabitat = 1u << 12, .crowdInsideShift = 0,
      },
     {.type = SquadType::Lair,
-     .minZone = 102, .maxZone = 255, .lightColor = 0xFF883A3Au, .lightPop = 70.0f,
+     .lightColor = 0xFF883A3Au, .lightPop = 70.0f,
      .faunaHabitat = kPlaceFaunaGround, .faunaMin = 0, .faunaMax = 0,
      .faunaCap = kPlaceFaunaCapGround,
      .crowdHabitat = 1u << 12 },
     {.type = SquadType::Shrine,
-     .minZone = 25, .maxZone = 178, .lightColor = 0xFFE2E2E2u, .lightPop = 90.0f },
+     .lightColor = 0xFFE2E2E2u, .lightPop = 90.0f },
     {.type = SquadType::Mine,
-     .minZone = 51, .maxZone = 203, .lightColor = 0xFF8B6332u, .lightPop = 60.0f },
+     .lightColor = 0xFF8B6332u, .lightPop = 60.0f },
     {.type = SquadType::Tower,
-     .minZone = 76, .maxZone = 203, .lightColor = 0xFF6E6E89u, .lightPop = 80.0f },
+     .lightColor = 0xFF6E6E89u, .lightPop = 80.0f },
 
     // ── ПОДВИЖНЫЕ РОДЫ ОСИ: ОСТАЛЬНОЕ ЧЕСТНО ПУСТО ───────────────────────
     // Артель, корован, сборщик и дракон стоят на ТОЙ ЖЕ оси, что места
@@ -319,13 +321,13 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
     // ПОЛНОЙ функцией без гейта по роду. (Имя, вид и глаголы встречи у них
     // — строки `kSquadKinds`, вместе с шрамом M-281 о литерале в ветке.)
     {.type = SquadType::Artel,
-     .minZone = 0, .maxZone = 255, .lightColor = 0x00000000u, .lightPop = 0.0f },
+     .lightColor = 0x00000000u, .lightPop = 0.0f },
     {.type = SquadType::Caravan,
-     .minZone = 0, .maxZone = 255, .lightColor = 0x00000000u, .lightPop = 0.0f },
+     .lightColor = 0x00000000u, .lightPop = 0.0f },
     {.type = SquadType::Collector,
-     .minZone = 0, .maxZone = 255, .lightColor = 0x00000000u, .lightPop = 0.0f },
+     .lightColor = 0x00000000u, .lightPop = 0.0f },
     {.type = SquadType::Dragon,
-     .minZone = 0, .maxZone = 255, .lightColor = 0x00000000u, .lightPop = 0.0f },
+     .lightColor = 0x00000000u, .lightPop = 0.0f },
 };
 static_assert(rows_in_enum_order(kPlaces, &PlaceDef::type),
               "kPlaces row order must mirror SquadType");
@@ -383,6 +385,10 @@ static_assert(rows_in_enum_order(kPlaces, &PlaceDef::type),
 // уехали в `kSquadKinds`, и хвостовое выравнивание считается теперь до
 // кратного четырёх. Последнее поле `seedRawMult` стоит на 23 — данных 24
 // ровно, нуль хвоста.
+// ОТЪЕЗД `minZone`/`maxZone` К ГЕНЕРАТОРАМ (2026-11-02) ЧИСЛО НЕ ДВИНУЛ:
+// оба байта стояли в зазоре между `type` (офсет 0) и `lightColor` (офсет 4,
+// align 4) — их место заняло выравнивание. Пятый случай подряд, где довод
+// «уберём колонку — станет меньше» не выводится из ширины колонки.
 static_assert(sizeof(PlaceDef) == 24,
               "PlaceDef layout changed — say WHICH column and why, and "
               "never re-add a faction column: a KIND is not an OWNER (M-39)");

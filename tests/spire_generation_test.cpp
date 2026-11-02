@@ -8,7 +8,7 @@
 //     ordinal + 1, 0 = drained), born charged. Проверяется МНОЖЕСТВОМ
 //     {1..kSpellCount}, а не порядком рождения тел, которого больше нет;
 //   · a spire stands on land, inside the place table's own zone band
-//     (place_def(Spire).minZone), and the top-tier spell's spire stands at
+//     (kSpireMinZone), and the top-tier spell's spire stands at
 //     the band's CAP — the doom spell lives where the world is at its worst;
 //   · занятая клетка ветирует шпиль, и занятость спрашивается у БАЙТА
 //     (`place_kind_of_feature`, та же дверь, что у постановки шахт M-321);
@@ -50,7 +50,6 @@
 #include "check.h"
 #include "macro/labour.h"   // souls_flock — паства ГОРОДА (живая половина)
 
-#include "macro/place_registry.h"
 #include "macro/map_generator.h"
 #include "macro/place_iter.h"  // for_each_place — перепись СКВАДОВ (их ноль)
 #include "macro/place_birth.h"  // birth_place — сквад города/деревни фикстуры
@@ -211,7 +210,6 @@ void test_one_spire_per_spell_in_the_band() {
     sm::FeatureLayer flA = fresh_features(terrain.width, terrain.height);
     generate_spires(gs, zones, terrain, flA);
 
-    const PlaceDef& def = place_def(SquadType::Spire);
     const std::vector<std::uint32_t> spires = feature_cells(flA, FT_Spire);
     CHECK_OR_RETURN(spires.size() == std::size_t(kSpellCount),
                     "every learnable spell got its spire");
@@ -246,8 +244,8 @@ void test_one_spire_per_spell_in_the_band() {
               "клетка шпиля работает СВОЙ спелл: ординал реестра + 1, и два "
               "шпиля одного спелла не несут");
         CHECK(!terrain.is_water(x, y), "a spire stands on land");
-        CHECK(int(zones.at(x, y)) >= int(def.minZone),
-              "a spire stands inside the place table's zone band");
+        CHECK(int(zones.at(x, y)) >= int(kSpireMinZone),
+              "a spire stands inside the spire generator's zone band");
     }
     CHECK(spells.size() == std::size_t(kSpellCount),
           "каждый спелл каталога получил РОВНО один шпиль");
@@ -260,7 +258,7 @@ void test_one_spire_per_spell_in_the_band() {
         const int x = cell_x(c, gs.mapW), y = cell_y(c, gs.mapW);
         if (feature_number_read(gs, x, y) != doomSpell) continue;
         ++doomSeen;
-        CHECK(int(zones.at(x, y)) == int(def.maxZone),
+        CHECK(int(zones.at(x, y)) == int(kSpireMaxZone),
               "the top-tier spire stands at the band's cap");
     }
     CHECK(doomSeen == 1, "шпиль старшего спелла нашёлся, и ровно один");
@@ -562,14 +560,13 @@ void test_genesis_places_ruins_and_spires_as_features() {
 
     // Ruins exist — the §42 stillborn kind lives, inside its own band, on
     // land. Спрашивается это у БАЙТА: им руина и является.
-    const PlaceDef& ruinDef = place_def(SquadType::Ruin);
     const std::vector<std::uint32_t> ruinCells = feature_cells(flH, FT_Ruin);
     for (const std::uint32_t c : ruinCells) {
         const int x = cell_x(c, gs.mapW), y = cell_y(c, gs.mapW);
         CHECK(!terrain.is_water(x, y), "a ruin stands on land");
         const int z = int(zones.at(x, y));
-        CHECK(z >= int(ruinDef.minZone) && z <= int(ruinDef.maxZone),
-              "a ruin stands inside its registry zone band");
+        CHECK(z >= int(kRuinMinZone) && z <= int(kRuinMaxZone),
+              "a ruin stands inside its generator zone band");
     }
     CHECK(!ruinCells.empty(), "the world places ruins");
     // РУИНА И ШПИЛЬ НЕ ДЕЛЯТ КЛЕТКУ — вето спрашивает БАЙТ, и шпили в этом

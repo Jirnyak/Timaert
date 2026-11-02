@@ -1,5 +1,4 @@
 #include "macro/spires.h"
-#include "macro/place_registry.h"
 #include "macro/features.h"      // feature_put — фича просто ЕСТЬ в мире
 #include "macro/macro_world.h"   // конверт слоёв: закон его собственной шапки
 #include "macro/map_generator.h"
@@ -50,7 +49,6 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         || !zones.has_complete_storage()) {
         return;
     }
-    const PlaceDef& def = place_def(SquadType::Spire);
     // Own deterministic stream, distinct from the place-naming salt in
     // populate_places_from_politik (0xC1A05E1D).
     Rng rng(gs.worldSeed ^ 0x59B12E50u);
@@ -73,12 +71,12 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         // the danger is a CONTINUUM now, so the tier walks the row's band in
         // four derived steps instead of four hand +1s.
         const int tier = std::clamp(kSpellDefs[ord].tier, 1, 5);
-        const int tierStep = (int(def.maxZone) - int(def.minZone)) / 4;
+        const int tierStep = (int(kSpireMaxZone) - int(kSpireMinZone)) / 4;
         const int relaxStep = std::max(1, 256 / kZoneCount);
         int bestX = -1, bestY = -1, bestScore = -1;
-        int gate = std::min<int>(def.maxZone,
-                                 int(def.minZone) + (tier - 1) * tierStep);
-        for (; gate >= int(def.minZone); gate -= relaxStep) {
+        int gate = std::min<int>(kSpireMaxZone,
+                                 int(kSpireMinZone) + (tier - 1) * tierStep);
+        for (; gate >= int(kSpireMinZone); gate -= relaxStep) {
             // Best-candidate (Mitchell) pick: among admissible draws take the
             // one farthest from every spire already placed — even spread over
             // the wild band without a tuned separation constant.
@@ -107,7 +105,7 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
             std::fprintf(stderr,
                          "[worldgen] spire for spell ordinal %d: no admissible "
                          "site at any zone >= %d\n",
-                         ord, int(def.minZone));
+                         ord, int(kSpireMinZone));
             continue;
         }
         // ── ШПИЛЬ ЕСТЬ ЧИСТАЯ ФИЧА СО СВОИМ ЧИСЛОМ (M-320, вердикт

@@ -1,7 +1,6 @@
 #include "macro/ruins.h"
 #include "macro/features.h"     // feature_put — фича просто ЕСТЬ в мире
 #include "macro/place_iter.h"   // for_each_place — сквады по слотам (счёт городов)
-#include "macro/place_registry.h"
 #include "macro/state.h"
 #include "macro/zones.h"
 #include "macro/map_generator.h"
@@ -55,7 +54,6 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
         || !zones.has_complete_storage()) {
         return;
     }
-    const PlaceDef& def = place_def(SquadType::Ruin);
     int cities = 0;
     for_each_place(st, [&](std::uint16_t slot) {
         if (SquadType(st.runtime[slot].squadType) == SquadType::City)
@@ -90,7 +88,7 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
             const int y = int(rng.next_u32() % std::uint32_t(gs.mapH));
             if (terrain.is_water(x, y)) continue;
             const int z = int(zones.at(x, y));
-            if (z < int(def.minZone) || z > int(def.maxZone)) continue;
+            if (z < int(kRuinMinZone) || z > int(kRuinMaxZone)) continue;
             if (cell_taken_(features, x, y)) continue;
             int score = gs.mapW + gs.mapH;   // no ruins yet: any site wins
             for (const std::uint32_t c : placedCells)
@@ -109,7 +107,7 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
             std::fprintf(stderr,
                          "[worldgen] ruin %d/%d: no admissible site in zone "
                          "band %d..%d\n",
-                         n + 1, target, int(def.minZone), int(def.maxZone));
+                         n + 1, target, int(kRuinMinZone), int(kRuinMaxZone));
             continue;
         }
         // ── РУИНА ЕСТЬ ЧИСТАЯ ФИЧА, И БОЛЬШЕ НИЧЕГО (M-320, вердикт
