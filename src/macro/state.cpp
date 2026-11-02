@@ -191,7 +191,7 @@ void populate_places_from_politik(GameState& gs, MacroStore& st,
         // what a town actually HAS now lives in this one inventory.)
         seed_place_inventory(
             st.inventory[slot].inv, souls,
-            place_def(SquadType(st.runtime[slot].squadType)));
+            squad_birth(SquadType(st.runtime[slot].squadType)));
         const int id = int(st.spawnId[slot].index);
         cityRefs.push_back(CityRef{id, c.x, c.y, c.factionIdx});
         if (c.isCapital && c.factionIdx >= 0)
@@ -339,7 +339,7 @@ void populate_places_from_politik(GameState& gs, MacroStore& st,
             settle_souls(gs, st, vslot, vilSouls);
             seed_place_inventory(
                 st.inventory[vslot].inv, vilSouls,
-                place_def(SquadType(st.runtime[vslot].squadType)));
+                squad_birth(SquadType(st.runtime[vslot].squadType)));
             set_relation(st, int(st.spawnId[vslot].index), suzerainId,
                          Stance::Suzerain);
         }

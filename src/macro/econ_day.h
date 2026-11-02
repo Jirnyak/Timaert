@@ -30,7 +30,7 @@ namespace sm {
 // Строка рода — только по ССЫЛКЕ (§12: forward-declare в заголовке,
 // include в .cpp): тянуть сюда весь реестр ради одного параметра
 // значило бы заставить каждого включившего парсить его.
-struct PlaceDef;
+struct SquadBirthRow;   // таблица рождения рода (macro/characters.h)
 
 // ── State ────────────────────────────────────────────────────────────────
 
@@ -535,7 +535,7 @@ inline float population_delta_per_day(int population, float wellbeing) {
 // зачем её позвал). Оба прежних звонящих передавали ТАВТОЛОГИЮ —
 // спрашивали род у слота там, где литералом только что его записали.
 void seed_place_inventory(Inventory& inv, int population,
-                            const PlaceDef& row);
+                            const SquadBirthRow& row);
 
 
 } // namespace sm

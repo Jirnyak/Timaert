@@ -757,7 +757,7 @@ inline CharacterSheet* owned_sheet(MacroStore& st, MacroHandle h) {
 // предикат владения ложен по всем трём термам (строка существа нулевая и не
 // именная, тег анкеты −1, бит дома 0), поэтому дверь ИГНОРИРОВАЛА его
 // анкету и отдавала бросок строки `Peasant`. Город и деревня — ровно два
-// непустых листа таблицы `kPlaceSheets@src/macro/characters.h`, и все их
+// непустых листа таблицы `kSquadBirth@src/macro/characters.h`, и все их
 // 12 заполненных ячеек (Blacksmith/Tailoring/Masonry/Alchemy/Trade + Cha)
 // дверь не видела НИ РАЗУ: числа жили только для прямых читателей колонки.
 // Веса роли `Peasant` дают этим пяти ремёслам вес 0 (`tables/npc.h`), так

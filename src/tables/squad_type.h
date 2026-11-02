@@ -57,7 +57,7 @@ namespace sm {
 // «дописать в хвост, чтобы сохранённый ординал не переехал» есть мёртвый
 // довод, а сейв ограничением не является вовсе (§10). Три таблицы,
 // ключуемые этой осью (`kPlaces@src/macro/place_registry.h`,
-// `kPlaceSheets@src/macro/characters.h`, `kSquadDraw@src/ui/squad_draw.h`),
+// `kPlaceSheets` (ныне `kSquadBirth@src/macro/characters.h`), `kSquadDraw` (ныне `kSquadKinds` здесь же),
 // держатся не неподвижностью номеров, а `rows_in_enum_order` — страж
 // ловит разъезд ключа со строкой в тот же компиляторный заход, и именно он
 // поймал все четыре таблицы, когда `Capital` встала первой.

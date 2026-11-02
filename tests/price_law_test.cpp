@@ -12,7 +12,7 @@
 //     buy-81/sell-92 infinite money (audit III.2). The killer is the
 //     SLIPPAGE both sides pay: a buy prices the shelf it leaves behind
 //     (scarcer, dearer), a sell prices the glut it creates (cheaper).
-#include "macro/characters.h"   // place_sheet — руки места
+#include "macro/characters.h"   // squad_birth — руки рода
 #include "check.h"
 
 #include "macro/economy.h"
@@ -23,7 +23,7 @@
 namespace {
 // Руки города и деревни — анкета их рода (characters.h), а не вид места.
 static const sm::Skills& CITY =
-    sm::place_sheet(sm::SquadType::City).skills;
+    sm::squad_birth(sm::SquadType::City).sheet.skills;
 
 using namespace sm;
 

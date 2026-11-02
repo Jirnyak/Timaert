@@ -1766,7 +1766,7 @@ namespace sm::ui
                     //
                     // АНКЕТА ЭТОГО СКВАДА, А НЕ СТОЛ ЕГО РОДА: таблица рода —
                     // только ШАБЛОН РОЖДЕНИЯ (`birth_place` ставит
-                    // `st.sheet[slot] = place_sheet(kind)`), после него
+                    // `st.sheet[slot] = squad_birth(kind).sheet`), после него
                     // истина у анкеты — она качается (ЗАКОН АНКЕТЫ).
                     const auto buyUnit = [&](const ItemRef &ref, int n) {
                         return trade_overlay_buy_price(

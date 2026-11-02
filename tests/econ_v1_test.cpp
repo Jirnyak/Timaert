@@ -15,7 +15,7 @@
 //      FamineStarted/FamineEnded were cut 2026-09-21 as emitterless,
 //      TRANSITIONS, not every day).
 
-#include "macro/characters.h"   // place_sheet — руки места
+#include "macro/characters.h"   // squad_birth — руки рода
 #include "check.h"
 #include "macro/currency.h"
 #include "macro/econ_day.h"
@@ -67,9 +67,9 @@ Boundary boundary_(sm::Inventory& store, std::int32_t* needDebt,
 }
 // Руки города и деревни — анкета их рода (characters.h), а не вид места.
 static const sm::Skills& CITY =
-    sm::place_sheet(sm::SquadType::City).skills;
+    sm::squad_birth(sm::SquadType::City).sheet.skills;
 static const sm::Skills& VILLAGE =
-    sm::place_sheet(sm::SquadType::Village).skills;
+    sm::squad_birth(sm::SquadType::Village).sheet.skills;
 
 int fail(const char* msg) {
     // Testing law #1: the verdict lives in the ONE check.h counter — the
@@ -469,7 +469,7 @@ int main() {
     {
         const int pop = 640;
         Inventory city;
-        seed_place_inventory(city, pop, place_def(SquadType::City));
+        seed_place_inventory(city, pop, squad_birth(SquadType::City));
         if (city.count("food") != pop * kDaysPerSeason) {
             return fail("birth larder must hold a SEASON of food — a place "
                         "seeded thinner dies of arithmetic at its first "
@@ -481,7 +481,7 @@ int main() {
                   "a consumed need row was born empty");
         }
         Inventory village;
-        seed_place_inventory(village, pop, place_def(SquadType::Village));
+        seed_place_inventory(village, pop, squad_birth(SquadType::Village));
         // ДЕЛО ДЕРЕВНИ — СЫРЬЁ, и мерить это надо СЫРЬЁМ (2026-09-20): пища
         // с этого дня не материал, а голодная строка, и её амбар рождения
         // равен сезону у всех — деревня перестала «держать больше еды» не
@@ -493,7 +493,7 @@ int main() {
             return fail("a crafting city banks deeper crafted stocks");
         }
         Inventory again;
-        seed_place_inventory(again, pop, place_def(SquadType::City));
+        seed_place_inventory(again, pop, squad_birth(SquadType::City));
         if (again.count("food") != city.count("food")
             || again.used_slots() != city.used_slots()) {
             return fail("birth stocks must be deterministic from population");

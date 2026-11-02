@@ -161,7 +161,7 @@ struct PlaceDef {
     //  выше: его единственный читатель — верхний квартал города.)
     // (`econSite` УМЕР 2026-09-18 вместе с EconSite. Он отвечал «по какой
     // ТАБЛИЦЕ это место работает», то есть на вопрос «что оно умеет» — а
-    // отвечает на него теперь АНКЕТА места: characters.h place_sheet,
+    // отвечает на него теперь АНКЕТА места: characters.h squad_birth,
     // ранги ремёсел против ремесла и ранга рецепта. Место, которое не умеет
     // ничего, — анкета в нулях; законный ноль S6 остался на месте, просто
     // перестал быть отдельной колонкой.)
@@ -176,24 +176,11 @@ struct PlaceDef {
     // появится читатель; специализация рода = НОВЫЙ ТИП + модуль, никогда
     // колонка-настройка. Страж log2(kCreaturesPerCityWorker) умер с ней,
     // включение macro/econ_day.h — тоже. ─────────────────────────────────
-    // ── АМБАР РОЖДЕНИЯ: ДВА ЧИСЛА РОДА, А НЕ БУЛЕВ РОД В АРГУМЕНТЕ ────────
-    // Здесь их не было: `seed_place_inventory(..., bool isCity)` тащил
-    // РОД булевым параметром и сам решал по нему оба числа (`isCity ? 32 : 8`
-    // и `isCity ? 1 : 2`) — ветка по роду внутри фундаментальной двери,
-    // ровно то, что запрещает ЗАКОН СТРОКИ КАТАЛОГА. А оба звонящих
-    // передавали ТАВТОЛОГИЮ: спрашивали род у слота там, где литералом
-    // только что его туда и записали.
-    //
-    // ЗАЧЕМ ИМЕННО ЭТИ ДВА (DOD п.9 «кто читает и зачем»): их читает
-    // `seed_place_inventory@src/macro/econ_day.cpp` — единственный
-    // читатель, — чтобы ответить «с чем сквад рождается посреди жизни».
-    // Числа БАЛАНСНЫЕ (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ: не по-двойки, значит
-    // контент), и по вердикту владельца 2026-10-06 они СОДЕРЖИМОЕ модуля
-    // рода — здесь они стоят до эпика M-72/M-235 и уедут в модуль с ним.
-    // Дефолты — деревенские: сквад, про который ничего не сказано, рождается
-    // скромно, а не богато.
-    std::uint8_t     seedComfortDays = 8;   // дней бюджета комфорта в амбаре
-    std::uint8_t     seedRawMult = 2;       // множитель сырьевых буферов
+    // ── КОЛОНКИ `seedComfortDays`/`seedRawMult` УЕХАЛИ 2026-11-02 В ТАБЛИЦУ
+    // РОЖДЕНИЯ РОДА (`kSquadBirth@src/macro/characters.h`, вместе с бывшей
+    // `kPlaceSheets` — вердикт владельца: «в таблице типа как рождается по
+    // дефолту что в инвентаре и тд … 3 однозначно нужно»). Их пин переехал
+    // туда же. ───────────────────────────────────────────────────────────
 };
 
 // Night-light columns (lightColor / lightPop) drive the universal macro
@@ -245,16 +232,13 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
     // пустоте — переспросить их придётся ровно в день первой столицы.
     {.type = SquadType::Capital,
      .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
-     .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
-     .seedComfortDays = 32, .seedRawMult = 1 },
+     .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2 },
     {.type = SquadType::City,
      .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
-     .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
-     .seedComfortDays = 32, .seedRawMult = 1 },
+     .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2 },
     {.type = SquadType::Village,
      .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
-     .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
-     .seedComfortDays = 8, .seedRawMult = 2 },
+     .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2 },
     // Spire wild fauna returned to the GROUND (§42 Инк 5): its demons are
     // its POPULATION now — the mountain's own beasts roam the slopes, and
     // clearing the tower can never again be ambiguous between garrison and
@@ -366,25 +350,12 @@ static_assert(rows_in_enum_order(kPlaces, &PlaceDef::type),
 // ОТЪЕЗД РАСКЛАДКИ ТОЛПЫ В СУБМИР (2026-11-02, та же сессия): 24 → 20 —
 // четыре байта данных (u16 + два u8), и хвост сложился ровно: последнее
 // поле `seedRawMult` на 18, данных 19, 20 — ближайшее кратное четырёх.
+// ОТЪЕЗД АМБАРА РОЖДЕНИЯ В ТАБЛИЦУ РОЖДЕНИЯ РОДА (2026-11-02, та же
+// сессия) ЧИСЛО НЕ ДВИНУЛ: два хвостовых u8 съело выравнивание — последнее
+// поле `faunaCap` на 16, данных 17, 20 — ближайшее кратное четырёх.
 static_assert(sizeof(PlaceDef) == 20,
               "PlaceDef layout changed — say WHICH column and why, and "
               "never re-add a faction column: a KIND is not an OWNER (M-39)");
-
-// ── СТРАЖ ПОЗИЦИОННОЙ СТРОКИ: ДВА АМБАРНЫХ ЧИСЛА СТОЯТ ГДЕ ОБЕЩАНО ───────
-// Строки этой таблицы инициализируются ПОЗИЦИОННО, и новая колонка в хвосте
-// — ровно тот промах на единицу, который числами не виден: значение село бы
-// в соседнее поле, мир остался бы правдоподобным, а свидетель замера молчал
-// бы. Поэтому пин под КОМПИЛЯТОРОМ, а не в тесте: неверная раскладка
-// перестаёт СОБИРАТЬСЯ (§8 п.6 — лучшая форма свидетеля).
-// Числа БАЛАНСНЫЕ и менять их можно; менять ВМЕСТЕ с этой строкой.
-static_assert(
-    kPlaces[std::size_t(SquadType::City)].seedComfortDays == 32
-        && kPlaces[std::size_t(SquadType::City)].seedRawMult == 1
-        && kPlaces[std::size_t(SquadType::Village)].seedComfortDays == 8
-        && kPlaces[std::size_t(SquadType::Village)].seedRawMult == 2,
-    "амбар рождения: город — сезон комфорта и одинарное сырьё, деревня — "
-    "восемь дней и двойное (значения перенесены из булева параметра "
-    "seed_place_inventory один в один)");
 
 inline constexpr const PlaceDef& place_def(SquadType t) {
     return kPlaces[std::size_t(t)];

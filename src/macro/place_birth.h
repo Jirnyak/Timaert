@@ -13,7 +13,7 @@
 // add_place, перенесён дословно).
 //
 // Свой заголовок, а не npc_spawn: рождению тела места хватает header-only
-// дверей (store_birth, cell_index, place_sheet, refresh_body_from_sheet) —
+// дверей (store_birth, cell_index, squad_birth, refresh_body_from_sheet) —
 // тянуть за ним весь спавн сквадов значило бы заставить каждый тест
 // генезиса линковать цепь npc_spawn.cpp ради нескольких присваиваний.
 // `macro/squad.h` при этом законен и ПРОВЕРЕН: его `refresh_body_from_sheet`
@@ -24,7 +24,7 @@
 
 #include <cstring>
 
-#include "macro/characters.h"     // place_sheet — анкета места по роду
+#include "macro/characters.h"     // squad_birth — дефолт рождения рода
 #include "macro/features.h"    // feature_put + feature_of_place_kind — фича ДО тела
 #include "macro/squad.h"       // refresh_body_from_sheet — тело той же дверью
 #include "macro/state.h"
@@ -34,7 +34,7 @@ namespace sm {
 
 // kind.type остаётся НУЛЕВОЙ строкой: вопрос «каким листом дерётся лидер»
 // месту не задаёт никто — бой места ведут ГОЛОВЫ его контейнера
-// (auto_battle.h), а анкета берётся строкой стола по роду (place_sheet).
+// (auto_battle.h), а анкета берётся дефолтом рождения рода (squad_birth).
 // СНАЧАЛА ФИЧА, СКВАД ПОВЕРХ (вердикт владельца 2026-10-23: «ДЕРЕВНИ ГОРОДА
 // это сначало фичи ВСЁ ТОЛЬКО ФИЧИ потом поверх них ложатся сквады»; фичи
 // делаются ОДИН РАЗ при генерации). Дверь рождения места ставит фичу рода
@@ -61,7 +61,7 @@ inline MacroHandle birth_place(GameState& gs, MacroStore& st, SquadType kind,
     if (name != nullptr)
         std::strncpy(st.name[h.slot].text, name,
                      sizeof st.name[h.slot].text - 1);
-    st.sheet[h.slot]   = place_sheet(kind);
+    st.sheet[h.slot]   = squad_birth(kind).sheet;
     ecs::MacroNpcRuntime rt{};
     rt.state     = std::uint8_t(NPCState::Idle);
     rt.squadType = std::uint8_t(kind);
@@ -163,7 +163,7 @@ inline MacroHandle birth_place(GameState& gs, MacroStore& st, SquadType kind,
     // мест, и НЕ хватило, чтобы они ожили — `hp <= 0` осталось у всех 2275.
     //
     // СТРОКА СУЩЕСТВА — `NPCType::Peasant`, И ЭТО ЗАКОН, А НЕ ПОДБОР: лист
-    // места ПУСТ (`place_sheet` выше), а пустой лист есть законное значение
+    // места ПУСТ (`squad_birth` выше), а пустой лист есть законное значение
     // «сквад без личности» (ЗАКОН АНКЕТЫ п.5), значит база нужна только
     // затем, чтобы у планок были ПОТОЛКИ. Берётся та же человеческая строка,
     // против которой выставлен весь мир (`kHumanMarchMult@src/macro/
