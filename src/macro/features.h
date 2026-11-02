@@ -413,7 +413,7 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
      .onWater = FT_None,
      .kind = SquadType::Ruin,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
-     .mapColor = 0x5A8E8576u, .markPx = 22, .markMaxPx = 144},
+     .mapColor = 0x5A46B49Au, .markPx = 22, .markMaxPx = 144},
 };
 static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
               "kFeatureDefs row order must mirror FeatureType — a new "
