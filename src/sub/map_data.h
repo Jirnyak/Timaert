@@ -322,7 +322,7 @@ struct DungeonRef {
 // (owner ruling 2026-08-14: at two tenants ad-hoc fields were fine, at five
 // they fold). A new place fact is a member here, not another CellContext
 // column.
-struct PlaceContext {
+struct RootedContext {
     SquadType kind = SquadType::None;
     int  id   = -1;   // the place's id within its kind; -1 = none
     // POPULATION, for every kind (§42: the spire's spell tier used to ride
@@ -412,7 +412,7 @@ struct CellContext {
     // (owner report 2026-08-29). Meadow default keeps bare fixtures green.
     Biome groundBiome = Biome::Meadow;
     FeatureType feature;
-    PlaceContext place{};
+    RootedContext rooted{};
     std::uint32_t seed;
     // Macro TreeLayer count for this cell (0..16384); -1 = unknown — the
     // generator re-derives it from biome/features (tests, bare resolvers).
@@ -454,10 +454,10 @@ struct CellContext {
 // где род клетки ВЫДУМЫВАЛСЯ.
 //
 // В продакшене ветка была недостижима ПО ПОСТРОЕНИЮ, и это свойство пакета:
-// `.type` и `.id` у `PlaceFacts` пишутся ОДНОЙ строкой из ОДНОЙ ветки
+// `.type` и `.id` у `RootedFacts` пишутся ОДНОЙ строкой из ОДНОЙ ветки
 // (`cell_facts@src/macro/cell_facts.cpp`, единственный писатель в мире, под
 // `lmId != 0`), а род там берётся у `settlement_at@src/macro/squad_index.h`,
-// которая сама гейтится архетипом Place ⇒ `None` не отдаёт никогда.
+// которая сама гейтится архетипом Rooted ⇒ `None` не отдаёт никогда.
 // Незаданный полюс — дефолты структуры, и он прибит `static_assert` у самого
 // объявления (`src/macro/cell_facts.h`). Значит «род есть» и «ординал есть»
 // равносильны, и выдумывать второй ответ нечему.

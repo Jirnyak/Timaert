@@ -263,7 +263,7 @@ int main() {
             }
         }
         // Умерших сняла дверь (их головы ушли из контейнера) — «как
-        // settle_place_day», где наверху остаётся только паства.
+        // settle_rooted_day», где наверху остаётся только паства.
         // Привоз в полсчёта: гасится СРАЗУ той же дверью, что в мире.
         poor.add_of(commodity_item_index(foodIdx),
                     poorDebt[foodIdx] / 2);
@@ -470,7 +470,7 @@ int main() {
     {
         const int pop = 640;
         Inventory city;
-        seed_place_inventory(city, pop, squad_birth(SquadType::City));
+        seed_rooted_inventory(city, pop, squad_birth(SquadType::City));
         if (city.count("food") != pop * kDaysPerSeason) {
             return fail("birth larder must hold a SEASON of food — a place "
                         "seeded thinner dies of arithmetic at its first "
@@ -482,7 +482,7 @@ int main() {
                   "a consumed need row was born empty");
         }
         Inventory village;
-        seed_place_inventory(village, pop, squad_birth(SquadType::Village));
+        seed_rooted_inventory(village, pop, squad_birth(SquadType::Village));
         // ДЕЛО ДЕРЕВНИ — СЫРЬЁ, и мерить это надо СЫРЬЁМ (2026-09-20): пища
         // с этого дня не материал, а голодная строка, и её амбар рождения
         // равен сезону у всех — деревня перестала «держать больше еды» не
@@ -494,7 +494,7 @@ int main() {
             return fail("a crafting city banks deeper crafted stocks");
         }
         Inventory again;
-        seed_place_inventory(again, pop, squad_birth(SquadType::City));
+        seed_rooted_inventory(again, pop, squad_birth(SquadType::City));
         if (again.count("food") != city.count("food")
             || again.used_slots() != city.used_slots()) {
             return fail("birth stocks must be deterministic from population");
@@ -583,7 +583,7 @@ int main() {
 
     // ── 12. Zero workers craft nothing — the ghost-bench half of the
     // honest-death law (owner, 2026-08-29; the population side lives in
-    // world_tick_parity_test, which links settle_place_day).
+    // world_tick_parity_test, which links settle_rooted_day).
     {
         Inventory ghost;
         ghost.add("food", 100);

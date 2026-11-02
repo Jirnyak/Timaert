@@ -1,5 +1,5 @@
 // СТРОКА КЛЕТКИ — род 1 канонического фрейма (M-171, ломоть 3).
-// Формы CellFacts/PlaceFacts переехали сюда из macro/cell_facts.h:
+// Формы CellFacts/RootedFacts переехали сюда из macro/cell_facts.h:
 // строка пакета обязана жить ниже обоих миров (ЗАКОН КАНОНИЧЕСКОГО ФРЕЙМА
 // п.7 — стена возможна, только пока bus/ не включает macro/). Сборщик
 // остался макро-дверью: cell_facts@src/macro/cell_facts.h.
@@ -16,7 +16,7 @@ namespace sm {
 // The place standing on the cell, with its LIVE fields resolved from
 // GameState at the moment of asking (population and ownership drift daily;
 // the frame only answers WHO — settlement_at, macro/squad_index.h).
-struct PlaceFacts {
+struct RootedFacts {
     SquadType type = SquadType::None;   // ось рода (алиас SquadType умирает ломтиком F)
     int  id = -1;          // WORLD-unique place ordinal (v54); -1 = none
     // POPULATION, for every kind (§42: this field used to carry a spire's
@@ -61,8 +61,8 @@ struct PlaceFacts {
 // `effective_place`, фабриковавший City из одного ординала (некролог в
 // `src/sub/map_data.h`). Дефолты обязаны быть НЕЗАДАННЫМИ ОБА: мутация
 // «id = 0» роняет сборку, потому что 0 есть законный ординал.
-static_assert(PlaceFacts{}.type == SquadType::None
-                  && PlaceFacts{}.id < 0,
+static_assert(RootedFacts{}.type == SquadType::None
+                  && RootedFacts{}.id < 0,
               "незаданная клетка обязана быть незаданной ОБОИМИ полями: род "
               "None и ординал < 0 — иначе «ординал без рода» выразимо, и "
               "фабрикация рода из ординала вернётся");
@@ -72,7 +72,7 @@ struct CellFacts {
     int y = 0;
     Biome        biome = Biome::Water;   // the one cascade (biome_at_cell)
     FeatureType  feature = FT_None;      // road / dirt road / field
-    PlaceFacts place{};
+    RootedFacts rooted{};
     int   treeCount = 0;      // macro tree count; -1 = layer not wired
     float height01 = 0.0f;    // normalized elevation (terrain R)
     float fertility01 = 0.0f; // moisture (terrain G) — the wheat driver

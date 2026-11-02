@@ -3,7 +3,7 @@
 
 #include "macro/map_generator.h"
 #include "macro/npc_ai.h"
-#include "macro/features.h"   // place_kind_of_feature — род едет из ФИЧИ (M-318 Б)
+#include "macro/features.h"   // rooted_kind_of_feature — род едет из ФИЧИ (M-318 Б)
 #include "macro/politik.h"   // faction_index_for_cell — владелец земли клетки
 #include "macro/resource_field.h"
 #include "macro/spires.h"   // spire_orb — ОДИН вывод об орбе (M-233 п.8)
@@ -72,7 +72,7 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
     //   КТО НА НЕЙ СТОИТ — колонки сквада (`.id`, `.size`, `.factionIdx`).
     //     Нет сквада — ординала нет (`-1`), паствы нет (0), знамени нет:
     //     это ЗНАЧЕНИЯ «никого», а не отсутствие ответа.
-    const SquadType kind = place_kind_of_feature(f.feature);
+    const SquadType kind = rooted_kind_of_feature(f.feature);
     // Орб шпиля — ОДИН вывод на весь мир (spire_orb@src/macro/spires.h,
     // M-233 п.8). Здесь он СТОЯЛ, и шесть соседей писали его заново;
     // теперь сборщик его ПУБЛИКУЕТ, а вывод живёт в модуле шпиля и
@@ -92,7 +92,7 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
     // ПОЗИЦИОННАЯ выкладка, и это ровно грабля, купленная прошлой
     // сессией: новая колонка в середине садится в соседнее поле МОЛЧА,
     // а мир остаётся правдоподобным.
-    f.place = {.type = kind,
+    f.rooted = {.type = kind,
                   .id = manned
                       ? std::int32_t(w.store->spawnId[who.slot].index) : -1,
                   // ЧИСЛО ПОЛЯ ЕДЕТ ВНИЗ БЕЗУСЛОВНО, КАК И РОД: оно факт

@@ -68,7 +68,7 @@ using EconFactSink = void (*)(void* user, const EconFact& fact);
 // (`upkeep_season_window`) судила его ВТОРЫМ по счёту, только что ею
 // же перезаписанному. Голод и вымирание теперь говорит летопись в
 // точке суда; этой функции остались СУТКИ: гашение, гигиена, рост.
-void settle_place_day(GameState& gs, MacroStore& st, std::uint16_t slot,
+void settle_rooted_day(GameState& gs, MacroStore& st, std::uint16_t slot,
                          int day,
                          EconFactSink sink = nullptr, void* user = nullptr);
 

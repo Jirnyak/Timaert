@@ -60,8 +60,8 @@ CellContext make_prologue_ctx(std::uint32_t worldSeed, int vx, int vy) {
     ctx.macroHeight = 0.55f;
     ctx.biome = Taiga;
     ctx.feature = FT_None;
-    ctx.place.id = -1;
-    ctx.place.size = 0;
+    ctx.rooted.id = -1;
+    ctx.rooted.size = 0;
     ctx.worldSeed = worldSeed;
     ctx.seed = dungeon_scene_seed(worldSeed, vx, vy, 0, 0);
     ctx.dungeon.kind = DungeonRef::PrologueRoad;

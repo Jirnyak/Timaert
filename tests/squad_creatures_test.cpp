@@ -11,7 +11,7 @@
 
 #include "ecs/components.h"
 #include "macro/npc_spawn.h"
-#include "macro/place_birth.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
+#include "macro/birth_squad.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "macro/world_row.h"
 #include "macro/store.h"
 #include <cstdio>
@@ -23,7 +23,7 @@ namespace {
 // души кладутся головами в инвентарь того же тела.
 sm::MacroHandle make_settlement(sm::GameState& gs, sm::MacroStore& st,
                                 int x, int y) {
-    const sm::MacroHandle h = sm::birth_place(gs, st, sm::SquadType::City,
+    const sm::MacroHandle h = sm::birth_squad(gs, st, sm::SquadType::City,
                                               x, y, 0, "Test Settlement");
     // Души — ГОЛОВАМИ в инвентарь тела (v122): фабрика мира не
     // видит, поэтому пасту (число фичи) ставит звонящий,
@@ -59,7 +59,7 @@ void test_every_macro_npc_is_a_squad_of_one() {
         for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32)
             before[s32] = st.alive[s32];
     }
-    const int placeBodies = int(worldStore_->aliveCount);
+    const int rootedBodies = int(worldStore_->aliveCount);
     sm::spawn_macro_npcs(gs, *worldStore_, terrain, 123u);
 
     int macroNpcs = 0;
@@ -79,7 +79,7 @@ void test_every_macro_npc_is_a_squad_of_one() {
     CHECK(sm::spawn_npc_at(gs, *worldStore_, terrain, "bandit", 4, 4, /*level*/ 3),
           "runtime spawn door must accept a registry label");
     int containers = 0;
-    containers = int(worldStore_->aliveCount) - placeBodies;
+    containers = int(worldStore_->aliveCount) - rootedBodies;
     CHECK(containers == macroNpcs + 1,
           "both spawn doors must attach exactly one creatures per macro NPC");
 }

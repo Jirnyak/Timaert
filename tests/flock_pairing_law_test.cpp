@@ -33,7 +33,7 @@
 #include "macro/macro_stock.h"   // квитанция боя — строка Creatures
 #include "macro/macro_world.h"
 #include "macro/npc_ai.h"        // squad_season_window — сезонная дверь
-#include "macro/place_birth.h"   // birth_place — место родится телом
+#include "macro/birth_squad.h"   // birth_squad — место родится телом
 #include "macro/squad.h"
 #include "macro/store.h"
 #include "macro/upkeep_window.h"
@@ -75,10 +75,10 @@ struct World {
 
 // Место с ПАСТВОЙ: `settle_souls` — единственная дверь появления души, и она
 // пишет ОБА носителя, поэтому фикстура согласована по построению.
-std::uint16_t born_place(World& w, sm::SquadType kind, int x, int y,
+std::uint16_t born_rooted(World& w, sm::SquadType kind, int x, int y,
                          int souls) {
     const sm::MacroHandle h =
-        sm::birth_place(w.gs, *w.store, kind, x, y, 0, "Fixture");
+        sm::birth_squad(w.gs, *w.store, kind, x, y, 0, "Fixture");
     sm::settle_souls(w.gs, *w.store, h.slot, souls);
     return h.slot;
 }
@@ -98,9 +98,9 @@ int folk_of(World& w, std::uint16_t slot) {
 // пары: отставание ≤ суток законно прямо (ЗАКОН ДВУХ ТЕМПОВ «размазывается
 // фоном»). Утверждение при этом НЕ ослаблено — мир по-прежнему не смеет
 // числить людей, которых у него нет; изменилась только КАДЕНЦИЯ.
-void place_module_day(World& w) {
+void rooted_module_day(World& w) {
     std::vector<std::int32_t> buf(sm::kUnifiedCap, 0);
-    sm::reconcile_place_flock(w.gs, *w.store, buf.data());
+    sm::reconcile_rooted_flock(w.gs, *w.store, buf.data());
 }
 
 // ── 1. СЕЗОННАЯ ДВЕРЬ: ГОЛОД СНИМАЕТ ОБА НОСИТЕЛЯ ────────────────────────
@@ -109,7 +109,7 @@ void place_module_day(World& w) {
 // ЧАСТИЧНУЮ долю у двери нет: её рождает только наполовину оплаченный сезон.
 void test_the_season_window_pays_the_flock() {
     World w;
-    const std::uint16_t slot = born_place(w, sm::SquadType::City, 10, 10, 8);
+    const std::uint16_t slot = born_rooted(w, sm::SquadType::City, 10, 10, 8);
     CHECK(flock_of(w, slot) == 8 && folk_of(w, slot) == 8,
           "фикстура: оба носителя согласны — паства 8 и голов 8");
 
@@ -150,7 +150,7 @@ void test_the_season_window_pays_the_flock() {
 // поселения: набег на деревню снимал головы и паству не трогал.
 void test_the_creature_receipt_pays_the_flock() {
     World w;
-    const std::uint16_t slot = born_place(w, sm::SquadType::Village, 20, 20, 5);
+    const std::uint16_t slot = born_rooted(w, sm::SquadType::Village, 20, 20, 5);
     const int id = int(w.store->spawnId[slot].index);
     CHECK(flock_of(w, slot) == 5 && folk_of(w, slot) == 5,
           "фикстура: паства 5 и голов 5");
@@ -168,7 +168,7 @@ void test_the_creature_receipt_pays_the_flock() {
     CHECK(flock_of(w, slot) == 5,
           "квитанция сняла ГОЛОВУ и только её: число — частность модуля, и "
           "снизу его не пишет никто (M-325)");
-    place_module_day(w);
+    rooted_module_day(w);
     CHECK(flock_of(w, slot) == 3,
           "ЗАКОН ПАРЫ: в СВОЁМ дневном проходе модуль свёл число к тем же "
           "троим, что остались в контейнере");
@@ -186,10 +186,10 @@ void test_the_creature_receipt_pays_the_flock() {
 // тех, кто в поле.
 void test_the_flock_counts_the_artels_too() {
     World w;
-    const std::uint16_t place = born_place(w, sm::SquadType::Village, 30, 30, 9);
-    const int placeId = int(w.store->spawnId[place].index);
-    place_module_day(w);
-    CHECK(flock_of(w, place) == 9, "фикстура: девять душ, все дома");
+    const std::uint16_t rooted = born_rooted(w, sm::SquadType::Village, 30, 30, 9);
+    const int rootedId = int(w.store->spawnId[rooted].index);
+    rooted_module_day(w);
+    CHECK(flock_of(w, rooted) == 9, "фикстура: девять душ, все дома");
 
     // АРТЕЛЬ — СКВАД, ЧЕЙ РОДИТЕЛЬ ЭТО МЕСТО. Головы в неё ПЕРЕНОСЯТСЯ, а не
     // рождаются: общее число семьи от выхода в поле не меняется, и ровно это
@@ -197,30 +197,30 @@ void test_the_flock_counts_the_artels_too() {
     const sm::MacroHandle art = sm::store_birth(*w.store);
     CHECK_OR_RETURN(w.store->valid(art), "фикстура: артель родилась слотом");
     sm::set_relation(*w.store, int(w.store->spawnId[art.slot].index),
-                     placeId, sm::Stance::Parent);
+                     rootedId, sm::Stance::Parent);
     const int moved = 4;
-    sm::bleed_flock(w.store->inventory[place].inv, moved);
+    sm::bleed_flock(w.store->inventory[rooted].inv, moved);
     CHECK(sm::creatures_push_stack(
               w.store->inventory[art.slot].inv, sm::NPCType::Peasant,
               sm::npc_def(sm::NPCType::Peasant).baseLevel, moved),
           "фикстура: четверо встали в артель");
-    CHECK(folk_of(w, place) == 5, "дома осталось пятеро");
+    CHECK(folk_of(w, rooted) == 5, "дома осталось пятеро");
 
-    place_module_day(w);
+    rooted_module_day(w);
     // ЯКОРЬ, А НЕ ПЕРЕСЧЁТ ФОРМУЛЫ (§8 п.6): утверждается ОТНОШЕНИЕ к
     // независимо известному факту мира — семья не поредела, четверо просто
     // вышли в поле, значит число обязано остаться девятью.
-    CHECK(flock_of(w, place) == 9,
+    CHECK(flock_of(w, rooted) == 9,
           "ЗАКОН: число места есть ДОМ + ВСЕ ЕГО АРТЕЛИ — выход в поле семью "
           "не уменьшает");
-    CHECK(flock_of(w, place) != folk_of(w, place),
+    CHECK(flock_of(w, rooted) != folk_of(w, rooted),
           "негативный контроль: число НЕ равно счёту голов дома, иначе "
           "свод, забывший артели, прошёл бы незамеченным");
 
     // И ОБРАТНО: смерть В АРТЕЛИ обязана убавить число её дома.
     sm::bleed_flock(w.store->inventory[art.slot].inv, 2);
-    place_module_day(w);
-    CHECK(flock_of(w, place) == 7,
+    rooted_module_day(w);
+    CHECK(flock_of(w, rooted) == 7,
           "двое павших в поле сошли с числа своего дома");
 }
 
@@ -232,7 +232,7 @@ void test_the_flock_counts_the_artels_too() {
 // себе сам.
 void test_a_dead_horse_is_not_a_dead_soul() {
     World w;
-    const std::uint16_t slot = born_place(w, sm::SquadType::Village, 30, 30, 4);
+    const std::uint16_t slot = born_rooted(w, sm::SquadType::Village, 30, 30, 4);
     sm::Inventory& inv = w.store->inventory[slot].inv;
     CHECK(sm::creatures_push_stack(inv, sm::NPCType::Horse,
                                    sm::npc_def(sm::NPCType::Horse).baseLevel, 3),

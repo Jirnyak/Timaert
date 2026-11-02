@@ -563,7 +563,7 @@ jopus_prompts.md	src/tables/commodity.h:30-60
 jopus_prompts.md	src/macro/econ_day.cpp:40-55
 jopus_prompts.md	src/macro/econ_day.h:70-80
 jopus_prompts.md	src/macro/features.h:165-295
-jopus_prompts.md	src/macro/place_iter.h:45-55
+jopus_prompts.md	src/macro/rooted_iter.h:45-55
 jopus_prompts.md	src/macro/language.cpp:136-180
 jopus_prompts.md	src/macro/macro_stock.cpp:340-460
 jopus_prompts.md	src/macro/macro_stock.cpp:480-565

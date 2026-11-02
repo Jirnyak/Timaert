@@ -20,7 +20,7 @@
 #include "macro/world_row.h"
 #include "macro/npc_spawn.h"
 #include "macro/squad.h"
-#include "macro/place_birth.h"   // birth_place — фикстура рождает свой неподвижный сквад
+#include "macro/birth_squad.h"   // birth_squad — фикстура рождает свой неподвижный сквад
 #include "macro/player_entity.h"
 #include "tables/faction.h"
 #include "tables/npc.h"
@@ -822,7 +822,7 @@ void test_the_avatars_training_reads_at_the_new_doors() {
 // Свидетеля у этого закона не было ВОВСЕ, поэтому дефект и жил: ни один тест
 // не спрашивал, цела ли анкета ПОСЛЕ роста. Фикстура рождает предусловие сама
 // (§8 п.11): сквад с табличной анкетой непустых ремёсел — ровно то, что
-// кладёт `birth_place` городу.
+// кладёт `birth_squad` городу.
 //
 // ДВА УТВЕРЖДЕНИЯ, И ОНИ РАЗНЫЕ:
 //   · ремёсла целы после роста — перекат анкеты невыразим;
@@ -835,7 +835,7 @@ void test_a_victory_does_not_erase_a_table_born_sheet() {
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
 
-    const MacroHandle town = sm::birth_place(gs, st, SquadType::City,
+    const MacroHandle town = sm::birth_squad(gs, st, SquadType::City,
                                              12, 12, std::int16_t(0), "Kamen");
     CHECK_OR_RETURN(st.valid(town), "фикстура родила свой неподвижный сквад");
 

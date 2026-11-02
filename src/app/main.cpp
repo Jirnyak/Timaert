@@ -40,8 +40,8 @@
 #include "macro/settlement_score.h"
 #include "macro/spawners.h"
 #include "macro/tree_layer.h"
-#include "macro/place_iter.h"
-#include "macro/place_birth.h"
+#include "macro/rooted_iter.h"
+#include "macro/birth_squad.h"
 #include "macro/deposit_layer.h"
 #include "macro/spires.h"
 #include "macro/zones.h"
@@ -220,7 +220,7 @@ bool squad_is_named(const App& app, sm::MacroHandle h) {
 
 // (STANDING and THE deed door moved to the macro layer — macro/squad.h
 // renown_slot / renown_of / grant_renown / record_deed, beside their place
-// twin record_place_fact in state.h — so the app, the UI and the subworld
+// twin record_rooted_fact in state.h — so the app, the UI and the subworld
 // engine all knock on ONE door. The one-door law of S20.1 had drifted across
 // two layers, and the drift was writers that filed facts for free.)
 
@@ -248,11 +248,11 @@ sm::FactNaming app_fact_naming(App& app) {
         // безымянный субъект не вправе получить его местоимение.
         return (home != 0 && ordinal == home) ? "You" : nullptr;
     };
-    n.place = [](void* u, std::uint32_t id) -> const char* {
+    n.rooted = [](void* u, std::uint32_t id) -> const char* {
         // Имя места — колонка его ТЕЛА (ломтик F); конверт летописи несёт
         // store, потому что строк мест больше нет.
         auto& st = *static_cast<App*>(u)->macroStore;
-        const sm::MacroHandle h = sm::place_handle_by_ordinal(st, id);
+        const sm::MacroHandle h = sm::rooted_handle_by_ordinal(st, id);
         if (st.valid(h) && st.name[h.slot].text[0] != '\0')
             return st.name[h.slot].text;
         return nullptr;   // a spire has no name of its own — "a place"
@@ -430,7 +430,7 @@ long file_size_bytes(const std::string& path) {
 // Ответ — СЛОТ места (ломтик F); пустой хэндл значит «такого места нет»,
 // и дверь резолва сама гейтит ось рода (None не пройдёт).
 sm::MacroHandle settlement_by_id(const sm::MacroStore& st, int id) {
-    return id >= 0 ? sm::place_handle_by_ordinal(st, std::uint32_t(id))
+    return id >= 0 ? sm::rooted_handle_by_ordinal(st, std::uint32_t(id))
                    : sm::MacroHandle{};
 }
 
@@ -450,7 +450,7 @@ int settlement_at_player(const sm::GameState& gs, const sm::MacroStore& st,
     sm::squads_in_frame(idx, st, px, py, radius,
                         [&](std::uint16_t slot, int dx, int dy) {
         const sm::SquadType kind = sm::SquadType(st.runtime[slot].squadType);
-        if (!sm::place_is_settlement(kind)) return;
+        if (!sm::rooted_is_settlement(kind)) return;
         const int d2 = dx * dx + dy * dy;
         if (d2 > r2 || d2 >= bestD2) return;
         bestD2 = d2;
@@ -893,7 +893,7 @@ void detect_forced_encounter(App& app) {
             // закон.
             if (sm::squad_archetype(
                     sm::SquadType(st.runtime[slot].squadType))
-                == sm::SquadArchetype::Place) {
+                == sm::SquadArchetype::Rooted) {
                 return;
             }
             if (st.pools[slot].hp <= 0) return;
@@ -1509,7 +1509,7 @@ void rebake_macro_lights(App& app) {
 // flush, where the map is next drawn anyway.
 void rebake_world(App& app, bool uploadNow) {
     std::vector<sm::ZoneSeed> zsCities, zsVills;
-    sm::for_each_place(*app.macroStore, [&](std::uint16_t slot) {
+    sm::for_each_rooted(*app.macroStore, [&](std::uint16_t slot) {
         const sm::SquadType kind =
             sm::SquadType(app.macroStore->runtime[slot].squadType);
         if (kind != sm::SquadType::City
@@ -3931,7 +3931,7 @@ void draw_debug_ui(App& app) {
     }
     ImGui::Text("Zoom %.2f  Cam %.1f,%.1f", app.zoom, app.camX, app.camY);
     std::size_t dbgCities = 0, dbgVillages = 0;
-    sm::for_each_place(*app.macroStore, [&](std::uint16_t slot) {
+    sm::for_each_rooted(*app.macroStore, [&](std::uint16_t slot) {
         const sm::SquadType kind =
             sm::SquadType(app.macroStore->runtime[slot].squadType);
         if (kind == sm::SquadType::City) ++dbgCities;
@@ -4195,7 +4195,7 @@ void register_console_commands(App& app) {
             sm::MacroHandle found{};
             int id = 0;
             if (sm::dev::arg_int(a, 0, id))
-                if (const sm::MacroHandle h = sm::place_handle_by_ordinal(
+                if (const sm::MacroHandle h = sm::rooted_handle_by_ordinal(
                         st, std::uint32_t(id));
                     st.valid(h)
                     && sm::SquadType(st.runtime[h.slot].squadType)
@@ -4204,7 +4204,7 @@ void register_console_commands(App& app) {
             if (!st.valid(found)) {
                 std::string q;
                 for (std::size_t i = 0; i < a.size(); ++i) { if (i) q += ' '; q += a[i]; }
-                sm::for_each_place(st, [&](std::uint16_t slot) {
+                sm::for_each_rooted(st, [&](std::uint16_t slot) {
                     if (st.valid(found)) return;
                     if (sm::SquadType(st.runtime[slot].squadType)
                         != sm::SquadType::City)
@@ -5359,7 +5359,7 @@ void draw_debug_panels(App& app) {
             ImGui::Text("seed    %u", app.gs.worldSeed);
             ImGui::Text("map     %d x %d", app.gs.mapW, app.gs.mapH);
             std::size_t nCities = 0, nVillages = 0, nSpires = 0;
-            sm::for_each_place(*app.macroStore, [&](std::uint16_t slot) {
+            sm::for_each_rooted(*app.macroStore, [&](std::uint16_t slot) {
                 const sm::SquadType kind =
                     sm::SquadType(app.macroStore->runtime[slot].squadType);
                 if (kind == sm::SquadType::City) ++nCities;
@@ -5471,7 +5471,7 @@ void build_world_preview(App& app, int side = 384) {
                 img[o + 0] = cr; img[o + 1] = cg; img[o + 2] = cb; img[o + 3] = 255;
             }
     };
-    sm::for_each_place(*app.macroStore, [&](std::uint16_t slot) {
+    sm::for_each_rooted(*app.macroStore, [&](std::uint16_t slot) {
         if (sm::SquadType(app.macroStore->runtime[slot].squadType)
             != sm::SquadType::City)
             return;
@@ -5480,7 +5480,7 @@ void build_world_preview(App& app, int side = 384) {
         const int py = sm::ecs::cell_y(c, app.gs.mapW) * side / td.height;
         stamp(px, py, 1, 240, 200, 60);
     });
-    sm::for_each_place(*app.macroStore, [&](std::uint16_t slot) {
+    sm::for_each_rooted(*app.macroStore, [&](std::uint16_t slot) {
         // Столица есть город, не обязанный данью никому (S24: своему
         // сюзерену она сама себе, и одна дверь ставит ей 0). Прежде здесь
         // стояла колонка `City::isCapital` плана генератора — второй

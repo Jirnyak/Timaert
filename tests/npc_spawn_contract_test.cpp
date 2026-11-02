@@ -1,7 +1,7 @@
 #include "check.h"
 #include "macro/world_row.h"   // raise_flock_into_container — души головами
 #include "macro/npc_spawn.h"
-#include "macro/place_birth.h" // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
+#include "macro/birth_squad.h" // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "ecs/components.h"
 #include "macro/store.h"
 
@@ -13,7 +13,7 @@ namespace {
 // одной дверью — ТЕЛОМ в store этого мира (ломтик F: строки места больше
 // нет), и склад его — колонка того же тела.
 void add_settlement(sm::GameState& gs, sm::MacroStore& st, int x, int y) {
-    const sm::MacroHandle h = sm::birth_place(gs, st, sm::SquadType::City,
+    const sm::MacroHandle h = sm::birth_squad(gs, st, sm::SquadType::City,
                                               x, y, 0, "Test Settlement");
     // Души — ГОЛОВАМИ в инвентарь тела (v122): фабрика мира не
     // видит, поэтому пасту (число фичи) ставит звонящий,
@@ -25,16 +25,16 @@ void add_settlement(sm::GameState& gs, sm::MacroStore& st, int x, int y) {
 // сквад»), но спавн-дверь его НЕ рождала — её закон спрашивается только у
 // того, кого она родила. Отсечка берётся не временем и не порядком слотов, а
 // самой структурой: ломтиком F «это место?» отвечает ОСЬ РОДА тела — тот же
-// предикат, которым мир обходит свои места (for_each_place).
-bool is_place_body(const sm::MacroStore& st, std::size_t slot) {
-    return sm::squad_archetype(sm::SquadType(st.runtime[slot].squadType)) == sm::SquadArchetype::Place;
+// предикат, которым мир обходит свои места (for_each_rooted).
+bool is_rooted_body(const sm::MacroStore& st, std::size_t slot) {
+    return sm::squad_archetype(sm::SquadType(st.runtime[slot].squadType)) == sm::SquadArchetype::Rooted;
 }
 
 int count_macro_npcs(const sm::MacroStore& st) {
     // 6.3: население — живые слоты store, моста нет; тела мест не в счёт.
     int n = 0;
     for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32)
-        if (st.alive[s32] != 0 && !is_place_body(st, s32)) ++n;
+        if (st.alive[s32] != 0 && !is_rooted_body(st, s32)) ++n;
     return n;
 }
 
@@ -53,7 +53,7 @@ int count_macro_npcs(const sm::MacroStore& st) {
 int bodies_without_a_full_block(const sm::MacroStore& st) {
     int bad = 0;
     for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
-        if (st.alive[s32] == 0 || is_place_body(st, s32)) continue;
+        if (st.alive[s32] == 0 || is_rooted_body(st, s32)) continue;
         const auto& pools = st.pools[s32];
         if (pools.maxHp <= 0 || pools.hp <= 0) ++bad;
         if (pools.maxMp <= 0 || pools.mp <= 0) ++bad;

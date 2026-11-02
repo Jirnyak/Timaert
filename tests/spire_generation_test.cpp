@@ -11,7 +11,7 @@
 //     (kSpireMinZone), and the top-tier spell's spire stands at
 //     the band's CAP — the doom spell lives where the world is at its worst;
 //   · занятая клетка ветирует шпиль, и занятость спрашивается у БАЙТА
-//     (`place_kind_of_feature`, та же дверь, что у постановки шахт M-321);
+//     (`rooted_kind_of_feature`, та же дверь, что у постановки шахт M-321);
 //     the pick spreads: best-candidate sampling never stacks two side by side;
 //   · placement is a fact of the world seed (the spell rows are compile-time
 //     constants): same seed reproduces the sites, another seed moves them;
@@ -23,7 +23,7 @@
 // голове автора; следующий правит прибор вслепую. Поэтому числа здесь:
 //
 //   ОБЯЗАНЫ КРАСНИТЬ:
-//   · фикстура рожает руине сквад (`birth_place(…Ruin…)` перед переписью)
+//   · фикстура рожает руине сквад (`birth_squad(…Ruin…)` перед переписью)
 //       → КРАСНЫЙ, **1 из 77** — утверждение «сквадов ноль» имеет зубы;
 //   · гейт сквада возвращён над родом клетки (`cell_facts`: `.type` только
 //     при `manned`) — то есть ровно тот дефект, который наряд и лечил
@@ -51,8 +51,8 @@
 #include "macro/labour.h"   // souls_flock — паства ГОРОДА (живая половина)
 
 #include "macro/map_generator.h"
-#include "macro/place_iter.h"  // for_each_place — перепись СКВАДОВ (их ноль)
-#include "macro/place_birth.h"  // birth_place — сквад города/деревни фикстуры
+#include "macro/rooted_iter.h"  // for_each_rooted — перепись СКВАДОВ (их ноль)
+#include "macro/birth_squad.h"  // birth_squad — сквад города/деревни фикстуры
 #include "macro/ruins.h"
 #include "macro/anketa.h"
 #include "macro/spires.h"
@@ -217,7 +217,7 @@ void test_one_spire_per_spell_in_the_band() {
     // проверялся бы только отсутствием красного, а отсутствие красного
     // доказывает лишь то, что никто не смотрел.
     int spireSquads = 0;
-    for_each_place(places(), [&](std::uint16_t slot) {
+    for_each_rooted(places(), [&](std::uint16_t slot) {
         if (SquadType(places().runtime[slot].squadType) == SquadType::Spire)
             ++spireSquads;
     });
@@ -328,7 +328,7 @@ void test_no_admissible_ground_places_nothing() {
     }
 }
 
-void test_named_places_veto_their_cells() {
+void test_named_rooted_veto_their_cells() {
     // The only wild ground is a 16×16 block (zone 9 at x,y in [32,48)); the
     // rest of the world is tame. With the block free every registry spell's
     // spire lands inside it; with a village on EVERY block cell the spires
@@ -361,7 +361,7 @@ void test_named_places_veto_their_cells() {
     }
     {
         // ПРЕДУСЛОВИЕ РОЖДАЕТСЯ ПОЛНОСТЬЮ, И ЭТО ПОПРАВКА M-320 (§8 п.11).
-        // Здесь `birth_place` звалась БЕЗ слоя фич, то есть деревни вставали
+        // Здесь `birth_squad` звалась БЕЗ слоя фич, то есть деревни вставали
         // телами, а байтов `FT_Village` в мире не появлялось ни одного —
         // предусловие было рождено ПОЛОВИНОЙ. Прежний вето-скан смотрел в
         // стор и этого не замечал; новый спрашивает БАЙТ, и половинная
@@ -372,7 +372,7 @@ void test_named_places_veto_their_cells() {
         sm::FeatureLayer flI = fresh_features(terrain.width, terrain.height);
         for (int y = 32; y < 48; ++y)
             for (int x = 32; x < 48; ++x)
-                birth_place(gs, places(), SquadType::Village, x, y, -1,
+                birth_squad(gs, places(), SquadType::Village, x, y, -1,
                             nullptr, &flI, &terrain);
         int vetoCells = 0;
         for (int y = 32; y < 48; ++y)
@@ -441,7 +441,7 @@ void test_named_places_veto_their_cells() {
 //      дереве, где редкий случай сделан частым НАРОЧНО.
 //   2. ПРЕДЕЛ ЭТОГО СВИДЕТЕЛЯ, НАЗВАННЫЙ ВСЛУХ: он читает БАЙТ, поэтому
 //      слепнет, если спелл кто-то ЗАТЁР. Первая редакция мутации 2 рожала
-//      деревню со слоем фич — и `birth_place` переписала `FT_Spire` на
+//      деревню со слоем фич — и `birth_squad` переписала `FT_Spire` на
 //      `FT_Village`, то есть спелл УНИЧТОЖИЛСЯ, прибор промолчал законно
 //      (слота на клетке со спеллом правда не стало), а мир потерял строку
 //      каталога. Это другой род дефекта — тот же, что `bugs.md` Л7, — и
@@ -474,7 +474,7 @@ void test_no_live_slot_stands_on_a_spell_cell() {
     for (int y = 32; y < 48; ++y)
         for (int x = 32; x < 48; ++x) {
             if (((x + y) & 1) != 0) continue;
-            birth_place(gs, places(), SquadType::Village, x, y, -1,
+            birth_squad(gs, places(), SquadType::Village, x, y, -1,
                         nullptr, &fl, &terrain);
             ++born;
         }
@@ -550,7 +550,7 @@ void test_genesis_places_ruins_and_spires_as_features() {
     generate_ruins(gs, places(), zones, terrain, flH);
 
     int ruinSquads = 0, spireSquads = 0;
-    for_each_place(places(), [&](std::uint16_t slot) {
+    for_each_rooted(places(), [&](std::uint16_t slot) {
         const SquadType k = SquadType(places().runtime[slot].squadType);
         if (k == SquadType::Ruin) ++ruinSquads;
         else if (k == SquadType::Spire) ++spireSquads;
@@ -633,7 +633,7 @@ void test_one_answer_to_the_drained_orb() {
     // ── НЕГАТИВНЫЙ КОНТРОЛЬ С ЗУБАМИ: свидетель рождает его САМ (§8 п.11).
     const int freefolk = faction_index("freefolk");
     CHECK_OR_RETURN(freefolk >= 0, "реестр фракций несёт строку freefolk");
-    const MacroHandle city = birth_place(gs, places(), SquadType::City,
+    const MacroHandle city = birth_squad(gs, places(), SquadType::City,
                                         40, 40, std::int16_t(freefolk),
                                         nullptr, &feat, &terrain);
     CHECK_OR_RETURN(places().valid(city), "фикстура родила себе город");
@@ -716,13 +716,13 @@ void test_one_answer_to_the_drained_orb() {
     CHECK(otherDepleted == 0,
           "обобран РОВНО один шпиль — выкачанность есть факт КЛЕТКИ");
 
-    // ЗДЕСЬ СТОЯЛА ПРОВЕРКА ВИЗИТОРА МЕСТ (`for_each_place_view`) НА ТОМ ЖЕ
+    // ЗДЕСЬ СТОЯЛА ПРОВЕРКА ВИЗИТОРА МЕСТ (`for_each_rooted_view`) НА ТОМ ЖЕ
     // ОБОБРАННОМ ШПИЛЕ, И ЕЁ ПРЕДМЕТ СНЯТ M-320: визитор обходит СКВАДЫ, а
     // сквада у шпиля нет ни одного, значит «вид места несёт ту же
     // выкачанность, что дверь» — утверждение о пустом множестве.
     //
     // ⚠ И ЭТО НАЗВАННАЯ ДЫРА, А НЕ ЗАКРЫТЫЙ ВОПРОС: колонка
-    // `PlaceView::depleted@src/macro/place_iter.h` после сноса ВСЕГДА ложна,
+    // `RootedView::depleted@src/macro/rooted_iter.h` после сноса ВСЕГДА ложна,
     // то есть стала сиротой (DOD п.9), а её читатель
     // `macro_lighting.cpp` тем самым перестал зажигать шпили в ночи.
     // Разбор и число — в отчёте шага; снос колонки трогает ui/ и свет, то
@@ -731,7 +731,7 @@ void test_one_answer_to_the_drained_orb() {
     // ЖИВАЯ ПОЛОВИНА ЗАКОНА ОСТАЁТСЯ, И ОНА ПРО ГОРОД: пустая паства НЕ
     // значит «выкачан», и у города это по-прежнему судится визитором.
     int cityViewDepleted = 0, cityViewSeen = 0;
-    for_each_place_view(mw, [&](const PlaceView& lv) {
+    for_each_rooted_view(mw, [&](const RootedView& lv) {
         if (lv.type != SquadType::City) return;
         ++cityViewSeen;
         if (lv.depleted) ++cityViewDepleted;
@@ -755,7 +755,7 @@ void test_one_answer_to_the_drained_orb() {
 //
 // ЧТО ИЗ ЗАКОНА ОСТАЛОСЬ ЖИТЬ И ГДЕ ЕГО СУДЯТ, чтобы его не искали заново:
 //   · «владельца называет ЭКЗЕМПЛЯР, не вид» — предмет жив у ГОРОДА и
-//     ДЕРЕВНИ (их рождает `populate_places_from_politik@src/macro/state.cpp`
+//     ДЕРЕВНИ (их рождает `populate_rooted_from_politik@src/macro/state.cpp`
 //     с `c.factionIdx`), и колонки вида `spawnFaction`, против которой M-39
 //     был направлен, в дереве нет вовсе — её снёс сам M-39;
 //   · «знамя не достаёт до дичи на земле» — `fauna_registry_test`, как и
@@ -819,7 +819,7 @@ constexpr const char* kOrbWitness = "src/app/smoke.cpp";
 // файлового правила, оплаченное в M-320 причиной и двумя числами: имя шпиля
 // стоит в нём РОВНО ОДИН раз, строкой `{ SquadType::Spire, nullptr, nullptr }`
 // таблицы модулей (её требует ассерт полноты `kAiModuleRows`), а оба
-// `feature_number_read` стоят ПОД ГЕЙТОМ `place_is_settlement`, куда шпиль не
+// `feature_number_read` стоят ПОД ГЕЙТОМ `rooted_is_settlement`, куда шпиль не
 // проходит и где сквада у него нет вовсе.
 //
 // ИМЯ УШЛО ПОТОМУ, ЧТО ЕГО ПРИЧИНА ПЕРЕСТАЛА БЫТЬ ИСКЛЮЧЕНИЕМ: суд по ТОЙ ЖЕ
@@ -906,7 +906,7 @@ int main() {
     test_one_spire_per_spell_in_the_band();
     test_placement_is_a_fact_of_the_seed();
     test_no_admissible_ground_places_nothing();
-    test_named_places_veto_their_cells();
+    test_named_rooted_veto_their_cells();
     test_genesis_places_ruins_and_spires_as_features();
     test_one_answer_to_the_drained_orb();
     test_no_live_slot_stands_on_a_spell_cell();

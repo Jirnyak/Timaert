@@ -104,7 +104,7 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
 
     const int centre = kCellSize / 2;
     const float cf = float(centre);
-    const int population = ctx.place.size;   // floored by city_wall_radius
+    const int population = ctx.rooted.size;   // floored by city_wall_radius
     // The garrison's houses stand in the upper quarter, not on the town's
     // streets: the town lays the REST (sub/city_layout.h).
     const int upperHouses = city_upper_houses(population);

@@ -22,7 +22,7 @@
 #include "macro/labour.h"
 #include "macro/macro_stock.h"
 #include "macro/map_generator.h"
-#include "macro/place_birth.h"
+#include "macro/birth_squad.h"
 #include "macro/resource_field.h"
 #include "macro/squad.h"
 #include "macro/state.h"
@@ -81,7 +81,7 @@ World make_world() {
     w.features.resize(kMap, kMap);
     allocate_world_fields(w.gs, kMap, kMap);
 
-    w.village = birth_place(w.gs, *w.store, SquadType::Village, 10, 10, -1,
+    w.village = birth_squad(w.gs, *w.store, SquadType::Village, 10, 10, -1,
                             "Doorholm");
     settle_souls(w.gs, *w.store, w.village.slot, 40);
 

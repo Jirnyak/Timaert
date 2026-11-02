@@ -1815,7 +1815,7 @@ timaert_test(woodcutter_gather_test
 # сюите. Прибор спрашивает выпуск через ДУМКУ модуля типа (второго пути в
 # мире нет), плату душами за рождение крю и гейт дубля. Список исходников —
 # тот же, что у woodcutter_gather_test: тот же npc_ai + econ_day + рождение.
-timaert_test(place_module_day_test
+timaert_test(rooted_module_day_test
     SOURCES
         # ДНЕВНОЙ ПРОХОД МЕСТА (settle_place_day) — предмет теста 8 (M-333):
         # число поля под местом растёт как ЛЮДИ у всякого рода, и свидетель
@@ -2034,7 +2034,7 @@ timaert_test(resource_growth_test
 # РОЖАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11) — разводит фичу и колонку сквада НАРОЧНО,
 # потому что в живом мире они согласны (0 расхождений за 623 171 осмотр), и
 # свидетель на согласном мире был бы тавтологией (§8 п.6, шестая форма).
-timaert_test(place_identity_test
+timaert_test(rooted_identity_test
     SOURCES
         src/macro/cell_facts.cpp
         src/macro/spires.cpp
@@ -2046,7 +2046,7 @@ timaert_test(place_identity_test
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
-    PIN "OK place_identity_test .6 checks")
+    PIN "OK rooted_identity_test .6 checks")
 
 timaert_test(frame_fill_test
     SOURCES

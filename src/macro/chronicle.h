@@ -344,7 +344,7 @@ void chronicle_init(Chronicle& c, int mapW, int mapH);
 // world yet). Every field is a number, so this is a store and two links.
 std::uint32_t chronicle_record(Chronicle& c, const WorldFact& fact);
 
-// (The place-fact door lives in state.h `record_place_fact` — it must
+// (The place-fact door lives in state.h `record_rooted_fact` — it must
 // resolve the place's RENOWN to mark figure-ness and to pay the deed, and a
 // chronicle of ordinals must not learn where renown lives.)
 
@@ -401,7 +401,7 @@ struct FactNaming {
     // Each returns a display name for an ordinal, or nullptr if it cannot say
     // — in which case the sentence falls back to what it does know.
     const char* (*squad)(void* user, std::uint32_t ordinal) = nullptr;
-    const char* (*place)(void* user, std::uint32_t id) = nullptr;
+    const char* (*rooted)(void* user, std::uint32_t id) = nullptr;
     const char* (*faction)(void* user, std::uint32_t index) = nullptr;
     void* user = nullptr;
 };

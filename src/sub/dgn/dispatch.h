@@ -141,7 +141,7 @@ struct DungeonKindRow {
     bool householdAbove;     // storeys ≥0 borrow RESIDENTS from Population
     bool verminAbove;        // storeys ≥0 draw VERMIN from FaunaCount
                              //   (a cellar, level<0, is always a den)
-    bool placeGarrison;      // this scene IS its place's own interior
+    bool rootedGarrison;      // this scene IS its place's own interior
                              //   (§42/CANON S28): when the door cell names a
                              //   place that keeps a crowd, storeys draw the
                              //   PLACE's population — its crowd family, as

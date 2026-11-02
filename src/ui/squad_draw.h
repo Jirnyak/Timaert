@@ -63,7 +63,7 @@ struct ArchetypeDrawRow {
     //
     // ПОЧЕМУ ЭТО ГРУППОВОЙ ВОПРОС, А НЕ ВОПРОС ЖИЗНИ ТЕЛА: у неподвижного
     // сквада пулы ВЕСТИГИАЛЬНЫ — рождение ставит их нулями
-    // (`birth_place@src/macro/place_birth.h`), а первый же полученный уровень
+    // (`birth_squad@src/macro/birth_squad.h`), а первый же полученный уровень
     // поднимает ему `maxHp`, оставляя `hp` нулём НАВСЕГДА, потому что дверь
     // пересборки отказывается воскрешать («Dead stays dead», `squad.h`).
     // Значит ни `hp`, ни `maxHp` не отвечают «что показать»: число у места
@@ -73,7 +73,7 @@ struct ArchetypeDrawRow {
 
 inline constexpr ArchetypeDrawRow
     kArchetypeDraw[std::size_t(SquadArchetype::Count)] = {
-    {.arch = SquadArchetype::Place, .cellSpan = 2.0f, .remembered = true, .pictureFromBody = false, .layer = 0, .figuresFromPools = false},
+    {.arch = SquadArchetype::Rooted, .cellSpan = 2.0f, .remembered = true, .pictureFromBody = false, .layer = 0, .figuresFromPools = false},
     {.arch = SquadArchetype::Worker, .cellSpan = 1.0f, .remembered = false, .pictureFromBody = true, .layer = 1, .figuresFromPools = true},
     {.arch = SquadArchetype::Roamer, .cellSpan = 1.0f, .remembered = false, .pictureFromBody = true, .layer = 1, .figuresFromPools = true},
     {.arch = SquadArchetype::Hero, .cellSpan = 1.0f, .remembered = false, .pictureFromBody = true, .layer = 1, .figuresFromPools = true},
@@ -89,7 +89,7 @@ inline constexpr const ArchetypeDrawRow& archetype_draw(SquadArchetype a) {
 
 // Слоёв ровно два, и проход рисовки режет список рисования на столько же.
 inline constexpr std::size_t kMapDrawLayers = 2;
-static_assert(kArchetypeDraw[std::size_t(SquadArchetype::Place)].layer
+static_assert(kArchetypeDraw[std::size_t(SquadArchetype::Rooted)].layer
                   < kMapDrawLayers
               && kArchetypeDraw[std::size_t(SquadArchetype::Hero)].layer
                   < kMapDrawLayers,

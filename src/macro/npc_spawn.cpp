@@ -4,7 +4,7 @@
 #include "tables/biomes.h"
 #include "tables/npc.h"
 #include "macro/deposit_layer.h"
-#include "macro/place_iter.h"   // for_each_place — обход мест по слотам
+#include "macro/rooted_iter.h"   // for_each_rooted — обход мест по слотам
 #include "macro/npc_ai.h"
 #include "macro/politik.h"
 #include "macro/squad.h"
@@ -247,7 +247,7 @@ void spawn_macro_npcs(GameState& gs, MacroStore& st,
     // Per-settlement spawns. Снимок СЛОТОВ городов берётся до рождений:
     // жители встают в ТУ ЖЕ популяцию, и живой обход увидел бы их тоже.
     std::vector<std::uint16_t> cities;
-    for_each_place(st, [&](std::uint16_t slot) {
+    for_each_rooted(st, [&](std::uint16_t slot) {
         if (SquadType(st.runtime[slot].squadType) == SquadType::City)
             cities.push_back(slot);
     });
@@ -407,7 +407,7 @@ void spawn_design_characters(GameState& gs, MacroStore& st,
             hy = peaks[slot].y;
         } else if (row.homeType != SquadType::None) {
             std::vector<std::uint16_t> ofKind;
-            for_each_place(st, [&](std::uint16_t ps) {
+            for_each_rooted(st, [&](std::uint16_t ps) {
                 if (SquadType(st.runtime[ps].squadType) != row.homeType)
                     return;
                 if (row.homeFactionPrefix != nullptr) {
@@ -466,7 +466,7 @@ void spawn_design_characters(GameState& gs, MacroStore& st,
             std::uint16_t best = 0;
             bool found = false;
             float bestD = 0.0f;
-            for_each_place(st, [&](std::uint16_t ps) {
+            for_each_rooted(st, [&](std::uint16_t ps) {
                 if (std::int8_t(st.runtime[ps].squadType)
                         != row.agenda.routeToNearest)
                     return;
@@ -551,7 +551,7 @@ MacroHandle spawn_squad(GameState& gs, MacroStore& store,
     // её же город в воюющие фракции — крестьяне резали крестьян на общей
     // дороге (измерено, [death-1299] сид 7). «Земля решает» остаётся
     // правилом БЕЗДОМНЫХ и контекстных спавнов.
-    const MacroHandle home = place_handle_by_ordinal(
+    const MacroHandle home = rooted_handle_by_ordinal(
         store, std::uint32_t(spec.parentId));
     const std::uint16_t f = spec.factionIndex >= 0
         ? std::uint16_t(spec.factionIndex)

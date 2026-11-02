@@ -30,7 +30,7 @@
 #include "macro/world_row.h"   // raise_flock_into_container — души головами
 #include "ecs/components.h"
 #include "tables/faction.h"
-#include "macro/features.h"   // feature_of_place_kind — байт из колонки рода
+#include "macro/features.h"   // feature_of_rooted_kind — байт из колонки рода
 #include "sub/city_layout.h"
 #include "sub/map_data.h"
 #include "sub/seamless_manager.h"
@@ -103,17 +103,17 @@ sm::sub::CellResolver settlement_resolver(sm::SquadType kind,
         c.macroTemperature = 0.5f;
         c.biome = sm::Biome::Meadow;
         c.feature = sm::FT_None;
-        c.place.id = -1;
-        c.place.size = 0;
-        c.place.kind = sm::SquadType::None;
+        c.rooted.id = -1;
+        c.rooted.size = 0;
+        c.rooted.kind = sm::SquadType::None;
         c.treeCount = 0;
         if (cx == 0 && cy == 0) {
-            c.place.id = 7;
-            c.place.size = pop;
-            c.place.kind = kind;
+            c.rooted.id = 7;
+            c.rooted.size = pop;
+            c.rooted.kind = kind;
             // ...и ФИЧА вместе с родом: заселённая клетка без фичи в мире
             // не рождается, а ключ модуля теперь байт (2026-10-28).
-            c.feature = sm::feature_of_place_kind(kind);
+            c.feature = sm::feature_of_rooted_kind(kind);
         }
         c.seed = sm::sub::cell_seed(0x5E771EDu, cx, cy);
         return c;
@@ -186,7 +186,7 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
                              /*worldSeed*/seed,
                              std::uint16_t(sm::faction_index("empire")),
                              pop,
-                             /*placeSubjectId*/-1,
+                             /*rootedSubjectId*/-1,
                              /*macroCellX*/0, /*macroCellY*/0,
                              /*faunaCount: клетка поселения вычищена полем (M-371)*/0,
                              &homeSouls,

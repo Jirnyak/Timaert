@@ -24,7 +24,7 @@
 #include "macro/anketa.h"
 #include "macro/deal.h"   // kNoCarryLimitG — «предела нет» живёт у двери deal
 #include "macro/npc_ai.h"
-#include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
+#include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
 #include "macro/state.h"
 #include "macro/store.h"
 
@@ -40,9 +40,9 @@ long long commodity_total(const sm::Inventory& a, const sm::Inventory& b,
 // MacroStore. «Половинчатого» места (строка без тела) больше не существует,
 // поэтому все рынки этого свидетеля идут одной дверью рождения; сделке при
 // этом нужен только store, мир — затем, чтобы тело знало свою клетку.
-std::uint16_t fixture_place(sm::MacroStore& st, sm::GameState& gs,
+std::uint16_t fixture_rooted(sm::MacroStore& st, sm::GameState& gs,
                             sm::SquadType type) {
-    return sm::birth_place(gs, st, type, 0, 0).slot;
+    return sm::birth_squad(gs, st, type, 0, 0).slot;
 }
 
 // Счёт содержания места — колонка контейнера его тела (creatures.h): одна
@@ -71,7 +71,7 @@ int main() {
     // «не хватает хлеба» = НЕПОГАШЕННЫЙ СЧЁТ: спрос кривой читает его
     // остаток, а проданный в город хлеб гасит счёт и СЪЕДАЕТСЯ на месте —
     // на полку ложится только излишек сверх счёта.
-    const std::uint16_t city = fixture_place(mstore, gsFix, sm::SquadType::City);
+    const std::uint16_t city = fixture_rooted(mstore, gsFix, sm::SquadType::City);
     // Души — ГОЛОВАМИ в инвентарь записи (v122; запись живёт вне мира, так
     // что паства числом фичи ей не нужна: торговля спрашивает РТЫ). Счёт еды —
     // `upkeep_bill` по таблице, а не «душа × сезон» литералом.
@@ -164,7 +164,7 @@ int main() {
     // ── The vendor run ───────────────────────────────────────────────────
     // A village crew brings food to a town that lacks it; home lacks tools
     // (snapshot class 0), the town holds them.
-    const std::uint16_t town = fixture_place(mstore, gsFix, sm::SquadType::City);
+    const std::uint16_t town = fixture_rooted(mstore, gsFix, sm::SquadType::City);
     sm::raise_flock_into_container(shelf(mstore, town), 64);
     // Хлебный счёт не погашен — из него производный спрос на зерно (город
     // печёт); счёт по инструментам оплачен, полка с ними — ИЗЛИШЕК.
@@ -186,7 +186,7 @@ int main() {
     // Дом идёт ТОЙ ЖЕ дверью, что рынки: ломтиком F второй двери рождения
     // места не существует вовсе.
     const sm::MacroHandle home =
-        sm::birth_place(hgs, mstore, sm::SquadType::Village, 0, 0);
+        sm::birth_squad(hgs, mstore, sm::SquadType::Village, 0, 0);
     sm::raise_flock_into_container(shelf(mstore, home.slot), 50);
     CHECK(shelf(mstore, home.slot).add("food", 5000), "fixture: home food");
 
@@ -237,7 +237,7 @@ int main() {
     {
         const auto buy_home_food = [&](int homeFood) {
             const std::uint16_t hm =
-                fixture_place(mstore, gsFix, sm::SquadType::City);
+                fixture_rooted(mstore, gsFix, sm::SquadType::City);
             sm::raise_flock_into_container(shelf(mstore, hm), 2520);
             // Счёт сезона ВЫСТАВЛЕН целиком у ОБОИХ — довод «у него же есть
             // нужда» снят заранее: нужда есть, и гора всё равно делает хлеб
@@ -249,7 +249,7 @@ int main() {
                       "fixture: the home's shelf");
 
             const std::uint16_t mkt =
-                fixture_place(mstore, gsFix, sm::SquadType::City);
+                fixture_rooted(mstore, gsFix, sm::SquadType::City);
             sm::raise_flock_into_container(shelf(mstore, mkt), 64);
             CHECK(shelf(mstore, mkt).add("food", 4000), "fixture: market food");
             CHECK(shelf(mstore, mkt).add("coin_empire_copper", 20000),
@@ -280,7 +280,7 @@ int main() {
     // S10, ярус 1 — торговля стоит и без знания).
     {
         const std::uint16_t mkt =
-            fixture_place(mstore, gsFix, sm::SquadType::City);
+            fixture_rooted(mstore, gsFix, sm::SquadType::City);
         sm::raise_flock_into_container(shelf(mstore, mkt), 64);
         CHECK(shelf(mstore, mkt).add("tools", 50), "fixture: unlit market tools");
         CHECK(shelf(mstore, mkt).add("coin_empire_copper", 20000),
@@ -297,7 +297,7 @@ int main() {
     }
 
     // ── Negative control: a coinless market buys nothing, loses nothing ──
-    const std::uint16_t broke = fixture_place(mstore, gsFix, sm::SquadType::City);
+    const std::uint16_t broke = fixture_rooted(mstore, gsFix, sm::SquadType::City);
     sm::raise_flock_into_container(shelf(mstore, broke), 64);
     const std::uint16_t bag2Slot = 16004;
     sm::Inventory& bag2 = mstore.inventory[bag2Slot].inv;
@@ -317,7 +317,7 @@ int main() {
     // бы платежом раньше своей строки — обе половины сделки по отдельности
     // сторожит станция выше, эдж-пин держит продажу.
     const auto run_fixture = [&](int edge) {
-        const std::uint16_t m = fixture_place(mstore, gsFix, sm::SquadType::City);
+        const std::uint16_t m = fixture_rooted(mstore, gsFix, sm::SquadType::City);
         sm::raise_flock_into_container(shelf(mstore, m), 64);
         need_debt(mstore, m)[sm::commodity_index("food")] =
             sm::upkeep_bill(shelf(mstore, m)).board;

@@ -62,7 +62,7 @@ inline constexpr float kMacroGlowGain = 0.45f;
 // пишут ту же дверь своими значениями и рефрешем не стираются.
 void refresh_feature_lights(GameState& gs, const FeatureLayer& features);
 // collect_macro_lights — ЧИТАТЕЛЬ ПОЛЯ: разворачивает живые клетки поля в
-// список эмиттеров бейка. Обход сквадов (for_each_place_view) умер — свет
+// список эмиттеров бейка. Обход сквадов (for_each_rooted_view) умер — свет
 // руин и шпилей, молча потерянный со сносом их сквадов (M-320), вернулся
 // полем. Новый светящий род = строка таблицы фич, НОЛЬ строк здесь.
 struct MacroWorld;

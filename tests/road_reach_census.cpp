@@ -15,7 +15,7 @@
 //
 // ЧТО ИМЕННО МЕРЯЕТСЯ, ЧЕСТНО. Multi-source BFS по ТОРУ от ВСЕХ дорожных
 // клеток (`FT_Road`, `FT_DirtRoad`, `FT_Bridge`) даёт поле расстояний в
-// клетках; затем для каждого неподвижного сквада (`SquadArchetype::Place` —
+// клетках; затем для каждого неподвижного сквада (`SquadArchetype::Rooted` —
 // ось родов, не список имён) читается его клетка. Расстояние 0 значит «дорога
 // НА клетке места», 1 — «в соседней», большое — обрыв. Прибор ОТЧИТЫВАЕТСЯ, а
 // сюита НЕ СУДИТ: порога «сколько допустимо» никто не выводил, и выдумывать
@@ -53,7 +53,7 @@
 
 namespace {
 
-struct PlaceReach {
+struct RootedReach {
     std::uint8_t  type = 0;
     std::uint32_t cell = 0;
     int           dist = -1;   // клеток до ближайшей дороги; -1 = дороги нет вовсе
@@ -124,16 +124,16 @@ void census_seed(std::uint32_t seed) {
 
     const std::vector<std::int32_t> dist = road_distance_field(features, side);
 
-    std::vector<PlaceReach> places;
+    std::vector<RootedReach> rootedSites;
     for (std::size_t s = 0; s < sm::kUnifiedCap; ++s) {
         if (!store->alive[s]) continue;
         const auto type = sm::SquadType(store->runtime[s].squadType);
-        if (sm::squad_archetype(type) != sm::SquadArchetype::Place) continue;
-        PlaceReach pr;
+        if (sm::squad_archetype(type) != sm::SquadArchetype::Rooted) continue;
+        RootedReach pr;
         pr.type = store->runtime[s].squadType;
         pr.cell = store->cell[s].idx;
         pr.dist = (pr.cell < dist.size()) ? dist[pr.cell] : -1;
-        places.push_back(pr);
+        rootedSites.push_back(pr);
     }
 
     // Распределение разрыва. Гистограмма, а не среднее: среднее по разрывам
@@ -141,7 +141,7 @@ void census_seed(std::uint32_t seed) {
     int onCell = 0, adjacent = 0, far = 0, unreached = 0, worst = 0;
     std::uint32_t worstCell = 0;
     std::uint8_t worstType = 0;
-    for (const PlaceReach& p : places) {
+    for (const RootedReach& p : rootedSites) {
         if (p.dist < 0) { ++unreached; continue; }
         if (p.dist == 0) ++onCell;
         else if (p.dist == 1) ++adjacent;
@@ -149,8 +149,8 @@ void census_seed(std::uint32_t seed) {
         if (p.dist > worst) { worst = p.dist; worstCell = p.cell; worstType = p.type; }
     }
 
-    std::printf("[road-reach] seed=%u side=%d roadCells=%zu places=%zu\n",
-                seed, side, roadCells, places.size());
+    std::printf("[road-reach] seed=%u side=%d roadCells=%zu rooted=%zu\n",
+                seed, side, roadCells, rootedSites.size());
     std::printf("             дорога НА клетке места: %d · в соседней: %d · "
                 "дальше: %d · не достигнуто вовсе: %d\n",
                 onCell, adjacent, far, unreached);
@@ -162,7 +162,7 @@ void census_seed(std::uint32_t seed) {
     // смешивать их в одном числе значит потерять ответ.
     for (int t = 1; t <= 8; ++t) {
         int cnt = 0, sum = 0, mx = 0, miss = 0;
-        for (const PlaceReach& p : places) {
+        for (const RootedReach& p : rootedSites) {
             if (p.type != std::uint8_t(t)) continue;
             ++cnt;
             if (p.dist < 0) { ++miss; continue; }

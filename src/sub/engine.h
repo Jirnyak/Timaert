@@ -102,7 +102,7 @@ struct DungeonSession {
     std::int32_t segShare[kMaxInteriorStoreys] = {0, 0, 0, 0, 0};
     // The door cell's place KIND — whose crowd stripe the household rolls
     // (§42: the interior's people are the PLACE's people, not always a town's).
-    SquadType placeKind = SquadType::None;
+    SquadType rootedKind = SquadType::None;
     std::uint16_t faction = 0;    // owning kingdom's registry faction index
 };
 
@@ -1096,7 +1096,7 @@ private:
     // is filed in the world's ONE memory, at the macro cell that contains this
     // subworld. One memory, and the place is the seam between the layers.
     void record_world_fact(FactKind kind, int cellX, int cellY, int amount,
-                           int objectPlaceId = 0);
+                           int objectRootedId = 0);
 
     // Watch for the player crossing INTO a zone. Called from tick().
     void tick_zones();

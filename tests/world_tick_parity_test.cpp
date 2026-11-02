@@ -12,7 +12,7 @@
 
 #include "tables/npc.h"
 #include "macro/labour.h"       // settle_souls / souls_home / souls_flock
-#include "macro/place_birth.h"  // birth_place — место родится ТЕЛОМ
+#include "macro/birth_squad.h"  // birth_squad — место родится ТЕЛОМ
 #include "macro/world_row.h"
 #include "macro/npc_ai.h"   // squad_season_window — THE boundary window
 #include "macro/upkeep_window.h"   // upkeep_season_window — сама дверь суда
@@ -430,7 +430,7 @@ void test_a_famine_is_recorded_once_when_it_begins() {
     // взыскание, и летопись обязана записать РОВНО этот день — не тридцать
     // два дня голодания вокруг него.
     const sm::MacroHandle town =
-        sm::birth_place(gs, st, sm::SquadType::City, 8, 8, -1, "Hungry");
+        sm::birth_squad(gs, st, sm::SquadType::City, 8, 8, -1, "Hungry");
     // Души селятся ДВЕРЬЮ МИРА (labour.h settle_souls): паства в число фичи
     // фичи, головы в инвентарь — тем же законом, что генезис.
     sm::settle_souls(gs, st, town.slot, 100);
@@ -506,7 +506,7 @@ void test_population_dies_honestly_to_zero() {
     gs.mapW = 64;
     gs.mapH = 64;
     const std::uint16_t v =
-        sm::birth_place(gs, st, sm::SquadType::Village, 4, 4).slot;
+        sm::birth_squad(gs, st, sm::SquadType::Village, 4, 4).slot;
     // Хутор с пустым амбаром: три души ДВЕРЬЮ МИРА (паства + головы).
     sm::settle_souls(gs, st, v, 3);
     sm::chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
@@ -514,7 +514,7 @@ void test_population_dies_honestly_to_zero() {
     bool sawBelowOldFloor = false;
     // ИСХОД ЧИТАЕТСЯ ИЗ ЛЕТОПИСИ, А НЕ ИЗ out-ПАРАМЕТРА (M-233). Флаги
     // `famine`/`diedOut` рождала ВТОРАЯ дверь содержания, стоявшая внутри
-    // `settle_place_day`; она уничтожена, и голод с вымиранием говорит
+    // `settle_rooted_day`; она уничтожена, и голод с вымиранием говорит
     // теперь строка летописи в точке суда. ЗАКОН, который судит этот
     // свидетель, не изменился ни на слово: пол населения мёртв, спад идёт до
     // нуля, ноль поглощающий, переход в смерть срабатывает РОВНО один раз.
@@ -533,7 +533,7 @@ void test_population_dies_honestly_to_zero() {
     // порознь ни одна из них мир не убивает (прежде обе жили в одной, и
     // поселение этим судилось дважды).
     for (int day = 1; day <= 2048 && dayOfDeath < 0; ++day) {
-        sm::settle_place_day(gs, st, v, day);
+        sm::settle_rooted_day(gs, st, v, day);
         sm::squad_season_window(gs, st, day);
         if (cell_number_at(gs, st, v) < 5) sawBelowOldFloor = true;
         if (died_facts() > 0) dayOfDeath = day;
@@ -546,7 +546,7 @@ void test_population_dies_honestly_to_zero() {
     CHECK(sawBelowOldFloor,
           "population passed the old floor: no crutch is back");
     for (int day = 1; day <= 100; ++day) {
-        sm::settle_place_day(gs, st, v, day);
+        sm::settle_rooted_day(gs, st, v, day);
         sm::squad_season_window(gs, st, day);
     }
     deaths = died_facts();
@@ -608,12 +608,12 @@ void test_one_upkeep_door_judges_every_squad_once() {
     sm::chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
 
     const std::uint16_t a =
-        sm::birth_place(gs, st, sm::SquadType::Artel, 12, 12).slot;
+        sm::birth_squad(gs, st, sm::SquadType::Artel, 12, 12).slot;
     // Фикстура рождает своё предусловие сама (§8 п.11): восемь людских голов
     // в контейнере — дверью мира, не присваиванием колонки.
     CHECK(sm::raise_flock_into_container(st.inventory[a].inv, 8) == 8,
           "фикстура: восемь душ встали в контейнер артели");
-    CHECK(sm::squad_archetype(sm::SquadType::Artel) != sm::SquadArchetype::Place,
+    CHECK(sm::squad_archetype(sm::SquadType::Artel) != sm::SquadArchetype::Rooted,
           "фикстура: артель подвижна, значит дневного прохода мест она не "
           "видит вовсе — ничего не производит, и число смертей ниже не "
           "зашумлено выпечкой");

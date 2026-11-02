@@ -30,7 +30,7 @@
 // is a breach.
 
 #include "check.h"
-#include "macro/features.h"   // feature_of_place_kind — байт из колонки рода
+#include "macro/features.h"   // feature_of_rooted_kind — байт из колонки рода
 #include "sub/city_layout.h"
 #include "sub/gens/dispatch.h"
 #include "sub/map_data.h"
@@ -65,14 +65,14 @@ Town make_town(SquadType kind, std::uint32_t seed, int population,
     c.macroHeight = 0.64f;
     c.biome = Meadow;
     // Байт ВЫВОДИТСЯ из той же колонки, что читает прод
-    // (`feature_of_place_kind@src/macro/features.h` — колонка `kind`
+    // (`feature_of_rooted_kind@src/macro/features.h` — колонка `kind`
     // строки фичи под круговым `static_assert`), поэтому фикстура не
     // может разойтись с миром, как разошлась до 2026-10-28: клетка с
     // местом и НУЛЕВОЙ фичей в мире не рождается.
-    c.feature = sm::feature_of_place_kind(kind);
-    c.place.id = 101;
-    c.place.size = population;
-    c.place.kind = kind;
+    c.feature = sm::feature_of_rooted_kind(kind);
+    c.rooted.id = 101;
+    c.rooted.size = population;
+    c.rooted.kind = kind;
     c.seed = seed;
 
     float nbH[9];

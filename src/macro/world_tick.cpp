@@ -13,8 +13,8 @@
 #include "macro/world_tick.h"
 #include "macro/econ_day.h"
 #include "macro/labour.h"   // souls_flock / settle_souls — паства и её приход
-#include "macro/place_iter.h"  // for_each_place — обход мест по слотам
-#include "macro/squad.h"        // record_place_fact — летопись места
+#include "macro/rooted_iter.h"  // for_each_rooted — обход мест по слотам
+#include "macro/squad.h"        // record_rooted_fact — летопись места
 #include "macro/currency.h"
 #include "macro/fauna.h"
 #include "macro/macro_stock.h"
@@ -68,7 +68,7 @@ namespace {
 //
 // Благополучие теперь ЧИТАЕТСЯ здесь, а пишется там — один писатель на
 // величину, как и было, только дверь другая.
-void settle_place_day(GameState& gs, MacroStore& st, std::uint16_t slot,
+void settle_rooted_day(GameState& gs, MacroStore& st, std::uint16_t slot,
                          int day, EconFactSink sink, void* user) {
     (void)day;   // сутки больше не ветвятся: границу судит одна дверь мира
     // Плечо сквада — колонки его ТЕЛА (ломтик F): склад, счёт нужд и
@@ -186,7 +186,7 @@ void tithe_daily_(GameState& gs, MacroStore& st, int day) {
 // НИКОГДА — проход до них просто не доходил, и ветка данжа внутри общего
 // хвоста была мёртвым кодом в продакшене. Теперь живут все.
 //
-// ЧЕГО ЗДЕСЬ ЕЩЁ НЕТ, И ЭТО НАЗВАНО ВСЛУХ: проход идёт по `for_each_place`,
+// ЧЕГО ЗДЕСЬ ЕЩЁ НЕТ, И ЭТО НАЗВАНО ВСЛУХ: проход идёт по `for_each_rooted`,
 // то есть по НЕПОДВИЖНЫМ. Расширить его на артели и корованы нельзя до
 // того, как `souls_flock@src/macro/labour.h` научится отвечать за ХОДОКА:
 // у подвижного рода `bornPopBase == 0`, и дверь возвращает ему число фичи
@@ -195,7 +195,7 @@ void tithe_daily_(GameState& gs, MacroStore& st, int day) {
 // кого нет своей клетки», и он идёт владельцу, а не выдумывается здесь.
 void tick_squads_day_(GameState& gs, MacroStore& st, int day,
                       EconFactSink sink, void* user) {
-    for_each_place(st, [&](std::uint16_t slot) {
+    for_each_rooted(st, [&](std::uint16_t slot) {
         // (КЛЕЙМОВЩИК АДРЕСА УМЕР 2026-10-25 вместе с колонкой
         // `EconFact::placeId` — у неё не было читателей ни одного. Сток
         // фактов идёт слушателю НАПРЯМУЮ, посредника нет.)
@@ -210,7 +210,7 @@ void tick_squads_day_(GameState& gs, MacroStore& st, int day,
         // ответа на один вопрос мира и есть тот mess, которым это кончается.
         //
         // ЧТО ЭТИМ НЕ ПОТЕРЯНО, И ЭТО ПРОВЕРЕНО АНКЕТАМИ, А НЕ НАДЕЖДОЙ:
-        // проход идёт `for_each_place`, то есть по ВСЕМ родам мест, а модули
+        // проход идёт `for_each_rooted`, то есть по ВСЕМ родам мест, а модули
         // выпуска есть у трёх — Village, City, Capital. Остальные шесть
         // (шпиль, руина, логово, святилище, шахта, башня) не производили
         // НИКОГДА и не могли: их строка в `kSquadBirth@src/macro/characters.h`
@@ -229,7 +229,7 @@ void tick_squads_day_(GameState& gs, MacroStore& st, int day,
         // летопись голода пишется там же, где суд.
         // (Дань ушла из пер-местного дня: её ведёт один проход пула
         // феодальных рёбер tithe_daily_ — v121, род 6.)
-        settle_place_day(gs, st, slot, day, sink, user);
+        settle_rooted_day(gs, st, slot, day, sink, user);
     });
     // ЧИСЛО МЕСТА СВОДИТСЯ ПОСЛЕ ЕГО ДНЯ, И ЭТО ПОРЯДОК, А НЕ ВКУС (M-325):
     // день рождает души (`settle_souls`) и взыскивает голод, то есть меняет
@@ -244,7 +244,7 @@ void tick_squads_day_(GameState& gs, MacroStore& st, int day,
                       "буфер свода лежит на стеке — его размер есть КАП, и "
                       "рост капа обязан быть замечен здесь, а не на стеке");
         std::int32_t flockOf[kUnifiedCap];
-        reconcile_place_flock(gs, st, flockOf);
+        reconcile_rooted_flock(gs, st, flockOf);
     }
 }
 
@@ -343,7 +343,7 @@ int process_world_daily_ticks(GameState& gs, MacroStore& st,
         // вернули тем же днём: колонка срока — половина формы, согласованной
         // владельцем построчно (разбор у `Interest@src/macro/interests.h`).
         // ГЕЙТ РОДА СНЯТ (M-233, попутно): колонка `interests` стоит у
-        // КАЖДОГО слота (store.h), а тик срока шёл по `for_each_place`, то
+        // КАЖДОГО слота (store.h), а тик срока шёл по `for_each_rooted`, то
         // есть только по неподвижным. Срочные связи артели, корована и
         // сборщика не убывали НИКОГДА — их перемирия и контракты были
         // вечными не по замыслу, а потому что проход до них не доходил.

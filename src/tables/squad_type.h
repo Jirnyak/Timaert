@@ -99,7 +99,7 @@ enum class SquadType : std::uint8_t {
     // ── НЕПОДВИЖНЫЕ: что СТОИТ и живёт на клетке ──────────────────────────
     // Их строка реестра несёт зону, глиф, цвет, свечение, крю, рацион и
     // фауну; подвижные роды ниже этих колонок не имеют и честно нулевые.
-    // Вопрос рода «это МЕСТО» — у самой оси (ниже, squad_archetype == Place):
+    // Вопрос рода «это МЕСТО» — у самой оси (ниже, squad_archetype == Rooted):
     // роды неподвижных идут сплошным отрезком 1..9, и это закреплено
     // static_assert-ом при предикате.
     //
@@ -165,16 +165,16 @@ enum class SquadType : std::uint8_t {
 //
 // ЗАКОН УПОТРЕБЛЕНИЯ: архетип законен КЛЮЧОМ таблиц и семян (округа
 // навигации, генерация, выбор ИИ-модуля) и ЗАПРЕЩЁН ГЕЙТОМ в проходе
-// симуляции — ранний выход «Place не ест / не думает» есть тот же дефект,
+// симуляции — ранний выход «Rooted не ест / не думает» есть тот же дефект,
 // что гейты рода M-233 п.5, и переименование предиката его не легализует.
-// Place — якорь округ навигации ПО ОПРЕДЕЛЕНИЮ; флага anchorsNav нет.
+// Rooted — якорь округ навигации ПО ОПРЕДЕЛЕНИЮ; флага anchorsNav нет.
 //
 // Шрам предшественника (M-90 шаг 5) живёт и здесь: ответ «кто ты» даёт ось
 // рода, НИКОГДА строка существа — тело места носит нулевую строку (Peasant),
 // и аукцион, судивший «кто артель» по строке существа, растворял тела
 // городов (squadType 1 → 11 за один rotate).
 enum class SquadArchetype : std::uint8_t {
-    Place,   // неподвижный центр мира: стоит на клетке, сеет округу путей
+    Rooted,  // неподвижный центр мира: стоит на клетке, сеет округу путей
     Worker,  // экономический челнок: артель, корован, сборщик
     Roamer,  // кочевник по полям — ПУСТ до эпика ИИ (бандиты, патрули, стаи)
     Hero,    // персоналия с полной анкетой — ПУСТА до эпика ИИ (лорды, игрок)
@@ -195,7 +195,7 @@ inline constexpr SquadArchetype squad_archetype(SquadType t) {
         case SquadType::Lair:
         case SquadType::Shrine:
         case SquadType::Mine:
-        case SquadType::Tower:     return SquadArchetype::Place;
+        case SquadType::Tower:     return SquadArchetype::Rooted;
         case SquadType::Artel:
         case SquadType::Caravan:
         case SquadType::Collector: return SquadArchetype::Worker;
@@ -219,12 +219,12 @@ static_assert(SquadType::Capital == SquadType(1)
                   && SquadType::Dragon == SquadType(13),
               "неподвижные роды — сплошной отрезок 1..9, работники 10..12, "
               "персоналии с 13: squad_archetype читает ось, а не список имён");
-static_assert(squad_archetype(SquadType::Capital) == SquadArchetype::Place
-                  && squad_archetype(SquadType::Tower) == SquadArchetype::Place
+static_assert(squad_archetype(SquadType::Capital) == SquadArchetype::Rooted
+                  && squad_archetype(SquadType::Tower) == SquadArchetype::Rooted
                   && squad_archetype(SquadType::Artel) == SquadArchetype::Worker
                   && squad_archetype(SquadType::Dragon) == SquadArchetype::Hero
-                  && squad_archetype(SquadType::None) != SquadArchetype::Place,
-              "Place — ровно неподвижный отрезок; Hero заселён драконом; "
+                  && squad_archetype(SquadType::None) != SquadArchetype::Rooted,
+              "Rooted — ровно неподвижный отрезок; Hero заселён драконом; "
               "None местом не бывает");
 
 // ── ЕСТЬ ЛИ У РОДА АВАТАР СВОЕЙ АНКЕТЫ — ВЫВЕДЕННЫЙ ПРЕДИКАТ, НОЛЬ БАЙТ ──
@@ -278,11 +278,11 @@ static_assert(squad_archetype(SquadType::Capital) == SquadArchetype::Place
 // существует. Гейт приехал ВМЕСТЕ с телом места — порознь было нельзя: без
 // тела у места `fatigue` = 0.1 (нулевые пулы), и снятый вклад аватара урезал
 // бы силу ГОЛОВ города десятикратно. Тело даёт
-// `birth_place@src/macro/place_birth.h`, а третью причину — ритм марша, жёгший
+// `birth_squad@src/macro/birth_squad.h`, а третью причину — ритм марша, жёгший
 // стоящий город складом как перегрузом, — снял вердикт о МНОЖИТЕЛЕ перегруза
 // (`overload_burden_from_capacity@src/macro/travel.h`).
 inline constexpr bool squad_has_avatar(SquadType t) {
-    return squad_archetype(t) != SquadArchetype::Place;
+    return squad_archetype(t) != SquadArchetype::Rooted;
 }
 // Ровно неподвижный отрезок невоплощаем — под компилятором, а не под
 // памятью ревьюера (та же стена, что у отрезков выше).
@@ -312,7 +312,7 @@ static_assert(!squad_has_avatar(SquadType::Capital)
 // совпадает с номерами оси 1..9 — это СОВПАДЕНИЕ значений, а не тождество
 // законов: ось упорядочена «места первыми ради таблиц», приоритет —
 // «города раньше шпилей», и разъехаться им закон разрешает.
-inline constexpr SquadType kPlaceYieldOrder[] = {
+inline constexpr SquadType kRootedYieldOrder[] = {
     // Столица старше города по ТОМУ ЖЕ закону, по которому город старше
     // деревни: спорная клетка достаётся старшему поселению.
     SquadType::Capital,
@@ -321,10 +321,10 @@ inline constexpr SquadType kPlaceYieldOrder[] = {
     SquadType::Mine, SquadType::Tower,
 };
 // Порядок выдачи обязан быть ПОЛНЫМ по неподвижному отрезку, иначе место
-// нового рода стало бы невидимым для `for_each_place_view` и каркасного
+// нового рода стало бы невидимым для `for_each_rooted_view` и каркасного
 // ответа «кто здесь живёт» — молча, без единой красной строки. Счёт
 // выводится из оси, а не пишется рукой (ЗАКОН СЛОВАРЯ п.3).
-static_assert(std::size(kPlaceYieldOrder)
+static_assert(std::size(kRootedYieldOrder)
                   == std::size_t(SquadType::Artel) - 1u,
               "порядок выдачи покрывает ВЕСЬ неподвижный отрезок 1..9: "
               "новый род места = его строка здесь, иначе он невидим");
@@ -506,10 +506,10 @@ static_assert([] {
 //      нулём, за который отвечал литерал в коде, — она больше невыразима.
 static_assert([] {
     for (const SquadKindRow& d : kSquadKinds) {
-        const bool place = squad_archetype(d.type) == SquadArchetype::Place;
-        if (place && (d.actions & (kMapActTalk | kMapActAttack)) != 0)
+        const bool rooted = squad_archetype(d.type) == SquadArchetype::Rooted;
+        if (rooted && (d.actions & (kMapActTalk | kMapActAttack)) != 0)
             return false;                                           // (1)
-        if (!place
+        if (!rooted
             && (d.actions & (kMapActTalk | kMapActTrade | kMapActAttack))
                    != (kMapActTalk | kMapActTrade | kMapActAttack))
             return false;                                           // (2)
@@ -526,8 +526,8 @@ static_assert([] {
 // свои глаголы, поселением стали артель и корован, панель открывалась сама
 // и ПАУЗИЛА мир. Теперь обе половины спрашивают СВОЁ: «стоит ли» — архетипом
 // (ключом, не гейтом), «торгует ли» — поселенческими битами, а не любыми.
-inline constexpr bool place_is_settlement(SquadType t) {
-    return squad_archetype(t) == SquadArchetype::Place
+inline constexpr bool rooted_is_settlement(SquadType t) {
+    return squad_archetype(t) == SquadArchetype::Rooted
         && (squad_kind(t).actions
             & (kMapActTrade | kMapActHire | kMapActQuests)) != 0;
 }
@@ -537,13 +537,13 @@ inline constexpr bool place_is_settlement(SquadType t) {
 static_assert([] {
     for (std::size_t i = 0; i < std::size_t(SquadType::Count); ++i) {
         const SquadType t = SquadType(i);
-        if (squad_archetype(t) != SquadArchetype::Place
-            && place_is_settlement(t))
+        if (squad_archetype(t) != SquadArchetype::Rooted
+            && rooted_is_settlement(t))
             return false;
     }
-    return place_is_settlement(SquadType::City)
-        && place_is_settlement(SquadType::Village)
-        && !place_is_settlement(SquadType::Spire);
+    return rooted_is_settlement(SquadType::City)
+        && rooted_is_settlement(SquadType::Village)
+        && !rooted_is_settlement(SquadType::Spire);
 }(), "поселение — СТОЯЩИЙ род с прилавком/наймом/доской; подвижный род "
      "поселением не бывает ни при каких глаголах");
 

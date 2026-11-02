@@ -37,7 +37,7 @@ int torus_chebyshev(int ax, int ay, int bx, int by, int w, int h) {
 // здесь сканировался стор сквадов, и после сноса сквадов шпиля скан отвечал
 // бы «свободно» про клетку, на которой фича шпиля уже стоит.
 bool cell_taken(const FeatureLayer& fl, int x, int y) {
-    return place_kind_of_feature(fl.at(x, y)) != SquadType::None;
+    return rooted_kind_of_feature(fl.at(x, y)) != SquadType::None;
 }
 
 } // namespace
@@ -50,7 +50,7 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         return;
     }
     // Own deterministic stream, distinct from the place-naming salt in
-    // populate_places_from_politik (0xC1A05E1D).
+    // populate_rooted_from_politik (0xC1A05E1D).
     Rng rng(gs.worldSeed ^ 0x59B12E50u);
 
     // ШПИЛИ ЭТОГО ПРОХОДА — БУФЕР ГЕНЕРАЦИИ (ЗАКОН ГЕНЕРАЦИИ п.3): разброс
@@ -111,7 +111,7 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         // ── ШПИЛЬ ЕСТЬ ЧИСТАЯ ФИЧА СО СВОИМ ЧИСЛОМ (M-320, вердикт
         // владельца: «да под снос») ───────────────────────────────────────
         //
-        // ЗДЕСЬ РОЖДАЛСЯ СКВАД (`birth_place`) И САДИЛСЯ ГАРНИЗОН
+        // ЗДЕСЬ РОЖДАЛСЯ СКВАД (`birth_squad`) И САДИЛСЯ ГАРНИЗОН
         // (`settle_souls` по колонкам `bornPop*`). Замер 256 дней (сид
         // 12345): байт `FT_Spire` держался **10 плоско ВСЕ 256 дней**, а
         // сквадов шпиля оставалось **10 → 2** (у руины 70 → 26) — их сносит

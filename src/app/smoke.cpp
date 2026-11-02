@@ -107,8 +107,8 @@ static void smoke_give_visual(sm::sub::SubObjects& objs, int s,
 #include "macro/currency.h"   // coin_census_value — монетная перепись сумки
 #include "macro/anketa.h"
 #include "macro/labour.h"   // souls_flock — паства через ТЕЛО (M-90)
-#include "macro/place_iter.h"   // for_each_place — обход мест по слотам
-#include "macro/squad.h"           // place_handle_by_ordinal — резолв места
+#include "macro/rooted_iter.h"   // for_each_rooted — обход мест по слотам
+#include "macro/squad.h"           // rooted_handle_by_ordinal — резолв места
 #include "macro/squad_index.h"     // settlement_at — «кто живёт на клетке»
 #include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP witness
 #include "macro/player_entity.h"
@@ -1593,7 +1593,7 @@ sm::MacroHandle smoke_first_city(const App& app) {
     if (!app.macroStore) return sm::MacroHandle{};
     const sm::MacroStore& st = *app.macroStore;
     sm::MacroHandle first{};
-    sm::for_each_place(st, [&](std::uint16_t slot) {
+    sm::for_each_rooted(st, [&](std::uint16_t slot) {
         if (st.valid(first)) return;   // первый по слоту — он и есть ответ
         if (sm::SquadType(st.runtime[slot].squadType) != want) return;
         first = sm::handle_at(st, slot);
@@ -1606,9 +1606,9 @@ bool smoke_find_open_subworld_cell(const App& app, int& outX, int& outY) {
         || app.terrain.height <= 0) {
         return false;
     }
-    auto hasPlace = [&](int x, int y) {
+    auto hasRooted = [&](int x, int y) {
         bool here = false;
-        sm::for_each_place(*app.macroStore, [&](std::uint16_t slot) {
+        sm::for_each_rooted(*app.macroStore, [&](std::uint16_t slot) {
             const auto& c = app.macroStore->cell[slot];
             if (sm::ecs::cell_x(c, app.gs.mapW) == x
                 && sm::ecs::cell_y(c, app.gs.mapW) == y)
@@ -1639,7 +1639,7 @@ bool smoke_find_open_subworld_cell(const App& app, int& outX, int& outY) {
                     || y >= app.gs.mapH - 64) {
                     continue;
                 }
-                if (hasPlace(x, y)) continue;
+                if (hasRooted(x, y)) continue;
                 const float h = sm::field01_of(app.terrain.height_at(x, y));
                 // The [minH, 0.72] band sits below kMountainBiomeLevel (0.75),
                 // so Mountain-biome cells are already excluded here.
@@ -2733,7 +2733,7 @@ bool run_dungeon_house_smoke(App& app) {
     // Город спрашивается у НАСЕЛЕНИЯ STORE (ломтик F): второго списка
     // городов у мира больше нет, план генератора умер вместе с генезисом.
     sm::MacroHandle firstCity{};
-    sm::for_each_place(*app.macroStore, [&](std::uint16_t slot) {
+    sm::for_each_rooted(*app.macroStore, [&](std::uint16_t slot) {
         if (app.macroStore->valid(firstCity)) return;
         if (sm::SquadType(app.macroStore->runtime[slot].squadType)
             == sm::SquadType::City)
@@ -2805,7 +2805,7 @@ bool run_dungeon_house_smoke(App& app) {
     // снималась ОДИН раз и переиспользовалась после выхода из дома — держалось
     // это на кэше снимков клеток, который возвращал улице прежние позиции. Кэш
     // снесён, и обнажилось вот что: геометрия города есть функция ЖИВОГО
-    // населения (`city.cpp` берёт `population = ctx.place.size`, от него
+    // населения (`city.cpp` берёт `population = ctx.rooted.size`, от него
     // радиус стены, число домов и полос), поэтому смерть ОДНОГО жителя из
     // 6272 ниже по сценарию двигает **4690 пропов из 71 039 (6.6 %)**, и
     // прицельная дверь уезжает на 9.55 м. ЗДЕСЬ ЭТО НЕ УТВЕРЖДАЕТСЯ НИКАК:
@@ -4112,7 +4112,7 @@ bool run_spire_climb_smoke(App& app) {
     //
     // ШПИЛЬ ИЩЕТСЯ ПО БАЙТУ ФИЧИ, А НЕ ПО СКВАДАМ (M-320): сквада у шпиля
     // нет ни одного, он ЕСТЬ клетка со своим числом. Здесь стоял скан
-    // `for_each_place` по роду `Spire`, и после сноса он находил пустоту —
+    // `for_each_rooted` по роду `Spire`, и после сноса он находил пустоту —
     // смоук краснел «found no unlearned spire» не потому, что закон нарушен,
     // а потому, что спрашивал не у того носителя.
     //
@@ -4323,7 +4323,7 @@ bool run_spire_climb_smoke(App& app) {
         // ГРАНИЦЕ тика, не в кадре нажатия (ломоть 5).
         smoke_advance_to_macro_tick(app);
         // ВЫКАЧАННОСТЬ СПРАШИВАЕТСЯ У КЛЕТКИ, КОТОРУЮ ОБОБРАЛИ (M-320).
-        // Здесь стоял резолв сквада по ординалу (`place_handle_by_ordinal`),
+        // Здесь стоял резолв сквада по ординалу (`rooted_handle_by_ordinal`),
         // чтобы узнать адрес шпиля, — а у шпиля нет ни сквада, ни ординала,
         // и адрес у смоука уже на руках: это та клетка, на которую он встал.
         depletedFlag = sm::feature_number_read(app.gs, targetX, targetY) == 0;
@@ -8799,7 +8799,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             //
             // Шрам, купивший сценарий, — числом: слияние ветвей панели дало
             // ей ОДИН гейт живости, и в него уехал `hp > 0` из ветки сквада.
-            // У места пулы рождаются НУЛЯМИ (CANON S6, `birth_place`), потому
+            // У места пулы рождаются НУЛЯМИ (CANON S6, `birth_squad`), потому
             // что город не дерётся телом, — и панель ГОРОДА перестала
             // открываться вовсе. Вторым заходом затёртый субъект убил панель
             // СКВАДА. Оба раза `check` 130/130 и ВСЕ смоуки остались

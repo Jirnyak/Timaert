@@ -223,7 +223,7 @@ bool scent_hunt_step(MacroHandle self, MacroPos& p,
 // — no omniscience, no rumours. Two strategies over the ONE price law
 // (economy.h stock_price at post-trade supply; transfer_value moves coin —
 // nothing minted, nothing confiscated). At namespace scope (the
-// settle_place_day pattern) so caravan_deal_test can drive one deal.
+// settle_rooted_day pattern) so caravan_deal_test can drive one deal.
 struct CaravanDeal {
     int boughtValue = 0;      // coin paid INTO the market for goods taken
     int soldValue   = 0;      // coin the market paid for goods delivered

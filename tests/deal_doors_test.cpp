@@ -183,7 +183,7 @@ void test_stale_slot_line_ships_nothing() {
     CHECK(A.count_of(wood) == 5, "the stranger cargo stayed home");
 }
 
-void test_place_debt_paid_on_arrival() {
+void test_rooted_debt_paid_on_arrival() {
     World w = make_world();
     const int food = item_index("food");
     const int foodOrd = commodity_index("food");
@@ -276,7 +276,7 @@ int main() {
     test_souls_travel_by_the_same_door();
     test_asdef_rebirth_conserves_heads();
     test_stale_slot_line_ships_nothing();
-    test_place_debt_paid_on_arrival();
+    test_rooted_debt_paid_on_arrival();
     test_self_deal_refused();
     test_stage_value_lines_cover_cost();
     test_receiver_without_slots_refuses();

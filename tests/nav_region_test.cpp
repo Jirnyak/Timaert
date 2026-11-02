@@ -14,7 +14,7 @@
 
 #include "macro/nav_field.h"
 #include "macro/pathfinding.h"
-#include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
+#include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
 #include "macro/squad.h"
 #include "macro/state.h"
 #include "macro/store.h"
@@ -97,7 +97,7 @@ struct Fixture {
         for (int i = 0; i < 6; ++i) {
             const int x = sm::wrapi(lmx[i] + shiftX, W);
             const int y = sm::wrapi(lmy[i] + shiftY, H);
-            const sm::MacroHandle h = sm::birth_place(
+            const sm::MacroHandle h = sm::birth_squad(
                 gs, places(),
                 i % 2 ? sm::SquadType::City : sm::SquadType::Village,
                 x, y);
@@ -138,13 +138,13 @@ struct Fixture {
         seeded.clear();
         {
             const sm::MacroHandle h =
-                sm::birth_place(gs, places(), sm::SquadType::City, 5, 32);
+                sm::birth_squad(gs, places(), sm::SquadType::City, 5, 32);
             sm::settle_souls(gs, places(), h.slot, 100);
             seeded.push_back(
                 Place{5, 32, int(places().spawnId[h.slot].index), h.slot});
         }
         {
-            const sm::MacroHandle h = sm::birth_place(
+            const sm::MacroHandle h = sm::birth_squad(
                 gs, places(), sm::SquadType::Village, 40, 32);
             sm::settle_souls(gs, places(), h.slot, 100);
             seeded.push_back(
@@ -205,7 +205,7 @@ int main() {
 
     // Запекание: шесть округ, вся достижимая суша разобрана.
     CHECK(base.nav.baked(), "nav bakes on the synthetic torus");
-    CHECK(int(base.nav.regionPlaceId.size()) == 6,
+    CHECK(int(base.nav.regionRootedId.size()) == 6,
           "every place seeds a region");
     // Кап порталов НЕ резал переходы — счётчик, не stderr (грабля «кричит
     // в лог, grep не ловит» убита механизмом).
@@ -294,14 +294,14 @@ int main() {
         Fixture sea;
         sea.build_island();
         CHECK(sea.nav.baked(), "island world bakes");
-        CHECK(int(sea.nav.regionPlaceId.size()) == 2,
+        CHECK(int(sea.nav.regionRootedId.size()) == 2,
               "mainland and island each seed a region");
         const auto rm = sm::nav_region_at(sea.nav, 5, 32);
         const auto ri = sm::nav_region_at(sea.nav, 40, 32);
         CHECK(rm != sm::kNavNoRegion && ri != sm::kNavNoRegion && rm != ri,
               "the strait still SPLITS the partition: water is dear, so the "
               "two shores remain two округи with a portal between them");
-        const std::size_t R = sea.nav.regionPlaceId.size();
+        const std::size_t R = sea.nav.regionRootedId.size();
         CHECK(sea.nav.routeNext[std::size_t(ri) * R + rm]
                   != sm::kNavNoRegion,
               "THE ISLAND IS REACHABLE ON FOOT: the one table knows the "
@@ -429,7 +429,7 @@ int main() {
         // житель обязан пережить перепёк, не потеряв своей округи.
         const int ruinId = f.seeded[1].id;
         const sm::MacroHandle bornH =
-            sm::birth_place(f.gs, places(), sm::SquadType::Village, 40, 32);
+            sm::birth_squad(f.gs, places(), sm::SquadType::Village, 40, 32);
         sm::settle_souls(f.gs, places(), bornH.slot, 100);
         const int bornId = int(places().spawnId[bornH.slot].index);
         CHECK(sm::nav_ensure(f.mw, f.nav),
@@ -437,7 +437,7 @@ int main() {
         CHECK(f.nav.regionOf[0] != mark,
               "рождение в окне перепекает округи");
         bool sawDead = false, sawBorn = false;
-        for (std::int32_t lid : f.nav.regionPlaceId) {
+        for (std::int32_t lid : f.nav.regionRootedId) {
             sawDead = sawDead || lid == ruinId;
             sawBorn = sawBorn || lid == bornId;
         }

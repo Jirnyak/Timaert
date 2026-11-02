@@ -301,7 +301,7 @@ if (!ok) return 1;
 снести вместе с потолком — тогда до аукциона найма (M-38/M-40) места стоят
 голыми; НАПОМИНАЮ ИГРА НЕ ИГРАБЕЛЬНА СЕЙЧАС ПОЛИРОВКА ЯДРА ВРМЕННЫНЕ
 КОСТЫЛИ НЕ НУЖНЫ»):** `garrison_recruit_` (`:293-304`) и оба вызова
-(`:246`, `:442`), `garrison_wants_recruits` (`settle_place_day@src/macro/world_tick.h`) и его
+(`:246`, `:442`), `garrison_wants_recruits` (`settle_rooted_day@src/macro/world_tick.h`) и его
 проверки в блок «потолок» в `trade_law_test` (СНЕСЁН 2026-09-30 вместе с подсистемой). `garrison_target_strength`
 (`world_tick.h:38-42`) и колонка `garrisonShift` (реестр мест уничтожен 2026-11-02, арк M-235)
 — ОСТАЮТСЯ, у них жильцы вне дневного набора: РОЖДЕНИЕ места
@@ -1343,7 +1343,7 @@ libstdc++/MSVC (32 Б). Ещё две строки той же породы: `Ci
 `language.h:20-35` (`minSyllables/maxSyllables`, шаблоны слогов — для
 расчёта N), `src/core/stacks.h:110-145` (сторожа `sizeof`),
 `src/macro/save.cpp:665-680, 715-725, 750-785`, `src/macro/save_stream.h:20-75`
-(примитивы), читатели имени: `src/macro/place_iter.h:45-55`,
+(примитивы), читатели имени: `src/macro/rooted_iter.h:45-55`,
 `src/macro/state.cpp:180-192, 360-370`, `src/macro/politik.cpp:188-196,
 230-240, 290-300`, `src/app/main.cpp:3010-3018, 4110-4116, 4488-4494`,
 `src/app/smoke.cpp:7155-7226` (три `.c_str()`), src/content/quests/procedural.cpp †420-430 (снесён, ломоть 3 M-72),

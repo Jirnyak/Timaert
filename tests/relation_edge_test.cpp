@@ -97,17 +97,17 @@ void test_role_is_single_and_debt_dies_with_the_edge() {
 void test_self_edges() {
     MacroStore& st = store();
     store_reset(st);
-    const MacroHandle place = birth(st, 12u);
+    const MacroHandle rooted = birth(st, 12u);
 
     // Self-феод — отказ: вассал сам себе не платит.
-    set_relation(st, int(place.id), int(place.id), Stance::Suzerain);
-    CHECK(suzerain_of(st, place.slot) == 0, "self-феод отвергнут");
+    set_relation(st, int(rooted.id), int(rooted.id), Stance::Suzerain);
+    CHECK(suzerain_of(st, rooted.slot) == 0, "self-феод отвергнут");
 
     // Self-Parent — закон места: одна запись, без зеркала.
-    set_relation(st, int(place.id), int(place.id), Stance::Parent);
-    CHECK(parent_of(st, place.slot) == int(place.id),
+    set_relation(st, int(rooted.id), int(rooted.id), Stance::Parent);
+    CHECK(parent_of(st, rooted.slot) == int(rooted.id),
           "дом места — оно само (self-ребро Parent)");
-    CHECK(interests_count(st.interests[place.slot]) == 1,
+    CHECK(interests_count(st.interests[rooted.slot]) == 1,
           "self-ребро — ОДНА запись, зеркало не съело второй слот");
 }
 

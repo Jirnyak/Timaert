@@ -29,8 +29,8 @@
 
 #include "ecs/components.h"   // MacroSpawnId — ординал слота store
 #include "tables/squad_type.h"
-#include "macro/place_birth.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
-#include "macro/squad.h"         // actions_of + place_handle_by_ordinal
+#include "macro/birth_squad.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
+#include "macro/squad.h"         // actions_of + rooted_handle_by_ordinal
 #include "macro/state.h"
 #include "macro/store.h"
 #include "tables/map_actions.h"
@@ -58,7 +58,7 @@ Fixture make_world(sm::MacroStore& st) {
     // выдача с единицы столкнула бы место и сквад в одном ординале, и дверь
     // отвечала бы «тем же объектом» по совпадению. С M-220 эмитент — у стора.
     st.nextSpawnId = 7u;
-    const sm::MacroHandle city = sm::birth_place(
+    const sm::MacroHandle city = sm::birth_squad(
         gs, st, sm::SquadType::City, 10, 10, -1, "Testholm");
     fx.cityId = int(st.spawnId[city.slot].index);
     sm::creatures_push(st.inventory[city.slot].inv,
@@ -68,12 +68,12 @@ Fixture make_world(sm::MacroStore& st) {
     sm::settle_souls(gs, st, city.slot, 300);
     // A VILLAGE and a SPIRE on the same one id space (v54): the doors must
     // answer for them exactly as they do for the city — kind-blind.
-    const sm::MacroHandle village = sm::birth_place(
+    const sm::MacroHandle village = sm::birth_squad(
         gs, st, sm::SquadType::Village, 20, 20, -1, "Hamlet");
     fx.vilId = int(st.spawnId[village.slot].index);
     sm::settle_souls(gs, st, village.slot, 40);
     const sm::MacroHandle spire =
-        sm::birth_place(gs, st, sm::SquadType::Spire, 40, 40);
+        sm::birth_squad(gs, st, sm::SquadType::Spire, 40, 40);
     fx.spireId = int(st.spawnId[spire.slot].index);
     return fx;
 }
@@ -106,7 +106,7 @@ void test_one_container_is_the_very_object() {
               == &st.inventory[squad.slot].inv,
           "у ходока склад ЕСТЬ его колонка инвентаря — тот самый объект");
 
-    const MacroHandle city = place_handle_by_ordinal(st, std::uint32_t(fx.cityId));
+    const MacroHandle city = rooted_handle_by_ordinal(st, std::uint32_t(fx.cityId));
     CHECK(&body_state<ecs::NpcInventory>(st, city)->inv
               == &st.inventory[city.slot].inv,
           "у стоящего склад ЕСТЬ колонка инвентаря ЕГО ЖЕ ТЕЛА, не второй стор");
@@ -114,7 +114,7 @@ void test_one_container_is_the_very_object() {
     // PLAY-2's law: дверь КИНД-СЛЕПА. Деревня и шпиль отвечают той же дверью,
     // что город, — фильтра по `SquadType` нет ни одного.
     for (const int id : {fx.vilId, fx.spireId}) {
-        const MacroHandle h = place_handle_by_ordinal(st, std::uint32_t(id));
+        const MacroHandle h = rooted_handle_by_ordinal(st, std::uint32_t(id));
         CHECK(body_state<ecs::NpcInventory>(st, h) != nullptr,
               "деревня и шпиль открывают дверь как всякое стоящее");
     }
@@ -138,9 +138,9 @@ void test_verbs_are_declared_by_the_row() {
     MacroStore& st = *worldStore_;
     Fixture fx = make_world(st);
 
-    const MacroHandle city = place_handle_by_ordinal(st, std::uint32_t(fx.cityId));
-    const MacroHandle vil  = place_handle_by_ordinal(st, std::uint32_t(fx.vilId));
-    const MacroHandle sp   = place_handle_by_ordinal(st, std::uint32_t(fx.spireId));
+    const MacroHandle city = rooted_handle_by_ordinal(st, std::uint32_t(fx.cityId));
+    const MacroHandle vil  = rooted_handle_by_ordinal(st, std::uint32_t(fx.vilId));
+    const MacroHandle sp   = rooted_handle_by_ordinal(st, std::uint32_t(fx.spireId));
 
     CHECK(actions_of(st, city)
               == (kMapActTrade | kMapActHire | kMapActQuests),
@@ -189,7 +189,7 @@ void test_no_second_address_form() {
     MacroStore& st = *worldStore_;
     Fixture fx = make_world(st);
 
-    const MacroHandle city = place_handle_by_ordinal(st, std::uint32_t(fx.cityId));
+    const MacroHandle city = rooted_handle_by_ordinal(st, std::uint32_t(fx.cityId));
     CHECK(int(city.id) == fx.cityId,
           "«ординал места» ЕСТЬ половина id его хэндла, а не второй адрес");
     CHECK(city == handle_at(st, city.slot),
@@ -214,13 +214,13 @@ void test_the_doors_fail_closed() {
               && body_state<ecs::NpcInventory>(st, MacroHandle{}) == nullptr,
           "нерождённый хэндл не называет никого");
 
-    CHECK(place_handle_by_ordinal(st, 9999u) == MacroHandle{},
+    CHECK(rooted_handle_by_ordinal(st, 9999u) == MacroHandle{},
           "неизвестный ординал резолвится в пустой хэндл, а не в чужой слот");
 
     // Ординал ЖИВОГО ходока, поданный в дверь МЕСТА, — честное «никого»:
     // пространство ординалов одно (M-37), и различает их ось рода.
     const MacroHandle artel = make_squad(st, 5, SquadType::Artel);
-    CHECK(place_handle_by_ordinal(st, artel.id) == MacroHandle{},
+    CHECK(rooted_handle_by_ordinal(st, artel.id) == MacroHandle{},
           "ординал ходока не отдаёт его за место: ось рода гейтит резолв");
 
     // Поколение мертвит пережившую смерть ссылку: тот же слот, но старый

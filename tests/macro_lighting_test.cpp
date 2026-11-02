@@ -14,12 +14,12 @@
 #include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
 #include "macro/macro_lighting.h"
-#include "macro/place_iter.h"   // stamp_settlement_features — дверь штампа
+#include "macro/rooted_iter.h"   // stamp_settlement_features — дверь штампа
 #include "macro/macro_world.h"    // конверт слоёв — вход переписи (M-233 п.8)
 #include "macro/map_generator.h"  // field_word_of / kDefaultSeaLevel
 #include "macro/features.h"
 #include "tables/squad_type.h"
-#include "macro/place_birth.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
+#include "macro/birth_squad.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "macro/state.h"
 #include "macro/store.h"
 
@@ -170,25 +170,25 @@ int main() {
         // души селятся дверью мира, а не колонкой записи.
         sm::settle_souls(
             gs, st,
-            sm::birth_place(gs, st, SquadType::City, 10, 10, -1, nullptr,
+            sm::birth_squad(gs, st, SquadType::City, 10, 10, -1, nullptr,
                             &feat, &land).slot, 5000);
         sm::settle_souls(
             gs, st,
-            sm::birth_place(gs, st, SquadType::City, 20, 20, -1, nullptr,
+            sm::birth_squad(gs, st, SquadType::City, 20, 20, -1, nullptr,
                             &feat, &land).slot, 20);
 
         sm::settle_souls(
             gs, st,
-            sm::birth_place(gs, st, SquadType::Village, 30, 30, -1, nullptr,
+            sm::birth_squad(gs, st, SquadType::Village, 30, 30, -1, nullptr,
                             &feat, &land).slot, 100);
 
         // v120: a spire's charge is its cell's feature number (ordinal + 1);
         // drained = 0 — the spent spire's cell simply stays unwritten.
         feature_number_write(gs, 40, 40, 1);
 
-        sm::birth_place(gs, st, SquadType::Spire, 40, 40, -1, nullptr,
+        sm::birth_squad(gs, st, SquadType::Spire, 40, 40, -1, nullptr,
                         &feat, &land);
-        sm::birth_place(gs, st, SquadType::Spire, 50, 50, -1, nullptr,
+        sm::birth_squad(gs, st, SquadType::Spire, 50, 50, -1, nullptr,
                         &feat, &land);
         CHECK(feat.at(40, 40) == FT_Spire && feat.at(50, 50) == FT_Spire,
               "рождение поставило обеим клеткам шпиля их фичу — без неё "

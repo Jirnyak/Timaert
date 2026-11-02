@@ -24,7 +24,7 @@
 #include "macro/macro_snapshot.h"
 #include "macro/npc_ai.h"
 #include "macro/npc_spawn.h"
-#include "macro/place_birth.h"  // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
+#include "macro/birth_squad.h"  // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "macro/squad.h"
 #include "macro/store.h"
 
@@ -72,7 +72,7 @@ TerrainData make_terrain() {
 sm::MacroHandle settle(GameState& gs, sm::MacroStore& st, SquadType kind,
                        int x, int y, std::int16_t factionIdx = -1) {
     const sm::MacroHandle h =
-        birth_place(gs, st, kind, x, y, factionIdx);
+        birth_squad(gs, st, kind, x, y, factionIdx);
     raise_flock_into_container(st.inventory[h.slot].inv, 100);
     return h;
 }

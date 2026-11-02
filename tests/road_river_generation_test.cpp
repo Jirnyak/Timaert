@@ -737,7 +737,7 @@ void test_dirt_roads_refuse_unreachable_targets()
     CHECK(wetDirt == 0, "dirt lanes must never stamp water cells");
 }
 
-void test_dirt_roads_reach_gates_place_lane()
+void test_dirt_roads_reach_gates_rooted_lane()
 {
     sm::TerrainData td = make_terrain(16, 16, kPlainLand01);
 
@@ -745,19 +745,19 @@ void test_dirt_roads_reach_gates_place_lane()
     villages[0].x = 2;
     villages[0].y = 2;
     villages[0].hasCity = false; // orphan of a city; the place row alone
-    const std::vector<sm::RoadSite> places{{10, 2}}; // torus distance 8
+    const std::vector<sm::RoadSite> rootedSites{{10, 2}}; // torus distance 8
 
     sm::FeatureLayer nearFeatures;
     nearFeatures.resize(td.width, td.height);
     const int laidNear =
-        sm::trace_dirt_roads(nearFeatures, td, villages, places, 9);
+        sm::trace_dirt_roads(nearFeatures, td, villages, rootedSites, 9);
     CHECK(laidNear > 1 && nearFeatures.at(10, 2) == sm::FT_DirtRoad,
           "a place within reach must get a lane ending at the place");
 
     sm::FeatureLayer farFeatures;
     farFeatures.resize(td.width, td.height);
     const int laidFar =
-        sm::trace_dirt_roads(farFeatures, td, villages, places, 4);
+        sm::trace_dirt_roads(farFeatures, td, villages, rootedSites, 4);
     CHECK(laidFar == 1 && farFeatures.at(10, 2) == sm::FT_None,
           "a place beyond reach gets no lane — only the village cell");
 }
@@ -813,7 +813,7 @@ int main()
     test_politik_malformed_terrain_fails_closed();
     test_dirt_roads_lay_a_star_lanes();
     test_dirt_roads_refuse_unreachable_targets();
-    test_dirt_roads_reach_gates_place_lane();
+    test_dirt_roads_reach_gates_rooted_lane();
     test_dirt_roads_fail_closed_on_malformed_inputs();
     return sm::test::report("road_river_generation_test");
 }

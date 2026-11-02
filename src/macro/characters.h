@@ -211,7 +211,7 @@ kSquadBirth = [] {
     city.attributes[AttributeId::Cha] = 10;
     city.skills[SkillId::Trade]       = 30;
     // Город рождается с СЕЗОНОМ комфорта и одинарным сырьём (перенесено из
-    // булева параметра seed_place_inventory один в один, M-281-родня).
+    // булева параметра seed_rooted_inventory один в один, M-281-родня).
     a[std::size_t(SquadType::City)].seedComfortDays = 32;
     a[std::size_t(SquadType::City)].seedRawMult = 1;
     CharacterSheet& village = a[std::size_t(SquadType::Village)].sheet;

@@ -13,7 +13,7 @@
 #include <cstdio>
 #include "check.h"
 #include "macro/labour.h"        // settle_souls / souls_flock — двери душ
-#include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
+#include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
 #include "macro/squad.h"         // set_suzerain / tithe_edge_of
 #include "macro/store.h"
 
@@ -180,7 +180,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     // ставятся НЕНУЛЕВЫМИ и судятся на том берегу — потеря любой из них
     // в проводе сейва обязана красить.
     sm::ecs::goal_set(a.goal, sm::ecs::cell_index(100, 200, 512),
-                      sm::ecs::goal_what(sm::ecs::GoalKind::Place, 4u),
+                      sm::ecs::goal_what(sm::ecs::GoalKind::Rooted, 4u),
                       7, std::uint8_t(sm::NPCState::Working));
     a.runtime.lairCell = sm::ecs::cell_index(45, 46, 512);
     a.runtime.stateTimer = 11;
@@ -366,7 +366,7 @@ sm::GameState make_state(sm::MacroStore& st) {
         //  теперь всё, что несёт ссылка.)
         conquest.subjectKind = sm::fact_subject(sm::FactSubject::Squad);
         conquest.subject = 4242u;
-        conquest.objectKind = sm::fact_subject(sm::FactSubject::Place);
+        conquest.objectKind = sm::fact_subject(sm::FactSubject::Rooted);
         conquest.object = 9u;
         conquest.x = 41; conquest.y = 41;
         sm::chronicle_record(gs.chronicle, conquest);
@@ -459,7 +459,7 @@ sm::GameState make_state(sm::MacroStore& st) {
     // поэтому отдельной посадки душ в состояние мира больше нет.)
 
     {
-        const sm::MacroHandle row = sm::birth_place(
+        const sm::MacroHandle row = sm::birth_squad(
             gs, st, sm::SquadType::City, 40, 80, 2, "Round City");
         sm::Inventory& store = st.inventory[row.slot].inv;
         store.add("wood", 19);
@@ -477,7 +477,7 @@ sm::GameState make_state(sm::MacroStore& st) {
     }
 
     {
-        const sm::MacroHandle row = sm::birth_place(
+        const sm::MacroHandle row = sm::birth_squad(
             gs, st, sm::SquadType::Village, 45, 85, 2, "Round Hamlet");
         st.inventory[row.slot].inv.add("food_meat", 4);
         sm::Wellbeing& wb = st.wellbeing[row.slot];
@@ -495,7 +495,7 @@ sm::GameState make_state(sm::MacroStore& st) {
         sm::tithe_of(st, row.slot)->owedValue = 123;
     }
 
-    sm::birth_place(gs, st, sm::SquadType::Spire, 12, 34);
+    sm::birth_squad(gs, st, sm::SquadType::Spire, 12, 34);
     // v120: the spire's spell rides the featureNumber layer (ordinal + 1), which
     // the save carries as a world-field block — the roundtrip must bring
     // back the NUMBER at the cell, not columns.
@@ -607,12 +607,12 @@ void run_roundtrip() {
     // самом блоке. Снимок store даёт ровно три тела фикстуры.
     std::vector<sm::MacroNpcRecord> macroFixture = make_macro_records();
     {
-        const std::vector<sm::MacroNpcRecord> places =
+        const std::vector<sm::MacroNpcRecord> rootedRecs =
             sm::snapshot_macro_ecs(store);
-        if (places.size() != 3u) {
+        if (rootedRecs.size() != 3u) {
             FAIL_BAIL("фикстура: у трёх мест обязано быть три тела");
         }
-        macroFixture.insert(macroFixture.end(), places.begin(), places.end());
+        macroFixture.insert(macroFixture.end(), rootedRecs.begin(), rootedRecs.end());
     }
     if (!sm::save_game(gs, store.nextSpawnId, macroFixture,
                        treeCounts, path)) {
@@ -964,7 +964,7 @@ void run_roundtrip() {
     sm::MacroStore& loadedStore = *loadedStoreOwn;
     sm::restore_macro_ecs(loadedMacro, loadedStore, loadedNextSpawnId);
 
-    const sm::MacroHandle cityLm = sm::place_handle_by_ordinal(
+    const sm::MacroHandle cityLm = sm::rooted_handle_by_ordinal(
         loadedStore, std::uint32_t(kFixtureCityId));
     // ПАСТВА — слой чисел фич (v122), и круг сейва обязан вернуть её
     // ровно. Домашние головы здесь НЕ равны пастве: фикстура досыпала в тот
@@ -992,7 +992,7 @@ void run_roundtrip() {
             FAIL_BAIL("settlement honest-day readouts (v29) lost");
         }
     }
-    const sm::MacroHandle vilLm = sm::place_handle_by_ordinal(
+    const sm::MacroHandle vilLm = sm::rooted_handle_by_ordinal(
         loadedStore, std::uint32_t(kFixtureVillageId));
     if (loadedStore.valid(vilLm)) {
         // M-245: долг дани едет НА РЕБРЕ Suzerain вассала — записью его же
@@ -1016,7 +1016,7 @@ void run_roundtrip() {
             FAIL_BAIL("village honest-day readouts (v29) lost");
         }
     }
-    const sm::MacroHandle spireLm = sm::place_handle_by_ordinal(
+    const sm::MacroHandle spireLm = sm::rooted_handle_by_ordinal(
         loadedStore, std::uint32_t(kFixtureSpireId));
     if (!loadedStore.valid(spireLm)
         || sm::SquadType(loadedStore.runtime[spireLm.slot].squadType)
@@ -1211,29 +1211,29 @@ void run_roundtrip() {
     // резолв идёт колонкой spawnId живого тела плюс гейт оси рода. Остаётся
     // то, что от этого закона не зависело ни тогда: дверь обязана найти
     // ВСЯКОЕ место круга и не отвечать за небывалый ординал и за «никто».
-    int placesOfTheRound = 0, unresolvable = 0;
+    int rootedOfTheRound = 0, unresolvable = 0;
     for (std::uint32_t slot = 0; slot < sm::kUnifiedCap; ++slot) {
         if (loadedStore.alive[slot] == 0 || loadedStore.dead[slot] != 0)
             continue;
         if (sm::squad_archetype(
                 sm::SquadType(loadedStore.runtime[slot].squadType))
-            != sm::SquadArchetype::Place)
+            != sm::SquadArchetype::Rooted)
             continue;
-        ++placesOfTheRound;
-        const sm::MacroHandle back = sm::place_handle_by_ordinal(
+        ++rootedOfTheRound;
+        const sm::MacroHandle back = sm::rooted_handle_by_ordinal(
             loadedStore, loadedStore.spawnId[slot].index);
         if (!loadedStore.valid(back)
             || back.slot != std::uint16_t(slot)) ++unresolvable;
     }
     // Цикл утверждает, что ПОМЕРИЛ (§8 п.3): пустой круг зеленел бы нулём
     // расхождений, а мест в этой фикстуре ровно три.
-    if (placesOfTheRound != 3 || unresolvable != 0) {
+    if (rootedOfTheRound != 3 || unresolvable != 0) {
         FAIL_BAIL("by-ordinal find missed a place of the round");
     }
-    if (loadedStore.valid(sm::place_handle_by_ordinal(loadedStore, 4242u))
-        || loadedStore.valid(sm::place_handle_by_ordinal(loadedStore, 0u))
+    if (loadedStore.valid(sm::rooted_handle_by_ordinal(loadedStore, 4242u))
+        || loadedStore.valid(sm::rooted_handle_by_ordinal(loadedStore, 0u))
         || loadedStore.valid(
-               sm::place_handle_by_ordinal(loadedStore, 0xFFFFFFFFu))) {
+               sm::rooted_handle_by_ordinal(loadedStore, 0xFFFFFFFFu))) {
         FAIL_BAIL("by-ordinal find answered for an id no place holds");
     }
 
@@ -1309,7 +1309,7 @@ void run_every_sub_state_kind_survives() {
 void run_payload_cap_is_a_fact() {
     constexpr std::uint64_t kOldLiteralCap = 64ull * 1024ull * 1024ull;
     constexpr std::uint32_t kHeaderBytes = 4u + 4u + 8u + 4u;
-    constexpr int kCensusPlaces = 1880;   // core/stacks.h, замеренный мир
+    constexpr int kCensusRooted = 1880;   // core/stacks.h, замеренный мир
 
     const std::string path = temp_save_path("timaert_save_payload_cap.bin");
     const std::string overPath = temp_save_path("timaert_save_payload_over.bin");
@@ -1352,11 +1352,11 @@ void run_payload_cap_is_a_fact() {
     // Ординалы этих мест выдаёт тот же эмитент, что назвал места make_state
     // (ломтик F): одно пространство ординалов (M-37), и выдача монотонна —
     // столкновений в нём не бывает по построению.
-    for (int i = 0; i < kCensusPlaces; ++i) {
+    for (int i = 0; i < kCensusRooted; ++i) {
         // Душ здесь нет намеренно: предмет этой фикстуры — ХУДШИЙ ВЕС
         // мест, и все слоты забиты неслипающимися стаками. Паства живёт в
         // слое чисел фич (v122), её вес считает блок полей, а не запись места.
-        const sm::MacroHandle row = sm::birth_place(
+        const sm::MacroHandle row = sm::birth_squad(
             gs, store, sm::SquadType::Village,
             i % gs.mapW, (i / gs.mapW) % gs.mapH);
         sm::Inventory& bag = store.inventory[row.slot].inv;
@@ -1369,10 +1369,10 @@ void run_payload_cap_is_a_fact() {
         }
     }
 
-    const std::vector<sm::MacroNpcRecord> placeBodies =
+    const std::vector<sm::MacroNpcRecord> rootedBodies =
         sm::snapshot_macro_ecs(store);
     const std::vector<std::uint16_t> noTrees;
-    if (!sm::save_game(gs, store.nextSpawnId, placeBodies,
+    if (!sm::save_game(gs, store.nextSpawnId, rootedBodies,
                        noTrees, path)) {
         FAIL_BAIL("save_game refused a legal world at the census caps");
     }

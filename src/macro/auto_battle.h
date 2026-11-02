@@ -278,7 +278,7 @@ inline float squad_power(const AutoBattleSide& s) {
     // марша читал склад как носимый перегруз, M-310: мест 2275 → 90), и
     // держал её не этот файл. Вердикт владельца о МНОЖИТЕЛЕ перегруза снял
     // блокер, и все три куска сошлись одним шагом — тело в
-    // `birth_place@src/macro/place_birth.h`, множитель в
+    // `birth_squad@src/macro/birth_squad.h`, множитель в
     // `overload_burden_from_capacity@src/macro/travel.h`, гейт здесь.
     float power = squad_has_avatar(s.type)
         ? avatar_power(s.avatarSheet, s.avatarType,

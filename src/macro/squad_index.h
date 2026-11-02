@@ -42,7 +42,7 @@
 #include <vector>
 
 #include "macro/squad_walk.h"      // SquadWalkEntry + порядок закона; store.h
-#include "tables/squad_type.h"     // ось рода + kPlaceYieldOrder
+#include "tables/squad_type.h"     // ось рода + kRootedYieldOrder
 
 namespace sm {
 
@@ -155,7 +155,7 @@ inline void squads_in_frame(const SquadIndex& g, const MacroStore& st,
 //
 // Ответ, который давала запечённая сетка мест (`LandmarkGrid::at`, умерла
 // ломтиком F): бакет каркаса → фильтр по клетке и ОСИ РОДА. Приоритет
-// спорной клетки — kPlaceYieldOrder (один закон, живёт у оси); внутри
+// спорной клетки — kRootedYieldOrder (один закон, живёт у оси); внутри
 // рода побеждает меньший ординал, и это не новое правило: бакет отсортирован
 // по ординалу по построению, а старая сетка отдавала клетку первой строке
 // append-only вектора — тот же порядок рождения.
@@ -175,7 +175,7 @@ inline MacroHandle settlement_at(const SquadIndex& g, const MacroStore& st,
     const int gx = wx / b.cellSize;
     const int gy = wy / b.cellSize;
     MacroHandle best{};
-    std::size_t bestRank = std::size(kPlaceYieldOrder);
+    std::size_t bestRank = std::size(kRootedYieldOrder);
     for (const std::uint32_t* it = b.cell_begin(gx, gy),
                             * end = b.cell_end(gx, gy);
          it != end; ++it) {
@@ -184,9 +184,9 @@ inline MacroHandle settlement_at(const SquadIndex& g, const MacroStore& st,
         if (ecs::cell_x(c, mapW) != wx || ecs::cell_y(c, mapW) != wy)
             continue;
         const SquadType t = SquadType(st.runtime[slot].squadType);
-        if (squad_archetype(t) != SquadArchetype::Place) continue;
+        if (squad_archetype(t) != SquadArchetype::Rooted) continue;
         for (std::size_t r = 0; r < bestRank; ++r) {
-            if (kPlaceYieldOrder[r] != t) continue;
+            if (kRootedYieldOrder[r] != t) continue;
             bestRank = r;
             best = handle_at(st, slot);
             break;   // внутри рода первый = меньший ординал (порядок бакета)

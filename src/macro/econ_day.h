@@ -251,7 +251,7 @@ int season_comfort_units(int population, int commodityIdx);
 // пищевая строка словаря» прибито `static_assert`ом ВНУТРИ `items.cpp`, а
 // дверь ниже отвечает -1, если каталог этому закону противоречит.
 // Товарным ординалом — то, ЧЕМ голод адресуется в СЧЁТЕ (`needDebt`
-// индексируется товарным ординалом: state.h Place, ecs::SquadUpkeep).
+// индексируется товарным ординалом: ecs::SquadUpkeep/macro/upkeep.h).
 int hunger_commodity_ordinal();
 
 // Она же каталожным ОРДИНАЛОМ — то, ЧЕМ её списывают из закромов.
@@ -404,7 +404,7 @@ using EconFactSink = void (*)(void* user, const EconFact& fact);
 // дверей прихода (haul_between, transfer_value_dense): сумка проходит
 // голым инвентарём (needDebt == nullptr, неявная конверсия), МЕСТО отдаёт
 // свой счёт и канал фактов — и дверь гасит долг СРАЗУ тем, что упало
-// (econ_pay_debt после кредита). Дневной такт settle_place_day остаётся
+// (econ_pay_debt после кредита). Дневной такт settle_rooted_day остаётся
 // СТРАХОВКОЙ для путей мимо дверей (торговая панель игрока).
 struct Depot {
     Inventory& inv;
@@ -534,7 +534,7 @@ inline float population_delta_per_day(int population, float wellbeing) {
 // читает (ЗАКОН АГНОСТИЧНОСТИ: фундаментальная система не знает, кто и
 // зачем её позвал). Оба прежних звонящих передавали ТАВТОЛОГИЮ —
 // спрашивали род у слота там, где литералом только что его записали.
-void seed_place_inventory(Inventory& inv, int population,
+void seed_rooted_inventory(Inventory& inv, int population,
                             const SquadBirthRow& row);
 
 

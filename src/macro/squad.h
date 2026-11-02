@@ -243,7 +243,7 @@ inline const char* squad_name(const MacroStore& st, std::uint16_t slot) {
 // вопрос «какой он уровня» читает ЭТУ дверь.
 //
 // И СНОС БЫЛ НЕ КОСМЕТИКОЙ — КОЛОНКА ДЕРЖАЛА ЖИВОЙ БАГ, НЕДОСТУПНЫЙ АНКЕТЕ
-// ПО ПОСТРОЕНИЮ. Колонка умела быть НУЛЁМ: `birth_place` её не писал вовсе,
+// ПО ПОСТРОЕНИЮ. Колонка умела быть НУЛЁМ: `birth_squad` её не писал вовсе,
 // а рождение слота обнуляет (`store_birth`). Нулевой уровень обнулял и
 // кривую — `exp_to_next_level(0)` = 0 (`anketa.h`), — поэтому `while (xp >=
 // порог)` срабатывал на ЛЮБОМ положительном xp, и первая же победа
@@ -317,11 +317,11 @@ inline std::uint16_t actions_of(const MacroStore& st, MacroHandle h) {
 // ординалов ОДНО (M-37), и после смерти строки мест «это место?» отвечает
 // только ось тела — звонящий, которому нужен именно НЕПОДВИЖНЫЙ сквад,
 // обязан спрашивать этой дверью, а не голым резолвом.
-inline MacroHandle place_handle_by_ordinal(const MacroStore& st,
+inline MacroHandle rooted_handle_by_ordinal(const MacroStore& st,
                                            std::uint32_t index) {
     const MacroHandle h = macro_handle_by_spawn_id(st, index);
     return st.valid(h)
-            && squad_archetype(SquadType(st.runtime[h.slot].squadType)) == SquadArchetype::Place
+            && squad_archetype(SquadType(st.runtime[h.slot].squadType)) == SquadArchetype::Rooted
         ? h : MacroHandle{};
 }
 
@@ -331,7 +331,7 @@ inline MacroHandle place_handle_by_ordinal(const MacroStore& st,
 //  вопрос мира в дереве стояло ДВА ответа (DOD п.6). Теперь дешёв сам резолв
 //  — справочник у эмитента, — и параметр покупать нечего. Вместе с ней ушло
 //  последнее, третье написание закона: лямбда `slot_of` дневной ротации и
-//  `place_slot_by_id` думки сведены к ОДНОМУ переходнику в `npc_ai.cpp`.)
+//  `rooted_slot_by_id` думки сведены к ОДНОМУ переходнику в `npc_ai.cpp`.)
 
 // ДВЕРЬ ПЕРЕХОДА ВИДА — второе событие места, и оно же его СМЕРТЬ (владелец
 // 2026-09-20: «уничтожение ландмарка и рождение будет как механика»). Смерть
@@ -343,7 +343,7 @@ inline MacroHandle place_handle_by_ordinal(const MacroStore& st,
 //  смены рода неподвижного сквада имела НОЛЬ прод-вызовов, и её шапка
 //  это признавала сама. Закон «переход рода поднимает событие состава»
 //  остался без пути, а не без носителя: событие поднимает рождение
-//  (`birth_place@src/macro/place_birth.h`, ++gs.navEpoch), и свидетель
+//  (`birth_squad@src/macro/birth_squad.h`, ++gs.navEpoch), и свидетель
 //  навигации судит его там. Понадобится переход — придёт вместе со
 //  своим звонящим, как всякая дверь.)
 
@@ -413,11 +413,11 @@ inline MacroHandle place_handle_by_ordinal(const MacroStore& st,
 inline void shift_home_flock(GameState& gs, const MacroStore& st,
                              std::int32_t homeId, int delta) {
     if (homeId <= 0 || delta == 0) return;
-    const MacroHandle home = place_handle_by_ordinal(st, std::uint32_t(homeId));
+    const MacroHandle home = rooted_handle_by_ordinal(st, std::uint32_t(homeId));
     if (!st.valid(home)) return;
     // (Ранний возврат «у данжа числа не трогаем» снесён с колонкой
     //  `bornPopBase` — M-320. Руина и шпиль стали ФИЧАМИ, слотов у них нет,
-    //  значит домом для чужих душ им не стать: `place_handle_by_ordinal`
+    //  значит домом для чужих душ им не стать: `rooted_handle_by_ordinal`
     //  к ним не резолвит. Одна дверь, один закон.)
     const auto& c = st.cell[home.slot];
     const int x = ecs::cell_x(c, gs.mapW), y = ecs::cell_y(c, gs.mapW);
@@ -443,7 +443,7 @@ inline void shift_home_flock(GameState& gs, const MacroStore& st,
 // идёт людьми (`settle_souls` → `raise_flock_into_container`, строка
 // Peasant). Значит и убыль обязана считаться людьми: конь в стойле —
 // имущество, и его падёж человеческую паству уменьшать не смеет. До этой
-// двери `settle_place_day` вычитал из числа фичи ЛЮБУЮ павшую голову, считая
+// двери `settle_rooted_day` вычитал из числа фичи ЛЮБУЮ павшую голову, считая
 // её душой (латентно: табун у мест сегодня нулевой).
 //
 // ВЕТКИ ПО РОДУ ЗДЕСЬ НЕТ И НЕ НУЖНО: у данжа паства И ЕСТЬ головы, поэтому
@@ -480,7 +480,7 @@ inline int flock_left_home(GameState& gs, const MacroStore& st,
 // ОБЛАСТЬ У НЕГО ТА ЖЕ, ЧТО У ДНЕВНОГО РОСТА, И ЭТО НЕ СОВПАДЕНИЕ: оба суть
 // содержимое модуля города и деревни, лежащее пока общим проходом (M-235,
 // ломоть 5б). Сегодня сквадами-местами рождаются ТОЛЬКО City и Village
-// (`birth_place@src/macro/place_birth.h` зовут две строки `state.cpp`),
+// (`birth_squad@src/macro/birth_squad.h` зовут две строки `state.cpp`),
 // поэтому свод не встречает рода, у которого число значит не людей. Когда
 // такой род родится сквадом — у шахты число есть РУДА (M-321) — ему
 // понадобится своя строка модуля, и этот проход обязан будет спросить её, а
@@ -490,7 +490,7 @@ inline int flock_left_home(GameState& gs, const MacroStore& st,
 // стеке звонящего (64 КиБ при `kUnifiedCap` = 16384), в тик и в кадр не
 // попадает (ЗАКОН СТАБИЛЬНОСТИ: цена структуры — константа от капа, а не от
 // населения).
-inline void reconcile_place_flock(GameState& gs, MacroStore& st,
+inline void reconcile_rooted_flock(GameState& gs, MacroStore& st,
                                   std::int32_t* souls) {
     for (std::uint32_t i = 0; i < kUnifiedCap; ++i) souls[i] = 0;
     // ПРОХОД ПЕРВЫЙ — ЧЕЙ ЭТО ЧЕЛОВЕК. Каждый живой сквад кладёт своих людей
@@ -500,7 +500,7 @@ inline void reconcile_place_flock(GameState& gs, MacroStore& st,
         const int homeId = parent_of(st, std::uint16_t(slot));
         if (homeId <= 0) continue;          // безымянный дом — законное «нет»
         const MacroHandle home =
-            place_handle_by_ordinal(st, std::uint32_t(homeId));
+            rooted_handle_by_ordinal(st, std::uint32_t(homeId));
         if (!st.valid(home)) continue;
         souls[home.slot] +=
             count_human_souls(st.inventory[slot].inv);
@@ -510,7 +510,7 @@ inline void reconcile_place_flock(GameState& gs, MacroStore& st,
     for (std::uint32_t slot = 0; slot < kUnifiedCap; ++slot) {
         if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
         if (squad_archetype(SquadType(st.runtime[slot].squadType))
-            != SquadArchetype::Place)
+            != SquadArchetype::Rooted)
             continue;
         const auto& c = st.cell[slot];
         feature_number_write(gs, ecs::cell_x(c, gs.mapW), ecs::cell_y(c, gs.mapW),
@@ -749,12 +749,12 @@ inline CharacterSheet* owned_sheet(MacroStore& st, MacroHandle h) {
 // `(строка существа, колонка уровня, сид ординала)` вместо того, чтобы
 // прочитать колонку. Умерла она потому, что её предпосылка исчезла ещё
 // 2026-09-25: колонка листа есть у ВСЕХ слотов и пишется КАЖДЫМ рождением
-// (`npc_spawn.cpp`, `place_birth.h`, `player_entity.cpp`, restore снапшота),
+// (`npc_spawn.cpp`, `birth_squad.h`, `player_entity.cpp`, restore снапшота),
 // и `npc_spawn.cpp` об этом прямо говорит — «дуализм owned/derived умер
 // здесь». Умер он на одной стороне: писатель перестал деривировать, а
 // ЧИТАТЕЛЬ продолжал, ещё три недели.
 //
-// ЦЕНА ДУАЛИЗМА, НАЗВАННАЯ ЧИСЛОМ. У сквада, рождённого `birth_place`,
+// ЦЕНА ДУАЛИЗМА, НАЗВАННАЯ ЧИСЛОМ. У сквада, рождённого `birth_squad`,
 // предикат владения ложен по всем трём термам (строка существа нулевая и не
 // именная, тег анкеты −1, бит дома 0), поэтому дверь ИГНОРИРОВАЛА его
 // анкету и отдавала бросок строки `Peasant`. Город и деревня — ровно два
@@ -880,7 +880,7 @@ inline std::uint32_t* renown_slot(MacroStore& st,
             const MacroHandle h = macro_handle_by_spawn_id(st, ordinal);
             return st.valid(h) ? &st.runtime[h.slot].renown : nullptr;
         }
-        case std::uint8_t(FactSubject::Place): {
+        case std::uint8_t(FactSubject::Rooted): {
             // Слава места — колонка runtime.renown его ТЕЛА; строки нет,
             // резолв тот же, что у сквада (одно пространство ординалов,
             // M-37), род субъекта остаётся словом ЛЕТОПИСИ.
@@ -920,7 +920,7 @@ inline void grant_renown(MacroStore& st,
 // becomes somebody; a writer that paid renown without filing would be a
 // legend nobody can read. Here neither is expressible: you hand over the
 // sentence and the doer, and both happen. It lives on the MACRO layer beside
-// its place twin (record_place_fact, state.h) so the app, the UI and
+// its place twin (record_rooted_fact, state.h) so the app, the UI and
 // the subworld engine all knock on the same door — the one-door law had
 // drifted across two layers, and the drift was writers that filed for free.
 //
@@ -967,18 +967,18 @@ inline std::uint32_t record_deed(MacroStore& st, GameState& gs,
 // его ТЕЛА). Та же одна дверь S20.1: figure-ность из ДО-дельной славы, файл,
 // плата — всё внутри record_deed_filed, вторая копия закона умерла с
 // переездом.
-inline std::uint32_t record_place_fact(MacroStore& st, GameState& gs,
-                                          FactKind kind, int placeId,
+inline std::uint32_t record_rooted_fact(MacroStore& st, GameState& gs,
+                                          FactKind kind, int rootedId,
                                           int x, int y, int amount,
-                                          int objectPlaceId = 0) {
+                                          int objectRootedId = 0) {
     WorldFact f{};
     f.day = gs.worldTime.day();
     f.kind = std::uint16_t(kind);
-    f.subjectKind = std::uint8_t(FactSubject::Place);
-    f.subject = std::uint32_t(placeId < 0 ? 0 : placeId);
-    if (objectPlaceId > 0) {
-        f.objectKind = std::uint8_t(FactSubject::Place);
-        f.object = std::uint32_t(objectPlaceId);
+    f.subjectKind = std::uint8_t(FactSubject::Rooted);
+    f.subject = std::uint32_t(rootedId < 0 ? 0 : rootedId);
+    if (objectRootedId > 0) {
+        f.objectKind = std::uint8_t(FactSubject::Rooted);
+        f.object = std::uint32_t(objectRootedId);
     }
     f.x = std::int16_t(x);
     f.y = std::int16_t(y);
@@ -1466,12 +1466,12 @@ inline void record_battle_facts(MacroStore& st, GameState& gs,
                              std::int32_t dead) {
         if (dead <= 0 || !st.valid(side)) return;
         const int homeId = parent_of(st, side.slot);   // дом = родитель (M-245)
-        if (!st.valid(place_handle_by_ordinal(st, std::uint32_t(homeId))))
+        if (!st.valid(rooted_handle_by_ordinal(st, std::uint32_t(homeId))))
             return;   // the homeless bereave nobody — Killed already spoke
         WorldFact f{};
         f.day = gs.worldTime.day();
         f.kind = std::uint16_t(FactKind::Died);
-        f.subjectKind = std::uint8_t(FactSubject::Place);
+        f.subjectKind = std::uint8_t(FactSubject::Rooted);
         f.subject = std::uint32_t(homeId);
         const std::uint32_t foeOrd =
             st.valid(foe) ? st.spawnId[foe.slot].index : 0u;

@@ -522,7 +522,7 @@ const char* affix_suffix(const ItemRef& item) noexcept;
 // его на три недели, потому что у неё был ЧИТАТЕЛЬ и не было ПИСАТЕЛЯ.
 // (generate_settlement_inventory is gone: the unified-container moment it was
 // kept for arrived — place stocks are seeded by the ECONOMY's own law,
-// econ_day.h seed_place_inventory, from the one commodity dictionary.)
+// econ_day.h seed_rooted_inventory, from the one commodity dictionary.)
 
 // ── Unified loot table ─────────────────────────────────────────
 // ONE loot registry keyed by a stable string `lootId`. Зарегистрированы

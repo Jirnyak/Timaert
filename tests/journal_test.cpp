@@ -12,7 +12,7 @@
 #include "check.h"
 
 #include "macro/journal.h"
-#include "macro/place_birth.h"  // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
+#include "macro/birth_squad.h"  // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "macro/squad.h"
 #include "macro/store.h"
 
@@ -89,7 +89,7 @@ void test_participation_locality_and_silence() {
     // NOT: this is S11 applied to history, and the whole point of a journal.
     chronicle_record(gs.chronicle,
                      fact(1, FactKind::Starved,
-                          std::uint8_t(FactSubject::Place), 3u, 40, 40));
+                          std::uint8_t(FactSubject::Rooted), 3u, 40, 40));
 
     player_journal_capture(gs, *wStore_);
     CHECK(gs.player.journal.size() == 2,
@@ -263,13 +263,13 @@ void test_the_deed_door_files_and_pays_as_one_action() {
     // банды (7): выдача с него столкнула бы два субъекта в одном ординале.
     stB.nextSpawnId = 8u;   // эмитент — у стора (M-220)
     const MacroHandle hTown =
-        birth_place(gs, stB, SquadType::City, 10, 10);
+        birth_squad(gs, stB, SquadType::City, 10, 10);
     stB.runtime[hTown.slot].renown = 50u;
 
     WorldFact f{};
     f.day = 1;
     f.kind = std::uint16_t(FactKind::Killed);
-    f.objectKind = std::uint8_t(FactSubject::Place);
+    f.objectKind = std::uint8_t(FactSubject::Rooted);
     f.object = stB.spawnId[hTown.slot].index;
     f.x = 10;
     f.y = 10;

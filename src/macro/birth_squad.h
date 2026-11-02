@@ -1,7 +1,7 @@
-// ── РОЖДЕНИЕ МЕСТА = ТЕЛО В STORE, ОДНОЙ ДВЕРЬЮ (ломтик F) ───────────────
+// ── РОЖДЕНИЕ ОСЁДЛОГО СКВАДА = ТЕЛО В STORE, ОДНОЙ ДВЕРЬЮ (ломтик F) ─────
 //
-// Место есть неподвижный сквад: всякая основа города, деревни, шпиля, руины
-// идёт СЮДА. Строки-индекса больше не существует — вся идентичность места
+// Рода «место» нет (вердикт «МЕСТ НЕТ»): всякая основа города, деревни,
+// шпиля, руины — ОСЁДЛЫЙ СКВАД (архетип Rooted), и идёт она СЮДА. Строки-индекса больше не существует — вся идентичность места
 // лежит колонками его тела: ординал (spawnId, единый эмитент M-37), ось рода
 // (runtime.squadType 1..8), имя (name), адрес (cell), фракция
 // (kind.factionIdx — с ломтика F это ИСТИНА, зеркала в строке больше нет).
@@ -25,7 +25,7 @@
 #include <cstring>
 
 #include "macro/characters.h"     // squad_birth — дефолт рождения рода
-#include "macro/features.h"    // feature_put + feature_of_place_kind — фича ДО тела
+#include "macro/features.h"    // feature_put + feature_of_rooted_kind — фича ДО тела
 #include "macro/squad.h"       // refresh_body_from_sheet — тело той же дверью
 #include "macro/state.h"
 #include "macro/store.h"
@@ -38,25 +38,25 @@ namespace sm {
 // СНАЧАЛА ФИЧА, СКВАД ПОВЕРХ (вердикт владельца 2026-10-23: «ДЕРЕВНИ ГОРОДА
 // это сначало фичи ВСЁ ТОЛЬКО ФИЧИ потом поверх них ложатся сквады»; фичи
 // делаются ОДИН РАЗ при генерации). Дверь рождения места ставит фичу рода
-// (`feature_of_place_kind@src/macro/features.h` — обход строк ФИЧ по их
+// (`feature_of_rooted_kind@src/macro/features.h` — обход строк ФИЧ по их
 // колонке `kind`; до варианта В M-235 здесь читалась колонка строки СКВАДА,
 // и порядок закона был вывернут) В МОМЕНТ ВЫБОРА КЛЕТКИ — до тела; слой фич
 // производен от сида и тел не читает никогда. nullptr-слой — фикстура без
 // фич, законно (fail-open как у всякого слоя конверта).
-inline MacroHandle birth_place(GameState& gs, MacroStore& st, SquadType kind,
+inline MacroHandle birth_squad(GameState& gs, MacroStore& st, SquadType kind,
                                int x, int y, std::int16_t factionIdx = -1,
                                const char* name = nullptr,
                                FeatureLayer* fl = nullptr,
                                const TerrainData* td = nullptr) {
     if (fl && td) {
-        const FeatureType ft = feature_of_place_kind(kind);
+        const FeatureType ft = feature_of_rooted_kind(kind);
         if (ft != FT_None) feature_put(*fl, *td, x, y, ft);
     }
     // ОСНОВАНИЕ ПОСЕЛЕНИЯ ПРОГОНЯЕТ ЗВЕРЬЁ (M-371): одна запись в ПОЛЕ
     // фауны через его дверь — событие мира при рождении, а не связь рода с
     // фауной в живом мире (колонки fauna* рода мертвы; поле дальше живёт
     // само: рост может вернуть пару голов к стенам — это антураж, не дефект).
-    if (place_is_settlement(kind)) fauna_field_write(gs, x, y, 0);
+    if (rooted_is_settlement(kind)) fauna_field_write(gs, x, y, 0);
     const MacroHandle h = store_birth(st);
     if (!st.valid(h)) return h;   // отказ капа уже прозвучал вслух
     const int id = int(h.id);     // ординал выдала дверь рождения (M-220)
@@ -105,7 +105,7 @@ inline MacroHandle birth_place(GameState& gs, MacroStore& st, SquadType kind,
     // уже истинно» ставит цель спавн сквада в `src/app/smoke.cpp`.
     //
     // `what` = 0 НАРОЧНО: это `GoalKind::None` с ординалом 0, поэтому
-    // `AiView::goal_place@src/macro/npc_ai.cpp` отвечает `kMacroNoSlot` и
+    // `AiView::goal_rooted@src/macro/npc_ai.cpp` отвечает `kMacroNoSlot` и
     // целью-МЕСТОМ эту запись не примет никто. А если какая-то система даст
     // месту ДРУГУЮ цель, `at_goal` честно станет ложным и место честно
     // начнёт платить за марш — это не конфликт за колонку, а верная

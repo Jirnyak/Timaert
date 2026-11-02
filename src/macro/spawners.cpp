@@ -4,7 +4,7 @@
 #include "tables/biomes.h"
 #include "tables/items.h"          // вес рода шахты = 1/стоимость выхода
 #include "macro/macro_stock.h"      // MacroWorld — the registry's context
-#include "macro/features.h"   // place_kind_of_feature — занята ли клетка местом
+#include "macro/features.h"   // rooted_kind_of_feature — занята ли клетка местом
 #include "macro/settlement_score.h" // kSettlementReach — the home-field box
 #include "macro/pathfinding.h"
 #include "macro/resource_field.h"
@@ -473,8 +473,8 @@ namespace sm
     // spiral is the nearest-TARGET choice for the place row.
     int trace_dirt_roads(FeatureLayer &features, const TerrainData &td,
                          const std::vector<VillageRoadSite> &villages,
-                         const std::vector<RoadSite> &places,
-                         int placeReach,
+                         const std::vector<RoadSite> &rootedSites,
+                         int rootedReach,
                          const TreeLayer *treeLayer)
     {
         const std::size_t totalCells = td.cell_count();
@@ -564,12 +564,12 @@ namespace sm
                     if (v.hasCity)
                         lay(vx, vy, wrap_axis(v.cityX, W), wrap_axis(v.cityY, H));
                     break;
-                case RoadLink::VillageNearestPlace:
+                case RoadLink::VillageNearestRooted:
                 {
                     // Nearest-target CHOICE (the spiral's surviving job);
                     // torus Chebyshev, ties to the earlier row.
-                    int bestD = placeReach, bx = -1, by = -1;
-                    for (const RoadSite &lm : places)
+                    int bestD = rootedReach, bx = -1, by = -1;
+                    for (const RoadSite &lm : rootedSites)
                     {
                         const int lx = wrap_axis(lm.x, W);
                         const int ly = wrap_axis(lm.y, H);
@@ -806,12 +806,12 @@ namespace sm
                 frontier.pop_back();
                 const std::int32_t units = deposits.cells.at_index(c);
                 // Занятость судится КОЛОНКОЙ строки места, а не списком имён
-                // байтов: обратная дверь `place_kind_of_feature` отвечает
+                // байтов: обратная дверь `rooted_kind_of_feature` отвечает
                 // «чьё это место, если на клетке такой байт», и `None` у неё
                 // значит «местом клетка не занята» (ЗАКОН СТРОКИ КАТАЛОГА —
                 // новый род места закрывает клетку сам, без правки здесь).
                 if (units > peakUnits
-                    && place_kind_of_feature(fl.at(c)) == SquadType::None) {
+                    && rooted_kind_of_feature(fl.at(c)) == SquadType::None) {
                     peakUnits = units;
                     peak = c;
                 }

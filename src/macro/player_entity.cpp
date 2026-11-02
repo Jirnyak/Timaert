@@ -2,7 +2,7 @@
 #include "ecs/components.h"
 #include "ecs/npc_character.h"
 #include "macro/entry_context.h"
-#include "macro/place_iter.h"   // for_each_place — места по слотам
+#include "macro/rooted_iter.h"   // for_each_rooted — места по слотам
 #include "tables/faction.h"
 #include "tables/npc.h"
 #include "macro/spell_book_state.h"
@@ -80,7 +80,7 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
         // `politik.cities[0]`. Второго списка городов у мира больше нет —
         // план умер вместе с генезисом.
         bool cityFound = false;
-        for_each_place(st, [&](std::uint16_t slot) {
+        for_each_rooted(st, [&](std::uint16_t slot) {
             if (cityFound) return;
             if (SquadType(st.runtime[slot].squadType) != SquadType::City)
                 return;

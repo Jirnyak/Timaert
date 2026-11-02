@@ -83,9 +83,9 @@ sm::sub::CellContext meadow_cell(int cx, int cy) {
     c.macroHeight = 0.62f;
     c.biome = sm::Biome::Meadow;
     c.feature = sm::FT_None;
-    c.place.id = -1;
-    c.place.size = 0;
-    c.place.kind = sm::SquadType::None;
+    c.rooted.id = -1;
+    c.rooted.size = 0;
+    c.rooted.kind = sm::SquadType::None;
     c.seed = 0x24680000u
         ^ sm::sub::cell_seed(0u, cx, cy);
     return c;
@@ -103,7 +103,7 @@ std::vector<SpawnRecord> expected_cell_fauna(
     int ox,
     int oy,
     std::uint32_t seed,
-    int placePop) {
+    int rootedPop) {
 
     const int originX = (ox + 1) * sm::sub::kCellSize;
     const int originY = (oy + 1) * sm::sub::kCellSize;
@@ -121,9 +121,9 @@ std::vector<SpawnRecord> expected_cell_fauna(
 
     // No context markup: a creature is its ROW and its own level (CANON.md S12).
     // The settlement's √(pop/100) bonus and the zone's +level / ×1.18 hp+damage
-    // died 2026-08-20 — and `placePop` stays a parameter precisely so this
+    // died 2026-08-20 — and `rootedPop` stays a parameter precisely so this
     // mirror keeps proving it changes NOTHING about a body.
-    (void)placePop;
+    (void)rootedPop;
 
     const auto& tiles = mgr.tiles();
     const bool tilesUsable =
@@ -324,7 +324,7 @@ void spawn_cell_at(sm::sub::SubObjects& objs,
                              ox, oy, c.seed, /*worldSeed*/c.seed,
                              std::uint16_t(sm::faction_index("empire")),
                              0,
-/*placeSubjectId*/-1,
+/*rootedSubjectId*/-1,
                              /*macroCellX*/0, /*macroCellY*/0,
                              /*faunaCount*/-1, /*garrison*/nullptr,
                              sm::world_time_at(1, 12, 0));
@@ -478,7 +478,7 @@ bool run_population_does_not_scale_bodies_case(
                                  /*worldSeed*/0xFACEB00Cu,
                                  std::uint16_t(sm::faction_index("empire")),
                                  t.pop,
-                                 /*placeSubjectId*/-1,
+                                 /*rootedSubjectId*/-1,
                                  /*macroCellX*/0, /*macroCellY*/0,
                                  /*faunaCount: клетка города вычищена полем (M-371)*/0, &homeSouls,
                                  sm::world_time_at(1, 12, 0));

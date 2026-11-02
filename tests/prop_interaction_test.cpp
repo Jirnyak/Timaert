@@ -98,13 +98,13 @@ CellContext make_city_ctx(std::uint32_t seed) {
     ctx.biome = Meadow;
     // ФИЧА ЕСТЬ КЛЮЧ МОДУЛЯ (вердикт владельца 2026-10-28), а клетка с
     // местом БЕЗ фичи — пара, которой генератор не рождает никогда
-    // (`birth_place@src/macro/place_birth.h` штампует фичу рода ДО тела).
+    // (`birth_squad@src/macro/birth_squad.h` штампует фичу рода ДО тела).
     // Здесь стоял `FT_None`, и ложь была бесплатной ровно пока ключом был
     // род места.
     ctx.feature = FT_City;
-    ctx.place.id = 101;
-    ctx.place.size = 2000;
-    ctx.place.kind = SquadType::City;
+    ctx.rooted.id = 101;
+    ctx.rooted.size = 2000;
+    ctx.rooted.kind = SquadType::City;
     ctx.seed = seed;
     return ctx;
 }
@@ -116,8 +116,8 @@ CellContext make_house_ctx(float footHx, float footHy, std::int8_t level) {
     ctx.macroHeight = 0.62f;
     ctx.biome = Meadow;
     ctx.feature = FT_None;
-    ctx.place.id = -1;
-    ctx.place.size = 0;
+    ctx.rooted.id = -1;
+    ctx.rooted.size = 0;
     ctx.seed = 0xD00DCAFEu;
     ctx.dungeon.kind = DungeonRef::House;
     ctx.dungeon.level = level;
@@ -462,8 +462,8 @@ void test_revisit_is_regeneration() {
     ctx.macroHeight = 0.58f;
     ctx.biome = Meadow;
     ctx.feature = FT_None;
-    ctx.place.id = -1;
-    ctx.place.size = 0;
+    ctx.rooted.id = -1;
+    ctx.rooted.size = 0;
     ctx.seed = 0x7A1DF00Du;
 
     // ОБА СЧЁТА НИЖЕ ЛЕСНОГО ПОРОГА И БЕРУТСЯ ИЗ ТАБЛИЦЫ, а не с потолка:

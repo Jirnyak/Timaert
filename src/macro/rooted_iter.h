@@ -32,14 +32,14 @@
 // сборку, что и произошло: имя в комментарии и предмет включения разошлись
 // (ЗАКОН ИМЕНИ п.4 — что код ДЕЛАЕТ, сильнее того, как он назван).
 #include "macro/store.h"            // MacroStore, kUnifiedCap — обход слотами
-#include "tables/squad_type.h"      // kPlaceYieldOrder — закон клетки
+#include "tables/squad_type.h"      // kRootedYieldOrder — закон клетки
 #include "macro/macro_world.h"   // конверт слоёв — вход визитора (п.8)
 #include "macro/spires.h"   // spire_orb — ОДИН вывод об орбе (M-233 п.8)
 #include "macro/state.h"
 
 namespace sm {
 
-struct PlaceView {
+struct RootedView {
     SquadType type;
     int  id;          // WORLD-unique subject ordinal (M-37: один эмитент
                       // на сквады и места — nextMacroSpawnOrdinal; «id
@@ -63,20 +63,20 @@ struct PlaceView {
                            // этого вывода перестал быть с M-233 п.8
 };
 
-// (kPlaceYieldOrder живёт у ОСИ РОДА, `tables/squad_type.h`: сетке мест
+// (kRootedYieldOrder живёт у ОСИ РОДА, `tables/squad_type.h`: сетке мест
 // нужен тот же закон приоритета клетки, а итератора она тянуть не должна —
 // флип M-90 отправил паству в ТЕЛО места, и этот файл теперь тащит store.
 // Адрес «place_registry.h» был ложью ещё до сноса файла: порядок уехал к оси
 // раньше самого реестра.)
 
 // ── ОБХОД МЕСТ — СЛОТЫ ПО ОСИ РОДА (ломтик F: штабель строк умер) ────────
-// «Все места мира» = живые слоты store с архетипом Place. Проход капом,
+// «Все места мира» = живые слоты store с архетипом Rooted. Проход капом,
 // а не населением (ЗАКОН СТАБИЛЬНОСТИ: структурная цена — константа).
 template <class F>
-void for_each_place(const MacroStore& st, F&& fn) {
+void for_each_rooted(const MacroStore& st, F&& fn) {
     for (std::uint32_t slot = 0; slot < kUnifiedCap; ++slot) {
         if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
-        if (squad_archetype(SquadType(st.runtime[slot].squadType)) != SquadArchetype::Place)
+        if (squad_archetype(SquadType(st.runtime[slot].squadType)) != SquadArchetype::Rooted)
             continue;
         fn(std::uint16_t(slot));
     }
@@ -89,11 +89,11 @@ void for_each_place(const MacroStore& st, F&& fn) {
 // назван числом. Тела мест по-прежнему колонки `*w.store` (M-90 шаг 5).
 // Пустой конверт законен: нет мира — обход пуст, нулевой вклад S6.
 template <class F>
-void for_each_place_view(const MacroWorld& w, F&& fn) {
+void for_each_rooted_view(const MacroWorld& w, F&& fn) {
     if (!w.gs || !w.store) return;
     const GameState& gs = *w.gs;
     const MacroStore& st = *w.store;
-    for (SquadType t : kPlaceYieldOrder) {
+    for (SquadType t : kRootedYieldOrder) {
         for (std::uint32_t slot = 0; slot < kUnifiedCap; ++slot) {
             if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
             if (SquadType(st.runtime[slot].squadType) != t) continue;
@@ -115,7 +115,7 @@ void for_each_place_view(const MacroWorld& w, F&& fn) {
             // ПОЛЯ НАЗЫВАЮТСЯ, А НЕ СЧИТАЮТСЯ (DOD п.9): позиционная
             // инициализация и есть та форма, в которой переименование
             // колонки проходит МОЛЧА — ровно его тут и делали (M-324).
-            fn(PlaceView{.type = t,
+            fn(RootedView{.type = t,
                          .id = int(st.spawnId[slot].index),
                          .x = x,
                          .y = y,
@@ -129,6 +129,6 @@ void for_each_place_view(const MacroWorld& w, F&& fn) {
 // (`stamp_settlement_features` УНИЧТОЖЕН 2026-10-23, вердикт «фичи делают
 // 1 раз ПРИ ГЕНЕРАЦИИ МИРА»: он выводил слой фич ИЗ ТЕЛ сквадов — обратное
 // направление. Фичу рода ставит дверь рождения места в момент выбора клетки
-// (`birth_place@src/macro/place_birth.h`, колонка `kind` строки фичи).)
+// (`birth_squad@src/macro/birth_squad.h`, колонка `kind` строки фичи).)
 
 } // namespace sm

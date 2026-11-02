@@ -11,8 +11,8 @@
 #include "macro/labour.h"   // souls_flock — паства места
 
 #include "macro/npc_ai.h"
-#include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
-#include "macro/squad.h"         // place_handle_by_ordinal — резолв места
+#include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
+#include "macro/squad.h"         // rooted_handle_by_ordinal — резолв места
 #include "macro/world_row.h"
 #include "macro/map_generator.h"
 #include "macro/recovery.h"
@@ -37,7 +37,7 @@ namespace {
 // ОРДИНАЛ, потому что дом сквада называется именно им.
 int push_settlement(sm::GameState& gs, sm::MacroStore& st, int x, int y) {
     const sm::MacroHandle h =
-        sm::birth_place(gs, st, sm::SquadType::City, x, y, 0, "Test");
+        sm::birth_squad(gs, st, sm::SquadType::City, x, y, 0, "Test");
     sm::settle_souls(gs, st, h.slot, 1000);
     return int(st.spawnId[h.slot].index);
 }
@@ -106,9 +106,9 @@ bool targets(const sm::MacroStore& st, sm::MacroHandle e, float x, float y,
 }
 
 // Ординал места из «чего ищу» цели (род Place), 0 = не место.
-int goal_place(const sm::MacroStore& st, sm::MacroHandle e) {
+int goal_rooted(const sm::MacroStore& st, sm::MacroHandle e) {
     const sm::ecs::SquadGoal& g = st.goal[e.slot];
-    return sm::ecs::goal_kind(g.what) == sm::ecs::GoalKind::Place
+    return sm::ecs::goal_kind(g.what) == sm::ecs::GoalKind::Rooted
         ? int(sm::ecs::goal_ordinal(g.what)) : 0;
 }
 
@@ -187,7 +187,7 @@ void test_trader_targets_other_settlement() {
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     CHECK(in_state(rt, sm::NPCState::Traveling),
           "a Trader standing at home sets out");
-    CHECK(goal_place(st, e) == awayId,
+    CHECK(goal_rooted(st, e) == awayId,
           "a Trader trades AWAY from home: never its own settlement");
     CHECK(targets(st, e, 40.0f, 10.0f),
           "the Trader's target cell is the chosen settlement's cell");
@@ -213,7 +213,7 @@ void test_nomad_excludes_current_target() {
     // «Стою у standing» — прежний ординал несёт сама цель (род Place).
     sm::ecs::goal_set(st.goal[e.slot],
                       sm::ecs::cell_index(40, 10, 128),
-                      sm::ecs::goal_what(sm::ecs::GoalKind::Place,
+                      sm::ecs::goal_what(sm::ecs::GoalKind::Rooted,
                                          std::uint32_t(standingId)),
                       0, std::uint8_t(sm::NPCState::Idle));
 
@@ -223,7 +223,7 @@ void test_nomad_excludes_current_target() {
 
     CHECK(in_state(rt, sm::NPCState::Traveling),
           "a Nomad that arrived picks a new leg immediately");
-    CHECK(goal_place(st, e) == firstId,
+    CHECK(goal_rooted(st, e) == firstId,
           "a Nomad never re-picks the settlement it is already standing at");
     CHECK(targets(st, e, 10.0f, 10.0f),
           "the Nomad's target cell follows the settlement it chose");

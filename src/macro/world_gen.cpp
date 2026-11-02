@@ -15,7 +15,7 @@
 #include "macro/deposit_layer.h"
 #include "macro/knowledge.h"
 #include "macro/squad_index.h"
-#include "macro/place_iter.h"
+#include "macro/rooted_iter.h"
 #include "macro/map_generator.h"
 #include "macro/npc_ai.h"
 #include "macro/npc_spawn.h"
@@ -44,13 +44,13 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // Места генезиса — слоты ЭТОГО массива (ломтик F): всякий вопрос «где
     // стоят города/деревни/шпили» задаётся ему, а не отдельному списку.
     MacroStore& st = *out.store;
-    const auto place_x = [&](std::uint16_t s) {
+    const auto rooted_x = [&](std::uint16_t s) {
         return ecs::cell_x(st.cell[s], gs.mapW);
     };
-    const auto place_y = [&](std::uint16_t s) {
+    const auto rooted_y = [&](std::uint16_t s) {
         return ecs::cell_y(st.cell[s], gs.mapW);
     };
-    const auto place_kind = [&](std::uint16_t s) {
+    const auto rooted_kind = [&](std::uint16_t s) {
         return SquadType(st.runtime[s].squadType);
     };
 
@@ -135,7 +135,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
                          p.targetTotalCities, &siteCtx);
     snap_cities_to_land(cityPlan, *out.terrain);
     finalize_politik(cityPlan, gs.cellOwner, gs.mapW, gs.mapH, *out.terrain);
-    populate_places_from_politik(gs, *out.store, cityPlan, *out.terrain,
+    populate_rooted_from_politik(gs, *out.store, cityPlan, *out.terrain,
                                     *out.treeLayer, *out.deposits,
                                     *out.features);
     if (p.trace) {
@@ -147,15 +147,15 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         // нести информацию и показывала бы ровно 100 % всегда.
         int nearWater = 0, nearDeposit = 0;
         std::vector<std::uint16_t> cityRows, villageRows;
-        for_each_place(st, [&](std::uint16_t slot) {
-            if (place_kind(slot) == SquadType::City)
+        for_each_rooted(st, [&](std::uint16_t slot) {
+            if (rooted_kind(slot) == SquadType::City)
                 cityRows.push_back(slot);
-            else if (place_kind(slot) == SquadType::Village)
+            else if (rooted_kind(slot) == SquadType::Village)
                 villageRows.push_back(slot);
         });
         for (std::uint16_t vs : villageRows) {
             bool water = false, deposit = false;
-            const std::uint32_t vIdx = cell_of(place_x(vs), place_y(vs),
+            const std::uint32_t vIdx = cell_of(rooted_x(vs), rooted_y(vs),
                                                gs.mapW);
             for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy)
                 for (int dx = -kSettlementReach; dx <= kSettlementReach;
@@ -189,8 +189,8 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
             for (std::uint16_t os : villageRows) {
                 if (os == vs || suzerain_of(st, os) != suzerain_of(st, vs))
                     continue;
-                const int dx = std::abs(place_x(vs) - place_x(os));
-                const int dy = std::abs(place_y(vs) - place_y(os));
+                const int dx = std::abs(rooted_x(vs) - rooted_x(os));
+                const int dy = std::abs(rooted_y(vs) - rooted_y(os));
                 const int ddx = std::min(dx, gs.mapW - dx);
                 const int ddy = std::min(dy, gs.mapH - dy);
                 nearest = std::min(nearest, std::max(ddx, ddy));
@@ -244,9 +244,9 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
 
     std::vector<ZoneSeed> zsCities, zsVills;
     for (auto& c : cityPlan) zsCities.push_back({c.x, c.y});
-    for_each_place(st, [&](std::uint16_t slot) {
-        if (place_kind(slot) == SquadType::Village)
-            zsVills.push_back({place_x(slot), place_y(slot)});
+    for_each_rooted(st, [&](std::uint16_t slot) {
+        if (rooted_kind(slot) == SquadType::Village)
+            zsVills.push_back({rooted_x(slot), rooted_y(slot)});
     });
     *out.zones = generate_zones(gs.mapW, gs.mapH, gs.worldSeed,
                                 zsCities, zsVills, *out.features,
@@ -254,7 +254,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
 
     // Spires need the zone field (their placement law), so they are the one
     // place born after generate_zones rather than in
-    // populate_places_from_politik. One spire per registered spell; a load
+    // populate_rooted_from_politik. One spire per registered spell; a load
     // restores every place as a record of the macro-squad block
     // (boot_world_from_save), spires with everything else — one population,
     // one block, no creatures of its own (ломтик F).
@@ -273,25 +273,25 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         // ломтиком F, тот же закон свежести: генезис, перепёк, драйв).
         // (Перештамп фич из тел УМЕР 2026-10-23, вердикт «фичи делают 1 раз
         // при генерации»: фичу рода ставит дверь рождения места В МОМЕНТ
-        // ВЫБОРА клетки — birth_place, колонка kind@src/macro/features.h.)
+        // ВЫБОРА клетки — birth_squad, колонка kind@src/macro/features.h.)
         build_squad_index(*out.squadIndex, st, gs.mapW, gs.mapH);
         if (p.trace) {
             // The placement report card: every spell offered, every spire in
             // the wild band, and a spread that reads "scattered", not "heap".
             int zoneMin = 9, zoneMax = 0, minPair = gs.mapW + gs.mapH;
             std::vector<std::uint16_t> spireRows;
-            for_each_place(st, [&](std::uint16_t slot) {
-                if (place_kind(slot) == SquadType::Spire)
+            for_each_rooted(st, [&](std::uint16_t slot) {
+                if (rooted_kind(slot) == SquadType::Spire)
                     spireRows.push_back(slot);
             });
             for (std::uint16_t ss : spireRows) {
-                const int z = int(out.zones->at(place_x(ss), place_y(ss)));
+                const int z = int(out.zones->at(rooted_x(ss), rooted_y(ss)));
                 zoneMin = std::min(zoneMin, z);
                 zoneMax = std::max(zoneMax, z);
                 for (std::uint16_t os : spireRows) {
                     if (os == ss) continue;
-                    const int dx = std::abs(place_x(ss) - place_x(os));
-                    const int dy = std::abs(place_y(ss) - place_y(os));
+                    const int dx = std::abs(rooted_x(ss) - rooted_x(os));
+                    const int dy = std::abs(rooted_y(ss) - rooted_y(os));
                     const int ddx = std::min(dx, gs.mapW - dx);
                     const int ddy = std::min(dy, gs.mapH - dy);
                     minPair = std::min(minPair, std::max(ddx, ddy));
@@ -314,33 +314,33 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // highways; a village with no reachable target honestly gets no lane.
     {
         std::vector<VillageRoadSite> villageSites;
-        for_each_place(st, [&](std::uint16_t slot) {
-            if (place_kind(slot) != SquadType::Village) return;
+        for_each_rooted(st, [&](std::uint16_t slot) {
+            if (rooted_kind(slot) != SquadType::Village) return;
             VillageRoadSite site{};
-            site.x = place_x(slot);
-            site.y = place_y(slot);
-            const MacroHandle s = place_handle_by_ordinal(
+            site.x = rooted_x(slot);
+            site.y = rooted_y(slot);
+            const MacroHandle s = rooted_handle_by_ordinal(
                 st, std::uint32_t(suzerain_of(st, slot)));
-            if (st.valid(s) && place_kind(s.slot) == SquadType::City) {
-                site.cityX = place_x(s.slot);
-                site.cityY = place_y(s.slot);
+            if (st.valid(s) && rooted_kind(s.slot) == SquadType::City) {
+                site.cityX = rooted_x(s.slot);
+                site.cityY = rooted_y(s.slot);
                 site.hasCity = true;
             }
             villageSites.push_back(site);
         });
-        std::vector<RoadSite> placeSites;
-        for_each_place(st, [&](std::uint16_t slot) {
-            if (place_kind(slot) == SquadType::Spire)
-                placeSites.push_back({place_x(slot), place_y(slot)});
+        std::vector<RoadSite> rootedSites;
+        for_each_rooted(st, [&](std::uint16_t slot) {
+            if (rooted_kind(slot) == SquadType::Spire)
+                rootedSites.push_back({rooted_x(slot), rooted_y(slot)});
         });
         // Reach comes from THE distance law of the settled world
         // (politik.h derive_city_spacing) — one city spacing, not a magic
         // radius: a village's world ends about where the next town's begins.
-        const int placeReach = derive_city_spacing(
+        const int rootedReach = derive_city_spacing(
             out.terrain, gs.mapW, gs.mapH, int(cityPlan.size()));
         const int dirtStamped = trace_dirt_roads(
-            *out.features, *out.terrain, villageSites, placeSites,
-            placeReach, out.treeLayer);
+            *out.features, *out.terrain, villageSites, rootedSites,
+            rootedReach, out.treeLayer);
         if (p.trace) {
             std::size_t stoneCells = 0, dirtCells = 0, bridgeCells = 0;
             int bridgeX = -1, bridgeY = -1; // first span, for MACROPOS repros
@@ -382,7 +382,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
                          "bridge cells=%zu first_bridge=%d,%d "
                          "fork_bridge=%d,%d stamped=%d reach=%d\n",
                          stoneCells, dirtCells, bridgeCells, bridgeX, bridgeY,
-                         forkX, forkY, dirtStamped, placeReach);
+                         forkX, forkY, dirtStamped, rootedReach);
             std::fflush(stderr);
         }
     }
@@ -392,10 +392,10 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // villages' grain deposit for the economy loop.
     {
         std::vector<FieldSite> fieldSites;
-        for_each_place(st, [&](std::uint16_t slot) {
-            if (place_kind(slot) == SquadType::Village)
-                fieldSites.push_back(FieldSite{place_x(slot),
-                                               place_y(slot)});
+        for_each_rooted(st, [&](std::uint16_t slot) {
+            if (rooted_kind(slot) == SquadType::Village)
+                fieldSites.push_back(FieldSite{rooted_x(slot),
+                                               rooted_y(slot)});
         });
         stamp_field_features(*out.features, siteCtx.w, fieldSites);
     }

@@ -423,8 +423,8 @@ int main() {
     // Forest is a COUNT class now (macro/tree_layer.h): a massif-interior
     // count drives Forest mode, no feature byte involved.
     ctx.treeCount = kMaxTreesPerCell;
-    ctx.place.id = -1;
-    ctx.place.size = 0;
+    ctx.rooted.id = -1;
+    ctx.rooted.size = 0;
     ctx.seed = 0x12345678u;
 
     float nbH[9];
@@ -525,9 +525,9 @@ int main() {
     grassTrail.macroHeight = 0.62f;
     grassTrail.biome = Meadow;
     grassTrail.feature = FT_None;
-    grassTrail.place.id = -1;
-    grassTrail.place.size = 0;
-    grassTrail.place.kind = SquadType::None;
+    grassTrail.rooted.id = -1;
+    grassTrail.rooted.size = 0;
+    grassTrail.rooted.kind = SquadType::None;
     grassTrail.seed = 0x51525354u;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
     nbF[3] = std::uint8_t(FT_Road);
@@ -567,9 +567,9 @@ int main() {
     swampTrail.macroHeight = 0.57f;
     swampTrail.biome = Swamp;
     swampTrail.feature = FT_None;
-    swampTrail.place.id = -1;
-    swampTrail.place.size = 0;
-    swampTrail.place.kind = SquadType::None;
+    swampTrail.rooted.id = -1;
+    swampTrail.rooted.size = 0;
+    swampTrail.rooted.kind = SquadType::None;
     swampTrail.seed = 0x71727374u;
     fill_flat_neighbors(nbH, nbB, nbF, Swamp, FT_None);
     nbF[5] = std::uint8_t(FT_Road);
@@ -589,9 +589,9 @@ int main() {
     mountainTrail.macroHeight = 0.84f;
     mountainTrail.biome = Mountain;   // elevation-classified biome, not a feature
     mountainTrail.feature = FT_None;
-    mountainTrail.place.id = -1;
-    mountainTrail.place.size = 0;
-    mountainTrail.place.kind = SquadType::None;
+    mountainTrail.rooted.id = -1;
+    mountainTrail.rooted.size = 0;
+    mountainTrail.rooted.kind = SquadType::None;
     mountainTrail.seed = 0x81828384u;
     fill_flat_neighbors(nbH, nbB, nbF, Mountain, FT_None);
     nbF[1] = std::uint8_t(FT_Road);
@@ -612,14 +612,14 @@ int main() {
     spire.biome = Meadow;
     // ПОСЛЕДНИЙ ЛЖЕЦ ЭТОГО ТЕСТА (см. заметку ниже, у фикстуры руины): здесь
     // стоял `FT_None` при роде `Spire`, то есть клетка без фичи с местом на
-    // ней — пара, которой генератор не рождает НИ РАЗУ (`birth_place` штампует
+    // ней — пара, которой генератор не рождает НИ РАЗУ (`birth_squad` штампует
     // фичу рода ДО тела). Трое соседей по тесту были поправлены 2026-10-26,
     // шпиль пропустили, и ложь оставалась бесплатной ровно пока ключом модуля
     // был род места. Теперь ключ — ФИЧА, и фикстура обязана быть честной.
     spire.feature = FT_Spire;
-    spire.place.id = 77;
-    spire.place.size = 0;
-    spire.place.kind = SquadType::Spire;
+    spire.rooted.id = 77;
+    spire.rooted.size = 0;
+    spire.rooted.kind = SquadType::Spire;
     spire.seed = 0x2468ACE0u;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
@@ -953,9 +953,9 @@ int main() {
     // (`features_link@src/sub/gens/kit/streets.h`), и клетка с нулём не связана
     // ни с чем по построению.
     ruin.feature = FT_Ruin;
-    ruin.place.id = 88;
-    ruin.place.size = 4;
-    ruin.place.kind = SquadType::Ruin;
+    ruin.rooted.id = 88;
+    ruin.rooted.size = 4;
+    ruin.rooted.kind = SquadType::Ruin;
     ruin.seed = 0x13579BDFu;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
@@ -1008,9 +1008,9 @@ int main() {
     city.macroHeight = 0.64f;
     city.biome = Meadow;
     city.feature = FT_City;      // см. заметку о фикстурах-лжецах выше
-    city.place.id = 101;
-    city.place.size = 6000;
-    city.place.kind = SquadType::City;
+    city.rooted.id = 101;
+    city.rooted.size = 6000;
+    city.rooted.kind = SquadType::City;
     city.seed = 0x0BADF00Du;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
@@ -1080,9 +1080,9 @@ int main() {
     village.macroHeight = 0.59f;
     village.biome = Meadow;
     village.feature = FT_Village;  // см. заметку о фикстурах-лжецах выше
-    village.place.id = 202;
-    village.place.size = 120;
-    village.place.kind = SquadType::Village;
+    village.rooted.id = 202;
+    village.rooted.size = 120;
+    village.rooted.kind = SquadType::Village;
     village.seed = 0x00C0FFEEu;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
@@ -1144,9 +1144,9 @@ int main() {
     road.macroHeight = 0.35f;
     road.biome = Water;
     road.feature = FT_Road;
-    road.place.id = -1;
-    road.place.size = 0;
-    road.place.kind = SquadType::None;
+    road.rooted.id = -1;
+    road.rooted.size = 0;
+    road.rooted.kind = SquadType::None;
     road.seed = 0x10203040u;
     fill_flat_neighbors(nbH, nbB, nbF, Water, FT_Road);
     // Honest water: a Water-biome cell's macro height sits BELOW the macro
@@ -1366,9 +1366,9 @@ int main() {
     grass.macroHeight = 0.62f;
     grass.biome = Meadow;
     grass.feature = FT_None;
-    grass.place.id = -1;
-    grass.place.size = 0;
-    grass.place.kind = SquadType::None;
+    grass.rooted.id = -1;
+    grass.rooted.size = 0;
+    grass.rooted.kind = SquadType::None;
     grass.seed = 0xAABBCCDDu;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
@@ -1446,9 +1446,9 @@ int main() {
     water.macroHeight = 0.28f;
     water.biome = Water;
     water.feature = FT_None;
-    water.place.id = -1;
-    water.place.size = 0;
-    water.place.kind = SquadType::None;
+    water.rooted.id = -1;
+    water.rooted.size = 0;
+    water.rooted.kind = SquadType::None;
     water.seed = 0x31415926u;
     fill_flat_neighbors(nbH, nbB, nbF, Water, FT_None);
     for (float& h : nbH) h = water.macroHeight;
@@ -1520,9 +1520,9 @@ int main() {
     swamp.macroHeight = 0.56f;
     swamp.biome = Swamp;
     swamp.feature = FT_None;
-    swamp.place.id = -1;
-    swamp.place.size = 0;
-    swamp.place.kind = SquadType::None;
+    swamp.rooted.id = -1;
+    swamp.rooted.size = 0;
+    swamp.rooted.kind = SquadType::None;
     swamp.seed = 0x27182818u;
     fill_flat_neighbors(nbH, nbB, nbF, Swamp, FT_None);
 
@@ -1544,9 +1544,9 @@ int main() {
     mountain.macroHeight = 0.84f;
     mountain.biome = Mountain;   // elevation-classified biome, not a feature
     mountain.feature = FT_None;
-    mountain.place.id = -1;
-    mountain.place.size = 0;
-    mountain.place.kind = SquadType::None;
+    mountain.rooted.id = -1;
+    mountain.rooted.size = 0;
+    mountain.rooted.kind = SquadType::None;
     mountain.seed = 0x55667788u;
     fill_flat_neighbors(nbH, nbB, nbF, Mountain, FT_None);
 
@@ -1577,9 +1577,9 @@ int main() {
     field.macroHeight = 0.62f;
     field.biome = Meadow;
     field.feature = FT_Field;
-    field.place.id = -1;
-    field.place.size = 0;
-    field.place.kind = SquadType::None;
+    field.rooted.id = -1;
+    field.rooted.size = 0;
+    field.rooted.kind = SquadType::None;
     field.seed = 0xf1e1d001u;
     field.treeCount = 64;
     field.fertility01 = 0.70f;

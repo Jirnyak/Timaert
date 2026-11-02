@@ -109,7 +109,7 @@ void test_mine_does_not_eat_the_village() {
     CHECK(onTown == sm::FT_Village,
           "клетка деревни обязана остаться деревней — шахта не разрабатывает "
           "уже разрабатываемую клетку (ЗАКОН ПОЛЯ п.3)");
-    CHECK(sm::place_kind_of_feature(onTown) == sm::SquadType::Village,
+    CHECK(sm::rooted_kind_of_feature(onTown) == sm::SquadType::Village,
           "обратная дверь обязана по-прежнему узнавать в клетке деревню");
 
     // И ЧИСЛО — вторая половина закона, и она ВАЖНЕЕ байта: именно его
@@ -154,7 +154,7 @@ void test_the_closure_is_by_column_not_by_kind() {
     int closed = 0, open = 0;
     for (std::size_t i = 0; i < std::size_t(sm::FT_Count); ++i) {
         const sm::FeatureType ft = sm::FeatureType(i);
-        if (sm::place_kind_of_feature(ft) != sm::SquadType::None) ++closed;
+        if (sm::rooted_kind_of_feature(ft) != sm::SquadType::None) ++closed;
         else ++open;
     }
     CHECK(closed == 5,

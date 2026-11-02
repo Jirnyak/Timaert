@@ -13,8 +13,8 @@
 #include "macro/upkeep_window.h"   // upkeep_bill — счёт по таблице
 
 #include "macro/npc_ai.h"
-#include "macro/place_iter.h"  // for_each_place — перепись мест
-#include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
+#include "macro/rooted_iter.h"  // for_each_rooted — перепись мест
+#include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
 #include "macro/world_row.h"
 #include "macro/chronicle.h"
 #include "macro/econ_day.h"
@@ -128,7 +128,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store: склад
     // — его колонка, ординал выдаёт эмитент ВНУТРИ двери рождения.
     const sm::MacroHandle vil =
-        sm::birth_place(gs, st, SquadType::Village, 10, 10);
+        sm::birth_squad(gs, st, SquadType::Village, 10, 10);
     const int vilId = int(st.spawnId[vil.slot].index);
     // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в число фичи
     // фичи, головы в инвентарь ТЕЛА — тем же законом, что генезис.
@@ -200,11 +200,11 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     CHECK(layer.revision > 0,
           "the chop moved the grid revision - the map sprite and the save "
           "(which carries the grid whole) both see the stump");
-    int placeCount = 0;
-    sm::for_each_place(st,
-                       [&](std::uint16_t) { ++placeCount; });
+    int rootedCount = 0;
+    sm::for_each_rooted(st,
+                       [&](std::uint16_t) { ++rootedCount; });
     CHECK(st.inventory[vil.slot].inv.count("wood") > 0
-              && placeCount == 1,
+              && rootedCount == 1,
           "the village man hauls for the VILLAGE (no city even exists here)");
 
     // NEGATIVE CONTROL for the vein writer: the forest cell was felled to
@@ -243,7 +243,7 @@ void test_the_farmer_works_the_field() {
 
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
-        sm::birth_place(gs, st, SquadType::Village, 10, 10);
+        sm::birth_squad(gs, st, SquadType::Village, 10, 10);
     sm::MacroHandle h = sm::store_birth(st);
     sm::MacroHandle e = h;
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
@@ -319,7 +319,7 @@ void test_farmer_without_terrain_conjures_nothing() {
 
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
-        sm::birth_place(gs, st, SquadType::Village, 10, 10);
+        sm::birth_squad(gs, st, SquadType::Village, 10, 10);
     sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st.sub[h.slot] = {};   // доля клетки: центр (M-244a)
@@ -370,7 +370,7 @@ void test_no_layer_no_chop() {
     sm::MacroStore& st = *wStore_;
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
-        sm::birth_place(gs, st, SquadType::Village, 10, 10);
+        sm::birth_squad(gs, st, SquadType::Village, 10, 10);
     make_woodcutter(st, 10.0f, 10.0f,
                     int(st.spawnId[vil.slot].index));
     MacroNpcAiRuntime rt{};
@@ -413,7 +413,7 @@ void test_the_mine_runs_while_the_player_is_away() {
 
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
-        sm::birth_place(gs, st, SquadType::Village, 10, 10);
+        sm::birth_squad(gs, st, SquadType::Village, 10, 10);
     sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st.sub[h.slot] = {};   // доля клетки: центр (M-244a)
@@ -485,7 +485,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     // сколько нужно: следующее рождение его не двигает (вектор строк, чьё
     // движение протухало ссылкой, умер).
     const sm::MacroHandle city =
-        sm::birth_place(gs, st, SquadType::City, 10, 10);
+        sm::birth_squad(gs, st, SquadType::City, 10, 10);
     const int cityId = int(st.spawnId[city.slot].index);
     {
         sm::Inventory& row = st.inventory[city.slot].inv;
@@ -499,7 +499,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
         row.add("coin_timaert_copper", 40000);
     }
     const sm::MacroHandle vil =
-        sm::birth_place(gs, st, SquadType::Village, 16, 10);
+        sm::birth_squad(gs, st, SquadType::Village, 16, 10);
     const int vilId = int(st.spawnId[vil.slot].index);
     {
         sm::Inventory& row = st.inventory[vil.slot].inv;
@@ -546,7 +546,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     // ТОЙ ЖЕ дверью и в той же форме, какой его назовёт сам рейс, решив
     // следующее плечо: {клетка рынка, Place(ординал), 0, Working}.
     ecs::goal_set(st.goal[h.slot], st.cell[city.slot].idx,
-                  ecs::goal_what(ecs::GoalKind::Place,
+                  ecs::goal_what(ecs::GoalKind::Rooted,
                                  std::uint32_t(cityId)),
                   0, std::uint8_t(NPCState::Working));
     sm::store_rename_ordinal(st, h, 13u);
@@ -625,11 +625,11 @@ void test_the_vendor_sells_at_the_nearest_city() {
     CHECK(traded.n >= 1, "a completed exchange left a Traded fact");
     CHECK(traded.last.subject == std::uint32_t(vilId)
               && traded.last.subjectKind
-                     == std::uint8_t(FactSubject::Place),
+                     == std::uint8_t(FactSubject::Rooted),
           "the fact's subject is the home village whose vendor dealt");
     CHECK(traded.last.object == std::uint32_t(cityId)
               && traded.last.objectKind
-                     == std::uint8_t(FactSubject::Place),
+                     == std::uint8_t(FactSubject::Rooted),
           "the fact's object is the city it traded AT");
     CHECK(traded.last.amount > 0,
           "the deal's worth is real: table value of what changed hands");
@@ -658,7 +658,7 @@ void test_the_miner_works_the_vein() {
 
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
-        sm::birth_place(gs, st, SquadType::Village, 10, 10);
+        sm::birth_squad(gs, st, SquadType::Village, 10, 10);
     const int vilId = int(st.spawnId[vil.slot].index);
     sm::MacroHandle h = sm::store_birth(st);
     sm::MacroHandle e = h;
@@ -721,7 +721,7 @@ void test_the_miner_works_the_vein() {
           "one dead vein = ONE Drained fact, not one per haul");
     CHECK(drained.last.subject == std::uint32_t(vilId)
               && drained.last.subjectKind
-                     == std::uint8_t(FactSubject::Place),
+                     == std::uint8_t(FactSubject::Rooted),
           "the fact names the village whose man worked the vein out");
     CHECK(drained.last.x == 14 && drained.last.y == 10,
           "the fact stands on the vein's own cell");
@@ -738,7 +738,7 @@ void test_the_miner_works_the_vein() {
     // (ломтик F), и одно тело на два мира невыразимо. Деревня рождается
     // здесь заново, своим эмитентом.
     const sm::MacroHandle vil2 =
-        sm::birth_place(gs2, st2, SquadType::Village, 10, 10);
+        sm::birth_squad(gs2, st2, SquadType::Village, 10, 10);
     sm::MacroHandle h2 = sm::store_birth(st2);
     st2.cell[h2.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st2.sub[h2.slot] = {};   // доля клетки: центр (M-244a)
@@ -814,7 +814,7 @@ void test_the_catch_lands_as_creatures() {
 
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
-        sm::birth_place(gs, st, SquadType::Village, 10, 10);
+        sm::birth_squad(gs, st, SquadType::Village, 10, 10);
     // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в число фичи
     // фичи, головы в инвентарь ТЕЛА — тем же законом, что генезис.
     sm::settle_souls(gs, st, vil.slot, 40);

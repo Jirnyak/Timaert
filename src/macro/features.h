@@ -443,13 +443,13 @@ static_assert(sizeof(FeatureDef) == 40,
 // `SquadType::None` — «этот байт не ставит никакой род» (дорога, пашня,
 // мост, шахта, парцелла, пустая клетка); `feature_def` fail-open, поэтому
 // невалидный байт честно отвечает «никакой».
-inline constexpr SquadType place_kind_of_feature(FeatureType f) {
+inline constexpr SquadType rooted_kind_of_feature(FeatureType f) {
     return feature_def(f).kind;
 }
 
 // ── И ОБРАТНОЕ: КАКУЮ ФИЧУ СТАВИТ ЭТОТ РОД ───────────────────────────────
 // ОБХОД, и это правильная сторона платить: вопрос звучит РОВНО ОДИН РАЗ за
-// рождение сквада (`birth_place@src/macro/place_birth.h`), на руках у
+// рождение сквада (`birth_squad@src/macro/birth_squad.h`), на руках у
 // звонящего род, а не байт, и цена — O(строк таблицы фич), константа.
 // ВЫВЕДЕНА ИЗ ТЕХ ЖЕ СТРОК, А НЕ ВТОРЫМ СПИСКОМ: второй список был бы «у
 // двух таблиц один и тот же ключ» (DOD п.9) и разошёлся бы МОЛЧА в день,
@@ -457,7 +457,7 @@ inline constexpr SquadType place_kind_of_feature(FeatureType f) {
 // `SquadType::None` → `FT_None` названо ЯВНО, а не оставлено на порядок
 // строк: пустой род несут 13 строк из 18, и обход вернул бы ПЕРВУЮ из них —
 // сегодня это нулевой ряд, то есть верный ответ, но верный СЛУЧАЙНО.
-inline constexpr FeatureType feature_of_place_kind(SquadType k) {
+inline constexpr FeatureType feature_of_rooted_kind(SquadType k) {
     if (k == SquadType::None) return FT_None;   // нет рода — нет фичи
     for (const FeatureDef& d : kFeatureDefs)
         if (d.kind == k) return d.type;
@@ -479,15 +479,15 @@ inline constexpr FeatureType feature_of_place_kind(SquadType k) {
 static_assert([] {
     for (const FeatureDef& d : kFeatureDefs) {
         if (d.kind == SquadType::None) continue;
-        if (feature_of_place_kind(d.kind) != d.type) return false;      // (1)
+        if (feature_of_rooted_kind(d.kind) != d.type) return false;      // (1)
     }
     for (std::size_t i = 0; i < std::size_t(SquadType::Count); ++i) {
         const SquadType k = SquadType(i);
-        const FeatureType f = feature_of_place_kind(k);
-        if (f != FT_None && place_kind_of_feature(f) != k) return false; // (2)
+        const FeatureType f = feature_of_rooted_kind(k);
+        if (f != FT_None && rooted_kind_of_feature(f) != k) return false; // (2)
     }
-    return place_kind_of_feature(FT_None) == SquadType::None             // (3)
-        && feature_of_place_kind(SquadType::None) == FT_None;
+    return rooted_kind_of_feature(FT_None) == SquadType::None             // (3)
+        && feature_of_rooted_kind(SquadType::None) == FT_None;
 }(), "колонка `kind` обязана читаться в ОБЕ стороны: фича → род → фича и "
      "род → фича → род сходятся, и двух фич на одном роде не бывает");
 

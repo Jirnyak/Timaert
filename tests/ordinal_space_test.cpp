@@ -7,7 +7,7 @@
 //     Летопись писала неизвестного субъекта нулём с v54 — теперь это закон
 //     всех ординалов-идентичностей, и коллизия «первый сквад = никто»
 //     (spawnId начинался с 0) невозможна по построению.
-//  2. ОДНО ПРОСТРАНСТВО: место (birth_place, ординал из эмитента ВНУТРИ
+//  2. ОДНО ПРОСТРАНСТВО: место (birth_squad, ординал из эмитента ВНУТРИ
 //     двери) и сквад (spawn_squad → make_npc, единственная дверь рождения)
 //     тянут ОДИН счётчик; их номера строго различны и строго возрастают в
 //     порядке рождения. До M-37 счётчиков было два, и сквад не мог войти в
@@ -51,7 +51,7 @@
 
 #include "core/rng.h"
 #include "macro/npc_spawn.h"
-#include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
+#include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
 #include "macro/squad.h"         // резолв по ординалу: место и сквад
 #include "macro/squad_walk.h"    // SquadWalkEntry — порядок закона
 #include "macro/state.h"
@@ -86,7 +86,7 @@ TerrainData make_terrain(int w, int h) {
     return t;
 }
 
-void test_one_space_for_places_and_squads() {
+void test_one_space_for_rooted_and_squads() {
     GameState gs{};
     gs.mapW = 64; gs.mapH = 64;
     const TerrainData terrain = make_terrain(gs.mapW, gs.mapH);
@@ -95,7 +95,7 @@ void test_one_space_for_places_and_squads() {
     // Место — тем же жестом, что генезис (state.cpp/spires.cpp/ruins.cpp):
     // ординал эмитится ВНУТРИ двери, звонящий его не выбирает (ломтик F).
     const MacroHandle a =
-        birth_place(gs, *store, SquadType::Village, 1, 2);
+        birth_squad(gs, *store, SquadType::Village, 1, 2);
     CHECK(store->valid(a), "фикстура рождает своё место сама (§8 п.11)");
 
     // Сквад — единственной дверью рождения сквадов.
@@ -108,27 +108,27 @@ void test_one_space_for_places_and_squads() {
     const std::uint32_t squadOrdinal = store->spawnId[h.slot].index;
 
     // Второе место — после сквада.
-    const MacroHandle b = birth_place(gs, *store, SquadType::City, 5, 6);
+    const MacroHandle b = birth_squad(gs, *store, SquadType::City, 5, 6);
     CHECK(store->valid(b), "второе место родилось тем же жестом");
 
-    const int placeA = int(store->spawnId[a.slot].index);
-    const int placeB = int(store->spawnId[b.slot].index);
-    CHECK(placeA == 1 && squadOrdinal == 2u && placeB == 3,
+    const int rootedA = int(store->spawnId[a.slot].index);
+    const int rootedB = int(store->spawnId[b.slot].index);
+    CHECK(rootedA == 1 && squadOrdinal == 2u && rootedB == 3,
           "одно пространство: место, сквад, место — 1, 2, 3 из ОДНОГО "
           "эмитента, ни один номер не выдан дважды");
-    CHECK(placeA > 0 && squadOrdinal > 0u,
+    CHECK(rootedA > 0 && squadOrdinal > 0u,
           "нулевой ординал не выдаётся никому (0 = «никто»)");
 
     // Поиск по ординалу: резолв субъекта плюс ГЕЙТ ОСИ РОДА — после смерти
     // строки «это место?» отвечает только колонка тела.
-    CHECK(place_handle_by_ordinal(*store, std::uint32_t(placeA)).slot == a.slot
-              && place_handle_by_ordinal(*store,
-                                         std::uint32_t(placeB)).slot == b.slot,
-          "place_handle_by_ordinal находит оба места при номерах вперемешку "
+    CHECK(rooted_handle_by_ordinal(*store, std::uint32_t(rootedA)).slot == a.slot
+              && rooted_handle_by_ordinal(*store,
+                                         std::uint32_t(rootedB)).slot == b.slot,
+          "rooted_handle_by_ordinal находит оба места при номерах вперемешку "
           "со сквадами (плотности places[id-1] больше нет)");
-    CHECK(!store->valid(place_handle_by_ordinal(*store, 0u))
-              && !store->valid(place_handle_by_ordinal(*store, 0xFFFFFFFFu))
-              && !store->valid(place_handle_by_ordinal(*store, squadOrdinal)),
+    CHECK(!store->valid(rooted_handle_by_ordinal(*store, 0u))
+              && !store->valid(rooted_handle_by_ordinal(*store, 0xFFFFFFFFu))
+              && !store->valid(rooted_handle_by_ordinal(*store, squadOrdinal)),
           "«никто», небывалый и СКВАДНЫЙ номер местом не отвечают");
 }
 
@@ -141,9 +141,9 @@ void test_directory_cannot_lie() {
     gs.mapW = 64; gs.mapH = 64;
     auto store = make_macro_store();
     const MacroHandle lo =
-        birth_place(gs, *store, SquadType::Ruin, 1, 1);
+        birth_squad(gs, *store, SquadType::Ruin, 1, 1);
     const MacroHandle hi =
-        birth_place(gs, *store, SquadType::Ruin, 2, 2);
+        birth_squad(gs, *store, SquadType::Ruin, 2, 2);
     CHECK_OR_RETURN(store->valid(lo) && store->valid(hi),
                     "свидетель родил оба своих места сам (§8 п.11)");
     const std::uint32_t loOrd = store->spawnId[lo.slot].index;
@@ -175,11 +175,11 @@ void test_directory_cannot_lie() {
     // И ТА ЖЕ ПРОВЕРКА СНИМАЕТ УСТАРЕВШУЮ СТРОКУ: слот умер и переродился
     // под новым именем — старый ключ обязан отвечать «никого».
     store_reset(*store);
-    MacroHandle a = birth_place(gs, *store, SquadType::Ruin, 3, 3);
+    MacroHandle a = birth_squad(gs, *store, SquadType::Ruin, 3, 3);
     CHECK_OR_RETURN(store->valid(a), "свидетель родил своё место сам");
     const std::uint32_t aOrd = a.id;
     store_death(*store, a);
-    const MacroHandle b = birth_place(gs, *store, SquadType::Ruin, 3, 3);
+    const MacroHandle b = birth_squad(gs, *store, SquadType::Ruin, 3, 3);
     CHECK(store->valid(b) && b.slot == a.slot && b.id != aOrd,
           "freelist вернул тот же слот новому жильцу с новым именем");
     const MacroHandle ghost = macro_handle_by_spawn_id(*store, aOrd);
@@ -257,7 +257,7 @@ void test_directory_equals_an_honest_scan() {
 
 int main() {
     test_issue_starts_at_one();
-    test_one_space_for_places_and_squads();
+    test_one_space_for_rooted_and_squads();
     test_directory_cannot_lie();
     test_directory_equals_an_honest_scan();
     return sm::test::report("ordinal_space_test");

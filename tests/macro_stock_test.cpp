@@ -25,8 +25,8 @@
 #include "macro/macro_stock.h"
 #include "scene_objects_fixture.h"  // арена: квитанция — колонка слота (ломоть 4)
 #include "sub/spawn.h"            // stamp_macro_debt — дверь штампа (ломоть 4)
-#include "macro/place_iter.h"  // for_each_place — места по слотам
-#include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
+#include "macro/rooted_iter.h"  // for_each_rooted — места по слотам
+#include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
 #include "macro/squad.h"
 #include "macro/state.h"
 #include "macro/tree_layer.h"
@@ -105,7 +105,7 @@ World make_world() {
     gs.mapW = 64;
     gs.mapH = 64;
     {
-        const sm::MacroHandle h = sm::birth_place(
+        const sm::MacroHandle h = sm::birth_squad(
             gs, st, sm::SquadType::City, 10, 10, -1, "Testholm");
         wld.cityId = int(st.spawnId[h.slot].index);
         // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в число фичи
@@ -114,7 +114,7 @@ World make_world() {
         sm::settle_souls(gs, st, h.slot, 300);
     }
     {
-        const sm::MacroHandle h = sm::birth_place(
+        const sm::MacroHandle h = sm::birth_squad(
             gs, st, sm::SquadType::City, 30, 30, -1, "Neighbour");
         wld.otherId = int(st.spawnId[h.slot].index);
         sm::settle_souls(gs, st, h.slot, 300);
@@ -125,13 +125,13 @@ World make_world() {
     // guarded the register-bit crutch; the invariant now is that the id ALONE
     // bills the right place.
     {
-        const sm::MacroHandle h = sm::birth_place(
+        const sm::MacroHandle h = sm::birth_squad(
             gs, st, sm::SquadType::Village, 40, 40, -1, "Twinvale");
         wld.twinId = int(st.spawnId[h.slot].index);
         sm::settle_souls(gs, st, h.slot, 80);
     }
     {
-        const sm::MacroHandle h = sm::birth_place(
+        const sm::MacroHandle h = sm::birth_squad(
             gs, st, sm::SquadType::Village, 20, 20, -1, "Hamlet");
         wld.hamletId = int(st.spawnId[h.slot].index);
         sm::settle_souls(gs, st, h.slot, 40);
@@ -145,7 +145,7 @@ World make_world() {
 // одному обходу мест.
 int population_of_kind(const World& wld, sm::SquadType kind, int id) {
     int found = -1;
-    sm::for_each_place(*wld.store, [&](std::uint16_t slot) {
+    sm::for_each_rooted(*wld.store, [&](std::uint16_t slot) {
         if (sm::SquadType(wld.store->runtime[slot].squadType) != kind) return;
         if (int(wld.store->spawnId[slot].index) != id) return;
         found = cell_number_at(wld.gs, *wld.store, slot);
@@ -170,9 +170,9 @@ int population_of(const World& wld, int id) {
 // суток законно прямо (ЗАКОН ДВУХ ТЕМПОВ «размазывается фоном»), и охраняемый
 // закон от этого не слабеет: мир по-прежнему не смеет числить людей, которых
 // у него нет.
-void place_module_day(const World& wld) {
+void rooted_module_day(const World& wld) {
     std::vector<std::int32_t> buf(sm::kUnifiedCap, 0);
-    sm::reconcile_place_flock(const_cast<sm::GameState&>(wld.gs),
+    sm::reconcile_rooted_flock(const_cast<sm::GameState&>(wld.gs),
                               *wld.store, buf.data());
 }
 
@@ -233,7 +233,7 @@ void test_borrow_and_return_are_symmetric() {
     // число стоит там, где его оставил генезис.
     CHECK(population_of(wld, wld.cityId) == pop0,
           "ряд снял ГОЛОВЫ и только их: число — частность модуля места");
-    place_module_day(wld);
+    rooted_module_day(wld);
     CHECK(population_of(wld, wld.cityId) == pop0 - 12,
           "ЗАКОН ПАРЫ: в СВОЁМ дневном проходе модуль свёл число ровно к "
           "оставшимся головам");
@@ -273,7 +273,7 @@ void test_stocks_are_bounded() {
 
     macro_stock_apply(w, MacroStock::Creatures,
                       peasant_key(wld.cityId, 10, 10), -100000);
-    place_module_day(wld);
+    rooted_module_day(wld);
     CHECK(population_of(wld, wld.cityId) == 0,
           "a town can be emptied to zero and never below it");
 
@@ -308,7 +308,7 @@ void test_debts_bill_their_own_subject() {
     CHECK_OR_RETURN(debt != nullptr, "stamping leaves a receipt on the body");
 
     settle_like_the_delta(w, *debt, -1);
-    place_module_day(wld);
+    rooted_module_day(wld);
     CHECK(population_of(wld, wld.cityId) == 299,
           "the dead citizen's own town shrinks by one");
     CHECK(population_of(wld, wld.otherId) == 300,
@@ -322,7 +322,7 @@ void test_debts_bill_their_own_subject() {
                           MacroStock::Creatures,
                           peasant_key(wld.hamletId, 20, 20), 3);
     settle_like_the_delta(w, *sub::slot_debt(objs, sVillager), -1);
-    place_module_day(wld);
+    rooted_module_day(wld);
     CHECK(population_of(wld, wld.hamletId) == 37,
           "a village pays from its own people, by the amount the receipt says");
 
@@ -334,7 +334,7 @@ void test_debts_bill_their_own_subject() {
                           MacroStock::Creatures,
                           peasant_key(wld.twinId, 40, 40), 2);
     settle_like_the_delta(w, *sub::slot_debt(objs, sTwinVillager), -1);
-    place_module_day(wld);
+    rooted_module_day(wld);
     CHECK(village_population_of(wld, wld.twinId) == 78,
           "a village pays its own dead through the one id space");
     CHECK(city_population_of(wld, wld.cityId) == 299
@@ -350,7 +350,7 @@ void test_debts_bill_their_own_subject() {
     // здесь проверялась, из шва недостижима — долг гасится ровно в одной
     // точке и всегда минусом.
     settle_like_the_delta(w, *sub::slot_debt(objs, sVillager), +1);
-    place_module_day(wld);
+    rooted_module_day(wld);
     CHECK(population_of(wld, wld.hamletId) == 37,
           "безымянный плюс не воскрешает: деревня осталась там, где её "
           "оставила смерть");
@@ -716,7 +716,7 @@ void test_a_creature_deal_moves_the_flock_both_ways() {
 
     // Свидетель рождает своё предусловие сам (§8 п.11): место и его паства —
     // дверями мира, а не присвоением колонки.
-    const MacroHandle town = sm::birth_place(gs, st, SquadType::City, 12, 9);
+    const MacroHandle town = sm::birth_squad(gs, st, SquadType::City, 12, 9);
     const int kSouls = 40;
     CHECK(sm::settle_souls(gs, st, town.slot, kSouls) == kSouls,
           "паства встала дверью мира целиком");

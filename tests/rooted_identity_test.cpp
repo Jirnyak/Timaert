@@ -62,7 +62,7 @@ sm::TerrainData make_land() {
     return td;
 }
 
-sm::MacroHandle birth_place_at(sm::MacroStore& st, int x, int y,
+sm::MacroHandle birth_squad_at(sm::MacroStore& st, int x, int y,
                                sm::SquadType kind) {
     const sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = sm::ecs::MacroCell{sm::ecs::cell_index(x, y, kSide)};
@@ -98,40 +98,40 @@ int main() {
     constexpr int kAx = 40, kAy = 40, kBx = 70, kBy = 70;
     sm::feature_put(features, terrain, kAx, kAy, sm::FT_City);
     sm::feature_put(features, terrain, kBx, kBy, sm::FT_Village);
-    birth_place_at(st, kAx, kAy, sm::SquadType::Village);
-    birth_place_at(st, kBx, kBy, sm::SquadType::City);
+    birth_squad_at(st, kAx, kAy, sm::SquadType::Village);
+    birth_squad_at(st, kBx, kBy, sm::SquadType::City);
     sm::build_squad_index(idx, st, gs.mapW, gs.mapH);
 
     const sm::CellFacts a = sm::cell_facts(mw, kAx, kAy);
     const sm::CellFacts b = sm::cell_facts(mw, kBx, kBy);
 
-    // Предусловие состоялось: ветка `.place` вообще отработала. Без этого
+    // Предусловие состоялось: ветка `.rooted` вообще отработала. Без этого
     // «род равен фиче» было бы зелено на двух нулях (§8 п.2).
-    CHECK(a.place.id != 0 && b.place.id != 0,
+    CHECK(a.rooted.id != 0 && b.rooted.id != 0,
           "предусловие: сборщик нашёл неподвижный сквад на обеих клетках");
     CHECK(a.feature == sm::FT_City && b.feature == sm::FT_Village,
           "предусловие: байты фич легли так, как их положил свидетель");
 
     // ГЛАВНОЕ УТВЕРЖДЕНИЕ — РОД РАВЕН ТОМУ, ЧТО СКАЗАЛА ФИЧА.
-    CHECK(a.place.type == sm::SquadType::City,
+    CHECK(a.rooted.type == sm::SquadType::City,
           "род места берётся из БАЙТА ФИЧИ: фича говорит город — вниз едет "
           "город, даже когда колонка сквада говорит деревню");
-    CHECK(b.place.type == sm::SquadType::Village,
+    CHECK(b.rooted.type == sm::SquadType::Village,
           "и зеркально: фича говорит деревню — вниз едет деревня");
 
     // И ОТРИЦАНИЕ, НАЗВАННОЕ ЯВНО: колонка сквада на этот вопрос НЕ отвечает.
     // Формулируется через ту же пару, чтобы мутация «вернуть колонку сквада»
     // роняла прибор ОБОИМИ плечами, а не одним.
-    CHECK(a.place.type != sm::SquadType(st.runtime[0].squadType)
-              || b.place.type != sm::SquadType(st.runtime[1].squadType),
+    CHECK(a.rooted.type != sm::SquadType(st.runtime[0].squadType)
+              || b.rooted.type != sm::SquadType(st.runtime[1].squadType),
           "колонка сквада на вопрос о роде места НЕ отвечает — иначе субмир "
           "читал бы макро-ответ О СКВАДЕ (ЗАКОН ДВУХ МИРОВ п.4)");
 
     // ДВЕРЬ И СБОРЩИК ОБЯЗАНЫ СОГЛАШАТЬСЯ: `cell_facts` не вправе иметь
     // СВОЁ мнение о том, чья это фича, — иначе у вопроса снова два носителя.
-    CHECK(a.place.type == sm::place_kind_of_feature(a.feature)
-              && b.place.type == sm::place_kind_of_feature(b.feature),
+    CHECK(a.rooted.type == sm::rooted_kind_of_feature(a.feature)
+              && b.rooted.type == sm::rooted_kind_of_feature(b.feature),
           "сборщик отвечает РОВНО то же, что обратная дверь реестра");
 
-    return sm::test::report("place_identity_test");
+    return sm::test::report("rooted_identity_test");
 }

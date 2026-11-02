@@ -40,7 +40,7 @@
 //   · ТЕРРАИН-СУША ОБЯЗАТЕЛЕН — `AiPult::spawn` отказывает без
 //     `mw.terrain` невалидным хэндлом, и «артель не родилась» выглядело бы
 //     дефектом мира;
-//   · `birth_place` С ЯВНОЙ ФРАКЦИЕЙ — при -1 минтовый рецепт глохнет
+//   · `birth_squad` С ЯВНОЙ ФРАКЦИЕЙ — при -1 минтовый рецепт глохнет
 //     fail-closed (`faction_mint_rows(-1)` = `{-1,-1,-1}`).
 #include "check.h"
 
@@ -48,9 +48,9 @@
 #include "macro/pathfinding.h"   // PathCostData — вес земли под стоящим
 #include "macro/movement_cost.h"  // burn/rest per hour — якорь предусловия
 #include "macro/travel.h"         // overload_burden_from_capacity
-#include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
-#include "tables/squad_type.h"  // place_is_settlement — дверь различения (M-333)
-#include "macro/world_tick.h"    // settle_place_day — дневной проход места
+#include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
+#include "tables/squad_type.h"  // rooted_is_settlement — дверь различения (M-333)
+#include "macro/world_tick.h"    // settle_rooted_day — дневной проход места
 #include "macro/features.h"      // FeatureLayer — фича ПОД местом
 #include "macro/labour.h"        // settle_souls — одна дверь прихода душ
 #include "macro/store.h"         // parent_of / tithe_of / set_relation
@@ -134,7 +134,7 @@ void tally_sink(void* user, const EconFact& f) {
 // получается меньше регена, планка не садится НИ У КОГО, и всякая проверка
 // про SP становится ТАВТОЛОГИЕЙ (§8 п.2: прибор обязан утверждать, что
 // помЕрил). Поймала это ровно ТАБЛИЦА МУТАЦИЙ: снос строки цели в
-// `birth_place` ронял только проверки про саму цель, а проверки про планку
+// `birth_squad` ронял только проверки про саму цель, а проверки про планку
 // оставались зелёными — то есть не проверяли ничего.
 //
 // ЧИСЛО ВЗЯТО ИЗ ЗАМЕРА ЖИВОГО МИРА, А НЕ С ПОТОЛКА: зонд в самой точке
@@ -148,7 +148,7 @@ struct Fixture {
     TerrainData terrain = all_land();
     TreeLayer trees;
     PathCostData pathCost;
-    // СЛОЙ ФИЧ — НЕ УКРАШЕНИЕ ФИКСТУРЫ: без него `birth_place` фичу не
+    // СЛОЙ ФИЧ — НЕ УКРАШЕНИЕ ФИКСТУРЫ: без него `birth_squad` фичу не
     // ставит вовсе (её постановка гейтится `fl && td`), и закон «умирающий
     // переписывает фичу под собой» проверять было бы НЕ НА ЧЁМ.
     FeatureLayer features;
@@ -186,8 +186,8 @@ struct Fixture {
     }
 
     // ПЛЕМЯ НАЗЫВАЕТСЯ ЯВНО: -1 глушит минтовый рецепт fail-closed.
-    MacroHandle place(SquadType kind, int x, int y, int souls) {
-        const MacroHandle h = birth_place(
+    MacroHandle rooted(SquadType kind, int x, int y, int souls) {
+        const MacroHandle h = birth_squad(
             gs, st(), kind, x, y,
             std::int16_t(faction_index("timaert")), /*name*/nullptr,
             &features, &terrain);   // ФИЧА СТАВИТСЯ ДО ТЕЛА (ЗАКОН ГЕНЕРАЦИИ)
@@ -243,7 +243,7 @@ struct Fixture {
 // кирпич, найденный на полке, пришёл через модуль.
 void test_village_produces_through_its_own_think() {
     Fixture f;
-    const MacroHandle vil = f.place(SquadType::Village, 10, 10, 64);
+    const MacroHandle vil = f.rooted(SquadType::Village, 10, 10, 64);
 
     // ТОЛЬКО ГЛИНА НА ПОЛКЕ — ЭТО И ДЕЛАЕТ ЯКОРЬ ОДНОЗНАЧНЫМ. Деревня знает
     // шесть товарных рецептов (Masonry 30, Tailoring 30, Blacksmith 20,
@@ -311,7 +311,7 @@ void test_village_produces_through_its_own_think() {
 // ═════ 2. ДЕРЕВНЯ РОЖАЕТ АРТЕЛЬ И ПЛАТИТ ДУШАМИ ═════════════════════════
 void test_village_raises_an_artel_and_pays_in_souls() {
     Fixture f;
-    const MacroHandle vil = f.place(SquadType::Village, 10, 10, 64);
+    const MacroHandle vil = f.rooted(SquadType::Village, 10, 10, 64);
     const int vilId = int(f.st().spawnId[vil.slot].index);
 
     // ЖИВАЯ НУЖДА — ПРЕДУСЛОВИЕ, И ПРИБОР РОЖДАЕТ ЕГО САМ. Счёт нужд есть
@@ -366,8 +366,8 @@ void test_village_raises_an_artel_and_pays_in_souls() {
 // ═════ 3. СБОРЩИК — ТОЛЬКО ПРИ ВАССАЛЕ-ДОЛЖНИКЕ ═════════════════════════
 void test_city_raises_a_collector_only_for_a_debtor() {
     Fixture f;
-    const MacroHandle city = f.place(SquadType::City, 10, 10, 64);
-    const MacroHandle vassal = f.place(SquadType::Village, 14, 10, 64);
+    const MacroHandle city = f.rooted(SquadType::City, 10, 10, 64);
+    const MacroHandle vassal = f.rooted(SquadType::Village, 14, 10, 64);
     const int cityId = int(f.st().spawnId[city.slot].index);
     const int vassalId = int(f.st().spawnId[vassal.slot].index);
 
@@ -407,7 +407,7 @@ void test_city_raises_a_collector_only_for_a_debtor() {
 // ненужной: выводимое не хранится (ЗАКОН АНКЕТЫ п.2, шрам трёх носителей).
 void test_no_duplicate_child_however_long_the_world_runs() {
     Fixture f;
-    const MacroHandle vil = f.place(SquadType::Village, 10, 10, 200);
+    const MacroHandle vil = f.rooted(SquadType::Village, 10, 10, 200);
     const int vilId = int(f.st().spawnId[vil.slot].index);
     f.st().upkeep[vil.slot].needDebt[hunger_commodity_ordinal()] = 1 << 20;
 
@@ -433,17 +433,17 @@ void test_no_duplicate_child_however_long_the_world_runs() {
 // ═════ 5. СТОЯЩЕЕ МЕСТО НЕ ЖЖЁТ ПЛАНКУ И НЕ ЛОЖИТСЯ В ПРИВАЛ ════════════
 // M-313, ветка Б (вердикт владельца 2026-10-25). Закон: тело, которое никуда
 // не шло, за дорогу не платит. Носитель — цель на СВОЮ клетку, которую пишет
-// `birth_place@src/macro/place_birth.h`: `at_goal` делается истинным по
+// `birth_squad@src/macro/birth_squad.h`: `at_goal` делается истинным по
 // построению, `resting` — истинным, и половина жжения в
 // `settle_pools_over_time@src/macro/recovery.cpp` не берётся вовсе.
 //
 // ПОЧЕМУ ЭТОТ СВИДЕТЕЛЬ ОБЯЗАН БЫЛ ПОЯВИТЬСЯ: дефект прошёл мимо ВСЕХ 135
 // приборов и нашёлся только замером приёмки (`placeResting` 1505 из 2458).
 // Ни один прибор не спрашивал, цела ли планка у того, кто стоит.
-void test_a_standing_place_pays_nothing_for_the_road() {
+void test_a_standing_rooted_pays_nothing_for_the_road() {
     Fixture f;
-    const MacroHandle vil = f.place(SquadType::Village, 10, 10, 64);
-    const MacroHandle city = f.place(SquadType::City, 20, 20, 64);
+    const MacroHandle vil = f.rooted(SquadType::Village, 10, 10, 64);
+    const MacroHandle city = f.rooted(SquadType::City, 20, 20, 64);
 
     // ── ИНВЕНТАРЬ СКВАДА ПОЛОН, И БЕЗ ЭТОГО ПРОВЕРКА БЫЛА БЫ ТАВТОЛОГИЕЙ ─
     // «Склада» как рода вещей НЕ СУЩЕСТВУЕТ (владелец, дословно: «никакого
@@ -455,7 +455,7 @@ void test_a_standing_place_pays_nothing_for_the_road() {
     // даёт перегруз **1.0**, жжение 5.0 × 2.0 = 10.0 SP/час против регена
     // 13.75 — планка НЕ САДИТСЯ НИ У КОГО, и всё, что ниже, зеленеет само.
     // Поймала это таблица мутаций, а не глаза: снос строки цели в
-    // `birth_place` ронял только проверки про саму цель.
+    // `birth_squad` ронял только проверки про саму цель.
     for (const MacroHandle h : {vil, city}) {
         CHECK(f.st().inventory[h.slot].inv.add_of(item_index("stone"), 4096),
               "контейнер сквада набит камнем — предусловие рождено прибором, а не "
@@ -494,7 +494,7 @@ void test_a_standing_place_pays_nothing_for_the_road() {
         // `what` = 0 есть `GoalKind::None`: целью-МЕСТОМ эту запись не примет
         // никто, и спор за колонку невыразим.
         CHECK(ecs::goal_kind(f.st().goal[h.slot].what) == ecs::GoalKind::None,
-              "род цели — None, поэтому `AiView::goal_place` отвечает «нет "
+              "род цели — None, поэтому `AiView::goal_rooted` отвечает «нет "
               "места» и запись не путается с целью-местом");
     }
 
@@ -554,7 +554,7 @@ void test_the_last_shift_of_hands_is_never_written_out() {
     // ── ПЛЕЧО ОТКАЗА: ДУШ РОВНО НА ОДНО КРЮ ─────────────────────────────
     {
         Fixture f;
-        const MacroHandle vil = f.place(SquadType::Village, 10, 10, kCrew);
+        const MacroHandle vil = f.rooted(SquadType::Village, 10, 10, kCrew);
         const int vilId = int(f.st().spawnId[vil.slot].index);
         f.st().upkeep[vil.slot].needDebt[hunger_commodity_ordinal()] = 1 << 20;
         Inventory& shelf = f.st().inventory[vil.slot].inv;
@@ -594,7 +594,7 @@ void test_the_last_shift_of_hands_is_never_written_out() {
     // детектор).
     {
         Fixture f;
-        const MacroHandle vil = f.place(SquadType::Village, 10, 10, kCrew + 1);
+        const MacroHandle vil = f.rooted(SquadType::Village, 10, 10, kCrew + 1);
         const int vilId = int(f.st().spawnId[vil.slot].index);
         f.st().upkeep[vil.slot].needDebt[hunger_commodity_ordinal()] = 1 << 20;
         Inventory& shelf = f.st().inventory[vil.slot].inv;
@@ -621,8 +621,8 @@ void test_the_last_shift_of_hands_is_never_written_out() {
     // доказывало бы один сайт из двух.
     {
         Fixture f;
-        const MacroHandle city = f.place(SquadType::City, 10, 10, kCrew);
-        const MacroHandle vassal = f.place(SquadType::Village, 14, 10, kCrew);
+        const MacroHandle city = f.rooted(SquadType::City, 10, 10, kCrew);
+        const MacroHandle vassal = f.rooted(SquadType::Village, 14, 10, kCrew);
         const int cityId = int(f.st().spawnId[city.slot].index);
         const int vassalId = int(f.st().spawnId[vassal.slot].index);
         set_relation(f.st(), vassalId, cityId, Stance::Suzerain);
@@ -653,7 +653,7 @@ void test_the_last_shift_of_hands_is_never_written_out() {
 // нашёл 35 ушедших строк мест, и ФИЧА ОСТАВАЛАСЬ ЖИВА **35 из 35**. То есть
 // мир держал фичу деревни, на которой не живёт никто, — а фича есть РЕСУРС
 // клетки (ЗАКОН ПОЛЯ п.3), и соврать ею дороже, чем потерять строку.
-void test_a_dying_place_rewrites_the_feature_under_itself() {
+void test_a_dying_rooted_rewrites_the_feature_under_itself() {
     const auto feature_of = [](Fixture& f, const MacroHandle h) {
         return f.features.at(f.st().cell[h.slot].idx);
     };
@@ -665,7 +665,7 @@ void test_a_dying_place_rewrites_the_feature_under_itself() {
     // ── ГОРОД → РУИНА ───────────────────────────────────────────────────
     {
         Fixture f;
-        const MacroHandle city = f.place(SquadType::City, 10, 10, 64);
+        const MacroHandle city = f.rooted(SquadType::City, 10, 10, 64);
         CHECK(feature_of(f, city) == FT_City,
               "ПРЕДУСЛОВИЕ: под городом стоит ФИЧА ГОРОДА — иначе проверка "
               "ниже не отличала бы «переписал» от «тут и так было»");
@@ -683,7 +683,7 @@ void test_a_dying_place_rewrites_the_feature_under_itself() {
     // на всех, здесь стояла бы руина, и тест покраснел бы.
     {
         Fixture f;
-        const MacroHandle vil = f.place(SquadType::Village, 10, 10, 64);
+        const MacroHandle vil = f.rooted(SquadType::Village, 10, 10, 64);
         CHECK(feature_of(f, vil) == FT_Village,
               "ПРЕДУСЛОВИЕ: под деревней стоит ФИЧА ДЕРЕВНИ");
         kill(f, vil);
@@ -700,7 +700,7 @@ void test_a_dying_place_rewrites_the_feature_under_itself() {
     // «её переписывает кто угодно, кто тут умер».
     {
         Fixture f;
-        const MacroHandle vil = f.place(SquadType::Village, 10, 10, 200);
+        const MacroHandle vil = f.rooted(SquadType::Village, 10, 10, 200);
         const int vilId = int(f.st().spawnId[vil.slot].index);
         f.st().upkeep[vil.slot].needDebt[hunger_commodity_ordinal()] = 1 << 20;
         f.think(kThinksPerDay + 2);
@@ -739,22 +739,22 @@ void test_a_dying_place_rewrites_the_feature_under_itself() {
 // ЧТО ЗА ЗАКОН. Смысл числу поля придаёт ЧИТАЮЩИЙ МОДУЛЬ, а не мир (ЗАКОН
 // ПОЛЯ п.3, вердикт владельца 2026-10-26: «ЧИСЛО ФИЧИ ЭТО ПРОСТО ЧИСЛО! ЕГО
 // СМЫСЛ ПРИДАЁТ МОДУЛЬ СКВАДА… для артели модуль крестьян поле фич шахт это
-// ресурс что он добывает»). Дневной проход `settle_place_day@src/macro/world_tick.cpp`
+// ресурс что он добывает»). Дневной проход `settle_rooted_day@src/macro/world_tick.cpp`
 // читает это число под клеткой ВСЯКОГО места и кормит им
 // `population_delta_per_day@src/macro/econ_day.h`, то есть растит его КАК
 // ЛЮДЕЙ, не спросив, что оно значит у ЭТОГО рода. Гейт стоит по УМОЛЧАНИЮ —
 // «рода, у которого число значит не людей, просто не бывает».
 //
 // ПОЧЕМУ СЕГОДНЯ НЕ СТРЕЛЯЕТ: сквадами-местами рождаются только City и
-// Village — `birth_place@src/macro/place_birth.h` зовут ДВЕ строки, обе в
-// `populate_places_from_politik@src/macro/state.cpp`. Шахта строку реестра
+// Village — `birth_squad@src/macro/birth_squad.h` зовут ДВЕ строки, обе в
+// `populate_rooted_from_politik@src/macro/state.cpp`. Шахта строку реестра
 // имеет, а сквадом не рождается; мина заряжена, спускового крючка нет.
 //
 // ЧТО ЭТОТ СВИДЕТЕЛЬ УТВЕРЖДАЕТ — ТОЛЬКО ЗАКОНЫ, ВЕРНЫЕ И ДО, И ПОСЛЕ
 // ПОЧИНКИ: (1) сытое поселение растёт, и оба носителя души ходят парой;
 // (2) голодное СТОИТ (ноль поглощающий — тот же закон, не кламп);
 // (3) дверь, различающая смысл числа, В МИРЕ ЕСТЬ и отвечает врозь
-// (`place_is_settlement@src/tables/squad_type.h`: деревня — поселение,
+// (`rooted_is_settlement@src/tables/squad_type.h`: деревня — поселение,
 // шахта — нет), значит день починки не потребует новой системы;
 // (4) число под шахтой НЕ ЕСТЬ счёт её голов — 512 руды против нуля людей.
 //
@@ -765,7 +765,7 @@ void test_a_dying_place_rewrites_the_feature_under_itself() {
 // на роде, которого мир не рождает, — тогда как ФОРМА гейта (колонка строки
 // рода против предиката) есть вопрос владельцу и уедет с модулями родов
 // (M-235). Печать и есть «число названо»: она показывает, ЧТО случится в день,
-// когда третья строка `birth_place` назовёт не поселение.
+// когда третья строка `birth_squad` назовёт не поселение.
 void test_the_number_under_a_mine_is_ore_and_not_people() {
     Fixture f;
     const auto number_at = [](Fixture& fx, const MacroHandle h) {
@@ -774,7 +774,7 @@ void test_the_number_under_a_mine_is_ore_and_not_people() {
                            ecs::cell_y(c, fx.gs.mapW));
     };
     const auto one_day = [](Fixture& fx, const MacroHandle h) {
-        settle_place_day(fx.gs, fx.st(), h.slot, /*day*/1,
+        settle_rooted_day(fx.gs, fx.st(), h.slot, /*day*/1,
                          &tally_sink, &fx.tally);
     };
     // ЧИСЛО ОДНО НА ОБА РОДА НАРОЧНО: под деревней это паства, под шахтой —
@@ -782,7 +782,7 @@ void test_the_number_under_a_mine_is_ore_and_not_people() {
     constexpr int kNumber = 512;
 
     // ── ПОЛОЖИТЕЛЬНЫЙ КОНТРОЛЬ: СЫТОЕ ПОСЕЛЕНИЕ РАСТЁТ, И ПАРА СХОДИТСЯ ──
-    const MacroHandle vil = f.place(SquadType::Village, 10, 10, kNumber);
+    const MacroHandle vil = f.rooted(SquadType::Village, 10, 10, kNumber);
     CHECK(number_at(f, vil) == kNumber && f.heads(vil.slot) == kNumber,
           "ПРЕДУСЛОВИЕ: у деревни оба носителя души согласны — число клетки "
           "и головы контейнера по " "512");
@@ -799,7 +799,7 @@ void test_the_number_under_a_mine_is_ore_and_not_people() {
 
     // ── ВТОРОЙ КОНТРОЛЬ: ГОЛОДНОЕ СТОИТ. Ноль благополучия — ЗНАЧЕНИЕ, и
     // рост от него нулевой по самому закону, а не обрезан клампом.
-    const MacroHandle hungry = f.place(SquadType::Village, 20, 20, kNumber);
+    const MacroHandle hungry = f.rooted(SquadType::Village, 20, 20, kNumber);
     f.st().wellbeing[hungry.slot].seasonWellbeing = 0;
     one_day(f, hungry);
     CHECK(number_at(f, hungry) == kNumber
@@ -812,15 +812,15 @@ void test_the_number_under_a_mine_is_ore_and_not_people() {
     // рождает, поэтому её рождает фикстура — БЕЗ ДУШ, как и положено роду,
     // у которого паствы не бывает. Число под ней кладётся дверью мира
     // (`feature_number_write@src/macro/state.h`), ровно как его кладёт генерация жил.
-    const MacroHandle mine = f.place(SquadType::Mine, 30, 30, /*souls*/0);
+    const MacroHandle mine = f.rooted(SquadType::Mine, 30, 30, /*souls*/0);
     const auto& mc = f.st().cell[mine.slot];
     feature_number_write(f.gs, ecs::cell_x(mc, f.gs.mapW),
                  ecs::cell_y(mc, f.gs.mapW), kNumber);
     CHECK(number_at(f, mine) == kNumber && f.heads(mine.slot) == 0,
           "ПРЕДУСЛОВИЕ ШАХТЫ: под ней 512 РУДЫ и НОЛЬ голов — число и счёт "
           "душ здесь расходятся по построению");
-    CHECK(place_is_settlement(SquadType::Village)
-              && !place_is_settlement(SquadType::Mine),
+    CHECK(rooted_is_settlement(SquadType::Village)
+              && !rooted_is_settlement(SquadType::Mine),
           "ДВЕРЬ РАЗЛИЧЕНИЯ СУЩЕСТВУЕТ И ОТВЕЧАЕТ ВРОЗЬ: деревня — "
           "поселение, шахта — нет. Значит гейт, которого дневному проходу не "
           "хватает, не требует новой системы — он требует ВОПРОСА");
@@ -841,7 +841,7 @@ void test_the_number_under_a_mine_is_ore_and_not_people() {
     // ТА ЖЕ ОБЛАСТЬ У СВОДА M-325, И ЕГО ЦИФРА ПЕЧАТАЕТСЯ ТОЖЕ: свод
     // приводит число к головам контейнера, а у шахты голов нет вовсе.
     std::vector<std::int32_t> buf(kUnifiedCap, 0);
-    reconcile_place_flock(f.gs, f.st(), buf.data());
+    reconcile_rooted_flock(f.gs, f.st(), buf.data());
     std::printf("  [M-333] свод модуля места: руда шахты %d → %d, "
                 "паства деревни %d при %d головах\n",
                 oreAfter, number_at(f, mine), number_at(f, vil),
@@ -855,9 +855,9 @@ int main() {
     test_village_raises_an_artel_and_pays_in_souls();
     test_city_raises_a_collector_only_for_a_debtor();
     test_no_duplicate_child_however_long_the_world_runs();
-    test_a_standing_place_pays_nothing_for_the_road();
+    test_a_standing_rooted_pays_nothing_for_the_road();
     test_the_last_shift_of_hands_is_never_written_out();
-    test_a_dying_place_rewrites_the_feature_under_itself();
+    test_a_dying_rooted_rewrites_the_feature_under_itself();
     test_the_number_under_a_mine_is_ore_and_not_people();
-    return sm::test::report("place_module_day_test");
+    return sm::test::report("rooted_module_day_test");
 }

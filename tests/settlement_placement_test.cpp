@@ -33,8 +33,8 @@
 #include "macro/npc_ai.h"          // kGathererReach — the crews' working box
 #include "macro/politik.h"
 #include "macro/squad_index.h"     // каркас клеток: «кто здесь живёт»
-#include "macro/place_iter.h"   // штамп фич поселений
-#include "macro/place_birth.h"     // место рождается СО СВОИМ ТЕЛОМ (M-90)
+#include "macro/rooted_iter.h"   // штамп фич поселений
+#include "macro/birth_squad.h"     // место рождается СО СВОИМ ТЕЛОМ (M-90)
 #include "macro/settlement_score.h"
 #include "macro/spawners.h"
 #include "macro/squad.h"       // suzerain_of — знание роли в interests ТЕЛА
@@ -191,7 +191,7 @@ void make_settled_world(World& w) {
     w.cityPlan.push_back(a);
     w.cityPlan.push_back(b);
 
-    populate_places_from_politik(w.gs, places(), w.cityPlan, w.td, w.trees,
+    populate_rooted_from_politik(w.gs, places(), w.cityPlan, w.td, w.trees,
                                     w.deposits, w.features);
 }
 
@@ -199,7 +199,7 @@ void make_settled_world(World& w) {
 // СНИМОК, а не ссылки: мир следующей фикстуры обнуляет store, а свидетель
 // детерминизма сравнивает два расселения между собой. Порядок обхода слотов
 // на свежем store И ЕСТЬ порядок рождения.
-struct PlaceRow {
+struct RootedRow {
     int x = 0, y = 0;
     int id = 0;
     std::uint16_t slot = 0;
@@ -209,12 +209,12 @@ struct PlaceRow {
     int suzerain = 0; // знание роли — колонка interests ТЕЛА
 };
 
-std::vector<PlaceRow> places_of(const GameState& gs, SquadType kind) {
-    std::vector<PlaceRow> out;
-    for_each_place(places(), [&](std::uint16_t slot) {
+std::vector<RootedRow> rooted_of(const GameState& gs, SquadType kind) {
+    std::vector<RootedRow> out;
+    for_each_rooted(places(), [&](std::uint16_t slot) {
         if (SquadType(places().runtime[slot].squadType) != kind) return;
         const Inventory& bag = places().inventory[slot].inv;
-        out.push_back(PlaceRow{
+        out.push_back(RootedRow{
             ecs::cell_x(places().cell[slot], gs.mapW),
             ecs::cell_y(places().cell[slot], gs.mapW),
             int(places().spawnId[slot].index), slot,
@@ -226,11 +226,11 @@ std::vector<PlaceRow> places_of(const GameState& gs, SquadType kind) {
     return out;
 }
 
-std::vector<PlaceRow> villages_of(const GameState& gs) {
-    return places_of(gs, SquadType::Village);
+std::vector<RootedRow> villages_of(const GameState& gs) {
+    return rooted_of(gs, SquadType::Village);
 }
-std::vector<PlaceRow> cities_of(const GameState& gs) {
-    return places_of(gs, SquadType::City);
+std::vector<RootedRow> cities_of(const GameState& gs) {
+    return rooted_of(gs, SquadType::City);
 }
 
 SettlementSiteContext site_ctx(World& w) {
@@ -276,7 +276,7 @@ void test_vetoes_hold() {
     const auto villages = villages_of(w.gs);
     CHECK_OR_RETURN(!villages.empty(), "the lush world settles villages");
     int onRock = 0;
-    for (const PlaceRow& v : villages) {
+    for (const RootedRow& v : villages) {
         CHECK(!w.td.is_water(v.x, v.y), "no village on water");
         // НАХОДКА 2026-09-23, И ОНА НЕ ПРО ЭТОТ ТЕСТ. Свойство «деревня не
         // на скале» мир НЕ ГАРАНТИРУЕТ: вето на гору в расселении нет, камень
@@ -394,7 +394,7 @@ void test_villages_feed_themselves() {
     SettlementSiteContext ctx = site_ctx(w);
     // Per city, at most ONE village may fail the gate (the forced hamlet).
     std::vector<int> failedOf(w.cityPlan.size(), 0);
-    for (const PlaceRow& v : villages) {
+    for (const RootedRow& v : villages) {
         const SettlementSiteTerms t = settlement_site_terms(ctx, v.x, v.y);
         const bool feeds = t.arable >= kVillageArableGate
                         || t.deposit >= kVillageDepositGate;
@@ -459,8 +459,8 @@ void test_villages_scatter_around_their_town() {
     const auto villages = villages_of(w.gs);
     CHECK_OR_RETURN(!villages.empty(), "the lush world settles villages");
     int closest = 1 << 20;
-    for (const PlaceRow& a : villages) {
-        for (const PlaceRow& b : villages) {
+    for (const RootedRow& a : villages) {
+        for (const RootedRow& b : villages) {
             if (a.slot == b.slot) continue;
             const int ddx = std::min(std::abs(a.x - b.x), kW - std::abs(a.x - b.x));
             const int ddy = std::min(std::abs(a.y - b.y), kH - std::abs(a.y - b.y));
@@ -478,11 +478,11 @@ void test_villages_scatter_around_their_town() {
     // so POSITION pairs them; the id is an ordinal, not an index (v54).
     const auto cities = cities_of(w.gs);
     for (std::size_t si = 0; si < cities.size(); ++si) {
-        const PlaceRow& s = cities[si];
+        const RootedRow& s = cities[si];
         const City& c = w.cityPlan[si];
         if (hinterland_scores(w, c).empty()) continue;
         int mine = 0;
-        for (const PlaceRow& v : villages)
+        for (const RootedRow& v : villages)
             if (v.suzerain == s.id) ++mine;
         CHECK(mine >= 1, "a city with admissible ground is never hamlet-less");
     }
@@ -497,7 +497,7 @@ void test_count_derives_from_capacity() {
     const auto cities = cities_of(w.gs);
     const auto villages = villages_of(w.gs);
     const int lushCityId = cities.empty() ? -1 : cities[0].id;
-    for (const PlaceRow& v : villages) {
+    for (const RootedRow& v : villages) {
         if (v.suzerain == lushCityId) ++lush;
         else ++dry;
     }
@@ -513,7 +513,7 @@ void test_count_derives_from_capacity() {
     // считает их же. Свидетель поэтому судит ОБА носителя и требует их
     // СОГЛАСИЯ: разойдись они — и место стало бы живым по одной двери и
     // мёртвым по другой.
-    for (const PlaceRow& v : villages) {
+    for (const RootedRow& v : villages) {
         CHECK(v.flock >= kVillageBornBase
                   && v.flock < kVillageBornBase + kVillageBornSpread,
               "a village is born at the owner's scale");
@@ -531,7 +531,7 @@ void test_villages_stand_next_to_something() {
     const auto villages = villages_of(w.gs);
     CHECK_OR_RETURN(!villages.empty(), "the lush world settles villages");
     int withContext = 0;
-    for (const PlaceRow& v : villages) {
+    for (const RootedRow& v : villages) {
         bool found = false;
         // Ploughable ground and timber count within the home-field box; a
         // DEPOSIT counts within the crews' working reach — a mining village
@@ -636,7 +636,7 @@ void test_cities_read_the_ground() {
 //
 // Согласие это НЕ дано по построению, и шаг 4 нашёл причину: спорную клетку
 // два носителя разрешают РАЗНЫМИ правилами. Сетка отдаёт её ПЕРВОМУ по
-// приоритету `kPlaceYieldOrder` (город → деревня → шпиль → руина), а штамп
+// приоритету `kRootedYieldOrder` (город → деревня → шпиль → руина), а штамп
 // фич идёт по контейнеру в порядке РОЖДЕНИЯ и перекрывает, то есть отдаёт
 // ПОСЛЕДНЕМУ. Пока спорных клеток нет, расхождение латентно; свидетель
 // называет их ЧИСЛО вслух, поэтому день, когда они появятся, виден сразу.
@@ -648,7 +648,7 @@ void test_cities_read_the_ground() {
 // стоял РУКОПИСНЫЙ `switch` на 12 веток — вторая копия колонки
 // `kind` строки фичи, то есть второй ответ на «какую фичу ставит род»
 // (DOD п.6). Копия молчала, пока обе стороны совпадали, а разъехаться им
-// было нечем помешать: дверь рождения места (`birth_place`) штампует
+// было нечем помешать: дверь рождения места (`birth_squad`) штампует
 // КОЛОНКУ, и свидетель обязан спрашивать её же, иначе он сторожит не закон
 // мира, а собственную память о нём. Нашлось при заселении столицы: ось
 // выросла, `-Wswitch` назвал копию, и выяснилось, что строка `Capital`
@@ -658,7 +658,7 @@ void test_cities_read_the_ground() {
 // записанный при рождении, и сетка сквадов, знающая, кто где стоит.
 // Колонка — это то, о чём закон, а не второй его исполнитель.
 FeatureType settlement_feature_of(SquadType t) {
-    return feature_of_place_kind(t);
+    return feature_of_rooted_kind(t);
 }
 
 // Сколько клеток мира два носителя назвали ПО-РАЗНОМУ. Отдельная функция,
@@ -715,9 +715,9 @@ void test_settlement_kind_has_one_answer() {
     // есть руине. Детектор обязан увидеть ровно одну спорную клетку; если он
     // её не видит, зелень выше ничего не значила.
     GameState& gs = w.gs;
-    const std::vector<PlaceRow> cityRows = cities_of(gs);
+    const std::vector<RootedRow> cityRows = cities_of(gs);
     CHECK_OR_RETURN(!cityRows.empty(), "фикстура обязана родить город");
-    birth_place(gs, places(), SquadType::Ruin,
+    birth_squad(gs, places(), SquadType::Ruin,
                 cityRows[0].x, cityRows[0].y, -1, nullptr,
                 &w.features, &w.td);
 
@@ -743,8 +743,8 @@ void test_determinism() {
                     "two runs settle the same number of villages");
     bool same = true;
     for (std::size_t i = 0; i < villagesA.size(); ++i) {
-        const PlaceRow& va = villagesA[i];
-        const PlaceRow& vb = villagesB[i];
+        const RootedRow& va = villagesA[i];
+        const RootedRow& vb = villagesB[i];
         same = same && va.x == vb.x && va.y == vb.y
                     && va.home == vb.home;
     }

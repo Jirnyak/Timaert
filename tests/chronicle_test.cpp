@@ -37,7 +37,7 @@ WorldFact killing(int day, int x, int y, std::uint32_t who, int bodies) {
     f.kind = std::uint16_t(FactKind::Killed);
     f.subjectKind = std::uint8_t(FactSubject::Squad);
     f.subject = who;
-    f.objectKind = std::uint8_t(FactSubject::Place);
+    f.objectKind = std::uint8_t(FactSubject::Rooted);
     f.object = 3u;
     f.x = std::int16_t(x);
     f.y = std::int16_t(y);
@@ -320,7 +320,7 @@ void test_a_band_becomes_a_figure_by_its_deeds() {
 const char* name_squad(void*, std::uint32_t o) {
     return o == 42u ? "Bloody Karl" : nullptr;
 }
-const char* name_place(void*, std::uint32_t id) {
+const char* name_rooted(void*, std::uint32_t id) {
     return id == 3u ? "Ryazan" : nullptr;
 }
 
@@ -330,12 +330,12 @@ void test_a_fact_says_itself() {
     f.kind = std::uint16_t(FactKind::OwnerChanged);
     f.subjectKind = fact_subject(FactSubject::Squad);
     f.subject = 42u;
-    f.objectKind = std::uint8_t(FactSubject::Place);
+    f.objectKind = std::uint8_t(FactSubject::Rooted);
     f.object = 3u;
 
     FactNaming naming{};
     naming.squad = name_squad;
-    naming.place = name_place;
+    naming.rooted = name_rooted;
 
     char line[128];
     const int n = fact_sentence(f, naming, line, int(sizeof(line)));

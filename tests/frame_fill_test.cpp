@@ -32,12 +32,12 @@ namespace {
 // временных объектов сравнивал бы мусор стека, а не ответ мира.
 bool same_row(const sm::CellFacts& a, const sm::CellFacts& b) {
     return a.x == b.x && a.y == b.y && a.biome == b.biome
-        && a.feature == b.feature && a.place.type == b.place.type
-        && a.place.id == b.place.id && a.place.size == b.place.size
-        && a.place.tier == b.place.tier
-        && a.place.spell == b.place.spell
-        && a.place.factionIdx == b.place.factionIdx
-        && a.place.depleted == b.place.depleted
+        && a.feature == b.feature && a.rooted.type == b.rooted.type
+        && a.rooted.id == b.rooted.id && a.rooted.size == b.rooted.size
+        && a.rooted.tier == b.rooted.tier
+        && a.rooted.spell == b.rooted.spell
+        && a.rooted.factionIdx == b.rooted.factionIdx
+        && a.rooted.depleted == b.rooted.depleted
         && a.treeCount == b.treeCount && a.height01 == b.height01
         && a.fertility01 == b.fertility01
         && a.temperature01 == b.temperature01

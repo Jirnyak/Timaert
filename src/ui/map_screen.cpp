@@ -2,7 +2,7 @@
 
 #include "tables/biomes.h"
 #include "core/caps.h"              // kUnifiedCap — проход по слотам, не по числу
-#include "tables/squad_type.h"      // kSquadKinds/kPlaceYieldOrder — ось рода
+#include "tables/squad_type.h"      // kSquadKinds/kRootedYieldOrder — ось рода
 #include "macro/map_generator.h"
 #include "macro/markers.h"
 #include "macro/player_entity.h"
@@ -130,8 +130,8 @@ inline constexpr bool stands_on_the_chart(SquadType t) {
 static_assert([] {
     for (std::size_t i = 0; i < std::size_t(SquadType::Count); ++i) {
         const SquadType t = SquadType(i);
-        const bool place = squad_archetype(t) == SquadArchetype::Place;
-        if (stands_on_the_chart(t) != place) return false;
+        const bool rooted = squad_archetype(t) == SquadArchetype::Rooted;
+        if (stands_on_the_chart(t) != rooted) return false;
     }
     return true;
 }(), "чарт показывает то, что СТОИТ: предикат карты обязан совпадать с "
@@ -188,7 +188,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
                 ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1), "%s",
                                    kBiomes[std::size_t(b)].name);
                 // КТО НА ЭТОЙ КЛЕТКЕ — КАРКАСОМ, И ДВЕРЬ КИНД-СЛЕПА (M-288).
-                // Здесь стоял `for_each_place` — ПОЛНЫЙ СКАН КАПА (8 родов
+                // Здесь стоял `for_each_rooted` — ПОЛНЫЙ СКАН КАПА (8 родов
                 // × 16384 слота = 131 072 посещения) на вопрос об ОДНОЙ
                 // клетке, то есть ровно то, что ЗАКОН КЛЕТОЧНОГО КАРКАСА
                 // называет нарушением дословно. Теперь спрашивается
@@ -233,7 +233,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
 
     // ── ОДИН ПРОХОД ПО СЛОТАМ: МЕТКИ ЧАРТА И СЧЁТ ЛЕГЕНДЫ ───────────────
     // Главная карта перестала рисовать двумя проходами 2026-10-19 (M-280);
-    // страница шла ещё тремя обходами `for_each_place`, то есть на один
+    // страница шла ещё тремя обходами `for_each_rooted`, то есть на один
     // вопрос мира — «как сквад выглядит на карте» — два экрана отвечали
     // по-разному (DOD п.6). Проход теперь один и той же формы, что у
     // главной карты: слоты гладкой памяти, колонки вместо обхода по роду.
@@ -244,7 +244,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
     // про текущий кадр, — и тем же предикатом `stands_on_the_chart`.
     //
     // ПОРЯДОК РИСОВКИ — СЛОТОВЫЙ, И ЭТО СКАЗАНО ВСЛУХ. Прежний обход шёл в
-    // `kPlaceYieldOrder`, но тот порядок есть закон ВЛАДЕНИЯ СПОРНОЙ
+    // `kRootedYieldOrder`, но тот порядок есть закон ВЛАДЕНИЯ СПОРНОЙ
     // КЛЕТКОЙ, а не закон рисования: брать его сюда значило занимать чужой
     // закон под косметику. Метки чарта — плоские примитивы одного класса
     // размера, и ни одна не укрывает другую так, как 192-пиксельный спрайт
@@ -342,7 +342,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
     const double exploredPct =
         cells > 0.0 ? 100.0 * double(st.exploredCells) / cells : 0.0;
 
-    // (Третий обход `for_each_place` стоял здесь и считал `discovered[]`
+    // (Третий обход `for_each_rooted` стоял здесь и считал `discovered[]`
     //  заново. Счёт уехал В ПРОХОД МЕТОК выше — он обязан считать ровно то,
     //  что нарисовано, и отдельный обход этого не гарантировал ничем.)
     bool styleSeen[4] = {};

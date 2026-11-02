@@ -9,7 +9,7 @@
 #include "macro/npc_ai.h"          // kGathererReach — the field's press radius
 #include "macro/settlement_score.h"
 #include "macro/labour.h"           // settle_souls — одна дверь душ
-#include "macro/place_birth.h"      // birth_place — место родится ТЕЛОМ
+#include "macro/birth_squad.h"      // birth_squad — место родится ТЕЛОМ
 #include "macro/squad.h"            // set_suzerain — знание роли в ТЕЛЕ
 #include "core/rng.h"
 // ПЕРЕПИСЬ ШТАБЕЛЕЙ висит на сборке ядра, а не на отдельном тесте:
@@ -124,7 +124,7 @@ GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
 // became bodies (ломтик F): there is no list of its own to clear — a second
 // call births a second world on top of the first, and the one caller
 // (genesis) runs it on a freshly born store.
-void populate_places_from_politik(GameState& gs, MacroStore& st,
+void populate_rooted_from_politik(GameState& gs, MacroStore& st,
                                      const std::vector<City>& cities,
                                      const TerrainData& terrain,
                                      TreeLayer& trees,
@@ -178,7 +178,7 @@ void populate_places_from_politik(GameState& gs, MacroStore& st,
                                 : std::string("Outpost");
         // Место родится ТЕЛОМ одной дверью (ломтик F): ординал эмитит она
         // же, из того же единого эмитента, что сквадам (M-37).
-        const MacroHandle h = birth_place(gs, st, SquadType::City,
+        const MacroHandle h = birth_squad(gs, st, SquadType::City,
                                           c.x, c.y, c.factionIdx,
                                           cityName.c_str(), &features,
                                           &terrain);
@@ -189,7 +189,7 @@ void populate_places_from_politik(GameState& gs, MacroStore& st,
         // town has stocks to live on while the first caravans find their legs.
         // (The old EconomyState "archetype" strings died with it, W2b-4 —
         // what a town actually HAS now lives in this one inventory.)
-        seed_place_inventory(
+        seed_rooted_inventory(
             st.inventory[slot].inv, souls,
             squad_birth(SquadType(st.runtime[slot].squadType)));
         const int id = int(st.spawnId[slot].index);
@@ -330,14 +330,14 @@ void populate_places_from_politik(GameState& gs, MacroStore& st,
             const std::string vilName =
                 s.factionIdx >= 0 ? generate_name(lang_of(s.factionIdx), rng)
                                   : std::string("Hamlet");
-            const MacroHandle vh = birth_place(gs, st, SquadType::Village,
+            const MacroHandle vh = birth_squad(gs, st, SquadType::Village,
                                                c.x, c.y, s.factionIdx,
                                                vilName.c_str(), &features,
                                                &terrain);
             if (!st.valid(vh)) continue;   // отказ капа уже прозвучал вслух
             const std::uint16_t vslot = vh.slot;
             settle_souls(gs, st, vslot, vilSouls);
-            seed_place_inventory(
+            seed_rooted_inventory(
                 st.inventory[vslot].inv, vilSouls,
                 squad_birth(SquadType(st.runtime[vslot].squadType)));
             set_relation(st, int(st.spawnId[vslot].index), suzerainId,

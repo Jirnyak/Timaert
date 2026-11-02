@@ -490,9 +490,9 @@ constexpr int kSaveVersion = 149;
 
 // (struct Landmark УНИЧТОЖЕНА ломтиком F: место есть неподвижный сквад, вся
 // его идентичность — колонки ТЕЛА в MacroStore: spawnId, runtime.squadType,
-// name, cell, kind.factionIdx. Рождение — birth_place@src/macro/place_birth.h,
+// name, cell, kind.factionIdx. Рождение — birth_squad@src/macro/birth_squad.h,
 // резолв по ординалу — macro_handle_by_spawn_id@src/macro/squad.h, обход —
-// for_each_place@src/macro/place_iter.h.)
+// for_each_rooted@src/macro/rooted_iter.h.)
 
 enum class GameSubStateKind : std::uint8_t {
     Exploring, Paused, Trading, ViewingMap,
@@ -977,7 +977,7 @@ inline bool cell_is_leased(const GameState& gs, std::uint32_t cell) noexcept {
 
 // (landmark_index_by_id / landmark_by_id / add_landmark / set_landmark_type
 // УНИЧТОЖЕНЫ ломтиком F вместе со строкой и штабелем мест: резолв ординала —
-// macro_handle_by_spawn_id@src/macro/squad.h, рождение — birth_place,
+// macro_handle_by_spawn_id@src/macro/squad.h, рождение — birth_squad,
 // (смена вида места дверью НЕ делается: она умерла 2026-10-18 с нулём
 //  прод-вызовов; событие состава поднимает рождение)
 // navEpoch.)
@@ -1037,7 +1037,7 @@ inline void light_emission_write(GameState& gs, int x, int y, int value) {
     gs.lightEmission.write(x, y, std::int32_t(value < 0 ? 0 : value));
 }
 
-// (record_place_fact УЕХАЛА в macro/squad.h флипом M-90 шаг 5: слава
+// (record_rooted_fact УЕХАЛА в macro/squad.h флипом M-90 шаг 5: слава
 // места — колонка runtime.renown его ТЕЛА, то есть двери нужен MacroStore,
 // которого state.h не видит и видеть не должен.)
 
@@ -1142,7 +1142,7 @@ struct TerrainData;  // fwd
 struct TreeLayer;
 struct DepositLayer;
 struct MacroStore;   // fwd — тела мест рождаются в store (M-90 шаг 5)
-void populate_places_from_politik(GameState& gs, MacroStore& st,
+void populate_rooted_from_politik(GameState& gs, MacroStore& st,
                                      const std::vector<City>& cities,
                                      const TerrainData& terrain,
                                      TreeLayer& trees,

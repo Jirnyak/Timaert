@@ -7,7 +7,7 @@
 // loop are a rendering artifact and are skipped), and writes per-day TSV:
 //
 //   <out>/world_<seed>.tsv     one row per day: totals + per-commodity flows
-//   <out>/places_<seed>.tsv one row per place per day: pop/wellbeing/stocks
+//   <out>/rooted_<seed>.tsv one row per place per day: pop/wellbeing/stocks
 //
 // Usage: balance_run [seedsCsv] [days] [outDir]
 //        defaults:    12345      256    balance_out
@@ -38,8 +38,8 @@
 #include "macro/spawners.h"
 #include "macro/state.h"
 #include "macro/labour.h"
-#include "macro/place_iter.h"   // for_each_place — обход мест по слотам
-#include "macro/squad.h"           // place_handle_by_ordinal — резолв места
+#include "macro/rooted_iter.h"   // for_each_rooted — обход мест по слотам
+#include "macro/squad.h"           // rooted_handle_by_ordinal — резолв места
 #include "macro/store.h"
 #include "macro/tree_layer.h"
 #include "macro/world_gen.h"
@@ -164,14 +164,14 @@ long long coins_in(const sm::Inventory& inv, const std::vector<int>& coinIdx) {
 //               и «занято» с «ходит в думку» путать нельзя;
 //   places    — из множества думки те, у кого архетип Place: их дневная думка
 //               кончается ранним возвратом гейта `squad_archetype(…) ==
-//               SquadArchetype::Place` в `npc_ai.cpp`. Счёт идёт ДВЕРЬЮ
-//               `for_each_place@src/macro/place_iter.h` — второго написания
+//               SquadArchetype::Rooted` в `npc_ai.cpp`. Счёт идёт ДВЕРЬЮ
+//               `for_each_rooted@src/macro/rooted_iter.h` — второго написания
 //               закона «что есть место» прибор не заводит.
 struct SlotCensus {
     long long alive = 0;
     long long aliveScan = 0;
     long long dead = 0;
-    long long places = 0;
+    long long rooted = 0;
 };
 
 SlotCensus slot_census(const sm::MacroStore& st) {
@@ -182,7 +182,7 @@ SlotCensus slot_census(const sm::MacroStore& st) {
         ++c.aliveScan;
         if (st.dead[s] != 0) ++c.dead;
     }
-    sm::for_each_place(st, [&](std::uint16_t) { ++c.places; });
+    sm::for_each_rooted(st, [&](std::uint16_t) { ++c.rooted; });
     return c;
 }
 
@@ -309,7 +309,7 @@ int main(int argc, char** argv) {
         std::snprintf(path, sizeof path, "%s/world_%u.tsv", outDir.c_str(),
                       seed);
         FILE* fw = std::fopen(path, "w");
-        std::snprintf(path, sizeof path, "%s/places_%u.tsv",
+        std::snprintf(path, sizeof path, "%s/rooted_%u.tsv",
                       outDir.c_str(), seed);
         FILE* fl = std::fopen(path, "w");
         if (!fw || !fl) {
@@ -325,7 +325,7 @@ int main(int argc, char** argv) {
         // со своими величинами: казна пула и пул дезертиров были половинами
         // контура — писатель живой, читателей ноль. Прибор не печатает то,
         // чего в мире нет; колонки читать ПО ИМЕНИ, §5 п.7.)
-        std::fprintf(fw, "day\tpop\tcoinPlaces\tcoinSquads"
+        std::fprintf(fw, "day\tpop\tcoinRooted\tcoinSquads"
                          "\tstarvedPops\tminted\ttrades\ttradedValue\tfoodHolds"
                          "\tcrewsGather\tcrewsSell\tcrewsOther"
                          // ЛОШАДЬ-ЮНИТ (2026-09-19): свидетель контура —
@@ -357,7 +357,7 @@ int main(int argc, char** argv) {
                          // ЖЕ ЛЮДЕЙ. `soulsHomed` идёт по ВСЕМ живым слотам
                          // и берёт тех, чьё ребро Parent разрешается в
                          // место; у места он разрешается в НЕГО САМОГО
-                         // (place_birth.h «дом места — оно само»), поэтому
+                         // (birth_squad.h «дом места — оно само»), поэтому
                          // места попадали в `soulsHomed`, а `soulsGarr`
                          // считал их же второй раз, а `popTotal` — третий,
                          // пастве которой они и принадлежат. Сумма
@@ -402,7 +402,7 @@ int main(int argc, char** argv) {
         // сдвинулись ПО ЗАМЫСЛУ — это не регресс. Прибор потому и
         // постоянный жилец: дверь остаётся той же, и дельту эпика видно
         // ЭТИМИ ЖЕ колонками, а не новым зондом.
-        std::fprintf(fw, "\tslotsAlive\tslotsDead\tslotsPlace\taiMsDay");
+        std::fprintf(fw, "\tslotsAlive\tslotsDead\tslotsRooted\taiMsDay");
         std::fprintf(fw, "\n");
         // ТРИ ПОТОКА МАТЕРИИ, ПО МЕСТАМ (CANON S10, 2026-09-20): гипотеза о
         // расщеплении горизонта — про МЕДИАНЫ по местам (еда топит пол
@@ -488,7 +488,7 @@ int main(int argc, char** argv) {
             long long stockVil[sm::kCommodityCount] = {};
             // Место ЕСТЬ слот store (ломтик F): род, адрес, ординал и склад
             // — его колонки, и замер идёт тем же обходом, что живой мир.
-            sm::for_each_place(*macroStore, [&](std::uint16_t slot) {
+            sm::for_each_rooted(*macroStore, [&](std::uint16_t slot) {
                 const sm::SquadType kind =
                     sm::SquadType(macroStore->runtime[slot].squadType);
                 const int lmx = sm::ecs::cell_x(macroStore->cell[slot], gs.mapW);
@@ -572,7 +572,7 @@ int main(int argc, char** argv) {
                 foodHolds += bag.inv.count_of(foodIdx);
             }
             long long horsesGarr = 0, soulsGarr = 0;
-            sm::for_each_place(*macroStore, [&](std::uint16_t slot) {
+            sm::for_each_rooted(*macroStore, [&](std::uint16_t slot) {
                 const sm::Inventory& bag = macroStore->inventory[slot].inv;
                 horsesGarr +=
                     sm::creature_count_of(bag, sm::NPCType::Horse);
@@ -605,7 +605,7 @@ int main(int argc, char** argv) {
                 souls += sm::count_human_souls(
                     macroStore->inventory[slot].inv);
                 if (souls <= 0) continue;
-                if (macroStore->valid(sm::place_handle_by_ordinal(
+                if (macroStore->valid(sm::rooted_handle_by_ordinal(
                         *macroStore,
                         std::uint32_t(sm::parent_of(*macroStore, slot)))))
                     soulsHomed += souls;
@@ -685,7 +685,7 @@ int main(int argc, char** argv) {
             }
             const SlotCensus sc = slot_census(*macroStore);
             std::fprintf(fw, "\t%lld\t%lld\t%lld\t%.3f",
-                         sc.alive, sc.dead, sc.places, aiSecs * 1000.0);
+                         sc.alive, sc.dead, sc.rooted, aiSecs * 1000.0);
             // ЗАКОН СЛОТОВ, И ОН ЖЕ ДЕТЕКТОР ПРИБОРА. Три утверждения, и ни
             // одно не есть пересказанное число (§8 п.4): (1) счётчик стора
             // сходится с независимым сканом своей же колонки — бухгалтерия
@@ -698,16 +698,16 @@ int main(int argc, char** argv) {
             // ГЕНЕРАЦИИ п.6), поэтому мир без мест есть сломанный мир, а не
             // неудачный сид.
             const bool slotLawDay =
-                sc.alive == sc.aliveScan && sc.alive > 0 && sc.places > 0
-                && sc.places <= sc.alive - sc.dead;
+                sc.alive == sc.aliveScan && sc.alive > 0 && sc.rooted > 0
+                && sc.rooted <= sc.alive - sc.dead;
             if (!slotLawDay && slotLawHolds) {
                 slotLawHolds = false;
                 slotLawFirstBadDay = gs.worldTime.day();
                 std::fprintf(stderr,
                              "[slots] ДЕНЬ %d: alive=%lld scan=%lld dead=%lld "
-                             "places=%lld\n",
+                             "rooted=%lld\n",
                              slotLawFirstBadDay, sc.alive, sc.aliveScan,
-                             sc.dead, sc.places);
+                             sc.dead, sc.rooted);
             }
             lastCensus = sc;
             lastAiMs = aiSecs * 1000.0;
@@ -770,7 +770,7 @@ int main(int argc, char** argv) {
         // corridors) land with the mechanics that make them checkable.
         long long popEnd = 0;
         int alive = 0;
-        sm::for_each_place(*macroStore, [&](std::uint16_t slot) {
+        sm::for_each_rooted(*macroStore, [&](std::uint16_t slot) {
             const sm::SquadType kind =
                 sm::SquadType(macroStore->runtime[slot].squadType);
             if (kind != sm::SquadType::City
@@ -796,19 +796,19 @@ int main(int argc, char** argv) {
         // поодиночке они оба бессмысленны: цена думки есть цена ЭТОГО
         // населения. Стенные миллисекунды — время прибора (см. колонку).
         std::fprintf(stderr,
-                     "[slots] seed=%u day=%d alive=%lld dead=%lld places=%lld "
+                     "[slots] seed=%u day=%d alive=%lld dead=%lld rooted=%lld "
                      "walked=%lld aiMsDay=%.3f\n",
                      seed, gs.worldTime.day(), lastCensus.alive,
-                     lastCensus.dead, lastCensus.places,
+                     lastCensus.dead, lastCensus.rooted,
                      lastCensus.alive - lastCensus.dead, lastAiMs);
         if (slotLawHolds) {
             std::fprintf(stderr,
                          "[law] store slot bookkeeping (aliveCount == scan, "
-                         "places subset of walked): OK\n");
+                         "rooted subset of walked): OK\n");
         } else {
             std::fprintf(stderr,
                          "[law] store slot bookkeeping (aliveCount == scan, "
-                         "places subset of walked): FAIL (первый день "
+                         "rooted subset of walked): FAIL (первый день "
                          "расхождения %d)\n",
                          slotLawFirstBadDay);
         }

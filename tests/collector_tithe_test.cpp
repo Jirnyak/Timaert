@@ -61,7 +61,7 @@
 #include "check.h"
 
 #include "macro/npc_ai.h"
-#include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
+#include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
 #include "macro/labour.h"        // settle_souls — двери душ
 #include "macro/world_row.h"
 #include "macro/chronicle.h"
@@ -117,7 +117,7 @@ MacroHandle make_collector(MacroStore& st, int x, int y,
     pools.sp = pools.maxSp;
     st.runtime[h.slot] = rt;
     ecs::goal_set(st.goal[h.slot], st.cell[vassal.slot].idx,
-                  ecs::goal_what(ecs::GoalKind::Place,
+                  ecs::goal_what(ecs::GoalKind::Rooted,
                                  std::uint32_t(vassalId)),
                   0, std::uint8_t(NPCState::Working));
     store_rename_ordinal(st, h, ordinal);
@@ -150,7 +150,7 @@ void build_rig(Rig& r, int foodLots, int silverLots, long long owed) {
     chronicle_init(r.gs.chronicle, kMap, kMap);
     MacroStore& st = *r.store;
 
-    r.home = birth_place(r.gs, st, SquadType::City, 10, 10);
+    r.home = birth_squad(r.gs, st, SquadType::City, 10, 10);
     r.homeId = int(st.spawnId[r.home.slot].index);
     settle_souls(r.gs, st, r.home.slot, 50);
     // ДОМ ГОЛОДЕН СЧЁТОМ (CANON S10): «нет хлеба» есть непогашенный сезонный
@@ -159,7 +159,7 @@ void build_rig(Rig& r, int foodLots, int silverLots, long long owed) {
     st.upkeep[r.home.slot].needDebt[commodity_index("food")] =
         std::int32_t(50 * kDaysPerSeason);
 
-    r.vassal = birth_place(r.gs, st, SquadType::Village, 16, 10);
+    r.vassal = birth_squad(r.gs, st, SquadType::Village, 16, 10);
     r.vassalId = int(st.spawnId[r.vassal.slot].index);
     settle_souls(r.gs, st, r.vassal.slot, 30);
     {

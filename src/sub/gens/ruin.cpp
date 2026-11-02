@@ -132,7 +132,7 @@ void gen_ruin(const GenInput& in, SubworldMapData& out) {
     const RoadDirSet dirs = connected_road_dirs(std::uint8_t(in.ctx.feature), nbFeature);
     carve_place_anchor_roads(out, ctx, dirs, center, ctx.seed ^ 0xA8A1EADu);
 
-    const int difficulty = std::max(1, ctx.place.size);
+    const int difficulty = std::max(1, ctx.rooted.size);
     const int rings = std::max(1, std::min(3, (difficulty + 2) / 3));
     for (int ring = 0; ring < rings; ++ring) {
         const float radius = float(kCellSize) * (0.12f + float(ring) * 0.10f);

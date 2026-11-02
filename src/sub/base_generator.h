@@ -318,9 +318,9 @@ namespace sm::sub
     // ЗДЕСЬ СТОЯЛ ВТОРОЙ ПАРАМЕТР `SquadType place`, И ОН БЫЛ ВЫВОДИМ ИЗ
     // ПЕРВОГО (вердикт владельца 2026-10-28: «вместо мест он смотрит модули
     // типов фич которые для этого и существуют»). Макро-граница сама делает
-    // `place_kind_of_feature(f.feature)` (`cell_facts@src/macro/cell_facts.cpp`),
+    // `rooted_kind_of_feature(f.feature)` (`cell_facts@src/macro/cell_facts.cpp`),
     // а колонка `kind` строки фичи держит соответствие под круговым
-    // `static_assert` (`place_kind_of_feature@src/macro/features.h`), поэтому
+    // `static_assert` (`rooted_kind_of_feature@src/macro/features.h`), поэтому
     // род места НЕ МОГ принести сюда ни одного бита, которого нет в байте.
     // Два языка на один вопрос стоили 9-широкого кольца `SquadType` через
     // весь шов (`nbPlace`, 11 сайтов проводки) — оно умерло вместе с осью.

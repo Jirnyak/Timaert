@@ -12,8 +12,8 @@
 
 #include "macro/chronicle.h"
 #include "macro/nav_field.h"
-#include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
-#include "macro/squad.h"         // record_place_fact — дверь дела места
+#include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
+#include "macro/squad.h"         // record_rooted_fact — дверь дела места
 #include "macro/state.h"
 #include "macro/store.h"
 #include "macro/threat_field.h"
@@ -49,7 +49,7 @@ World make_world() {
     gs.worldSeed = 7u;
     {
         const MacroHandle h =
-            birth_place(gs, st, SquadType::City, 10, 10);
+            birth_squad(gs, st, SquadType::City, 10, 10);
         w.cityId = int(st.spawnId[h.slot].index);
         // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в число фичи
         // фичи, головы в инвентарь — тем же законом, что генезис.
@@ -57,7 +57,7 @@ World make_world() {
     }
     {
         const MacroHandle h =
-            birth_place(gs, st, SquadType::Village, 40, 10);
+            birth_squad(gs, st, SquadType::Village, 40, 10);
         w.vilId = int(st.spawnId[h.slot].index);
         sm::settle_souls(gs, st, h.slot, 100);
     }
@@ -84,7 +84,7 @@ NavWorld make_nav(const World& w, bool withPortal) {
             nv.regionOf[std::size_t(y) * kMap + x] = x < kMap / 2 ? 0 : 1;
     nv.distHome.assign(cells, 16);
     nv.stepHome.assign(cells, 0);
-    nv.regionPlaceId = {w.cityId, w.vilId};
+    nv.regionRootedId = {w.cityId, w.vilId};
     nv.regionCell = {10 * kMap + 10, 10 * kMap + 40};
     if (withPortal) {
         NavPortal ab{};
@@ -117,7 +117,7 @@ void test_source_and_diffusion() {
     mw.nav = &nv;
 
     // Осиротевший дом хоронит двоих — та дверь, что пишет Died всегда.
-    record_place_fact(*w.store, gs, FactKind::Died, w.vilId, 40, 12,
+    record_rooted_fact(*w.store, gs, FactKind::Died, w.vilId, 40, 12,
                          /*amount*/2);
     threat_field_daily(mw, /*day*/1);
 
@@ -143,7 +143,7 @@ void test_no_edge_no_flow_and_decay() {
     MacroWorld mw{.gs = &gs};
     mw.nav = &nv;
 
-    record_place_fact(*w.store, gs, FactKind::Died, w.vilId, 40, 12,
+    record_rooted_fact(*w.store, gs, FactKind::Died, w.vilId, 40, 12,
                          /*amount*/2);
     threat_field_daily(mw, /*day*/1);
     const std::uint32_t raised = 2u * std::uint32_t(threat_soul_price());
@@ -168,7 +168,7 @@ void test_replay_converges() {
     MacroWorld mw{.gs = &gs};
     mw.nav = &live;
 
-    record_place_fact(*w.store, gs, FactKind::Died, w.vilId, 40, 12,
+    record_rooted_fact(*w.store, gs, FactKind::Died, w.vilId, 40, 12,
                          /*amount*/2);
     // Живое поле переживает 17 дней (два распада)…
     for (int day = 1; day <= 17; ++day) threat_field_daily(mw, day);

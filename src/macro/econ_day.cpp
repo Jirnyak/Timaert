@@ -5,7 +5,7 @@
 
 #include "macro/economy.h"    // stock_price — ranking asks THE price law
 #include "tables/faction.h"    // монетная семья фракции — ординалы номиналов
-#include "macro/state.h"      // GameState/Place — ведомость пишется в место
+#include "macro/state.h"      // GameState — ведомость пишется в осёдлый сквад
 
 #include <algorithm>
 #include <bit>
@@ -349,7 +349,7 @@ int commodity_of_item(int itemIdx) {
         ? int(kBack[std::size_t(itemIdx)]) : -1;
 }
 
-void seed_place_inventory(Inventory& inv, int population,
+void seed_rooted_inventory(Inventory& inv, int population,
                             const SquadBirthRow& row) {
     if (population <= 0) return;
     // Born MID-LIFE means born with LAST SEASON'S HARVEST IN THE BARN: the

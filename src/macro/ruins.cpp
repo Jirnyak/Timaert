@@ -1,6 +1,6 @@
 #include "macro/ruins.h"
 #include "macro/features.h"     // feature_put — фича просто ЕСТЬ в мире
-#include "macro/place_iter.h"   // for_each_place — сквады по слотам (счёт городов)
+#include "macro/rooted_iter.h"   // for_each_rooted — сквады по слотам (счёт городов)
 #include "macro/state.h"
 #include "macro/zones.h"
 #include "macro/map_generator.h"
@@ -42,7 +42,7 @@ int torus_chebyshev_(int ax, int ay, int bx, int by, int w, int h) {
 // руины и шпиля скан отвечал бы «свободно» про клетку, на которой фича
 // уже стоит: руина села бы поверх руины и поверх шпиля МОЛЧА.
 bool cell_taken_(const FeatureLayer& fl, int x, int y) {
-    return place_kind_of_feature(fl.at(x, y)) != SquadType::None;
+    return rooted_kind_of_feature(fl.at(x, y)) != SquadType::None;
 }
 
 } // namespace
@@ -55,7 +55,7 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
         return;
     }
     int cities = 0;
-    for_each_place(st, [&](std::uint16_t slot) {
+    for_each_rooted(st, [&](std::uint16_t slot) {
         if (SquadType(st.runtime[slot].squadType) == SquadType::City)
             ++cities;
     });
@@ -114,7 +114,7 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
         // владельца 2026-10-26: «под снос как шпиль, чистая фича без
         // сквада») ────────────────────────────────────────────────────────
         //
-        // ЗДЕСЬ РОЖДАЛСЯ СКВАД (`birth_place`) И САДИЛИСЬ ДУШИ
+        // ЗДЕСЬ РОЖДАЛСЯ СКВАД (`birth_squad`) И САДИЛИСЬ ДУШИ
         // (`settle_souls` по колонкам `bornPop*`), И ИМЕННО ЭТО УБИВАЛО
         // ДАНЖ. Замер 256 дней (сид 12345): байт `FT_Ruin` держался **70
         // плоско ВСЕ 256 дней**, а сквадов руины оставалось **70 → 26**, и

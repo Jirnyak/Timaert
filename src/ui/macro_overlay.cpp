@@ -16,7 +16,7 @@
 #include "ecs/components.h"
 #include "macro/state.h"
 #include "macro/squad.h"   // record_deed — THE deed door (S20.1)
-#include "macro/place_iter.h"
+#include "macro/rooted_iter.h"
 #include "macro/spires.h"   // spire_orb — ОДИН вывод об орбе (M-233 п.8)
 #include "ui/squad_draw.h"
 #include "macro/markers.h"
@@ -259,16 +259,16 @@ void draw_macro_overlay(const MacroWorld& mw,
 
     // ── Hover-cell highlight + tooltip (chrome) and settlement pick (input).
     if (cursor.hoverValid) {
-        // Place under the cursor is resolved ALWAYS — click-to-select
+        // Rooted under the cursor is resolved ALWAYS — click-to-select
         // must keep working even when the overlay chrome is hidden. One
         // visitor pass names EVERY kind (first hit wins, in the visitor's
         // resolve_context priority order) and picks the settlement id for
         // the click when the hit is a city.
-        const char* place = "";
+        const char* rooted = "";
         int hoverSettlementId = -1;
-        for_each_place_view(mw, [&](const PlaceView& lm) {
+        for_each_rooted_view(mw, [&](const RootedView& lm) {
             if (lm.x != cursor.hoverX || lm.y != cursor.hoverY) return;
-            if (!place[0]) place = lm.name;
+            if (!rooted[0]) rooted = lm.name;
             // Any place is pickable — the City hardcode died with
             // PLAY-2; the panel itself decides which tabs the kind shows.
             if (lm.type != SquadType::None && hoverSettlementId < 0)
@@ -318,9 +318,9 @@ void draw_macro_overlay(const MacroWorld& mw,
                                            "Trees: %d", tc);
                     }
                 }
-                if (place[0])
+                if (rooted[0])
                     ImGui::TextColored(ImVec4(1.00f, 0.90f, 0.40f, 1), "%s",
-                                       place);
+                                       rooted);
             }
             ImGui::EndTooltip();
         }
@@ -335,7 +335,7 @@ void draw_macro_overlay(const MacroWorld& mw,
     // ── ОДИН ПРОХОД НА ВСЕ СКВАДЫ ─────────────────────────────────────────
     // Вердикт владельца 2026-10-19, дословно: «У НАС ЕДИНАЯ ССИЕМА СКВАДОВ
     // ПОЧЕМУ ИХ НЕ НАРИСУЕТ?». Здесь стояли ДВА прохода — обход мест
-    // `for_each_place` своей строкой и цикл по слотам строкой тела, — а
+    // `for_each_rooted` своей строкой и цикл по слотам строкой тела, — а
     // между ними ранний выход по архетипу, чтобы город не нарисовался
     // ДВАЖДЫ. Гейт был симптомом: он лечил существование второго прохода.
     //
@@ -367,7 +367,7 @@ void draw_macro_overlay(const MacroWorld& mw,
             if (row.minZoom > 0.0f && zoom < row.minZoom) continue;
             // Положение — ГЛАЗ представления (M-244a): у ходока он догоняет
             // клетку, у неподвижного совпадает с ней (рождение ставит долю
-            // клетки в ноль — `place_birth.h`, «рождение — центр клетки»).
+            // клетки в ноль — `birth_squad.h`, «рождение — центр клетки»).
             // Непраймленный кадр ещё не ходил tick_macro_eyes и честно
             // рисует по клетке.
             const auto& cell = st.cell[slot];
@@ -482,7 +482,7 @@ void draw_macro_overlay(const MacroWorld& mw,
             const SquadKindRow& cityRow = squad_kind(SquadType::City);
             const float above =
                 mark_size(zoom,
-                          archetype_draw(SquadArchetype::Place).cellSpan,
+                          archetype_draw(SquadArchetype::Rooted).cellSpan,
                           cityRow.basePx, cityRow.maxPx) * 0.5f + r + 4.0f;
             const ImVec2 c(p.x, p.y - above);                  // pin centre
             // Dark disc + coloured ring so the pin reads over any biome.
