@@ -101,9 +101,6 @@ struct SpawnContext {
     bool         forest = false;          // is_forest_cell(treeCount)
     SquadType place = SquadType::None;
     std::uint8_t danger = 0;              // the cell's danger byte (zones)
-    // Live deposit kinds within the profession reach (bit per DepositKind):
-    // the ground that raises a macro miner also puts him in the street crowd.
-    std::uint8_t depositsNear = 0;
 };
 
 // ОРДИНАЛ, А НЕ СТРОКА (ЗАКОН СЛОВАРЯ п.1-2, наряд M-187). Здесь стоял

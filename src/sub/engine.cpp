@@ -1667,7 +1667,6 @@ CellContext SubworldEngine::context_from_facts(const CellFacts& f) const {
     // subtracts what the sickle already took.
     c.fertility01 = f.fertility01;
     c.zone = f.zone;
-    c.depositsNear = f.depositsNear;
     c.cropHarvested = f.cropHarvested;
     c.place.kind       = f.place.type;
     c.place.id         = f.place.id;
@@ -1736,7 +1735,7 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
         : MacroHandle{};
     spawn_cell_npcs((*objects_),
                     ctx.biome, ctx.treeCount, ctx.place.kind,
-                    ctx.zone, ctx.depositsNear, mgr_,
+                    ctx.zone, mgr_,
                     ox, oy, ctx.seed, ctx.worldSeed,
                     settlementFaction, ctx.place.size,
                     // The macro stock these citizens are borrowed from: this

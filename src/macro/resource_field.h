@@ -45,15 +45,15 @@ namespace sm {
 
 // A profession works ITS OWN village's ground: half the live worlds' village
 // spacing (~21-23 cells, derive_city_spacing/2) rounded to po2 — a work trip
-// stays inside the home hinterland, never the neighbour's. The spawn side
-// reads the same number: ore inside this reach raises the profession, and the
-// man it raises can actually walk to the ore.
+// stays inside the home hinterland, never the neighbour's. The placement side
+// reads the same number: a village is sited so the ore it is meant to work
+// lies inside this reach, and the man who walks there can actually reach it.
 //
 // It lives HERE, with the resource rows, rather than with the AI that walks
-// it, because three modules now measure by it: the gatherer's errand
-// (npc_ai.h), the street crowd's trade gate (cell_facts.h depositsNear) and
-// the reach field that answers the second in O(1) (deposit_layer.h). A number
-// two modules must agree on belongs below both.
+// it, because several modules measure by it on both sides: the gatherer's
+// errand (npc_ai.h), village siting (settlement_score.cpp, spawners.cpp) and
+// the vein reach field sized by it (deposit_layer.h). A number they must all
+// agree on belongs below all of them.
 inline constexpr int kGathererReach = 16;
 
 struct GameState;

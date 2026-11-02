@@ -143,9 +143,6 @@ int main() {
             ctx.forest = forest;
             ctx.place = place;
             ctx.danger = danger;
-            // Deposits all in reach: the profession rows of a town stripe are
-            // gated on ground, and this sweep asks "can it ever", not "here".
-            ctx.depositsNear = 0xFFu;
             std::uint32_t rng = 0x5EED0000u ^ salt;
             for (int i = 0; i < 4096; ++i) {
                 for (const auto& p : sm::roll_spawns(ctx, rng)) {

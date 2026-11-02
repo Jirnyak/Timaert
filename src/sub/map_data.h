@@ -429,9 +429,6 @@ struct CellContext {
     // The cell's danger byte (macro/zones.h continuum) — the spawn law's
     // zone contribution; 0 when the layer is not wired (silent legal zero).
     std::uint8_t zone = 0;
-    // Live deposit kinds within the profession reach (bit per DepositKind) —
-    // the street crowd's trade gate (spawn law, macro/fauna.h).
-    std::uint8_t depositsNear = 0;
     // The WORLD seed (not the per-cell hash above): seam-symmetric features
     // — the field-plot lattice — need a seed every neighbour derives
     // identically, or the two sides of a shared plot disagree. 0 in bare

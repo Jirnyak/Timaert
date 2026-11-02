@@ -83,8 +83,6 @@ struct CellFacts {
                                    //   shifted temperature (foliage wants it,
                                    //   classification must not see it)
     std::uint8_t zone = 0;    // the danger byte (macro/zones.h continuum)
-    std::uint8_t depositsNear = 0; // live DepositKind bits within the
-                                   //   profession reach (kGathererReach)
     // (ownerKingdom died 2026-09-11 with the kingdoms: it was written and
     // never read — ground ownership answers через faction_index_for_cell.)
     int  cropHarvested = 0;   // the wheat scar: what the sickle already took

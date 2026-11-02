@@ -1193,7 +1193,6 @@ void spawn_cell_npcs(SubObjects& objs,
                      int treeCount,
                      SquadType place,
                      std::uint8_t danger,
-                     std::uint8_t depositsNear,
                      const SeamlessSubworldManager& mgr,
                      int ox,
                      int oy,
@@ -1220,12 +1219,7 @@ void spawn_cell_npcs(SubObjects& objs,
     // same guard stronger for standing in a bigger town and the same wolf tougher
     // for standing in a redder province. Deleted 2026-08-20 (CANON.md S12); when
     // the zone is meant to matter it must weight the TABLE, not the body.
-    SpawnContext townCtx{};
-    townCtx.biome = biome;
-    townCtx.forest = is_forest_cell(treeCount);
-    townCtx.place = place;
-    townCtx.danger = danger;
-    townCtx.depositsNear = depositsNear;
+    //
     // ОДИН ПУТЬ ВОПЛОЩЕНИЯ: инвентарь существ места (вердикт владельца
     // 2026-09-30). Гарнизонная половина спавна, стоявшая здесь второй
     // дверью, УНИЧТОЖЕНА вместе с разделом «гарнизон/мирные»: она

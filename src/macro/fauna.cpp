@@ -5,7 +5,6 @@
 //   - Tables stored as null-terminated arrays of `const FaunaEntry*` so
 //     they live in `.rodata` and never allocate.
 #include "macro/fauna.h"
-#include "macro/deposit_layer.h"
 #include "macro/squad_index.h"
 #include "macro/macro_world.h"
 #include "macro/map_generator.h"

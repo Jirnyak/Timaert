@@ -319,7 +319,7 @@ void spawn_cell_at(sm::sub::SubObjects& objs,
                    int ox, int oy, int absCx, int absCy) {
     const sm::sub::CellContext c = meadow_cell(absCx, absCy);
     sm::sub::spawn_cell_npcs(objs, c.biome, c.feature,
-                             sm::SquadType::None, /*danger*/0, /*depositsNear*/0, mgr,
+                             sm::SquadType::None, /*danger*/0, mgr,
                              ox, oy, c.seed, /*worldSeed*/c.seed,
                              std::uint16_t(sm::faction_index("empire")),
                              0,
@@ -389,7 +389,6 @@ bool run_city_population_projection_case(
                              sm::FT_None,
                              sm::SquadType::City,
                              /*danger*/0,
-                             /*depositsNear*/0,
                              mgr,
                              /*ox*/0, /*oy*/0,
                              0xFACEB00Cu,
@@ -470,7 +469,7 @@ bool run_population_does_not_scale_bodies_case(
         sm::raise_flock_into_container(homeSouls, t.pop);
         sm::sub::spawn_cell_npcs(objs,
                                  sm::Biome::Meadow, sm::FT_None,
-                                 sm::SquadType::City, /*danger*/0, /*depositsNear*/0, mgr,
+                                 sm::SquadType::City, /*danger*/0, mgr,
                                  /*ox*/0, /*oy*/0,
                                  0xFACEB00Cu,
                                  /*worldSeed*/0xFACEB00Cu,

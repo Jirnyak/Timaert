@@ -1,7 +1,6 @@
 #include "macro/cell_facts.h"
 #include "macro/labour.h"   // souls_flock — паства через ТЕЛО (M-90)
 
-#include "macro/deposit_layer.h"
 #include "macro/map_generator.h"
 #include "macro/npc_ai.h"
 #include "macro/features.h"   // place_kind_of_feature — род едет из ФИЧИ (M-318 Б)
@@ -40,17 +39,6 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
     f.treeCount = (w.trees && w.trees->has_complete_storage())
         ? int(w.trees->at(f.x, f.y)) : -1;
     f.zone = w.zones ? w.zones->at(f.x, f.y) : std::uint8_t(0);
-    // Live vein within the profession reach — the same ground and the same
-    // radius that raise a macro gatherer (npc_ai.h kGathererReach) put his
-    // trade in this cell's street crowd (spawn law, fauna.h).
-    // ONE array read. This used to scan the ENTIRE vein list — 69 624
-    // entries in a real world — 161 µs per cell_facts, 4.3 ms of a 6.8 ms
-    // seam crossing, for one byte. The radius question is a stamped field
-    // (deposit_layer.h reach, problems.md §52). Жилы единые (2026-10-22):
-    // рода у маски больше нет, байт несёт один факт «жила рядом».
-    if (w.deposits && w.deposits->vein_near(f.x, f.y)) {
-        f.depositsNear = 1u;
-    }
 
     if (w.gs) {
         f.seasonTempOffset = season_temp_offset(w.gs->worldTime.day());

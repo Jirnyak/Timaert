@@ -42,7 +42,6 @@ bool same_row(const sm::CellFacts& a, const sm::CellFacts& b) {
         && a.fertility01 == b.fertility01
         && a.temperature01 == b.temperature01
         && a.seasonTempOffset == b.seasonTempOffset && a.zone == b.zone
-        && a.depositsNear == b.depositsNear
         && a.cropHarvested == b.cropHarvested && a.water == b.water;
 }
 
