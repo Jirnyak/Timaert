@@ -344,6 +344,51 @@ void draw_macro_overlay(const MacroWorld& mw,
     // групповые из них ключуются архетипом (`ui/squad_draw.h`): сколько
     // клеток занимает метка, помнит ли её карта, откуда берётся картинка и
     // каким слоем она ложится.
+    // ── МЕТКИ ЧИСТЫХ ФИЧ — ОТ ФИЧИ, НЕ ОТ СКВАДА (M-374, вердикт (а)).
+    // Руина и шпиль с M-320 — фичи без сквада, их глиф потерял носителя:
+    // слотовый проход ниже рисует СКВАДЫ, а чистая фича в сторе не живёт.
+    // Носитель метки — СТРОКА ФИЧИ (markPx/markMaxPx + цвет mapColor),
+    // обход — ОКНО видимых клеток поля фич: O(вьюпорт/zoom²), на минимальном
+    // зуме 4 px это ~233k чтений байта на кадр (окно 2560×1440) — тело цикла
+    // тривиально против 16 384 слотов с ветками ниже. Заворот — МАСКОЙ:
+    // сторона мира всегда степень двойки (ЗАКОН АДРЕСА). Рисуется ДО
+    // слотового прохода, то есть ПОД сквадами: артель на шахте не тонет.
+    if (zoom > 0.0f) {
+        const int maskX = mapW - 1, maskY = mapH - 1;
+        const int x0 = int(std::floor(camX - float(viewW) * 0.5f / zoom));
+        const int y0 = int(std::floor(camY - float(viewH) * 0.5f / zoom));
+        const int nx = std::min(mapW, int(float(viewW) / zoom) + 2);
+        const int ny = std::min(mapH, int(float(viewH) / zoom) + 2);
+        for (int y = y0; y < y0 + ny; ++y) {
+            const int cy = y & maskY;
+            for (int x = x0; x < x0 + nx; ++x) {
+                const int cx = x & maskX;
+                const FeatureDef& fd =
+                    kFeatureDefs[std::size_t(features.at(cx, cy))];
+                if (fd.markPx == 0) continue;
+                // Фича — факт карты: по памяти рисуется поблёкшей, тем же
+                // законом, что здания (`remembered` у архетипа).
+                const std::uint8_t know = gs.knowledge.at(cx, cy);
+                if (know == kKnowledgeUnknown) continue;
+                const bool faded = know < kKnowledgeVisible;
+                const ImVec2 p = world_to_screen(float(cx) + 0.5f,
+                                                 float(cy) + 0.5f, camX, camY,
+                                                 zoom, viewW, viewH, mapW,
+                                                 mapH);
+                const float size = mark_size(zoom, 1.0f, float(fd.markPx),
+                                             float(fd.markMaxPx));
+                // Выкачанность — ОДИН вывод на весь мир (spire_orb): тёмный
+                // шпиль туши отвечает тем же полуцветом, что метка чарта.
+                const std::uint32_t argb = spire_orb(mw, cx, cy).depleted
+                    ? ((fd.mapColor >> 1) & 0x7F7F7Fu)
+                    : fd.mapColor;
+                draw_sprite(dl, p, SpriteId::None, size,
+                            IM_COL32((argb >> 16) & 0xFF, (argb >> 8) & 0xFF,
+                                     argb & 0xFF, faded ? 120 : 230));
+            }
+        }
+    }
+
     {
         MacroStore& st = *mw.store;
         // Игрок — свой маркер, и под вселением тоже: слот флага + колонка.

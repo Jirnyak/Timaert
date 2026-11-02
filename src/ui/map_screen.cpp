@@ -3,6 +3,7 @@
 #include "tables/biomes.h"
 #include "core/caps.h"              // kUnifiedCap — проход по слотам, не по числу
 #include "tables/squad_type.h"      // kSquadKinds/kRootedYieldOrder — ось рода
+#include "macro/features.h"         // kFeatureDefs — метки чистых фич (M-374)
 #include "macro/map_generator.h"
 #include "macro/markers.h"
 #include "macro/player_entity.h"
@@ -124,6 +125,12 @@ constexpr const char* kMarkerLegendLabel[4] = {"Quest", "Point of interest",
 inline constexpr bool stands_on_the_chart(SquadType t) {
     return archetype_draw(squad_archetype(t)).remembered;
 }
+
+// Пол радиуса метки ЧИСТОЙ ФИЧИ на чарте — тот же, что был у кружка
+// руины-сквада до M-320: miniR 1.6 её строки × 2 (формула слотового прохода
+// ниже — max(miniR*2, zoom*0.5)). Метка восстановлена, не выдумана; число —
+// баланс.
+inline constexpr float kFeatureChartR = 3.2f;
 
 // Чарт рисует РОВНО неподвижные рода — под компилятором, а не по памяти
 // ревьюера. Негативный контроль записан в теле коммита (обе полярности).
@@ -294,6 +301,41 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
             dl->AddText(tp, IM_COL32(20, 22, 26, 220), nm);
             dl->AddText(ImVec2(tp.x - 1, tp.y - 1),
                         IM_COL32(235, 232, 220, faded ? 150 : 255), nm);
+        }
+    }
+
+    // ── МЕТКИ ЧИСТЫХ ФИЧ — ОТ ФИЧИ, НЕ ОТ СКВАДА (M-374, вердикт (а)):
+    // руина и шпиль стояли на чарте слотовым проходом и умерли с их
+    // сквадами (M-320). Носитель — СТРОКА ФИЧИ (markPx + mapColor), обход —
+    // всё поле фич: 1 МиБ байтов на кадр открытой страницы с тривиальным
+    // телом; мир-оверлей при открытом чарте не рисуется вовсе, а слотовый
+    // проход выше ходит 16 384 слота с большим телом.
+    if (mw.features) {
+        const FeatureLayer& features = *mw.features;
+        for (int ly = 0; ly < mapH; ++ly) {
+            for (int lx = 0; lx < mapW; ++lx) {
+                const FeatureDef& fd =
+                    kFeatureDefs[std::size_t(features.at(lx, ly))];
+                if (fd.markPx == 0) continue;
+                const std::uint8_t know = gs.knowledge.at(lx, ly);
+                if (know == kKnowledgeUnknown) continue;
+                const bool faded = know < kKnowledgeVisible;
+                const ImVec2 p = to_screen(float(lx) + 0.5f, float(ly) + 0.5f,
+                                           st, zoomLogical, viewW, viewH,
+                                           mapW, mapH);
+                if (p.x < -32 || p.x > viewW + 32 || p.y < -32
+                    || p.y > viewH + 32)
+                    continue;
+                const float r = std::max(kFeatureChartR, zoomLogical * 0.5f);
+                // Выкачанность — ОДИН вывод на весь мир (spire_orb, M-233
+                // п.8); полуцвет — та же дериват, что у меток сквадов выше.
+                const std::uint32_t base = spire_orb(mw, lx, ly).depleted
+                    ? ((fd.mapColor >> 1) & 0x7F7F7Fu)
+                    : fd.mapColor;
+                const ImU32 fill = argb_im(base, faded ? 140 : 230);
+                const ImU32 rim = argb_im((base >> 2) & 0x3F3F3Fu, 255);
+                chart_shape(dl, p, MiniShape::Dot, r, fill, rim);
+            }
         }
     }
 

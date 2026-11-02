@@ -230,6 +230,20 @@ struct FeatureDef {
     // RGB поселений и ленточных родов взяты из их строк `kSquadKinds` и их
     // процедурных камней, чтобы один род не красился двумя разными ответами.
     std::uint32_t mapColor;
+
+    // ── МЕТКА ФИЧИ НА КАРТЕ — ТУШЬ ПОВЕРХ ТИНТА (M-374, вердикт владельца:
+    // «дать чистым фичам глиф от ФИЧИ»). Руина и шпиль с M-320 — фичи без
+    // сквада, и их глиф потерял носителя: слотовые проходы карт рисуют
+    // СКВАДЫ, а чистая фича в сторе не живёт. Носитель метки — ЭТА строка;
+    // ноль = метки нет, и этот ноль говорят два рода строк ОДНИМ ответом:
+    // у поселений метку несёт их сквад (второй знак был бы двойной рисовкой),
+    // у лент и борозд вид процедурный (их же ноль в mapColor). Цвет метка
+    // берёт у mapColor (RGB; альфа там — сила заливки, в метку не входит).
+    // Числа руины/шпиля — пол и потолок кружка руины-сквада до M-320
+    // (basePx 22, maxPx 144 её строки kSquadKinds): метка ВОССТАНОВЛЕНА,
+    // не выдумана; прочим фичам метка — одна строка данных, когда решат.
+    std::uint8_t markPx = 0;     // пол размера метки, px; 0 = метки нет
+    std::uint8_t markMaxPx = 0;  // потолок размера метки, px
 };
 
 // ── ПОЛЯ НАЗЫВАЮТСЯ, А НЕ СЧИТАЮТСЯ (DOD п.9) ────────────────────────────
@@ -392,14 +406,14 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
      .onWater = FT_None,
      .kind = SquadType::Spire,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
-     .mapColor = 0x6EA86CFFu},
+     .mapColor = 0x6EA86CFFu, .markPx = 22, .markMaxPx = 144},
     {.type = FT_Ruin, .bedWeight = 0.0f, .opticalCost = 1.00f,
      .civStrength = 0.0f,
      .lightPalette = kLightRuin, .lightBase = 40,
      .onWater = FT_None,
      .kind = SquadType::Ruin,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
-     .mapColor = 0x5A8E8576u},
+     .mapColor = 0x5A8E8576u, .markPx = 22, .markMaxPx = 144},
 };
 static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
               "kFeatureDefs row order must mirror FeatureType — a new "

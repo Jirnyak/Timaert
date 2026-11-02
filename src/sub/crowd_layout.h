@@ -53,8 +53,13 @@ inline constexpr CrowdLayoutRow kCrowdLayout[std::size_t(SquadType::Count)] = {
     // уходит на ярусы башни («улица — толпа, башня держит четверть»).
     {.type = SquadType::Spire,
      .crowdHabitat = kHabSpire, .crowdInsideShift = 2},
-    // Бит руины — он же словарь нор (что заползает в погреба и пещеры).
-    {.type = SquadType::Ruin, .crowdHabitat = kHabRuin},
+    // Толпа руины СНЕСЕНА (M-374, вердикт владельца: «толпа — легаси»):
+    // руина — чистая фича без сквада (M-320), её обитателей спавнит МОДУЛЬ
+    // полосой FaunaBand (kFeatureGenRows@src/sub/gens/dispatch.cpp), а не
+    // раскладка толпы поселения. Ряд пуст, как у Shrine/Mine/Tower.
+    {.type = SquadType::Ruin},
+    // Бит руины — он же словарь нор (что заползает в погреба и пещеры);
+    // у ЛОГОВА он остаётся полосой толпы.
     {.type = SquadType::Lair, .crowdHabitat = kHabRuin},
     {.type = SquadType::Shrine},
     {.type = SquadType::Mine},
