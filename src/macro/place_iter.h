@@ -97,7 +97,7 @@ void for_each_place_view(const MacroWorld& w, F&& fn) {
             // колонке рядом, только недоступный ни руине, ни логову, ни
             // шахте — они показывали пустую строку, хотя их label ждал.
             const char* name = st.name[slot].text;
-            if (name[0] == '\0') name = place_def(t).label.data();
+            if (name[0] == '\0') name = squad_kind(t).label.data();
             const auto& c = st.cell[slot];
             const int x = ecs::cell_x(c, gs.mapW);
             const int y = ecs::cell_y(c, gs.mapW);

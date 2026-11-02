@@ -49,7 +49,7 @@
 #include "macro/movement_cost.h"  // burn/rest per hour — якорь предусловия
 #include "macro/travel.h"         // overload_burden_from_capacity
 #include "macro/place_birth.h"   // birth_place — место родится ТЕЛОМ
-#include "macro/place_registry.h"  // place_is_settlement — дверь различения (M-333)
+#include "tables/squad_type.h"  // place_is_settlement — дверь различения (M-333)
 #include "macro/world_tick.h"    // settle_place_day — дневной проход места
 #include "macro/features.h"      // FeatureLayer — фича ПОД местом
 #include "macro/labour.h"        // settle_souls — одна дверь прихода душ
@@ -754,7 +754,7 @@ void test_a_dying_place_rewrites_the_feature_under_itself() {
 // ПОЧИНКИ: (1) сытое поселение растёт, и оба носителя души ходят парой;
 // (2) голодное СТОИТ (ноль поглощающий — тот же закон, не кламп);
 // (3) дверь, различающая смысл числа, В МИРЕ ЕСТЬ и отвечает врозь
-// (`place_is_settlement@src/macro/place_registry.h`: деревня — поселение,
+// (`place_is_settlement@src/tables/squad_type.h`: деревня — поселение,
 // шахта — нет), значит день починки не потребует новой системы;
 // (4) число под шахтой НЕ ЕСТЬ счёт её голов — 512 руды против нуля людей.
 //

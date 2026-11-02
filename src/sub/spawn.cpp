@@ -595,7 +595,7 @@ void spawn_place_population(SubObjects& objs,
             BodyLoan::from(MacroStock::Creatures, key));
     }
     if (refused > 0) {
-        const std::string_view id = place_def(place).id;
+        const std::string_view id = squad_kind(place).id;
         std::fprintf(stderr,
                      "[spawn] WARN %.*s crowd at cell (%d,%d): %d of %d "
                      "bodies found no ground\n",

@@ -8,6 +8,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>   // std::size — счёт порядка выдачи выводится, не пишется
+#include <string_view>
+
+#include "core/table_guard.h"    // rows_in_enum_order — ключ строки есть индекс
+#include "tables/map_actions.h"  // биты глаголов встречи (колонка actions)
+#include "tables/sprite_rows.h"  // SpriteId — спрайт рода есть ПРОСТО ЧИСЛО
 
 namespace sm {
 
@@ -314,5 +319,229 @@ static_assert(std::size(kPlaceYieldOrder)
               "порядок выдачи покрывает ВЕСЬ неподвижный отрезок 1..9: "
               "новый род места = его строка здесь, иначе он невидим");
 
+// ── ЕДИНАЯ ТАБЛИЦА РОДОВ СКВАДА: ИМЯ, ВИД, ГЛАГОЛЫ ВСТРЕЧИ (ломоть 5б
+// M-235) ──────────────────────────────────────────────────────────────────
+// Вердикт владельца 2026-11-01, дословно: «просто спутниа таблицы сквадов
+// (анкет их) это ж буквально типа часть строк этих естетсвено у каждого
+// может быть свой спрайт в таблице самой это просто тупа число какой его
+// спрайт единнобразно»; и канонный 2026-10-04: «ПОЧЕМУ ПРОСТО УНИВЕРСАЛЬНО
+// У НАС ЕДИНАЯ ТАБЛИЦА СКВАДОВ (АНКЕТЫ) … У КАЖДОЙ ЛИБО СВОЙ АРТ СПРАЙТ
+// (ЛИБО ПРОЦЕДУРНАЯ ДЕФОЛТ ПУТЬ)» — таблица родов ОДНА на все сквады,
+// слияние вместе с эпиком АИ-модулей.
+//
+// СЮДА СЛИТЫ: вся бывшая таблица рисовки рода (SquadDrawRow из
+// ui/squad_draw.h — спрайт ЧИСЛОМ, размеры метки, знак миникарты) и пять
+// колонок бывшего реестра мест (macro/place_registry.h: id, label, glyph,
+// color, actions). «Нет арта» ≠ «не рисуется»: род без строки спрайта
+// метится глиф-кружком цветом своей строки (страж — в ui/squad_draw.h, у
+// группового закона pictureFromBody).
+//
+// ЦВЕТ: вердикт 2026-08-14 «color строки реестра — ОДИН источник цвета для
+// карты, миникарты и списков» исполняется ЗДЕСЬ: реестр мест умирает
+// (M-235), единственный источник переехал вместе с остальным видом —
+// источников по-прежнему не два.
+//
+// ЛИЧНЫЙ СПРАЙТ АНКЕТЫ («у каждого может быть свой спрайт») — колонка
+// ЭКЗЕМПЛЯРА поверх дефолта рода; НЕ заведена, потому что читателя у неё
+// ещё нет ни одного (DOD п.9) — заводится вместе с первым.
+
+// Знак метки миникарты. Ring = точка с тёмной обводкой (города), Dot — голая
+// точка (деревни), Diamond — ромб с обводкой (шпили).
+enum class MiniShape : std::uint8_t { Ring, Dot, Diamond };
+
+struct SquadKindRow {
+    SquadType type;           // MUST equal the row's index (guard below)
+    SpriteId sprite;          // None = нет арта → глиф-кружок
+    SpriteId spriteDepleted;  // вид выработанного места (== sprite, если
+                              // род не вырабатывается)
+    std::uint8_t glyph;       // ASCII-метка под неотрисованным артом
+    MiniShape mini;           // знак миникарты
+    // Глаголы ВСТРЕЧИ: что предлагает универсальное меню при клике на род
+    // (биты tables/map_actions.h). Это строки будущих ВЫБОРОВ узла диалога
+    // (вердикт «встреча = узел диалог-системы», M-305): когда встреча станет
+    // узлом, колонка умрёт в строки узлов — она контент, не каркас.
+    std::uint16_t actions;
+    std::uint32_t color;      // ARGB; ОДИН источник цвета рода (см. шапку)
+    float basePx;             // пол размера метки на малом зуме
+    float maxPx;              // потолок размера метки на большом зуме
+    float minZoom;            // прятать ниже этого зума (0 = виден всегда)
+    float labelZoom;          // подпись с этого зума (0 = никогда)
+    float miniR;              // радиус метки миникарты, px
+    std::string_view id;      // авторское имя рода (лог, авторинг)
+    std::string_view label;   // подпись на карте; "" = подпись даёт ТЕЛО
+};
+
+inline constexpr SquadKindRow kSquadKinds[std::size_t(SquadType::Count)] = {
+    // ТИП БЕЗ НАЗНАЧЕНИЯ — ХОДОК: глаголы ходочьи (M-281), картинка с тела,
+    // разброс размеров тот же, что у подвижных (нулевой maxPx оставил бы его
+    // невидимым — строка обязана отвечать).
+    {.type = SquadType::None, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None, .glyph = ' ', .mini = MiniShape::Dot,
+     .actions = kMapActTalk | kMapActTrade | kMapActAttack,
+     .color = 0x00000000u,
+     .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
+     .miniR = 0.0f, .id = "none", .label = ""},
+    // Столица носит ГОРОДСКОЙ спрайт — своего арта у неё ещё нет, и «нет
+    // арта» не значит «не рисуется»: крупнее города на карте и тем отличима,
+    // пока художник не дал ей строку спрайта.
+    {.type = SquadType::Capital, .sprite = SpriteId::City,
+     .spriteDepleted = SpriteId::City, .glyph = '@', .mini = MiniShape::Ring,
+     .actions = kMapActTrade | kMapActHire | kMapActQuests,
+     .color = 0xFFFFD98Cu,
+     .basePx = 32.0f, .maxPx = 224.0f, .minZoom = 0.0f, .labelZoom = 6.0f,
+     .miniR = 3.0f, .id = "capital", .label = "Capital"},
+    {.type = SquadType::City, .sprite = SpriteId::City,
+     .spriteDepleted = SpriteId::City, .glyph = '#', .mini = MiniShape::Ring,
+     .actions = kMapActTrade | kMapActHire | kMapActQuests,
+     .color = 0xFFE7D27Au,
+     .basePx = 28.0f, .maxPx = 192.0f, .minZoom = 0.0f, .labelZoom = 6.0f,
+     .miniR = 3.0f, .id = "city", .label = "City"},
+    {.type = SquadType::Village, .sprite = SpriteId::Village,
+     .spriteDepleted = SpriteId::Village, .glyph = 'v', .mini = MiniShape::Dot,
+     .actions = kMapActTrade | kMapActHire | kMapActQuests,
+     .color = 0xFFCCB068u,
+     .basePx = 22.0f, .maxPx = 144.0f, .minZoom = 3.0f, .labelZoom = 0.0f,
+     .miniR = 1.6f, .id = "village", .label = "Village"},
+    {.type = SquadType::Spire, .sprite = SpriteId::SpireActive,
+     .spriteDepleted = SpriteId::SpireSpent, .glyph = 'I',
+     .mini = MiniShape::Diamond, .actions = 0, .color = 0xFFA86CFFu,
+     .basePx = 26.0f, .maxPx = 160.0f, .minZoom = 0.0f, .labelZoom = 0.0f,
+     .miniR = 4.0f, .id = "spire", .label = "Spire"},
+    {.type = SquadType::Ruin, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None, .glyph = 'r', .mini = MiniShape::Dot,
+     .actions = 0, .color = 0xFF8E8576u,
+     .basePx = 22.0f, .maxPx = 144.0f, .minZoom = 0.0f, .labelZoom = 0.0f,
+     .miniR = 1.6f, .id = "ruin", .label = "Ruin"},
+    {.type = SquadType::Lair, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None, .glyph = 'L', .mini = MiniShape::Dot,
+     .actions = 0, .color = 0xFF883A3Au,
+     .basePx = 22.0f, .maxPx = 144.0f, .minZoom = 0.0f, .labelZoom = 0.0f,
+     .miniR = 1.6f, .id = "lair", .label = "Lair"},
+    {.type = SquadType::Shrine, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None, .glyph = '+', .mini = MiniShape::Dot,
+     .actions = 0, .color = 0xFFE2E2E2u,
+     .basePx = 22.0f, .maxPx = 144.0f, .minZoom = 0.0f, .labelZoom = 0.0f,
+     .miniR = 1.6f, .id = "shrine", .label = "Shrine"},
+    {.type = SquadType::Mine, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None, .glyph = 'M', .mini = MiniShape::Dot,
+     .actions = 0, .color = 0xFF8B6332u,
+     .basePx = 22.0f, .maxPx = 144.0f, .minZoom = 0.0f, .labelZoom = 0.0f,
+     .miniR = 1.6f, .id = "mine", .label = "Mine"},
+    {.type = SquadType::Tower, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None, .glyph = 'T', .mini = MiniShape::Dot,
+     .actions = 0, .color = 0xFF6E6E89u,
+     .basePx = 22.0f, .maxPx = 144.0f, .minZoom = 0.0f, .labelZoom = 0.0f,
+     .miniR = 1.6f, .id = "tower", .label = "Tower"},
+    // ── ПОДВИЖНЫЕ РОДА: картинку ходок берёт С ТЕЛА (pictureFromBody его
+    // архетипа, ui/squad_draw.h), подпись — тоже тело (label = ""); здесь
+    // размеры, порог зума и ходочьи глаголы (маска была литералом в ветке
+    // `actions_of` по роду — ветка умерла, литерал стал строками, M-281).
+    {.type = SquadType::Artel, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None, .glyph = ' ', .mini = MiniShape::Dot,
+     .actions = kMapActTalk | kMapActTrade | kMapActAttack,
+     .color = 0x00000000u,
+     .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
+     .miniR = 0.0f, .id = "artel", .label = ""},
+    {.type = SquadType::Caravan, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None, .glyph = ' ', .mini = MiniShape::Dot,
+     .actions = kMapActTalk | kMapActTrade | kMapActAttack,
+     .color = 0x00000000u,
+     .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
+     .miniR = 0.0f, .id = "caravan", .label = ""},
+    {.type = SquadType::Collector, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None, .glyph = ' ', .mini = MiniShape::Dot,
+     .actions = kMapActTalk | kMapActTrade | kMapActAttack,
+     .color = 0x00000000u,
+     .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
+     .miniR = 0.0f, .id = "collector", .label = ""},
+    // ДРАКОН — ходок: строка существа несёт SpriteId::Dragon, картинка с
+    // тела. Маска глаголов ПОЛНАЯ — страж ниже держит закон «у ходока
+    // глаголы ЕСТЬ»; верные глаголы дракону назовёт его модуль (ломоть 6).
+    {.type = SquadType::Dragon, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None, .glyph = ' ', .mini = MiniShape::Dot,
+     .actions = kMapActTalk | kMapActTrade | kMapActAttack,
+     .color = 0x00000000u,
+     .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
+     .miniR = 0.0f, .id = "dragon", .label = ""},
+};
+
+static_assert(rows_in_enum_order(kSquadKinds, &SquadKindRow::type),
+              "kSquadKinds row order must mirror SquadType — the enum "
+              "index IS the binding");
+
+// РАЗМЕР СТРОКИ НАЗВАН — ЗНАЧИТ ПРИБИТ (DOD п.10). Раскладка: пять байт
+// головы (type, sprite, spriteDepleted, glyph, mini) + байт выравнивания,
+// actions на 6..7, color на 8..11, пять float 12..31, два string_view
+// (align 8) 32..63. Пин не про байты (14 constexpr-строк), а про запрет
+// доливать колонку МОЛЧА: строку меняют осознанно, вместе с этим числом.
+static_assert(sizeof(SquadKindRow) == 64,
+              "SquadKindRow layout changed — say WHICH column and why");
+
+inline constexpr const SquadKindRow& squad_kind(SquadType t) {
+    return kSquadKinds[std::size_t(t)];
+}
+
+// Ни один род оси не остаётся невидимым: нулевой maxPx означал бы размер 0
+// на любом зуме — строку, которая отказывается отвечать.
+static_assert([] {
+    for (const SquadKindRow& r : kSquadKinds)
+        if (r.maxPx <= 0.0f) return false;
+    return true;
+}(), "строка рода обязана нести свой размер — иначе род невидим");
+
+// ── ЗАКОН ГЛАГОЛОВ — ПОД КОМПИЛЯТОРОМ, А НЕ В ПРОГОНЕ (M-281) ────────────
+//   1) НИ ОДНО МЕСТО НЕ ГОВОРИТ И НЕ БЬЁТСЯ ЧЕРЕЗ ЭТО МЕНЮ (вердикт
+//      2026-09-11: «война — отдельный трек»). Город с Attack НЕ СОБЕРЁТСЯ.
+//   2) У ХОДОКА ГЛАГОЛЫ ЕСТЬ. Нулевая строка подвижного рода и была тем
+//      нулём, за который отвечал литерал в коде, — она больше невыразима.
+static_assert([] {
+    for (const SquadKindRow& d : kSquadKinds) {
+        const bool place = squad_archetype(d.type) == SquadArchetype::Place;
+        if (place && (d.actions & (kMapActTalk | kMapActAttack)) != 0)
+            return false;                                           // (1)
+        if (!place
+            && (d.actions & (kMapActTalk | kMapActTrade | kMapActAttack))
+                   != (kMapActTalk | kMapActTrade | kMapActAttack))
+            return false;                                           // (2)
+    }
+    return true;
+}(), "строка оси объявляет свои глаголы сама: место не говорит и не бьётся, "
+     "а ходок говорит, торгует и бьётся");
+
+// Поселение ли род — СТОЯЩИЙ род, который держит прилавок, найм или доску
+// контрактов: сюда «прибывают», с событиями входа/выхода и панелью по T.
+// Предикат убил хардкод SquadType::City (PLAY-2): деревня отвечает той же
+// дверью, что город. ШРАМ M-281 (здесь, чтобы не повторить): предикат звался
+// `actions != 0` и жил на ЧУЖОМ нуле — как только подвижные строки получили
+// свои глаголы, поселением стали артель и корован, панель открывалась сама
+// и ПАУЗИЛА мир. Теперь обе половины спрашивают СВОЁ: «стоит ли» — архетипом
+// (ключом, не гейтом), «торгует ли» — поселенческими битами, а не любыми.
+inline constexpr bool place_is_settlement(SquadType t) {
+    return squad_archetype(t) == SquadArchetype::Place
+        && (squad_kind(t).actions
+            & (kMapActTrade | kMapActHire | kMapActQuests)) != 0;
+}
+
+// ХОДОК НЕ ПОСЕЛЕНИЕ — ПОД КОМПИЛЯТОРОМ. Ровно тот закон, который правка
+// M-281 сломала молча; свидетеля у него не было, и он прожил до смоука.
+static_assert([] {
+    for (std::size_t i = 0; i < std::size_t(SquadType::Count); ++i) {
+        const SquadType t = SquadType(i);
+        if (squad_archetype(t) != SquadArchetype::Place
+            && place_is_settlement(t))
+            return false;
+    }
+    return place_is_settlement(SquadType::City)
+        && place_is_settlement(SquadType::Village)
+        && !place_is_settlement(SquadType::Spire);
+}(), "поселение — СТОЯЩИЙ род с прилавком/наймом/доской; подвижный род "
+     "поселением не бывает ни при каких глаголах");
 
 } // namespace sm
+
+#include "core/row_law.h"
+// Контур строк этого файла — судит компилятор (`core/row_law.h`, M-169):
+// строка мира с вектором, строкой, картой или виртуальным методом отсюда не
+// соберётся. string_view законен: это НЕ владеющая строка, а пара
+// {указатель, длина} на constexpr-литерал — тривиально копируема.
+TIMAERT_ROW(sm::SquadKindRow);

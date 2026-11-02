@@ -210,7 +210,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
                             SquadType(st.runtime[slot].squadType);
                         if (!stands_on_the_chart(t)) return;
                         const char* nm = st.name[slot].text;
-                        if (nm[0] == '\0') nm = place_def(t).label.data();
+                        if (nm[0] == '\0') nm = squad_kind(t).label.data();
                         if (nm[0] == '\0') return;
                         ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.4f, 1), "%s",
                                            nm);
@@ -264,7 +264,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
         if (know == kKnowledgeUnknown) continue;
         ++discovered[std::size_t(type)];
         const bool faded = know < kKnowledgeVisible;
-        const SquadDrawRow& row = squad_draw(type);
+        const SquadKindRow& row = squad_kind(type);
         const ImVec2 p = to_screen(float(lx) + 0.5f, float(ly) + 0.5f, st,
                                    zoomLogical, viewW, viewH, mapW, mapH);
         if (p.x < -64 || p.x > viewW + 64 || p.y < -64 || p.y > viewH + 64)
@@ -274,7 +274,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
         // remembered. The mark grows to half its cell when zoomed in, floored
         // at the row's legend radius so it never dissolves at world-fit.
         const float r = std::max(row.miniR * 2.0f, zoomLogical * 0.5f);
-        const std::uint32_t argb = place_def(type).color;
+        const std::uint32_t argb = squad_kind(type).color;
         // Depleted = half strength, remembered = reduced alpha — the same
         // derivations the old panel used; ONE colour authority throughout.
         // Выкачанность — ОДИН вывод на весь мир (spire_orb, M-233 п.8).
@@ -287,7 +287,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
             // Безымянный показывает label своей строки реестра — один закон
             // показа на все рода, тот же, что у главной карты.
             const char* nm = store.name[slot].text;
-            if (nm[0] == '\0') nm = place_def(type).label.data();
+            if (nm[0] == '\0') nm = squad_kind(type).label.data();
             if (nm[0] == '\0') continue;
             const ImVec2 ts = ImGui::CalcTextSize(nm);
             const ImVec2 tp(p.x - ts.x * 0.5f, p.y - r - ts.y - 3.0f);
@@ -376,15 +376,14 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
         const float sw = rowH * 0.45f;
         for (std::size_t t = 0; t < std::size_t(SquadType::Count); ++t) {
             if (discovered[t] == 0) continue;
-            const PlaceDef& def = kPlaces[t];
-            const SquadDrawRow& row = kSquadDraw[t];
+            const SquadKindRow& row = kSquadKinds[t];
             const ImVec2 cur = ImGui::GetCursorScreenPos();
             chart_shape(wdl, ImVec2(cur.x + sw, cur.y + rowH * 0.42f),
-                        row.mini, sw, argb_im(def.color, 230),
-                        argb_im((def.color >> 2) & 0x3F3F3Fu, 255));
+                        row.mini, sw, argb_im(row.color, 230),
+                        argb_im((row.color >> 2) & 0x3F3F3Fu, 255));
             ImGui::Dummy(ImVec2(sw * 2.4f, rowH * 0.8f));
             ImGui::SameLine();
-            ImGui::Text("%.*s", int(def.label.size()), def.label.data());
+            ImGui::Text("%.*s", int(row.label.size()), row.label.data());
             ImGui::SameLine();
             ImGui::TextDisabled("%d", discovered[t]);
         }

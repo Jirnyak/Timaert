@@ -1575,7 +1575,7 @@ namespace sm::ui
         const ecs::Pools &pools = st.pools[slot];
         const auto &kindCol = st.kind[slot];
         const SquadType sKind = SquadType(st.runtime[slot].squadType);
-        const PlaceDef &row = place_def(sKind);
+        const SquadKindRow &row = squad_kind(sKind);
         const NPCType bodyKind =
             kindCol.type < std::uint16_t(NPCType::Count)
                 ? NPCType(std::uint8_t(kindCol.type)) : NPCType::Peasant;

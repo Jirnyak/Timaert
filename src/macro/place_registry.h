@@ -11,12 +11,8 @@
 #pragma once
 #include <cstdint>
 #include "core/table_guard.h"
-#include "macro/econ_day.h"     // kCreaturesPerCityWorker — the bench quota the
-                                // city's labourShift is log2 of (guard below)
-#include "tables/map_actions.h"  // the verb bits the `actions` column declares
 #include "tables/npc.h"   // NPCType — the crew rows below name who a place raises
 #include "tables/squad_type.h"  // SquadType — строка объявляет, КОГО она поднимает
-#include <string_view>
 
 namespace sm {
 
@@ -44,11 +40,13 @@ inline constexpr std::uint8_t  kPlaceFaunaCapGround = 0xFFu;
 struct PlaceDef {
     // MUST equal the row's index in kPlaces (guard below the table).
     SquadType     type;
-    std::string_view id;
-    std::string_view label;
+    // ── КОЛОНКИ `id`, `label`, `glyph`, `color`, `actions` УЕХАЛИ 2026-11-01
+    // В ЕДИНУЮ ТАБЛИЦУ РОДОВ `kSquadKinds@src/tables/squad_type.h` (ломоть 5б
+    // M-235, вердикт владельца: таблица родов ОДНА на все сквады, спрайт —
+    // просто число). Туда же уехал предикат `place_is_settlement` со своими
+    // стражами — его дом теперь ось, а не реестр мест. ──────────────────────
     std::uint8_t     minZone;     // minimum difficulty zone to spawn
     std::uint8_t     maxZone;
-    std::uint8_t     glyph;       // ASCII glyph for fallback rendering
     // ── КОЛОНКА `feature` УЕХАЛА 2026-10-27 В СТРОКУ ФИЧИ (вариант В
     // M-235, вердикт владельца) ──────────────────────────────────────────
     // Она отвечала «какую фичу ставит этот род». Теперь на тот же вопрос
@@ -60,7 +58,6 @@ struct PlaceDef {
     // модуля генерации субмира (вердикт 2026-10-24 про `FT_Capital`).
     // Включение `tables/feature_type.h` ушло вместе с колонкой: роду этой
     // таблицы словарь фич больше не нужен ни на байт.
-    std::uint32_t    color;       // ARGB tint
     // (КОЛОНКА `walkable` УНИЧТОЖЕНА 2026-10-19, M-290, вердикт владельца
     //  «снести оба»: она объявляла «можно ли сюда войти», а вход в субмир
     //  субъекта не спрашивает ВООБЩЕ — `enter_subworld@src/app/main.cpp`
@@ -183,24 +180,16 @@ struct PlaceDef {
     // ничего, — анкета в нулях; законный ноль S6 остался на месте, просто
     // перестал быть отдельной колонкой.)
 
-    // ── The labour law of the place (owner 2026-08-31, CANON S10) ─────────
-    // City = 3 = log2(kCreaturesPerCityWorker), the bench quota's own shift
-    // (the M&B doctrine — «деревня добывает ресурсы, город производит
-    // товары» — keeps a city's hands at its benches; the static_assert below
-    // the table ties the two laws together). Крю-половина закона — «crew
-    // pool = pop >> labourShift», строки crews и аукцион дневной ротации
-    // (НЕ путать с аукционом найма M-38/M-40 — тот ещё не построен) — КАЗНЕНА
-    // (ломоть 4 M-72, вердикт 2026-10-04 «уничтожить как систему»): рабочие
-    // сквады поднимет модуль места (ломоть 5), дыра открыта и названа.
-    std::uint8_t     labourShift = 3;
-    // ── The interaction verbs this KIND offers (меню-сессия, 2026-09-11) ──
-    // tables/map_actions.h bits: what the universal menu lists when the
-    // player stands beside one of these. 0 = the walk-in minimum (info +
-    // Enter — Enter is the `walkable` column above, actions_of() folds it
-    // in, no second byte). Availability NOW is the menu row's predicate;
-    // this column is the kind's vocabulary. Owner's verdicts: деревня =
-    // прилавок + найм + доска контрактов; отдых таверны вырезан вообще.
-    std::uint16_t     actions = 0;
+    // ── КОЛОНКА `labourShift` СНЕСЕНА 2026-11-01 (вердикт владельца: «да
+    // сноси специализацию сквдов мы будет делать лучше если понадобитсч
+    // чисто просто создавая новый типа и модуль сквадов под каждую
+    // профессию»). Она была СИРОТОЙ СО СТРАЖЕМ: ноль прод-читателей — у
+    // закона труда (owner 2026-08-31, CANON S10) крю-половина казнена
+    // ломтём 4 M-72, и субъект колонки умер раньше неё. Решение «сколько
+    // рук у рода» возьмёт себе МОДУЛЬ рода своим числом, когда у числа
+    // появится читатель; специализация рода = НОВЫЙ ТИП + модуль, никогда
+    // колонка-настройка. Страж log2(kCreaturesPerCityWorker) умер с ней,
+    // включение macro/econ_day.h — тоже. ─────────────────────────────────
     // ── АМБАР РОЖДЕНИЯ: ДВА ЧИСЛА РОДА, А НЕ БУЛЕВ РОД В АРГУМЕНТЕ ────────
     // Здесь их не было: `seed_place_inventory(..., bool isCity)` тащил
     // РОД булевым параметром и сам решал по нему оба числа (`isCity ? 32 : 8`
@@ -248,15 +237,12 @@ struct PlaceDef {
 // TSV замера). Переезд строк в ИИ-модули рода (M-235) становится
 // механическим: поля называются, значит их нельзя пересчитать.
 inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
-    // ТИП БЕЗ НАЗНАЧЕНИЯ — ХОДОК, И ГЛАГОЛЫ У НЕГО ХОДОЧЬИ (M-281). Здесь
-    // стояла строка в нулях при `walkable = true`, то есть бестиповый сквад
-    // объявлял ВХОД и не объявлял ни разговора, ни торга, ни драки — и это
-    // было незаметно, потому что ответ за него давала константная маска,
-    // вписанная в `actions_of` веткой по роду субъекта. Ветка умерла, строка
-    // отвечает сама: войти в человека нельзя (`walkable = false`).
-    {.type = SquadType::None, .id = "none", .label = "",
-     .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u, .lightColor = 0x00000000u, .lightPop = 0.0f,
-     .actions = kMapActTalk | kMapActTrade | kMapActAttack },
+    // ТИП БЕЗ НАЗНАЧЕНИЯ — ХОДОК. Его имя, вид и глаголы — строка
+    // `kSquadKinds`; здесь остались только колонки, ждущие своих адресатов
+    // (ломоть 5б M-235): зоны — генераторам, свет и фауна — строке фичи,
+    // crowd*/garrison — модулям генерации субмира, seed* — модулю рода.
+    {.type = SquadType::None,
+     .minZone = 0, .maxZone = 255, .lightColor = 0x00000000u, .lightPop = 0.0f },
     // СТОЛИЦА — ГОРОД СТАРШЕГО РАНГА, И ПОКА ЧИСЛА У НЕЁ ГОРОДСКИЕ. Это
     // не лень, а ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ: различие столицы — предмет
     // ЕЁ МОДУЛЯ (ломоть 5) и ЕЁ ГЕНЕРАТОРА субмира (строка `FT_Capital`),
@@ -272,26 +258,23 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
     // расселение ставит столицу модулем места (ломоть 5); до тех пор строка
     // стоит голой, а `== SquadType::City`-гейты мира остаются верными по
     // пустоте — переспросить их придётся ровно в день первой столицы.
-    {.type = SquadType::Capital, .id = "capital", .label = "Capital",
-     .minZone = 0, .maxZone = 76, .glyph = '@', .color = 0xFFFFD98Cu, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
+    {.type = SquadType::Capital,
+     .minZone = 0, .maxZone = 76, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
-     .garrisonShift = 3, .labourShift = 3,
-     .actions = kMapActTrade | kMapActHire | kMapActQuests,
+     .garrisonShift = 3,
      .seedComfortDays = 32, .seedRawMult = 1 },
-    {.type = SquadType::City, .id = "city", .label = "City",
-     .minZone = 0, .maxZone = 76, .glyph = '#', .color = 0xFFE7D27Au, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
+    {.type = SquadType::City,
+     .minZone = 0, .maxZone = 76, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
-     .garrisonShift = 3, .labourShift = 3,
-     .actions = kMapActTrade | kMapActHire | kMapActQuests,
+     .garrisonShift = 3,
      .seedComfortDays = 32, .seedRawMult = 1 },
-    {.type = SquadType::Village, .id = "village", .label = "Village",
-     .minZone = 0, .maxZone = 101, .glyph = 'v', .color = 0xFFCCB068u, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
+    {.type = SquadType::Village,
+     .minZone = 0, .maxZone = 101, .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
      .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2,
      .crowdHabitat = 1u << 14, .crowdInsideShift = 0,
-     .garrisonShift = 3, .labourShift = 1,
-     .actions = kMapActTrade | kMapActHire | kMapActQuests,
+     .garrisonShift = 3,
      .seedComfortDays = 8, .seedRawMult = 2 },
     // Spire wild fauna returned to the GROUND (§42 Инк 5): its demons are
     // its POPULATION now — the mountain's own beasts roam the slopes, and
@@ -299,101 +282,57 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
     // game. The Ruin row keeps kHabRuin: that bit is ALSO the den
     // dictionary (what creeps into cellars and caves), and a ruin's ground
     // honestly crawls.
-    {.type = SquadType::Spire, .id = "spire", .label = "Spire",
-     .minZone = 128, .maxZone = 255, .glyph = 'I', .color = 0xFFA86CFFu, .lightColor = 0xFFA86CFFu, .lightPop = 200.0f,
+    {.type = SquadType::Spire,
+     .minZone = 128, .maxZone = 255, .lightColor = 0xFFA86CFFu, .lightPop = 200.0f,
      .faunaHabitat = kPlaceFaunaGround, .faunaMin = 0, .faunaMax = 0,
      .faunaCap = kPlaceFaunaCapGround,
      .crowdHabitat = 1u << 13, .crowdInsideShift = 2,
      },
-    {.type = SquadType::Ruin, .id = "ruin", .label = "Ruin",
-     .minZone = 51, .maxZone = 229, .glyph = 'r', .color = 0xFF8E8576u, .lightColor = 0xFF8E8576u, .lightPop = 40.0f,
+    {.type = SquadType::Ruin,
+     .minZone = 51, .maxZone = 229, .lightColor = 0xFF8E8576u, .lightPop = 40.0f,
      .faunaHabitat = 1u << 12, .faunaMin = 2, .faunaMax = 6,
      .faunaCap = kPlaceFaunaCapGround,
      .crowdHabitat = 1u << 12, .crowdInsideShift = 0,
      },
-    {.type = SquadType::Lair, .id = "lair", .label = "Lair",
-     .minZone = 102, .maxZone = 255, .glyph = 'L', .color = 0xFF883A3Au, .lightColor = 0xFF883A3Au, .lightPop = 70.0f,
+    {.type = SquadType::Lair,
+     .minZone = 102, .maxZone = 255, .lightColor = 0xFF883A3Au, .lightPop = 70.0f,
      .faunaHabitat = kPlaceFaunaGround, .faunaMin = 0, .faunaMax = 0,
      .faunaCap = kPlaceFaunaCapGround,
      .crowdHabitat = 1u << 12 },
-    {.type = SquadType::Shrine, .id = "shrine", .label = "Shrine",
-     .minZone = 25, .maxZone = 178, .glyph = '+', .color = 0xFFE2E2E2u, .lightColor = 0xFFE2E2E2u, .lightPop = 90.0f },
-    {.type = SquadType::Mine, .id = "mine", .label = "Mine",
-     .minZone = 51, .maxZone = 203, .glyph = 'M', .color = 0xFF8B6332u, .lightColor = 0xFF8B6332u, .lightPop = 60.0f },
-    {.type = SquadType::Tower, .id = "tower", .label = "Tower",
-     .minZone = 76, .maxZone = 203, .glyph = 'T', .color = 0xFF6E6E89u, .lightColor = 0xFF6E6E89u, .lightPop = 80.0f },
+    {.type = SquadType::Shrine,
+     .minZone = 25, .maxZone = 178, .lightColor = 0xFFE2E2E2u, .lightPop = 90.0f },
+    {.type = SquadType::Mine,
+     .minZone = 51, .maxZone = 203, .lightColor = 0xFF8B6332u, .lightPop = 60.0f },
+    {.type = SquadType::Tower,
+     .minZone = 76, .maxZone = 203, .lightColor = 0xFF6E6E89u, .lightPop = 80.0f },
 
-    // ── ПОДВИЖНЫЕ РОДЫ ОСИ: ГЛАГОЛЫ ИХ, ОСТАЛЬНОЕ ЧЕСТНО ПУСТО ───────────
-    // Артель, корован и сборщик стоят на ТОЙ ЖЕ оси, что места (одна ось у
-    // одной популяции), и колонок МЕСТА не имеют: они не стоят на клетке,
-    // не светятся ночью, не поднимают крю и не держат фауну. Их строки
-    // выписаны ЯВНО, а не оставлены на доинициализацию нулями, по двум
-    // причинам: (1) `rows_in_enum_order` ниже сверяет колонку `type` с
-    // индексом, и неявная строка приехала бы с `None` на месте `Artel` —
-    // молчаливое расхождение таблицы с собственным ключом; (2) пустая
-    // строка обязана быть ВИДНА как решение, а не как пропуск. Это цена,
-    // названная в шапке `squad_type.h`: платим пустотой за то, что
-    // `place_def` остаётся ПОЛНОЙ функцией без гейта по роду.
-    //
-    // НО КОЛОНКА `actions` У НИХ БОЛЬШЕ НЕ НУЛЕВАЯ (M-281), И ЭТО ТОТ ЖЕ
-    // ХОД, ЧТО С `kSquadDraw` 2026-10-19. Нуль здесь держал не пустоту, а
-    // ВТОРОЙ ОТВЕТ: маска `Talk|Trade|Attack` была вписана КОДОМ в ветку
-    // `actions_of` по роду субъекта, то есть на вопрос «какие глаголы у
-    // этого сквада» в дереве стояло два ответа — строка для неподвижного и
-    // литерал для ходока (DOD п.6). Ветка умерла, литерал переехал в
-    // строки, и `actions_of` стало ОДНОЙ дверью над ОДНОЙ колонкой.
-    // Войти в ходока нельзя: `walkable` остаётся false, и Enter не
-    // примешивается по построению.
-    {.type = SquadType::Artel, .id = "artel", .label = "",
-     .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u, .lightColor = 0x00000000u, .lightPop = 0.0f,
-     .actions = kMapActTalk | kMapActTrade | kMapActAttack },
-    {.type = SquadType::Caravan, .id = "caravan", .label = "",
-     .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u, .lightColor = 0x00000000u, .lightPop = 0.0f,
-     .actions = kMapActTalk | kMapActTrade | kMapActAttack },
-    {.type = SquadType::Collector, .id = "collector", .label = "",
-     .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u, .lightColor = 0x00000000u, .lightPop = 0.0f,
-     .actions = kMapActTalk | kMapActTrade | kMapActAttack },
-    // ДРАКОН — ХОДОК, И КОЛОНКИ МЕСТА ЕМУ ТАК ЖЕ ЧУЖДЫ, как артели.
-    // Маска глаголов у него ПОЛНАЯ, и это выбор в пользу стража: соблазн
-    // был снять `Trade` («с драконом не торгуют»), но его снятие уронило бы
-    // ассерт ниже, который держит закон «у ходока глаголы ЕСТЬ». Ослаблять
-    // компиляторного стража ради вкусовой строки, которую пока никто не
-    // рождает, — ровно подгонка под свидетеля (§8 ЗАКОН НУЛЕВОЙ п.4).
-    // Верные глаголы дракону назовёт его модуль (ломоть 6), и тогда это
-    // будет решение о механике, а не о том, как позеленить сборку.
-    {.type = SquadType::Dragon, .id = "dragon", .label = "",
-     .minZone = 0, .maxZone = 255, .glyph = ' ', .color = 0x00000000u, .lightColor = 0x00000000u, .lightPop = 0.0f,
-     .actions = kMapActTalk | kMapActTrade | kMapActAttack },
+    // ── ПОДВИЖНЫЕ РОДЫ ОСИ: ОСТАЛЬНОЕ ЧЕСТНО ПУСТО ───────────────────────
+    // Артель, корован, сборщик и дракон стоят на ТОЙ ЖЕ оси, что места
+    // (одна ось у одной популяции), и колонок МЕСТА не имеют: они не стоят
+    // на клетке, не светятся ночью и не держат фауну. Их строки выписаны
+    // ЯВНО, а не оставлены на доинициализацию нулями, по двум причинам:
+    // (1) `rows_in_enum_order` ниже сверяет колонку `type` с индексом, и
+    // неявная строка приехала бы с `None` на месте `Artel` — молчаливое
+    // расхождение таблицы с собственным ключом; (2) пустая строка обязана
+    // быть ВИДНА как решение, а не как пропуск. Это цена, названная в шапке
+    // `squad_type.h`: платим пустотой за то, что `place_def` остаётся
+    // ПОЛНОЙ функцией без гейта по роду. (Имя, вид и глаголы встречи у них
+    // — строки `kSquadKinds`, вместе с шрамом M-281 о литерале в ветке.)
+    {.type = SquadType::Artel,
+     .minZone = 0, .maxZone = 255, .lightColor = 0x00000000u, .lightPop = 0.0f },
+    {.type = SquadType::Caravan,
+     .minZone = 0, .maxZone = 255, .lightColor = 0x00000000u, .lightPop = 0.0f },
+    {.type = SquadType::Collector,
+     .minZone = 0, .maxZone = 255, .lightColor = 0x00000000u, .lightPop = 0.0f },
+    {.type = SquadType::Dragon,
+     .minZone = 0, .maxZone = 255, .lightColor = 0x00000000u, .lightPop = 0.0f },
 };
 static_assert(rows_in_enum_order(kPlaces, &PlaceDef::type),
               "kPlaces row order must mirror SquadType");
 
-// ── ЗАКОН ГЛАГОЛОВ — ПОД КОМПИЛЯТОРОМ, А НЕ В ПРОГОНЕ (M-281) ────────────
-// Здесь проверяется ровно то, что раньше утверждал прогон над мёртвой
-// дверью: каждая строка оси объявляет свои глаголы САМА, и ни одна группа
-// не остаётся без ответа. Три утверждения, и каждое — закон, а не пересказ
-// сегодняшних значений:
-//   1) НИ ОДНО МЕСТО НЕ ГОВОРИТ И НЕ БЬЁТСЯ ЧЕРЕЗ ЭТО МЕНЮ (вердикт
-//      2026-09-11: «война — отдельный трек»). Прежде это держал прогон;
-//      теперь город с `Attack` в строке НЕ СОБЕРЁТСЯ.
-//   2) У ХОДОКА ГЛАГОЛЫ ЕСТЬ. Нулевая строка подвижного рода и была тем
-//      нулём, за который отвечал литерал в коде, — она больше невыразима.
-// Негативный контроль записан в теле коммита (мутация → исход, обе
-// полярности): снятие `.actions` у любой подвижной строки роняет СБОРКУ,
-// а не тест.
-static_assert([] {
-    for (const PlaceDef& d : kPlaces) {
-        const bool place = squad_archetype(d.type) == SquadArchetype::Place;
-        if (place && (d.actions & (kMapActTalk | kMapActAttack)) != 0)
-            return false;                                           // (1)
-        if (!place
-            && (d.actions & (kMapActTalk | kMapActTrade | kMapActAttack))
-                   != (kMapActTalk | kMapActTrade | kMapActAttack))
-            return false;                                           // (2)
-    }
-    return true;
-}(), "строка оси объявляет свои глаголы сама: место не говорит и не бьётся, "
-     "а ходок говорит, торгует и бьётся");
+// (ЗАКОН ГЛАГОЛОВ — «место не говорит и не бьётся, ходок говорит, торгует и
+//  бьётся» — УЕХАЛ 2026-11-01 вместе с колонкой `actions` к единой таблице
+//  родов: страж стоит под `kSquadKinds@src/tables/squad_type.h`.)
 
 // РАЗМЕР СТРОКИ НАЗВАН — ЗНАЧИТ ПРИБИТ (DOD п.10). Замер: проба
 // static_assert на clang, дерево m39-faction, 2026-09-28 — 120 байт.
@@ -438,7 +377,13 @@ static_assert([] {
 // и к отъезду он отношения не имел ни разу — колонка уехала за ПОРЯДОК
 // ЗАКОНА (фича ставится до сквада), а не за байты. На приёмной стороне
 // картина та же: `sizeof(FeatureDef)` 40 → 40, колонка села в паддинг.
-static_assert(sizeof(PlaceDef) == 72,
+// ПЕРЕЕЗД ИМЕНИ, ВИДА И ГЛАГОЛОВ К ЕДИНОЙ ТАБЛИЦЕ РОДОВ + СНОС labourShift
+// (2026-11-01, ломоть 5б M-235): 72 → 24, И ВПЕРВЫЕ УПАЛ САМ `alignof` —
+// 8 → 4: оба `string_view` (единственные восьмибайтно выровненные члены)
+// уехали в `kSquadKinds`, и хвостовое выравнивание считается теперь до
+// кратного четырёх. Последнее поле `seedRawMult` стоит на 23 — данных 24
+// ровно, нуль хвоста.
+static_assert(sizeof(PlaceDef) == 24,
               "PlaceDef layout changed — say WHICH column and why, and "
               "never re-add a faction column: a KIND is not an OWNER (M-39)");
 
@@ -458,17 +403,6 @@ static_assert(
     "восемь дней и двойное (значения перенесены из булева параметра "
     "seed_place_inventory один в один)");
 
-// THE two labour laws of a city meet at the same eighth of its people, and
-// until now that meeting was a claim in a COMMENT: the crew pool's shift
-// (labourShift, this table) and the bench quota (econ_day.h
-// kCreaturesPerCityWorker) are one number spelled two ways, and nothing compared
-// them. Retune either alone and a city raises crews on one eighth while its
-// benches staff another — silently, because both numbers stay plausible.
-static_assert(
-    (1 << kPlaces[std::size_t(SquadType::City)].labourShift)
-        == kCreaturesPerCityWorker,
-    "city labourShift must be log2(kCreaturesPerCityWorker)");
-
 inline constexpr const PlaceDef& place_def(SquadType t) {
     return kPlaces[std::size_t(t)];
 }
@@ -486,50 +420,10 @@ inline constexpr const PlaceDef& place_def(SquadType t) {
 // одним символом, двинулось только включение (ЗАКОН ИМЕНИ п.5 — важно не
 // имя, а смысл и системность).
 
-// Is this KIND a SETTLEMENT — a place the player «прибывает в», with enter/
-// leave events and the T-key panel default? The data answers: СТОЯЩИЙ род,
-// который держит прилавок, найм или доску контрактов.
-// This predicate killed the SquadType::City hardcode (PLAY-2): a village
-// answers the same door a city does. The subject PANEL itself opens for ANY
-// place by click — which tabs it shows is the actions column's business.
-//
-// ЗДЕСЬ СТОЯЛО `actions != 0`, И ЭТО БЫЛО ВТОРОЕ ЗНАЧЕНИЕ КОЛОНКИ, ЖИВШЕЕ НА
-// ЧУЖОМ НУЛЕ (M-281). Колонка объявляет «какие ГЛАГОЛЫ у рода»; «ноль
-// глаголов» значило «не поселение» ровно до тех пор, пока подвижные строки
-// стояли пустыми. Как только они получили свои глаголы — а это та самая
-// правка, которой M-280 лечил второй проход рисовки, — предикат стал звать
-// поселением АРТЕЛЬ И КОРОВАН, и шесть его звонящих (рыночный выбор думки,
-// событие прибытия) поверили. Поймал не тест, а смоук `macro_travel_sp`:
-// каждый ходок рядом стал «поселением», панель открывалась сама и ПАУЗИЛА
-// мир — марш не доходил за 600 кадров против 124.
-//
-// УРОК ТОТ ЖЕ, ЧТО У `kSquadDraw`: нулевая строка — не пустота, а чей-то
-// несущий ответ, и прежде чем её заполнить, надо спросить, КТО читает ноль.
-// Теперь предикат спрашивает СВОЙ вопрос обеими половинами: «стоит ли» —
-// архетипом (КЛЮЧОМ классификатора, не гейтом прохода), «торгует ли» —
-// поселенческими битами, а не любыми. Ни один из двенадцати родов не сменил
-// ответа: поселения — ровно City и Village, как и было.
-inline constexpr bool place_is_settlement(SquadType t) {
-    return squad_archetype(t) == SquadArchetype::Place
-        && (place_def(t).actions
-            & (kMapActTrade | kMapActHire | kMapActQuests)) != 0;
-}
-
-// ХОДОК НЕ ПОСЕЛЕНИЕ — ПОД КОМПИЛЯТОРОМ. Ровно тот закон, который правка
-// выше сломала молча; свидетеля у него не было вовсе, и потому он прожил
-// до смоука. Негативный контроль — в теле коммита.
-static_assert([] {
-    for (std::size_t i = 0; i < std::size_t(SquadType::Count); ++i) {
-        const SquadType t = SquadType(i);
-        if (squad_archetype(t) != SquadArchetype::Place
-            && place_is_settlement(t))
-            return false;
-    }
-    return place_is_settlement(SquadType::City)
-        && place_is_settlement(SquadType::Village)
-        && !place_is_settlement(SquadType::Spire);
-}(), "поселение — СТОЯЩИЙ род с прилавком/наймом/доской; подвижный род "
-     "поселением не бывает ни при каких глаголах");
+// (ПРЕДИКАТ `place_is_settlement` УЕХАЛ 2026-11-01 к единой таблице родов —
+//  `place_is_settlement@src/tables/squad_type.h`: он спрашивает ОСЬ и её
+//  глаголы, а оба теперь живут там. Шрам M-281 — «предикат на чужом нуле
+//  звал поселением артель и корован, панель паузила мир» — переехал с ним.)
 
 // ── ЗДЕСЬ СТОЯЛА `place_born_population`, И ОНА УМЕРЛА С M-320 ────────────
 //

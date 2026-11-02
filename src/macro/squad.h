@@ -309,9 +309,7 @@ inline void set_visual_speed(ecs::MacroNpcRuntime& rt, float dist,
 // нулевая маска, нулевой вклад S6, как у всякой макро-двери.
 inline std::uint16_t actions_of(const MacroStore& st, MacroHandle h) {
     if (!st.valid(h)) return 0;
-    const PlaceDef& def =
-        place_def(SquadType(st.runtime[h.slot].squadType));
-    return def.actions;
+    return squad_kind(SquadType(st.runtime[h.slot].squadType)).actions;
 }
 
 // РЕЗОЛВ МЕСТА: тот же резолв субъекта + гейт оси рода. Пространство

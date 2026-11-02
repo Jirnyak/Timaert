@@ -362,7 +362,7 @@ void draw_macro_overlay(const MacroWorld& mw,
             if (slot == flagSlot || st.playerFlag[slot].home != 0)
                 continue;
             const SquadType type = SquadType(st.runtime[slot].squadType);
-            const SquadDrawRow& row = squad_draw(type);
+            const SquadKindRow& row = squad_kind(type);
             const ArchetypeDrawRow& grp = archetype_draw(squad_archetype(type));
             if (row.minZoom > 0.0f && zoom < row.minZoom) continue;
             // Положение — ГЛАЗ представления (M-244a): у ходока он догоняет
@@ -419,7 +419,7 @@ void draw_macro_overlay(const MacroWorld& mw,
             // (выкачанный шпиль рисует тёмную башню — тот же закон, что у
             // ночного свечения, macro_lighting.cpp), а глиф-кружок берёт цвет
             // у ОДНОГО источника — строки реестра.
-            const std::uint32_t argb = place_def(type).color;
+            const std::uint32_t argb = squad_kind(type).color;
             const ImU32 fallback = IM_COL32((argb >> 16) & 0xFF,
                                             (argb >> 8) & 0xFF, argb & 0xFF,
                                             faded ? 120 : 230);
@@ -432,7 +432,7 @@ void draw_macro_overlay(const MacroWorld& mw,
                 // Безымянный показывает label своей строки реестра — один
                 // закон показа на все рода.
                 const char* name = st.name[slot].text;
-                if (name[0] == '\0') name = place_def(type).label.data();
+                if (name[0] == '\0') name = squad_kind(type).label.data();
                 if (name[0] == '\0') continue;
                 const ImVec2 ts = ImGui::CalcTextSize(name);
                 const ImVec2 tp(p.x - ts.x * 0.5f,
@@ -479,7 +479,7 @@ void draw_macro_overlay(const MacroWorld& mw,
             // — и спрошено это у САМОЙ строки города, а не двумя её числами,
             // переписанными сюда литералами: пин обязан подниматься над тем,
             // что карта рисует СЕГОДНЯ.
-            const SquadDrawRow& cityRow = squad_draw(SquadType::City);
+            const SquadKindRow& cityRow = squad_kind(SquadType::City);
             const float above =
                 mark_size(zoom,
                           archetype_draw(SquadArchetype::Place).cellSpan,
@@ -831,7 +831,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                     // существа («Peasant»). У ходока ярлык рода пуст по
                     // построению, поэтому цепь сама приходит к телу — ветка
                     // по роду субъекта здесь была лишней.
-                    const char* rowRole = place_def(type).label.data();
+                    const char* rowRole = squad_kind(type).label.data();
                     if (rowRole[0] == '\0') rowRole = npc_def(t).label;
                     const char* rowName = st.name[slot].text;
                     if (rowName[0] == '\0') rowName = rowRole;
@@ -893,7 +893,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                         if (grp.pictureFromBody) {
                             sp = sprite_get(npc_sprite(t));
                         } else {
-                            const SquadDrawRow& drow = squad_draw(type);
+                            const SquadKindRow& drow = squad_kind(type);
                             // Выкачанность — ОДИН вывод на весь мир
                             // (spire_orb@src/macro/spires.h, M-233 п.8); здесь
                             // стояло своё написание, четвёртое по счёту.
@@ -911,7 +911,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                         } else if (grp.pictureFromBody) {
                             ImGui::Dummy(side);
                         } else {
-                            const PlaceDef& ldef = place_def(type);
+                            const SquadKindRow& ldef = squad_kind(type);
                             const ImVec2 p = ImGui::GetCursorScreenPos();
                             ImGui::Dummy(side);
                             ImDrawList* dl = ImGui::GetWindowDrawList();

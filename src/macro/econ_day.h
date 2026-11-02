@@ -268,11 +268,11 @@ constexpr int season_hunger_units(int population) {
 }
 
 // One worker per this many heads (po2) — the BENCH quota: the share of
-// hands staffing the recipes (econ_produce_day). The daily CREWS are the
-// place's own law since 2026-08-31 (place_registry: crews rows +
-// labourShift — «какие сквады кто спавнит — таблично»); the city's
-// labourShift = log2 of this number, so the two laws meet at the same
-// eighth of a town.
+// hands staffing the recipes (econ_produce_day). Крю-половина закона труда
+// 2026-08-31 (crews rows + labourShift) казнена ломтём 4 M-72, а колонка
+// `labourShift` снесена 2026-11-01 (ломоть 5б: сирота со стражем) — квота
+// станков осталась ЕДИНСТВЕННЫМ носителем этого числа; «сколько рук у рода»
+// назовёт модуль рода своим числом, когда появится читатель.
 inline constexpr int kCreaturesPerCityWorker = 8;
 
 // (THE WORKING RHYTHM died here, 2026-09-16. `kWorkCyclesPerBar` = 4 declared
