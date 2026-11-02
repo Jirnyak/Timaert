@@ -3,6 +3,7 @@
 // subworld/{forest,grassland,city,village,...}.ts.
 #pragma once
 #include "sub/map_data.h"
+#include "tables/npc.h"   // FaunaBand — полоса спавна модуля (M-371)
 
 namespace sm::sub {
 
@@ -27,6 +28,13 @@ namespace sm::sub {
 struct GenInput;
 using GenFn = void (*)(const GenInput&, SubworldMapData&);
 GenFn open_air_gen_for(const CellContext& ctx);
+
+// ПОЛОСА СПАВНА БАЙТА ФИЧИ (M-371) — ответ МОДУЛЯ «кто роллится на моей
+// клетке»: колонка `fauna` той же строки kFeatureGenRows, что даёт модуль
+// геометрии; {0,0,0} = земля отвечает (лес/биом). Вердикт владельца:
+// обитатели руины «могут спавниться и по модулую (рандом распред) и +
+// контекст полей зоны» — вес по полю зоны даёт сам закон ролла.
+FaunaBand feature_fauna_band(std::uint8_t feature);
 
 // Single entry point — dispatches to the right generator. `nbHeights` is
 // 9 macro heights, `nbBiome` is 9 macro biomes, `nbFeature` is 9 macro

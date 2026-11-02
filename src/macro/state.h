@@ -452,7 +452,11 @@ namespace sm {
 // блоке `featureNumber`, который и так писался. Ординалы рядов НЕ двинулись (ряд
 // остался на своём месте перед жилами), поэтому сдвига блоков нет — двигает
 // версию ровно смена ЖИЛЬЦА блока.
-constexpr int kSaveVersion = 148;   // 2026-10-30 (M-184): ярус АННАЛОВ снесён — из блока летописи ушли байт `annalsFull` и весь блок анналов, то есть раскладка файла за кольцом другая
+// 149 — ПОЛЕ ФАУНЫ (M-371, 2026-11-02): ряд Fauna стал НОСИТЕЛЕМ на хранимое
+// поле `GameState::faunaField` — его блок добавился в провод полей
+// (world_fields.cpp), а скар-блок ряда Fauna теперь всегда пуст (носитель
+// шрама не держит). Файл стал длиннее на блок и другой по смыслу ряда.
+constexpr int kSaveVersion = 149;
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -900,6 +904,18 @@ struct GameState {
     // рядом-НОСИТЕЛЕМ на это поле, и своего массива над миром у него больше
     // нет вовсе (вердикт владельца 2026-10-12: «сноси поле лошадей это бред»).
     ResourceGrid featureNumber;
+    // ── ПОЛЕ ФАУНЫ — ЖИВОЕ ПОГОЛОВЬЕ ДИКОЙ ПРИРОДЫ (M-371) ──────────────
+    // Полноправное хранимое поле над тором (вердикты владельца 2026-11-02:
+    // «а фауна это отдельное поле»; «это может быть полномппрваное поле -
+    // фауна точно с фиачами не связана»; «его пишет СВОЙ ГЕНЕРАТОР один раз
+    // при рождении мира (биом + лес…) … оно меняется по сезонам как и
+    // другие ресурсы это норм»). Ряд Fauna реестра — НОСИТЕЛЬ на это поле
+    // (форма Trees→TreeLayer, Livestock→featureNumber): прежний шрам ряда
+    // мёртв, живое читается отсюда, рост лечит к природной ёмкости
+    // (fauna_cell_capacity_at — биом + лес, БЕЗ рода: род-развилки умерли
+    // тем же нарядом). Основание поселения вычищает клетку одной записью
+    // через дверь ниже — событие мира, не связь с фичей в живом мире.
+    ResourceGrid faunaField;
 
     // (Вектор `builtFeatures` и структура `BuiltFeature` УНИЧТОЖЕНЫ в v130,
     // перепись сирот 2026-10-11. Шапка на этом месте обещала «appended when
@@ -975,6 +991,22 @@ inline void feature_number_write(GameState& gs, int x, int y, int value) {
 }
 inline void feature_number_add(GameState& gs, int x, int y, int delta) {
     feature_number_write(gs, x, y, feature_number_read(gs, x, y) + delta);
+}
+
+// ── Двери поля фауны — та же идиома, что у поля чисел фич выше ──────────
+// Живое поголовье клетки. Писатели: генератор рождения мира (один раз),
+// пульт полей через носителя ряда Fauna (fauna_apply@macro_stock.cpp — рост
+// и охота), рождение поселения (вычищает свою клетку). Читает всё остальное
+// пульт resource_field_read — прямых читателей у грида не заводить.
+inline int fauna_field_read(const GameState& gs, int x, int y) {
+    return int(gs.faunaField.at(x, y));
+}
+inline void fauna_field_write(GameState& gs, int x, int y, int value) {
+    if (!gs.faunaField.live()) {
+        if (gs.mapW <= 0 || gs.mapH <= 0) return;   // no world, no field
+        gs.faunaField.allocate(gs.mapW, gs.mapH, 0);
+    }
+    gs.faunaField.write(x, y, std::int32_t(value < 0 ? 0 : value));
 }
 
 // (record_place_fact УЕХАЛА в macro/squad.h флипом M-90 шаг 5: слава

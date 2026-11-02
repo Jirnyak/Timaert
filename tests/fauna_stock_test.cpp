@@ -65,6 +65,9 @@ void test_untouched_cell_reads_capacity() {
     GameState gs;
     const TerrainData terrain = meadow_terrain();
     MacroWorld w{.gs = &gs, .terrain = &terrain};
+    // Носитель ряда Fauna — хранимое поле (M-371): свидетель рожает своё
+    // предусловие сам — нетронутый мир заполняет генератор рождения.
+    generate_fauna_field(w);
 
     MacroWorld capW{.gs = &gs, .terrain = &terrain};
     const int cap = fauna_cell_capacity_at(capW, 1, 1);
@@ -81,6 +84,9 @@ void test_hunt_thins_and_return_does_not_resurrect() {
     GameState gs;
     const TerrainData terrain = meadow_terrain();
     MacroWorld w{.gs = &gs, .terrain = &terrain};
+    // Носитель ряда Fauna — хранимое поле (M-371): свидетель рожает своё
+    // предусловие сам — нетронутый мир заполняет генератор рождения.
+    generate_fauna_field(w);
     const int cap = macro_stock_read(w, MacroStock::FaunaCount, cell_key(2, 2));
     CHECK(cap >= 2, "the fixture needs at least two heads to hunt");
 
@@ -106,10 +112,19 @@ void test_regrow_self_cleans_at_baseline() {
     GameState gs;
     const TerrainData terrain = meadow_terrain();
     MacroWorld w{.gs = &gs, .terrain = &terrain};
+    // Носитель ряда Fauna — хранимое поле (M-371): свидетель рожает своё
+    // предусловие сам — нетронутый мир заполняет генератор рождения.
+    generate_fauna_field(w);
     const int cap = macro_stock_read(w, MacroStock::FaunaCount, cell_key(0, 3));
 
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(0, 3), -2);
-    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Fauna)].liveCells == 1, "the hunt scars exactly one cell");
+    // Ряд-носитель (M-371): удар ложится в САМО поле ровно на эту клетку,
+    // а шрам носителя не растёт никогда — прежний «scars exactly one cell»
+    // охранял форму шрама, умершую с вердиктом «звери это просто поле».
+    CHECK(fauna_field_read(gs, 0, 3) == cap - 2,
+          "the hunt hits the carrier field on exactly the hunted cell");
+    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Fauna)].liveCells == 0,
+          "a carrier row never grows a scar");
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(0, 3), +1);
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(0, 3)) == cap - 1,
           "one head regrown");
@@ -117,13 +132,16 @@ void test_regrow_self_cleans_at_baseline() {
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(0, 3)) == cap,
           "regrowth caps at the cell's own baseline - never beyond");
     CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Fauna)].liveCells == 0,
-          "a cell back at baseline erases its override - the map self-cleans");
+          "the scar row of a carrier stays dead through hunt and regrowth");
 }
 
 void test_regrow_runs_on_game_days() {
     GameState gs;
     const TerrainData terrain = meadow_terrain();
     MacroWorld w{.gs = &gs, .terrain = &terrain};
+    // Носитель ряда Fauna — хранимое поле (M-371): свидетель рожает своё
+    // предусловие сам — нетронутый мир заполняет генератор рождения.
+    generate_fauna_field(w);
     const int cap = macro_stock_read(w, MacroStock::FaunaCount, cell_key(3, 1));
     CHECK(cap >= 3, "the fixture needs three heads to cull");
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(3, 1), -3);

@@ -147,6 +147,7 @@ void run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
                              /*treeCount*/0,
                              sm::SquadType::City,
                              /*danger*/0,
+                             /*faunaBand: земля*/sm::FaunaBand{},
                              mgr,
                              /*ox*/0, /*oy*/0,
                              0xB105A11u,
@@ -155,7 +156,7 @@ void run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
                              /*placePop*/2000,
 /*placeSubjectId*/-1,
                              /*macroCellX*/0, /*macroCellY*/0,
-                             /*faunaCount*/-1, &homeSouls,
+                             /*faunaCount: клетка города вычищена полем (M-371)*/0, &homeSouls,
                              sm::world_time_at(1, 12, 0));
 
     int citizens = 0;
@@ -202,6 +203,7 @@ void run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
                              /*treeCount*/0,
                              sm::SquadType::Village,
                              /*danger*/0,
+                             /*faunaBand: земля*/sm::FaunaBand{},
                              mgr,
                              /*ox*/0, /*oy*/0,
                              0xB105A12u,
@@ -210,7 +212,7 @@ void run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
                              /*placePop*/400,
                              /*placeSubjectId*/-1,
                              /*macroCellX*/0, /*macroCellY*/0,
-                             /*faunaCount*/-1, &homeSouls,
+                             /*faunaCount: клетка поселения вычищена полем (M-371)*/0, &homeSouls,
                              sm::world_time_at(1, 12, 0));
 
     int citizens = 0;

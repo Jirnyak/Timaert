@@ -98,7 +98,7 @@ sm::sub::CellContext meadow_cell(int cx, int cy) {
 std::vector<SpawnRecord> expected_cell_fauna(
     const sm::sub::SeamlessSubworldManager& mgr,
     sm::Biome biome,
-    sm::SquadType place,
+    sm::FaunaBand band,
     std::uint8_t danger,
     int ox,
     int oy,
@@ -114,7 +114,7 @@ std::vector<SpawnRecord> expected_cell_fauna(
     sm::SpawnContext sctx{};
     sctx.biome = biome;
     sctx.forest = false;   // this fixture rolls open meadow
-    sctx.place = place;
+    sctx.band = band;
     sctx.danger = danger;
     std::uint32_t rngState = seed ^ 0xFAEAu;
     const std::vector<sm::FaunaPick> picks = sm::roll_spawns(sctx, rngState);
@@ -319,7 +319,8 @@ void spawn_cell_at(sm::sub::SubObjects& objs,
                    int ox, int oy, int absCx, int absCy) {
     const sm::sub::CellContext c = meadow_cell(absCx, absCy);
     sm::sub::spawn_cell_npcs(objs, c.biome, c.feature,
-                             sm::SquadType::None, /*danger*/0, mgr,
+                             sm::SquadType::None, /*danger*/0,
+                             /*faunaBand: земля*/sm::FaunaBand{}, mgr,
                              ox, oy, c.seed, /*worldSeed*/c.seed,
                              std::uint16_t(sm::faction_index("empire")),
                              0,
@@ -389,6 +390,7 @@ bool run_city_population_projection_case(
                              sm::FT_None,
                              sm::SquadType::City,
                              /*danger*/0,
+                             /*faunaBand: земля*/sm::FaunaBand{},
                              mgr,
                              /*ox*/0, /*oy*/0,
                              0xFACEB00Cu,
@@ -397,7 +399,7 @@ bool run_city_population_projection_case(
                              4000,
                              0,
                              /*macroCellX*/0, /*macroCellY*/0,
-                             /*faunaCount*/-1, &homeSouls,
+                             /*faunaCount: клетка города вычищена полем (M-371)*/0, &homeSouls,
                              sm::world_time_at(1, 12, 0));
 
     // The street is Peasant + Guard and NOBODY else since 2026-09-18 (verdict
@@ -469,7 +471,8 @@ bool run_population_does_not_scale_bodies_case(
         sm::raise_flock_into_container(homeSouls, t.pop);
         sm::sub::spawn_cell_npcs(objs,
                                  sm::Biome::Meadow, sm::FT_None,
-                                 sm::SquadType::City, /*danger*/0, mgr,
+                                 sm::SquadType::City, /*danger*/0,
+                                 /*faunaBand: земля*/sm::FaunaBand{}, mgr,
                                  /*ox*/0, /*oy*/0,
                                  0xFACEB00Cu,
                                  /*worldSeed*/0xFACEB00Cu,
@@ -477,7 +480,7 @@ bool run_population_does_not_scale_bodies_case(
                                  t.pop,
                                  /*placeSubjectId*/-1,
                                  /*macroCellX*/0, /*macroCellY*/0,
-                                 /*faunaCount*/-1, &homeSouls,
+                                 /*faunaCount: клетка города вычищена полем (M-371)*/0, &homeSouls,
                                  sm::world_time_at(1, 12, 0));
         // Свип плоской арены (ломоть D): гейт — колонка рода.
         for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
@@ -1062,7 +1065,7 @@ int main() {
 
     const std::vector<SpawnRecord> expected =
         expected_cell_fauna(mgr, sm::Biome::Meadow,
-                            sm::SquadType::None, /*danger*/0, 0, 0,
+                            sm::FaunaBand{}, /*danger*/0, 0, 0,
                             centre.seed, 0);
     const std::vector<SpawnRecord> actual = actual_fauna(centreObjs);
     const int cmp = compare_records(expected, actual);

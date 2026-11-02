@@ -52,6 +52,11 @@ inline MacroHandle birth_place(GameState& gs, MacroStore& st, SquadType kind,
         const FeatureType ft = feature_of_place_kind(kind);
         if (ft != FT_None) feature_put(*fl, *td, x, y, ft);
     }
+    // ОСНОВАНИЕ ПОСЕЛЕНИЯ ПРОГОНЯЕТ ЗВЕРЬЁ (M-371): одна запись в ПОЛЕ
+    // фауны через его дверь — событие мира при рождении, а не связь рода с
+    // фауной в живом мире (колонки fauna* рода мертвы; поле дальше живёт
+    // само: рост может вернуть пару голов к стенам — это антураж, не дефект).
+    if (place_is_settlement(kind)) fauna_field_write(gs, x, y, 0);
     const MacroHandle h = store_birth(st);
     if (!st.valid(h)) return h;   // отказ капа уже прозвучал вслух
     const int id = int(h.id);     // ординал выдала дверь рождения (M-220)

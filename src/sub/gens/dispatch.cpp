@@ -50,7 +50,11 @@ namespace sm::sub {
 // ОСЬ ПЕРВАЯ — БАЙТ ФИЧИ. `nullptr` = «этот байт своего модуля ещё не имеет»,
 // и клетка честно показывает свою землю (GEN-5: род без своего TU не смеет
 // поднимать ЧУЖУЮ стройку).
-struct FeatureGenRow { FeatureType feature; GenFn gen; };
+// `fauna` — ПОЛОСА СПАВНА МОДУЛЯ (M-371, вердикт владельца: обитатели руины
+// «могут спавниться и по модулую (рандом распред) и + контекст полей зоны»):
+// кто роллится на клетке этого байта; {0,0,0} = земля отвечает. Вес по полю
+// зоны даёт сам закон ролла (danger_match_weight), модулю хватает полосы.
+struct FeatureGenRow { FeatureType feature; GenFn gen; FaunaBand fauna{}; };
 constexpr FeatureGenRow kFeatureGenRows[] = {
     { FT_None,       nullptr      },
     { FT_Road,       gen_road     },
@@ -78,7 +82,10 @@ constexpr FeatureGenRow kFeatureGenRows[] = {
     { FT_City,       gen_city     },
     { FT_Village,    gen_village  },
     { FT_Spire,      gen_spire    },
-    { FT_Ruin,       gen_ruin     },
+    // Руина — чистая фича без сквада (вердикт 2026-11-02: «У РУИНЫ НЕ ДОЛЖНО
+    // БЫТЬ СКВАДА … это чистая фича»); её обитателей объявляет ЕЁ модуль:
+    // полоса kHabRuin, 2..6 голов за визит — числа прежней колонки рода.
+    { FT_Ruin,       gen_ruin,    {kHabRuin, 2, 6} },
 };
 static_assert(rows_in_enum_order(kFeatureGenRows, &FeatureGenRow::feature),
               "kFeatureGenRows обязана идти в порядке FeatureType");
@@ -104,6 +111,11 @@ constexpr BiomeGenRow kBiomeGenRows[] = {
 };
 static_assert(rows_in_enum_order(kBiomeGenRows, &BiomeGenRow::biome),
               "kBiomeGenRows обязана идти в порядке Biome");
+
+FaunaBand feature_fauna_band(std::uint8_t feature) {
+    const FeatureType ft = FeatureLayer::decode(feature);
+    return kFeatureGenRows[std::size_t(ft)].fauna;
+}
 
 GenFn open_air_gen_for(const CellContext& ctx) {
     // An interior context outranks everything: the cell shows what stands

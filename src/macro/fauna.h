@@ -14,7 +14,6 @@
 #include "macro/features.h"
 #include "macro/anketa.h"
 #include "tables/behaviour.h"
-#include "macro/place_registry.h"
 #include "tables/npc.h"
 #include "tables/sprite_rows.h"
 
@@ -68,18 +67,14 @@ using FaunaEntry = NpcTypeDef;
 // (subworld_spawn_parity_test; the autolevel stays dead).
 
 // Биты ареала (kHabForest/kHabRuin/kHabSpire/kHabTown, hab(Biome)) переехали
-// в macro/npc.h 2026-09-22 — к колонке строки, которую они описывают. Здесь
-// они остались только ЦИТАТОЙ в двух свидетелях ниже.
-// The place registry's faunaHabitat column quotes these bits as data
-// (its header cannot include this one) — a drifted quote refuses to compile.
-// (The Spire line died with §42 Инк 5: its wild fauna returned to the
-// ground — the spire's demons are its POPULATION, not the cell's game.)
-static_assert(place_def(SquadType::Ruin).faunaHabitat == kHabRuin,
-              "kPlaces fauna columns must quote fauna.h's habitat bits");
+// в macro/npc.h 2026-09-22 — к колонке строки, которую они описывают.
 // (Страж КОЛОНКИ ТОЛПЫ умер 2026-11-02 вместе с колонкой: раскладка толпы
 //  сцены уехала в данные субмира — `kCrowdLayout@src/sub/crowd_layout.h`, —
 //  и авторится там ИМЕНАМИ битов kHab* из tables/npc.h, так что второго
-//  правописания, которое этот страж сверял, больше не существует.)
+//  правописания, которое этот страж сверял, больше не существует. Страж
+//  колонки `faunaHabitat` умер тем же способом в M-371: род-развилки
+//  place_def мертвы, полосу объявляет МОДУЛЬ клетки именами битов —
+//  `FaunaBand@src/tables/npc.h`.)
 
 // Halving distance of the match law. Derived, not tuned: ten halvings span
 // the whole 0..255 continuum (a full-span mismatch lands at 2^-10 of the
@@ -94,12 +89,14 @@ std::uint8_t spawn_strength(NPCType t);
 // The symmetric never-zero match term, in 1/1024ths of the peak.
 std::uint32_t danger_match_weight(std::uint8_t strength, std::uint8_t danger);
 
-// Everything the roll wants to know about the place — assembled by the
+// Everything the roll wants to know about the cell — assembled by the
 // caller from its CellContext / CellFacts. Zero members are legal silence.
+// РОДА МЕСТА ЗДЕСЬ БОЛЬШЕ НЕТ (M-371): фауна — поле дикой природы, полосу
+// особой клетки объявляет её МОДУЛЬ (band), земля отвечает по лесу/биому.
 struct SpawnContext {
     Biome        biome = Biome::Meadow;
     bool         forest = false;          // is_forest_cell(treeCount)
-    SquadType place = SquadType::None;
+    FaunaBand    band{};                  // модульная полоса; bit 0 = земля
     std::uint8_t danger = 0;              // the cell's danger byte (zones)
 };
 
@@ -171,18 +168,17 @@ inline double row_power(NPCType t) {
 
 // ── The honest headcount (Session 16) ────────────────────────────────
 // A cell's fauna CAPACITY — how many heads its own spawn table carries
-// (the winning table's maxCount). This is the derived baseline of the
-// fauna_count macro stock (macro/macro_stock.h): what stands in a cell
-// nobody has hunted yet.
-int fauna_cell_capacity(Biome biome, int treeCount, SquadType place);
+// (the winning table's maxCount). ПРИРОДНАЯ ёмкость: биом + лес, рода места
+// в ней нет (M-371). Она — базовая ряда Fauna: потолок роста и кламп выемки
+// носителя (хранимое поле GameState::faunaField, заполняет генератор).
+int fauna_cell_capacity(Biome biome, int treeCount);
 
 // The same capacity resolved from the macro cell's own data, through THE
 // layer envelope (macro_stock.h MacroWorld): biome via the one biome_at
-// cascade, forest class from the tree layer, place from the baked
-// cell frame over squads (macro/squad_index.h — this function carried its
-// own hand-written scan of the named places until 2026-08-24, the drifted
-// second implementation of "what stands here", canon-audit C2). Missing
-// layers read as no context: nothing to embody, 0.
+// cascade, forest class from the tree layer. РОДА МЕСТА ЗДЕСЬ НЕТ (M-371):
+// скан сквадов `settlement_at` был вторым носителем рода против байта фичи
+// у ролла и умер с род-развилками. Missing layers read as no context:
+// nothing to embody, 0.
 struct MacroWorld;
 int fauna_cell_capacity_at(const MacroWorld& w, int x, int y);
 

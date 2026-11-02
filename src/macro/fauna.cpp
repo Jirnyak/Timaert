@@ -5,7 +5,6 @@
 //   - Tables stored as null-terminated arrays of `const FaunaEntry*` so
 //     they live in `.rodata` and never allocate.
 #include "macro/fauna.h"
-#include "macro/squad_index.h"
 #include "macro/macro_world.h"
 #include "macro/map_generator.h"
 #include "macro/state.h"
@@ -89,25 +88,22 @@ static_assert(rows_in_enum_order(kBiomeSpawnCounts, &BiomeSpawnCountRow::biome),
               "kBiomeSpawnCounts row order must mirror Biome");
 constexpr SpawnCounts kForestSpawnCounts{3, 8};
 
-// The place's own counts COLUMN wins (place registry faunaMin/faunaMax —
-// the ruin's 2..6 and the spire's 4..9 live there now); faunaMax 0 = the
-// ground answers. The SquadType switch that stood here was an if-chain
-// over the registry (CANON S16).
+// МОДУЛЬНАЯ ПОЛОСА ПОБЕЖДАЕТ, ЗЕМЛЯ ОТВЕЧАЕТ ПО УМОЛЧАНИЮ (M-371): счёт
+// голов за визит объявляет band модуля клетки (нора данжа, фича субмира);
+// band.maxCount 0 = лес/биом. Колонки рода места мертвы вместе с place_def.
 SpawnCounts spawn_counts(const SpawnContext& ctx) {
-    const PlaceDef& def = place_def(ctx.place);
-    if (def.faunaMax != 0) return {def.faunaMin, def.faunaMax};
+    if (ctx.band.maxCount != 0)
+        return {ctx.band.minCount, ctx.band.maxCount};
     if (ctx.forest) return kForestSpawnCounts;
     const auto b = std::size_t(ctx.biome);
     return b <= std::size_t(Mountain) ? kBiomeSpawnCounts[b].counts
                                       : SpawnCounts{0, 0};
 }
 
-// The habitat bit a context asks for — the place's faunaHabitat column when
-// it states one (a town's 0 rolls no wild fauna at all: its crowd is the
-// kHabTown stripe, rolled by the settlement spawner), else the ground's.
+// The habitat bit a context asks for — the module's band when it states one
+// (a den, a ruin's ground), else the ground's own forest/biome bit.
 std::uint16_t context_bit(const SpawnContext& ctx) {
-    const PlaceDef& def = place_def(ctx.place);
-    if (def.faunaHabitat != kPlaceFaunaGround) return def.faunaHabitat;
+    if (ctx.band.bit != 0) return ctx.band.bit;
     if (ctx.forest) return kHabForest;
     return hab(ctx.biome);
 }
@@ -264,17 +260,13 @@ const FaunaEntry* creature_def_from_kind(std::uint16_t kindType) {
 
 // ── The honest headcount (Session 16) ────────────────────────────────
 
-int fauna_cell_capacity(Biome biome, int treeCount,
-                        SquadType place) {
-    // The place's own cap COLUMN wins (place registry faunaCap — a town is
-    // the poorest hunting ground that still is one); everywhere else the
-    // winning counts row caps it.
-    const PlaceDef& def = place_def(place);
-    if (def.faunaCap != kPlaceFaunaCapGround) return int(def.faunaCap);
+int fauna_cell_capacity(Biome biome, int treeCount) {
+    // ПРИРОДНАЯ ёмкость — счётная строка земли (лес/биом), и больше ничего
+    // (M-371): колонка faunaCap рода места мертва, подавление у поселения —
+    // вычистка ЕГО клетки в поле при рождении, не константа рода.
     SpawnContext ctx{};
     ctx.biome = biome;
     ctx.forest = is_forest_cell(treeCount);
-    ctx.place = place;
     return int(spawn_counts(ctx).maxCount);
 }
 
@@ -296,18 +288,12 @@ int fauna_cell_capacity_at(const MacroWorld& w, int x, int y) {
     const Biome biome = biome_at_cell(*terrain, wx, wy);
     const int treeCount = (w.trees && w.trees->has_complete_storage())
         ? int(w.trees->at(wx, wy)) : 0;
-    // РОД МЕСТА — ОСЬ РОДА ЕГО ТЕЛА (ломтик F: сетка мест умерла, «кто здесь
-    // живёт» отвечает каркас клеток по сквадам тем же порядком приоритета —
-    // settlement_at). Колонка runtime.squadType и есть та самая колонка
-    // записи, которую читал второй читатель сетки (`cell_facts`): носитель
-    // один, копий рода больше нет нигде.
-    SquadType place = SquadType::None;
-    if (w.squads && w.store) {
-        const MacroHandle who = settlement_at(*w.squads, *w.store, wx, wy);
-        if (w.store->valid(who))
-            place = SquadType(w.store->runtime[who.slot].squadType);
-    }
-    return fauna_cell_capacity(biome, treeCount, place);
+    // ЗДЕСЬ ЖИЛ СКАН СКВАДОВ (`settlement_at`) — второй носитель рода против
+    // байта фичи у ролла, и он умер с род-развилками (M-371): природная
+    // ёмкость спрашивает только ЗЕМЛЮ. Подавление у поселения — вычистка его
+    // клетки в поле при рождении (place_birth.h), охотой и ростом дальше
+    // распоряжается само поле.
+    return fauna_cell_capacity(biome, treeCount);
 }
 
 } // namespace sm

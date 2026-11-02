@@ -106,6 +106,17 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // first use for the same reason the deposit fields are — a field
     // allocated lazily is one whose first reader pays for everyone.
     allocate_world_fields(gs, gs.mapW, gs.mapH);
+    // ПОЛЕ ФАУНЫ — свой генератор, один раз (M-371): нетронутый мир стоит
+    // полным — живое поголовье рождается равным природной ёмкости (биом +
+    // лес). Порядок продиктован (мир → ПОЛЯ → фичи): природа не знает ни
+    // фич, ни сквадов; поселение вычистит свою клетку своей дверью рождения.
+    {
+        MacroWorld fw{};
+        fw.gs      = &gs;
+        fw.trees   = out.treeLayer;
+        fw.terrain = out.terrain;
+        generate_fauna_field(fw);
+    }
 
     // The score context politics reads (R2): the crown decides how many
     // and whose, the ground decides where and how large.

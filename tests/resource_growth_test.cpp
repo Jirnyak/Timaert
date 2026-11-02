@@ -174,6 +174,9 @@ void test_beasts_breed_where_beasts_are() {
     gs.mapH = kH;
     const TerrainData td = make_terrain();
     MacroWorld w{.gs = &gs, .terrain = &td};
+    // Носитель ряда Fauna — хранимое поле (M-371): фикстура заполняет его
+    // генератором рождения, как мир.
+    generate_fauna_field(w);
 
     const int cap = resource_field_read(w, ResourceFieldId::Fauna, 10, 10);
     CHECK_OR_RETURN(cap >= 2, "the meadow carries beasts to hunt");

@@ -200,6 +200,22 @@ int fauna_baseline(const MacroWorld& w, int x, int y) {
     return fauna_cell_capacity_at(w, x, y);
 }
 
+// ФАУНА — РЯД-НОСИТЕЛЬ НА СВОЁ ПОЛЕ (M-371, вердикт владельца 2026-11-02:
+// «а фауна это отдельное поле»; «его пишет СВОЙ ГЕНЕРАТОР один раз при
+// рождении мира»). Живое поголовье лежит в `GameState::faunaField`; базовая
+// (природная ёмкость: биом + лес) осталась потолком роста и клампом выемки —
+// форма ровно та же, что у стада: своя базовая плюс свой контейнер.
+int fauna_read(const MacroWorld& w, int x, int y) {
+    return w.gs ? fauna_field_read(*w.gs, x, y) : 0;
+}
+void fauna_apply(MacroWorld& w, int x, int y, int delta) {
+    if (!w.gs) return;
+    const int cap = fauna_baseline(w, x, y);
+    fauna_field_write(*w.gs, x, y,
+                      std::clamp(fauna_field_read(*w.gs, x, y) + delta,
+                                 0, std::max(0, cap)));
+}
+
 // Trees: the carrier row. The live state is the dense TreeLayer grid the
 // map renders (worldgen filled it; growth and felling move it from there —
 // the virgin derivation is an initial condition, not an attractor), so
@@ -404,9 +420,12 @@ constexpr ResourceFieldDef kResourceFields[] = {
     /* Wheat */ {"wheat", &wheat_baseline,
                  GrowthDomain::HealToBaseline, &wheat_growth_at,
                  nullptr, nullptr, 0, "food", NPCType::Count},
+    // ФАУНА — РЯД-НОСИТЕЛЬ НА СВОЁ ХРАНИМОЕ ПОЛЕ (M-371): живое — в
+    // `GameState::faunaField` (генератор заполняет при рождении мира), шрам
+    // мёртв, рост лечит носителя к природной базовой тем же ходоком.
     /* Fauna */ {"fauna", &fauna_baseline,
                  GrowthDomain::HealToBaseline, &fauna_growth_at,
-                 nullptr, nullptr, 0, "food", NPCType::Count},
+                 &fauna_read, &fauna_apply, 0, "food", NPCType::Count},
     // ЛЕС — ЕДИНСТВЕННОЕ ИСКЛЮЧЕНИЕ ЗАКОНА, и оно названо вслух: базовой у
     // него нет, потому что нетронутая земля зарастает ГУЩЕ девственной.
     // The forest reaches nobody: no gate asks «is there wood near» today, и
@@ -452,6 +471,17 @@ ResourceGrid& scars_of(GameState& gs, ResourceFieldId f) {
 }
 
 } // namespace
+
+void generate_fauna_field(MacroWorld& w) {
+    if (!w.gs || !w.terrain || w.terrain->width <= 0 || w.terrain->height <= 0)
+        return;
+    for (int y = 0; y < w.terrain->height; ++y) {
+        for (int x = 0; x < w.terrain->width; ++x) {
+            const int cap = fauna_cell_capacity_at(w, x, y);
+            if (cap > 0) fauna_field_write(*w.gs, x, y, cap);
+        }
+    }
+}
 
 void allocate_world_fields(GameState& gs, int width, int height) {
     if (width <= 0 || height <= 0) return;

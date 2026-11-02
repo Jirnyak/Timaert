@@ -23,10 +23,7 @@ namespace sm {
 // рода, tables/squad_type.h: его читает и обход мест, и ответ каркаса
 // «кто здесь живёт», а ось — их единственный общий нижний слой.)
 
-// Sentinels of the fauna columns below: "the GROUND answers" — the cell's own
-// forest/biome row decides, the place states no override of its own.
-inline constexpr std::uint16_t kPlaceFaunaGround    = 0xFFFFu;
-inline constexpr std::uint8_t  kPlaceFaunaCapGround = 0xFFu;
+// (Сентинелы колонок фауны УНИЧТОЖЕНЫ 2026-11-02 вместе с колонками, M-371.)
 
 // ── Crew rows: WHO this place raises (owner 2026-08-31, CANON S10) ────────
 // ── Crowd role rows: fixed posts the street crowd fills FIRST (§42) ──────
@@ -98,26 +95,14 @@ struct PlaceDef {
     // контейнера места (`inventory_value@src/macro/currency.h`), а не
     // константа строки.
 
-    // ── Fauna spawn columns (read by THE spawn law, macro/fauna.cpp) ──────
-    // What this place's ground rolls, as data — the three switch ladders over
-    // SquadType that answered these questions in the spawn code are dead
-    // (CANON S16, 2026-08-29).
-    //
-    // faunaHabitat — the habitat bit the place asks the body table for.
-    //   kPlaceFaunaGround = no override (forest/biome answer); 0 = no wild
-    //   fauna at all (a town's crowd is the settlement spawner's kHabTown
-    //   stripe). The Ruin/Spire values are cross-checked against fauna.h's
-    //   kHabRuin/kHabSpire right beside those bits' definitions.
-    std::uint16_t    faunaHabitat = kPlaceFaunaGround;
-    // The place's own head-count roll, min/max; faunaMax 0 = no override
-    // (the forest/biome counts row rolls).
-    std::uint8_t     faunaMin = 0;
-    std::uint8_t     faunaMax = 0;
-    // The honest-headcount capacity (fauna_cell_capacity, macro_stock
-    // baseline). kPlaceFaunaCapGround = the winning counts row's max; a
-    // number is the place's own cap — a town is the poorest hunting ground
-    // that still is one (the old ruin row's minCount, 2).
-    std::uint8_t     faunaCap = kPlaceFaunaCapGround;
+    // ── КОЛОНКИ `fauna*`×4 УНИЧТОЖЕНЫ 2026-11-02 (M-371, вердикт владельца:
+    // «а фауна это отдельное поле что за бред»; «фауна точно с фиачами не
+    // связана»). Фауна — ПОЛЕ дикой природы (`GameState::faunaField`, пишет
+    // свой генератор при рождении мира); полосу особой клетки объявляет её
+    // МОДУЛЬ (`FaunaBand@src/tables/npc.h`: руина — строка kFeatureGenRows,
+    // нора — строка kDungeonKindRows), подавление у поселения — вычистка
+    // его клетки в поле при рождении. Род-развилки и скан сквадов
+    // `settlement_at` в fauna.cpp умерли тем же нарядом. ──────────────────
     // ── КОЛОНКИ `crowdHabitat`, `crowdInsideShift`, `garrisonShift` УЕХАЛИ
     // 2026-11-02 В ДАННЫЕ СУБМИРА (`kCrowdLayout@src/sub/crowd_layout.h`,
     // ломоть 5б M-235): раскладку населения СЦЕНЫ читал только субмир —
@@ -231,34 +216,20 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
     // стоит голой, а `== SquadType::City`-гейты мира остаются верными по
     // пустоте — переспросить их придётся ровно в день первой столицы.
     {.type = SquadType::Capital,
-     .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
-     .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2 },
+     .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f },
     {.type = SquadType::City,
-     .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
-     .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2 },
+     .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f },
     {.type = SquadType::Village,
-     .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f,
-     .faunaHabitat = 0u, .faunaMin = 0, .faunaMax = 0, .faunaCap = 2 },
-    // Spire wild fauna returned to the GROUND (§42 Инк 5): its demons are
-    // its POPULATION now — the mountain's own beasts roam the slopes, and
-    // clearing the tower can never again be ambiguous between garrison and
-    // game. The Ruin row keeps kHabRuin: that bit is ALSO the den
-    // dictionary (what creeps into cellars and caves), and a ruin's ground
-    // honestly crawls.
+     .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f },
+    // (Фауна-полосы родов умерли с колонками, M-371: руина объявляет свою
+    // kHabRuin строкой СВОЕГО модуля kFeatureGenRows, норы — строками
+    // kDungeonKindRows, земля отвечает всем прочим.)
     {.type = SquadType::Spire,
-     .lightColor = 0xFFA86CFFu, .lightPop = 200.0f,
-     .faunaHabitat = kPlaceFaunaGround, .faunaMin = 0, .faunaMax = 0,
-     .faunaCap = kPlaceFaunaCapGround,
-     },
+     .lightColor = 0xFFA86CFFu, .lightPop = 200.0f },
     {.type = SquadType::Ruin,
-     .lightColor = 0xFF8E8576u, .lightPop = 40.0f,
-     .faunaHabitat = 1u << 12, .faunaMin = 2, .faunaMax = 6,
-     .faunaCap = kPlaceFaunaCapGround,
-     },
+     .lightColor = 0xFF8E8576u, .lightPop = 40.0f },
     {.type = SquadType::Lair,
-     .lightColor = 0xFF883A3Au, .lightPop = 70.0f,
-     .faunaHabitat = kPlaceFaunaGround, .faunaMin = 0, .faunaMax = 0,
-     .faunaCap = kPlaceFaunaCapGround },
+     .lightColor = 0xFF883A3Au, .lightPop = 70.0f },
     {.type = SquadType::Shrine,
      .lightColor = 0xFFE2E2E2u, .lightPop = 90.0f },
     {.type = SquadType::Mine,
@@ -351,9 +322,11 @@ static_assert(rows_in_enum_order(kPlaces, &PlaceDef::type),
 // четыре байта данных (u16 + два u8), и хвост сложился ровно: последнее
 // поле `seedRawMult` на 18, данных 19, 20 — ближайшее кратное четырёх.
 // ОТЪЕЗД АМБАРА РОЖДЕНИЯ В ТАБЛИЦУ РОЖДЕНИЯ РОДА (2026-11-02, та же
-// сессия) ЧИСЛО НЕ ДВИНУЛ: два хвостовых u8 съело выравнивание — последнее
-// поле `faunaCap` на 16, данных 17, 20 — ближайшее кратное четырёх.
-static_assert(sizeof(PlaceDef) == 20,
+// сессия) ЧИСЛО НЕ ДВИНУЛ: два хвостовых u8 съело выравнивание.
+// СМЕРТЬ КОЛОНОК ФАУНЫ (M-371, та же сессия): 20 → 12 — тип (u8 + 3
+// выравнивания) + lightColor u32 + lightPop float; осталось ровно то, что
+// ждёт M-370 (свет), после него таблица пустеет и сносится.
+static_assert(sizeof(PlaceDef) == 12,
               "PlaceDef layout changed — say WHICH column and why, and "
               "never re-add a faction column: a KIND is not an OWNER (M-39)");
 

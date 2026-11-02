@@ -182,6 +182,36 @@ bool feature_number_read_block(savefmt::Reader& r, const WorldFieldStoresMut& st
 constexpr std::uint64_t kFeatureNumberMaxBytes =
     kBlockCountBytes + std::uint64_t(kMaxFieldCells) * kSparseCellBytes;
 
+// ── FaunaField: живое поголовье дикой природы (M-371, v149) ─────────────
+// Носитель ряда Fauna — та же разреженная пара {индекс, значение}, что у
+// поля чисел фич: данные генератора рождения, из ничего не выводятся.
+void fauna_field_write_block(savefmt::Writer& w, const WorldFieldStores& st) {
+    if (!st.gs) { w.count(0, kMaxFieldCells); return; }
+    const ResourceGrid& g = st.gs->faunaField;
+    if (!w.count(std::size_t(g.liveCells), kMaxFieldCells)) return;
+    g.for_each_live([&](std::uint32_t idx, std::int32_t value) {
+        w.pod(idx);
+        w.pod(value);
+    });
+}
+bool fauna_field_read_block(savefmt::Reader& r, const WorldFieldStoresMut& st) {
+    std::uint32_t n = 0;
+    if (!savefmt::read_count(r, n, kMaxFieldCells)) return false;
+    if (!st.gs) { r.ok = false; return false; }
+    ResourceGrid& g = st.gs->faunaField;
+    if (n > 0 && !size_for_world(*st.gs, g)) { r.ok = false; return false; }
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        std::uint32_t idx = 0;
+        std::int32_t value = 0;
+        r.pod(idx);
+        r.pod(value);
+        if (r.ok && g.live()) field_set(g, idx, value);
+    }
+    return r.ok;
+}
+constexpr std::uint64_t kFaunaFieldMaxBytes =
+    kBlockCountBytes + std::uint64_t(kMaxFieldCells) * kSparseCellBytes;
+
 // (Ряд `Built` и пара `built_write`/`built_read` УНИЧТОЖЕНЫ в v130 вместе с
 // вектором `builtFeatures`: писателей из геймплея у него было НОЛЬ, то есть
 // ряд возил в файл свой же результат чтения — см. некролог в `world_fields.h`.)
@@ -206,6 +236,9 @@ constexpr WorldFieldRow kWorldFields[std::size_t(WorldField::Count)] = {
     {WorldField::FeatureNumber, "feature_number",
      feature_number_write_block, feature_number_read_block,
      kFeatureNumberMaxBytes},
+    {WorldField::FaunaField, "fauna_field",
+     fauna_field_write_block, fauna_field_read_block,
+     kFaunaFieldMaxBytes},
 };
 static_assert(rows_in_enum_order(kWorldFields, &WorldFieldRow::id),
               "every WorldField needs its row — the table IS the system");

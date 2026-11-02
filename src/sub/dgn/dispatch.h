@@ -148,7 +148,10 @@ struct DungeonKindRow {
                              //   fighters — and the wild FaunaCount den law
                              //   stands down. A spire's demons are the
                              //   spire's souls, never the mountain's game.
-    SquadType denFamily;  // whose monster-table family the den draws
+    FaunaBand den;           // the den's spawn band: habitat bit + heads per
+                             //   visit (M-371 — the SquadType key through the
+                             //   dead place columns is gone; the dungeon row
+                             //   states its vermin itself, by kHab* names)
     bool shaftLadder;        // pads are directional (W climbs, E descends)
                              //   instead of fixed storey pairs
     bool roofHatch;          // the top storey opens a hatch onto open air

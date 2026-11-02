@@ -1116,7 +1116,7 @@ int spawn_street_arrivals(SubObjects& objs,
 
 int spawn_dungeon_vermin(SubObjects& objs,
                          std::uint32_t seed,
-                         SquadType tableKind,
+                         FaunaBand den,
                          std::uint8_t danger,
                          Biome biome,
                          int treeCount,
@@ -1133,11 +1133,11 @@ int spawn_dungeon_vermin(SubObjects& objs,
         return 0;
     }
     // The same ONE law the open cell runs (fauna.h roll_spawns): habitat ×
-    // danger-match over the body table; the den kind is the habitat bit.
+    // danger-match over the body table; the den's band IS the habitat bit.
     SpawnContext sctx{};
     sctx.biome = biome;
     sctx.forest = is_forest_cell(treeCount);
-    sctx.place = tableKind;
+    sctx.band = den;
     sctx.danger = danger;
     std::uint32_t rngState = seed ^ 0xCE11A5u;
     auto picks = roll_spawns(sctx, rngState);
@@ -1193,6 +1193,7 @@ void spawn_cell_npcs(SubObjects& objs,
                      int treeCount,
                      SquadType place,
                      std::uint8_t danger,
+                     FaunaBand faunaBand,
                      const SeamlessSubworldManager& mgr,
                      int ox,
                      int oy,
@@ -1242,7 +1243,7 @@ void spawn_cell_npcs(SubObjects& objs,
     SpawnContext sctx{};
     sctx.biome = biome;
     sctx.forest = is_forest_cell(treeCount);
-    sctx.place = place;
+    sctx.band = faunaBand;   // полоса МОДУЛЯ фичи клетки (M-371); {} = земля
     sctx.danger = danger;
     std::uint32_t rngState = cellSeed ^ 0xFAEAu;
     auto picks = roll_spawns(sctx, rngState);

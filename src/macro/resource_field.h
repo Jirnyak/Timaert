@@ -213,6 +213,14 @@ const ResourceFieldDef& resource_field_def(ResourceFieldId f);
 // (and a carrier row carries none, so the rule holds there by construction).
 void allocate_world_fields(GameState& gs, int width, int height);
 
+// ГЕНЕРАТОР ПОЛЯ ФАУНЫ — один раз при рождении мира (M-371, вердикт
+// владельца: «его пишет СВОЙ ГЕНЕРАТОР один раз при рождении мира (биом +
+// лес…)»). Заполняет `GameState::faunaField` природной ёмкостью клетки;
+// дальше полем распоряжается живой мир (охота — выемка, рост — лечение к
+// базовой, основание поселения — вычистка своей клетки).
+struct MacroWorld;
+void generate_fauna_field(MacroWorld& w);
+
 // The current count of a cell. Sparse rows: capacity − scar, floored at
 // zero, fail-closed without terrain. Carrier rows: the carrier's cell.
 int resource_field_read(const MacroWorld& w, ResourceFieldId f, int x, int y);
@@ -398,6 +406,7 @@ private:
     friend void allocate_world_fields(GameState&, int, int);
     friend void feature_number_write(GameState&, int, int, int);
     friend void feature_number_add(GameState&, int, int, int);
+    friend void fauna_field_write(GameState&, int, int, int);
     friend void allocate_deposit_fields(struct DepositLayer&, int, int);
     friend DepositLayer build_deposit_layer(const TerrainData&, std::uint32_t);
     friend void create_deposit(struct DepositLayer&, int, int, std::int32_t);

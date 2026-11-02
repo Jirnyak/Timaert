@@ -21,6 +21,7 @@
 #include "sub/damage.h"
 #include "sub/record.h"   // macro_record_of / pools_of — THE door of the seam
 #include "sub/base_generator.h"
+#include "sub/gens/dispatch.h"  // feature_fauna_band — полоса спавна модуля фичи (M-371)
 #include "sub/dgn/dispatch.h"
 #include "sub/body.h"
 #include "sub/material.h"
@@ -1735,7 +1736,11 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
         : MacroHandle{};
     spawn_cell_npcs((*objects_),
                     ctx.biome, ctx.treeCount, ctx.place.kind,
-                    ctx.zone, mgr_,
+                    ctx.zone,
+                    // Полоса спавна — ответ МОДУЛЯ байта фичи (M-371):
+                    // руина объявляет kHabRuin сама, прочие — {} = земля.
+                    feature_fauna_band(std::uint8_t(ctx.feature)),
+                    mgr_,
                     ox, oy, ctx.seed, ctx.worldSeed,
                     settlementFaction, ctx.place.size,
                     // The macro stock these citizens are borrowed from: this
@@ -4455,11 +4460,10 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         // the kind row's column. Placement is the scene's floor catalog: a
         // cave's whole gallery chain holds its creatures, never just the
         // mouth chamber the old rectangle described (CANON S28).
-        const SquadType denKind = kindRow.denFamily;
         spawn_dungeon_vermin((*objects_),
             dungeon_scene_seed(worldSeed, ses.doorCx, ses.doorCy,
                                ses.ref.ordinal, ses.ref.level),
-            denKind, doorFacts.zone, doorFacts.biome,
+            kindRow.den, doorFacts.zone, doorFacts.biome,
             std::max(0, doorFacts.treeCount), budget,
             mgr_.cell_stand_points(4),
             float(kCellSize), float(kCellSize), faunaKey);

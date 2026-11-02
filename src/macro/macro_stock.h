@@ -69,8 +69,8 @@ enum class MacroStock : std::uint8_t {
                      //   охранник корована. Здесь стоял второй ряд
                      //   `Population`, делавший то же самое через
                      //   place-фильтр субъекта, — снесён вместе с фильтром
-    FaunaCount,      // the wild headcount of one cell (macro/fauna.h capacity
-                     //   + GameState::faunaOverrides — the hunted delta)
+    FaunaCount,      // the wild headcount of one cell — the Fauna row's own
+                     //   stored field (GameState::faunaField, M-371)
     CropCount,       // the standing wheat of one cell (fertility-derived
                      //   estimate − GameState::cropOverrides harvest scar)
     FeatureNumber,          // ЧИСЛО ФИЧИ клетки (единое плоское поле GameState::featureNumber,

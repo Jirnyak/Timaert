@@ -14,6 +14,7 @@
 
 #include "macro/fauna.h"
 #include "sub/crowd_layout.h"  // полосы толпы — данные субмира (2026-11-02)
+#include "sub/gens/dispatch.h" // feature_fauna_band — полоса модуля фичи (M-371)
 #include "tables/faction.h"   // faction_index — перевод имени в ординал (M-187)
 
 #include <cstdint>
@@ -136,12 +137,12 @@ int main() {
     // поднимает ни ролл, ни одна полоса толпы, — мёртвый контент.
     {
         bool seen[std::size_t(sm::NPCType::Count)] = {};
-        auto sweep = [&](sm::SquadType place, sm::Biome biome, bool forest,
+        auto sweep = [&](sm::FaunaBand band, sm::Biome biome, bool forest,
                          std::uint8_t danger, std::uint32_t salt) {
             sm::SpawnContext ctx{};
             ctx.biome = biome;
             ctx.forest = forest;
-            ctx.place = place;
+            ctx.band = band;
             ctx.danger = danger;
             std::uint32_t rng = 0x5EED0000u ^ salt;
             for (int i = 0; i < 4096; ++i) {
@@ -150,23 +151,26 @@ int main() {
                 }
             }
         };
-        // The grounds the world has: the two den families across their whole
-        // danger bands (a ruin at the safe edge holds different things from
-        // one in hell) and the open biomes.
+        // The grounds the world has: the ruin MODULE's band across its whole
+        // danger band (a ruin at the safe edge holds different things from
+        // one in hell) and the open biomes. Полоса руины берётся ДВЕРЬЮ
+        // модуля (M-371), а не пересказом её чисел в свидетеле.
+        const sm::FaunaBand ruinBand =
+            sm::sub::feature_fauna_band(std::uint8_t(sm::FT_Ruin));
+        CHECK(ruinBand.bit != 0, "модуль руины объявляет свою полосу спавна");
         for (int d = 0; d <= 255; d += 15) {
             const auto danger = std::uint8_t(d);
-            sweep(sm::SquadType::Spire,   sm::Meadow,   false, danger, 1u);
-            sweep(sm::SquadType::Ruin,    sm::Meadow,   false, danger, 2u);
-            sweep(sm::SquadType::City,    sm::Meadow,   false, danger, 3u);
-            sweep(sm::SquadType::None,    sm::Mountain, false, danger, 4u);
-            sweep(sm::SquadType::None,    sm::Swamp,    false, danger, 5u);
-            sweep(sm::SquadType::None,    sm::Desert,   false, danger, 6u);
-            sweep(sm::SquadType::None,    sm::Steppe,   false, danger, 7u);
-            sweep(sm::SquadType::None,    sm::Valley,   true,  danger, 8u);
-            sweep(sm::SquadType::None,    sm::Taiga,    false, danger, 9u);
-            sweep(sm::SquadType::None,    sm::Tundra,   false, danger, 10u);
-            sweep(sm::SquadType::None,    sm::Snow,     false, danger, 11u);
-            sweep(sm::SquadType::None,    sm::Tropics,  false, danger, 12u);
+            sweep(ruinBand,        sm::Meadow,   false, danger, 2u);
+            sweep(sm::FaunaBand{}, sm::Meadow,   false, danger, 3u);
+            sweep(sm::FaunaBand{}, sm::Mountain, false, danger, 4u);
+            sweep(sm::FaunaBand{}, sm::Swamp,    false, danger, 5u);
+            sweep(sm::FaunaBand{}, sm::Desert,   false, danger, 6u);
+            sweep(sm::FaunaBand{}, sm::Steppe,   false, danger, 7u);
+            sweep(sm::FaunaBand{}, sm::Valley,   true,  danger, 8u);
+            sweep(sm::FaunaBand{}, sm::Taiga,    false, danger, 9u);
+            sweep(sm::FaunaBand{}, sm::Tundra,   false, danger, 10u);
+            sweep(sm::FaunaBand{}, sm::Snow,     false, danger, 11u);
+            sweep(sm::FaunaBand{}, sm::Tropics,  false, danger, 12u);
         }
         // Союз полос толпы ВСЕХ родов мест — вторая земля, структурная.
         std::uint16_t crowdUnion = 0;
@@ -212,8 +216,9 @@ int main() {
     {
         sm::SpawnContext ruinCell{};
         ruinCell.biome = sm::Biome::Meadow;
-        ruinCell.place = sm::SquadType::Ruin;
-        ruinCell.danger = 128;   // середина руинной полосы реестра (51..229)
+        ruinCell.band =
+            sm::sub::feature_fauna_band(std::uint8_t(sm::FT_Ruin));
+        ruinCell.danger = 128;   // середина руинной полосы генератора (51..229)
         int picks = 0, nonDemon = 0, mismatched = 0;
         for (std::uint32_t s = 0; s < 256u; ++s) {
             std::uint32_t rngState = 0xA11CE000u ^ s;

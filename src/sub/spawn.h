@@ -204,6 +204,7 @@ void spawn_cell_npcs(SubObjects& objs,
                      int treeCount,
                      SquadType place,
                      std::uint8_t danger,
+                     FaunaBand faunaBand,
                      const SeamlessSubworldManager& mgr,
                      int ox,
                      int oy,
@@ -374,9 +375,10 @@ int spawn_street_arrivals(SubObjects& objs,
                           MacroStockKey populationKey);
 
 // The vermin of ONE interior (a cellar, a cave floor): creatures rolled from
-// the SAME global monster table the open world uses — `tableKind` picks the
-// row family (a cellar reads the Ruin table: what lives in the dark under
-// men's floors), `biome` and `treeCount` complete the ordinary resolve — and
+// the SAME global monster table the open world uses — `den` is the dungeon
+// row's OWN spawn band (M-371: a cellar states kHabRuin itself — what lives
+// in the dark under men's floors; {0,0,0} = the ground answers), `biome` and
+// `treeCount` complete the ordinary resolve — and
 // borrowed from the SAME fauna_count stock as the cell above, so a kill down
 // here thins the cell for good and the ONE regrowth law (32 game days a head,
 // macro/fauna.h) brings it back. `budget` is that stock: nothing embodies
@@ -384,7 +386,7 @@ int spawn_street_arrivals(SubObjects& objs,
 // as for residents above. Deterministic from `seed`; returns how many stood up.
 int spawn_dungeon_vermin(SubObjects& objs,
                          std::uint32_t seed,
-                         SquadType tableKind,
+                         FaunaBand den,
                          std::uint8_t danger,
                          Biome biome,
                          int treeCount,

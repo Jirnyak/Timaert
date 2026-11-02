@@ -48,6 +48,9 @@ enum class WorldField : std::uint8_t {
     FeatureNumber,      // THE featureNumber layer, one field for the world (v96): the
                  //   number under a feature — hulls moored at a harbour
                  //   today (CANON S5 «слой разработки — ОДНО поле на всё»).
+    FaunaField,  // sparse u16 — живое поголовье дикой природы, носитель ряда
+                 //   Fauna (GameState::faunaField, M-371 v149): данные
+                 //   генератора рождения, выводу неоткуда взяться — едет.
     Count,
 };
 
@@ -64,7 +67,9 @@ enum class WorldField : std::uint8_t {
 // включивший (AGENTS §5 п.13).
 // 2026-10-11, v130: 155'189'328 → 145'752'140, −9'437'188 Б — ряд `Built`
 // снесён (4 Б счёта + 2^20 клеток × 9 Б записи `{i32 x, i32 y, u8 ft}`).
-inline constexpr std::uint64_t kWorldFieldsMaxBytes = 53'477'408ull;
+// 2026-11-02, v149 (M-371): 53'477'408 → 61'866'020, +8'388'612 Б — ряд
+// `FaunaField` (4 Б счёта + 2^20 клеток × 8 Б разреженной пары {u32, i32}).
+inline constexpr std::uint64_t kWorldFieldsMaxBytes = 61'866'020ull;
 
 // The owning stores of the saved rows. Not a second world envelope: load
 // runs BEFORE the app's layers exist (it fills these, and the boot moves

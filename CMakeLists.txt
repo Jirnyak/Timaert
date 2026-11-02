@@ -1440,7 +1440,10 @@ timaert_test(targeting_test
 
 timaert_test(fauna_registry_test
     SOURCES
-        src/macro/fauna.cpp)
+        src/macro/fauna.cpp
+        # feature_fauna_band — полоса модуля фичи (M-371): свидетель берёт
+        # полосу руины ДВЕРЬЮ модуля, а не пересказом её чисел
+        src/sub/gens/dispatch.cpp)
 # THE sprite table (tables/sprite_rows.h): totality over the creature catalog and
 # the NPC kinds, every row drawable, the creature↔row name binding, and the
 # negative control that the binding check can actually fail. Pure data — it
