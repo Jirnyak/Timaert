@@ -4824,9 +4824,9 @@ void reset_macro_npc_ai_runtime(MacroNpcAiRuntime& runtime,
                                 std::uint32_t seed) {
     runtime = MacroNpcAiRuntime{};
     runtime.jitter = Rng{seed ^ 0xA1F0u};
-    // Аллокация на сборке мира, не в тике (DOD п.4): скрэтчи закона порядка
-    // (squad_walk.h) греются до капа один раз, свипы дальше zero-alloc.
-    runtime.sweepOrder.reserve(kUnifiedCap);
+    // Аллокация на сборке мира, не в тике (DOD п.4): скрэтч закона порядка
+    // (squad_walk.h) греется до капа один раз, свипы дальше zero-alloc.
+    // (Второй скрэтч `sweepOrder` умер с M-376 — лист на драйв один.)
     runtime.squadIndex.order.reserve(kUnifiedCap);
 }
 
@@ -4945,16 +4945,15 @@ void tick_macro_npc_ai(MacroWorld& mw,
     scent_player_deposit(ctx);   // игрок следит наравне со всеми (CANON S10)
 
     // Свип делит ОДИН RNG на всех — порядок обхода есть закон мира
-    // (squad_walk.h): по ординалу, не по кишке хранилища. Игрока свип не
-    // водит НИКОГДА — ни флажок, ни его родной сквад (слоты из ctx).
-    collect_squads_by_ordinal(
-        st, runtime.sweepOrder,
-        [&](std::uint16_t slot) {
-            return st.dead[slot] == 0 && slot != ctx.playerFlagSlot
-                && slot != ctx.playerSquadSlot;
-        });
-    for (const SquadWalkEntry& sw : runtime.sweepOrder) {
+    // (squad_walk.h): по ординалу, не по кишке хранилища. Лист на драйв
+    // ОДИН — тот самый, что собрал build_squad_index выше (M-376: второй
+    // скан капа умер; содержимое и порядок те же — живые по ординалу).
+    // Игрока свип не водит НИКОГДА — ни флажок, ни его родной сквад
+    // (слоты из ctx, пропуск в теле).
+    for (const SquadWalkEntry& sw : runtime.squadIndex.order) {
         const std::uint16_t slot = sw.slot;
+        if (slot == ctx.playerFlagSlot || slot == ctx.playerSquadSlot)
+            continue;
         const MacroHandle h = handle_at(st, slot);
         auto& cell = st.cell[slot];
         auto& kind = st.kind[slot];
@@ -5062,23 +5061,36 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     scent_player_deposit(ctx);   // игрок следит наравне со всеми (CANON S10)
 
     // Тот же закон порядка, что у карт-драйвера (squad_walk.h): курсор —
-    // позиция В ЭТОМ порядке. Лист собран на вызов; умерший внутри свипа
+    // позиция в листе ИНДЕКСА (M-376: свой лист свипа умер, лист на драйв
+    // один — его собрал build_squad_index выше). Умерший внутри свипа
     // отсеивается проверкой Dead ниже, ровно как раньше. Игрока свип не
-    // водит никогда — ни флажок, ни родной сквад (слоты из ctx).
-    collect_squads_by_ordinal(
-        st, runtime.sweepOrder,
-        [&](std::uint16_t slot) {
-            return st.dead[slot] == 0 && slot != ctx.playerFlagSlot
-                && slot != ctx.playerSquadSlot;
-        });
+    // водит никогда — пропуск в теле, курсор честно шагает и по его строкам.
+    const std::vector<SquadWalkEntry>& order = runtime.squadIndex.order;
+    // «Некого водить» — пустой лист БЕЗ ИГРОКА: его строки в листе индекса
+    // стоят (индекс видит всех живых), а свипу не достаются. Точный
+    // эквивалент прежнего sweepOrder.empty().
+    std::size_t playerRows = 0;
+    if (ctx.playerFlagSlot < kUnifiedCap && st.alive[ctx.playerFlagSlot] != 0
+        && st.dead[ctx.playerFlagSlot] == 0)
+        ++playerRows;
+    if (ctx.playerSquadSlot < kUnifiedCap
+        && ctx.playerSquadSlot != ctx.playerFlagSlot
+        && st.alive[ctx.playerSquadSlot] != 0
+        && st.dead[ctx.playerSquadSlot] == 0)
+        ++playerRows;
+    const bool anySweepable = order.size() > playerRows;
 
     while (runtime.pendingSweeps > 0
            && result.npcsProcessed < max_npc_ticks) {
         bool reachedEnd = true;
 
         for (std::size_t i = runtime.sweepCursor;
-             i < runtime.sweepOrder.size(); ++i) {
-            const std::uint16_t slot = runtime.sweepOrder[i].slot;
+             i < order.size(); ++i) {
+            const std::uint16_t slot = order[i].slot;
+            if (slot == ctx.playerFlagSlot || slot == ctx.playerSquadSlot) {
+                ++runtime.sweepCursor;
+                continue;
+            }
             const MacroHandle h = handle_at(st, slot);
 
             auto& cell = st.cell[slot];
@@ -5128,7 +5140,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
             }
         }
 
-        if (runtime.sweepOrder.empty()) {
+        if (!anySweepable) {
             runtime.pendingSweeps = 0;
             runtime.sweepCursor = 0;
             break;

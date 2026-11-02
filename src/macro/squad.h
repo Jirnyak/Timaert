@@ -531,15 +531,22 @@ inline int kill_fallen_squad_creatures(MacroStore& st, GameState& gs,
     // убитого он не является и вердикт «не важно кто умер» его не касается.
     // Существа живут в ЕДИНОМ контейнере сквада (M-71).
     // Порядок обхода — закон (squad_walk.h): «чьи люди легли первыми» не
-    // должно зависеть от кишки хранилища. Вектор пуст почти каждый тик
-    // (смерть — редкое событие), аллокации нет.
+    // должно зависеть от кишки хранилища. Население — ВЕДОМОСТЬ ПАВШИХ
+    // (M-376): прежний скан всех 16384 слотов на КАЖДЫЙ вызов умер, свип
+    // читает O(павших); строку перерождённого слота отсеивает перепроверка
+    // alive+dead. Вектор пуст почти каждый тик (смерть — редкое событие),
+    // аллокации нет.
     std::vector<SquadWalkEntry> order;
-    collect_squads_by_ordinal(
-        st, order,
-        [&](std::uint16_t slot) {
-            return st.dead[slot] != 0
-                && st.playerFlag[slot].home == 0;
-        });
+    for (std::uint32_t i = 0; i < st.deadRowCount; ++i) {
+        const std::uint16_t slot = st.deadRows[i];
+        if (st.alive[slot] == 0 || st.dead[slot] == 0) continue;
+        if (st.playerFlag[slot].home != 0) continue;
+        order.push_back({st.spawnId[slot].index, slot});
+    }
+    std::sort(order.begin(), order.end(),
+              [](const SquadWalkEntry& a, const SquadWalkEntry& b) {
+                  return a.ordinal < b.ordinal;
+              });
     for (const SquadWalkEntry& sw : order) {
         auto& bag = st.inventory[sw.slot];
         if (creatures_empty(bag.inv)) continue;
@@ -638,22 +645,27 @@ inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
                                      void* sweptUser = nullptr) {
     // Снос по ординалу (squad_walk.h) — снимок и так был обязателен
     // (destroy под собственным view незаконен), закон порядка достался ему
-    // бесплатно. Игрок исключается КОЛОНКАМИ (1е кластер 5): родной сквад —
-    // зарезервированным ординалом, носитель флажка — битами GameState;
-    // тег-exclude умер вместе с резолвом тегом. Обход — слоты store (6.1);
-    // прежний exclude<SubworldTag> был рудиментом (сам тег умер ломтём 6
-    // M-150): жильство сцены носили только тела, макро-сквад — никогда.
+    // бесплатно. Население — ВЕДОМОСТЬ ПАВШИХ (M-376): скан капа умер,
+    // снимок строится за O(павших). Игрок исключается КОЛОНКАМИ (1е кластер
+    // 5): родной сквад — зарезервированным ординалом, носитель флажка —
+    // битами GameState; тег-exclude умер вместе с резолвом тегом. Прежний
+    // exclude<SubworldTag> был рудиментом (сам тег умер ломтём 6 M-150):
+    // жильство сцены носили только тела, макро-сквад — никогда.
     const MacroHandle flag = player_flag_handle(gs);
     const bool flagLive = st.valid(flag);
     std::vector<SquadWalkEntry> snapshot;
-    collect_squads_by_ordinal(
-        st, snapshot,
-        [&](std::uint16_t slot) {
-            return st.dead[slot] != 0
-                && st.playerFlag[slot].home == 0
-                && !(flagLive && slot == flag.slot)
-                && !cell_is_leased(gs, st.cell[slot].idx);
-        });
+    for (std::uint32_t i = 0; i < st.deadRowCount; ++i) {
+        const std::uint16_t slot = st.deadRows[i];
+        if (st.alive[slot] == 0 || st.dead[slot] == 0) continue;
+        if (st.playerFlag[slot].home != 0) continue;
+        if (flagLive && slot == flag.slot) continue;
+        if (cell_is_leased(gs, st.cell[slot].idx)) continue;
+        snapshot.push_back({st.spawnId[slot].index, slot});
+    }
+    std::sort(snapshot.begin(), snapshot.end(),
+              [](const SquadWalkEntry& a, const SquadWalkEntry& b) {
+                  return a.ordinal < b.ordinal;
+              });
     int swept = 0;
     for (const SquadWalkEntry& sw : snapshot) {
         const std::uint16_t slot = sw.slot;
@@ -680,6 +692,9 @@ inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
         store_death(st, handle_at(st, slot));
         ++swept;
     }
+    // Строки ведомости снимает только этот свип — он же её и компактит:
+    // снесённые и перерождённые уходят, флаги пересобираются (M-376).
+    dead_ledger_compact(st);
     return swept;
 }
 

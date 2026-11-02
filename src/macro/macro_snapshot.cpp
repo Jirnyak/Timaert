@@ -101,7 +101,12 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
         st.sheet[h.slot] = m.sheet;
         st.designTag[h.slot] = ecs::DesignCharacterTag{m.designOrdinal};
         st.gear[h.slot] = ecs::BodyEquipment{m.gear};
-        if (m.dead) st.dead[h.slot] = 1;
+        // Судьба — вместе со строкой ВЕДОМОСТИ ПАВШИХ (M-376): прямой байт
+        // без приписки оставил бы свип мёртвых слепым к загруженным трупам.
+        if (m.dead) {
+            st.dead[h.slot] = 1;
+            dead_ledger_append(st, h.slot);
+        }
         // Флажок игрока — колонкой записи (5б); кэши GameState (биты)
         // пересобирает resolve_player_handles_after_load ПОСЛЕ этого
         // восстановления — сканом колонок, один раз на загрузке (SAVE-5

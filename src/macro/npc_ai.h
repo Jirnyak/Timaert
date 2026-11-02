@@ -83,9 +83,8 @@ struct MacroNpcAiRuntime {
     int         pendingSweeps = 0;
     std::size_t sweepCursor = 0;
     SquadIndex  squadIndex;         // rebuilt per drive; buckets reused
-    // Порядок свипа по ординалу (macro/squad_walk.h) — скрэтч драйверов,
-    // ноль аллокаций после прогрева.
-    std::vector<SquadWalkEntry> sweepOrder;
+    // (Свой лист свипа `sweepOrder` умер с M-376: лист на драйв ОДИН —
+    //  `squadIndex.order`, живые по ординалу; игрока свипы пропускают телом.)
 };
 
 struct MacroNpcAiSliceResult {
@@ -166,7 +165,7 @@ struct TickContext {
 // ссылаться этим числом на одну из них нельзя.
 //
 // А `MacroNpcAiRuntime` ПИНА НЕ ПОЛУЧАЕТ, И ЭТО РЕШЕНИЕ, А НЕ ПРОПУСК: его
-// `sizeof` несёт `std::vector` (`sweepOrder`, бакеты `SquadIndex`), то есть
+// `sizeof` несёт `std::vector` (бакеты и лист `SquadIndex`), то есть
 // является свойством СТАНДАРТНОЙ БИБЛИОТЕКИ, а не нашей раскладки — такой
 // пин прибил бы libc++ и покраснел бы на MinGW первой же сборкой. Здесь же
 // каждое поле своё: указатели, `int`, `float`, `uint16` — число наше.

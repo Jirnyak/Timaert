@@ -152,6 +152,21 @@ struct MacroStore {
     std::array<std::uint16_t, kUnifiedCap> ordSlot;
     std::uint32_t ordCount = 0;
 
+    // ── ВЕДОМОСТЬ ПАВШИХ: СВИП МЁРТВЫХ БЕЗ СКАНА КАПА (M-376, разряд А) ──
+    // «Какие записи пали» отвечалось проходом по ВСЕМ 16384 слотам — на
+    // каждый вызов, а звали его оба драйвера тика, середина ИИ и субмир
+    // (kill_fallen_squad_creatures / destroy_dead_macro_squads). Теперь
+    // ведомость кормит ДВЕРЬ смерти (macro_mark_dead) — пересчёт живёт
+    // внутри двери изменения (DOD п.9, разряд А), читают её те же свипы за
+    // O(павших). Строка умеет только ПРОМОЛЧАТЬ: потребитель перепроверяет
+    // alive+dead, и слот, переродившийся под новым жильцом, отсеивается.
+    // Дубликат невыразим: приписку гейтит флаг deadListed, снимает флаги
+    // только компакция (dead_ledger_compact), она же выносит сирот — отсюда
+    // deadRowCount ≤ kUnifiedCap по построению, переполнения нет.
+    std::array<std::uint16_t, kUnifiedCap> deadRows;
+    std::array<std::uint8_t,  kUnifiedCap> deadListed;
+    std::uint32_t deadRowCount = 0;
+
     // Валидность ссылки судит ID (M-220): жилец тот же, пока ординал слота
     // совпал. id == 0 не совпадает ни с одним живым слотом по построению —
     // рождение выдаёт с 1, так что отдельной ветки «никого» здесь нет.
@@ -238,7 +253,11 @@ struct MacroStore {
 // есть колонка была ВТОРЫМ НОСИТЕЛЕМ одного ответа, DOD п.6). Названных байт
 // 4, освободилось 8 — четыре добрали дыры выравнивания рантайма (u8 перед
 // u32): 747 126 800 → 746 995 728, то есть **−131 072 Б = −128 КиБ**.
-static_assert(sizeof(MacroStore) == 746962960ull,    // кап 16384; 2026-11-02 (квантовый марш): −2 Б/слот — колонка CellSub уехала ВНУТРЬ рантайма на место float-банка moveBudget (сквадные координаты в скваде, мир их не знает); 746 995 728 → 746 962 960 = −32 КиБ. До того ±0 (цель SquadGoal +12 = рантайм −12)
+// 2026-11-02 (квантовый марш, M-375): −2 Б/слот — колонка CellSub уехала
+// ВНУТРЬ рантайма на место float-банка moveBudget (сквадные координаты в
+// скваде, мир их не знает); 746 995 728 → 746 962 960 = −32 КиБ. До того ±0
+// (цель SquadGoal +12 = рантайм −12).
+static_assert(sizeof(MacroStore) == 747012120ull,    // кап 16384; 2026-11-02 ломоть 7 (M-376): +3 Б/слот и +1 счётчик — ВЕДОМОСТЬ ПАВШИХ (deadRows u16 + deadListed u8 + deadRowCount u32): свип мёртвых записей перестал сканировать кап на каждый вызов; 746 962 960 → 747 012 120 = +48 КиБ
               "гладкая память макромира: новая колонка = новая цена, "
               "названная вслух (AGENTS п.10)");
 
@@ -247,12 +266,12 @@ static_assert(sizeof(MacroStore) == 746962960ull,    // кап 16384; 2026-11-02
 // он СЧИТАЕТ из тех же типов (`kMacroStoreRowBytes`). Равенство ниже и есть
 // шов между прозой переписи и правдой структуры: добавил колонку только сюда
 // — красный ассерт назовёт забытую строку переписи; поправил только перепись
-// — он же назовёт ложь в ней. Хвост 16 Б — два счётчика (`freeCount`,
-// `aliveCount`), эмитент (`nextSpawnId`) и 4 Б выравнивания структуры до
-// align 8 — единственное, что не умножается на кап.
+// — он же назовёт ложь в ней. Хвост 24 Б — пять счётчиков (`freeCount`,
+// `aliveCount`, эмитент `nextSpawnId`, `ordCount`, `deadRowCount`) и 4 Б
+// выравнивания структуры до align 8 — единственное, что не умножается на кап.
 static_assert(sizeof(MacroStore)
                   == kMacroStoreRowBytes * kUnifiedCap
-                         + sizeof(std::uint32_t) * 4u,
+                         + sizeof(std::uint32_t) * 6u,
               "перепись штабелей и гладкая память разъехались: цена слота "
               "kMacroStoreRowBytes (core/stacks.h) больше не равна колонкам");
 
@@ -424,10 +443,12 @@ inline void store_reset(MacroStore& s) {
     for (std::size_t i = 0; i < kUnifiedCap; ++i) {
         s.alive[i] = 0;
         s.freeSlots[i] = std::uint16_t(kUnifiedCap - 1u - i);
+        s.deadListed[i] = 0;   // павших прошлого мира ведомость не помнит
     }
     s.freeCount  = std::uint32_t(kUnifiedCap);
     s.aliveCount = 0;
     s.ordCount   = 0;   // имён прошлого мира справочник не помнит
+    s.deadRowCount = 0;
 }
 
 // ── РЕЗОЛВ ПО ОРДИНАЛУ — ЕДИНСТВЕННАЯ ДВЕРЬ, O(log живых) (M-271) ────────
@@ -655,10 +676,41 @@ inline const C* body_state(const MacroStore& s, MacroHandle h) {
 inline bool macro_dead(const MacroStore& s, MacroHandle h) {
     return !s.valid(h) || s.dead[h.slot] != 0;
 }
+// Приписка в ведомость павших (M-376). Отдельной дверью, а не телом
+// macro_mark_dead, ровно для одного второго писателя: ЗАГРУЗКА восстанавливает
+// байт судьбы прямой колонкой (macro_snapshot.cpp) и обязана кормить ведомость
+// той же строкой — иначе свип слеп к загруженным трупам.
+inline void dead_ledger_append(MacroStore& s, std::uint16_t slot) {
+    if (s.deadListed[slot] != 0) return;   // дубликат невыразим (шапка стора)
+    s.deadListed[slot] = 1;
+    s.deadRows[s.deadRowCount++] = slot;
+}
+
+// Компакция ведомости: снять флаги, переписать годных (живой слот с байтом
+// судьбы). Сироты — слоты, перерождённые или уничтоженные, — исчезают за
+// O(строк). Зовёт её свип трупов (destroy_dead_macro_squads) — единственный,
+// кто строки ведомости СНИМАЕТ.
+inline void dead_ledger_compact(MacroStore& s) {
+    const std::uint32_t n = s.deadRowCount;
+    for (std::uint32_t i = 0; i < n; ++i) s.deadListed[s.deadRows[i]] = 0;
+    std::uint32_t kept = 0;
+    for (std::uint32_t i = 0; i < n; ++i) {
+        const std::uint16_t slot = s.deadRows[i];
+        if (s.alive[slot] == 0 || s.dead[slot] == 0) continue;
+        if (s.deadListed[slot] != 0) continue;
+        s.deadListed[slot] = 1;
+        s.deadRows[kept++] = slot;
+    }
+    s.deadRowCount = kept;
+}
+
 // Смерть по хэндлу: протухший хэндл — no-op (жилец уже сменился, мертвить
-// некого); та же fail-closed пара к macro_dead выше.
+// некого); та же fail-closed пара к macro_dead выше. Уже мёртвый — тоже
+// no-op: ведомость кормится ровно флипом судьбы 0 → 1.
 inline void macro_mark_dead(MacroStore& s, MacroHandle h) {
-    if (s.valid(h)) s.dead[h.slot] = 1;
+    if (!s.valid(h) || s.dead[h.slot] != 0) return;
+    s.dead[h.slot] = 1;
+    dead_ledger_append(s, h.slot);
 }
 
 } // namespace sm
