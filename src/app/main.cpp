@@ -1866,7 +1866,16 @@ bool boot_world_from_save(App& app, const std::string& path) {
     app.npcAi.jitter        = app.gs.macroAiRhythm.jitter;
     app.npcAi.sweepAccum    = app.gs.macroAiRhythm.sweepAccum;
     app.npcAi.pendingSweeps = app.gs.macroAiRhythm.pendingSweeps;
-    app.npcAi.sweepCursor   = std::size_t(app.gs.macroAiRhythm.sweepCursor);
+    // Курсор — ординал шва среза (M-123); u64 провода сейва сужается честно.
+    app.npcAi.sweepCursor   = std::uint32_t(app.gs.macroAiRhythm.sweepCursor);
+    // Метры сохранения — свидетельская обвязка, сейв их не везёт; загрузка
+    // перезаводит их СОГЛАСОВАННЫМИ с восстановленным ритмом (инвариант
+    // aiInflow == accum + квант·(done + долг) цел при done = 0).
+    app.npcAi.aiInflowTicks =
+        std::uint64_t(app.npcAi.sweepAccum)
+        + std::uint64_t(sm::kAiTicks)
+              * std::uint64_t(std::max(0, app.npcAi.pendingSweeps));
+    app.npcAi.sweepsDone = 0;
     // Story progress (v25): every content node was just registered as on a
     // new game; replay the saved progress — a consumed one-shot stays
     // consumed, and the active set is restored exactly.
@@ -3706,6 +3715,16 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                     /*resting=*/!marching);
             }
         }
+        // ДОЛГ СВИПОВ СУБМИРА ДОПЛАЧИВАЕТСЯ НА КАРТЕ, А НЕ СБРАСЫВАЕТСЯ
+        // (M-105/M-123; ЗАКОН ДВУХ ТЕМПОВ п.3: размазать — растянуть, а не
+        // выкинуть; здесь стояло обнуление ритма — оплаченные кванты думки
+        // исчезали, мир врал игроку, что жил). Та же дверь, что внизу, вход
+        // тиков 0: только отработка накопленного, тем же бюджетом за кадр —
+        // прошлое прежде настоящего.
+        if (app.npcAi.pendingSweeps > 0) {
+            sm::tick_macro_npc_ai_budgeted(macroTickWorld, app.npcAi, 0,
+                                           kSubworldMacroNpcTicksPerStep);
+        }
         sm::tick_macro_npc_ai(macroTickWorld, app.npcAi,
                               std::uint64_t(stats.timeTick.ticksAdvanced));
         // The other half of the geometric meeting: a squad may have stepped
@@ -3725,9 +3744,9 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                 frt.entryTicks = sm::saturate_entry_ticks(frt.entryTicks);
             }
         }
-        app.npcAi.sweepAccum = 0;
-        app.npcAi.pendingSweeps = 0;
-        app.npcAi.sweepCursor = 0;
+        // (Здесь стояло обнуление sweepAccum/pendingSweeps/sweepCursor —
+        //  потеря №3 по M-105: накопленный под землёй долг думок исчезал на
+        //  первом же кадре карты. Теперь его доплачивает дверь выше.)
         emit_time_advance_if_needed(app, stats.timeTick);
         process_world_events(app);
         // Flush any pending glow refresh now, on the macro path, before this
@@ -3862,7 +3881,10 @@ RuntimeFrameStats advance_sim_steps(App& app, int steps, bool allowInput) {
         total.timeTick.dailyBudgetExhausted = s.timeTick.dailyBudgetExhausted;
         total.macroNpcAi.npcsProcessed += s.macroNpcAi.npcsProcessed;
         total.macroNpcAi.sweepsCompleted += s.macroNpcAi.sweepsCompleted;
-        total.macroNpcAi.backlog = s.macroNpcAi.backlog;
+        // ИЛИ, не присваивание: долг, видевшийся хоть одним под-шагом, не
+        // смеет быть затёрт последним (M-105 — свёртка глотала флаг).
+        total.macroNpcAi.backlog = total.macroNpcAi.backlog
+                                   || s.macroNpcAi.backlog;
     }
     // A promotion that bought NO time, asked for its reason on the spot.
     //

@@ -81,7 +81,20 @@ struct MacroNpcAiRuntime {
     Rng           jitter{0xA1F0u};
     std::uint32_t sweepAccum = 0;   // world ticks toward the next sweep
     int         pendingSweeps = 0;
-    std::size_t sweepCursor = 0;
+    // Шов среза бюджетного свипа — ОРДИНАЛ последнего обдуманного (M-123),
+    // не позиция: лист пересобирается каждым вызовом, и смерть уже-обдуманного
+    // сдвигала бы позиции — позиционный курсор съедал чужую думку. 0 = свип
+    // с начала (закон нуля-ординала: 0 навсегда «никто»).
+    std::uint32_t sweepCursor = 0;
+    // МЕТРЫ ЗАКОНА СОХРАНЕНИЯ СВИПОВ (M-105/M-123): вход тиков равен копилке
+    // плюс квант × (исполнено + долг) — aiInflowTicks == sweepAccum +
+    // kAiTicks·(sweepsDone + pendingSweeps) — ВСЕГДА. Потерять работу молча
+    // невыразимо: сброс долга или списанный без свипа квант рвут равенство.
+    // Читатель — смоук subworld_time и sweep_debt_test. В сейв не едут:
+    // это свидетельская обвязка, загрузка перезаводит их согласованными с
+    // восстановленным ритмом (main.cpp, aiInflow = accum + квант·долг).
+    std::uint64_t aiInflowTicks = 0;
+    std::uint64_t sweepsDone = 0;
     SquadIndex  squadIndex;         // rebuilt per drive; buckets reused
     // (Свой лист свипа `sweepOrder` умер с M-376: лист на драйв ОДИН —
     //  `squadIndex.order`, живые по ординалу; игрока свипы пропускают телом.)

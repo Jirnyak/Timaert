@@ -5031,18 +5031,20 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     if (!mw.gs || !mw.store) return result;  // no store, no thinking
     GameState& gs = *mw.gs;
 
-    constexpr int kMaxQueuedSweeps = 4;
     if (ticks > 0) {
-        runtime.sweepAccum +=
-            std::uint32_t(std::min<std::uint64_t>(ticks, kAiTicks * kMaxQueuedSweeps));
+        // ВХОД УЧИТЫВАЕТСЯ ВЕСЬ — ни среза до учёта, ни потолка очереди
+        // (M-105/M-123: прежний kMaxQueuedSweeps = 4 СПИСЫВАЛ квант и
+        // ВЫБРАСЫВАЛ свип, а min(ticks, 128) резал вход до учёта — обе
+        // потери были читом по §6). Недоделанное — ДОЛГ, растягиваемый
+        // бюджетом исполнения ниже (ЗАКОН ДВУХ ТЕМПОВ п.3: размазать —
+        // растянуть, а не выкинуть). u32 копилки хватает на 2^32/8192 =
+        // 524 288 игровых суток непрерывного входа — заворот недостижим.
+        runtime.aiInflowTicks += ticks;
+        runtime.sweepAccum += std::uint32_t(ticks);
         // Та же дверь, тот же закон (M-218): условие цикла И ЕСТЬ трата
         // кванта, а не спутник вычитания рядом с ним.
         while (try_spend(runtime.sweepAccum, kAiTicks)) {
-            if (runtime.pendingSweeps < kMaxQueuedSweeps) {
-                ++runtime.pendingSweeps;
-            } else {
-                result.backlog = true;
-            }
+            ++runtime.pendingSweeps;
         }
     }
     if (runtime.pendingSweeps <= 0) return result;
@@ -5084,13 +5086,25 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
            && result.npcsProcessed < max_npc_ticks) {
         bool reachedEnd = true;
 
-        for (std::size_t i = runtime.sweepCursor;
-             i < order.size(); ++i) {
+        // Возобновление среза — ПО ОРДИНАЛУ, не позиции (M-123): лист
+        // пересобран ЭТИМ вызовом, и смерти сдвинули позиции, а ординал
+        // монотонен — шов не пропускает и не повторяет ничью думку. Лист
+        // отсортирован по ординалу (squad_walk.h), точка входа — первый
+        // ординал СТРОЖЕ курсора, O(log n).
+        std::size_t begin = 0;
+        if (runtime.sweepCursor != 0) {
+            const auto it = std::lower_bound(
+                order.begin(), order.end(), runtime.sweepCursor,
+                [](const SquadWalkEntry& e, std::uint32_t cursor) {
+                    return e.ordinal <= cursor;
+                });
+            begin = std::size_t(it - order.begin());
+        }
+        for (std::size_t i = begin; i < order.size(); ++i) {
             const std::uint16_t slot = order[i].slot;
-            if (slot == ctx.playerFlagSlot || slot == ctx.playerSquadSlot) {
-                ++runtime.sweepCursor;
+            runtime.sweepCursor = order[i].ordinal;
+            if (slot == ctx.playerFlagSlot || slot == ctx.playerSquadSlot)
                 continue;
-            }
             const MacroHandle h = handle_at(st, slot);
 
             auto& cell = st.cell[slot];
@@ -5132,7 +5146,6 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
                 }
                 ++result.npcsProcessed;
             }
-            ++runtime.sweepCursor;
 
             if (result.npcsProcessed >= max_npc_ticks) {
                 reachedEnd = false;
@@ -5141,6 +5154,11 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
         }
 
         if (!anySweepable) {
+            // НУЛЕВАЯ РАБОТА — ЧЕСТНОЕ ИСПОЛНЕНИЕ, не потеря (вердикт
+            // владельца 2026-11-02): думать некому, значит каждый ждущий
+            // свип исполнен пустым обходом — счёт сохранения это видит.
+            result.sweepsCompleted += runtime.pendingSweeps;
+            runtime.sweepsDone += std::uint64_t(runtime.pendingSweeps);
             runtime.pendingSweeps = 0;
             runtime.sweepCursor = 0;
             break;
@@ -5149,14 +5167,17 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
 
         --runtime.pendingSweeps;
         ++result.sweepsCompleted;
+        ++runtime.sweepsDone;
         runtime.sweepCursor = 0;
     }
     // Same end-of-tick settlement as the map-view driver above (S4): the
     // macro clock ticks underground too, and a lord felled down there must
-    // leave the map by the same law. (The positional sweep cursor already
-    // tolerates the view shrinking — every death mid-sweep shrinks it.)
+    // leave the map by the same law. (Смерть, усохшая лист посреди среза,
+    // курсору не страшна: шов — ординал, а не позиция; M-123.)
     settle_dead_squads(mw);
-    result.backlog = result.backlog || runtime.pendingSweeps > 0;
+    // Флаг отныне значит ровно «долг остался» — потерь, которые он прежде
+    // глотал (переполнение очереди), больше не существует (M-105/M-123).
+    result.backlog = runtime.pendingSweeps > 0;
     return result;
 }
 

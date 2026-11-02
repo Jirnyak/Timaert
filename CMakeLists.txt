@@ -1577,6 +1577,33 @@ timaert_test(trade_law_test
         src/macro/deposit_layer.cpp
     LINK_SDL)
 
+# Закон сохранения свипов (M-105/M-123): пролог бюджетного драйвера без
+# потерь, пустой мир исполняет нулевой работой. Список исходников — замыкание
+# npc_ai.cpp, то же, что у trade_law_test.
+timaert_test(sweep_debt_test
+    PIN "OK sweep_debt_test .17 checks."
+    SOURCES
+        src/macro/npc_spawn.cpp
+        src/macro/npc_ai.cpp
+        src/macro/squad_index.cpp
+        src/macro/deal.cpp
+        src/macro/recovery.cpp
+        src/macro/nav_field.cpp
+        src/macro/economy.cpp
+        src/macro/macro_stock.cpp
+        src/macro/fauna.cpp
+        src/macro/tree_layer.cpp
+        src/macro/anketa.cpp
+        src/tables/items.cpp
+        src/macro/econ_day.cpp
+        src/macro/world_tick.cpp
+        src/macro/spires.cpp
+        src/macro/threat_field.cpp
+        src/macro/scent_field.cpp
+        src/macro/chronicle.cpp
+        src/macro/deposit_layer.cpp
+    LINK_SDL)
+
 timaert_test(rpg_rules_test
     SOURCES
         src/macro/economy.cpp)
