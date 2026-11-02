@@ -2,9 +2,10 @@
 // CANON S10 «Баланс экономики выводится ДУБЛЬ-ПРОГОНОМ», work_vector §1
 // «Методика баланса»). NOT a ctest: it is the measuring instrument of the
 // economy track — it raises the SAME world the game boots (macro/world_gen.h,
-// one baker, CANON S26), runs it at the live loop's own cadence (256 AI
-// sweeps + the daily tick per game day — the 8192 frame steps of the live
-// loop are a rendering artifact and are skipped), and writes per-day TSV:
+// one baker, CANON S26), runs it at the live loop's own cadence (8192
+// per-tick AI calls + the daily tick per game day — the batch-of-32 cadence
+// undermeasured the per-call cost ×32 and zeroed every think phase; M-376
+// (в)), and writes per-day TSV:
 //
 //   <out>/world_<seed>.tsv     one row per day: totals + per-commodity flows
 //   <out>/rooted_<seed>.tsv one row per place per day: pop/wellbeing/stocks
@@ -479,8 +480,23 @@ int main(int argc, char** argv) {
                 // замер стоит ВОКРУГ двери думки и внутрь её не лезет —
                 // `npc_ai.cpp` эпик АИ переписывает целиком, и правка в нём
                 // была бы работой на снос (§5 п.14).
+                //
+                // ЧЕСТНЫЙ КАДЕНС (M-376 (в)): живая игра зовёт драйвер
+                // КАЖДЫЙ ТИК (main.cpp, 1 тик на кадр) — 8192 вызова в день,
+                // и фикс-цену вызова (сбор листа) она платит каждый раз.
+                // Прежняя пачка `kAiTicks` недомеряла её ровно в 32 раза.
+                // ДУМОК за день поровну (квант пер-сквадный, приток
+                // сохраняется), но МИР прогона с пачкой НЕ совпадает: сквад,
+                // рождённый в середине 32-тикового окна, думает со СВОЕЙ
+                // фазой, пачка же схлопывала все фазы в ноль — общий RNG
+                // свипа раздаётся в другом порядке (замер: день 1, все
+                // бродяги). По-тиковый каденс и есть каденс живой игры;
+                // прежние TSV-базы с этим шагом несравнимы (числа — баланс).
+                // Зависимость фаз думок от КАДАНСА ВЫЗОВОВ — дефект мира,
+                // названный нарядом M-379.
                 const auto a0 = std::chrono::steady_clock::now();
-                sm::tick_macro_npc_ai(mw, ai, sm::kAiTicks);
+                for (std::uint64_t t = 0; t < sm::kAiTicks; ++t)
+                    sm::tick_macro_npc_ai(mw, ai, 1);
                 aiSecs += std::chrono::duration<double>(
                               std::chrono::steady_clock::now() - a0).count();
             }
