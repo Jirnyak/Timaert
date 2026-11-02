@@ -35,8 +35,10 @@ struct DesignAgenda {
     // невозможны — мир процедурен, поэтому строка называет РОД цели, а
     // спавн-дверь резолвит её из контекста, как find_valid_spawn.
     std::int8_t routeToNearest = -1;
-    // Радиус вылетов от дома в клетках (модель дракона возьмёт).
-    std::int16_t radiusCells = 0;
+    // (`radiusCells` СНЕСЁН 2026-11-02, ломоть 6 M-72: поводок дракона —
+    //  ВНУТРИ его модуля (вердикт владельца 2026-10-10 «5) внутри модуля»),
+    //  константой kDragonLeashCells@src/macro/npc_ai.cpp; агенда радиуса
+    //  была вторым носителем того же числа.)
 };
 
 // Дом анкеты: ландмарк рода homeType — N-й по порядку (homeIndex ≥ 0,
@@ -50,6 +52,10 @@ struct DesignCharacterDef {
     NPCType      body;      // строка реестра как есть: спрайт/комбат/апкип;
                             // контекст выбирает строку, не скейлит (S12)
     std::int16_t level;     // −1 = дефолт строки + бросок
+    // РОД СКВАДА персоны (ломоть 6 M-72): типизированный род думает МОДУЛЕМ
+    // своей строки kAiModuleRows, и колонка behaviour у него не читается.
+    // None = бестиповый — думает лестницей None-строки (течь, сузит Б-6).
+    SquadType    type;
     // ЛИСТ — ЕДИНОЙ СИСТЕМОЙ, БЕЗ ОСОБОГО ПУТИ (вердикт владельца
     // 2026-10-18, дословно: «авторед это просто одна из анкет то есть не
     // ннадо особую систему это единая система просто дод типа будут
@@ -70,7 +76,7 @@ struct DesignCharacterDef {
     // Дом — ВЕРШИНА ГОРНОГО МАССИВА (владелец: «рандом центр горного
     // массива — самая высокая клетка»): homeType = None, спавн-дверь
     // резолвит homeIndex-ю из высочайших клеток карты с разносом, и она
-    // же становится ЛОГОВОМ (rt.lairX/Y) для модели LairSorties.
+    // же становится ЛОГОВОМ (rt.lairCell) для модуля дракона (ai_dragon).
     bool         homePeak;
     std::int16_t cellX, cellY;
     AIBehaviour  behaviour; // какая модель думает (лестница effective_behaviour)
@@ -92,6 +98,7 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
     {
         "varnava", "Varnava",
         NPCType::Merchant, /*level*/ 3,
+        /*type*/ SquadType::None,
         "empire",
         SquadType::City, /*homeIndex*/ 0, /*homeFaction*/ nullptr,
         /*homePeak*/ false, /*cell*/ 0, 0,
@@ -111,6 +118,7 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
     {
         "king_peasant", "King-Peasant",
         NPCType::Peasant, /*level*/ 70,
+        /*type*/ SquadType::None,
         "king_peasant",
         SquadType::City, /*homeIndex: случайный*/ -1,
         /*homeFaction*/ "barbarian",
@@ -122,37 +130,43 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
     // карте», имена DragonN его словом): тело Dragon (первый ЛЕТУН-боец —
     // честный полёт cruiseM, огненный шар Missile-колонками), фракция
     // dragons ОБЩАЯ (вердикт: «фракция мобы/драконы, не он сам»), дом —
-    // вершины трёх горных массивов, модель — вылеты из логова (радиус 10,
-    // бьёт любой сквад слабее себя, возвращается спать).
+    // вершины трёх горных массивов. Думает МОДУЛЕМ рода Dragon (ломоть 6
+    // M-72, ai_dragon@src/macro/npc_ai.cpp): вылеты из логова, бьёт любой
+    // сквад слабее себя, возвращается спать; поводок — константа модуля.
+    // Колонка behaviour у типизированного рода не читается — стоит дефолт
+    // строки тела (лестница None её не спросит никогда).
     {
         "dragon1", "Dragon1",
         NPCType::Dragon, /*level*/ 10,
+        /*type*/ SquadType::Dragon,
         "dragons",
         SquadType::None, /*homeIndex: вершина №0*/ 0,
         /*homeFaction*/ nullptr,
         /*homePeak*/ true, /*cell*/ 0, 0,
-        AIBehaviour::LairSorties,
-        DesignAgenda{.radiusCells = 10},
+        AIBehaviour::Wanderer,
+        DesignAgenda{},
     },
     {
         "dragon2", "Dragon2",
         NPCType::Dragon, /*level*/ 10,
+        /*type*/ SquadType::Dragon,
         "dragons",
         SquadType::None, /*homeIndex: вершина №1*/ 1,
         /*homeFaction*/ nullptr,
         /*homePeak*/ true, /*cell*/ 0, 0,
-        AIBehaviour::LairSorties,
-        DesignAgenda{.radiusCells = 10},
+        AIBehaviour::Wanderer,
+        DesignAgenda{},
     },
     {
         "dragon3", "Dragon3",
         NPCType::Dragon, /*level*/ 10,
+        /*type*/ SquadType::Dragon,
         "dragons",
         SquadType::None, /*homeIndex: вершина №2*/ 2,
         /*homeFaction*/ nullptr,
         /*homePeak*/ true, /*cell*/ 0, 0,
-        AIBehaviour::LairSorties,
-        DesignAgenda{.radiusCells = 10},
+        AIBehaviour::Wanderer,
+        DesignAgenda{},
     },
 };
 

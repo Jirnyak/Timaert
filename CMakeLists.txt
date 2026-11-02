@@ -1010,6 +1010,7 @@ timaert_test(macro_travel_parity_test
 # ординал в снапшоте — линк-набор squad_war_test + сам снапшот.
 timaert_test(design_characters_test
     SOURCES
+        src/macro/squad_index.cpp   # каркас клеток — прибор дракона гоняет думки
         src/macro/npc_ai.cpp
         src/macro/deal.cpp
         src/macro/recovery.cpp
@@ -1025,6 +1026,7 @@ timaert_test(design_characters_test
         src/macro/macro_snapshot.cpp
         src/macro/anketa.cpp
         src/tables/items.cpp
+        src/macro/econ_day.cpp   # AiPult::craft жив в думке — долг гасится тут
     LINK_SDL)
 
 # The macro march pays the map (Session 21): greedy steering on the baked

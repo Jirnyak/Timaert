@@ -452,6 +452,12 @@ void spawn_design_characters(GameState& gs, MacroStore& st,
         //  дверью — `make_npc` выше уже родил её из (body, level, сид).
         st.designTag[slot] = ecs::DesignCharacterTag{ord};
 
+        // РОД СКВАДА — авторская колонка строки (ломоть 6 M-72): дракон
+        // думает модулем СВОЕЙ строки kAiModuleRows, а не лестницей None.
+        // Нулевой None пишется честно тем же присваиванием — второй ветки
+        // «а у этого рода нет» не существует.
+        st.runtime[slot].squadType = std::uint8_t(row.type);
+
         // Логово — дом-клетка модели вылетов: вершина и есть его дом.
         // Адрес = одно число (M-3), сентинел ecs::kNoCell = логова нет.
         if (row.homePeak) {

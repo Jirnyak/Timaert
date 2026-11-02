@@ -465,11 +465,14 @@ inline constexpr SquadKindRow kSquadKinds[std::size_t(SquadType::Count)] = {
      .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
      .miniR = 0.0f, .id = "collector", .label = ""},
     // ДРАКОН — ходок: строка существа несёт SpriteId::Dragon, картинка с
-    // тела. Маска глаголов ПОЛНАЯ — страж ниже держит закон «у ходока
-    // глаголы ЕСТЬ»; верные глаголы дракону назовёт его модуль (ломоть 6).
+    // тела. Глаголы названы его модулем (ломоть 6 M-72): ГОВОРИТ — монстры
+    // разумны (вердикт владельца: «монстры они обладают разумом (огры троли
+    // гоблины драконы и тд)»), БЬЁТСЯ — очевидно; НЕ ТОРГУЕТ — «с драконом
+    // не торгуют» (тело f4660f2c). Закон стража ниже — «у ходока глаголы
+    // ЕСТЬ», ненулевая маска, а не полная.
     {.type = SquadType::Dragon, .sprite = SpriteId::None,
      .spriteDepleted = SpriteId::None, .glyph = ' ', .mini = MiniShape::Dot,
-     .actions = kMapActTalk | kMapActTrade | kMapActAttack,
+     .actions = kMapActTalk | kMapActAttack,
      .color = 0x00000000u,
      .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
      .miniR = 0.0f, .id = "dragon", .label = ""},
@@ -509,14 +512,18 @@ static_assert([] {
         const bool rooted = squad_archetype(d.type) == SquadArchetype::Rooted;
         if (rooted && (d.actions & (kMapActTalk | kMapActAttack)) != 0)
             return false;                                           // (1)
+        // (2) — РОВНО закон прозы «у ходока глаголы ЕСТЬ»: ненулевая маска.
+        // Прежняя форма требовала ПОЛНОЙ маски и охраняла случай (все
+        // ходоки были одинаковы), а не закон: дракон не торгует (ломоть 6),
+        // и полнота стала бы подгонкой строки под стража (ЗАКОН НУЛЕВОЙ).
         if (!rooted
             && (d.actions & (kMapActTalk | kMapActTrade | kMapActAttack))
-                   != (kMapActTalk | kMapActTrade | kMapActAttack))
+                   == 0)
             return false;                                           // (2)
     }
     return true;
 }(), "строка оси объявляет свои глаголы сама: место не говорит и не бьётся, "
-     "а ходок говорит, торгует и бьётся");
+     "а у ходока глаголы ЕСТЬ");
 
 // Поселение ли род — СТОЯЩИЙ род, который держит прилавок, найм или доску
 // контрактов: сюда «прибывают», с событиями входа/выхода и панелью по T.

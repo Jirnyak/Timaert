@@ -336,13 +336,94 @@ void test_dragons_nest_on_mountain_peaks() {
           "dragons share the ONE dragons faction row (owner verdict)");
     CHECK(owned_sheet(std_, d1) != nullptr,
           "the dragon OWNS his sheet like every design character");
-    const auto& kind = std_.kind[d1.slot];
-    CHECK(untyped_squad_behaviour(std_, d1, kind)
-              == AIBehaviour::LairSorties,
-          "the design rung answers LairSorties");
-    CHECK(kNpcTypeDefs[std::uint16_t(NPCType::Dragon)].ai
-              != AIBehaviour::LairSorties,
-          "negative control: the type row does not sortie — the rung is real");
+    // РОД СКВАДА — АВТОРСКАЯ КОЛОНКА СТРОКИ (ломоть 6 M-72): дракон думает
+    // модулем строки Dragon таблицы kAiModuleRows, а не лестницей None.
+    CHECK(SquadType(std_.runtime[d1.slot].squadType) == SquadType::Dragon,
+          "the spawn door writes the row's squad kind: the dragon thinks "
+          "as the Dragon MODULE row, not the None ladder");
+    CHECK(kDesignCharacterDefs[2].type == SquadType::Dragon
+              && kDesignCharacterDefs[0].type == SquadType::None,
+          "negative control: kind is a ROW column — the untyped preacher "
+          "honestly stays None (the ladder is still his path)");
+}
+
+// ПРИБОР ЭМЕРДЖЕНТНОСТИ ЭПИКА M-72 (владелец: «будет ли он есть крестьян
+// и тд эмерджентно») — модуль дракона не знает ни крестьян, ни деревень:
+// добычу называет сила (nearest_weaker_squad), смерть — авто-бой, и ни
+// одной строки, связывающей ai_dragon с модулем жертвы, не существует.
+// Свидетель рожает СВОЁ предусловие (§8 п.11): массив с вершиной — дракону,
+// слабый крестьянский сквад на клетке логова — в добычу.
+//
+// ТАБЛИЦА «МУТАЦИЯ → ИСХОД» (§8 п.6, прогнана вживую 2026-11-02):
+//   тело ai_dragon → `return;` первой строкой ⇒ КРАСНЫЙ 1/61
+//                                               («the dragon ate…»)
+//   спавнер не пишет row.type в squadType     ⇒ КРАСНЫЙ 2/61 (колонка рода
+//                                               + прибор: None-бродяга)
+//   kDragonLeashCells 10 → 8                  ⇒ ЗЕЛЁНЫЙ 61/61 (добыча на
+//                                               логове — внутри любого
+//                                               поводка; детектор не красит
+//                                               невиновного)
+void test_dragon_eats_peasants_emergently() {
+    constexpr float kPeak01 = 250.0f / 255.0f;
+    constexpr float kMassif01 = 230.0f / 255.0f;
+    auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
+    GameState gs = make_world(st);
+    TerrainData terrain = make_terrain();
+    for (int y = 44; y <= 52; ++y)
+        for (int x = 44; x <= 52; ++x)
+            terrain.rgba[(std::size_t(y) * kW + x) * 4u + 0] =
+                sm::field_word_of(x == 48 && y == 48 ? kPeak01 : kMassif01);
+    Rng rng(999u);
+    spawn_design_characters(gs, st, terrain, rng);
+    const sm::MacroHandle dragon = find_design(st, 2);
+    CHECK_OR_RETURN(st.valid(dragon), "the massif births Dragon1");
+
+    // Добыча — уровень 1, без ростера: слабее дракона по squad_power
+    // ЗАВЕДОМО; стоит на клетке логова, внутри любого поводка.
+    SquadSpec spec;
+    spec.avatarType = NPCType::Peasant;
+    spec.avatarLevel = 1;
+    spec.x = 48;
+    spec.y = 48;
+    spec.factionIndex = faction_index("timaert");
+    const sm::MacroHandle prey = spawn_squad(gs, st, terrain, spec);
+    CHECK_OR_RETURN(st.valid(prey), "the prey squad is born");
+
+    MacroNpcAiRuntime air{};
+    reset_macro_npc_ai_runtime(air, 7u);
+    for (int i = 0; i < 16; ++i) {
+        MacroWorld mw{.gs = &gs, .store = &st};
+        tick_macro_npc_ai(mw, air, kAiTicks);
+    }
+    CHECK(!st.valid(prey) || st.dead[prey.slot] != 0,
+          "the dragon ate the peasant — no line names the peasant in "
+          "ai_dragon, the interaction is emergent (epic M-72 acceptance)");
+    CHECK(st.valid(dragon) && st.dead[dragon.slot] == 0,
+          "the dragon survives his own meal");
+
+    // Негативный контроль, и он УТВЕРЖДАЕТСЯ: плоский мир дракона не
+    // рождает, и та же добыча те же думки живёт.
+    auto flatStore_ = sm::make_macro_store();
+    sm::MacroStore& fst = *flatStore_;
+    GameState fgs = make_world(fst);
+    const TerrainData flat = make_terrain();
+    Rng frng(999u);
+    spawn_design_characters(fgs, fst, flat, frng);
+    CHECK(!fst.valid(find_design(fst, 2)),
+          "flat world: no dragon (precondition of the control is real)");
+    SquadSpec fspec = spec;
+    const sm::MacroHandle fprey = spawn_squad(fgs, fst, flat, fspec);
+    CHECK_OR_RETURN(fst.valid(fprey), "control prey is born");
+    MacroNpcAiRuntime fair{};
+    reset_macro_npc_ai_runtime(fair, 7u);
+    for (int i = 0; i < 16; ++i) {
+        MacroWorld mw{.gs = &fgs, .store = &fst};
+        tick_macro_npc_ai(mw, fair, kAiTicks);
+    }
+    CHECK(fst.valid(fprey) && fst.dead[fprey.slot] == 0,
+          "no dragon — the same peasant lives the same thinks: the death "
+          "above was the dragon's doing, not the world's");
 }
 
 void test_no_home_no_birth() {
@@ -370,6 +451,7 @@ int main() {
     test_king_peasant_births_by_home_faction();
     test_king_needs_a_barbarian_city();
     test_dragons_nest_on_mountain_peaks();
+    test_dragon_eats_peasants_emergently();
     test_no_home_no_birth();
     return sm::test::report("design_characters_test");
 }

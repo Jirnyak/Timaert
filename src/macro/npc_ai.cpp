@@ -3346,11 +3346,13 @@ void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     }
 }
 
-// ── Вылеты из логова (стол анкет — модель дракона) ───────────────────────
-// Дом — КЛЕТКА (rt.lairX/Y, гора — не ландмарк), радиус вылетов — агенда
-// строки анкеты. В вылете бьёт любой сквад СЛАБЕЕ себя (слово владельца) —
-// той же дверью встречи, что threat step; наевшись или улетев за радиус —
-// домой. Игрокова встреча — форс-двери игрока, как у всех.
+// ── МОДУЛЬ РОДА Dragon — вылеты из логова (ломоть 6 M-72) ────────────────
+// Дом — КЛЕТКА (rt.lairCell, гора — не ландмарк). В вылете бьёт любой сквад
+// СЛАБЕЕ себя (слово владельца) — той же дверью встречи, что threat step;
+// наевшись или улетев за поводок — домой. Игрокова встреча — форс-двери
+// игрока, как у всех. До 2026-11-02 это была модель AIBehaviour::LairSorties
+// под родом None (лестница стола анкет) — второй ответ на «как он действует»
+// рядом с осью рода; теперь думку раздаёт ОДНА таблица kAiModuleRows.
 MacroHandle nearest_weaker_squad(MacroHandle self, const MacroPos& p,
                                  float sightCells, const TickContext& ctx) {
     const SquadIndex& g = *ctx.squads;
@@ -3391,9 +3393,22 @@ MacroHandle nearest_weaker_squad(MacroHandle self, const MacroPos& p,
     return found;
 }
 
-void ai_lair_sorties(MacroHandle self, MacroPos& p,
-                     ecs::MacroNpcRuntime& rt, [[maybe_unused]] ecs::Pools& pools,
-                     const TickContext& ctx) {
+// Поводок — ВНУТРИ модуля (вердикт владельца 2026-10-10, дословно
+// «5) внутри модуля»; список НЕ-ЕДИНОГО называет его прямо): не колонка
+// сквада и не агенда строки — у агенды радиуса был второй носитель того же
+// числа. Значение — БАЛАНС: прежняя авторская агенда драконов стояла 10.
+constexpr float kDragonLeashCells = 10.0f;
+
+void ai_dragon(MacroHandle self, MacroPos& p,
+               ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
+               const TickContext& ctx) {
+    if (!ctx.mw.store || !ctx.mw.gs) return;
+    // Преамбула рефлексов — та же и в том же порядке, что у четырёх
+    // думающих модулей (M-307, см. ai_artel). Повтор — НОРМА (DOD п.5).
+    const ecs::NPCKind& kind = store_ctx(ctx).kind[self.slot];
+    scent_squad_deposit(self, p, kind, ctx);
+    if (squad_threat_step(self, p, kind, rt, pools, ctx)) return;
+    if (scent_hunt_step(self, p, kind, rt, pools, ctx)) return;
     // Логово самозалечивается: тело без дома объявляет домом место, где
     // проснулось (спавн-дверь анкеты пишет честную клетку раньше).
     if (rt.lairCell == ecs::kNoCell) {
@@ -3401,19 +3416,7 @@ void ai_lair_sorties(MacroHandle self, MacroPos& p,
     }
     const float lairX = float(cell_x(rt.lairCell, ctx.mapW));
     const float lairY = float(cell_y(rt.lairCell, ctx.mapW));
-    // Радиус вылетов — агенда СТРОКИ анкеты (данные в строке — решения в
-    // функции); тело без анкеты, если когда-то получит эту модель, кружит
-    // дефолтной восьмёркой.
-    float radius = 8.0f;
-    {
-        const ecs::DesignCharacterTag& dc =
-            store_ctx(ctx).designTag[self.slot];
-        if (const DesignCharacterDef* row = design_character(dc.ordinal)) {
-            if (row->agenda.radiusCells > 0) {
-                radius = float(row->agenda.radiusCells);
-            }
-        }
-    }
+    const float radius = kDragonLeashCells;
     const float fromLair = std::sqrt(torus_dist_sq(
         p.x, p.y, lairX, lairY,
         float(ctx.mapW), float(ctx.mapH)));
@@ -4127,7 +4130,8 @@ void ai_untyped(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
         case AIBehaviour::Flee:         ai_wanderer  (e, p, rt, pools, ctx); break;
         case AIBehaviour::Waypoints:    ai_waypoints (e, p, rt, pools, ctx); break;
         case AIBehaviour::MageHunt:     ai_mage_hunt (e, p, rt, pools, ctx); break;
-        case AIBehaviour::LairSorties:  ai_lair_sorties(e, p, rt, pools, ctx); break;
+        // (`LairSorties` УМЕР 2026-11-02, ломоть 6 M-72: вылеты из логова —
+        //  МОДУЛЬ рода Dragon (ai_dragon), лестница None их не раздаёт.)
         case AIBehaviour::Count:        break;
     }
 }
@@ -4182,11 +4186,6 @@ void village_death(MacroHandle self, AiPult& pult) {
 
 constexpr AiModuleRow kAiModuleRows[] = {
     { SquadType::None,      ai_untyped,   nullptr       },
-    // Дракон СТОИТ В ТАБЛИЦЕ С ПЕРВОГО ДНЯ СВОЕЙ ОСИ с `nullptr`: его модуль
-    // придёт ломтём 6. Строка с `nullptr` есть ЧЕСТНОЕ «род не думает», а не
-    // пропуск: без неё ассерт полноты ниже не собрался бы, и это ровно та
-    // стена, ради которой диспетч стал таблицей.
-    //
     // СТОЛИЦЕ ДАНА ФУНКЦИЯ ГОРОДА — ОДНА ФУНКЦИЯ ДВУМ СТРОКАМ ЗАКОННА,
     // ПОТОМУ ЧТО ЭТО ДАННЫЕ: различие столицы ещё не названо системой
     // (её строка `kSquadKinds` тоже носит городские числа), и выдумывать ей
@@ -4205,7 +4204,10 @@ constexpr AiModuleRow kAiModuleRows[] = {
     { SquadType::Artel,     ai_artel,     nullptr       },
     { SquadType::Caravan,   ai_vendor,    nullptr       },
     { SquadType::Collector, ai_collector, nullptr       },
-    { SquadType::Dragon,    nullptr,      nullptr       },
+    // Дракон — ПРИБОР ЭМЕРДЖЕНТНОСТИ эпика (владелец: «будет ли он есть
+    // крестьян и тд эмерджентно»): модуль не знает ни деревень, ни артелей —
+    // добычу называет сила (nearest_weaker_squad), смерть — авто-бой.
+    { SquadType::Dragon,    ai_dragon,    nullptr       },
 };
 static_assert(std::size(kAiModuleRows) == std::size_t(SquadType::Count),
               "kAiModuleRows must cover every SquadType: a new row of the "
