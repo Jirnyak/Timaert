@@ -2,9 +2,10 @@
 #include "macro/macro_lighting.h"
 
 #include "macro/features.h"
-#include "macro/place_iter.h"
+#include "macro/macro_world.h"
 #include "macro/optics.h"
 #include "macro/state.h"
+#include "tables/light_palette.h"
 
 #include <algorithm>
 #include <cmath>
@@ -109,26 +110,44 @@ void accumulate_occluded(const MacroLight& L, int width, int height,
 
 } // namespace
 
+void refresh_feature_lights(GameState& gs, const FeatureLayer& features) {
+    if (features.width <= 0 || features.height <= 0) return;
+    for (int y = 0; y < features.height; ++y) {
+        for (int x = 0; x < features.width; ++x) {
+            const FeatureDef& def =
+                feature_def(FeatureLayer::decode(features.at(x, y)));
+            if (def.lightPalette == 0) continue;
+            const int number = feature_number_read(gs, x, y);
+            int strength = def.lightBase > 0 ? int(def.lightBase) : number;
+            // Числовой гейт: орб шпиля и залежь выемки тушат огонь СВОИМ
+            // числом (0 = выкачано) — событию-писателю здесь делать нечего.
+            if (def.lightNumberGated && number <= 0) strength = 0;
+            light_emission_write(
+                gs, x, y,
+                strength <= 0
+                    ? 0
+                    : int(light_pack(def.lightPalette,
+                                     std::uint16_t(std::min(
+                                         strength, int(kLightStrengthMax))))));
+        }
+    }
+}
+
 std::vector<MacroLight> collect_macro_lights(const MacroWorld& mw) {
     std::vector<MacroLight> out;
     if (!mw.gs) return out;   // нулевой вклад отсутствующего мира (S6)
     const GameState& gs = *mw.gs;
     const int w = gs.mapW;
     const int h = gs.mapH;
-    // THE enumeration (place_iter.h) × THE registry row: the kind's row
-    // says whether it glows (lightColor, 0 = opt-out inside push_light) and
-    // HOW — population-scaled hearth (lightPop == 0) or a fixed synthetic
-    // strength. `depleted` is the one live opt-out (a spire whose orb is gone
-    // lost its light with it). This used to be three hand-written loops, one
-    // per kind (canon-audit C2) — a new place kind now glows by its row
-    // alone, with no line here.
-    for_each_place_view(mw, [&](const PlaceView& lv) {
-        if (lv.depleted) return;
-        const PlaceDef& def = place_def(lv.type);
-        const float strength =
-            def.lightPop > 0.0f ? def.lightPop : float(lv.featureNumber);
-        push_light(out, w, h, float(lv.x), float(lv.y), strength,
-                   def.lightColor);
+    // ЧИТАТЕЛЬ ПОЛЯ (M-370): эмиттер = живая клетка `lightEmission`, сила и
+    // тинт — её же упаковка. Кто и когда зажёг клетку, бейк не спрашивает —
+    // обход сквадов и ветка `depleted` умерли (шпиль гаснет числом через
+    // refresh_feature_lights, руина светит фичей без сквада).
+    if (!gs.lightEmission.live()) return out;
+    gs.lightEmission.for_each_live([&](std::uint32_t idx, std::int32_t v) {
+        const std::uint16_t packed = std::uint16_t(v);
+        push_light(out, w, h, float(cell_x(idx, w)), float(cell_y(idx, w)),
+                   float(light_strength_of(packed)), light_tint_of(packed));
     });
     return out;
 }

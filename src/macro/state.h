@@ -916,6 +916,21 @@ struct GameState {
     // тем же нарядом). Основание поселения вычищает клетку одной записью
     // через дверь ниже — событие мира, не связь с фичей в живом мире.
     ResourceGrid faunaField;
+    // ── ПОЛЕ СВЕТА — ЭМИССИЯ НОЧНОГО СВЕЧЕНИЯ КЛЕТКИ (M-370) ────────────
+    // Вердикт владельца 2026-11-02: «свет — своё поле … по сути это клеточка
+    // светит (ну может через сквад или объект но суть в том что свет
+    // генерится)»; форма А подтверждена им же («вроде А лучше»), рефреш —
+    // «типа просто свет можно менять от числа на поле фичи при ребейке у
+    // нас всё по сезонам». Клетка несёт u16-упаковку «палитра + сила»
+    // (`tables/light_palette.h`). Писатели: рефреш фич на границе ребейка
+    // (`refresh_feature_lights@src/macro/macro_lighting.cpp` — пишет ТОЛЬКО
+    // клетки светящих фич, чужие огни не трогает), впредь сквады/объекты/
+    // события той же дверью. Читатель один — сбор эмиттеров бейка
+    // (`collect_macro_lights`); живой мир свечением не управляется (свет —
+    // представление, ЗАКОН ТУПИКА РЕНДЕРА держит направление). В сейв НЕ
+    // едет: восстанавливается рефрешем при загрузочном ребейке, а гашение
+    // выкачанного шпиля несёт его же ЧИСЛО (0 = орб пуст) в блоке чисел фич.
+    ResourceGrid lightEmission;
 
     // (Вектор `builtFeatures` и структура `BuiltFeature` УНИЧТОЖЕНЫ в v130,
     // перепись сирот 2026-10-11. Шапка на этом месте обещала «appended when
@@ -1007,6 +1022,19 @@ inline void fauna_field_write(GameState& gs, int x, int y, int value) {
         gs.faunaField.allocate(gs.mapW, gs.mapH, 0);
     }
     gs.faunaField.write(x, y, std::int32_t(value < 0 ? 0 : value));
+}
+
+// ── Двери поля света — та же идиома (M-370) ─────────────────────────────
+// Значение — упаковка «палитра + сила» (`tables/light_palette.h`); 0 = тьма.
+inline int light_emission_read(const GameState& gs, int x, int y) {
+    return int(gs.lightEmission.at(x, y));
+}
+inline void light_emission_write(GameState& gs, int x, int y, int value) {
+    if (!gs.lightEmission.live()) {
+        if (gs.mapW <= 0 || gs.mapH <= 0) return;   // no world, no field
+        gs.lightEmission.allocate(gs.mapW, gs.mapH, 0);
+    }
+    gs.lightEmission.write(x, y, std::int32_t(value < 0 ? 0 : value));
 }
 
 // (record_place_fact УЕХАЛА в macro/squad.h флипом M-90 шаг 5: слава

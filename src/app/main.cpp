@@ -1456,7 +1456,13 @@ float player_sight_budget_cells() {
 // world is passed so glow propagates through terrain (open land carries it
 // far, forest dims it, mountains wall it off — increments B/C).
 void bake_macro_light_field(App& app, std::vector<std::uint8_t>& out) {
-    std::vector<sm::MacroLight> lights = sm::collect_macro_lights(macro_world(app));
+    // ПОЛЕ СВЕТА (M-370): граница ребейка — плановая точка синхронизации
+    // («свет можно менять от числа на поле фичи при ребейке»): писатель фич
+    // переписывает СВОИ клетки (паства, орб, залежь — их же числами), затем
+    // бейк разворачивает живые клетки поля в эмиттеры.
+    const sm::MacroWorld mw = macro_world(app);
+    if (mw.features) sm::refresh_feature_lights(app.gs, *mw.features);
+    std::vector<sm::MacroLight> lights = sm::collect_macro_lights(mw);
     const sm::OpticalWorld world = optical_world(app);
     sm::bake_light_field(app.gs.mapW, app.gs.mapH, lights, out, world.features,
                          world.heights, world.treeDensity);

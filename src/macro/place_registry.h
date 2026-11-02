@@ -66,9 +66,13 @@ struct PlaceDef {
     //  единстывыенный вход в субмир». Прод-читателей у неё был НОЛЬ:
     //  единственный — подмес `kMapActEnter` в `actions_of`, чей бит тоже
     //  никто не читал. Сирота DOD п.9 в чистом виде.)
-    std::uint32_t    lightColor;  // ARGB night-emission tint (0 = does not glow)
-    float            lightPop;    // synthetic emitter strength for fixed POIs;
-                                  // 0 => inhabited type, scale by live population
+    // ── КОЛОНКИ `lightColor`/`lightPop` УНИЧТОЖЕНЫ 2026-11-02 (M-370):
+    // свет — ПОЛЕ (`GameState::lightEmission`), авторинг писателя — колонки
+    // lightPalette/lightBase/lightNumberGated СТРОКИ ФИЧИ (features.h) +
+    // палитра-словарь `tables/light_palette.h`. Свет руин и шпилей, молча
+    // потерянный со сносом их сквадов (M-320: collect ходил стором), этим
+    // ВЕРНУЛСЯ; цвета логова/святилища/башни умерли мёртвым контентом —
+    // их фич не существует, вернутся со своими строками. ─────────────────
 
     // КОЛОНКА `spawnFaction` УНИЧТОЖЕНА 2026-09-28 (M-39, вердикт владельца
     // 2026-09-21 «руине надо дать фракцию»). Она была ВТОРЫМ ответом на «чья
@@ -168,12 +172,9 @@ struct PlaceDef {
     // туда же. ───────────────────────────────────────────────────────────
 };
 
-// Night-light columns (lightColor / lightPop) drive the universal macro
-// lighting system (macro_lighting.cpp). Inhabited types (city, village) emit
-// the TS warm hearth tint scaled by live population (lightPop = 0). Fixed POIs
-// emit their own tint at a synthetic strength. Set lightColor = 0 to opt a type
-// out of night glow entirely — the single data-driven gate.
-// (Перевод полос 0..9 в байты опасности — owner 2026-08-24 — уехал вместе с
+// (Ночной свет уехал ПОЛЕМ — M-370: `GameState::lightEmission` + колонки
+//  light* СТРОКИ ФИЧИ, см. некролог колонок в теле структуры выше.
+//  Перевод полос 0..9 в байты опасности — owner 2026-08-24 — уехал вместе с
 //  колонками зон к генераторам: kSpireMinZone/kRuinMinZone несут его в своих
 //  шапках.)
 // ── ПОЛЯ НАЗЫВАЮТСЯ, А НЕ СЧИТАЮТСЯ (DOD п.9) ───────────────────────────
@@ -198,8 +199,7 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
     // `kSquadKinds`; здесь остались только колонки, ждущие своих адресатов
     // (ломоть 5б M-235): зоны — генераторам, свет и фауна — строке фичи,
     // crowd*/garrison — модулям генерации субмира, seed* — модулю рода.
-    {.type = SquadType::None,
-     .lightColor = 0x00000000u, .lightPop = 0.0f },
+    {.type = SquadType::None},
     // СТОЛИЦА — ГОРОД СТАРШЕГО РАНГА, И ПОКА ЧИСЛА У НЕЁ ГОРОДСКИЕ. Это
     // не лень, а ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ: различие столицы — предмет
     // ЕЁ МОДУЛЯ (ломоть 5) и ЕЁ ГЕНЕРАТОРА субмира (строка `FT_Capital`),
@@ -215,27 +215,18 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
     // расселение ставит столицу модулем места (ломоть 5); до тех пор строка
     // стоит голой, а `== SquadType::City`-гейты мира остаются верными по
     // пустоте — переспросить их придётся ровно в день первой столицы.
-    {.type = SquadType::Capital,
-     .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f },
-    {.type = SquadType::City,
-     .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f },
-    {.type = SquadType::Village,
-     .lightColor = 0xFFFFC76Bu, .lightPop = 0.0f },
+    {.type = SquadType::Capital},
+    {.type = SquadType::City},
+    {.type = SquadType::Village},
     // (Фауна-полосы родов умерли с колонками, M-371: руина объявляет свою
     // kHabRuin строкой СВОЕГО модуля kFeatureGenRows, норы — строками
     // kDungeonKindRows, земля отвечает всем прочим.)
-    {.type = SquadType::Spire,
-     .lightColor = 0xFFA86CFFu, .lightPop = 200.0f },
-    {.type = SquadType::Ruin,
-     .lightColor = 0xFF8E8576u, .lightPop = 40.0f },
-    {.type = SquadType::Lair,
-     .lightColor = 0xFF883A3Au, .lightPop = 70.0f },
-    {.type = SquadType::Shrine,
-     .lightColor = 0xFFE2E2E2u, .lightPop = 90.0f },
-    {.type = SquadType::Mine,
-     .lightColor = 0xFF8B6332u, .lightPop = 60.0f },
-    {.type = SquadType::Tower,
-     .lightColor = 0xFF6E6E89u, .lightPop = 80.0f },
+    {.type = SquadType::Spire},
+    {.type = SquadType::Ruin},
+    {.type = SquadType::Lair},
+    {.type = SquadType::Shrine},
+    {.type = SquadType::Mine},
+    {.type = SquadType::Tower},
 
     // ── ПОДВИЖНЫЕ РОДЫ ОСИ: ОСТАЛЬНОЕ ЧЕСТНО ПУСТО ───────────────────────
     // Артель, корован, сборщик и дракон стоят на ТОЙ ЖЕ оси, что места
@@ -249,14 +240,10 @@ inline constexpr PlaceDef kPlaces[std::size_t(SquadType::Count)] = {
     // `squad_type.h`: платим пустотой за то, что `place_def` остаётся
     // ПОЛНОЙ функцией без гейта по роду. (Имя, вид и глаголы встречи у них
     // — строки `kSquadKinds`, вместе с шрамом M-281 о литерале в ветке.)
-    {.type = SquadType::Artel,
-     .lightColor = 0x00000000u, .lightPop = 0.0f },
-    {.type = SquadType::Caravan,
-     .lightColor = 0x00000000u, .lightPop = 0.0f },
-    {.type = SquadType::Collector,
-     .lightColor = 0x00000000u, .lightPop = 0.0f },
-    {.type = SquadType::Dragon,
-     .lightColor = 0x00000000u, .lightPop = 0.0f },
+    {.type = SquadType::Artel},
+    {.type = SquadType::Caravan},
+    {.type = SquadType::Collector},
+    {.type = SquadType::Dragon},
 };
 static_assert(rows_in_enum_order(kPlaces, &PlaceDef::type),
               "kPlaces row order must mirror SquadType");
@@ -324,9 +311,10 @@ static_assert(rows_in_enum_order(kPlaces, &PlaceDef::type),
 // ОТЪЕЗД АМБАРА РОЖДЕНИЯ В ТАБЛИЦУ РОЖДЕНИЯ РОДА (2026-11-02, та же
 // сессия) ЧИСЛО НЕ ДВИНУЛ: два хвостовых u8 съело выравнивание.
 // СМЕРТЬ КОЛОНОК ФАУНЫ (M-371, та же сессия): 20 → 12 — тип (u8 + 3
-// выравнивания) + lightColor u32 + lightPop float; осталось ровно то, что
-// ждёт M-370 (свет), после него таблица пустеет и сносится.
-static_assert(sizeof(PlaceDef) == 12,
+// выравнивания) + lightColor u32 + lightPop float.
+// СМЕРТЬ КОЛОНОК СВЕТА (M-370, та же сессия): 12 → 1 — остался ГОЛЫЙ КЛЮЧ
+// `type`: таблица пуста и ждёт СНОСА вместе с файлом (арк ломтя 5б).
+static_assert(sizeof(PlaceDef) == 1,
               "PlaceDef layout changed — say WHICH column and why, and "
               "never re-add a faction column: a KIND is not an OWNER (M-39)");
 

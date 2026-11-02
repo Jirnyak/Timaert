@@ -20,6 +20,7 @@
 // Колонка `kind` ниже называет РОД СКВАДА, который эту фичу ставит (вариант В
 // M-235). Ось рода живёт НЕЙТРАЛЬНЫМ слоем (§11, M-181), поэтому включение
 // идёт вниз по слоям и цикла быть не может: `tables/` о фичах не знает.
+#include "tables/light_palette.h"
 #include "tables/squad_type.h"
 #include <cstddef>
 #include <cstdint>
@@ -63,6 +64,23 @@ struct FeatureDef {
     // (zones.cpp): how strongly a built thing pushes the wilderness back.
     // 0 = builds no safety of its own (a field is tended, not garrisoned).
     float civStrength;
+    // ── НОЧНОЙ СВЕТ ФИЧИ (M-370, вердикт владельца: «фича тоже может быть
+    // источником свет но сделать это просто/ типа я теперь понял поч нужна
+    // таблица фич») ──────────────────────────────────────────────────────
+    // Авторинг для ПИСАТЕЛЯ поля света (refresh_feature_lights@src/macro/
+    // macro_lighting.cpp): носитель истины — само ПОЛЕ (`GameState::
+    // lightEmission`), живой мир этих колонок не читает. Свет — вид, тупик
+    // рендера: строка фичи здесь спутница представления, как таблица
+    // спрайтов, а не носитель закона живого мира (CANON п.7/п.9).
+    // lightPalette — ординал `kLightPalette@src/tables/light_palette.h`,
+    //   0 = не светит.
+    std::uint8_t lightPalette = 0;
+    // lightBase — сила эмиссии; 0 = сила из ЧИСЛА фичи (паства поселения).
+    std::uint16_t lightBase = 0;
+    // lightNumberGated — свет гаснет при нуле числа фичи: выкачанный орб
+    // шпиля (его число = спелл, 0 = пуст) и выбранная залежь выемки тушат
+    // свои огни САМИ, данными, без события-писателя.
+    bool lightNumberGated = false;
     // (КОЛОНКА `worksRow` ВЫРЕЗАНА 2026-09-22, сессия 14: ноль читателей за
     // всю жизнь, при том что её шапка звала себя «THE one door». Живая связь
     // «фича → что с неё берут» теперь КОЛОНКА `yieldItem` ниже — но это НЕ
@@ -267,32 +285,50 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // ровно эта колонка. А ЧИСЛО НА ШАХТЕ ЕСТЬ ЕЁ ЗАЛЕЖЬ (numberRow = Vein,
     // M-78/M-88): кап связного кластера, свёрнутый генерацией шахт.
     {.type = FT_ClayPit, .bedWeight = 0.0f, .opticalCost = 1.00f,
-     .civStrength = 0.0f, .onWater = FT_None,
+     .civStrength = 0.0f,
+     .lightPalette = kLightWorkings, .lightBase = 60,
+     .lightNumberGated = true,
+     .onWater = FT_None,
      .kind = SquadType::None,
      .numberRow = ResourceFieldId::Vein, .yieldItem = "clay",
      .mapColor = 0x66B06A4Au},
     {.type = FT_IronMine, .bedWeight = 0.0f, .opticalCost = 1.00f,
-     .civStrength = 0.0f, .onWater = FT_None,
+     .civStrength = 0.0f,
+     .lightPalette = kLightWorkings, .lightBase = 60,
+     .lightNumberGated = true,
+     .onWater = FT_None,
      .kind = SquadType::None,
      .numberRow = ResourceFieldId::Vein, .yieldItem = "iron",
      .mapColor = 0x666E5A52u},
     {.type = FT_Quarry, .bedWeight = 0.0f, .opticalCost = 1.00f,
-     .civStrength = 0.0f, .onWater = FT_None,
+     .civStrength = 0.0f,
+     .lightPalette = kLightWorkings, .lightBase = 60,
+     .lightNumberGated = true,
+     .onWater = FT_None,
      .kind = SquadType::None,
      .numberRow = ResourceFieldId::Vein, .yieldItem = "stone",
      .mapColor = 0x669A9A94u},
     {.type = FT_SilverMine, .bedWeight = 0.0f, .opticalCost = 1.00f,
-     .civStrength = 0.0f, .onWater = FT_None,
+     .civStrength = 0.0f,
+     .lightPalette = kLightWorkings, .lightBase = 60,
+     .lightNumberGated = true,
+     .onWater = FT_None,
      .kind = SquadType::None,
      .numberRow = ResourceFieldId::Vein, .yieldItem = "silver",
      .mapColor = 0x66C8CDD4u},
     {.type = FT_CopperMine, .bedWeight = 0.0f, .opticalCost = 1.00f,
-     .civStrength = 0.0f, .onWater = FT_None,
+     .civStrength = 0.0f,
+     .lightPalette = kLightWorkings, .lightBase = 60,
+     .lightNumberGated = true,
+     .onWater = FT_None,
      .kind = SquadType::None,
      .numberRow = ResourceFieldId::Vein, .yieldItem = "copper",
      .mapColor = 0x66B87333u},
     {.type = FT_GoldMine, .bedWeight = 0.0f, .opticalCost = 1.00f,
-     .civStrength = 0.0f, .onWater = FT_None,
+     .civStrength = 0.0f,
+     .lightPalette = kLightWorkings, .lightBase = 60,
+     .lightNumberGated = true,
+     .onWater = FT_None,
      .kind = SquadType::None,
      .numberRow = ResourceFieldId::Vein, .yieldItem = "gold",
      .mapColor = 0x66D4AF37u},
@@ -329,27 +365,38 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // различие столицы живёт в её ГЕНЕРАТОРЕ субмира, ключом которого эта
     // строка и является (вердикт владельца 2026-10-24, см. feature_type.h).
     {.type = FT_Capital, .bedWeight = 1.0f, .opticalCost = 1.00f,
-     .civStrength = 0.0f, .onWater = FT_None,
+     .civStrength = 0.0f,
+     .lightPalette = kLightHearth,
+     .onWater = FT_None,
      .kind = SquadType::Capital,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
      .mapColor = 0x3CFFD98Cu},
     {.type = FT_City, .bedWeight = 1.0f, .opticalCost = 1.00f,
-     .civStrength = 0.0f, .onWater = FT_None,
+     .civStrength = 0.0f,
+     .lightPalette = kLightHearth,
+     .onWater = FT_None,
      .kind = SquadType::City,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
      .mapColor = 0x3CE7D27Au},
     {.type = FT_Village, .bedWeight = 1.5f, .opticalCost = 1.00f,
-     .civStrength = 0.0f, .onWater = FT_None,
+     .civStrength = 0.0f,
+     .lightPalette = kLightHearth,
+     .onWater = FT_None,
      .kind = SquadType::Village,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
      .mapColor = 0x30CCB068u},
     {.type = FT_Spire, .bedWeight = 0.0f, .opticalCost = 1.00f,
-     .civStrength = 0.0f, .onWater = FT_None,
+     .civStrength = 0.0f,
+     .lightPalette = kLightSpire, .lightBase = 200,
+     .lightNumberGated = true,
+     .onWater = FT_None,
      .kind = SquadType::Spire,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
      .mapColor = 0x6EA86CFFu},
     {.type = FT_Ruin, .bedWeight = 0.0f, .opticalCost = 1.00f,
-     .civStrength = 0.0f, .onWater = FT_None,
+     .civStrength = 0.0f,
+     .lightPalette = kLightRuin, .lightBase = 40,
+     .onWater = FT_None,
      .kind = SquadType::Ruin,
      .numberRow = ResourceFieldId::Count, .yieldItem = nullptr,
      .mapColor = 0x5A8E8576u},

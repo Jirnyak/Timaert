@@ -407,6 +407,7 @@ private:
     friend void feature_number_write(GameState&, int, int, int);
     friend void feature_number_add(GameState&, int, int, int);
     friend void fauna_field_write(GameState&, int, int, int);
+    friend void light_emission_write(GameState&, int, int, int);
     friend void allocate_deposit_fields(struct DepositLayer&, int, int);
     friend DepositLayer build_deposit_layer(const TerrainData&, std::uint32_t);
     friend void create_deposit(struct DepositLayer&, int, int, std::int32_t);

@@ -149,27 +149,11 @@ int main() {
         auto storePtr = sm::make_macro_store();
         sm::MacroStore& st = *storePtr;
 
-        // Паства решает, как ярко горит место (macro_lighting читает
-        // souls_flock): души селятся дверью мира, а не колонкой записи.
-        sm::settle_souls(
-            gs, st,
-            sm::birth_place(gs, st, SquadType::City, 10, 10).slot, 5000);
-        sm::settle_souls(
-            gs, st,
-            sm::birth_place(gs, st, SquadType::City, 20, 20).slot, 20);
-
-        sm::settle_souls(
-            gs, st,
-            sm::birth_place(gs, st, SquadType::Village, 30, 30).slot, 100);
-
-        // v120: a spire's charge is its cell's feature number (ordinal + 1);
-        // drained = 0 — the spent spire's cell simply stays unwritten.
-        feature_number_write(gs, 40, 40, 1);
-
         // СМЫСЛ ЧИСЛУ ЗАДАЁТ ФИЧА КЛЕТКИ (M-233 п.8, ЗАКОН ПОЛЯ п.3), и с
         // 2026-10-23 фичу рода ставит сама ДВЕРЬ РОЖДЕНИЯ места в момент
-        // выбора клетки (перештамп из тел умер) — свидетель рождает своё
-        // предусловие той же дверью, что живой мир, со слоем и терраином.
+        // выбора клетки — свидетель рождает своё предусловие той же дверью,
+        // что живой мир, со слоем и терраином. С M-370 слой нужен ВСЕМ
+        // рождениям: свет — поле, его пишет рефреш ФИЧ, а не обход сквадов.
         sm::TerrainData land;
         land.width = gs.mapW;
         land.height = gs.mapH;
@@ -181,6 +165,27 @@ int main() {
         feat.height = gs.mapH;
         feat.data.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH),
                          std::uint8_t(FT_None));
+
+        // Паства решает, как ярко горит место (сила очага = ЧИСЛО фичи):
+        // души селятся дверью мира, а не колонкой записи.
+        sm::settle_souls(
+            gs, st,
+            sm::birth_place(gs, st, SquadType::City, 10, 10, -1, nullptr,
+                            &feat, &land).slot, 5000);
+        sm::settle_souls(
+            gs, st,
+            sm::birth_place(gs, st, SquadType::City, 20, 20, -1, nullptr,
+                            &feat, &land).slot, 20);
+
+        sm::settle_souls(
+            gs, st,
+            sm::birth_place(gs, st, SquadType::Village, 30, 30, -1, nullptr,
+                            &feat, &land).slot, 100);
+
+        // v120: a spire's charge is its cell's feature number (ordinal + 1);
+        // drained = 0 — the spent spire's cell simply stays unwritten.
+        feature_number_write(gs, 40, 40, 1);
+
         sm::birth_place(gs, st, SquadType::Spire, 40, 40, -1, nullptr,
                         &feat, &land);
         sm::birth_place(gs, st, SquadType::Spire, 50, 50, -1, nullptr,
@@ -194,6 +199,9 @@ int main() {
         mw.store = &st;
         mw.features = &feat;
         mw.terrain = &land;
+        // Граница ребейка (M-370): писатель фич наполняет ПОЛЕ, сбор читает
+        // только его — ровно порядок bake_macro_light_field.
+        sm::refresh_feature_lights(gs, feat);
         std::vector<MacroLight> lights = collect_macro_lights(mw);
         // 2 settlements + 1 village + 1 active spire; the depleted spire emits none.
         CHECK(lights.size() == 4u, "census: 4 emitters (depleted spire excluded)");

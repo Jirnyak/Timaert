@@ -50,16 +50,21 @@ inline constexpr float kMacroGlowCeil = 1.5f;
 // towns, lower for a darker night. Director-tunable — the one knob to turn.
 inline constexpr float kMacroGlowGain = 0.45f;
 
-// Data-driven emitter census. Inhabited places (settlements, villages) scale
-// radius + intensity by population via the TS curve; fixed POIs (active spires,
-// and any place type whose PlaceDef carries a non-zero lightColor) use
-// their table tint + synthetic strength (PlaceDef.lightPop). Adding a new
-// emitting place type is one table row plus, once it has world instances,
-// one loop here — never an engine branch in the renderer or shader.
-struct MacroStore;   // паства мест — склад ТЕЛА (M-90 шаг 5)
-// КОНВЕРТ, А НЕ ПАРА СЛОЁВ (M-233 п.8): выкачанность шпиля гасит его свет, а
-// выводится она из ФИЧИ клетки, значит перепись нужен слой фич — и он едет
-// конвертом, как велит шапка `macro_world.h`, а не новым аргументом.
+// ── ПОЛЕ СВЕТА (M-370): эмиттеры живут ЧИСЛОМ КЛЕТКИ, не обходом сквадов ──
+// Вердикт владельца 2026-11-02: «по сути это клеточка светит … свет
+// генерится». Носитель — `GameState::lightEmission` (u16-упаковка «палитра +
+// сила», tables/light_palette.h).
+//
+// refresh_feature_lights — ПИСАТЕЛЬ ФИЧ: на границе ребейка переписывает
+// клетки СВЕТЯЩИХ фич из их строк (сила = lightBase, либо ЧИСЛО фичи —
+// паства; lightNumberGated гасит выкачанный орб и выбранную залежь их же
+// числом). Чужих клеток не трогает — будущие огни сквадов/объектов/событий
+// пишут ту же дверь своими значениями и рефрешем не стираются.
+void refresh_feature_lights(GameState& gs, const FeatureLayer& features);
+// collect_macro_lights — ЧИТАТЕЛЬ ПОЛЯ: разворачивает живые клетки поля в
+// список эмиттеров бейка. Обход сквадов (for_each_place_view) умер — свет
+// руин и шпилей, молча потерянный со сносом их сквадов (M-320), вернулся
+// полем. Новый светящий род = строка таблицы фич, НОЛЬ строк здесь.
 struct MacroWorld;
 std::vector<MacroLight> collect_macro_lights(const MacroWorld& w);
 
