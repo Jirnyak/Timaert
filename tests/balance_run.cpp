@@ -41,6 +41,8 @@
 #include "macro/rooted_iter.h"   // for_each_rooted — обход мест по слотам
 #include "macro/squad.h"           // rooted_handle_by_ordinal — резолв места
 #include "macro/store.h"
+#include "macro/tasks.h"           // task_offers_for — доска контрактов (Б6)
+#include "tables/map_actions.h"    // kMapActQuests — бит доски
 #include "macro/tree_layer.h"
 #include "macro/world_gen.h"
 #include "macro/world_tick.h"
@@ -427,9 +429,16 @@ int main(int argc, char** argv) {
         // колонкой второй вопрос не задать — чаща всегда и «у леса» тоже, так
         // что `treesNear` без `trees` их не различает. Обе — в единицах
         // TreeLayer (0..kMaxTreesPerCell), порог класса — is_forest_cell.
+        // ДОСКА КОНТРАКТОВ, ПО МЕСТАМ (bugs.md Б6 «No work today»): сколько
+        // офферов доска этого места предъявит в этот день, и каким ГЛАГОЛОМ.
+        // Четыре колонки, а не одна, потому что «доска пуста» и «доска
+        // говорит одним глаголом» — разные болезни: пространство объекта у
+        // каждого глагола своё (нужды / округа / слой фич), и молчит оно
+        // поотдельности.
         std::fprintf(fl, "day\tid\ttype\tpop\twellbeing\tstarved"
                          "\tdebtFood\tdebtComfort\tfood\tcloth\tiron\tcoin"
-                         "\ttrees\ttreesNear\n");
+                         "\ttrees\ttreesNear"
+                         "\toffers\toffFetch\toffKill\toffVisit\n");
 
         // Голодная строка — ДВЕРЬ (econ_day.h hunger_item_*), не литерал:
         // ровно та причина, по которой дверь и заведена — переименуй строку
@@ -516,8 +525,19 @@ int main(int argc, char** argv) {
                     else if (kind == sm::SquadType::Village)
                         stockVil[c] += n;
                 }
-                const bool settled = kind == sm::SquadType::City
-                                  || kind == sm::SquadType::Village;
+                // ГЕЙТ СТРОКИ — ТОТ ЖЕ ВОПРОС, ЧТО У ВКЛАДКИ CONTRACTS, И ТОЙ
+                // ЖЕ ДВЕРЬЮ: маска глаголов `actions_of@src/macro/squad.h`
+                // против бита доски (`src/app/main.cpp` спрашивает буквально
+                // это). Здесь стоял перечень родов `City || Village`, и он
+                // МОЛЧА исключал СТОЛИЦУ — род, у которого доска есть по
+                // своей же строке оси, то есть прибор не видел целого рода
+                // мест ровно там, где игрок видит доску (bugs.md Б6).
+                // Перечень родов в приборе и был вторым написанием закона
+                // «кто держит прилавок» (ЗАКОН СТРОКИ КАТАЛОГА).
+                const sm::MacroHandle lmH = sm::handle_at(*macroStore, slot);
+                const bool settled =
+                    (sm::actions_of(*macroStore, lmH) & sm::kMapActQuests)
+                    != 0;
                 if (settled) {
                     long long debtComfort = 0;
                     for (int k = 0; k < comfortOrdCount; ++k)
@@ -541,9 +561,34 @@ int main(int argc, char** argv) {
                                 int(treeLayer.at(sm::cell_x(n, gs.mapW),
                                                  sm::cell_y(n, gs.mapW))));
                         }
+                    // ── ПЕРЕПИСЬ ОФФЕРОВ ДОСКИ (bugs.md Б6 «No work today»)
+                    // ТОЙ ЖЕ ДВЕРЬЮ, ЧТО ВКЛАДКА CONTRACTS. Доска
+                    // детерминирована от (сид мира × день × место) и нигде не
+                    // хранится, поэтому прибор видит РОВНО то, что увидит
+                    // игрок, открыв её в этот день у этого места — не модель
+                    // доски, а саму доску.
+                    // Кап буфера — кап вкладки (`TaskBoardView::offers`,
+                    // src/ui/overlays.h): прибор не вправе спрашивать больше,
+                    // чем доска способна показать.
+                    sm::TaskOffer offers[4];
+                    const int offerCount = sm::task_offers_for(
+                        *macroStore, gs, ai.squadIndex, features, lmH, offers,
+                        4);
+                    // Глаголы считаются ОРДИНАЛОМ СТРОКИ kTaskVerbs, а не
+                    // именем (ЗАКОН СЛОВАРЯ), а колонки названы поимённо —
+                    // значит новая строка глагола обязана сломать СБОРКУ
+                    // прибора, а не молча выпасть из переписи.
+                    static_assert(std::size(sm::kTaskVerbs) == 3,
+                                  "offFetch/offKill/offVisit названы строками "
+                                  "kTaskVerbs — новой строке нужна колонка");
+                    int offByVerb[std::size(sm::kTaskVerbs)] = {};
+                    for (int i = 0; i < offerCount; ++i) {
+                        if (offers[i].verb < std::size(sm::kTaskVerbs))
+                            ++offByVerb[offers[i].verb];
+                    }
                     std::fprintf(fl,
                                  "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%lld\t%d\t%d"
-                                 "\t%d\t%lld\t%d\t%d\n",
+                                 "\t%d\t%lld\t%d\t%d\t%d\t%d\t%d\t%d\n",
                                  gs.worldTime.day(),
                                  int(macroStore->spawnId[slot].index),
                                  int(kind), int(flock),
@@ -560,7 +605,9 @@ int main(int argc, char** argv) {
                                  bag.count_of(clothIdx),
                                  bag.count_of(ironIdx),
                                  coins_in(bag, coinIdx),
-                                 treesHere, treesNear);
+                                 treesHere, treesNear,
+                                 offerCount, offByVerb[0], offByVerb[1],
+                                 offByVerb[2]);
                 }
             });
             long long coinSquads = 0, foodHolds = 0;

@@ -417,6 +417,8 @@ add_executable(balance_run tests/balance_run.cpp
     src/macro/npc_spawn.cpp
     src/macro/npc_ai.cpp
     src/macro/deal.cpp
+    # перепись доски контрактов (Б6) спрашивает ТУ ЖЕ дверь, что вкладка
+    src/macro/tasks.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
