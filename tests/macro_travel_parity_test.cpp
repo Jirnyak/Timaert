@@ -605,18 +605,26 @@ void test_travel_balance_holds_its_intent() {
     // mastery is 1 (learned) + 99 spends.
     sm::LevelData ld{};
     sm::Skills capped{};
-    ld.skillPoints = sm::kMaxSkillRank + 10;
+    // КОШЕЛЁК ЗАДАЁТСЯ СТУПЕНЬЮ (M-383): выдача ранговых очков есть L−1, так
+    // что 111-я ступень даёт 110 — на одиннадцать больше, чем стоит мастерство.
+    // Запас нужен, чтобы последняя проверка говорила о ПОТОЛКЕ РАНГА: пустая
+    // казна отказывает тем же `false`, и без запаса два закона читались бы
+    // одним наблюдением.
+    ld.exp = sm::exp_at_level(sm::kMaxSkillRank + 11);
     CHECK(!sm::spend_skill_point(ld, capped, sm::SkillId::Travel),
           "an unknown skill refuses the point: learn first");
     CHECK(sm::learn_skill(capped, sm::SkillId::Travel),
           "the world teaches, and rank 1 is the knowing");
+    const int purseBefore = sm::skill_points_left(ld, capped);
     int spent = 0;
     while (sm::spend_skill_point(ld, capped, sm::SkillId::Travel)) ++spent;
     CHECK(spent == sm::kMaxSkillRank - 1
               && capped.of(sm::SkillId::Travel) == sm::kMaxSkillRank,
           "a rank stops at mastery");
-    CHECK(ld.skillPoints == 11,
-          "and a refused spend keeps the point for another skill");
+    CHECK(sm::skill_points_left(ld, capped) == purseBefore - spent
+              && sm::skill_points_left(ld, capped) == 11,
+          "and a refused spend keeps the point for another skill: списано "
+          "РОВНО потраченное, а остаток ненулевой");
 
     // The balance, printed on every run: a number you can read is a number you
     // can argue with. A ZERO in the hours row means SUSTAINABLE, not «no

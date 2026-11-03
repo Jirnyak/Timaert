@@ -113,15 +113,25 @@ void test_wisdom_pays_a_dividend_on_every_grant() {
     a[AttributeId::Wis] = 10;
     const int multPct = calculate_derived(a, Skills{}).expMultPct;
 
+    // ДИВИДЕНД СУДИТСЯ ВНУТРИ ОДНОЙ СТУПЕНИ, И ЭТО ТЕПЕРЬ УСЛОВИЕ ВОПРОСА
+    // (M-383): опыт стал КУМУЛЯТИВНЫМ, порог никто не вычитает, значит грант,
+    // перешагнувший веху, спрашивал бы уже про уровень, а не про множитель
+    // мудрости. Все три гранта ниже лежат под первым порогом — он выражением и
+    // назван, чтобы перекалибровка кривой краснила ЗДЕСЬ, а не молча сдвигала
+    // предмет проверки.
+    CHECK(exp_to_next_level(1) > 110,
+          "предусловие: все три гранта ниже первой вехи, значит ни один из них "
+          "не превращается в уровень и дивиденд виден начисто");
+
     LevelData ld = default_level_data();
     award_exp(ld, 100, multPct);
-    if (ld.exp != 110) std::fprintf(stderr, "  exp=%d\n", ld.exp);
-    CHECK(ld.exp == 110,
+    if (ld.exp != 110) std::fprintf(stderr, "  exp=%d\n", int(ld.exp));
+    CHECK(ld.exp == 110 && level_of(ld) == 1,
           "wis 10 is +1% per point: a grant of 100 lands as 110");
 
     LevelData ld2 = default_level_data();
     award_exp(ld2, 25, multPct);  // 27.5 -> round half up -> 28
-    if (ld2.exp != 28) std::fprintf(stderr, "  exp=%d\n", ld2.exp);
+    if (ld2.exp != 28) std::fprintf(stderr, "  exp=%d\n", int(ld2.exp));
     CHECK(ld2.exp == 28,
           "the dividend rounds half UP — a half point of xp is never eaten");
 

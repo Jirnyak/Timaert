@@ -147,7 +147,7 @@ void test_hostiles_on_one_cell_fight_and_the_ledger_pays() {
     // сквада рост один, через свой лист.
     {
         const CharacterSheet& own = *sm::body_state<CharacterSheet>(st, bandit);
-        CHECK(own.levelData.exp > 0 || own.levelData.level > 5,
+        CHECK(own.levelData.exp > 0 || sm::level_of(own.levelData) > 5,
               "victory pays experience through the one reward law");
     }
 }
@@ -508,8 +508,10 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     creatures_push(*army, make_soldier(std::uint8_t(NPCType::Guard), 3, 502u));
     player_pools(gs, *wStore_)->maxHp = 100;
     player_pools(gs, *wStore_)->hp = 100;
-    const int level0 = sm::player_sheet(gs, *wStore_)->levelData.level;
-    const int exp0 = sm::player_sheet(gs, *wStore_)->levelData.exp;
+    const int level0 = sm::level_of(sm::player_sheet(gs, *wStore_)->levelData);
+    // Кумулятив беззнаковый (M-383) — база снимается тем же типом, иначе
+    // сравнение ниже уводит одну из сторон в другой знак.
+    const std::uint32_t exp0 = sm::player_sheet(gs, *wStore_)->levelData.exp;
     const auto enemy = make_squad_at(st, NPCType::Bandit, "bandits", 3,
                                      10.0f, 10.0f, 9u, {31u, 32u},
                                      NPCType::Bandit, 2);
@@ -541,9 +543,9 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
           "the enemy died through the ledger and the tracked-death shape");
     CHECK(player_inventory(gs, *wStore_)->count("wood") == 4,
           "the fallen owner's goods landed in the player's own bag");
-    CHECK(xp > 0
-              && (sm::player_sheet(gs, *wStore_)->levelData.exp > exp0
-                  || sm::player_sheet(gs, *wStore_)->levelData.level > level0),
+    const sm::CharacterSheet& after = *sm::player_sheet(gs, *wStore_);
+    CHECK(xp > 0 && (after.levelData.exp > exp0
+                     || sm::level_of(after.levelData) > level0),
           "victory paid the player experience through award_exp");
 
     // The player LOSES with a man still standing: wounded, never dead — the
@@ -826,10 +828,13 @@ void test_the_avatars_training_reads_at_the_new_doors() {
 //
 // ДВА УТВЕРЖДЕНИЯ, И ОНИ РАЗНЫЕ:
 //   · ремёсла целы после роста — перекат анкеты невыразим;
-//   · один-единственный опыт НЕ даёт уровня — кривая `exp_to_next_level`
-//     читает уровень АНКЕТЫ, а он не бывает нулём (LevelData::level = 1).
-//     Через мёртвую колонку он был нулём у всякого неподвижного сквада, и
-//     порог `exp_to_next_level(0)` = 0 выдавал уровень за любой xp > 0.
+//   · один-единственный опыт НЕ даёт уровня — ступень есть ВЫВОД из
+//     накопленного опыта (`level_of_exp`), и нулём она не бывает по
+//     построению: двоичный поиск начинает с первой ступени. Прежде ответ
+//     давало ПОЛЕ, и у всякого неподвижного сквада оно было нулём, а порог
+//     `exp_to_next_level(0)` = 0 выдавал уровень за любой xp > 0. С M-383
+//     поля нет вовсе, значит соврать им невозможно — но закон остался
+//     законом, и спрашивается он здесь ровно так же.
 void test_a_victory_does_not_erase_a_table_born_sheet() {
     GameState gs = make_world(-80);
     auto wStore_ = sm::make_macro_store();

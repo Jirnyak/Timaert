@@ -174,7 +174,12 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     a.cell = {sm::ecs::cell_index(33, 44, 512)};
     a.kind = {std::uint16_t(sm::NPCType::Bandit), 3};
     a.pools = {17, 42};
-    a.sheet.levelData.level = 5;   // уровень — анкета (M-246а)
+    // СТУПЕНЬ И ПРОГРЕСС ВНУТРИ НЕЁ — ОДНО ЧИСЛО (M-383), ПОЭТОМУ ФИКСТУРА
+    // НАЗЫВАЕТ ИХ ВРОЗЬ. Прежде `level = 5` и `exp = 555` были двумя полями и
+    // могли приехать по отдельности; теперь приезжает кумулятив, а врозь
+    // судятся два ВЫВОДА из него — иначе подмена ступени прогрессом (и
+    // наоборот) прошла бы незаметно.
+    a.sheet.levelData.exp = sm::exp_at_level(5) + 555u;
     // ЦЕЛЬ — КОЛОНКА РОДА 2 (M-1, ломоть 3 M-72): все четыре колонки
     // ставятся НЕНУЛЕВЫМИ и судятся на том берегу — потеря любой из них
     // в проводе сейва обязана красить.
@@ -198,8 +203,8 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     a.runtime.entryTicks = 9;
     a.runtime.visualSpeed = 0.25f;
     a.runtime.tickAccum = 77;
-    a.sheet.levelData.exp = 555;      // the avatar's campaigns (M-246а:
-                                      // опыт — колонка анкеты, не рантайма)
+    // (Кампании аватара поставлены ВЫШЕ, одним числом: опыт и ступень больше
+    //  не два поля, и второй записи здесь быть не может — M-383.)
     a.traits.count = 2;
     a.traits.traits[0] = 1;
     a.traits.traits[1] = 4;
@@ -234,7 +239,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     d.cell = {sm::ecs::cell_index(1, 2, 512)};
     d.kind = {std::uint16_t(sm::NPCType::Guard), 1};
     d.pools = {0, 55};
-    d.sheet.levelData.level = 3;   // уровень — анкета (M-246а)
+    d.sheet.levelData.exp = sm::exp_at_level(3);   // уровень — анкета (M-383)
     d.dead = 1;
     out.push_back(std::move(d));
     // THE PLAYER's own squad — an ordinary record of the same snapshot, told
@@ -254,7 +259,10 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     player.kind = {std::uint16_t(sm::NPCType::Adventurer),
                    std::uint16_t(sm::faction_index(sm::kPlayerFactionId))};
     player.pools = {40, 40};
-    player.sheet.levelData.level = 3;   // уровень — анкета (M-246а)
+    // (Здесь стояло `levelData.level = 3`, и оно было МЁРТВОЙ ЗАПИСЬЮ: строкой
+    //  ниже тот же блок переписывался шестой ступенью. Пока уровень был своим
+    //  полем, это читалось как «ещё одна колонка фикстуры»; с одним числом
+    //  вторая запись видна как то, чем была всегда.)
     // ...and WHO HE BUILT (посадка Б, v91): his sheet rides the record's
     // record's sheet column like every squad's (M-246а: опт-ина нет) — the exact values
     // the dead gs.player.sheet block used to drive.
@@ -273,10 +281,20 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     player.sheet.skills[sm::SkillId::Marathon] = 5;
     player.sheet.skills[sm::SkillId::Spellcraft] = 6;
     player.sheet.skills[sm::SkillId::Weightlifting] = 7;
-    player.sheet.levelData.level = 6;
-    player.sheet.levelData.exp = 321;
-    player.sheet.levelData.attributePoints = 4;
-    player.sheet.levelData.skillPoints = 5;
+    // ШЕСТАЯ СТУПЕНЬ И 321 СВЕРХ НЕЁ — ОДНИМ ЧИСЛОМ (M-383).
+    //
+    // ЗДЕСЬ СТОЯЛИ ЧЕТЫРЕ ПОЛЯ БЛОКА УРОВНЯ, И ДВА ИЗ НИХ ВРАЛИ О САМОМ ЛИСТЕ:
+    // фикстура просила «4 атрибутных очка и 5 ранговых доступны», тогда как
+    // ранги строками выше тратят 21 очко, а атрибуты — 83. Счётчик, не
+    // согласованный с листом, который он считает, и был тем дефектом, из-за
+    // которого M-383 их снёс; выразить его заново теперь невозможно — доступное
+    // считается ОТ ЛИСТА.
+    //
+    // ЛИСТ ФИКСТУРЫ ОСТАЁТСЯ НЕОПЛАТНЫМ ДЛЯ СВОЕЙ СТУПЕНИ, И ЭТО НАМЕРЕННО:
+    // круг сейва судит БАЙТЫ, а не законность персонажа, и семь непустых рангов
+    // вразброс по конверту — именно то, что доказывает проезд всего массива.
+    // Законность рождённых листов судит `sheet_registry_test` по столу M-383.
+    player.sheet.levelData.exp = sm::exp_at_level(6) + 321u;
     // ...and what he KNOWS (v89): learned + active + a burning sustained —
     // the exact states the old PlayerState block used to carry.
     sm::spellbook_learn(player.book, sm::spell_ordinal("fireball"));
@@ -790,10 +808,23 @@ void run_roundtrip() {
         if (a.pools.hp != want.pools.hp || a.pools.maxHp != want.pools.maxHp) {
             FAIL_BAIL("macro wounds lost");
         }
-        if (a.sheet.levelData.level != want.sheet.levelData.level)
+        // НОСИТЕЛЬ ОДИН, ВОПРОСОВ ДВА (M-383): ступень и прогресс внутри неё.
+        //
+        // СТУПЕНЬ ПИНИТСЯ ЧИСЛОМ, А НЕ СВЕРКОЙ С ФИКСТУРОЙ, И ЭТО НЕ
+        // ПРИДИРКА — ЭТО ЗАМЕР. Сверка `loaded == want` ловит ТОЛЬКО потерю в
+        // проводе: оба её конца растут из одной фикстуры, поэтому мутация
+        // «убрать оплату ступени» (кумулятив = 555, ступень схлопывается в
+        // первую) прошла ЗЕЛЁНОЙ 20 из 20 — ровно «тождество одной формулы»
+        // из §8 п.6. Якорем служит авторское число фикстуры: с ним та же
+        // мутация краснеет.
+        if (sm::level_of(a.sheet.levelData) != 5
+            || sm::level_of(a.sheet.levelData)
+                   != sm::level_of(want.sheet.levelData))
             FAIL_BAIL("macro level lost");
         if (a.pools.sp != -25) FAIL_BAIL("macro SP debt lost");
-        if (a.sheet.levelData.exp != 555) FAIL_BAIL("macro avatar xp lost");
+        if (sm::exp_in_level_of(a.sheet.levelData) != 555
+            || a.sheet.levelData.exp != want.sheet.levelData.exp)
+            FAIL_BAIL("macro avatar xp lost");
         // ВЕСЬ РАНТАЙМ, КОТОРЫЙ ФИКСТУРА СТАВИТ, ЗДЕСЬ И СУДИТСЯ (M-254,
         // 2026-10-12). До этой правки фикстура ставила ТРИНАДЦАТЬ полей
         // `MacroNpcRuntime`, а вердикт спрашивал ЧЕТЫРЕ — остальные девять
@@ -881,6 +912,12 @@ void run_roundtrip() {
     if (loadedMacro[1].dead != 1 || loadedMacro[1].pools.hp != 0.0f) {
         FAIL_BAIL("the killed lord did not stay dead across the save");
     }
+    // ПОСТАВЛЕНО — ЗНАЧИТ СПРОШЕНО (§8 п.3, тот же довод, что у M-254 выше):
+    // третья ступень этой записи ехала кругом без свидетеля, и потеря блока
+    // уровня У МЁРТВОГО не покраснела бы ничем.
+    if (sm::level_of(loadedMacro[1].sheet.levelData) != 3) {
+        FAIL_BAIL("the dead lord's level block did not survive the save");
+    }
     if (loaded.worldTime.tick != gs.worldTime.tick) {
         FAIL_BAIL("world time not exact to the tick");
     }
@@ -910,10 +947,14 @@ void run_roundtrip() {
             || sh.skills.of(sm::SkillId::Weightlifting) != 7) {
             FAIL_BAIL("player skills lost");
         }
-        if (sh.levelData.level != 6 || sh.levelData.exp != 321
-            || sm::exp_to_next_of(sh.levelData) != sm::exp_to_next_level(6)
-            || sh.levelData.attributePoints != 4
-            || sh.levelData.skillPoints != 5) {
+        // ВЕСЬ БЛОК УРОВНЯ — ЭТО ТЕПЕРЬ ОДНО ЧИСЛО, И ОНО СУДИТСЯ ЦЕЛИКОМ:
+        // кумулятив побайтово, плюс оба его смысла (ступень и прогресс) врозь.
+        // Четыре счётчика очков из прежней проверки ушли не из свидетеля, а из
+        // МИРА — они стали выводом от ступени и самого листа (M-383), значит
+        // сторожить их отдельно больше нечего: разъехаться с опытом невыразимо.
+        if (sh.levelData.exp != sm::exp_at_level(6) + 321u
+            || sm::level_of(sh.levelData) != 6
+            || sm::exp_in_level_of(sh.levelData) != 321) {
             FAIL_BAIL("player level data lost");
         }
     }

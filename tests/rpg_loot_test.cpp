@@ -201,13 +201,16 @@ static void test_sheet_budget_identity() {
 
             std::snprintf(msg, sizeof msg,
                 "sheet L%d role %d: pools drained to zero", lvl, int(role));
-            CHECK(cs.levelData.attributePoints == 0
-                  && cs.levelData.skillPoints == 0
-                  && cs.levelData.learnPicks == 0, msg);
+            // «Опустошён» теперь спрашивается у РАЗНОСТИ выданного и
+            // потраченного (M-383): счётчики умерли как дубли выводимого.
+            // Утверждение то же — генератор тратит бюджет ступени ДО КОНЦА.
+            CHECK(sm::attribute_points_left(cs.levelData, cs.attributes) == 0
+                  && sm::skill_points_left(cs.levelData, cs.skills) == 0
+                  && sm::learn_picks_left(cs.levelData, cs.skills) == 0, msg);
 
             std::snprintf(msg, sizeof msg,
                 "sheet L%d role %d: level + xp curve set", lvl, int(role));
-            CHECK(cs.levelData.level == lvl
+            CHECK(sm::level_of(cs.levelData) == lvl
                   && sm::exp_to_next_of(cs.levelData)
                          == exp_to_next_level(lvl), msg);
         }

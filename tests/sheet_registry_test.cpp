@@ -21,6 +21,10 @@
 #include "check.h"
 
 #include "bus/anketa.h"
+// СТОЛ РОЖДЕНИЯ — предмет свидетеля «ни одна строка не неоплатна»: бюджет
+// выводится из листа, значит судить его надо по той же таблице, из которой
+// лист берёт `birth_squad`.
+#include "macro/characters.h"
 #include "macro/travel.h"   // travel_skill_efficiency — выучка читает РАНГИ анкеты
 #include "tables/movement_cost.h"
 
@@ -57,8 +61,15 @@ void test_attributes_are_an_envelope_and_a_table() {
           "the envelope is the size the save promises");
 
     // The one door into a score refuses rather than rolls the byte over.
+    //
+    // БЮДЖЕТ ЗАДАЁТСЯ СТУПЕНЬЮ, А НЕ СЧЁТЧИКОМ (M-383): поле `attributePoints`
+    // умерло, доступное есть выданное минус потраченное. Поэтому фикстура
+    // поднимает лист на ВЕРХ ЛЕСТНИЦЫ — там выдано 259 очков против 254
+    // нужных, значит отказать может только ПОТОЛОК БАЙТА, и проверка ниже
+    // говорит о том, о чём говорила всегда. Пустой кошелёк соврал бы тем же
+    // числом отказа, что и потолок.
     LevelData ld{};
-    ld.attributePoints = kMaxAttributeScore + 10;
+    ld.exp = exp_at_level(kMaxTier);
     Attributes cap{};
     int spent = 0;
     while (spend_attribute_point(ld, cap, AttributeId::Lck)) ++spent;
@@ -191,18 +202,27 @@ void test_the_cap_belongs_to_the_law() {
     // mastery is therefore 1 (learned) + 99 spends.
     LevelData ld{};
     Skills s{};
-    ld.skillPoints = kMaxSkillRank + 10;
+    // КОШЕЛЁК ЗАДАЁТСЯ СТУПЕНЬЮ (M-383): выданное есть `granted_skill_points`
+    // = L−1, значит 111-я ступень даёт 110 ранговых очков — на одиннадцать
+    // больше, чем стоит мастерство. Этот запас и есть предмет последней
+    // проверки: без него отказ двери был бы отказом ПУСТОЙ КАЗНЫ, а не
+    // потолка ранга, и два разных закона читались бы одним числом.
+    ld.exp = exp_at_level(kMaxSkillRank + 11);
     CHECK(!spend_skill_point(ld, s, SkillId::Travel),
           "an unknown skill refuses the point: learn first");
     CHECK(learn_skill(s, SkillId::Travel),
           "learning is the one door out of ignorance (rank 0 -> 1)");
     CHECK(!learn_skill(s, SkillId::Travel),
           "and a teacher cannot teach what is already known");
+    const int purseBefore = skill_points_left(ld, s);
     int spent = 0;
     while (spend_skill_point(ld, s, SkillId::Travel)) ++spent;
     CHECK(spent == kMaxSkillRank - 1, "a rank stops at mastery");
-    CHECK(ld.skillPoints == 11,
-          "and a refused spend keeps the point for another skill");
+    CHECK(skill_points_left(ld, s) == purseBefore - spent
+              && skill_points_left(ld, s) == 11,
+          "and a refused spend keeps the point for another skill: ушло РОВНО "
+          "потраченное, а остаток ненулевой — значит отказал ПОТОЛОК РАНГА, "
+          "не пустая казна");
     CHECK(!spend_skill_point(ld, s, SkillId::Count),
           "a rank that names no row is refused, not written past the end");
 }
@@ -310,18 +330,39 @@ void test_the_governed_numbers_follow_the_row() {
 // «perk point every 10th level» died with this witness watching. (Маска
 // выученных узлов отсюда ушла вместе с самой маской — M-252.)
 void test_the_third_currency_accrues() {
+    // ЭКОНОМИКА ТА ЖЕ, НО ОНА БОЛЬШЕ НЕ ХРАНИТСЯ (M-383): четыре счётчика стали
+    // ВЫВОДОМ от ступени и самого листа, значит «доступно» спрашивается дверью,
+    // а свежесть листа входит в вопрос ВТОРЫМ аргументом. Это не ослабление
+    // свидетеля, а усиление: прежние поля могли показать 5-5-5 над листом,
+    // который уже всё потратил, — теперь такое невыразимо.
     LevelData ld = default_level_data();
-    CHECK(ld.attributePoints == 5 && ld.learnPicks == 5 && ld.perkPoints == 5,
+    const Attributes fresh{};
+    const Skills unlearned{};
+    CHECK(attribute_points_left(ld, fresh) == 5
+              && learn_picks_left(ld, unlearned) == 5
+              && perk_points_left(ld) == 5,
           "creation is the K-K-K budget: 5-5-5 (owner 2026-09-14)");
-    ld.exp = exp_to_next_of(ld);   // порог — вывод (M-246а)
-    CHECK(try_level_up(ld), "the threshold levels");
-    CHECK(ld.attributePoints == 6 && ld.skillPoints == 1 && ld.perkPoints == 6,
+    CHECK(level_of(ld) == 1,
+          "a fresh sheet stands on the FIRST step — нулевой ступени нет, иначе "
+          "порог `exp_to_next_level(0)` обнулил бы кривую (M-246а)");
+    // ВЕХУ ПЕРЕСЕКАЕТ ОПЫТ, А НЕ КНОПКА. Здесь стояло `try_level_up`, и она
+    // умерла вместе с самим понятием «взять уровень» (M-383): полоса,
+    // доведённая до порога, И ЕСТЬ уровень. Поэтому доведение и наступление —
+    // одна строка,
+    // а порог спрашивается тою же дверью, которой его считает мир.
+    ld.exp = std::uint32_t(exp_to_next_of(ld));
+    CHECK(level_of(ld) == 2,
+          "the threshold LEVELS BY ITSELF: пройденная веха и есть ступень, "
+          "второго шага между ними нет");
+    CHECK(attribute_points_left(ld, fresh) == 6
+              && skill_points_left(ld, unlearned) == 1
+              && perk_points_left(ld) == 6,
           "a level grants 1-1-1: full isotropy, no special levels");
     // A level-N procedural sheet is budget-identical to a level-N player;
     // the perk pool accrues UNSPENT while the graph is a stub.
     const CharacterSheet cs =
         make_character_sheet(NPCType(0), 6, avatar_sheet_seed(1u));
-    CHECK(cs.levelData.perkPoints == 5 + 5,
+    CHECK(perk_points_left(cs.levelData) == 5 + 5,
           "an NPC sheet accrues the perk pool it cannot spend yet");
     // ЗДЕСЬ СТОЯЛИ ТРИ УТВЕРЖДЕНИЯ О `PerkMask` — у них УМЕР НОСИТЕЛЬ
     // (M-252, 2026-10-12): маска снесена как сирота, прод-читателей у неё не
@@ -331,6 +372,79 @@ void test_the_third_currency_accrues() {
     // уровень, симметрия игрока и процедурного листа) — жив целиком и
     // утверждается выше. Когда придут строки узлов, выученность вернётся в
     // анкету, и свидетель на неё пишется заново вместе с читателем.
+}
+
+// ── НИ ОДНА СТРОКА СТОЛА РОЖДЕНИЯ НЕ НЕОПЛАТНА (M-383) ───────────────────
+//
+// Доступное есть ВЫДАННОЕ МИНУС ПОТРАЧЕННОЕ, и клампа у разности нет нарочно
+// (ЗАКОН КЛАМПА: обрезать её значило бы спрятать лист, получивший ранги, не
+// оплаченные ступенью). Значит у отрицательного бюджета обязан быть свидетель,
+// иначе закон виден только тому, кто откроет панель.
+//
+// РОЖДЕНИЕ ЛЕЧИТ ЭТО ВЫВОДОМ СТУПЕНИ: `birth_squad@src/macro/birth_squad.h`
+// ставит `exp = exp_at_level(level_affording(лист))`. Проверяется поэтому ТОТ
+// ЖЕ состав — таблица рождения, прогнанная через ту же пару дверей, — а не
+// живой мир: это свойство СТРОКИ, и спрашивать его дешевле у строки.
+//
+// ЧТО ИМЕННО ЛОВИТ. Атрибуты и ранги обратимы: `5 + (L−1)` и `L−1` растут с
+// уровнем без предела, поэтому любая их трата рано или поздно оплачивается.
+// УЧЕНИЯ НЕ ОБРАТИМЫ — их выдано ПЯТЬ на всю жизнь (`granted_learn_picks`),
+// значит строка, выучившая ШЕСТОЙ навык, неоплатна на ЛЮБОЙ ступени, и
+// `level_affording` о ней соврать не может — она просто вернёт свой максимум.
+// Это и есть единственный способ завести здесь вечно отрицательный бюджет, и
+// он виден ровно этой проверкой.
+//
+// ТАБЛИЦА «МУТАЦИЯ → ИСХОД» (§8 п.6; прогнано 2026-11-03, база 342 проверки).
+// Детектор, краснеющий на всё, детектором не является, поэтому у таблицы ОБЕ
+// полярности:
+//   · город учит ШЕСТОЙ навык (`learn_skill(cs.skills, SkillId::Sword)`)
+//        → КРАСНО, 2 из 342: ряд города печатает «учений −1», и отдельно
+//          краснеет потолок учений;
+//   · город поднимает РАНГ кузнеца 30 → 99
+//        → ЗЕЛЕНО, 342/342, и это ПРАВИЛЬНО: ранги обратимы ступенью
+//          (`level_affording` поднимет её до 126+), значит неоплатности нет;
+//   · стол «ничего не учит» (`cs.skills = Skills{}`)
+//        → КРАСНО, 1 из 342: предусловие фикстуры. Без него проверка выше
+//          была бы зелена по пустоте — у пустого листа бюджет неотрицателен
+//          всегда.
+void test_no_birth_row_is_born_in_debt() {
+    int rows = 0;
+    int learnedPeak = 0;
+    for (int t = 0; t < int(SquadType::Count); ++t) {
+        CharacterSheet cs = squad_birth(SquadType(t)).sheet;
+        // Рождение ставит опыт ровно так, и второго закона у него нет.
+        cs.levelData.exp = exp_at_level(level_affording(cs));
+        ++rows;
+        const int learned = learned_skill_count(cs.skills);
+        if (learned > learnedPeak) learnedPeak = learned;
+
+        char msg[160];
+        std::snprintf(msg, sizeof msg,
+            "строка рождения %d: ступень %d оплачивает её ранги "
+            "(атрибутных %d, ранговых %d, учений %d)",
+            t, level_of(cs.levelData),
+            attribute_points_left(cs.levelData, cs.attributes),
+            skill_points_left(cs.levelData, cs.skills),
+            learn_picks_left(cs.levelData, cs.skills));
+        CHECK(attribute_points_left(cs.levelData, cs.attributes) >= 0
+                  && skill_points_left(cs.levelData, cs.skills) >= 0
+                  && learn_picks_left(cs.levelData, cs.skills) >= 0, msg);
+    }
+    CHECK(rows == int(SquadType::Count),
+          "спрошен КАЖДЫЙ род оси, а не те, у кого авторская строка: род, "
+          "забывший высказаться, молча получает пустой лист — и это законно, "
+          "но сказать об этом обязан прибор, а не умолчание");
+    // ПРЕДУСЛОВИЕ УТВЕРЖДАЕТСЯ (§8 п.3): если ни одна строка стола не учит
+    // НИ ОДНОГО навыка, проверка выше зелена по пустоте — у пустого листа
+    // бюджет неотрицателен всегда, и шестой навык в таком мире невыразим.
+    CHECK(learnedPeak > 0,
+          "НЕГАТИВНЫЙ КОНТРОЛЬ ФИКСТУРЫ: стол рождения вообще учит навыкам — "
+          "иначе неоплатность проверялась бы на листах, которые нечем "
+          "перетратить");
+    CHECK(learnedPeak <= kCreationBudget,
+          "и ни одна строка не перешла предел учений: шестой навык неоплатен "
+          "на ЛЮБОЙ ступени, потому что учений выдано пять и уровень их не "
+          "добавляет (`granted_learn_picks`)");
 }
 
 // ── An NPC hits with his SHEET (CANON S13/S14, session Е 2026-09-19) ─────
@@ -462,6 +576,7 @@ int main() {
     test_one_door_and_the_row_decides();
     test_the_cap_belongs_to_the_law();
     test_the_third_currency_accrues();
+    test_no_birth_row_is_born_in_debt();
     test_npc_strikes_with_his_sheet();
     test_the_governed_numbers_follow_the_row();
     test_every_role_rates_every_skill();

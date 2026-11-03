@@ -278,7 +278,7 @@ bool spellbook_cast(sub::SubObjects* objs, MacroStore* st,
         const CharacterSheet* cs =
             sub::slot_sheet_of(*objs, casterSlot, *st);
         ctx.casterLevel =
-            std::int16_t(cs != nullptr ? cs->levelData.level : 0);
+            std::int16_t(cs != nullptr ? sm::level_of(cs->levelData) : 0);
     }
 
     if (!cast_spell(objs, *d, ctx)) return false;

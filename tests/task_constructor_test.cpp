@@ -280,8 +280,8 @@ int main() {
     const std::int32_t debtBefore =
         st.upkeep[r.place.slot].needDebt[commodity_index("food")];
     const std::uint32_t renownBefore = st.runtime[r.player.slot].renown;
-    const int expBefore = st.sheet[r.player.slot].levelData.exp;
-    const int lvlBefore = st.sheet[r.player.slot].levelData.level;
+    const std::uint32_t expBefore = st.sheet[r.player.slot].levelData.exp;
+    const int lvlBefore = sm::level_of(st.sheet[r.player.slot].levelData);
     CHECK(task_turn_in(st, gs, r.player, r.place), "сдача проходит");
     {
         // ЗАКОН СОХРАНЕНИЯ ПРИХОДА: дверь deal гасит долг нужд приходом
@@ -302,9 +302,13 @@ int main() {
     {
         const ItemDef* d = item_def_at(foodItem);
         const int wantXp = (d ? d->value : 0) * 5;
-        const int gained = st.sheet[r.player.slot].levelData.exp - expBefore;
-        const bool levelled = st.sheet[r.player.slot].levelData.level
-                              > lvlBefore;
+        // Опыт КУМУЛЯТИВЕН (M-383), поэтому прирост есть разность самого
+        // носителя, а не «сколько осталось в полосе»: веха, перешагнутая этим
+        // грантом, больше ничего из него не вычитает.
+        const int gained =
+            int(st.sheet[r.player.slot].levelData.exp - expBefore);
+        const bool levelled =
+            sm::level_of(st.sheet[r.player.slot].levelData) > lvlBefore;
         CHECK(levelled || gained == wantXp,
               "опыт = ЧИСТАЯ СТОИМОСТЬ доставленного (колонка value той же "
               "таблицы; множитель анкеты равен 100% у крестьянина)");

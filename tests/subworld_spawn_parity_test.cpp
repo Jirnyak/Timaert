@@ -654,7 +654,8 @@ bool run_beast_member_projection_case(
     stl.kind[hl.slot] = sm::ecs::NPCKind{std::uint16_t(sm::NPCType::Bandit),
                                          std::uint16_t(3)};
     stl.pools[hl.slot] = sm::ecs::Pools{10, 10};
-    stl.sheet[hl.slot].levelData.level = 3;   // уровень — анкета (M-246а)
+    // Ступень = НАКОПЛЕННЫЙ ОПЫТ, второго носителя нет (M-383).
+    stl.sheet[hl.slot].levelData.exp = sm::exp_at_level(3);
     {
         auto& bag = stl.inventory[hl.slot];
         sm::creatures_push(bag.inv, sm::make_soldier(kBeast, 2, 5001u));
@@ -1033,7 +1034,8 @@ bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
     st.kind[reborn.slot] = sm::ecs::NPCKind{
         std::uint16_t(sm::NPCType::Guard), 2};
     st.pools[reborn.slot] = sm::ecs::Pools{9, 9};
-    st.sheet[reborn.slot].levelData.level = 2;   // уровень — анкета (M-246а)
+    // Ступень = НАКОПЛЕННЫЙ ОПЫТ (M-383).
+    st.sheet[reborn.slot].levelData.exp = sm::exp_at_level(2);
     {
         sm::ecs::NpcCharacter ch{};
         ch.visualSeed = 0xFEEDu;
@@ -1244,7 +1246,8 @@ int main() {
         stq.kind[hq.slot] = sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit), std::uint16_t(3)};
         stq.pools[hq.slot] = sm::ecs::Pools{10, 10};
-        stq.sheet[hq.slot].levelData.level = 7;   // уровень — анкета (M-246а)
+        // Ступень = НАКОПЛЕННЫЙ ОПЫТ (M-383).
+        stq.sheet[hq.slot].levelData.exp = sm::exp_at_level(7);
 
         // HIS sheet — deliberately NOT the one his row and level would roll
         // from the cell seed, so "he arrived as himself" is a claim that can
@@ -1322,7 +1325,8 @@ int main() {
         stq.kind[hq.slot] = sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit), std::uint16_t(3)};
         stq.pools[hq.slot] = sm::ecs::Pools{40, 40};
-        stq.sheet[hq.slot].levelData.level = 5;   // уровень — анкета (M-246а)
+        // Ступень = НАКОПЛЕННЫЙ ОПЫТ (M-383).
+        stq.sheet[hq.slot].levelData.exp = sm::exp_at_level(5);
 
         // Both bodies are created BEFORE any pointer is taken: a spawn
         // reallocates component storage, and a reference held across one is
@@ -1410,7 +1414,8 @@ int main() {
         stq.kind[hq.slot] = sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit), std::uint16_t(3)};
         stq.pools[hq.slot] = sm::ecs::Pools{50, 50};
-        stq.sheet[hq.slot].levelData.level = 6;   // уровень — анкета (M-246а)
+        // Ступень = НАКОПЛЕННЫЙ ОПЫТ (M-383).
+        stq.sheet[hq.slot].levelData.exp = sm::exp_at_level(6);
 
         const int sBody = sm::sub::spawn_tracked_body(
             objs, stq, hq, 32.0f, 32.0f,

@@ -345,7 +345,7 @@ struct SubObjects {
 // анкеты ушёл `expToNext` (4 Б, порог уровня стал выводом), и сцена
 // подешевела на 4 Б × 65536 = 256 КиБ, о которых наряд не думал вовсе.
 // Греп по `expToNext` этого места тоже не называл; назвал компилятор.
-static_assert(sizeof(SubObjects) == std::size_t(kMaxSubObjects) * 613 + 20,
+static_assert(sizeof(SubObjects) == std::size_t(kMaxSubObjects) * 593 + 20,
               "массив объектов сцены: 613 Б/слот (M-220: MacroOrigin несёт "
               "{слот, ID} — 4 → 8 Б) + служебные (ломоть D: avatarEnttBits "
               "умер с сущностью аватара, 24 → 20)");

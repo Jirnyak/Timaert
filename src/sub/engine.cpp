@@ -2939,7 +2939,7 @@ bool SubworldEngine::grant_prop_loot(const Structure& prop,
     const CharacterSheet* lootSheet =
         gs_ ? player_sheet(*gs_, (*mw_.store)) : nullptr;
     auto stacks = roll_loot_profile(lootId,
-                                    lootSheet ? lootSheet->levelData.level : 1,
+                                    lootSheet ? level_of(lootSheet->levelData) : 1,
                                     &loot_rng_f01, /*affixPower*/ 0);
     gLootRng = nullptr;
 

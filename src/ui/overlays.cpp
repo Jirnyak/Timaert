@@ -563,9 +563,9 @@ namespace sm::ui
             ImGui::SetWindowFontScale(scale);
             ImGui::Text("%s  Level %d  Age %d days",
                         p.name.empty() ? "Wanderer" : p.name.c_str(),
-                        sheet.levelData.level, p.ageDays);
+                        level_of(sheet.levelData), p.ageDays);
             ImGui::SameLine();
-            ImGui::TextDisabled("EXP %d / %d", sheet.levelData.exp,
+            ImGui::TextDisabled("EXP %d / %d", exp_in_level_of(sheet.levelData),
                                 exp_to_next_of(sheet.levelData));
             ImGui::Separator();
 
@@ -590,17 +590,20 @@ namespace sm::ui
                         ImGui::Text("MP %d / %d", pools.mp, pools.maxMp);
                         ImGui::Text("SP %d / %d", pools.sp, pools.maxSp);
                         ImGui::Text("Value %d", container_worth(playerBag));
-                        ImGui::Text("Attr pts %d", sheet.levelData.attributePoints);
-                        ImGui::Text("Skill pts %d", sheet.levelData.skillPoints);
-                        if (sheet.levelData.learnPicks > 0)
-                            ImGui::Text("Learn picks %d", sheet.levelData.learnPicks);
-                        if (sheet.levelData.exp >= exp_to_next_of(sheet.levelData))
-                        {
-                            if (ImGui::Button("Level Up"))
-                            {
-                                squad_level_up(st, panelSquadH);
-                            }
-                        }
+                        ImGui::Text("Attr pts %d",
+                                    attribute_points_left(sheet.levelData,
+                                                          sheet.attributes));
+                        ImGui::Text("Skill pts %d",
+                                    skill_points_left(sheet.levelData, sheet.skills));
+                        if (learn_picks_left(sheet.levelData, sheet.skills) > 0)
+                            ImGui::Text("Learn picks %d",
+                                        learn_picks_left(sheet.levelData, sheet.skills));
+                        // (КНОПКА «Level Up» УМЕРЛА 2026-11-03, M-383: уровень
+                        //  есть функция накопленного опыта и отстать от него не
+                        //  может, значит жать было нечего. Это снятие лишнего
+                        //  шага, а не упрощение: кнопка была единственным местом,
+                        //  где лист мог стоять с полной полосой и прежним
+                        //  уровнем.)
                         ImGui::TableNextColumn();
                         // The [+] sits at ONE x for the whole block: measured
                         // from the widest label plus a three-digit number
@@ -621,7 +624,7 @@ namespace sm::ui
                             if (ImGui::IsItemHovered())
                                 ImGui::SetTooltip("%s", row.effect);
                             ImGui::SameLine(attrPlusX);
-                            ImGui::BeginDisabled(sheet.levelData.attributePoints <= 0);
+                            ImGui::BeginDisabled(attribute_points_left(sheet.levelData, sheet.attributes) <= 0);
                             if (ImGui::SmallButton("+"))
                             {
                                 if (squad_spend_attribute(st, panelSquadH, row.id))
@@ -686,7 +689,7 @@ namespace sm::ui
                                 else
                                     ImGui::TextDisabled("—");
                                 ImGui::SameLine(number_field_x());
-                                ImGui::BeginDisabled(sheet.levelData.learnPicks <= 0);
+                                ImGui::BeginDisabled(learn_picks_left(sheet.levelData, sheet.skills) <= 0);
                                 if (ImGui::SmallButton("Learn"))
                                 {
                                     if (squad_spend_learn(st, panelSquadH, row.id))
@@ -705,7 +708,7 @@ namespace sm::ui
                                 // after the digits, so rank 10 does not push
                                 // it sideways.
                                 ImGui::SameLine(number_field_x());
-                                ImGui::BeginDisabled(sheet.levelData.skillPoints <= 0);
+                                ImGui::BeginDisabled(skill_points_left(sheet.levelData, sheet.skills) <= 0);
                                 if (ImGui::SmallButton("+"))
                                 {
                                     if (squad_spend_skill(st, panelSquadH, row.id))
@@ -729,7 +732,7 @@ namespace sm::ui
                     ImGui::Spacing();
                     ImGui::Text("Perks");
                     ImGui::SameLine();
-                    ImGui::TextDisabled("(%d points)", sheet.levelData.perkPoints);
+                    ImGui::TextDisabled("(%d points)", perk_points_left(sheet.levelData));
                     ImGui::TextDisabled("Points accrue; the constellation graph arrives after the demo.");
                     ImGui::EndTabItem();
                 }

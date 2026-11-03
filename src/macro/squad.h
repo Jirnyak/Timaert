@@ -251,7 +251,7 @@ inline const char* squad_name(const MacroStore& st, std::uint16_t slot) {
 // `LevelData::level = 1` по умолчанию, и `make_character_sheet` клампит
 // `level < 1` в 1 — то есть после этой двери нулевой порог НЕВЫРАЗИМ.
 inline int squad_level(const MacroStore& st, std::uint16_t slot) {
-    return st.sheet[slot].levelData.level;
+    return level_of(st.sheet[slot].levelData);
 }
 
 // ── СКОРОСТЬ КАРТИНКИ — ОДНА ДВЕРЬ, И ВЕЛИЧИНА У НЕЁ «РАССТОЯНИЕ ЗА ВРЕМЯ» ─
@@ -1235,14 +1235,10 @@ inline bool squad_spend_learn(MacroStore& st, MacroHandle h, SkillId id) {
 
 // ── ДВЕРЬ КЛАССА «УРОВЕНЬ ПО КНОПКЕ» (M-301) ─────────────────────────────
 // Отдельный вход в тот же класс, что `squad_award_exp`: опыт уже накоплен, и
-// игрок берёт уровень сам. Своего закона у него нет — та же `try_level_up` и
-// тот же пересчёт.
-inline bool squad_level_up(MacroStore& st, MacroHandle h) {
-    if (!st.valid(h)) return false;
-    if (!try_level_up(st.sheet[h.slot].levelData)) return false;
-    refresh_squad_body(st, h);
-    return true;
-}
+// (`squad_level_up` УМЕРЛА 2026-11-03 вместе с `try_level_up` и самим понятием
+//  «взять уровень»: уровень есть функция накопленного опыта, и отставать от
+//  него он больше не может. Единственным звонящим была кнопка панели, и жать
+//  ей стало нечего — веха пройдена, очки уже доступны.)
 
 // ── ДВЕРИ КЛАССА «НАДЕВАНИЕ» (M-301) ─────────────────────────────────────
 // До этого шага надевание не звало пересчёт НИ ОДНИМ из пяти прод-сайтов

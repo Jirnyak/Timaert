@@ -3158,9 +3158,13 @@ void apply_creation(App& app) {
     const sm::content::StoryChoice* sexes =
         sm::content::creation_sex_choices(sexCount);
     if (cs.sexIdx >= 0 && std::size_t(cs.sexIdx) < sexCount) {
-        const std::string_view v = sexes[cs.sexIdx].value;
-        if (v == "male")   sheet->levelData.skillPoints += 1;
-        if (v == "female") sheet->levelData.attributePoints += 1;
+        // (БОНУС ПОЛА УМЕР 2026-11-03, M-383, вердикт владельца: «ой в жопу
+        //  бонус пола тогда такая мелоч». Он прибавлял мужчине очко скилла, а
+        //  женщине очко атрибута — и под выводимым бюджетом был НЕВЫРАЗИМ:
+        //  записи в счётчик не существует, а дать полу слагаемое в формулу
+        //  «выдано» значило завести НОВЫЙ носитель ровно того рода, который
+        //  правка и снимала.)
+        (void)sexes;
     }
     {
         // The sheet changed wholesale: ceilings follow through THE door, and
@@ -4568,8 +4572,8 @@ void register_console_commands(App& app) {
                 *app.macroStore, sm::player_flag_handle(app.gs), amount);
             auto& ld = sheet->levelData;
             c.printfln(Lvl::Ok, "exp +%d -> level %d (%d gained), %d/%d to next",
-                       amount, ld.level, gained, ld.exp,
-                       sm::exp_to_next_of(ld));
+                       amount, sm::level_of(ld), gained,
+                       sm::exp_in_level_of(ld), sm::exp_to_next_of(ld));
             return true;
         });
 
@@ -4581,21 +4585,22 @@ void register_console_commands(App& app) {
             sm::CharacterSheet* sheet = sm::player_sheet(app.gs, *app.macroStore);
             if (!sheet) { c.printfln(Lvl::Error, "no world"); return false; }
             auto& ld = sheet->levelData;
-            const int before = ld.level;
+            const int before = sm::level_of(ld);
             // Один вход в дверь листа на все N уровней: «добрать опыт до
             // порога и взять уровень» — правка не класса, а отладочная,
             // поэтому идёт ключом (M-301), а пересчёт стоит внутри него.
             sm::edit_squad_sheet(
                 *app.macroStore, sm::player_flag_handle(app.gs),
                 [n](sm::CharacterSheet& s) {
-                    for (int i = 0; i < n; ++i) {
-                        if (s.levelData.exp < sm::exp_to_next_of(s.levelData))
-                            s.levelData.exp = sm::exp_to_next_of(s.levelData);
-                        sm::try_level_up(s.levelData);
-                    }
+                    // Уровень НАСТУПАЕТ, а не берётся (M-383): отладочный ключ
+                    // просто ставит опыт на нужную ступень лестницы.
+                    const int want = sm::level_of(s.levelData) + n;
+                    s.levelData.exp = sm::exp_at_level(want);
                 });
             c.printfln(Lvl::Ok, "level %d -> %d  (%d attr, %d skill pts avail)",
-                       before, ld.level, ld.attributePoints, ld.skillPoints);
+                       before, sm::level_of(ld),
+                       sm::attribute_points_left(ld, sheet->attributes),
+                       sm::skill_points_left(ld, sheet->skills));
             return true;
         });
 
@@ -4775,7 +4780,7 @@ void register_console_commands(App& app) {
                 return true;
             }
             const sm::CharacterSheet* sheet = sm::player_sheet(app.gs, *app.macroStore);
-            const int level = sheet ? sheet->levelData.level : 1;
+            const int level = sheet ? sm::level_of(sheet->levelData) : 1;
             int power = int(sm::affix_power(level, 0));
             sm::dev::arg_int(a, 2, power);
             power = std::clamp(power, 0, 255);
@@ -4907,8 +4912,11 @@ void register_console_commands(App& app) {
             const sm::ecs::Pools& cs = player_pools(app);
             c.printfln(Lvl::Ok,
                        "level %d  exp %d/%d  points: %d attr, %d skill, %d learn",
-                       ld.level, ld.exp, sm::exp_to_next_of(ld), ld.attributePoints,
-                       ld.skillPoints, ld.learnPicks);
+                       sm::level_of(ld), sm::exp_in_level_of(ld),
+                       sm::exp_to_next_of(ld),
+                       sm::attribute_points_left(ld, base.attributes),
+                       sm::skill_points_left(ld, base.skills),
+                       sm::learn_picks_left(ld, base.skills));
             c.printfln(Lvl::Info, "HP %d/%d  MP %d/%d  SP %d/%d", cs.hp,
                        cs.maxHp, cs.mp, cs.maxMp, cs.sp, cs.maxSp);
             for (const auto& d : sm::kAttributeDefs)
@@ -5360,13 +5368,15 @@ void draw_debug_panels(App& app) {
                 const sm::CharacterSheet* ps = sm::player_sheet(app.gs, *app.macroStore);
                 const sm::LevelData ld = ps ? ps->levelData : sm::LevelData{};
                 ImGui::Text("level   %d   (exp %d / %d)",
-                            ld.level, ld.exp, sm::exp_to_next_of(ld));
+                            sm::level_of(ld), sm::exp_in_level_of(ld),
+                            sm::exp_to_next_of(ld));
                 const sm::ecs::Pools& pools = player_pools(app);
                 ImGui::Text("hp      %d / %d", pools.hp, pools.maxHp);
                 ImGui::Text("mp      %d / %d", pools.mp, pools.maxMp);
                 ImGui::Text("sp      %d / %d", pools.sp, pools.maxSp);
                 ImGui::Text("points  attr %d  skill %d",
-                            ld.attributePoints, ld.skillPoints);
+                            ps ? sm::attribute_points_left(ld, ps->attributes) : 0,
+                            ps ? sm::skill_points_left(ld, ps->skills) : 0);
             }
             ImGui::Text("spells  %d learned",
                         sm::spellbook_learned_count(player_book(app)));

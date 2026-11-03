@@ -41,7 +41,8 @@ sm::MacroHandle npc_squad(sm::MacroStore& st, float x, float y,
     st.runtime[h.slot].sub = {};   // доля клетки: центр (M-244a)
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Bandit),
                                    std::uint16_t(faction_index("bandits"))};
-    st.sheet[h.slot].levelData.level = 2;   // уровень — анкета (M-246а)
+    // Ступень — ОПЫТ, и других её носителей нет (M-383).
+    st.sheet[h.slot].levelData.exp = sm::exp_at_level(2);
     st.pools[h.slot] = ecs::Pools{50, 50};
     sm::store_rename_ordinal(st, h, ordinal);
     h = sm::handle_at(st, h.slot);
@@ -280,7 +281,7 @@ void test_the_entity_numbers_are_not_stale() {
     const MacroHandle e = player_squad_handle(gs);
     sm::edit_squad_sheet(*wStore_, e, [](sm::CharacterSheet& s) {
         s.attributes[sm::AttributeId::End] = 5;
-        s.levelData.level = 1;
+        s.levelData.exp = sm::exp_at_level(1);
     });
 
     const int bornMaxSp = wStore_->pools[e.slot].maxSp;
@@ -306,7 +307,7 @@ void test_the_entity_numbers_are_not_stale() {
     wStore_->cell[e.slot].idx = ecs::cell_index(33, 44, 64);
     sm::edit_squad_sheet(*wStore_, e, [](sm::CharacterSheet& s) {
         s.attributes[sm::AttributeId::End] = 12;
-        s.levelData.level = 4;
+        s.levelData.exp = sm::exp_at_level(4);
     });
     ensure_macro_player_entity(gs, *wStore_);
 
@@ -358,7 +359,7 @@ void test_one_door_assembles_every_battle_side() {
     ensure_macro_player_entity(gs, *wStore_);
     player_sheet(gs, *wStore_)->attributes[sm::AttributeId::Str] = 18;
     player_sheet(gs, *wStore_)->attributes[sm::AttributeId::End] = 18;
-    player_sheet(gs, *wStore_)->levelData.level = 5;
+    player_sheet(gs, *wStore_)->levelData.exp = sm::exp_at_level(5);
     // The per-tick walk moves the ceilings after the build change.
     ensure_macro_player_entity(gs, *wStore_);
     const MacroHandle e = player_squad_handle(gs);

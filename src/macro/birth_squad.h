@@ -67,6 +67,13 @@ inline MacroHandle birth_squad(GameState& gs, MacroStore& st, SquadType kind,
         std::strncpy(st.name[h.slot].text, name,
                      sizeof st.name[h.slot].text - 1);
     st.sheet[h.slot]   = squad_birth(kind).sheet;
+    // УРОВЕНЬ = ПРОКАЧКА (вердикт владельца 2026-11-03, M-383): авторская
+    // строка называет РАНГИ, и её опыт выводится из того уровня, который их
+    // оплачивает. Прежде лист таблицы приходил с `level = 1` при тридцатых
+    // ранга́х — безвредно, пока очки были отдельными полями, и отрицательным
+    // бюджетом теперь, когда доступное есть выданное минус потраченное.
+    st.sheet[h.slot].levelData.exp =
+        exp_at_level(level_affording(st.sheet[h.slot]));
     ecs::MacroNpcRuntime rt{};
     rt.state     = std::uint8_t(NPCState::Idle);
     rt.squadType = std::uint8_t(kind);

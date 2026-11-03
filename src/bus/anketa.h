@@ -200,9 +200,26 @@ struct DerivedBonuses {
 
 // ── Level data ─────────────────────────────────────────────────
 
+// ЛИСТ ХРАНИТ ОДНО ЧИСЛО — НАКОПЛЕННЫЙ ОПЫТ. Уровень и все четыре счётчика
+// очков суть ВЫВОД из него и из самого листа, поэтому их здесь нет.
+//
+// Вердикт владельца 2026-11-03: ✓ «а может раз мы опыт всё равно храним убрать
+// кап у скровня и вообще его убрать а сделать уровнеь вычислимым? типа опыт по
+// сути и есть уровнь через квадратичную формулу»; и о бюджете: ✓ «А уровень =
+// прокачка». Значит ВЫДАННОЕ есть функция уровня, ПОТРАЧЕННОЕ — функция самого
+// листа (сумма атрибутов над базой и сумма рангов над выученным), а ДОСТУПНОЕ —
+// их разность. Четыре хранимых счётчика были четырьмя величинами, выводимыми из
+// двух уже хранимых, и расходиться с ними могли молча.
+//
+// ЧТО ЭТО ЗАКРЫЛО ДАРОМ: возврат очка на экране создания перестал быть ПАРОЙ
+// («уменьши ранг И верни счётчик») — достаточно уменьшить ранг, счётчик
+// пересчитается. Пара, у которой половину можно забыть, была ровно тем классом
+// дефекта, что `carryCap` разряда Б (`SCARS.md` «тотал-разряд-Б»).
+//
+// Двери вывода — `tables/progression.h`: `level_of_exp`, `exp_within_level`,
+// `granted_*`; потраченное считают `spent_*` ниже.
 struct LevelData {
-    int level             = 1;
-    int exp               = 0;
+    std::uint32_t exp     = 0;   // КУМУЛЯТИВНЫЙ: только растёт, порог не вычитает
     // (Поле `expToNext` УМЕРЛО 2026-10-18, M-246а — ВТОРОЙ НОСИТЕЛЬ
     //  ВЫВОДИМОЙ ВЕЛИЧИНЫ. Порог следующего уровня ВСЕГДА равен
     //  `exp_to_next_level(level)`, и держать его полем значило иметь два
@@ -213,19 +230,16 @@ struct LevelData {
     //  src/macro/characters.h` строит строки `a{}`): первая же победа
     //  неподвижного сквада давала ему даровой уровень. Дверь — `exp_to_next_of`
     //  ниже; свидетель — `squad_war_test` «один опыт НЕ даёт уровня».)
-    // The creation budget (CANON S14, owner 2026-09-03): 5 attribute points
-    // and 5 LEARN PICKS — a pick teaches a skill (rank 0 → 1), it is not a
-    // rank point. Skill points arrive with levels and spend only into what
-    // is already known.
-    int attributePoints   = 5;
-    int skillPoints       = 0;
-    int learnPicks        = 5;
-    // The third K of the creation budget (CANON S14 1-1-1, owner 2026-09-14):
-    // 5 perk points toward the starting constellation lanes, +1 every level.
-    // The graph they spend into is consciously absent (stub, owner
-    // 2026-09-19) — they accrue, and no door spends them yet.
-    int perkPoints        = 5;
+    // (ЧЕТЫРЕ СЧЁТЧИКА ОЧКОВ — `attributePoints`, `skillPoints`, `learnPicks`,
+    //  `perkPoints` — УМЕРЛИ ЗДЕСЬ 2026-11-03 вместе с полем `level`. Бюджет
+    //  создания 5-5-5 и прибавка 1-1-1 за уровень (CANON S14) никуда не ушли:
+    //  они стоят строками `granted_*@src/tables/progression.h`, а доступное
+    //  считается как выданное минус потраченное. Перк-очки выводятся ТОЧНО,
+    //  потому что графа перков сознательно нет и тратить их нечему.)
 };
+static_assert(sizeof(LevelData) == 4,
+              "лист хранит ОДНО число — накопленный опыт; уровень и очки суть "
+              "вывод (M-383)");
 
 // (No `attribute_value` switches either. A score is `attributes[AttributeId::X]`
 // — an index into a flat array — so there is nothing to switch on, and naming
@@ -241,13 +255,69 @@ struct LevelData {
 // a score refuses rather than rolls over.
 constexpr int kMaxAttributeScore = 255;
 
-inline bool spend_attribute_point(LevelData& ld, Attributes& a, AttributeId id) {
-    if (id >= AttributeId::Count || ld.attributePoints <= 0) return false;
+// ── ПОТРАЧЕНО — ФУНКЦИЯ САМОГО ЛИСТА ──────────────────────────────────────
+// Читать лист дешевле, чем держать четвёртый счётчик: атрибутов восемь, рангов
+// тридцать с небольшим, и оба обхода идут по плоским массивам, которые уже в
+// кеше у всякого, кто спрашивает бюджет.
+
+// База каждого атрибута — ЕДИНИЦА (`attribute_bases`), значит потраченное есть
+// сумма превышений над ней. Резервный хвост конверта не считается: обход идёт
+// по РЕАЛЬНЫМ атрибутам.
+inline int spent_attribute_points(const Attributes& a) {
+    int spent = 0;
+    for (int i = 0; i < int(AttributeId::Count); ++i)
+        spent += int(a.of(AttributeId(i))) - 1;
+    return spent;
+}
+
+// Ранг 0 ЕСТЬ «не знаешь» (ЗАКОН ИЗУЧЕНИЯ), поэтому выученное — это ранг ≥ 1,
+// а очки ранга — превышение над единицей, в которую вывело учение.
+inline int learned_skill_count(const Skills& s) {
+    int known = 0;
+    for (int i = 0; i < int(SkillId::Count); ++i)
+        if (s.of(SkillId(i)) != 0) ++known;
+    return known;
+}
+inline int spent_skill_points(const Skills& s) {
+    int spent = 0;
+    for (int i = 0; i < int(SkillId::Count); ++i) {
+        const int rank = int(s.of(SkillId(i)));
+        if (rank > 0) spent += rank - 1;
+    }
+    return spent;
+}
+
+// ── ДОСТУПНО — ВЫДАННОЕ МИНУС ПОТРАЧЕННОЕ, И КЛАМПА ЗДЕСЬ НЕТ ─────────────
+// Отрицательное значение возможно ровно тогда, когда лист получил ранги, не
+// оплаченные его уровнем, — и тогда оно обязано быть ВИДНО (ЗАКОН КЛАМПА:
+// кламп внутри живой динамики маскирует отсутствие обратной связи). Авторские
+// анкеты от этого защищены по построению: их опыт выводится из уровня, который
+// их же ранги оплачивает (`squad_birth@src/macro/characters.h`).
+inline int attribute_points_left(const LevelData& ld, const Attributes& a) {
+    return granted_attribute_points(level_of_exp(ld.exp))
+           - spent_attribute_points(a);
+}
+inline int skill_points_left(const LevelData& ld, const Skills& s) {
+    return granted_skill_points(level_of_exp(ld.exp)) - spent_skill_points(s);
+}
+inline int learn_picks_left(const LevelData& ld, const Skills& s) {
+    return granted_learn_picks(level_of_exp(ld.exp)) - learned_skill_count(s);
+}
+// ПЕРК-ОЧКИ ВЫВОДЯТСЯ ТОЧНО, потому что тратить их нечему: графа перков
+// сознательно нет (вердикт-заглушка владельца 2026-09-19), значит потраченное
+// тождественно ноль, и вычитать не из чего.
+inline int perk_points_left(const LevelData& ld) {
+    return granted_perk_points(level_of_exp(ld.exp));
+}
+
+inline bool spend_attribute_point(const LevelData& ld, Attributes& a,
+                                  AttributeId id) {
+    if (id >= AttributeId::Count) return false;
+    if (attribute_points_left(ld, a) <= 0) return false;
     std::uint8_t& score = a[id];
     if (int(score) >= kMaxAttributeScore) return false;
     ++score;
-    --ld.attributePoints;
-    return true;
+    return true;   // счётчика нет: доступное пересчитается само
 }
 
 // ── THE LEARN LAW (CANON S14, owner 2026-09-03) ────────────────
@@ -271,25 +341,23 @@ inline bool learn_skill(Skills& s, SkillId id) {
 // A creation pick is a learn with a budget: 5 at character creation
 // (default_level_data), consumed through this door so the pool cannot
 // over-spend and a refused learn keeps the pick.
-inline bool spend_learn_pick(LevelData& ld, Skills& s, SkillId id) {
-    if (ld.learnPicks <= 0) return false;
-    if (!learn_skill(s, id)) return false;
-    --ld.learnPicks;
-    return true;
+inline bool spend_learn_pick(const LevelData& ld, Skills& s, SkillId id) {
+    if (learn_picks_left(ld, s) <= 0) return false;
+    return learn_skill(s, id);   // счётчика нет: выученное и есть потраченное
 }
 
 // The cap is enforced HERE, at the only door into a skill rank, so no caller
 // can push one past mastery and no formula has to defend itself against a rank
 // nobody could legitimately have. A refused spend keeps the point. Rank 0
 // refuses too — THE learn law above: you cannot train what you do not know.
-inline bool spend_skill_point(LevelData& ld, Skills& s, SkillId id) {
-    if (id >= SkillId::Count || ld.skillPoints <= 0) return false;
+inline bool spend_skill_point(const LevelData& ld, Skills& s, SkillId id) {
+    if (id >= SkillId::Count) return false;
+    if (skill_points_left(ld, s) <= 0) return false;
     std::uint8_t& rank = s[id];
     if (rank == 0) return false;               // unknown: learn first
     if (int(rank) >= kMaxSkillRank) return false;
     ++rank;
-    --ld.skillPoints;
-    return true;
+    return true;   // счётчика нет: сумма рангов и есть потраченное
 }
 
 // ── КРИВАЯ УЕХАЛА В ОБЩИЙ СЛОЙ ─────────────────────────────────
@@ -310,11 +378,20 @@ inline Skills     default_skills()     { return {}; }
 
 inline LevelData default_level_data() { return LevelData{}; }
 
-// ПОРОГ СЛЕДУЮЩЕГО УРОВНЯ — ВЫВОД, А НЕ ПОЛЕ (M-246а): одна дверь над
-// уровнем анкеты. Выведенное не может разъехаться с источником по
-// построению — ровно то, чего не умело поле.
+// ── УРОВЕНЬ ЛИСТА — ОДНА ДВЕРЬ НАД НАКОПЛЕННЫМ ОПЫТОМ ──────────────────────
+// Поле `level` умерло 2026-11-03 (M-383) тем же доводом, которым за месяц до
+// него умерло `expToNext` (M-246а): ВЫВОДИМОЕ НЕ ХРАНИТСЯ. Разъехаться с опытом
+// теперь невыразимо.
+inline int level_of(const LevelData& ld) { return level_of_exp(ld.exp); }
+
+// ПОРОГ ТЕКУЩЕЙ СТУПЕНИ и ПРОГРЕСС ВНУТРИ НЕЁ — то, что рисует полоса. Прежде
+// прогресс и лежал в поле `exp`, потому что уровень ВЫЧИТАЛ порог; теперь
+// запись монотонна, а вычитание делает читатель.
 inline int exp_to_next_of(const LevelData& ld) {
-    return exp_to_next_level(ld.level);
+    return exp_to_next_level(level_of(ld));
+}
+inline int exp_in_level_of(const LevelData& ld) {
+    return int(exp_within_level(ld.exp));
 }
 
 // (СТАВКА ВОССТАНОВЛЕНИЯ `kRestRegenPctPerHour` ПЕРЕЕХАЛА в
@@ -490,20 +567,18 @@ inline std::int64_t get_overload_penalty(std::int64_t massG,
 // +1 skill point AND +1 perk point EVERY level — 1-1-1, full level isotropy:
 // no «special» levels, no artificial gates. Specialization is held by the
 // perk graph's TOPOLOGY (distance to a keystone), not by point scarcity.
-inline bool try_level_up(LevelData& ld) {
-    // Порог выводится из уровня (M-246а). Минус голый и это законно: `exp`
-    // ЗНАКОВЫЙ, а ЗАКОН ТИПА п.2 и сами двери вычитания (core/subtract.h)
-    // говорят прямо — «знаковой величине минус законен голым»; ниже нуля он
-    // не уходит, потому что порог только что проверен.
-    const int need = exp_to_next_level(ld.level);
-    if (ld.exp < need) return false;
-    ld.exp           -= need;
-    ld.level         += 1;
-    ld.attributePoints += 1;
-    ld.skillPoints     += 1;
-    ld.perkPoints      += 1;
-    return true;
-}
+// ЗДЕСЬ СТОЯЛА `try_level_up`, И ОНА УМЕРЛА 2026-11-03 (M-383) — вместе с самим
+// понятием «взять уровень». Уровень теперь НАСТУПАЕТ: он есть функция
+// накопленного опыта, и порога больше никто не вычитает. Выдача очков 1-1-1 не
+// исчезла, она стала ВЫВОДОМ (`granted_*@src/tables/progression.h`), то есть
+// ровно тем, чего требовал вердикт владельца: ✓ «важно едисннственое это тчобы
+// левел апы давались после перехода вехи уровня» — переход вехи и есть всё
+// событие, а разницу уровней называет `award_exp` ниже.
+//
+// ЧТО ЭТИМ УШЛО ИЗ ИНТЕРФЕЙСА: кнопка «Level Up» (`squad_level_up`), которую
+// игрок жал после набора полосы. Жать стало нечего — веха пройдена, очки уже
+// доступны. Это не упрощение, а снятие ЛИШНЕГО ШАГА: кнопка была единственным
+// местом, где уровень мог отстать от опыта.
 
 // THE way experience is granted, and the only one. Awarding XP and consuming it
 // into levels is a SINGLE act: every source that split them — a quest reward, a
@@ -516,10 +591,16 @@ inline bool try_level_up(LevelData& ld) {
 // hence the loop. Returns how many levels it produced, which is what a caller
 // needs to say so, and 0 for a grant that only fills the bar.
 inline int award_exp(LevelData& ld, int amount) {
-    if (amount > 0) ld.exp += amount;
-    int gained = 0;
-    while (try_level_up(ld)) ++gained;
-    return gained;
+    if (amount <= 0) return 0;
+    const int before = level_of_exp(ld.exp);
+    // НАСЫЩЕНИЕ, А НЕ ЗАВОРОТ. Кумулятив влезает в u32 с запасом ×7 над верхом
+    // лестницы (static_assert у таблицы порогов), то есть переполнение требует
+    // сотен тысяч убийств СВЕРХ максимального уровня — но беззнаковый заворот
+    // положил бы на лист ноль опыта и обнулил уровень, а это ровно тот дюп из
+    // воздуха, против которого стоит ЗАКОН ТРЁХ ДВЕРЕЙ. Потолок назван.
+    const std::uint32_t room = 0xFFFFFFFFu - ld.exp;
+    ld.exp += std::uint32_t(amount) < room ? std::uint32_t(amount) : room;
+    return level_of_exp(ld.exp) - before;
 }
 
 // The wis dividend (owner ruling 2026-08-05: the first formerly-dead
@@ -1349,9 +1430,33 @@ struct CharacterSheet {
 // 1.69 МиБ, и число теперь названо тем, чем оно является.
 // 108 → 104 (2026-10-18, M-246а): из блока уровня ушёл `expToNext` (4 Б) —
 // порог следующего уровня ВЫВОДИТСЯ из уровня, а не хранится вторым полем.
-static_assert(sizeof(CharacterSheet) == 104,
-              "анкета = атрибуты 16 + скиллы 64 + уровень 24; "
-              "× кап 16384 = 1.63 МиБ резидентно");
+static_assert(sizeof(CharacterSheet) == 84,
+              "анкета = атрибуты 16 + скиллы 64 + ОПЫТ 4; × кап 16384 = "
+              "1.31 МиБ резидентно. 104 → 84 ломтём M-383: уровень и четыре "
+              "счётчика очков стали выводом, минус 320 КиБ на капе");
+
+// ── МИНИМАЛЬНЫЙ УРОВЕНЬ, КОТОРЫЙ ОПЛАЧИВАЕТ ЭТОТ ЛИСТ ─────────────────────
+//
+// Вердикт владельца 2026-11-03: ✓ «А уровень = прокачка». Значит авторская
+// строка называет РАНГИ, а её опыт ВЫВОДИТСЯ из того уровня, который эти ранги
+// оплачивает. Без этого лист, собранный таблицей мимо двери рождения, показывал
+// бы ОТРИЦАТЕЛЬНЫЙ бюджет: город несёт 125 очков ранга при выданных нулём.
+//
+// Обращение простое, потому что выданное монотонно по уровню:
+// `5 + (L−1) ≥ потрачено_атрибутов` ⇒ `L ≥ потрачено − 4`;
+// `(L−1) ≥ потрачено_рангов`        ⇒ `L ≥ потрачено + 1`.
+//
+// УЧЕНИЯ ОБРАТИТЬ НЕЛЬЗЯ, И ЭТО НАЗВАНО: их выдано ПЯТЬ на всю жизнь, значит
+// строка, выучившая шестой навык, неоплатна на ЛЮБОМ уровне. Свидетель
+// `sheet_registry_test` судит это по всей таблице рождения.
+inline int level_affording(const CharacterSheet& cs) {
+    const int needAttr  = spent_attribute_points(cs.attributes);
+    const int needSkill = spent_skill_points(cs.skills);
+    int level = 1;
+    if (needAttr - kCreationBudget + 1 > level) level = needAttr - kCreationBudget + 1;
+    if (needSkill + 1 > level)                 level = needSkill + 1;
+    return level > kMaxTier ? kMaxTier : level;
+}
 
 // ── ТОРГОВАЯ СИЛА АНКЕТЫ — ОДНА ДВЕРЬ НА ВЕСЬ МИР (CANON S25) ─────────────
 // Сделка двусторонняя, и обе стороны называют ОДНО число — финальное
@@ -1441,12 +1546,11 @@ inline CharacterSheet make_character_sheet(NPCType role, int level,
     if (level < 1) level = 1;
 
     CharacterSheet cs;
-    cs.levelData           = default_level_data();
-    cs.levelData.level     = level;
-    cs.levelData.exp       = 0;
-    cs.levelData.attributePoints = 5 + (level - 1);
-    cs.levelData.skillPoints     = (level - 1);
-    cs.levelData.perkPoints      = 5 + (level - 1);
+    // ОПЫТ СТАВИТСЯ СРАЗУ НА ТРЕБУЕМУЮ СТУПЕНЬ, и больше ставить нечего:
+    // уровень из него выводится, бюджет очков — из уровня. Прежде здесь
+    // выписывались ЧЕТЫРЕ счётчика, то есть четыре величины, выводимые из
+    // этой одной.
+    cs.levelData.exp = exp_at_level(level);
 
     // Веса роли — КОЛОНКИ строки каталога (M-263, 2026-10-12): таблицы
     // `kRoleWeights` по тому же ординалу больше нет.
@@ -1465,7 +1569,7 @@ inline CharacterSheet make_character_sheet(NPCType role, int level,
     csheet_detail::SheetRng skillRng{
         csheet_detail::mix32(seed, std::uint32_t(role), 0x5C11u)};
 
-    while (cs.levelData.attributePoints > 0) {
+    while (attribute_points_left(cs.levelData, cs.attributes) > 0) {
         const int pick = csheet_detail::weighted_pick(attrW.w, attrRng.next());
         if (!spend_attribute_point(cs.levelData, cs.attributes,
                                    AttributeId(std::uint8_t(pick))))
@@ -1475,7 +1579,7 @@ inline CharacterSheet make_character_sheet(NPCType role, int level,
     // pick that lands on a known skill rerolls, and if the row runs out of
     // distinct weighted skills (a narrow beast), the pick learns the first
     // still-unknown weighted skill instead of spinning.
-    while (cs.levelData.learnPicks > 0) {
+    while (learn_picks_left(cs.levelData, cs.skills) > 0) {
         bool learned = false;
         for (int attempt = 0; attempt < 16 && !learned; ++attempt) {
             const int pick =
@@ -1492,7 +1596,7 @@ inline CharacterSheet make_character_sheet(NPCType role, int level,
     }
     // LEVELS: points spend only into the learned set (THE learn law) — the
     // weights are re-read through a mask so an unknown skill cannot draw.
-    while (cs.levelData.skillPoints > 0) {
+    while (skill_points_left(cs.levelData, cs.skills) > 0) {
         std::uint8_t known[std::size_t(SkillId::Count)] = {};
         for (int i = 0; i < int(SkillId::Count); ++i)
             if (cs.skills.rank[std::size_t(i)] > 0

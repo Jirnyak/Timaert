@@ -142,7 +142,7 @@ void test_spawn_births_the_row() {
     // Индивид владеет листом (посадки А/Б) — и уровень строки дошёл.
     const CharacterSheet* own = owned_sheet(*wStore_, e);
     CHECK_OR_RETURN(own != nullptr, "the design character OWNS his sheet");
-    CHECK(own->levelData.level == int(row.level),
+    CHECK(sm::level_of(own->levelData) == int(row.level),
           "the row's level reached the owned sheet");
     // Здесь стояла проверка СОГЛАСИЯ колонки `ecs::NpcLevel` с анкетой — она
     // охраняла сам дубль, и её субъект умер вместе с колонкой (M-246а).
@@ -272,7 +272,8 @@ void test_king_peasant_births_by_home_faction() {
           "his faction is his OWN registry row");
     const CharacterSheet* own = owned_sheet(stk, king);
     CHECK_OR_RETURN(own != nullptr, "the king OWNS his sheet");
-    CHECK(own->levelData.level == 70, "the level-70 roll reached the sheet");
+    CHECK(sm::level_of(own->levelData) == 70,
+          "the level-70 roll reached the sheet");
     // Лестница: приказов нет — ступень анкеты, доказуемо не строка типа
     // (Peasant.ai = Gatherer).
     const auto& kind = stk.kind[king.slot];

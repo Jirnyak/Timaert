@@ -138,7 +138,8 @@ ShellResult draw_character_creation(CreationState& cs) {
         ImGui::TableNextColumn();
         ImGui::Text("Attributes");
         ImGui::SameLine();
-        ImGui::TextDisabled("(%d points left)", ld.attributePoints);
+        ImGui::TextDisabled("(%d points left)",
+                            attribute_points_left(ld, cs.sheet.attributes));
         for (const AttributeDef& row : kAttributeDefs) {
             ImGui::PushID(row.label);
             ImGui::Text("%s %d", row.label, cs.sheet.attributes.of(row.id));
@@ -146,12 +147,16 @@ ShellResult draw_character_creation(CreationState& cs) {
             ImGui::SameLine(120);
             ImGui::BeginDisabled(cs.sheet.attributes.of(row.id) <= 1);
             if (ImGui::SmallButton("-")) {
+                // ВОЗВРАТ СТАЛ ОДНОЙ ПОЛОВИНОЙ (M-383): доступное есть
+                // «выданное минус потраченное», значит уменьшить ранг и
+                // ЕСТЬ вернуть очко. Пара, у которой можно забыть вторую
+                // половину, здесь больше невыразима.
                 --cs.sheet.attributes[row.id];
-                ++ld.attributePoints;
             }
             ImGui::EndDisabled();
             ImGui::SameLine();
-            ImGui::BeginDisabled(ld.attributePoints <= 0);
+            ImGui::BeginDisabled(
+                attribute_points_left(ld, cs.sheet.attributes) <= 0);
             if (ImGui::SmallButton("+"))
                 spend_attribute_point(ld, cs.sheet.attributes, row.id);
             ImGui::EndDisabled();
@@ -160,7 +165,7 @@ ShellResult draw_character_creation(CreationState& cs) {
         ImGui::Spacing();
         ImGui::Text("Perks");
         ImGui::SameLine();
-        ImGui::TextDisabled("(%d points)", ld.perkPoints);
+        ImGui::TextDisabled("(%d points)", perk_points_left(ld));
         // Honest, not coy: the third currency accrues (5 at creation, +1
         // every level — CANON S14 5-5-5/1-1-1), the constellation graph it
         // spends into is consciously absent for the demo (owner 2026-09-19).
@@ -171,7 +176,7 @@ ShellResult draw_character_creation(CreationState& cs) {
         ImGui::Text("Skills");
         ImGui::SameLine();
         ImGui::TextDisabled("(%d picks left — a pick learns a skill)",
-                            ld.learnPicks);
+                            learn_picks_left(ld, cs.sheet.skills));
         if (ImGui::BeginChild("##skill_list", ImVec2(0, 330), true)) {
             for (const SkillDef& row : kSkillDefs) {
                 ImGui::PushID(row.label);
@@ -180,13 +185,15 @@ ShellResult draw_character_creation(CreationState& cs) {
                     ImGui::Text("%s", row.label);
                     ImGui::SameLine(200);
                     if (ImGui::SmallButton("x")) {
-                        cs.sheet.skills[row.id] = 0;   // creation-only refund
-                        ++ld.learnPicks;
+                        // Та же одна половина: забыть навык И ЕСТЬ вернуть
+                        // учение (M-383).
+                        cs.sheet.skills[row.id] = 0;
                     }
                 } else {
                     ImGui::TextDisabled("%s", row.label);
                     ImGui::SameLine(200);
-                    ImGui::BeginDisabled(ld.learnPicks <= 0);
+                    ImGui::BeginDisabled(
+                        learn_picks_left(ld, cs.sheet.skills) <= 0);
                     if (ImGui::SmallButton("Learn"))
                         spend_learn_pick(ld, cs.sheet.skills, row.id);
                     ImGui::EndDisabled();
@@ -586,7 +593,7 @@ void draw_player_hud(const GameState& gs, const MacroStore& st,
     char nameBuf[64];
     std::snprintf(nameBuf, sizeof(nameBuf), "%s  Lv %d   %d / %d EXP",
         gs.player.name.empty() ? "Wanderer" : gs.player.name.c_str(),
-        hudLevel.level, hudLevel.exp,
+        sm::level_of(hudLevel), sm::exp_in_level_of(hudLevel),
         sm::exp_to_next_of(hudLevel));
     const float nw = ImGui::CalcTextSize(nameBuf).x;
     ImGui::SameLine(vp.x - nw - 14.0f);

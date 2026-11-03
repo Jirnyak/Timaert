@@ -91,7 +91,13 @@ void test_snapshot_round_trips_the_living_map() {
     // Опыт — колонка АНКЕТЫ (M-246а): runtime.xp умер со вторым законом
     // роста, а закон «кампании лорда переживают сейв» остался и держится
     // на той величине, которая опыт и есть.
-    wStore_->sheet[a.slot].levelData.exp = 777;
+    //
+    // СТУПЕНЬ И КАМПАНИИ — ОДИН НОСИТЕЛЬ (M-383), И ПОТОМУ ОНИ СКЛАДЫВАЮТСЯ.
+    // Здесь стояло голое `exp = 777`, и это ЗАТИРАЛО пятую ступень, с которой
+    // лорд рождён (`specA.avatarLevel`), — проверка уровня ниже судила бы
+    // первую. Опыт, оплачивающий ступень, плюс 777 сверх неё: оба смысла едут
+    // кругом сейва и оба спрашиваются врозь.
+    wStore_->sheet[a.slot].levelData.exp = exp_at_level(5) + 777u;
     wStore_->pools[a.slot].sp = -15;
     wStore_->cell[a.slot].idx = ecs::cell_index(25, 21, 64);
     wStore_->pools[b.slot].hp = 0.0f;
@@ -145,7 +151,7 @@ void test_snapshot_round_trips_the_living_map() {
 
     const MacroHandle a2 = find_by_ordinal(*w2Store_, ordinalA);
     CHECK_OR_RETURN(w2Store_->valid(a2), "avatar A restored under his ordinal");
-    CHECK(w2Store_->sheet[a2.slot].levelData.exp == 777,
+    CHECK(exp_in_level_of(w2Store_->sheet[a2.slot].levelData) == 777,
           "the avatar's campaigns (xp) survive the save");
     CHECK(w2Store_->pools[a2.slot].sp == -15,
           "the avatar's exhaustion debt survives the save");
@@ -240,8 +246,9 @@ void test_resnapshot_is_byte_identical() {
     CHECK_OR_RETURN(wStore_->valid(a), "squad A spawned");
     // ОПЫТ — КОЛОНКА АНКЕТЫ (M-246а): поле runtime.xp умерло вместе со
     // вторым законом роста, и закон «кампании лорда переживают сейв»
-    // держится теперь на той величине, которая опыт и есть.
-    owned_sheet(*wStore_, a)->levelData.exp = 777;
+    // держится теперь на той величине, которая опыт и есть. Кумулятив несёт
+    // И СТУПЕНЬ (M-383), поэтому прибавляется к ней, а не заменяет её.
+    owned_sheet(*wStore_, a)->levelData.exp = exp_at_level(5) + 777u;
     CHECK_OR_RETURN(owned_sheet(*wStore_, a) != nullptr,
                     "named lord owns his sheet");
     owned_sheet(*wStore_, a)->attributes[AttributeId::End] = 13;
