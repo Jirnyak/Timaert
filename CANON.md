@@ -4474,12 +4474,12 @@ Ruin 0.5, остальные 1.0), то есть отвечала «что эт�
    файлах**. Поимённо: алиас `SquadUpkeep@src/ecs/components.h`, колонка
    `roster` в `SM_MACRO_STORE_COLUMNS@src/macro/store.h`, строка стека и пин
    `sizeof(ecs::SquadUpkeep) == 72` в `src/core/stacks.h`, ряд ведомости
-   `MacroStock::Creatures@src/macro/macro_stock.h`, двери `upkeep_bill`,
+   `MacroStock::Creatures@src/tables/stock_key.h`, двери `upkeep_bill`,
    `upkeep_season_window`, `find_creatures`, `UpkeepBill`, `UpkeepWindowOutcome`.
    **ИСПОЛНЕНО, И СНОС ОКАЗАЛСЯ РАСЩЕПЛЕНИЕМ — ЭТО И ЕСТЬ ДОКАЗАТЕЛЬСТВО, ЧТО
    СЛОВО ВРАЛО:** одно имя стояло на ДВУХ разных вещах. Тип (два долга) стал
    `Upkeep@src/macro/upkeep.h` — ведомость СОДЕРЖАНИЯ; строка ведомости,
-   снимающая существо из инвентаря, стала `Creatures@src/macro/macro_stock.h`
+   снимающая существо из инвентаря, стала `Creatures@src/tables/stock_key.h`
    (ординал 2 не двинулся, двинулось только имя). Семейство «голова» стало
    существом: `CreatureRef`, `creature_count`, `creatures_range`,
    `bleed_creatures`. Одним `sed` это не бралось, и ещё три ловушки назвал

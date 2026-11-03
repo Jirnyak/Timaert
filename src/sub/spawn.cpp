@@ -11,7 +11,7 @@
 #include "ecs/npc_character.h"
 #include "core/rng.h"
 #include "tables/npc.h"
-#include "macro/macro_stock.h"
+#include "tables/stock_key.h"   // MacroStock/MacroStockKey — словарь расписки
 #include "tables/forest.h"
 #include "macro/squad.h"              // sheet_of — THE door to "who is this"
 #include "sub/record.h"

@@ -32,15 +32,21 @@
 // Planting, building, settling people are the positive direction and will need
 // no new machinery when they arrive.
 //
-// LAYERING. This header is the INTERFACE — an enum, a key and the stamp — and
-// deliberately knows nothing of GameState, so spawners (sub/) can borrow
-// without dragging macro state into their translation unit. The rows, which do
-// touch GameState and the tree layer, live in macro_stock.cpp.
+// LAYERING. This header is the INTERFACE — a key and the rows over it — and
+// deliberately knows nothing of GameState, so the day loop can borrow without
+// dragging macro state into its translation unit. The rows, which do touch
+// GameState and the tree layer, live in macro_stock.cpp.
+//
+// СЛОВАРЬ ВЕДОМОСТИ (`MacroStock` + `MacroStockKey`) УЕХАЛ в tables/stock_key.h
+// ломтём 1б эпика пакетов v1: его называет расписка субмира, а §11 запрещает
+// субмиру включать macro/. Здесь остались ПОДПИСИ с `MacroWorld` — то есть
+// состояние мира, которому в нейтральном слое места нет.
 #pragma once
 
 #include "ecs/components.h"
 #include "macro/macro_world.h"
 #include "macro/resource_field.h"
+#include "tables/stock_key.h"
 
 // entt этот модуль больше не трогает: последнее касание (stamp_macro_debt,
 // писавший компонент на тело сцены) уехало в sub/spawn.h ломтём 4 M-150.
@@ -56,60 +62,6 @@ namespace sm {
 // от зерна» (owner's anchor, CANON S10). Public so crop_stock_test derives
 // its expectation from the SAME number the law reads.
 inline constexpr int kWheatSeasonsToRegrow = 1;
-
-// The borrowable quantities. One row per value in the table (macro_stock.cpp);
-// the enum value IS the row index, and ecs::MacroDebt stores it as a plain byte
-// so the ECS layer never has to learn this header exists.
-enum class MacroStock : std::uint8_t {
-    TreeCount = 0,   // macro/tree_layer.h — the forest standing in one cell
-    Creatures,       // СУЩЕСТВО ВЫШЛО ИЗ КОНТЕЙНЕРА СКВАДА — один вопрос мира
-                     //   и ОДИН ряд на него (M-324). Город, деревня, корован,
-                     //   артель: все они сквады с инвентарём, и горожанин,
-                     //   убитый в субмире, списывается ровно так же, как
-                     //   охранник корована. Здесь стоял второй ряд
-                     //   `Population`, делавший то же самое через
-                     //   place-фильтр субъекта, — снесён вместе с фильтром
-    FaunaCount,      // the wild headcount of one cell — the Fauna row's own
-                     //   stored field (GameState::faunaField, M-371)
-    CropCount,       // the standing wheat of one cell (fertility-derived
-                     //   estimate − GameState::cropOverrides harvest scar)
-    FeatureNumber,          // ЧИСЛО ФИЧИ клетки (единое плоское поле GameState::featureNumber,
-                     //   ЗАКОН ПОЛЯ п.3: смысл задаёт стоящая фича — заряд орба,
-                     //   руда шахты, зерно пашни). Ряд рождён ломтём 5 эпика
-                     //   фрейма: дренаж орба субмиром едет СТРОКОЙ ДЕЛЬТЫ, а
-                     //   строка адресует ведомость, не голую дверь feature_number_write.
-    // (Garrison УНИЧТОЖЕН 2026-09-30, v122: сословия «гарнизон» больше нет —
-    // все души места лежат головами в ОДНОМ его инвентаре, и строка
-    // `Creatures` выше адресует их всех, именную по entityId и генерика по
-    // {роду, уровню}. Две строки на один контейнер были вторым словарём —
-    // и `Population` была ТРЕТЬЕЙ, пережившей этот же приговор на год.)
-    Count,
-};
-
-// Where a stock lives. Everything in the world sits in a macro cell; a stock
-// belonging to a NAMED thing standing in that cell also carries its id.
-struct MacroStockKey {
-    std::int32_t subject = 0;   // settlement / village id; -1 = the cell itself
-                                 //   (the creature row: the squad's MacroSpawnId)
-    std::int16_t cellX = 0;
-    std::int16_t cellY = 0;
-    // Which row WITHIN the subject, when the stock is a TABLE rather than a
-    // count. The creature row stores the member's SoldierRecord::entityId (a bit
-    // pattern — ids may use the high bit); -1 = no name, the stock is a plain
-    // number. Anonymous rows ignore it, so every existing key stays valid.
-    std::int32_t detail = -1;
-    // The GENERIC soul's name (CANON S4: a stack member has no entityId, it
-    // IS its {kind, level}). detailLevel > 0 marks the pair live — kind
-    // alone cannot, because Peasant is row 0. A named key may carry the pair
-    // too; the strike door prefers the entityId when one exists.
-    std::uint16_t detailKind = 0;
-    std::int16_t  detailLevel = 0;
-    // (v54/M-37) The register bit is gone: every place draws its id from
-    // the ONE subject issuer (nextMacroSpawnOrdinal), so the id names the place.
-    // The bit existed because cities and villages were numbered from zero
-    // independently — killing ten peasants in village 3 took ten souls off
-    // CITY 3 on the other side of the map.
-};
 
 // THE envelope of world layers lives in macro/macro_world.h (CANON S6) — the
 // rows below read and pay the world through it.

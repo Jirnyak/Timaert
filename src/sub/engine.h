@@ -9,7 +9,7 @@
 #include <vector>
 #include "core/rng.h"
 #include "core/time.h"
-#include "macro/audio.h"     // SfxId — the one sound vocabulary (pending sfx)
+#include "tables/sfx.h"      // SfxId — the one sound vocabulary (pending sfx)
 #include "bus/fact.h"       // FactKind/WorldFact — строки рода 5
 #include "bus/delta.h"       // ДЕЛЬТА — обратный поток шва (член delta_)
 #include "macro/macro_world.h" // конверт MacroWorld — член mw_ (значением);
@@ -649,7 +649,7 @@ public:
     int combat_log_count() const { return combatLogCount_; }
     const CombatLogEntry* combat_log_entry(int index) const;
     // One-shot combat SFX queued by this tick's swings/hits, in THE sound
-    // vocabulary (macro/audio.h SfxId — no shadow enum to fall out of step).
+    // vocabulary (tables/sfx.h SfxId — no shadow enum to fall out of step).
     // The app drains this after tick() and hands the ids to AudioSystem:
     // sound is an app-side device exactly like the window, so the engine only
     // states the FACT «a swing happened / a blow landed / the plate rang».

@@ -31,7 +31,7 @@
 #include "macro/state.h"
 #include "macro/entry_context.h"
 #include "tables/npc.h"
-#include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP law
+#include "tables/econ_laws.h" // kGatherPerWorkerDay/sp_price — the harvest SP law
 #include "macro/map_generator.h"
 #include "macro/features.h"
 #include "tables/biomes.h"

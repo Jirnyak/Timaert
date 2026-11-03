@@ -244,8 +244,6 @@ SKELETON.md	macro_stock.cpp:407-416
 SKELETON.md	macro_stock.cpp:440
 SKELETON.md	macro_stock.cpp:607
 SKELETON.md	macro_stock.cpp:610
-SKELETON.md	macro_stock.h:114-116
-SKELETON.md	macro_stock.h:60-74
 SKELETON.md	macro_world.h:68-71
 SKELETON.md	map_data.h:395
 SKELETON.md	map_generator.cpp:185-186

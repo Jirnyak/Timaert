@@ -13,7 +13,14 @@
 #include "tables/biomes.h"
 #include "macro/anketa.h"
 #include "tables/npc.h"
-#include "macro/macro_stock.h"
+#include "tables/stock_key.h"   // MacroStock/MacroStockKey — словарь расписки
+
+// Гладкая память макро-сквадов стоит в ПОДПИСЯХ ниже только ссылкой и
+// указателем, поэтому называется forward-объявлением (§12), а полный тип
+// берёт `.cpp`. Прежде она приезжала ТРАНЗИТОМ через macro/macro_stock.h —
+// переезд словаря ведомости в tables/ ломтём 1б обнажил этот долг подписи
+// (та же находка, что FeatureLayer в ломте 1а).
+namespace sm { struct MacroStore; }
 
 namespace sm::sub {
 

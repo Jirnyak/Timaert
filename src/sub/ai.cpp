@@ -2,7 +2,7 @@
 #include "sub/map_data.h"
 #include "ecs/components.h"
 #include "core/rng.h"
-#include "macro/macro_stock.h" // MacroStock::Creatures — чьи люди стоят без чувств
+#include "tables/stock_key.h"  // MacroStock::Creatures — чьи люди стоят без чувств
 #include "tables/npc.h"   // cruiseM — крейсерская высота рода летуна
 #include "sub/record.h"  // objects_find + slot_macro_record — «без сознания»
                          // читается шовной слот-дверью зеркала
