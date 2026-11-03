@@ -517,9 +517,22 @@ inline void reconcile_rooted_flock(GameState& gs, MacroStore& st,
     }
 }
 
-inline int kill_fallen_squad_creatures(MacroStore& st, GameState& gs,
-                                      EconFactSink sink = nullptr,
-                                      void* user = nullptr) {
+// ── ЗДЕСЬ БЫЛ ПАРАМЕТР `GameState& gs`, И ОН СНЯТ ВМЕСТЕ С ЧУЖОЙ ЗАПИСЬЮ ───
+// Он был нужен РОВНО для `shift_home_flock` (некролог в теле ниже), то есть
+// для того единственного, что эта дверь делать не вправе. Сняв запись, мы
+// сняли и мир из подписи — и это не косметика, а СТЕНА ПОД КОМПИЛЯТОРОМ
+// (§8 п.6: лучшая форма свидетеля — нарушение, которое невозможно собрать):
+// дверь без `GameState` не может написать число поля НИКАК, потому что
+// `feature_number_write` без мира невыразима. Комментарий можно не прочесть,
+// подпись — нельзя.
+//
+// И ОНА ЖЕ СУЖАЕТ КАНАЛ: двое звонящих живут в `src/sub/engine.cpp`, и у них
+// пропал повод доставать `*gs_` — то есть макро-состояние — ради вызова,
+// которому оно не нужно (ЗАКОН ДВУХ МИРОВ п.3: канал узок ПО ПОСТРОЕНИЮ, а не
+// по дисциплине).
+inline int kill_fallen_squad_creatures(MacroStore& st,
+                                       EconFactSink sink = nullptr,
+                                       void* user = nullptr) {
     int killed = 0;
     int souls = 0;
     // The player's own squad is never swept: он не лидер, чьи люди уходят,
@@ -553,10 +566,32 @@ inline int kill_fallen_squad_creatures(MacroStore& st, GameState& gs,
         const int homeSouls = count_human_souls(bag.inv);
         killed += creatures_kill_all(bag.inv);
         souls += homeSouls;
-        // Душа вышла из мира своего дома — число паствы обязано упасть.
-        // Списывается ВСЁ, а не разница «до и после»: отказа у смерти нет,
-        // поэтому намерение и факт здесь — одно и то же.
-        shift_home_flock(gs, st, parent_of(st, sw.slot), -homeSouls);
+        // ЗДЕСЬ СТОЯЛ `shift_home_flock(gs, st, parent_of(st, sw.slot),
+        // -homeSouls)` — ТО ЕСТЬ ЭТА ДВЕРЬ ВЕЛА ЧУЖУЮ ЧАСТНОСТЬ, и вела её
+        // ИЗ ШВА: двое из шести её звонящих живут в `src/sub/engine.cpp`
+        // (жнец мёртвых тел и `leave`). Снято ТОЙ ЖЕ правкой, какой её уже
+        // снял соседний ряд стока (`write_creatures@src/macro/macro_stock.cpp`),
+        // и по тому же вердикту владельца 2026-10-27, дословно: «прописывать
+        // вручную смену поля не надо тут потому что им занимается сам модуль
+        // города … а тут по единой системе просто убийство существа в
+        // субмире». Основание — ЗАКОН КОНТЕЙНЕРА п.3: «Убил кого-то в
+        // субмире — дельта снимает голову из контейнера, и БОЛЬШЕ НИЧЕГО;
+        // прописывать оттуда смену числа поля ЗАПРЕЩЕНО».
+        //
+        // РАЗЛИЧИТЕЛЬ ТОТ ЖЕ ОДИН ВОПРОС: ЦЕЛЬ ЛИ ПОЛЕ У ДЕЙСТВИЯ. У рубки и
+        // копки поле ЕСТЬ предмет способности, поэтому их дельта пишет поле по
+        // праву. У смерти головы целью было ТЕЛО, а число паствы — посторонняя
+        // величина рядом, да ещё и под клеткой ТРЕТЬЕГО сквада (дома павшего).
+        //
+        // И ЗАПИСЬ БЫЛА НЕ НЕСУЩЕЙ, что проверяется построением, а не надеждой:
+        // число паствы сводит `reconcile_rooted_flock@src/macro/squad.h` —
+        // АБСОЛЮТОМ по контейнерам, раз в день (`src/macro/world_tick.cpp`), и
+        // в его проход мёртвый слот не попадает вовсе (гейт `st.dead[slot]`).
+        // Значит ответ не потерян, а передан модулю места, которому он и
+        // принадлежит; инкремент же был разрядом Б по DOD п.9 — дисциплиной
+        // поверх свода, который разойтись не может.
+        // (→ `SCARS.md` «контейнер-пара-дверей»: сведение этой пары в одну
+        //  дверь само стало дефектом — дверь принялась вести чужую частность.)
     }
     // ОДИН ДОКЛАД НА ПРОХОД, А НЕ НА СКВАД: ведомость склада душ отвечает на
     // «сколько мир потерял», и дробить это по трупам значило бы заводить
@@ -1556,7 +1591,7 @@ inline void settle_auto_battle(const MacroWorld& mw,
         loot_fallen_owner(st, loser, st.inventory[winner.slot].inv);
     }
 
-    kill_fallen_squad_creatures(st, gs, mw.econFacts, mw.econFactsUser);
+    kill_fallen_squad_creatures(st, mw.econFacts, mw.econFactsUser);
     // ОДНА дверь оплаты (корень 5): именованный победитель растёт как
     // игрок (лист владеем, WIS-дивиденд, очки копятся), транзиент —
     // прежний бросок.
@@ -1650,7 +1685,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     if (playerWon && macro_dead(st, enemy)) {
         loot_fallen_owner(st, enemy, *playerBag);
     }
-    kill_fallen_squad_creatures(st, gs, mw.econFacts, mw.econFactsUser);
+    kill_fallen_squad_creatures(st, mw.econFacts, mw.econFactsUser);
 
     // Пара Killed+Died — ТА ЖЕ дверь, что у ИИ↔ИИ (хвост 2б, владелец
     // 2026-09-02): осиротевшие дома жертв игрока получают Died, и

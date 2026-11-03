@@ -246,9 +246,11 @@ void test_the_players_men_are_never_swept() {
     const MacroHandle fallen = npc_squad(*wStore_, 30.0f, 30.0f, 7u, 3);
     sm::macro_mark_dead(*wStore_, fallen);
 
-    // Мир нужен двери ПО ЗАКОНУ, а не для удобства: погибшая душа списывается
-    // с паствы своего дома (leave_home_flock).
-    const int killed = kill_fallen_squad_creatures(*wStore_, gs);
+    // МИР ДВЕРИ НЕ ПЕРЕДАЁТСЯ ВОВСЕ, И ЭТО ЗАКОН (ЗАКОН КОНТЕЙНЕРА п.3):
+    // смерть головы меняет КОНТЕЙНЕР и больше ничего, а число паствы дома
+    // ведёт модуль места своим дневным сводом. Здесь стояло «мир нужен двери
+    // ПО ЗАКОНУ» со ссылкой на `leave_home_flock` — ровно наоборот.
+    const int killed = kill_fallen_squad_creatures(*wStore_);
 
     CHECK(killed == 3, "погибли только трое людей павшего НПЦ-лидера");
     // (Прежде рядом стояло `creature_count(gs.deserterPool) == 0` — «ни один

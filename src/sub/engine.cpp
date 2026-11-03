@@ -1666,13 +1666,48 @@ bool SubworldEngine::frame_rows_addressed() const {
 
 // Строка дельты — вверх идут ОПЕРАЦИИ (ЗАКОН ШВА). Перевод словаря субъекта
 // (ключ ведомости «клетка = −1» → закон нуля-ординала «никто = 0») живёт на
-// двух концах канала: здесь и в apply_local_delta. Переполнение — громкий
-// счёт droppedOps, его печатает точка применения.
-static void push_stock_op(DeltaBuffer& d, MacroStock s, const MacroStockKey& k,
-                          int amount, std::uint32_t cell) {
+// двух концах канала: здесь и в apply_local_delta. Отказ собрать строку —
+// громкий счёт droppedOps, его печатает точка применения.
+//
+// ── АДРЕС СТРОКИ СЧИТАЕТСЯ ЗДЕСЬ, И ЭТО ОДИН НОСИТЕЛЬ РЕШЕНИЯ ─────────────
+// ЗДЕСЬ СТОЯЛ ГОТОВЫЙ `std::uint32_t cell`, И ЧЕТЫРЕ ЗВОНЯЩИХ СЧИТАЛИ ЕГО
+// СЕБЕ САМИ ВЫРАЖЕНИЕМ `cell_of(x, y, frame_ ? frame_->side : 1)`. Два
+// дефекта в одном:
+//   · ФОРМА МИРА ПОДМЕНЯЛАСЬ МОЛЧА. Без снимка сторона бралась равной 1, а
+//     `cell_of` сворачивает маской `side - 1`, то есть ЛЮБУЮ клетку в индекс
+//     0 — и `apply_local_delta` разворачивал его обратно УЖЕ ПО `gs->mapW`,
+//     получая клетку (0,0) РЕАЛЬНОГО мира. Операция адресовала не «никуда», а
+//     чужой угол карты, и притом беззвучно. Гейт у этого был РОВНО ОДИН
+//     (`doorlessPocket` у рубки), и он про другой вопрос — про карман без
+//     клетки, а не про отсутствие снимка.
+//   · ДВА ОТВЕТА НА ОДИН ВОПРОС (DOD п.9). Клетка строки и так названа в
+//     ключе (`k.cellX/k.cellY`) — все четыре звонящих передавали ту же пару
+//     дважды, и разъехаться они могли молча. Теперь адрес ВЫВОДИТСЯ из ключа,
+//     то есть расхождение невыразимо.
+// БЕЗ СНИМКА СТРОКА НЕ СОБИРАЕТСЯ ВОВСЕ — это честный отказ, а не нулевой
+// адрес: форму мира (сторону тора) называет РОД 4 пакета, и мимо пакета её
+// взять негде (ЗАКОН КАНОНИЧЕСКОГО ФРЕЙМА п.2). Потеря при этом НАЗВАНА тем
+// же счётом, которым названо переполнение: тихий дроп операции есть мир,
+// соврвший игроку о том, что он сделал (ЗАКОН ДВУХ ТЕМПОВ п.3).
+//
+// СВИДЕТЕЛЬ ЭТОЙ ФОРМЫ — СМОУК-СЮИТА, И ОН ЗАМЕРЕН (2026-11-03, обе
+// полярности; откат `cp` + сверка `cmp` побайтово):
+//   · `op.cell = 0` вместо вывода из ключа — то есть РОВНО то, что делал
+//     молчаливый фолбэк `side = 1`  → КРАСНЫЕ 4 из 63: «a kill underground
+//     did not thin the cell» ×2 и «chop: macro count/revision did not track
+//     the felled tree». Значит путь живой, а правка не вакуумна;
+//   · порядок двух отказов переставлен (ответ тот же) → ЗЕЛЁНЫЕ 63/63.
+// ЧЕГО СВИДЕТЕЛЯ НЕТ, И ЭТО НАЗВАНО ВСЛУХ: самого отказа «снимка нет» не
+// пинит никто — сцена без снимка в сюите не поднимается (`enter@src/sub/engine.cpp`
+// гейтит `!frame` на входе, а оба кармана получают `&app.frame`). То есть
+// отказ сегодня ЗАЩИТНАЯ ФОРМА, и держит её не прогон, а подпись: собрать
+// строку мимо этой двери нечем.
+static void push_stock_op(DeltaBuffer& d, const LocalContext* frame,
+                          MacroStock s, const MacroStockKey& k, int amount) {
+    if (!frame || frame->side <= 0) { ++d.droppedOps; return; }
     if (d.stockCount >= kDeltaStockCap) { ++d.droppedOps; return; }
     StockOp& op = d.stockOps[d.stockCount++];
-    op.cell = cell;
+    op.cell = cell_of(k.cellX, k.cellY, frame->side);
     op.subject = k.subject > 0 ? k.subject : 0;
     op.amount = amount;
     op.detail = k.detail;
@@ -2854,16 +2889,16 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
         // ПРАВИЛЬНЕЕ: субмир СООБЩАЕТ операцию, а есть ли у мира такой слой —
         // вопрос применяющей стороны (ЗАКОН ШВА: «макро не верит значению,
         // оно применяет операцию своими дверями»).
-        push_stock_op(delta_, MacroStock::TreeCount,
+        push_stock_op(delta_, frame_, MacroStock::TreeCount,
                       MacroStockKey{-1, std::int16_t(mcx), std::int16_t(mcy)},
-                      -1, cell_of(mcx, mcy, frame_ ? frame_->side : 1));
+                      -1);
     } else if (!doorlessPocket && victim.kind == Structure::Crop) {
         // One stand cut = one unit off the cell's crop row (the harvest
         // scar): re-entering the cell replants natural yield minus the scar,
         // and the world clock regrows it (crop_daily_regrow).
-        push_stock_op(delta_, MacroStock::CropCount,
+        push_stock_op(delta_, frame_, MacroStock::CropCount,
                       MacroStockKey{-1, std::int16_t(mcx), std::int16_t(mcy)},
-                      -1, cell_of(mcx, mcy, frame_ ? frame_->side : 1));
+                      -1);
     }
     if (outCellX) *outCellX = mcx;
     if (outCellY) *outCellY = mcy;
@@ -3928,14 +3963,12 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 // собирал сам; граница тика применит ведомостью (ломоть 5).
                 if (debt->stock < std::uint8_t(MacroStock::Count)
                     && debt->amount != 0) {
-                    push_stock_op(delta_, MacroStock(debt->stock),
+                    push_stock_op(delta_, frame_, MacroStock(debt->stock),
                                   MacroStockKey{debt->subject, debt->cellX,
                                                 debt->cellY, debt->detail,
                                                 debt->detailKind,
                                                 debt->detailLevel},
-                                  -int(debt->amount),
-                                  cell_of(debt->cellX, debt->cellY,
-                                          frame_ ? frame_->side : 1));
+                                  -int(debt->amount));
                 }
             }
             // The other half of the same law, for the other kind of body. A
@@ -3962,7 +3995,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     // beheaded warband stayed a live squad on the map for as
                     // long as the player kept exploring — and the pool that
                     // raises bandit bands was paid late by exactly that long.
-                    kill_fallen_squad_creatures((*mw_.store), *gs_);
+                    kill_fallen_squad_creatures(*mw_.store);
                 }
             }
             const auto* kind = sub::slot_kind(arena, ds);
@@ -4094,8 +4127,12 @@ void SubworldEngine::leave(bool force) {
         // moment; now its survivors stop being a squad and fall into the
         // deserter pool, out of which the macro sim later raises deserter and
         // bandit bands. First gameplay writer that pool has ever had.
-        if (objects_ && gs_) {
-            kill_fallen_squad_creatures((*mw_.store), *gs_);
+        // Гейт называет СВОЮ посылку, а не соседнюю: дверь разыменовывает
+        // РОВНО стор, и спрашивать у неё сцену и мир было наследством
+        // снятого параметра `GameState&` (а `mw_.store`, который она и правда
+        // разыменовывает, не спрашивал никто).
+        if (mw_.store) {
+            kill_fallen_squad_creatures(*mw_.store);
         }
         // ЗДЕСЬ ОКНО УЕЗЖАЛО В КЭШ СЕССИИ. Снесено 2026-10-19 (M-262): ВСЯКАЯ
         // сцена — и клетка мира, и интерьер — есть ПРОЕКЦИЯ своей
@@ -4649,9 +4686,9 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     // операцией эквивалентно нулю по построению. Only the player can stand
     // here (interactions are his alone), so this write is player-earned by
     // construction, not by a special case.
-    push_stock_op(delta_, MacroStock::FeatureNumber,
+    push_stock_op(delta_, frame_, MacroStock::FeatureNumber,
                   MacroStockKey{-1, std::int16_t(cx), std::int16_t(cy)},
-                  -charge, cell_of(cx, cy, frame_ ? frame_->side : 1));
+                  -charge);
     // The orb burns out of the scene like a felled tree (owning cell data +
     // composite + dirty signals in one call), so its glow dies now — not on
     // the next visit.

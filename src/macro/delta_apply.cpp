@@ -49,8 +49,10 @@ void apply_local_delta(MacroWorld& w, DeltaBuffer& d) {
     // игроку о том, что он сделал (ЗАКОН ДВУХ ТЕМПОВ п.3).
     if (d.droppedOps > 0) {
         std::fprintf(stderr,
-                     "[delta] ДРОП %u операций: кап буфера (%u/%u строк) "
-                     "мал для одного тика — поднять кап, не глотать\n",
+                     "[delta] ДРОП %u операций: либо кап буфера (%u/%u строк) "
+                     "мал для одного тика — поднять кап, не глотать; либо "
+                     "строку нечем адресовать (снимок не назвал стороны "
+                     "тора)\n",
                      d.droppedOps, kDeltaStockCap, kDeltaFactCap);
     }
     d.stockCount = 0;

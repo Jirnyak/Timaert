@@ -4155,11 +4155,14 @@ namespace {
 void settle_exhaustion(MacroHandle e, const ecs::Pools& hp,
                        const TickContext& ctx) {
     if (hp.hp > 0) return;
-    if (!ctx.mw.store || !ctx.mw.gs) return;
+    // (`|| !ctx.mw.gs` снят вместе с параметром `GameState&` у двери ниже:
+    //  предусловие переживало свою причину — ни одна строка этого тела мира
+    //  больше не спрашивает. Условие осталось ровно одно и настоящее: без
+    //  стора `store_ctx` невыразим.)
+    if (!ctx.mw.store) return;
     MacroStore& st = store_ctx(ctx);
     settle_avatar_fraction(st, e, 0.0f);
-    kill_fallen_squad_creatures(st, *ctx.mw.gs,
-                                ctx.mw.econFacts,
+    kill_fallen_squad_creatures(st, ctx.mw.econFacts,
                                 ctx.mw.econFactsUser);
 }
 
@@ -4926,7 +4929,7 @@ void relay_swept_death_(MacroHandle h, void* user) {
 void settle_dead_squads(MacroWorld& mw) {
     GameState& gs = *mw.gs;
     MacroStore& st = *mw.store;
-    kill_fallen_squad_creatures(st, gs, mw.econFacts, mw.econFactsUser);
+    kill_fallen_squad_creatures(st, mw.econFacts, mw.econFactsUser);
     // КОНТЕКСТ СОБИРАЕТСЯ ЗДЕСЬ, И ОН МИНИМАЛЬНЫЙ ПО ЧЕСТНОЙ ПРИЧИНЕ: у
     // свипа мёртвых нет ни кванта думки, ни позиции игрока, ни индекса
     // сквадов — и глаголу `reshape_feature` ничего из этого не нужно. Пустые
