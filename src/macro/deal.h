@@ -35,7 +35,7 @@
 #include <limits>
 #include <span>
 
-#include "macro/econ_day.h"   // EconFactSink: приход в место гасит долг СРАЗУ (CANON S10)
+#include "macro/econ_day.h"   // econ_pay_debt: приход в место гасит долг СРАЗУ (CANON S10)
 #include "tables/items.h"     // item_def_at/item_mass_g — кламп массы прибытия
 
 namespace sm {
@@ -104,8 +104,7 @@ DealFact deal(MacroStore& st,
               std::uint16_t a, std::uint16_t b,
               std::span<DealLine> fromA, std::span<DealLine> fromB,
               std::int64_t massCapToB = kNoCarryLimitG,
-              std::int64_t massCapToA = kNoCarryLimitG,
-              EconFactSink sink = nullptr, void* user = nullptr);
+              std::int64_t massCapToA = kNoCarryLimitG);
 
 // Встречный лот ПО ЗАКОНУ ПЛОТНОСТИ — цена остаётся законом звонящего:
 // та же дверь `densest_value_slot`, какой платит весь мир, только она

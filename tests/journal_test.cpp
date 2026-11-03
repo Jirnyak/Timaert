@@ -82,7 +82,7 @@ void test_participation_locality_and_silence() {
                           50, 50));
     // (b) Somebody else's deed on the player's cell — learned by LOCALITY.
     chronicle_record(gs.chronicle,
-                     fact(1, FactKind::Battle,
+                     fact(1, FactKind::Killed,
                           fact_subject(FactSubject::Squad),
                           777u, 10, 10));
     // (c) Somebody else's deed far away — the world knows, the player DOES
@@ -121,7 +121,7 @@ void test_participation_locality_and_silence() {
     // silent above becomes his the tick he stands on it.
     stand_at(gs, *wStore_, 40, 40);
     chronicle_record(gs.chronicle,
-                     fact(3, FactKind::Battle,
+                     fact(3, FactKind::Killed,
                           fact_subject(FactSubject::Squad),
                           779u, 40, 40));
     player_journal_capture(gs, *wStore_);
@@ -147,7 +147,7 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
                                                             cap - filed);
         for (std::uint32_t i = 0; i < slice; ++i) {
             chronicle_record(gs.chronicle,
-                             fact(int(filed + i) / 256 + 1, FactKind::Battle,
+                             fact(int(filed + i) / 256 + 1, FactKind::Killed,
                                   fact_subject(FactSubject::Squad),
                                   1000u + filed + i, 5, 5));
         }
@@ -161,7 +161,7 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
     // One past the cap: the flag goes up LOUDLY, nothing already learned is
     // dropped (append-only is the owner's law: this is his whole game).
     chronicle_record(gs.chronicle,
-                     fact(300, FactKind::Battle,
+                     fact(300, FactKind::Killed,
                           fact_subject(FactSubject::Squad),
                           999999u, 5, 5));
     player_journal_capture(gs, *wStore_);
@@ -224,10 +224,10 @@ void test_a_captured_copy_carries_no_ring_link() {
 
     // Two facts on one cell: the second's ring slot LINKS to the first.
     chronicle_record(gs.chronicle,
-                     fact(1, FactKind::Battle,
+                     fact(1, FactKind::Killed,
                           fact_subject(FactSubject::Squad), 7u, 5, 5));
     chronicle_record(gs.chronicle,
-                     fact(1, FactKind::Battle,
+                     fact(1, FactKind::Killed,
                           fact_subject(FactSubject::Squad), 8u, 5, 5));
     player_journal_capture(gs, *wStore_);
     CHECK(gs.player.journal.size() == 2

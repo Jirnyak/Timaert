@@ -24,7 +24,7 @@
 #pragma once
 
 #include "macro/currency.h"   // pay_value_dense / inventory_value — плата стоимостью
-#include "macro/econ_day.h"   // econ_pay_debt, hunger_commodity_ordinal, EconFactSink
+#include "macro/econ_day.h"   // econ_pay_debt, hunger_commodity_ordinal
 #include "tables/npc.h"        // npc_board_per_day / soldier_upkeep — счёт по строкам
 #include "bus/upkeep.h"
 #include "bus/world_row.h"  // область существ единого контейнера (M-71)
@@ -97,9 +97,7 @@ inline int unmet_mouths(std::int64_t debt, std::int64_t bill, int heads) {
 // `store` — ЕДИНЫЙ контейнер владельца (M-71): его область существ и есть
 // контейнер, его предметная область и есть склад; суд читает обе.
 inline UpkeepWindowOutcome upkeep_season_window(Upkeep& r, Inventory& store,
-                                                Wellbeing& wb,
-                                                EconFactSink sink,
-                                                void* user) {
+                                                Wellbeing& wb) {
     UpkeepWindowOutcome out{};
     const int boardOrd = hunger_commodity_ordinal();
     if (boardOrd < 0) return out;   // мир без голодной строки не судит никого
@@ -233,29 +231,12 @@ inline UpkeepWindowOutcome upkeep_season_window(Upkeep& r, Inventory& store,
     wb.starvedYesterday =
         std::uint16_t(std::min(out.starved, 0xFFFF));
 
-    // ── ВЕДОМОСТЬ СКЛАДА ДУШ — ДОКЛАД ОТТУДА, ГДЕ СОБЫТИЕ ПРОИСХОДИТ ─────
-    // Два исхода — два факта, и они НЕ альтернатива (M-232). Докладывает
-    // сама дверь, а не звонящий: раньше обе строки писались у звонящего, и
-    // прямой суд над дверью не давал ведомости НИ ОДНОГО факта — свидетель,
-    // гонявший дверь напрямую, считал бы события мира нулём и был бы прав
-    // по букве.
-    // АДРЕСА ДВЕРЬ НЕ ЗНАЕТ и не должна: она видит ОДИН контейнер. Прежде
-    // адрес дописывал релей звонящего, но колонка, в которую он штамповал
-    // (`EconFact::placeId`), не имела читателей НИ ОДНОГО и снесена
-    // 2026-10-25 вместе со всеми тремя релеями — факт уезжает слушателю как
-    // есть.
-    if (out.starved > 0 && sink) {
-        EconFact f{};
-        f.kind = EconFact::Kind::Starved;
-        f.amount = out.starved;
-        sink(user, f);
-    }
-    if (out.walked > 0 && sink) {
-        EconFact f{};
-        f.kind = EconFact::Kind::SoulsDesertedUnpaid;
-        f.amount = out.walked;
-        sink(user, f);
-    }
+    // ── ДВА ИСХОДА СУДА — ДВЕ КОЛОНКИ `out`, И БОЛЬШЕ НИЧЕГО ─────────────
+    // Здесь стоял доклад ведомости склада душ двумя строками — `Starved` и
+    // `SoulsDesertedUnpaid`, — и он умер 2026-11-03 вместе со вторым фактным
+    // путём мира (некролог — `src/macro/econ_day.h`). Оба числа дверь и так
+    // ОТДАЁТ (`out.starved`/`out.walked`), то есть исход не потерян; потерян
+    // СУММАТОР по миру, у которого читателей в мире не было ни одного.
 
     // ── 2. НОВЫЙ СЧЁТ по составу ПОСЛЕ убыли, ПЕРЕЗАПИСЬЮ ────────────────
     // Старая недоимка не переносится: взыскали — выставили новый. Поэтому
@@ -287,7 +268,7 @@ inline UpkeepWindowOutcome upkeep_season_window(Upkeep& r, Inventory& store,
     // стоял гейт по голодной строке — он был верен, пока комфортных строк у
     // этой двери не было, и стал бы немым пропуском ровно в тот день, когда
     // они появились: посевной амбар платил бы по хлебу и не платил по ткани.
-    econ_pay_debt(store, r.needDebt, sink, user);
+    econ_pay_debt(store, r.needDebt);
     if (r.wageDebt > 0) {
         const std::int64_t canPay =
             std::min<std::int64_t>(r.wageDebt, inventory_value(store));

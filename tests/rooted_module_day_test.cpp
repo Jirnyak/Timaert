@@ -56,7 +56,7 @@
 #include "bus/store.h"         // parent_of / tithe_of / set_relation
 #include "bus/world_row.h"     // count_human_souls
 #include "macro/chronicle.h"
-#include "macro/econ_day.h"      // kCreaturesPerCityWorker, EconFact
+#include "macro/econ_day.h"      // kCreaturesPerCityWorker, econ_produce_day
 #include "bus/interests.h"
 #include "macro/resource_field.h"
 #include "macro/squad.h"
@@ -97,34 +97,11 @@ TerrainData all_land() {
     return td;
 }
 
-// ВЕДОМОСТЬ ФАКТОВ — `switch` ПО ВСЕМ `Kind` БЕЗ `default:`: новый род
-// ведомости назовёт `-Wswitch` сам, и прибор не проглотит его молча
-// (ЗАКОН СЛОВАРЯ п.4). Ординал 7 в оси пуст — перечислять нечего.
-struct FactTally {
-    int gathered = 0, produced = 0, starved = 0, consumed = 0;
-    int minted = 0, scrapped = 0;
-    int soulsBorn = 0, soulsDeserted = 0, soulsKilled = 0;
-    int producedUnits = 0;
-    int producedCommodity = -1;
-};
-void tally_sink(void* user, const EconFact& f) {
-    FactTally& t = *static_cast<FactTally*>(user);
-    switch (f.kind) {
-        case EconFact::Kind::Gathered: ++t.gathered; break;
-        case EconFact::Kind::Produced:
-            ++t.produced;
-            t.producedUnits += f.amount;
-            t.producedCommodity = f.commodity;
-            break;
-        case EconFact::Kind::Starved:  ++t.starved;  break;
-        case EconFact::Kind::Consumed: ++t.consumed; break;
-        case EconFact::Kind::Minted:   ++t.minted;   break;
-        case EconFact::Kind::Scrapped: ++t.scrapped; break;
-        case EconFact::Kind::SoulsBorn: ++t.soulsBorn; break;
-        case EconFact::Kind::SoulsDesertedUnpaid: ++t.soulsDeserted; break;
-        case EconFact::Kind::SoulsKilled: ++t.soulsKilled; break;
-    }
-}
+// (ВЕДОМОСТЬ ФАКТОВ `FactTally` + `tally_sink` СТОЯЛИ ЗДЕСЬ — `switch` по
+//  всем девяти родам `EconFact::Kind` без `default:`. Умерли 2026-11-03 вместе
+//  со вторым фактным путём мира: некролог и вердикт владельца — в шапке
+//  `src/macro/econ_day.h`. Что с ними ушло из ЭТОГО прибора, названо у
+//  утверждений о выпуске ниже.)
 
 // Мир фикстуры — одна структура, чтобы все четыре теста рождали СВОИ
 // предусловия одной и той же дверью, а не четырьмя списаниями друг у друга.
@@ -153,7 +130,6 @@ struct Fixture {
     // переписывает фичу под собой» проверять было бы НЕ НА ЧЁМ.
     FeatureLayer features;
     std::unique_ptr<MacroStore> storeOwner = make_macro_store();
-    FactTally tally{};
 
     Fixture() {
         gs.mapW = kMap;
@@ -180,9 +156,7 @@ struct Fixture {
         return MacroWorld{.gs = &gs, .trees = &trees, .store = storeOwner.get(),
                           .terrain = &terrain,
                           .features = &features,
-                          .pathCost = &pathCost,
-                          .econFacts = &tally_sink,
-                          .econFactsUser = &tally};
+                          .pathCost = &pathCost};
     }
 
     // ПЛЕМЯ НАЗЫВАЕТСЯ ЯВНО: -1 глушит минтовый рецепт fail-closed.
@@ -285,13 +259,14 @@ void test_village_produces_through_its_own_think() {
           "СОХРАНЕНИЕ ПО СТРОКЕ КАТАЛОГА: кирпичей ровно `yield` на каждую "
           "ушедшую глину — число взято из composition, а не пересчитано "
           "формулой ранжирования");
-    CHECK(f.tally.produced > 0
-              && f.tally.producedCommodity == commodity_of_item(bricksIdx),
-          "ведомость услышала факт Produced, и он назвал ТОВАРНУЮ строку "
-          "кирпича");
-    CHECK(f.tally.producedUnits == bricksAfterOne,
-          "ЯКОРЬ ВЕДОМОСТИ: доложенные единицы равны тому, что РЕАЛЬНО легло "
-          "на полку — факт не врёт о вещах, которых нет");
+    // (ЗДЕСЬ СТОЯЛИ ДВА УТВЕРЖДЕНИЯ О ВЕДОМОСТИ — «факт Produced назвал
+    //  ТОВАРНУЮ строку кирпича» и «доложенные единицы равны тому, что РЕАЛЬНО
+    //  легло на полку». Оба были законами О САМОМ КАНАЛЕ — «ведомость не врёт
+    //  о вещах, которых нет», — и умерли вместе с ним 2026-11-03 (§8 п.6,
+    //  сказано вслух). Переводить их на живой носитель нечем и не нужно: ЧТО
+    //  легло на полку и СКОЛЬКО, утверждают три проверки ВЫШЕ, и верхняя из
+    //  них — якорь по АВТОРСКОЙ строке каталога (`item_yield`), то есть
+    //  утверждение более сильное, чем согласие двери с самой собой.)
 
     // ВОССТАНОВЛЕНИЕ ЕСТЬ ЗАКОН, А НЕ ПОЖЕЛАНИЕ: до конца суток второго акта
     // не бывает. Это и ловит «произвёл дважды за день» — то, чем кончались
@@ -568,7 +543,7 @@ void test_the_last_shift_of_hands_is_never_written_out() {
         // этого утверждения «артели нет» не отличалось бы от «а и не надо».
         Inventory handless = shelf;
         CHECK(econ_produce_day(handless, nullptr, f.st().sheet[vil.slot].skills,
-                               /*workers*/0, /*population*/0, nullptr, nullptr,
+                               /*workers*/0, /*population*/0,
                                faction_index("timaert")) == 0,
               "ВОТ ЧЕМ ГРОЗИТ ВЫПИСАННАЯ ПОСЛЕДНЯЯ СМЕНА: та же полка и та же "
               "анкета без рук дают НОЛЬ партий — значит гейт охраняет не "
@@ -774,8 +749,7 @@ void test_the_number_under_a_mine_is_ore_and_not_people() {
                            ecs::cell_y(c, fx.gs.mapW));
     };
     const auto one_day = [](Fixture& fx, const MacroHandle h) {
-        settle_rooted_day(fx.gs, fx.st(), h.slot, /*day*/1,
-                         &tally_sink, &fx.tally);
+        settle_rooted_day(fx.gs, fx.st(), h.slot, /*day*/1);
     };
     // ЧИСЛО ОДНО НА ОБА РОДА НАРОЧНО: под деревней это паства, под шахтой —
     // руда, и ровно в том, что проход их не различает, всё дело.

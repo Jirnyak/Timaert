@@ -172,17 +172,20 @@ struct TickContext {
 // ЧЕГО ЭТОТ СТРАЖ НЕ ВИДИТ — НАЗВАНО ЗАМЕРОМ, А НЕ УМОЛЧАНО (§8 п.6:
 // детектор, не сказавший о своей слепоте, читается как всевидящий). Два
 // слепых пятна, оба проверены мутацией:
-//   · КОЛОНКА, ВЛЕЗАЮЩАЯ В ХВОСТОВУЮ ДЫРУ, ПРОХОДИТ МОЛЧА. Данных здесь 156
-//     Б (`MacroWorld` 120 + два `int` + указатель + два `float` + указатель +
-//     два `uint16`), а `sizeof` 160 при `alignof` 8 — значит в хвосте стоят
+//   · КОЛОНКА, ВЛЕЗАЮЩАЯ В ХВОСТОВУЮ ДЫРУ, ПРОХОДИТ МОЛЧА. Данных здесь 140
+//     Б (`MacroWorld` 104 + два `int` + указатель + два `float` + указатель +
+//     два `uint16`), а `sizeof` 144 при `alignof` 8 — значит в хвосте стоят
 //     ЧЕТЫРЕ СВОБОДНЫХ БАЙТА, и дописанный `std::uint16_t` собрался ЗЕЛЁНЫМ.
 //     Против этого стража нет, и выдумывать его числом нельзя: вопрос «зачем
 //     колонка» решает DOD п.9 ревью, а не байты;
 //   · ПЕРЕСТАНОВКА РАВНОШИРОКИХ ПОЛЕЙ ПРОХОДИТ МОЛЧА (`mapW`↔`mapH` —
 //     собралось). Это пин РАЗМЕРА, а не раскладки; порядок полей судит
 //     `-Wreorder-init-list` у строк-агрегатов, которым эта форма не является.
-static_assert(sizeof(TickContext) == 160,
-              "вид думки на мир: 160 Б на стеке, один экземпляр на тик (не "
+// 2026-11-03: 160 → 144. −16 Б наследованы от конверта: `MacroWorld` усох на
+// КОЛОНКИ `econFacts`/`econFactsUser` (второй фактный путь мира снесён —
+// `src/macro/econ_day.h`), своих полей вид думки не терял ни одного.
+static_assert(sizeof(TickContext) == 144,
+              "вид думки на мир: 144 Б на стеке, один экземпляр на тик (не "
               "на сквад) — раскладка изменилась, назови КАКУЮ колонку и "
               "зачем (DOD п.9-10)");
 
@@ -234,9 +237,6 @@ struct CaravanDeal {
 // charisma/bargaining are the trader's SHEET (the one trade-price law of
 // economy.h modulates both halves): a caravan out-trades a peasant because
 // its row rolls better numbers — never a hardcode (owner 2026-08-30).
-// `sink`/`user` — канал фактов мира (Consumed при гашении долга рынка,
-// CANON S10): проданное в место по счёту съедается СРАЗУ. Тесты водят
-// сделку без канала — гашение то же, факты молчат.
 // «ПРЕДЕЛА НЕТ» — `kNoCarryLimitG@src/macro/deal.h` (уехал к двери `deal`
 // вместе с клампом спины; вывод числа стоит там же).
 // Торговец — СЛОТ стора (ломоть 2 M-72): обе ноги — атомарные сделки
@@ -245,9 +245,7 @@ CaravanDeal trade_caravan_at_station(MacroStore& st,
                                      std::uint16_t traderSlot,
                                      std::int64_t capacityG,
                                      std::uint16_t marketSlot,
-                                     int myTradePct, int theirTradePct,
-                                     EconFactSink sink = nullptr,
-                                     void* user = nullptr);
+                                     int myTradePct, int theirTradePct);
 // The village crew selling at its nearest city: unload everything, then
 // spend the WHOLE purse down the home's needs ladder («деревня не копит
 // капитал», owner 2026-08-30) — each line up to a season's stock at home;
@@ -277,9 +275,7 @@ CaravanDeal trade_vendor_at_market(MacroStore& st,
                                    std::int64_t capacityG,
                                    std::uint16_t marketSlot,
                                    MacroHandle home,
-                                   int myTradePct, int theirTradePct,
-                                   EconFactSink sink = nullptr,
-                                   void* user = nullptr);
+                                   int myTradePct, int theirTradePct);
 
 // ТИП СКВАДА живёт в tables/squad_type.h — его называют двое: сквад
 // (колонкой) и СТРОКА РЕЕСТРА МЕСТА (объявляя, кого поднимает).
@@ -365,8 +361,7 @@ AIBehaviour untyped_squad_behaviour(const MacroStore& st, MacroHandle h,
 // row, never the avatar's — the old avatar-typed gate was the player-special
 // Adventurer.upkeep=0 door, dead by «игрок == нпц»: the player's squad pays
 // here through the very same loop. Returns souls deserted.
-int squad_season_window(GameState& gs, MacroStore& st, int day,
-                        EconFactSink sink = nullptr, void* user = nullptr);
+int squad_season_window(GameState& gs, MacroStore& st, int day);
 
 // Daily bag hygiene — the auto-scrap half of the old daily feed loop (CANON
 // «Крафт/Скрап»: авто-скрап ИИ по порогу >50%; the player's bag is NEVER

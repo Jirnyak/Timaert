@@ -69,7 +69,7 @@ namespace {
 // Благополучие теперь ЧИТАЕТСЯ здесь, а пишется там — один писатель на
 // величину, как и было, только дверь другая.
 void settle_rooted_day(GameState& gs, MacroStore& st, std::uint16_t slot,
-                         int day, EconFactSink sink, void* user) {
+                         int day) {
     (void)day;   // сутки больше не ветвятся: границу судит одна дверь мира
     // Плечо сквада — колонки его ТЕЛА (ломтик F): склад, счёт нужд и
     // благополучие живут в store, строки места больше не существует.
@@ -85,9 +85,9 @@ void settle_rooted_day(GameState& gs, MacroStore& st, std::uint16_t slot,
     // границе суток. Такту это безразлично ровно потому, что он
     // страховочный: он гасит то, что на складе ЛЕЖИТ, и в каком порядке оно
     // туда попало, не спрашивает.
-    econ_pay_debt(store, st.upkeep[slot].needDebt, sink, user);
+    econ_pay_debt(store, st.upkeep[slot].needDebt);
     // Daily slot hygiene (CANON «Крафт/Скрап») — hygiene, not a balance.
-    econ_store_hygiene(store, sink, user);
+    econ_store_hygiene(store);
 
     // РОСТ ЕСТЬ РАБОТА МОДУЛЯ НАД ПОЛЕМ ПОД СОБОЙ (владелец: «через закон
     // работы сквад может по своему модулю менять число поля фич под собой —
@@ -110,18 +110,12 @@ void settle_rooted_day(GameState& gs, MacroStore& st, std::uint16_t slot,
         // Родившаяся душа — ГОЛОВА в инвентаре дома (у данжа — голова его
         // толпы); паства числом фичи поселения растёт на ФАКТ вставших: отказ
         // контейнера не рождает счётных призраков.
-        const int born = settle_souls(gs, st, slot, whole);
-        // ВЕДОМОСТЬ СКЛАДА ДУШ (econ_day.h SoulsBorn): единственный приход
-        // на склад душ во всём мире. Убыль у склада своя — голод здесь же
-        // (Starved выше), дезертирство в окне артели, бой. Доклад идёт
-        // только о приходе: закон сохранения собирается из прихода, убыли
-        // и уровней, а не из трёх копий одной величины.
-        if (born > 0 && sink) {
-            EconFact f{};
-            f.kind = EconFact::Kind::SoulsBorn;
-            f.amount = born;
-            sink(user, f);
-        }
+        // ФАКТ ВСТАВШИХ — ОТВЕТ ДВЕРИ `settle_souls`, И БОЛЬШЕ ЕГО НИКТО НЕ
+        // СПРАШИВАЕТ: доклад `SoulsBorn` в ведомость склада душ стоял здесь и
+        // умер 2026-11-03 вместе со вторым фактным путём (некролог —
+        // `src/macro/econ_day.h`). Приход на склад душ по-прежнему ОДИН, и
+        // дверь у него одна; потерян СЧЁТ прихода, а не сам приход.
+        (void)settle_souls(gs, st, slot, whole);
     }
 }
 
@@ -193,12 +187,8 @@ void tithe_daily_(GameState& gs, MacroStore& st, int day) {
 // КЛЕТКИ, НА КОТОРОЙ ОН СТОИТ, — чужую паству, по которой рост тут же
 // дописал бы ему душ в чужой дом. Это вопрос «что такое паства у того, у
 // кого нет своей клетки», и он идёт владельцу, а не выдумывается здесь.
-void tick_squads_day_(GameState& gs, MacroStore& st, int day,
-                      EconFactSink sink, void* user) {
+void tick_squads_day_(GameState& gs, MacroStore& st, int day) {
     for_each_rooted(st, [&](std::uint16_t slot) {
-        // (КЛЕЙМОВЩИК АДРЕСА УМЕР 2026-10-25 вместе с колонкой
-        // `EconFact::placeId` — у неё не было читателей ни одного. Сток
-        // фактов идёт слушателю НАПРЯМУЮ, посредника нет.)
         // ── ДНЕВНОЙ ВЫПУСК УШЁЛ ОТСЮДА В ДУМКУ СКВАДА (ломоть 5а M-72) ───
         // Здесь стоял `econ_produce_day` — и стоял он ВТОРЫМ ПУТЁМ к одному
         // акту мира. «Произвёл» есть ЗАНЯТИЕ сквада, а занятия сквад решает
@@ -229,7 +219,7 @@ void tick_squads_day_(GameState& gs, MacroStore& st, int day,
         // летопись голода пишется там же, где суд.
         // (Дань ушла из пер-местного дня: её ведёт один проход пула
         // феодальных рёбер tithe_daily_ — v121, род 6.)
-        settle_rooted_day(gs, st, slot, day, sink, user);
+        settle_rooted_day(gs, st, slot, day);
     });
     // ЧИСЛО МЕСТА СВОДИТСЯ ПОСЛЕ ЕГО ДНЯ, И ЭТО ПОРЯДОК, А НЕ ВКУС (M-325):
     // день рождает души (`settle_souls`) и взыскивает голод, то есть меняет
@@ -325,11 +315,6 @@ int process_world_daily_ticks(GameState& gs, MacroStore& st,
     if (max_daily_ticks <= 0) return 0;
 
     int processed = 0;
-    // The economy's listener rides the envelope (macro_world.h): null macro
-    // or null sink both read as "nobody is listening" — the honest state of
-    // the live game today; the balance harness is the first subscriber.
-    const EconFactSink esink = macro ? macro->econFacts : nullptr;
-    void* euser = macro ? macro->econFactsUser : nullptr;
     while (runtime.pendingDailyTicks > 0 && processed < max_daily_ticks) {
         const int day = runtime.nextDailyTickDay;
         // ДЕНЬ СРОКА СВЯЗЕЙ (interests.h): срочные отношения — перемирия,
@@ -352,7 +337,7 @@ int process_world_daily_ticks(GameState& gs, MacroStore& st,
             if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
             interests_tick_day(st.interests[slot]);
         }
-        tick_squads_day_(gs, st, day, esink, euser);
+        tick_squads_day_(gs, st, day);
         tithe_daily_    (gs, st, day);  // дань — проход рёбер рода 6 (v121)
         tick_player_daily_(gs.player);
 
@@ -406,7 +391,7 @@ int process_world_daily_ticks(GameState& gs, MacroStore& st,
         // ровно тот глобальный флаг, что запрещает ЗАКОН ДВУХ ТЕМПОВ п.5.
         // Теперь дверь просит только то, чем судит: `gs` (пулы мира) и `st`
         // (слоты), и день зовёт её всегда.
-        squad_season_window(gs, st, day, esink, euser);
+        squad_season_window(gs, st, day);
 
         --runtime.pendingDailyTicks;
         ++runtime.nextDailyTickDay;

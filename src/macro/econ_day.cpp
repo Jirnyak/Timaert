@@ -53,21 +53,11 @@ const ResolvedTables& resolved() {
     return t;
 }
 
-void report(EconFactSink sink, void* user, EconFact::Kind kind,
-            int commodity, int amount) {
-    if (!sink || amount == 0) return;
-    EconFact f{};
-    f.kind = kind;
-    f.commodity = commodity;
-    f.amount = amount;
-    sink(user, f);
-}
-
 } // namespace
 
 int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
                      const Skills& hands, int workers,
-                     int population, EconFactSink sink, void* user,
+                     int population,
                      int mintFactionIdx) {
     if (workers <= 0) return 0;
     // The mint's outputs: the faction's own coin family, GOLD FIRST — the
@@ -184,29 +174,16 @@ int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
         madeBatches[std::size_t(best)] += bestBatches;
         total += bestBatches;
     }
-    for (int c = 0; c < candCount; ++c) {
-        if (madeBatches[std::size_t(c)] <= 0) continue;
-        const Cand& cd = cands[std::size_t(c)];
-        const int units = int(madeBatches[std::size_t(c)] * cd.yield);
-        if (cd.isMint) {
-            // The fact names the METAL spent (part 0's commodity row) — the
-            // money-supply counter balance_run watches.
-            report(sink, user, EconFact::Kind::Minted,
-                   commodity_of_item(int(item_parts(cd.outIdx)[0].def)),
-                   units);
-        } else {
-            report(sink, user, EconFact::Kind::Produced, cd.commodity,
-                   units);
-        }
-    }
+    // (ЗДЕСЬ СТОЯЛ ПРОХОД ДОКЛАДА `Minted`/`Produced` — он умер 2026-11-03
+    //  вместе со вторым фактным путём, некролог в econ_day.h. Выпуск назван
+    //  ВОЗВРАТОМ двери, и число это то же: чеканка и выпуск видны на полке.)
     return total;
 }
 
-int econ_pay_debt(Inventory& store, std::int32_t* needDebt,
-                  EconFactSink sink, void* user) {
+int econ_pay_debt(Inventory& store, std::int32_t* needDebt) {
     // ОДНА дверь гашения (CANON S10: «всё, что падает в него, идёт в уплату
-    // долга»): склад платит по счёту, оплаченное СЪЕДЕНО — списано с фактом
-    // Consumed. После вызова видимый склад — только излишек, и потому всё
+    // долга»): склад платит по счёту, оплаченное СЪЕДЕНО — списано.
+    // После вызова видимый склад — только излишек, и потому всё
     // видимое свободно для погрузки и оплаты.
     // Проход по ВСЕМУ словарю, а не по списку нужд: дверь гашения не обязана
     // знать, кто и по какому закону выставил счёт — она платит по тому, что
@@ -222,22 +199,17 @@ int econ_pay_debt(Inventory& store, std::int32_t* needDebt,
         store.remove_of(commodity_item_index(idx), eaten);
         needDebt[idx] -= eaten;
         paid += eaten;
-        report(sink, user, EconFact::Kind::Consumed, idx, eaten);
     }
     return paid;
 }
 
-int econ_store_hygiene(Inventory& store, EconFactSink sink, void* user) {
+int econ_store_hygiene(Inventory& store) {
     // Slot hygiene stays DAILY while the balances went seasonal (CANON
     // «Крафт/Скрап»: авто-скрап ИИ по порогу >50%): a store clogged past the
     // half mark by non-fungible lut melts its cheapest pieces back to matter,
     // so bread and ore always have somewhere to land. Plain stacks are never
     // touched, and the PLAYER'S bag never passes through this function.
-    const int scrapped = auto_scrap_overflow(store);
-    if (scrapped > 0) {
-        report(sink, user, EconFact::Kind::Scrapped, -1, scrapped);
-    }
-    return scrapped;
+    return auto_scrap_overflow(store);
 }
 
 // A commodity's CATALOG ordinal. The two id spaces are one now; this is the

@@ -12,7 +12,9 @@
 #include <cstdint>
 #include <vector>
 #include "ecs/components.h"
-#include "macro/econ_day.h"   // EconFactSink — доклад оттока пула душ
+// (`#include "macro/econ_day.h"` стоял здесь РАДИ `EconFactSink` — «доклад
+//  оттока пула душ» — и снят 2026-11-03 вместе с самим каналом: включение без
+//  символа есть цена, которую платит каждый включивший, §5 п.13.)
 #include "tables/npc.h"
 #include "macro/state.h"
 #include "macro/map_generator.h"

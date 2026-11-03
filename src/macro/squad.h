@@ -11,7 +11,7 @@
 #include "core/rng.h"
 #include <cstdio>
 #include "macro/currency.h"
-#include "macro/econ_day.h"   // EconFact/EconFactSink — ведомость склада душ
+#include "macro/econ_day.h"   // Depot/econ_pay_debt — приход гасит долг места
 #include "tables/squad_type.h"   // SquadType/squad_archetype — ось рода
 #include "tables/npc.h"          // NPCType — строка существа, база лидера
 #include "macro/macro_stock.h"
@@ -364,10 +364,12 @@ inline MacroHandle rooted_handle_by_ordinal(const MacroStore& st,
 //      это просто универсально не важно кто умер и умер всё никаких».
 //
 // ЧТО ДЕЛАЕТ ЭТА ДВЕРЬ. Обходит каждый сквад, чей лидер мёртв, и УНИЧТОЖАЕТ
-// его область существ целиком (`creatures_kill_all`), списывая паству дома на
-// погибшие ДУШИ и докладывая их же в ведомость склада душ
-// (`EconFact::Kind::SoulsKilled`). Сквад с живым лидером не трогается.
+// его область существ целиком (`creatures_kill_all`).
 // Возвращает погибшие ГОЛОВЫ — любого рода.
+// (ДОКЛАД `EconFact::Kind::SoulsKilled` в ведомость склада душ стоял здесь и
+//  умер 2026-11-03 вместе со вторым фактным путём мира: некролог —
+//  `src/macro/econ_day.h`. Погибшие ДУШИ больше не считаются никем, потому
+//  что считал их один прибор; погибшие ГОЛОВЫ были и остались ВОЗВРАТОМ.)
 //
 // ПОЧЕМУ ОТКАЗА БОЛЬШЕ НЕТ: прежний слив мог упереться в кап слотов пула, и
 // тогда души ОСТАВАЛИСЬ стоять в мёртвом скваде до следующего тика. У смерти
@@ -530,11 +532,8 @@ inline void reconcile_rooted_flock(GameState& gs, MacroStore& st,
 // пропал повод доставать `*gs_` — то есть макро-состояние — ради вызова,
 // которому оно не нужно (ЗАКОН ДВУХ МИРОВ п.3: канал узок ПО ПОСТРОЕНИЮ, а не
 // по дисциплине).
-inline int kill_fallen_squad_creatures(MacroStore& st,
-                                       EconFactSink sink = nullptr,
-                                       void* user = nullptr) {
+inline int kill_fallen_squad_creatures(MacroStore& st) {
     int killed = 0;
-    int souls = 0;
     // The player's own squad is never swept: он не лидер, чьи люди уходят,
     // когда он падает, — его родная запись есть БИТ КОЛОНКИ (playerFlag.home,
     // M-255), тот же предикат, каким владение листом узнаёт сквад игрока
@@ -562,10 +561,7 @@ inline int kill_fallen_squad_creatures(MacroStore& st,
     for (const SquadWalkEntry& sw : order) {
         auto& bag = st.inventory[sw.slot];
         if (creatures_empty(bag.inv)) continue;
-        // Паства считается ДО смерти: после неё спрашивать уже некого.
-        const int homeSouls = count_human_souls(bag.inv);
         killed += creatures_kill_all(bag.inv);
-        souls += homeSouls;
         // ЗДЕСЬ СТОЯЛ `shift_home_flock(gs, st, parent_of(st, sw.slot),
         // -homeSouls)` — ТО ЕСТЬ ЭТА ДВЕРЬ ВЕЛА ЧУЖУЮ ЧАСТНОСТЬ, и вела её
         // ИЗ ШВА: двое из шести её звонящих живут в `src/sub/engine.cpp`
@@ -592,15 +588,6 @@ inline int kill_fallen_squad_creatures(MacroStore& st,
         // поверх свода, который разойтись не может.
         // (→ `SCARS.md` «контейнер-пара-дверей»: сведение этой пары в одну
         //  дверь само стало дефектом — дверь принялась вести чужую частность.)
-    }
-    // ОДИН ДОКЛАД НА ПРОХОД, А НЕ НА СКВАД: ведомость склада душ отвечает на
-    // «сколько мир потерял», и дробить это по трупам значило бы заводить
-    // отдельную строку на каждую смерть ради того же числа.
-    if (souls > 0 && sink) {
-        EconFact f{};
-        f.kind = EconFact::Kind::SoulsKilled;
-        f.amount = souls;
-        sink(user, f);
     }
     return killed;
 }
@@ -1591,7 +1578,7 @@ inline void settle_auto_battle(const MacroWorld& mw,
         loot_fallen_owner(st, loser, st.inventory[winner.slot].inv);
     }
 
-    kill_fallen_squad_creatures(st, mw.econFacts, mw.econFactsUser);
+    kill_fallen_squad_creatures(st);
     // ОДНА дверь оплаты (корень 5): именованный победитель растёт как
     // игрок (лист владеем, WIS-дивиденд, очки копятся), транзиент —
     // прежний бросок.
@@ -1663,14 +1650,35 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     // the fought version pays through the reaper (damage-door Inc 6). The
     // crime is the registry's column, so a bandit costs nothing and a
     // peasant costs the same here as underfoot.
+    //
+    // ПЛАТИТ ФРАКЦИЯ СКВАДА-УЧАСТНИКА, А НЕ ФЛАЖОК (вердикт владельца
+    // 2026-11-03, дословно: «Обобщить: платит фракция сквада-участника»; и
+    // корень того же дня: «да это надо обобщить … потому что игрок ничем не
+    // особенен»). Здесь стоял `add_player_reputation(gs, enemyFaction, …)` —
+    // то есть актором ВСЕГДА шла строка игрока, чей бы запись ни носила
+    // флажок. Цена была реальна и названа: ОДЕРЖИМЫЙ ЛОРД, перебивший
+    // крестьян своей же державы, ссорил с ней НЕ СВОЮ фракцию, а игроцкую, —
+    // а поступок есть отношение ДВУХ фракций, и чья рука его двинула,
+    // спрашивается у ЗАПИСИ актора (`squad_faction_slot`), как уже спрашивает
+    // субмир (`apply_avatar_kill_standing@src/sub/engine.cpp`, ломоть 4а).
+    //
+    // ОРДИНАЛАМИ ОБА КОНЦА (ЗАКОН СЛОВАРЯ): круг «ординал → имя → ординал»
+    // стоял здесь дважды за тело — у знамени жертвы и у гейта преступления.
+    // Гейт цел и остаётся КОЛОНКОЙ строки ЖЕРТВЫ, спрошенной числом: ординал
+    // вне реестра (включая `kNoFactionSlot`) отвечает «не преступление»
+    // fail-open, то есть мёртвая или безродная запись не платит ничем.
     report_battle_deaths(mw, st, enemy, enemyCas, enemyFraction <= 0.0f,
                          MacroHandle{});
-    const char* enemyFaction = squad_faction_id(st, enemy);
-    if (!kill_is_no_crime(enemyFaction)) {
+    const FactionSlot enemyBanner = squad_faction_slot(st, enemy);
+    if (!kill_is_no_crime(std::uint16_t(enemyBanner))) {
         const int fallen = int(enemyCas.size())
             + (enemyFraction <= 0.0f ? 1 : 0);
+        // ПО ТЕЛУ, А НЕ ОДНИМ СДВИГОМ — форма прежняя (цена смерти есть цена
+        // ОДНОЙ смерти, умноженная телами), и дверь аддитивна, поэтому число
+        // то же до байта.
         for (int i = 0; i < fallen; ++i) {
-            add_player_reputation(gs, enemyFaction, kKillRepPenalty);
+            add_faction_standing(gs.factions, squad_faction_slot(st, playerH),
+                                 enemyBanner, kKillRepPenalty);
         }
     }
 
@@ -1685,7 +1693,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     if (playerWon && macro_dead(st, enemy)) {
         loot_fallen_owner(st, enemy, *playerBag);
     }
-    kill_fallen_squad_creatures(st, mw.econFacts, mw.econFactsUser);
+    kill_fallen_squad_creatures(st);
 
     // Пара Killed+Died — ТА ЖЕ дверь, что у ИИ↔ИИ (хвост 2б, владелец
     // 2026-09-02): осиротевшие дома жертв игрока получают Died, и

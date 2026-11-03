@@ -327,7 +327,12 @@ const char* name_rooted(void*, std::uint32_t id) {
 void test_a_fact_says_itself() {
     WorldFact f{};
     f.day = 77;
-    f.kind = std::uint16_t(FactKind::OwnerChanged);
+    // РОД — ЖИВОЙ И С ДВУМЯ УЧАСТНИКАМИ: предмет проверки есть ФРАЗА
+    // (субъект + ярлык рода + объект), поэтому роду достаточно иметь обе
+    // ссылки. Стоял `OwnerChanged` — снесён как сирота 2026-11-03, и
+    // свидетель переведён на живой род, а не похоронен вместе с ним.
+    constexpr FactKind kVerb = FactKind::Taxed;
+    f.kind = std::uint16_t(kVerb);
     f.subjectKind = fact_subject(FactSubject::Squad);
     f.subject = 42u;
     f.objectKind = std::uint8_t(FactSubject::Rooted);
@@ -342,7 +347,12 @@ void test_a_fact_says_itself() {
     CHECK(n > 0 && line[n] == '\0', "a sentence is written and terminated");
     CHECK(std::strstr(line, "Bloody Karl") != nullptr, "it names the doer");
     CHECK(std::strstr(line, "Ryazan") != nullptr, "and what he did it to");
-    CHECK(std::strstr(line, "Changed hands") != nullptr,
+    // ОЖИДАНИЕ — ИЗ ТОЙ ЖЕ ТАБЛИЦЫ, ЧТО ЧИТАЕТ КОД (§8 п.4). Здесь стоял
+    // ЛИТЕРАЛ «Changed hands», и он ломался дважды: при перекалибровке ярлыка
+    // и при сносе самого рода. Ярлык спрашивается у строки — тогда
+    // утверждение говорит «фраза берёт ГЛАГОЛ у таблицы», а не «ярлык равен
+    // вот этим двум словам».
+    CHECK(std::strstr(line, fact_kind_def(kVerb).label) != nullptr,
           "and the VERB is the kind's own label — a new kind speaks by being "
           "added to the table, with no code here");
     CHECK(std::strstr(line, "77") != nullptr, "and when");

@@ -39,18 +39,11 @@ struct WorldTickResult {
 // потолок и обрезка не нужны — набор и есть рождение душ.)
 
 
-// The economy's fact channel (econ_day.h owns the record; the envelope of
-// macro_world.h carries the pointer the same way).
-struct EconFact;
-using EconFactSink = void (*)(void* user, const EconFact& fact);
-
 // One place's daily tail: the debt boundary off the universal inventory,
 // then the population law. No floor and no ceiling (CANON S25 + owner
 // 2026-08-29): supply is the only cap, and population falls honestly to an
 // absorbing zero. The out-flags are what the chronicle files: souls the
 // boundary took, and the day the place died out.
-// `sink` receives the day's Consumed/Starved facts (null = silence).
-//
 // SEASONAL since 2026-09-17 (CANON S19.2): the boundary runs only on
 // season_boundary(day) and parks ONE number on the place — благополучие
 // (seasonWellbeing), доля оплаченных нужд; every other day reads that number
@@ -69,8 +62,7 @@ using EconFactSink = void (*)(void* user, const EconFact& fact);
 // же перезаписанному. Голод и вымирание теперь говорит летопись в
 // точке суда; этой функции остались СУТКИ: гашение, гигиена, рост.
 void settle_rooted_day(GameState& gs, MacroStore& st, std::uint16_t slot,
-                         int day,
-                         EconFactSink sink = nullptr, void* user = nullptr);
+                         int day);
 
 // (`regrow_dungeon_populations` УМЕРЛА 2026-10-26, M-320: её гейтом была
 //  колонка `bornPopBase != 0`, носителями гейта — руина и шпиль, а они

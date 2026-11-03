@@ -56,13 +56,12 @@ struct Boundary {
     // ниже сравнивают целые: половина — это 128, а не 0.5f ± эпсилон.
     int wb255 = 0;
 };
-Boundary boundary_(sm::Inventory& store, std::int32_t* needDebt,
-                   sm::EconFactSink sink, void* user) {
+Boundary boundary_(sm::Inventory& store, std::int32_t* needDebt) {
     sm::Upkeep r{};
     for (int c = 0; c < sm::kCommodityCount; ++c) r.needDebt[c] = needDebt[c];
     sm::Wellbeing wb{};
     const sm::UpkeepWindowOutcome out =
-        sm::upkeep_season_window(r, store, wb, sink, user);
+        sm::upkeep_season_window(r, store, wb);
     for (int c = 0; c < sm::kCommodityCount; ++c) needDebt[c] = r.needDebt[c];
     return Boundary{out.starved, int(wb.seasonWellbeing)};
 }
@@ -79,34 +78,15 @@ int fail(const char* msg) {
     return 1;
 }
 
-struct Ledger {
-    std::array<long, sm::kCommodityCount> gathered{};
-    std::array<long, sm::kCommodityCount> produced{};
-    std::array<long, sm::kCommodityCount> consumed{};
-    int starvedEvents = 0;
-};
-
-void sink(void* user, const sm::EconFact& f) {
-    auto* led = static_cast<Ledger*>(user);
-    switch (f.kind) {
-        case sm::EconFact::Kind::Gathered:
-            led->gathered[std::size_t(f.commodity)] += f.amount;
-            break;
-        case sm::EconFact::Kind::Produced:
-            led->produced[std::size_t(f.commodity)] += f.amount;
-            break;
-        default: break;
-        case sm::EconFact::Kind::Starved: ++led->starvedEvents; break;
-        case sm::EconFact::Kind::Consumed:
-            // Потребление стало ДОЛГОМ (CANON S10): ест дверь гашения
-            // (econ_pay_debt), и ест ДНЯМИ, не границей — ручной дифф
-            // склада больше не накрывает все точки, факт накрывает.
-            led->consumed[std::size_t(f.commodity)] += f.amount;
-            break;
-        case sm::EconFact::Kind::Minted: break;     // no mint in this fixture
-        case sm::EconFact::Kind::Scrapped: break;   // no clog in this fixture
-    }
-}
+// (ЛЕДЖЕР `Ledger` + СТОК `sink` СТОЯЛИ ЗДЕСЬ и умерли 2026-11-03 вместе со
+//  вторым фактным путём мира (`EconFact`/`EconFactSink`, некролог и вердикт
+//  владельца — в шапке `src/macro/econ_day.h`).
+//
+//  ТРИ ЕГО ПОЛЯ БЫЛИ МЕРТВЫ УЖЕ ДО СНОСА, И ЭТО НАДО СКАЗАТЬ ЧИСЛОМ:
+//  `gathered`/`produced`/`consumed` не читало НИ ОДНО утверждение этого файла
+//  — их единственным читателем была 96-дневная самоига, вырезанная
+//  2026-10-04. Читался один `starvedEvents`, и его утверждение разобрано на
+//  месте, ниже.)
 
 // (ЗДЕСЬ СТОЯЛА `inputs_for_output` — ведомость входов производства за
 // единицу выхода. Её единственным читателем была 96-дневная самоига,
@@ -228,7 +208,6 @@ int main() {
     // И та же доля читается благополучием — ЕДИНСТВЕННОЙ мерой жизни
     // (настроение вырезано 2026-09-19): оплатил половину еды — ход роста
     // вдвое ниже, и голодавший больше не плодится на полной скорости.
-    Ledger fled{};
     Inventory poor{};
     std::int32_t poorDebt[kCommodityCount] = {};
     // СЧЁТ ЕДЫ ЧИТАЕТСЯ С ГОЛОВ (v122: рацион — колонка строки, а не литерал
@@ -238,9 +217,16 @@ int main() {
     // рядом вторым счётом.
     raise_flock_into_container(poor, 32);
     int poorPop = count_human_souls(poor);
+    // «ГОЛОД ГОВОРИТ В КАЖДОМ ОКНЕ» — ЗАКОН ЖИВ, НОСИТЕЛЬ СМЕНЁН (§8 п.6).
+    // Здесь это утверждал счётчик фактов `Starved` снесённой ведомости
+    // (`fled.starvedEvents != 4`); теперь считается ОТВЕТ САМОЙ ДВЕРИ
+    // (`UpkeepWindowOutcome::starved`) — носитель живой, а утверждение то же
+    // и даже сильнее: оно про суд, а не про доклад о суде.
+    int windowsThatKilled = 0;
     for (int window = 0; window < 5; ++window) {
         poorPop = count_human_souls(poor);
-        const Boundary o = boundary_(poor, poorDebt, &sink, &fled);
+        const Boundary o = boundary_(poor, poorDebt);
+        if (o.starved > 0) ++windowsThatKilled;
         if (window == 0 && o.starved != 0) {
             return fail("the first bill cannot kill before it is due");
         }
@@ -267,14 +253,16 @@ int main() {
         // Привоз в полсчёта: гасится СРАЗУ той же дверью, что в мире.
         poor.add_of(commodity_item_index(foodIdx),
                     poorDebt[foodIdx] / 2);
-        econ_pay_debt(poor, poorDebt, &sink, &fled);
+        econ_pay_debt(poor, poorDebt);
     }
-    if (fled.starvedEvents != 4) return fail("Starved must report per window");
+    if (windowsThatKilled != 4) {
+        return fail("hunger claims souls in EVERY window but the first");
+    }
     // Рельеф — привоз, кроющий счёт целиком: следующая граница не
     // взыскивает никого.
     poor.add_of(commodity_item_index(foodIdx), poorDebt[foodIdx]);
-    econ_pay_debt(poor, poorDebt, &sink, &fled);
-    const Boundary relief = boundary_(poor, poorDebt, &sink, &fled);
+    econ_pay_debt(poor, poorDebt);
+    const Boundary relief = boundary_(poor, poorDebt);
     if (relief.starved != 0) {
         return fail("a paid season kills nobody");
     }
@@ -296,14 +284,14 @@ int main() {
         raise_flock_into_container(s, pop);
         s.add_of(commodity_item_index(commodity_index("food")),
                  pop * kDaysPerSeason);
-        const Boundary first = boundary_(s, debt, nullptr, nullptr);
+        const Boundary first = boundary_(s, debt);
         if (first.starved != 0) {
             return fail("the first bill cannot kill before it is due");
         }
         if (s.count_of(commodity_item_index(commodity_index("food"))) != 0) {
             return fail("the bill must eat the whole shelf on the spot");
         }
-        const Boundary o = boundary_(s, debt, nullptr, nullptr);
+        const Boundary o = boundary_(s, debt);
         if (o.starved != 0) {
             return fail("harch-only pop must be fed in full");
         }
@@ -332,7 +320,7 @@ int main() {
         raise_flock_into_container(s, pop);
         const int half = pop * kDaysPerSeason / 2;
         s.add_of(commodity_item_index(commodity_index("food")), half);
-        boundary_(s, debt, nullptr, nullptr);
+        boundary_(s, debt);
         // Каждая единица на полке платит по счёту — склад пуст, долг
         // помнит ровно вторую половину.
         if (s.count_of(commodity_item_index(commodity_index("food"))) != 0) {
@@ -341,7 +329,7 @@ int main() {
         if (debt[commodity_index("food")] != half) {
             return fail("the debt must remember exactly the unpaid half");
         }
-        const Boundary o = boundary_(s, debt, nullptr, nullptr);
+        const Boundary o = boundary_(s, debt);
         if (o.starved != pop - pop / 2) {
             return fail("half a season must starve exactly half the souls");
         }
@@ -353,8 +341,8 @@ int main() {
         std::int32_t tailDebt[kCommodityCount] = {};
         tail.add_of(commodity_item_index(commodity_index("food")),
                     kDaysPerSeason - 1);
-        boundary_(tail, tailDebt, nullptr, nullptr);
-        const Boundary ot = boundary_(tail, tailDebt, nullptr, nullptr);
+        boundary_(tail, tailDebt);
+        const Boundary ot = boundary_(tail, tailDebt);
         if (ot.starved != pop - 1) {
             return fail("a sub-season scrap forgives exactly one death");
         }
@@ -376,7 +364,7 @@ int main() {
         // population 0: no demand pass — pure fair shares, the exact surface
         // the old hog bug lived on.
         const int made =
-            econ_produce_day(s, nullptr, CITY, 8, 0, nullptr, nullptr);
+            econ_produce_day(s, nullptr, CITY, 8, 0);
         if (made <= 0) return fail("city with inputs and workers made nothing");
         if (s.count_of(commodity_item_index(commodity_index("bricks"))) <= 0) {
             return fail("first recipe hogged every worker - no output diversity");
@@ -447,7 +435,7 @@ int main() {
         if (s.used_slots() <= kAutoScrapSlots) {
             return fail("clog fixture did not overflow (negative control)");
         }
-        econ_store_hygiene(s, nullptr, nullptr);
+        econ_store_hygiene(s);
         if (s.used_slots() > kAutoScrapSlots) {
             return fail("daily hygiene left the store clogged past 50%");
         }
@@ -571,8 +559,8 @@ int main() {
         inv.add("potion_hp", 3);   // NOT a commodity — must ride untouched
         std::int32_t debt[kCommodityCount] = {};
         econ_produce_day(inv, debt, VILLAGE, /*workers*/4,
-                         /*population*/40, nullptr, nullptr);
-        boundary_(inv, debt, nullptr, nullptr);
+                         /*population*/40);
+        boundary_(inv, debt);
         if (inv.count("potion_hp") != 3) {
             return fail("a day of economy disturbed what is not a commodity");
         }
@@ -588,7 +576,7 @@ int main() {
         Inventory ghost;
         ghost.add("food", 100);
         if (econ_produce_day(ghost, nullptr, CITY, /*workers*/0,
-                             /*population*/0, nullptr, nullptr) != 0) {
+                             /*population*/0) != 0) {
             return fail("zero workers produced something");
         }
     }
@@ -616,30 +604,24 @@ int main() {
         if (yield <= 0 || metal->value != yield * item_def_at(coinRow)->value) {
             return fail("the mint metal's price is not yield x nominal");
         }
-        auto minted_sink = [](void* user, const EconFact& f) {
-            if (f.kind == EconFact::Kind::Minted) {
-                *static_cast<long*>(user) += f.amount;
-            }
-        };
-
         // A store of metal and nothing else: no other City recipe can be fed,
         // so every write below belongs to the mint. Two workers on a hamlet's
         // population strike far less than the store holds — the leftover is
         // what makes a SECOND debit visible at all (drain the stack dry and
         // the extra remove_of fails silently and hides itself).
-        long mintedCoins = 0;
         Inventory store;
         store.add("silver", 40);
         econ_produce_day(store, nullptr, CITY, /*workers*/2,
-                         /*population*/2,
-                         minted_sink, &mintedCoins, faction_index("empire"));
+                         /*population*/2, faction_index("empire"));
 
         const int spent = 40 - store.count("silver");
         const int coins = store.count("coin_empire_silver");
         if (coins <= 0) return fail("the mint struck nothing from a store of silver");
-        if (long(coins) != mintedCoins) {
-            return fail("the Minted fact and the coins on the shelf disagree");
-        }
+        // (ЗДЕСЬ СТОЯЛО «the Minted fact and the coins on the shelf disagree»
+        //  — закон О САМОМ КАНАЛЕ, и он умер вместе с ним 2026-11-03 (§8 п.6).
+        //  Переводить нечего: ЯКОРЬ МИРА стоит строкой ниже и он сильнее —
+        //  он судит монеты против МЕТАЛЛА по авторской колонке `item_yield`,
+        //  а не доклад двери против её же собственной полки.)
         if (spent * yield != coins) {
             std::printf("  mint: silver spent=%d yield=%d coins struck=%d\n",
                         spent, yield, coins);
@@ -662,7 +644,7 @@ int main() {
         if (!full.full()) return fail("the fixture's store is not full");
         econ_produce_day(full, nullptr, CITY, /*workers*/2,
                          /*population*/2,
-                         nullptr, nullptr, faction_index("empire"));
+                         faction_index("empire"));
         if (full.count("coin_empire_silver") != 0) {
             return fail("a full shelf accepted coins it had no slot for");
         }

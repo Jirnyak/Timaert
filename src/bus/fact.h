@@ -24,15 +24,35 @@ enum class FactKind : std::uint16_t {
     None = 0,
     Killed,          // subject killed object            (amount = bodies)
     Died,            // subject died                     (amount = bodies)
-    Battle,          // subject fought object            (amount = casualties)
     // (Robbed ВЫРЕЗАН, владелец 2026-09-03: «минимум систем … died уже
     // достаточно» — лут павшего и так молчит правильно: Died/Killed несут
     // бой, поле угрозы грабёж не греет. Сдвиг ординалов = бамп v75.)
+    //
+    // (Род `Battle` УНИЧТОЖЕН 2026-11-03, вердикт владельца «Снести сирот
+    // сейчас». «Subject fought object (amount = casualties)» — НОЛЬ
+    // отправителей во всём дереве: бой мира говорит `Killed` победителем и
+    // `Died` каждым осиротевшим домом (`record_battle_facts@src/macro/squad.h`,
+    // ОБА авторезолва), то есть исход назван ДВУМЯ строками с разных сторон, а
+    // третья, «они сражались», не писалась никогда. Заведут заново, если у
+    // мира появится событие СРАЖЕНИЯ, у которого нет победителя.)
     Traded,          // subject traded with object       (amount = value)
-    Gathered,        // subject took from the land       (amount = units)
-    Built,           // subject raised something         (amount = units)
+    // (Род `Gathered` УНИЧТОЖЕН 2026-11-03 тем же вердиктом. «Subject took
+    // from the land (amount = units)» — НОЛЬ отправителей: взятое у земли
+    // мир записывает `Drained` там, где взятое НЕ ВОЗВРАЩАЕТСЯ (жила,
+    // орб), а возобновимое — лес, урожай, фауна — не деяние летописи вовсе,
+    // оно убыль ПОЛЯ, и пишет её ведомость стока. Заведут вместе с
+    // механикой, которой «нарубил» будет деянием.)
+    // (Род `Built` УНИЧТОЖЕН 2026-11-03 тем же вердиктом. «Subject raised
+    // something» — НОЛЬ отправителей: фичу на клетку ставит генерация
+    // (ЗАКОН ГЕНЕРАЦИИ: фича ДО сквада) и плуг одной клеткой
+    // (`plough_field_cell@src/macro/macro_stock.cpp`), и ни один из двух
+    // летописи не говорит. Заведут вместе со стройкой как способностью.)
     Starved,         // subject went hungry              (amount = heads)
-    OwnerChanged,    // object now belongs to subject
+    // (Род `OwnerChanged` УНИЧТОЖЕН 2026-11-03 тем же вердиктом. «Object now
+    // belongs to subject» — НОЛЬ отправителей: смены владельца в мире НЕ
+    // ПРОИСХОДИТ, потому что её механика (осада, захват) не построена, а
+    // фракции идут позже всего (ФРЕЙМ, род 6: «мы ещё не долшли до фракций в
+    // полировке ядра»). Заведут вместе с захватом.)
     Explored,        // subject learned a place          (amount = depth)
     // Took from the world something that does not come back — a spire's orb,
     // a vein worked out. NOT "used a thing": that is a mechanism, and this is
@@ -45,7 +65,12 @@ enum class FactKind : std::uint16_t {
     // отправителей — та же колонка-сирота, только в каталоге (DOD п.9).
     // Когда у открытия появится настоящий открыватель — данж, руина, чёрный
     // артефакт (эпик M-248), — род заведут заново вместе с ним.)
-    Spawned,         // subject appeared in the world
+    //
+    // (Род `Spawned` УНИЧТОЖЕН 2026-11-03 тем же вердиктом. «Subject appeared
+    // in the world» — НОЛЬ отправителей: рождение сквада есть СЛОТ стора
+    // (`birth_squad@src/macro/birth_squad.h`), и спрашивают о нём колонки, а
+    // не летопись. «Появился» — не деяние: у него нет ни славы, ни интереса,
+    // и строка стояла с `baseRenown` 0 именно поэтому.)
     QuestTaken,      // subject took object's contract
     QuestDone,       // subject finished it
     // Subject paid its suzerain the tithe (amount = coin) — the feudal tax

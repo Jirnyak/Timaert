@@ -360,7 +360,10 @@ sm::GameState make_state(sm::MacroStore& st) {
 
         sm::WorldFact conquest{};
         conquest.day = 12;
-        conquest.kind = std::uint16_t(sm::FactKind::OwnerChanged);
+        // (Род `OwnerChanged` снесён как сирота 2026-11-03 — фикстуре нужен
+        //  ВТОРОЙ живой род рядом с `Killed`, чтобы кольцо вернуло два
+        //  РАЗНЫХ факта; имя локала оставлено, оно про роль в фикстуре.)
+        conquest.kind = std::uint16_t(sm::FactKind::Taxed);
         // (Бит «именован» снят вместе с анналами — M-184: род участника
         //  теперь всё, что несёт ссылка.)
         conquest.subjectKind = sm::fact_subject(sm::FactSubject::Squad);
@@ -717,7 +720,7 @@ void run_roundtrip() {
                                ++s2.n;
                                if (f.kind == std::uint16_t(sm::FactKind::Killed))
                                    s2.anonymous = true;
-                               if (f.kind == std::uint16_t(sm::FactKind::OwnerChanged))
+                               if (f.kind == std::uint16_t(sm::FactKind::Taxed))
                                    s2.conquest = true;
                            }, &seen);
         if (!seen.anonymous) {

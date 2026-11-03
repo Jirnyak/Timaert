@@ -145,6 +145,15 @@ squad(*wStore_, NPCType::Bandit, "bandits", 2, 2, 2u);
           "is the zero contribution, not a broken path");
 }
 
+// ЦЕНА СМЕРТИ — КОЛОНКА СТРОКИ ЖЕРТВЫ, А ПЛАТЕЛЬЩИК — ЗАПИСЬ УЧАСТНИКА.
+//
+// СВИДЕТЕЛЬ ОБЯЗАН РОДИТЬ СВОЮ ЗАПИСЬ ИГРОКА, И С 2026-11-03 ЭТО НЕ ГИГИЕНА,
+// А ПРЕДУСЛОВИЕ ЗАКОНА (§8 п.11). Прежде здесь не было `ensure_macro_player_
+// entity`, и тест был зелёным: плательщиком шла строка игрока ЛИТЕРАЛОМ, то
+// есть пара двигалась даже у мира, в котором записи игрока не существует.
+// Теперь платит фракция СКВАДА-УЧАСТНИКА (вердикт владельца «Обобщить: платит
+// фракция сквада-участника»), и «кто участник» спрашивается у записи — значит
+// мир без записи не платит ничем, и это ПРАВИЛЬНО: платить некому.
 void test_kill_price_is_the_registry_column() {
     // A lawful realm: every body costs kKillRepPenalty.
     {
@@ -154,6 +163,11 @@ void test_kill_price_is_the_registry_column() {
         MacroWorld mw{};
         mw.gs = &gs;
         mw.store = wStore_.get();
+        ensure_macro_player_entity(gs, *wStore_);
+        CHECK(sm::squad_faction_slot(*wStore_, sm::player_flag_handle(gs))
+                  == sm::kPlayerFactionSlot,
+              "предусловие: запись, которой играют, носит знамя игрока — "
+              "иначе проверка ниже спрашивала бы ЧУЖУЮ пару");
         const sm::MacroHandle enemy =
 squad(*wStore_, NPCType::Guard, "empire", 2, 2, 5u);
         const int before = player_reputation(&gs, "empire");
@@ -170,6 +184,7 @@ squad(*wStore_, NPCType::Guard, "empire", 2, 2, 5u);
         MacroWorld mw{};
         mw.gs = &gs;
         mw.store = wStore_.get();
+        ensure_macro_player_entity(gs, *wStore_);
         const sm::MacroHandle enemy =
 squad(*wStore_, NPCType::Bandit, "bandits", 2, 2, 6u);
         const int before = player_reputation(&gs, "bandits");
@@ -177,6 +192,77 @@ squad(*wStore_, NPCType::Bandit, "bandits", 2, 2, 6u);
         CHECK(player_reputation(&gs, "bandits") == before,
               "killing outlaws is no crime — the column says so, not the code");
     }
+}
+
+// ── АВТОРЕЗОЛВ ПЛАТИТ ФРАКЦИЕЙ УЧАСТНИКА, А НЕ ПАРОЙ ИГРОКА ──────────────
+// Вердикт владельца 2026-11-03: «Обобщить: платит фракция сквада-участника».
+//
+// ОДЕРЖИМОСТЬ И ЕСТЬ ЕДИНСТВЕННЫЙ ОПЫТ, РАЗЛИЧАЮЩИЙ ДВА ЗАКОНА, и потому
+// фикстура строит именно её: пока флажок стоит на СВОЕЙ записи игрока, обе
+// формулы дают один байт (его запись носит знамя игрока), и утверждение было
+// бы ТАВТОЛОГИЕЙ — ровно той, какой был тест выше до этой правки. Флажок на
+// записи ЛОРДА ДЕРЖАВЫ разводит их: платить обязана держава, игрок — ничем.
+//
+// ОЖИДАНИЕ ЧИТАЕТ СЫРОЙ БАЙТ МАТРИЦЫ, А НЕ `relation_of` (§8 п.6, форма
+// слепоты «тождество одной формулы»): дверь записи и дверь чтения свелись бы
+// сами с собой.
+void test_the_auto_resolve_pays_with_the_participants_banner() {
+    constexpr sm::FactionSlot kEmpire  = sm::faction_ordinal("empire");
+    constexpr sm::FactionSlot kTimaert = sm::faction_ordinal("timaert");
+    static_assert(kEmpire >= 0 && kTimaert >= 0 && kEmpire != kTimaert,
+                  "пара прибора — две ЖИВЫЕ строки реестра");
+    static_assert(kEmpire != sm::kPlayerFactionSlot
+                      && kTimaert != sm::kPlayerFactionSlot,
+                  "и ни одна из них не игрок: иначе новый закон нечем "
+                  "отличить от прежнего");
+    const auto raw = [](const sm::FactionState& f, sm::FactionSlot a,
+                        sm::FactionSlot b) {
+        return int(f.rows[std::size_t(a)].rel[std::size_t(b)]);
+    };
+
+    GameState gs{};
+    gs.mapW = gs.mapH = 64;
+    sm::claim_registry_rows(gs.factions);
+    auto wStore_ = sm::make_macro_store();
+    MacroWorld mw{};
+    mw.gs = &gs;
+    mw.store = wStore_.get();
+
+    // ОДЕРЖИМЫЙ: флажок «кем играют» на записи ЛОРДА ДЕРЖАВЫ. Поле GameState
+    // и есть истина «кем я на карте» (`player_flag_handle`), поэтому фикстура
+    // ставит ровно его — второго носителя у вопроса нет.
+    const sm::MacroHandle worn =
+squad(*wStore_, NPCType::Guard, "empire", 5, 0, 21u);
+    gs.playerFlagRef = worn;
+    CHECK(sm::player_flag_handle(gs) == worn
+              && sm::squad_faction_slot(*wStore_, worn) == kEmpire,
+          "фикстура: играют записью под знаменем державы, а не своей");
+
+    // ЖЕРТВА — ДРУГАЯ фракция, и её смерть ОБЯЗАНА быть преступлением,
+    // иначе гейт съел бы весь предмет проверки молча.
+    CHECK(!sm::kill_is_no_crime(std::uint16_t(kTimaert)),
+          "предусловие гейта: смерть подданного жертвы мир помнит");
+    const sm::MacroHandle victim =
+squad(*wStore_, NPCType::Guard, "timaert", 2, 2, 22u);
+    const AutoBattleOutcome o = wipe_of(*wStore_, victim, true);
+    const int fallen = int(o.casualtiesB.size()) + 1;
+    CHECK(fallen == 3,
+          "фикстура убила ТРОИХ (две головы и аватар) — иначе ожидание ниже "
+          "не отличалось бы от цены одной смерти");
+    CHECK(raw(gs.factions, kEmpire, kTimaert) == 0
+              && raw(gs.factions, sm::kPlayerFactionSlot, kTimaert) == 0,
+          "обе пары нейтральны ДО боя: сдвиг будет ВИДЕН, а не угадан");
+
+    settle_player_auto_battle(mw, victim, o, /*playerIsA*/true);
+
+    CHECK(raw(gs.factions, kEmpire, kTimaert) == fallen * kKillRepPenalty,
+          "НОВЫЙ ЗАКОН: платит фракция СКВАДА-УЧАСТНИКА — держава одержимого "
+          "лорда, по цене одной смерти на каждое тело");
+    CHECK(raw(gs.factions, kTimaert, kEmpire) == fallen * kKillRepPenalty,
+          "…и симметрично, потому что дверь поступка одна на весь мир");
+    CHECK(raw(gs.factions, sm::kPlayerFactionSlot, kTimaert) == 0,
+          "СТАРЫЙ ЗАКОН МЁРТВ: пара ИГРОКА не двинулась ни на единицу — "
+          "одержимый лорд ссорит с жертвой СВОЮ державу, не игрока");
 }
 
 void test_spoils_are_rolled_not_scavenged() {
@@ -277,6 +363,7 @@ int main() {
     test_every_death_is_reported_once();
     test_no_facts_when_nobody_listens();
     test_kill_price_is_the_registry_column();
+    test_the_auto_resolve_pays_with_the_participants_banner();
     test_spoils_are_rolled_not_scavenged();
     test_empty_handed_fallen_pays_nothing();
     return sm::test::report("auto_resolve_speaks_test");

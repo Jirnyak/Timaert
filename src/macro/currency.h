@@ -205,7 +205,7 @@ inline int transfer_value_dense(Inventory& from, Depot to, int value,
             sub_sat(massLeftG, std::uint64_t(take) * std::uint64_t(d.massG));
     }
     if (moved > 0 && to.needDebt) {
-        econ_pay_debt(to.inv, to.needDebt, to.sink, to.user);
+        econ_pay_debt(to.inv, to.needDebt);
     }
     return moved;
 }

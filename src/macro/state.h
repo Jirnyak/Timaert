@@ -458,7 +458,7 @@ namespace sm {
 // 150 — M-379: долг свипов умер вместе с бюджетным драйвером — блок ритма
 // макро-ИИ усох до одного джиттера (sweepAccum/pendingSweeps/sweepCursor
 // покинули провод): ритм живёт пер-сквадно в rt.tickAccum строк сквадов.
-constexpr int kSaveVersion = 150;
+constexpr int kSaveVersion = 151;
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -1123,9 +1123,16 @@ inline bool player_hostile_to(const GameState* gs, const char* factionId) {
 // именем игрока ушёл — сравнение имён заменено равенством чисел.
 //
 // Звонящие — ПО ПРИРОДЕ про игрока, и потому дверь жива: эффект выбора
-// диалога (`src/events/effect_applicator.cpp`), его собственный авторезолв
-// (`settle_player_battle@src/macro/squad.h`), выбор родины на старте и
+// диалога (`src/events/effect_applicator.cpp`), выбор родины на старте и
 // консоль (`src/app/main.cpp`).
+//
+// А ЕГО АВТОРЕЗОЛВ ОТСЮДА УШЁЛ 2026-11-03, и это был ПОСЛЕДНИЙ звонящий,
+// который про игрока НЕ был: `settle_player_auto_battle@src/macro/squad.h`
+// платил за убитых строкой ИГРОКА, а платить обязана фракция сквада-участника
+// (вердикт владельца «Обобщить: платит фракция сквада-участника»). Признак,
+// по которому дверь жива у остальных трёх: у них актор игрок ПО ПРЕДМЕТУ —
+// диалог ведёт он, родину выбирает он, консоль правит его. Новому звонящему
+// сюда нужен тот же признак, иначе ему нужна ординальная дверь.
 inline void add_player_reputation(GameState& gs, const char* factionId,
                                   int delta) {
     add_faction_standing(gs.factions, kPlayerFactionSlot,

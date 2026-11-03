@@ -123,7 +123,7 @@ void test_the_two_shares_are_independent() {
     // раньше был в `out`, а не в пуле.)
     sm::Wellbeing wb{};
     const sm::UpkeepWindowOutcome out = sm::upkeep_season_window(
-        r, store, wb, nullptr, nullptr);
+        r, store, wb);
 
     CHECK(out.starved == 2,
           "половина непокрытого харча = половина состава УМЕРЛА (4 × 1/2)");

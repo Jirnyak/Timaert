@@ -62,70 +62,19 @@ static int cell_number_at(const sm::GameState& gs, const sm::MacroStore& st,
 
 namespace {
 
-// One game day of econ facts, folded flat. World-aggregate on purpose: the
-// per-place cut comes from sampling the place bodies at day end;
-// facts carry the FLOWS the stocks alone cannot show.
-struct DayAccum {
-    long long gathered[sm::kCommodityCount] = {};
-    long long produced[sm::kCommodityCount] = {};
-    long long consumed[sm::kCommodityCount] = {};
-    int starvedPops = 0;
-    long long mintedCoins = 0;
-    // ── ВЕДОМОСТЬ СКЛАДА ДУШ (econ_day.h, CANON S9) ──────────────────────
-    // Уровни (кто где стоит) прибор снимает сам вечерним свипом; ПОТОКИ к
-    // вечеру не видны — место, выплатившее сто душ в артель, и место,
-    // потерявшее сто душ, выглядят одинаково. Эти четыре величины и есть
-    // разница между «мир умирает» и «мир переливается».
-    long long soulsBorn = 0;
-    // (`crewsUnfed`/`soulsUnfed` УМЕРЛИ 2026-10-06, M-232: исхода «ушёл за
-    // харч» в мире больше нет — некормленные умирают и попадают в
-    // `starvedPops` выше, той же строкой, которой говорит голод места.)
-    int crewsUnpaid = 0;         // контейнеров провалило окно по ПЛАТЕ
-    long long soulsUnpaid = 0;
-    // ЕДИНСТВЕННАЯ БОЕВАЯ УБЫЛЬ (M-228): души, погибшие с павшим сквадом.
-    // До 2026-10-06 они не умирали, а переезжали в пул дезертиров, и
-    // ведомость об этом молчала — закон сохранения душ мира не сходился ни
-    // на одном сиде, потому что строки просто не было.
-    long long soulsKilled = 0;
-
-    void reset() { *this = DayAccum{}; }
-};
-
-void econ_fact_sink(void* user, const sm::EconFact& f) {
-    auto* a = static_cast<DayAccum*>(user);
-    const bool hasCommodity =
-        f.commodity >= 0 && f.commodity < sm::kCommodityCount;
-    switch (f.kind) {
-        case sm::EconFact::Kind::Gathered:
-            if (hasCommodity) a->gathered[f.commodity] += f.amount;
-            break;
-        case sm::EconFact::Kind::Produced:
-            if (hasCommodity) a->produced[f.commodity] += f.amount;
-            break;
-        case sm::EconFact::Kind::Consumed:
-            if (hasCommodity) a->consumed[f.commodity] += f.amount;
-            break;
-        case sm::EconFact::Kind::Starved: a->starvedPops += f.amount; break;
-        // amount = coins struck (commodity carries the INPUT silver row, so
-        // this is its own counter, not a produced[] line).
-        case sm::EconFact::Kind::Minted: a->mintedCoins += f.amount; break;
-        // Slot hygiene, not a flow of goods: what the melt RETURNS is not
-        // reported as Produced on purpose (entropy is a sink, not a source).
-        case sm::EconFact::Kind::Scrapped: break;
-        // Ведомость склада душ. Один факт дезертирства = одна артель,
-        // поэтому здесь считаются ОБЕ величины: артели фактами, души суммой.
-        case sm::EconFact::Kind::SoulsBorn:
-            a->soulsBorn += f.amount;
-            break;
-        case sm::EconFact::Kind::SoulsDesertedUnpaid:
-            a->crewsUnpaid += 1;
-            a->soulsUnpaid += f.amount;
-            break;
-        case sm::EconFact::Kind::SoulsKilled:
-            a->soulsKilled += f.amount;
-            break;
-    }
-}
+// (ВЕДОМОСТЬ ДНЯ `DayAccum` + СТОК `econ_fact_sink` СТОЯЛИ ЗДЕСЬ и умерли
+//  2026-11-03 вместе со вторым фактным путём мира — `EconFact`/`EconFactSink`,
+//  вердикт владельца в шапке `src/macro/econ_day.h`. Прибор был их
+//  ЕДИНСТВЕННЫМ читателем, поэтому с каналом ушёл и он.
+//
+//  ЧТО ПРИБОР ПЕРЕСТАЛ УМЕТЬ, НАЗВАНО ЧИСЛОМ КОЛОНОК: вечерний взгляд видит
+//  УРОВНИ (`*_stock`, `souls*`, `coin*`) и не видит ПОТОКОВ — ушли
+//  `starvedPops`, `minted`, `soulsBorn`, `crewsUnpaid`, `soulsUnpaid`,
+//  `soulsKilled` и по три колонки на товар (`*_gathered`, `*_produced`,
+//  `*_consumed`), всего 6 + 3×kCommodityCount. Уровень есть сумма нескольких
+//  причин: место, потерявшее сто душ, и место, выплатившее сто душ в артель,
+//  к вечеру выглядят одинаково — именно это ведомость и различала. Дыра
+//  названа нарядом реестра; времянки на её место не поставлено (AGENTS §1).)
 
 // Every coin row of the faction registry's mint columns, counted by catalog
 // ordinal × NOMINAL (its value column): with three nominals per realm
@@ -290,7 +239,6 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "[muster] spawned at sea: %d\n", atSea);
         }
 
-        DayAccum accum;
         sm::NavWorld nav;        // запечённая навигация (CANON S7), derived
         sm::MacroWorld mw{};
         mw.gs = &gs;
@@ -304,8 +252,6 @@ int main(int argc, char** argv) {
         mw.pathCost = &pathCost;
         mw.treeGrid = &treeGrid;
         mw.squads = &ai.squadIndex;
-        mw.econFacts = &econ_fact_sink;
-        mw.econFactsUser = &accum;
 
         // ── TSV writers ──────────────────────────────────────────────────
         char path[512];
@@ -328,8 +274,11 @@ int main(int argc, char** argv) {
         // со своими величинами: казна пула и пул дезертиров были половинами
         // контура — писатель живой, читателей ноль. Прибор не печатает то,
         // чего в мире нет; колонки читать ПО ИМЕНИ, §5 п.7.)
+        // (КОЛОНКИ ПОТОКОВ `starvedPops`/`minted` ушли 2026-11-03 вместе с
+        //  ведомостью дня — некролог выше. Прибор не печатает того, чего в
+        //  мире нет; колонки читать ПО ИМЕНИ, §5 п.7.)
         std::fprintf(fw, "day\tpop\tcoinRooted\tcoinSquads"
-                         "\tstarvedPops\tminted\ttrades\ttradedValue\tfoodHolds"
+                         "\ttrades\ttradedValue\tfoodHolds"
                          "\tcrewsGather\tcrewsSell\tcrewsOther"
                          // ЛОШАДЬ-ЮНИТ (2026-09-19): свидетель контура —
                          // табуны в гарнизонах и спины в отрядах, миром.
@@ -373,15 +322,11 @@ int main(int argc, char** argv) {
                          // теперь входит каждая душа РОВНО раз.
                          "\tpopCity\tpopVil\tpopLair\tpopElse"
                          "\tsoulsHomed\tsoulsFree\tsoulsGarr"
-                         "\tsoulsWorld"
-                         // Потоки дня (ведомость склада душ, econ_day.h).
-                         "\tsoulsBorn"
-                         "\tcrewsUnpaid\tsoulsUnpaid\tsoulsKilled");
+                         "\tsoulsWorld");
         for (int c = 0; c < sm::kCommodityCount; ++c) {
             const char* id = sm::kCommodities[c].id;
-            std::fprintf(fw, "\t%s_stock\t%s_gathered\t%s_produced"
-                             "\t%s_consumed\t%s_city\t%s_vil",
-                         id, id, id, id, id, id);
+            std::fprintf(fw, "\t%s_stock\t%s_city\t%s_vil",
+                         id, id, id);
         }
         // ── ПЕРЕПИСЬ СЛОТОВ И ЦЕНА ДУМКИ — В САМОМ КОНЦЕ СТРОКИ ──────────
         // Приписаны ХВОСТОМ нарочно: ни один индекс прежних колонок не
@@ -471,7 +416,6 @@ int main(int argc, char** argv) {
         SlotCensus lastCensus;
         double lastAiMs = 0.0;
         for (int d = 0; d < days; ++d) {
-            accum.reset();
             double aiSecs = 0.0;
             for (int s = 0; s < kSweepsPerDay; ++s) {
                 sm::tick_world(gs, *macroStore, gs.worldTickRt, sm::kAiTicks,
@@ -712,11 +656,10 @@ int main(int argc, char** argv) {
             ringCursor = gs.chronicle.nextSeq;
 
             std::fprintf(fw,
-                         "%d\t%lld\t%lld\t%lld\t%d\t%lld\t%lld"
+                         "%d\t%lld\t%lld\t%lld\t%lld"
                          "\t%lld\t%lld\t%d\t%d\t%d",
                          gs.worldTime.day(), popTotal, coinLm, coinSquads,
-                         accum.starvedPops,
-                         accum.mintedCoins, trades, tradedValue, foodHolds,
+                         trades, tradedValue, foodHolds,
                          crewsGather, crewsSell, crewsOther);
             std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld",
                          horsesGarr, horsesSquads, pastures, parcels);
@@ -725,8 +668,8 @@ int main(int argc, char** argv) {
             // существует: величина, которую каждый читатель складывает сам,
             // рано или поздно складывается по-разному.
             std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld"
-                             "\t%lld\t%lld\t%lld\t%lld"
-                             "\t%lld\t%d\t%lld\t%lld",
+                             "\t%lld\t%lld\t%lld"
+                             "\t%lld",
                          popCity, popVil, popLair, popElse,
                          soulsHomed, soulsFree, soulsGarr,
                          // Паства мест + бездомные: ни одной души дважды.
@@ -737,14 +680,10 @@ int main(int argc, char** argv) {
                          // входят — они подмножества паствы и живут рядом
                          // как ответы на «кто стоит дома» и «кто за домом
                          // числится».
-                         popTotal + soulsFree,
-                         accum.soulsBorn,
-                         accum.crewsUnpaid, accum.soulsUnpaid,
-                         accum.soulsKilled);
+                         popTotal + soulsFree);
             for (int c = 0; c < sm::kCommodityCount; ++c) {
-                std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld",
-                             stock[c], accum.gathered[c], accum.produced[c],
-                             accum.consumed[c], stockCity[c], stockVil[c]);
+                std::fprintf(fw, "\t%lld\t%lld\t%lld",
+                             stock[c], stockCity[c], stockVil[c]);
             }
             const SlotCensus sc = slot_census(*macroStore);
             std::fprintf(fw, "\t%lld\t%lld\t%lld\t%.3f",

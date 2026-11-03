@@ -111,20 +111,22 @@ inline constexpr FactKindDef kFactKinds[] = {
     // bereaved home files the loss for its READERS (grudges, revenge
     // quests, the danger price), not for standing.
     {FactKind::Died,         "died",          "Died",          32,      0, false},
-    {FactKind::Battle,       "battle",        "Battle",        32,      5},
+    // (РЯД `Battle` СНЕСЁН 2026-11-03 вместе со своим родом — ноль
+    //  отправителей, DOD п.9; некролог в `src/bus/fact.h`.)
     // What a place suffers or does. It earns the PLACE its standing.
     // victimShare false: a deal is mutual, not a deed against the partner.
     {FactKind::Traded,       "traded",        "Traded",         8,      0, false},
     // Deeds against the LAND, which has no standing of its own — so their base
-    // IS the answer, and it is small. Felling a forest is a day's work the
-    // world notices a little (owner's own example).
-    {FactKind::Gathered,     "gathered",      "Gathered",       8,      1},
-    {FactKind::Built,        "built",         "Built",         64,     10},
+    // IS the answer, and it is small.
+    // (РЯДЫ `Gathered`/`Built`/`OwnerChanged`/`Spawned` СНЕСЕНЫ 2026-11-03
+    //  вместе со своими родами — у каждого было НОЛЬ отправителей во всём
+    //  дереве (DOD п.9, вердикт владельца «Снести сирот сейчас»); поимённые
+    //  некрологи с причиной — в `src/bus/fact.h`. С ними ушёл и пример
+    //  владельца про «срубить лес — дело, которое мир замечает немного»: его
+    //  место займёт та строка, которую заведут вместе с механикой.)
     {FactKind::Starved,      "starved",       "Starved",       32,      0},
-    {FactKind::OwnerChanged, "owner_changed", "Changed hands", 64,     20},
     {FactKind::Explored,     "explored",      "Explored",      64,      2},
     {FactKind::Drained,      "drained",       "Drained",       64,     10},
-    {FactKind::Spawned,      "spawned",       "Appeared",      16,      0},
     {FactKind::QuestTaken,   "quest_taken",   "Took contract", 32,      1},
     {FactKind::QuestDone,    "quest_done",    "Kept contract", 32,      5},
     // Weekly-interest weather like Traded: the tithe is mutual order, not a

@@ -41,10 +41,9 @@ struct BattleFact {
 };
 using BattleFactSink = void (*)(void* user, const BattleFact& fact);
 
-// The economy's fact record lives in econ_day.h (its writer); the envelope
-// only carries the pointer, so a forward declaration keeps this header POD.
-struct EconFact;
-using EconFactSink = void (*)(void* user, const EconFact& fact);
+// (ПАРА `EconFact`/`EconFactSink` СТОЯЛА ЗДЕСЬ ОБЪЯВЛЕНИЕМ ВПЕРЁД и умерла
+//  2026-11-03 вместе со вторым фактным путём мира — некролог в
+//  `src/macro/econ_day.h`. Факт мира есть род 5, `WorldFact@src/bus/fact.h`.)
 
 struct GameState;
 struct MacroStore;
@@ -99,12 +98,11 @@ struct MacroWorld {
     // state of a headless fixture and costs a null check.
     BattleFactSink facts     = nullptr;
     void*          factsUser = nullptr;
-    // The economy's fact channel (econ_day.h EconFact): gathered / produced /
-    // consumed / famine, stamped with the place id by the world_tick relay.
-    // Same law as `facts` above — null means nobody is listening. The balance
-    // harness is the first listener; the app may plug the bus in later.
-    EconFactSink   econFacts     = nullptr;
-    void*          econFactsUser = nullptr;
+    // (КОЛОНКИ `econFacts`/`econFactsUser` — КАНАЛ ЭКОНОМИЧЕСКИХ ФАКТОВ —
+    //  УНИЧТОЖЕНЫ 2026-11-03. Их не ставил НИ ОДИН путь игры, то есть девять
+    //  эмиссий в проде были no-op всегда, а читали их только приборы: вторая
+    //  форма факта рядом с родом 5 фрейма (DOD п.6). Вердикт владельца и
+    //  названная дыра — в шапке `src/macro/econ_day.h`.)
 };
 
 } // namespace sm

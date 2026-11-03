@@ -179,21 +179,13 @@ void deliver_bag_home(MacroHandle self, const TickContext& ctx, int defIdx) {
     lot[0] = DealLine{};
     lot[0].want = n;
     lot[0].def = std::uint16_t(defIdx);
-    const DealFact fact = deal(st, self.slot, homeSlot, lot, {},
-                               kNoCarryLimitG, kNoCarryLimitG,
-                               ctx.mw.econFacts, ctx.mw.econFactsUser);
-    // The arrival IS the gather flow: the pure econ steps announce their
-    // own facts, but the agent work-loop lands its haul here — without
-    // this fact every *_gathered column of the дубль-прогон reads zero
-    // (measured: 4 years × 4 seeds of zeros, 2026-08-31). Количество —
-    // ФАКТ сделки, не намерение.
-    if (fact.settled && ctx.mw.econFacts) {
-        EconFact f{};
-        f.kind = EconFact::Kind::Gathered;
-        f.commodity = commodity_of_item(defIdx);
-        f.amount = fact.unitsAB;
-        ctx.mw.econFacts(ctx.mw.econFactsUser, f);
-    }
+    // (ДОКЛАД `Gathered` СТОЯЛ ЗДЕСЬ — приход И ЕСТЬ поток добычи, и он один
+    //  из девяти, умерших 2026-11-03 вместе со вторым фактным путём мира:
+    //  некролог — `src/macro/econ_day.h`. Число не потеряно как СОБЫТИЕ —
+    //  дверь сделки отдаёт его (`DealFact::unitsAB`); потерян СУММАТОР по
+    //  миру, читателем которого был один прибор.)
+    (void)deal(st, self.slot, homeSlot, lot, {},
+               kNoCarryLimitG, kNoCarryLimitG);
 }
 
 // The RIPEST home field, not the nearest (owner increment 2026-08-31) —
@@ -1229,20 +1221,19 @@ float march_days_(const TickContext& ctx, int ax, int ay, int bx, int by);
 float route_fear_(const TickContext& ctx, int ax, int ay, int bx, int by);
 long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
                           std::uint16_t traderSlot, const Skills& site,
-                          std::int64_t capG, EconFactSink sink, void* user);
+                          std::int64_t capG);
 // ФОЛБЭКИ — ТОЖЕ ГЛАГОЛЫ ПУЛЬТА: сквад без дома и сквад без цели ходят
 // чужими модулями, и право позвать их даёт пульт, а не прямой вызов из тела.
 void ai_nomad(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
               ecs::Pools& pools, const TickContext& ctx);
 
 
-// Приёмник-МЕСТО (CANON S10): склад + счёт + канал фактов мира — дверь
-// прихода гасит долг СРАЗУ тем, что упало. Сумки в Depot не заворачиваются
-// (неявная конверсия из Inventory&, долга нет).
+// Приёмник-МЕСТО (CANON S10): склад + счёт — дверь прихода гасит долг СРАЗУ
+// тем, что упало. Сумки в Depot не заворачиваются (неявная конверсия из
+// Inventory&, долга нет).
 inline Depot depot_(std::uint16_t slot, const MacroWorld& mw) {
     MacroStore& st = store_mw(mw);
-    return Depot(st.inventory[slot].inv, st.upkeep[slot].needDebt,
-                 mw.econFacts, mw.econFactsUser);
+    return Depot(st.inventory[slot].inv, st.upkeep[slot].needDebt);
 }
 
 // The sell-run machine (defined with the trade behaviours below): the
@@ -1544,8 +1535,7 @@ public:
     void load_home(AiSelf& s, std::uint16_t homeSlot) {
         MacroStore& st = store_ctx(ctx_);
         plan_home_load_(st, homeSlot, s.h.slot, st.sheet[homeSlot].skills,
-                        carry_capacity_g(s.rt, s.bag),
-                        ctx_.mw.econFacts, ctx_.mw.econFactsUser);
+                        carry_capacity_g(s.rt, s.bag));
     }
     // СДЕЛКА НА РЫНКЕ — дверь торговли (S10/S25): обе ноги атомарны, сила
     // торга у каждой стороны своя и берётся ЕЁ анкетой.
@@ -1556,8 +1546,7 @@ public:
             st, s.h.slot, carry_capacity_g(s.rt, s.bag), market,
             handle_at(st, homeSlot),
             trade_power_of(sheet_of(st, s.h)),
-            trade_power_of(st.sheet[market]),
-            ctx_.mw.econFacts, ctx_.mw.econFactsUser);
+            trade_power_of(st.sheet[market]));
     }
     // Летопись: состоявшийся обмен — факт мира (FactKind::Traded).
     void traded_fact(AiSelf& s, int x, int y, int value, int marketId) {
@@ -1586,8 +1575,7 @@ public:
             dump[i].def = std::uint16_t(commodity_item_index(i));
         }
         deal(st, s.h.slot, homeSlot, dump, {},
-             kNoCarryLimitG, kNoCarryLimitG,
-             ctx_.mw.econFacts, ctx_.mw.econFactsUser);
+             kNoCarryLimitG, kNoCarryLimitG);
         // ВЫГРУЗКА ИЗ спины В СКЛАД: предела нет, и это ВЫСКАЗЫВАНИЕ, а не
         // пропуск (M-308) — у склада места спины нет вовсе, потому что обоз
         // есть свойство анкеты, которая идёт, а место не идёт никуда
@@ -1670,7 +1658,7 @@ public:
                 draw[0].def = std::uint16_t(id);
                 deal(st, vassal, s.h.slot, draw, {},
                      carry_capacity_g(rt, *bag) - inventory_mass_g(*bag),
-                     kNoCarryLimitG, ctx_.mw.econFacts, ctx_.mw.econFactsUser);
+                     kNoCarryLimitG);
                 const int moved = draw[0].done;
                 if (moved <= 0) continue;
                 owed -= (long long)moved * base;
@@ -1737,13 +1725,10 @@ public:
         MacroStore& st = store_ctx(ctx_);
         const std::uint16_t slot = s.h.slot;
         const int heads = count_human_souls(s.bag);
-        // СТОК ФАКТОВ — НАПРЯМУЮ: клеймовщик адреса умер вместе с колонкой
-        // `EconFact::placeId` (2026-10-25, вердикт «да сноси»), и посредника
-        // между дверью и слушателем больше нет.
         const int made = econ_produce_day(
             s.bag, st.upkeep[slot].needDebt, st.sheet[slot].skills,
             heads > 0 ? std::max(1, heads / kCreaturesPerCityWorker) : 0,
-            heads, ctx_.mw.econFacts, ctx_.mw.econFactsUser,
+            heads,
             faction_or_freefolk(std::int16_t(st.kind[slot].factionIdx)));
         s.rt.stateTimer = std::int16_t(kCraftThinksPerDay);
         return made;
@@ -2471,12 +2456,9 @@ long long trade_bid_value_(const int* mine,
 // иначе план стейджится лотом и исполняется ОДНОЙ сделкой в конце —
 // «что решили» и «что повезли» теперь не только одно число, но и один
 // коммит.
-// (Умолчания `sink = nullptr, user = nullptr` сняты вместе с переездом
-//  вызова в пульт: звонящий у двери один, и канал фактов он передаёт всегда —
-//  умолчание было разрешением МОЛЧА потерять факт сделки.)
 long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
                           std::uint16_t traderSlot, const Skills& site,
-                          std::int64_t capG, EconFactSink sink, void* user) {
+                          std::int64_t capG) {
     Inventory& store = st.inventory[homeSlot].inv;
     const std::int32_t* needDebt = st.upkeep[homeSlot].needDebt;
     const int population = souls_home(st, homeSlot);
@@ -2544,7 +2526,7 @@ long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
     if (bag && lines > 0)
         deal(st, homeSlot, traderSlot,
              std::span<DealLine>(lot, std::size_t(lines)), {},
-             budgetG, kNoCarryLimitG, sink, user);
+             budgetG, kNoCarryLimitG);
     return planned;
 }
 
@@ -4162,8 +4144,7 @@ void settle_exhaustion(MacroHandle e, const ecs::Pools& hp,
     if (!ctx.mw.store) return;
     MacroStore& st = store_ctx(ctx);
     settle_avatar_fraction(st, e, 0.0f);
-    kill_fallen_squad_creatures(st, ctx.mw.econFacts,
-                                ctx.mw.econFactsUser);
+    kill_fallen_squad_creatures(st);
 }
 
 // ПОВЕДЕНИЕ НЕТИПИЗИРОВАННОГО СКВАДА — МОДУЛЬ None-СТРОКИ kAiModuleRows
@@ -4395,8 +4376,7 @@ CaravanDeal trade_caravan_at_station(MacroStore& st,
                                      std::uint16_t traderSlot,
                                      std::int64_t capacityG,
                                      std::uint16_t marketSlot,
-                                     int myTradePct, int theirTradePct,
-                                     EconFactSink sink, void* user) {
+                                     int myTradePct, int theirTradePct) {
     CaravanDeal out{};
     // Склад и счёт рынка — колонки его ТЕЛА (M-90 шаг 5); гашение долга
     // рынка приходом (CANON S10) теперь внутри двери deal.
@@ -4448,7 +4428,7 @@ CaravanDeal trade_caravan_at_station(MacroStore& st,
             const DealFact f =
                 deal(st, traderSlot, marketSlot, goods,
                      std::span<DealLine>(pay, std::size_t(sv.lines)),
-                     kNoCarryLimitG, kNoCarryLimitG, sink, user);
+                     kNoCarryLimitG, kNoCarryLimitG);
             if (!f.settled) continue;
             out.soldValue += sv.value;
             out.movedTableValue += base * n;
@@ -4480,7 +4460,7 @@ CaravanDeal trade_caravan_at_station(MacroStore& st,
             const DealFact f =
                 deal(st, traderSlot, marketSlot,
                      std::span<DealLine>(pay, std::size_t(sv.lines)), goods,
-                     kNoCarryLimitG, freeG, sink, user);
+                     kNoCarryLimitG, freeG);
             if (!f.settled) continue;
             out.boughtValue += sv.value;
             out.movedTableValue += base * n;
@@ -4500,8 +4480,7 @@ CaravanDeal trade_vendor_at_market(MacroStore& st,
                                    std::int64_t capacityG,
                                    std::uint16_t marketSlot,
                                    MacroHandle home,
-                                   int myTradePct, int theirTradePct,
-                                   EconFactSink sink, void* user) {
+                                   int myTradePct, int theirTradePct) {
     CaravanDeal out{};
     // Склад и счёт рынка — колонки его ТЕЛА (M-90 шаг 5); гашение долга
     // рынка приходом (CANON S10) теперь внутри двери deal.
@@ -4548,7 +4527,7 @@ CaravanDeal trade_vendor_at_market(MacroStore& st,
         const DealFact f =
             deal(st, traderSlot, marketSlot, goods,
                  std::span<DealLine>(pay, std::size_t(sv.lines)),
-                 kNoCarryLimitG, kNoCarryLimitG, sink, user);
+                 kNoCarryLimitG, kNoCarryLimitG);
         if (!f.settled) continue;
         out.soldValue += sv.value;
         out.movedTableValue += base * n;
@@ -4670,7 +4649,7 @@ CaravanDeal trade_vendor_at_market(MacroStore& st,
             const DealFact f =
                 deal(st, traderSlot, marketSlot,
                      std::span<DealLine>(pay, std::size_t(sv.lines)), goods,
-                     kNoCarryLimitG, freeG, sink, user);
+                     kNoCarryLimitG, freeG);
             if (!f.settled) continue;
             out.boughtValue += sv.value;
             out.movedTableValue += base * n;
@@ -4710,8 +4689,7 @@ CaravanDeal trade_vendor_at_market(MacroStore& st,
 // угрозы; у него с терраином нет общего вопроса, и выключать его вместе с
 // ним значит ровно то, что запрещает ЗАКОН ДВУХ ТЕМПОВ п.5: глобальный
 // флаг, гасящий систему макромира.
-int squad_season_window(GameState& gs, MacroStore& st, int day,
-                        EconFactSink sink, void* user) {
+int squad_season_window(GameState& gs, MacroStore& st, int day) {
     if (!season_boundary(day)) return 0;
     int deserted = 0;
     // Окно делит ОДИН пул дезертиров и один пул лута на всех — порядок суда
@@ -4744,12 +4722,8 @@ int squad_season_window(GameState& gs, MacroStore& st, int day,
         // списанной ни на одну душу. Мир кормил, растил, поднимал сквады и
         // облагал данью людей, которых у него нет.
         const int folkBefore = count_human_souls(bag.inv);
-        // СТОК ФАКТОВ — НАПРЯМУЮ. Здесь стоял клеймовщик адреса, и умер он
-        // вместе с колонкой `EconFact::placeId` (2026-10-25): дверь про
-        // адреса не знает и не должна, а колонку, в которую он штамповал,
-        // не читал никто.
         const UpkeepWindowOutcome out = upkeep_season_window(
-            creatures, bag.inv, st.wellbeing[slot], sink, user);
+            creatures, bag.inv, st.wellbeing[slot]);
         flock_left_home(gs, st, slot, folkBefore);
         deserted += out.walked;
         // (ВЕДОМОСТЬ СКЛАДА ДУШ переехала В САМУ ДВЕРЬ, M-233: событие
@@ -4815,8 +4789,7 @@ int squad_bags_hygiene_daily(MacroWorld& mw) {
         // писать закон пятый раз; вместо этого контейнер ест то, что приехало,
         // тем же вечером. «Добыча привезла — часть съелась» (владелец,
         // 2026-09-21), и это ТОТ ЖЕ econ_pay_debt, которым платит ландмарк.
-        econ_pay_debt(bag.inv, st.upkeep[slot].needDebt, mw.econFacts,
-                      mw.econFactsUser);
+        econ_pay_debt(bag.inv, st.upkeep[slot].needDebt);
     }
     return melted;
 }
@@ -4929,7 +4902,7 @@ void relay_swept_death_(MacroHandle h, void* user) {
 void settle_dead_squads(MacroWorld& mw) {
     GameState& gs = *mw.gs;
     MacroStore& st = *mw.store;
-    kill_fallen_squad_creatures(st, mw.econFacts, mw.econFactsUser);
+    kill_fallen_squad_creatures(st);
     // КОНТЕКСТ СОБИРАЕТСЯ ЗДЕСЬ, И ОН МИНИМАЛЬНЫЙ ПО ЧЕСТНОЙ ПРИЧИНЕ: у
     // свипа мёртвых нет ни кванта думки, ни позиции игрока, ни индекса
     // сквадов — и глаголу `reshape_feature` ничего из этого не нужно. Пустые

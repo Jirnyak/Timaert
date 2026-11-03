@@ -93,8 +93,7 @@ HalfFact ship_half(Inventory& src, Inventory& dst,
 DealFact deal(MacroStore& st,
               std::uint16_t a, std::uint16_t b,
               std::span<DealLine> fromA, std::span<DealLine> fromB,
-              std::int64_t massCapToB, std::int64_t massCapToA,
-              EconFactSink sink, void* user) {
+              std::int64_t massCapToB, std::int64_t massCapToA) {
     DealFact out{};
     const auto zero_facts = [&] {
         for (DealLine& l : fromA) l.done = 0;
@@ -130,9 +129,9 @@ DealFact deal(MacroStore& st,
     // ДВЕРИ НЕ ПРИНАДЛЕЖИТ (вердикт 2026-10-23: «паства это только ответ
     // АИ модуля») — дверь объектна и душ не знает.
     if (ab.units > 0)
-        econ_pay_debt(st.inventory[b].inv, st.upkeep[b].needDebt, sink, user);
+        econ_pay_debt(st.inventory[b].inv, st.upkeep[b].needDebt);
     if (ba.units > 0)
-        econ_pay_debt(st.inventory[a].inv, st.upkeep[a].needDebt, sink, user);
+        econ_pay_debt(st.inventory[a].inv, st.upkeep[a].needDebt);
     return out;
 }
 
