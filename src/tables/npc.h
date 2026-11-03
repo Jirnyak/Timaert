@@ -13,6 +13,7 @@
 #include "tables/attributes.h"   // AttrWeights/SkillWeights — колонки весов роли (M-263)
 #include "tables/army.h"        // CombatTemplate — боевой лист строки существа
 #include "tables/behaviour.h"
+#include "tables/progression.h"  // exp_value_of_level/tier_of_power — лестница мира
 #include "tables/body_parts.h"  // SlotMask — какие слоты экипировки у тела этой строки
 #include <algorithm>
 #include <cctype>
@@ -295,13 +296,25 @@ struct NpcTypeDef {
     CombatTemplate  combat;
     int             upkeepGoldPerDay;
     bool            hireable;
-    // ONE XP law (owner, 2026-08-29): every kill pays npc_xp_reward =
-    // xpReward + (level−1)·5, in the subworld and the auto-resolve alike —
-    // the old exp_from_fight(lvl) = 10·lvl fallback for rows that named 0 is
-    // dead. Creature rows author xpReward = 5·(baseLevel+1), DERIVED to keep
-    // the old subworld feel at the row's own level:
-    //     5·(L₀+1) + (L₀−1)·5 = 10·L₀  — exactly what 10·lvl used to pay.
-    int             xpReward;
+    // ── ЗДЕСЬ ЖИЛА КОЛОНКА `xpReward`, И ОНА УНИЧТОЖЕНА 2026-11-03 ────────
+    //
+    // ЧЕМ ОНА БЫЛА: «ONE XP law» 2026-08-29 — каждое убийство платило
+    // `xpReward + (level−1)·5`, а строки существ авторили `5·(baseLevel+1)`,
+    // чтобы итог сошёлся в 10·L₀.
+    //
+    // ПОЧЕМУ УМЕРЛА. Во-первых, она была ВТОРЫМ ОТВЕТОМ на вопрос «чего стоит
+    // эта тварь»: сила строки уже считается её колонками (`row_combat_power`
+    // ниже), а цена жила отдельным числом и расходилась с силой молча — восемь
+    // строк из сорока семи отклонялись от собственной формулы, причём
+    // `Adventurer` при мощи 560 платил НОЛЬ, а дракон — в девять раз больше
+    // выводимого. Во-вторых, закон был ЛИНЕЙНЫМ (10·L) против КВАДРАТИЧНОГО
+    // порога уровня, и замер по формулам дал инфляцию гринда: убийств ровни на
+    // уровень 110 → 1100 на дистанции 1..100.
+    //
+    // ЧТО ВМЕСТО: цена выводится из ТИРА строки, а тир — из её же мощи
+    // (`creature_tier` ниже). Авторская воля никуда не делась — она теперь
+    // выражается боевыми колонками, то есть ровно тем, что автор и так
+    // настраивает: hp, кости, период удара, броня.
 
     // ── The wild half of the row ──────────────────────────────────────────
     // These four columns arrived with the creature catalog when the two body
@@ -652,7 +665,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = kPeasantCombat,
         .upkeepGoldPerDay = 0,
         .hireable = true,
-        .xpReward = 10,
         .weight = 55,
         .names = {{"Ivan","Pyotr","Sergey","Dmitry","Alexei","Nikolai","Vasily","Grigory",
           "Fedor","Andrei","Olga","Natalya","Katya","Masha","Dasha"}},
@@ -685,7 +697,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = kMerchantCombat,
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = 30,
         .weight = 21,
         .names = {{"Kartash","Bazukin","Torgin","Menkov","Skaldin"}},
         .nameCount = 5,
@@ -713,7 +724,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = kBanditCombat,
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = 20,
         .names = {{"Razboy","Diki","Grozny","Slyak","Khvat"}},
         .nameCount = 5,
         .talkLines = {{"Your gold or your life!",
@@ -744,7 +754,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = kAmbusherCombat,
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = 20,
         // He drops what a bandit drops, named in his own column: his ordinal
         // sits in the creature stripe of the table, where the
         // per-role loot list no longer answers.
@@ -778,7 +787,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = kGuardCombat,
         .upkeepGoldPerDay = 3,
         .hireable = true,
-        .xpReward = 30,
         .names = {{"Strazhnik","Boyar","Vityaz","Desyatnik","Druzhina"}},
         .nameCount = 5,
         .talkLines = {{"Move along, citizen. Nothing to see here.",
@@ -833,7 +841,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = kWitchCombat,
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = 50,
         .weight = 3,
         .names = {{"Yaga","Vedma","Znakharka","Koldunia","Volshebnitsa"}},
         .nameCount = 5,
@@ -861,7 +868,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = kSorceressCombat,
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = 60,
         .names = {{"Charodejka","Zaklinatelnitsa","Mistika","Runara","Svetozara"}},
         .nameCount = 5,
         .talkLines = {{"The arcane currents shift around you...",
@@ -892,7 +898,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
          DamageType::Arcane, /*cruiseM*/0.0f, /*castSpell*/spell_ordinal("magic_bolt")},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/25,
         .weight = 3,
         .radius = 0.55f,
         .names = {{"Brother Vas","Sister Ilm","Novice Korr","The Pale Hand","Acolyte Zeb"}},
@@ -926,7 +931,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = kAdventurerCombat,
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = 0,
         .names = {{}},
         .nameCount = 0,
         .talkLines = {{}},
@@ -950,7 +954,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = kWoodcutterCombat,
         .upkeepGoldPerDay = 0,
         .hireable = true,
-        .xpReward = 12,
         .weight = 21,
         .names = {{"Foka","Yeremey","Lavrenty","Sofron","Nikanor"}},
         .nameCount = 5,
@@ -983,7 +986,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {25, {8,1}, 2.0f, 3, 1.0f, "Gbl"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/15,
         .weight = 4,
         .radius = 0.6f,
         .names = {{}},
@@ -1013,7 +1015,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
          DamageType::Pierce},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/10,
         .weight = 5,
         .radius = 0.45f,
         .names = {{"Skree","Yip","Gnash","Tikka","Vess"}},
@@ -1045,7 +1046,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
          DamageType::Pierce},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/20,
         .weight = 4,
         .radius = 0.6f,
         .names = {{"Gruth","Mazgar","Ukk","Snaga","Dorgul","Brakk"}},
@@ -1074,7 +1074,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {120, {25,1}, 1.25f, 4, 2.0f, "Trl"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/30,
         .weight = 1,
         .radius = 1.2f,
         .names = {{}},
@@ -1104,7 +1103,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
          DamageType::Blunt},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/35,
         .weight = 1,
         .radius = 1.2f,
         .names = {{}},
@@ -1134,7 +1132,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
          DamageType::Pierce},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/35,
         .weight = 1,
         .radius = 1.0f,
         .names = {{}},
@@ -1164,7 +1161,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
          DamageType::Pierce, /*cruiseM*/8.0f},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/20,
         .weight = 3,
         .radius = 0.55f,
         .names = {{}},
@@ -1198,7 +1194,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = kDragonCombat,
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = 500,
         .radius = 1.6f,
         .names = {{}},
         .nameCount = 0,
@@ -1228,7 +1223,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {5, {0,1}, 2.75f, 0, 9.0f, "Rbt"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/10,
         .weight = 15,
         .radius = 0.4f,
         .names = {{}},
@@ -1289,7 +1283,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
          DamageType::Pierce},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/10,
         .weight = 6,
         .radius = 0.35f,
         .names = {{}},
@@ -1317,7 +1310,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {15, {2,1}, 2.5f, 2, 2.0f, "Der"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/10,
         .weight = 12,
         .radius = 0.6f,
         .names = {{}},
@@ -1346,7 +1338,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {12, {4,1}, 2.25f, 2, 1.2f, "Fox"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/10,
         .weight = 8,
         .radius = 0.5f,
         .names = {{}},
@@ -1375,7 +1366,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {30, {10,1}, 2.5f, 3, 1.0f, "Wlf"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/15,
         .weight = 6,
         .radius = 0.7f,
         .names = {{}},
@@ -1405,7 +1395,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {80, {18,1}, 1.75f, 3, 1.5f, "Ber"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/20,
         .weight = 3,
         .radius = 1.0f,
         .names = {{}},
@@ -1433,7 +1422,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {40, {12,1}, 2.0f, 3, 1.2f, "Bor"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/15,
         .weight = 5,
         .radius = 0.7f,
         .names = {{}},
@@ -1462,7 +1450,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {10, {8,1}, 1.5f, 2, 0.8f, "Snk"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/10,
         .weight = 4,
         .radius = 0.3f,
         .names = {{}},
@@ -1491,7 +1478,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {50, {15,1}, 1.25f, 3, 1.5f, "Crc"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/20,
         .weight = 4,
         .radius = 0.8f,
         .names = {{}},
@@ -1522,7 +1508,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
          DamageType::Earth},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/35,
         .weight = 1,
         .radius = 0.8f,
         .names = {{}},
@@ -1552,7 +1537,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {8, {5,1}, 3.0f, 3, 1.0f, "Hwk", CombatTemplate::Melee, 0, 0, 0xFFFFFFFFu, 0.0f, kNpcSightDefaultM, 100, 100, DamageType::Blunt, 5.0f},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/10,
         .weight = 3,
         .radius = 0.4f,
         .names = {{}},
@@ -1582,7 +1566,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {12, {7,1}, 3.25f, 3, 1.0f, "Egl", CombatTemplate::Melee, 0, 0, 0xFFFFFFFFu, 0.0f, kNpcSightDefaultM, 100, 100, DamageType::Blunt, 6.0f},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/15,
         .weight = 4,
         .radius = 0.5f,
         .names = {{}},
@@ -1610,7 +1593,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {3, {0,1}, 1.5f, 0, 9.0f, "Frg"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/10,
         .weight = 10,
         .radius = 0.3f,
         .names = {{}},
@@ -1643,7 +1625,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
          DamageType::Pierce, /*cruiseM*/2.5f},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/10,
         .weight = 6,
         .radius = 0.3f,
         .names = {{}},
@@ -1673,7 +1654,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
          DamageType::Pierce},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/15,
         .weight = 4,
         .radius = 0.5f,
         .names = {{}},
@@ -1701,7 +1681,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {35, {12,1}, 1.75f, 3, 1.0f, "Ssc"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/15,
         .weight = 5,
         .radius = 0.6f,
         .names = {{}},
@@ -1740,7 +1719,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {40, {1,4}, 2.2f, 1.2f, 1.6f, "Hrs"},
         .upkeepGoldPerDay = 0,
         .hireable = true,
-        .xpReward = /*xp = 5*(baseLevel+1)*/10,
         .radius = 0.8f,
         .names = {{}},
         .nameCount = 0,
@@ -1803,7 +1781,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {12, {1,3}, 1.3f, 1.0f, 3.0f, "Shp"},
         .upkeepGoldPerDay = 0,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/10,
         .weight = 5,
         .radius = 0.5f,
         .names = {{}},
@@ -1831,7 +1808,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {20, {5,1}, 2.0f, 2, 1.5f, "Mgt"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/10,
         .weight = 8,
         .radius = 0.6f,
         .names = {{}},
@@ -1866,7 +1842,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {35, {10,1}, 1.5f, 3, 1.2f, "Skl"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/20,
         .weight = 3,
         .radius = 0.6f,
         .names = {{}},
@@ -1896,7 +1871,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
          DamageType::Blunt},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/15,
         .weight = 4,
         .radius = 0.55f,
         .names = {{}},
@@ -1926,7 +1900,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
          DamageType::Pierce},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/20,
         .weight = 3,
         .radius = 0.5f,
         .names = {{}},
@@ -1956,7 +1929,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
          DamageType::Void},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/30,
         .weight = 2,
         .radius = 0.6f,
         .names = {{}},
@@ -1983,7 +1955,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {45, {16,1}, 1.75f, 5, 1.3f, "Iwr"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/25,
         .weight = 2,
         .radius = 0.7f,
         .names = {{}},
@@ -2010,7 +1981,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {150, {20,1}, 0.75f, 4, 2.5f, "Glm"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/30,
         .weight = 1,
         .radius = 1.3f,
         .names = {{}},
@@ -2041,7 +2011,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
          DamageType::Earth, /*cruiseM*/7.0f},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/30,
         .weight = 2,
         .radius = 0.9f,
         .names = {{}},
@@ -2070,7 +2039,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
          DamageType::Fire},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/15,
         .weight = 5,
         .radius = 0.35f,
         .names = {{}},
@@ -2097,7 +2065,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .combat = {60, {14,1}, 1.0f, 4, 1.5f, "Swt"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/20,
         .weight = 3,
         .radius = 0.9f,
         .names = {{}},
@@ -2128,7 +2095,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
          DamageType::Void, /*cruiseM*/0.0f, /*castSpell*/spell_ordinal("void_arrow")},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
-        .xpReward = /*xp = 5*(baseLevel+1)*/45,
         .weight = 1,
         .radius = 0.6f,
         .names = {{"Vashkar","The Grey Crown","Ozimandel","Neth-Ur"}},
@@ -2353,10 +2319,68 @@ inline int hire_price_for(std::uint16_t kind, int level) {
 }
 
 
-inline int npc_xp_reward(NPCType t, int level) {
-    const int base = npc_def(t).xpReward;
-    const int safeLevel = normalize_soldier_level(level);
-    return base + (safeLevel - 1) * 5;
+// ── МОЩЬ СТРОКИ — ОДНО ЧИСЛО, И ЭТО ТО, КОТОРЫМ ОНА ДЕРЁТСЯ ────────────────
+//
+// hp, помноженное на то, что строка держит бронёй, и на ожидание её удара в
+// секунду. Считается ЦЕЛЫМ: период берётся в сотых долях секунды, поэтому
+// `power = hp_armoured · удар×2 · 50 / период_сотых`. Проверка на известных
+// числах: дракон 500 hp, 3d20, период 3.0 → 5250; волк 30 hp, 10d1, 1.0 → 300.
+//
+// ПОЧЕМУ БРОНЯ ВХОДИТ: мерить надо тем, чем ДЕРУТСЯ (CANON S13, один закон боя
+// на все масштабы). Единственная строка каталога с бронёй — стражник
+// (`uniform_defense(40, 5)`), и без этого члена его мощь занижалась бы на
+// две трети.
+//
+// УРОВНЯ ЭКЗЕМПЛЯРА ЗДЕСЬ НЕТ ВОВСЕ, и это ЗАКОН ДВУХ ТАБЛИЦ: у объекта анкеты
+// нет, его сила есть КОЛОНКИ ЕГО СТРОКИ, а «гоблин и гоблин-вождь — разные
+// строки» (CANON S12).
+inline long long row_combat_power(NPCType t) {
+    const NpcTypeDef& def = npc_def(t);
+    const CombatTemplate& row = def.combat;
+    const int armour = (def.defense.armor_of(DamageType::Pierce)
+                        + def.defense.armor_of(DamageType::Blunt)) / 2;
+    const long long hpArmoured =
+        (long long)(row.hp < 1.0f ? 1 : int(row.hp))
+        * armor_hp_mult_num(armour) / armor_hp_mult_den(armour);
+    const long long strikeX2 = strike_mean_x2(row.dice, row.flatAdd, row.multPct);
+    int cooldownCenti = int(row.cooldown * 100.0f + 0.5f);
+    if (cooldownCenti < 10) cooldownCenti = 10;   // пол периода, как у очного боя
+    return hpArmoured * strikeX2 * 50 / cooldownCenti;
+}
+
+// ТИР СТРОКИ — ВЫВОД, НЕ КОЛОНКА. Разъехаться с силой невозможно по
+// построению, а автор тюнит привычным: hp, кости, период. Колонка `xpReward`
+// УМЕРЛА здесь же (2026-11-03) — она была вторым ответом на вопрос «чего стоит
+// эта тварь», причём ЛИНЕЙНЫМ, и 37 её строк честно пересказывали формулу
+// `5·(baseLevel+1)`, а восемь от неё отклонялись молча.
+inline int creature_tier(NPCType t) {
+    return tier_of_power(row_combat_power(t));
+}
+
+// ЦЕНА УБИТОГО. Вход — УРОВЕНЬ убитого: у головы инвентаря это ТИР ЕЁ СТРОКИ,
+// у аватара — его настоящий уровень из анкеты, и звонящий передаёт ровно то,
+// чем убитое является. Ветки по роду здесь нет.
+//
+// ЗДЕСЬ СТОЯЛО `xpReward + (level−1)·5`, то есть 10·L — ЛИНЕЙНАЯ награда против
+// КВАДРАТИЧНОГО порога. Замер по формулам: убийств ровни на уровень росло
+// 110 → 1100 на дистанции 1..100, а сильнейшая строка каталога на пятидесятом
+// уровне платила 0.25 % уровня. Вердикт владельца 2026-11-03: ✓ «тут ошибка в
+// коде и каноне а манифест прав ОПЫТ … по мощи … (ценности экспа по
+// квадратичной динамике)».
+// ДВЕРЕЙ ДВЕ, ПОТОМУ ЧТО ВОПРОСОВ ДВА, А ЗАКОН ОДИН.
+//
+// `head_xp_reward` — цена ГОЛОВЫ инвентаря: её тир, и больше ничего. Уровня
+// экземпляра она не принимает ВОВСЕ, и это нарочно: прежняя `npc_xp_reward`
+// брала его параметром, а сила головы его не читала никогда
+// (`head_power@src/macro/auto_battle.h` принимает только строку) — платилось за
+// силу, которой у головы нет.
+//
+// Цена АВАТАРА считается его настоящим уровнем и зовётся прямо —
+// `exp_value_of_level@src/tables/progression.h`. Отдельной двери ей не нужно:
+// уровень у неё уже на руках, а выдумывать строку-посредника значит заводить
+// третий спеллинг одного закона.
+inline int head_xp_reward(NPCType t) {
+    return exp_value_of_level(creature_tier(t));
 }
 
 // (garrison_soldier_id_base — the high-bit garrison id space — died with

@@ -151,10 +151,51 @@ int main() {
         if (!ok12) return 1;
     }
 
-    const bool ok13 = !(sm::npc_xp_reward(sm::NPCType::Guard, 4)
-                        <= sm::npc_xp_reward(sm::NPCType::Guard, 1));
-    CHECK(ok13, "NPC XP reward does not scale by level");
-    if (!ok13) return 1;
+    // ЗДЕСЬ СТОЯЛА ПРОВЕРКА «награда растёт с УРОВНЕМ экземпляра»
+    // (`npc_xp_reward(Guard,4) > npc_xp_reward(Guard,1)`), и она умерла вместе
+    // со своим законом 2026-11-03: цена головы есть ТИР ЕЁ СТРОКИ, а уровня
+    // записи сила головы не знает вовсе (ЗАКОН ДВУХ ТАБЛИЦ). Свидетель
+    // переписан под НОВЫЙ закон, а не подогнан (§8 п.3).
+    {
+        // (1) ЦЕНА ГОЛОВЫ НЕ ЗАВИСИТ ОТ УРОВНЯ ЗАПИСИ — её и спросить нечем:
+        //     дверь головы уровня не принимает. Утверждаем ТО, что осталось
+        //     выразимым: цена есть функция СТРОКИ, и две головы одной строки
+        //     стоят одинаково.
+        const int guardA = sm::head_xp_reward(sm::NPCType::Guard);
+        const int guardB = sm::head_xp_reward(sm::NPCType::Guard);
+        CHECK(guardA == guardB && guardA > 0,
+              "цена головы есть функция её СТРОКИ: одна строка — одна цена");
+
+        // (2) ПОРЯДОК ЦЕНЫ ЕСТЬ ПОРЯДОК МОЩИ. Отношение, а не пересказанное
+        //     число (§8 п.4): дракон дороже волка, волк дороже крестьянина,
+        //     крестьянин дороже кролика, который не бьёт вовсе.
+        const int dragon  = sm::head_xp_reward(sm::NPCType::Dragon);
+        const int wolf    = sm::head_xp_reward(sm::NPCType::Wolf);
+        const int peasant = sm::head_xp_reward(sm::NPCType::Peasant);
+        const int rabbit  = sm::head_xp_reward(sm::NPCType::Rabbit);
+        CHECK(dragon > wolf && wolf > peasant && peasant > rabbit,
+              "порядок цены есть порядок мощи строки");
+
+        // (3) НЕ БЬЮЩАЯ ТВАРЬ ВСЁ РАВНО СТОИТ СТРОКИ, А НЕ НУЛЯ (вердикт
+        //     владельца: «чтобы чтото было»): пол лестницы — тир 1.
+        CHECK(rabbit == sm::exp_value_of_level(1) && rabbit > 0,
+              "пол лестницы: кролик стоит тира 1, а не нуля");
+
+        // (4) ИНВАРИАНТ ДЕЛИТЕЛЯ — ТО, ЧЕГО ЛИНЕЙНАЯ НАГРАДА НЕ ДАВАЛА НИ НА
+        //     ОДНОМ УРОВНЕ: убийств РОВНИ на уровень ровно `kKillsPerLevel` на
+        //     ВСЕЙ лестнице. Негативный контроль прежнего закона: при награде
+        //     10·L это отношение росло 110 → 1100.
+        int sampled = 0, offBudget = 0;
+        for (int lvl = 1; lvl <= sm::kMaxTier; ++lvl) {
+            const int price = sm::exp_value_of_level(lvl);
+            if (price <= 0) { ++offBudget; continue; }
+            const int kills = sm::exp_to_next_level(lvl) / price;
+            ++sampled;
+            if (kills != sm::kKillsPerLevel) ++offBudget;
+        }
+        CHECK(sampled == sm::kMaxTier && offBudget == 0,
+              "убийств ровни на уровень держится у делителя на ВСЕЙ лестнице");
+    }
 
     // (Проверка self-append умерла с creatures_add в ломоть 2 M-72: копия
     // области минтит головы и дверью мира не является; закон слияния

@@ -19,6 +19,7 @@
 // в `tables/attributes.h` — что эти колонки ЗНАЧАТ.
 #pragma once
 #include "core/subtract.h"      // try_spend — дверь вычитания шага рулетки
+#include "tables/progression.h" // exp_to_next_level — кривая уровня, общий слой
 #include "core/time.h"          // steps_from_seconds — квант двери восстановления
 #include "tables/attributes.h"  // каталог: AttributeId/SkillId, строки, THE skill law
 #include "tables/army.h"        // каталог: CombatTemplate — боевой лист строки
@@ -291,12 +292,17 @@ inline bool spend_skill_point(LevelData& ld, Skills& s, SkillId id) {
     return true;
 }
 
-// ── Formulas (verbatim from attributes.ts) ─────────────────────
-
-// EXP_next(lvl) = floor(1000 * lvl * (0.1 * lvl + 1))
-inline int exp_to_next_level(int level) {
-    return int(1000.0 * level * (0.1 * level + 1.0));
-}
+// ── КРИВАЯ УЕХАЛА В ОБЩИЙ СЛОЙ ─────────────────────────────────
+//
+// `exp_to_next_level` жила ЗДЕСЬ и считала через double — порт формулы из
+// `attributes.ts`. Она переехала в `tables/progression.h` 2026-11-03, потому
+// что её новым читателем стала ЦЕНА УБИТОГО (`npc_xp_reward@src/tables/npc.h`),
+// а слой `tables/` шину включать не может (§11). Тело стало целым: прежнее
+// `int(1000.0*L*(0.1*L+1.0))` тождественно `100L² + 1000L` и на всей лестнице
+// 1..255 даёт бит в бит то же — переезд побитово нейтрален, а из мира ушёл один
+// float (ЗАКОН ТИПА).
+//
+// Имя НЕ изменилось, поэтому ни один из её звонящих не тронут.
 // (exp_from_fight — the flat 10·lvl kill payout — died 2026-08-29: every
 // kill pays through the ONE npc_xp_reward law in macro/npc.h now.)
 inline Attributes default_attributes() { return {}; }

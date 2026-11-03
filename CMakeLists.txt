@@ -827,7 +827,11 @@ timaert_test(combat_squad_test
         # Найм — одна сделка дверью deal (ломоть 2 M-72).
         src/macro/deal.cpp
         src/macro/econ_day.cpp
-    PIN "OK combat_squad_test .23 checks.")
+    # 23 → 26: прежняя проверка «награда растёт с уровнем экземпляра» умерла
+    # вместе со своим законом (2026-11-03, цена головы есть тир её строки), и на
+    # её место встали четыре — цена есть функция строки, порядок цены есть
+    # порядок мощи, пол лестницы, и инвариант делителя на всех 255 ступенях.
+    PIN "OK combat_squad_test .26 checks.")
 
 # The melee reach law: range + body_radius(target), hostiles-first by surface
 # gap, grid-arm/full-scan parity. Pure targeting TU — the body table it reads

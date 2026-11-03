@@ -1439,15 +1439,20 @@ inline int xp_for_fallen(const MacroStore& st, MacroHandle loser,
                          const std::vector<SoldierRecord>& casualties,
                          bool avatarFell) {
     int xp = 0;
+    // ГОЛОВА ПЛАТИТ СВОЕЙ СТРОКОЙ — её тиром, а не уровнем записи (ЗАКОН ДВУХ
+    // ТАБЛИЦ: у объекта анкеты нет, «уровень объекта есть ТИР, и тир выражается
+    // СВОЕЙ СТРОКОЙ»). Прежде здесь стоял `r.level`, и он платил за силу,
+    // которой голова не имеет: её силу `head_power` считает ОДНИМИ КОЛОНКАМИ
+    // строки и уровня не читает вовсе.
     for (const SoldierRecord& r : casualties) {
         if (!valid_npc_kind(r.kind)) continue;
-        xp += npc_xp_reward(NPCType(r.kind),
-                            normalize_soldier_level(r.level));
+        xp += head_xp_reward(NPCType(r.kind));
     }
+    // АВАТАР ПЛАТИТ СВОИМ НАСТОЯЩИМ УРОВНЕМ — у него анкета есть, и его сила
+    // (`avatar_power`) читает её честно.
     if (avatarFell && st.valid(loser)
         && st.kind[loser.slot].type < std::uint16_t(NPCType::Count)) {
-        xp += npc_xp_reward(
-            NPCType(std::uint8_t(st.kind[loser.slot].type)),
+        xp += exp_value_of_level(
             normalize_soldier_level(squad_level(st, loser.slot)));
     }
     return xp;

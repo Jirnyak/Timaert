@@ -4060,13 +4060,20 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 }
                 MacroStore& mst = *mw_.store;
                 if (mst.valid(avatar) && !macro_dead(mst, avatar)) {
-                    // One row, one formula (owner, 2026-08-29): what a kill
-                    // is worth is npc_xp_reward — the row's own xpReward
-                    // stepped by level, for EVERY row and EVERY killer.
-                    squad_award_exp(mst, avatar,
-                                  npc_xp_reward(NPCType(std::uint8_t(
-                                                    kind ? kind->type : 0)),
-                                                lvl));
+                    // ЦЕНА УБИТОГО — ОДИН ЗАКОН, ДВА ВХОДА (вердикт владельца
+                    // 2026-11-03: опыт по мощи, квадратичной динамикой).
+                    // Убитое стоит `exp_to_next_level(его уровень)/100`, а
+                    // «его уровень» читается по тому, ЧЕМ оно является: у
+                    // аватара это настоящий уровень анкеты, у головы инвентаря
+                    // — ТИР ЕЁ СТРОКИ (ЗАКОН ДВУХ ТАБЛИЦ: у объекта анкеты нет).
+                    // Прежде здесь платилось `xpReward + (level−1)·5` ОБОИМ, то
+                    // есть голове — за уровень, которого её сила не знает.
+                    const int victimXp =
+                        arena.is_avatar_slot(ds)
+                            ? exp_value_of_level(lvl)
+                            : head_xp_reward(NPCType(std::uint8_t(
+                                  kind ? kind->type : 0)));
+                    squad_award_exp(mst, avatar, victimXp);
                 }
                 // ЦЕНУ СМЕРТИ ПЛАТИТ ЛЮБОЙ АВАТАР (вердикты владельца
                 // 2026-11-03: «игрок ничем не особенен»; «именно аватаоры а
