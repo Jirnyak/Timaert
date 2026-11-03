@@ -5697,8 +5697,11 @@ bool run_subworld_reputation_hit_smoke(App& app) {
 
     // afterRep is -1, not -2, even though the player lands TWO hits here: the
     // bolt charges the point and flips the peasant temp-hostile, and
-    // apply_player_hit_reputation refuses to charge again for striking someone
+    // apply_avatar_hit_standing refuses to charge again for striking someone
     // already at war with you. You pay for turning a neutral against you once.
+    // (Прежнее имя `apply_player_hit_reputation` умерло 2026-11-03 вместе с
+    // захардкоженным игроком: стандинг платит ЛЮБОЙ аватар, а охват триггера
+    // остался тем же — рука игрока, см. шапку двери.)
     if (beforeRep != 0 || neutralMove > 0.001f || !friendlySpellHit
         || afterRep != -1 || !tempHostile
         || !ai || ai->kind != sm::ecs::SubworldAi::Flee

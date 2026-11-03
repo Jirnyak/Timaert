@@ -1313,9 +1313,26 @@ static_assert(BattleFact{}.victim == MacroHandle{}
                   && BattleFact{}.killer == MacroHandle{},
               "сентинель BattleFact = пустой MacroHandle (id 0 — «никто»)");
 
+// ЧЬЁ ЗНАМЯ НОСИТ ЭТА ЗАПИСЬ, ЧИСЛОМ — ядро вопроса, и «никого» у него
+// НАЗВАНО (ЗАКОН СЛОВАРЯ: внутри мира живут только ординалы).
+//
+// ПОЧЕМУ ДВЕРЬ, А НЕ `squad_kind(st, h).factionIdx` НА МЕСТЕ: `squad_kind` на
+// невалидном хэндле отдаёт `ecs::NPCKind{}`, то есть `factionIdx = 0`, а ноль
+// реестра — ЖИВАЯ СТРОКА «wildlife» (`kFactionDefs[0]`). Запись, которой нет,
+// уверенно отвечала бы «зверь», и отвечала бы без ошибки — ровно тот класс
+// умолчания, что врёт молча. Здесь «нет записи» есть `kNoFactionSlot`, и
+// каждая дверь отношений его отвергает сама.
+inline FactionSlot squad_faction_slot(const MacroStore& st, MacroHandle h) {
+    return st.valid(h) ? FactionSlot(st.kind[h.slot].factionIdx)
+                       : kNoFactionSlot;
+}
+
 // The faction a macro body wears — its INSTANCE colours (Inc 2), not its row.
+// СТРОКОВАЯ ФОРМА — ГРАНИЦА над ядром выше: имя нужно летописи и авторезолву,
+// внутри мира ходит ординал.
 inline const char* squad_faction_id(const MacroStore& st, MacroHandle h) {
-    return st.valid(h) ? faction_id_for_index(st.kind[h.slot].factionIdx) : "";
+    const FactionSlot s = squad_faction_slot(st, h);
+    return s < 0 ? "" : faction_id_for_index(std::uint16_t(s));
 }
 
 // СПОЙЛОВ ИЗ ВОЗДУХА БОЛЬШЕ НЕТ (M-139, вердикт владельца 2026-09-26).

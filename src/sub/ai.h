@@ -20,7 +20,9 @@ constexpr float kDetectionRadius  = kNpcSightDefaultM;
 // kHostileThreshold moved to macro/faction.h (Session 15): the macro squad
 // threat step needs the same line the battle masks draw, and one number
 // cannot live in two headers. Unqualified uses in sm::sub still resolve.
-constexpr int   kHitRepPenalty    = -1;
+// kHitRepPenalty уехало туда же 2026-11-03, к `kKillRepPenalty` и колонке
+// `killIsNoCrime`: цена удара есть закон МАТРИЦЫ ФРАКЦИЙ (род 6), а не число
+// сцены, и стоять ей положено на той же полке, что цене убийства.
 
 // Ключ — СЛОТ арены ((ii-б) ломтя 7): колбэк зовётся из живого цикла тика,
 // голый слот внутри тика законен; entity-ключ был последним entt-литералом

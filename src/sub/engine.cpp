@@ -319,14 +319,26 @@ bool is_player_side_slot(const sub::SubObjects& objs, int s) {
         || sub::slot_flag(objs, s, sub::kObjPlayerSoldier);
 }
 
+// ОРДИНАЛАМИ, НЕ ИМЕНАМИ (ЗАКОН СЛОВАРЯ, долг M-103 «ноль строк на шве»):
+// фракция тела уже лежит ЧИСЛОМ в колонке `NPCKind::factionIdx`, а сторона
+// игрока — `kPlayerFactionSlot`, снятый на сборке. Здесь стоял круг
+// «ординал → имя → ординал»: `faction_id_for_kind` переводил колонку в строку,
+// а `player_hostile_to` переводил строку обратно, — и делал это на КАЖДОМ
+// кандидате горячего цикла (колбэк угрозы мозга, свип выхода).
+// Крайние значения отвечает сам `relation_of`: сентинел `kNoFaction` и всякий
+// протухший байт вне реестра дают 0, то есть нейтралитет, — ровно то же, что
+// давало пустое имя.
 bool hostile_to_player_slot(const sub::SubObjects& objs, int s,
                             const GameState* gs) {
+    if (!gs) return false;   // нет мира — нет отношений, значит и вражды
     if (!alive_subworld_slot(objs, s) || is_player_side_slot(objs, s)) {
         return false;
     }
     if (sub::slot_flag(objs, s, sub::kObjTempHostile)) return true;
-    const char* factionId = faction_id_for_kind(sub::slot_kind(objs, s));
-    return player_hostile_to(gs, factionId);
+    const auto* kind = sub::slot_kind(objs, s);
+    return factions_hostile(gs->factions, kPlayerFactionSlot,
+                            kind ? FactionSlot(kind->factionIdx)
+                                 : kNoFactionSlot);
 }
 
 // (Entity-адаптер hostile_to_player_entity умер в (ii-б): оба звонящих —
@@ -357,15 +369,31 @@ const char* subworld_attacker_label(const sub::SubObjects& objs, int slot) {
 // maybe_emplace_missile_attack / maybe_emplace_carried_light: the file-local
 // twins that lived here moved to their one home — sub/spawn.{h,cpp}.
 
+// ── КТО УДАРИЛ: ФРАКЦИЯ ЕГО ЗАПИСИ, И НИКОГДА ЕГО ТЕЛА ───────────────────
+// Фракция АКТОРА берётся у МАКРО-ЗАПИСИ его сквада
+// (`squad_faction_slot@src/macro/squad.h`), а не у тела на арене, и это не
+// вкус: колонка `NPCKind` слота аватара НЕ ЗАПОЛНЯЕТСЯ ВОВСЕ
+// (`spawn_player_entity` ставит бэклинк, бары, удар и шаг — но не род), то
+// есть `alloc` оставляет там `factionIdx = 0`, а ноль реестра есть ЖИВАЯ
+// СТРОКА «wildlife». Тело аватара, спрошенное о своём знамени, уверенно
+// соврало бы «зверь» — и соврало бы без ошибки.
+
+// ЗЛОПАМЯТНОСТЬ СЦЕНЫ — ИГРОВАЯ СЕССИЯ СУБМИРА, И ОБОБЩЕНИЮ НЕ ПОДЛЕЖИТ.
+// Бит `kObjTempHostile` значит «враждебен ИГРОКУ» (`hostile_to_player_slot`
+// выше): это состояние СЦЕНЫ, живущее до смерти тела или до конца сцены, а не
+// макро-величина, и второй такой обиды «на каждого аватара» в мире нет.
+// Ординалами — по той же причине, что и гейт враждебности: имя фракции здесь
+// не нужно никому, а круг «ординал → имя → ординал» стоял и тут.
 void maybe_flip_temp_hostile(sub::SubObjects& objs,
                              int target,
                              const GameState* gs,
-                             const char* factionId) {
-    if (!gs || target < 0 || !factionId || factionId[0] == '\0') {
+                             FactionSlot victimFaction) {
+    if (!gs || target < 0 || victimFaction < 0) return;
+    if (sub::slot_flag(objs, target, sub::kObjTempHostile)) return;
+    if (relation_of(gs->factions, kPlayerFactionSlot, victimFaction)
+            >= kAllyRepThreshold) {
         return;
     }
-    if (sub::slot_flag(objs, target, sub::kObjTempHostile)) return;
-    if (player_reputation(gs, factionId) >= kAllyRepThreshold) return;
 
     sub::slot_flag_set(objs, target, sub::kObjTempHostile);
     if (auto* ai = sub::slot_ai(objs, target)) {
@@ -375,29 +403,61 @@ void maybe_flip_temp_hostile(sub::SubObjects& objs,
     }
 }
 
-void apply_player_hit_reputation(sub::SubObjects& objs,
-                                 int target,
-                                 GameState* gs) {
+// ── УДАР АВАТАРА: СТАНДИНГ ОБОБЩЁН, ТРИГГЕР — НЕТ ───────────────────────
+// Вердикт владельца 2026-11-03, дословно: «любой воплощённый аватар сквада
+// (игрок частный случай) будет менять репутацию в матрицы фракий (его и
+// чужая)»; и об охвате: «аватар сквада (опред фракции) ударил объект(моба) или
+// аватара сквада другой фракции это работате / … то есть должен пристствовать
+// всегда именно аватар сквада».
+//
+// ОБОБЩЕНА ЗДЕСЬ ДВЕРЬ, А НЕ ТРИГГЕР, И ГРАНИЦУ СТАВИТ §11: актор приезжает
+// ПАРАМЕТРОМ (захардкоженного игрока внутри больше нет), но ЗВАТЬ эту дверь
+// по-прежнему умеет только колбэк лога попадания, то есть рука игрока. Полный
+// охват — «моб ударил аватара сквада», удары НПЦ друг по другу — требует
+// триггера в самой двери урона (`apply_damage@src/sub/damage.cpp`), а значит
+// рода 6 ВНУТРИ неё, то есть нового `#include "macro/…"` в `src/sub`, что §11
+// запрещает прямо; он приходит ПАКЕТОМ рода 6 в эпике фракций.
+void apply_avatar_hit_standing(sub::SubObjects& objs,
+                               int target,
+                               GameState* gs,
+                               const MacroStore& st,
+                               MacroHandle actorSquad) {
     if (!gs || target < 0) return;
     if (hostile_to_player_slot(objs, target, gs)) return;
 
-    const char* factionId =
-        faction_id_for_kind(sub::slot_kind(objs, target));
-    if (!factionId || factionId[0] == '\0') return;
-    add_player_reputation(*gs, factionId, kHitRepPenalty);
-    maybe_flip_temp_hostile(objs, target, gs, factionId);
+    const auto* victim = sub::slot_kind(objs, target);
+    const FactionSlot victimFaction =
+        victim ? FactionSlot(victim->factionIdx) : kNoFactionSlot;
+    add_faction_standing(gs->factions, squad_faction_slot(st, actorSquad),
+                         victimFaction, kHitRepPenalty);
+    maybe_flip_temp_hostile(objs, target, gs, victimFaction);
 }
 
-void apply_player_kill_reputation(GameState* gs, const ecs::NPCKind* kind) {
-    if (!gs) return;
-    const char* factionId = faction_id_for_kind(kind);
-    if (!factionId || factionId[0] == '\0') return;
-    // Whose death the world holds against you is a COLUMN of the faction
-    // registry (killIsNoCrime), not three ids spelled into the reaper: a new
-    // lawless faction is a row, and this file never learns who the outlaws
-    // are.
-    if (kill_is_no_crime(factionId)) return;
-    add_player_reputation(*gs, factionId, kKillRepPenalty);
+// ── УБИЙСТВО: ПЛАТИТ ЛЮБОЙ АВАТАР, И ТОЛЬКО АВАТАР ──────────────────────
+// Здесь стоял `apply_player_kill_reputation`, бравший имя фракции жертвы и
+// подставлявший игрока актором; гейт `playerHand` в жнеце пускал к нему
+// РОВНО игрока и его солдат. Обоих больше нет: цена смерти есть отношение
+// ДВУХ фракций, и чья рука её двинула — вопрос к записи актора.
+//
+// «ИМЕННО АВАТАРЫ, А НЕ ИХ ИНВЕНТАРЬ» (владелец, дословно). Поэтому актор
+// приезжает хэндлом, который звонящий взял дверью БЭКЛИНКА
+// (`slot_macro_record@src/sub/record.h`), а не лестницей `slot_squad_of`: та
+// честно принимает и расписку займа, то есть ГОЛОВУ контейнера, и ею платят
+// опыт — но не репутацию. Два разных вопроса к одному телу, и у каждого своя
+// дверь. Отсюда же и «если дерутся просто мобы это не в счёт»: у головы и у
+// зверя из сида бэклинка нет вовсе, значит актора нет, значит пара не едет.
+//
+// Гейт преступления — КОЛОНКА строки фракции ЖЕРТВЫ (`killIsNoCrime`), и
+// спрашивается она ОРДИНАЛОМ: новая беззаконная фракция есть строка, а этот
+// файл не узнаёт, кто в мире разбойник.
+void apply_avatar_kill_standing(GameState* gs,
+                                const MacroStore& st,
+                                MacroHandle actorSquad,
+                                FactionSlot victimFaction) {
+    if (!gs || victimFaction < 0) return;
+    if (kill_is_no_crime(std::uint16_t(victimFaction))) return;
+    add_faction_standing(gs->factions, squad_faction_slot(st, actorSquad),
+                         victimFaction, kKillRepPenalty);
 }
 
 const char* compass_from_delta(float dx, float dy) {
@@ -807,7 +867,10 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // расписки под зарезервированный ординал.
     std::int32_t creaturesSubject = 0;
     std::int16_t creaturesCx = 0, creaturesCy = 0;
-    std::uint16_t squadFaction = std::uint16_t(faction_index(kPlayerFactionId));
+    // Ординал игрока — СНЯТЫЙ НА СБОРКЕ (`kPlayerFactionSlot`), а не скан
+    // реестра по имени на каждом входе в сцену: то же единственное число,
+    // спрошенное на другом этапе (ЗАКОН СЛОВАРЯ).
+    std::uint16_t squadFaction = std::uint16_t(kPlayerFactionSlot);
     {
         const MacroStore& st = (*mw_.store);
         if (st.valid(flagRec)) {
@@ -2304,7 +2367,17 @@ void SubworldEngine::push_player_hit_log(int targetSlot,
     // Протухший слот жив-гейтом не пускается: лог и репутация — о теле,
     // которое ЕСТЬ (прежний reg.valid, слот-формой).
     if (!sub::slot_flag(objs, targetSlot, sub::kObjAlive)) return;
-    apply_player_hit_reputation(objs, targetSlot, gs_);
+    // АКТОР — ЗАПИСЬ, ЧЬИМ ВОПЛОЩЕНИЕМ СТОИТ ТЕЛО НА АРЕНЕ, и спрашивается она
+    // ТОЙ ЖЕ дверью бэклинка, что у жнеца: «кем играют» есть колонка флажка, а
+    // не особый род (одержимый лорд бьёт ПОД СВОИМ знаменем, и его удар по
+    // своему же земляку пара отвергает сама — `actor == owner`). Здесь стоял
+    // `apply_player_hit_reputation`, подставлявший строку игрока.
+    if (mw_.store) {
+        apply_avatar_hit_standing(
+            objs, targetSlot, gs_, (*mw_.store),
+            sub::slot_macro_record(objs, sub::avatar_slot(objs),
+                                   (*mw_.store)));
+    }
 
     const int dmg = damage;
     char msg[96]{};
@@ -3952,11 +4025,6 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                         if (mw_.store->valid(ps)) avatar = ps;
                     }
                 }
-                // «Рука игрока» — сценная правда для репутации: его
-                // аватар (включая одержимое тело) или его солдат.
-                const bool playerHand = arena.is_avatar_slot(killerSlot)
-                    || sub::slot_flag(arena, killerSlot,
-                                      sub::kObjPlayerSoldier);
                 MacroStore& mst = *mw_.store;
                 if (mst.valid(avatar) && !macro_dead(mst, avatar)) {
                     // One row, one formula (owner, 2026-08-29): what a kill
@@ -3967,7 +4035,22 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                                                     kind ? kind->type : 0)),
                                                 lvl));
                 }
-                if (playerHand) apply_player_kill_reputation(gs_, kind);
+                // ЦЕНУ СМЕРТИ ПЛАТИТ ЛЮБОЙ АВАТАР (вердикты владельца
+                // 2026-11-03: «игрок ничем не особенен»; «именно аватаоры а
+                // не их инвентарь»). Здесь стоял гейт `playerHand`, пускавший
+                // к репутации РОВНО игрока и его солдат, — он умер целиком, и
+                // вместе с ним умерла единственная причина спрашивать «чья это
+                // рука» на этом пути.
+                //
+                // АКТОРА БЕРЁТ ДВЕРЬ БЭКЛИНКА, А НЕ ЛЕСТНИЦА `slot_squad_of`
+                // ВЫШЕ, и расхождение тут НЕСУЩЕЕ: лестница принимает и
+                // расписку займа, то есть голову контейнера, — ею платят ОПЫТ
+                // (её сквад качается законно), но не репутацию. Фракция
+                // жертвы — колонка её тела, ординалом.
+                apply_avatar_kill_standing(
+                    gs_, mst,
+                    sub::slot_macro_record(arena, killerSlot, mst),
+                    kind ? FactionSlot(kind->factionIdx) : kNoFactionSlot);
             }
 
             // ТРУПА-КОНТЕЙНЕРА ЗДЕСЬ БОЛЬШЕ НЕТ — вердикт владельца

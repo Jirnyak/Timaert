@@ -88,6 +88,13 @@ inline constexpr int kAllyRepThreshold = 32;
 // two copies of one price is exactly how the two layers drift apart.
 inline constexpr int kKillRepPenalty = -1;
 
+// THE price of a BLOW the world holds against you — the same shelf as the
+// price of a kill, and for the same reason. It lived in `sub/ai.h` while only
+// the subworld hand charged it; it is a law of the MACRO matrix (a standing
+// between two factions), not a number of the scene, and a scene constant that
+// writes род 6 is a macro law filed under the wrong roof.
+inline constexpr int kHitRepPenalty = -1;
+
 // ── The registry ───────────────────────────────────────────────────────────
 struct FactionDef {
     const char*   id;               // stable machine id — THE universal key
@@ -281,6 +288,18 @@ constexpr int faction_ordinal(std::string_view id) {
     return -1;
 }
 
+// ОРДИНАЛ СТРОКИ ИГРОКА, СНЯТЫЙ НА СБОРКЕ — одно написание на всю игру. Он
+// нужен затем, что игрок — обычная строка матрицы (см. запись "player" выше),
+// а значит его сторону пары спрашивают ровно так же, как чужую: числом. До
+// него каждый такой вопрос шёл через `faction_index(kPlayerFactionId)`, то
+// есть через ИМЯ, и делал это внутри тика — ровно то, что ЗАКОН СЛОВАРЯ
+// называет дефектом ревью. Это не второй словарь: тот же единственный список,
+// спрошенный на сборке (см. шапку `faction_ordinal`).
+inline constexpr int kPlayerFactionSlot = faction_ordinal(kPlayerFactionId);
+static_assert(kPlayerFactionSlot >= 0,
+              "строка игрока обязана существовать в реестре: на ней стоит вся "
+              "его сторона матрицы отношений");
+
 // THE idx→id map (replaces npc_faction_id_for / fauna_faction_id_for /
 // faction_id_for_idx). Out of range — including kNoFaction — degrades to the
 // empty id, which every consumer treats as neutral.
@@ -303,11 +322,23 @@ inline std::uint16_t faction_or_freefolk(int idx) {
 }
 
 // Is killing a member of this faction a crime the world holds against you?
-// Fail-open for an unknown/empty id: a body whose faction the registry does
-// not know is a nobody, and nobody's death is nobody's business.
+// Fail-open for an unknown/empty ordinal: a body whose faction the registry
+// does not know is a nobody, and nobody's death is nobody's business — the
+// sentinel `kNoFaction` and every out-of-range byte answer the same way.
+//
+// ОРДИНАЛЬНАЯ ФОРМА — ЯДРО, СТРОКОВАЯ — ГРАНИЦА (ЗАКОН СЛОВАРЯ, та же пара,
+// что у `factions_hostile`): жнец субмира держит ординал жертвы колонкой её
+// тела (`NPCKind::factionIdx`), поэтому спрашивать он обязан числом. Строковая
+// форма осталась у авторезолва, который имя фракции и так держит
+// (`squad_faction_id@src/macro/squad.h`), и она делегирует СЮДА — колонка
+// `killIsNoCrime` читается в дереве однажды.
+inline bool kill_is_no_crime(std::uint16_t factionIdx) {
+    const FactionDef* def = faction_def_by_index(factionIdx);
+    return def == nullptr ? true : def->killIsNoCrime;
+}
 inline bool kill_is_no_crime(const char* factionId) {
     const int i = faction_index(factionId);
-    return i < 0 ? true : kFactionDefs[i].killIsNoCrime;
+    return i < 0 ? true : kill_is_no_crime(std::uint16_t(i));
 }
 
 // ── ПОЛИТИКА ВЫРЕЗАНА 2026-09-21 (вердикт владельца) ─────────────────────

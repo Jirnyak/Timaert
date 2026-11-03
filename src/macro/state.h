@@ -1107,15 +1107,29 @@ inline bool player_hostile_to(const GameState* gs, const char* factionId) {
 // рождённой в игре фракции строку выдаст её собственный закон.)
 
 // Move that standing by `delta`, writing both directions of the pair.
+//
+// ИГРОК — ОБЫЧНАЯ СТРОКА МАТРИЦЫ, А ЭТА ДВЕРЬ — ЕГО ЧАСТНЫЙ СЛУЧАЙ, И ТОЛЬКО
+// (вердикт владельца 2026-11-03: «да это надо обобщить … потому что игрок
+// ничем не особенен»). Поступок судит ОРДИНАЛЬНАЯ дверь
+// `add_faction_standing@src/macro/factions.h` — одна на весь мир; здесь
+// остаётся ГРАНИЦА, переводящая имя в ординал ОДИН раз (ЗАКОН СЛОВАРЯ) и
+// подставляющая строку игрока актором. Своей арифметики у неё больше нет, и
+// это важнее краткости: пока она сама звала `set_relation`, «игрок ударил» и
+// «аватар ударил» были ДВУМЯ законами одной величины.
+//
+// Все четыре прежних отказа целы и ни одного не осталось ЗДЕСЬ: пустое имя и
+// незнакомое дают -1 (`faction_index`), нулевой сдвиг и «сам себе» (ординал
+// игрока равен ординалу игрока) отвергает сама дверь. Поэтому `strcmp` с
+// именем игрока ушёл — сравнение имён заменено равенством чисел.
+//
+// Звонящие — ПО ПРИРОДЕ про игрока, и потому дверь жива: эффект выбора
+// диалога (`src/events/effect_applicator.cpp`), его собственный авторезолв
+// (`settle_player_battle@src/macro/squad.h`), выбор родины на старте и
+// консоль (`src/app/main.cpp`).
 inline void add_player_reputation(GameState& gs, const char* factionId,
                                   int delta) {
-    if (!factionId || factionId[0] == '\0' || delta == 0) return;
-    if (std::strcmp(factionId, kPlayerFactionId) == 0) return;  // no self-standing
-    const FactionSlot me = faction_index(kPlayerFactionId);
-    const FactionSlot them = faction_index(factionId);
-    if (me < 0 || them < 0) return;
-    set_relation(gs.factions, me, them,
-                 relation_of(gs.factions, me, them) + delta);
+    add_faction_standing(gs.factions, kPlayerFactionSlot,
+                         faction_index(factionId), delta);
 }
 
 // ── Factories ────────────────────────────────────────────────

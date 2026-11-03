@@ -1654,6 +1654,15 @@ timaert_test(fight_pause_test
         src/macro/deposit_layer.cpp
     LINK_SDL)
 
+# РЕПУТАЦИЮ ДВИГАЕТ ЛЮБОЙ АВАТАР, И ТОЛЬКО АВАТАР (вердикты владельца
+# 2026-11-03). Замыкание — три двери поступка: ординальная дверь матрицы
+# (header-only), дверь знамени записи (macro/squad.h) и дверь бэклинка шва
+# (sub/record.h); контейнер и каталог нужны самой анкете.
+timaert_test(avatar_standing_test
+    SOURCES
+        src/bus/anketa.cpp
+        src/tables/items.cpp)
+
 timaert_test(rpg_rules_test
     SOURCES
         src/macro/economy.cpp)
