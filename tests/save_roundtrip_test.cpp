@@ -399,9 +399,6 @@ sm::GameState make_state(sm::MacroStore& st) {
     gs.worldTickRt.subworldStepRemainder = 11;
     gs.worldTickRt.jitter.state = 0xDEADBEEFu;
     gs.macroAiRhythm.jitter.state = 0xFEEDF00Du;
-    gs.macroAiRhythm.sweepAccum = 21;
-    gs.macroAiRhythm.pendingSweeps = 2;
-    gs.macroAiRhythm.sweepCursor = 57;
     // Story progress (v25): the intro was consumed, chapter 1 is live.
     gs.logicNodesRegistered = {"plot_chapter_1", "sys_settlement"};
     gs.logicNodesActive = {"plot_chapter_1"};
@@ -672,10 +669,7 @@ void run_roundtrip() {
         || loaded.worldTickRt.jitter.state != 0xDEADBEEFu) {
         FAIL_BAIL("world-tick runtime (queue/remainder/jitter) lost");
     }
-    if (loaded.macroAiRhythm.jitter.state != 0xFEEDF00Du
-        || loaded.macroAiRhythm.sweepAccum != 21
-        || loaded.macroAiRhythm.pendingSweeps != 2
-        || loaded.macroAiRhythm.sweepCursor != 57) {
+    if (loaded.macroAiRhythm.jitter.state != 0xFEEDF00Du) {
         FAIL_BAIL("macro-AI rhythm lost");
     }
     if (loaded.logicNodesRegistered.size() != 2

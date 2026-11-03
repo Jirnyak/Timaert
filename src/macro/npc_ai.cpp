@@ -4928,9 +4928,13 @@ void settle_dead_squads(MacroWorld& mw) {
 
 } // namespace
 
-void tick_macro_npc_ai(MacroWorld& mw,
-                       MacroNpcAiRuntime& runtime, std::uint64_t ticks) {
-    if (!mw.gs || !mw.store) return;   // no store, no thinking (fail-closed)
+// ОДИН тик мира — закон ритма целиком (M-379): единообразный перебор всех
+// сквадов, фаза каждого копится ЧЕСТНЫМИ ТИКАМИ (+1), созревшая — думает.
+// Квант kAiTicks и персональные фазы рождения — ШИРИНА ИСПОЛНИТЕЛЯ, не закон
+// мира (владелец, 2026-11-02: размазка «сделана только ради оптимизации,
+// другого смысла там нет»); закон мира — перебор каждый тик, и он исполняется
+// здесь буквально.
+static void tick_macro_npc_ai_one(MacroWorld& mw, MacroNpcAiRuntime& runtime) {
     GameState& gs = *mw.gs;
     MacroStore& st = *mw.store;
 
@@ -4960,15 +4964,17 @@ void tick_macro_npc_ai(MacroWorld& mw,
         auto& rt   = st.runtime[slot];
         auto& hp   = st.pools[slot];
 
-        // One think per call at most, as before: a caller that hands over a
-        // huge jump does not get a burst of catch-up thinking, it gets one.
-        rt.tickAccum += std::uint32_t(std::min<std::uint64_t>(ticks, kAiTicks));
+        // Приток — честный тик (M-379). Здесь стоял срез min(ticks, kAiTicks)
+        // с законом «одна думка на вызов»: фаза копила ВЫЗОВЫ, не тики, и мир
+        // зависел от дробления — пачка 32 схлопывала все фазы в ноль.
+        ++rt.tickAccum;
         // ТРАТА КВАНТА — ДВЕРЬ «ВСЁ ИЛИ НИЧЕГО» (M-218, 2026-10-12). Здесь
         // стояли гейт и голое `-=` двумя строками, то есть `try_spend`,
         // написанный руками над БЕЗЗНАКОВЫМ счётчиком: разъехались бы они —
         // и копилка завернулась бы в 4 млрд тиков, то есть сквад перестал бы
         // думать молча и навсегда. Дверь делает расхождение невыразимым.
         if (!try_spend(rt.tickAccum, kAiTicks)) continue;
+        ++runtime.thinksDone;   // метр-свидетель: квант оплачен — думка была
 
         if (kind.type >= std::uint16_t(NPCType::Count)) continue;
         // A battle earlier in this very sweep may have killed this squad —
@@ -5018,167 +5024,24 @@ void tick_macro_npc_ai(MacroWorld& mw,
     settle_dead_squads(mw);
 }
 
+// ЕДИНСТВЕННЫЙ драйвер макро-думок (M-379): N тиков = N итераций шага выше,
+// байтово равных N вызовам по 1, — эволюция мира есть функция ТИКОВ по
+// построению, и дробление вызовов (кадр, пачка теста, фон субмира по
+// делителю, прыжок addtime) в состоянии невыразимо. Бюджетный собрат
+// tick_macro_npc_ai_budgeted умер этим же нарядом: его машинерия
+// (sweepAccum/pendingSweeps/sweepCursor, бюджет думок на шаг) была размазкой
+// ради оптимизации (вердикт владельца 2026-11-02) и вторым законом ритма —
+// ряд SKELETON «два драйвера — один закон каданса» закрыт.
+void tick_macro_npc_ai(MacroWorld& mw,
+                       MacroNpcAiRuntime& runtime, std::uint64_t ticks) {
+    if (!mw.gs || !mw.store) return;   // no store, no thinking (fail-closed)
+    for (std::uint64_t i = 0; i < ticks; ++i)
+        tick_macro_npc_ai_one(mw, runtime);
+}
+
 // (tick_macro_npc_visuals жил здесь и умер с M-244a: глайд карты — чистое
 // ПРЕДСТАВЛЕНИЕ, и его интегратор переехал в кэш глаз оверлея —
 // tick_macro_eyes@src/ui/macro_overlay.cpp; мир несёт клетку и целую долю
 // CellSub, float-колонки вида в store больше нет.)
-
-MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
-    MacroWorld& mw,
-    MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks) {
-    MacroNpcAiSliceResult result{};
-    if (max_npc_ticks <= 0) return result;
-    if (!mw.gs || !mw.store) return result;  // no store, no thinking
-    GameState& gs = *mw.gs;
-
-    if (ticks > 0) {
-        // ВХОД УЧИТЫВАЕТСЯ ВЕСЬ — ни среза до учёта, ни потолка очереди
-        // (M-105/M-123: прежний kMaxQueuedSweeps = 4 СПИСЫВАЛ квант и
-        // ВЫБРАСЫВАЛ свип, а min(ticks, 128) резал вход до учёта — обе
-        // потери были читом по §6). Недоделанное — ДОЛГ, растягиваемый
-        // бюджетом исполнения ниже (ЗАКОН ДВУХ ТЕМПОВ п.3: размазать —
-        // растянуть, а не выкинуть). u32 копилки хватает на 2^32/8192 =
-        // 524 288 игровых суток непрерывного входа — заворот недостижим.
-        runtime.aiInflowTicks += ticks;
-        runtime.sweepAccum += std::uint32_t(ticks);
-        // Та же дверь, тот же закон (M-218): условие цикла И ЕСТЬ трата
-        // кванта, а не спутник вычитания рядом с ним.
-        while (try_spend(runtime.sweepAccum, kAiTicks)) {
-            ++runtime.pendingSweeps;
-        }
-    }
-    if (runtime.pendingSweeps <= 0) return result;
-
-    MacroStore& st = *mw.store;
-
-    build_squad_index(runtime.squadIndex, st, gs.mapW, gs.mapH);
-
-    // The same ONE assembly as the map-view driver. This used to be a paste
-    // that had drifted (the deposits epitaph now lives on TickContext itself,
-    // npc_ai.h); the two drivers may differ in HOW they walk the slots —
-    // never in what world the squads think about (CANON.md S2).
-    if (mw.nav) nav_ensure(mw, *mw.nav);
-    scent_ensure(gs.scent, gs.mapW, gs.mapH);
-    TickContext ctx = make_tick_context(mw, runtime);
-    scent_player_deposit(ctx);   // игрок следит наравне со всеми (CANON S10)
-
-    // Тот же закон порядка, что у карт-драйвера (squad_walk.h): курсор —
-    // позиция в листе ИНДЕКСА (M-376: свой лист свипа умер, лист на драйв
-    // один — его собрал build_squad_index выше). Умерший внутри свипа
-    // отсеивается проверкой Dead ниже, ровно как раньше. Игрока свип не
-    // водит никогда — пропуск в теле, курсор честно шагает и по его строкам.
-    const std::vector<SquadWalkEntry>& order = runtime.squadIndex.order;
-    // «Некого водить» — пустой лист БЕЗ ИГРОКА: его строки в листе индекса
-    // стоят (индекс видит всех живых), а свипу не достаются. Точный
-    // эквивалент прежнего sweepOrder.empty().
-    std::size_t playerRows = 0;
-    if (ctx.playerFlagSlot < kUnifiedCap && st.alive[ctx.playerFlagSlot] != 0
-        && st.dead[ctx.playerFlagSlot] == 0)
-        ++playerRows;
-    if (ctx.playerSquadSlot < kUnifiedCap
-        && ctx.playerSquadSlot != ctx.playerFlagSlot
-        && st.alive[ctx.playerSquadSlot] != 0
-        && st.dead[ctx.playerSquadSlot] == 0)
-        ++playerRows;
-    const bool anySweepable = order.size() > playerRows;
-
-    while (runtime.pendingSweeps > 0
-           && result.npcsProcessed < max_npc_ticks) {
-        bool reachedEnd = true;
-
-        // Возобновление среза — ПО ОРДИНАЛУ, не позиции (M-123): лист
-        // пересобран ЭТИМ вызовом, и смерти сдвинули позиции, а ординал
-        // монотонен — шов не пропускает и не повторяет ничью думку. Лист
-        // отсортирован по ординалу (squad_walk.h), точка входа — первый
-        // ординал СТРОЖЕ курсора, O(log n).
-        std::size_t begin = 0;
-        if (runtime.sweepCursor != 0) {
-            const auto it = std::lower_bound(
-                order.begin(), order.end(), runtime.sweepCursor,
-                [](const SquadWalkEntry& e, std::uint32_t cursor) {
-                    return e.ordinal <= cursor;
-                });
-            begin = std::size_t(it - order.begin());
-        }
-        for (std::size_t i = begin; i < order.size(); ++i) {
-            const std::uint16_t slot = order[i].slot;
-            runtime.sweepCursor = order[i].ordinal;
-            if (slot == ctx.playerFlagSlot || slot == ctx.playerSquadSlot)
-                continue;
-            const MacroHandle h = handle_at(st, slot);
-
-            auto& cell = st.cell[slot];
-            auto& kind = st.kind[slot];
-            auto& rt   = st.runtime[slot];
-            auto& hp   = st.pools[slot];
-            if (kind.type < std::uint16_t(NPCType::Count)
-                && st.dead[slot] == 0) {   // may have died this sweep
-                const ThinkGate gate = prepare_macro_npc_tick(rt, hp);
-                if (gate != ThinkGate::Dead) {
-                    // Множитель груза — ДО поведения, тот же момент (M-302).
-                    const float overloadBurden =
-                        overload_burden_of(rt, &st.inventory[slot]);
-                    // Decode → fractional scratch → encode (the scale split).
-                    MacroPos p{float(ecs::cell_x(cell, gs.mapW)),
-                               float(ecs::cell_y(cell, gs.mapW))};
-                    const float x0 = p.x, y0 = p.y;
-                    rt.marchFlags = 0;   // флаги марша живут одну думку
-                    if (gate == ThinkGate::Think) {
-                        dispatch(h, p, rt, hp, ctx);
-                    }
-                    settle_march_rhythm(
-                        h, p, rt, hp,
-                        p.x != x0 || p.y != y0
-                            || (rt.marchFlags & ecs::kMarchAdvanced) != 0,
-                        ctx, overloadBurden);
-                    const std::uint32_t newIdx =
-                        ecs::cell_index(int(p.x), int(p.y), gs.mapW);
-                    // Тот же закон, что у полного свипа выше: марш ведёт
-                    // долю сам, драйверу остался прыжок (kEntryDirNone →
-                    // центр).
-                    if (newIdx != cell.idx) {
-                        int sdx = 0, sdy = 0;
-                        unpack_entry_dir(rt.entryDir, sdx, sdy);
-                        if (sdx == 0 && sdy == 0)
-                            st.runtime[slot].sub = {};
-                    }
-                    cell.idx = newIdx;
-                }
-                ++result.npcsProcessed;
-            }
-
-            if (result.npcsProcessed >= max_npc_ticks) {
-                reachedEnd = false;
-                break;
-            }
-        }
-
-        if (!anySweepable) {
-            // НУЛЕВАЯ РАБОТА — ЧЕСТНОЕ ИСПОЛНЕНИЕ, не потеря (вердикт
-            // владельца 2026-11-02): думать некому, значит каждый ждущий
-            // свип исполнен пустым обходом — счёт сохранения это видит.
-            result.sweepsCompleted += runtime.pendingSweeps;
-            runtime.sweepsDone += std::uint64_t(runtime.pendingSweeps);
-            runtime.pendingSweeps = 0;
-            runtime.sweepCursor = 0;
-            break;
-        }
-        if (!reachedEnd) break;
-
-        --runtime.pendingSweeps;
-        ++result.sweepsCompleted;
-        ++runtime.sweepsDone;
-        runtime.sweepCursor = 0;
-    }
-    // Same end-of-tick settlement as the map-view driver above (S4): the
-    // macro clock ticks underground too, and a lord felled down there must
-    // leave the map by the same law. (Смерть, усохшая лист посреди среза,
-    // курсору не страшна: шов — ординал, а не позиция; M-123.)
-    settle_dead_squads(mw);
-    // Флаг отныне значит ровно «долг остался» — потерь, которые он прежде
-    // глотал (переполнение очереди), больше не существует (M-105/M-123).
-    result.backlog = runtime.pendingSweeps > 0;
-    return result;
-}
 
 } // namespace sm

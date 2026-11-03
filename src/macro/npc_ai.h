@@ -79,31 +79,17 @@ void build_tree_grid(TreeGrid& g, const std::vector<TreePoint>& trees,
 
 struct MacroNpcAiRuntime {
     Rng           jitter{0xA1F0u};
-    std::uint32_t sweepAccum = 0;   // world ticks toward the next sweep
-    int         pendingSweeps = 0;
-    // Шов среза бюджетного свипа — ОРДИНАЛ последнего обдуманного (M-123),
-    // не позиция: лист пересобирается каждым вызовом, и смерть уже-обдуманного
-    // сдвигала бы позиции — позиционный курсор съедал чужую думку. 0 = свип
-    // с начала (закон нуля-ординала: 0 навсегда «никто»).
-    std::uint32_t sweepCursor = 0;
-    // МЕТРЫ ЗАКОНА СОХРАНЕНИЯ СВИПОВ (M-105/M-123): вход тиков равен копилке
-    // плюс квант × (исполнено + долг) — aiInflowTicks == sweepAccum +
-    // kAiTicks·(sweepsDone + pendingSweeps) — ВСЕГДА. Потерять работу молча
-    // невыразимо: сброс долга или списанный без свипа квант рвут равенство.
-    // Читатель — смоук subworld_time и sweep_debt_test. В сейв не едут:
-    // это свидетельская обвязка, загрузка перезаводит их согласованными с
-    // восстановленным ритмом (main.cpp, aiInflow = accum + квант·долг).
-    std::uint64_t aiInflowTicks = 0;
-    std::uint64_t sweepsDone = 0;
+    // МЕТР-СВИДЕТЕЛЬ (M-379): оплаченных квантов думки за жизнь рантайма.
+    // Читатели — смоук subworld_time и приборы каденса; в сейв не едет
+    // (свидетельская обвязка, не состояние мира). Бюджетная машинерия
+    // sweepAccum/pendingSweeps/sweepCursor и метры сохранения свипов умерли
+    // с M-379: закон ритма ОДИН — петля по тикам внутри tick_macro_npc_ai,
+    // фаза сквада копится честными тиками в rt.tickAccum, и терять приток
+    // больше нечем — долга не существует.
+    std::uint64_t thinksDone = 0;
     SquadIndex  squadIndex;         // rebuilt per drive; buckets reused
     // (Свой лист свипа `sweepOrder` умер с M-376: лист на драйв ОДИН —
     //  `squadIndex.order`, живые по ординалу; игрока свипы пропускают телом.)
-};
-
-struct MacroNpcAiSliceResult {
-    int  npcsProcessed = 0;
-    int  sweepsCompleted = 0;
-    bool backlog = false;
 };
 
 void reset_macro_npc_ai_runtime(MacroNpcAiRuntime& runtime, std::uint32_t seed);
@@ -407,19 +393,15 @@ int squad_bags_hygiene_daily(MacroWorld& mw);
 
 // (`provision_squad` УМЕР 2026-10-23: 0 звонящих во всём дереве.)
 
-// Macro-view path: scans all macro NPCs each step and dispatches those whose
-// per-NPC tick accumulator matured. `ticks` is world ticks elapsed. The
-// envelope must carry at least `gs` and `store`; every other layer is an
-// optional contribution (see TickContext above).
+// ЕДИНСТВЕННЫЙ драйвер макро-думок (M-379): `ticks` — тики МИРА, и ровно
+// столько внутренних шагов исполняется, по одному тику за шаг. Вызов с N
+// тиков байтово равен N вызовам по 1 — эволюция мира есть функция тиков по
+// построению; дробление (кадр, пачка теста, фон субмира по делителю, прыжок
+// addtime) в состоянии невыразимо. Фон субмира зовёт ЭТУ ЖЕ дверь — бюджетный
+// собрат tick_macro_npc_ai_budgeted умер с M-379: его размазка была чистой
+// оптимизацией (вердикт владельца) и вторым законом ритма. Envelope несёт как
+// минимум `gs` и `store`; остальные слои — опциональный вклад (TickContext).
 void tick_macro_npc_ai(MacroWorld& mw,
                        MacroNpcAiRuntime& runtime, std::uint64_t ticks);
-
-// Subworld path: queues one AI sweep per kAiTicks of WORLD time, then
-// dispatches at most `max_npc_ticks` entities this step. Because the clock
-// crawls underground, so do the sweeps — the macro world keeps thinking, at the
-// pace of the day it is actually living through.
-MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
-    MacroWorld& mw,
-    MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks);
 
 } // namespace sm

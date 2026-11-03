@@ -1577,11 +1577,13 @@ timaert_test(trade_law_test
         src/macro/deposit_layer.cpp
     LINK_SDL)
 
-# Закон сохранения свипов (M-105/M-123): пролог бюджетного драйвера без
-# потерь, пустой мир исполняет нулевой работой. Список исходников — замыкание
-# npc_ai.cpp, то же, что у trade_law_test.
-timaert_test(sweep_debt_test
-    PIN "OK sweep_debt_test .17 checks."
+# МИР — ФУНКЦИЯ ТИКОВ (M-379): те же N тиков любым дроблением вызовов дают
+# байтово один мир. Наследник sweep_debt_test (умер со своим предметом —
+# долгом свипов бюджетного драйвера: единый драйвер платит каждый тик на
+# месте). Список исходников — замыкание npc_ai.cpp, то же, что у
+# trade_law_test.
+timaert_test(ai_cadence_test
+    PIN "OK ai_cadence_test .11 checks."
     SOURCES
         src/macro/npc_spawn.cpp
         src/macro/npc_ai.cpp

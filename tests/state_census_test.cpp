@@ -406,7 +406,8 @@ constexpr Row kGameStateRows[] = {
     {"navEpoch", Rod::Cache, "счётчик события состава; в сейв не едет"},
     {"worldTickRt", Rod::WorldVars, "очередь дневного тика + RNG"},
     {"macroAiRhythm", Rod::WorldVars,
-     "ритм макро-ИИ + RNG; сейв-образ живой половины App::npcAi"},
+     "RNG макро-ИИ (после M-379 — один джиттер); сейв-образ живой половины "
+     "App::npcAi"},
     {"logicNodesRegistered", Rod::Facts,
      "прогресс сюжета; форма vector<string> — M-180"},
     {"logicNodesActive", Rod::Facts,
@@ -570,8 +571,8 @@ constexpr Row kAppRows[] = {
     {"appliedStoryResultCount", Rod::Session, ""},
     {"appliedSpawnEventCount", Rod::Session, ""},
     {"npcAi", Rod::WorldVars,
-     "живая половина ритма макро-ИИ; сейв-образ gs.macroAiRhythm; индекс "
-     "сквадов — кэш на драйв"},
+     "живая половина ритма макро-ИИ (после M-379 — джиттер + метр думок); "
+     "сейв-образ gs.macroAiRhythm; индекс сквадов — кэш на драйв"},
     {"subworld", Rod::Module,
      "модуль субмира (ФРЕЙМ п.5); нарезка его памяти — M-150"},
     {"audio", Rod::Session, ""},

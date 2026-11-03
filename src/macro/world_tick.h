@@ -88,6 +88,15 @@ void reset_world_tick_runtime(WorldTickRuntime& runtime, std::uint32_t seed);
 WorldTickResult advance_world_clock(GameState& gs, WorldTickRuntime& runtime,
                                     std::uint64_t ticks);
 
+// Бюджет догона дневной помпы за ОДИН ход часов: больше стольких дневных
+// тиков разом не исполняется, излишек остаётся ДОЛГОМ `pendingDailyTicks` и
+// доплачивается следующими ходами — потерь нет (ЗАКОН ДВУХ ТЕМПОВ п.3:
+// размазать — растянуть, а не выкинуть). Число БАЛАНСНОЕ (ограничивает рывок
+// кадра на прыжке часов вроде addtime; po2 тут ничего не покупает) — менять
+// можно, терять нельзя. Имя закрыло остаток ЗАКОНА КОНСТАНТ из M-105/M-376
+// (M-379, 2026-11-03).
+inline constexpr int kMaxDailyTicksPerAdvance = 32;
+
 // Process queued settlement/village/player daily ticks. `macro` (the
 // registry's world envelope — state, tree grid, deposit layer, terrain)
 // enables the daily resource-growth step (the ONE law: forest growth,
@@ -102,7 +111,8 @@ int process_world_daily_ticks(GameState& gs, MacroStore& st,
 // Macro-view path: advance time and process queued daily ticks immediately.
 WorldTickResult tick_world(GameState& gs, MacroStore& st,
                            WorldTickRuntime& runtime,
-                           std::uint64_t ticks, int max_daily_ticks = 32,
+                           std::uint64_t ticks,
+                           int max_daily_ticks = kMaxDailyTicksPerAdvance,
                            MacroWorld* macro = nullptr);
 
 // Clock-only path: advances the clock and queues daily work, but does not

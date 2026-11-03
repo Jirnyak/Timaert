@@ -456,7 +456,10 @@ namespace sm {
 // поле `GameState::faunaField` — его блок добавился в провод полей
 // (world_fields.cpp), а скар-блок ряда Fauna теперь всегда пуст (носитель
 // шрама не держит). Файл стал длиннее на блок и другой по смыслу ряда.
-constexpr int kSaveVersion = 149;
+// 150 — M-379: долг свипов умер вместе с бюджетным драйвером — блок ритма
+// макро-ИИ усох до одного джиттера (sweepAccum/pendingSweeps/sweepCursor
+// покинули провод): ритм живёт пер-сквадно в rt.tickAccum строк сквадов.
+constexpr int kSaveVersion = 150;
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -704,16 +707,15 @@ struct WorldTickRuntime {
 };
 
 // The persistent half of the macro-AI runtime (npc_ai.h MacroNpcAiRuntime):
-// the jitter stream and the sweep rhythm. The transient half (the squad
-// index) is rebuilt every drive and stays out of the save. Synced with the
-// live runtime at exactly two doors — staging before a save, applying after
-// a load (src/app/main.cpp) — fixed-width fields because this is a save
-// block.
+// the jitter stream, and nothing else. The transient half (the squad index,
+// the thinksDone witness meter) is rebuilt/re-counted every run and stays out
+// of the save; the per-squad think phase rides each squad's own rt.tickAccum
+// row. Synced with the live runtime at exactly two doors — staging before a
+// save, applying after a load (src/app/main.cpp). (Колонки долга
+// sweepAccum/pendingSweeps/sweepCursor умерли с M-379: долга думок больше не
+// существует — единый драйвер платит каждый тик на месте.)
 struct MacroAiRhythm {
     Rng           jitter{0xA1F0u};
-    std::uint32_t sweepAccum = 0;
-    std::int32_t  pendingSweeps = 0;
-    std::uint64_t sweepCursor = 0;
 };
 
 // «АРЕНДЫ НЕТ» — последнее значение типа (ЗАКОН УЗКОГО ИНДЕКСА): клетка 0

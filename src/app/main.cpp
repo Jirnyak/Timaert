@@ -128,11 +128,10 @@ namespace sm::app {
 constexpr const char* kSaveOrgName = "Timaert";
 constexpr const char* kSaveAppName = "timaert_c";
 constexpr int kSubworldDailyTicksPerStep = 1;
-// Macro NPCs dispatched per simulation STEP while the player is underground —
-// a budget, so a huge macro population cannot make one step unbounded. Named
-// for the step, not the frame: since the world runs on a fixed tick a frame may
-// carry several steps or none.
-constexpr int kSubworldMacroNpcTicksPerStep = 64;
+// (kSubworldMacroNpcTicksPerStep умер с M-379: бюджет думок на шаг был нужен
+// бюджетному драйверу, который копил свипы и разом их отрабатывал; единый
+// драйвер платит каждый макротик на месте — под землёй это ≤1 тика на шаг по
+// kSubworldTickDivisor, ограничивать нечего.)
 constexpr float kSubworldHitFlashSeconds = 0.30f;
 // Macro-map zoom: one step factor and one clamp, shared by the mouse wheel
 // and the toolbar buttons (the four literals used to be written out at both).
@@ -1352,9 +1351,9 @@ void refresh_save_summary(App& app) {
 // call site takes its records from here.
 std::vector<sm::MacroNpcRecord> stage_save_state(App& app) {
     app.gs.macroAiRhythm.jitter        = app.npcAi.jitter;
-    app.gs.macroAiRhythm.sweepAccum    = app.npcAi.sweepAccum;
-    app.gs.macroAiRhythm.pendingSweeps = app.npcAi.pendingSweeps;
-    app.gs.macroAiRhythm.sweepCursor   = std::uint64_t(app.npcAi.sweepCursor);
+    // (Колонки долга sweepAccum/pendingSweeps/sweepCursor умерли с M-379:
+    //  ритм единого драйвера живёт пер-сквадно в rt.tickAccum, который едет
+    //  в сейв строкой сквада; общего состояния у ритма не осталось.)
     // Story progress (v25) — sorted: the engine's node map iterates in
     // unspecified order and the payload is checksummed.
     app.gs.logicNodesRegistered = app.logic.node_ids();
@@ -1864,18 +1863,9 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // the LOADED rhythm now overwrites that, so the AI resumes mid-phase with
     // its own jitter stream instead of re-rolling the same sequence.
     app.npcAi.jitter        = app.gs.macroAiRhythm.jitter;
-    app.npcAi.sweepAccum    = app.gs.macroAiRhythm.sweepAccum;
-    app.npcAi.pendingSweeps = app.gs.macroAiRhythm.pendingSweeps;
-    // Курсор — ординал шва среза (M-123); u64 провода сейва сужается честно.
-    app.npcAi.sweepCursor   = std::uint32_t(app.gs.macroAiRhythm.sweepCursor);
-    // Метры сохранения — свидетельская обвязка, сейв их не везёт; загрузка
-    // перезаводит их СОГЛАСОВАННЫМИ с восстановленным ритмом (инвариант
-    // aiInflow == accum + квант·(done + долг) цел при done = 0).
-    app.npcAi.aiInflowTicks =
-        std::uint64_t(app.npcAi.sweepAccum)
-        + std::uint64_t(sm::kAiTicks)
-              * std::uint64_t(std::max(0, app.npcAi.pendingSweeps));
-    app.npcAi.sweepsDone = 0;
+    // (Колонки долга и метры сохранения умерли с M-379; thinksDone — метр-
+    //  свидетель текущего запуска, его загрузка не трогает: фазы думок едут
+    //  пер-сквадно в rt.tickAccum строками сквадов.)
     // Story progress (v25): every content node was just registered as on a
     // new game; replay the saved progress — a consumed one-shot stays
     // consumed, and the active set is restored exactly.
@@ -3615,12 +3605,11 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
             for (int i = 0; i < n; ++i) app.audio.play_sfx(sfx[i]);
         }
         // The macro world thinks on WORLD time, so underground it thinks as
-        // slowly as the day passes: kSubworldTickDivisor steps buy one tick,
-        // and a step that bought none queues no sweep.
-        stats.macroNpcAi =
-            sm::tick_macro_npc_ai_budgeted(subMacroWorld, app.npcAi,
-                                           std::uint64_t(stats.timeTick.ticksAdvanced),
-                                           kSubworldMacroNpcTicksPerStep);
+        // slowly as the day passes: kSubworldTickDivisor steps buy one tick —
+        // и это ТА ЖЕ дверь, что на карте (M-379): закон ритма один, фон
+        // отличается только числом приходящих тиков (≤1 на шаг).
+        sm::tick_macro_npc_ai(subMacroWorld, app.npcAi,
+                              std::uint64_t(stats.timeTick.ticksAdvanced));
         emit_time_advance_if_needed(app, stats.timeTick);
         process_world_events(app);
     } else {
@@ -3646,7 +3635,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         sm::MacroWorld macroTickWorld = macro_world(app);
         stats.timeTick = sm::tick_world(app.gs, *app.macroStore,
                                         app.gs.worldTickRt, 1,
-                                        /*max_daily_ticks=*/32,
+                                        sm::kMaxDailyTicksPerAdvance,
                                         &macroTickWorld);
         if (stats.timeTick.dailyTicksProcessed > 0) app.macroLightsDirty = true;
         // The MONTHLY re-bake (owner, Session 21 follow-up). Chopping changes
@@ -3715,16 +3704,9 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                     /*resting=*/!marching);
             }
         }
-        // ДОЛГ СВИПОВ СУБМИРА ДОПЛАЧИВАЕТСЯ НА КАРТЕ, А НЕ СБРАСЫВАЕТСЯ
-        // (M-105/M-123; ЗАКОН ДВУХ ТЕМПОВ п.3: размазать — растянуть, а не
-        // выкинуть; здесь стояло обнуление ритма — оплаченные кванты думки
-        // исчезали, мир врал игроку, что жил). Та же дверь, что внизу, вход
-        // тиков 0: только отработка накопленного, тем же бюджетом за кадр —
-        // прошлое прежде настоящего.
-        if (app.npcAi.pendingSweeps > 0) {
-            sm::tick_macro_npc_ai_budgeted(macroTickWorld, app.npcAi, 0,
-                                           kSubworldMacroNpcTicksPerStep);
-        }
+        // (Доплата долга свипов, стоявшая здесь, умерла с M-379 вместе с
+        //  самим долгом: единый драйвер платит каждый поданный тик на месте,
+        //  терять и копить нечего — M-105/M-123 закрыты по построению.)
         sm::tick_macro_npc_ai(macroTickWorld, app.npcAi,
                               std::uint64_t(stats.timeTick.ticksAdvanced));
         // The other half of the geometric meeting: a squad may have stepped
@@ -3879,12 +3861,8 @@ RuntimeFrameStats advance_sim_steps(App& app, int steps, bool allowInput) {
         total.timeTick.daysAdvanced += s.timeTick.daysAdvanced;
         total.timeTick.dailyTicksProcessed += s.timeTick.dailyTicksProcessed;
         total.timeTick.dailyBudgetExhausted = s.timeTick.dailyBudgetExhausted;
-        total.macroNpcAi.npcsProcessed += s.macroNpcAi.npcsProcessed;
-        total.macroNpcAi.sweepsCompleted += s.macroNpcAi.sweepsCompleted;
-        // ИЛИ, не присваивание: долг, видевшийся хоть одним под-шагом, не
-        // смеет быть затёрт последним (M-105 — свёртка глотала флаг).
-        total.macroNpcAi.backlog = total.macroNpcAi.backlog
-                                   || s.macroNpcAi.backlog;
+        // (Свёртка macroNpcAi умерла с M-379 вместе с MacroNpcAiSliceResult:
+        //  долга нет, метр думок — App::npcAi.thinksDone.)
     }
     // A promotion that bought NO time, asked for its reason on the spot.
     //
@@ -5043,7 +5021,12 @@ void register_console_commands(App& app) {
                 app.gs, *app.macroStore, app.gs.worldTickRt,
                 sm::ticks_to_advance_minutes(app.gs.worldTime.tick,
                                              std::int64_t(hours * 60.0f + 0.5f)),
-                /*max_daily_ticks=*/32, &mw);
+                sm::kMaxDailyTicksPerAdvance, &mw);
+            // Прыжок часов обязан прожить и думками (M-379): до этого звонка
+            // addtime двигал время, а драйвер сквадов не звал ВООБЩЕ — весь
+            // прыжок проходил без единой думки мира.
+            sm::tick_macro_npc_ai(mw, app.npcAi,
+                                  std::uint64_t(r.ticksAdvanced));
             c.printfln(Lvl::Ok, "advanced %.2f h -> day %d, %02d:%02d  (%d daily tick(s))",
                        hours, app.gs.worldTime.day(), app.gs.worldTime.hour(),
                        app.gs.worldTime.minute(), r.dailyTicksProcessed);

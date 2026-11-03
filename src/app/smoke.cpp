@@ -930,16 +930,18 @@ bool run_subworld_time_smoke(App& app) {
     const int expectedPlayerX = sm::cell_x(expectedPlayerCell, app.gs.mapW);
     const int expectedPlayerY = sm::cell_y(expectedPlayerCell, app.gs.mapW);
     const int dailyPendingStart = app.gs.worldTickRt.pendingDailyTicks;
-    const int sweepsPendingStart = app.npcAi.pendingSweeps;
+    // Метр думок (M-379): долга свипов больше не существует — единый драйвер
+    // платит каждый поданный тик на месте, свидетелю остаётся рост метра.
+    const std::uint64_t thinksStart = app.npcAi.thinksDone;
     const std::uint64_t subStepRemainderBefore =
         app.gs.worldTickRt.subworldStepRemainder;
 
     std::fprintf(stderr,
                  "[smoke] subworld_time before day=%d %02d:%02d "
-                 "player=%.1f,%.1f pendingDaily=%d pendingSweeps=%d\n",
+                 "player=%.1f,%.1f pendingDaily=%d thinksDone=%llu\n",
                  before.day(), before.hour(), before.minute(),
                  playerBeforeX, playerBeforeY,
-                 dailyPendingStart, sweepsPendingStart);
+                 dailyPendingStart, (unsigned long long)thinksStart);
     std::fflush(stderr);
 
     enter_subworld(app);
@@ -983,12 +985,7 @@ bool run_subworld_time_smoke(App& app) {
     int minutesAdvanced = 0;
     int daysAdvanced = 0;
     int dailyProcessed = 0;
-    int npcProcessed = 0;
-    int sweepsCompleted = 0;
-    int backlogFrames = 0;
     int maxPendingDaily = app.gs.worldTickRt.pendingDailyTicks;
-    int maxPendingSweeps = app.npcAi.pendingSweeps;
-    std::uint32_t maxSweepCursor = app.npcAi.sweepCursor;
 
     for (int i = 0; i < kSubworldSmokeFrames; ++i) {
         RuntimeFrameStats frameStats = tick_playing_runtime(app, false);
@@ -999,18 +996,11 @@ bool run_subworld_time_smoke(App& app) {
         minutesAdvanced += frameStats.timeTick.minutesAdvanced;
         daysAdvanced += frameStats.timeTick.daysAdvanced;
         dailyProcessed += frameStats.timeTick.dailyTicksProcessed;
-        npcProcessed += frameStats.macroNpcAi.npcsProcessed;
-        sweepsCompleted += frameStats.macroNpcAi.sweepsCompleted;
-        if (frameStats.macroNpcAi.backlog) ++backlogFrames;
         maxPendingDaily = std::max(maxPendingDaily, app.gs.worldTickRt.pendingDailyTicks);
-        maxPendingSweeps = std::max(maxPendingSweeps, app.npcAi.pendingSweeps);
-        maxSweepCursor = std::max(maxSweepCursor, app.npcAi.sweepCursor);
     }
 
     const sm::WorldTime beforeLeave = app.gs.worldTime;
     const int pendingDailyBeforeLeave = app.gs.worldTickRt.pendingDailyTicks;
-    const int pendingSweepsBeforeLeave = app.npcAi.pendingSweeps;
-    const std::uint32_t sweepCursorBeforeLeave = app.npcAi.sweepCursor;
     const bool activeBeforeLeave = app.subworld.active();
     app.subworld.leave(true);
     const bool activeAfterLeave = app.subworld.active();
@@ -1034,19 +1024,14 @@ bool run_subworld_time_smoke(App& app) {
     const bool dailyCaughtUp = daysAdvanced == dailyProcessed
         && pendingDailyBeforeLeave == 0
         && app.gs.worldTickRt.pendingDailyTicks == pendingDailyBeforeLeave;
-    // ЗАКОН СОХРАНЕНИЯ СВИПОВ (M-105/M-123): вход тиков == копилка + квант ×
-    // (исполнено + долг) — всегда. Прежний пин maxPendingSweeps <= 4 охранял
-    // ЧИТ: потолок очереди, выбрасывавший оплаченные кванты (ЗАКОН НУЛЕВОЙ
-    // п.7 — свидетель охранял дефект). Долг отныне не ограничен — он честно
-    // доплачивается, и доплату судит блок после leave ниже.
-    const bool sweepsConserved =
-        app.npcAi.aiInflowTicks
-        == std::uint64_t(app.npcAi.sweepAccum)
-               + std::uint64_t(sm::kAiTicks)
-                     * (app.npcAi.sweepsDone
-                        + std::uint64_t(std::max(0, app.npcAi.pendingSweeps)));
-    const bool npcBounded = sweepsConserved
-        && app.npcAi.sweepAccum < sm::kAiTicks;
+    // ДУМКИ ИДУТ ПО ТИКАМ И ПОД ЗЕМЛЁЙ (M-379): драйвер один, фон кормится по
+    // делителю, долга не существует — платёж на месте. Если макротиков прошло
+    // не меньше кванта, КАЖДЫЙ живой сквад созрел хотя бы раз и метр обязан
+    // вырасти; прошло меньше кванта — фазы могли не созреть, и это сознательно
+    // не утверждается (судит блок на карте после leave ниже).
+    const std::uint64_t thinksUnderground = app.npcAi.thinksDone - thinksStart;
+    const bool npcThinksOk = expectedTicks < std::uint64_t(sm::kAiTicks)
+        || thinksUnderground > 0;
     const bool playerSynced = playerAfterX == expectedPlayerX
         && playerAfterY == expectedPlayerY;
     const bool leaveOk = activeBeforeLeave && !activeAfterLeave;
@@ -1069,14 +1054,11 @@ bool run_subworld_time_smoke(App& app) {
                  pendingDailyBeforeLeave, app.gs.worldTickRt.pendingDailyTicks,
                  maxPendingDaily);
     std::fprintf(stderr,
-                 "[smoke] subworld_time npcProcessed=%d sweepsCompleted=%d "
-                 "backlogFrames=%d pendingSweepsStart=%d pendingSweepsBeforeLeave=%d "
-                 "pendingSweepsAfterLeave=%d maxPendingSweeps=%d "
-                 "sweepCursorBeforeLeave=%u maxSweepCursor=%u sweepAccum=%u\n",
-                 npcProcessed, sweepsCompleted, backlogFrames,
-                 sweepsPendingStart, pendingSweepsBeforeLeave,
-                 app.npcAi.pendingSweeps, maxPendingSweeps,
-                 sweepCursorBeforeLeave, maxSweepCursor, app.npcAi.sweepAccum);
+                 "[smoke] subworld_time thinksUnderground=%llu "
+                 "(expectedTicks=%llu, quantum=%u)\n",
+                 (unsigned long long)thinksUnderground,
+                 (unsigned long long)expectedTicks,
+                 unsigned(sm::kAiTicks));
     std::fflush(stderr);
 
     if (!timeAdvanced) {
@@ -1091,8 +1073,8 @@ bool run_subworld_time_smoke(App& app) {
         smoke_fail(app, "subworld_time daily budget invariant");
         return false;
     }
-    if (!npcBounded) {
-        smoke_fail(app, "subworld_time npc budget invariant");
+    if (!npcThinksOk) {
+        smoke_fail(app, "subworld_time macro must keep thinking underground");
         return false;
     }
     if (!playerSynced || !leaveOk) {
@@ -1100,40 +1082,24 @@ bool run_subworld_time_smoke(App& app) {
         return false;
     }
 
-    // ── ДОЛГ ДОПЛАЧИВАЕТСЯ НА КАРТЕ, А НЕ СБРАСЫВАЕТСЯ (M-105 потеря №3) ──
-    // Предусловие рожает свидетель (§8 п.11): долг заводится вручную,
-    // СОГЛАСОВАННО с метрами (инвариант сохранения цел на входе), — живой
-    // сценарий долга почти не копит, а нулевой долг нечем терять. Дальше
-    // карт-кадры обязаны его ОТРАБАТЫВАТЬ: прогресс виден курсором, числом
-    // исполненных или усохшим долгом, а равенство сохранения отличает
-    // честную доплату от сброса (сброс рвёт равенство — долг исчез, а
-    // исполненные не выросли).
-    const int forcedDebt = app.npcAi.pendingSweeps + 3;
-    app.npcAi.pendingSweeps = forcedDebt;
-    app.npcAi.aiInflowTicks += std::uint64_t(sm::kAiTicks) * 3u;
-    const std::uint64_t doneBeforeDrain = app.npcAi.sweepsDone;
-    const std::uint32_t cursorBeforeDrain = app.npcAi.sweepCursor;
-    for (int i = 0; i < 8; ++i) (void)tick_playing_runtime(app, false);
-    const bool debtConserved =
-        app.npcAi.aiInflowTicks
-        == std::uint64_t(app.npcAi.sweepAccum)
-               + std::uint64_t(sm::kAiTicks)
-                     * (app.npcAi.sweepsDone
-                        + std::uint64_t(std::max(0, app.npcAi.pendingSweeps)));
-    const bool debtPaidDown = app.npcAi.sweepsDone > doneBeforeDrain
-        || app.npcAi.pendingSweeps < forcedDebt
-        || app.npcAi.sweepCursor != cursorBeforeDrain;
+    // ── ДУМКИ НА КАРТЕ — ФУНКЦИЯ ТИКОВ (M-379) ──
+    // Прежний блок принудительного долга умер вместе с машинерией долга:
+    // единый драйвер платит каждый поданный тик на месте, терять нечего.
+    // Закон карты: за kAiTicks тиков КАЖДЫЙ живой сквад зреет ровно раз —
+    // метр думок обязан вырасти, пока в мире есть хоть один сквад (генезис
+    // рожает города и деревни сквадами; пустота мира была бы ЕГО дефектом,
+    // и провал обязан сказать «мир обязан был их породить»).
+    const std::uint64_t thinksBeforeMap = app.npcAi.thinksDone;
+    for (int i = 0; i < int(sm::kAiTicks); ++i)
+        (void)tick_playing_runtime(app, false);
+    const std::uint64_t mapThinks = app.npcAi.thinksDone - thinksBeforeMap;
     std::fprintf(stderr,
-                 "[smoke] subworld_time debt: forced=%d pendingAfter=%d "
-                 "doneBefore=%llu doneAfter=%llu cursorAfter=%u "
-                 "conserved=%d\n",
-                 forcedDebt, app.npcAi.pendingSweeps,
-                 (unsigned long long)doneBeforeDrain,
-                 (unsigned long long)app.npcAi.sweepsDone,
-                 app.npcAi.sweepCursor, int(debtConserved));
+                 "[smoke] subworld_time map thinks over %u ticks: %llu\n",
+                 unsigned(sm::kAiTicks), (unsigned long long)mapThinks);
     std::fflush(stderr);
-    if (!debtConserved || !debtPaidDown) {
-        smoke_fail(app, "subworld_time sweep debt must drain, not vanish");
+    if (mapThinks == 0) {
+        smoke_fail(app, "subworld_time map thinks must grow with ticks "
+                        "(the world was obliged to bear squads)");
         return false;
     }
 

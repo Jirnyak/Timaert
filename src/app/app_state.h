@@ -435,7 +435,6 @@ enum PauseReason : std::uint8_t {
 
 struct RuntimeFrameStats {
     sm::WorldTickResult timeTick{};
-    sm::MacroNpcAiSliceResult macroNpcAi{};
     bool ticked = false;
     bool subworldActive = false;
 };

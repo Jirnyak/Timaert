@@ -824,8 +824,8 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // not be (AGENTS core invariants — «no cheats, on whichever unit runs
     // it»; NPCs are never frozen or LOD-skipped). The overworld thinks on
     // WORLD time, so underground it thinks as slowly as the day passes —
-    // main.cpp runs tick_macro_npc_ai_budgeted at kSubworldMacroNpcTicksPerStep
-    // every scene step. A lord you left walking is still walking.
+    // main.cpp feeds tick_macro_npc_ai the divisor-paced ticks every scene
+    // step (M-379: одна дверь ритма). A lord you left walking is still walking.
     //
     // Runs AFTER the world fill and BEFORE the player entity so projections
     // are part of the scene the player enters.

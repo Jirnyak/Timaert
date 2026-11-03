@@ -475,7 +475,7 @@ int main(int argc, char** argv) {
             double aiSecs = 0.0;
             for (int s = 0; s < kSweepsPerDay; ++s) {
                 sm::tick_world(gs, *macroStore, gs.worldTickRt, sm::kAiTicks,
-                               /*max_daily_ticks=*/32, &mw);
+                               sm::kMaxDailyTicksPerAdvance, &mw);
                 // Время прибора, не мира (см. шапку колонки `aiMsDay`):
                 // замер стоит ВОКРУГ двери думки и внутрь её не лезет —
                 // `npc_ai.cpp` эпик АИ переписывает целиком, и правка в нём

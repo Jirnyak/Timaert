@@ -443,8 +443,7 @@ void test_the_mine_runs_while_the_player_is_away() {
     reset_macro_npc_ai_runtime(art, 70u);
     for (int i = 0; i < 400; ++i) {
         MacroWorld mw{.gs = &gs, .store = &st, .features = &features};
-        tick_macro_npc_ai_budgeted(mw, art, kAiTicks,
-                                   /*max_npc_ticks=*/64);
+        tick_macro_npc_ai(mw, art, kAiTicks);
     }
 
     // Залежь шахты — число фичи: выработка видна там же, где её оставила
