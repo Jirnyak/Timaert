@@ -12,7 +12,7 @@
 #include <vector>
 #include "tables/biomes.h"
 #include "macro/features.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "tables/behaviour.h"
 #include "tables/npc.h"
 #include "tables/sprite_rows.h"

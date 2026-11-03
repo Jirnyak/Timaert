@@ -798,7 +798,7 @@ const ItemDef* item_def_at(int idx) noexcept {
 }
 
 // ГРАНИЦА РОДОВ СТРОКИ МИРА (M-73): предмет — всё, что ниже размера ЭТОГО
-// каталога. Единственное определение; двери macro/world_row.h строятся на нём.
+// каталога. Единственное определение; двери bus/world_row.h строятся на нём.
 bool world_row_is_item(std::uint16_t row) noexcept {
     return row < std::uint16_t(std::size(kCatalog));
 }

@@ -50,10 +50,10 @@
 #include "macro/deal.h"
 #include "macro/store.h"
 
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/currency.h"
 #include "macro/upkeep_window.h"
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 
 #include <cstdio>
 

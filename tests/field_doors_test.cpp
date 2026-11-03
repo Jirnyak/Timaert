@@ -17,7 +17,7 @@
 
 #include <memory>
 
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/features.h"
 #include "macro/labour.h"
 #include "macro/macro_stock.h"
@@ -28,7 +28,7 @@
 #include "macro/state.h"
 #include "macro/store.h"
 #include "macro/tree_layer.h"
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "tables/items.h"
 #include "tables/npc.h"
 

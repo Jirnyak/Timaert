@@ -19,8 +19,8 @@
 // monstrous either is (M-310).
 #include "check.h"
 
-#include "ecs/pools.h"
-#include "macro/anketa.h"
+#include "core/pools.h"
+#include "bus/anketa.h"
 #include "tables/movement_cost.h"
 #include "macro/recovery.h"
 

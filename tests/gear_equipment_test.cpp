@@ -11,7 +11,7 @@
 // тела» — биты маски: отрастить конечность = поставить бит, в рантайме.
 #include "check.h"
 
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "tables/body_parts.h"
 #include "tables/items.h"
 

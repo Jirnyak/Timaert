@@ -24,7 +24,7 @@
 #include "macro/politik.h"
 #include "macro/settlement_score.h"
 #include "macro/spawners.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/squad.h"            // suzerain_of — знание роли в ТЕЛЕ (M-90)
 #include "macro/spires.h"
 #include "macro/ruins.h"

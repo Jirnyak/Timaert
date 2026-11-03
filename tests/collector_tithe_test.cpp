@@ -63,7 +63,7 @@
 #include "macro/npc_ai.h"
 #include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
 #include "macro/labour.h"        // settle_souls — двери душ
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "macro/chronicle.h"
 #include "macro/econ_day.h"
 #include "macro/squad.h"

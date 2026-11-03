@@ -19,7 +19,7 @@
 #include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
 #include "macro/deposit_layer.h"
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "macro/deal.h"          // deal — сделка идёт ТЕМ ЖЕ законом
 #include "macro/currency.h"
 #include "macro/macro_stock.h"

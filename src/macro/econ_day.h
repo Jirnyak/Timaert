@@ -21,7 +21,7 @@
 #pragma once
 #include <array>
 #include <cstdint>
-#include "macro/anketa.h"   // SkillId/Skills — ремесло открывает рецепт
+#include "bus/anketa.h"   // SkillId/Skills — ремесло открывает рецепт
 #include "tables/commodity.h"
 #include "tables/econ_laws.h" // kGatherPerWorkerDay/sp_price — законы труда
                               // уехали в нейтральный слой (их читает субмир);

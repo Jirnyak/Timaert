@@ -21,7 +21,7 @@
 #include <array>
 #include <cstdint>
 #include "tables/behaviour.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "tables/npc.h"
 #include "macro/state.h"
 

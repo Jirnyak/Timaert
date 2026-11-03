@@ -22,10 +22,10 @@
 #pragma once
 
 #include "core/rng.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "tables/npc.h"
 #include "tables/squad_type.h"   // squad_has_avatar — вклад аватара под гейтом
-#include "macro/world_row.h" // область существ единого контейнера (M-71)
+#include "bus/world_row.h" // область существ единого контейнера (M-71)
 
 #include <algorithm>
 #include <cmath>
@@ -85,7 +85,7 @@ struct AutoBattleSide {
     // предметная область для него не существует.
     const Inventory* creatures = nullptr;   // may be empty/null
     // (Поле `bonuses` умерло с `squad_bonuses` 2026-10-18: аура сквада
-    //  была константой-нулём, см. некролог в macro/anketa.h.)
+    //  была константой-нулём, см. некролог в bus/anketa.h.)
     // Context, composed by the caller from what the cell and the squad say:
     // terrain advantage (defender's hill, forest cover — data rows when the
     // encounter system lands) and fatigue (sp / maxSp). 1 = neutral/fresh.

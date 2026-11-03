@@ -16,7 +16,7 @@
 
 #include <cstdint>
 
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 
 namespace sm {
 

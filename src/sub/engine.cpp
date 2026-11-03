@@ -27,7 +27,7 @@
 #include "sub/material.h"
 #include "ecs/npc_character.h"
 #include "sub/height.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/state.h"
 #include "macro/entry_context.h"
 #include "tables/npc.h"
@@ -2091,7 +2091,7 @@ void SubworldEngine::tick_day_pump(float dt) {
     // Именное тело в по-родный счёт НЕ входит — его голову гасит entityId,
     // и генерик того же рода не был бы погашен дважды.
     // ПРЕДЕЛ ИМЕНИТЫХ ВЫВЕДЕН, А НЕ ВЫБРАН: именной ключ головы — `entityId`
-    // СЛОТА контейнера (`CreatureRef@src/macro/world_row.h` берёт его у
+    // СЛОТА контейнера (`CreatureRef@src/bus/world_row.h` берёт его у
     // `ItemRef`), значит различных именных у места не больше, чем слотов
     // инвентаря. Отсюда плоский массив длиной `kMaxInventorySlots` (4 КиБ) и
     // ОБЯЗАТЕЛЬНАЯ склейка дубликатов: стак в одном слоте делит один

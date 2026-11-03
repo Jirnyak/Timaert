@@ -21,7 +21,7 @@
 #include "macro/currency.h"
 #include "macro/deal.h"
 #include "macro/store.h"
-#include "macro/world_row.h"   // creature_slot / creatures_push_stack — вторая половина
+#include "bus/world_row.h"   // creature_slot / creatures_push_stack — вторая половина
 
 namespace {
 

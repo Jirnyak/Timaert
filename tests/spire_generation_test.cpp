@@ -54,7 +54,7 @@
 #include "macro/rooted_iter.h"  // for_each_rooted — перепись СКВАДОВ (их ноль)
 #include "macro/birth_squad.h"  // birth_squad — сквад города/деревни фикстуры
 #include "macro/ruins.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/spires.h"
 #include "macro/state.h"
 #include "macro/store.h"

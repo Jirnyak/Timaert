@@ -13,7 +13,7 @@
 #include "macro/npc_ai.h"
 #include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
 #include "macro/squad.h"         // rooted_handle_by_ordinal — резолв места
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "macro/map_generator.h"
 #include "macro/recovery.h"
 #include "macro/resource_field.h"

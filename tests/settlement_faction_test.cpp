@@ -25,7 +25,7 @@
 #include "ecs/components.h"
 #include "tables/faction.h"
 #include "macro/politik.h"
-#include "macro/world_row.h"   // raise_flock_into_container — души головами
+#include "bus/world_row.h"   // raise_flock_into_container — души головами
 #include "sub/seamless_manager.h"
 #include "sub/spawn.h"
 #include "sub/record.h"   // body_kind — род тела из колонки арены (кусок 1)

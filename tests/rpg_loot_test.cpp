@@ -12,8 +12,8 @@
 
 #include "check.h"
 
-#include "macro/anketa.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
+#include "bus/anketa.h"
 #include "tables/items.h"
 #include "tables/npc.h"
 

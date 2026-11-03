@@ -21,7 +21,7 @@
 #include "macro/currency.h"
 #include "macro/econ_day.h"
 #include "macro/economy.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/deal.h"   // kNoCarryLimitG — «предела нет» живёт у двери deal
 #include "macro/npc_ai.h"
 #include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ

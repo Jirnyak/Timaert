@@ -29,7 +29,7 @@
 #include "core/rng.h"
 #include "core/torus.h"
 #include "macro/deposit_layer.h"
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "macro/npc_ai.h"          // kGathererReach — the crews' working box
 #include "macro/politik.h"
 #include "macro/squad_index.h"     // каркас клеток: «кто здесь живёт»

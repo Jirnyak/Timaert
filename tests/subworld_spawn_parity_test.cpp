@@ -1,7 +1,7 @@
 #include "check.h"
 #include "scene_objects_fixture.h"  // арена сцены фикстурам (кусок 1)
 #include "tables/faction.h"
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "macro/fauna.h"   // SpawnContext/roll_spawns — паритет зовёт закон логова сам
 #include "sub/crowd_layout.h"  // crowdInsideShift — данные субмира (2026-11-02)
 #include "sub/spawn.h"

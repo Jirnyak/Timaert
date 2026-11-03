@@ -22,7 +22,7 @@
 #include "tables/commodity.h"   // the raw rows the scrap variant byte names
 #include "macro/economy.h"
 #include "tables/faction.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "content/spells/spell_book.h"
 #include "content/plot/intro.h"
 #include "events/event_bus.h"
@@ -1958,7 +1958,7 @@ namespace sm::ui
                 // Значит разбиение законно ТОЛЬКО как вид: обе вкладки идут по
                 // ТЕМ ЖЕ 1024 слотам (`Inventory::slots`), различаются одним
                 // предикатом рода строки и берут имя ОДНОЙ дверью
-                // (`world_row_label@src/macro/world_row.h`). Второго хранилища
+                // (`world_row_label@src/bus/world_row.h`). Второго хранилища
                 // нет ни у одной, сословий внутри контейнера нет (ЗАКОН
                 // КОНТЕЙНЕРА), и `?` на существе стал невыразим.
                 //

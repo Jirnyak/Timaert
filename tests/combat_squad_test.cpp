@@ -3,7 +3,7 @@
 #include "scene_objects_fixture.h"  // арена: флаг солдата — бит маски
 #include "tables/faction.h"
 #include "tables/npc.h"
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "ecs/components.h"
 #include "sub/ai.h"
 #include "sub/spawn.h"

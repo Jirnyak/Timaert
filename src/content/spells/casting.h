@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <string_view>
 
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "sub/objects.h" // ObjRef — ссылка сцены: кастер конверта (iii-б)
 
 namespace sm {

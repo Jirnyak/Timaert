@@ -6,7 +6,7 @@
 // tests) settles squads through the same functions.
 #pragma once
 
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/auto_battle.h"
 #include "core/rng.h"
 #include <cstdio>
@@ -17,7 +17,7 @@
 #include "macro/macro_stock.h"
 #include "macro/player_entity.h"
 #include "macro/spell_book_state.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/squad_walk.h"
 #include "macro/state.h"
 #include "macro/zones.h"
@@ -1184,7 +1184,7 @@ inline int squad_award_exp(MacroStore& st, MacroHandle h, int xp) {
 // ── ДВЕРЬ КЛАССА «ТРАТА ОЧКОВ» (M-301) ───────────────────────────────────
 // Уровень даёт ОЧКИ, а лист двигает их ТРАТА — значит классов изменений тут
 // два, и у второго три входа: атрибут, ранг умения, изучение с нуля. Низкие
-// двери (`spend_*@src/macro/anketa.h`) остаются и остаются ПУБЛИЧНЫМИ: их
+// двери (`spend_*@src/bus/anketa.h`) остаются и остаются ПУБЛИЧНЫМИ: их
 // законно зовёт создание персонажа (`src/ui/screens.cpp`) и прокат листа
 // (`make_character_sheet`), где тела ещё нет вовсе и пересчитывать нечего.
 // Разница названа вслух: ниже — АРИФМЕТИКА ЛИСТА, здесь — ИЗМЕНЕНИЕ АНКЕТЫ

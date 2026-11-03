@@ -18,7 +18,7 @@
 #include "core/subtract.h"    // sub_sat — остаток спины приёмника (M-308)
 #include "macro/econ_day.h"   // Depot + econ_pay_debt — приход гасит долг (S10)
 #include "tables/faction.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 
 namespace sm {
 
@@ -154,7 +154,7 @@ inline int pay_value_dense(Inventory& inv, int value) {
 // ── СПИНА ПРИЁМНИКА — ПАРАМЕТР ПОДПИСИ, И ОН ОБЯЗАТЕЛЕН (M-308) ──────────
 // ЗДЕСЬ НЕ БЫЛО МАССЫ ВОВСЕ, и это были ДВА ЗАКОНА ЁМКОСТИ на один вопрос
 // мира (DOD п.6): `deal@src/macro/deal.h` мерит грузы МАССОЙ, а эта дверь
-// встала на отказе СЛОТА — `add_ref@src/macro/anketa.h` о массе не знает
+// встала на отказе СЛОТА — `add_ref@src/bus/anketa.h` о массе не знает
 // ничего и отказывает лишь при переполнении стака или нехватке слота.
 // Поймано ЗАМЕРОМ в `collect_tithe@src/macro/npc_ai.cpp`: две половины
 // одной загрузки спрашивали спину ПО-РАЗНОМУ — ветка нужды дома честно

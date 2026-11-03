@@ -7,8 +7,8 @@
 
 #include "content/spells/casting.h"
 #include "core/macro_handle.h"   // хэндл сквада — он едет ПО ЗНАЧЕНИЮ
-#include "ecs/pools.h"
-#include "macro/anketa.h"
+#include "core/pools.h"
+#include "bus/anketa.h"
 #include "macro/spell_book_state.h"
 
 namespace sm {

@@ -20,7 +20,7 @@
 
 #include "check.h"
 #include "macro/squad.h"
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "macro/player_entity.h"
 #include "macro/npc_spawn.h"
 #include "macro/currency.h"

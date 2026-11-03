@@ -9,7 +9,7 @@
 #include "macro/politik.h"
 #include "macro/squad.h"
 #include "macro/store.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "ecs/components.h"
 #include "ecs/npc_character.h"
 #include "core/torus.h"

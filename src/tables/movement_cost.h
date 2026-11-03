@@ -72,7 +72,7 @@
 #include <cmath>
 #include <iterator>          // std::size — счёт строк постели выводится, не пишется
 #include "core/time.h"       // the ladder: kSubworldWalkTilesPerSecond derives from it
-#include "ecs/pools.h"       // the bars this law spends and bites — one home
+#include "core/pools.h"       // the bars this law spends and bites — one home
 #include "tables/attributes.h"   // THE skill law — skill_mult_of(Marathon, rank)
 #include "tables/biomes.h"
 #include "tables/feature_def.h"  // строка фичи: её `bedWeight` ЕСТЬ постель шага
@@ -170,7 +170,7 @@ constexpr int kExhaustionBiteDivisor = 32;
 // (owner, 2026-09-03): 1/8 (po2) — a full bar in 8 game hours, a night
 // refills any traveller with room to spare.
 //
-// ПЕРЕЕХАЛА СЮДА ИЗ `macro/anketa.h` ломтём 1а эпика пакетов v1, и переезд
+// ПЕРЕЕХАЛА СЮДА ИЗ `bus/anketa.h` ломтём 1а эпика пакетов v1, и переезд
 // вернул число ТУДА, ГДЕ ОНО ЧИТАЕТСЯ. В анкете у него не было ни одного
 // читателя-кода: четыре чтения из шести жили в этом файле (дверь
 // `rest_stamina_per_hour` и три утверждения лестницы ниже), пятое и шестое —

@@ -56,7 +56,7 @@ DefenseSum defense_of(SubObjects& objs, MacroStore* st, int s,
     const auto* wornBag = record_state<ecs::NpcInventory>(objs, s, st);
     const auto* eq = record_state<ecs::BodyEquipment>(objs, s, st);
     const bool dressed = eq != nullptr && wornBag != nullptr;
-    // ONE assembly for both laws of battle (macro/anketa.h body_defense): the
+    // ONE assembly for both laws of battle (bus/anketa.h body_defense): the
     // fought body and the auto-resolve read the SAME sentence. Нет ни клампа в
     // ноль, ни раннего выхода: ОТРИЦАТЕЛЬНАЯ броня есть УЯЗВИМОСТЬ и обязана
     // дойти до закона живой (CANON S13) — прежний `std::max(0, armour)` делал

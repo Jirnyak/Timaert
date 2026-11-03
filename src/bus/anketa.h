@@ -717,7 +717,7 @@ inline bool operator!=(const SoldierRecord& a, const SoldierRecord& b) {
 // ── СЛИЯНИЕ M-71 (2026-09-24): ПЛОТНЫЙ КОНТЕЙНЕР УМЕР ─────────────────────────
 // SoldierSquad / SoldierSlot / kMaxSquadSlots / souls()-развёртка вырезаны:
 // существа лежат СТРОКАМИ МИРА в едином контейнере (Inventory, закон двух
-// областей — items.h), все операции — дверями macro/world_row.h
+// областей — items.h), все операции — дверями bus/world_row.h
 // (creatures_push / pop_back / remove_one / move / add, головы, развёртка).
 // Здесь остались боевой лист строки и МОНЕТА ПЕРЕНОСА души.
 
@@ -1113,7 +1113,7 @@ struct Inventory {
     }
     // ПРЕДМЕТНАЯ дверь: строка существа отказывается громко — её снятие
     // обязано чинить плотность области и ходит типизированной дверью
-    // (macro/world_row.h), а не ординальной.
+    // (bus/world_row.h), а не ординальной.
     bool remove_of(int defIdx, int n) {
         if (defIdx < 0 || n <= 0 || count_of(defIdx) < n) return false;
         if (!world_row_is_item(std::uint16_t(defIdx))) return false;

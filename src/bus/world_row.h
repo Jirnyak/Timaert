@@ -9,7 +9,7 @@
 #pragma once
 #include <cstdint>
 
-#include "macro/anketa.h"       // SoldierRecord — монета переноса души
+#include "bus/anketa.h"       // SoldierRecord — монета переноса души
 #include "tables/world_row.h"   // адрес строки мира: род, имя, ключ
 
 namespace sm {

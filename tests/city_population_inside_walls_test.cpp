@@ -27,7 +27,7 @@
 //      the refactor must not have moved a single wall.
 #include "check.h"
 #include "scene_objects_fixture.h"  // арена сцены фикстурам (кусок 1)
-#include "macro/world_row.h"   // raise_flock_into_container — души головами
+#include "bus/world_row.h"   // raise_flock_into_container — души головами
 #include "ecs/components.h"
 #include "tables/faction.h"
 #include "macro/features.h"   // feature_of_rooted_kind — байт из колонки рода

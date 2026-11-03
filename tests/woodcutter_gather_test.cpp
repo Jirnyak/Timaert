@@ -15,7 +15,7 @@
 #include "macro/npc_ai.h"
 #include "macro/rooted_iter.h"  // for_each_rooted — перепись мест
 #include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "macro/chronicle.h"
 #include "macro/econ_day.h"
 #include "tables/faction.h"

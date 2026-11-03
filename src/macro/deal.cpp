@@ -6,7 +6,7 @@
 #include "core/caps.h"        // kUnifiedCap — границы слотов сторон
 #include "core/subtract.h"    // sub_sat — остатки намерения и спины («ниже
                               // нуля не бывает» — закон этих величин)
-#include "macro/anketa.h"     // Inventory — контейнер обеих сторон
+#include "bus/anketa.h"     // Inventory — контейнер обеих сторон
 #include "macro/currency.h"   // densest_value_slot — стейджинг встречного лота
 #include "macro/store.h"      // MacroStore — адресация сторон слотами
 

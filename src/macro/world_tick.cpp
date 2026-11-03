@@ -23,7 +23,7 @@
 #include "macro/npc_spawn.h"
 #include "macro/resource_field.h"   // kGrowthEpochDays — the regrow epoch
 #include "tables/seasons.h"          // season_boundary — единое окно мира (S19.2)
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/spires.h"   // spire_orb — тир орба ОДНИМ выводом (M-233 п.8)
 #include "macro/zones.h"            // the ruin's danger byte (same)
 #include "macro/scent_field.h"

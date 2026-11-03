@@ -23,7 +23,7 @@
 #include <vector>
 
 #include "macro/npc_ai.h"
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "tables/movement_cost.h"
 #include "macro/recovery.h"
 #include "macro/travel.h"

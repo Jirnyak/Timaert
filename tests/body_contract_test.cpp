@@ -23,8 +23,8 @@
 #include "sub/map_data.h"
 #include "ecs/components.h"
 #include "ecs/npc_character.h"
-#include "macro/anketa.h"
-#include "macro/world_row.h"
+#include "bus/anketa.h"
+#include "bus/world_row.h"
 #include "macro/macro_stock.h"   // macro_stock_apply — ведомость осталась в macro/,
                                  // словарь уехал в tables/stock_key.h (ломоть 1б);
                                  // прежде дверь приезжала транзитом из sub/spawn.h

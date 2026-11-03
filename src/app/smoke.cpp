@@ -105,7 +105,7 @@ static void smoke_give_visual(sm::sub::SubObjects& objs, int s,
 }
 #include "tables/codex.h"
 #include "macro/currency.h"   // coin_census_value — монетная перепись сумки
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/labour.h"   // souls_flock — паства через ТЕЛО (M-90)
 #include "macro/rooted_iter.h"   // for_each_rooted — обход мест по слотам
 #include "macro/squad.h"           // rooted_handle_by_ordinal — резолв места

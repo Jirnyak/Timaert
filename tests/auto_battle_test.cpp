@@ -17,7 +17,7 @@
 #include "check.h"
 
 #include "macro/auto_battle.h"
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "tables/movement_cost.h"
 #include "sub/movement.h"
 

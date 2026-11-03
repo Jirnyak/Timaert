@@ -5,9 +5,9 @@
 #include "macro/macro_stock.h"
 #include "macro/store.h"
 
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/deposit_layer.h"
-#include "macro/world_row.h"  // двери существ единого контейнера (M-71)
+#include "bus/world_row.h"  // двери существ единого контейнера (M-71)
 #include "macro/labour.h"     // settle_souls / souls_flock — души места
 #include "macro/fauna.h"
 #include "macro/map_generator.h"

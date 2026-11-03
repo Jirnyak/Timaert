@@ -36,7 +36,7 @@
 #pragma once
 #include "ecs/components.h"
 #include "macro/store.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/entry_context.h"
 #include "macro/spell_book_state.h"
 #include "macro/state.h"

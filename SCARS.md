@@ -18,7 +18,7 @@
 развилку о сущности без предмета. Ответ: «лидера нет никакого у нас АНКЕТЫ
 СКВАДОВ! там мморпг система … атрибут сила за пернеосимый вес и там sp mp а
 существа дают доп вес». Арифметика лежала на один греп ниже имени:
-`get_carry_capacity@src/macro/anketa.h` = `(100 + Str×10) ×
+`get_carry_capacity@src/bus/anketa.h` = `(100 + Str×10) ×
 skill_mult(Weightlifting)`, `haulMult` суммируется по существам контейнера. Цена
 — сессия на ложной рамке.
 
@@ -129,7 +129,7 @@ index)`, разброс у стражника **976 против 254 за три
    (`write_creatures@src/macro/macro_stock.cpp`) принялась вести число места,
    то есть ЧУЖУЮ частность. Приход души по-прежнему идёт
    `settle_souls@src/macro/labour.h`, убыль по контейнеру —
-   `bleed_flock@src/macro/world_row.h` и `bleed_creatures@src/macro/world_row.h`;
+   `bleed_flock@src/bus/world_row.h` и `bleed_creatures@src/bus/world_row.h`;
    число же ведёт модуль места своей дверью (`shift_home_flock@src/macro/squad.h`)
    и в СВОЁМ дневном проходе, а не по звонку снизу.
 4. **ВСЕ, КТО В КОНТЕЙНЕРЕ, ЕДЯТ ПО ТАБЛИЦЕ** (владелец, тот же день: «с чего

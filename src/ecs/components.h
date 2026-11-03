@@ -1,16 +1,18 @@
 // ECS components — small POD structs as per AGENTS.md.
 #pragma once
-#include "ecs/pools.h"
+#include "core/pools.h"
 #include "core/torus.h"        // cell_of — ОДИН адрес клетки мира
 #include "core/macro_handle.h"   // MacroHandle {слот, ID} — через шов (M-220)
-#include "macro/anketa.h"
-#include "tables/commodity.h"   // kCommodityCount — счёт содержания контейнера
+#include "bus/anketa.h"          // Inventory + Gear — ровно их носят колонки ниже
 // (`macro/upkeep.h` СНЯТ 2026-11-03, M-342: он стоял ради одного алиаса
 //  `ecs::SquadUpkeep`, уехавшего к своему типу, — и доставлял макро-слой
 //  транзитом в каждый TU субмира, включающий компоненты.)
+// (`tables/commodity.h` и `<string>` СНЯТЫ ломтём 2а эпика пакетов v1: оба
+//  стояли без единого употребления в файле — `kCommodityCount` уехал вместе с
+//  `SquadUpkeep` ломтём 1г, а `std::string` здесь не рождался никогда, и это
+//  закон, а не случай: POD-строка мира обязана переживать `memcpy` (§12).)
 #include <array>
 #include <cstdint>
-#include <string>
 
 namespace sm {
 
@@ -132,7 +134,7 @@ inline int cell_y(MacroCell c, int mapW) {
     return sm::cell_y(c.idx, mapW);
 }
 
-// THE POOLS OF A BODY — moved to its own entt-free header (ecs/pools.h) so
+// THE POOLS OF A BODY — moved to its own entt-free header (core/pools.h) so
 // the recovery law and the stamina bookkeeping compile without the component
 // creatures; the story of the block lives with the block.
 
@@ -173,7 +175,7 @@ struct Combat {
     //
     // ЭТО НЕ ВТОРОЙ ГЕЙТ, и разница несущая: `recoverySteps` выше отвечает
     // «занято ли ТЕЛО» и запирает действия, этот — «в строю ли БРОНЯ» и не
-    // запирает НИЧЕГО. Закон один (`recovery_steps@src/macro/anketa.h`), база
+    // запирает НИЧЕГО. Закон один (`recovery_steps@src/bus/anketa.h`), база
     // своя (вес надетой брони), сливает обоих один `tick_body_recovery`.
     //
     // ПОЧЕМУ ЗДЕСЬ, А НЕ В НОВОЙ КОЛОНКЕ: это второй субъект ОДНОГО закона, и

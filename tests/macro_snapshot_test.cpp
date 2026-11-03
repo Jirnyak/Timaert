@@ -13,7 +13,7 @@
 #include "check.h"
 
 #include "macro/macro_snapshot.h"
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "macro/npc_spawn.h"
 #include "macro/deposit_layer.h"
 #include "macro/save.h"

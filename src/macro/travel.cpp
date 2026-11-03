@@ -1,6 +1,6 @@
 #include "macro/travel.h"
 
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 
 namespace sm {
 

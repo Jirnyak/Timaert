@@ -27,7 +27,7 @@
 #include "macro/econ_day.h"   // econ_pay_debt, hunger_commodity_ordinal, EconFactSink
 #include "tables/npc.h"        // npc_board_per_day / soldier_upkeep — счёт по строкам
 #include "macro/upkeep.h"
-#include "macro/world_row.h"  // область существ единого контейнера (M-71)
+#include "bus/world_row.h"  // область существ единого контейнера (M-71)
 
 #include <algorithm>
 
@@ -189,7 +189,7 @@ inline UpkeepWindowOutcome upkeep_season_window(Upkeep& r, Inventory& store,
     // ухода, и НИКУДА не кладётся: приёмника у смерти нет, значит нет и
     // отказа — в этом она противоположность уходу ниже, который пул может
     // не принять. Форма та же, что у павших сквадов (M-228,
-    // `creatures_kill_all@src/macro/world_row.h`), только доля, а не всё.
+    // `creatures_kill_all@src/bus/world_row.h`), только доля, а не всё.
     while (dying-- > 0 && !creatures_empty(store)) {
         SoldierRecord dead{};
         if (!creatures_pop_back(store, dead)) break;

@@ -20,7 +20,7 @@
 #include "macro/econ_day.h"   // kRecipes — чей ранг открывает рецепт
 #include "check.h"
 
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/travel.h"   // travel_skill_efficiency — выучка читает РАНГИ анкеты
 #include "tables/movement_cost.h"
 

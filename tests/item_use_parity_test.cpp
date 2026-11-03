@@ -9,7 +9,7 @@
 // §8 п.1 exists to forbid. The file's only COUNTED check was the un-failable
 // `CHECK(true, "every gate above held")` at the bottom.
 #include "check.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 
 #include <string>
 

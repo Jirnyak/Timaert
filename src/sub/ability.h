@@ -27,7 +27,7 @@
 #pragma once
 
 #include "ecs/components.h"      // ecs::Combat — тот самый гейт
-#include "macro/anketa.h"    // recovery_steps — дверь восстановления S14
+#include "bus/anketa.h"    // recovery_steps — дверь восстановления S14
 #include "sub/objects.h"     // SubObjects — лист стал колонкой (кусок 2)
 #include "sub/record.h"      // body_visual — колонка визуальной позиции (кусок 3)
 

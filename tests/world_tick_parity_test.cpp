@@ -13,7 +13,7 @@
 #include "tables/npc.h"
 #include "macro/labour.h"       // settle_souls / souls_home / souls_flock
 #include "macro/birth_squad.h"  // birth_squad — место родится ТЕЛОМ
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "macro/npc_ai.h"   // squad_season_window — THE boundary window
 #include "macro/upkeep_window.h"   // upkeep_season_window — сама дверь суда
 #include "macro/world_tick.h"

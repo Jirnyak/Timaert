@@ -1,6 +1,6 @@
 // КАТАЛОГ ПРЕДМЕТОВ — строки и форма ссылки на них (наряд M-181, разрез
 // items: каталожная половина здесь, анкетная — Inventory и двери над ним —
-// в macro/anketa.h). Контент, constexpr, одинаковый по обе стороны границы
+// в bus/anketa.h). Контент, constexpr, одинаковый по обе стороны границы
 // миров; состояния мира этот файл не знает и не смеет знать.
 //
 // `ItemRef` ЛЕЖИТ ЗДЕСЬ, И ЭТО РЕШЕНИЕ С ПРИЧИНОЙ: он не состояние, а ФОРМА
@@ -322,8 +322,8 @@ const ItemDef* item_def_at(int idx) noexcept;
 // ГРАНИЦА РОДОВ СТРОКИ МИРА — У САМОГО КАТАЛОГА (M-73, одно пространство
 // ординалов). Строка мира ниже размера предметного каталога есть ПРЕДМЕТ,
 // всё выше — существо. Определение живёт рядом с каталогом (items.cpp);
-// все ОСТАЛЬНЫЕ двери пространства ординалов (macro/world_row.h) строятся
-// НА этой — второго вывода границы не существует. Контейнеру (macro/anketa.h
+// все ОСТАЛЬНЫЕ двери пространства ординалов (bus/world_row.h) строятся
+// НА этой — второго вывода границы не существует. Контейнеру (bus/anketa.h
 // Inventory) она нужна потому, что закон РАЗМЕЩЕНИЯ слота зависит от рода
 // строки.
 bool world_row_is_item(std::uint16_t row) noexcept;
@@ -344,7 +344,7 @@ std::span<const ItemDef> item_catalog() noexcept;
 // composition lives HERE, as up to kMaxItemParts pairs {catalog ordinal,
 // count}, so the 40-byte instance grows by nothing and the one answer feeds
 // four consumers — the city's production day (econ_day), the craft door, the
-// scrap door, and the AI's overflow scrap (macro/anketa.h).
+// scrap door, and the AI's overflow scrap (bus/anketa.h).
 //
 // A row with NO parts is TERMINAL — raw matter that "consists of itself"
 // (ore, hide, gems, meat, coins). Parts may reference ONLY terminal rows, so

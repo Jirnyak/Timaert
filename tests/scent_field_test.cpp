@@ -10,8 +10,8 @@
 #include "check.h"
 
 #include "ecs/components.h"
-#include "macro/anketa.h"
-#include "macro/world_row.h"
+#include "bus/anketa.h"
+#include "bus/world_row.h"
 #include "macro/currency.h"
 #include "tables/npc.h"
 #include "macro/npc_ai.h"

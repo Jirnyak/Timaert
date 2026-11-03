@@ -2,7 +2,7 @@
 #include "macro/features.h"      // feature_put — фича просто ЕСТЬ в мире
 #include "macro/macro_world.h"   // конверт слоёв: закон его собственной шапки
 #include "macro/map_generator.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/state.h"
 #include "macro/zones.h"
 #include "core/rng.h"

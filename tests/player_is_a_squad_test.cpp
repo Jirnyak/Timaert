@@ -18,7 +18,7 @@
 #include "check.h"
 
 #include "macro/player_entity.h"
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "macro/npc_ai.h"
 #include "macro/squad.h"
 #include "macro/macro_snapshot.h"

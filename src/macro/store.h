@@ -47,7 +47,7 @@
 
 #include "core/stacks.h"
 #include "ecs/components.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/interests.h"
 #include "macro/spell_book_state.h"
 

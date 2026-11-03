@@ -54,7 +54,7 @@
 #include "macro/features.h"      // FeatureLayer — фича ПОД местом
 #include "macro/labour.h"        // settle_souls — одна дверь прихода душ
 #include "macro/store.h"         // parent_of / tithe_of / set_relation
-#include "macro/world_row.h"     // count_human_souls
+#include "bus/world_row.h"     // count_human_souls
 #include "macro/chronicle.h"
 #include "macro/econ_day.h"      // kCreaturesPerCityWorker, EconFact
 #include "macro/interests.h"

@@ -35,7 +35,7 @@
 #include <cstdint>
 
 #include "ecs/components.h" // ecs::NPCKind — тип колонки kind (кусок 1)
-#include "macro/anketa.h"   // CharacterSheet + BonusTotals — колонки листа и
+#include "bus/anketa.h"   // CharacterSheet + BonusTotals — колонки листа и
                             // зеркала (ломоть 2; включение ПЕРЕЕХАЛО из
                             // record.h — канал M-171 не вырос, тип анкеты
                             // пересекал его и раньше)

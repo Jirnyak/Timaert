@@ -26,7 +26,7 @@
 #include "scene_objects_fixture.h"  // арена сцены фикстурам (кусок 1)
 #include "ecs/components.h"
 #include "tables/faction.h"
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "tables/npc.h"
 #include "sub/seamless_manager.h"
 #include "sub/spawn.h"

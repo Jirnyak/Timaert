@@ -101,7 +101,7 @@ constexpr const char* kLegacyList = "tests/data/arch_legacy.txt";
 constexpr std::string_view kRowHeaders[] = {
     "src/ecs/components.h",        "src/tables/npc.h",
     "src/tables/items.h",          "src/tables/body_parts.h",
-    "src/tables/attributes.h",     "src/macro/anketa.h",
+    "src/tables/attributes.h",     "src/bus/anketa.h",
     "src/tables/army.h",           "src/tables/bonus.h",
     "src/tables/biomes.h",         "src/tables/damage_types.h",
     "src/tables/spells.h",         "src/tables/sprite_rows.h",
@@ -445,11 +445,20 @@ void collect_subcap(std::vector<Site>& out) {
 }
 
 // ── R7: ВЫЧИТАНИЕ ХОДИТ ДВЕРЬМИ (ЗАКОН ТРЁХ ДВЕРЕЙ, M-243 п.2) ───────────
-// Голое `a -= b` в src/macro|src/sub — кандидат дюпа из воздуха
+// Голое `a -= b` в src/macro|src/sub|src/bus — кандидат дюпа из воздуха
 // («uint16 wood = 5; wood -= 10» кладёт на склад 65 531 дерева молча);
 // двери — `sub_sat`/`try_spend`/`drain` в core/subtract.h. Мера — та же,
 // что у переписи 2026-10-09: `-=`, чей левый сосед не оператор (чтобы не
 // ловить составные и сравнения); комментарии срезаются.
+//
+// `src/bus` ВОШЁЛ В ОХВАТ ВМЕСТЕ С ПЕРЕЕЗДОМ АНКЕТЫ (ломоть 2а эпика пакетов
+// v1): контейнер и ростер — та самая «беззнаковая величина симуляции», о
+// которой закон, и они переехали из `src/macro` в `src/bus` целиком. Не
+// расширь охват — и пять сайтов списка растаяли бы САМИ, то есть прибор
+// потерял бы зрение ровно там, где лежит инвентарь мира; растопить строку
+// списка вправе только перевод сайта НА ДВЕРЬ. Новых кандидатов расширение не
+// принесло ни одного: в `cell_row.h`/`delta.h`/`fact.h`/`local_frame.h`
+// вычитания нет вовсе.
 //
 // ЭТОТ СЧЁТЧИК СЧИТАЕТ КАНДИДАТОВ, А НЕ НАРУШЕНИЯ, И РАЗНИЦА ЗАМЕРЕНА
 // ПОШТУЧНО ПО ТИПАМ (M-218, перепись 2026-10-12; прежний суд 2026-10-09 дал
@@ -500,7 +509,8 @@ bool line_has_bare_minus_assign(const std::string& line) {
 
 void collect_minus(std::vector<Site>& out) {
     for (std::string_view top : {std::string_view("src/macro"),
-                                 std::string_view("src/sub")}) {
+                                 std::string_view("src/sub"),
+                                 std::string_view("src/bus")}) {
         const fs::path dir = fs::path(kRoot) / fs::path(top);
         if (!fs::is_directory(dir)) continue;
         std::vector<fs::path> files;

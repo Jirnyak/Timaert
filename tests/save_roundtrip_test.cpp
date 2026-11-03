@@ -1,5 +1,5 @@
 #include "macro/save.h"
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "macro/state.h"
 #include "macro/macro_snapshot.h"
 #include "macro/deposit_layer.h"
@@ -417,7 +417,7 @@ sm::GameState make_state(sm::MacroStore& st) {
     // and asserted with the player record in make_macro_records.)
     // (No bars here since v85: the player's three pools ride the macro-ECS
     // snapshot inside his squad's MacroNpcRecord — the POD block the
-    // static_assert in ecs/pools.h guards — not the player scalar block this
+    // static_assert in core/pools.h guards — not the player scalar block this
     // test drives. player_is_a_squad_test pins that path.)
     gs.player.codexUnlockedBits = sm::codex_bit(sm::CodexArticleId::Witches)
                                 | sm::codex_bit(sm::CodexArticleId::Market);

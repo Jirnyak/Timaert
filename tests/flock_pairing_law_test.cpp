@@ -37,7 +37,7 @@
 #include "macro/squad.h"
 #include "macro/store.h"
 #include "macro/upkeep_window.h"
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "tables/npc.h"
 #include "tables/seasons.h"
 

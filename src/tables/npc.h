@@ -502,7 +502,7 @@ struct NpcTypeDef {
     // объектов? не пон»). Таблица `kRoleWeights` жила отдельным файлом не по
     // замыслу, а по истории: слияние анкеты вынесло её из
     // `macro/character_sheet.h` в `tables/` и не довело до строки. Читатель у
-    // неё в продакшене был ОДИН (`make_character_sheet@src/macro/anketa.h`), а
+    // неё в продакшене был ОДИН (`make_character_sheet@src/bus/anketa.h`), а
     // ключ — тот же ординал, то есть ровно «у двух таблиц один и тот же ключ»
     // (DOD п.9). Со слиянием исчез и её страж порядка `rows_in_enum_order`:
     // расходиться стало НЕЧЕМУ — колонка И ЕСТЬ строка.
@@ -2295,7 +2295,7 @@ inline bool valid_npc_kind(std::uint16_t raw) {
 // The row behind a record, or Peasant for a number that names none. One
 // resolver, two spellings: the raw kind is the identity, the record is the
 // transfer coin. (Слот единого контейнера несёт СТРОКУ МИРА, не сырой род —
-// его читают дверями macro/world_row.h, третьего спеллинга здесь нет.)
+// его читают дверями bus/world_row.h, третьего спеллинга здесь нет.)
 inline NPCType soldier_npc_type(std::uint16_t kind) {
     return kind < std::uint16_t(NPCType::Count) ? NPCType(kind)
                                                 : NPCType::Peasant;
@@ -2336,7 +2336,7 @@ inline bool is_folk_kind(std::uint16_t kind) {
 //  свалки честный вопрос звучит «какой архетип», а на него отвечает
 //  `npc_archetype` — одним сравнением и без третьей двери.)
 
-// (count_human_souls / calculate_squad_upkeep переехали в macro/world_row.h
+// (count_human_souls / calculate_squad_upkeep переехали в bus/world_row.h
 // слиянием M-71: они — взгляды на область существ единого контейнера, а
 // пересчёт строка ↔ род живёт только там. Колонки, которые они читают,
 // остались здесь. `is_mount_kind` стоял рядом и умер вместе с законом
@@ -2389,7 +2389,7 @@ inline int npc_xp_reward(NPCType t, int level) {
 // патрульной строки реестра мест: «вырезан не вид, а то, что город его
 // спавнит». Её носят авто-бой, сцена и двадцать тестов.
 //
-// (raise_flock_into_container переехала в macro/world_row.h слиянием M-71;
+// (raise_flock_into_container переехала в bus/world_row.h слиянием M-71;
 // найм стал exact-лотом одной сделки — deal@src/macro/deal.h, ломоть 2 M-72.)
 
 // Case-insensitive token → registry row, matched against the row's stable

@@ -11,7 +11,7 @@
 #include "macro/deal.h"
 #include "macro/store.h"
 
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 
 #include <cstdint>
 

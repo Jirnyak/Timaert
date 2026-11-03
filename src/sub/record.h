@@ -33,7 +33,7 @@
 #include "ecs/components.h"
 #include "macro/store.h"
 #include "sub/objects.h"    // SubObjects — единый массив объектов сцены (M-150);
-                            // он же несёт macro/anketa.h (колонки листа и
+                            // он же несёт bus/anketa.h (колонки листа и
                             // зеркала, ломоть 2)
 #include "sub/doors.h"      // слот-формы ВСЕХ дверей арены — ЕДИНСТВЕННОЕ тело
                             // каждого закона; двери ниже лишь переводят

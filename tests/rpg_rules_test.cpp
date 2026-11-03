@@ -13,7 +13,7 @@
 //      with context (mood/trait) as one multiplier column.
 
 #include "check.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/economy.h"
 #include "tables/npc.h"               // npc_def — THE row the ceiling reads
 #include "macro/squad.h"

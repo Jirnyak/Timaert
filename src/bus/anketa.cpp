@@ -4,7 +4,7 @@
 // одностороннее — эти двери ЧИТАЮТ каталог (item_parts, item_yield,
 // value_of, item_def), каталог о них не знает (AGENTS §11).
 
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 
 #include "tables/commodity.h"
 
@@ -91,7 +91,7 @@ int auto_scrap_overflow(Inventory& inv) {
 }
 
 // (ЗДЕСЬ ЖИЛА `inventory_weight` — последнее деление этой цепочки на
-//  килограмм. СНЯТА: дверь массы стала `inventory_mass_g@src/macro/anketa.h`
+//  килограмм. СНЯТА: дверь массы стала `inventory_mass_g@src/bus/anketa.h`
 //  и отдаёт хранимую сводку ЦЕЛЫМИ ГРАММАМИ, то есть у неё не осталось тела
 //  вовсе. Вместе с делением ушёл и его шрам: `× 0.001f` врал ВВЕРХ (112 000 г
 //  → 112.0000053 кг), и перегруз 2.0000053 кг округлялся до ТРЁХ единиц цены

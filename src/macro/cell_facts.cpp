@@ -8,7 +8,7 @@
 #include "macro/resource_field.h"
 #include "macro/spires.h"   // spire_orb — ОДИН вывод об орбе (M-233 п.8)
 #include "tables/seasons.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/state.h"
 #include "macro/tree_layer.h"
 #include "macro/zones.h"

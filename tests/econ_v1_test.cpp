@@ -22,8 +22,8 @@
 #include "tables/squad_type.h"  // SquadType — ось рода (амбар рождения уехал
                                 // в kSquadBirth@src/macro/characters.h)
 #include "macro/upkeep_window.h"  // upkeep_season_window — ОДНА дверь суда границы (M-233)
-#include "macro/world_row.h"   // raise_flock_into_container / count_human_souls
-#include "macro/anketa.h"
+#include "bus/world_row.h"   // raise_flock_into_container / count_human_souls
+#include "bus/anketa.h"
 
 #include <array>
 #include <cstdio>

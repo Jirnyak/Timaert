@@ -1,7 +1,7 @@
 #include "macro/save.h"
 #include "macro/save_stream.h"
 #include "macro/world_fields.h"
-#include "macro/world_row.h"   // область существ единого контейнера (M-71)
+#include "bus/world_row.h"   // область существ единого контейнера (M-71)
 #include "macro/deposit_layer.h"
 #include "macro/state.h"
 #include "core/stacks.h"       // капы штабелей — один источник (перепись)

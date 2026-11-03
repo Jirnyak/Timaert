@@ -17,7 +17,7 @@
 #include "check.h"
 
 #include "macro/npc_ai.h"
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "macro/npc_spawn.h"
 #include "macro/squad.h"
 #include "macro/birth_squad.h"   // birth_squad — фикстура рождает свой неподвижный сквад

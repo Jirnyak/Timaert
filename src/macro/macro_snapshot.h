@@ -21,7 +21,7 @@
 #include <vector>
 
 #include "ecs/components.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/upkeep.h"   // Upkeep/Wellbeing + ecs::SquadUpkeep — колонки
                              // строки снимка; прежде ехали транзитом через
                              // ecs/components.h, M-342 снял ту доставку

@@ -30,7 +30,7 @@
 #pragma once
 
 #include "tables/movement_cost.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include <cmath>
 
 namespace sm {

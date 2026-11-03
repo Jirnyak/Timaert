@@ -19,7 +19,7 @@
 // одно — значит субмир, когда ПАКЕТНАЯ ШИНА принесёт ему казну родом 4,
 // позовёт её, не заводя ни одной нитки в макромир.
 #pragma once
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 
 #include <cstdint>
 

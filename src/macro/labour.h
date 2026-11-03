@@ -21,7 +21,7 @@
 
 #include "macro/state.h"      // GameState + feature_number_add — запись числа поля
 #include "macro/store.h"      // MacroStore — колонки сквада по слоту
-#include "macro/world_row.h"  // count_human_souls / raise_flock_into_container
+#include "bus/world_row.h"  // count_human_souls / raise_flock_into_container
 
 namespace sm {
 

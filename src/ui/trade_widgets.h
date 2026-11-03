@@ -20,7 +20,7 @@
 #include <cstdio>
 #include <string>
 
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/currency.h"
 #include "macro/deal.h"    // ОДИН глагол обмена: кнопка Deal зовёт его
 #include "macro/store.h"   // стороны сделки адресуются СЛОТАМИ сквадов
@@ -460,7 +460,7 @@ inline void draw_barter_body(const char* stockLabel,
     // шестнадцати рядов из тридцати двух. Пока на полке лежали одни
     // предметы, это никого не задевало: закон размещения кладёт их СНИЗУ,
     // от слота 0. Существа лежат НАВЕРХУ области, вниз от 1023
-    // (`creature_first@src/macro/anketa.h`), то есть ровно в тех рядах,
+    // (`creature_first@src/bus/anketa.h`), то есть ровно в тех рядах,
     // которых не видно, — и «слот теперь рисуется и нажимается» оказалось
     // правдой, до которой нельзя дотянуться.
     //

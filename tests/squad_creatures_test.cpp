@@ -12,7 +12,7 @@
 #include "ecs/components.h"
 #include "macro/npc_spawn.h"
 #include "macro/birth_squad.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
-#include "macro/world_row.h"
+#include "bus/world_row.h"
 #include "macro/store.h"
 #include <cstdio>
 

@@ -44,7 +44,7 @@
 
 #include "core/caps.h"
 #include "ecs/components.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "macro/chronicle.h"
 #include "macro/deposit_layer.h"
 #include "macro/features.h"

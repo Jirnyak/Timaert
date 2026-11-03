@@ -11,7 +11,7 @@
 #include "sub/doors.h"    // slot_set_debt — колонка квитанции (ломоть 4; слот-форма (ii-б))
 #include "sub/seamless_manager.h"
 #include "tables/biomes.h"
-#include "macro/anketa.h"
+#include "bus/anketa.h"
 #include "tables/npc.h"
 #include "tables/stock_key.h"   // MacroStock/MacroStockKey — словарь расписки
 
@@ -134,7 +134,7 @@ inline void stamp_macro_debt(SubObjects& objs, int s,
 // `squadBonuses` is what this body's AVATAR gives it (character_sheet.h
 // (Параметр ауры лидера `squadBonuses` снесён 2026-10-18 вместе с
 //  `squad_bonuses`: та возвращала константу-нули с перковой чистки
-//  2026-09-03 — см. некролог в macro/anketa.h.)
+//  2026-09-03 — см. некролог в bus/anketa.h.)
 int spawn_derived_body(SubObjects& objs, const BodySpec& body,
                        std::uint32_t faceSalt,
                        const BodyLoan& loan = BodyLoan::none());
