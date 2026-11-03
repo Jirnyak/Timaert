@@ -663,14 +663,13 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     std::uint8_t entryDir = kEntryDirNone;
     std::uint8_t entryTicks = 0;
     {
-        MacroStore& st = (*mw_.store);
+        const MacroStore& st = (*mw_.store);
         const MacroHandle fh = frame_->playerFlag;
         if (st.valid(fh)) {
-            const auto& fc = st.cell[fh.slot];
+            const ecs::MacroCell fc = squad_cell(st, fh);
             cx = ecs::cell_x(fc, frame_->side);
             cy = ecs::cell_y(fc, frame_->side);
-            entryDir = st.runtime[fh.slot].entryDir;
-            entryTicks = st.runtime[fh.slot].entryTicks;
+            squad_entry_side(st, fh, entryDir, entryTicks);
         }
     }
 
@@ -799,13 +798,16 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     std::int16_t creaturesCx = 0, creaturesCy = 0;
     std::uint16_t squadFaction = std::uint16_t(faction_index(kPlayerFactionId));
     {
-        MacroStore& st = (*mw_.store);
+        const MacroStore& st = (*mw_.store);
         if (st.valid(flagRec)) {
-            creaturesSubject = std::int32_t(st.spawnId[flagRec.slot].index);
-            const auto& mc = st.cell[flagRec.slot];
+            // Субъект расписки — САМ ХЭНДЛ (тождество M-220: `valid` И ЕСТЬ
+            // «ординал слота совпал с id ссылки»), поэтому колонку `spawnId`
+            // спрашивать не у кого — ответ уже в руках.
+            creaturesSubject = std::int32_t(flagRec.id);
+            const ecs::MacroCell mc = squad_cell(st, flagRec);
             creaturesCx = std::int16_t(ecs::cell_x(mc, frame_->side));
             creaturesCy = std::int16_t(ecs::cell_y(mc, frame_->side));
-            squadFaction = st.kind[flagRec.slot].factionIdx;
+            squadFaction = squad_kind(st, flagRec).factionIdx;
         }
     }
     spawn_player_squad((*objects_),
@@ -933,7 +935,7 @@ void SubworldEngine::fold_player_sub() {
         const int q = int((frac01 - 0.5f) * 256.0f);
         return std::int8_t(std::clamp(q, -127, 127));
     };
-    st.runtime[fh.slot].sub = {quant(playerX_), quant(playerY_)};
+    squad_set_sub(st, fh, ecs::CellSub{quant(playerX_), quant(playerY_)});
 }
 
 // Квитанция app «фрейм заполнен заново». Здесь же достраивается генерация,
@@ -1101,8 +1103,10 @@ void SubworldEngine::spawn_player_entity() {
     // the sheet and the weapon actually in hand on the FLAG record — gear is
     // macro state, the body is its projection. Refreshed each tick beside the
     // pace, so drawing a dagger changes the next swing, not the next descent.
-    const ecs::BodyEquipment* eqp = nullptr;
-    if (pst.valid(flagRec)) eqp = &pst.gear[flagRec.slot];
+    // Сбруя — состояние ЗАПИСИ, и спрашивается колонкой под valid-гардой
+    // (`body_state` — та же дверь, которой её читает шов, sub/record.h).
+    const ecs::BodyEquipment* eqp =
+        body_state<ecs::BodyEquipment>(pst, flagRec);
     // The EFFECTIVE sheet swings and paces (phase 4): the ring's +STR is in
     // the blow, the sustained haste's +SPD is in the step. The totals are
     // assembled ONCE — the sheet copy takes the attr/skill cells, and the
@@ -1113,13 +1117,12 @@ void SubworldEngine::spawn_player_entity() {
         gs_ ? player_sheet(*gs_, (*mw_.store)) : nullptr;
     const CharacterSheet effBody = baseSheet
         ? effective_sheet(*baseSheet, standing) : CharacterSheet{};
-    const ecs::NpcInventory* flagBag =
-        (gs_ && pst.valid(flagRec)) ? &pst.inventory[flagRec.slot] : nullptr;
+    const Inventory* flagBag = gs_ ? squad_container(pst, flagRec) : nullptr;
     const StrikeFields hs = gs_
         ? hand_strike_fields(effBody.attributes,
                              effBody.skills,
                              eqp ? &eqp->gear : nullptr,
-                             flagBag ? &flagBag->inv : nullptr)
+                             flagBag)
         : StrikeFields{kFistDice, DamageType::Blunt, 0, 100, 0};
     // Speed: a walking man's, from the ONE scale every body is stated on
     // (tables/movement_cost.h). Refreshed each tick beside the damage, so a
@@ -1138,7 +1141,7 @@ void SubworldEngine::spawn_player_entity() {
     float armReach = kAdventurerCombat.attackRange;
     if (pst.valid(flagRec)) {
         armReach = npc_def(
-            NPCType(pst.kind[flagRec.slot].type)).combat.attackRange;
+            NPCType(squad_kind(pst, flagRec).type)).combat.attackRange;
     }
     sub::slot_set_combat(
         *objs, slot, ecs::Combat{hs.dice, hs.flatAdd, hs.multPct, hs.luck,
@@ -1752,9 +1755,7 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
                     // (macro/macro_stock.h) instead of vanishing without trace.
                     ctx.rooted.id,
                     wcx, wcy, faunaCount,
-                    mw_.store && mw_.store->valid(lmRec)
-                        ? &mw_.store->inventory[lmRec.slot].inv
-                        : nullptr,
+                    mw_.store ? squad_container(*mw_.store, lmRec) : nullptr,
                     // THE CLOCK, because how many of this cell's people are on
                     // its streets is a question about the hour (city_layout.h
                     // crowd_outdoor_share01) — the rest are behind their doors.
@@ -1959,8 +1960,7 @@ void SubworldEngine::tick_day_pump(float dt) {
     const MacroStore& st = (*mw_.store);
     const MacroHandle ph = rooted_handle_by_ordinal(
         st, std::uint32_t(ctx.rooted.id));
-    const Inventory* souls =
-        st.valid(ph) ? &st.inventory[ph.slot].inv : nullptr;
+    const Inventory* souls = squad_container(st, ph);
     const int heads = souls ? home_creatures(*souls) : 0;
     if (heads <= 0) return;
 
@@ -3243,7 +3243,7 @@ bool SubworldEngine::spawn_tracked_npc_body(MacroHandle macro) {
     // Both coordinates, through the door: the record's own cell salts the
     // stream, and the record's own ordinal (unique per world, M-220)
     // diverges two lords on one cell.
-    const auto& mc = st.cell[macro.slot];
+    const ecs::MacroCell mc = squad_cell(st, macro);
     const std::uint32_t seed =
         (frame_ ? cell_seed(frame_->worldSeed, ecs::cell_x(mc, frame_->side),
                             ecs::cell_y(mc, frame_->side))
@@ -4146,8 +4146,8 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
         const MacroStore& st = (*mw_.store);
         const MacroHandle ph = rooted_handle_by_ordinal(
             st, std::uint32_t(ses.settlementId));
-        const int heads = st.valid(ph)
-            ? home_creatures(st.inventory[ph.slot].inv) : 0;
+        const Inventory* souls = squad_container(st, ph);
+        const int heads = souls ? home_creatures(*souls) : 0;
         for (int l = 0; l < DungeonSession::kMaxInteriorStoreys; ++l) {
             const InteriorSegment seg = interior_segment_for_door(
                 mgr_.structures(), ses.rootedKind, doorCtx.worldSeed,
@@ -4383,8 +4383,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         const MacroStore& st = (*mw_.store);
         const MacroHandle ph = rooted_handle_by_ordinal(
             st, std::uint32_t(ses.settlementId));
-        const Inventory* souls =
-            st.valid(ph) ? &st.inventory[ph.slot].inv : nullptr;
+        const Inventory* souls = squad_container(st, ph);
         // Отрезок яруса снят на пороге (DungeonSession) — к этому моменту
         // окно держит интерьер, и дверей города в нём уже нет.
         const int lvl = std::clamp(int(ses.ref.level), 0,
@@ -4424,8 +4423,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         const MacroStore& st = (*mw_.store);
         const MacroHandle ph = rooted_handle_by_ordinal(
             st, std::uint32_t(ses.settlementId));
-        const Inventory* souls =
-            st.valid(ph) ? &st.inventory[ph.slot].inv : nullptr;
+        const Inventory* souls = squad_container(st, ph);
         const int lvl = std::clamp(int(ses.ref.level), 0,
                                    DungeonSession::kMaxInteriorStoreys - 1);
         const int share = std::min(popNow, int(ses.segShare[lvl]));
@@ -4607,9 +4605,9 @@ bool SubworldEngine::read_sign(const Structure& sign) {
             ? rooted_handle_by_ordinal(*mw_.store,
                                       std::uint32_t(ctx.rooted.id))
             : MacroHandle{};
-        if (mw_.store && mw_.store->valid(lm)
-            && mw_.store->name[lm.slot].text[0] != '\0')
-            rooted = mw_.store->name[lm.slot].text;
+        // «Как зовут эту запись» — ОДНА дверь, и безымянное место отвечает
+        // ею же: nullptr и значит «звать никак», то есть доска пуста.
+        if (mw_.store) rooted = squad_name(*mw_.store, lm);
     }
     char msg[96];
     if (rooted) {

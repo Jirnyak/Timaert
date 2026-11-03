@@ -650,7 +650,7 @@ int spawn_tracked_body(SubObjects& objs, MacroStore& st, MacroHandle macro,
     // ЗАПИСЬ ЕСТЬ СЛОТ STORE, и другой формы больше нет (шаг 2 1е):
     // идентичность — хэндл, протухший хэндл честно отказывает.
     if (!st.valid(macro)) return -1;
-    const auto& kind = st.kind[macro.slot];
+    const ecs::NPCKind kind = squad_kind(st, macro);
     // A kind that names no row at all is refused; a kind that names one is
     // trackable, whatever it is. The extra refusal that stood here — "not a
     // creature" — died with the second birth: a pack avatar is a macro record
@@ -658,9 +658,11 @@ int spawn_tracked_body(SubObjects& objs, MacroStore& st, MacroHandle macro,
     // way (CANON.md S4).
     if (!valid_npc_kind(kind.type)) return -1;
 
-    const auto& health = st.pools[macro.slot];
-    const float fraction = health.maxHp > 0
-        ? std::clamp(float(health.hp) / float(health.maxHp), 0.0f, 1.0f)
+    // Бары — состояние ЗАПИСИ, и спрашиваются колонкой под valid-гардой
+    // (`body_state` — та же дверь, которой их читает шов, sub/record.h).
+    const ecs::Pools* health = body_state<ecs::Pools>(st, macro);
+    const float fraction = (health && health->maxHp > 0)
+        ? std::clamp(float(health->hp) / float(health->maxHp), 0.0f, 1.0f)
         : 1.0f;
 
     BodySpec body{};
@@ -686,7 +688,7 @@ int spawn_tracked_body(SubObjects& objs, MacroStore& st, MacroHandle macro,
     body.sheet = &macroSheet;
 
     const int s =
-        emplace_body(objs, body, st.character[macro.slot], fraction);
+        emplace_body(objs, body, squad_face(st, macro), fraction);
 
     // The belongings, the personality, the gear and the book are STATE up
     // there, and they STAY up there: nothing is copied down. The line that
@@ -1546,7 +1548,13 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
     int projected = 0;
     for (std::uint32_t s32 = 0; s32 < kUnifiedCap; ++s32) {
         const std::uint16_t slot = std::uint16_t(s32);
-        if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
+        // «Занят ли слот и не труп ли в нём» — ОДНА дверь на оба байта
+        // (`macro_dead@src/bus/store.h`): протухший хэндл отвечает «мёртв», а
+        // хэндл живого слота годен и в `valid`, и дальше по проходу. Здесь
+        // стояла пара `alive[slot] == 0 || dead[slot] != 0` — то же равенство
+        // СВОИМ правописанием, то есть второй ответ рядом с дверью.
+        const MacroHandle macro = handle_at(st, slot);
+        if (macro_dead(st, macro)) continue;
         if (slot == flagSlot) continue;
         // АВАТАРА АНКЕТЫ У НЕПОДВИЖНОГО РОДА НЕТ — ОДНА ДВЕРЬ НА ВСЮ ИГРУ
         // (`squad_has_avatar@src/tables/squad_type.h`). Здесь стояло
@@ -1556,9 +1564,9 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
         // отсекается ровно тот же отрезок оси. И НЕ ПУТАТЬ С ТОЛПОЙ: головы
         // контейнера города воплощаются агностично своим проходом (ЗАКОН
         // КОНТЕЙНЕРА) — этот гейт про АВАТАРА сквада, не про его инвентарь.
-        if (!squad_has_avatar(SquadType(st.runtime[slot].squadType))) continue;
-        const MacroHandle macro = handle_at(st, slot);
-        const auto& mcell = st.cell[macro.slot];
+        if (!squad_has_avatar(SquadType(squad_type_ordinal(st, macro))))
+            continue;
+        const ecs::MacroCell mcell = squad_cell(st, macro);
         const int mcx = ecs::cell_x(mcell, mapW);
         const int mcy = ecs::cell_y(mcell, mapW);
         // Which of the 3×3 window cells does this macro NPC occupy (if any)?
@@ -1572,7 +1580,7 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
         // for the whole scene — died with §42 Инк 6, owner: «потолков нет».
         // Every macro body standing in the window walks in; the one physical
         // bound is the crowd grid, and it already shouts when it binds.)
-        const auto& kind = st.kind[macro.slot];
+        const ecs::NPCKind kind = squad_kind(st, macro);
 
         // Deterministic per-(cell, type, index) stream: the same overworld state
         // reprojects identically, yet two same-type NPCs in one cell still differ
@@ -1595,18 +1603,20 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
         // deck of a bridge is a perfectly good place to meet a caravan
         // (sub/height.h is_dry_footing). Falls back to the cell centre if 20
         // tries all land in water (never lose the NPC).
-        const auto& mrt = st.runtime[macro.slot];
+        std::uint8_t entryDir = kEntryDirNone;
+        std::uint8_t entryTicks = 0;
+        squad_entry_side(st, macro, entryDir, entryTicks);
         int sdx = 0, sdy = 0;
-        (void)unpack_entry_dir(mrt.entryDir, sdx, sdy);
+        (void)unpack_entry_dir(entryDir, sdx, sdy);
         const int originX = (ox + 1) * kCellSize;
         const int originY = (oy + 1) * kCellSize;
         float fx = float(originX) + float(kCellSize) * 0.5f;
         float fy = float(originY) + float(kCellSize) * 0.5f;
         for (int attempt = 0; attempt < 20; ++attempt) {
             const float tx = float(originX) + entry_axis_pos(
-                sdx, mrt.entryTicks, float(kCellSize), rng.next_f01());
+                sdx, entryTicks, float(kCellSize), rng.next_f01());
             const float ty = float(originY) + entry_axis_pos(
-                sdy, mrt.entryTicks, float(kCellSize), rng.next_f01());
+                sdy, entryTicks, float(kCellSize), rng.next_f01());
             const int ix = int(tx), iy = int(ty);
             if (ix < 0 || ix >= kFullSize || iy < 0 || iy >= kFullSize) continue;
             if (tilesUsable &&
@@ -1649,13 +1659,11 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
         // other placement here; a member that finds no land stands ON the
         // avatar's spot rather than being lost. The whole creatures walks in —
         // no ceiling (§42 Инк 6): an army of hundreds meets you as hundreds.
-        {
-            const auto* mbag = &st.inventory[macro.slot];
-            const auto* sid = &st.spawnId[macro.slot];
+        if (const Inventory* mbag = squad_container(st, macro)) {
             constexpr float kTau = 6.2831853f;
-            const int memberCount = int(creature_count(mbag->inv));
+            const int memberCount = int(creature_count(*mbag));
             int m = -1;
-            for (const CreatureRef rec : creatures_range(mbag->inv)) {
+            for (const CreatureRef rec : creatures_range(*mbag)) {
                 ++m;
                 if (!valid_npc_kind(rec.kind)) continue;
 
@@ -1680,10 +1688,16 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                 // No MacroSpawnId (synthetic setups only — make_npc always
                 // stamps one) means no addressable creatures: an honest fiat body
                 // rather than a receipt against nobody.
-                const BodyLoan loan = sid
+                //
+                // ОРДИНАЛ-СУБЪЕКТ НЕСЁТ САМ ХЭНДЛ, И ВТОРОГО НОСИТЕЛЯ НЕТ
+                // (тождество M-220: `valid` И ЕСТЬ «ординал слота совпал с id
+                // ссылки»). Колонку `spawnId` здесь спрашивать не у кого —
+                // ответ уже в руках; 0 навсегда «никто» (ЗАКОН СЛОВАРЯ п.6),
+                // и под такое имя расписке лечь некуда.
+                const BodyLoan loan = macro.id != 0
                     ? BodyLoan::from(
                           MacroStock::Creatures,
-                          MacroStockKey{std::int32_t(sid->index),
+                          MacroStockKey{std::int32_t(macro.id),
                                         std::int16_t(mcx),
                                         std::int16_t(mcy),
                                         rec.entityId != 0
