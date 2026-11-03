@@ -4,7 +4,7 @@
 
 #include "core/torus.h"          // cell_of — ОДИН адрес клетки мира
 #include "macro/features.h"
-#include "macro/movement_cost.h" // kClimbSpWeight — the edge half of the law
+#include "tables/movement_cost.h" // kClimbSpWeight — the edge half of the law
 #include "macro/map_generator.h" // TerrainData
 
 #include <algorithm> // std::fill (scratch generation wrap)

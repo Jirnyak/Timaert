@@ -36,6 +36,7 @@
 #pragma once
 
 #include "tables/seasons.h"
+#include "tables/resource_field_id.h"   // словарь РЯДОВ — имена, чьи строки ниже
 #include "core/torus.h"   // cell_of — адрес клетки мира, одна дверь
 #include <cmath>
 #include <cstdint>
@@ -64,31 +65,10 @@ struct MacroWorld;
 // заголовку не нужно — ширина у перечисления фиксирована (tables/npc.h).
 enum class NPCType : std::uint8_t;
 
-enum class ResourceFieldId : std::uint8_t {
-    Wheat = 0,   // standing-wheat potential — fertility (climate G channel)
-    Fauna,       // wild headcount — biome capacity (macro/fauna.h)
-    Trees,       // forest of a cell — carrier row (macro/tree_layer.h grid)
-    // СТАДО — ЧИСЛО ФИЧИ, А НЕ ПОЛЕ НАД МИРОМ (вердикт владельца 2026-10-12,
-    // дословно: «у нас есть поля фич а пастбища это фича числа на нём и будут
-    // значить всё что ты тупишь сноси поле лошадей это бред»). Ряд остался
-    // РЯДОМ ЗАКОНА — кап от фертильности, рост поголовья, выемка при ловле, —
-    // но своего массива у него больше нет: он НОСИТЕЛЬ, и носитель его —
-    // единое поле чисел фич (`GameState::featureNumber`), где смысл числу задаёт
-    // колонка `numberRow` стоящей фичи.
-    Livestock,
-    // ЖИЛА — ОДНО ПРИРОДНОЕ ПОЛЕ (вердикт владельца 2026-10-22, дословно:
-    // «жилы единые то есть одно природно поле жил а что там окажется решает
-    // фича шахты - золотая железеная мденая и тд»). Шесть рядов
-    // Clay/Iron/Stone/Silver/Copper/Gold умерли этим вердиктом: рода у жилы
-    // НЕТ, род РЕСУРСА называет строка фичи шахты (её `yieldItem`). Носителей
-    // два, и оба чужие (форма стада): дикая жила — производный грид
-    // `DepositLayer` (чистая функция терраина и сида, геймплеем НЕ
-    // мутируется, в сейв не едет), залежь шахты — число фичи в `featureNumber`,
-    // свёрнутое генерацией из связного кластера (кап шахты = связность жилы,
-    // вердикт 2026-10-23).
-    Vein,
-    Count,
-};
+// (Словарь ResourceFieldId ПЕРЕЕХАЛ в tables/resource_field_id.h ломтём 1а
+// эпика пакетов v1: его называет КОЛОНКОЙ строка каталога фич, а каталог по
+// закону M-181 живёт нейтральным слоем и не смеет включать macro/. Здесь
+// остались СТРОКИ реестра и их гриды — изменяемое состояние мира.)
 
 // The wheat row's SCALE: the fertility channel (0..255) maps onto this many
 // stands in a cell. It lives here, at the row's own door, because everyone

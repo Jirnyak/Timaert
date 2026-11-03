@@ -21,7 +21,7 @@
 
 #include "ecs/pools.h"
 #include "macro/anketa.h"
-#include "macro/movement_cost.h"
+#include "tables/movement_cost.h"
 #include "macro/recovery.h"
 
 #include <cmath>

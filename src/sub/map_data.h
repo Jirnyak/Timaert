@@ -9,11 +9,20 @@
 #include <vector>
 #include "core/table_guard.h"
 #include "tables/biomes.h"
+// СЛОЙ фич, а не словарь, и нитка ОСТАЁТСЯ (замер ломтя 1а эпика пакетов v1).
+// Сам этот заголовок берёт отсюда только ТИП (`tables/feature_type.h`) — но
+// нитку держат ТРАНЗИТИВНЫЕ потребители ЖИВОГО слоя: `FeatureLayer` стоит в
+// подписях пяти файлов `src/sub` (gens/dispatch.cpp 5 сайтов, gens/field.cpp,
+// gens/kit/streets.cpp 2, engine.h, vk_renderer_3d.cpp), и ни один из них
+// прямого включения не имеет — то есть гейт канала их не видит вовсе (R2
+// считает ПРЯМЫЕ включения, `tests/arch_guard_test.cpp`). Снять эту строку
+// значит либо завести ПЯТЬ новых прямых ниток, либо увезти слой фич пакетом;
+// второе и есть наряд, первое запрещено (AGENTS §11).
 #include "macro/features.h"
                                        //   (нитку снимет M-38, не ломтик F)
 // THE step law: the subworld prices ground in the same units the macro march
 // does (biome beds, feature beds, the canopy term, speed = base/√weight).
-#include "macro/movement_cost.h"
+#include "tables/movement_cost.h"
 
 namespace sm::sub {
 
@@ -174,7 +183,7 @@ inline constexpr bool tile_is(std::uint8_t t, std::uint16_t mask) {
 // ── Ground movement: ONE law, both scales (owner's ruling, 2026-08-30) ─────
 // How hard each ground type is to cross — and it is the SAME question the
 // macro march answers, so it may not have a second answer. Until now it had
-// one: the map priced a cell by bed + canopy (macro/movement_cost.h) and the
+// one: the map priced a cell by bed + canopy (tables/movement_cost.h) and the
 // subworld priced a tile by a hand-written multiplier table, two laws about
 // one world differing by up to 40 %.
 //

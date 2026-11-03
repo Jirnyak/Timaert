@@ -1078,7 +1078,7 @@ float macro_cell_cost_weight(const App& app) {
 // ней 2026-10-24, когда вердикт владельца вынул жжение из стоянки: у привала
 // жжение РОВНО НУЛЬ, значит он окупается везде, и предикат стал тождественно
 // истинным. Эпитафия и арифметика вырождения —
-// `rest_stamina_per_hour@src/macro/movement_cost.h`. Его двое звонящих —
+// `rest_stamina_per_hour@src/tables/movement_cost.h`. Его двое звонящих —
 // отказ прицела отдыха и отмена промоушена времени — ушли с ним: «rest until
 // rested» теперь доезжает до полной планки где угодно, включая открытое море,
 // и компрессия времени не может привести в конец, которого нет.)
@@ -3008,7 +3008,7 @@ void poll_movement(App& app, float dt) {
             float(sm::calculate_derived(effSheet.attributes, effSheet.skills,
                                         standing)
                       .moveSpeedPct) / 100.0f;
-        // The march is quoted in cells per GAME hour (macro/movement_cost.h).
+        // The march is quoted in cells per GAME hour (tables/movement_cost.h).
         // This file is the one place that knows what a game hour costs in real
         // seconds, so the conversion lives here and nowhere else.
         constexpr float kMarchCellsPerRealSecond =

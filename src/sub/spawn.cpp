@@ -356,7 +356,7 @@ int emplace_body(SubObjects& arena, const BodySpec& body,
         pools.sp = pools.maxSp = body_max_sp(sheet, def.combat);
         sub::slot_set_pools(*objs, slot, pools);
     }
-    // Its pace: the world's march (macro/movement_cost.h) times what this row
+    // Its pace: the world's march (tables/movement_cost.h) times what this row
     // is against a walking man. ONE scale for every body, the player's
     // included — a peasant walks at exactly the speed the map says a man
     // walks, and a bandit's 2.25 means he runs.

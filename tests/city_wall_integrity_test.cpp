@@ -65,7 +65,7 @@ Town make_town(SquadType kind, std::uint32_t seed, int population,
     c.macroHeight = 0.64f;
     c.biome = Meadow;
     // Байт ВЫВОДИТСЯ из той же колонки, что читает прод
-    // (`feature_of_rooted_kind@src/macro/features.h` — колонка `kind`
+    // (`feature_of_rooted_kind@src/tables/feature_def.h` — колонка `kind`
     // строки фичи под круговым `static_assert`), поэтому фикстура не
     // может разойтись с миром, как разошлась до 2026-10-28: клетка с
     // местом и НУЛЕВОЙ фичей в мире не рождается.

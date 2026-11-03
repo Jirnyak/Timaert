@@ -36,7 +36,7 @@
 #include "macro/features.h"
 #include "tables/biomes.h"
 #include "macro/tree_layer.h"
-#include "macro/movement_cost.h"
+#include "tables/movement_cost.h"
 #include "tables/seasons.h"
 #include "core/rng.h"
 #include "core/torus.h"
@@ -1118,7 +1118,7 @@ void SubworldEngine::spawn_player_entity() {
                              flagBag ? &flagBag->inv : nullptr)
         : StrikeFields{kFistDice, DamageType::Blunt, 0, 100, 0};
     // Speed: a walking man's, from the ONE scale every body is stated on
-    // (macro/movement_cost.h). Refreshed each tick beside the damage, so a
+    // (tables/movement_cost.h). Refreshed each tick beside the damage, so a
     // hasted or burdened player's body says what it can actually do.
     const float playerPace = march_speed(kHumanMarchMult)
         * (gs_ ? float(calculate_derived(effBody.attributes,
@@ -3304,7 +3304,7 @@ std::uint16_t SubworldEngine::ground_faction_at(float fx, float fy) const {
 
 // ...and what does it cost to walk it? Same window-tile → macro-cell mapping,
 // asked of the terrain: the cell's own biome / feature / forest cover, resolved
-// through the ONE weight table the map layer uses (macro/movement_cost.h). A
+// through the ONE weight table the map layer uses (tables/movement_cost.h). A
 // swamp is a swamp whether you cross it as a dot on the map or on foot.
 // The window cache behind the per-tick price: nine weights, resolved once
 // per scene change. Before it, EVERY simulation tick of walking paid a full

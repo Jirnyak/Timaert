@@ -26,10 +26,10 @@
 //
 // It is all that is left of this file: until 2026-10-06 it also owned the
 // per-cell travel price, and that whole question died with the hour quantum
-// (macro/movement_cost.h — the burn and the two processes it belongs to).
+// (tables/movement_cost.h — the burn and the two processes it belongs to).
 #pragma once
 
-#include "macro/movement_cost.h"
+#include "tables/movement_cost.h"
 #include "macro/anketa.h"
 #include <cmath>
 
@@ -37,6 +37,37 @@ namespace sm {
 
 struct CharacterSheet;
 struct Inventory;
+
+// What the `travel` skill does, and the only thing it does: it buys down the
+// stamina cost of ground, one percent per rank, under THE skill law
+// (macro/attributes.h): rank == percent, capped at kMaxSkillRank. At mastery the
+// terrain costs nothing — a hundred levels poured into travelling, and the world
+// stops resisting you.
+//
+// И С 2026-10-24 ОНО СБИВАЕТ ТАКЖЕ ПЕРЕГРУЗ, ЧЕГО НЕ ДЕЛАЛО НИКОГДА. Здесь
+// стояло «What that does NOT buy is a free ride: an overloaded pack is a
+// separate term in the cost» — и это было верно ровно пока перегруз был
+// СЛАГАЕМЫМ. Вердикт владельца сделал его МНОЖИТЕЛЕМ того же жжения, а
+// множители коммутируют: мастер пути тащит перегруз даром так же, как даром
+// идёт по горе. Снято не наблюдением, а ФОРМОЙ, и названо здесь затем, чтобы
+// прежнюю оговорку не восстановили как «потерянный закон» (§5 п.14).
+//
+// One skill, one effect. The RATE of ground is this skill's business; SPEED is
+// `spd` and `athletics`. The two never fight, and under the hour quantum they
+// compose instead: this rank buys the burn-per-hour down, the pace shortens the
+// hours exposed to it.
+//
+// СТОИТ ЗДЕСЬ, А НЕ У ЗАКОНА ЖЖЕНИЯ, И ЭТО ГРАНИЦА ДВУХ ТАБЛИЦ, А НЕ
+// УДОБСТВО (ломоть 1а эпика пакетов v1). `Skills` — РАНГИ ЛОРДА, то есть
+// анкета, экземпляр (AGENTS §11: «`Skills` — не таблица навыков, а ранги
+// лорда»), поэтому дверь, читающая их, в нейтральный слой каталогов войти не
+// может по закону — а сам закон жжения туда уехал целиком. Дом выбран не по
+// слою: ВТОРОЙ множитель того же произведения уже живёт ниже
+// (`overload_burden_from_capacity`), и теперь оба стоят рядом, как и читаются
+// — `burn_stamina_per_hour(вес, перегруз, выучка)`.
+inline float travel_skill_efficiency(const Skills& s) {
+    return skill_mult(s, SkillId::Travel);
+}
 
 // THE overload law, for any back on the map. It was called
 // `player_overload_charge` and only the player was ever charged by it, so a

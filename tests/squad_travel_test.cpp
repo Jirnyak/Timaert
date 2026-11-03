@@ -24,7 +24,7 @@
 
 #include "macro/npc_ai.h"
 #include "macro/world_row.h"
-#include "macro/movement_cost.h"
+#include "tables/movement_cost.h"
 #include "macro/recovery.h"
 #include "macro/travel.h"
 #include "macro/pathfinding.h"

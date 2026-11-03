@@ -58,13 +58,24 @@
 // (settle_sp_carry below); SP moves in whole points. Nothing is lost to
 // rounding and nothing is stored in the save — a load starts the carry at
 // zero, worth at most 1 SP.
+//
+// ЖИВЁТ В НЕЙТРАЛЬНОМ СЛОЕ, И ЭТО НЕ ПЕРЕЕЗД ПО ВКУСУ (ломоть 1а эпика
+// пакетов v1, вердикт M-332 «таблица, живущая не там»). Закон спрашивают ОБА
+// мира — `sub/map_data.h` берёт отсюда и постель клетки, и темп ходьбы, а
+// `src/sub/` включать `macro/` не смеет (AGENTS §11): пока заголовок лежал под
+// `macro/`, законное чтение ЗАКОНА было неотличимо от незаконного чтения
+// СОСТОЯНИЯ, то есть стена канала была невозможна в принципе. Здесь нет ни
+// одной функции, которой нужен мир: дальше идут только числа, строки каталогов
+// и арифметика над полосами ОДНОГО тела (`ecs::Pools` — POD без включений).
 #pragma once
+#include <algorithm>
 #include <cmath>
+#include <iterator>          // std::size — счёт строк постели выводится, не пишется
 #include "core/time.h"       // the ladder: kSubworldWalkTilesPerSecond derives from it
 #include "ecs/pools.h"       // the bars this law spends and bites — one home
-#include "macro/anketa.h"
+#include "tables/attributes.h"   // THE skill law — skill_mult_of(Marathon, rank)
 #include "tables/biomes.h"
-#include "macro/features.h"
+#include "tables/feature_def.h"  // строка фичи: её `bedWeight` ЕСТЬ постель шага
 
 namespace sm {
 
@@ -121,27 +132,13 @@ constexpr float kStaminaPerWeightHour = 2.0f;
 // healing for free; a caller-shaped law was a door to the opposite — a body
 // nobody remembered to call simply stopped living.)
 
-// What the `travel` skill does, and the only thing it does: it buys down the
-// stamina cost of ground, one percent per rank, under THE skill law
-// (macro/attributes.h): rank == percent, capped at kMaxSkillRank. At mastery the
-// terrain costs nothing — a hundred levels poured into travelling, and the world
-// stops resisting you.
-//
-// И С 2026-10-24 ОНО СБИВАЕТ ТАКЖЕ ПЕРЕГРУЗ, ЧЕГО НЕ ДЕЛАЛО НИКОГДА. Здесь
-// стояло «What that does NOT buy is a free ride: an overloaded pack is a
-// separate term in the cost» — и это было верно ровно пока перегруз был
-// СЛАГАЕМЫМ. Вердикт владельца сделал его МНОЖИТЕЛЕМ того же жжения, а
-// множители коммутируют: мастер пути тащит перегруз даром так же, как даром
-// идёт по горе. Снято не наблюдением, а ФОРМОЙ, и названо здесь затем, чтобы
-// прежнюю оговорку не восстановили как «потерянный закон» (§5 п.14).
-//
-// One skill, one effect. The RATE of ground is this skill's business; SPEED is
-// `spd` and `athletics`. The two never fight, and under the hour quantum they
-// compose instead: this rank buys the burn-per-hour down, the pace shortens the
-// hours exposed to it.
-inline float travel_skill_efficiency(const Skills& s) {
-    return skill_mult(s, SkillId::Travel);
-}
+// (НЕТ `travel_skill_efficiency` — переехала в `macro/travel.h` ломтём 1а
+// эпика пакетов v1, и переезд вынужден ЗАКОНОМ ДВУХ ТАБЛИЦ, а не слоями: она
+// читает `Skills`, то есть РАНГИ ЛОРДА — анкету, экземпляр, — а нейтральный
+// слой каталогов анкет не видит. Её новый дом не случаен: там же живёт ВТОРОЙ
+// множитель этого же произведения, `overload_burden_from_capacity`. Выучка
+// входит в закон ровно через аргумент `efficiency` у `burn_stamina_per_hour`
+// ниже, как и прежде — один множитель, одна дверь.)
 
 // Death by exhaustion, and it is DESIGN, not an accident — and since
 // 2026-09-17 the ONE law of zero is QUADRATIC (owner, CANON S14.1, дословно:
@@ -157,6 +154,30 @@ inline float travel_skill_efficiency(const Skills& s) {
 // debt whose square sits below the divisor bites nothing — the same
 // asymmetric floor the tithe average keeps by design.
 constexpr int kExhaustionBiteDivisor = 32;
+
+// THE ONE RECOVERY LAW (CANON S14; owner rulings Session 21 and 2026-09-03):
+// every bar recovers as a PERCENT of itself per GAME HOUR of REST, and rest —
+// standing still, doing nothing — is the ONLY thing that recovers a bar
+// (the march heals nothing: a marching body never calls the rest law).
+// A percent, not a flat number, so a full rest takes the same 8 hours for
+// every body in the world — the veteran's bigger bar refills proportionally
+// faster in absolute points, and nobody "rests longer because he is tougher"
+// (the perversity the flat 10·(1+vit·0.01) legacy had). Since only waiting
+// refills a bar, SP is literally time in a bar: END/WILL do not shorten the
+// night, they fatten the day. The ONLY thing that shortens a rest is the
+// `marathon` skill on SP, multiplying this rate by THE skill law (+1%/rank;
+// capstone rank 100 halves the rest to 4 h). One fraction for all three bars
+// (owner, 2026-09-03): 1/8 (po2) — a full bar in 8 game hours, a night
+// refills any traveller with room to spare.
+//
+// ПЕРЕЕХАЛА СЮДА ИЗ `macro/anketa.h` ломтём 1а эпика пакетов v1, и переезд
+// вернул число ТУДА, ГДЕ ОНО ЧИТАЕТСЯ. В анкете у него не было ни одного
+// читателя-кода: четыре чтения из шести жили в этом файле (дверь
+// `rest_stamina_per_hour` и три утверждения лестницы ниже), пятое и шестое —
+// в `settle_pools_over_time@src/macro/recovery.cpp`, который этот заголовок
+// и так включает. Ставка есть БАЛАНС (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ), а не
+// колонка экземпляра: у неё нет носителя-тела, значит в анкете ей не место.
+constexpr float kRestRegenPctPerHour = 0.125f;
 
 // How fast the macro march covers ground, in cells per GAME HOUR. Not per real
 // second — that is the whole point. Stamina is priced per cell and recovery per

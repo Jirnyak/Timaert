@@ -21,7 +21,8 @@
 #include "check.h"
 
 #include "macro/anketa.h"
-#include "macro/movement_cost.h"
+#include "macro/travel.h"   // travel_skill_efficiency — выучка читает РАНГИ анкеты
+#include "tables/movement_cost.h"
 
 #include <cstdio>
 

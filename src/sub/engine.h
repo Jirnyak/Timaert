@@ -410,7 +410,7 @@ public:
 
     float player_x() const { return playerX_; }
     float player_y() const { return playerY_; }
-    // Terrain difficulty (macro/movement_cost.h cell_sp_weight) of the ground
+    // Terrain difficulty (tables/movement_cost.h cell_sp_weight) of the ground
     // the player is standing on — what a step HERE costs in stamina. The
     // subworld charges travel by the same law as the map (one journey, one
     // price); this is the map's own weight, resolved for the cell underfoot.

@@ -46,7 +46,7 @@
 
 #include "macro/npc_ai.h"
 #include "macro/pathfinding.h"   // PathCostData — вес земли под стоящим
-#include "macro/movement_cost.h"  // burn/rest per hour — якорь предусловия
+#include "tables/movement_cost.h"  // burn/rest per hour — якорь предусловия
 #include "macro/travel.h"         // overload_burden_from_capacity
 #include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
 #include "tables/squad_type.h"  // rooted_is_settlement — дверь различения (M-333)

@@ -311,21 +311,12 @@ inline int exp_to_next_of(const LevelData& ld) {
     return exp_to_next_level(ld.level);
 }
 
-// THE ONE RECOVERY LAW (CANON S14; owner rulings Session 21 and 2026-09-03):
-// every bar recovers as a PERCENT of itself per GAME HOUR of REST, and rest —
-// standing still, doing nothing — is the ONLY thing that recovers a bar
-// (the march heals nothing: a marching body never calls the rest law).
-// A percent, not a flat number, so a full rest takes the same 8 hours for
-// every body in the world — the veteran's bigger bar refills proportionally
-// faster in absolute points, and nobody "rests longer because he is tougher"
-// (the perversity the flat 10·(1+vit·0.01) legacy had). Since only waiting
-// refills a bar, SP is literally time in a bar: END/WILL do not shorten the
-// night, they fatten the day. The ONLY thing that shortens a rest is the
-// `marathon` skill on SP, multiplying this rate by THE skill law (+1%/rank;
-// capstone rank 100 halves the rest to 4 h). One fraction for all three bars
-// (owner, 2026-09-03): 1/8 (po2) — a full bar in 8 game hours, a night
-// refills any traveller with room to spare.
-constexpr float kRestRegenPctPerHour = 0.125f;
+// (СТАВКА ВОССТАНОВЛЕНИЯ `kRestRegenPctPerHour` ПЕРЕЕХАЛА в
+// `tables/movement_cost.h` ломтём 1а эпика пакетов v1 — туда, где уже живёт
+// ЕДИНСТВЕННАЯ дверь, её читающая (`rest_stamina_per_hour`), и лестница,
+// прибитая ею под компилятором. Число есть БАЛАНС, не анкета: анкета не
+// читала его ни разу — здесь оно стояло среди потолков полос и упоминается
+// ниже только словом, в шапке `bar_ceilings`.)
 
 // FinalStat = (base + attrRaw) × (1 + skillRank × skillMult)
 //
@@ -398,7 +389,7 @@ inline DerivedBonuses calculate_derived(const Attributes& a, const Skills& s) {
     // Attributes add, skills multiply. `spd` is the body's own quickness;
     // `athletics` is training on top of it — the legs' GENERIC tempo skill,
     // exactly what Armsmaster is to the arms. `travel` has no business here —
-    // it buys DISTANCE per bar of stamina, not speed (macro/movement_cost.h).
+    // it buys DISTANCE per bar of stamina, not speed (tables/movement_cost.h).
     d.moveSpeedPct   = quickness_pct(a.of(AttributeId::Spd))
                        * skill_mult_pct(s, SkillId::Athletics) / 100;
     // ТОРГОВАЯ СИЛА — ОДНО ПРОИЗВОДНОЕ (CANON S25, владелец 2026-09-18:

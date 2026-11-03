@@ -16,7 +16,7 @@
 #include "macro/labour.h"           // ОДИН пул рук места (CANON S4)
 #include "macro/rooted_iter.h"    // for_each_rooted — обход мест по оси рода
 #include "tables/squad_type.h"   // SquadType/rooted_is_settlement — ось рода
-#include "macro/movement_cost.h"
+#include "tables/movement_cost.h"
 #include "tables/npc.h"
 #include "macro/nav_field.h"        // локальные поля-округи (CANON S7)
 #include "macro/player_entity.h"
@@ -455,7 +455,7 @@ void settle_march_rhythm(MacroHandle e, const MacroPos& p,
     // окупается ВЕЗДЕ по построению — у стоящего тела жжения нет, а реген
     // пассивен, значит планка в лагере только растёт и порог пробуждения в
     // половину планки достигается всегда. Эпитафия предиката и четырёх его
-    // ветвей — у `rest_stamina_per_hour@src/macro/movement_cost.h`.
+    // ветвей — у `rest_stamina_per_hour@src/tables/movement_cost.h`.
     //
     // ONE camp decision, and it used to be TWO: settle_exhaustion took the
     // same decision again for a body already in debt, each behind its own

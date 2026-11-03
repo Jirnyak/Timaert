@@ -1,6 +1,6 @@
 #include "macro/recovery.h"
 #include "ecs/pools.h"
-#include "macro/movement_cost.h"
+#include "tables/movement_cost.h"
 
 #include <algorithm>
 

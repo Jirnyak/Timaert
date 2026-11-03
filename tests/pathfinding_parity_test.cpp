@@ -2,7 +2,7 @@
 
 #include "tables/biomes.h"
 #include "macro/features.h"
-#include "macro/movement_cost.h"
+#include "tables/movement_cost.h"
 #include "macro/pathfinding.h"
 #include "macro/zones.h"
 

@@ -3,7 +3,7 @@
 #include "macro/features.h"
 #include "macro/anketa.h"
 #include "macro/map_generator.h"
-#include "macro/movement_cost.h"
+#include "tables/movement_cost.h"
 #include "macro/state.h"
 #include "macro/recovery.h"
 #include "macro/world_tick.h"
@@ -313,7 +313,7 @@ void test_exhaustion_curve_bites_deeper_each_step() {
 // journey. Marching and resting are separate states now, and these numbers are
 // what that separation is worth.
 // Cells covered per game hour of marching on the REFERENCE bed. Since the
-// march is quoted in exactly that unit (macro/movement_cost.h), this is no
+// march is quoted in exactly that unit (tables/movement_cost.h), this is no
 // longer a derivation from two constants that could drift apart — it IS the
 // shipping number, and every hour below is a game hour, whatever a day costs
 // in real seconds.
