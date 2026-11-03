@@ -47,8 +47,4 @@ Outline wall_ring_noise(const Outline& base, float roughness, Rng& r) {
     return o;
 }
 
-Outline wall_outline(float cx, float cy, float radius, float roughness, Rng& r) {
-    return wall_ring_noise(Outline::disk(cx, cy, radius), roughness, r);
-}
-
 } // namespace sm::sub::kit

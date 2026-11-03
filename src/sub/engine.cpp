@@ -33,7 +33,11 @@
 #include "tables/npc.h"
 #include "tables/econ_laws.h" // kGatherPerWorkerDay/sp_price — the harvest SP law
 #include "macro/map_generator.h"
-#include "macro/features.h"
+// Нитка `macro/features.h` СНЯТА (ломоть 1г эпика пакетов v1, M-342): этот
+// файл брал оттуда ровно `FT_None` — один ТИП, а тип живёт в нейтральном
+// слое, который видят оба мира (AGENTS §11). Слоя фич (`FeatureLayer`) здесь
+// нет ни в одной подписи, проба сборки это подтвердила.
+#include "tables/feature_type.h"
 #include "tables/biomes.h"
 #include "macro/tree_layer.h"
 #include "tables/movement_cost.h"

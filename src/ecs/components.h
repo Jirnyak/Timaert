@@ -5,7 +5,9 @@
 #include "core/macro_handle.h"   // MacroHandle {слот, ID} — через шов (M-220)
 #include "macro/anketa.h"
 #include "tables/commodity.h"   // kCommodityCount — счёт содержания контейнера
-#include "macro/upkeep.h"      // sm::Upkeep — ОДИН контейнер на место и на сквад
+// (`macro/upkeep.h` СНЯТ 2026-11-03, M-342: он стоял ради одного алиаса
+//  `ecs::SquadUpkeep`, уехавшего к своему типу, — и доставлял макро-слой
+//  транзитом в каждый TU субмира, включающий компоненты.)
 #include <array>
 #include <cstdint>
 #include <string>
@@ -858,42 +860,16 @@ struct MacroSpawnId { std::uint32_t index = 0; };   // 0 = «никто»: эм�
 // (macro/store.h): `on` — «кем я на карте», `home` — «кто оригинал»;
 // ординал игроку выдаёт тот же эмитент, что всякому скваду.)
 
-// THE macro entity is a SQUAD, not a person (owner's design, CANON S4/S13 (бывший macrosim.md)
-// "Squad as THE macro entity"). This component is that ruling made structural:
-// every macro NPC carries one, and `members` holds everyone EXCEPT the avatar
-// — the avatar IS the carrying entity, with its sheet, inventory, wounds and
-// MacroSpawnId exactly as before. An empty creatures is not a special case, it is
-// the common one: a peasant on the road is a squad of one, its own avatar.
-// The player is the same shape — his entity is the avatar, PlayerState::army
-// is his creatures — so possession of a avatar is acquisition of its squad by
-// construction, not by code.
-//
-// Members are procedural rows (macro/army.h SoldierRecord), embodied through
-// the one body birth as DERIVED bodies; only the avatar is TRACKED. The creatures
-// is a macro STOCK (macro/macro_stock.h): members embodied below are borrowed
-// from it and their deaths are paid back up, and a squad whose members are
-// gone and whose avatar is dead is gone from the map by that general rule.
-// Runtime-only until the macro snapshot save (Session 17) — the ECS is never
-// serialized, so no kSaveVersion cost today.
-// ЭТО НЕ «ТАКОЙ ЖЕ» СЧЁТ, ЧТО У МЕСТА — ЭТО БУКВАЛЬНО ОДИН ТИП
-// (macro/upkeep.h, CANON S4: «гарнизон = ростер ландмарка, армия = ростер,
-// артель = ростер; одна система, одна арифметика пищи, один суд границы»).
-// До 2026-09-21 здесь стояла своя тройка полей (squad + needDebt + wageDebt),
-// а у места — своя (garrison + garrisonDebt + garrisonWageDebt), поле в поле
-// одна и та же, и над ними ДВЕ копии закона.
-// **ИМЯ СМЕНИЛОСЬ 2026-10-06 (M-227).** Здесь стоял довод «entt адресует
-// компонент типом, и „ростер сквада“ — честное имя роли, а не второго вида
-// ростера». Вердикт владельца его снял: «ГОЛОВЫ РОСТЕРА НЕТ ЭТО ОШИБКА ЕГО НЕ
-// МОЖЕТ БЫТЬ У НАС ДАЖЕ РОСТЕРА ТЕПЕРЬ НЕТ ЭТО ЛЕГАСИ СЖЕЧЬ ВЫРЕЗАТЬ ВСЁ».
-// Роли под этим именем не было вовсе: тип несёт ДВА ДОЛГА (харч и плату), ни
-// одного существа, — то есть ведомость СОДЕРЖАНИЯ, и так он теперь и зовётся.
-//
-// ЧЕМ РАЗДВОЕНИЕ БЫЛО ИЗМЕРЕНО: за 512 дней на четырёх сидах в местах НИ
-// ОДНОЙ голодной смерти (у них долг), а мир при этом потерял три четверти
-// населения через контейнеры (у них долга не было) — 154 385 душ в пуле
-// дезертиров. Эксперимент поставлен самим миром: сущность со счётом не
-// голодает, сущность без счёта обескровливает мир.
-using SquadUpkeep = sm::Upkeep;
+// (`SquadUpkeep` — алиас ведомости содержания — УЕХАЛ в `macro/upkeep.h`
+//  2026-11-03, M-342 ломоть 1г, вместе со всей своей доктриной. Он стоял
+//  здесь и был ЕДИНСТВЕННОЙ причиной, по которой этот заголовок включал
+//  `macro/upkeep.h`, — а значит тащил макро-слой транзитом в каждый TU
+//  субмира, включающий компоненты, при том что в `src/sub` ни одного символа
+//  содержания не употребляется ни разу. Читатели имени — `core/stacks.h`,
+//  `macro/store.h`, `macro/macro_snapshot.cpp`, `macro/npc_spawn.cpp` — все
+//  приходят к типу и так. Тело компоненты не изменилось ни на байт: это был
+//  алиас, а не носитель, и `static_assert(sizeof(ecs::SquadUpkeep) == 80)` в
+//  `core/stacks.h` сторожит это по-прежнему.)
 
 // A waypoint route a squad was ORDERED onto (Session 15, Inc 7) — OPT-IN,
 // and the route's presence IS the order (owner's ruling: no second knob):

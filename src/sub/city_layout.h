@@ -174,14 +174,11 @@ inline constexpr int hearth_souls_mean(int population) {
          + (population >= kHearthCrowdedPop ? kHearthSoulsCrowded : 0);
 }
 
-// The widest a single household gets. The roll is uniform over
-// [1, 2·mean − 1]: symmetric about the mean, so the doors of a town hold its
-// people EXACTLY in expectation — which is the property the house count
-// depends on and the old ceiling law could not give. A crowded town therefore
-// runs one to seven behind a door, four being ordinary.
-inline constexpr int hearth_souls_span(int population) {
-    return 2 * hearth_souls_mean(population) - 1;
-}
+// (`hearth_souls_span` — ширина того же броска — СНЕСЕНА 2026-11-03, M-342:
+//  звонящих ноль, а живой бросок считает `2·mean − 1` от СВОЕГО среднего —
+//  душ на ДВЕРИ, посчитанные на земле (`interior_household_share@src/sub/
+//  spawn.cpp`), — не от того, какое число пожелал закон раскладки. Два ответа
+//  на «сколько душ за дверью» свелись к одному, живому.)
 
 
 // Target house count for a city of `population`: EVERY SOUL HAS A HEARTH.

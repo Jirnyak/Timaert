@@ -116,8 +116,8 @@ struct WallGate {
 // Consumes `r` — hand it a stream of its own, or the ring's shape becomes a
 // function of how many houses the caller happened to place first.
 Outline wall_ring_noise(const Outline& base, float roughness, Rng& r);
-
-// The circle case, spelled out: a ring of this nominal radius about (cx, cy).
-Outline wall_outline(float cx, float cy, float radius, float roughness, Rng& r);
+// (`wall_outline` — обёртка `wall_ring_noise(Outline::disk(…))` — СНЕСЕНА
+//  2026-11-03, M-342: звонящих ноль, а круг у звонящего и так есть одной
+//  строкой `Outline::disk`. Второго способа обвести круг больше нет.)
 
 } // namespace sm::sub::kit

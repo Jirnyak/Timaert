@@ -279,10 +279,12 @@ inline void slot_clear_airborne(SubObjects& o, int s) {
 inline bool slot_is_projectile(const SubObjects& o, int s) {
     return slot_flag(o, s, kObjProjectile);
 }
-inline ecs::Projectile* slot_projectile(SubObjects& o, int s) {
-    if (!slot_flag(o, s, kObjProjectile)) return nullptr;
-    return &o.projectile[std::size_t(s)];
-}
+// (`slot_projectile` — указатель-или-ноль на колонку — СНЕСЁН 2026-11-03,
+//  M-342: звонящих ноль. Единственный живой читатель колонки — ЧИСТО СЛОТОВЫЙ
+//  проход `tick_spell_projectiles@src/sub/spell_effects.cpp`, который сам
+//  фильтрует по биту `kObjProjectile` в условии цикла, то есть дверь
+//  перепроверяла бы уже проверенное. Роль-бит спрашивают `slot_is_projectile`
+//  и `slot_set_projectile` ниже — они живы.)
 inline void slot_set_projectile(SubObjects& o, int s,
                                 const ecs::Projectile& p) {
     o.projectile[std::size_t(s)] = p;

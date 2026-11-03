@@ -79,4 +79,53 @@ static_assert(sizeof(Wellbeing) == 8,
               "благополучие анкеты = голод (2) + вердикт окна (1 + пад 1) "
               "+ перенос роста (4)");
 
+// ── ИМЯ `ecs::SquadUpkeep` ЖИВЁТ ЗДЕСЬ, РЯДОМ С ТИПОМ, КОТОРЫЙ ОНО НАЗЫВАЕТ
+// (переезд из `src/ecs/components.h`, 2026-11-03, M-342 ломоть 1г). Алиас
+// стоял в ecs-слое и тащил ЭТОТ заголовок транзитом в каждый TU субмира,
+// включавший компоненты, — а в `src/sub` ни одного символа содержания не
+// употребляется ни разу. Читателей у имени четверо, и все МАКРО-или-КОРОВЫЕ
+// (`core/stacks.h`, `macro/store.h`, `macro/macro_snapshot.cpp`,
+// `macro/npc_spawn.cpp`); каждый из них приходит сюда и так — прямо или через
+// `macro/state.h`. Соседних макро-алиасов ecs-компонент в дереве НЕТ ни
+// одного, поэтому дом выбран по сути, а не по компании: имя у типа.
+namespace ecs {
+
+// THE macro entity is a SQUAD, not a person (owner's design, CANON S4/S13
+// (бывший macrosim.md) "Squad as THE macro entity"). This component is that
+// ruling made structural: every macro NPC carries one, and `members` holds
+// everyone EXCEPT the avatar — the avatar IS the carrying entity, with its
+// sheet, inventory, wounds and MacroSpawnId exactly as before. An empty
+// creatures is not a special case, it is the common one: a peasant on the road
+// is a squad of one, its own avatar. The player is the same shape — his entity
+// is the avatar, PlayerState::army is his creatures — so possession of a avatar
+// is acquisition of its squad by construction, not by code.
+//
+// Members are procedural rows (macro/army.h SoldierRecord), embodied through
+// the one body birth as DERIVED bodies; only the avatar is TRACKED. The
+// creatures is a macro STOCK (macro/macro_stock.h): members embodied below are
+// borrowed from it and their deaths are paid back up, and a squad whose members
+// are gone and whose avatar is dead is gone from the map by that general rule.
+//
+// ЭТО НЕ «ТАКОЙ ЖЕ» СЧЁТ, ЧТО У МЕСТА — ЭТО БУКВАЛЬНО ОДИН ТИП (CANON S4:
+// «гарнизон = ростер ландмарка, армия = ростер, артель = ростер; одна система,
+// одна арифметика пищи, один суд границы»). До 2026-09-21 здесь стояла своя
+// тройка полей (squad + needDebt + wageDebt), а у места — своя (garrison +
+// garrisonDebt + garrisonWageDebt), поле в поле одна и та же, и над ними ДВЕ
+// копии закона.
+// **ИМЯ СМЕНИЛОСЬ 2026-10-06 (M-227).** Там стоял довод «entt адресует
+// компонент типом, и „ростер сквада“ — честное имя роли, а не второго вида
+// ростера». Вердикт владельца его снял: «ГОЛОВЫ РОСТЕРА НЕТ ЭТО ОШИБКА ЕГО НЕ
+// МОЖЕТ БЫТЬ У НАС ДАЖЕ РОСТЕРА ТЕПЕРЬ НЕТ ЭТО ЛЕГАСИ СЖЕЧЬ ВЫРЕЗАТЬ ВСЁ».
+// Роли под этим именем не было вовсе: тип несёт ДВА ДОЛГА (харч и плату), ни
+// одного существа, — то есть ведомость СОДЕРЖАНИЯ, и так он теперь и зовётся.
+//
+// ЧЕМ РАЗДВОЕНИЕ БЫЛО ИЗМЕРЕНО: за 512 дней на четырёх сидах в местах НИ
+// ОДНОЙ голодной смерти (у них долг), а мир при этом потерял три четверти
+// населения через контейнеры (у них долга не было) — 154 385 душ в пуле
+// дезертиров. Эксперимент поставлен самим миром: сущность со счётом не
+// голодает, сущность без счёта обескровливает мир.
+using SquadUpkeep = Upkeep;
+
+} // namespace ecs
+
 } // namespace sm

@@ -4471,7 +4471,10 @@ Ruin 0.5, остальные 1.0), то есть отвечала «что эт�
    переименование по СУЩЕСТВУ плюс смерть алиаса, а не вынимание данных.
    Охват: `roster` — **494 строки в 69 файлах** (`src` 291/45, `tests` 203/24);
    `CreatureRef`/`creatures_range`/`bleed_creatures` — **118 строк в 28
-   файлах**. Поимённо: алиас `SquadUpkeep@src/ecs/components.h`, колонка
+   файлах**. Поимённо: алиас `SquadUpkeep@src/macro/upkeep.h` (уехал из
+   `src/ecs/components.h` 2026-11-03, M-342: он был единственной причиной
+   включения `macro/upkeep.h` ecs-слоем и тащил макро транзитом в субмир),
+   колонка
    `roster` в `SM_MACRO_STORE_COLUMNS@src/macro/store.h`, строка стека и пин
    `sizeof(ecs::SquadUpkeep) == 72` в `src/core/stacks.h`, ряд ведомости
    `MacroStock::Creatures@src/tables/stock_key.h`, двери `upkeep_bill`,
