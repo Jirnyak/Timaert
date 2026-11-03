@@ -3934,20 +3934,19 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 // ordinary avatar he is. The avatar is then paid through
                 // THE one kill-XP door (squad.h squad_award_exp): an owned
                 // sheet grows like the player's, a transient rolls.
-                MacroHandle avatar{};
-                if (const MacroHandle killerOrigin =
-                        sub::slot_macro_origin(arena, killerSlot);
-                    killerOrigin.id != 0) {
-                    avatar = killerOrigin;
-                } else if (const auto* debt =
-                               sub::slot_debt(arena, killerSlot);
-                           debt && debt->stock
-                               == std::uint8_t(MacroStock::Creatures)) {
-                    avatar = macro_handle_by_spawn_id(
-                        *mw_.store, std::uint32_t(debt->subject));
-                } else if (arena.is_avatar_slot(killerSlot)
-                           || sub::slot_flag(arena, killerSlot,
-                                             sub::kObjPlayerSoldier)) {
+                // ЛЕСТНИЦА ДВУХ РОЖДЕНИЙ — ОДНО НАПИСАНИЕ (M-319A): пара
+                // «бэклинк аватара ИЛИ расписка головы» уехала в дверь шва
+                // `slot_squad_of@src/sub/record.h`, потому что о том же
+                // спрашивает писатель заминки боя, а два написания одного
+                // вопроса о мире есть второй закон (DOD п.6). ТРЕТЬЯ ступень
+                // осталась ЗДЕСЬ и по природе: она требует ФРЕЙМА, которого
+                // дверь шва не видит.
+                MacroHandle avatar = sub::slot_squad_of(arena, killerSlot,
+                                                        *mw_.store);
+                if (avatar.id == 0
+                    && (arena.is_avatar_slot(killerSlot)
+                        || sub::slot_flag(arena, killerSlot,
+                                          sub::kObjPlayerSoldier))) {
                     if (frame_) {
                         const MacroHandle ps = frame_->playerSquad;
                         if (mw_.store->valid(ps)) avatar = ps;

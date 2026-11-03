@@ -375,8 +375,12 @@ inline float far_point_height_m(const FarCellGrid& grid, int camCx, int camCy,
                    + c01.mtnScale * w01 + c11.mtnScale * w11;
     const int rawX = window_macro_tile(camCx, wx);
     const int rawZ = window_macro_tile(camCy, wz);
-    const int gx = worldTiles > 0.0f ? wrapi(rawX, int(worldTiles)) : rawX;
-    const int gz = worldTiles > 0.0f ? wrapi(rawZ, int(worldTiles)) : rawZ;
+    // Делитель — СТОРОНА МИРА в тайлах, то есть степень двойки (`side` тора ×
+    // `kCellSize` = 2^10), значит заворот есть МАСКА, а не деление (ЗАКОН
+    // АДРЕСА п.3). Гейт `worldTiles > 0.0f` ОБЯЗАТЕЛЕН: на нуле маска даёт
+    // 0xFFFFFFFF, тогда как `wrapi` отвечал нулём сам.
+    const int gx = worldTiles > 0.0f ? wrap_axis(rawX, int(worldTiles)) : rawX;
+    const int gz = worldTiles > 0.0f ? wrap_axis(rawZ, int(worldTiles)) : rawZ;
     // WHERE THE WATER IS, IS A QUESTION ABOUT HEIGHT, and the far world does
     // not get to answer it a second way. The near generator decides it per
     // TILE and only by height — `water[i] = heightmap[i] < waterLevel`

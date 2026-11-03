@@ -69,11 +69,16 @@ void desert_dunes(const GenInput& in, SubworldMapData& out) {
             // бы на шве клетки.
             const float w = blend9(sand, nb_weights(x, y, kCellSize));
             if (w <= 0.01f) continue;
+            // Делитель — СТОРОНА МИРА в тайлах, то есть степень двойки
+            // (`side` тора × `kCellSize` = 2^10), значит заворот есть МАСКА, а
+            // не деление (ЗАКОН АДРЕСА п.3). Гейт `worldTiles > 0` ОБЯЗАТЕЛЕН:
+            // на нуле маска даёт 0xFFFFFFFF, тогда как `wrapi` отвечал нулём
+            // сам.
             const int gx = worldTiles > 0
-                ? wrapi(in.ctx.cx * kCellSize + x, worldTiles)
+                ? wrap_axis(in.ctx.cx * kCellSize + x, worldTiles)
                 : in.ctx.cx * kCellSize + x;
             const int gy = worldTiles > 0
-                ? wrapi(in.ctx.cy * kCellSize + y, worldTiles)
+                ? wrap_axis(in.ctx.cy * kCellSize + y, worldTiles)
                 : in.ctx.cy * kCellSize + y;
             const float n = smooth_noise01(float(gx) / kDuneTiles,
                                            float(gy) / (kDuneTiles * kDuneAcross),

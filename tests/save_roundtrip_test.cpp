@@ -192,6 +192,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     a.pools.spCarry = 0.5f;
     a.runtime.sub = {17, -9};   // сквадная доля едет сейвом (в рантайме, 2026-11-02)
     a.runtime.marchFlags = 3;
+    a.runtime.fighting = 2;     // заминка боя — колонка рода 2 (M-319A)
     a.runtime.state = 2;
     a.runtime.entryDir = 0x12;
     a.runtime.entryTicks = 9;
@@ -803,7 +804,8 @@ void run_roundtrip() {
             || a.runtime.visualSpeed != want.runtime.visualSpeed
             || a.runtime.sub.x != want.runtime.sub.x
             || a.runtime.sub.y != want.runtime.sub.y
-            || a.runtime.marchFlags != want.runtime.marchFlags) {
+            || a.runtime.marchFlags != want.runtime.marchFlags
+            || a.runtime.fighting != want.runtime.fighting) {
             FAIL_BAIL("macro runtime state lost");
         }
         // ЦЕЛЬ РОДА 2 ПЕРЕЖИВАЕТ СЕЙВ ВСЕМИ ЧЕТЫРЬМЯ КОЛОНКАМИ (M-1):

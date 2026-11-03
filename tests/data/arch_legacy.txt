@@ -13,7 +13,8 @@
 #             core/caps.h) — шаг 0 M-150 (развод капов, 2026-10-09): субмир
 #             меряется своим kMaxSubObjects@src/sub/caps.h; законный остаток —
 #             скан живых слотов MacroStore в спавне, тает с каналом (M-171).
-#   minus   — голое `-=` в src/macro|src/sub (ЗАКОН ТРЁХ ДВЕРЕЙ, M-243 п.2):
+#   minus   — голое `-=` в src/macro|src/sub|src/bus|src/tables (ЗАКОН ТРЁХ
+#             ДВЕРЕЙ, M-243 п.2):
 #             беззнаковая величина симуляции обязана ходить дверями
 #             core/subtract.h; мера флоат/знак не различает — такие сайты
 #             живут здесь поимённо, им дверь запрещена типом.
@@ -103,3 +104,8 @@ minus	src/sub/sky.h	pick -= int(def.kindWeights[kindIdx]);
 minus	src/sub/spawn.cpp	if (d * 2 > n) d -= n; // fold to (-n/2, n/2]
 minus	src/sub/spell_effects.cpp	p.lifeTimer -= dt;
 minus	src/sub/vk_renderer_3d.cpp	remaining -= n;
+minus	src/tables/fauna.cpp	roll -= double(w[i]);
+minus	src/tables/items.cpp	roll -= int(a.weight[t]);
+minus	src/tables/movement_cost.h	pools.hp -= lost;
+minus	src/tables/movement_cost.h	pools.sp -= cost;
+minus	src/tables/movement_cost.h	carry -= float(whole);

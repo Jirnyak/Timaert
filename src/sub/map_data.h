@@ -2,6 +2,7 @@
 // Mirrors subworld/map-data.ts (compact).
 #pragma once
 #include <algorithm>
+#include <bit>        // has_single_bit — вывод по-двойковости kCellSize ниже
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -26,6 +27,20 @@ namespace sm::sub {
 
 constexpr int kCellSize = 1024;          // tiles per macro cell
 constexpr int kFullSize = kCellSize * 3; // 3×3 grid
+
+// СТОРОНА МИРА В ТАЙЛАХ ОБЯЗАНА БЫТЬ СТЕПЕНЬЮ ДВОЙКИ, И ОПИРАЕТСЯ ЭТО НА ДВА
+// ИНВАРИАНТА, А НЕ НА ОДИН. Шесть сайтов сворачивают мир, выраженный в
+// суб-тайлах, МАСКОЙ (`wrap_axis@src/core/torus.h`: `gens/open.cpp`,
+// `gens/swamp.cpp`, `far_point_height_m@src/sub/far_mesh.h`), а их делитель
+// есть ПРОИЗВЕДЕНИЕ `side` тора на `kCellSize`. Первый множитель держит ЗАКОН
+// АДРЕСА (`side@src/bus/local_frame.h`, степень двойки по инварианту мира);
+// второй держался ровно комментарием «tiles per macro cell» — то есть ничем.
+// Правка `kCellSize` на не-по-двойку сделала бы маску молча неверной на всех
+// шести сайтах разом, поэтому вывод стоит под компилятором рядом с числом.
+static_assert(std::has_single_bit(std::uint32_t(kCellSize)),
+              "тайлов на клетку — степень двойки: иначе сторона мира в тайлах "
+              "перестаёт быть по-двойкой, и заворот МАСКОЙ (wrap_axis) врёт "
+              "молча");
 
 // ── НОЛЬ ОКОННЫХ МЕТРОВ ЕСТЬ ЦЕНТР КЛЕТКИ КАМЕРЫ ──────────────────────────
 // Композит кладёт девять клеток слотами по `kCellSize` тайлов

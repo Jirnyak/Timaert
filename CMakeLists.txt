@@ -1628,6 +1628,32 @@ timaert_test(ai_cadence_test
         src/macro/deposit_layer.cpp
     LINK_SDL)
 
+# ЗАМИНКА БОЯ: ноги встали, воля цела (M-319A). Замыкание — то же, что у
+# ai_cadence_test: предмет живёт в драйвере думок и в марше.
+timaert_test(fight_pause_test
+    SOURCES
+        src/macro/npc_spawn.cpp
+        src/macro/npc_ai.cpp
+        src/macro/squad_index.cpp
+        src/macro/deal.cpp
+        src/macro/recovery.cpp
+        src/macro/nav_field.cpp
+        src/macro/economy.cpp
+        src/macro/macro_stock.cpp
+        src/macro/fauna.cpp
+        src/tables/fauna.cpp
+        src/macro/tree_layer.cpp
+        src/bus/anketa.cpp
+        src/tables/items.cpp
+        src/macro/econ_day.cpp
+        src/macro/world_tick.cpp
+        src/macro/spires.cpp
+        src/macro/threat_field.cpp
+        src/macro/scent_field.cpp
+        src/macro/chronicle.cpp
+        src/macro/deposit_layer.cpp
+    LINK_SDL)
+
 timaert_test(rpg_rules_test
     SOURCES
         src/macro/economy.cpp)

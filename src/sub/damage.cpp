@@ -147,6 +147,14 @@ DamageResult apply_damage(SubObjects& objs, MacroStore* st, int targetSlot,
     auto* hp = st != nullptr ? slot_pools_of(objs, s, *st)
                              : slot_pools(objs, s);
     if (hp == nullptr || hp->hp <= 0) return out;
+    // ЗАМИНКА БОЯ ВВЕРХ (M-319A, вердикт владельца 2026-10-26): «если ктото из
+    // сквада вступает в файт В СУБМИРЕ … то просто на макромир переходит смена
+    // сосотояния что он сражается». Штамп стоит ДО смягчения нарочно: сквад
+    // втягивает в бой САМО НАПАДЕНИЕ, а не прошедший урон — удар, съеденный
+    // блоком, есть такой же бой, и сквад, чью голову молотят по щиту, стоять
+    // на марше не вправе. Пустой хэндл (зверь из сида клетки, проп, тело
+    // фикстуры) — no-op двери: наверху о нём не помнит никто.
+    if (st != nullptr) squad_mark_fighting(*st, slot_squad_of(objs, s, *st));
     // A crit found the armour gap: mitigation is not in the way, exactly as
     // the Fall row's column says plate is not in the way of the ground. И
     // ПРОСТОЙ КРИТ НЕ СТАВИТ: плита в таком ударе не участвовала вовсе, сбивать

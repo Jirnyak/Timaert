@@ -75,11 +75,16 @@ void bog_pools(const GenInput& in, SubworldMapData& out) {
             if (w <= 0.01f) continue;
             // Глобальный тайл, завёрнутый по тору: решётка фактуры встречает
             // себя на шве мира, потому что её шаг — делитель стороны мира.
+            // Делитель — СТОРОНА МИРА в тайлах, то есть степень двойки
+            // (`side` тора × `kCellSize` = 2^10), значит заворот есть МАСКА, а
+            // не деление (ЗАКОН АДРЕСА п.3). Гейт `worldTiles > 0` ОБЯЗАТЕЛЕН:
+            // на нуле маска даёт 0xFFFFFFFF, тогда как `wrapi` отвечал нулём
+            // сам.
             const int gx = worldTiles > 0
-                ? wrapi(in.ctx.cx * kCellSize + x, worldTiles)
+                ? wrap_axis(in.ctx.cx * kCellSize + x, worldTiles)
                 : in.ctx.cx * kCellSize + x;
             const int gy = worldTiles > 0
-                ? wrapi(in.ctx.cy * kCellSize + y, worldTiles)
+                ? wrap_axis(in.ctx.cy * kCellSize + y, worldTiles)
                 : in.ctx.cy * kCellSize + y;
             const float n =
                 0.5f * smooth_noise01(float(gx) / kBogLongTiles,
