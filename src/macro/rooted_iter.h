@@ -27,11 +27,11 @@
 // ЧЕСТНАЯ ЗАВИСИМОСТЬ ВМЕСТО ТРАНЗИТНОЙ (M-324): здесь стоял
 // `macro/labour.h` с комментарием «souls_flock — паства места», и символ
 // этот мёртв с M-320 — но включение держалось, потому что ТАЩИЛО
-// `macro/store.h` (`MacroStore`, `kUnifiedCap`), которым файл пользуется
+// `bus/store.h` (`MacroStore`, `kUnifiedCap`), которым файл пользуется
 // по-настоящему. Снять его «как мёртвое по комментарию» значило сломать
 // сборку, что и произошло: имя в комментарии и предмет включения разошлись
 // (ЗАКОН ИМЕНИ п.4 — что код ДЕЛАЕТ, сильнее того, как он назван).
-#include "macro/store.h"            // MacroStore, kUnifiedCap — обход слотами
+#include "bus/store.h"            // MacroStore, kUnifiedCap — обход слотами
 #include "tables/squad_type.h"      // kRootedYieldOrder — закон клетки
 #include "macro/macro_world.h"   // конверт слоёв — вход визитора (п.8)
 #include "macro/spires.h"   // spire_orb — ОДИН вывод об орбе (M-233 п.8)

@@ -4,13 +4,16 @@
 #include "core/caps.h"              // kUnifiedCap — проход по слотам, не по числу
 #include "tables/squad_type.h"      // kSquadKinds/kRootedYieldOrder — ось рода
 #include "macro/features.h"         // kFeatureDefs — метки чистых фич (M-374)
+#include "macro/macro_world.h"      // MacroWorld — конверт слоёв, читается по
+                                    // членам ниже (до M-171 2б-II приезжал
+                                    // транзитом store.h → core/stacks.h)
 #include "macro/map_generator.h"
 #include "macro/markers.h"
 #include "macro/player_entity.h"
 #include "macro/spires.h"           // spire_orb — ОДИН вывод о выкачанности
 #include "macro/squad_index.h"      // squads_in_frame — каркас клеток
 #include "macro/state.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "ui/squad_draw.h"
 #include "ui/screens.h"
 

@@ -13,7 +13,7 @@
 #include "ecs/components.h"
 #include "sub/record.h"   // slot_macro_record — шовная слот-дверь записи
 #include "macro/state.h"   // GameState — поля игрока (вселение, 1е кл.5)
-#include "macro/store.h"
+#include "bus/store.h"
 #include "sub/body.h"      // body_radius — the caster shell the muzzle clears
 #include "sub/possess.h"   // possess_entity — THE flag-move door
 #include "sub/targeting.h" // aim_target — the Targeted delivery's pick

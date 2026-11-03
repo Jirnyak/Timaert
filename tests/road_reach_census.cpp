@@ -36,7 +36,7 @@
 #include "macro/npc_ai.h"
 #include "macro/pathfinding.h"
 #include "macro/state.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "macro/world_gen.h"
 #include "macro/zones.h"
 #include "macro/map_generator.h"

@@ -12,7 +12,6 @@
 #include "ecs/components.h"   // MacroHandle — кэши игрока {слот, ID} (M-220)
 #include "tables/commodity.h"   // kCommodityCount — дань по позициям (v73)
 #include "bus/memory.h"   // WorldMemory — память мира с горизонтом сезона
-#include "bus/anketa.h"
 #include "bus/upkeep.h"   // Upkeep — ОДИН счёт содержания на место и на сквад (S4)
 #include "bus/interests.h"   // Interests — ВСЕ связи субъекта одной таблицей
 #include "tables/squad_type.h"   // SquadType — ось рода сквада (реестр мест снесён)

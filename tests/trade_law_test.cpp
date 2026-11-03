@@ -25,7 +25,7 @@
 #include "macro/squad.h"
 #include "macro/world_tick.h"
 #include "macro/state.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <cstdio>
 #include <vector>

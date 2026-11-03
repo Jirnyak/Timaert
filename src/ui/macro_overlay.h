@@ -5,7 +5,7 @@
 #pragma once
 
 #include "macro/pathfinding.h"
-#include "macro/store.h"   // MacroHandle — ссылка на сквад после шага 1г
+#include "bus/store.h"   // MacroHandle — ссылка на сквад после шага 1г
 #include "ui/macro_eyes.h" // MacroEyeCache — глаза карты (M-244a)
 #include <cstddef>
 #include <cstdint>

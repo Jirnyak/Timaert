@@ -22,7 +22,7 @@
 #include "macro/resource_field.h"
 #include "macro/squad_index.h"
 #include "macro/state.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <cstring>
 

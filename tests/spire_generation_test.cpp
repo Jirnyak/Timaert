@@ -57,7 +57,7 @@
 #include "bus/anketa.h"
 #include "macro/spires.h"
 #include "macro/state.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "macro/zones.h"
 #include "tables/faction.h"    // faction_index — знамя ГОРОДА фикстуры
 

@@ -53,7 +53,7 @@
 #include "macro/world_tick.h"    // settle_rooted_day — дневной проход места
 #include "macro/features.h"      // FeatureLayer — фича ПОД местом
 #include "macro/labour.h"        // settle_souls — одна дверь прихода душ
-#include "macro/store.h"         // parent_of / tithe_of / set_relation
+#include "bus/store.h"         // parent_of / tithe_of / set_relation
 #include "bus/world_row.h"     // count_human_souls
 #include "macro/chronicle.h"
 #include "macro/econ_day.h"      // kCreaturesPerCityWorker, EconFact

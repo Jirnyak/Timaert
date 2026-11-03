@@ -139,6 +139,6 @@ inline void set_relation(FactionState& f, FactionSlot a, FactionSlot b,
 }
 
 // (Три двери пула — `tithe_edge`/`tithe_edge_add`/`tithe_edge_remove` —
-//  умерли вместе с ним, M-245; долг отвечает `tithe_of@src/macro/store.h`.)
+//  умерли вместе с ним, M-245; долг отвечает `tithe_of@src/bus/store.h`.)
 
 } // namespace sm

@@ -30,7 +30,7 @@
 #include "macro/squad.h"
 #include "macro/state.h"
 #include "macro/tree_layer.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <cstdio>
 

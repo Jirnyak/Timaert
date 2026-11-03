@@ -17,11 +17,10 @@
 #include "macro/macro_stock.h"
 #include "macro/player_entity.h"
 #include "bus/spell_book_state.h"
-#include "bus/anketa.h"
 #include "macro/squad_walk.h"
 #include "macro/state.h"
 #include "macro/zones.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <algorithm>
 #include <cmath>
@@ -200,7 +199,7 @@ inline std::int64_t carry_capacity_g(const MacroStore& st,
                             st.inventory[squad.slot].inv);
 }
 
-// (Резолв по ординалу — `macro_handle_by_spawn_id@src/macro/store.h`: он
+// (Резолв по ординалу — `macro_handle_by_spawn_id@src/bus/store.h`: он
 //  читает ТОЛЬКО стор и живёт у эмитента, рядом со справочником, который
 //  отвечает. Здесь стоял его СКАН всех 16384 слотов — M-271.)
 

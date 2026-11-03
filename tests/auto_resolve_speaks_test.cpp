@@ -24,7 +24,7 @@
 #include "macro/player_entity.h"
 #include "macro/npc_spawn.h"
 #include "macro/currency.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <cstdio>
 #include <vector>

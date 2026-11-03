@@ -28,7 +28,7 @@
 #include "sub/movement.h"
 #include "sub/body.h"
 #include "ecs/components.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <cmath>
 #include <cstdint>

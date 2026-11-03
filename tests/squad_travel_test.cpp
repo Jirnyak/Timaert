@@ -31,7 +31,7 @@
 #include "macro/squad.h"
 #include "tables/npc.h"
 #include "core/torus.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <algorithm>
 #include <cmath>

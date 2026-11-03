@@ -18,7 +18,7 @@
 #include "macro/squad.h"
 #include "macro/squad_index.h"
 #include "macro/state.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "tables/commodity.h"
 #include "tables/items.h"
 #include "bus/squad_row.h"   // колонки сквада — род 2 фрейма (ломоть 2б-I)

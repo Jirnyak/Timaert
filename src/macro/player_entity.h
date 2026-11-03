@@ -35,7 +35,7 @@
 // the one door.
 #pragma once
 #include "ecs/components.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "bus/anketa.h"
 #include "macro/entry_context.h"
 #include "bus/spell_book_state.h"

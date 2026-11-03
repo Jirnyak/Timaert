@@ -545,7 +545,7 @@ void collect_minus(std::vector<Site>& out) {
 // (`ordKey`/`ordSlot`), которым резолв «ординал → слот» отвечает без скана
 // всех 16384 слотов. Сырое присваивание колонки разошло бы их МОЛЧА: мир
 // остался бы верным, а найти в нём переименованного было бы нельзя. Поэтому
-// писателей ровно два, оба в `src/macro/store.h` (`store_birth` и
+// писателей ровно два, оба в `src/bus/store.h` (`store_birth` и
 // `store_rename_ordinal`), и оба ведут справочник.
 //
 // СПИСОК ЭТОГО ПРАВИЛА ПУСТ, И ЭТО НЕ ОПЕЧАТКА. Остальные правила прибора —
@@ -584,7 +584,7 @@ void collect_identity(std::vector<Site>& out) {
         for (const fs::path& p : files) {
             const std::string rel =
                 fs::relative(p, fs::path(kRoot)).generic_string();
-            if (rel == "src/macro/store.h") continue;   // сами двери
+            if (rel == "src/bus/store.h") continue;   // сами двери
             // Прибор не судит СВОИ фикстуры: строки негативного контроля
             // ниже обязаны выглядеть нарушением — в этом их работа.
             if (rel == "tests/arch_guard_test.cpp") continue;

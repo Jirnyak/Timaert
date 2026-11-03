@@ -15,7 +15,7 @@
 #include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
 #include "macro/squad.h"         // record_rooted_fact — дверь дела места
 #include "macro/state.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "macro/threat_field.h"
 
 #include <memory>

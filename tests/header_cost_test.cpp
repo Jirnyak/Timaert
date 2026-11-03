@@ -86,7 +86,7 @@ constexpr unsigned long long kControlStartCells = 1ull << 20;
 enum class Verdict { Ok, OverWall, DidNotCompile };
 
 struct Probe {
-    std::string label;   // "macro/store.h" или "control:sick"
+    std::string label;   // "bus/store.h" или "control:sick"
     std::string tu;      // сгенерированный .cpp пробника
     std::string log;     // перехваченный вывод компилятора
     pid_t pid = -1;

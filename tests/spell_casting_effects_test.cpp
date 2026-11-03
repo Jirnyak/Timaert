@@ -7,7 +7,7 @@
 #include "sub/spell_effects.h"
 #include "sub/body.h"
 #include "sub/ability.h"   // tick_body_recovery — один слив (кусок 2)
-#include "macro/store.h"
+#include "bus/store.h"
 #include "macro/squad.h"   // двери анкеты уровня сквада (M-301)
 
 #include <cmath>

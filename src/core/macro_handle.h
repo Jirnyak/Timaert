@@ -18,7 +18,7 @@
 // Файл нарочно НИЩИЙ (<cstdint> и всё): его включают и ecs/components.h
 // (MacroOrigin несёт хэндл через шов миров), и сознательно лёгкий конверт
 // macro_world.h (BattleFact носит {слот, ID} полями) — тащить туда полный
-// ecs-слой запрещено его же шапкой. Двери хэндла — macro/store.h.
+// ecs-слой запрещено его же шапкой. Двери хэндла — bus/store.h.
 #pragma once
 #include <cstdint>
 

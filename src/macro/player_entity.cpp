@@ -8,7 +8,7 @@
 #include "bus/spell_book_state.h"
 #include "bus/anketa.h"
 #include "macro/squad.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include <algorithm>
 #include <array>
 

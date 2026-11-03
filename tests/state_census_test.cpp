@@ -446,7 +446,7 @@ constexpr Row kPlayerStateRows[] = {
     {"factionPeaceUntilDay", Rod::Factions, "перемирия по слотам фракций"},
 };
 
-// MacroStore@src/macro/store.h — гладкая память рода 2 целиком: колонки
+// MacroStore@src/bus/store.h — гладкая память рода 2 целиком: колонки
 // X-macro + обвязка слотов той же системы.
 constexpr Row kMacroStoreRows[] = {
     {"spawnId", Rod::Squads, ""},
@@ -739,7 +739,7 @@ Boundary census() {
     const std::string stateSrc =
         read_file(fs::path(kRoot) / "src/macro/state.h");
     const std::string storeSrc =
-        read_file(fs::path(kRoot) / "src/macro/store.h");
+        read_file(fs::path(kRoot) / "src/bus/store.h");
     const std::string appSrc =
         read_file(fs::path(kRoot) / "src/app/app_state.h");
     CHECK(!stateSrc.empty() && !storeSrc.empty() && !appSrc.empty(),

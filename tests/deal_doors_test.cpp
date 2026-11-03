@@ -25,7 +25,7 @@
 
 #include "bus/anketa.h"
 #include "macro/deal.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "bus/world_row.h"
 #include "tables/commodity.h"
 #include "tables/items.h"

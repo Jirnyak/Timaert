@@ -88,7 +88,7 @@
 СВИДЕТЕЛЬ	ЗАКОН АГНОСТИЧНОСТИ СИСТЕМЫ	bake_far_cover_sheet@tests/far_mesh_test.cpp
 # Гладкий SoA: sizeof = f(кап) под двумя ассертами; EnTT-легаси тает правилом
 # entt в arch_legacy.txt.
-СТЕНА	ЗАКОН ГЛАДКОЙ ПАМЯТИ МАКРОМИРА	sizeof(MacroStore)@src/macro/store.h
+СТЕНА	ЗАКОН ГЛАДКОЙ ПАМЯТИ МАКРОМИРА	sizeof(MacroStore)@src/bus/store.h
 СВИДЕТЕЛЬ	КАЛИБРОВАТЬ ТОЛЬКО В ТИКАХ ИГРЫ, НИКОГДА В РЕАЛЬНЫХ СЕКУНДАХ	kTicksPerDay@tests/time_ladder_test.cpp
 # Единственная инструментируемая часть закона — самосогласованность.
 СВИДЕТЕЛЬ	ФОРМАТ СЕЙВА НЕ ЯВЛЯЕТСЯ ОГРАНИЧЕНИЕМ. ВООБЩЕ. НИКОГДА.	run_roundtrip@tests/save_roundtrip_test.cpp

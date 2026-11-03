@@ -7,7 +7,7 @@
 #include "ecs/components.h"
 #include "sub/ai.h"
 #include "sub/spawn.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "macro/macro_stock.h"  // займ контейнера — носитель идентичности солдата
 
 #include <cstdio>

@@ -5,7 +5,7 @@
 // settlement placement reads them (R2); spires need the zone field; dirt
 // lanes need the spires; fields never overwrite a road of either class.
 #include "macro/world_gen.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <algorithm>
 #include <cstdio>

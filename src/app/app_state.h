@@ -32,7 +32,7 @@
 #include "events/node_registry.h"
 #include "bus/local_frame.h" // локальный фрейм пяти пакетов (M-171, ломоть 4)
 #include "macro/state.h"
-#include "macro/store.h"     // гладкая память макро-сквадов (M-106)
+#include "bus/store.h"     // гладкая память макро-сквадов (M-106)
 #include "macro/knowledge.h"
 #include "ui/map_screen.h"
 #include "macro/map_generator.h"
@@ -199,7 +199,7 @@ struct App {
     //  кэшированными темпами регена.)
     // (`sm::ecs::World ecs` умер ломтём E вместе с реестром: тела сцены —
     // слоты `sceneObjects` ниже, store и арена ходят явными параметрами.)
-    // ГЛАДКАЯ ПАМЯТЬ МАКРОМИРА (macro/store.h, M-106): колонки состояния
+    // ГЛАДКАЯ ПАМЯТЬ МАКРОМИРА (bus/store.h, M-106): колонки состояния
     // макро-сквадов. Родится один раз на старте приложения — преаллокация
     // мира (1460 МиБ по капу, вердикт владельца 2026-09-25).
     std::unique_ptr<sm::MacroStore> macroStore;

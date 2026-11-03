@@ -20,7 +20,7 @@
 #include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
 #include "macro/labour.h"        // settle_souls — одна дверь душ
 #include "macro/npc_ai.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <cstdint>
 #include <memory>

@@ -20,7 +20,7 @@
 #include "macro/state.h"
 #include "core/torus.h"
 #include "ecs/components.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "macro/squad.h"   // squad_level — дверь уровня над анкетой (M-246а)
 
 #include <cstdio>

@@ -1,5 +1,5 @@
 // РЕБРО СВЯЗИ (M-245): одна ось, две пары — Parent/Child и Suzerain/Vassal,
-// одна дверь `set_relation@src/macro/store.h` на оба конца, долг дани НА
+// одна дверь `set_relation@src/bus/store.h` на оба конца, долг дани НА
 // РЕБРЕ Suzerain вассала (`tithe_of`). Законы, которые стережёт этот файл:
 //   · оба конца ставятся ОДНИМ вызовом, зеркальная роль — вторым значением
 //     оси (роль несимметрична по природе, род 6 фрейма);
@@ -15,7 +15,7 @@
 #include "check.h"
 
 #include "macro/squad.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <cstdint>
 #include <memory>

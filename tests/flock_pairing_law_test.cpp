@@ -35,7 +35,7 @@
 #include "macro/npc_ai.h"        // squad_season_window — сезонная дверь
 #include "macro/birth_squad.h"   // birth_squad — место родится телом
 #include "macro/squad.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "macro/upkeep_window.h"
 #include "bus/world_row.h"
 #include "tables/npc.h"

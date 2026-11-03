@@ -18,7 +18,7 @@
 #include "macro/recovery.h"
 #include "macro/resource_field.h"
 #include "ecs/components.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "ui/macro_eyes.h"
 
 #include <cmath>

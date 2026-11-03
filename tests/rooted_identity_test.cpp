@@ -32,7 +32,7 @@
 #include "macro/features.h"
 #include "macro/squad_index.h"
 #include "macro/state.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "tables/feature_type.h"
 #include "tables/squad_type.h"
 

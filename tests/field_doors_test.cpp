@@ -26,7 +26,7 @@
 #include "macro/resource_field.h"
 #include "macro/squad.h"
 #include "macro/state.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "macro/tree_layer.h"
 #include "bus/world_row.h"
 #include "tables/items.h"

@@ -313,7 +313,7 @@ struct LightEmitter {
 //  `macro/upkeep.h`, — а значит тащил макро-слой транзитом в каждый TU
 //  субмира, включающий компоненты, при том что в `src/sub` ни одного символа
 //  содержания не употребляется ни разу. Читатели имени — `core/stacks.h`,
-//  `macro/store.h`, `macro/macro_snapshot.cpp`, `macro/npc_spawn.cpp` — все
+//  `bus/store.h`, `macro/macro_snapshot.cpp`, `macro/npc_spawn.cpp` — все
 //  приходят к типу и так. Тело компоненты не изменилось ни на байт: это был
 //  алиас, а не носитель, и `static_assert(sizeof(ecs::SquadUpkeep) == 80)` в
 //  `core/stacks.h` сторожит это по-прежнему.)

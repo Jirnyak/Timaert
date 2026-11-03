@@ -48,7 +48,7 @@
 
 #include <memory>
 #include "macro/deal.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include "bus/anketa.h"
 #include "macro/currency.h"

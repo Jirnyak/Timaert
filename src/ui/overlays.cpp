@@ -37,7 +37,7 @@
 #include "sub/seamless_manager.h"
 #include "sub/engine.h"
 #include "sub/map_data.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include <stb_image.h>
 #include <algorithm>
 #include <bit>
@@ -1562,7 +1562,7 @@ namespace sm::ui
         // панель города перестала открываться вовсе. Поймал КАДР: 130 тестов
         // и 64 смоука остались зелёными (§8 п.6, пятая слепота — паритет
         // судит числа, а тут не сдвинулось ни одно). Дверь смерти одна —
-        // `macro_dead@src/macro/store.h` над колонкой `dead`; HP есть ЦИФРА
+        // `macro_dead@src/bus/store.h` над колонкой `dead`; HP есть ЦИФРА
         // тела, и спрашивать её о жизни значит предполагать род субъекта.
         const bool alive = st.valid(subject)
             && !macro_dead(st, subject)

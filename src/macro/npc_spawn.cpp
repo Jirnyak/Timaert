@@ -8,7 +8,7 @@
 #include "macro/npc_ai.h"
 #include "macro/politik.h"
 #include "macro/squad.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "bus/anketa.h"
 #include "ecs/components.h"
 #include "ecs/npc_character.h"
@@ -29,7 +29,7 @@ namespace {
 // она перечисляла entt-модель с УСЛОВНЫМИ компонентами (CharacterSheet
 // «только именным», SquadOrders «только маршрутным»), а с ломтика F каждый
 // слот MacroStore несёт ВСЕ колонки одинаково — цену слота и хранилища
-// целиком прибивает static_assert(sizeof(MacroStore))@macro/store.h.
+// целиком прибивает static_assert(sizeof(MacroStore))@bus/store.h.
 // Здесь остаётся закон доминанты: ядро субъекта — контейнер + обвязка
 // счетов, ОДНО на место и на отряд («ландмарк есть неподвижный сквад»).
 static_assert(sizeof(ecs::NpcInventory) + sizeof(ecs::SquadUpkeep) == 41104,

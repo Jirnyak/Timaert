@@ -55,7 +55,7 @@
 #include "macro/squad.h"         // резолв по ординалу: место и сквад
 #include "macro/squad_walk.h"    // SquadWalkEntry — порядок закона
 #include "macro/state.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 namespace {
 

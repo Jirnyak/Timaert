@@ -3,7 +3,7 @@
 #include <algorithm>
 
 #include "macro/state.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 namespace sm {
 

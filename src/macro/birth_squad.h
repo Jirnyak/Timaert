@@ -28,7 +28,7 @@
 #include "macro/features.h"    // feature_put + feature_of_rooted_kind — фича ДО тела
 #include "macro/squad.h"       // refresh_body_from_sheet — тело той же дверью
 #include "macro/state.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 namespace sm {
 

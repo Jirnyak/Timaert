@@ -24,7 +24,7 @@ namespace sm {
 // quarryman / clay-digger); specialisation is CONTEXT, never a village
 // type (owner ruling, R2). nullptr = no mining professions spawn.
 struct DepositLayer;
-struct MacroStore;   // гладкая память макро-сквадов (macro/store.h, M-106)
+struct MacroStore;   // гладкая память макро-сквадов (bus/store.h, M-106)
 // (`ecs::World& w` снят 2026-10-09, M-150: тело его НЕ ЧИТАЛО ни в одной из
 // трёх дверей — рождение идёт в СТОР, а реестр сцены к макро-спавну отношения
 // не имеет. Жил молча за `-Wno-unused-parameter`, снятым тем же шагом.)

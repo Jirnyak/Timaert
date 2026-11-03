@@ -113,7 +113,7 @@ static void smoke_give_visual(sm::sub::SubObjects& objs, int s,
 #include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP witness
 #include "macro/player_entity.h"
 #include "macro/entry_context.h"  // unpack_entry_dir — закон доли марша (M-244a)
-#include "macro/store.h"
+#include "bus/store.h"
 #include <bit>
 
 namespace sm::app {

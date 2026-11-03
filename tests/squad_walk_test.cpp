@@ -10,7 +10,7 @@
 
 #include "ecs/components.h"
 #include "macro/squad_walk.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <cstdint>
 #include <vector>

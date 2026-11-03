@@ -205,7 +205,7 @@ inline constexpr std::uint32_t kNoCell = ~0u;
 
 struct MacroNpcRuntime {
     // (`homeSettlementId` умерла 2026-10-22, M-245: ДОМ = РОДИТЕЛЬ, ребро
-    //  Parent реестра связей; читается дверью `parent_of@src/macro/store.h`.)
+    //  Parent реестра связей; читается дверью `parent_of@src/bus/store.h`.)
     // (`targetSettlementId` умерла 2026-10-23, ломоть 3 M-72: ординал рынка
     //  несёт колонка цели `SquadGoal::what` рода Rooted — второй носитель
     //  «куда еду» рядом с целью был вторым словарём.)
@@ -576,7 +576,7 @@ struct MacroSpawnId { std::uint32_t index = 0; };   // 0 = «никто»: эм�
 // персистентный и МОНОТОННЫЙ, ординалы не переиспользует (ровно за это его
 // и вводили, v23); а «найти его снова после загрузки» делает КОЛОНКА.
 // Теперь оба вопроса — биты одной колонки анкеты `PlayerFlag`
-// (macro/store.h): `on` — «кем я на карте», `home` — «кто оригинал»;
+// (bus/store.h): `on` — «кем я на карте», `home` — «кто оригинал»;
 // ординал игроку выдаёт тот же эмитент, что всякому скваду.)
 
 // A waypoint route a squad was ORDERED onto (Session 15, Inc 7) — OPT-IN,

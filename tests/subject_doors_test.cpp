@@ -32,7 +32,7 @@
 #include "macro/birth_squad.h"   // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "macro/squad.h"         // actions_of + rooted_handle_by_ordinal
 #include "macro/state.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "tables/map_actions.h"
 
 #include <cstdio>

@@ -8,7 +8,7 @@
                               // нуля не бывает» — закон этих величин)
 #include "bus/anketa.h"     // Inventory — контейнер обеих сторон
 #include "macro/currency.h"   // densest_value_slot — стейджинг встречного лота
-#include "macro/store.h"      // MacroStore — адресация сторон слотами
+#include "bus/store.h"      // MacroStore — адресация сторон слотами
 
 namespace sm {
 namespace {

@@ -17,7 +17,7 @@
 #include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
 #include "macro/squad.h"
 #include "macro/state.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "core/torus.h"
 
 #include <cstdio>

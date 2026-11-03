@@ -31,7 +31,7 @@
 #include "sub/seamless_manager.h"
 #include "sub/spawn.h"
 #include "sub/record.h"   // body_kind — род тела из колонки арены (кусок 1)
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <cmath>
 #include <cstdint>

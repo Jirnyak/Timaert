@@ -12,7 +12,7 @@
 #include "tables/npc.h"
 #include "macro/player_entity.h"
 #include "sub/base_generator.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <algorithm>
 #include <cmath>

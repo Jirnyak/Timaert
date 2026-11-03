@@ -54,7 +54,7 @@
 #include "macro/npc_ai.h"
 #include "macro/squad.h"
 #include "macro/squad_index.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "macro/tasks.h"
 #include "tables/commodity.h"
 #include "tables/faction.h"

@@ -32,7 +32,7 @@
 #include "ecs/components.h"
 #include "events/event_bus.h"
 #include "events/event_types.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <cstdio>
 

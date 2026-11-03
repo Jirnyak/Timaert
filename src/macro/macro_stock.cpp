@@ -3,7 +3,7 @@
 // serves; adding a quantity is a row here plus a value in the enum, and the
 // static_assert below refuses to build if those two ever disagree.
 #include "macro/macro_stock.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include "bus/anketa.h"
 #include "macro/deposit_layer.h"

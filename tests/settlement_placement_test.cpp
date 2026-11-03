@@ -39,7 +39,7 @@
 #include "macro/spawners.h"
 #include "macro/squad.h"       // suzerain_of — знание роли в interests ТЕЛА
 #include "macro/state.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "macro/tree_layer.h"
 
 #include <algorithm>

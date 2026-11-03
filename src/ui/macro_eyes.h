@@ -10,7 +10,7 @@
 // store, и его свидетель (macro_npc_ai_parity_test) собирается хедлесс.
 #pragma once
 
-#include "macro/store.h"
+#include "bus/store.h"
 #include <array>
 
 namespace sm::ui {

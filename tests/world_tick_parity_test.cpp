@@ -20,7 +20,7 @@
 #include "macro/player_entity.h"
 #include "macro/macro_world.h"
 #include "macro/currency.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <cstdint>
 #include <cstdio>

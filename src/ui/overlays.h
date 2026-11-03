@@ -4,7 +4,7 @@
 #pragma once
 #include "events/event_bus.h"   // GameEvent/EventBus — диалог и сюжет
 #include "macro/state.h"
-#include "macro/store.h"   // MacroHandle — субъект-сквад после шага 1г
+#include "bus/store.h"   // MacroHandle — субъект-сквад после шага 1г
 #include "macro/tasks.h"   // доска контрактов — офферы и активный контракт
 #include <array>
 #include <cstdint>

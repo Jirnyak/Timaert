@@ -27,7 +27,7 @@
 #include "macro/settlement_score.h" // kSettlementReach — the home-field box
 #include "macro/spawners.h"
 #include "macro/squad.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "macro/threat_field.h"     // поле угрозы: скор патруля, страх артелей
 #include "macro/travel.h"
 #include "ecs/components.h"
@@ -74,7 +74,7 @@ inline MacroStore& store_ctx(const TickContext& ctx) {
 // Думка зовёт этот резолв по нескольку раз за think, поэтому он обязан быть
 // дешевле скана капа (§6 граница O(N)) — и сегодня он такой САМ: резолв идёт
 // бинарным поиском по справочнику идентичности стора
-// (`macro_handle_by_spawn_id@src/macro/store.h`, M-271). Прежде дешевизну
+// (`macro_handle_by_spawn_id@src/bus/store.h`, M-271). Прежде дешевизну
 // приходилось ПРИНОСИТЬ С СОБОЙ — порядком драйва отдельным параметром, — и
 // у кого порядка не было (фикстура, дневная ротация с её `TickContext{}`),
 // тот падал в скан: замер 64 дней назвал эту ветку самым частым сканом мира,
@@ -1356,11 +1356,11 @@ public:
     // МОЙ ДОЛЖНИК — ПЕРВЫЙ ВАССАЛ С НЕПОГАШЕННЫМ ДОЛГОМ, И ВОПРОС ЭТОТ
     // ЗАДАЁТСЯ СВОИМ РЕЕСТРОМ СВЯЗЕЙ, А НЕ ПОИСКОМ ПО МИРУ. Зеркало
     // `Stance::Vassal` пишет та же дверь, что ставит `Suzerain`
-    // (`set_relation@src/macro/store.h`) — роль несимметрична по природе
+    // (`set_relation@src/bus/store.h`) — роль несимметрична по природе
     // (ФРЕЙМ род 6), поэтому «кому я сюзерен» лежит колонкой МОЕЙ строки, и
     // обходить мир незачем. Обход плотный: занятые записи идут подряд от
     // нуля, первая `Stance::None` закрывает проход — тот же стоп, которым
-    // ходит `tithe_of@src/macro/store.h`.
+    // ходит `tithe_of@src/bus/store.h`.
     // kMacroNoSlot = должника нет, и это ЗНАЧЕНИЕ: сборщику некого доить.
     std::uint16_t owing_vassal(std::uint16_t suzerainSlot) const {
         if (suzerainSlot == kMacroNoSlot) return kMacroNoSlot;
@@ -1379,7 +1379,7 @@ public:
     }
     // ЕСТЬ ЛИ У МЕНЯ ЖИВОЙ РЕБЁНОК ЭТОГО ТИПА — гейт дубля перед рождением,
     // И ОТВЕЧАЮТ НА НЕГО СВОИ РЁБРА, А НЕ СКАН МИРА. Вопрос о СВОИХ детях
-    // есть вопрос о СВОЕЙ строке: `set_relation@src/macro/store.h` ставит
+    // есть вопрос о СВОЕЙ строке: `set_relation@src/bus/store.h` ставит
     // родителю зеркало `Stance::Child` той же записью, которой ставит
     // ребёнку `Parent`, — значит дети перечислены колонкой МОЕЙ строки, как
     // вассалы у `owing_vassal` выше. Тип на ребре не лежит и не должен:

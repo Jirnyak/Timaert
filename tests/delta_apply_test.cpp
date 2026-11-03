@@ -21,7 +21,7 @@
 #include "macro/macro_stock.h"
 #include "macro/macro_world.h"
 #include "macro/state.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 namespace {
 

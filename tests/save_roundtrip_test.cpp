@@ -15,7 +15,7 @@
 #include "macro/labour.h"        // settle_souls / souls_flock — двери душ
 #include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
 #include "macro/squad.h"         // set_suzerain / tithe_edge_of
-#include "macro/store.h"
+#include "bus/store.h"
 
 // ДУШИ ФИКСТУРЫ — ОДНО ЧИСЛО НА ПОСЕВ И НА ПРОВЕРКУ (иначе ожидание станет
 // пересказанным литералом, §8 п.4). Души селятся крестьянами, поэтому

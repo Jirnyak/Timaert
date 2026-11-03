@@ -41,7 +41,7 @@
 #include "macro/labour.h"
 #include "macro/rooted_iter.h"   // for_each_rooted — обход мест по слотам
 #include "macro/squad.h"           // rooted_handle_by_ordinal — резолв места
-#include "macro/store.h"
+#include "bus/store.h"
 #include "macro/tasks.h"           // task_offers_for — доска контрактов (Б6)
 #include "tables/map_actions.h"    // kMapActQuests — бит доски
 #include "macro/tree_layer.h"

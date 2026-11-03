@@ -17,7 +17,7 @@
 #include "macro/npc_ai.h"
 #include "macro/factions.h"   // set_relation — вражду ставим отношением
 #include "macro/scent_field.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include <memory>
 
 #include <cstdint>

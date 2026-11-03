@@ -26,7 +26,7 @@
 #include "macro/npc_ai.h"
 #include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
 #include "macro/state.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 namespace {
 

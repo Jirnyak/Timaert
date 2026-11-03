@@ -1,7 +1,7 @@
 #include "content/spells/spell_book.h"
 #include "core/time.h"
 #include "ecs/components.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "bus/anketa.h"  // the record's sheet — casterLevel
 #include "macro/squad.h"   // refresh_squad_body — пересчёт производных анкеты
 #include "sub/body.h"   // body_radius — the caster shell the muzzle clears

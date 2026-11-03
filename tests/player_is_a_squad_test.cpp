@@ -23,7 +23,7 @@
 #include "macro/squad.h"
 #include "macro/macro_snapshot.h"
 #include "ecs/components.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <cmath>
 #include <cstdio>

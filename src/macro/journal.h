@@ -22,7 +22,7 @@
 #include "ecs/components.h"
 #include "macro/player_entity.h"
 #include "macro/state.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 namespace sm {
 

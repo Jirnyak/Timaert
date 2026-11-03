@@ -101,7 +101,7 @@
 #include "imgui.h"
 #include "backends/imgui_impl_sdl2.h"
 #include "backends/imgui_impl_vulkan.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include <vulkan/vulkan.h>
 
 // The screenshot PNG encoder (stb impl) moved to app/smoke.cpp with its one
@@ -1327,7 +1327,7 @@ void destroy_world(App& app) {
     // Арена сцены умирает вместе с миром (ломоть D; реестр умер ломтём E —
     // смерть мира и есть SubObjects::clear()).
     if (app.sceneObjects) app.sceneObjects->clear();
-    // Store умирает вместе с миром (store_reset@src/macro/store.h): без
+    // Store умирает вместе с миром (store_reset@src/bus/store.h): без
     // этого каждая загрузка оставляла население прошлого мира живыми
     // слотами-призраками, и restore рожал поверх (смоук SAVE-5 поймал два
     // носителя ординала игрока честным store-сканом, 2026-09-29).

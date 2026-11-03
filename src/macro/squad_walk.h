@@ -27,7 +27,7 @@
 #include <vector>
 
 #include "ecs/components.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 namespace sm {
 

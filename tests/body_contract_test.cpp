@@ -30,7 +30,7 @@
                                  // прежде дверь приезжала транзитом из sub/spawn.h
 #include "tables/faction.h"
 #include "tables/npc.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <algorithm>
 #include <vector>

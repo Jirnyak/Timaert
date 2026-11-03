@@ -20,7 +20,7 @@
 #include "macro/state.h"
 #include "tables/faction.h"
 #include "tables/npc.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "macro/squad.h"
 
 #include <cstdint>

@@ -67,7 +67,7 @@
 #include "macro/chronicle.h"
 #include "macro/econ_day.h"
 #include "macro/squad.h"
-#include "macro/store.h"
+#include "bus/store.h"
 #include "tables/faction.h"
 #include "tables/npc.h"
 

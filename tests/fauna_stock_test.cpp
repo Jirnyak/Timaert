@@ -15,7 +15,7 @@
 #include "macro/macro_stock.h"
 #include "macro/map_generator.h"
 #include "macro/state.h"
-#include "macro/store.h"       // тела сквадов и мест — вход дневного тика
+#include "bus/store.h"       // тела сквадов и мест — вход дневного тика
 #include "macro/world_tick.h"
 
 namespace {

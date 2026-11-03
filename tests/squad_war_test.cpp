@@ -25,7 +25,7 @@
 #include "tables/faction.h"
 #include "tables/npc.h"
 #include "core/torus.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <cstdint>
 #include <initializer_list>

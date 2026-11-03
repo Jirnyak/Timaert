@@ -24,7 +24,7 @@
 #include "macro/squad.h"
 #include "macro/deposit_layer.h"
 #include "macro/tree_layer.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <limits>
 #include <cmath>

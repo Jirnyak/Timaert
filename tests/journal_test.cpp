@@ -14,7 +14,7 @@
 #include "macro/journal.h"
 #include "macro/birth_squad.h"  // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
 #include "macro/squad.h"
-#include "macro/store.h"
+#include "bus/store.h"
 
 #include <cstdint>
 

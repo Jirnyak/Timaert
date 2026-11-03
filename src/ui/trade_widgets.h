@@ -23,7 +23,7 @@
 #include "bus/anketa.h"
 #include "macro/currency.h"
 #include "macro/deal.h"    // ОДИН глагол обмена: кнопка Deal зовёт его
-#include "macro/store.h"   // стороны сделки адресуются СЛОТАМИ сквадов
+#include "bus/store.h"   // стороны сделки адресуются СЛОТАМИ сквадов
 #include "macro/player_entity.h"   // player_effective_sheet — the haggler door
 #include "macro/squad.h"           // standing_bonuses_of
 #include "macro/state.h"
