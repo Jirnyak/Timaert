@@ -19,6 +19,15 @@
 // old uniform scatter, so "been here forever" (locals, garrisons, teleports,
 // pre-first-move spawns via kEntryDirNone) needs no special case: the formula
 // degrades to exactly the previous behaviour.
+//
+// ПЕРЕЕХАЛ ИЗ `macro/` НА ШИНУ ЛОМТЁМ 3 ЭПИКА ПАКЕТОВ v1, и переезд называет
+// то, чем файл был всегда: ТОЛКОВАНИЕМ ДВУХ БАЙТ РОДА 2. Носитель — колонка
+// строки сквада (`entryDir`/`entryTicks@src/bus/squad_row.h`), дверь записи
+// уже на шине (`squad_entry_side@src/bus/store.h`), а здесь — чистая
+// арифметика над теми же байтами: ни состояния, ни слоя, ни `GameState` в
+// подписях. Пока он лежал под `macro/`, оба читателя субмира (`engine.cpp`,
+// `spawn.cpp`) платили за толкование СВОЕЙ ЖЕ колонки ниткой канала —
+// законное чтение формы было неотличимо от незаконного чтения мира.
 #pragma once
 #include <algorithm>
 #include <cstdint>

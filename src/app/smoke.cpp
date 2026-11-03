@@ -112,7 +112,7 @@ static void smoke_give_visual(sm::sub::SubObjects& objs, int s,
 #include "macro/squad_index.h"     // settlement_at — «кто живёт на клетке»
 #include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP witness
 #include "macro/player_entity.h"
-#include "macro/entry_context.h"  // unpack_entry_dir — закон доли марша (M-244a)
+#include "bus/entry_context.h"  // unpack_entry_dir — закон доли марша (M-244a)
 #include "bus/store.h"
 #include <bit>
 
@@ -3778,6 +3778,25 @@ bool run_prologue_road_smoke(App& app) {
         return false;
     }
     app.subworld.tick(0.016f);
+    // ПРОМАХИ СНИМКА НА ПУТИ БЕЗДВЕРНОГО КАРМАНА — НОЛЬ, И ЭТО ЗАКОН, А НЕ
+    // УДАЧА (ломоть 3 эпика пакетов v1). Карман якорится ВИРТУАЛЬНО, (0,0)
+    // («a doorless pocket owes no cell»), то есть вне охвата 5×5 — и
+    // безусловный вопрос `facts_at(doorCx, doorCy)` при подъёме сцены был
+    // ГАРАНТИРОВАННЫМ промахом за величину, которой НИ ОДИН читатель кармана
+    // потом не касался (ни очага, ни гарнизона, ни логова: все три колонки
+    // строки `prologue_road` ложны, ярус 0). До пина этот путь был слепым
+    // пятном: `subworld_clock` судит промахи только НАД землёй, а карман
+    // поднимается другой дверью.
+    //
+    // ТАБЛИЦА «МУТАЦИЯ → ИСХОД» (§8 п.6; детектор, краснеющий на всё, —
+    // не детектор, поэтому полярностей ДВЕ):
+    //   A. гейт снят, `facts_at(doorCx, doorCy)` спрашивается БЕЗУСЛОВНО
+    //      → КРАСНО: `checks=20 failed=1`, и падает РОВНО эта строка
+    //        (misses 0 → ≥1);
+    //   Б. из гейта снято `|| ses.ref.level < 0` (ярус подвала)
+    //      → МОЛЧИТ: `checks=20 failed=0`, и это ВЕРНО — прологовый карман
+    //        стоит на ярусе 0, то есть этой мутации он не наблюдает вовсе.
+    const std::uint32_t pocketMisses = app.subworld.frame_misses();
 
     // The centre cell's ground, hashed — every torus copy must serve the
     // SAME cell, so the hash must survive any number of wrap crossings.
@@ -4064,6 +4083,10 @@ bool run_prologue_road_smoke(App& app) {
     // patience, the torus seam and THE MAP LAW — were one chain under
     // "prologue_road invariant".
     SMOKE_CHECK(app, entered, "the prologue pocket can be entered");
+    SMOKE_CHECK(app, pocketMisses == 0,
+                "raising a DOORLESS pocket asks the snapshot nothing: its "
+                "anchor is virtual, so every question would be a miss — and "
+                "the pocket reads none of the facts a door's cell carries");
     SMOKE_CHECK(app, onRoad, "the entry lands the player ON the road");
     SMOKE_CHECK(app, ambushWaits, "the ambush WAITS at its line instead of charging on sight");
     SMOKE_CHECK(app, ambushCloses, "the ambush closes once the line is crossed");
@@ -7226,7 +7249,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // Opt-in (TIMAERT_SMOKE_ENTRYDIR="dx,dy,ticks"): stamp the player's
             // entry-side context before entering, then assert the spawn landed
             // on that side of the centre cell — the end-to-end check of the
-            // macro→subworld entry placement (macro/entry_context.h). Use small
+            // macro→subworld entry placement (bus/entry_context.h). Use small
             // tick counts (≤ 4): the assertion bands below are the near quarter
             // of the cell, written as independent literals on purpose (checking
             // against entry_axis_pos itself would be a tautology).

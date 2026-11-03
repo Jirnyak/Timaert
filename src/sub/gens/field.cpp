@@ -160,7 +160,7 @@ void gen_field(const GenInput& in, SubworldMapData& out) {
     float ringField[9];
     float ringFert[9];
     for (int i = 0; i < 9; ++i) {
-        ringField[i] = FeatureLayer::decode(nbFeature[i]) == FT_Field
+        ringField[i] = feature_decode(nbFeature[i]) == FT_Field
                            ? 1.0f : 0.0f;
         ringFert[i] = std::clamp(nbFertility[i], 0.0f, 1.0f);
     }

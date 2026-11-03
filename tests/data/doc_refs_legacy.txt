@@ -115,7 +115,6 @@ SKELETON.md	:4468
 SKELETON.md	:4528
 SKELETON.md	:466
 SKELETON.md	:468
-SKELETON.md	:47
 SKELETON.md	:4784
 SKELETON.md	:481
 SKELETON.md	:4985
@@ -129,7 +128,6 @@ SKELETON.md	:6070
 SKELETON.md	:620
 SKELETON.md	:6330
 SKELETON.md	:65
-SKELETON.md	:67
 SKELETON.md	:6715
 SKELETON.md	:68
 SKELETON.md	:6805
@@ -233,7 +231,6 @@ SKELETON.md	knowledge.h:45
 SKELETON.md	lighting.h:56-67
 SKELETON.md	logic_nodes.cpp:52
 SKELETON.md	macro/cell_facts.cpp:15-81
-SKELETON.md	macro/entry_context.h:29-85
 SKELETON.md	macro/state.h:856
 SKELETON.md	macro_stock.cpp:221
 SKELETON.md	macro_stock.cpp:225

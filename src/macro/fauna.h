@@ -1,180 +1,26 @@
-// Subworld fauna — biome / feature / place spawn tables. Pure data:
-// each entry says what to spawn, how often, with what stats / colour.
-// Faithful port of `src/game/subworld/fauna.ts`.
+// ФАУНА, ПОЛОВИНА КОТОРОЙ НУЖЕН МИР — всё, что нельзя было увезти в
+// нейтральный слой.
 //
-// Adding a creature: one row of THE body table (macro/npc.h) that states its
-// ground in its habitat mask (kSpawnHabitats). Adding a biome: its bit and
-// its counts row. No engine code changes ever needed.
+// ЗАКОН ДИКОГО РОЛЛА ПЕРЕЕХАЛ В `tables/fauna.h` ЛОМТЁМ 3 ЭПИКА ПАКЕТОВ v1
+// (`FaunaEntry`, `SpawnContext`, `FaunaPick`, `roll_spawns`,
+// `spawn_strength`, `danger_match_weight`, `row_power`, `kDangerHalfLife`,
+// `fauna_cell_capacity`): это СТРОКИ КАТАЛОГА и чистая арифметика над ними,
+// а спрашивает их и субмир, которому `macro/` включать нельзя (§11). Здесь
+// остались ровно две вещи, которым МИР нужен по существу:
+//   · `fauna_cell_capacity_at` — та же ёмкость, снятая с КЛЕТКИ через
+//     конверт слоёв (`MacroWorld`);
+//   · виды над каталогом существ — поиск строки по id-строке и по ординалу
+//     тела; они держат `<span>`/`<string_view>`, которым в законе ролла
+//     места нет.
 #pragma once
-#include <cstdint>
 #include <span>
 #include <string_view>
-#include <vector>
-#include "tables/biomes.h"
-#include "macro/features.h"
-#include "bus/anketa.h"
-#include "tables/behaviour.h"
-#include "tables/npc.h"
-#include "tables/sprite_rows.h"
+#include "tables/fauna.h"
 
 namespace sm {
 
-// The place vocabulary is SquadType (tables/squad_type.h) — the
-// one registry enum. A private five-value "PlaceKind" lived here until
-// 2026-08-24; it was the third copy of the same idea, and the kinds it could
-// not name (Lair, Shrine, Mine, Tower) could not route fauna at all.
-
-// AI hint for the spawned entity.
-// (`FaunaAi` lived here until 2026-08-20 — a second behaviour vocabulary for
-// beasts. It is `AIBehaviour` now, the one every row speaks: tables/behaviour.h.)
-
-// Creature faction — the registry id string (macro/faction.h), the SAME key
-// every other faction consumer uses. The old FaunaFaction enum was a fourth
-// parallel vocabulary whose indices collided with the humanoid one (a bandit
-// creature (2) and a bandit NPC (3) compared as enemies, a bandit NPC (3) and
-// a DEMON creature (3) as brothers — the spell friendly-fire check used the
-// raw index). One id space ends that class of bug. nullptr = factionless.
-
-// A creature row IS an npc row (owner, 2026-08-20: one system). The struct
-// that used to live here is `NpcTypeDef` in macro/npc.h, and every creature is
-// a member of the ONE table there — this alias survives only so the spawn
-// tables below read as what they are: lists of rows a place may roll.
-using FaunaEntry = NpcTypeDef;
-
-// ── THE spawn law (CANON S6/S12, owner 2026-08-24) ───────────────────
-// Who a cell rolls = habitat × danger-match, over the ONE body table.
-//
-//   weight(row, cell) = row.weight × habitat(row, cell)
-//                     × danger_match(spawn_strength(row), cell danger)
-//
-// · habitat — a bitmask COLUMN of the body table (kSpawnHabitats below,
-//   enum-ordered beside the law that reads it): which biomes the row lives
-//   in, plus the forest class and the den kinds. It replaced thirteen
-//   hand-built list-tables and the switch ladder that chose between them
-//   (canon-audit F5) — a new species states its ground in its own row.
-// · spawn_strength — DERIVED, never hand-set: log₂ of the row's own combat
-//   power (hp × damage/cooldown), normalized over the table — the weakest
-//   row is 0, the strongest demon 255. Strengthen a row and it migrates to
-//   dangerous ground by itself (S26: constants derive from world facts).
-// · danger_match — symmetric around strength == danger (the owner's word:
-//   hell is peopled by demons, not by demons plus rabbits), HALVING per
-//   kDangerHalfLife bytes of mismatch, floor 1 — a doom-tier horror in a
-//   safe meadow is «исчезающе малая вероятность», literally, never zero.
-//   No cutoffs, no bands: composition flows across the map.
-//
-// The zone therefore changes WHAT SPAWNS and nothing else — the negative
-// control that no number is scaled on the body after the pick stands
-// (subworld_spawn_parity_test; the autolevel stays dead).
-
-// Биты ареала (kHabForest/kHabRuin/kHabSpire/kHabTown, hab(Biome)) переехали
-// в macro/npc.h 2026-09-22 — к колонке строки, которую они описывают.
-// (Страж КОЛОНКИ ТОЛПЫ умер 2026-11-02 вместе с колонкой: раскладка толпы
-//  сцены уехала в данные субмира — `kCrowdLayout@src/sub/crowd_layout.h`, —
-//  и авторится там ИМЕНАМИ битов kHab* из tables/npc.h, так что второго
-//  правописания, которое этот страж сверял, больше не существует. Страж
-//  колонки `faunaHabitat` умер тем же способом в M-371: род-развилки
-//  place_def мертвы, полосу объявляет МОДУЛЬ клетки именами битов —
-//  `FaunaBand@src/tables/npc.h`.)
-
-// Halving distance of the match law. Derived, not tuned: ten halvings span
-// the whole 0..255 continuum (a full-span mismatch lands at 2^-10 of the
-// peak before the floor), so kDangerHalfLife = 256 / 10.
-inline constexpr int kDangerHalfLife = 256 / 10;
-
-// The derived strength byte of a row (see the law above). Computed once
-// from the table itself; every consumer of "how dangerous is this thing" —
-// spawn, and tomorrow loot quality and hire pricing — asks HERE.
-std::uint8_t spawn_strength(NPCType t);
-
-// The symmetric never-zero match term, in 1/1024ths of the peak.
-std::uint32_t danger_match_weight(std::uint8_t strength, std::uint8_t danger);
-
-// Everything the roll wants to know about the cell — assembled by the
-// caller from its CellContext / CellFacts. Zero members are legal silence.
-// РОДА МЕСТА ЗДЕСЬ БОЛЬШЕ НЕТ (M-371): фауна — поле дикой природы, полосу
-// особой клетки объявляет её МОДУЛЬ (band), земля отвечает по лесу/биому.
-struct SpawnContext {
-    Biome        biome = Biome::Meadow;
-    bool         forest = false;          // is_forest_cell(treeCount)
-    FaunaBand    band{};                  // модульная полоса; bit 0 = земля
-    std::uint8_t danger = 0;              // the cell's danger byte (zones)
-};
-
-// ОРДИНАЛ, А НЕ СТРОКА (ЗАКОН СЛОВАРЯ п.1-2, наряд M-187). Здесь стоял
-// `const char* factionId`, и `faction_index()` звался НА КАЖДОЕ ТЕЛО — дважды
-// в `src/sub/spawn.cpp`, то есть линейный скан 64 строк реестра со `strcmp`
-// внутри цикла заселения. Имя переводится в число ОДИН раз, на границе ролла
-// (`roll_spawns`), как велит закон: «граница переводит имя в ординал ОДИН
-// раз». Ширина — та же, какой её берёт `BodySpec::faction`; «неизвестная
-// строка» остаётся прежним значением `std::uint16_t(-1)`, которое звонящие
-// уже получали от `faction_index`, — поведение не тронуто ни в одном бите.
-struct FaunaPick { const FaunaEntry* entry; std::uint16_t faction; };
-
-// Roll a cell's wild population by the law. Count comes from the place's
-// counts row; faction comes from the species row's own wildFaction and from
-// nowhere else — a wild roll belongs to the LAND (M-39 killed the place-kind
-// override that used to dress a spire's slope deer as demons).
-std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
-                                   std::uint32_t& rngState);
-
-// (pick_crowd_row — ролл рода толпы по полосе crowdHabitat — УНИЧТОЖЕН
-// 2026-10-04, D-хвост: род, уровень и лицо жителя — ФАКТ ГОЛОВЫ инвентаря
-// на всех трёх путях (улица, интерьер, дверь рассвета), и выдумывать род
-// заново на каждом входе было побочной системой. Колонку crowdHabitat
-// читают теперь гейты «держит ли род толпу» — все четыре в СУБМИРЕ — и
-// пять `static_assert` ниже; род ДУШИ решается при поселении, не при
-// воплощении.)
-
-// МОЩЬ СТРОКИ — ОДИН РАСЧЁТ, И ПОСЛЕ СНОСА НИЖЕ У НЕГО ОДИН ПОТРЕБИТЕЛЬ.
-// hp × dps той же строки, что и дерётся: `spawn_strength` нормализует ЭТО в
-// байт для сравнения с опасностью клетки. Второго счёта силы в игре нет —
-// нормализация порядка не меняет, поэтому «насколько он силён» отвечается
-// тем же числом, каким дерутся (DOD п.6). Второй потребитель
-// (`weakest_crowd_kind`, «кто слабее») умер вместе со своим вопросом.
-inline double row_power(NPCType t) {
-    const CombatTemplate& c = npc_def(t).combat;
-    const double dps = double(dice_mean_x2(c.dice)) * 0.5
-                     / std::max(0.25, double(c.cooldown));
-    return std::max(1.0, double(c.hp) * dps);
-}
-
-// ── ЗДЕСЬ ЖИЛА `weakest_crowd_kind`, И ОНА УНИЧТОЖЕНА 2026-10-27 ──────────
-//
-// ЧЕМ ОНА БЫЛА: «слабейшая строка полосы crowdHabitat этого рода мест» —
-// ВЫВОД рода души данжа (шпиль → Imp, руина и логово → CaveBat), чтобы вид
-// стака не выдумывался при заселении (вердикт владельца 2026-09-30: «души
-// данжей — тоже головами; вид стака НЕ выдумывать»).
-//
-// ПОЧЕМУ СНЕСЕНА: у вывода исчез ВОПРОС. Оба её звонка умерли одним
-// коммитом `6ba675f1` (M-320, вердикт владельца «снести колонки целиком») —
-// ветка `settle_souls@src/macro/labour.h` и проход
-// `regrow_dungeon_populations`, — потому что данж перестал быть сквадом:
-// руина и шпиль стали чистыми фичами, заселять и отращивать их будет ИХ
-// СОБСТВЕННЫЙ модуль (CANON S28, механизм 2) и своими строками. Перепись
-// перед резом: **НОЛЬ звонящих** в `src/` и в `tests/`, при трёх прозах,
-// которые ещё утверждали обратное — и громче всех её собственная шапка:
-// «ЕЁ ЗОВЁТ ДВЕРЬ ЗАСЕЛЕНИЯ (labour.h settle_souls)».
-//
-// ПОЧЕМУ ЭТОГО НЕ ВИДЕЛ НИКТО, И ЭТО УРОК, А НЕ ОПРАВДАНИЕ: `inline` в
-// ЗАГОЛОВКЕ, поэтому `-Wunused-function` молчит по построению — мёртвая
-// дверь в заголовке невидима компилятору, в отличие от статической в
-// `.cpp` (ту `-Wunused-function` назвал сам же в M-320: так умерла
-// `place_context_score`). Нашла её ПЕРЕПИСЬ КОЛОНКИ: `crowdHabitat`
-// считалась «самой растянутой по слоям», а растяжку держал читатель внутри
-// двери с нулём звонящих.
-//
-// ЧТО ОСТАЛОСЬ ВМЕСТО НЕЁ: ничего, и это правильный ответ (§1: временных
-// костылей не ставим). Понадобится данжу население — его даст его модуль.
-
-// ── The honest headcount (Session 16) ────────────────────────────────
-// A cell's fauna CAPACITY — how many heads its own spawn table carries
-// (the winning table's maxCount). ПРИРОДНАЯ ёмкость: биом + лес, рода места
-// в ней нет (M-371). Она — базовая ряда Fauna: потолок роста и кламп выемки
-// носителя (хранимое поле GameState::faunaField, заполняет генератор).
-int fauna_cell_capacity(Biome biome, int treeCount);
-
 // The same capacity resolved from the macro cell's own data, through THE
-// layer envelope (macro_stock.h MacroWorld): biome via the one biome_at
+// layer envelope (macro_world.h MacroWorld): biome via the one biome_at
 // cascade, forest class from the tree layer. РОДА МЕСТА ЗДЕСЬ НЕТ (M-371):
 // скан сквадов `settlement_at` был вторым носителем рода против байта фичи
 // у ролла и умер с род-развилками. Missing layers read as no context:
@@ -182,13 +28,9 @@ int fauna_cell_capacity(Biome biome, int treeCount);
 struct MacroWorld;
 int fauna_cell_capacity_at(const MacroWorld& w, int x, int y);
 
-// (The breeding step is the ONE growth law — resource_fields_daily_growth,
-// macro/resource_field.h: beasts breed where beasts are, capped by this
-// capacity — and lives with the rows: macro/macro_stock.cpp.)
-
 // ── Creature views over THE one body table ───────────────────────────
 // The source of truth for every creature (rabbit → dragon) is the same
-// `kNpcTypeDefs` row it is for a peasant (macro/npc.h, CANON S16); these are
+// `kNpcTypeDefs` row it is for a peasant (tables/npc.h, CANON S16); these are
 // convenience views over its creature stripe (природа строки — не человек).
 // Ids are one
 // contiguous ordinal space — the old `0x100 | catalog index` encoding is DEAD

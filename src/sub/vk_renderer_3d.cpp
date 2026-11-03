@@ -1634,7 +1634,7 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
             biomes[i] = c.biome;
             heights[i] = c.macroHeight;
             damps[i] = sub::terrain_mod_for(
-                FeatureLayer::decode(std::uint8_t(c.feature))).damp;
+                feature_decode(std::uint8_t(c.feature))).damp;
             // ONE SPELLING OF THE DIVISION (tables/forest.h). A resolver that
             // never met the macro world answers −1 for "unknown", and the door
             // reads that as bare rather than as a wrap-around of the byte.

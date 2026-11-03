@@ -338,7 +338,7 @@ struct MacroNpcRuntime {
     std::uint8_t  marchFlags = 0;
     std::uint8_t  subPad = 0;   // дыра выравнивания названа полем (M-183)
     std::uint8_t  state;         // NPCState
-    // Entry-side context (macro/entry_context.h): the packed signed step of the
+    // Entry-side context (bus/entry_context.h): the packed signed step of the
     // last cell change (0xFF = none: spawned here / teleported), and a
     // saturating count of AI ticks since it. Stamped by try_move, consumed by
     // the macro→subworld projection to place this NPC's body on the side of the

@@ -402,6 +402,7 @@ add_executable(balance_run tests/balance_run.cpp
     src/macro/tree_layer.cpp
     src/macro/deposit_layer.cpp
     src/macro/fauna.cpp
+    src/tables/fauna.cpp
     src/macro/map_generator.cpp
     src/macro/plates.cpp
     src/macro/language.cpp
@@ -459,6 +460,7 @@ add_executable(road_reach_census tests/road_reach_census.cpp
     src/macro/tree_layer.cpp
     src/macro/deposit_layer.cpp
     src/macro/fauna.cpp
+    src/tables/fauna.cpp
     src/macro/map_generator.cpp
     src/macro/plates.cpp
     src/macro/language.cpp
@@ -657,6 +659,7 @@ timaert_test(world_tick_parity_test
         # The daily tick regrows fauna through the stock row (Session 16).
         src/macro/macro_stock.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         # ...and raises deserter bands out of the pool, through the ONE
         # creation door (spawn_squad → make_npc).
@@ -687,6 +690,7 @@ timaert_test(flock_pairing_law_test
         src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/nav_field.cpp
         src/macro/economy.cpp
@@ -732,6 +736,7 @@ timaert_test(save_roundtrip_test
         src/macro/knowledge.cpp
         # npc.h now answers for BOTH halves of the kind id space.
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         # M-90 флип (v127): плечо места едет ЗАПИСЬЮ ЕГО ТЕЛА в блоке
         # макро-сквадов, поэтому круг сейва снимает тела (snapshot_macro_ecs)
         # и возвращает их (restore_macro_ecs + relink_place_bodies).
@@ -764,6 +769,7 @@ timaert_test(macro_snapshot_test
         src/tables/items.cpp
         # npc.h now answers for BOTH halves of the kind id space.
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
     LINK_SDL)
 
 # Header-only on purpose: the spell DATA registry (macro/spells.h) is a
@@ -791,6 +797,7 @@ timaert_test(spell_casting_effects_test
         # the MONSTER table (creature_def_from_kind) like melee always has — so this
         # test links the table rather than a second opinion about how wide a wolf is.
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/sub/spell_effects.cpp
         # spell_effects strikes through THE damage door now.
         src/sub/damage.cpp
@@ -816,6 +823,7 @@ timaert_test(combat_squad_test
         # one solidity authority linked, exactly as the game does.
         src/sub/collide.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         # Найм — одна сделка дверью deal (ломоть 2 M-72).
         src/macro/deal.cpp
         src/macro/econ_day.cpp
@@ -878,6 +886,7 @@ timaert_test(caravan_deal_test
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         src/bus/anketa.cpp
         src/tables/items.cpp
@@ -905,6 +914,7 @@ timaert_test(macro_npc_ai_parity_test
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         # The caravan agent weighs its cargo hold (items.cpp).
         src/bus/anketa.cpp
@@ -990,6 +1000,7 @@ timaert_test(squad_war_test
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         # spawn_squad (Inc 7) is born through make_npc — the one creation
         # door — so the test links the spawner and the loot it rolls.
@@ -1023,6 +1034,7 @@ timaert_test(design_characters_test
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/npc_spawn.cpp
         src/macro/macro_snapshot.cpp
@@ -1054,6 +1066,7 @@ timaert_test(squad_travel_test
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         src/bus/anketa.cpp
         src/tables/items.cpp
@@ -1100,6 +1113,7 @@ timaert_test(road_river_generation_test
         src/macro/tree_layer.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
     LINK_SDL)
 # River generation invariants (macro heap-A* trace + below-sea carve) and the
 # honest subworld river descent. Pure CPU synth: generate_terrain() and
@@ -1148,6 +1162,7 @@ timaert_test(biome_cascade_test
         src/macro/tree_layer.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/sub/base_generator.cpp
     LINK_SDL)
 
@@ -1173,6 +1188,7 @@ timaert_test(feature_layer_parity_test
         src/macro/chronicle.cpp
         src/macro/tree_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
     LINK_SDL)
 # Header-only classifier test (biomes.h): mountains are a biome by elevation.
 
@@ -1384,6 +1400,7 @@ timaert_test(subworld_spawn_parity_test
         # one solidity authority linked, exactly as the game does.
         src/sub/collide.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/sub/seamless_manager.cpp
         src/sub/height.cpp
         src/sub/base_generator.cpp
@@ -1431,7 +1448,8 @@ timaert_test(loot_pool_test
         # ТАМ, потому что закон выбора строки контекстом в мире ОДИН — спавн
         # и лут спрашивают его одинаково. Линкуется он же и в свидетеле,
         # иначе тест проверял бы копию закона, а не закон.
-        src/macro/fauna.cpp)
+        src/macro/fauna.cpp
+        src/tables/fauna.cpp)
 # Pure targeting primitive (Inc 5 possession groundwork). Links only the new
 # targeting TU — no engine/render code, so it stays independent of the
 # subworld renderer.
@@ -1445,6 +1463,7 @@ timaert_test(targeting_test
 timaert_test(fauna_registry_test
     SOURCES
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         # feature_fauna_band — полоса модуля фичи (M-371): свидетель берёт
         # полосу руины ДВЕРЬЮ модуля, а не пересказом её чисел
         src/sub/gens/dispatch.cpp)
@@ -1454,7 +1473,8 @@ timaert_test(fauna_registry_test
 # links the fauna registry only to walk the catalog.
 timaert_test(sprite_rows_test
     SOURCES
-        src/macro/fauna.cpp)
+        src/macro/fauna.cpp
+        src/tables/fauna.cpp)
 # Every homeland the intro offers must lead to a real country: totality over the
 # offered choices, the group resolution staying inside its own realms, one world
 # always answering the same way, and a negative control proving the resolver can
@@ -1563,6 +1583,7 @@ timaert_test(trade_law_test
         src/macro/economy.cpp
         src/macro/macro_stock.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         src/bus/anketa.cpp
         src/tables/items.cpp
@@ -1594,6 +1615,7 @@ timaert_test(ai_cadence_test
         src/macro/economy.cpp
         src/macro/macro_stock.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         src/bus/anketa.cpp
         src/tables/items.cpp
@@ -1647,6 +1669,7 @@ timaert_test(mine_settlement_collision_test
         src/macro/tree_layer.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/state.cpp
         src/tables/items.cpp
     PIN "OK mine_settlement_collision_test .10 checks")
@@ -1689,6 +1712,7 @@ timaert_test(settlement_placement_test
         src/macro/tree_layer.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/map_generator.cpp
         src/macro/plates.cpp
         src/macro/language.cpp
@@ -1724,6 +1748,7 @@ timaert_test(crop_stock_test
     SOURCES
         src/macro/macro_stock.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/world_tick.cpp
         # Дневной тик спрашивает тир орба ОДНИМ выводом (M-233 п.8).
@@ -1766,6 +1791,7 @@ timaert_test(fauna_stock_test
         src/macro/player_entity.cpp
         src/macro/macro_stock.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/world_tick.cpp
         # Дневной тик спрашивает тир орба ОДНИМ выводом (M-233 п.8).
@@ -1804,6 +1830,7 @@ timaert_test(collector_tithe_test
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/npc_spawn.cpp
         src/bus/anketa.cpp
@@ -1836,6 +1863,7 @@ timaert_test(woodcutter_gather_test
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/npc_spawn.cpp
         src/bus/anketa.cpp
@@ -1862,6 +1890,7 @@ timaert_test(task_constructor_test
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/npc_spawn.cpp
         src/bus/anketa.cpp
@@ -1896,6 +1925,7 @@ timaert_test(rooted_module_day_test
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/npc_spawn.cpp
         src/bus/anketa.cpp
@@ -1941,6 +1971,7 @@ timaert_test(scent_field_test
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/npc_spawn.cpp
         src/bus/anketa.cpp
@@ -1980,6 +2011,7 @@ timaert_test(settlement_faction_test
         # one solidity authority linked, exactly as the game does.
         src/sub/collide.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/sub/seamless_manager.cpp
         src/sub/height.cpp
         src/sub/base_generator.cpp
@@ -2004,6 +2036,7 @@ timaert_test(carried_light_spawn_test
         # one solidity authority linked, exactly as the game does.
         src/sub/collide.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/sub/seamless_manager.cpp
         src/sub/height.cpp
         src/sub/base_generator.cpp
@@ -2032,6 +2065,7 @@ timaert_test(city_population_inside_walls_test
         # one solidity authority linked, exactly as the game does.
         src/sub/collide.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/sub/seamless_manager.cpp
         src/sub/height.cpp
         src/sub/base_generator.cpp
@@ -2063,6 +2097,7 @@ timaert_test(body_contract_test
         src/sub/collide.cpp
         src/sub/material.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/macro_stock.cpp
         # a struck vein is a chronicle fact now (v58)
         src/macro/chronicle.cpp
@@ -2088,6 +2123,7 @@ timaert_test(resource_growth_test
         src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp)
 
 # Личность места едет вниз ИЗ ФИЧИ (M-318 часть Б). Прибор заведён потому,
@@ -2107,6 +2143,7 @@ timaert_test(rooted_identity_test
         src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
     PIN "OK rooted_identity_test .6 checks")
 
@@ -2124,6 +2161,7 @@ timaert_test(frame_fill_test
         src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp)
 
 timaert_test(delta_apply_test
@@ -2137,6 +2175,7 @@ timaert_test(delta_apply_test
         src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp)
 
 # Один глагол обмена (ломоть 2 M-72): кламп намерения до факта, exact-откат
@@ -2159,6 +2198,7 @@ timaert_test(field_doors_test
         src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp)
 
 timaert_test(macro_stock_test
@@ -2172,6 +2212,7 @@ timaert_test(macro_stock_test
         src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         # Прилавок голов настаёт дверью deal (ломоть 2 M-72).
         src/macro/deal.cpp
@@ -2211,6 +2252,7 @@ timaert_test(spell_broadphase_parity_test
         src/tables/items.cpp
         src/sub/movement.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/events/event_bus.cpp)
 
 # The agreement between the two laws of battle (macro/auto_battle.h): the
@@ -2224,7 +2266,8 @@ timaert_test(auto_battle_test
         src/tables/items.cpp
         src/sub/movement.cpp
         # npc.h answers for both halves of the kind id space (monsters too).
-        src/macro/fauna.cpp)
+        src/macro/fauna.cpp
+        src/tables/fauna.cpp)
 
 # The auto-resolve is not mute: facts, the kill price, rolled spoils — the
 # three things the fought version always paid and the button never did.
@@ -2239,7 +2282,8 @@ timaert_test(auto_resolve_speaks_test
         # a struck vein is a chronicle fact now (v58)
         src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
-        src/macro/fauna.cpp)
+        src/macro/fauna.cpp
+        src/tables/fauna.cpp)
 
 # The player is an ordinary squad — and the one party no "another party" scan
 # may ever choose. PlayerSquadTag vs PlayerTag, each guard with its control.
@@ -2263,6 +2307,7 @@ timaert_test(player_is_a_squad_test
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
+        src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         src/bus/anketa.cpp
         src/tables/items.cpp

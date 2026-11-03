@@ -289,8 +289,8 @@ void edge_anchor_target(const CellContext& ctx, int dx, int dy,
 bool features_link(std::uint8_t a, std::uint8_t b) {
     // Пустая клетка не связывается ни с чем: «ненулевая фича» и есть условие
     // того, что стыковать вообще есть что.
-    if (FeatureLayer::decode(a) == FT_None) return false;
-    if (FeatureLayer::decode(b) == FT_None) return false;
+    if (feature_decode(a) == FT_None) return false;
+    if (feature_decode(b) == FT_None) return false;
     // Дорога на ЛЮБОЙ из сторон делает пару связанной. Симметрия отсюда по
     // построению: `||` не различает порядок.
     return is_road_feature(a) || is_road_feature(b);

@@ -1,7 +1,7 @@
 #include "macro/player_entity.h"
 #include "ecs/components.h"
 #include "ecs/npc_character.h"
-#include "macro/entry_context.h"
+#include "bus/entry_context.h"
 #include "macro/rooted_iter.h"   // for_each_rooted — места по слотам
 #include "tables/faction.h"
 #include "tables/npc.h"

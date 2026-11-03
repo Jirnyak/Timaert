@@ -11,7 +11,7 @@
 #include "macro/deposit_layer.h"
 #include "macro/econ_day.h"
 #include "macro/macro_stock.h"
-#include "macro/entry_context.h"
+#include "bus/entry_context.h"
 #include "tables/faction.h"
 #include "macro/labour.h"           // ОДИН пул рук места (CANON S4)
 #include "macro/rooted_iter.h"    // for_each_rooted — обход мест по оси рода

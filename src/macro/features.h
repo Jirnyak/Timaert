@@ -60,9 +60,12 @@ struct FeatureLayer {
         return value < FT_Count;
     }
 
-    static FeatureType decode(std::uint8_t value) {
-        return value < FT_Count ? FeatureType(value) : FT_None;
-    }
+    // Толкование байта живёт У ОСИ (`feature_decode@src/tables/feature_type.h`,
+    // ломоть 3 эпика пакетов v1): арифметика над словарём состояния мира не
+    // касается, а спрашивал её и субмир — девять его сайтов читали ЭТОТ статик
+    // и тянули за него весь слой в канал. Имя остаётся звонком: у макро-мест
+    // оно читается как «просей байт этой решётки».
+    static FeatureType decode(std::uint8_t value) { return feature_decode(value); }
 
     static bool cell_count_for(int w, int h, std::size_t &out) {
         out = 0;

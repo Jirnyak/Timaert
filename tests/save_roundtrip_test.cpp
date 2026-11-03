@@ -6,7 +6,7 @@
 #include "tables/codex.h"
 #include "macro/currency.h"
 #include "tables/npc.h"
-#include "macro/entry_context.h"
+#include "bus/entry_context.h"
 #include "events/event_bus.h"
 
 #include <cstdint>

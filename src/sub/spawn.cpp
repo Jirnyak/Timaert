@@ -3,9 +3,12 @@
 #include "sub/crowd_layout.h"  // раскладка населения сцены по роду — данные субмира
 #include "sub/dgn/dispatch.h"   // dungeon_scene_seed, dungeon_has_upper —
                                 // the household/partition law (CANON S28)
-#include "macro/entry_context.h"
-#include "macro/fauna.h"       // SpawnContext/roll_spawns — закон логова зовётся
-                               // отсюда; прежде транзит через spawn.h (ломоть 1)
+#include "bus/entry_context.h"
+#include "tables/fauna.h"       // SpawnContext/roll_spawns — закон логова
+                               // зовётся отсюда; прежде транзит через spawn.h
+                               // (ломоть 1), потом НИТКА КАНАЛА `macro/fauna.h`
+                               // (до ломтя 3 эпика пакетов v1: закон ролла
+                               // чист, значит живёт нейтральным слоем)
 #include "tables/faction.h"
 #include "ecs/components.h"
 #include "ecs/npc_character.h"
@@ -1592,7 +1595,7 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
         Rng rng(seed ^ salt);
 
         // Entry-side scatter within this window cell's sub-region
-        // (macro/entry_context.h): the band starts at the edge this NPC walked
+        // (bus/entry_context.h): the band starts at the edge this NPC walked
         // in from and deepens with its time in the macro cell, so a party that
         // just chased somebody across the border materialises AT that border,
         // behind them — while a local that has been here forever gets the full

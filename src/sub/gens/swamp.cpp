@@ -11,6 +11,10 @@
 #include "core/rng.h"
 #include "sub/height.h"
 #include "sub/collide.h"   // kStepUpM — рост, через который переступают
+// Честное прямое включение: двери тора приезжали сюда ТРАНЗИТОМ через
+// `map_data.h` → `macro/features.h`, то есть через нитку канала (снята
+// ломтём 3 эпика пакетов v1).
+#include "core/torus.h"
 #include <algorithm>
 #include <array>
 #include <cmath>

@@ -40,7 +40,7 @@ namespace sm {
 // small biome ambience, so a v13 world's derived layers (and hence its
 // override baselines) no longer match what this code regenerates.
 // v15: the player's entry-side context (PlayerState entryDir/entryTicks,
-// macro/entry_context.h) — which side the player walked into the current macro
+// bus/entry_context.h) — which side the player walked into the current macro
 // cell from, persisted so a save made at a river bank re-enters the subworld
 // with the same army-facing placement.
 // v16: the player became an ordinary faction row ("player") and his reputation

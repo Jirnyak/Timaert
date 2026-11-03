@@ -113,7 +113,7 @@ static_assert(rows_in_enum_order(kBiomeGenRows, &BiomeGenRow::biome),
               "kBiomeGenRows обязана идти в порядке Biome");
 
 FaunaBand feature_fauna_band(std::uint8_t feature) {
-    const FeatureType ft = FeatureLayer::decode(feature);
+    const FeatureType ft = feature_decode(feature);
     return kFeatureGenRows[std::size_t(ft)].fauna;
 }
 
@@ -128,7 +128,7 @@ GenFn open_air_gen_for(const CellContext& ctx) {
     // ОСЬ ПЕРВАЯ — ФИЧА: что люди построили, решает, ЧЕМ клетка является
     // подо ногами (вердикт владельца 2026-10-28: «вместо мест он смотрит
     // модули типов фич которые для этого и существуют»).
-    const FeatureType feature = FeatureLayer::decode(std::uint8_t(ctx.feature));
+    const FeatureType feature = feature_decode(std::uint8_t(ctx.feature));
     if (const GenFn f = kFeatureGenRows[std::size_t(feature)].gen) return f;
     // ОСЬ ВТОРАЯ — БИОМ, и он спрашивается ТОЛЬКО когда фича промолчала:
     // биом заполняет рельеф под постройкой. Порядок осей СОХРАНЁН в точности:
@@ -156,7 +156,7 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
                        const int* nbTreeCount,
                        const float* nbFertility) {
     CellContext safeCtx = ctx;
-    safeCtx.feature = FeatureLayer::decode(std::uint8_t(ctx.feature));
+    safeCtx.feature = feature_decode(std::uint8_t(ctx.feature));
     // Interior scene: the dungeon module writes the whole cell itself (flat
     // field, sealed geometry) — the open-air terrain pipeline below would
     // only be thrown away.
@@ -166,7 +166,7 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
     }
     std::uint8_t safeFeature[9]{};
     for (int i = 0; i < 9; ++i) {
-        safeFeature[i] = std::uint8_t(FeatureLayer::decode(nbFeature[i]));
+        safeFeature[i] = std::uint8_t(feature_decode(nbFeature[i]));
     }
 
     // Per-cell fertility ring for the field-plot module. Missing array or a
@@ -204,7 +204,7 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
     // такой ветки нет: байт соседа честен по построению.
     TerrainMod nbMods[9]{};
     for (int i = 0; i < 9; ++i) {
-        nbMods[i] = terrain_mod_for(FeatureLayer::decode(safeFeature[i]));
+        nbMods[i] = terrain_mod_for(feature_decode(safeFeature[i]));
     }
 
     out.heightmap.clear();

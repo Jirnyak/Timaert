@@ -1,4 +1,4 @@
-// Entry-side context contract (macro/entry_context.h) — the two bytes that
+// Entry-side context contract (bus/entry_context.h) — the two bytes that
 // carry "which side did this walker enter its macro cell from, and how long
 // ago" from the macro world into subworld spawn placement.
 //
@@ -18,7 +18,7 @@
 // Pure — header only. No ECS, no Vulkan.
 #include "check.h"
 
-#include "macro/entry_context.h"
+#include "bus/entry_context.h"
 
 #include <cmath>
 #include <cstdio>

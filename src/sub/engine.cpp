@@ -2,7 +2,16 @@
 #include "bus/local_frame.h"   // ЛОКАЛЬНЫЙ ФРЕЙМ — вход по сводке (ломоть 4)
 #include "sub/ability.h"   // THE ability door — every act pays the one gate
 #include "content/spells/casting.h"   // kSpellCasterRadius — the player body radius's one home
-#include "macro/macro_stock.h"
+// Нитка `macro/macro_stock.h` СНЯТА (ломоть 3 эпика пакетов v1): этот файл
+// держал её ОДНИМ фолбэком `macro_stock_read` в `fauna_stock_at` — вторым
+// путём к состоянию мира мимо фрейма. Фолбэк мёртв, а словарь ведомости
+// (`MacroStock`/`MacroStockKey`, которым адресуются строки ДЕЛЬТЫ вверх)
+// живёт нейтральным слоем и приезжал сюда ТРАНЗИТОМ — груз назван честно.
+#include "tables/stock_key.h"
+// ОСТАТОК КАНАЛА, НАЗВАННЫЙ ВСЛУХ: нитку держит РЕНДЕР-ДВЕРЬ
+// `resolve_context_envelope` — дальний мир и апрон высот, ТУПИК РЕНДЕРА, где
+// избыточность законна, а счётчиком промахов этот путь не является. Уедет
+// пакетом вместе с дальномиром (M-151), не этим ломтём.
 #include "macro/cell_facts.h"
 #include "macro/chronicle.h"  // fact_kind_def + chronicle_record — тело, не заголовок
 #include "tables/faction.h"
@@ -29,7 +38,7 @@
 #include "sub/height.h"
 #include "bus/anketa.h"
 #include "macro/state.h"
-#include "macro/entry_context.h"
+#include "bus/entry_context.h"
 #include "tables/npc.h"
 #include "tables/econ_laws.h" // kGatherPerWorkerDay/sp_price — the harvest SP law
 #include "macro/map_generator.h"
@@ -39,7 +48,11 @@
 // нет ни в одной подписи, проба сборки это подтвердила.
 #include "tables/feature_type.h"
 #include "tables/biomes.h"
-#include "macro/tree_layer.h"
+// Нитка `macro/tree_layer.h` СНЯТА (ломоть 3 эпика пакетов v1): этот файл
+// держал её ВИДОМ живого слоя (`treeLayer_`) ради счёта до рубки — теперь
+// счёт идёт строкой снимка. Осталась КОНСТАНТА полога `kMaxTreesPerCell`, и
+// она живёт нейтральным слоем, приезжая сюда прежде ТРАНЗИТОМ.
+#include "tables/forest.h"
 #include "tables/movement_cost.h"
 #include "tables/seasons.h"
 #include "core/rng.h"
@@ -636,7 +649,6 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
         terrain_ = nullptr;
         objects_ = nullptr;
         bus_ = nullptr;
-        treeLayer_ = nullptr;
         active_ = false;
         pendingUpload3d_ = {};
         set_status("Subworld unavailable: invalid terrain");
@@ -652,7 +664,6 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     gs_ = mw_.gs; terrain_ = mw_.terrain;
     frame_ = frame;
     objects_ = &scene; bus_ = &bus;
-    treeLayer_ = mw_.trees;
     GameState& gs = *gs_;
     // The scene raises around the FLAG HOLDER's cell — «кем я на карте» is
     // where "here" is (подпосадка 4). The entry-side context reads the same
@@ -712,7 +723,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // what happened to refill the shortlist the interaction prompt reads.
     rebuild_prop_cache();
     structIndexDirty_ = false;
-    // Entry-side placement (macro/entry_context.h): the player lands in the
+    // Entry-side placement (bus/entry_context.h): the player lands in the
     // CENTRE cell on the side they actually walked in from, at a depth that
     // grows with time spent in the macro cell — walked in from the south just
     // now → near the south edge; been in the cell for minutes (or no known
@@ -1529,18 +1540,19 @@ const CellFacts* SubworldEngine::frame_cell(int cx, int cy) const {
 
 // Ряд Fauna рода 3 из снимка — та же политика промаха, что у строк клеток
 // (ломоть 4в). Снят сборщиком тем же resource_field_read на границе тика.
+//
+// ФОЛБЭК В МАКРО-СЛОЙ СНЯТ (ломоть 3 эпика пакетов v1): вопрос вне охвата
+// снимка отвечает НУЛЁМ и ГРОМКИМ СЧЁТОМ, а не вторым путём к состоянию
+// мира. Обход фрейма был ровно тем широким каналом, против которого стоит
+// ЗАКОН ДВУХ МИРОВ: он давал правильное число и этим скрывал, что фрейм
+// промахнулся. Ноль — честное ЗНАЧЕНИЕ («в этой клетке мне ничего не
+// обещано»), и промах виден счётчиком, который пинят смоуки.
 int SubworldEngine::fauna_stock_at(int cx, int cy) const {
     const int i = frame_cell_index(cx, cy);
-    if (i >= 0) {
-        return frame_->stock[std::size_t(int(ResourceFieldId::Fauna))
-                                 * std::size_t(kFrameCells)
-                             + std::size_t(i)];
-    }
-    ++frameMisses_;
-    MacroWorld w = mw_;
-    return macro_stock_read(w, MacroStock::FaunaCount,
-                            MacroStockKey{-1, std::int16_t(cx),
-                                          std::int16_t(cy)});
+    if (i < 0) { ++frameMisses_; return 0; }
+    return frame_->stock[std::size_t(int(ResourceFieldId::Fauna))
+                             * std::size_t(kFrameCells)
+                         + std::size_t(i)];
 }
 
 // Дедуп «мир это помнит» (гейт onceEver зоны): окно фактов снимка + карман
@@ -1607,14 +1619,21 @@ static void push_stock_op(DeltaBuffer& d, MacroStock s, const MacroStockKey& k,
 }
 
 // ЕДИНАЯ политика промаха снимка: вопрос внутри охвата 5×5 отвечает ФРЕЙМ,
-// вне — конверт (легаси-путь до ломтя 7) со счётом frameMisses_. В
-// канонических потоках промахов НОЛЬ по построению: генерация на пересечении
-// ОТЛОЖЕНА до свежего фрейма (flush в frame_resynced), а все акты и веса
-// спрашивают окно 3×3 ⊂ 5×5. Свидетель — subworld_clock (misses == 0).
+// вне — ДЕФОЛТНАЯ СТРОКА со счётом frameMisses_. В канонических потоках
+// промахов НОЛЬ по построению: генерация на пересечении ОТЛОЖЕНА до свежего
+// фрейма (flush в frame_resynced), а все акты и веса спрашивают окно 3×3 ⊂
+// 5×5. Свидетель — subworld_clock (misses == 0).
+//
+// ВТОРОЙ ПУТЬ К СОСТОЯНИЮ МИРА СНЯТ (ломоть 3 эпика пакетов v1): здесь стоял
+// конверт `cell_facts(mw_, …)` — прямое чтение макро-слоя из тика субмира,
+// то есть ровно та нитка, которую ЗАКОН ДВУХ МИРОВ запрещает, и притом
+// нитка-ОБМАНКА: она отвечала ПРАВИЛЬНО и этим делала промах фрейма
+// невидимым. Дефолтная строка — честное значение («снимок об этой клетке
+// ничего не говорит»), и промах теперь слышно.
 CellFacts SubworldEngine::facts_at(int cx, int cy) const {
     if (const CellFacts* row = frame_cell(cx, cy)) return *row;
     ++frameMisses_;
-    return cell_facts(mw_, cx, cy);
+    return CellFacts{};
 }
 
 CellContext SubworldEngine::resolve_context(int x, int y) const {
@@ -2744,11 +2763,24 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
     int prev = 0;
     const bool doorlessPocket =
         sceneKind_ == SceneKind::Dungeon && !dungeon_.hasDoor;
-    if (!doorlessPocket && victim.kind == Structure::Tree && treeLayer_) {
-        prev = int(treeLayer_->at(mcx, mcy));
+    if (!doorlessPocket && victim.kind == Structure::Tree) {
+        // СЧЁТ ДО РУБКИ — ИЗ СНИМКА, А НЕ ИЗ МАКРО-СЛОЯ (ломоть 3 эпика
+        // пакетов v1). Здесь стояло `treeLayer_->at(mcx, mcy)` — прямое
+        // чтение живого слоя макромира из тика субмира, то есть нитка мимо
+        // канала. Равенство со слоем держится ПО ПОСТРОЕНИЮ: строка снимка
+        // ЕСТЬ `cell_facts` той же клетки (`fill_local_frame@src/macro/
+        // frame_fill.cpp`), а слой и снимок обновляются ОДНОЙ границей тика —
+        // буферных дельт не видит ни тот, ни другой. `-1` строки значит «слоя
+        // в мире нет»; ноль здесь — то же, чем прежде был пропуск ветки по
+        // нулевому указателю, то есть договор out-параметра («счёт ДО») цел.
+        prev = std::max(0, facts_at(mcx, mcy).treeCount);
         // Срубленное — СТРОКОЙ ДЕЛЬТЫ («−1 дерева»), применит граница тика
         // одной точкой (ломоть 5, M-98): операция коммутирует с фоновым
-        // ростом, прямая запись из акта была ниткой мимо канала.
+        // ростом, прямая запись из акта была ниткой мимо канала. Гейт по
+        // живому указателю слоя (`&& treeLayer_`) ушёл вместе с членом, и это
+        // ПРАВИЛЬНЕЕ: субмир СООБЩАЕТ операцию, а есть ли у мира такой слой —
+        // вопрос применяющей стороны (ЗАКОН ШВА: «макро не верит значению,
+        // оно применяет операцию своими дверями»).
         push_stock_op(delta_, MacroStock::TreeCount,
                       MacroStockKey{-1, std::int16_t(mcx), std::int16_t(mcy)},
                       -1, cell_of(mcx, mcy, frame_ ? frame_->side : 1));
@@ -4053,7 +4085,6 @@ void SubworldEngine::leave(bool force) {
     terrain_ = nullptr;
     objects_ = nullptr;
     bus_ = nullptr;
-    treeLayer_ = nullptr;
     structIndex_.clear();
     structIndexDirty_ = true;
     propLights_.clear();   // reaped with the scene above
@@ -4243,7 +4274,6 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     mw_ = mw;
     gs_ = mw_.gs; terrain_ = mw_.terrain;
     objects_ = &scene; bus_ = &bus;
-    treeLayer_ = mw_.trees;
 
     // Synthetic resolver: the door cell IS the interior, the ring is sealed
     // by whatever filler the kind's row names (Void rock today; an open
@@ -4353,7 +4383,23 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // The door cell's LIVE facts — danger byte, deposit gates, biome, trees —
     // through the one assembler: the household and the vermin below spawn by
     // the same law as the street above the door.
-    const CellFacts doorFacts = facts_at(ses.doorCx, ses.doorCy);
+    //
+    // СПРАШИВАЕТСЯ СНИМОК ТОЛЬКО ТОГДА, КОГДА ЕГО КТО-ТО ЧИТАЕТ (ломоть 3
+    // эпика пакетов v1). Безусловный вопрос был ГАРАНТИРОВАННЫМ ПРОМАХОМ
+    // фрейма у БЕЗДВЕРНОГО кармана: у него якорь виртуальный — (0,0),
+    // «doorless pocket owes no cell» (`enter_pocket_scene` выше), — то есть
+    // вне охвата 5×5, и счётчик `frameMisses_` набегал за величину, которой
+    // ни один читатель потом не касался. Гейт стоит ПО КОЛОНКАМ СТРОКИ РОДА
+    // и по ЯРУСУ сцены, никогда по ИМЕНИ рода (ЗАКОН СТРОКИ КАТАЛОГА): это
+    // ровно дизъюнкция предусловий трёх читателей ниже — очаг
+    // (`householdAbove`), гарнизон места (`rootedGarrison`) и логово
+    // (`verminAbove` либо подвал, `level < 0`). Карман не несёт ни одной из
+    // колонок и стоит на ярусе 0, поэтому гейт закрыт, а дефолтная строка
+    // никуда не едет.
+    const bool doorFactsRead = kindRow.householdAbove || kindRow.rootedGarrison
+                            || kindRow.verminAbove || ses.ref.level < 0;
+    const CellFacts doorFacts =
+        doorFactsRead ? facts_at(ses.doorCx, ses.doorCy) : CellFacts{};
     // The household: a deterministic handful of the settlement's people,
     // borrowed from the SAME population stock as the street crowd — but only
     // while the town still has people to lend. A door in an emptied town

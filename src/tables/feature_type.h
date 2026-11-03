@@ -79,4 +79,16 @@ static_assert(FT_ClayPit == 5 && FT_IronMine == 6 && FT_Quarry == 7
 static_assert(FT_Pasture == 11 && FT_FlaxField == 12,
               "FeatureType byte layout (parcels)");
 
+// ── БАЙТ → СТРОКА ОСИ: единственное толкование сырого байта фичи ───────────
+// Дом здесь, рядом с осью, а не у слоя (macro/features.h), и это ломоть 3
+// эпика пакетов v1: толкование есть чистая арифметика над ОСЬЮ — состояния
+// мира оно не касается ни одним членом, — а спрашивают его ОБА мира (девять
+// сайтов `src/sub` читали его статиком слоя и тянули за это `macro/features.h`
+// в канал). Незаконный байт отвечает `FT_None`: байт вне оси не называет
+// ничего, и это ЗНАЧЕНИЕ, а не отказ (ЗАКОН ЛЕСТНИЦЫ: умолчание — тоже
+// значение, и здесь оно названо вслух).
+inline constexpr FeatureType feature_decode(std::uint8_t value) {
+    return value < FT_Count ? FeatureType(value) : FT_None;
+}
+
 } // namespace sm

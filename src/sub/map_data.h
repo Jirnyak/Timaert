@@ -9,17 +9,15 @@
 #include <vector>
 #include "core/table_guard.h"
 #include "tables/biomes.h"
-// СЛОЙ фич, а не словарь, и нитка ОСТАЁТСЯ (замер ломтя 1а эпика пакетов v1).
-// Сам этот заголовок берёт отсюда только ТИП (`tables/feature_type.h`) — но
-// нитку держат ТРАНЗИТИВНЫЕ потребители ЖИВОГО слоя: `FeatureLayer` стоит в
-// подписях пяти файлов `src/sub` (gens/dispatch.cpp 5 сайтов, gens/field.cpp,
-// gens/kit/streets.cpp 2, engine.h, vk_renderer_3d.cpp), и ни один из них
-// прямого включения не имеет — то есть гейт канала их не видит вовсе (R2
-// считает ПРЯМЫЕ включения, `tests/arch_guard_test.cpp`). Снять эту строку
-// значит либо завести ПЯТЬ новых прямых ниток, либо увезти слой фич пакетом;
-// второе и есть наряд, первое запрещено (AGENTS §11).
-#include "macro/features.h"
-                                       //   (нитку снимет M-38, не ломтик F)
+// ОСЬ фич, а не слой: этому заголовку нужен ТИП (колонка `CellContext::feature`
+// ниже и весовые строки `kTileGroundWeight`), и ничего больше. Нитка канала
+// `macro/features.h` стояла здесь ломоть 1а → 3 эпика пакетов v1 потому, что
+// `src/sub` спрашивал толкование байта СТАТИКОМ ЖИВОГО СЛОЯ
+// (`FeatureLayer::decode`) в девяти местах и тянул слой ТРАНЗИТОМ. Толкование
+// переехало к оси (`feature_decode@src/tables/feature_type.h`), сайты зовут
+// свободную функцию, и ЖИВОГО потребителя слоя в `src/sub` не осталось ни
+// одного — нитка снята, а не спрятана.
+#include "tables/feature_type.h"
 // THE step law: the subworld prices ground in the same units the macro march
 // does (biome beds, feature beds, the canopy term, speed = base/√weight).
 #include "tables/movement_cost.h"

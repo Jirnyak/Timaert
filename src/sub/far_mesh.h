@@ -39,6 +39,11 @@
 #include "sub/height.h"
 #include "sub/map_data.h"
 #include "sub/material.h"
+// Честное прямое включение: двери тора приезжали сюда ТРАНЗИТОМ через
+// `map_data.h` → `macro/features.h`, то есть через нитку канала (снята
+// ломтём 3 эпика пакетов v1). Цена O(1) по капам — заголовку такое законно
+// (§5 п.13).
+#include "core/torus.h"
 
 #include <cmath>
 #include <cstdint>

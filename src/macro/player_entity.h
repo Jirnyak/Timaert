@@ -37,7 +37,7 @@
 #include "ecs/components.h"
 #include "bus/store.h"
 #include "bus/anketa.h"
-#include "macro/entry_context.h"
+#include "bus/entry_context.h"
 #include "bus/spell_book_state.h"
 #include "macro/state.h"
 

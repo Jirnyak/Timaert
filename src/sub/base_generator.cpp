@@ -5,6 +5,11 @@
 #include "sub/tree_atlas.h"
 #include "core/rng.h"
 #include "core/math.h"
+// ЧЕСТНОЕ ПРЯМОЕ ВКЛЮЧЕНИЕ, А НЕ ТРАНЗИТ: двери тора (`wrap_axis` для
+// МАКРО-координат ниже, `wrapi` для периода решётки шума) приезжали сюда
+// ТРАНЗИТОМ через `map_data.h` → `macro/features.h`, то есть через нитку
+// канала. Нитка снята ломтём 3 эпика пакетов v1, и груз назван своим именем.
+#include "core/torus.h"
 #include <algorithm>
 #include <cmath>
 
@@ -630,8 +635,13 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
         // through the one door (`cell_seed`, map_data.h).
         const int rawGX = globalOffsetX / cellSize + cx - 1;
         const int rawGY = globalOffsetY / cellSize + cy - 1;
-        const int cellGX = worldCellsX > 0 ? wrapi(rawGX, worldCellsX) : rawGX;
-        const int cellGY = worldCellsX > 0 ? wrapi(rawGY, worldCellsX) : rawGY;
+        // МАКРО-КООРДИНАТА НА ШВЕ СВОРАЧИВАЕТСЯ ДВЕРЬЮ ТОРА (ЗАКОН АДРЕСА
+        // п.3-4): это КЛЕТКА МИРА, сторона которой есть степень двойки по
+        // инварианту, значит заворот — маска, а не деление по рантайм-делителю.
+        // Результат бит-в-бит тот же; `wrapi` остаётся решётке шума выше, чей
+        // период миром не является.
+        const int cellGX = worldCellsX > 0 ? wrap_axis(rawGX, worldCellsX) : rawGX;
+        const int cellGY = worldCellsX > 0 ? wrap_axis(rawGY, worldCellsX) : rawGY;
         // THE crest law, through its one door (base_generator.h) — the same
         // one the far world builds its massifs with, so the ridge seen from
         // thirty kilometres is the ridge you walk up to (CANON S18.1).
@@ -732,10 +742,14 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             // every caller is what makes that a property of construction — and
             // it costs nothing at the seam, because the noise above closes on
             // the same span (CANON.md S1/S2).
+            // МАКРО-КООРДИНАТА НА ШВЕ СВОРАЧИВАЕТСЯ ДВЕРЬЮ ТОРА: это ТАЙЛ
+            // МИРА, а `worldTiles` = сторона × `cellSize` — произведение двух
+            // степеней двойки (сторона по инварианту ЗАКОНА АДРЕСА, `kCellSize`
+            // = 1024), значит заворот есть маска. Бит-в-бит то же число.
             const int gxi = worldTiles > 0.0f
-                ? wrapi(globalOffsetX + x, int(worldTiles)) : globalOffsetX + x;
+                ? wrap_axis(globalOffsetX + x, int(worldTiles)) : globalOffsetX + x;
             const int gyi = worldTiles > 0.0f
-                ? wrapi(globalOffsetY + y, int(worldTiles)) : globalOffsetY + y;
+                ? wrap_axis(globalOffsetY + y, int(worldTiles)) : globalOffsetY + y;
             // ── СТОПКА ДЕТАЛИ ОДНА, И ЗВОНЯТ В НЕЁ ОБА МИРА ──────────────
             // Здесь стояли те же частоты и те же веса, написанные от руки
             // второй раз: 0.008/0.5 и 0.02/0.25 с делением на 0.75 — ровно

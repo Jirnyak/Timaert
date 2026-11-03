@@ -711,7 +711,7 @@ inline std::uint8_t squad_type_ordinal(const MacroStore& s, MacroHandle h) {
 // «С какого края запись вошла в свою клетку и давно ли» — вход-контекст
 // марша: два байта одного вопроса, поэтому и дверь одна. Протухший хэндл
 // выходов НЕ ТРОГАЕТ: сентинел «входа не было» принадлежит
-// `kEntryDirNone@src/macro/entry_context.h`, и второго его правописания
+// `kEntryDirNone@src/bus/entry_context.h`, и второго его правописания
 // здесь не заводится (ЗАКОН СЛОВАРЯ п.3).
 inline void squad_entry_side(const MacroStore& s, MacroHandle h,
                              std::uint8_t& dir, std::uint8_t& ticks) {
