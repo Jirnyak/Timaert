@@ -1,4 +1,4 @@
-// ПАМЯТЬ МИРА — свидетель закона (macro/memory.h, CANON S19.2).
+// ПАМЯТЬ МИРА — свидетель закона (bus/memory.h, CANON S19.2).
 //
 // Заведён 2026-09-21 на дефект, который прожил в дани с самого её рождения и
 // НЕ ПАДАЛ ни на одном тесте, потому что дефект был МОЛЧАНИЕМ: память с
@@ -17,7 +17,7 @@
 
 #include <initializer_list>
 
-#include "macro/memory.h"
+#include "bus/memory.h"
 
 using namespace sm;
 

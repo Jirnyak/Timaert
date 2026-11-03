@@ -43,7 +43,7 @@
 #pragma once
 
 #include "core/caps.h"
-#include "ecs/components.h"
+#include "bus/squad_row.h"   // колонки сквада — род 2 фрейма (ломоть 2б-I)
 #include "bus/anketa.h"
 #include "macro/chronicle.h"
 #include "macro/deposit_layer.h"
@@ -55,7 +55,7 @@
 #include "macro/pathfinding.h"
 #include "macro/resource_field.h"
 #include "macro/scent_field.h"
-#include "macro/spell_book_state.h"
+#include "bus/spell_book_state.h"
 #include "macro/state.h"
 #include "macro/tree_layer.h"
 #include "macro/zones.h"

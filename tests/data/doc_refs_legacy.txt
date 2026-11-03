@@ -195,8 +195,6 @@ SKELETON.md	economy.cpp:85
 SKELETON.md	ecs/components.h:218
 SKELETON.md	ecs/components.h:243
 SKELETON.md	ecs/components.h:362
-SKELETON.md	ecs/components.h:441-442
-SKELETON.md	ecs/components.h:457
 SKELETON.md	effect_applicator.cpp:53-60
 SKELETON.md	effect_applicator.h:12
 SKELETON.md	engine.cpp:1223-1225

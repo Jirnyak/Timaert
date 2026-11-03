@@ -100,6 +100,10 @@ constexpr const char* kLegacyList = "tests/data/arch_legacy.txt";
 // починено: наряд в реестре, а не красный гейт.
 constexpr std::string_view kRowHeaders[] = {
     "src/ecs/components.h",        "src/tables/npc.h",
+    // Колонки сквада (род 2 фрейма) уехали из `ecs/components.h` ломтём 2б-I
+    // эпика пакетов v1 — и контур обязан был уехать С НИМИ: заголовок, чьи
+    // строки не судит стена, есть дыра, а не мелочь стиля.
+    "src/bus/squad_row.h",
     "src/tables/items.h",          "src/tables/body_parts.h",
     "src/tables/attributes.h",     "src/bus/anketa.h",
     "src/tables/army.h",           "src/tables/bonus.h",

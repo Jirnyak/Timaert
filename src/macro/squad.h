@@ -16,7 +16,7 @@
 #include "tables/npc.h"          // NPCType — строка существа, база лидера
 #include "macro/macro_stock.h"
 #include "macro/player_entity.h"
-#include "macro/spell_book_state.h"
+#include "bus/spell_book_state.h"
 #include "bus/anketa.h"
 #include "macro/squad_walk.h"
 #include "macro/state.h"

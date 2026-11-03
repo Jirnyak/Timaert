@@ -5,7 +5,7 @@
 #include "macro/rooted_iter.h"   // for_each_rooted — места по слотам
 #include "tables/faction.h"
 #include "tables/npc.h"
-#include "macro/spell_book_state.h"
+#include "bus/spell_book_state.h"
 #include "bus/anketa.h"
 #include "macro/squad.h"
 #include "macro/store.h"

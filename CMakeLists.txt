@@ -1704,7 +1704,7 @@ timaert_test(price_law_test
         src/bus/anketa.cpp
         src/tables/items.cpp)
 
-# ПАМЯТЬ МИРА — header-only закон (macro/memory.h над seasons.h), поэтому у
+# ПАМЯТЬ МИРА — header-only закон (bus/memory.h над seasons.h), поэтому у
 # свидетеля нет ни одной единицы трансляции: он пинит арифметику горизонта и
 # держит негативный контроль на ПРЕЖНЮЮ, непредмасштабированную форму.
 timaert_test(world_memory_test)

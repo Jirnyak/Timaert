@@ -48,8 +48,8 @@
 #include "core/stacks.h"
 #include "ecs/components.h"
 #include "bus/anketa.h"
-#include "macro/interests.h"
-#include "macro/spell_book_state.h"
+#include "bus/interests.h"
+#include "bus/spell_book_state.h"
 
 namespace sm {
 
@@ -538,7 +538,7 @@ inline int parent_of(const MacroStore& st, std::uint16_t slot) {
 // оба сегодня идут нулём у всех прод-звонящих, то есть связь бессрочна и без
 // веса. Снести их как «колонки без читателя» пробовали тем днём и вернули —
 // они две из четырёх колонок формы, согласованной с владельцем построчно
-// 2026-09-21 (разбор у `Interest@src/macro/interests.h`).
+// 2026-09-21 (разбор у `Interest@src/bus/interests.h`).
 //
 // РОЛЬ ЗОВЁТСЯ С НИЖНЕГО КОНЦА: subject получает `role` (Suzerain | Parent),
 // контрагент — зеркало (Vassal | Child). SELF-СВЯЗЬ законна ТОЛЬКО у Parent

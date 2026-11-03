@@ -24,7 +24,7 @@
 #pragma once
 #include <cstdint>
 #include "core/rng.h"
-#include "ecs/components.h"
+#include "bus/squad_row.h"   // колонки сквада — род 2 фрейма (ломоть 2б-I)
 
 namespace sm::ecs {
 

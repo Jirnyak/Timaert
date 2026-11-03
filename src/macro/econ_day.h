@@ -247,7 +247,7 @@ int season_comfort_units(int population, int commodityIdx);
 // пищевая строка словаря» прибито `static_assert`ом ВНУТРИ `items.cpp`, а
 // дверь ниже отвечает -1, если каталог этому закону противоречит.
 // Товарным ординалом — то, ЧЕМ голод адресуется в СЧЁТЕ (`needDebt`
-// индексируется товарным ординалом: ecs::SquadUpkeep/macro/upkeep.h).
+// индексируется товарным ординалом: ecs::SquadUpkeep/bus/upkeep.h).
 int hunger_commodity_ordinal();
 
 // Она же каталожным ОРДИНАЛОМ — то, ЧЕМ её списывают из закромов.

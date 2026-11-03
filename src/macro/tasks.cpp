@@ -21,6 +21,7 @@
 #include "macro/store.h"
 #include "tables/commodity.h"
 #include "tables/items.h"
+#include "bus/squad_row.h"   // колонки сквада — род 2 фрейма (ломоть 2б-I)
 
 namespace sm {
 namespace {

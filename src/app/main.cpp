@@ -1145,7 +1145,7 @@ sm::CharacterSheet player_effective_sheet(const App& app) {
 
 // Is a RULE of the world switched on for him right now? A rule has no
 // magnitude to scale, so this is a row lookup and a boolean, not a number —
-// the one scan beside the SpellBook itself (macro/spell_book_state.h).
+// the one scan beside the SpellBook itself (bus/spell_book_state.h).
 bool player_rule_active(const App& app, sm::SpellRuleId rule) {
     return sm::spellbook_rule_active(
         player_book(const_cast<App&>(app)), rule);

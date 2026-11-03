@@ -26,7 +26,7 @@
 
 #include "bus/fact.h"           // FactKind — род судьи (строка рода 5)
 #include "core/macro_handle.h"
-#include "ecs/components.h"     // GoalKind / goal_what — форма цели рода 2
+#include "bus/squad_row.h"   // колонки сквада — род 2 фрейма (ломоть 2б-I)
 
 namespace sm {
 

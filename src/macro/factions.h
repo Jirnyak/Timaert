@@ -40,7 +40,7 @@ inline constexpr FactionSlot kNoFactionSlot = -1;
 
 // (ФЕОДАЛЬНОЕ РЕБРО `TitheEdge` И ПУЛ `fief` УМЕРЛИ 2026-10-22, M-245:
 //  долг и память дани живут НА РЕБРЕ Suzerain самого вассала —
-//  `Interest@src/macro/interests.h`, двери `tithe_of`/`owes_tithe` у
+//  `Interest@src/bus/interests.h`, двери `tithe_of`/`owes_tithe` у
 //  эмитента идентичности. Второй носитель одной связи снесён вместе с
 //  counting-sort-пулом 393 КиБ и тремя его дверями.)
 

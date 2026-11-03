@@ -11,10 +11,10 @@
 #include "bus/anketa.h"
 #include "ecs/components.h"   // MacroHandle — кэши игрока {слот, ID} (M-220)
 #include "tables/commodity.h"   // kCommodityCount — дань по позициям (v73)
-#include "macro/memory.h"   // WorldMemory — память мира с горизонтом сезона
+#include "bus/memory.h"   // WorldMemory — память мира с горизонтом сезона
 #include "bus/anketa.h"
-#include "macro/upkeep.h"   // Upkeep — ОДИН счёт содержания на место и на сквад (S4)
-#include "macro/interests.h"   // Interests — ВСЕ связи субъекта одной таблицей
+#include "bus/upkeep.h"   // Upkeep — ОДИН счёт содержания на место и на сквад (S4)
+#include "bus/interests.h"   // Interests — ВСЕ связи субъекта одной таблицей
 #include "tables/squad_type.h"   // SquadType — ось рода сквада (реестр мест снесён)
 #include "macro/resource_field.h"
 #include "tables/npc.h"
@@ -25,7 +25,7 @@
 #include "macro/chronicle.h"
 #include "macro/scent_field.h"
 #include "macro/markers.h"
-#include "macro/spell_book_state.h"
+#include "bus/spell_book_state.h"
 #include "macro/map_generator.h"
 
 namespace sm {
@@ -227,7 +227,7 @@ namespace sm {
 // two of its lines became honest facts instead (a struck vein — тот род
 // факта снесён 2026-10-11 вместе со своим единственным писателем,
 // a player's deal = Traded). 8192 saved std::strings leave the format.
-// v59: the spellbook is FLAT (macro/spell_book_state.h) — ordinal-indexed
+// v59: the spellbook is FLAT (bus/spell_book_state.h) — ordinal-indexed
 // rows over the append-only spell registry; the string ids and the three
 // heap containers left the format.
 // v60: dead-code sweep. LayerParameters (a save-prefix POD) dropped its
@@ -429,7 +429,7 @@ namespace sm {
 //   · `Interest` терял `term` и `value` тем же днём и ПОЛУЧИЛ ИХ НАЗАД
 //     (вердикт владельца «вернуть обе»): это две из четырёх колонок формы,
 //     согласованной построчно 2026-09-21, то есть стройка, а не сирота —
-//     разбор у `Interest@src/macro/interests.h`. На файл это не влияет ни в
+//     разбор у `Interest@src/bus/interests.h`. На файл это не влияет ни в
 //     ту, ни в другую сторону: sizeof был и остался 8 Б, а три байта, пока
 //     они были выравниванием, лежали нулями — то есть ровно тем «бессрочно,
 //     сила 0», что единственно и писала игра. Версию двигают первые две

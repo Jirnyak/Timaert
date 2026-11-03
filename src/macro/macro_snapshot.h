@@ -21,12 +21,13 @@
 #include <vector>
 
 #include "ecs/components.h"
+#include "bus/squad_row.h"   // колонки сквада — род 2 фрейма (ломоть 2б-I)
 #include "bus/anketa.h"
-#include "macro/upkeep.h"   // Upkeep/Wellbeing + ecs::SquadUpkeep — колонки
+#include "bus/upkeep.h"   // Upkeep/Wellbeing + ecs::SquadUpkeep — колонки
                              // строки снимка; прежде ехали транзитом через
                              // ecs/components.h, M-342 снял ту доставку
-#include "macro/interests.h"
-#include "macro/spell_book_state.h"
+#include "bus/interests.h"
+#include "bus/spell_book_state.h"
 
 namespace sm {
 

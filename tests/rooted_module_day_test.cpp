@@ -57,7 +57,7 @@
 #include "bus/world_row.h"     // count_human_souls
 #include "macro/chronicle.h"
 #include "macro/econ_day.h"      // kCreaturesPerCityWorker, EconFact
-#include "macro/interests.h"
+#include "bus/interests.h"
 #include "macro/resource_field.h"
 #include "macro/squad.h"
 #include "macro/tree_layer.h"
