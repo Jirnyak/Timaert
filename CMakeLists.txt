@@ -1722,6 +1722,13 @@ timaert_test(avatar_standing_test
         src/bus/anketa.cpp
         src/tables/items.cpp)
 
+# ЕДИНАЯ ТАБЛИЦА ДЕЙСТВИЙ (M-369, ломоть 1): отрезок выведен из каталога
+# спеллов, два слоя рекавери, домен из лестницы, цена тремя колонками.
+timaert_test(action_table_test
+    SOURCES
+        src/bus/anketa.cpp
+        src/tables/items.cpp)
+
 timaert_test(rpg_rules_test
     SOURCES
         src/macro/economy.cpp)

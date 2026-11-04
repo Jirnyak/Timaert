@@ -386,8 +386,12 @@ int armor_recovery_steps(const Gear& g, const Inventory& inv,
     // дал бы скрытый квадрат, ровно тот, из-за которого генерик-пару убрали из
     // урона 2026-09-07. Итог: типовой множит защиту, Армсмастер сокращает
     // простой, у каждой ручки ровно одна работа.
-    return recovery_steps(kg * kArmorRecoverySecondsPerKg, a, s,
-                          SkillId::Armsmaster);
+    // Секунды → тики ЗДЕСЬ: дверь берёт тики (M-369). Броня действием не
+    // является (ЗАКОН СПОСОБНОСТИ п.5), поэтому строки в единой таблице у неё
+    // не будет — её база так и останется выведенной из МАССЫ надетого, то есть
+    // модификатором контекста того же рода, что масса оружия.
+    return recovery_steps(steps_from_seconds(kg * kArmorRecoverySecondsPerKg),
+                          a, s, SkillId::Armsmaster);
 }
 
 DefenseSum body_defense(const Defense& row, const Skills& skills,
@@ -459,7 +463,12 @@ StrikeFields hand_strike_fields(const Attributes& attributes,
     out.luck    = std::uint8_t(attributes.of(AttributeId::Lck));
     // The TEMPO half (CANON S14 «один рычаг»): the MASS law's base through
     // the recovery door; the worn SwingPct rows speak LAST, clamped po2.
-    const int steps = recovery_steps(weapon_swing_seconds(w),
+    // Секунды → тики ЗДЕСЬ: дверь берёт тики (M-369). Эта база переедет в
+    // единую таблицу ломтем «базы удара и существа» (M-396), и переедет
+    // РАЗДЕЛЁННОЙ: база = замах ПУСТОЙ РУКИ строкой действия, масса оружия =
+    // ДОБАВКА в тиках (вердикт владельца 2026-11-04: модификаторы рекавери —
+    // расширяемый род; `weapon_swing_seconds` складывает, а не множит).
+    const int steps = recovery_steps(steps_from_seconds(weapon_swing_seconds(w)),
                                      attributes, skills,
                                      SkillId::Armsmaster);
     const int swingPct = 100 + std::clamp(

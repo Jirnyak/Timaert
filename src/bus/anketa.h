@@ -27,6 +27,8 @@
 #include "tables/bonus.h"       // каталог: строки бонусов, чью сумму копит анкета
 #include "tables/npc.h"         // каталог: строка существа — цена найма, содержание, награда
 #include "tables/spells.h"      // каталог: строка спелла — что делает каст новичка
+#include "tables/actions.h"     // ЕДИНАЯ строка действия: база в тиках, цена, охват (M-369)
+#include "core/pools.h"         // ecs::Pools — тройка HP/MP/SP, из которой платит цена
 #include "tables/items.h"       // каталог: строки предметов, ItemRef — что ХРАНИТ контейнер ниже
 #include "tables/world_row.h"   // адрес строки мира: по нему сводка читает ПОЛОВИНУ слота
 #include <algorithm>
@@ -548,20 +550,67 @@ inline DerivedBonuses calculate_derived(const Attributes& a, const Skills& s) {
 // lever, and one handle counted into both power and tempo is a hidden square
 // (×121 DPS from one skill), not a synergy.
 //
-// The base is DATA — the item row's `recovery`, the spell row's `cooldown`,
-// the NPC row's `cooldown` — so a dagger is faster than a mace by its row,
-// never by code. Floor = one simulation step: the time quantum itself, not an
-// invented cap. Integer end to end and healthy to the ENGINE caps (attribute
-// 255 → quickness ≤ 184, rank 100 → tempo ≤ 600 at 5 %/rank): worst numerator
-// is a 120 s base = 7680 steps × 10⁴ ≈ 7.7·10⁷, thirty-fold inside int; the
-// law test locks the caps explicitly.
-inline int recovery_steps(float baseSeconds, const Attributes& a,
+// ЭТА ШАПКА ВРАЛА ИМЕНАМИ СВОИХ ЖЕ ВХОДОВ, И ЭТО БЫЛ СИМПТОМ, А НЕ ОПЕЧАТКА:
+// здесь стояло «the item row's `recovery`, the spell row's `cooldown`», тогда
+// как в коде наоборот (`useSeconds` у предмета, `recovery` у спелла). Уследить
+// за ШЕСТЬЮ именами одной величины нельзя — отсюда единая таблица действий
+// (`src/tables/actions.h`, наряд M-369).
+//
+// ДВА СЛОЯ ОДНОЙ ВЕЛИЧИНЫ (вердикт владельца 2026-11-04, CANON S14 «БАЗОВОЕ И
+// ЭФФЕКТИВНОЕ РЕКОВЕРИ»): БАЗА есть колонка строки действия в ЦЕЛЫХ ТИКАХ, а
+// ЭФФЕКТИВНОЕ считает ЭТА дверь — резвость Spd, ранг генерика домена и
+// модификаторы контекста (масса оружия — первый из рода, арифметика его
+// АДДИТИВНА). Поэтому дверь берёт ТИКИ, а не секунды: секундам внутри
+// симуляции делать нечего (ЗАКОН ТИПА п.5), и всякий ещё не переехавший
+// носитель переводит свои авторские секунды У СЕБЯ, на месте вызова —
+// `steps_from_seconds` constexpr. Так флоат умирает носитель за носителем, а
+// дверь остаётся ОДНА (ЗАКОН СПОСОБНОСТИ п.4).
+//
+// Floor = one simulation step: the time quantum itself, not an invented cap.
+// Integer end to end and healthy to the ENGINE caps (attribute 255 →
+// quickness ≤ 184, rank 100 → tempo ≤ 600 at 5 %/rank): worst base in the
+// catalogue is armageddon's 122 s = 7808 ticks × 10⁴ ≈ 7.8·10⁷, thirty-fold
+// inside int; the law test locks the caps explicitly.
+// ВХОД ЗАПЕРТ ТИПОМ, А НЕ ПРОСЬБОЙ, И ЭТО НЕ ПЕДАНТИЗМ: литерал `0.001f`
+// компилятор ловит сам (`-Wliteral-conversion` в `-Werror`), а float-ПЕРЕМЕННАЯ
+// обрезалась бы МОЛЧА — `-Wfloat-conversion` в сборке нет, и база 1.4 с стала
+// бы ОДНИМ тиком вместо девяноста. Шаблон со стражем делает такой вызов
+// НЕСОБИРАЕМЫМ и называет лечение прямо в сообщении (ФРЕЙМ п.7: стену ставит
+// компилятор, а не ревью).
+template <class TicksT>
+inline int recovery_steps(TicksT baseTicks, const Attributes& a,
                           const Skills& s, SkillId genericSkill) {
+    static_assert(std::is_integral_v<TicksT> && !std::is_same_v<TicksT, bool>,
+                  "дверь восстановления берёт ТИКИ (целый квант мира): "
+                  "авторские секунды переводятся на месте вызова — "
+                  "recovery_steps(steps_from_seconds(x), ...)");
     const int quickPct = quickness_pct(a.of(AttributeId::Spd));
     const int tempoPct = skill_mult_pct(s, genericSkill);
-    const int base = int(steps_from_seconds(baseSeconds));
-    const int steps = (base * 100 * 100) / (quickPct * tempoPct);
+    const int steps = (int(baseTicks) * 100 * 100) / (quickPct * tempoPct);
     return steps < 1 ? 1 : steps;
+}
+
+// ЦЕНА ДЕЙСТВИЯ — ОДНА ДВЕРЬ НА ТРИ ПУЛА, И НОЛЬ В КОЛОНКЕ ЗАКОНЕН
+// (ЗАКОН СПОСОБНОСТИ п.1-2: у способности две обязательные колонки —
+// восстановление и цена в HP/MP/SP, а «бесплатно» есть цена 0).
+//
+// ВСЁ ИЛИ НИЧЕГО ПО ТРЁМ ПУЛАМ СРАЗУ: полуплатёж (списали ману, не хватило
+// SP) есть ложь того же рода, что и `try_spend` запрещает внутри одного
+// баланса. Голый минус здесь ЗАКОНЕН и это не поблажка: пулы `ecs::Pools`
+// ЗНАКОВЫЕ, а дверь `try_spend` по своему же `static_assert` существует для
+// БЕЗЗНАКОВЫХ величин («знаковой величине минус законен голым», ЗАКОН ТИПА
+// п.2) — проверка достаточности стоит выше и делает заворот невыразимым.
+[[nodiscard]] inline bool can_pay_action_cost(const ecs::Pools& p,
+                                              const ActionDef& a) {
+    return p.hp >= a.costHp && p.mp >= a.costMp && p.sp >= a.costSp;
+}
+
+[[nodiscard]] inline bool pay_action_cost(ecs::Pools& p, const ActionDef& a) {
+    if (!can_pay_action_cost(p, a)) return false;
+    p.hp -= a.costHp;
+    p.mp -= a.costMp;
+    p.sp -= a.costSp;
+    return true;
 }
 
 // ── Carry weight — ЦЕЛЫЕ ГРАММЫ ───────────────────────────────
@@ -1831,8 +1880,12 @@ inline CombatTemplate project_combat(const CharacterSheet& sheet,
     // Armsmaster paces every physical act — a swing and a SHOT alike (a bow
     // is drawn by arms, not by a casting hand; before the split, the row's
     // delivery column decided this too).
+    // Авторские СЕКУНДЫ строки существа переводятся в тики ЗДЕСЬ, на месте
+    // вызова: дверь берёт тики (M-369), а эта база ещё не переехала в единую
+    // таблицу — её ломоть «базы удара и существа» (M-396). Арифметика
+    // тождественна прежней: тот же `steps_from_seconds`, то же округление.
     out.cooldown = seconds_from_steps(std::uint32_t(recovery_steps(
-        base.cooldown, sheet.attributes, sheet.skills,
+        steps_from_seconds(base.cooldown), sheet.attributes, sheet.skills,
         cast ? SkillId::Spellcraft : SkillId::Armsmaster)));
     // The POWER half of the same split: the typed skill multiplies the dice
     // (the door above already gave the generic pair to TEMPO — one handle,

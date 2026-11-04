@@ -111,8 +111,12 @@ inline void charge_ability(ecs::Combat* gate, float baseSeconds,
                            SkillId generic) {
     if (gate == nullptr) return;
     if (baseSeconds <= 0.0f) return;           // ноль — значит ноль
-    gate->recoverySteps = std::uint32_t(
-        recovery_steps(baseSeconds, attributes, skills, generic));
+    // Секунды → тики ЗДЕСЬ: дверь восстановления берёт ТИКИ (M-369). Пока
+    // зелье, рычаг и топор не переехали строками в единую таблицу, их
+    // авторские секунды переводятся на месте вызова — так флоат уходит
+    // носитель за носителем, а дверь остаётся одна.
+    gate->recoverySteps = std::uint32_t(recovery_steps(
+        steps_from_seconds(baseSeconds), attributes, skills, generic));
 }
 
 // ТА САМАЯ ОДНА ДВЕРЬ: спросить гейт и, если рука свободна, занять её.

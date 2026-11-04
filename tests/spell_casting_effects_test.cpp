@@ -491,8 +491,14 @@ int main() {
     if (!ok38) return 1;
     const std::uint32_t fireGate =
         sm::sub::slot_combat(worldObjs, casterSlot)->recoverySteps;
+    // Ожидание читает ЕДИНУЮ строку действия — тот самый путь, которым теперь
+    // заряжается гейт (M-369): база в тиках и домен темпа из лестницы, а не
+    // авторская секунда спелла и подставленный руками Спеллкрафт.
+    const sm::ActionDef& fireAct =
+        sm::action_def(sm::action_of_spell(sm::spell_ordinal("fireball")));
     const auto wantGate = std::uint32_t(sm::recovery_steps(
-        fireDef->recovery, attributes, skills, sm::SkillId::Spellcraft));
+        fireAct.recoveryTicks, attributes, skills,
+        sm::action_tempo_generic(fireAct)));
     const bool ok39 = !(fireGate == 0u || fireGate != wantGate);
     CHECK(ok39, "fireball recovery did not charge the body gate");
     if (!ok39) return 1;

@@ -265,11 +265,11 @@ void test_the_governed_numbers_follow_the_row() {
     CHECK(trD.rawSpellDamage == bareD.rawSpellDamage
               && trD.rawSpellDamage == a.of(AttributeId::Intl),
           "spell add is raw Intl — Spellcraft no longer multiplies damage");
-    CHECK(recovery_steps(1.0f, a, trained, SkillId::Armsmaster)
-              < recovery_steps(1.0f, a, none, SkillId::Armsmaster),
+    CHECK(recovery_steps(steps_from_seconds(1.0f), a,trained, SkillId::Armsmaster)
+              < recovery_steps(steps_from_seconds(1.0f), a,none, SkillId::Armsmaster),
           "Armsmaster's row now governs the arm's tempo");
-    CHECK(recovery_steps(1.0f, a, trained, SkillId::Spellcraft)
-              < recovery_steps(1.0f, a, none, SkillId::Spellcraft),
+    CHECK(recovery_steps(steps_from_seconds(1.0f), a,trained, SkillId::Spellcraft)
+              < recovery_steps(steps_from_seconds(1.0f), a,none, SkillId::Spellcraft),
           "Spellcraft's row now governs the cast's tempo");
     CHECK(get_carry_capacity(a, trained) == bareCarry * 2,
           "carry capacity follows weightlifting's row");

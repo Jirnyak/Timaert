@@ -108,3 +108,6 @@ minus	src/tables/items.cpp	roll -= int(a.weight[t]);
 minus	src/tables/movement_cost.h	pools.hp -= lost;
 minus	src/tables/movement_cost.h	pools.sp -= cost;
 minus	src/tables/movement_cost.h	carry -= float(whole);
+minus	src/bus/anketa.h	p.hp -= a.costHp;
+minus	src/bus/anketa.h	p.mp -= a.costMp;
+minus	src/bus/anketa.h	p.sp -= a.costSp;

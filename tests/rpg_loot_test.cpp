@@ -86,8 +86,8 @@ static void test_project_combat_melee() {
     // this expectation moves when the law moves, never a pinned number.
     CHECK(approx(out.cooldown,
                  seconds_from_steps(std::uint32_t(recovery_steps(
-                     base.cooldown, cs.attributes, cs.skills,
-                     sm::SkillId::Armsmaster)))),
+                     sm::steps_from_seconds(base.cooldown), cs.attributes,
+                     cs.skills, sm::SkillId::Armsmaster)))),
           "melee: cooldown == the recovery door's verdict (Armsmaster)");
     CHECK(out.cooldown < base.cooldown,
           "melee: a quick sheet strikes faster than its row's base");
@@ -149,13 +149,13 @@ static void test_project_combat_missile() {
     cdCast.castSpell = ord;
     CHECK(approx(project_combat(cs, cdCast).cooldown,
                  seconds_from_steps(std::uint32_t(recovery_steps(
-                     cdCast.cooldown, cs.attributes, cs.skills,
-                     sm::SkillId::Spellcraft)))),
+                     sm::steps_from_seconds(cdCast.cooldown), cs.attributes,
+                     cs.skills, sm::SkillId::Spellcraft)))),
           "cast: cooldown == the recovery door's verdict (Spellcraft)");
     CHECK(approx(project_combat(cs, cdShot).cooldown,
                  seconds_from_steps(std::uint32_t(recovery_steps(
-                     cdShot.cooldown, cs.attributes, cs.skills,
-                     sm::SkillId::Armsmaster)))),
+                     sm::steps_from_seconds(cdShot.cooldown), cs.attributes,
+                     cs.skills, sm::SkillId::Armsmaster)))),
           "shot: cooldown == the recovery door's verdict (Armsmaster)");
 }
 

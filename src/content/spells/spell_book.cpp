@@ -119,14 +119,27 @@ CastCheck spellbook_can_cast_ex(const SpellBook& sb,
     }
     if (d->sustained && spellbook_has_sustained(sb, spellOrd))
         return {true, "", 0.0f};
-    if (combat.mp < d->manaCost) return {false, "Not enough mana", 0.0f};
-
-    if (inMicro && !d->hasMicro) return {false, "Cannot use here", 0.0f};
-    if (!inMicro && !d->hasMacro) {
-        // What a spell can do on the world map is now stated by the row that
-        // was always meant to state it (`hasMacro`), not inferred from whether
-        // it happened to carry a macro-effect enum. The two used to disagree
-        // silently, and the enum was the one nobody read.
+    // ЦЕНА И ОХВАТ — ИЗ ЕДИНОЙ СТРОКИ ДЕЙСТВИЯ (M-369): каст есть ЧАСТНЫЙ
+    // СЛУЧАЙ способности, и его универсальные колонки читаются там же, где
+    // будут читаться колонки удара, рубки и крафта. Строка магического
+    // отрезка ВЫВЕДЕНА из этой же авторской строки спелла, поэтому числа
+    // тождественны, а разъехаться им невыразимо.
+    const ActionDef& act = action_def(action_of_spell(spellOrd));
+    if (!can_pay_action_cost(combat, act)) {
+        return {false, combat.mp < act.costMp ? "Not enough mana"
+                                              : "Not enough strength", 0.0f};
+    }
+    // Ось охвата вместо пары булевых колонок: «нигде» четвёртым значением не
+    // существует, и это стоит под компилятором
+    // (`every_spell_is_castable_somewhere@src/tables/actions.h`), а не на
+    // совести автора строки.
+    if (inMicro && act.scope == ActionScope::MacroOnly)
+        return {false, "Cannot use here", 0.0f};
+    if (!inMicro && act.scope == ActionScope::MicroOnly) {
+        // What a spell can do on the world map is stated by the row's SCOPE,
+        // not inferred from whether it happened to carry a macro-effect enum.
+        // The two used to disagree silently, and the enum was the one nobody
+        // read.
         return {false, "Cannot use on world map", 0.0f};
     }
     return {true, "", 0.0f};
@@ -140,9 +153,14 @@ int spellbook_start_cast(SpellBook& sb, ecs::Pools& combat,
         spellbook_toggle_sustained(sb, spellOrd);
         return 0;
     }
-    combat.mp -= d->manaCost;
-    if (combat.mp < 0) combat.mp = 0;
-    return d->manaCost;
+    // ОДНА ДВЕРЬ ЦЕНЫ НА ТРИ ПУЛА (`pay_action_cost@src/bus/anketa.h`), и
+    // здесь уходит КЛАМП: прежде пул дотягивался до нуля `if (mp < 0) mp = 0`,
+    // то есть полуплатёж был ВЫРАЗИМ, когда проверку достаточности обходили.
+    // Теперь не хватило — не списано ничего (ЗАКОН КЛАМПА: обрезание шкалы
+    // маскировало отсутствие ответа «нечем платить»).
+    const ActionDef& act = action_def(action_of_spell(spellOrd));
+    if (!pay_action_cost(combat, act)) return 0;
+    return act.costMp;
 }
 
 namespace {
@@ -210,8 +228,13 @@ bool spellbook_cast(sub::SubObjects* objs, MacroStore* st,
     // the body for the instant it acted in.
     const auto charge_gate = [&] {
         if (gate) {
+            // База — КОЛОНКА строки действия в тиках; домен темпа даёт
+            // ЛЕСТНИЦА (`action_tempo_generic@src/tables/actions.h`), а не
+            // подстановка звонящего: Спеллкрафт здесь больше не вписан руками.
+            const ActionDef& act = action_def(action_of_spell(spellOrd));
             gate->recoverySteps = std::uint32_t(recovery_steps(
-                d->recovery, attributes, skills, SkillId::Spellcraft));
+                act.recoveryTicks, attributes, skills,
+                action_tempo_generic(act)));
         }
     };
     // ОДИН ВХОД В НАЧАЛО КАСТА НА ВЕСЬ ЭТОТ ФАЙЛ (M-301): если субъект

@@ -177,12 +177,15 @@ void test_one_price_law_reads_only_the_difference_in_bargaining() {
 // Shape, not pinned numbers (testing law #4/#5): each claim breaks alone.
 void test_the_recovery_door_is_one_lever() {
     using namespace sm;
-    const float base = 0.5f;   // the one-handed anchor
+    // База В ТИКАХ: дверь восстановления берёт квант мира, а не секунды
+    // (M-369). Перевод стоит ОДИН раз здесь — ровно там, где кончается
+    // авторская запись и начинается симуляция.
+    const std::uint32_t base = steps_from_seconds(0.5f);  // the one-handed anchor
     Attributes a{};
     a[AttributeId::Spd] = 0;   // the bases start at 1 — zero the ONE input
     Skills s{};
     const int blank = recovery_steps(base, a, s, SkillId::Armsmaster);
-    CHECK(blank == int(steps_from_seconds(base)),
+    CHECK(blank == int(base),
           "a zeroed sheet swings at exactly the row's own base tempo");
 
     // Spd quickens through the SAME rate the legs walk on…
@@ -220,14 +223,14 @@ void test_the_recovery_door_is_one_lever() {
     Attributes anchor = a;
     anchor[AttributeId::Spd] = 100;            // якорь эндгейма, внутри байта
     CHECK(recovery_steps(base, anchor, s, SkillId::Armsmaster)
-              == int(steps_from_seconds(base)) * 100 / quickness_pct(100),
+              == int(base) * 100 / quickness_pct(100),
           "марш и восстановление делят ОДНО число: один множит, другой делит");
 
     // И ЗАТУХАНИЕ: тот же рычаг делителем даёт 1/x, поэтому потолка ему не
     // нужно (владелец, 2026-11-04: «рековери не может быть меньше нуля») —
     // очко на вершине шкалы экономит МЕНЬШЕ, чем очко у подножия. База взята
     // длинной нарочно: на коротком замахе целые шаги разницы не увидят.
-    const float longBase = 10.0f;
+    const std::uint32_t longBase = steps_from_seconds(10.0f);
     const auto steps_at = [&](int spd) {
         Attributes at = a;
         at[AttributeId::Spd] = std::uint8_t(spd);
@@ -258,7 +261,10 @@ void test_the_recovery_door_is_one_lever() {
     const int demigod = recovery_steps(base, cap, s, SkillId::Armsmaster);
     CHECK(demigod >= 1, "even at the byte cap a swing costs at least one step");
     CHECK(demigod <= master, "and the curve stays monotone all the way there");
-    CHECK(recovery_steps(0.001f, cap, s, SkillId::Armsmaster) == 1,
+    // Под-квантовая база (0.001 с) есть НОЛЬ тиков, и пол двери всё равно
+    // отдаёт один шаг: действие не бывает бесплатным по времени.
+    CHECK(recovery_steps(steps_from_seconds(0.001f), cap, s,
+                         SkillId::Armsmaster) == 1,
           "the floor is ONE simulation step: no action is ever free of time");
 }
 

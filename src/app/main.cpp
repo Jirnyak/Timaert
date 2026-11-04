@@ -4958,12 +4958,14 @@ void register_console_commands(App& app) {
             for (int ord = 0; ord < sm::kSpellCount; ++ord) {
                 if (!sm::spellbook_has_learned(player_book(app),
                                                ord)) continue;
-                const auto& s = sm::kSpellDefs[ord];
-                if (s.recovery <= 0.0f) continue;
+                const sm::ActionDef& act =
+                    sm::action_def(sm::action_of_spell(ord));
+                if (act.recoveryTicks == 0u) continue;
                 const float rec = sm::seconds_from_steps(std::uint32_t(
-                    sm::recovery_steps(s.recovery, eff.attributes, eff.skills,
-                                       sm::SkillId::Spellcraft)));
-                c.printfln(Lvl::Ok, "cast: %-16s %.2fs recovery", s.id, rec);
+                    sm::recovery_steps(act.recoveryTicks, eff.attributes,
+                                       eff.skills,
+                                       sm::action_tempo_generic(act))));
+                c.printfln(Lvl::Ok, "cast: %-16s %.2fs recovery", act.id, rec);
             }
             return true;
         });
