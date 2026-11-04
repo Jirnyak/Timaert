@@ -1446,7 +1446,19 @@ inline int xp_for_fallen(const MacroStore& st, MacroHandle loser,
     }
     // АВАТАР ПЛАТИТ СВОИМ НАСТОЯЩИМ УРОВНЕМ — у него анкета есть, и его сила
     // (`avatar_power`) читает её честно.
+    //
+    // ГЕЙТ РОДА ОБЯЗАТЕЛЕН, И ЕГО ЗДЕСЬ НЕ БЫЛО (найдено 2026-11-03 при M-383,
+    // вердикт владельца: «у города нет аватара его нельзя убить просто»).
+    // `avatarFell` приходит как `доля ≤ 0`, а у НЕПОДВИЖНОГО доля обнуляется
+    // сама, когда выбит его ростер (`creaturesWipedOut` в `auto_battle.h`), —
+    // то есть город платил аватарскую половину, НЕ ИМЕЯ аватара
+    // (`squad_has_avatar@src/tables/squad_type.h` для всего отрезка Rooted даёт
+    // false под `static_assert`). Дефект был НЕВИДИМ, пока лист места приходил
+    // уровнем 1: платилось 11 опыта, то есть столько же, сколько за крестьянина.
+    // С честным уровнем места (126 у города) та же строка заплатила бы 17 136.
+    // Снос маски обнажил чужой дефект — лечится он гейтом, а не ценой.
     if (avatarFell && st.valid(loser)
+        && squad_has_avatar(SquadType(st.runtime[loser.slot].squadType))
         && st.kind[loser.slot].type < std::uint16_t(NPCType::Count)) {
         xp += exp_value_of_level(
             normalize_soldier_level(squad_level(st, loser.slot)));

@@ -208,6 +208,19 @@ int main() {
         }
         CHECK(sampled == sm::kMaxTier && offBudget == 0,
               "убийств ровни на уровень держится у делителя на ВСЕЙ лестнице");
+
+        // (5) У МЕСТА АВАТАРА НЕТ, ЗНАЧИТ АВАТАРСКОЙ ПОЛОВИНЫ ОНО НЕ ПЛАТИТ
+        //     (вердикт владельца 2026-11-03: «у города нет аватара его нельзя
+        //     убить просто»). Гейт рода в `xp_for_fallen` этого не делал, и
+        //     дефект был НЕВИДИМ, пока лист места приходил уровнем 1 — он
+        //     платил 11, как крестьянин. Утверждается ОСЬ, а не число: ровно
+        //     неподвижный отрезок аватара не имеет.
+        CHECK(!sm::squad_has_avatar(sm::SquadType::Capital)
+                  && !sm::squad_has_avatar(sm::SquadType::City)
+                  && !sm::squad_has_avatar(sm::SquadType::Village)
+                  && sm::squad_has_avatar(sm::SquadType::Artel)
+                  && sm::squad_has_avatar(sm::SquadType::Dragon),
+              "аватарская половина цены адресуется ОСЬЮ РОДА: у места её нет");
     }
 
     // (Проверка self-append умерла с creatures_add в ломоть 2 M-72: копия

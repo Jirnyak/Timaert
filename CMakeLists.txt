@@ -833,7 +833,7 @@ timaert_test(combat_squad_test
     # порядок авторского тира · пол лестницы платит · цена читает КОЛОНКУ, а не
     # боевые числа (негативный контроль снесённого вывода из мощи) · инвариант
     # делителя на всех 255 ступенях.
-    PIN "OK combat_squad_test .27 checks.")
+    PIN "OK combat_squad_test .28 checks.")
 
 # The melee reach law: range + body_radius(target), hostiles-first by surface
 # gap, grid-arm/full-scan parity. Pure targeting TU — the body table it reads
