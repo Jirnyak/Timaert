@@ -496,12 +496,25 @@ struct MoveGround {
     // stone it is, not like the river under it.
     const float* tileGrip = nullptr;
     float worldMax = 0.0f;                 // movement clamp bound (kFullSize)
-    // Solid-structure gate (sub/collide.h, wired by the engine; optional like
-    // everything here): may a body of radius r with feet at z occupy (x, y)?
-    // Walls/houses stop being wadeable speed bumps and become real walls; the
-    // steering pass slides along them (axis fallback) and NEVER traps a body
-    // that is already inside a solid (it may always move — the escape rule).
-    bool (*canStand)(void* user, float x, float y, float r, float z) = nullptr;
+    // THE solid-structure STEP DOOR (sub/collide.h resolve_step, wired by the
+    // engine; optional like everything here): hand it the step from
+    // (fromX, fromY) to (*toX, *toY) for a body of radius r with feet at z and
+    // it writes back the REACHED point — refusing a path that crosses a
+    // solid's side, sliding along the free axis, and never trapping a body
+    // already inside one (the escape rule).
+    //
+    // IT IS A DOOR AND NOT A PREDICATE ON PURPOSE (M-398). Until then this was
+    // `canStand(x, y, r, z)` — a point test — and the pass owned its own axis
+    // fallback around it, so "may a body step there" had TWO answers about one
+    // world (DOD п.6): the same three-test-and-slide shape written twice, once
+    // here and once in collide.cpp. Both judged the step by its DESTINATION,
+    // which refuses a body only while it lands inside the expanded solid, so
+    // a step wider than 2·halfXy + 2·r crossed clean — and at the engine's own
+    // ceiling (143.5 tiles/s ⇒ 2.24 per frame) a fence is 1.70 wide. Making
+    // the door a resolver means the sweep is written ONCE and neither mover
+    // can drift from it.
+    void (*resolveStep)(void* user, float fromX, float fromY,
+                        float* toX, float* toY, float r, float z) = nullptr;
     void* solidUser = nullptr;
     // THE GROUND UNDER THE FEET (sub/collide.h walk_tile_at): given the tile
     // the terrain paints at (x, y), what is the body at feet-height `z`

@@ -935,25 +935,28 @@ void steer_bodies(BodyCrowd& u, const UnitGrid& fine, const UnitGrid& pick,
         u.vy[si] += dvy;
         float nx = std::clamp(px + u.vx[si] * dt, 1.0f, bound);
         float ny = std::clamp(py + u.vy[si] * dt, 1.0f, bound);
-        // Solid structures: refuse a step INTO a wall/house side, slide along
-        // the free axis, zero the blocked velocity component so the body
-        // doesn't grind. A body already inside a solid may always move — the
-        // escape rule — so nothing can be trapped. Flyers pass above.
-        if (terrain.canStand && (u.flags[si] & B_Flying) == 0u
-            && !terrain.canStand(terrain.solidUser, nx, ny, ri, u.z[si])
-            && terrain.canStand(terrain.solidUser, px, py, ri, u.z[si])) {
-            if (terrain.canStand(terrain.solidUser, nx, py, ri, u.z[si])) {
-                ny = py;
-                u.vy[si] = 0.0f;
-            } else if (terrain.canStand(terrain.solidUser, px, ny, ri, u.z[si])) {
-                nx = px;
-                u.vx[si] = 0.0f;
-            } else {
-                nx = px;
-                ny = py;
-                u.vx[si] = 0.0f;
-                u.vy[si] = 0.0f;
-            }
+        // Solid structures, through THE one door (sub/collide.h resolve_step):
+        // it refuses a step whose swept path crosses a wall/house side, slides
+        // along the free axis, and never traps a body already inside a solid
+        // (the escape rule). Whatever component failed to arrive loses its
+        // velocity, so a body does not grind against masonry. Flyers pass
+        // above — a solid below the feet is a floor, not a wall.
+        //
+        // This block used to BE the second answer to the door's own question
+        // (M-398): three point tests and its own axis fallback. Resolving
+        // through the door means the sweep exists once, and a step at the
+        // engine's ceiling (2.24 tiles) can no longer cross a 1.70-tile fence.
+        if (terrain.resolveStep && (u.flags[si] & B_Flying) == 0u) {
+            float rx = nx, ry = ny;
+            terrain.resolveStep(terrain.solidUser, px, py, &rx, &ry, ri,
+                                u.z[si]);
+            // The door either leaves a coordinate alone or writes the body's
+            // own `from` back into it, so these comparisons are exact bits,
+            // never an epsilon question.
+            if (rx != nx) u.vx[si] = 0.0f;
+            if (ry != ny) u.vy[si] = 0.0f;
+            nx = rx;
+            ny = ry;
         }
         u.x[si] = nx;
         u.y[si] = ny;

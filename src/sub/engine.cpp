@@ -3516,10 +3516,16 @@ float SubworldEngine::ground_height_callback(void* user, float x, float y) {
 // Solidity hooks: one StructureIndex (sub/collide.h) answers for the battle
 // pass, the wander/flee AI and spell bolts through the same fn-pointer idiom
 // as the height hooks — those modules stay free of the engine and of Vulkan.
-bool SubworldEngine::solid_can_stand_callback(void* user, float x, float y,
-                                              float r, float z) {
+//
+// The step hook forwards THE door itself, not a predicate under it: the pass
+// no longer owns a slide of its own, so the sweep that refuses a 2.24-tile
+// step at a 1.70-tile fence is written once and serves both movers (M-398).
+void SubworldEngine::solid_resolve_step_callback(void* user, float fromX,
+                                                 float fromY, float* toX,
+                                                 float* toY, float r,
+                                                 float z) {
     auto* self = static_cast<SubworldEngine*>(user);
-    return !self->structIndex_.blocked_at(x, y, r, z);
+    self->structIndex_.resolve_step(fromX, fromY, *toX, *toY, r, z);
 }
 
 std::uint8_t SubworldEngine::solid_walk_tile_callback(void* user, float x,
@@ -3818,9 +3824,10 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     }
     terrain.worldMax = float(kFullSize);
     // Solid structures (walls, houses, gate jambs) are real obstacles: the
-    // steering pass refuses steps into them and slides along. Fed by the same
-    // index the ground-follow support and the player mover use.
-    terrain.canStand = &SubworldEngine::solid_can_stand_callback;
+    // steering pass hands its step to the ONE door and takes back the reached
+    // point. The same index the ground-follow support and the direct player
+    // mover use, and now the same DOOR as the latter (M-398).
+    terrain.resolveStep = &SubworldEngine::solid_resolve_step_callback;
     terrain.solidUser = this;
     // ...and the same index answers what the ground under the feet IS, so a
     // body on a bridge deck is priced as walking road rather than wading the

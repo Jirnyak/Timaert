@@ -1411,7 +1411,18 @@ bool run_subworld_seam_smoke(App& app) {
         return false;
     }
 
-    app.subworld.move_player(0.0f, kSeamWalk);
+    // A 1200-TILE DISPLACEMENT IS AN ARRIVAL, NOT A JOURNEY — so it goes
+    // through the teleport door (`set_player_pos`: «A teleport is an arrival,
+    // not a journey») and not through the walk door. This line used to read
+    // `move_player(0.0f, kSeamWalk)`, and it worked only because the step test
+    // judged a step by its DESTINATION: 1200 tiles is 535 frame steps at the
+    // engine's own ceiling, and every wall, house and fence in between was
+    // simply not looked at. Once the step became a SWEEP (M-398) the harness
+    // honestly collided with the first solid on the line and the player moved
+    // ZERO — which is the right answer to the question it was asking and the
+    // wrong question to ask. What this smoke measures is the SEAM RE-CENTRE,
+    // and nothing about that invariant wants a 1200-tile walk to be legal.
+    app.subworld.set_player_pos(beforeX + kSeamWalk, beforeY);
     std::fprintf(stderr, "[smoke] subworld_seam moved player=%.1f,%.1f\n",
                  app.subworld.player_x(), app.subworld.player_y());
     std::fflush(stderr);

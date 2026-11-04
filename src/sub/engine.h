@@ -1173,8 +1173,13 @@ private:
     static std::uint8_t solid_walk_tile_callback(void* user, float x, float y,
                                                  float r, float z,
                                                  std::uint8_t tile);
-    static bool solid_can_stand_callback(void* user, float x, float y,
-                                         float r, float z);
+    // THE step door for the mass pass (sub/collide.h resolve_step). It used to
+    // be a point predicate (`solid_can_stand_callback`) and the pass wrapped
+    // its own axis slide around it — a second answer to the door's question,
+    // and both halves judged a step by its destination (M-398).
+    static void solid_resolve_step_callback(void* user, float fromX,
+                                            float fromY, float* toX,
+                                            float* toY, float r, float z);
     static bool spell_solid_callback(void* user, float x, float y, float z);
     // Turns a spell-tick FX event (bolt trail / impact) into a particle burst.
     // Static + void* user so spell_effects.cpp needs no SubworldEngine type.

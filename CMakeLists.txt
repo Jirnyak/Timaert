@@ -1327,6 +1327,11 @@ timaert_test(material_seam_test
 timaert_test(structure_collide_test
     SOURCES
         src/sub/collide.cpp
+        # THE OTHER MOVER (M-398): "may a body step there" is ONE door, so the
+        # witness drives the mass pass through it beside the direct one. Both
+        # spellings used to exist and a sweep fitted to either would have left
+        # the other tunnelling, so a prober that sees only one is the hole.
+        src/sub/movement.cpp
         src/sub/base_generator.cpp
         ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp

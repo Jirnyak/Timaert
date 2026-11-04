@@ -14,10 +14,16 @@
 #include "sub/gens/kit/outline.h"   // Outline::kBearings — the ring's own resolution
 #include "sub/gens/dispatch.h"
 #include "sub/height.h"
+#include "sub/movement.h"           // the OTHER mover — part E drives both
+#include "bus/anketa.h"             // quickness_pct — the M-389 pace ceiling
+#include "tables/attributes.h"      // skill_mult_of(Athletics, …)
+#include "tables/movement_cost.h"   // kSubworldWalkTilesPerSecond
+#include "tables/npc.h"             // kNpcBodyRadiusDefault
 
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
+#include <limits>
 #include <queue>
 #include <vector>
 
@@ -589,6 +595,200 @@ void part_d_support_lays_the_ground() {
           "the law is only visible because road and water differ in speed");
 }
 
+// ── PART E: A STEP IS A SWEEP, NOT A DESTINATION TEST (M-398) ─────────────
+// The defect this guards was STRUCTURAL and its threshold is arithmetic. A
+// destination test refuses a body only while the body LANDS inside the
+// Minkowski-expanded solid, so the band able to refuse it is 2·halfXy + 2·r
+// wide — and a step wider than the band crosses it clean, at any calibration.
+// Against the engine's own ceiling the narrowest solids of the world lose:
+// the subworld walk is 24 tiles/s (kSubworldWalkTilesPerSecond, under a
+// static_assert), the M-389 product ceiling is ×5.98, so a body does 143.5
+// tiles/s = 2.24 tiles per 64 Hz frame, while a fence's band is
+// 2·0.3 + 2·0.55 = 1.70 and a house's is 2·1.6 + 1.1 = 4.30 (so the house
+// falls the moment a frame drops under 33 Hz, and the direct mover already
+// hands in 12.8-tile displacements).
+//
+// THE WITNESS BUILDS ITS OWN FENCE AND HOUSE (AGENTS §8 п.11) out of the
+// shipping kind rows' own minimum half-extents — it cannot pass because some
+// generator was kind to it on some seed — and it drives BOTH movers, the
+// direct one (resolve_step) and the mass pass (steer_bodies through the ONE
+// door), because the question used to have two spellings and a fix to either
+// would have left the other tunnelling.
+void part_e_step_is_a_sweep() {
+    // Every number below is READ, never written (AGENTS §8 п.4): a retune of
+    // the walk, of the Spd law or of a kind's floor moves the test with it.
+    constexpr float kR = kNpcBodyRadiusDefault;
+    // The product ceiling M-389 left: quickness_pct at Spd 255 × Athletics 100.
+    // The attribute's ceiling is its TYPE's (anketa.h Attributes::score is a
+    // byte, and M-389's static_assert is stated against exactly that), the
+    // skill's is kMaxSkillRank. Read, not written.
+    const int spdCeiling = int(std::numeric_limits<std::uint8_t>::max());
+    const float ceilingMult = float(quickness_pct(spdCeiling)) / 100.0f
+        * skill_mult_of(SkillId::Athletics, kMaxSkillRank);
+    const float tilesPerSecond = kSubworldWalkTilesPerSecond * ceilingMult;
+    const float frameStep = tilesPerSecond / float(kTicksPerRealSecond);
+
+    const float fenceHalf = structure_min_half_xy(Structure::Fence);
+    const float houseHalf = structure_min_half_xy(Structure::House);
+    const float fenceBand = 2.0f * fenceHalf + 2.0f * kR;
+    const float houseBand = 2.0f * houseHalf + 2.0f * kR;
+    // THE RUN-UP, and it belongs in the arithmetic rather than in the prose.
+    // A body standing `kStandoff` clear of the near edge tunnels iff its step
+    // exceeds BAND + STANDOFF, not merely the band: the band is the crossing
+    // width, the standoff is the ground before it. Writing the test against
+    // the band alone left the house case passing under the very mutation it
+    // was meant to catch — the destination still landed inside the house.
+    constexpr float kStandoff = 0.05f;
+    // The premise of the whole part, asserted rather than assumed: the fence
+    // IS narrower than one frame step at the ceiling. Were it not, this part
+    // would be guarding nothing and must say so out loud.
+    CHECK(frameStep > fenceBand + kStandoff,
+          "one frame step at the engine's own ceiling clears a fence's whole "
+          "refusing band from a standing start — that is why a destination "
+          "test cannot hold it");
+    CHECK(houseBand + kStandoff > frameStep,
+          "a house is WIDER than one ceiling frame step: it falls to a long "
+          "step, not to the ceiling — so the two thresholds are different "
+          "numbers and both are real");
+
+    // Zero half-extents on purpose: the index applies the kind row's own
+    // minimum floor, so these are the honest NARROWEST solids of the world.
+    std::vector<Structure> solids;
+    solids.push_back(make_box(100.0f, 100.0f, 0.0f, 0.0f, 0.0f,
+                              /*height*/2.0f, /*zBase*/0.0f,
+                              Structure::Fence));
+    solids.push_back(make_box(300.0f, 100.0f, 0.0f, 0.0f, 0.0f,
+                              /*height*/6.0f, /*zBase*/0.0f,
+                              Structure::House));
+    StructureIndex idx;
+    idx.rebuild(solids, &flat_height, nullptr);
+    CHECK(idx.solid_count() == 2, "the witness built its own fence and house");
+
+    // ── MOVER 1: the direct door ──
+    // Start just clear of the fence's band and step one ceiling frame: the
+    // destination lands past the far edge, so a destination test calls it free.
+    const float fenceStart = 100.0f - fenceHalf - kR - kStandoff;
+    {
+        float tx = fenceStart + frameStep, ty = 100.0f;
+        CHECK(!idx.blocked_at(fenceStart, ty, kR, 0.0f),
+              "the body starts OUTSIDE the fence");
+        CHECK(!idx.blocked_at(fenceStart + frameStep, ty, kR, 0.0f),
+              "...and its destination is outside too — the exact blindness a "
+              "point test has: both ends free, the wall in between");
+        idx.resolve_step(fenceStart, 100.0f, tx, ty, kR, 0.0f);
+        CHECK(tx < 100.0f - fenceHalf,
+              "a ceiling-speed step is REFUSED BY THE FENCE: the body stays on "
+              "the near side instead of flying through it");
+        CHECK(!idx.blocked_at(tx, ty, kR, 0.0f),
+              "...and where it stopped is not itself inside a solid");
+    }
+    // The HOUSE needs a longer step, and the length comes from the house's own
+    // band — no frame rate and no real second enters the number (AGENTS «КАЛИБ-
+    // РОВАТЬ ТОЛЬКО В ТИКАХ»). Such a step is not hypothetical: the direct
+    // mover is handed 12.8 tiles by the shipping smoke harness
+    // (`move_player(0.0f, 12.8f)` in src/app/smoke.cpp), and the ceiling pace
+    // reaches this much per frame as soon as a frame runs long.
+    {
+        const float longStep = houseBand + 2.0f * kStandoff;
+        const float startX = 300.0f - houseHalf - kR - kStandoff;
+        CHECK(!idx.blocked_at(startX + longStep, 100.0f, kR, 0.0f),
+              "a step derived from the HOUSE's own band lands past it — a "
+              "destination test sees nothing here either");
+        float tx = startX + longStep, ty = 100.0f;
+        idx.resolve_step(startX, 100.0f, tx, ty, kR, 0.0f);
+        CHECK(tx < 300.0f - houseHalf,
+              "a long step is refused by the house wall too — the law is the "
+              "band, not the speed that produced the step");
+    }
+    // Diagonal: the slide candidates are swept as well, so sliding along one
+    // wall cannot tunnel through the next.
+    {
+        float tx = fenceStart + frameStep, ty = 100.0f + frameStep;
+        idx.resolve_step(fenceStart, 100.0f, tx, ty, kR, 0.0f);
+        CHECK(tx < 100.0f - fenceHalf || ty != 100.0f + frameStep,
+              "a diagonal ceiling step past the fence cannot keep BOTH "
+              "components");
+        CHECK(!idx.blocked_at(tx, ty, kR, 0.0f),
+              "whatever it kept leaves it outside the solid");
+    }
+    // ── THE ESCAPE RULE IS UNTOUCHED ──
+    // The sweep necessarily reports the solid it starts inside, which is what
+    // makes this the dangerous case: a sweep without the escape clause would
+    // lock a teleported or re-centred body in masonry forever — a new bug
+    // traded for the old one.
+    {
+        float tx = 108.0f, ty = 100.0f;   // straight out THROUGH the fence
+        CHECK(idx.blocked_at(100.0f, 100.0f, kR, 0.0f),
+              "the fence centre is inside a solid (precondition)");
+        idx.resolve_step(100.0f, 100.0f, tx, ty, kR, 0.0f);
+        CHECK(tx == 108.0f && ty == 100.0f,
+              "a body INSIDE a solid may still make a long step out — the "
+              "escape rule survives the sweep");
+    }
+
+    // ── MOVER 2: the mass pass, through the SAME door ──
+    // One body already at the ceiling pace, marching +x into the fence. Its
+    // own intent rules its legs (B_Passive), so no field and no enemy touch
+    // the result: what is measured is the solid gate and nothing else.
+    struct Gate {
+        static void step(void* user, float fromX, float fromY, float* toX,
+                         float* toY, float r, float z) {
+            static_cast<const StructureIndex*>(user)
+                ->resolve_step(fromX, fromY, *toX, *toY, r, z);
+        }
+    };
+    auto run_march = [&](bool wireSolids, float& outX) {
+        auto crowd = make_body_crowd();
+        BodyDesc d{};
+        d.x = fenceStart;
+        d.y = 100.0f;
+        d.z = 0.0f;
+        d.radius = kR;
+        d.height = kBodyHeightM;
+        d.speed = tilesPerSecond;
+        d.vx = tilesPerSecond;          // already at pace: the first step is a
+        d.intentVx = tilesPerSecond;    // full 2.24 tiles, not an acceleration
+        d.sight = 1.0f;
+        d.faction = 0;
+        d.flags = B_Passive;
+        crowd->add(d);
+        MoveGround terrain{};
+        terrain.worldMax = 512.0f;
+        if (wireSolids) {
+            terrain.resolveStep = &Gate::step;
+            terrain.solidUser = &idx;
+        }
+        MoveParams prm{};
+        auto fine = make_unit_grid();
+        auto pick = make_unit_grid();
+        auto field = make_influence_field();
+        const float dt = 1.0f / float(kTicksPerRealSecond);
+        for (int t = 0; t < 8; ++t) {
+            build_unit_grid(*fine, *crowd, fine_cell_for(*crowd, prm), 256);
+            build_unit_grid(*pick, *crowd, pick_cell_for(*crowd, prm), 256);
+            build_influence_field(*field, *crowd, prm.influenceCell, 512.0f);
+            steer_bodies(*crowd, *fine, *pick, *field, terrain, prm, dt,
+                         nullptr);
+        }
+        outX = crowd->x[0];
+    };
+    // The control FIRST, and it is the one that proves the fixture can move at
+    // all: with no solid door wired the march walks straight past the fence.
+    // Without it, "the body is on the near side" could be true because the
+    // body never went anywhere (AGENTS §8 п.3).
+    float freeX = 0.0f, gatedX = 0.0f;
+    run_march(/*wireSolids*/false, freeX);
+    CHECK(freeX > 100.0f + fenceHalf + kR,
+          "control: with no solid door the march crosses the fence line — the "
+          "fixture really does take ceiling-sized steps");
+    run_march(/*wireSolids*/true, gatedX);
+    CHECK(gatedX < 100.0f - fenceHalf,
+          "the MASS PASS is held on the near side of the fence too — both "
+          "movers ask the one door, so neither tunnels");
+    CHECK(!idx.blocked_at(gatedX, 100.0f, kR, 0.0f),
+          "the mass pass leaves its body outside the solid, not inside it");
+}
+
 } // namespace
 
 int main() {
@@ -596,5 +796,6 @@ int main() {
     part_b_generated_city();
     part_c_vertical_physics();
     part_d_support_lays_the_ground();
+    part_e_step_is_a_sweep();
     return sm::test::report("structure_collide_test");
 }

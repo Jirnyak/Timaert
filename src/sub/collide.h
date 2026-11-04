@@ -12,6 +12,14 @@
 //   • BLOCKING — a horizontal step that would push a body's volume through a
 //     solid's side is refused (with axis sliding). One rule for the player
 //     (walking AND flying), wander/flee AI, the mass-battle pass and spawn.
+//     The step is judged over the whole SWEPT PATH, never by its destination
+//     alone: a destination test only ever refuses a body that LANDS inside
+//     the Minkowski-expanded solid, so the band able to refuse it is
+//     2·halfXy + 2·r wide and any step wider crosses it clean. M-398 measured
+//     that band against the engine's own ceiling — a fence is 1.70 tiles wide
+//     and one frame step is 2.24 — so the hole was not a calibration but the
+//     shape of the question. `resolve_step` is the ONE door that asks it, for
+//     the direct mover and for the mass pass alike (DOD п.6).
 //   • LAYERING — solids are z-SPANS, not footprints. A lintel 5 m up blocks
 //     nobody at street level, carries a defender on top, and stops a flyer
 //     trying to rise through it: over/under crossings work honestly.
@@ -97,9 +105,18 @@ public:
                               std::uint8_t terrainTile,
                               float stand = kStepUpM) const;
 
-    // Resolve one horizontal step universally: refuse entry into a solid,
-    // slide along whichever axis stays free, and always allow a body already
-    // inside a solid to move (escape rule). Mutates to* to the reached point.
+    // THE door: resolve one horizontal step. Refuses a step whose SWEPT PATH
+    // touches a solid's side (not merely one whose end point lands in it),
+    // slides along whichever axis reaches its destination by a clear path, and
+    // always allows a body already inside a solid to move (escape rule).
+    // Mutates to* to the reached point.
+    //
+    // Every mover in the subworld goes through here — the direct one
+    // (engine.cpp move_player) and the mass pass (movement.cpp steer_bodies,
+    // through MoveGround::resolveStep). The pass used to carry its own
+    // spelling of the same question — three point tests plus its own axis
+    // fallback — so "may a body step there" had two answers about one world
+    // and a sweep fitted to either would have left the other tunnelling.
     void resolve_step(float fromX, float fromY, float& toX, float& toY,
                       float r, float zFeet,
                       float bodyH = kBodyHeightM,
@@ -120,9 +137,26 @@ private:
     };
 
     bool entry_overlaps(const Entry& e, float x, float y, float r) const;
+    // Does the SEGMENT (x0,y0)→(x1,y1) touch this entry's Minkowski-expanded
+    // body? A degenerate segment reduces EXACTLY to entry_overlaps, so the
+    // sweep and the point test can never disagree about the same place — which
+    // is what keeps a swept body from being parked where blocked_at calls it
+    // trapped.
+    bool entry_swept(const Entry& e, float x0, float y0, float x1, float y1,
+                     float r) const;
 
     template <typename Fn>
     void for_candidates(float x, float y, float r, Fn&& fn) const;
+    template <typename Fn>
+    void for_candidates_seg(float x0, float y0, float x1, float y1, float r,
+                            Fn&& fn) const;
+
+    // Would a body of radius `r` sweeping from (x0,y0) to (x1,y1) at feet
+    // `zFeet` cross the SIDE of any solid? Private on purpose: the only public
+    // way to ask about a step is `resolve_step`, so a second mover cannot grow
+    // its own half-answer beside it.
+    bool swept_blocked(float x0, float y0, float x1, float y1, float r,
+                       float zFeet, float bodyH, float stepUp) const;
 
     // Uniform bin grid over the full composite (kFullSize tiles), CSR layout.
     static constexpr int kBinShift = 5; // 32-tile bins → 96×96 over 3072
