@@ -15,7 +15,9 @@
 #include "macro/fauna.h"
 #include "sub/crowd_layout.h"  // полосы толпы — данные субмира (2026-11-02)
 #include "sub/gens/dispatch.h" // feature_fauna_band — полоса модуля фичи (M-371)
+#include "sub/dgn/dispatch.h"  // dungeon_kind_row — полоса рода норы (M-391)
 #include "tables/faction.h"   // faction_index — перевод имени в ординал (M-187)
+#include "tables/feature_type.h" // FT_Count — отрезок байтов слоя фич
 
 #include <cstdint>
 #include <cstdio>
@@ -136,7 +138,10 @@ int main() {
     // Потерянный бит habitat по-прежнему падает здесь: строка, которую не
     // поднимает ни ролл, ни одна полоса толпы, — мёртвый контент.
     {
-        bool seen[std::size_t(sm::NPCType::Count)] = {};
+        // ГОЛОВАМИ, А НЕ ФЛАЖКОМ (M-391): «строка поднимается» и «сколько её
+        // поднимается» — два вопроса, и второй нужен, чтобы Лича утверждать
+        // ЧИСЛОМ, а не галочкой.
+        std::uint64_t raised[std::size_t(sm::NPCType::Count)] = {};
         auto sweep = [&](sm::FaunaBand band, sm::Biome biome, bool forest,
                          std::uint8_t danger, std::uint32_t salt) {
             sm::SpawnContext ctx{};
@@ -147,20 +152,61 @@ int main() {
             std::uint32_t rng = 0x5EED0000u ^ salt;
             for (int i = 0; i < 4096; ++i) {
                 for (const auto& p : sm::roll_spawns(ctx, rng)) {
-                    if (p.entry) seen[std::size_t(p.entry->row)] = true;
+                    if (p.entry) ++raised[std::size_t(p.entry->row)];
                 }
             }
         };
-        // The grounds the world has: the ruin MODULE's band across its whole
-        // danger band (a ruin at the safe edge holds different things from
-        // one in hell) and the open biomes. Полоса руины берётся ДВЕРЬЮ
-        // модуля (M-371), а не пересказом её чисел в свидетеле.
+        auto seen = [&](sm::NPCType row) {
+            return raised[std::size_t(row)] != 0;
+        };
+        // ── ЗЕМЛИ СМЕТАЮТСЯ ВСЕ, И ОНИ СПРАШИВАЮТСЯ ДВЕРЬМИ (M-391) ──────
+        //
+        // ЗДЕСЬ СМЕТАЛАСЬ ОДНА МОДУЛЬНАЯ ПОЛОСА — РУИННАЯ, ВЫБРАННАЯ ПО
+        // ИМЕНИ, — И ЭТО БЫЛА ДЫРА РОВНО ТОГО РОДА, КОТОРЫЙ СВИДЕТЕЛЬ ОБЯЗАН
+        // ЛОВИТЬ. Бит `kHabSpire` носили 14 строк каталога, НИ ОДНА полоса
+        // дерева его не производила (замер M-391), а проверка «строка
+        // достижима» всё равно зеленела: Лич уходил в escape-hatch
+        // «crowd ground» ниже, потому что `kHabSpire` стоит полосой ТОЛПЫ
+        // рода `Spire` (`kCrowdLayout@src/sub/crowd_layout.h`). Толпы у шпиля
+        // нет с M-320 — сквада нет, значит голов инвентаря нет, значит селить
+        // некого, — то есть та земля была ФИКТИВНОЙ.
+        //
+        // Теперь сметаются ВСЕ двери полос, какие у дерева есть: КАЖДЫЙ байт
+        // слоя фич и КАЖДЫЙ род норы данжа. Выбор по имени кончился, значит
+        // забытая полоса нового байта падает здесь сама.
         const sm::FaunaBand ruinBand =
             sm::sub::feature_fauna_band(std::uint8_t(sm::FT_Ruin));
         CHECK(ruinBand.bit != 0, "модуль руины объявляет свою полосу спавна");
+        const sm::FaunaBand spireBand =
+            sm::sub::feature_fauna_band(std::uint8_t(sm::FT_Spire));
+        CHECK(spireBand.bit != 0, "модуль шпиля объявляет свою полосу спавна");
+        // ОДИН ШПИЛЬ — ОДИН ОТВЕТ НА ВОПРОС «КТО В НЁМ ЖИВЁТ» (DOD п.6).
+        // Улицу шпиля пишет модуль байта фичи, ярусы башни — род норы; это
+        // две СЦЕНЫ одной вещи, и разойтись битом им нельзя, иначе у одного
+        // шпиля два бестиария. Сравнивается РОВНО бит: счёт голов за визит
+        // есть баланс (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ), и свидетель, краснеющий
+        // на перекалибровку, мешал бы развитию (§8 п.7).
+        CHECK(sm::sub::dungeon_kind_row(sm::sub::DungeonRef::SpireTower).den.bit
+                  == spireBand.bit,
+              "улица шпиля и ярусы его башни роллят ОДНУ полосу — у одной "
+              "вещи один бестиарий");
         for (int d = 0; d <= 255; d += 15) {
             const auto danger = std::uint8_t(d);
-            sweep(ruinBand,        sm::Meadow,   false, danger, 2u);
+            // ВСЕ полосы модулей байтов фич — по одной соли на байт.
+            for (int ft = 0; ft < int(sm::FT_Count); ++ft) {
+                const sm::FaunaBand b =
+                    sm::sub::feature_fauna_band(std::uint8_t(ft));
+                if (b.bit == 0) continue;   // {} = земля отвечает (ниже)
+                sweep(b, sm::Meadow, false, danger, 0x200u + std::uint32_t(ft));
+            }
+            // ВСЕ полосы родов нор данжа — тем же порядком.
+            for (int k = 0; k <= int(sm::sub::DungeonRef::PrologueRoad); ++k) {
+                const sm::FaunaBand b =
+                    sm::sub::dungeon_kind_row(std::uint8_t(k)).den;
+                if (b.bit == 0) continue;
+                sweep(b, sm::Meadow, false, danger, 0x300u + std::uint32_t(k));
+            }
+            // И ЗЕМЛЯ — полоса {} по каждому биому, который у мира есть.
             sweep(sm::FaunaBand{}, sm::Meadow,   false, danger, 3u);
             sweep(sm::FaunaBand{}, sm::Mountain, false, danger, 4u);
             sweep(sm::FaunaBand{}, sm::Swamp,    false, danger, 5u);
@@ -172,7 +218,29 @@ int main() {
             sweep(sm::FaunaBand{}, sm::Snow,     false, danger, 11u);
             sweep(sm::FaunaBand{}, sm::Tropics,  false, danger, 12u);
         }
+        // ── ЛИЧ — ОТДЕЛЬНЫЙ, НЕЗАВИСИМЫЙ ВОПРОС, И ОН УТВЕРЖДАЕТСЯ ЧИСЛОМ ──
+        //
+        // Он ЕДИНСТВЕННАЯ строка каталога, у которой ареал равен `kHabSpire`
+        // одним битом (перепись M-391: бит носят 14 строк, 13 из них достижимы
+        // другой землёй — руиной, горой, лесом, тундрой). Значит «родов в
+        // шпиле стало больше» его появления НЕ доказывает, и утверждение у
+        // него своё. Проверка стоит ОТДЕЛЬНО от общей достижимости выше
+        // именно потому, что общая зеленеет через crowd-hatch, а эта — нет.
+        CHECK(raised[std::size_t(sm::NPCType::Lich)] != 0,
+              "Лич встаёт: его ареал есть kHabSpire ЕДИНСТВЕННЫМ, и до M-391 "
+              "эту землю не производила ни одна полоса дерева");
+        std::printf("fauna_registry_test: лич поднят %llu раз\n",
+                    (unsigned long long)raised[std::size_t(sm::NPCType::Lich)]);
         // Союз полос толпы ВСЕХ родов мест — вторая земля, структурная.
+        //
+        // ЭТОТ ESCAPE-HATCH ЕЩЁ ДЕРЖИТ ФИКЦИЮ, И ОНА НАЗВАНА ВСЛУХ: полоса
+        // толпы рода `Spire` (`kHabSpire`) и рода `Lair` (`kHabRuin`) не
+        // достаёт ни до одного живого читателя — у шпиля нет сквада с M-320, а
+        // сквад рода `Lair` в дереве не рождает НИ ОДИН писатель (перепись
+        // M-391: 0 писателей, 6 вхождений — все строки таблиц). Поэтому счётчик
+        // `crowd-stripe-only` ниже есть ПРИБОР над этой фикцией, а не вердикт:
+        // строка, прошедшая ТОЛЬКО толпой, достижима лишь на бумаге. Снос
+        // мёртвой половины партиции — отдельный наряд (**M-400**).
         std::uint16_t crowdUnion = 0;
         for (std::size_t k = 0; k < std::size_t(sm::SquadType::Count); ++k) {
             crowdUnion |= sm::sub::crowd_layout(sm::SquadType(k)).crowdHabitat;
@@ -186,11 +254,11 @@ int main() {
             ++reachable;
             const bool crowdGround =
                 (sm::npc_def(e->row).habitat & crowdUnion) != 0;
-            viaCrowd += crowdGround && !seen[std::size_t(e->row)] ? 1 : 0;
-            CHECK(seen[std::size_t(e->row)] || crowdGround,
+            viaCrowd += crowdGround && !seen(e->row) ? 1 : 0;
+            CHECK(seen(e->row) || crowdGround,
                    "a rollable catalog row has ground SOMETHING can raise it "
                    "from: roll_spawns or a settlement crowd stripe");
-            if (!seen[std::size_t(e->row)] && !crowdGround) {
+            if (!seen(e->row) && !crowdGround) {
                 std::printf("  unreachable: %s\n", e->id);
             }
         }

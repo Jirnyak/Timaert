@@ -580,7 +580,19 @@ add_executable(fauna_spread_census tests/fauna_spread_census.cpp
     src/macro/scent_field.cpp
     src/macro/world_fields.cpp
     src/macro/player_entity.cpp
-    src/sub/base_generator.cpp)
+    src/sub/base_generator.cpp
+    # M-391: вторая половина прибора мерит, КТО встаёт на клетке особой фичи, и
+    # полосу спавна она берёт ДВЕРЬМИ МОДУЛЕЙ, а не пересказом их чисел —
+    # `feature_fauna_band` (байт фичи) и `dungeon_kind_row` (род норы). Тот же
+    # набор, что у `relief_census`, по той же причине: прибор зовёт те же двери,
+    # что мир.
+    ${TIMAERT_GENS_SOURCES}
+    src/sub/material.cpp
+    src/sub/dgn/dispatch.cpp
+    src/sub/dgn/house.cpp
+    src/sub/dgn/cave.cpp
+    src/sub/dgn/spire_tower.cpp
+    src/sub/dgn/prologue_road.cpp)
 set_target_properties(fauna_spread_census PROPERTIES
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
@@ -1532,8 +1544,25 @@ timaert_test(fauna_registry_test
         src/macro/fauna.cpp
         src/tables/fauna.cpp
         # feature_fauna_band — полоса модуля фичи (M-371): свидетель берёт
-        # полосу руины ДВЕРЬЮ модуля, а не пересказом её чисел
-        src/sub/gens/dispatch.cpp)
+        # полосу руины ДВЕРЬЮ модуля, а не пересказом её чисел.
+        #
+        # M-391: земли сметаются ВСЕ — КАЖДЫЙ байт слоя фич и КАЖДЫЙ род норы, —
+        # потому что выбор полосы ПО ИМЕНИ и был той дырой, через которую
+        # забытая полоса шпиля прожила незамеченной: свидетель спрашивал руину,
+        # а молчал шпиль. Цена названа: обход байтов РАНТАЙМНЫЙ, поэтому строка
+        # `kFeatureGenRows` материализуется целиком вместе с колонкой `GenFn` —
+        # то есть таргет линкует ВСЕ модули геометрии. Это осознанная плата за
+        # полноту обхода (§2 п.1: токены и минуты не экономим, молчаливый дефект
+        # дороже), и она ровно та же, что у `relief_census`.
+        src/sub/gens/dispatch.cpp
+        ${TIMAERT_GENS_SOURCES}
+        src/sub/material.cpp
+        src/sub/base_generator.cpp
+        src/sub/dgn/dispatch.cpp
+        src/sub/dgn/house.cpp
+        src/sub/dgn/cave.cpp
+        src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp)
 # THE sprite table (tables/sprite_rows.h): totality over the creature catalog and
 # the NPC kinds, every row drawable, the creature↔row name binding, and the
 # negative control that the binding check can actually fail. Pure data — it
