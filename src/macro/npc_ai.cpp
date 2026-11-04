@@ -421,22 +421,32 @@ ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
 void settle_march_rhythm(MacroHandle e, const MacroPos& p,
                          ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
                          bool moved, const TickContext& ctx,
-                         float overloadBurden) {
+                         float overloadBurden, float groundWeight) {
     const int maxSp = std::max<int>(1, hp.maxSp);
 
-    // ЧТО ЧАС ПУТИ СТОИТ ЭТОМУ ТЕЛУ В ЭТОЙ КЛЕТКЕ. Цена берётся с грунта ПОД
-    // ТЕЛОМ и множится на два множителя, бывшие другой половиной мёртвой
-    // пошаговой цены: собственный груз сквада (`overloadBurden`, оценённый по
-    // его сумке свипом ДО поведения — параметр, никогда колонка) и выучка
-    // (`travelRank`, кэш листа, который читал сам марш, так что лист в думке
-    // не пересобирается).
+    // ЧТО ЧАС ПУТИ СТОИТ ЭТОМУ ТЕЛУ НА ЭТОЙ ЗЕМЛЕ. Все три входа цены —
+    // ПАРАМЕТРЫ, снятые ДО поведения, и это одно высказывание, а не три:
+    // грунт (`groundWeight`), собственный груз сквада (`overloadBurden`,
+    // оценённый по его сумке свипом) и выучка (`travelRank`, кэш листа,
+    // который читал сам марш, так что лист в думке не пересобирается).
+    //
+    // ГРУНТ ПРИХОДИТ ПАРАМЕТРОМ, И ЭТО ПОЧИНКА БАГА, А НЕ СТИЛЬ (M-395,
+    // вердикт владельца 2026-11-04: «клетка старта»). Здесь стояло своё
+    // чтение `cell_weight(ctx, int(p.x), int(p.y))`, а `p` на входе в ритм
+    // есть позиция ПОСЛЕ думки — то есть час оплачивался по клетке, в которой
+    // думка КОНЧИЛАСЬ, тогда как темп той же думки (`perThink`) считался по
+    // клетке, в которой она НАЧАЛАСЬ. Думка покрывает до трёх клеток, а цена
+    // клетки идёт дорога 0.25 · луг 0.70 · чаща 2.39 · гора 2.77 · вода 7.83
+    // SP, значит думка «из воды на дорогу» платила по дороге — промах до ×31.
+    // Второго сэмпла в коде не осталось: свип сэмплит землю ОДИН раз, и у
+    // скорости с ценой теперь одна и та же земля под ногами.
     //
     // СТОЯЩЕЕ ТЕЛО ЭТОГО НЕ ПЛАТИТ, и гейт стоит не здесь, а в двери
     // (`settle_pools_over_time` берёт `resting` и решает сама) — поэтому
     // ставку можно считать безусловно, одной строкой, не спрашивая заранее,
     // пойдёт ли тело.
     const float burnRate = burn_stamina_per_hour(
-        cell_weight(ctx, int(p.x), int(p.y)), overloadBurden,
+        groundWeight, overloadBurden,
         skill_mult_of(SkillId::Travel, int(rt.travelRank)));
 
     // The automaton's CAMP decision (npc_ai.h kCampBarDivisor): legs below an
@@ -4984,6 +4994,13 @@ static void tick_macro_npc_ai_one(MacroWorld& mw, MacroNpcAiRuntime& runtime) {
         MacroPos p{float(ecs::cell_x(cell, gs.mapW)),
                    float(ecs::cell_y(cell, gs.mapW))};
         const float x0 = p.x, y0 = p.y;
+        // ЗЕМЛЯ ЭТОГО ЧАСА — ОДИН СЭМПЛ, И СНЯТ ОН ТАМ ЖЕ, ГДЕ ЕГО БЕРЁТ ТЕМП
+        // (M-395): в КЛЕТКЕ СТАРТА думки, до поведения, тем же моментом, каким
+        // снята сумка выше. Час мира считается по ОДНОЙ клетке — и скорость, и
+        // цена обязаны говорить об одной и той же земле, иначе думка «из воды
+        // на дорогу» платит по дороге (промах до ×31). Адрес назван СТАРТОМ, а
+        // не `p`, чтобы следующая правка порядка не сменила смысл молча.
+        const float groundWeight = cell_weight(ctx, int(x0), int(y0));
         rt.marchFlags = 0;   // флаги марша живут одну думку
         if (gate == ThinkGate::Think)
             dispatch(h, p, rt, hp, ctx);
@@ -4992,7 +5009,7 @@ static void tick_macro_npc_ai_one(MacroWorld& mw, MacroNpcAiRuntime& runtime) {
         settle_march_rhythm(h, p, rt, hp,
                             p.x != x0 || p.y != y0
                                 || (rt.marchFlags & ecs::kMarchAdvanced) != 0,
-                            ctx, overloadBurden);
+                            ctx, overloadBurden, groundWeight);
         // ЗАМИНКА БОЯ УГАСАЕТ ПО ДУМКАМ, И ОДНОЙ ТОЧКОЙ (M-319A). Мера —
         // ДУМКА, потому что гейт стоит в марше, а марш живёт думкой; угасание
         // ПОСЛЕ ритма, то есть после того, как эту думку заминка уже

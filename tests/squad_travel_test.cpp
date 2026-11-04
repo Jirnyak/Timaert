@@ -1012,7 +1012,68 @@ void test_an_engine_cap_load_is_priced_whole() {
 
 } // namespace
 
+// ── ЧАС ОПЛАЧИВАЕТСЯ ЗЕМЛЁЙ, НА КОТОРОЙ ДУМКА НАЧАЛАСЬ (M-395) ────────────
+// Думка покрывает до трёх клеток, значит у «земли этого часа» ДВА кандидата:
+// клетка старта и клетка конца. Темп всегда читал стартовую и говорил об этом
+// вслух («one sample per think»), а ставка жжения до 2026-11-04 читала
+// КОНЕЧНУЮ — мир шёл по одной земле, а платил по другой, и промах доходил до
+// ×31 (дорога 0.25 против воды 7.83). Вердикт владельца: «клетка старта».
+//
+// УТВЕРЖДЕНИЕ ЗНАКОВОЕ, А НЕ ЧИСЛОВОЕ, И ЭТО НЕ ОСТОРОЖНОСТЬ, А СИЛА: дорога
+// просит меньше, чем платит пассивный реген, вода — в разы больше, поэтому у
+// двух прочтений РАЗНЫЕ ЗНАКИ чистого расхода. Планка либо выросла, либо
+// упала; подогнать такое нельзя, и перекалибровка знобу не трогает (§8 п.4).
+// Предусловие измеримости утверждается тут же — без расхождения знаков
+// утверждение было бы пустым (§8 п.3), а без шага в воду сравнивать было бы
+// нечего.
+void test_the_hour_is_priced_by_the_cell_the_think_began_in() {
+    GameState gs{};
+    gs.mapW = 32;
+    gs.mapH = 32;
+    auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
+
+    const float roadW = cell_sp_weight(Meadow, FT_Road);
+    const float waterW = biome_sp_weight(Water);
+    PathCostData grid = make_grid(32, 32, roadW);   // мир из дорожной постели
+    // ПОЛОСА ШИРОКАЯ НАРОЧНО: думка на дорожном темпе берёт полторы клетки,
+    // и ей надо КОНЧИТЬСЯ в воде, а не перескочить её.
+    for (int x = 15; x <= 19; ++x)
+        for (int y = 0; y < 32; ++y) paint_water(grid, x, y);
+
+    auto e = make_walker(st, gs.mapW, 14.0f, 10.0f, 24.0f, 10.0f, 110);
+    start_at_half(st, e);
+    MacroNpcAiRuntime rt{};
+    reset_macro_npc_ai_runtime(rt, 11u);
+
+    const int bar = (*sm::body_state<ecs::Pools>(st, e)).maxSp;
+    const float regen = rest_stamina_per_hour(bar, 0);
+    CHECK(burn_stamina_per_hour(roadW) < regen
+              && burn_stamina_per_hour(waterW) > regen,
+          "предусловие измеримости: дорога дешевле пассивного регена, а вода "
+          "дороже, значит два прочтения земли расходятся ЗНАКОМ — иначе "
+          "утверждение ниже ничего не стоит");
+
+    MacroWorld mw{.gs = &gs, .store = &st, .pathCost = &grid};
+    tick_macro_npc_ai(mw, rt, kAiTicks);   // РОВНО одна думка
+
+    const int xNow =
+        ecs::cell_x((*sm::body_state<ecs::MacroCell>(st, e)), gs.mapW);
+    CHECK(xNow >= 15 && xNow <= 19,
+          "думка НАЧАЛАСЬ на дороге и КОНЧИЛАСЬ в воде: без этого шага у часа "
+          "одна земля, и о порядке сэмпла сказать нечего");
+
+    const float spent =
+        sp_spent((*sm::body_state<ecs::Pools>(st, e)), kLedgerStartSp);
+    CHECK(spent < 0.0f,
+          "ЧАС ОПЛАЧЕН ДОРОГОЙ, С КОТОРОЙ ДУМКА ПОШЛА: планка ВЫРОСЛА, потому "
+          "что дорожная постель дешевле регена. Сэмпл по клетке КОНЦА дал бы "
+          "воду и отнял бы планку — это и есть негативный контроль: верни `p` "
+          "в сэмпл внутри settle_march_rhythm, и знак перевернётся");
+}
+
 int main() {
+    test_the_hour_is_priced_by_the_cell_the_think_began_in();
     test_greedy_walks_around_a_wet_cell();
     test_river_is_forded_and_a_bridge_is_cheaper();
     test_ocean_crossing_is_paid_in_blood();
