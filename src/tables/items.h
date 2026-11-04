@@ -471,12 +471,19 @@ inline constexpr int kAffixValueBase  = 128;
 // will.
 inline constexpr int kAffixValueCapUnits = 16;
 
-// The world's one affix-power byte: how loaded the dice are where this thing
-// dropped. Level pulls 8/level, the danger byte rides in whole. Третий вход —
-// богатство места — УНИЧТОЖЕН 2026-10-18 (M-223): он был константой по роду
-// места, писателя не имел ни одного, а своё обоснование брал у кошелька,
-// снесённого за месяц до того (M-139).
-std::uint8_t affix_power(int level, std::uint8_t danger);
+// The world's one affix-power byte: how loaded the dice are on whatever
+// DROPPED this thing. ВХОД ОДИН — ТИР ЖЕРТВЫ, и байт ЕСТЬ сама ступень
+// лестницы (M-388, вердикт владельца 2026-11-04: «РЕШАЕТ ТИР ЖЕРТВЫ, А
+// ОПАСНОСТЬ КЛЕТКИ НЕ ПРИБАВЛЯЕТ НИЧЕГО»). При одной лестнице 1..`kMaxTier`
+// складывать нечего: величины, которые прежний курс обменивал, лежат в ОДНИХ
+// единицах, и курс исчез как понятие, а не был перекалиброван.
+//
+// ЗДЕСЬ УМЕРЛИ ДВА ВХОДА, И БОЛЕЗНЬ У НИХ ОДНА — ОСЬ, ДВИГАВШАЯ СТОИМОСТЬ
+// ВМЕСТО СОСТАВА (CANON S12): опасность клетки (M-388 — она сатурировала байт
+// на тире 33, а в красной клетке делала все 47 строк каталога неразличимыми) и
+// богатство места (M-223, 2026-10-18 — константа по роду места, писателя не
+// имевшая ни одного).
+std::uint8_t affix_power(int tier);
 
 // ── THE affix writer (owner's design 2026-09-07) ──────────────────────────
 // One door for every way an item gains modifiers. The RANDOM path — this

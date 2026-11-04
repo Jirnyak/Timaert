@@ -51,9 +51,12 @@ int loot_issue(int budgetValue, const LootContext& ctx, RngFn rng,
     const int rows = int(catalog.size());
     if (rows <= 0) return 0;
 
-    // Обе колонки контекста сходятся в ОДНУ дверь — второго вывода «насколько
-    // богата вещь» в мире нет.
-    const std::uint8_t power = affix_power(ctx.level, ctx.danger);
+    // ОДИН ВХОД — ТИР ЖЕРТВЫ (M-388): опасность клетки к силе аффиксов не
+    // прибавляет ничего, иначе зона двигала бы СТОИМОСТЬ после того, как уже
+    // выбрала СОСТАВ. Байт кормит оба вопроса режиссёра — какую строку взять и
+    // насколько щедро её прокатать, — и второго вывода «насколько богата вещь»
+    // в мире нет.
+    const std::uint8_t power = affix_power(ctx.level);
 
     int left = budgetValue;
     int spent = 0;

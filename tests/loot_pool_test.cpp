@@ -19,6 +19,7 @@
 #include "macro/currency.h"    // inventory_value — цена контейнера одной дверью
 #include "bus/anketa.h"
 #include "macro/loot_pool.h"
+#include "tables/progression.h"   // kMaxTier — ступени контекста берутся у лестницы
 
 #include <cstdint>
 
@@ -88,7 +89,7 @@ void test_value_is_conserved() {
     int samples = 0, mismatches = 0, overspends = 0;
     for (int budget = 1; budget <= 100000; budget = budget * 3 + 1) {
         for (std::uint32_t seed = 1u; seed <= 16u; ++seed) {
-            const LootContext ctx{std::uint8_t(seed * 13u), int(seed)};
+            const LootContext ctx{int(seed)};
             Inventory bag{};
             rng_reset(seed * 2654435761u + std::uint32_t(budget));
             const int spent = loot_issue(budget, ctx, &rng_lcg, bag);
@@ -108,9 +109,10 @@ void test_value_is_conserved() {
 // Без этого п.2 вакуумен: если аффиксы не выпали ни разу, «цена экземпляра»
 // и «цена строки» совпадают тождественно, и закон никто не проверил.
 void test_affix_path_is_exercised_and_priced() {
-    // Богатый контекст: высокий уровень × полный байт опасности — обе
-    // колонки контекста говорят одной дверью affix_power.
-    const LootContext ctx{255, 30};
+    // Богатый контекст есть ВЕРХ ЛЕСТНИЦЫ, и число берётся у неё, а не
+    // пишется сюда: после M-388 у контекста ОДНА ось — тир жертвы, — и
+    // «богаче некуда» выражается ровно `kMaxTier`.
+    const LootContext ctx{kMaxTier};
     int withAffixes = 0, pricedByRow = 0, rounds = 0;
     for (std::uint32_t seed = 1u; seed <= 64u; ++seed) {
         Inventory bag{};
@@ -162,7 +164,7 @@ void test_full_container_refuses() {
 
 // ── 5. Один поток случайности — одна выдача ───────────────────────────────
 void test_deterministic() {
-    const LootContext ctx{64, 12};
+    const LootContext ctx{12};
     Inventory a{}, b{};
     rng_reset(2026u);
     const int sa = loot_issue(5000, ctx, &rng_lcg, a);
@@ -217,6 +219,12 @@ void test_poor_treasury_still_pays() {
 // ни по цене экземпляра, ни по базовой). Разделяет только ЛЕСТНИЦА: чтобы
 // средняя цена росла на КАЖДОЙ ступени, нужен именно закон выбора — на
 // равномерных весах ступень посередине ломается, и контроль краснеет.
+//
+// ОСЬ У КОНТЕКСТА ТЕПЕРЬ ОДНА — ТИР ЖЕРТВЫ (M-388), поэтому «ступень» здесь
+// буквальна: три точки взяты у САМОЙ ЛЕСТНИЦЫ (пол, середина, верх), а не
+// назначены числами. Прежде ступени составлялись парой «уровень × опасность»,
+// и опасность в них ДОМИНИРОВАЛА: при danger 255 байт сатурировал независимо
+// от уровня, то есть «богатый контекст» был богат клеткой, а не жертвой.
 void test_context_steers_composition() {
     struct Sample { long long base = 0, units = 0; int rounds = 0; };
     const auto measure = [](const LootContext& ctx) {
@@ -231,14 +239,15 @@ void test_context_steers_composition() {
         }
         return s;
     };
-    // Три ступени ОДНОЙ лестницы контекста (уровень × опасность — обе
-    // сходятся в `affix_power`), а не «до порога / после порога». Третья ось,
-    // богатство места, снесена 2026-10-18 (M-223): она НИКОГДА не двигала ни
-    // одну из этих ступеней, потому что писателя у неё не было, и лестница
-    // стояла на двух осях всё время своей жизни.
-    const Sample poor   = measure(LootContext{0,   1});
-    const Sample middle = measure(LootContext{96,  8});
-    const Sample rich   = measure(LootContext{255, 40});
+    // Три ступени ОДНОЙ лестницы мира, и числа у неё же: пол, середина, верх.
+    // Не «до порога / после порога» — порога у закона выбора нет вовсе.
+    // Остальные две оси, когда-то стоявшие здесь, мертвы: опасность клетки —
+    // 2026-11-04 (M-388, она двигала СТОИМОСТЬ после того, как назвала
+    // СОСТАВ), богатство места — 2026-10-18 (M-223, писателя не имело ни
+    // одного, то есть ни одной ступени не двигало НИКОГДА).
+    const Sample poor   = measure(LootContext{1});
+    const Sample middle = measure(LootContext{kMaxTier / 2});
+    const Sample rich   = measure(LootContext{kMaxTier});
     CHECK(poor.rounds > 0 && middle.rounds > 0 && rich.rounds > 0,
           "все три контекста обязаны были отработать");
     CHECK(poor.units > 0 && middle.units > 0 && rich.units > 0,

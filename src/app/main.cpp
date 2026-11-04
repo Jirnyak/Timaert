@@ -4766,7 +4766,8 @@ void register_console_commands(App& app) {
     con.register_cmd("loot", "loot <profileId> [rolls] [power]",
         "roll a loot profile into the bag - the same registry a death or a "
         "chest pays through ('loots' for ids); power 0-255 loads the affix "
-        "dice (default: the player's own level, open land)",
+        "dice (default: the player's own step of the one ladder - the cell "
+        "adds nothing, M-388)",
         [&app](Con& c, const std::vector<std::string>& a) {
             if (a.empty()) return false;
             int rolls = 1;
@@ -4781,7 +4782,7 @@ void register_console_commands(App& app) {
             }
             const sm::CharacterSheet* sheet = sm::player_sheet(app.gs, *app.macroStore);
             const int level = sheet ? sm::level_of(sheet->levelData) : 1;
-            int power = int(sm::affix_power(level, 0));
+            int power = int(sm::affix_power(level));
             sm::dev::arg_int(a, 2, power);
             power = std::clamp(power, 0, 255);
             int stacks = 0, refused = 0;
