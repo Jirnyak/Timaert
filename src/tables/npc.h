@@ -99,9 +99,9 @@ enum class NPCType : std::uint8_t {
     // Порядок внутри архетипа — ПО ТИПАМ (грызуны, псовые, гады, птицы…), а не
     // «слабейший → сильнейший», как было до наряда. Прежний порядок объяснялся
     // тем, «в каком порядке их читает закон спавна», и это было неверно уже
-    // тогда: `spawn_strength` выведен из hp × dps САМОЙ строки, а
-    // `danger_match` ставит её на ту землю, которой она по силам, — ни одна из
-    // двух дверей места в перечислении не читает.
+    // тогда: землю строке назначает её КОЛОНКА ТИРА (`baseLevel`, дверь
+    // `creature_tier`), которую `danger_match` сводит с опасностью клетки, —
+    // ни одна из двух дверей места в перечислении не читает.
     Rabbit,
     GiantRat,
     Deer,
@@ -1300,12 +1300,13 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // things decide where each of them ends up standing, and all three are
     // columns of this row — no spawn table names any of them by hand:
     //
-    //   · `combat` decides its STRENGTH. `spawn_strength` (fauna.cpp) is
-    //     log₂(hp × dice/cooldown) normalised over this table, and
-    //     `danger_match` halves a row's odds per 25 bytes of mismatch with
-    //     the cell's danger. So authoring a stat block IS authoring a
-    //     habitat band: an ogre cannot wander into a starting meadow because
-    //     of what an ogre is, not because a list forbade it.
+    //   · `baseLevel` decides its RUNG, and `danger_match` halves a row's
+    //     odds per 25 bytes of mismatch with the cell's danger. So authoring
+    //     a TIER IS authoring a habitat band: an ogre cannot wander into a
+    //     starting meadow because of how high an ogre stands, not because a
+    //     list forbade it. (Это читалось «`combat` decides its STRENGTH» и
+    //     звало выведенную `spawn_strength`; она снесена M-387 — ступень есть
+    //     авторское высказывание, а не производное от hp × dps.)
     //   · `weight` decides how COMMON it is where it belongs — fodder 4-6,
     //     the heavies 1-2, exactly the scale the older rows use.
     //   · the habitat mask (fauna.cpp kSpawnHabitats) decides WHOSE ground
@@ -2402,13 +2403,15 @@ inline int hire_price_for(std::uint16_t kind, int level) {
 // народ и мелкая живность, якорь «эндгейм ≈ 100» — лич, вершина — дракон 120,
 // и 135 ступеней оставлены свободными под то, чего в мире ещё нет.
 //
-// ЗДЕСЬ СТОЯЛО «ОНО ЖЕ ДАЁТ ВЕСА РАССЕЛЕНИЯ ПО ЗОНАМ», И ЭТО БЫЛО НЕВЕРНО
-// (§0 п.2 — шапка есть свидетель, и он врал): расселение судит ВЫВЕДЕННОЙ
-// МОЩЬЮ — `spawn_strength@src/tables/fauna.h` нормирует `log₂(hp×dps)` по
-// крайним строкам каталога, — а тир о нём не знает ВОВСЕ. Это два ответа на
-// один вопрос «насколько эта тварь высоко» (DOD п.6), и сведение расселения на
-// тир есть открытый ряд M-387. Практическое следствие для автора тиров: правка
-// этой колонки цену УБИТОГО двигает, а землю, на которой тварь водится, — нет.
+// И ОНО ЖЕ ДАЁТ ВЕСА РАССЕЛЕНИЯ ПО ЗОНАМ — С 2026-11-04, НАРЯДОМ M-387.
+// Здесь стояло, что это неверно, и тогда так и было: расселение судило
+// ВЫВЕДЕННОЙ МОЩЬЮ (`spawn_strength`, нормированный по крайним строкам
+// каталога `log₂(hp×dps)`), а тир о нём не знал ВОВСЕ — два ответа на один
+// вопрос «насколько эта тварь высоко» (DOD п.6). Выведенная мощь УНИЧТОЖЕНА,
+// и теперь `roll_spawns@src/tables/fauna.cpp` спрашивает ЭТУ колонку через
+// `creature_tier` ниже. Практическое следствие для автора тиров ровно
+// обратное прежнему: правка этой колонки двигает И цену убитого, И землю, на
+// которой тварь водится, — разойтись им больше нечем.
 //
 // ЗДЕСЬ СТОЯЛ ВЫВОД `тир = √(hp × удар/период)`, И ОН СНЕСЁН В ТОТ ЖЕ ДЕНЬ,
 // 2026-11-03, вердиктом владельца: ✓ «мы же решили отказаться ваще от мощи и

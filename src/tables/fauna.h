@@ -48,18 +48,19 @@ using FaunaEntry = NpcTypeDef;
 // Who a cell rolls = habitat × danger-match, over the ONE body table.
 //
 //   weight(row, cell) = row.weight × habitat(row, cell)
-//                     × danger_match(spawn_strength(row), cell danger)
+//                     × danger_match(creature_tier(row), cell danger)
 //
 // · habitat — a bitmask COLUMN of the body table (tables/npc.h, enum-ordered
 //   beside the law that reads it): which biomes the row lives in, plus the
 //   forest class and the den kinds. It replaced thirteen hand-built
 //   list-tables and the switch ladder that chose between them
 //   (canon-audit F5) — a new species states its ground in its own row.
-// · spawn_strength — DERIVED, never hand-set: log₂ of the row's own combat
-//   power (hp × damage/cooldown), normalized over the table — the weakest
-//   row is 0, the strongest demon 255. Strengthen a row and it migrates to
-//   dangerous ground by itself (S26: constants derive from world facts).
-// · danger_match — symmetric around strength == danger (the owner's word:
+// · ТИР — АВТОРСКАЯ КОЛОНКА СТРОКИ, И ЧИТАЕТСЯ ОН ОДНОЙ ДВЕРЬЮ
+//   (`creature_tier@src/tables/npc.h` над колонкой `baseLevel`, M-382/M-384).
+//   Здесь стояла ВЫВЕДЕННАЯ мощь `spawn_strength` — её некролог ниже, — и
+//   она была ВТОРЫМ ответом на вопрос «насколько эта тварь высоко» рядом с
+//   тиром, которым считается цена убитого (DOD п.6, наряд M-387).
+// · danger_match — symmetric around tier == danger (the owner's word:
 //   hell is peopled by demons, not by demons plus rabbits), HALVING per
 //   kDangerHalfLife bytes of mismatch, floor 1 — a doom-tier horror in a
 //   safe meadow is «исчезающе малая вероятность», literally, never zero.
@@ -84,13 +85,53 @@ using FaunaEntry = NpcTypeDef;
 // peak before the floor), so kDangerHalfLife = 256 / 10.
 inline constexpr int kDangerHalfLife = 256 / 10;
 
-// The derived strength byte of a row (see the law above). Computed once
-// from the table itself; every consumer of "how dangerous is this thing" —
-// spawn, and tomorrow loot quality and hire pricing — asks HERE.
-std::uint8_t spawn_strength(NPCType t);
+// ── ЗДЕСЬ ЖИЛА `spawn_strength`, И ОНА УНИЧТОЖЕНА 2026-11-04 (M-387) ──────
+//
+// ЧЕМ ОНА БЫЛА: байт силы строки, ВЫВЕДЕННЫЙ из её же боевых колонок —
+// `log₂(hp × урон/период)`, нормированный по КРАЙНИМ строкам каталога в
+// 0..255, — и им судилось расселение.
+//
+// ПОЧЕМУ СНЕСЕНА, ПЕРВОЕ: ДВА ОТВЕТА НА ОДИН ВОПРОС МИРА (DOD п.6). После
+// M-384 цена убитого считается АВТОРСКИМ тиром (`creature_tier`), а
+// расселение судилось этой выведенной мощью, и разойтись им ничто не мешало:
+// автор поднимал тир, а водиться тварь оставалась там же. Вопрос «насколько
+// эта тварь высоко» один, значит и носитель один — колонка.
+//
+// ПОЧЕМУ СНЕСЕНА, ВТОРОЕ — ШКАЛА БЫЛА ПЛАВАЮЩЕЙ, И ЭТО БЫЛ ЖИВОЙ ДЕФЕКТ.
+// Нормировка шла по `lo`/`hi` САМОГО каталога, поэтому добавление ОДНОЙ
+// сильной строки пересчитывало байт у ВСЕХ сорока семи и сдвигало расселение
+// ВСЕГО мира — правка контента меняла географию. На тире шкала АБСОЛЮТНА
+// (лестница 0..255, `kMaxTier@src/tables/progression.h`): новая строка встаёт
+// на свою ступень и никого не двигает. Замер сноса — в теле коммита M-387.
+//
+// ПОЧЕМУ ВЫВОД БЫЛ НЕВЕРЕН ПО СУЩЕСТВУ, А НЕ ТОЛЬКО ПО ФОРМЕ: он не видит
+// половины строки. Тот же довод уже записан у лестницы
+// (`src/tables/progression.h`, вердикт владельца 2026-11-03: «могут быть
+// твари мало хп куча резистов и огромнвй урон не умничай где нюансы есть») —
+// `hp × удар / период` не знает ни резистов, ни блока, ни дальнобойности,
+// значит стеклянная пушка получала низкую ступень, а жирный безобидный мешок
+// высокую. Тир есть ВЫСКАЗЫВАНИЕ автора, и формулой оно не заменяется.
+//
+// ВМЕСТЕ С НЕЙ УМЕРЛА `row_power` — её ЕДИНСТВЕННЫЙ звонящий был здесь
+// (перепись M-387: 1 кодовый сайт в `src/`, 0 в `tests/`), а своя шапка
+// утверждала «Второго счёта силы в игре нет» при живом
+// `head_power@src/macro/auto_battle.h`, который считает ту же `hp × dps`
+// ИНАЧЕ — с бронёй, с `flatAdd`/`multPct` и с полом периода 0.1 против 0.25.
+// То есть шапка была свидетелем, который врёт (§0 п.2), и второй счёт силы
+// пережил её на год.
 
 // The symmetric never-zero match term, in 1/1024ths of the peak.
-std::uint32_t danger_match_weight(std::uint8_t strength, std::uint8_t danger);
+//
+// СТУПЕНЬ, А НЕ «СИЛА», И ИМЯ ЗДЕСЬ НЕ УКРАШЕНИЕ: дверь ОДНА на двух
+// потребителей, и каждый подаёт свою ступень ОДНОЙ лестницы 0..255 — спавн
+// живности тир строки (`roll_spawns` ниже), режиссёр лута ценностную ступень
+// вещи (`loot_issue@src/macro/loot_pool.cpp`). Параметр звался `strength`,
+// когда у спавна была выведенная мощь; после M-387 это слово назвало бы
+// величину, которой нет ни у одного звонящего (ЗАКОН ИМЕНИ п.3). Единицы у
+// них общие не потому, что три вещи тождественны, а потому, что мир их
+// СОПОСТАВЛЯЕТ (`src/tables/progression.h`: «сопоставление и есть причина
+// единиц»).
+std::uint32_t danger_match_weight(std::uint8_t rung, std::uint8_t danger);
 
 // Everything the roll wants to know about the cell — assembled by the
 // caller from its CellContext / CellFacts. Zero members are legal silence.
@@ -129,18 +170,11 @@ std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
 // пять `static_assert` ниже; род ДУШИ решается при поселении, не при
 // воплощении.)
 
-// МОЩЬ СТРОКИ — ОДИН РАСЧЁТ, И ПОСЛЕ СНОСА НИЖЕ У НЕГО ОДИН ПОТРЕБИТЕЛЬ.
-// hp × dps той же строки, что и дерётся: `spawn_strength` нормализует ЭТО в
-// байт для сравнения с опасностью клетки. Второго счёта силы в игре нет —
-// нормализация порядка не меняет, поэтому «насколько он силён» отвечается
-// тем же числом, каким дерутся (DOD п.6). Второй потребитель
-// (`weakest_crowd_kind`, «кто слабее») умер вместе со своим вопросом.
-inline double row_power(NPCType t) {
-    const CombatTemplate& c = npc_def(t).combat;
-    const double dps = double(dice_mean_x2(c.dice)) * 0.5
-                     / std::max(0.25, double(c.cooldown));
-    return std::max(1.0, double(c.hp) * dps);
-}
+// (`row_power` — `hp × dps` строки в double — УНИЧТОЖЕНА 2026-11-04 вместе с
+//  `spawn_strength`, своим единственным звонящим; разбор и причина — в её
+//  некрологе выше. Мощь строки в бою по-прежнему считает
+//  `head_power@src/macro/auto_battle.h`, и теперь это ЕДИНСТВЕННЫЙ счёт силы
+//  в игре — ровно то, что ложно утверждала шапка умершей.)
 
 // ── ЗДЕСЬ ЖИЛА `weakest_crowd_kind`, И ОНА УНИЧТОЖЕНА 2026-10-27 ──────────
 //

@@ -535,6 +535,59 @@ set_target_properties(relief_census PROPERTIES
 target_include_directories(relief_census PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(relief_census PRIVATE timaert_build_flags)
 
+# Fauna spread census (наряд M-387, 2026-11-04): измерить, какого ТИРА тварь
+# водится в клетке какой опасности — распределение по восьми полосам, на трёх
+# сидах. Приёмка M-387 требует этого числа ДО и ПОСЛЕ сведения отбора на тир, а
+# мерил его ноль приборов: `subworld_spawn_parity_test` судит ОДНУ клетку луга
+# на синтетическом контексте и настоящего поля опасности не видит вовсе. Набор
+# исходников тот же, что у `road_reach_census`: мир поднимается ТОЙ ЖЕ дверью
+# `generate_macro_world`, что и игра. Сознательно НЕ ctest, по причине
+# `balance_run`: это ЗАМЕР, а не вердикт — порога «какой тир допустим в полосе»
+# никто не выводил.
+add_executable(fauna_spread_census tests/fauna_spread_census.cpp
+    src/macro/squad_index.cpp
+    src/macro/world_gen.cpp
+    src/macro/ruins.cpp
+    src/macro/state.cpp
+    src/macro/politik.cpp
+    src/macro/settlement_score.cpp
+    src/macro/macro_stock.cpp
+    src/macro/chronicle.cpp
+    src/macro/cell_facts.cpp
+    src/macro/tree_layer.cpp
+    src/macro/deposit_layer.cpp
+    src/macro/fauna.cpp
+    src/tables/fauna.cpp
+    src/macro/map_generator.cpp
+    src/macro/plates.cpp
+    src/macro/language.cpp
+    src/bus/anketa.cpp
+    src/tables/items.cpp
+    src/macro/economy.cpp
+    src/macro/econ_day.cpp
+    src/macro/spawners.cpp
+    src/macro/zones.cpp
+    src/macro/spires.cpp
+    src/macro/pathfinding.cpp
+    src/macro/knowledge.cpp
+    src/macro/npc_spawn.cpp
+    src/macro/npc_ai.cpp
+    src/macro/deal.cpp
+    src/macro/recovery.cpp
+    src/macro/nav_field.cpp
+    src/macro/world_tick.cpp
+    src/macro/threat_field.cpp
+    src/macro/scent_field.cpp
+    src/macro/world_fields.cpp
+    src/macro/player_entity.cpp
+    src/sub/base_generator.cpp)
+set_target_properties(fauna_spread_census PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(fauna_spread_census PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(fauna_spread_census PRIVATE timaert_build_flags)
+
 # ── ONE way to declare a test ──────────────────────────────────────────────
 # Every logic test used to be the same 20-24 lines with a different name: 1160
 # of this file's lines were that block, copied 49 times. Two things follow from
@@ -1430,7 +1483,7 @@ timaert_test(subworld_spawn_parity_test
     # 52 → 53 (M-296): фикстура сажала кольцо в слот ПРИСВАИВАНИЕМ, а слот
     # снаружи больше не пишется — посадка пошла дверью адреса, и её отказ
     # теперь судится вслух. Пин двинут ОСОЗНАННО, как он и задуман.
-    PIN "OK subworld_spawn_parity_test .60 checks.")
+    PIN "OK subworld_spawn_parity_test .61 checks.")
 # Pure-logic unit tests for the RPG spine (character_sheet.h) + unified loot
 # table (items.cpp). Header-only sheet code needs no extra deps; the loot
 # functions live in items.cpp (self-contained — no SDL2, same as
@@ -2731,4 +2784,4 @@ add_custom_target(check
 # по-прежнему разные слова.
 add_dependencies(check ${PROJECT_NAME} ${_timaert_tests} tu_time_jump
                  gpu_smoke gpu_smoke3d macro_shot balance_run
-                 height_census relief_census)
+                 height_census relief_census fauna_spread_census)

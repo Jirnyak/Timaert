@@ -3,8 +3,10 @@
 //
 // ЗАКОН ДИКОГО РОЛЛА ПЕРЕЕХАЛ В `tables/fauna.h` ЛОМТЁМ 3 ЭПИКА ПАКЕТОВ v1
 // (`FaunaEntry`, `SpawnContext`, `FaunaPick`, `roll_spawns`,
-// `spawn_strength`, `danger_match_weight`, `row_power`, `kDangerHalfLife`,
-// `fauna_cell_capacity`): это СТРОКИ КАТАЛОГА и чистая арифметика над ними,
+// `danger_match_weight`, `kDangerHalfLife`, `fauna_cell_capacity`; уехавшие
+// тем же ломтём `spawn_strength` и `row_power` потом УНИЧТОЖЕНЫ нарядом M-387
+// — отбор строки судит авторский тир): это СТРОКИ КАТАЛОГА и чистая
+// арифметика над ними,
 // а спрашивает их и субмир, которому `macro/` включать нельзя (§11). Здесь
 // остались ровно две вещи, которым МИР нужен по существу:
 //   · `fauna_cell_capacity_at` — та же ёмкость, снятая с КЛЕТКИ через

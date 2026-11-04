@@ -68,38 +68,15 @@ std::uint16_t context_bit(const SpawnContext& ctx) {
 
 } // namespace
 
-std::uint8_t spawn_strength(NPCType t) {
-    // Normalized once over the table itself: L = log₂(hp × damage/cooldown),
-    // weakest row → 0, strongest → 255. The derivation is the point — there
-    // is no strength column to drift from the numbers that actually fight.
-    static const std::array<std::uint8_t, std::size_t(NPCType::Count)> table =
-        [] {
-            std::array<double, std::size_t(NPCType::Count)> L{};
-            double lo = 1e30, hi = -1e30;
-            for (std::size_t i = 0; i < L.size(); ++i) {
-                // МОЩЬ СЧИТАЕТ ОДНА ДВЕРЬ (tables/fauna.h row_power) — та же,
-                // по которой строка дерётся, иначе это два счёта силы
-                // (DOD п.6). Второй её потребитель, `weakest_crowd_kind`,
-                // снесён 2026-10-27 вместе со своим вопросом.
-                L[i] = std::log2(row_power(NPCType(i)));
-                lo = std::min(lo, L[i]);
-                hi = std::max(hi, L[i]);
-            }
-            std::array<std::uint8_t, std::size_t(NPCType::Count)> out{};
-            const double span = std::max(1e-6, hi - lo);
-            for (std::size_t i = 0; i < out.size(); ++i) {
-                out[i] = std::uint8_t(
-                    std::lround(255.0 * (L[i] - lo) / span));
-            }
-            return out;
-        }();
-    const auto i = std::size_t(t);
-    return i < table.size() ? table[i] : 0;
-}
+// (`spawn_strength` — нормированный по каталогу `log₂(hp × dps)` — жила здесь
+//  до 2026-11-04 и уничтожена нарядом M-387 вместе с `row_power`. Полный
+//  некролог стоит в `tables/fauna.h`, у места объявления: там и второй ответ
+//  на вопрос «насколько тварь высоко» (DOD п.6), и плавающая нормировка,
+//  из-за которой одна новая строка сдвигала расселение всего мира.)
 
-std::uint32_t danger_match_weight(std::uint8_t strength,
+std::uint32_t danger_match_weight(std::uint8_t rung,
                                   std::uint8_t danger) {
-    const int miss = std::abs(int(strength) - int(danger));
+    const int miss = std::abs(int(rung) - int(danger));
     const int halvings = std::min(10, miss / kDangerHalfLife);
     return std::max<std::uint32_t>(1u, 1024u >> halvings);
 }
@@ -131,8 +108,13 @@ std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
         if (!(npc_def(NPCType(i)).habitat & bit)) continue;
         const NpcTypeDef& row = kNpcTypeDefs[i];
         if (row.weight == 0) continue;   // never rolled blind (the row's law)
+        // СТУПЕНЬ СТРОКИ — ЕЁ АВТОРСКИЙ ТИР, ОДНОЙ ДВЕРЬЮ (M-387). Посадку на
+        // лестницу делает `creature_tier` сама (`clamp_to_ladder` внутри), и
+        // своего клампа здесь нет ни одного — граница лестницы у мира одна
+        // (M-382). Байт прямой: тир уже 1..kMaxTier, то есть 1..255.
         w[i] = std::uint32_t(row.weight)
-             * danger_match_weight(spawn_strength(row.row), ctx.danger);
+             * danger_match_weight(std::uint8_t(creature_tier(row.row)),
+                                   ctx.danger);
         total += w[i];
     }
     if (total == 0) { rngState = r.state; return out; }

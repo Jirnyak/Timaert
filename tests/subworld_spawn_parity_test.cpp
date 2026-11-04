@@ -1197,32 +1197,118 @@ int main() {
                 "identity_remap=1\n",
                 actual.size(), centre.seed, 1);
     // ── THE spawn law's own invariants (fauna.h, owner 2026-08-24) ──
+    //
+    // ПЕРЕВЕРЖДЕНО НА ТИР НАРЯДОМ M-387. Прежние два утверждения спрашивали
+    // `spawn_strength` — выведенный из hp × dps байт, нормированный по крайним
+    // строкам каталога, — и он УНИЧТОЖЕН: расселение судит АВТОРСКИЙ тир
+    // строки (`creature_tier@src/tables/npc.h` над колонкой `baseLevel`).
+    // Снесён и свидетель порядка «rabbit < wolf < troll»: он охранял СЛУЧАЙ, а
+    // не закон (§8 п.5) — порядок трёх авторских чисел есть КОНТЕНТ И БАЛАНС,
+    // и прибивать его значило запретить переавторинг тиров (ЗАКОН ПРИОРИТЕТА
+    // СТРУКТУРЫ: «НИКОГДА НЕЛЬЗЯ СИСТЕМУ ПОДГОНЯТЬ ПОД ЧИСЛА»). На его месте —
+    // МОНОТОННОСТЬ по опасности, то есть сам закон S12 «зона меняет СОСТАВ».
     {
         // The danger byte re-weights WHO IS ROLLED — and nothing after the
         // pick (S12: the autolevel negative controls above stand untouched).
-        auto mean_strength = [](std::uint8_t danger) {
+        // Мера — средний ТИР выданного, снятый через ПРОДАКШЕН-дверь
+        // `roll_spawns`: прибор не переписывает закон отбора, он спрашивает ту
+        // же функцию, что зовёт мир (§8 п.5).
+        // ГДЕ ЗАКОН НАБЛЮДАЕМ — ЭТО ЧАСТЬ УТВЕРЖДЕНИЯ, А НЕ УДОБСТВО ВЫБОРКИ.
+        // Отбор ополовинивает вес на каждые `kDangerHalfLife` (25) байт
+        // расхождения ЦЕЛЫМ делением, поэтому земля, чьи авторские тиры лежат
+        // УЖЕ одной такой корзины, при далёкой опасности отдаёт ВСЕ свои
+        // строки в одну корзину — и отбор честно сводится к их голой
+        // частоте `weight`. Луг ровно таков: его семь строк несут тиры 1..16
+        // (замер M-387), то есть на нём закон НЕ НАБЛЮДАЕМ ни до правки, ни
+        // после, и прежний порог «+8 байт» проходил только потому, что
+        // НОРМИРОВКА растягивала эти 16 ступеней на весь байт — то есть
+        // свидетель жил за счёт ровно того дефекта, который снял M-387.
+        // Лесной класс несёт тиры 1..70 (span 69 > 25), и на нём закон виден.
+        auto mean_tier = [](std::uint8_t danger) {
             sm::SpawnContext c{};
             c.biome = sm::Biome::Meadow;
+            c.forest = true;
             c.danger = danger;
             double sum = 0.0;
             int n = 0;
-            for (std::uint32_t seed = 1; seed <= 64; ++seed) {
+            for (std::uint32_t seed = 1; seed <= 512; ++seed) {
                 std::uint32_t rs = seed * 2654435761u;
                 for (const auto& pk : sm::roll_spawns(c, rs)) {
-                    sum += double(sm::spawn_strength(pk.entry->row));
+                    sum += double(sm::creature_tier(pk.entry->row));
                     ++n;
                 }
             }
             return n > 0 ? sum / double(n) : 0.0;
         };
-        const double safe = mean_strength(16);
-        const double wild = mean_strength(240);
-        CHECK(wild > safe + 8.0,
-              "the danger byte shifts composition toward the strong rows");
+        // ЧТО ЗАКОН ОБЕЩАЕТ, А ЧТО НЕТ — И СТРОГОЙ МОНОТОННОСТИ ОН НЕ ОБЕЩАЛ
+        // НИКОГДА. Ополовинивание идёт ЦЕЛЫМ делением (`miss / 25`), значит
+        // средний тир по опасности есть СТУПЕНЧАТАЯ кривая с рябью внутри
+        // полосы, а не возрастающая функция: замер M-387 по лесу дал
+        // d=0 → 5.91, 60 → 15.51, 90 → 18.10, 150 → 12.62, 240 → 18.10 —
+        // тренд вверх, затем колебание в полосе 12.6..18.1. Свидетель,
+        // требующий «каждый следующий шаг выше», охранял бы СЛУЧАЙ квантования
+        // (§8 п.5).
+        //
+        // ПОРОГ ВЫВЕДЕН ИЗ ТОЙ ЖЕ ТАБЛИЦЫ, А НЕ НАЗНАЧЕН (§8 п.4). Отсчёт —
+        // НУЛЕВАЯ ГИПОТЕЗА: состав, который дала бы земля, если закона
+        // опасности не было бы вовсе, то есть средний тир по голой колонке
+        // `weight`. Это не копия продакшен-логики, а точка отсчёта, взятая из
+        // авторских строк: закон обязан СДВИГАТЬ состав относительно неё — в
+        // мирной земле ВНИЗ, в дикой ВВЕРХ. Порог переживает любой
+        // переавторинг тиров и весов, потому что считается из них же.
+        double wSum = 0.0, wTierSum = 0.0;
+        for (std::size_t i = 0; i < std::size_t(sm::NPCType::Count); ++i) {
+            const sm::NpcTypeDef& rr = sm::kNpcTypeDefs[i];
+            if (!(sm::npc_def(sm::NPCType(i)).habitat & sm::kHabForest)) continue;
+            if (rr.weight == 0) continue;
+            wSum += double(rr.weight);
+            wTierSum += double(rr.weight) * double(sm::creature_tier(rr.row));
+        }
+        const double unbiased = wSum > 0.0 ? wTierSum / wSum : 0.0;
+        const double safe = mean_tier(16);
+        int wildSamples = 0, wildFailures = 0;
+        for (int d = 90; d <= 255; d += 15) {
+            ++wildSamples;
+            if (!(mean_tier(std::uint8_t(d)) > unbiased)) ++wildFailures;
+        }
+        CHECK(unbiased > 0.0 && safe < unbiased
+                  && wildSamples == 12 && wildFailures == 0,
+              "опасность СДВИГАЕТ состав относительно нулевой гипотезы: мирная "
+              "земля ниже голой частоты строк, всякая дикая полоса выше "
+              "(S12 п.1: клетка подаёт ПОЛОСУ тиров)");
+        // ЗДЕСЬ СТОЯЛО «УЗКАЯ ЗЕМЛЯ ВЫРАВНИВАЕТСЯ, НО НЕ ПЕРЕВОРАЧИВАЕТСЯ»,
+        // И ЭТО УТВЕРЖДЕНИЕ СНЕСЕНО СВОЕЙ ЖЕ МУТАЦИЕЙ (M-387, таблица
+        // «мутация → исход»). Оно требовало, чтобы на лугу (тиры 1..16)
+        // средний тир при опасности 250 был не ниже, чем при 16, и проходило
+        // лишь потому, что при `kDangerHalfLife` = 25 ОБА конца попадают в
+        // одну корзину целого деления и дают РОВНО одно число (3.4549 против
+        // 3.4549). Пересчёт полупериода на 12 это равенство убил, и правильно:
+        // боар тира 16 в клетке опасности 16 есть ТОЧНОЕ совпадение, то есть
+        // мирная земля ЗАКОННО подаёт там свой верх. Законом «безопасная земля
+        // не богаче дикой» не является — свидетель охранял СЛУЧАЙ выравнивания
+        // корзин (§8 п.5), и держать его значило запретить перекалибровку
+        // (§8 п.7: тест не смеет мешать развитию).
         CHECK(sm::danger_match_weight(255, 0) == 1u,
               "a full-span mismatch is vanishingly rare — never zero");
         CHECK(sm::danger_match_weight(200, 200) == 1024u,
-              "a perfect strength-danger match pays the full peak");
+              "a perfect rung-danger match pays the full peak");
+        // ОДНА ЛЕСТНИЦА НА ДВА ВОПРОСА — ПИК СТОИТ РОВНО НА РАВЕНСТВЕ, и
+        // дверь симметрична: это и есть причина, по которой тир твари и
+        // опасность клетки мерятся одними единицами (M-382).
+        bool peaked = true, symmetric = true;
+        for (int rung = 20; rung <= 240; rung += 20) {
+            const std::uint32_t at = sm::danger_match_weight(
+                std::uint8_t(rung), std::uint8_t(rung));
+            const std::uint32_t off = sm::danger_match_weight(
+                std::uint8_t(rung), std::uint8_t(rung - 2 * sm::kDangerHalfLife));
+            if (!(at > off)) peaked = false;
+            if (sm::danger_match_weight(std::uint8_t(rung), 100u)
+                != sm::danger_match_weight(100u, std::uint8_t(rung)))
+                symmetric = false;
+        }
+        CHECK(peaked && symmetric,
+              "дверь совпадения симметрична и пикует на равенстве ступени и "
+              "опасности — одни единицы у тира и у зоны");
         // Same seed, same danger => the identical stream (determinism).
         sm::SpawnContext c{};
         c.biome = sm::Biome::Meadow;
@@ -1235,12 +1321,13 @@ int main() {
             same = a[i].entry == b[i].entry;
         }
         CHECK(same, "the roll is a fact of (seed, context) alone");
-        // The derivation orders the bestiary the way the fiction does.
-        CHECK(sm::spawn_strength(sm::NPCType::Rabbit)
-                  < sm::spawn_strength(sm::NPCType::Wolf)
-              && sm::spawn_strength(sm::NPCType::Wolf)
-                  < sm::spawn_strength(sm::NPCType::Troll),
-              "derived strength orders rabbit < wolf < troll");
+        // ОТБОР СУДИТ ИМЕННО ТИР, И ЭТО УТВЕРЖДАЕТСЯ ПРЯМО: из двух ступеней
+        // ближе к опасности клетки обязана весить больше — безразлично, какие
+        // у строк боевые колонки. Прежний закон отвечал бы на это мощью.
+        CHECK(sm::danger_match_weight(90u, 100u)
+                  > sm::danger_match_weight(10u, 100u),
+              "ступень, ближе стоящая к опасности клетки, весит больше "
+              "(M-387: отбор судит ТИР, а не выведенную мощь)");
     }
 
     // ── The garrison partition (§42 Инк 4/5, CANON S28) ──

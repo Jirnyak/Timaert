@@ -1,6 +1,6 @@
 // ФАУНА, ПОЛОВИНА КОТОРОЙ НУЖЕН МИР — виды над каталогом существ и ёмкость,
 // снятая с КЛЕТКИ. Сам ЗАКОН дикого ролла (таблицы счёта, `roll_spawns`,
-// `spawn_strength`, `danger_match_weight`, `fauna_cell_capacity`) переехал в
+// `danger_match_weight`, `fauna_cell_capacity`) переехал в
 // `tables/fauna.cpp` ломтём 3 эпика пакетов v1: он чист — ни слоя, ни
 // `GameState`, — а спрашивают его ОБА мира.
 //   - Tables stored as null-terminated arrays of `const FaunaEntry*` so
