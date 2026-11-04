@@ -3131,12 +3131,14 @@ void emit_simple_dialog(App& app, const char* title, const std::string& body,
     app.bus.emit(dialog);
 }
 
-// The intro is pure slides since 2026-09-03 (the asking moved to the
-// pre-world creation screen), so its completion carries no values — what it
-// still marks is the STORY BEAT: the prologue ended, chapter 1 begins.
-void apply_intro_story_result(App& app, const sm::StoryResultPayload&) {
-    app.logic.activate("plot_chapter_1");
-}
+// (ЗДЕСЬ СТОЯЛА `apply_intro_story_result`, и всё её тело было одной строкой
+//  `app.logic.activate("plot_chapter_1")` — активацией узла-ЗАГЛУШКИ, чьё
+//  условие возвращало `false` всегда и у которого не было эффекта (M-390,
+//  §1 ZERO MOCKS). Узел снесён вместе со своим файлом, и дверь ушла за ним:
+//  оставить её значило бы держать пустую функцию и звонок в неё — «пока
+//  оставим, потом уберём», ровно то, что §5 п.14 запрещает. Слайды интро
+//  по-прежнему проигрываются своим узлом; СОБЫТИЕМ их конец больше не
+//  распоряжается никто, и это честно: распоряжаться было нечем.)
 
 // Applies the creation screen's authored state to the freshly-booted world:
 // the identity, the sheet (spent through the real doors on the screen), the
@@ -3225,8 +3227,8 @@ void apply_pending_story_results(App& app) {
         const sm::GameEvent& ev = events[i];
         if (ev.tag != sm::EventTag::StoryResult || !ev.storyResult)
             continue;
-        if (ev.storyResult->sourceNodeId == "intro_main")
-            apply_intro_story_result(app, *ev.storyResult);
+        // (Ветка `intro_main` снесена с узлом-заглушкой главы 1 — M-390: она
+        //  активировала строку, которая не могла сработать никогда.)
         // The witch let go: NOW the world starts — intro_main fires the
         // arrival slide on the next logic tick (its activation moved here
         // from boot, 2026-09-09: the prologue plays first), and the map

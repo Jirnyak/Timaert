@@ -880,7 +880,7 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 (`politik.h:77`), индекс летописи u32×N/64 (`chronicle.h:345`), оптический
 кэш f32×2×N (представление, `app_state.h:177`), A\* скрэтч 7×N
 (`pathfinding.h:207`), `deserterPool@src/macro/state.h`, `MacroStore` (уже
-под своим `static_assert` на `sizeof` — `MacroStore@src/macro/store.h`, строка
+под своим `static_assert` на `sizeof` — `MacroStore@src/bus/store.h`, строка
 в перепись со ссылкой).
 
 **1. Контекст.** Читать: `src/core/stacks.h` целиком (формат `StackRow`,
@@ -941,7 +941,7 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 quest_engine.cpp †203-204 (снесён), никто не шлёт), `Custom` (только дефолт
 инициализации `logic_nodes.h:23` и тесты). Теги с производителем, но без
 прод-читателя: `QuestStart`, QuestUpdate (жил в quest_engine, снесён),
-`SpellCast@src/app/main.cpp`, `PlayerLeaveSettlement` (main.cpp:470 «        sm::GameEvent leave{sm::EventTag::PlayerLeaveSettlement};»).
+`SpellCast@src/app/main.cpp`, `PlayerLeaveSettlement` (main.cpp:471 «        sm::GameEvent leave{sm::EventTag::PlayerLeaveSettlement};»).
 
 **1. Контекст.** Читать: `src/events/event_bus.h` целиком,
 `src/events/event_bus.cpp` целиком, `src/events/event_types.h:20-64`
@@ -1275,7 +1275,7 @@ DOD п.6 (две записи одной фичи — второй ответ). 
 чтения мимо `at` — `spawners.cpp:528` (`decode(features.data[idx])`),
 `macro_stock.cpp:497-499`. **Пункт «`world_gen.cpp:310`» СНЯТ проверкой 2026-09-27:** прямых чтений `features.data[` в этом файле нет НИ ОДНОГО (`rg -n 'features\.data\[' src/macro/world_gen.cpp` → 0), так что чинить там нечего.
 
-**1. Контекст.** Читать: `src/macro/features.h:165-295` (`FeatureLayer`,
+**1. Контекст.** Читать: `FeatureLayer@src/macro/features.h` (`FeatureLayer`,
 `at`, `set`, `decode`), `src/macro/macro_stock.cpp:480-565`
 (`plough_field_cell` и соседняя дверь), и по ±8 строк вокруг каждой из
 точек списка. Остальное не читать.
@@ -1367,7 +1367,7 @@ libstdc++/MSVC (32 Б). Ещё две строки той же породы: `Ci
 - Было: три `std::string name`. Стало: `NameCol name{}` в `Landmark`,
   `City`, `PlayerState`.
 - Писатели: `state.cpp:184-187,360`, `politik.cpp:192,235,295` —
-  `name_set(x.name, generate_name(...))`; src/app/main.cpp:3135 «    if (cs.name[0] != '\0') app.gs.player.name = cs.name;» —
+  `name_set(x.name, generate_name(...))`; src/app/main.cpp:3149 «    if (cs.name[0] != '\0') app.gs.player.name = cs.name;» —
   `name_set(app.gs.player.name, cs.name)`.
 - Читатели: `.c_str()` → само поле; `.empty()` → `name[0] == '\0'`;
   procedural.cpp †426 (снесён) `ctx.name = s.name` — если `ctx.name` — `std::string`
@@ -1659,7 +1659,7 @@ return -1` — второй запрет мира рядом с водой. Го
 на проводке (`econ_day.cpp:46,51` — образец: кэш в `rr.output`,
 `r.needIdx`).
 
-**1. Контекст.** Читать: двери склада `Inventory@src/macro/anketa.h` (разрез M-181), `src/tables/commodity.h:30-60, 105-125`, `src/macro/econ_day.h:70-80,
+**1. Контекст.** Читать: двери склада `Inventory@src/bus/anketa.h` (разрез M-181), `src/tables/commodity.h:30-60, 105-125`, `src/macro/econ_day.h:70-80,
 135-145` (строки рецептов/нужд — `const char*`), `src/macro/econ_day.cpp:40-55`
 (образец кэша), и по ±10 строк вокруг КАЖДОЙ точки списка. Откуда
 приходит `id` в каждую точку (аргумент функции? колонка строки каталога
@@ -2179,7 +2179,7 @@ Image.open('/tmp/shots/river_close.ppm').save('/tmp/shots/river_close.png')"`.
 А»**.
 
 **РАЗРЯДЫ, И РАЗНИЦА ВАЖНЕЕ САМОГО ВЫБОРА.** **А** — пересчёт живёт ВНУТРИ
-двери изменения, разойтись НЕВЫРАЗИМО (эталон `InventorySummary@src/macro/anketa.h`:
+двери изменения, разойтись НЕВЫРАЗИМО (эталон `InventorySummary@src/bus/anketa.h`:
 восемь тоталов правит сама запись слота, писателя у сводки нет вовсе, ключ
 `SlotWrite` умеет сделать только `Inventory`). **Б** — пересчёт отдельной
 дверью, которую каждое место обязано не забыть позвать. **И ГЛАВНОЕ: хранить
@@ -2209,7 +2209,7 @@ DOD п.9 (у колонки обязан быть смысл и ОДИН пис�
 **Таблица (а) — ВЫВЕДЕННЫЕ ВЕЛИЧИНЫ АНКЕТЫ:** что выводится · где живёт
 (колонка или считается на чтении) · кто читает · РАЗРЯД (А/Б/на чтении).
 Стартовые адреса — ПРОВЕРЕНЫ ЧТЕНИЕМ 2026-10-20, но **пересчитать самому**:
- - `DerivedBonuses@src/macro/anketa.h` — 5 полей (`rawPhysDamage`,
+ - `DerivedBonuses@src/bus/anketa.h` — 5 полей (`rawPhysDamage`,
    `rawSpellDamage`, `expMultPct`, `moveSpeedPct`, `tradeDiscountPct`),
    считаются НА ЧТЕНИИ дверью `calculate_derived`, нигде не хранятся;
  - **5 кэшированных колонок** `MacroNpcRuntime@src/ecs/components.h`:
@@ -2235,10 +2235,10 @@ UI, все в области трат очков (греп `refresh_player_body@
 `unequip@src/ui/overlays.cpp`) — ни одного. Следствие по
 чтению: надетый аффикс `CarryKg` («of the Mule») идёт в `carryPerSoulG` через
 `standing_bonuses_of`, то есть ПАНЕЛЬ покажет новый вес свежо (она зовёт
-`get_carry_capacity@src/macro/anketa.h` на кадр), а МАРШ будет считать по
+`get_carry_capacity@src/bus/anketa.h` на кадр), а МАРШ будет считать по
 старой колонке (часовая трата игрока в `src/app/main.cpp` читает
 `carry_capacity_g(*prt, …)`; второй её читатель, предикат привала, снесён
-2026-10-24 — см. `rest_stamina_per_hour@src/macro/movement_cost.h`). **ПЕРВОЕ ДЕЛО — ЗАМЕРИТЬ
+2026-10-24 — см. `rest_stamina_per_hour@src/tables/movement_cost.h`). **ПЕРВОЕ ДЕЛО — ЗАМЕРИТЬ
 ЭТО, А НЕ ЧИНИТЬ:** расхождение панели и мира — ровно та слепота §8 п.6 (пятая
 форма), которую ни паритет, ни `ctest` не видят по построению, потому что числа
 симуляции от правоты картинки не меняются. Проверяется живым стендом с

@@ -421,9 +421,15 @@ sm::GameState make_state(sm::MacroStore& st) {
     gs.worldTickRt.subworldStepRemainder = 11;
     gs.worldTickRt.jitter.state = 0xDEADBEEFu;
     gs.macroAiRhythm.jitter.state = 0xFEEDF00Du;
-    // Story progress (v25): the intro was consumed, chapter 1 is live.
-    gs.logicNodesRegistered = {"plot_chapter_1", "sys_settlement"};
-    gs.logicNodesActive = {"plot_chapter_1"};
+    // Story progress (v25): the prologue is consumed, the arrival node is live.
+    // УЗЛЫ НАЗВАНЫ ЖИВЫЕ (M-390): здесь стоял `plot_chapter_1` — узел-заглушка,
+    // снесённый вместе со своим файлом, — и фикстура осталась бы ЕДИНСТВЕННЫМ
+    // местом в дереве, где мёртвое имя выглядит живым. Прибор судит перенос
+    // СПИСКА СТРОК через сейв, и для этого ему нужны две строки и одна активная;
+    // пусть они будут настоящими (`intro_main@src/content/plot/intro.cpp`,
+    // `sys_settlement@src/events/node_registry.cpp`).
+    gs.logicNodesRegistered = {"intro_main", "sys_settlement"};
+    gs.logicNodesActive = {"intro_main"};
 
     gs.player.name = "Tester";
     gs.player.ageDays = 1234;
@@ -695,9 +701,9 @@ void run_roundtrip() {
         FAIL_BAIL("macro-AI rhythm lost");
     }
     if (loaded.logicNodesRegistered.size() != 2
-        || loaded.logicNodesRegistered[0] != "plot_chapter_1"
+        || loaded.logicNodesRegistered[0] != "intro_main"
         || loaded.logicNodesActive.size() != 1
-        || loaded.logicNodesActive[0] != "plot_chapter_1") {
+        || loaded.logicNodesActive[0] != "intro_main") {
         FAIL_BAIL("story progress (logic nodes) lost");
     }
 

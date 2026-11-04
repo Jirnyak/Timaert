@@ -1,5 +1,4 @@
 #include "content/plot/intro.h"
-#include "content/plot/chapter_1.h"
 #include "events/event_types.h"
 #include "events/logic_nodes.h"
 
@@ -189,7 +188,16 @@ const char* resolve_homeland_faction(const char* choiceValue,
 void register_intro_story_nodes(LogicNodeEngine& logic) {
     logic.add(intro_main_node());
     logic.add(prologue_main_node());
-    register_chapter_1_nodes(logic);
+    // (ЗДЕСЬ РЕГИСТРИРОВАЛСЯ УЗЕЛ-ЗАГЛУШКА `plot_chapter_1`, и он снесён
+    //  2026-11-04 вместе со своим файлом `content/plot/chapter_1.h` — M-390.
+    //  Это была запрещённая §1 форма в чистом виде: условие
+    //  `return false` ВСЕГДА, эффекта нет вовсе, ярлык «Chapter 1
+    //  (placeholder)». Узел числился АКТИВНЫМ — его поднимал StoryResult
+    //  интро, — то есть игра носила в активном списке строку, которая не
+    //  могла сработать ни на одном тике. Глава 1 придёт УЗЛАМИ С
+    //  ПОСЛЕДСТВИЯМИ (M-269: у закона интеракции сегодня нет носителя), а
+    //  место под неё держать нечем: дыра названа в реестре, а не заглушкой
+    //  в дереве.)
     // intro_main is NOT activated here any more (2026-09-09): the demo opens
     // with the prologue pocket (release.md §3), and the arrival slide waits
     // for the witch scene's StoryResult — the app activates it there. A boot

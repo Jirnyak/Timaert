@@ -124,6 +124,59 @@ constexpr ItemDef kCatalog[] = {
         // it in the same column a weapon states its own (2026-09-19).
         /*def*/uniform_defense(10, 1), /*dice*/{}, /*dmgType*/DamageType::Blunt,
         /*skill*/SkillId::LightArmor},
+    // ── ТИП Shield: ЧТО ДЕРЖАТ В ОТВЕДЁННОЙ РУКЕ (M-390) ──────────────────
+    // Слот `OffGrip` существовал с рождения стойки и прямо называл эту вещь
+    // («a shield, a torch, a second blade»), скилл `SkillId::Shield` стоял и
+    // множил — а строк щита в каталоге было НОЛЬ. Вердикт владельца
+    // 2026-11-04 на развилку «снести скилл или добавить щиты»: ✓ «Добавить
+    // щиты строками», то есть скилл оживает КОНТЕНТОМ.
+    //
+    // ЧТО ЩИТ АВТОРИТ, И ЧЕГО НЕ АВТОРИТ (три утверждения, все три под
+    // `static_assert` ниже по файлу):
+    //   · БЛОК — да, и ТОЛЬКО он: щит ПЕРЕХВАТЫВАЕТ удар, он не покрывает
+    //     тело, и плоская колонка есть ровно эта работа. Она «НИКОГДА не
+    //     вызывает простой» (CANON S13, владелец: «блок никогда вообще не
+    //     вызывает простой это другая колонка даже в том и смысл»);
+    //   · ПРОЦЕНТ — ноль на всех восьми, и это МЕХАНИКА, а не пустая
+    //     колонка: простой выключает ровно процент, поэтому вещи без
+    //     процента в простое терять нечего — и база простоя её веса не
+    //     берёт вовсе (`armor_downtime_weight@src/bus/anketa.cpp`). Щит
+    //     стоит весь бой ПО ПОСТРОЕНИЮ, а не по ветке в двери урона;
+    //   · ДВЕ ФИЗИЧЕСКИЕ КОЛОНКИ ИЗ ВОСЬМИ (`physical_block`): доска с
+    //     оковкой стоит на пути того, что летит и бьёт, а шесть школ её
+    //     обтекают. Это и есть выбор, ради которого существует симметрия
+    //     8×8, — щит не ответ на всё.
+    //
+    // ЛЕСТНИЦА ЕСТЬ ПОЛОВИНЫ, И ВЕРХ ЕЙ ЗАДАЛ КАНОН: «лучшая плита каталога
+    // глушит два плоских удара начисто», то есть 2·kPlainBlow у павезы, и
+    // каждая ступень вниз — половина. Масса идёт тем же удвоением (2 → 4 →
+    // 8 кг), поэтому ЦЕНА ОДНОГО ПЛОСКОГО УДАРА В ГРАММАХ — одно число на
+    // всю лестницу (400 г за единицу блока), и держит её `static_assert`, а
+    // не честное слово: два литерала о одной вещи иначе разъезжаются молча.
+    // Темп работы делится тем же шагом (4 → 2 → 1 партия на рабочий день,
+    // `kPartsAuthoring` ниже).
+    //
+    // МАССА ЧИТАЕТСЯ СОСТАВОМ: кулачный щит — ЖЕЛЕЗНЫЙ диск (руда 4000 г →
+    // вещь 2000 г), павеза — ДОСКИ с оковкой (10 000 г материи → 8000 г
+    // вещи); готовая вещь легче своей материи ровно потому, что остальное
+    // ушло в щепу и окалину. ЦЕНА — ДВОЙНАЯ стоимость материи, тем же
+    // курсом, которым каталог оценивает кинжал (15 → 30) и меч (30 → 60):
+    // половина цены есть материя, половина — работа кузнеца.
+    {"shield_buckler", "Buckler",    ObjectType::Shield,     30, 2000, "\xF0\x9F\x9B\xA1",
+        "An iron fist-shield; turns a point aside, hides nothing", {},
+        /*slot*/part_bit(BodyPartId::OffGrip), /*blocks*/0,
+        /*def*/physical_block(kPlainBlow / 2), /*dice*/{},
+        /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Shield},
+    {"shield_round",   "Round Shield", ObjectType::Shield,   40, 4000, "\xF0\x9F\x9B\xA1",
+        "Planks and an iron boss — the soldier's own wall", {},
+        /*slot*/part_bit(BodyPartId::OffGrip), /*blocks*/0,
+        /*def*/physical_block(kPlainBlow), /*dice*/{},
+        /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Shield},
+    {"shield_tower",   "Tower Shield", ObjectType::Shield,   60, 8000, "\xF0\x9F\x9B\xA1",
+        "A pavise you stand behind; two plain blows die on it", {},
+        /*slot*/part_bit(BodyPartId::OffGrip), /*blocks*/0,
+        /*def*/physical_block(2 * kPlainBlow), /*dice*/{},
+        /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Shield},
     // ── АРХЕТИП Potion: ЧТО ПОТРЕБЛЯЮТ ЗА ЭФФЕКТ ──────────────────────────
     // Тип один и зовётся `consumable` (вердикт владельца 2026-10-20): сюда же
     // придут свитки и жезлы — всё, что при потреблении даёт эффект спелла на
@@ -314,6 +367,65 @@ static_assert(catalog_is_all_things(),
               "строка предметного каталога назвала ВОПЛОЩАЕМЫЙ архетип: адрес "
               "строки мира и лестница разошлись бы молча");
 
+// ── ЩИТ ЕСТЬ ЧИСТЫЙ ПЕРЕХВАТ, И ЭТО СУДИТ КОМПИЛЯТОР (M-390) ──────────────
+// Три утверждения одной функцией, потому что они одно: щит работает БЛОКОМ.
+//   · ПРОЦЕНТА НЕТ НИ В ОДНОЙ КОЛОНКЕ — отсюда и следует «щит не ставит
+//     простоя»: база простоя берёт вес ровно тех вещей, у которых процент
+//     есть (`armor_downtime_weight@src/bus/anketa.cpp`). Автор, дописавший
+//     щиту процент, красит СБОРКУ — и правильно: он завёл бы щит, который
+//     сбивает броню носителя своим весом, то есть блок, вызывающий простой;
+//   · БЛОК НЕНУЛЕВОЙ НА ДВУХ ФИЗИЧЕСКИХ колонках и НУЛЕВОЙ на шести школах
+//     (`physical_block`): доска стоит на пути удара, стихию она не ведает;
+//   · ЩИТЫ В КАТАЛОГЕ ЕСТЬ ВООБЩЕ — `seen > 0`. Это тот самый ноль, который
+//     наряд и закрывал: скилл `Shield` множил пустоту, и доказательством
+//     обратного была проза в шапке `attributes.h`.
+constexpr bool shields_are_pure_block() {
+    int seen = 0;
+    for (const ItemDef& d : kCatalog) {
+        if (d.type != ObjectType::Shield) continue;
+        ++seen;
+        if (d.defense.has_armor_percent()) return false;
+        for (std::size_t t = 0; t < kDamageTypeCount; ++t) {
+            const bool physical = DamageType(t) == DamageType::Pierce
+                               || DamageType(t) == DamageType::Blunt;
+            const bool stops = d.defense.block[t] != 0;
+            if (stops != physical) return false;
+        }
+    }
+    return seen > 0;
+}
+static_assert(shields_are_pure_block(),
+              "щит есть ПЕРЕХВАТ: процент ноль на всех восьми (иначе его вес "
+              "начнёт сбивать броню носителя), блок — только на двух "
+              "физических колонках, и хотя бы одна строка щита в каталоге "
+              "есть");
+
+// ...И ЛЕСТНИЦА ЩИТОВ ЕСТЬ ОДИН КУРС, А НЕ ТРИ НЕЗАВИСИМЫХ ЧИСЛА. Масса и
+// блок — два литерала об ОДНОЙ вещи («сколько железа и дерева несёт рука за
+// один погашенный плоский удар»), а два литерала об одной вещи разъезжаются
+// молча (закон произведения двух ручек). Здесь они обязаны разъехаться
+// НЕСОБИРАЕМО: грамм на единицу блока одинаков у всех строк типа, а верх
+// лестницы стоит ровно там, куда его поставил канон — 2·kPlainBlow, «лучшая
+// плита каталога глушит два плоских удара начисто» (CANON S13).
+constexpr bool shield_ladder_is_one_rate() {
+    std::int32_t rate = -1;
+    int top = 0;
+    for (const ItemDef& d : kCatalog) {
+        if (d.type != ObjectType::Shield) continue;
+        const int b = d.defense.block_of(DamageType::Blunt);
+        if (b <= 0 || d.massG % b != 0) return false;
+        const std::int32_t r = d.massG / b;
+        if (rate < 0) rate = r;
+        else if (r != rate) return false;
+        if (b > top) top = b;
+    }
+    return rate > 0 && top == 2 * kPlainBlow;
+}
+static_assert(shield_ladder_is_one_rate(),
+              "лестница щитов есть ОДИН курс: граммов на единицу блока "
+              "одинаково у всех строк типа, а верхняя строка глушит ровно два "
+              "плоских удара (2·kPlainBlow, CANON S13)");
+
 // ── The matter table (owner verdicts 2026-09-11, CANON «Крафт/Скрап») ──────
 // What each row is MADE OF, authored by id and resolved once into the flat
 // per-ordinal table below. Rows absent here are TERMINAL (raw matter). The
@@ -388,6 +500,14 @@ constexpr PartsAuthoringRow kPartsAuthoring[] = {
     {"wpn_staff",   {{"wood", 1}}, 1, 4},
     {"wpn_bow",     {{"wood", 1}}, 1, 2},
     {"arm_leather", {{"mat_hide", 3}}, 1, 2},
+    // ЩИТЫ (M-390): состав читается с той же лестницы, что масса и блок —
+    // кулачный есть ЖЕЛЕЗНЫЙ диск, круглый есть доска с оковкой, павеза есть
+    // три доски с оковкой. Труд делится тем же шагом, которым растёт масса:
+    // 4 → 2 → 1 партия на рабочий день, как лёгкая строка оружия (4) против
+    // клинка (2) против повозки (1).
+    {"shield_buckler", {{"iron", 1}}, 1, 4},
+    {"shield_round",   {{"wood", 1}, {"iron", 1}}, 1, 2},
+    {"shield_tower",   {{"wood", 3}, {"iron", 1}}, 1, 1},
 };
 
 // ── The mint is value-neutral, BY LITERAL (owner 2026-09-12) ───────────────

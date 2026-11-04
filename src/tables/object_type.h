@@ -63,6 +63,12 @@ enum class ObjectType : std::uint8_t {
     Bow,
     // Armor
     BodyArmor,
+    // ЩИТ — СВОЙ ТИП, А НЕ СТРОКА В `BodyArmor` (M-390): у него другой слот
+    // (отведённая рука), другой скилл (`SkillId::Shield`) и другая РАБОТА —
+    // плоский перехват вместо процентного покрытия. Три его строки
+    // (кулачный · круглый · павеза) различают КОЛОНКИ, а не механика, поэтому
+    // тип один на все три — тот же случай, что двенадцать монет.
+    Shield,
     // Potion → ОДИН тип, и он шире архетипа по имени сознательно (вердикт
     // владельца: «potion обобщить до консумабле типа там будут свитки и тд всё
     // что влияет на ресуры анкеты - типа могут бонусы к атриутам бафы
@@ -183,6 +189,7 @@ inline constexpr ObjectTypeDef kObjectTypes[std::size_t(ObjectType::Count)] = {
     {"staff",      ObjectArchetype::Weapon},
     {"bow",        ObjectArchetype::Weapon},
     {"body_armor", ObjectArchetype::Armor},
+    {"shield",     ObjectArchetype::Armor},
     {"consumable", ObjectArchetype::Potion},
     {"ration",     ObjectArchetype::Food},
     {"ore",        ObjectArchetype::Material},
@@ -304,9 +311,11 @@ constexpr bool object_type_ids_unique() {
 }
 static_assert(object_type_ids_unique(), "id типа — ключ контента, он уникален");
 
-static_assert(int(ObjectType::Count) == 59,
-              "59 типов на 91 строку мира — таксономия владельца 2026-10-20. "
-              "Счёт пинится затем, чтобы рост контента был ВИДЕН в дифе, а не "
-              "чтобы запретить его: новый тип правит это число одной цифрой");
+static_assert(int(ObjectType::Count) == 60,
+              "60 типов на 94 строки мира — таксономия владельца 2026-10-20 "
+              "плюс `shield` (M-390, вердикт 2026-11-04 «Добавить щиты "
+              "строками»). Счёт пинится затем, чтобы рост контента был ВИДЕН в "
+              "дифе, а не чтобы запретить его: новый тип правит это число "
+              "одной цифрой");
 
 } // namespace sm

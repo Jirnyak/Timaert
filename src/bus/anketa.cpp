@@ -359,7 +359,18 @@ DefenseSum worn_defense(const Gear& g, const Inventory& inv,
 // сумма флоатов зависела от ПОРЯДКА обхода ячеек экипировки, а простой чинит
 // это тем, что складывать нечему. Подпись остаётся килограммами: её читает
 // закон простоя брони через `kArmorRecoverySecondsPerKg`, то есть секунды.
-float worn_armor_weight(const Gear& g, const Inventory& inv) {
+//
+// ВЕС ПЛАТИТ РОВНО ТО, ЧТО ПРОСТОЙ ВЫКЛЮЧАЕТ (M-390). Простой гасит
+// ПРОЦЕНТНУЮ колонку и никогда плоскую, значит вещь, у которой процента нет
+// ни в одной колонке, в простое не теряет ничего — и часов своим весом не
+// заводит. Это не поблажка щиту и не ветка по роду: вопрос задан КОЛОНКЕ, и
+// щит с авторенным процентом платил бы простой честно, как куртка.
+// АФФИКСЫ СПРАШИВАЮТСЯ ТОЖЕ, и это не педантизм: роллнутый вард пишет в те же
+// процентные колонки (`worn_defense` ниже складывает их в одну сумму), поэтому
+// щит с «of Fire Warding» ЕСТЬ вещь с процентом — и его вес обязан платить за
+// то, что простой у него отнимет. Спроси здесь только строку, и у одной вещи
+// завелось бы два ответа на «есть ли ей что терять».
+float armor_downtime_weight(const Gear& g, const Inventory& inv) {
     std::int32_t grams = 0;
     for (int i = 0; i < kEquipCells; ++i) {
         const std::uint16_t v = g.worn[std::size_t(i)];
@@ -371,6 +382,17 @@ float worn_armor_weight(const Gear& g, const Inventory& inv) {
             || item_archetype(*def) != ObjectArchetype::Armor) {
             continue;
         }
+        bool hasPercent = def->defense.has_armor_percent();
+        if (!hasPercent) {
+            BonusTotals mine{};
+            for (int a = 0; a < kMaxItemAffixes; ++a) {
+                accumulate(mine, r.affix_at(a));
+            }
+            for (std::size_t t = 0; t < kDamageTypeCount; ++t) {
+                if (mine.armor[t] != 0) { hasPercent = true; break; }
+            }
+        }
+        if (!hasPercent) continue;
         grams += item_mass_g(*def);
     }
     return float(double(grams) / 1000.0);
@@ -378,7 +400,7 @@ float worn_armor_weight(const Gear& g, const Inventory& inv) {
 
 int armor_recovery_steps(const Gear& g, const Inventory& inv,
                          const Attributes& a, const Skills& s) {
-    const float kg = worn_armor_weight(g, inv);
+    const float kg = armor_downtime_weight(g, inv);
     if (kg <= 0.0f) return 0;
     // ТА ЖЕ ДВЕРЬ ТЕМПА, что у замаха и каста (`recovery_steps`), и тот же
     // ГЕНЕРИК-скилл: `Armsmaster`. Типовому доспешному роду вход сюда ЗАПРЕЩЁН

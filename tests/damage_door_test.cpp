@@ -21,7 +21,11 @@
 //     an armoured row cuts the larger of its column's threshold or the
 //     halving fraction — full block of a blow the plate outweighs is REAL
 //     (owner verdict 2026-09-05) — and whether armour is in the way at all is
-//     the damage KIND's column: plate does not soften a fall.
+//     the damage KIND's column: plate does not soften a fall;
+//   * ЩИТ (M-390): надетая строка щита СНИЖАЕТ прошедший урон, ранг разгоняет
+//     её плоскую колонку линейно, удар порядка тысячи всё равно проходит, и
+//     ПРОСТОЯ щит не ставит НИ РАЗУ — при негативном контроле вещью с
+//     процентом, которая его ставит.
 
 #include "check.h"
 #include "scene_objects_fixture.h"   // арена объектов: fx — колонки (M-150 1а)
@@ -421,6 +425,155 @@ void test_armor_downtime() {
           "шкура строки существа простоя не знает: надетого веса ноль");
 }
 
+// Одеть строку каталога по её id на тело ЗАПИСИ — предусловие свидетеля,
+// рождённое им самим (§8 п.11): ни на генератор лута, ни на стартовый набор
+// прибор не надеется. Возвращает ячейку экипировки или -1.
+int wear_by_id(sm::MacroStore& store, sm::MacroHandle squad, const char* id) {
+    const int idx = sm::item_index(id);
+    if (idx < 0) return -1;
+    sm::Inventory& bag = store.inventory[squad.slot].inv;
+    sm::ItemRef r{};
+    r.def = std::uint16_t(idx);
+    r.count = 1;
+    if (!bag.add_ref(r)) return -1;
+    int slot = -1;
+    for (int i = 0; i < sm::kMaxInventorySlots; ++i) {
+        if (!bag.slots[std::size_t(i)].empty()
+            && int(bag.slots[std::size_t(i)].def) == idx) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0) return -1;
+    return sm::equip(store.gear[squad.slot].gear, bag, slot);
+}
+
+// ЩИТ РАБОТАЕТ, И РАБОТАЕТ БЛОКОМ (M-390, вердикт владельца 2026-11-04 на
+// развилку «снести скилл или добавить щиты»: ✓ «Добавить щиты строками»).
+// Прежде скилл `Shield` множил ПУСТОТУ: строк щита в каталоге было ноль.
+// Утверждается ровно то, что делает щит ЖИВЫМ, и каждое падает отдельно:
+//   1. он СНИЖАЕТ прошедший урон — на ранге 0 ровно на блок своей строки;
+//   2. ранг разгоняет плоскую колонку ЛИНЕЙНО, и снимается БОЛЬШЕ...
+//   3. ...но удар порядка тысячи всё равно ПРОХОДИТ (CANON S13: абсолютной
+//      неуязвимости в этом мире не существует);
+//   4. ПРОСТОЯ ОН НЕ СТАВИТ НИ РАЗУ, хотя удар прошёл сквозь блок, — потому
+//      что процента у него нет, а база простоя берёт вес ровно тех вещей, у
+//      которых процент есть (`armor_downtime_weight@src/bus/anketa.cpp`);
+//   5. и НЕГАТИВНЫЙ КОНТРОЛЬ прибора: вещь С процентом (кожаная куртка) на том
+//      же теле простой СТАВИТ, значит ноль в п.4 есть факт, а не слепота.
+void test_shield_blocks_without_downtime() {
+    auto arena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *arena_;
+    // Род телу НЕ даётся сознательно: тогда `defense_of` берёт пустую строку
+    // существа, и всё измеренное ниже есть вклад НАДЕТОГО, без примеси шкуры.
+    const int body = make_body(objs, 100000.0f, /*withKind*/false);
+    sm::test::make_avatar(objs, body);
+    sm::test::give_combat(objs, body, sm::ecs::Combat{});
+
+    auto store = sm::make_macro_store();
+    const sm::MacroHandle squad = sm::store_birth(*store);
+    store->pools[squad.slot].hp = 100000;
+    store->pools[squad.slot].maxHp = 100000;
+    sm::test::give_origin(objs, body, squad);
+    sm::gear_init(store->gear[squad.slot].gear,
+                  sm::npc_def(sm::NPCType::Adventurer).slots);
+
+    const int shieldIdx = sm::item_index("shield_tower");
+    CHECK_OR_RETURN(shieldIdx >= 0, "каталог знает павезу — строку ЩИТА");
+    const int cell = wear_by_id(*store, squad, "shield_tower");
+    CHECK_OR_RETURN(cell >= 0, "и тело взяло её в руку");
+    CHECK(cell == sm::equip_cell(sm::BodyPartId::OffGrip, 0),
+          "щит садится в ОТВЕДЁННУЮ руку — слот, который и называл его с "
+          "рождения стойки («a shield, a torch, a second blade»)");
+
+    const sm::ItemDef& row = *sm::item_def_at(shieldIdx);
+    const int block = row.defense.block_of(sm::DamageType::Blunt);
+    CHECK_OR_RETURN(block > 0 && row.massG > 0
+                        && !row.defense.has_armor_percent(),
+                    "предусловие своё: у павезы ЕСТЬ блок и ЕСТЬ вес, а "
+                    "процента НЕТ — иначе п.4 ниже проверял бы другую вещь");
+
+    auto& clock = *sm::sub::slot_combat(objs, body);
+    sm::Skills& skills = store->sheet[squad.slot].skills;
+
+    // 1. РАНГ 0: снято РОВНО блок строки. Процента у щита нет, поэтому весь
+    //    съеденный урон есть плоская колонка, и это видно вычитанием.
+    const int blow = 1000;   // порядок удара лейта (CANON S13), и он же тот
+                             // размер, который обязан проходить сквозь лучшее
+                             // снаряжение каталога на сотом ранге
+    const DamageResult r0 =
+        apply_damage(objs, store.get(), body, DamageSource{}, blow,
+                     DamageKind::Melee, sm::DamageType::Blunt, nullptr);
+    CHECK(r0.applied < blow, "надетый щит СНИЖАЕТ прошедший урон");
+    CHECK(blow - int(r0.applied) == block,
+          "на ранге 0 снято ровно столько, сколько стоит в колонке блока "
+          "строки — ни пунктом больше");
+    const float wShield = sm::armor_downtime_weight(
+        store->gear[squad.slot].gear, store->inventory[squad.slot].inv);
+    CHECK(wShield == 0.0f,
+          "вес ЩИТА базы простоя не платит: простой выключает процент, а "
+          "процента у него нет — терять в простое нечего");
+    CHECK(clock.armorSteps == 0u,
+          "и простоя нет, хотя удар прошёл СКВОЗЬ блок: «блок никогда вообще "
+          "не вызывает простой» (владелец, CANON S13)");
+
+    // 2-3. РАНГ 100: плоскую колонку ранг разгоняет ЛИНЕЙНО (10 %/ранг у
+    //      щита против 1 %/ранг у процентных родов — CANON S13), поэтому
+    //      снимается БОЛЬШЕ, но тысяча всё равно проходит.
+    skills.rank[std::size_t(sm::SkillId::Shield)] = 100;
+    const DamageResult r100 =
+        apply_damage(objs, store.get(), body, DamageSource{}, blow,
+                     DamageKind::Melee, sm::DamageType::Blunt, nullptr);
+    const int stopped0 = blow - int(r0.applied);
+    const int stopped100 = blow - int(r100.applied);
+    CHECK(stopped100 > stopped0,
+          "ранг щита снял БОЛЬШЕ: плоская колонка разгоняется линейно");
+    CHECK(r100.applied > 0,
+          "...и удар в тысячу ПРОХОДИТ даже на сотом ранге: абсолютной "
+          "неуязвимости в этом мире не существует (CANON S13)");
+    CHECK(clock.armorSteps == 0u,
+          "простоя всё ещё нет — ранг множит защиту, а не заводит часы");
+    std::fprintf(stderr,
+                 "[shield] павеза: снято на ранге 0 — %d, на ранге 100 — %d, "
+                 "простой %u шагов\n",
+                 stopped0, stopped100, unsigned(clock.armorSteps));
+    std::fflush(stderr);
+
+    // 4. НЕГАТИВНЫЙ КОНТРОЛЬ ПРИБОРА: вещь С ПРОЦЕНТОМ на том же теле простой
+    //    СТАВИТ. Без этого три нуля выше доказывали бы лишь то, что прибор
+    //    слеп к простою вообще.
+    const int coatIdx = sm::item_index("arm_leather");
+    CHECK_OR_RETURN(coatIdx >= 0, "каталог знает кожаную куртку");
+    CHECK_OR_RETURN(wear_by_id(*store, squad, "arm_leather") >= 0,
+                    "и она надевается рядом со щитом — рука и торс не спорят");
+    const sm::ItemDef& coat = *sm::item_def_at(coatIdx);
+    CHECK(coat.defense.has_armor_percent(),
+          "контроль читает ту вещь, ради которой он взят: у куртки процент ЕСТЬ");
+    CHECK(sm::armor_downtime_weight(store->gear[squad.slot].gear,
+                                    store->inventory[squad.slot].inv)
+              == float(double(coat.massG) / 1000.0),
+          "база простоя есть РОВНО куртка: щит рядом с ней не прибавил своих "
+          "восьми килограммов");
+    apply_damage(objs, store.get(), body, DamageSource{}, blow,
+                 DamageKind::Melee, sm::DamageType::Blunt, nullptr);
+    CHECK(clock.armorSteps > 0u,
+          "негативный контроль: вещь С процентом простой СТАВИТ — значит нули "
+          "выше есть ФАКТ щита, а не слепота прибора");
+
+    // 5. ...И В ПРОСТОЕ БЛОК ЩИТА ОСТАЛСЯ В СТРОЮ: процент выключен, плоская
+    //    колонка держит. Ожидание берётся у тех же дверей, которыми отвечает
+    //    мир (сборка надетого + закон защиты), а не переписывается формулой.
+    const sm::DefenseSum worn = sm::worn_defense(
+        store->gear[squad.slot].gear, store->inventory[squad.slot].inv,
+        skills, sm::DamageType::Blunt);
+    const DamageResult inDowntime =
+        apply_damage(objs, store.get(), body, DamageSource{}, blow,
+                     DamageKind::Melee, sm::DamageType::Blunt, nullptr);
+    CHECK(inDowntime.applied == sm::mitigate_amount(blow, 0, worn.block),
+          "в простое процент выключен, а блок щита в строю — ровно закон "
+          "защиты от нулевой брони и полного блока");
+}
+
 // THE defence law's own shape (tables/damage_types.h) — свойства, а не
 // перевычисление формулы (§8 п.4-5): каждое утверждение падает отдельно.
 // ПЕРЕПИСАН 2026-10-01 (M-197) ВТОРОЙ РАЗ ЗА ДЕНЬ, и оба раза потому, что менялся
@@ -760,6 +913,7 @@ int main() {
     test_players_worn_plate_stands_underground();
     test_mitigation_law_shape();
     test_armor_downtime();
+    test_shield_blocks_without_downtime();
     test_survivor_protocol();
     test_player_death_is_not_an_npc_kill();
     test_kindless_body_still_reports();

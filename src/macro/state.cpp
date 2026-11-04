@@ -60,8 +60,12 @@ PlayerState default_player() {
     PlayerState p;
     p.name      = "Traveller";
     p.ageDays   = 1000;             // ~3 years; matches TS
-    // Start money: imperial coin until the chargen names a homeland — then
-    // apply_intro_story_result re-mints it into the realm's own currency.
+    // (ЗДЕСЬ ОБЕЩАЛАСЬ СТАРТОВАЯ МОНЕТА и перечеканка её в монету родины
+    //  «дверью интро» — обе половины обещания мертвы: кошелёк из воздуха снесён
+    //  M-139, а названная дверь (`apply_intro_story_result`) снесена M-390
+    //  вместе с узлом-заглушкой главы 1, который только и активировала.
+    //  Родина решает, какие монеты для игрока «свои», там, где речь о цене и
+    //  семье, — это читает реестр фракций.)
     // (The starter kit is dealt into his BAG — an ordinary NpcInventory on
     // his squad entity — by the world boot, once that entity exists. A
     // PlayerState cannot carry goods any more; it is not a container.)
