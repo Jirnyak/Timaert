@@ -124,8 +124,11 @@ struct CombatLogEntry {
 // body's own for a possession). One quantity, one door: player_arm_reach().
 // kPlayerMeleeCooldown is DEAD (recovery door, CANON S14 2026-09-07): the
 // swing's tempo comes from the held weapon's MASS through hand_strike_fields
-// (.recoverySteps — anatomy.h weapon_swing_seconds ÷ Spd asymptote ÷
-// Armsmaster), refreshed each tick like the dice.
+// (.recoverySteps — `weapon_swing_seconds@src/tables/items.h` ÷ линейная
+// ставка Spd ÷ Armsmaster), refreshed each tick like the dice. Прежний текст
+// звал АСИМПТОТУ Spd и файл `anatomy.h`: асимптота снята M-389 (ставка
+// линейна и без предела), а дверь массы переехала в `tables/` — шапка врала
+// в обоих словах.
 // kPlayerBaseMeleeDamage is DEAD (phase 3): the bare hand is the fist's own
 // dice row now (macro/anatomy.h kFistDice) and a weapon brings its own. The
 // historical 10 survives only as the armour scale's anchor (kPlainBlow).
