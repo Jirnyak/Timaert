@@ -2784,4 +2784,5 @@ add_custom_target(check
 # по-прежнему разные слова.
 add_dependencies(check ${PROJECT_NAME} ${_timaert_tests} tu_time_jump
                  gpu_smoke gpu_smoke3d macro_shot balance_run
-                 height_census relief_census fauna_spread_census)
+                 height_census relief_census fauna_spread_census
+                 road_reach_census)
