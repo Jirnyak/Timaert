@@ -2047,10 +2047,23 @@ const ItemDef* weapon_in_hand(const Gear& g, const Inventory& inv);
 // a troll's hide: bodies with no gear at all). Its род is in the WEARER's
 // training: the best-trained of the living armour skills. A beast trains
 // none of them and stays ×1, so the world's monsters do not silently thicken.
+// ЗДЕСЬ СТОЯЛ `SkillId::Shield`, И ОН СНЯТ ВЕРДИКТОМ ВЛАДЕЛЬЦА 2026-11-04
+// (наряд M-401), дословно: «про щит - это же просто один из элементов брони
+// да? так что пусть просто усилят броню которую он даёт да». Значит ранг Щита
+// рычаг САМОГО ЩИТА, а не носительской шкуры: надетая половина уже множит
+// КАЖДУЮ деталь рангом скилла, который называет ЕЁ строка
+// (`worn_defense@src/bus/anketa.cpp`), поэтому снятие отсюда ничего у щита не
+// отнимает — оно перестаёт отдавать ему чужое.
+//
+// ПОЧЕМУ ЭТО БЫЛ ДЕФЕКТ, А НЕ ВКУС: курс Щита 10 %/ранг законен ровно потому,
+// что его колонка ПЛОСКАЯ (блок) и в иммунитет не упирается; эта же дверь
+// множит ПРОЦЕНТНУЮ броню строки существа, у которой 100 % и есть иммунитет.
+// Замерено на строке Стражника (процент 40): ранг Щита 15 → броня 100, то есть
+// ИММУНИТЕТ ко всем восьми типам, ранг 100 → 440; та же выслуга Тяжёлой брони
+// даёт 46 и 80. Ранг приходил сам — его несут веса обучения строки.
 inline int sheet_armor_mult_pct(const Skills& skills) {
     int best = 100;
-    for (SkillId id : {SkillId::HeavyArmor, SkillId::LightArmor,
-                       SkillId::Shield}) {
+    for (SkillId id : {SkillId::HeavyArmor, SkillId::LightArmor}) {
         const int pct = skill_mult_pct(skills, id);
         if (pct > best) best = pct;
     }

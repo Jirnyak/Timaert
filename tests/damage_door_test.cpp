@@ -905,6 +905,53 @@ void test_the_blow_lands_on_the_record() {
           "body that fell");
 }
 
+// КУРС ПЛОСКОЙ КОЛОНКИ НЕ ПОПАДАЕТ НА ПРОЦЕНТНУЮ (наряд M-401, вердикт
+// владельца 2026-11-04: «про щит - это же просто один из элементов брони да?
+// так что пусть просто усилят броню которую он даёт да»).
+//
+// Щит есть НАДЕТАЯ ДЕТАЛЬ, и его ранг усиливает броню, которую даёт ОН САМ —
+// это утверждает проверка выше (`test_shield_blocks_without_downtime`:
+// снятое на ранге 100 больше снятого на ранге 0). Здесь утверждается вторая
+// половина того же закона: тот же ранг НЕ ОБЯЗАН и не смеет утолщать ШКУРУ
+// носителя, потому что процентная колонка упирается в иммунитет, а плоская —
+// нет. Замерено до починки на строке Стражника (процент 40): ранг Щита 15
+// давал броню 100, то есть ИММУНИТЕТ ко всем восьми типам, ранг 100 → 440.
+void test_shield_rank_does_not_thicken_the_skin() {
+    const sm::Defense& guard = sm::npc_def(sm::NPCType::Guard).defense;
+    const int bare = guard.armor_of(sm::DamageType::Blunt);
+    CHECK_OR_RETURN(bare > 0,
+                    "строка Стражника несёт ПРОЦЕНТНУЮ броню — иначе этот "
+                    "закон не на чем проверять, и мир обязан её нести");
+
+    sm::Skills onlyShield{};
+    onlyShield.rank[std::size_t(sm::SkillId::Shield)] = 100;
+    const sm::DefenseSum withShield =
+        sm::body_defense(guard, onlyShield, nullptr, nullptr,
+                         sm::DamageType::Blunt);
+    CHECK(withShield.armor == bare,
+          "ранг ЩИТА не двигает процентную броню строки существа ни на "
+          "единицу: он рычаг самой надетой детали, а не носительской шкуры");
+    CHECK(withShield.armor < 100,
+          "и потому иммунитета не возникает: сотый ранг щита оставляет "
+          "строку проницаемой (CANON S13 — абсолютной неуязвимости нет)");
+
+    // ЯКОРЬ НА ВТОРОЙ НОСИТЕЛЬ: закон снял ОДИН род из списка, а не список.
+    // Без этого проверка выше зеленела бы и на двери, умножающей на 100 всегда.
+    sm::Skills onlyHeavy{};
+    onlyHeavy.rank[std::size_t(sm::SkillId::HeavyArmor)] = 100;
+    const sm::DefenseSum withHeavy =
+        sm::body_defense(guard, onlyHeavy, nullptr, nullptr,
+                         sm::DamageType::Blunt);
+    CHECK(withHeavy.armor > bare,
+          "а ранг ДОСПЕШНОГО рода по-прежнему множит шкуру: выучка носителя "
+          "осталась законом, снят ровно один род из её списка");
+    std::fprintf(stderr,
+                 "[m401] Стражник, процент строки %d: ранг Щита 100 → %d "
+                 "(было 440), ранг Тяжёлой 100 → %d\n",
+                 bare, withShield.armor, withHeavy.armor);
+    std::fflush(stderr);
+}
+
 } // namespace
 
 int main() {
@@ -914,6 +961,7 @@ int main() {
     test_mitigation_law_shape();
     test_armor_downtime();
     test_shield_blocks_without_downtime();
+    test_shield_rank_does_not_thicken_the_skin();
     test_survivor_protocol();
     test_player_death_is_not_an_npc_kill();
     test_kindless_body_still_reports();
