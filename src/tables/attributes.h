@@ -111,7 +111,7 @@ inline constexpr AttributeDef kAttributeDefs[] = {
     {AttributeId::End,  "end",  "END", "+10 max HP, +5 max SP per point"},
     {AttributeId::Intl, "intl", "INT", "+1 spell damage per point"},
     {AttributeId::Wil,  "wil",  "WILL", "+10 max MP, +5 max SP per point"},
-    {AttributeId::Spd,  "spd",  "SPD", "Asymptotic movement speed"},
+    {AttributeId::Spd,  "spd",  "SPD", "+1 cell/hour of march per 16 points"},
     {AttributeId::Lck,  "lck",  "LCK", "Shifts the game's dice in your favor"},
     {AttributeId::Cha,  "cha",  "CHA", "1% off prices and payroll per point"},
     {AttributeId::Wis,  "wis",  "WIS", "+1% EXP bonus per point"},
