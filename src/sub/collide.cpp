@@ -223,7 +223,24 @@ bool StructureIndex::swept_blocked(float x0, float y0, float x1, float y1,
         // is a floor, anything protruding higher whose volume crosses
         // [feet, crown] is a wall. A horizontal step does not change z, so
         // this stays a per-entry filter.
-        if (e.z1 > zFeet + stepUp && e.z0 < zFeet + bodyH) hit = true;
+        if (!(e.z1 > zFeet + stepUp && e.z0 < zFeet + bodyH)) return;
+        // ПОБЕГ ПРИНАДЛЕЖИТ СОЛИДУ, А НЕ ТЕЛУ (M-406, вердикт владельца
+        // 2026-11-04 — вариант «побег ПО СОЛИДУ»). Этот вопрос стоял ОДИН
+        // уровнем выше — `resolve_step` спрашивала «внутри ли я ХОТЬ
+        // ЧЕГО-НИБУДЬ» и на «да» отпускала шаг целиком, то есть тело,
+        // законно пронизывающее ОДИН солид, проходило сквозь ВСЕ прочие.
+        // Замер: дракон (макушка 6 м) под воротной перекладиной (span z
+        // 2.0..3.0) шагал СКВОЗЬ глухую стену рядом и КОНЧАЛ шаг внутри
+        // кладки, где ему снова был положен побег. Живой геймплей, а не
+        // угол: всякая макушка выше низа перекладины стоит в проёме в
+        // состоянии побега ПОСТОЯННО, значит ходит сквозь воротные башни.
+        //
+        // Теперь пропуск даёт только САМ солид, внутри которого тело уже
+        // стояло, и «нельзя запереть» цело по построению: солид, обнявший
+        // тело, его не отказывает НИКОГДА, поэтому выйти из него можно
+        // всегда — а соседняя стена остаётся стеной.
+        if (entry_overlaps(e, x0, y0, r)) return;
+        hit = true;
     });
     return hit;
 }
@@ -294,11 +311,14 @@ void StructureIndex::resolve_step(float fromX, float fromY,
     // the same one the destination test cost — because a clear path and a
     // clear destination are the same answer whenever the step is short.
     if (!swept_blocked(fromX, fromY, toX, toY, r, zFeet, bodyH, stepUp)) return;
-    // Escape rule, UNCHANGED: a body already inside a solid may always move
-    // (out). It stands after the sweep and still holds, because a sweep that
-    // starts inside a solid necessarily reports that solid — so a trapped
-    // body always reaches this line.
-    if (blocked_at(fromX, fromY, r, zFeet, bodyH, stepUp)) return;
+    // (ЗДЕСЬ СТОЯЛ ГЛОБАЛЬНЫЙ ПОБЕГ — `if (blocked_at(fromX, fromY, …)) return;`
+    //  с надписью «UNCHANGED». Он отвечал на вопрос «внутри ли я ХОТЬ
+    //  ЧЕГО-НИБУДЬ» и отпускал шаг ЦЕЛИКОМ, то есть выдавал пропуск сразу
+    //  через ВСЕ солиды сцены — M-406. Правило не снято, а СПУЩЕНО К СОЛИДУ:
+    //  его исполняет `swept_blocked` строкой `entry_overlaps(e, x0, y0, r)`,
+    //  поэтому пропуск даёт только тот солид, внутри которого тело стояло.
+    //  Держать обе формы было нельзя — это два ответа на один вопрос о мире,
+    //  и широкий ответ всегда выигрывал, потому что стоял первым.)
     // Axis slide: keep whichever component reaches its destination by a CLEAR
     // PATH. Same two candidates as before, each asked as a sweep, so sliding
     // along a wall cannot tunnel through the next one.

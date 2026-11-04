@@ -25,7 +25,14 @@
 //     trying to rise through it: over/under crossings work honestly.
 //   • ESCAPE — a body that finds itself INSIDE a solid (teleport, possession,
 //     legacy save) may always move; blocking only ever refuses entry. Nothing
-//     can be trapped by this module.
+//     can be trapped by this module. The pass belongs to the SOLID, not to the
+//     body (M-406): only the solid a body already overlaps declines to refuse
+//     it, and every OTHER solid keeps refusing. The rule used to be global —
+//     "inside anything at all" freed a step through everything — so a body
+//     legitimately threading one solid crossed the rest; a dragon standing in
+//     a gateway is under its lintel PERMANENTLY, and so walked through the
+//     gate towers. Per-solid keeps the no-trapping promise by construction:
+//     the solid holding you never refuses you, so leaving it is always legal.
 //
 // Geometry comes from the shared map_data.h helpers (structure_half_x/y,
 // structure_solid_span, per-kind minimum floors), which the renderer's
@@ -143,9 +150,12 @@ private:
     bool entry_overlaps(const Entry& e, float x, float y, float r) const;
     // Does the SEGMENT (x0,y0)→(x1,y1) touch this entry's Minkowski-expanded
     // body? A degenerate segment reduces EXACTLY to entry_overlaps, so the
-    // sweep and the point test can never disagree about the same place — which
-    // is what keeps a swept body from being parked where blocked_at calls it
-    // trapped.
+    // GEOMETRY of the sweep and of the point test can never disagree about the
+    // same place — which is what keeps a swept body from being parked where
+    // blocked_at calls it trapped. (Their VERDICTS do part company inside a
+    // solid, and that is the per-solid escape of M-406, not a disagreement
+    // about shape: `blocked_at` answers "is this point in a solid",
+    // `swept_blocked` answers "would this step enter one it is not in yet".)
     bool entry_swept(const Entry& e, float x0, float y0, float x1, float y1,
                      float r) const;
 
@@ -156,9 +166,11 @@ private:
                             Fn&& fn) const;
 
     // Would a body of radius `r` sweeping from (x0,y0) to (x1,y1) at feet
-    // `zFeet` cross the SIDE of any solid? Private on purpose: the only public
-    // way to ask about a step is `resolve_step`, so a second mover cannot grow
-    // its own half-answer beside it.
+    // `zFeet` ENTER the side of a solid it is not already in? Private on
+    // purpose: the only public way to ask about a step is `resolve_step`, so a
+    // second mover cannot grow its own half-answer beside it. The "not already
+    // in" half IS the escape rule (M-406) and lives here rather than in the
+    // caller, because only here is the offending solid still named.
     bool swept_blocked(float x0, float y0, float x1, float y1, float r,
                        float zFeet, float bodyH, float stepUp) const;
 
