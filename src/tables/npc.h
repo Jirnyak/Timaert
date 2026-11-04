@@ -88,7 +88,15 @@ enum class NPCType : std::uint8_t {
     Troll,
     Ogre,
     Minotaur,
+    // ЙЕТИ — верхушка СНЕГА (M-382), тип `Giant`, поэтому стоит в группе
+    // великанов, а не рядом с «другими верхушками»: группы по ТИПУ, и
+    // «верхушка биома» типом не является — это высказывание КОЛОНКИ ТИРА.
+    Yeti,
     Harpy,
+    // Мантикора и грифон — верхушки СТЕПИ и ДОЛИНЫ, тип `Harpy` (крылатая
+    // тварь), поэтому группа гарпии выросла с одной строки до трёх.
+    Manticore,
+    Griffin,
     // Дракон (владелец 2026-09-10, стол анкет): первый ЛЕТАЮЩИЙ боец —
     // cruiseM > 0 рождает ecs::Flying, тот же честный полёт, что у игрока
     // (один конверт, один закон), а огненный шар — обычные Missile-колонки,
@@ -107,14 +115,34 @@ enum class NPCType : std::uint8_t {
     Deer,
     Fox,
     Wolf,
+    DireWolf,          // верхушка ТУНДРЫ — `Canine`
     Bear,
+    Shatun,            // верхушка ТАЙГИ — `Bear`
     Boar,
+    GreatBoar,         // верхушка ЛУГА — `Boar`
     Snake,
     Croc,
     Basilisk,
+    SeaSerpent,
+    Hydra,             // верхушка БОЛОТА — `Reptile`
+    SandWyrm,          // верхушка ПУСТЫНИ — `Reptile`
+    JungleTyrant,      // верхушка ТРОПИКОВ — `Reptile`
     Hawk,
     Eagle,
+    Roc,               // верхушка ГОРЫ — `Bird`
     Frog,
+    // ── Морские: население воды (M-382) ───────────────────────────────────
+    // Порядок внутри архетипа — ПО ТИПАМ, поэтому морские стоят ОДНОЙ группой
+    // за амфибией, а не в хвосте перечисления: «дописать в хвост, чтобы
+    // ординал не переехал» — мёртвый довод (ЗАКОН ЛЕСТНИЦЫ п.3, формат сейва
+    // ограничением не является). Внутри группы — лестницей тира.
+    // МОРСКОГО ЗМЕЯ ЗДЕСЬ НЕТ, И ЭТО СКАЗАЛ КОМПИЛЯТОР: он `Reptile`, а «все
+    // строки типа» обязаны быть НЕПРЕРЫВНЫМ отрезком, поэтому он стоит в
+    // группе гадов выше — рядом со змеёй, крокодилом и базиликом.
+    Squid,
+    Kakula,
+    Shark,
+    Whale,
     CaveBat,
     CaveSpider,
     SandScorpion,
@@ -1201,6 +1229,36 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
 
 
+    // ВЕРХУШКА СНЕГА — йети, 90. Снег и тундра стояли с потолком 42, то есть самые
+    // мёртвые земли мира были и самыми безопасными в нём.
+    {
+        .row = NPCType::Yeti,
+        .id = "yeti",
+        .label = "Yeti",
+        .sprite = SpriteId::Yeti,
+        .baseLevel = 90,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {200, {4,11}, 1.5f, 2.4f, 1.9f, "Yti", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/2.6f, kNpcSightDefaultM, 100, 100,
+         DamageType::Blunt},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .weight = 1,
+        .radius = 1.1f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .haulMult = 0.0f,
+        .type = ObjectType::Giant,
+        .attrWeights = role_attrs(8, 4, 2, 2, 5, 2, 1, 3),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,0,0,0, 3,0, 4,0,2,2,0, 1,1,1, 0, 0, 0,0,0,0),
+        .mapColor = 0xE0E8F0u,
+        .habitat = hab(Snow),
+        .wildFaction = "demons",
+    },
+
+
     // Harpy — the crags' own. Cruises at 8 m, which is above a man's reach
     // and below a tower's crown: she is fought by looking UP.
     {
@@ -1227,6 +1285,66 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .mapColor = 0xB07850u,
         .habitat = kHabSpire | hab(Mountain),
         .wildFaction = "demons",
+    },
+
+
+    // ВЕРХУШКА СТЕПИ — мантикора, 78 (прежний потолок степи 18).
+    {
+        .row = NPCType::Manticore,
+        .id = "manticore",
+        .label = "Manticore",
+        .sprite = SpriteId::Manticore,
+        .baseLevel = 78,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {118, {4,8}, 2.2f, 2.2f, 1.3f, "Mnt", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/1.8f, kNpcSightDefaultM, 100, 100,
+         DamageType::Pierce, 4.0f},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .weight = 1,
+        .radius = 0.9f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .haulMult = 0.0f,
+        .type = ObjectType::Harpy,
+        .attrWeights = role_attrs(6, 6, 2, 2, 4, 2, 1, 3),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,0,0,0, 4,0, 4,0,2,2,0, 1,1,1, 0, 0, 0,0,0,0),
+        .mapColor = 0x8A5A3Au,
+        .habitat = hab(Steppe),
+        .wildFaction = "demons",
+    },
+
+
+    // ВЕРХУШКА ДОЛИНЫ — грифон, 75 (прежний потолок долины 18). Тир И ЕСТЬ полоса:
+    // на обжитой долине его не будет, на дикой — будет, и запрета для этого не
+    // нужно ни одного.
+    {
+        .row = NPCType::Griffin,
+        .id = "griffin",
+        .label = "Griffin",
+        .sprite = SpriteId::Griffin,
+        .baseLevel = 75,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {110, {3,11}, 2.4f, 2.0f, 1.4f, "Grf", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/1.7f, kNpcSightDefaultM, 100, 100,
+         DamageType::Pierce, 5.0f},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .weight = 1,
+        .radius = 0.9f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .haulMult = 0.0f,
+        .type = ObjectType::Harpy,
+        .attrWeights = role_attrs(6, 7, 2, 2, 3, 2, 1, 4),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,0,0,0, 4,0, 4,0,2,2,0, 1,1,1, 0, 0, 0,0,0,0),
+        .mapColor = 0xB09050u,
+        .habitat = hab(Valley),
+        .wildFaction = "wildlife",
     },
 
 
@@ -1439,6 +1557,35 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
 
 
+    // ВЕРХУШКА ТУНДРЫ — лютый волк, 80 (прежний потолок тундры 42).
+    {
+        .row = NPCType::DireWolf,
+        .id = "dire_wolf",
+        .label = "Dire Wolf",
+        .sprite = SpriteId::DireWolf,
+        .baseLevel = 80,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {115, {4,7}, 2.3f, 1.8f, 1.0f, "DWf", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/1.2f, kNpcSightDefaultM, 100, 100,
+         DamageType::Pierce},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .weight = 2,
+        .radius = 0.7f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .haulMult = 0.0f,
+        .type = ObjectType::Canine,
+        .attrWeights = role_attrs(6, 6, 1, 2, 4, 2, 1, 2),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,0,0,0, 4,0, 4,0,2,2,0, 1,1,1, 0, 0, 0,0,0,0),
+        .mapColor = 0x8A8A92u,
+        .habitat = hab(Tundra),
+        .wildFaction = "wildlife",
+    },
+
+
     // Bear
     {
         .row = NPCType::Bear,
@@ -1462,6 +1609,35 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 5,0,1,1,0, 1,0,1, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Taiga) | kHabForest,
+        .wildFaction = "wildlife",
+    },
+
+
+    // ВЕРХУШКА ТАЙГИ — шатун, 82 (прежний потолок тайги 50).
+    {
+        .row = NPCType::Shatun,
+        .id = "shatun",
+        .label = "Shatun",
+        .sprite = SpriteId::Shatun,
+        .baseLevel = 82,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {150, {3,14}, 1.7f, 2.0f, 1.8f, "Sht", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/2.0f, kNpcSightDefaultM, 100, 100,
+         DamageType::Blunt},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .weight = 2,
+        .radius = 1.0f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .haulMult = 0.0f,
+        .type = ObjectType::Bear,
+        .attrWeights = role_attrs(8, 3, 1, 2, 5, 2, 1, 2),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,0,0,0, 3,0, 4,0,2,2,0, 1,1,1, 0, 0, 0,0,0,0),
+        .mapColor = 0x3A2A1Au,
+        .habitat = hab(Taiga),
         .wildFaction = "wildlife",
     },
 
@@ -1490,6 +1666,37 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Meadow) | hab(Valley) | hab(Steppe)
                           | hab(Tropics) | kHabForest,
+        .wildFaction = "wildlife",
+    },
+
+
+    // ВЕРХУШКА ЛУГА — вепрь-исполин, 72. Луг имел потолок 16, а замер показал, что
+    // опасность гасят ПОСЕЛЕНИЯ (26.2 на клетке → 138.8 на радиусе 64), а не
+    // биом: значит дикий луг вдали от жилья обязан кусать.
+    {
+        .row = NPCType::GreatBoar,
+        .id = "great_boar",
+        .label = "Great Boar",
+        .sprite = SpriteId::GreatBoar,
+        .baseLevel = 72,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {105, {3,10}, 2.0f, 1.7f, 1.5f, "GBr", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/1.3f, kNpcSightDefaultM, 100, 100,
+         DamageType::Pierce},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .weight = 2,
+        .radius = 0.8f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .haulMult = 0.0f,
+        .type = ObjectType::Boar,
+        .attrWeights = role_attrs(7, 4, 1, 1, 5, 2, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 4,0,2,2,0, 1,1,1, 0, 0, 0,0,0,0),
+        .mapColor = 0x4A3A2Au,
+        .habitat = hab(Meadow),
         .wildFaction = "wildlife",
     },
 
@@ -1579,6 +1786,128 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
 
 
+    // Морской змей — «хай тир» воды, 110. ТИП у него `Reptile`, а не `Marine`,
+    // и это не описка: ярус группирует по РОДУ ВЕЩИ, а где змей живёт, говорит
+    // колонка `habitat` — спрашивать место ещё и у яруса значило бы завести
+    // вторую дверь к одному вопросу.
+    {
+        .row = NPCType::SeaSerpent,
+        .id = "sea_serpent",
+        .label = "Sea Serpent",
+        .sprite = SpriteId::SeaSerpent,
+        .baseLevel = 110,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {300, {4,14}, 2.0f, 3.4f, 1.8f, "SSr", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/2.2f, kNpcSightDefaultM, 100, 100,
+         DamageType::Pierce},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .weight = 1,
+        .radius = 1.4f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .haulMult = 0.0f,
+        .type = ObjectType::Reptile,
+        .attrWeights = role_attrs(7, 6, 2, 2, 4, 2, 1, 3),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,2,0,0, 5,0, 4,0,2,2,0, 1,1,1, 0, 0, 0,0,0,0),
+        .mapColor = 0x2A6A6Au,
+        .habitat = hab(Water),
+        .wildFaction = "wildlife",
+    },
+
+
+    // ВЕРХУШКА БОЛОТА — гидра, 105 (прежний потолок болота 65).
+    {
+        .row = NPCType::Hydra,
+        .id = "hydra",
+        .label = "Hydra",
+        .sprite = SpriteId::Hydra,
+        .baseLevel = 105,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {280, {5,11}, 1.6f, 3.0f, 1.7f, "Hyd", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/2.4f, kNpcSightDefaultM, 100, 100,
+         DamageType::Water},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .weight = 1,
+        .radius = 1.3f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .haulMult = 0.0f,
+        .type = ObjectType::Reptile,
+        .attrWeights = role_attrs(7, 5, 2, 2, 6, 2, 1, 3),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,0,0,0, 5,0, 4,0,2,2,0, 1,1,1, 0, 0, 0,0,0,0),
+        .mapColor = 0x2A4A2Au,
+        .habitat = hab(Swamp),
+        .wildFaction = "demons",
+    },
+
+
+    // ВЕРХУШКА ПУСТЫНИ — песчаный вьюн, 95 (прежний потолок пустыни 65).
+    {
+        .row = NPCType::SandWyrm,
+        .id = "sand_wyrm",
+        .label = "Sand Wyrm",
+        .sprite = SpriteId::SandWyrm,
+        .baseLevel = 95,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {210, {4,12}, 1.8f, 2.8f, 1.9f, "SWm", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/1.8f, kNpcSightDefaultM, 100, 100,
+         DamageType::Earth},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .weight = 1,
+        .radius = 1.2f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .haulMult = 0.0f,
+        .type = ObjectType::Reptile,
+        .attrWeights = role_attrs(8, 4, 1, 2, 5, 2, 1, 2),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,0,0,0, 4,0, 4,0,2,2,0, 1,1,1, 0, 0, 0,0,0,0),
+        .mapColor = 0xC2A868u,
+        .habitat = hab(Desert),
+        .wildFaction = "demons",
+    },
+
+
+    // ВЕРХУШКА ТРОПИКОВ — тиран джунглей, 88. Тропики держали САМЫЙ низкий потолок
+    // среди земель — 28 — при самой густой жизни (2..6 голов за визит).
+    {
+        .row = NPCType::JungleTyrant,
+        .id = "jungle_tyrant",
+        .label = "Jungle Tyrant",
+        .sprite = SpriteId::JungleTyrant,
+        .baseLevel = 88,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {170, {4,10}, 2.1f, 2.2f, 1.4f, "JTy", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/2.2f, kNpcSightDefaultM, 100, 100,
+         DamageType::Pierce},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .weight = 1,
+        .radius = 1.0f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .haulMult = 0.0f,
+        .type = ObjectType::Reptile,
+        .attrWeights = role_attrs(7, 6, 1, 2, 4, 2, 1, 2),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,0,0,0, 4,0, 4,0,2,2,0, 1,1,1, 0, 0, 0,0,0,0),
+        .mapColor = 0x1A5A1Au,
+        .habitat = hab(Tropics),
+        .wildFaction = "wildlife",
+    },
+
+
+
+
     // Hawk
     {
         .row = NPCType::Hawk,
@@ -1637,6 +1966,36 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
 
 
+    // ВЕРХУШКА ГОРЫ — рух, 100. Гора была САМОЙ опасной полосой мира и всё равно
+    // упиралась в 70, поэтому её верхушка — самая высокая из земель.
+    {
+        .row = NPCType::Roc,
+        .id = "roc",
+        .label = "Roc",
+        .sprite = SpriteId::Roc,
+        .baseLevel = 100,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {230, {4,13}, 2.5f, 2.6f, 1.6f, "Roc", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/3.0f, kNpcSightDefaultM, 100, 100,
+         DamageType::Pierce, 9.0f},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .weight = 1,
+        .radius = 1.2f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .haulMult = 0.0f,
+        .type = ObjectType::Bird,
+        .attrWeights = role_attrs(8, 6, 2, 2, 5, 2, 1, 4),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,0,0,0, 4,0, 4,0,2,2,0, 1,1,1, 0, 0, 0,0,0,0),
+        .mapColor = 0x6A6A72u,
+        .habitat = hab(Mountain),
+        .wildFaction = "wildlife",
+    },
+
+
     // Frog
     {
         .row = NPCType::Frog,
@@ -1660,6 +2019,158 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 1,0,2,3,0, 1,3,0, 0, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
         .habitat = hab(Swamp),
+        .wildFaction = "wildlife",
+    },
+
+
+    // ══ НАСЕЛЕНИЕ ВОДЫ — ПЯТЬ СТРОК НА 21 % МИРА (M-382) ═════════════════
+    // Вердикт владельца 2026-11-04, дословно: «в воде пусть живут акулы какулы
+    // и морские змеи (хай ттиР) / и средний низкий кальмары всякие киты
+    // (высокий мирный и тд)»; и о воплощении — «будет плавание но пока воплощай
+    // как есть».
+    //
+    // ПОЧЕМУ ЭТО КРУПНЕЙШАЯ ДЫРА ОХВАТА, А НЕ УКРАШЕНИЕ: биом `Water` занимает
+    // 222 158 клеток (21 % мира) и по средней опасности ВТОРОЙ после горы
+    // (136.2 из 255, доля клеток ≥96 — 83 %), а строк с `hab(Water)` в каталоге
+    // было РОВНО НОЛЬ — то есть пятая часть мира роллила пустоту.
+    //
+    // ТИРЫ ИДУТ ЛЕСТНИЦЕЙ, А НЕ ПАРОЙ КРАЙНОСТЕЙ: кальмар 25 → какула 55 →
+    // акула 85 → кит 95 → морской змей 110. `danger_match` делит шансы строки
+    // вдвое на каждые 25 байт расхождения с опасностью клетки, поэтому
+    // авторить тир ЕСТЬ авторить полосу: змей садится только на самую злую
+    // воду, кальмар — на тихую отмель, и ни один список этого не запрещает.
+    //
+    // СТАРШИХ ФОРМ НЕ ЗАВОДИТСЯ (вердикт владельца): каждая строка — СВОЁ
+    // существо, а не подкрученная соседняя. Какула — не «большая акула», а
+    // стайный охотник, и отличает её не множитель, а КОЛОНКИ: своя кость, своя
+    // частота, свой оттенок.
+    //
+    // ПЛАВАНИЯ ЕЩЁ НЕТ, И ЭТО НАЗВАННАЯ ВРЕМЕННАЯ ЛОЖЬ МИРА (ряд M-404): тело
+    // встаёт на тайл воды и идёт бродом, потому что флаг плавания делается по
+    // аналогии с полётом и это отдельный наряд. Костыля под это здесь не
+    // ставится — колонка `habitat` говорит правду уже сегодня.
+
+    // Кальмар — тихая отмель. Мелочь, которой в воде положено быть МНОГО:
+    // `weight` 8 против единицы у змея, то есть он и есть «текстура» воды.
+    {
+        .row = NPCType::Squid,
+        .id = "squid",
+        .label = "Squid",
+        .sprite = SpriteId::Squid,
+        .baseLevel = 25,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {28, {2,6}, 1.1f, 1.6f, 2.0f, "Sqd", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/0.9f, kNpcSightDefaultM, 100, 100,
+         DamageType::Blunt},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .weight = 8,
+        .radius = 0.6f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .haulMult = 0.0f,
+        .type = ObjectType::Marine,
+        .attrWeights = role_attrs(2, 5, 1, 1, 3, 2, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 2,0, 3,0,2,2,0, 1,2,1, 0, 0, 0,0,0,0),
+        .mapColor = 0xA06A8Au,
+        .habitat = hab(Water),
+        .wildFaction = "wildlife",
+    },
+
+
+    // Какула — СВОЁ существо, а не крупная акула (вердикт владельца
+    // 2026-11-04: «отдельная тварь, авторь сам»). Стайный охотник: берёт не
+    // костью, а числом и напором, поэтому у неё частая атака, узкий разброс и
+    // вес выше акульего. Стоит ступенью между кальмаром и акулой — без неё
+    // лестница воды прыгала бы с 25 сразу на 85.
+    {
+        .row = NPCType::Kakula,
+        .id = "kakula",
+        .label = "Kakula",
+        .sprite = SpriteId::Kakula,
+        .baseLevel = 55,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {70, {4,5}, 1.9f, 2.0f, 0.9f, "Kkl", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/1.1f, kNpcSightDefaultM, 100, 100,
+         DamageType::Pierce},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .weight = 4,
+        .radius = 0.7f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .haulMult = 0.0f,
+        .type = ObjectType::Marine,
+        .attrWeights = role_attrs(4, 6, 1, 1, 3, 2, 1, 1),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 3,0, 4,0,2,2,0, 1,1,1, 0, 0, 0,0,0,0),
+        .mapColor = 0x7A5A6Au,
+        .habitat = hab(Water),
+        .wildFaction = "wildlife",
+    },
+
+
+    // Акула — одиночный хищник открытой воды. Против какулы она ровно
+    // обратная: редкая, бьёт реже и БОЛЬНЕЕ (3d12 против 4d5).
+    {
+        .row = NPCType::Shark,
+        .id = "shark",
+        .label = "Shark",
+        .sprite = SpriteId::Shark,
+        .baseLevel = 85,
+        .ai = AIBehaviour::Aggressive,
+        .combat = {120, {3,12}, 2.1f, 2.2f, 1.6f, "Shk", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/1.3f, kNpcSightDefaultM, 100, 100,
+         DamageType::Pierce},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .weight = 2,
+        .radius = 0.9f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .haulMult = 0.0f,
+        .type = ObjectType::Marine,
+        .attrWeights = role_attrs(6, 6, 1, 1, 3, 2, 1, 2),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,0,0,0, 4,0, 4,0,2,2,0, 1,1,1, 0, 0, 0,0,0,0),
+        .mapColor = 0x5A6A78u,
+        .habitat = hab(Water),
+        .wildFaction = "wildlife",
+    },
+
+
+    // Кит — «высокий мирный» из вердикта владельца, и мирность у него та же
+    // КОЛОНКА, что у оленя: `AIBehaviour::Flee`. Высокий тир при бегстве — не
+    // противоречие, а смысл: он огромен и дорог, но не ищет драки; тронувший
+    // его получает 5d10.
+    {
+        .row = NPCType::Whale,
+        .id = "whale",
+        .label = "Whale",
+        .sprite = SpriteId::Whale,
+        .baseLevel = 95,
+        .ai = AIBehaviour::Flee,
+        .combat = {260, {5,10}, 1.4f, 3.0f, 2.6f, "Whl", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/4.0f, kNpcSightDefaultM, 100, 100,
+         DamageType::Blunt},
+        .upkeepGoldPerDay = kNpcUpkeepNone,
+        .hireable = false,
+        .weight = 2,
+        .radius = 2.0f,
+        .names = {{}},
+        .nameCount = 0,
+        .talkLines = {{}},
+        .talkCount = 0,
+        .haulMult = 0.0f,
+        .type = ObjectType::Marine,
+        .attrWeights = role_attrs(8, 2, 1, 2, 6, 3, 1, 3),
+        .skillWeights = role_skills(0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 2,0, 2,0,1,1,0, 3,4,2, 0, 0, 0,0,0,0),
+        .mapColor = 0x3A4A5Au,
+        .habitat = hab(Water),
         .wildFaction = "wildlife",
     },
 

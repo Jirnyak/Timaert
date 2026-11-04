@@ -125,6 +125,18 @@ enum class SpriteId : std::uint8_t {
     // their NPCType rows are appended in.
     GiantRat, CaveBat, Kobold, CaveSpider, Imp, Zombie, Orc, Ghoul, Harpy,
     Cultist, Gargoyle, Wraith, Ogre, Minotaur, Basilisk, Lich,
+    // ── НАСЕЛЕНИЕ ВОДЫ (M-382, вердикт владельца 2026-11-04) ───────────
+    // Вода — 21 % мира и ВТОРОЙ биом по опасности, а строк у неё было НОЛЬ,
+    // поэтому пять картинок — не украшение, а крупнейшая дыра охвата.
+    // Все процедурные: каждая называет план тела, который шейдер уже рисует,
+    // и оттенок, то есть вид стоит СТРОКУ и никогда шейдера.
+    Shark, Kakula, Whale, Squid, SeaSerpent,
+    // ── ВЕРХУШКА КАЖДОГО БИОМА (M-382) ──────────────────────────────────
+    // Десять картинок на десять земель: у каждого биома появилась своя
+    // верхушка в полосе 72..115, потому что дикий потолок стоял на 70 и
+    // упирался в него ВЕСЬ мир сразу.
+    Roc, Hydra, SandWyrm, Yeti, JungleTyrant, Shatun, DireWolf, Manticore,
+    Griffin, GreatBoar,
     Count_,
 };
 
@@ -239,6 +251,43 @@ inline constexpr SpriteDef kSpriteRows[std::size_t(SpriteId::Count_)] = {
                                               std::uint8_t(CreatureArchetype::Serpent),   0x3A6A4Au},
     {SpriteId::Lich,         "lich",          nullptr,
                                               std::uint8_t(CreatureArchetype::Undead),    0xC0D0B0u},
+
+    // Морские: план тела читается силуэтом, а не биологией — торпеда идёт
+    // Quadruped (горизонтальная), змей — Serpent, кальмар — Critter (на
+    // дистанции он и есть приземистая клякса с щупальцами).
+    {SpriteId::Shark,        "shark",         nullptr,
+                                              std::uint8_t(CreatureArchetype::Quadruped), 0x5A6A78u},
+    {SpriteId::Kakula,       "kakula",        nullptr,
+                                              std::uint8_t(CreatureArchetype::Quadruped), 0x7A5A6Au},
+    {SpriteId::Whale,        "whale",         nullptr,
+                                              std::uint8_t(CreatureArchetype::Quadruped), 0x3A4A5Au},
+    {SpriteId::Squid,        "squid",         nullptr,
+                                              std::uint8_t(CreatureArchetype::Critter),   0xA06A8Au},
+    {SpriteId::SeaSerpent,   "sea_serpent",   nullptr,
+                                              std::uint8_t(CreatureArchetype::Serpent),   0x2A6A6Au},
+
+    // Верхушки земель: оттенок каждой взят от её биома, чтобы глаз читал
+    // принадлежность до того, как прочтёт силуэт.
+    {SpriteId::Roc,          "roc",           nullptr,
+                                              std::uint8_t(CreatureArchetype::Avian),     0x6A6A72u},
+    {SpriteId::Hydra,        "hydra",         nullptr,
+                                              std::uint8_t(CreatureArchetype::Serpent),   0x2A4A2Au},
+    {SpriteId::SandWyrm,     "sand_wyrm",     nullptr,
+                                              std::uint8_t(CreatureArchetype::Serpent),   0xC2A868u},
+    {SpriteId::Yeti,         "yeti",          nullptr,
+                                              std::uint8_t(CreatureArchetype::Biped),     0xE0E8F0u},
+    {SpriteId::JungleTyrant, "jungle_tyrant", nullptr,
+                                              std::uint8_t(CreatureArchetype::Quadruped), 0x1A5A1Au},
+    {SpriteId::Shatun,       "shatun",        nullptr,
+                                              std::uint8_t(CreatureArchetype::Quadruped), 0x3A2A1Au},
+    {SpriteId::DireWolf,     "dire_wolf",     nullptr,
+                                              std::uint8_t(CreatureArchetype::Quadruped), 0x8A8A92u},
+    {SpriteId::Manticore,    "manticore",     nullptr,
+                                              std::uint8_t(CreatureArchetype::Avian),     0x8A5A3Au},
+    {SpriteId::Griffin,      "griffin",       nullptr,
+                                              std::uint8_t(CreatureArchetype::Avian),     0xB09050u},
+    {SpriteId::GreatBoar,    "great_boar",    nullptr,
+                                              std::uint8_t(CreatureArchetype::Quadruped), 0x4A3A2Au},
 };
 
 static_assert(rows_in_enum_order(kSpriteRows, &SpriteDef::id),

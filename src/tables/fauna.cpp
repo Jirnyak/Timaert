@@ -40,7 +40,16 @@ struct BiomeSpawnCountRow { Biome biome; SpawnCounts counts; };
 constexpr BiomeSpawnCountRow kBiomeSpawnCounts[std::size_t(Mountain) + 1] = {
     {Tundra,  {1, 4}}, {Taiga,   {2, 5}}, {Snow,     {1, 3}}, {Valley, {2, 6}},
     {Meadow,  {2, 6}}, {Swamp,   {2, 6}}, {Desert,   {1, 4}}, {Steppe, {2, 5}},
-    {Tropics, {2, 6}}, {Water,   {0, 0}}, {Mountain, {1, 4}},
+    // ВОДА СТАЛА РОЛЛИТЬ ГОЛОВЫ (M-382, вердикт владельца 2026-11-04 «в воде
+    // пусть живут акулы какулы и морские змеи … кальмары всякие киты»). Здесь
+    // стоял `{0, 0}`, и это была ВТОРАЯ половина дыры воды: ряд обвинял только
+    // пустой каталог, но даже с пятью новыми строками `hab(Water)` мир не
+    // менялся НИ НА ГОЛОВУ — потому что счёт голов нулевой, и бит ареала воды
+    // не спрашивался ни разу. Два замка на одной двери, и открывать надо ОБА.
+    // Число 1..4 — калибровка, а не вывод: та же разреженная ступень, что у
+    // пустыни, тундры и горы, потому что открытая вода пуста НА КЛЕТКУ, а
+    // берёт она охватом — 21 % мира.
+    {Tropics, {2, 6}}, {Water,   {1, 4}}, {Mountain, {1, 4}},
 };
 static_assert(rows_in_enum_order(kBiomeSpawnCounts, &BiomeSpawnCountRow::biome),
               "kBiomeSpawnCounts row order must mirror Biome");
