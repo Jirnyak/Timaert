@@ -813,7 +813,7 @@ inline SoldierRecord make_soldier(std::uint16_t kind, int level,
     SoldierRecord s{};
     s.entityId = entityId;
     s.kind = kind;
-    s.level = std::int16_t(normalize_soldier_level(level));
+    s.level = std::int16_t(clamp_to_ladder(level));
     return s;
 }
 

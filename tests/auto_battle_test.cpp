@@ -156,7 +156,7 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
                 if (!valid_npc_kind(r.kind)) continue;
                 fixtureSeed = fixtureSeed * 2654435761u + 1u;
                 add_body_of_row(NPCType(r.kind),
-                                normalize_soldier_level(r.level),
+                                clamp_to_ladder(r.level),
                                 fixtureSeed, side);
             }
         }

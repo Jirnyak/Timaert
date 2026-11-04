@@ -3299,7 +3299,7 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
 
     const NPCType type = npc_type_from_token(npcTypeId);
     const NpcTypeDef& def = npc_def(type);
-    const int lvl = normalize_soldier_level(std::max(level, def.baseLevel));
+    const int lvl = clamp_to_ladder(std::max(level, def.baseLevel));
 
     Rng rng(seed ^ string_hash(npcTypeId) ^ string_hash(displayName));
     float fx = playerX_;
@@ -4008,7 +4008,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // чужому жильцу перерождённого слота.
             const sub::ObjRef lastRef = arena.lastHitBy[std::size_t(ds)];
             const int lvl =
-                normalize_soldier_level(lvlCol != 0 ? lvlCol : 1);
+                clamp_to_ladder(lvlCol != 0 ? lvlCol : 1);
 
             if (sub::slot_flag(arena, ds, sub::kObjPlayerSoldier)) {
                 // His creatures record was struck by THE settle above (§42

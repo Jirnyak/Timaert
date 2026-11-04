@@ -58,11 +58,11 @@ namespace {
 // РОД И УРОВЕНЬ ВЫВОДЯТСЯ ИЗ ТОЙ ЖЕ ТАБЛИЦЫ, ЧТО ЧИТАЕТ КОД (§8 п.4: не
 // пересказанное число, а инвариант): души фикстуры ставит `settle_souls` →
 // `raise_flock_into_container` строкой `Peasant` с её `baseLevel`, а
-// `creature_slot` гонит уровень через `normalize_soldier_level` (пол = 1).
+// `creature_slot` гонит уровень через `clamp_to_ladder` (пол = 1).
 inline sm::MacroStockKey peasant_key(std::int32_t subject, int x, int y) {
     sm::MacroStockKey k{subject, std::int16_t(x), std::int16_t(y)};
     k.detailKind  = std::uint16_t(sm::NPCType::Peasant);
-    k.detailLevel = std::int16_t(sm::normalize_soldier_level(
+    k.detailLevel = std::int16_t(sm::clamp_to_ladder(
         sm::npc_def(sm::NPCType::Peasant).baseLevel));
     return k;
 }

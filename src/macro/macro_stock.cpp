@@ -71,7 +71,7 @@ void write_tree_count(MacroWorld& w, MacroStockKey k, int delta) {
 //     (`sub/spawn.cpp`) зовут `name_creature_in_loan`, потому что тело
 //     воплощается ИЗ ГОЛОВЫ инвентаря.
 // А отказной гейт `creatures` (`entityId == 0 && level <= 0`) шов не ловит:
-// `creature_slot` гонит уровень через `normalize_soldier_level` с полом 1.
+// `creature_slot` гонит уровень через `clamp_to_ladder` с полом 1.
 //
 // ЧТО ЭТО ДАЛО СВЕРХ СНОСА ДУБЛЯ: чтение перестало быть ТОЛКОВАТЕЛЕМ.
 // `read_population` брал СУБЪЕКТА и отвечал числом поля фич под его клеткой —

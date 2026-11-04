@@ -592,7 +592,7 @@ void spawn_rooted_population(SubObjects& objs,
         spawn_derived_body(objs,
             BodySpec{
                 type, fx, fy, settlementFaction,
-                normalize_soldier_level(head.level),
+                clamp_to_ladder(head.level),
                 seed ^ (soulId * 2654435761u),
                 /*combatant*/true},
             /*faceSalt*/soulId * 7919u,
@@ -675,7 +675,7 @@ int spawn_tracked_body(SubObjects& objs, MacroStore& st, MacroHandle macro,
     // What it is, whose it is and how senior it is are read from the record
     // itself — a tracked body has no second opinion about its own identity.
     body.faction   = kind.factionIdx;
-    body.level     = normalize_soldier_level(squad_level(st, macro.slot));
+    body.level     = clamp_to_ladder(squad_level(st, macro.slot));
     body.seed      = seed;
     body.combatant = combatant;
     // HIMSELF, not a namesake: the record the macro layer keeps (owned by a
@@ -1058,7 +1058,7 @@ int spawn_dungeon_residents(SubObjects& objs,
         spawn_derived_body(objs,
             BodySpec{
                 NPCType(head.kind), fx, fy, settlementFaction,
-                normalize_soldier_level(head.level),
+                clamp_to_ladder(head.level),
                 seed ^ (soulId * 2654435761u),
                 combatant},
             /*faceSalt*/soulId * 7919u,
@@ -1109,7 +1109,7 @@ int spawn_street_arrivals(SubObjects& objs,
         name_creature_in_loan(key, head);
         spawn_derived_body(objs,
             BodySpec{NPCType(head.kind), d->x, d->y, faction,
-                     normalize_soldier_level(head.level),
+                     clamp_to_ladder(head.level),
                      seed ^ (soulId * 2654435761u),
                      /*combatant*/false},
             /*faceSalt*/soulId * 7919u,
@@ -1157,7 +1157,7 @@ int spawn_dungeon_vermin(SubObjects& objs,
         const StandPoint& pt = draw.next(floorCatalog, pos);
         const float fx = originX + float(pt.x) + 0.5f;
         const float fy = originY + float(pt.y) + 0.5f;
-        const int npcLevel = normalize_soldier_level(
+        const int npcLevel = clamp_to_ladder(
             int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f)));
         spawn_derived_body(objs,
             BodySpec{f.row, fx, fy,
@@ -1295,7 +1295,7 @@ void spawn_cell_npcs(SubObjects& objs,
             fx, fy);
         if (!placed) { ++refused; continue; }
 
-        const int npcLevel = normalize_soldier_level(
+        const int npcLevel = clamp_to_ladder(
             int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f)));
         spawn_derived_body(objs,
             BodySpec{f.row, fx, fy,
@@ -1386,7 +1386,7 @@ void spawn_player_squad(SubObjects& objs,
         if (!valid_npc_kind(soldier.kind)) continue;
 
         const NPCType type = static_cast<NPCType>(soldier.kind);
-        const int level = normalize_soldier_level(soldier.level);
+        const int level = clamp_to_ladder(soldier.level);
         // The sheet, the combat template and the whole body are derived inside
         // the one birth below; the slot only decides WHO stands here and where.
         // Seeded per squad slot (kind + level + slot) so a squad reprojects
@@ -1717,7 +1717,7 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                     BodySpec{
                         static_cast<NPCType>(rec.kind), mfx, mfy,
                         kind.factionIdx,
-                        normalize_soldier_level(rec.level),
+                        clamp_to_ladder(rec.level),
                         // Слот — старый контейнерный ординал (0 = старейший),
                         // из слота контейнера (M-71): то же тело до и после.
                         ((seed ^ salt) + std::uint32_t(m) * 2654435761u)

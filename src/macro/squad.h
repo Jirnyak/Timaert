@@ -1376,14 +1376,14 @@ inline void report_battle_deaths(const MacroWorld& mw, const MacroStore& st,
         if (!valid_npc_kind(r.kind)) continue;
         report_death(mw, r.kind, MacroHandle{}, killer,
                      std::int32_t(r.entityId),
-                     normalize_soldier_level(r.level), factionId);
+                     clamp_to_ladder(r.level), factionId);
     }
     if (avatarFell) {
         report_death(mw,
                      st.valid(side) ? st.kind[side.slot].type
                                     : std::uint16_t(0),
                      side, killer, -1,
-                     normalize_soldier_level(
+                     clamp_to_ladder(
                          st.valid(side) ? squad_level(st, side.slot) : 1),
                      factionId);
     }
@@ -1461,7 +1461,7 @@ inline int xp_for_fallen(const MacroStore& st, MacroHandle loser,
         && squad_has_avatar(SquadType(st.runtime[loser.slot].squadType))
         && st.kind[loser.slot].type < std::uint16_t(NPCType::Count)) {
         xp += exp_value_of_level(
-            normalize_soldier_level(squad_level(st, loser.slot)));
+            clamp_to_ladder(squad_level(st, loser.slot)));
     }
     return xp;
 }

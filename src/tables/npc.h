@@ -2176,6 +2176,22 @@ constexpr bool folk_is_a_prefix() {
 static_assert(folk_is_a_prefix(),
               "рода народа — сплошной отрезок в начале каталога существ");
 
+// ТИР КАЖДОЙ СТРОКИ СТОИТ НА ЛЕСТНИЦЕ, И ЭТО СУДИТ КОМПИЛЯТОР (M-382).
+// Колонка `baseLevel` авторская, а `clamp_to_ladder` — СТРАЖ области
+// определения: он подрезает описку МОЛЧА, и тем страшен. Автор, переавторивший
+// тиры (M-385), узнаёт о выезде за лестницу от сборки, а не от ровной цены
+// двух разных тварей: 300 и 255 дали бы одну и ту же цену 67 575.
+// Пол здесь 1, а не 0, по той же причине, что у двери: нулевой ступени нет.
+constexpr bool npc_tiers_on_ladder() {
+    for (const NpcTypeDef& d : kNpcTypeDefs) {
+        if (d.baseLevel < 1 || d.baseLevel > kMaxTier) return false;
+    }
+    return true;
+}
+static_assert(npc_tiers_on_ladder(),
+              "тир строки существа вне лестницы 1..255: страж подрезал бы его "
+              "молча, и две разных твари стали бы равны в цене");
+
 inline constexpr const NpcTypeDef& npc_def(NPCType t) {
     return kNpcTypeDefs[std::size_t(t)];
 }
@@ -2341,10 +2357,12 @@ inline int hire_price_for(std::uint16_t kind, int level) {
 // УРОВНЯ ЭКЗЕМПЛЯРА В ЦЕНЕ НЕТ ВОВСЕ, и это ЗАКОН ДВУХ ТАБЛИЦ: у объекта анкеты
 // нет, «уровень объекта есть ТИР, и тир выражается СВОЕЙ СТРОКОЙ», а гоблин и
 // гоблин-вождь суть две СТРОКИ (CANON S12).
+// Посадка на лестницу — ОДНОЙ дверью (`clamp_to_ladder@src/tables/progression.h`,
+// M-382): здесь стояло рукописное тройное условие, четвёртая копия того же
+// вопроса. Авторская колонка вне лестницы есть ОПИСКА АВТОРА, и страж её
+// подрезает молча — громко об этом говорит `static_assert` каталога.
 inline int creature_tier(NPCType t) {
-    const int authored = npc_def(t).baseLevel;
-    if (authored < 1) return 1;
-    return authored > kMaxTier ? kMaxTier : authored;
+    return clamp_to_ladder(npc_def(t).baseLevel);
 }
 
 // ЦЕНА УБИТОГО. Вход — УРОВЕНЬ убитого: у головы инвентаря это ТИР ЕЁ СТРОКИ,

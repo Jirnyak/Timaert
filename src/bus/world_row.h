@@ -34,7 +34,7 @@ inline ItemRef creature_slot(NPCType kind, int level, std::int32_t n,
                              std::uint32_t entityId = 0) noexcept {
     ItemRef r{};
     r.def = world_row_of_creature(kind);
-    r.level = std::uint8_t(normalize_soldier_level(level));
+    r.level = std::uint8_t(clamp_to_ladder(level));
     r.count = entityId != 0 ? 1 : n;
     r.entityId = entityId;
     return r;
@@ -133,7 +133,7 @@ inline bool creatures_remove_one(Inventory& inv, const SoldierRecord& r) {
         return creatures_remove_one_by_entity_id(inv, r.entityId);
     }
     const std::uint16_t row = world_row_of_creature(soldier_npc_type(r.kind));
-    const std::uint8_t lvl = std::uint8_t(normalize_soldier_level(r.level));
+    const std::uint8_t lvl = std::uint8_t(clamp_to_ladder(r.level));
     const int first = inv.creature_first();
     for (int i = kMaxInventorySlots - 1; i >= first; --i) {
         const ItemRef& s = inv.slots[std::size_t(i)];

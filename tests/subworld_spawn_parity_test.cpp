@@ -157,7 +157,7 @@ std::vector<SpawnRecord> expected_cell_fauna(
         }
         if (!placed) continue;
 
-        const int level = sm::normalize_soldier_level(
+        const int level = sm::clamp_to_ladder(
             int(f.baseLevel) + int(std::floor(rng.next_f01() * 2.0f)));
         // NOT restated here any more. A body's hp and damage are its row
         // PROJECTED THROUGH ITS SHEET since the two births merged (2026-08-20,
@@ -492,8 +492,8 @@ bool run_population_does_not_scale_bodies_case(
             if (typeId >= std::uint16_t(sm::NPCType::Count)) continue;  // fauna
             const int lvl = int(sm::sub::slot_level(objs, s));
             const int base = int(sm::npc_def(sm::NPCType(typeId)).baseLevel);
-            const int ceiling = sm::normalize_soldier_level(base + 2);
-            const int floorLvl = sm::normalize_soldier_level(base);
+            const int ceiling = sm::clamp_to_ladder(base + 2);
+            const int floorLvl = sm::clamp_to_ladder(base);
             if (lvl < floorLvl || lvl > ceiling) return false;
             ++t.count;
         }

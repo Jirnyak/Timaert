@@ -34,9 +34,10 @@ int main() {
     const sm::SoldierRecord highLevel = sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1000000, 8u);
     const bool ok1 = !(lowLevel.level != 1
-                       || highLevel.level != sm::kMaxSoldierLevel
+                       || highLevel.level != sm::kMaxTier
                        || sm::soldier_level_factor(1000000) <= 0);
-    CHECK(ok1, "soldier level normalization failed");
+    CHECK(ok1, "посадка на лестницу: пол 1, потолок kMaxTier (M-382 — у числа "
+               "одно имя, у посадки одна дверь)");
     if (!ok1) return 1;
 
     // Единый контейнер (M-71): армия и гарнизон — области существ. Найм —
