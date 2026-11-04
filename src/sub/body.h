@@ -130,6 +130,16 @@ inline float body_height_m(const NpcTypeDef& row) {
     return kHumanHeightM;
 }
 
+// THE vertical extent of a body, in world units (≈ metres): ступня → макушка.
+// Пара к двери ширины выше, и ровно по той же причине: столкновение тела есть
+// вопрос о ТЕЛЕ, а не о роде вещей вообще. До M-401/M-398 дверь шага брала
+// гуманоидную константу 1.7 м для ВСЕХ, то есть дракон (6 м по своей строке)
+// и заяц судились одной макушкой.
+inline float slot_body_height(const SubObjects& o, int s) {
+    if (const NpcTypeDef* row = row_for(slot_kind(o, s))) return body_height_m(*row);
+    return kHumanHeightM;
+}
+
 // KNOWN CONFLATION, left deliberately. Step 3 reads `Sprite.scale`, which is a
 // billboard's drawing size, as a physical width — one field wearing two
 // meanings. It survives because bare fixtures lean on it, and removing it would

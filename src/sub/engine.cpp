@@ -3523,9 +3523,9 @@ float SubworldEngine::ground_height_callback(void* user, float x, float y) {
 void SubworldEngine::solid_resolve_step_callback(void* user, float fromX,
                                                  float fromY, float* toX,
                                                  float* toY, float r,
-                                                 float z) {
+                                                 float z, float bodyH) {
     auto* self = static_cast<SubworldEngine*>(user);
-    self->structIndex_.resolve_step(fromX, fromY, *toX, *toY, r, z);
+    self->structIndex_.resolve_step(fromX, fromY, *toX, *toY, r, z, bodyH);
 }
 
 std::uint8_t SubworldEngine::solid_walk_tile_callback(void* user, float x,
@@ -5098,6 +5098,15 @@ float SubworldEngine::player_muzzle_z() const {
 // into a foreign body, and the walls he fits through are that body's business,
 // not the hero's. Between scenes there is no body, and the man-shaped default
 // is the honest stand-in for the scalars that still have to be placed.
+// Рост тела, в котором игрок сейчас, — пара к ширине ниже и по той же
+// причине: столкновение есть вопрос о ТЕЛЕ (M-401, вердикт владельца «единая
+// система игрок = нпц … все одинаково сталкиваются»).
+float SubworldEngine::player_body_height() const {
+    if (!objects_) return sub::kHumanHeightM;
+    const int s = sub::avatar_slot(*objects_);
+    return s < 0 ? sub::kHumanHeightM : sub::slot_body_height(*objects_, s);
+}
+
 float SubworldEngine::player_body_radius() const {
     if (!objects_) return kBodyRadiusFallback;
     sub::SubObjects* objs = objects_;
@@ -5202,9 +5211,9 @@ void SubworldEngine::sync_player_vertical(float dt) {
         const bool intoSolid =
             !structIndex_.empty()
             && structIndex_.blocked_at(playerX_, playerY_, player_body_radius(),
-                                       playerZ_ + dz)
+                                       playerZ_ + dz, player_body_height())
             && !structIndex_.blocked_at(playerX_, playerY_, player_body_radius(),
-                                        playerZ_);
+                                        playerZ_, player_body_height());
         if (!intoSolid) playerZ_ += dz;
     }
     float supportZ = mgr_.height_field().sample(playerX_, playerY_);
@@ -5324,12 +5333,14 @@ void SubworldEngine::move_player(float dx, float dy) {
     // always walk out.
     if (!structIndex_.empty()) {
         structIndex_.resolve_step(fromX, fromY, playerX_, playerY_,
-                                  player_body_radius(), playerZ_);
+                                  player_body_radius(), playerZ_,
+                                  player_body_height());
         if (dz != 0.0f
             && structIndex_.blocked_at(playerX_, playerY_, player_body_radius(),
-                                       playerZ_ + dz)
+                                       playerZ_ + dz, player_body_height())
             && !structIndex_.blocked_at(playerX_, playerY_,
-                                        player_body_radius(), playerZ_)) {
+                                        player_body_radius(), playerZ_,
+                                        player_body_height())) {
             // Vertical component: refuse rising/descending INTO a solid (a
             // lintel overhead, a wall top below) — the honest head-bump.
             dz = 0.0f;

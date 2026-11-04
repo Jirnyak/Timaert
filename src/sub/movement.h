@@ -513,8 +513,15 @@ struct MoveGround {
     // ceiling (143.5 tiles/s ⇒ 2.24 per frame) a fence is 1.70 wide. Making
     // the door a resolver means the sweep is written ONCE and neither mover
     // can drift from it.
+    // ВЫСОТА ТЕЛА ЕДЕТ ПАРАМЕТРОМ, А НЕ БЕРЁТСЯ ДЕФОЛТОМ: у двери стоял
+    // `bodyH = kBodyHeightM` (1.7 м), и через этот колбэк высота не ехала
+    // вовсе — значит дракон, заяц и человек судились ОДНОЙ гуманоидной
+    // макушкой, хотя колонка роста есть и у строки (`CombatTemplate::bodyHeight`),
+    // и у тела (`BodyCrowd::height`). Дефолт был местом, где дефект прятался
+    // молча; теперь высоту обязан назвать каждый звонящий.
     void (*resolveStep)(void* user, float fromX, float fromY,
-                        float* toX, float* toY, float r, float z) = nullptr;
+                        float* toX, float* toY, float r, float z,
+                        float bodyH) = nullptr;
     void* solidUser = nullptr;
     // THE GROUND UNDER THE FEET (sub/collide.h walk_tile_at): given the tile
     // the terrain paints at (x, y), what is the body at feet-height `z`

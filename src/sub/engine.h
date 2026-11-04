@@ -638,6 +638,10 @@ public:
     bool  flying() const;
     // The half-width of the body he is in right now (sub/body.h body_radius).
     float player_body_radius() const;
+    // Ступня → макушка того тела, в котором игрок СЕЙЧАС: та же дверь,
+    // которой мерят всех (одержание переносит его в чужое тело, и стены,
+    // сквозь которые он лезет, — дело ТОГО тела).
+    float player_body_height() const;
     void  rotate_camera(float dyaw, float dpitch);
     float spell_rng01() { return spellRng_.next_f01(); }
     // The stream a cast's WOUND is rolled from (spell_strike) — the same
@@ -1179,7 +1183,8 @@ private:
     // and both halves judged a step by its destination (M-398).
     static void solid_resolve_step_callback(void* user, float fromX,
                                             float fromY, float* toX,
-                                            float* toY, float r, float z);
+                                            float* toY, float r, float z,
+                                            float bodyH);
     static bool spell_solid_callback(void* user, float x, float y, float z);
     // Turns a spell-tick FX event (bolt trail / impact) into a particle burst.
     // Static + void* user so spell_effects.cpp needs no SubworldEngine type.

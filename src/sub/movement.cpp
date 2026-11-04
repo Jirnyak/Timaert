@@ -939,17 +939,29 @@ void steer_bodies(BodyCrowd& u, const UnitGrid& fine, const UnitGrid& pick,
         // it refuses a step whose swept path crosses a wall/house side, slides
         // along the free axis, and never traps a body already inside a solid
         // (the escape rule). Whatever component failed to arrive loses its
-        // velocity, so a body does not grind against masonry. Flyers pass
-        // above — a solid below the feet is a floor, not a wall.
+        // velocity, so a body does not grind against masonry.
         //
         // This block used to BE the second answer to the door's own question
         // (M-398): three point tests and its own axis fallback. Resolving
         // through the door means the sweep exists once, and a step at the
         // engine's ceiling (2.24 tiles) can no longer cross a 1.70-tile fence.
-        if (terrain.resolveStep && (u.flags[si] & B_Flying) == 0u) {
+        //
+        // ЗДЕСЬ СТОЯЛ ГЕЙТ `(u.flags[si] & B_Flying) == 0u`, И ОН БЫЛ ВТОРЫМ
+        // ОТВЕТОМ НА ТОТ ЖЕ ВОПРОС (вердикт владельца 2026-11-04: «единая
+        // система игрок = нпц (в субмире аватар = моб по поведению симуляции)
+        // делаем единую систему чтобы не было дубликатов … да все одинаково
+        // сталкиваются»). Игрок в полёте дверь спрашивал ВСЕГДА — и пролетал
+        // «над верхом» по ГЕОМЕТРИИ, потому что солид ниже ступней есть пол, а
+        // не стена, — а летящий НПЦ не спрашивал её вовсе и проходил СКВОЗЬ
+        // каменную башню. Пропуск двери означал сразу две вещи («владею своим
+        // Z» и «солиды меня не трогают»), и именно это склеивание рождало
+        // дубликат. Владение Z осталось за флагом (выше, где терраин не тянет
+        // тело к земле), а СТОЛКНОВЕНИЕ стало одним на всех: кто пролетает над
+        // верхом — решает высота ступней и макушки, то есть геометрия.
+        if (terrain.resolveStep) {
             float rx = nx, ry = ny;
             terrain.resolveStep(terrain.solidUser, px, py, &rx, &ry, ri,
-                                u.z[si]);
+                                u.z[si], u.height[si]);
             // The door either leaves a coordinate alone or writes the body's
             // own `from` back into it, so these comparisons are exact bits,
             // never an epsilon question.

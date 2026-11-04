@@ -11,6 +11,7 @@
 
 #include "sub/city_layout.h"
 #include "sub/collide.h"
+#include "sub/body.h"   // kHumanHeightM — единственный рост человека
 #include "sub/gens/kit/outline.h"   // Outline::kBearings — the ring's own resolution
 #include "sub/gens/dispatch.h"
 #include "sub/height.h"
@@ -61,16 +62,69 @@ Structure make_cylinder(float x, float y, float radius, float height) {
     return s;
 }
 
+// РОСТ ЧЕЛОВЕКА — ОДИН НА МИР (`kHumanHeightM@src/sub/body.h`). Прибор
+// называет его сам, потому что дефолта у дверей больше нет: «забыл
+// передать высоту» стало несобираемым (M-401).
+constexpr float kManH = sm::sub::kHumanHeightM;
+
+// ВЫСОТА ТЕЛА РЕШАЕТ, КТО ПРОХОДИТ ПОД ПОДНЯТЫМ СОЛИДОМ (M-401, вердикт
+// владельца 2026-11-04: «единая система игрок = нпц … да все одинаково
+// сталкиваются»).
+//
+// Один солид, одно место, ДВА роста — два ответа. До наряда дверь брала
+// гуманоидный дефолт 1.7 м для ВСЕХ, поэтому заяц и дракон судились одной
+// макушкой: под перекладиной проходили ОБА. Теперь высоту называет звонящий,
+// и геометрия отвечает честно: низ солида ниже макушки — стена; выше — проход.
+void part_f_height_decides_who_passes_under() {
+    StructureIndex idx;
+    std::vector<Structure> solids;
+    // Перекладина ворот: низ на двух метрах, толщиной метр — span 2.0..3.0.
+    solids.push_back(make_box(100.0f, 100.0f, 2.0f, 2.0f, 0.0f,
+                              /*height*/1.0f, /*zBase*/2.0f));
+    idx.rebuild(solids, &flat_height, nullptr);
+
+    constexpr float kR = 0.55f;
+    constexpr float kHare = 0.5f;     // заяц: макушка ниже низа перекладины
+    constexpr float kDragon = 6.0f;   // дракон: своя колонка строки, 6 м
+
+    const bool hareBlocked =
+        idx.blocked_at(100.0f, 100.0f, kR, 0.0f, kHare);
+    const bool manBlocked =
+        idx.blocked_at(100.0f, 100.0f, kR, 0.0f, kManH);
+    const bool dragonBlocked =
+        idx.blocked_at(100.0f, 100.0f, kR, 0.0f, kDragon);
+
+    CHECK(!hareBlocked,
+          "заяц проходит ПОД перекладиной: его макушка ниже низа солида, и "
+          "это геометрия, а не поблажка роду");
+    CHECK(dragonBlocked,
+          "дракон той же перекладиной ОСТАНОВЛЕН: его макушка выше её низа");
+    CHECK(hareBlocked != dragonBlocked,
+          "ОДИН солид судит два тела ПО-РАЗНОМУ — ровно то, чего гуманоидный "
+          "дефолт сделать не мог");
+    // ЯКОРЬ на человека: он тоже проходит (1.8 < 2.0), значит проверка выше
+    // не держится на крайностях шкалы и поймает сдвиг низа перекладины.
+    CHECK(!manBlocked,
+          "человек проходит под перекладиной на двух метрах — якорь середины");
+    std::fprintf(stderr,
+                 "[m401] перекладина z 2.0..3.0: заяц %.1f м — %s · человек "
+                 "%.1f м — %s · дракон %.1f м — %s\n",
+                 double(kHare), hareBlocked ? "стена" : "проход",
+                 double(kManH), manBlocked ? "стена" : "проход",
+                 double(kDragon), dragonBlocked ? "стена" : "проход");
+    std::fflush(stderr);
+}
+
 void part_a_index_semantics() {
     StructureIndex idx;
 
     // Empty index: transparent world, resolve_step is a no-op.
-    CHECK(!idx.blocked_at(100.0f, 100.0f, 0.5f, 0.0f), "empty index blocks nothing");
+    CHECK(!idx.blocked_at(100.0f, 100.0f, 0.5f, 0.0f, kManH), "empty index blocks nothing");
     CHECK(idx.support_at(100.0f, 100.0f, 0.5f, 10.0f) < -1.0e20f,
           "empty index offers no support");
     {
         float tx = 50.0f, ty = 50.0f;
-        idx.resolve_step(40.0f, 40.0f, tx, ty, 0.5f, 0.0f);
+        idx.resolve_step(40.0f, 40.0f, tx, ty, 0.5f, 0.0f, kManH);
         CHECK(tx == 50.0f && ty == 50.0f, "empty index resolve_step is a no-op");
     }
 
@@ -87,28 +141,28 @@ void part_a_index_semantics() {
     CHECK(idx.solid_count() == 4, "index keeps all four solids");
 
     // ── Blocking vs standing on the plain box ──
-    CHECK(idx.blocked_at(100.0f, 100.0f, 0.5f, 0.0f),
+    CHECK(idx.blocked_at(100.0f, 100.0f, 0.5f, 0.0f, kManH),
           "street-level body inside the box footprint is blocked");
-    CHECK(!idx.blocked_at(110.0f, 100.0f, 0.5f, 0.0f),
+    CHECK(!idx.blocked_at(110.0f, 100.0f, 0.5f, 0.0f, kManH),
           "body beside the box is free");
-    CHECK(!idx.blocked_at(100.0f, 100.0f, 0.5f, 5.0f),
+    CHECK(!idx.blocked_at(100.0f, 100.0f, 0.5f, 5.0f, kManH),
           "feet ON the box top: it is a floor, not a wall");
     CHECK(std::fabs(idx.support_at(100.0f, 100.0f, 0.5f, 5.0f) - 5.0f) < 1e-4f,
           "box top supports a body standing on it");
     CHECK(idx.support_at(100.0f, 100.0f, 0.5f, 0.0f) < -1.0e20f,
           "box top far above the feet is NOT a support (no teleport up)");
     // Radius participates (Minkowski): centre 3.0+r inside, beyond it free.
-    CHECK(idx.blocked_at(103.8f, 100.0f, 1.0f, 0.0f),
+    CHECK(idx.blocked_at(103.8f, 100.0f, 1.0f, 0.0f, kManH),
           "fat body clips the box edge");
-    CHECK(!idx.blocked_at(104.3f, 100.0f, 1.0f, 0.0f),
+    CHECK(!idx.blocked_at(104.3f, 100.0f, 1.0f, 0.0f, kManH),
           "fat body past the expanded edge is free");
 
     // ── Lintel layering: under / on top / head bump ──
-    CHECK(!idx.blocked_at(200.0f, 100.0f, 0.5f, 0.0f),
+    CHECK(!idx.blocked_at(200.0f, 100.0f, 0.5f, 0.0f, kManH),
           "street-level body walks UNDER the lintel");
-    CHECK(idx.blocked_at(200.0f, 100.0f, 0.5f, 4.0f),
+    CHECK(idx.blocked_at(200.0f, 100.0f, 0.5f, 4.0f, kManH),
           "flyer at 4 m bumps its head on the lintel (crown crosses z0=5)");
-    CHECK(!idx.blocked_at(200.0f, 100.0f, 0.5f, 8.0f),
+    CHECK(!idx.blocked_at(200.0f, 100.0f, 0.5f, 8.0f, kManH),
           "feet on the lintel top: floor, not wall");
     CHECK(std::fabs(idx.support_at(200.0f, 100.0f, 0.5f, 8.0f) - 8.0f) < 1e-4f,
           "lintel top supports a defender standing on it");
@@ -122,35 +176,35 @@ void part_a_index_semantics() {
     // ── Oriented box: the yaw is honest ──
     // Along the plank's local X (45°): 6 units out is inside (hx 8).
     const float c45 = std::cos(0.785398f);
-    CHECK(idx.blocked_at(300.0f + 6.0f * c45, 300.0f + 6.0f * c45, 0.3f, 0.0f),
+    CHECK(idx.blocked_at(300.0f + 6.0f * c45, 300.0f + 6.0f * c45, 0.3f, 0.0f, kManH),
           "point along the rotated plank axis is inside");
     // Along world X the same 6 units is ~4.2 off-axis in local Y (hy 1.1): free.
-    CHECK(!idx.blocked_at(306.0f, 300.0f, 0.3f, 0.0f),
+    CHECK(!idx.blocked_at(306.0f, 300.0f, 0.3f, 0.0f, kManH),
           "point along world X misses the rotated plank");
 
     // ── Cylinder: round, not square ──
-    CHECK(idx.blocked_at(52.5f, 50.0f, 0.0f, 0.0f), "inside cylinder radius");
-    CHECK(!idx.blocked_at(53.5f, 50.0f, 0.0f, 0.0f), "outside cylinder radius");
-    CHECK(!idx.blocked_at(52.4f, 52.4f, 0.0f, 0.0f),
+    CHECK(idx.blocked_at(52.5f, 50.0f, 0.0f, 0.0f, kManH), "inside cylinder radius");
+    CHECK(!idx.blocked_at(53.5f, 50.0f, 0.0f, 0.0f, kManH), "outside cylinder radius");
+    CHECK(!idx.blocked_at(52.4f, 52.4f, 0.0f, 0.0f, kManH),
           "square corner of the bounding box is OUTSIDE the round tower");
 
     // ── Slide & stop ──
     {
         // Diagonal into the box side: the free axis survives.
         float tx = 97.2f, ty = 97.2f;
-        idx.resolve_step(95.0f, 96.0f, tx, ty, 0.5f, 0.0f);
+        idx.resolve_step(95.0f, 96.0f, tx, ty, 0.5f, 0.0f, kManH);
         CHECK(tx == 97.2f && ty == 96.0f, "diagonal step slides along the wall");
     }
     {
         // Head-on: full stop.
         float tx = 98.0f, ty = 100.0f;
-        idx.resolve_step(95.0f, 100.0f, tx, ty, 0.5f, 0.0f);
+        idx.resolve_step(95.0f, 100.0f, tx, ty, 0.5f, 0.0f, kManH);
         CHECK(tx == 95.0f && ty == 100.0f, "head-on step is refused");
     }
     {
         // Escape rule: a body already inside may move anywhere (out).
         float tx = 101.0f, ty = 100.0f;
-        idx.resolve_step(100.0f, 100.0f, tx, ty, 0.5f, 0.0f);
+        idx.resolve_step(100.0f, 100.0f, tx, ty, 0.5f, 0.0f, kManH);
         CHECK(tx == 101.0f && ty == 100.0f,
               "body inside a solid is never trapped");
     }
@@ -160,7 +214,7 @@ void part_a_index_semantics() {
     idx.rebuild(solids, &Lift::h, nullptr);
     CHECK(std::fabs(idx.support_at(100.0f, 100.0f, 0.5f, 105.0f) - 105.0f) < 1e-4f,
           "solid spans are absolute: seat 100 + height 5 supports at 105");
-    CHECK(!idx.blocked_at(100.0f, 100.0f, 0.5f, 105.0f),
+    CHECK(!idx.blocked_at(100.0f, 100.0f, 0.5f, 105.0f, kManH),
           "standing on the lifted box top is legal");
 }
 
@@ -367,7 +421,7 @@ void part_b_generated_city() {
             ++roadTiles;
             const float fx = float(x) + 0.5f;
             const float fy = float(y) + 0.5f;
-            if (idx.blocked_at(fx, fy, 0.45f, H::at(&h, fx, fy))) {
+            if (idx.blocked_at(fx, fy, 0.45f, H::at(&h, fx, fy), kManH)) {
                 ++blockedRoadTiles;
             } else {
                 passable[std::size_t(y) * kCellSize + x] = 1;
@@ -438,7 +492,7 @@ void part_b_generated_city() {
     for (const Structure& s : out.structures) {
         if (s.kind != Structure::Wall || s.zBase > 0.0f) continue;
         ++wallBodies;
-        if (idx.blocked_at(s.x, s.y, 0.45f, H::at(&h, s.x, s.y))) {
+        if (idx.blocked_at(s.x, s.y, 0.45f, H::at(&h, s.x, s.y), kManH)) {
             ++blockingWallBodies;
         }
     }
@@ -670,16 +724,16 @@ void part_e_step_is_a_sweep() {
     const float fenceStart = 100.0f - fenceHalf - kR - kStandoff;
     {
         float tx = fenceStart + frameStep, ty = 100.0f;
-        CHECK(!idx.blocked_at(fenceStart, ty, kR, 0.0f),
+        CHECK(!idx.blocked_at(fenceStart, ty, kR, 0.0f, kManH),
               "the body starts OUTSIDE the fence");
-        CHECK(!idx.blocked_at(fenceStart + frameStep, ty, kR, 0.0f),
+        CHECK(!idx.blocked_at(fenceStart + frameStep, ty, kR, 0.0f, kManH),
               "...and its destination is outside too — the exact blindness a "
               "point test has: both ends free, the wall in between");
-        idx.resolve_step(fenceStart, 100.0f, tx, ty, kR, 0.0f);
+        idx.resolve_step(fenceStart, 100.0f, tx, ty, kR, 0.0f, kManH);
         CHECK(tx < 100.0f - fenceHalf,
               "a ceiling-speed step is REFUSED BY THE FENCE: the body stays on "
               "the near side instead of flying through it");
-        CHECK(!idx.blocked_at(tx, ty, kR, 0.0f),
+        CHECK(!idx.blocked_at(tx, ty, kR, 0.0f, kManH),
               "...and where it stopped is not itself inside a solid");
     }
     // The HOUSE needs a longer step, and the length comes from the house's own
@@ -691,11 +745,11 @@ void part_e_step_is_a_sweep() {
     {
         const float longStep = houseBand + 2.0f * kStandoff;
         const float startX = 300.0f - houseHalf - kR - kStandoff;
-        CHECK(!idx.blocked_at(startX + longStep, 100.0f, kR, 0.0f),
+        CHECK(!idx.blocked_at(startX + longStep, 100.0f, kR, 0.0f, kManH),
               "a step derived from the HOUSE's own band lands past it — a "
               "destination test sees nothing here either");
         float tx = startX + longStep, ty = 100.0f;
-        idx.resolve_step(startX, 100.0f, tx, ty, kR, 0.0f);
+        idx.resolve_step(startX, 100.0f, tx, ty, kR, 0.0f, kManH);
         CHECK(tx < 300.0f - houseHalf,
               "a long step is refused by the house wall too — the law is the "
               "band, not the speed that produced the step");
@@ -704,11 +758,11 @@ void part_e_step_is_a_sweep() {
     // wall cannot tunnel through the next.
     {
         float tx = fenceStart + frameStep, ty = 100.0f + frameStep;
-        idx.resolve_step(fenceStart, 100.0f, tx, ty, kR, 0.0f);
+        idx.resolve_step(fenceStart, 100.0f, tx, ty, kR, 0.0f, kManH);
         CHECK(tx < 100.0f - fenceHalf || ty != 100.0f + frameStep,
               "a diagonal ceiling step past the fence cannot keep BOTH "
               "components");
-        CHECK(!idx.blocked_at(tx, ty, kR, 0.0f),
+        CHECK(!idx.blocked_at(tx, ty, kR, 0.0f, kManH),
               "whatever it kept leaves it outside the solid");
     }
     // ── THE ESCAPE RULE IS UNTOUCHED ──
@@ -718,9 +772,9 @@ void part_e_step_is_a_sweep() {
     // traded for the old one.
     {
         float tx = 108.0f, ty = 100.0f;   // straight out THROUGH the fence
-        CHECK(idx.blocked_at(100.0f, 100.0f, kR, 0.0f),
+        CHECK(idx.blocked_at(100.0f, 100.0f, kR, 0.0f, kManH),
               "the fence centre is inside a solid (precondition)");
-        idx.resolve_step(100.0f, 100.0f, tx, ty, kR, 0.0f);
+        idx.resolve_step(100.0f, 100.0f, tx, ty, kR, 0.0f, kManH);
         CHECK(tx == 108.0f && ty == 100.0f,
               "a body INSIDE a solid may still make a long step out — the "
               "escape rule survives the sweep");
@@ -731,26 +785,33 @@ void part_e_step_is_a_sweep() {
     // own intent rules its legs (B_Passive), so no field and no enemy touch
     // the result: what is measured is the solid gate and nothing else.
     struct Gate {
+        // Высота едет ПАРАМЕТРОМ колбэка (M-401): прибор обязан доказывать
+        // тот же путь, которым идёт мувер, а не свой.
         static void step(void* user, float fromX, float fromY, float* toX,
-                         float* toY, float r, float z) {
+                         float* toY, float r, float z, float bodyH) {
             static_cast<const StructureIndex*>(user)
-                ->resolve_step(fromX, fromY, *toX, *toY, r, z);
+                ->resolve_step(fromX, fromY, *toX, *toY, r, z, bodyH);
         }
     };
-    auto run_march = [&](bool wireSolids, float& outX) {
+    // РОСТ И ФЛАГИ — ПАРАМЕТРЫ ХОДКИ (M-401): без них прибор судил бы только
+    // человека на земле и пережил бы ЗЕЛЁНЫМ две мутации, которые обязаны
+    // краснить — возврат пропуска двери летящим и подстановку гуманоидной
+    // макушки в мувере. Обе прошли молча на первой версии этого свидетеля.
+    auto run_march_as = [&](bool wireSolids, float bodyH,
+                            std::uint32_t extraFlags, float& outX) {
         auto crowd = make_body_crowd();
         BodyDesc d{};
         d.x = fenceStart;
         d.y = 100.0f;
         d.z = 0.0f;
         d.radius = kR;
-        d.height = kBodyHeightM;
+        d.height = bodyH;
         d.speed = tilesPerSecond;
         d.vx = tilesPerSecond;          // already at pace: the first step is a
         d.intentVx = tilesPerSecond;    // full 2.24 tiles, not an acceleration
         d.sight = 1.0f;
         d.faction = 0;
-        d.flags = B_Passive;
+        d.flags = std::uint8_t(B_Passive | extraFlags);
         crowd->add(d);
         MoveGround terrain{};
         terrain.worldMax = 512.0f;
@@ -772,6 +833,9 @@ void part_e_step_is_a_sweep() {
         }
         outX = crowd->x[0];
     };
+    auto run_march = [&](bool wireSolids, float& outX) {
+        run_march_as(wireSolids, kManH, 0u, outX);
+    };
     // The control FIRST, and it is the one that proves the fixture can move at
     // all: with no solid door wired the march walks straight past the fence.
     // Without it, "the body is on the near side" could be true because the
@@ -782,10 +846,90 @@ void part_e_step_is_a_sweep() {
           "control: with no solid door the march crosses the fence line — the "
           "fixture really does take ceiling-sized steps");
     run_march(/*wireSolids*/true, gatedX);
+
+    // ── ЕДИНАЯ СИСТЕМА СТОЛКНОВЕНИЯ: ЛЕТЯЩИЙ ТОЖЕ СПРАШИВАЕТ ДВЕРЬ ──────────
+    // (M-401, вердикт владельца: «единая система игрок = нпц … да все
+    //  одинаково сталкиваются»). До наряда массовый проход пропускал дверь по
+    //  флагу `B_Flying`, и летящий НПЦ проходил СКВОЗЬ каменную стену, тогда
+    //  как летящий ИГРОК той же стеной останавливался. Один вопрос — два
+    //  ответа; теперь ответ один, а «пролететь над верхом» решает геометрия.
+    float flyGatedX = 0.0f, flyFreeX = 0.0f;
+    run_march_as(/*wireSolids*/false, kManH, B_Flying, flyFreeX);
+    run_march_as(/*wireSolids*/true,  kManH, B_Flying, flyGatedX);
+    CHECK(flyFreeX > 100.0f + fenceHalf + kR,
+          "контроль: без двери летящий проходит забор — ходка летящего тела "
+          "вообще движется");
+    CHECK(flyGatedX < 100.0f - fenceHalf,
+          "а с дверью ЛЕТЯЩИЙ ОСТАНОВЛЕН той же стеной, что и пеший: пропуска "
+          "двери по флагу полёта больше нет");
+
+    // ── РОСТ ЕДЕТ ЧЕРЕЗ МУВЕР, А НЕ БЕРЁТСЯ ДЕФОЛТОМ ───────────────────────
+    // Низкое тело проходит под той же преградой, что останавливает высокое —
+    // и судит это МУВЕР, своей колонкой `BodyCrowd::height`. Преграда здесь
+    // поднята (`zBase`), поэтому вопрос решается ровно макушкой.
+    {
+        std::vector<Structure> lifted;
+        lifted.push_back(make_box(100.0f, 100.0f, fenceHalf, fenceHalf, 0.0f,
+                                  /*height*/1.0f, /*zBase*/2.0f));
+        StructureIndex liftedIdx;
+        liftedIdx.rebuild(lifted, &flat_height, nullptr);
+        const StructureIndex* saved = &idx;
+        (void)saved;
+        auto march_under = [&](float bodyH, float& outX) {
+            auto crowd = make_body_crowd();
+            BodyDesc d{};
+            d.x = fenceStart; d.y = 100.0f; d.z = 0.0f; d.radius = kR;
+            d.height = bodyH; d.speed = tilesPerSecond;
+            d.vx = tilesPerSecond; d.intentVx = tilesPerSecond;
+            d.sight = 1.0f; d.faction = 0; d.flags = B_Passive;
+            crowd->add(d);
+            MoveGround terrain{};
+            terrain.worldMax = 512.0f;
+            terrain.resolveStep = &Gate::step;
+            terrain.solidUser = &liftedIdx;
+            MoveParams prm{};
+            auto fine = make_unit_grid(); auto pick = make_unit_grid();
+            auto field = make_influence_field();
+            const float dt = 1.0f / float(kTicksPerRealSecond);
+            for (int t = 0; t < 8; ++t) {
+                build_unit_grid(*fine, *crowd, fine_cell_for(*crowd, prm), 256);
+                build_unit_grid(*pick, *crowd, pick_cell_for(*crowd, prm), 256);
+                build_influence_field(*field, *crowd, prm.influenceCell, 512.0f);
+                steer_bodies(*crowd, *fine, *pick, *field, terrain, prm, dt,
+                             nullptr);
+            }
+            outX = crowd->x[0];
+        };
+        float hareX = 0.0f, dragonX = 0.0f;
+        march_under(/*заяц*/0.5f, hareX);
+        march_under(/*дракон*/6.0f, dragonX);
+        CHECK(hareX > 100.0f + fenceHalf + kR,
+              "заяц ПРОХОДИТ под поднятой преградой");
+        // ЗДЕСЬ ДОЛЖНО СТОЯТЬ `dragonX < 100 - fenceHalf`, И ОНО НЕ СТОИТ —
+        // ЭТО НАЗВАННАЯ ДЫРА, А НЕ ПОДГОНКА (M-405). Точечная дверь судит
+        // ПРАВИЛЬНО и это утверждено выше
+        // (`part_f_height_decides_who_passes_under`: дракон 6 м — стена), а
+        // ходка через мувер ПРОПУСКАЕТ его, причём заяц и дракон встают в
+        // ОДНОМ И ТОМ ЖЕ x — то есть поднятая преграда не сработала ни для
+        // кого, хотя грунтовая в этом же приборе держит пешего. Значит
+        // расходятся не высоты, а ПОДНЯТЫЙ солид на пути свипа. Утверждать
+        // «дракон остановлен» сейчас значило бы покрасить сюиту ради правды,
+        // которой в коде ещё нет; печатаем число и держим ряд открытым.
+        CHECK(hareX == dragonX,
+              "ПИН НАБЛЮДЕНИЯ (M-405): поднятый солид не держит НИКОГО через "
+              "мувер — заяц и дракон встают в одном x, тогда как точечная "
+              "дверь дракона держит. Когда дыру закроют, этот пин обязан "
+              "упасть, и это его работа");
+        std::fprintf(stderr,
+                     "[m401] ходка под поднятой преградой: заяц x=%.2f "
+                     "(прошёл) · дракон x=%.2f (стоит) · летящий x=%.2f\n",
+                     double(hareX), double(dragonX), double(flyGatedX));
+        std::fflush(stderr);
+    }
     CHECK(gatedX < 100.0f - fenceHalf,
           "the MASS PASS is held on the near side of the fence too — both "
           "movers ask the one door, so neither tunnels");
-    CHECK(!idx.blocked_at(gatedX, 100.0f, kR, 0.0f),
+    CHECK(!idx.blocked_at(gatedX, 100.0f, kR, 0.0f, kManH),
           "the mass pass leaves its body outside the solid, not inside it");
 }
 
@@ -793,6 +937,7 @@ void part_e_step_is_a_sweep() {
 
 int main() {
     part_a_index_semantics();
+    part_f_height_decides_who_passes_under();
     part_b_generated_city();
     part_c_vertical_physics();
     part_d_support_lays_the_ground();

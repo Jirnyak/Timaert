@@ -54,10 +54,14 @@ namespace sm::sub {
 // as a wall. Kerbs and door sills yes; battlements no.
 constexpr float kStepUpM = 0.9f;
 
-// Vertical extent of a body for blocking purposes (feet → crown). One humanoid
-// constant: creature-specific heights can become data later without touching
-// the queries' shape.
-constexpr float kBodyHeightM = 1.7f;
+// (ЗДЕСЬ СТОЯЛА `kBodyHeightM = 1.7f` — «one humanoid constant: creature-
+//  specific heights can become data later». Данные были УЖЕ: рост есть колонка
+//  строки (`CombatTemplate::bodyHeight`) и колонка тела (`BodyCrowd::height`).
+//  Константа была не заглушкой на будущее, а ВТОРЫМ ответом, и он РАСХОДИЛСЯ
+//  с первым: человек был 1.8 м, когда его рисуют (`kHumanHeightM@src/sub/body.h`),
+//  и 1.7 м, когда он сталкивается — десять сантиметров разницы у одного тела.
+//  Уничтожена: высоту называет звонящий, дефолта у дверей больше нет, и
+//  «забыл передать» стало НЕСОБИРАЕМЫМ, а не молча гуманоидным.)
 
 class StructureIndex {
 public:
@@ -83,7 +87,7 @@ public:
     // overlap the SIDE of any solid at (x, y)? A solid whose top is within
     // stepUp of the feet is a floor, not a wall.
     bool blocked_at(float x, float y, float r, float zFeet,
-                    float bodyH = kBodyHeightM, float stepUp = kStepUpM) const;
+                    float bodyH, float stepUp = kStepUpM) const;
 
     // Point-in-solid test (projectiles: bolts detonate on walls like they
     // detonate on terrain).
@@ -119,7 +123,7 @@ public:
     // and a sweep fitted to either would have left the other tunnelling.
     void resolve_step(float fromX, float fromY, float& toX, float& toY,
                       float r, float zFeet,
-                      float bodyH = kBodyHeightM,
+                      float bodyH,
                       float stepUp = kStepUpM) const;
 
 private:
