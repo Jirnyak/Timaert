@@ -99,6 +99,15 @@ inline std::int16_t slot_level(const SubObjects& o, int s) {
 inline void slot_set_level(SubObjects& o, int s, std::int16_t lv) {
     o.level[std::size_t(s)] = lv;
 }
+// Вариация экземпляра в процентах табличного дефолта (M-386): 100 = строкой.
+// Читают её ровно двое — цена убитого при смерти и отладочная таблица; пишет
+// ОДНА дверь, рождение тела.
+inline int slot_variation(const SubObjects& o, int s) {
+    return int(o.variation[std::size_t(s)]);
+}
+inline void slot_set_variation(SubObjects& o, int s, int pct) {
+    o.variation[std::size_t(s)] = std::uint8_t(pct < 0 ? 0 : (pct > 255 ? 255 : pct));
+}
 
 // ── Бары, лист боя, снарядные параметры (кусок 2) ───────────────────────
 // «Баров нет» = maxHp 0 — тел с барами и нулевым максимумом не бывает.

@@ -4068,11 +4068,18 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     // — ТИР ЕЁ СТРОКИ (ЗАКОН ДВУХ ТАБЛИЦ: у объекта анкеты нет).
                     // Прежде здесь платилось `xpReward + (level−1)·5` ОБОИМ, то
                     // есть голове — за уровень, которого её сила не знает.
+                    // И ЦЕНА ГОЛОВЫ ЧИТАЕТ ТОТ ЖЕ МНОЖИТЕЛЬ, ЧТО ЕЁ СИЛА
+                    // (M-386): вариация экземпляра множит hp, удар и цену
+                    // ОДНИМ числом, значит «сильнее — значит дороже» верно по
+                    // построению, а не по дисциплине двух мест. У аватара
+                    // множителя нет вовсе — его сила есть его анкета, и
+                    // колонка арены стоит нейтралью 100 (ЗАКОН АНКЕТЫ).
                     const int victimXp =
                         arena.is_avatar_slot(ds)
                             ? exp_value_of_level(lvl)
-                            : head_xp_reward(NPCType(std::uint8_t(
-                                  kind ? kind->type : 0)));
+                            : varied(head_xp_reward(NPCType(std::uint8_t(
+                                         kind ? kind->type : 0))),
+                                     sub::slot_variation(arena, ds));
                     squad_award_exp(mst, avatar, victimXp);
                 }
                 // ЦЕНУ СМЕРТИ ПЛАТИТ ЛЮБОЙ АВАТАР (вердикты владельца

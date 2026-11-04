@@ -6516,7 +6516,17 @@ bool run_console_smoke(App& app) {
         // verbatim and the sheet's flatAdd/luck exactly as project_combat
         // wrote them — the spent sheet always adds str-damage, so flatAdd
         // must be positive where the template's is zero.
-        if (!near_eq(hlt->maxHp, projHp)
+        // И ЕДИНСТВЕННОЕ, ЧЕМ ТЕЛО ВПРАВЕ ОТЛИЧАТЬСЯ ОТ ПРОЕКЦИИ, ЕСТЬ ЕГО
+        // ВАРИАЦИЯ (M-386). Сверка стояла против ГОЛОЙ `project_combat`, и
+        // множитель экземпляра покраснил её честно: тело массовки теперь есть
+        // проекция, УМНОЖЕННАЯ на свой процент. Свидетель от этого стал
+        // СИЛЬНЕЕ, а не слабее: он утверждает, что множитель — ЕДИНСТВЕННАЯ
+        // разница, то есть второй источник силы рядом с анкетой невыразим.
+        // Кубы и удача множителем не трогаются вовсе — они лицо строки.
+        const int bodyPct = sm::sub::slot_variation(*objs, bs);
+        const float projHpVaried =
+            float(sm::varied(int(projHp), bodyPct));
+        if (!near_eq(hlt->maxHp, projHpVaried)
             || cmb->dice.n != proj.dice.n || cmb->dice.m != proj.dice.m
             || cmb->flatAdd != proj.flatAdd || cmb->luck != proj.luck) {
             restore();

@@ -317,11 +317,36 @@ int emplace_body(SubObjects& arena, const BodySpec& body,
     // source of strength standing beside it.
     const CombatTemplate pc = project_combat(sheet, def.combat);
 
+    // ВАРИАЦИЯ ЭКЗЕМПЛЯРА — ОДИН МНОЖИТЕЛЬ ОТ СИДА ЭТОГО ТЕЛА (M-386; вердикты
+    // владельца 2026-11-03 «вариация это просто поверх множитель … таблица даёт
+    // дефолт моба» и 2026-11-04 «ДА ВСЁ СНИЗУ … НАВЕРХУ ЧИСТАЯ МАКРОСТРАТГИЯ
+    // ТИПА МАУНТ ЭНД БЛЕЙД А ВНИЗУ АРПГ»). Им множатся hp, удар И ЦЕНА убитого,
+    // поэтому сила и цена — не две величины, которые надо не забыть подвинуть
+    // вместе, а ОДНА.
+    //
+    // ГЕЙТ ТОТ ЖЕ, ЧТО У ЛИСТА, И ВТОРОГО НЕ ЗАВОДИТСЯ: есть запись мира
+    // (`body.sheet`) — вариации нет, потому что истина о силе аватара есть его
+    // АНКЕТА (ЗАКОН АНКЕТЫ), и ролл поверх неё был бы вторым источником силы
+    // рядом с первым. Нет записи — это массовка, и её флуктуация выводится из
+    // сида, уже детерминированного от адреса клетки.
+    //
+    // ЗДЕСЬ ЖЕ УМЕР ЗАПРЕЩЁННЫЙ НОСИТЕЛЬ РАЗБРОСА. Прежде флуктуацию делал
+    // РОЛЛ УРОВНЯ (`baseLevel + {0,1}` у обоих спавнеров фауны), а уровень в
+    // `make_character_sheet` РАЗДАЁТ ОЧКИ — то есть объекту изготовлялась
+    // анкета на очко жирнее, и через неё разъезжались hp, mp, sp, прибавка к
+    // урону, удача и ПЕРИОД УДАРА. ЗАКОН ДВУХ ТАБЛИЦ п.4 запрещает это прямо, а
+    // своя же шапка `spawn_cell_npcs` ниже обещала обратное: «every body that
+    // stands up is exactly its table row». Теперь обещание верно: уровень тела
+    // есть ТИР ЕГО СТРОКИ, а флуктуация — множитель, и она ни одного очка не
+    // выдаёт.
+    const int variationPct = body.sheet ? 100 : variation_pct(body.seed);
+
     // Integers, not fractions: a body that hits for 17.85 accumulates a
     // different wound than one that hits for 17, and the two spawners used to
     // disagree about which it was. (The wound itself is dice + an already-
     // floored flatAdd now — the strike assembly is integer end to end.)
-    const float maxHp  = float(body_max_hp(sheet, def.combat));
+    const float maxHp  =
+        float(varied(body_max_hp(sheet, def.combat), variationPct));
     // Wounds travel as a FRACTION, not as a number of points, so the two layers
     // never have to agree on how big a lord's bar is. A tracked entity at two
     // thirds arrives at two thirds whatever the sheet says down here, and the
@@ -370,10 +395,21 @@ int emplace_body(SubObjects& arena, const BodySpec& body,
                   "sub/map_data.h kCellSize must equal the macro side's "
                   "kSubworldTilesPerMacroCell — the parity anchor rides on it");
     const float bodySpeed = march_speed(pc.speedMarchMult);
-    sub::slot_set_combat(*objs, slot, combat_from_sheet(sheet, def));
+    {
+        // Удар множится ОДНОЙ колонкой — типовым процентом над кубами
+        // (`multPct`), потому что он стоит в законе удара множителем всего
+        // броска: `(бросок + добавка) · multPct` (CANON S13). Значит вариация
+        // ложится на кости и на прибавку РАЗОМ, одной строкой, и второй ручки
+        // силы рядом с первой не появляется. Кубы и тип урона не трогаются —
+        // они есть лицо строки, а не её калибровка.
+        ecs::Combat c = combat_from_sheet(sheet, def);
+        c.multPct = std::int16_t(varied(c.multPct, variationPct));
+        sub::slot_set_combat(*objs, slot, c);
+    }
     maybe_emplace_missile_attack(*objs, slot, pc);
     maybe_emplace_flying(*objs, slot, pc);
     sub::slot_set_level(*objs, slot, std::int16_t(body.level));
+    sub::slot_set_variation(*objs, slot, variationPct);
         // How much room this body takes: the row's ONE width column, man-shaped
     // default resolved (npc.h npc_body_radius). This is the ONE line where
     // the creature birth and the humanoid birth used to differ about a
@@ -1157,8 +1193,10 @@ int spawn_dungeon_vermin(SubObjects& objs,
         const StandPoint& pt = draw.next(floorCatalog, pos);
         const float fx = originX + float(pt.x) + 0.5f;
         const float fy = originY + float(pt.y) + 0.5f;
-        const int npcLevel = clamp_to_ladder(
-            int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f)));
+        // Уровень тела есть ТИР его строки (M-386) — тот же снос ролла, что у
+        // спавнера фауны клетки: разброс несёт множитель от сида, не уровень,
+        // потому что уровень раздаёт очки анкеты, а у объекта анкеты нет.
+        const int npcLevel = creature_tier(f.row);
         spawn_derived_body(objs,
             BodySpec{f.row, fx, fy,
                      p.faction, npcLevel,
@@ -1295,8 +1333,12 @@ void spawn_cell_npcs(SubObjects& objs,
             fx, fy);
         if (!placed) { ++refused; continue; }
 
-        const int npcLevel = clamp_to_ladder(
-            int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f)));
+        // УРОВЕНЬ ТЕЛА ЕСТЬ ТИР ЕГО СТРОКИ, И БОЛЬШЕ НИЧЕГО (M-386). Здесь
+        // стоял ролл `baseLevel + {0,1}`, и он был ЗАПРЕЩЁННЫМ носителем
+        // разброса: уровень раздаёт очки анкеты, то есть объекту изготовлялась
+        // анкета (ЗАКОН ДВУХ ТАБЛИЦ п.4). Флуктуация теперь живёт множителем от
+        // сида — он уже стоит в этом же `BodySpec` строкой ниже.
+        const int npcLevel = creature_tier(f.row);
         spawn_derived_body(objs,
             BodySpec{f.row, fx, fy,
                      p.faction, npcLevel,

@@ -157,8 +157,14 @@ std::vector<SpawnRecord> expected_cell_fauna(
         }
         if (!placed) continue;
 
-        const int level = sm::clamp_to_ladder(
-            int(f.baseLevel) + int(std::floor(rng.next_f01() * 2.0f)));
+        // УРОВЕНЬ ТЕЛА ЕСТЬ ТИР ЕГО СТРОКИ, И ЗЕРКАЛО БОЛЬШЕ НЕ ЖЖЁТ БРОСОК
+        // (M-386). Здесь стояло `clamp_to_ladder(f.baseLevel + floor(f01·2))`,
+        // то есть зеркало повторяло РОЛЛ УРОВНЯ спавнера — и вместе с ним
+        // тратило один бросок потока. Ролл снесён как ЗАПРЕЩЁННЫЙ носитель
+        // разброса (уровень раздаёт очки анкеты, а у объекта анкеты нет —
+        // ЗАКОН ДВУХ ТАБЛИЦ п.4), поэтому и броска здесь больше нет: поток
+        // сдвинулся, и это ПРЕДМЕТ сверки, а не её поломка.
+        const int level = sm::creature_tier(f.row);
         // NOT restated here any more. A body's hp and damage are its row
         // PROJECTED THROUGH ITS SHEET since the two births merged (2026-08-20,
         // CANON.md S14: one sheet for everything alive), and a test that
@@ -490,11 +496,14 @@ bool run_population_does_not_scale_bodies_case(
             if (kindCol == nullptr) continue;
             const std::uint16_t typeId = kindCol->type;
             if (typeId >= std::uint16_t(sm::NPCType::Count)) continue;  // fauna
+            // РАВЕНСТВО, А НЕ ПОЛОСА (M-386). Здесь стоял допуск
+            // `base..base+2` — он описывал РОЛЛ УРОВНЯ, которого больше нет, и
+            // потому пропускал бы автолевел в одну-две ступени молча. Уровень
+            // тела ЕСТЬ тир его строки, точно, и детектор теперь ловит сдвиг на
+            // ОДНУ ступень. Разброс силы при этом не исчез — он уехал на
+            // множитель вариации, и у него свой свидетель ниже.
             const int lvl = int(sm::sub::slot_level(objs, s));
-            const int base = int(sm::npc_def(sm::NPCType(typeId)).baseLevel);
-            const int ceiling = sm::clamp_to_ladder(base + 2);
-            const int floorLvl = sm::clamp_to_ladder(base);
-            if (lvl < floorLvl || lvl > ceiling) return false;
+            if (lvl != sm::creature_tier(sm::NPCType(typeId))) return false;
             ++t.count;
         }
     }
@@ -1094,6 +1103,54 @@ int main() {
     CHECK(ok3, "a settlement's population moved a body's LEVEL "
                "(auto-level by town size is deleted — CANON.md S12)");
     if (!ok3) return 1;
+
+    // ── ВАРИАЦИЯ ЭКЗЕМПЛЯРА — ОДИН МНОЖИТЕЛЬ, И ОН ЗАКОН, А НЕ ЧИСЛО (M-386)
+    // Утверждаются СВОЙСТВА двери, не пересказ её тела (§8 п.5): воспроизводимость
+    // от сида, симметрия вокруг таблицы, и то, что сила и цена двигаются ОДНИМ
+    // числом. Последнее — якорь (§8 п.6): без него «тождество одной формулы»
+    // сошлось бы само с собой.
+    {
+        // (1) ВОСПРОИЗВОДИМОСТЬ: тот же сид — тот же множитель. Иначе повторный
+        // вход в клетку рождал бы другую тварь, а сид тела детерминирован от
+        // АДРЕСА клетки именно затем, чтобы этого не было.
+        CHECK(sm::variation_pct(0xDEADBEEFu) == sm::variation_pct(0xDEADBEEFu),
+              "вариация обязана быть функцией сида, а не роллом при чтении");
+        // (2) ПОЛОСА И СИММЕТРИЯ: авторское число таблицы обязано остаться
+        // СРЕДНИМ (таблица «даёт дефолт моба»), иначе вариация молча
+        // переавторила бы каталог. Среднее берётся по многим сидам, а границы —
+        // утверждением полосы, не литералом её ширины.
+        long sum = 0;
+        int lo = 1000, hi = -1000, distinct = 0;
+        bool seen[256] = {};
+        for (std::uint32_t s = 0; s < 4096u; ++s) {
+            const int p = sm::variation_pct(s * 2654435761u + 17u);
+            sum += p;
+            lo = p < lo ? p : lo;
+            hi = p > hi ? p : hi;
+            if (!seen[p]) { seen[p] = true; ++distinct; }
+        }
+        const int mean = int(sum / 4096);
+        CHECK(lo >= 100 - sm::kVariationSpreadPct
+                  && hi <= 100 + sm::kVariationSpreadPct,
+              "множитель вышел за свою полосу");
+        CHECK(distinct > 1, "вариация, не давшая ни одного разброса, "
+                            "есть выключенная механика, а не вариация");
+        CHECK(mean >= 99 && mean <= 101,
+              "полоса обязана быть симметричной вокруг 100: авторское число "
+              "таблицы есть СРЕДНЕЕ, а не пол или потолок");
+        // (3) ОДНО ЧИСЛО НА СИЛУ И НА ЦЕНУ: применение монотонно и неподвижно в
+        // нейтрали. Это и есть «разойтись не могут» — не два места, которые
+        // надо не забыть подвинуть вместе, а одна дверь.
+        CHECK(sm::varied(100, 100) == 100 && sm::varied(1000, 100) == 1000,
+              "нейтраль 100 обязана быть тождеством");
+        CHECK(sm::varied(1000, 125) > sm::varied(1000, 100)
+                  && sm::varied(1000, 75) < sm::varied(1000, 100),
+              "множитель обязан двигать величину в свою сторону");
+        // ЯКОРЬ: пол 1, потому что ноль hp есть СОБЫТИЕ (ЗАКОН КЛАМПА), а не
+        // «очень слабый моб» — тело с нулём было бы мёртвым при рождении.
+        CHECK(sm::varied(1, 75) == 1 && sm::varied(0, 75) == 1,
+              "вариация обязана не уметь родить тело с нулевой силой");
+    }
 
     const bool ok4 = !(!run_city_population_projection_case(mgr));
     if (!ok4) {
