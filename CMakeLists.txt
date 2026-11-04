@@ -1483,7 +1483,10 @@ timaert_test(subworld_spawn_parity_test
     # 52 → 53 (M-296): фикстура сажала кольцо в слот ПРИСВАИВАНИЕМ, а слот
     # снаружи больше не пишется — посадка пошла дверью адреса, и её отказ
     # теперь судится вслух. Пин двинут ОСОЗНАННО, как он и задуман.
-    PIN "OK subworld_spawn_parity_test .61 checks.")
+    # 61 → 62 (M-399): у пары «полупериод + пик» свидетеля была ровно половина
+    # (пик и пол на дальнем конце), и срез полупериода в одиночку оставлял
+    # сюиту зелёной, утопив в полу верхние полосы — замер дал ×3.34 → ×1.49.
+    PIN "OK subworld_spawn_parity_test .62 checks.")
 # Pure-logic unit tests for the RPG spine (character_sheet.h) + unified loot
 # table (items.cpp). Header-only sheet code needs no extra deps; the loot
 # functions live in items.cpp (self-contained — no SDL2, same as
