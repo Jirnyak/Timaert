@@ -185,13 +185,60 @@ void test_the_recovery_door_is_one_lever() {
     CHECK(blank == int(steps_from_seconds(base)),
           "a zeroed sheet swings at exactly the row's own base tempo");
 
-    // Spd quickens through the SAME asymptote the legs walk on…
+    // Spd quickens through the SAME rate the legs walk on…
     Attributes fast = a;
     fast[AttributeId::Spd] = 50;
     const int quick = recovery_steps(base, fast, s, SkillId::Armsmaster);
     CHECK(quick < blank, "Spd quickens the arm, as it quickens the legs");
-    CHECK(quickness_pct(50) == 150,
-          "and through the legs' OWN curve: half-saturation sits at spd 50");
+
+    // …И СТАВКА НАЗВАНА В ЕДИНИЦЕ МИРА, А НЕ ПРОЦЕНТОМ ЗА ОЧКО (M-389).
+    // Здесь стояло `quickness_pct(50) == 150` — пересказ числа умершей
+    // асимптоты (§8 п.4). Утверждается ОТНОШЕНИЕ, выведенное из тех же двух
+    // констант, что читает дверь: столько-то очков покупают одну лишнюю
+    // клетку в час из восьми клеток мира, значит удвоение стоит их
+    // ПРОИЗВЕДЕНИЕ. Перекалибровка ставки этих строк не краснит — они про
+    // форму закона, а не про выбранное число.
+    const int doubling = kSpdPctDivisor;   // очки за клетку × клетки в час
+    // (Что ГОЛОЕ тело — база атрибута = 1 — даёт тоже ровно 100 %, есть
+    // следствие нынешней ставки, а не закон: делитель 128 больше ста, поэтому
+    // первое очко усекается в ноль. Запинить это значило бы охранять
+    // калибровку — мутация 16 → 8 поймала такую строку здесь и была права.)
+    CHECK(quickness_pct(0) == 100,
+          "100 % ЕСТЬ марш мира в точности: невложенная резвость идёт мировым "
+          "шагом и не покупает ничего — это единица шкалы, а не калибровка");
+    CHECK(quickness_pct(doubling) == 200,
+          "а удвоение стоит РОВНО произведение двух чисел мира — очков за "
+          "клетку на клетки в час, и ничего кроме");
+    CHECK(quickness_pct(2 * doubling) == 300,
+          "форма ЛИНЕЙНА и без предела: два удвоения дают ×3, где снесённая "
+          "асимптота давала ×1.9 и дальше не росла вовсе");
+
+    // ОДИН РЫЧАГ, ДВА ЧИТАТЕЛЯ: марш МНОЖИТ на это число, рековери ДЕЛИТ на
+    // него (CANON S14 «один рычаг на ручку»). Утверждается не форма кривой —
+    // её пинят три проверки выше, — а то, что число ОДНО: иначе у рековери
+    // завелась бы своя кривая темпа, то есть второй закон.
+    Attributes anchor = a;
+    anchor[AttributeId::Spd] = 100;            // якорь эндгейма, внутри байта
+    CHECK(recovery_steps(base, anchor, s, SkillId::Armsmaster)
+              == int(steps_from_seconds(base)) * 100 / quickness_pct(100),
+          "марш и восстановление делят ОДНО число: один множит, другой делит");
+
+    // И ЗАТУХАНИЕ: тот же рычаг делителем даёт 1/x, поэтому потолка ему не
+    // нужно (владелец, 2026-11-04: «рековери не может быть меньше нуля») —
+    // очко на вершине шкалы экономит МЕНЬШЕ, чем очко у подножия. База взята
+    // длинной нарочно: на коротком замахе целые шаги разницы не увидят.
+    const float longBase = 10.0f;
+    const auto steps_at = [&](int spd) {
+        Attributes at = a;
+        at[AttributeId::Spd] = std::uint8_t(spd);
+        return recovery_steps(longBase, at, s, SkillId::Armsmaster);
+    };
+    CHECK(steps_at(20) - steps_at(21) > steps_at(254) - steps_at(255),
+          "отдача очка САМА затухает — делитель, а не линия, и потому ниже "
+          "нуля восстановление не уходит ни на какой шкале");
+    CHECK(steps_at(255) >= 1 && doubling <= 255,
+          "а удвоение ДОСТИЖИМО в типе атрибута: ставка, обещающая ступень "
+          "за пределом байта, обещала бы несуществующее");
 
     // …and the GENERIC skill multiplies on top — the typed one must NOT
     // (one handle, one lever: Sword already multiplied the dice).
