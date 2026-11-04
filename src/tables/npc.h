@@ -291,6 +291,60 @@ struct NpcTypeDef {
     // NO baseHp column — the ONE hp floor a body fights with is its
     // CombatTemplate's `hp` (the sheet projection's own floor); a second
     // number here was never read.
+
+    // ── АВТОРСКИЙ ТИР СТРОКИ: «НАСКОЛЬКО ЭТА ТВАРЬ ВЫСОКО В МИРЕ» ─────────
+    //
+    // ОДНА ЛЕСТНИЦА 1..255 НА ВЕСЬ МИР — `kMaxTier@src/tables/progression.h`,
+    // вердикт владельца 2026-11-03: ✓ «у нас есть УЖЕ ЗОНЫ СЛОЖНОСТИ И ТИРЫ
+    // ПРЕДМЕТОВ ОЧЕВИДНО ПРОСТО НАДО СЛИТЬ ЭТО В ОДНУ СИСТЕМУ … они уже u8 255
+    // НА ЭТОМ И РЕШИЛИ». На той же лестнице стоят опасность клетки
+    // (`ZoneLayer@src/macro/zones.h`) и тир предмета
+    // (`ItemRef::level@src/tables/items.h`), поэтому мир СОПОСТАВЛЯЕТ их без
+    // переводного курса — сопоставление и есть причина единых единиц. Что тир
+    // КАЖДОЙ строки стоит на лестнице, судит компилятор:
+    // `npc_tiers_on_ladder` под таблицей рядов.
+    //
+    // ВЫВОДИТЬ ТИР ИЗ МОЩИ ЗАПРЕЩЕНО, И ЭТО ВЕРДИКТ, А НЕ ВКУС: ✓ «мы же
+    // решили отказаться ваще от мощи и умножения хп на дпс … у нас же просто
+    // таблица объектов и написан тир моба»; ✓ «могут быть твари мало хп куча
+    // резистов и огромнвй урон не умничай где нюансы есть». `hp × удар/период`
+    // не видит ни резистов (`Defense::armor` по восьми родам урона), ни блока,
+    // ни дальнобойности, ни правил, ни того, что у кастера удар есть СПЕЛЛ, а
+    // не его собственные кубы. Число пишется РУКАМИ, и `tier_of_power`,
+    // пытавшаяся его считать, снесена в тот же день (M-384).
+    //
+    // ГДЕ СТОИТ КАТАЛОГ ПОСЛЕ ПЕРЕАВТОРИНГА (M-385): занято 1..120 из 255.
+    // Якорь — КАНОНИЧЕСКИЙ «эндгейм ≈ 100» (CANON S14 «он про то, где живёт
+    // игра»), поэтому народ и мелкая живность стоят у пола, лич встал РОВНО на
+    // якоре (100), а дракон, вершина каталога, на 120 — ВЫШЕ якоря и далеко НЕ
+    // у потолка: 135 ступеней (53 % лестницы) оставлены пустыми НАРОЧНО, иначе
+    // первая же новая сильная строка упёрлась бы в 255 и стала бы равна
+    // дракону В ЦЕНЕ. Полосы: 1 — не угроза вовсе · 2..6 — мелочь · 7..14 —
+    // первая настоящая угроза · 16..28 — ветеранская · 38..50 — элита ·
+    // 55..75 — чудовища · 100..120 — эндгейм. До M-385 занято было 1..10, цена
+    // убитого шла 11 → 200 (разброс ×18); теперь 11 → 15 600 (×1418).
+    //
+    // КТО ЭТО ЧИТАЕТ (DOD п.9 — у колонки обязан быть названный читатель):
+    //   · ЦЕНА УБИТОГО — `head_xp_reward` ниже, через `creature_tier`. Пол
+    //     лестницы платит: тир 1 стоит 11 опыта, а не ноль;
+    //   · ЭКОНОМИКА — `hire_price_for` и `soldier_upkeep` ниже, через
+    //     `soldier_level_factor@src/tables/army.h` = 1 + (уровень−1)/3: тир
+    //     едет уровнем головы в контейнер (`creature_slot@src/bus/world_row.h`),
+    //     и множитель стражника пошёл 1 → 5 (найм 90 → 450, содержание 3 → 15
+    //     золотых в день). Прочие платные строки не дрогнули ни на монету: у
+    //     крестьянина, сборщика десятины и лошади тир ≤ 3, то есть множитель
+    //     остался единицей, а 43 строки из 47 несут `hireGold == 0` вовсе;
+    //   · СИД УРОВНЯ ЭКЗЕМПЛЯРА — `npc_spawn.cpp` (тир + rng%4, лист аватара) и
+    //     `sub/spawn.cpp` (тир + rng%2, тело в сцене). Это ДОЛГ, названный
+    //     остатком M-384 («колонка служит СРАЗУ двум вещам — сидом уровня
+    //     экземпляра и тиром»), и переавторинг его ОБНАЖИЛ числом: средний hp
+    //     аватара тролля 186 → 839 (×4.5), медведя 126 → 497 (×3.9), дракона
+    //     538 → 740 (×1.4). Разводить два смысла — M-386/M-387, не здесь.
+    //
+    // ЧИСЛА — БАЛАНС (§3 ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ: «НИКОГДА НЕЛЬЗЯ СИСТЕМУ
+    // ПОДГОНЯТЬ ПОД ЧИСЛА»), и двигать их можно молча. Авторская воля в них
+    // одна — ПОРЯДОК; семя порядка есть `hp × удар/период` строки, а всякое
+    // отклонение от семени суть суждение о том, чего семя не видит.
     int             baseLevel;
     AIBehaviour     ai;
     CombatTemplate  combat;
@@ -692,7 +746,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "merchant",
         .label = "Merchant",
         .sprite = SpriteId::Caravan,
-        .baseLevel = 3,
+        .baseLevel = 2,
         .ai = AIBehaviour::Trader,
         .combat = kMerchantCombat,
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -719,7 +773,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "bandit",
         .label = "Bandit",
         .sprite = SpriteId::Bandit,
-        .baseLevel = 2,
+        .baseLevel = 9,
         .ai = AIBehaviour::Aggressive,
         .combat = kBanditCombat,
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -749,7 +803,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "road_ambusher",
         .label = "Ambusher",
         .sprite = SpriteId::Bandit,
-        .baseLevel = 3,
+        .baseLevel = 12,
         .ai = AIBehaviour::Aggressive,
         .combat = kAmbusherCombat,
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -782,7 +836,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "guard",
         .label = "Guard",
         .sprite = SpriteId::Peasant,
-        .baseLevel = 3,
+        .baseLevel = 14,
         .ai = AIBehaviour::Aggressive,
         .combat = kGuardCombat,
         .upkeepGoldPerDay = 3,
@@ -836,7 +890,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "witch",
         .label = "Witch",
         .sprite = SpriteId::Witch,
-        .baseLevel = 5,
+        .baseLevel = 26,
         .ai = AIBehaviour::Teleporter,
         .combat = kWitchCombat,
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -863,7 +917,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "sorceress",
         .label = "Sorceress",
         .sprite = SpriteId::Sorceress,
-        .baseLevel = 6,
+        .baseLevel = 55,
         .ai = AIBehaviour::Wanderer,
         .combat = kSorceressCombat,
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -891,7 +945,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "cultist",
         .label = "Cultist",
         .sprite = SpriteId::Cultist,
-        .baseLevel = 4,
+        .baseLevel = 22,
         .ai = AIBehaviour::Aggressive,
         .combat = {45, {3,6}, 1.5f, 22.0f, 2.2f, "Cul", CombatTemplate::Missile, 190,
          0.0f, 0xFFA060E0u, /*bodyHeight*/1.8f, kNpcSightDefaultM, 100, 100,
@@ -981,7 +1035,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "goblin",
         .label = "Goblin",
         .sprite = SpriteId::Goblin,
-        .baseLevel = 2,
+        .baseLevel = 7,
         .ai = AIBehaviour::Aggressive,
         .combat = {25, {8,1}, 2.0f, 3, 1.0f, "Gbl"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1008,7 +1062,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "kobold",
         .label = "Kobold",
         .sprite = SpriteId::Kobold,
-        .baseLevel = 1,
+        .baseLevel = 4,
         .ai = AIBehaviour::Aggressive,
         .combat = {20, {2,4}, 2.2f, 3.0f, 1.1f, "Kbd", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.1f, kNpcSightDefaultM, 100, 100,
@@ -1039,7 +1093,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "orc",
         .label = "Orc",
         .sprite = SpriteId::Orc,
-        .baseLevel = 3,
+        .baseLevel = 18,
         .ai = AIBehaviour::Aggressive,
         .combat = {60, {2,8}, 1.8f, 3.0f, 1.4f, "Orc", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.9f, kNpcSightDefaultM, 100, 100,
@@ -1069,7 +1123,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "troll",
         .label = "Troll",
         .sprite = SpriteId::Troll,
-        .baseLevel = 5,
+        .baseLevel = 72,
         .ai = AIBehaviour::Aggressive,
         .combat = {120, {25,1}, 1.25f, 4, 2.0f, "Trl"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1096,7 +1150,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "ogre",
         .label = "Ogre",
         .sprite = SpriteId::Ogre,
-        .baseLevel = 6,
+        .baseLevel = 70,
         .ai = AIBehaviour::Aggressive,
         .combat = {140, {3,12}, 1.2f, 4.0f, 2.2f, "Ogr", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/3.0f, kNpcSightDefaultM, 100, 100,
@@ -1125,7 +1179,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "minotaur",
         .label = "Minotaur",
         .sprite = SpriteId::Minotaur,
-        .baseLevel = 6,
+        .baseLevel = 75,
         .ai = AIBehaviour::Aggressive,
         .combat = {130, {4,10}, 1.9f, 4.0f, 1.8f, "Min", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/2.6f, kNpcSightDefaultM, 100, 100,
@@ -1154,7 +1208,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "harpy",
         .label = "Harpy",
         .sprite = SpriteId::Harpy,
-        .baseLevel = 3,
+        .baseLevel = 9,
         .ai = AIBehaviour::Aggressive,
         .combat = {30, {2,7}, 2.9f, 3.0f, 1.0f, "Hrp", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.6f, kNpcSightDefaultM, 100, 100,
@@ -1189,7 +1243,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "dragon",
         .label = "Dragon",
         .sprite = SpriteId::Dragon,
-        .baseLevel = 10,
+        .baseLevel = 120,
         .ai = AIBehaviour::Wanderer,
         .combat = kDragonCombat,
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1276,7 +1330,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "giant_rat",
         .label = "Giant Rat",
         .sprite = SpriteId::GiantRat,
-        .baseLevel = 1,
+        .baseLevel = 3,
         .ai = AIBehaviour::Aggressive,
         .combat = {14, {2,4}, 2.5f, 2.0f, 1.0f, "Rat", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/0.5f, kNpcSightDefaultM, 100, 100,
@@ -1333,7 +1387,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "fox",
         .label = "Fox",
         .sprite = SpriteId::Fox,
-        .baseLevel = 1,
+        .baseLevel = 2,
         .ai = AIBehaviour::Wanderer,
         .combat = {12, {4,1}, 2.25f, 2, 1.2f, "Fox"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1361,7 +1415,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "wolf",
         .label = "Wolf",
         .sprite = SpriteId::Wolf,
-        .baseLevel = 2,
+        .baseLevel = 10,
         .ai = AIBehaviour::Aggressive,
         .combat = {30, {10,1}, 2.5f, 3, 1.0f, "Wlf"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1390,7 +1444,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "bear",
         .label = "Bear",
         .sprite = SpriteId::Bear,
-        .baseLevel = 3,
+        .baseLevel = 50,
         .ai = AIBehaviour::Aggressive,
         .combat = {80, {18,1}, 1.75f, 3, 1.5f, "Ber"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1417,7 +1471,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "boar",
         .label = "Boar",
         .sprite = SpriteId::Boar,
-        .baseLevel = 2,
+        .baseLevel = 16,
         .ai = AIBehaviour::Aggressive,
         .combat = {40, {12,1}, 2.0f, 3, 1.2f, "Bor"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1445,7 +1499,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "snake",
         .label = "Snake",
         .sprite = SpriteId::Snake,
-        .baseLevel = 1,
+        .baseLevel = 4,
         .ai = AIBehaviour::Aggressive,
         .combat = {10, {8,1}, 1.5f, 2, 0.8f, "Snk"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1473,7 +1527,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "crocodile",
         .label = "Crocodile",
         .sprite = SpriteId::Crocodile,
-        .baseLevel = 3,
+        .baseLevel = 28,
         .ai = AIBehaviour::Aggressive,
         .combat = {50, {15,1}, 1.25f, 3, 1.5f, "Crc"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1501,7 +1555,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "basilisk",
         .label = "Basilisk",
         .sprite = SpriteId::Basilisk,
-        .baseLevel = 6,
+        .baseLevel = 65,
         .ai = AIBehaviour::Aggressive,
         .combat = {95, {3,10}, 1.6f, 3.0f, 1.5f, "Bsk", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.4f, kNpcSightDefaultM, 100, 100,
@@ -1530,7 +1584,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "hawk",
         .label = "Hawk",
         .sprite = SpriteId::Hawk,
-        .baseLevel = 1,
+        .baseLevel = 2,
         // ЛЕТУН: cruiseM 5 — ястреб честно в воздухе (полёт-посадка
         // 2026-09-10), гравитации нет, конверт общий с игроком.
         .ai = AIBehaviour::Wanderer,
@@ -1560,7 +1614,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "eagle",
         .label = "Eagle",
         .sprite = SpriteId::Eagle,
-        .baseLevel = 2,
+        .baseLevel = 3,
         // ЛЕТУН: cruiseM 6 — орёл выше ястреба, тот же закон.
         .ai = AIBehaviour::Wanderer,
         .combat = {12, {7,1}, 3.25f, 3, 1.0f, "Egl", CombatTemplate::Melee, 0, 0, 0xFFFFFFFFu, 0.0f, kNpcSightDefaultM, 100, 100, DamageType::Blunt, 6.0f},
@@ -1618,7 +1672,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "cave_bat",
         .label = "Cave Bat",
         .sprite = SpriteId::CaveBat,
-        .baseLevel = 1,
+        .baseLevel = 2,
         .ai = AIBehaviour::Aggressive,
         .combat = {8, {1,6}, 3.0f, 2.0f, 0.9f, "Bat", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/0.4f, kNpcSightDefaultM, 100, 100,
@@ -1647,7 +1701,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "cave_spider",
         .label = "Cave Spider",
         .sprite = SpriteId::CaveSpider,
-        .baseLevel = 2,
+        .baseLevel = 6,
         .ai = AIBehaviour::Aggressive,
         .combat = {26, {2,6}, 2.4f, 2.0f, 1.0f, "Spd", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/0.7f, kNpcSightDefaultM, 100, 100,
@@ -1676,7 +1730,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "sand_scorpion",
         .label = "Sand Scorpion",
         .sprite = SpriteId::SandScorpion,
-        .baseLevel = 2,
+        .baseLevel = 24,
         .ai = AIBehaviour::Aggressive,
         .combat = {35, {12,1}, 1.75f, 3, 1.0f, "Ssc"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1714,7 +1768,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "horse",
         .label = "Horse",
         .sprite = SpriteId::Deer,
-        .baseLevel = 1,
+        .baseLevel = 2,
         .ai = AIBehaviour::Flee,
         .combat = {40, {1,4}, 2.2f, 1.2f, 1.6f, "Hrs"},
         .upkeepGoldPerDay = 0,
@@ -1803,7 +1857,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "goat",
         .label = "Mountain Goat",
         .sprite = SpriteId::Goat,
-        .baseLevel = 1,
+        .baseLevel = 2,
         .ai = AIBehaviour::Flee,
         .combat = {20, {5,1}, 2.0f, 2, 1.5f, "Mgt"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1837,7 +1891,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "skeleton",
         .label = "Skeleton",
         .sprite = SpriteId::Skeleton,
-        .baseLevel = 3,
+        .baseLevel = 11,
         .ai = AIBehaviour::Aggressive,
         .combat = {35, {10,1}, 1.5f, 3, 1.2f, "Skl"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1864,7 +1918,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "zombie",
         .label = "Zombie",
         .sprite = SpriteId::Zombie,
-        .baseLevel = 2,
+        .baseLevel = 10,
         .ai = AIBehaviour::Aggressive,
         .combat = {55, {2,8}, 0.8f, 3.0f, 2.0f, "Zmb", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.75f, kNpcSightDefaultM, 100, 100,
@@ -1893,7 +1947,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "ghoul",
         .label = "Ghoul",
         .sprite = SpriteId::Ghoul,
-        .baseLevel = 3,
+        .baseLevel = 24,
         .ai = AIBehaviour::Aggressive,
         .combat = {48, {3,6}, 2.4f, 3.0f, 1.2f, "Ghl", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.7f, kNpcSightDefaultM, 100, 100,
@@ -1922,7 +1976,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "wraith",
         .label = "Wraith",
         .sprite = SpriteId::Wraith,
-        .baseLevel = 5,
+        .baseLevel = 40,
         .ai = AIBehaviour::Aggressive,
         .combat = {55, {3,8}, 2.0f, 4.0f, 1.4f, "Wrh", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.9f, kNpcSightDefaultM, 100, 100,
@@ -1950,7 +2004,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "ice_wraith",
         .label = "Ice Wraith",
         .sprite = SpriteId::IceWraith,
-        .baseLevel = 4,
+        .baseLevel = 42,
         .ai = AIBehaviour::Aggressive,
         .combat = {45, {16,1}, 1.75f, 5, 1.3f, "Iwr"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1976,7 +2030,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "stone_golem",
         .label = "Stone Golem",
         .sprite = SpriteId::StoneGolem,
-        .baseLevel = 5,
+        .baseLevel = 68,
         .ai = AIBehaviour::Aggressive,
         .combat = {150, {20,1}, 0.75f, 4, 2.5f, "Glm"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -2004,7 +2058,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "gargoyle",
         .label = "Gargoyle",
         .sprite = SpriteId::Gargoyle,
-        .baseLevel = 5,
+        .baseLevel = 45,
         .ai = AIBehaviour::Aggressive,
         .combat = {90, {3,8}, 1.4f, 3.0f, 1.6f, "Grg", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/2.2f, kNpcSightDefaultM, 100, 100,
@@ -2032,7 +2086,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "imp",
         .label = "Imp",
         .sprite = SpriteId::Imp,
-        .baseLevel = 2,
+        .baseLevel = 5,
         .ai = AIBehaviour::Aggressive,
         .combat = {18, {2,5}, 2.8f, 2.0f, 0.9f, "Imp", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/0.8f, kNpcSightDefaultM, 100, 100,
@@ -2060,7 +2114,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "swamp_thing",
         .label = "Swamp Thing",
         .sprite = SpriteId::SwampThing,
-        .baseLevel = 3,
+        .baseLevel = 38,
         .ai = AIBehaviour::Aggressive,
         .combat = {60, {14,1}, 1.0f, 4, 1.5f, "Swt"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -2088,7 +2142,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .id = "lich",
         .label = "Lich",
         .sprite = SpriteId::Lich,
-        .baseLevel = 8,
+        .baseLevel = 100,
         .ai = AIBehaviour::Aggressive,
         .combat = {110, {4,12}, 1.1f, 28.0f, 2.6f, "Lch", CombatTemplate::Missile, 210,
          3.0f, 0xFF90FFB0u, /*bodyHeight*/1.9f, kNpcSightDefaultM, 100, 100,
@@ -2337,10 +2391,24 @@ inline int hire_price_for(std::uint16_t kind, int level) {
 
 // ── ТИР СТРОКИ — АВТОРСКАЯ КОЛОНКА, ОДНА ДВЕРЬ ЧТЕНИЯ ──────────────────────
 //
-// Носитель — `baseLevel` этой же строки: число, которое автор пишет РУКАМИ и
-// которым говорит «насколько эта тварь высоко в мире». Оно же даёт веса
-// расселения по зонам, оно же есть цена в опыте, и оно же лежит на ОДНОЙ
-// лестнице 0..255 с опасностью клетки и тиром предмета.
+// Носитель — `baseLevel` этой же строки (её разбор и полосы каталога стоят
+// ТАМ, у колонки): число, которое автор пишет РУКАМИ и которым говорит
+// «насколько эта тварь высоко в мире». Оно есть цена в опыте, оно же едет
+// уровнем головы в контейнер, и оно лежит на ОДНОЙ лестнице 1..255 с
+// опасностью клетки и тиром предмета — пола 0 у лестницы нет, первая ступень
+// платит (вердикт владельца о поле: «чтобы чтото было»).
+//
+// ПОСЛЕ ПЕРЕАВТОРИНГА M-385 КАТАЛОГ ЗАНИМАЕТ 1..120 ИЗ 255 (было 1..10): пол —
+// народ и мелкая живность, якорь «эндгейм ≈ 100» — лич, вершина — дракон 120,
+// и 135 ступеней оставлены свободными под то, чего в мире ещё нет.
+//
+// ЗДЕСЬ СТОЯЛО «ОНО ЖЕ ДАЁТ ВЕСА РАССЕЛЕНИЯ ПО ЗОНАМ», И ЭТО БЫЛО НЕВЕРНО
+// (§0 п.2 — шапка есть свидетель, и он врал): расселение судит ВЫВЕДЕННОЙ
+// МОЩЬЮ — `spawn_strength@src/tables/fauna.h` нормирует `log₂(hp×dps)` по
+// крайним строкам каталога, — а тир о нём не знает ВОВСЕ. Это два ответа на
+// один вопрос «насколько эта тварь высоко» (DOD п.6), и сведение расселения на
+// тир есть открытый ряд M-387. Практическое следствие для автора тиров: правка
+// этой колонки цену УБИТОГО двигает, а землю, на которой тварь водится, — нет.
 //
 // ЗДЕСЬ СТОЯЛ ВЫВОД `тир = √(hp × удар/период)`, И ОН СНЕСЁН В ТОТ ЖЕ ДЕНЬ,
 // 2026-11-03, вердиктом владельца: ✓ «мы же решили отказаться ваще от мощи и

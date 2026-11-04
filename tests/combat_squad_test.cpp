@@ -53,8 +53,17 @@ int main() {
     sm::creatures_push(garrison, sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Peasant), 1, 43u));
 
+    // ЦЕНА ПРЕДПРОСМОТРА ЕСТЬ ЦЕНА ГОЛОВЫ НА ЕЁ ЖЕ ТИРЕ — ОТНОШЕНИЕ, А НЕ
+    // ПЕРЕСКАЗАННОЕ ЧИСЛО (§8 п.4). Здесь стоял литерал уровня `3`, верный
+    // ровно до тех пор, пока тир стражника равнялся трём; переавторинг тиров
+    // каталога на полную лестницу (M-385: 3 → 14) покраснел бы на РАБОТАЮЩЕМ
+    // мире, то есть свидетель держал бы не закон, а случай. Ожидание выводится
+    // из той же колонки, которую читает `npc_hire_price_base`, поэтому разъезд
+    // с ней невыразим, а охраняемое не изменилось: превью-запись обязана нести
+    // уровень СВОЕЙ строки, и цена обязана его прочесть.
     const int expectedPrice =
-        sm::hire_price_for(std::uint16_t(sm::NPCType::Guard), 3);
+        sm::hire_price_for(std::uint16_t(sm::NPCType::Guard),
+                           sm::npc_def(sm::NPCType::Guard).baseLevel);
     sm::DealLine recruit[1];
     recruit[0] = sm::DealLine{};
     recruit[0].want = 1;
