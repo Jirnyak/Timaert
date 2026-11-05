@@ -2,10 +2,12 @@
 //
 // Прибор судит ЧЕТЫРЕ закона, а не сегодняшние числа каталога:
 //
-//   1. МАГИЧЕСКИЙ ОТРЕЗОК ВЫВЕДЕН, А НЕ АВТОРЕН ВТОРЫМ КЛЮЧОМ. «Спелл просто
-//      частный случай» (владелец, 2026-11-04) — значит ординал туда и обратно
-//      обязан возвращать ТУ ЖЕ строку, и таблицы-спутника с тем же ключом не
-//      существует (DOD п.9).
+//   1. МАГИЧЕСКИЙ ОТРЕЗОК — АВТОРСКИЙ И ВЫРОВНЕН С КАТАЛОГОМ СПЕЛЛОВ
+//      ПОСТРОЧНО (переворот 2026-11-05, форма (А): дом базы/цены/охвата —
+//      таблица действий; поправка владельца — «почему просто не сделал
+//      универсльно способности?»). Тождество порядка держит static_assert в
+//      самой таблице; прибор судит РАНТАЙМ-двери: ординал туда и обратно
+//      возвращает ту же строку.
 //   2. ДВА СЛОЯ ВЕЛИЧИНЫ (CANON S14 «БАЗОВОЕ И ЭФФЕКТИВНОЕ РЕКОВЕРИ»): база —
 //      колонка строки в ЦЕЛЫХ ТИКАХ, эффективное — ОДНА дверь над ней.
 //      Нетренированный лист не двигает базу ВОВСЕ; тренированный двигает её
@@ -34,6 +36,7 @@
 #include "tables/actions.h"   // ЕДИНАЯ строка действия
 
 #include <cstdio>
+#include <cstring>
 
 namespace {
 
@@ -42,8 +45,8 @@ using sm::ActionScope;
 using sm::ActionType;
 using sm::SkillId;
 
-// ── 1. Отрезок и ординал: выведено, значит тождественно ───────────────────
-void segment_is_derived_not_authored() {
+// ── 1. Отрезок и ординал: авторский отрезок выровнен с каталогом ──────────
+void segment_is_aligned_with_spells() {
     CHECK(sm::kActionMagicCount == sm::kSpellCount,
                     "магический отрезок накрывает ВСЕ строки спеллов");
     CHECK(sm::kActionCount == sm::kActionMagicFirst + sm::kSpellCount,
@@ -54,9 +57,9 @@ void segment_is_derived_not_authored() {
         const int ord = sm::action_of_spell(i);
         if (!sm::action_ordinal_valid(ord)) { ++mismatches; continue; }
         const sm::ActionDef& a = sm::action_def(ord);
-        // Ключ ТОТ ЖЕ указатель: строка выведена из авторской, а не набрана
-        // заново — копия ключа означала бы второй авторский список.
-        if (a.id != sm::kSpellDefs[i].id) ++mismatches;
+        // Ключ ТОТ ЖЕ посимвольно: авторских списка два, но порядок один —
+        // разъезд ловит static_assert таблицы, прибор дублирует рантаймом.
+        if (std::strcmp(a.id, sm::kSpellDefs[i].id) != 0) ++mismatches;
         if (a.type != ActionType::Spell) ++mismatches;
         if (sm::archetype_of(a.type) != ActionArchetype::Magic) ++mismatches;
         ++samples;
@@ -199,6 +202,19 @@ void cost_is_all_or_nothing_across_three_pools() {
     CHECK(paidRich && rich.mp == 0 && rich.hp == 10 && rich.sp == 10,
                     "заплатив, действие списывает РОВНО свои три колонки");
 
+    // ЦЕНА НЕОТРИЦАТЕЛЬНА У ВСЕГО КАТАЛОГА: отрицательная колонка была бы
+    // лечением-через-каст мимо закона лечения — у авторской таблицы это
+    // судит прибор, потому что тип int32 выбран пулом, а не знаком цены.
+    int costSamples = 0, negative = 0;
+    for (int i = 0; i < sm::kActionCount; ++i) {
+        const sm::ActionDef& a = sm::action_def(i);
+        if (a.costHp < 0 || a.costMp < 0 || a.costSp < 0) ++negative;
+        ++costSamples;
+    }
+    CHECK(costSamples == sm::kActionCount && negative == 0,
+                    "цена не бывает отрицательной ни в одном пуле: минус тут "
+                    "был бы вторым входом в лечение");
+
     // Нулевая цена платится из пустого пула: ноль есть значение и здесь.
     const sm::ActionDef& haste =
         sm::action_def(sm::action_of_spell(sm::spell_ordinal("haste")));
@@ -211,7 +227,7 @@ void cost_is_all_or_nothing_across_three_pools() {
 } // namespace
 
 int main() {
-    segment_is_derived_not_authored();
+    segment_is_aligned_with_spells();
     base_is_ticks_anchored_to_the_world_quantum();
     effective_is_a_door_over_the_base();
     tempo_domain_comes_from_the_ladder();

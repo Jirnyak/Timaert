@@ -1320,6 +1320,10 @@ namespace sm::ui
                         {
                             if (!spellbook_has_learned(book, ord)) continue;
                             const SpellDef *def = &kSpellDefs[ord];
+                            // Универсальные числа (база, цена) — у строки
+                            // ДЕЙСТВИЯ: авторский дом перевёрнут (M-369 (А)).
+                            const ActionDef &act =
+                                action_def(action_of_spell(ord));
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
                             if (def)
@@ -1341,9 +1345,10 @@ namespace sm::ui
                                 // Casts are instant (verdict 2026-09-09) —
                                 // the row's one tempo number is what the
                                 // body owes AFTER, through the S14 door.
-                                if (def->recovery > 0.0f)
-                                    ImGui::TextDisabled("Recovery %.1fs",
-                                                        def->recovery);
+                                if (act.recoveryTicks > 0u)
+                                    ImGui::TextDisabled(
+                                        "Recovery %.1fs",
+                                        seconds_from_steps(act.recoveryTicks));
                                 else
                                     ImGui::TextDisabled("No recovery");
                                 if (def->description && def->description[0] != '\0')
@@ -1420,15 +1425,16 @@ namespace sm::ui
                             if (def && def->sustained)
                                 ImGui::Text("%.0f/s", def->manaDrain);
                             else if (def)
-                                ImGui::Text("%d", def->manaCost);
+                                ImGui::Text("%d", act.costMp);
                             else
                                 ImGui::TextDisabled("-");
                             ImGui::TableNextColumn();
                             // The row's authored recovery: live «busy» state
                             // is the BODY's one gate, not a book cell — and a
                             // world open on this panel is a paused world.
-                            if (def && def->recovery > 0.0f)
-                                ImGui::Text("%.1fs", def->recovery);
+                            if (def && act.recoveryTicks > 0u)
+                                ImGui::Text("%.1fs",
+                                            seconds_from_steps(act.recoveryTicks));
                             else
                                 ImGui::TextDisabled("-");
                             ImGui::TableNextColumn();

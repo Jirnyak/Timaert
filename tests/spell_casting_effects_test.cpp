@@ -38,6 +38,12 @@ bool nearf(float a, float b) {
     return std::fabs(a - b) <= 0.001f;
 }
 
+// Универсальные числа спелла (база, цена, охват) живут у его СТРОКИ ДЕЙСТВИЯ
+// — авторский дом перевёрнут (M-369, форма (А)); пины ниже читают её.
+const sm::ActionDef& act_of(const char* spellId) {
+    return sm::action_def(sm::action_of_spell(sm::spell_ordinal(spellId)));
+}
+
 // Слот первого живого снаряда со спеллом spellId, -1 = нет такого.
 int projectile_slot_by_spell(const sm::sub::SubObjects& objs,
                              std::uint32_t stableId) {
@@ -200,49 +206,49 @@ int main() {
     const bool ok7 = !(!fireDef->icon || std::strcmp(fireDef->icon, "*") != 0
                        || !fireDef->sourceIcon || std::strcmp(fireDef->sourceIcon, "\xF0\x9F\x94\xA5") != 0
                        || fireDef->rarity != sm::SpellRarity::Common
-                       || !nearf(fireDef->recovery, 2.3f));
+                       || act_of("fireball").recoveryTicks != sm::steps_from_seconds(2.3f));
     CHECK(ok7, "fireball identity metadata wrong");
     if (!ok7) return 1;
     const bool ok8 = !(!iceDef->icon || std::strcmp(iceDef->icon, "I") != 0
                        || !iceDef->sourceIcon || std::strcmp(iceDef->sourceIcon, "\xE2\x9D\x84") != 0
                        || iceDef->rarity != sm::SpellRarity::Uncommon
-                       || !nearf(iceDef->recovery, 1.7f));
+                       || act_of("ice_shard").recoveryTicks != sm::steps_from_seconds(1.7f));
     CHECK(ok8, "ice_shard identity metadata wrong");
     if (!ok8) return 1;
     const bool ok9 = !(!magicDef || !magicDef->icon || std::strcmp(magicDef->icon, "+") != 0
                        || !magicDef->sourceIcon || std::strcmp(magicDef->sourceIcon, "\xE2\x9C\xA6") != 0
                        || magicDef->rarity != sm::SpellRarity::Common
-                       || !nearf(magicDef->recovery, 0.0f));
+                       || act_of("magic_bolt").recoveryTicks != sm::steps_from_seconds(0.0f));
     CHECK(ok9, "magic_bolt identity metadata wrong");
     if (!ok9) return 1;
     const bool ok10 = !(!chainDef->icon || std::strcmp(chainDef->icon, "Z") != 0
                         || !chainDef->sourceIcon || std::strcmp(chainDef->sourceIcon, "\xE2\x9B\xA7") != 0
                         || chainDef->rarity != sm::SpellRarity::Rare
-                        || !nearf(chainDef->recovery, 4.1f));
+                        || act_of("lightning_chain").recoveryTicks != sm::steps_from_seconds(4.1f));
     CHECK(ok10, "lightning_chain identity metadata wrong");
     if (!ok10) return 1;
     const bool ok11 = !(!beamDef->icon || std::strcmp(beamDef->icon, "=") != 0
                         || !beamDef->sourceIcon || std::strcmp(beamDef->sourceIcon, "\xE2\x9A\xA1") != 0
                         || beamDef->rarity != sm::SpellRarity::Uncommon
-                        || !nearf(beamDef->recovery, 2.9f));
+                        || act_of("energy_beam").recoveryTicks != sm::steps_from_seconds(2.9f));
     CHECK(ok11, "energy_beam identity metadata wrong");
     if (!ok11) return 1;
     const bool ok12 = !(!armDef || !armDef->icon || std::strcmp(armDef->icon, "X") != 0
                         || !armDef->sourceIcon || std::strcmp(armDef->sourceIcon, "\xE2\x98\xA0") != 0
                         || armDef->rarity != sm::SpellRarity::Mythic
-                        || !nearf(armDef->recovery, 122.0f));
+                        || act_of("armageddon").recoveryTicks != sm::steps_from_seconds(122.0f));
     CHECK(ok12, "armageddon identity metadata wrong");
     if (!ok12) return 1;
     const bool ok13 = !(!hasteDef->icon || std::strcmp(hasteDef->icon, ">") != 0
                         || !hasteDef->sourceIcon || std::strcmp(hasteDef->sourceIcon, "\xF0\x9F\x92\xA8") != 0
                         || hasteDef->rarity != sm::SpellRarity::Uncommon
-                        || !nearf(hasteDef->recovery, 0.0f));
+                        || act_of("haste").recoveryTicks != sm::steps_from_seconds(0.0f));
     CHECK(ok13, "haste identity metadata wrong");
     if (!ok13) return 1;
     const bool ok14 = !(!flightDef->icon || std::strcmp(flightDef->icon, "^") != 0
                         || !flightDef->sourceIcon || std::strcmp(flightDef->sourceIcon, "\xF0\x9F\x95\x8A") != 0
                         || flightDef->rarity != sm::SpellRarity::Rare
-                        || !nearf(flightDef->recovery, 0.0f));
+                        || act_of("flight").recoveryTicks != sm::steps_from_seconds(0.0f));
     CHECK(ok14, "flight identity metadata wrong");
     if (!ok14) return 1;
     const bool ok15 = !(!std::strstr(fireDef->description, "allies included")
@@ -409,14 +415,16 @@ int main() {
         CHECK(ok29, "a spell's TIER is spire gating, never damage");
         if (!ok29) return 1;
     }
-    // Both are castable on the map because their ROW says so — the old test
-    // read a macro-effect enum instead, which is the field that had to agree
-    // with `hasMacro` and had no mechanism to.
-    const bool ok30 = !(!hasteDef->hasMacro || !hasteDef->sustained
+    // Both are castable on the map because their ACTION row's scope says so
+    // — охват уехал на строку действия (M-369, форма (А)); прежде тут была
+    // пара булей спелла, а ещё раньше — macro-effect enum без механизма.
+    const bool ok30 = !(act_of("haste").scope != sm::ActionScope::MicroMacro
+                        || !hasteDef->sustained
                         || std::strcmp(hasteDef->pros[2], "Works on world map") != 0);
     CHECK(ok30, "haste world-map metadata wrong");
     if (!ok30) return 1;
-    const bool ok31 = !(!flightDef->hasMacro || !flightDef->sustained
+    const bool ok31 = !(act_of("flight").scope != sm::ActionScope::MicroMacro
+                        || !flightDef->sustained
                         || std::strcmp(flightDef->cons[2], "Blocked indoors") != 0);
     CHECK(ok31, "flight world-map metadata wrong");
     if (!ok31) return 1;
@@ -1033,7 +1041,7 @@ int main() {
                                             &seq_rng01, &armRng));
     CHECK(ok88, "armageddon cast rejected");
     if (!ok88) return 1;
-    const bool ok89 = !(armCombat.mp != int(armBefore) - int(armDef->manaCost));
+    const bool ok89 = !(armCombat.mp != int(armBefore) - act_of("armageddon").costMp);
     CHECK(ok89, "armageddon charged exactly the mana its row names");
     if (!ok89) return 1;
     const bool ok90 = !(projectile_count(armObjs) < kStormAtLeast);

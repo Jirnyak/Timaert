@@ -6946,7 +6946,8 @@ bool run_console_smoke(App& app) {
             restore(); smoke_fail(app, "possess: possession cast did not fire"); return false;
         }
         const bool manaBurned =
-            int(player_pools(app).mp) == mpBefore - sm::kSpellDefs[possessionOrd].manaCost;
+            int(player_pools(app).mp) ==
+            mpBefore - sm::action_def(sm::action_of_spell(possessionOrd)).costMp;
         // Устоявшая цель меняет НИЧЕГО: сценовый флажок на хаске, макро дома.
         const bool macroFlagHeld = app.gs.playerFlagRef == macroFlagBefore;
         std::fprintf(stderr,

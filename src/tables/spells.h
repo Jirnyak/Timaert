@@ -200,20 +200,13 @@ struct SpellDef {
     DeliveryShape shape;
     int           tier;              // 1..5; drives spire zone gating
     // ── cast economy ──
-    int   manaCost;
-    // The action's RECOVERY base, in authored seconds — the ONE tempo column
-    // (owner verdict 2026-09-09): the cast fires the instant it is asked and
-    // this is what the caster's body owes afterwards, priced through THE
-    // recovery door (attributes.h recovery_steps) into the body's ONE gate
-    // (ecs::Combat::recoverySteps — the same field a sword swing charges).
-    // The castTime wind-up column died into this number (fireball 2.0+0.3 →
-    // 2.3): a pre-action delay and a post-action debt spend the same fight
-    // time, and one law is one system.
-    float recovery;                  // seconds
+    // БАЗА, ЦЕНА И ОХВАТ ЗДЕСЬ БОЛЬШЕ НЕ ЖИВУТ: авторский дом универсальных
+    // чисел — строка ДЕЙСТВИЯ (`kMagicActions@src/tables/actions.h`, переворот
+    // 2026-11-05, M-369 форма (А)); колонки recovery/manaCost/hasMicro/
+    // hasMacro снесены, у строки спелла осталось только СВОЁ — школа, кости,
+    // доставка и экономика поддержки ниже.
     bool  sustained;                 // toggled aura paid by drain, not cost
     float manaDrain;                 // mana per second while sustained
-    bool  hasMicro;                  // castable in the subworld
-    bool  hasMacro;                  // castable on the world map
     // ── effect numbers ──
     // The blow as DICE (CANON S13: урон = NdM строкой спелла). Scalar-era
     // rows converted mechanically to Nd1; authored spreads are content-stage.
@@ -284,9 +277,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .tag = SpellTag::Fire, .secondaryTag = SpellTag::Fire,
         .rarity = SpellRarity::Common, .shape = DeliveryShape::Projectile,
         .tier = 2,
-        .manaCost = 60, .recovery = 2.3f,
         .sustained = false, .manaDrain = 0.0f,
-        .hasMicro = true, .hasMacro = true,
         .dice = {36, 1}, .baseHeal = 0.0f, .baseRadius = 48.0f,
         .chainCount = 0, .chainDecayPct = 0,
         .speed = 280.0f, .duration = 0.0f, .friendlyFire = true,
@@ -308,9 +299,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .tag = SpellTag::Ice, .secondaryTag = SpellTag::Ice,
         .rarity = SpellRarity::Uncommon, .shape = DeliveryShape::Projectile,
         .tier = 2,
-        .manaCost = 30, .recovery = 1.7f,
         .sustained = false, .manaDrain = 0.0f,
-        .hasMicro = true, .hasMacro = true,
         .dice = {56, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
         .chainCount = 0, .chainDecayPct = 0,
         .speed = 350.0f, .duration = 0.0f, .friendlyFire = false,
@@ -334,9 +323,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .tag = SpellTag::Arcane, .secondaryTag = SpellTag::Arcane,
         .rarity = SpellRarity::Common, .shape = DeliveryShape::Projectile,
         .tier = 1,
-        .manaCost = 10, .recovery = 0.0f,
         .sustained = false, .manaDrain = 0.0f,
-        .hasMicro = true, .hasMacro = false,
         .dice = {12, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
         .chainCount = 0, .chainDecayPct = 0,
         .speed = 400.0f, .duration = 0.0f, .friendlyFire = false,
@@ -356,9 +343,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .tag = SpellTag::Lightning, .secondaryTag = SpellTag::Lightning,
         .rarity = SpellRarity::Rare, .shape = DeliveryShape::Chain,
         .tier = 3,
-        .manaCost = 60, .recovery = 4.1f,
         .sustained = false, .manaDrain = 0.0f,
-        .hasMicro = true, .hasMacro = true,
         .dice = {22, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
         .chainCount = 4, .chainDecayPct = 70,
         .speed = 0.0f, .duration = 0.0f, .friendlyFire = false,
@@ -380,9 +365,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .tag = SpellTag::Arcane, .secondaryTag = SpellTag::Light,
         .rarity = SpellRarity::Uncommon, .shape = DeliveryShape::Beam,
         .tier = 2,
-        .manaCost = 100, .recovery = 2.9f,
         .sustained = false, .manaDrain = 0.0f,
-        .hasMicro = true, .hasMacro = false,
         .dice = {28, 1}, .baseHeal = 0.0f, .baseRadius = 8.0f,
         .chainCount = 0, .chainDecayPct = 0,
         .speed = 0.0f, .duration = 0.0f, .friendlyFire = true,
@@ -403,9 +386,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .tag = SpellTag::Fire, .secondaryTag = SpellTag::Dark,
         .rarity = SpellRarity::Mythic, .shape = DeliveryShape::Nova,
         .tier = 5,
-        .manaCost = 1000, .recovery = 122.0f,
         .sustained = false, .manaDrain = 0.0f,
-        .hasMicro = true, .hasMacro = true,
         .dice = {160, 1}, .baseHeal = 0.0f, .baseRadius = 160.0f,
         .chainCount = 0, .chainDecayPct = 0,
         .speed = 0.0f, .duration = 0.0f, .friendlyFire = true,
@@ -427,9 +408,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .tag = SpellTag::Body, .secondaryTag = SpellTag::Air,
         .rarity = SpellRarity::Uncommon, .shape = DeliveryShape::Self,
         .tier = 2,
-        .manaCost = 0, .recovery = 0.0f,
         .sustained = true, .manaDrain = 10.0f,
-        .hasMicro = true, .hasMacro = true,
         .dice = {0, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
         .chainCount = 0, .chainDecayPct = 0,
         .speed = 0.0f, .duration = 0.0f, .friendlyFire = false,
@@ -456,9 +435,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .tag = SpellTag::Air, .secondaryTag = SpellTag::Arcane,
         .rarity = SpellRarity::Rare, .shape = DeliveryShape::Self,
         .tier = 3,
-        .manaCost = 0, .recovery = 0.0f,
         .sustained = true, .manaDrain = 20.0f,
-        .hasMicro = true, .hasMacro = true,
         .dice = {0, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
         .chainCount = 0, .chainDecayPct = 0,
         .speed = 0.0f, .duration = 0.0f, .friendlyFire = false,
@@ -490,9 +467,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .tag = SpellTag::Dark, .secondaryTag = SpellTag::Dark,
         .rarity = SpellRarity::Epic, .shape = DeliveryShape::Targeted,
         .tier = 4,
-        .manaCost = 200, .recovery = 4.0f,
         .sustained = false, .manaDrain = 0.0f,
-        .hasMicro = true, .hasMacro = false,
         .dice = {0, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
         .chainCount = 0, .chainDecayPct = 0,
         .speed = 0.0f, .duration = 0.0f, .friendlyFire = false,
@@ -529,9 +504,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .tag = SpellTag::Dark, .secondaryTag = SpellTag::Dark,
         .rarity = SpellRarity::Rare, .shape = DeliveryShape::Projectile,
         .tier = 3,
-        .manaCost = 30, .recovery = 0.8f,
         .sustained = false, .manaDrain = 0.0f,
-        .hasMicro = true, .hasMacro = false,
         .dice = {26, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
         .chainCount = 0, .chainDecayPct = 0,
         .speed = 320.0f, .duration = 0.0f, .friendlyFire = false,

@@ -82,21 +82,22 @@ void test_rows_are_sane() {
     int samples = 0, bad = 0;
     for (const SpellDef& s : kSpellDefs) {
         ++samples;
+        // Цена и охват уехали на СТРОКУ ДЕЙСТВИЯ (M-369, форма (А)): цену
+        // судит action_table_test, «кастуем хоть где-то» стало невыразимым —
+        // ось охвата авторится enum-ом из трёх значений, четвёртого нет.
         const bool ok =
             s.id && s.id[0] && s.name && s.name[0]
             && s.description && s.description[0]
             && s.tier >= 1 && s.tier <= 5
-            && s.manaCost >= 0
             && (!s.sustained || s.manaDrain > 0.0f)
             && s.statusEffect != nullptr
-            && (s.hasMicro || s.hasMacro)
             && !has_flavor_hole(s.pros)
             && !has_flavor_hole(s.cons);
         if (!ok) ++bad;
     }
     CHECK(samples > 0 && bad == 0,
           "every row: named + described, tier 1..5, sustained spells drain, "
-          "castable somewhere, flavor arrays hole-free");
+          "flavor arrays hole-free");
     // Negative control for the hole detector itself: a hole must be seen.
     const char* holed[kMaxSpellFlavorItems] = {"a", nullptr, "c", nullptr,
                                                nullptr};

@@ -40,7 +40,7 @@
 
 #include "core/time.h"          // steps_from_seconds — авторские секунды → ТИКИ, constexpr
 #include "tables/attributes.h"  // SkillId — чей ранг пускает к строке
-#include "tables/spells.h"      // kSpellDefs — магический отрезок ВЫВОДИТСЯ отсюда
+#include "tables/spells.h"      // kSpellDefs — тождество отрезка прибито к каталогу
 
 namespace sm {
 
@@ -61,7 +61,7 @@ enum class ActionArchetype : std::uint8_t {
 // которого ещё нет ни одной строки, запрещено: это заглушка (§1 ZERO MOCKS), а
 // лестница судится не длиной перечисления, а непрерывностью отрезков.
 enum class ActionType : std::uint8_t {
-    Spell,  // магия: строки ВЫВЕДЕНЫ из kSpellDefs (ниже)
+    Spell,  // магия: авторский отрезок ниже, построчно выровнен с kSpellDefs
     Count
 };
 
@@ -118,6 +118,9 @@ struct ActionDef {
     // миром и секундам внутри симуляции делать нечего (ЗАКОН ТИПА п.5).
     // Ширина: 32 бита — это ВЕЛИЧИНА, а не индекс, и сужать её ради байтов
     // запрещено (DOD п.2); авторские 122 с дают 7808 тиков, запас тридцатикратный.
+    // Колонка castTime умерла В ЭТО ЧИСЛО ещё у спелла (fireball 2.0+0.3 →
+    // 2.3): пред-актовая задержка и пост-актовый долг тратят ОДНО время боя,
+    // закон один (вердикт 2026-09-09) — акт всегда мгновенен.
     std::uint32_t recoveryTicks;
 
     // ЦЕНА — ТРИ КОЛОНКИ, И НОЛЬ В НИХ ЗАКОННОЕ ЗНАЧЕНИЕ, А НЕ ОТСУТСТВИЕ
@@ -146,69 +149,114 @@ static_assert(sizeof(ActionDef) == 32,
               "static_assert)");
 static_assert(std::is_trivially_copyable_v<ActionDef>);
 
-// ── МАГИЧЕСКИЙ ОТРЕЗОК ВЫВОДИТСЯ ИЗ kSpellDefs, А НЕ АВТОРИТСЯ ВТОРЫМ КЛЮЧОМ ──
+// ── МАГИЧЕСКИЙ ОТРЕЗОК — АВТОРСКИЙ; ДОМ УНИВЕРСАЛЬНЫХ ЧИСЕЛ ТЕПЕРЬ ЗДЕСЬ ──
 //
-// «Спелл просто частный случай» (владелец) здесь буквален: ординал действия
-// спелла есть начало магического отрезка плюс его собственный ординал, а
-// универсальные колонки СЧИТАЮТСЯ из его авторской строки на сборке. Поэтому
-// таблицы-спутника с тем же ключом не возникает (DOD п.9), и разъехаться с
-// источником невыразимо: выведенная колонка не может соврать о своём авторе.
-inline constexpr ActionScope spell_scope(const SpellDef& s) {
-    return (s.hasMicro && s.hasMacro) ? ActionScope::MicroMacro
-           : s.hasMicro               ? ActionScope::MicroOnly
-                                      : ActionScope::MacroOnly;
-}
-
-inline constexpr bool every_spell_is_castable_somewhere() {
-    for (int i = 0; i < kSpellCount; ++i)
-        if (!kSpellDefs[i].hasMicro && !kSpellDefs[i].hasMacro) return false;
-    return true;
-}
-static_assert(every_spell_is_castable_somewhere(),
-              "строка, которую нельзя применить ни в одном мире, незаконна: "
-              "ось охвата несёт ТРИ значения, и четвёртого — «нигде» — у неё "
-              "нет. Красный static_assert значит, что в kSpellDefs завелась "
-              "мёртвая строка, а не что стена неверна");
-
-inline constexpr std::array<ActionDef, std::size_t(kSpellCount)> make_magic_actions() {
-    std::array<ActionDef, std::size_t(kSpellCount)> out{};
-    for (int i = 0; i < kSpellCount; ++i) {
-        const SpellDef& s = kSpellDefs[i];
-        out[std::size_t(i)] = ActionDef{
-            .id            = s.id,
-            .recoveryTicks = steps_from_seconds(s.recovery),
-            .costHp        = 0,
-            .costMp        = s.manaCost,
-            .costSp        = 0,
-            // Право каста даёт КНИГА (анкета), а не ранг: выучен — значит
-            // можно. Это ровно вердикт о членстве — отвечает система анкет.
-            .gateSkill     = SkillId::Count,
-            .minRank       = 0,
-            .type          = ActionType::Spell,
-            .scope         = spell_scope(s),
-        };
-    }
-    return out;
-}
+// Здесь стоял ВЫВОД из kSpellDefs, и это была инверсия замысла — поправка
+// владельца 2026-11-04, дословно: «нет же это както тупа ты делаешь формально
+// одну систему а на деле внутри остаются и спелы и всё … почему просто не
+// сделал универсльно способности?». Направление перевёрнуто 2026-11-05
+// (брейншторм M-369, форма (А)): авторский дом БАЗЫ, ЦЕНЫ и ОХВАТА — таблица
+// действий, а строка спелла несёт только своё (школу, кости, доставку);
+// колонки recovery/manaCost/hasMicro/hasMacro у SpellDef снесены, так что
+// второго дома этих чисел не существует ФИЗИЧЕСКИ, не дисциплиной.
+//
+// ПОРЯДОК СТРОК — ЗАКОН: отрезок выровнен с kSpellDefs ПОСТРОЧНО (ординал
+// действия = kActionMagicFirst + ординал спелла), и тождество ключей прибито
+// static_assert-ом ниже — разъезд порядка НЕСОБИРАЕМ. Авторская единица базы
+// — секунды через constexpr-перевод в тики на месте строки (вердикт M-396:
+// хранится ЦЕЛЫЙ тик, секунда живёт только в авторинге).
+//
+// Право каста даёт КНИГА (анкета), а не ранг: выучен — значит можно; поэтому
+// gateSkill = SkillId::Count («рангом не ограничено») у всего отрезка —
+// ровно вердикт о членстве (за набор отвечает система-владелец актора).
+//
+// Прежний страж «всякий спелл кастуем хоть где-то» умер ВМЕСТЕ с парой булей:
+// ось охвата авторится enum-ом из трёх значений, четвёртое («нигде»)
+// невыразимо по построению — стена стала типом.
+inline constexpr ActionDef kMagicActions[] = {
+    {.id = "fireball",        .recoveryTicks = steps_from_seconds(2.3f),
+     .costHp = 0, .costMp = 60,   .costSp = 0,
+     .gateSkill = SkillId::Count, .minRank = 0,
+     .type = ActionType::Spell,   .scope = ActionScope::MicroMacro},
+    {.id = "ice_shard",       .recoveryTicks = steps_from_seconds(1.7f),
+     .costHp = 0, .costMp = 30,   .costSp = 0,
+     .gateSkill = SkillId::Count, .minRank = 0,
+     .type = ActionType::Spell,   .scope = ActionScope::MicroMacro},
+    {.id = "magic_bolt",      .recoveryTicks = steps_from_seconds(0.0f),
+     .costHp = 0, .costMp = 10,   .costSp = 0,
+     .gateSkill = SkillId::Count, .minRank = 0,
+     .type = ActionType::Spell,   .scope = ActionScope::MicroOnly},
+    {.id = "lightning_chain", .recoveryTicks = steps_from_seconds(4.1f),
+     .costHp = 0, .costMp = 60,   .costSp = 0,
+     .gateSkill = SkillId::Count, .minRank = 0,
+     .type = ActionType::Spell,   .scope = ActionScope::MicroMacro},
+    {.id = "energy_beam",     .recoveryTicks = steps_from_seconds(2.9f),
+     .costHp = 0, .costMp = 100,  .costSp = 0,
+     .gateSkill = SkillId::Count, .minRank = 0,
+     .type = ActionType::Spell,   .scope = ActionScope::MicroOnly},
+    {.id = "armageddon",      .recoveryTicks = steps_from_seconds(122.0f),
+     .costHp = 0, .costMp = 1000, .costSp = 0,
+     .gateSkill = SkillId::Count, .minRank = 0,
+     .type = ActionType::Spell,   .scope = ActionScope::MicroMacro},
+    {.id = "haste",           .recoveryTicks = steps_from_seconds(0.0f),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .gateSkill = SkillId::Count, .minRank = 0,
+     .type = ActionType::Spell,   .scope = ActionScope::MicroMacro},
+    {.id = "flight",          .recoveryTicks = steps_from_seconds(0.0f),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .gateSkill = SkillId::Count, .minRank = 0,
+     .type = ActionType::Spell,   .scope = ActionScope::MicroMacro},
+    {.id = "possession",      .recoveryTicks = steps_from_seconds(4.0f),
+     .costHp = 0, .costMp = 200,  .costSp = 0,
+     .gateSkill = SkillId::Count, .minRank = 0,
+     .type = ActionType::Spell,   .scope = ActionScope::MicroOnly},
+    {.id = "void_arrow",      .recoveryTicks = steps_from_seconds(0.8f),
+     .costHp = 0, .costMp = 30,   .costSp = 0,
+     .gateSkill = SkillId::Count, .minRank = 0,
+     .type = ActionType::Spell,   .scope = ActionScope::MicroOnly},
+};
 
 // ── ТАБЛИЦА И ЕЁ ОТРЕЗКИ ─────────────────────────────────────────────────
 // Отрезки стоят в порядке лестницы. Отрезок нулевой длины — это ЗНАЧЕНИЕ
 // («строк этого архетипа пока нет»), а не заглушка: ординалы при приходе
 // нового отрезка ЗАКОННО сдвигаются (ЗАКОН ЛЕСТНИЦЫ п.3, формат сейва
 // ограничением не является).
-inline constexpr auto kMagicActions = make_magic_actions();
-
 inline constexpr int kActionCombatFirst = 0;
 inline constexpr int kActionCombatCount = 0;
 inline constexpr int kActionMagicFirst  = kActionCombatFirst + kActionCombatCount;
-inline constexpr int kActionMagicCount  = kSpellCount;
+// Счёт ВЫВОДИТСЯ из таблицы (ЗАКОН СЛОВАРЯ п.3: ручной счёт рядом с таблицей
+// — второй словарь).
+inline constexpr int kActionMagicCount  = int(std::size(kMagicActions));
 inline constexpr int kActionCount       = kActionMagicFirst + kActionMagicCount;
+
+// ── ТОЖДЕСТВО ОТРЕЗКА С КАТАЛОГОМ СПЕЛЛОВ — СТЕНА ПОД КОМПИЛЯТОРОМ ──────
+// Ключ сверяется ПОСИМВОЛЬНО (указатели двух литералов сравнивать нельзя,
+// и их равенство ничего бы не значило): каждая строка магического отрезка
+// обязана стоять под ординалом СВОЕГО спелла и быть типом Spell.
+inline constexpr bool action_id_eq(const char* a, const char* b) {
+    for (; *a && *b; ++a, ++b)
+        if (*a != *b) return false;
+    return *a == *b;
+}
+inline constexpr bool magic_segment_matches_spells() {
+    if (kActionMagicCount != kSpellCount) return false;
+    for (int i = 0; i < kSpellCount; ++i) {
+        const ActionDef& a = kMagicActions[i];
+        if (!action_id_eq(a.id, kSpellDefs[i].id)) return false;
+        if (a.type != ActionType::Spell) return false;
+    }
+    return true;
+}
+static_assert(magic_segment_matches_spells(),
+              "магический отрезок таблицы действий обязан идти СТРОКА В "
+              "СТРОКУ с kSpellDefs (тот же ключ под тем же ординалом, тип "
+              "Spell): красный assert значит, что порядок строк разъехался "
+              "— чини ПОРЯДОК, а не стену");
 
 static_assert(kActionMagicFirst == kActionCombatFirst + kActionCombatCount,
               "отрезки обязаны лежать ВПЛОТНУЮ: дыра между ними есть ординал "
               "без строки, то есть молчаливое «нет вещи» внутри адресного "
               "пространства");
-static_assert(kActionCount == int(kMagicActions.size()) + kActionCombatCount);
 
 // Ординал → строка. Гейт — вопрос КАТАЛОГА, ровно как у спеллов
 // (`spell_ordinal_valid@src/tables/spells.h`).
