@@ -15,6 +15,7 @@
 #include "macro/macro_world.h" // конверт MacroWorld — член mw_ (значением);
                                // прежде приезжал ТРАНЗИТОМ macro_stock.h —
                                // ломоть 1 эпика фрейма назвал груз честно
+#include "sub/caps.h"        // kMaxSubworldDeathsPerStep — слагаемое стены капа дельты
 #include "sub/seamless_manager.h"
 #include "sub/camera.h"
 #include "sub/collide.h"
@@ -875,6 +876,19 @@ private:
                   "карман обязан вмещать все зоны сцены плюс орб за один тик");
     std::array<WorldFact, kFactsSinceFillCap> factsSinceFill_;
     int factsSinceFillCount_ = 0;
+    // ── СТЕНЫ КАПОВ ДЕЛЬТЫ — ЗДЕСЬ, ПОТОМУ ЧТО bus НЕ ВКЛЮЧАЕТ sub (§11) ──
+    // Кап рода 3 есть ВЫВОД: потолок жнеца за шаг × шагов субмира в одном
+    // макро-тике — больше смертей за тик сцена породить не может, значит
+    // переполнение расписки НЕСОБИРАЕМО (замер 4д 2026-11-05: спрос
+    // 5034–5726 строк, прежний кап 1024 терял до 80 % смертей).
+    static_assert(std::uint64_t(kDeltaStockCap) ==
+                      std::uint64_t(kMaxSubworldDeathsPerStep) *
+                          kSubworldTickDivisor,
+                  "кап дельты рода 3 обязан равняться потолку жнеца за тик");
+    // Кап рода 5 — пол над СТРУКТУРНЫМ потолком писателей: все зоны сцены
+    // плюс дренаж орба за один тик (тот же вывод, что у кармана выше).
+    static_assert(kDeltaFactCap >= std::uint32_t(kMaxSubZones) + 1u,
+                  "кап дельты рода 5 обязан вмещать все зоны сцены плюс орб");
     // ── ДЕЛЬТА ШВА (ломоть 5): операции родов 3 и 5, копятся до границы ──
     DeltaBuffer delta_;
 
@@ -1107,7 +1121,16 @@ private:
     // THE micro→macro door (CANON S20.1): a subworld act with lasting meaning
     // is filed in the world's ONE memory, at the macro cell that contains this
     // subworld. One memory, and the place is the seam between the layers.
+    //
+    // СУБЪЕКТ — ПАРАМЕТР, И У НЕГО НЕТ УМОЛЧАНИЯ. Дверь не знает, КТО сделал:
+    // это знает звонящий, и он платит ординалом сквада-деятеля (единый
+    // эмитент, M-255), 0 = «никто» (ЗАКОН СЛОВАРЯ И ОРДИНАЛА п.6). Пока дверь
+    // штамповала ординал флажка игрока сама, факт о ЧУЖОМ скваде был
+    // НЕВЫРАЗИМ — тот же «игрок особенен», который уже сняли у репутации
+    // (`add_faction_standing@src/macro/factions.h`, ломоть 4а). Умолчания нет
+    // нарочно: оно вернуло бы догадку двери под видом удобства.
     void record_world_fact(FactKind kind, int cellX, int cellY, int amount,
+                           std::uint32_t subjectOrdinal,
                            int objectRootedId = 0);
 
     // Watch for the player crossing INTO a zone. Called from tick().

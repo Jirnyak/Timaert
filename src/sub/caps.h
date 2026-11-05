@@ -29,4 +29,14 @@ static_assert(kMaxSubObjects != 0 &&
                   (kMaxSubObjects & (kMaxSubObjects - 1)) == 0,
               "степень двойки: маска слота вместо деления");
 
+// СМЕРТЕЙ ЗА ШАГ — ПОТОЛОК ЖНЕЦА. Deaths retired per simulation STEP
+// (SubworldEngine::tick is one step); named for the step, not the frame —
+// the world runs on a fixed tick, so a frame may carry several steps or
+// none. Дом — здесь, а не engine.cpp (переезд 2026-11-05, M-171 4д): из
+// этого потолка ВЫВОДИТСЯ кап дельты рода 3 (kDeltaStockCap в bus/delta.h =
+// потолок × kSubworldTickDivisor — больше смертей за макро-тик субмир
+// породить физически не может), а стена тождества обязана видеть оба
+// слагаемых и стоит в sub/engine.h, потому что bus не включает sub (§11).
+inline constexpr int kMaxSubworldDeathsPerStep = 512;
+
 }  // namespace sm

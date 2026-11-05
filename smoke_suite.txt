@@ -77,6 +77,10 @@ macro_recovery
 rest_sp
 timeadvance_burst
 chronicle_rate
+# Кап обратного потока шва — тем же прибором-счётчиком, что кольцо летописи:
+# населённое окно умирает внутри одного макро-тика, и строка печатает спрос
+# против капа (bus/delta.h). Нужна стоящая сцена, отсюда композиция.
+enter_first_settlement,delta_cap_probe
 macro_npc_trace
 macro_glide_gap
 

@@ -102,11 +102,6 @@ static_assert(int(float(kFullSize) / MoveParams{}.influenceCell) + 1
 // and no way for the two to drift.
 // The last-resort body radius lives with the rest of body sizing, in
 // sub/body.h as kBodyRadiusFallback.
-// Deaths retired per simulation STEP (SubworldEngine::tick is one step). Named
-// for the step, not the frame — the world runs on a fixed tick, so a frame may
-// carry several steps or none.
-constexpr int kMaxSubworldDeathsPerStep = 512;
-
 // ONE sentence for the danger gate, because it guards ONE law from two sides.
 // The gate refuses to let the player disengage while enemies are on him — and
 // entering a door disengages just as much as leaving one does, since the way
@@ -2301,26 +2296,36 @@ void SubworldEngine::tick_zones() {
         }
         // Filed at the PLACE's own cell, which is the one the zone was built
         // on — not at whichever cell the player's feet happen to resolve to.
-        record_world_fact(z.kind, z.cellX, z.cellY, z.amount);
+        // СУБЪЕКТОМ ПЛАТИТ ЭТОТ ЗВОНЯЩИЙ, и платит флажком: в круг вошли
+        // НОГИ ИГРОКА, стало быть дело его — а «его» значит того, на ком
+        // флажок. Мира под сессией может не быть вовсе (голая фикстура) —
+        // тогда честный ответ 0, «никто».
+        record_world_fact(z.kind, z.cellX, z.cellY, z.amount,
+                          objects_ ? player_flag_ordinal(*gs_, (*mw_.store))
+                                   : 0u);
     }
 }
 
 void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
-                                       int amount, int objectRootedId) {
+                                       int amount, std::uint32_t subjectOrdinal,
+                                       int objectRootedId) {
     if (!gs_) return;
     WorldFact f{};
     f.day = frame_ ? frame_->worldDay : 0;
     f.kind = std::uint16_t(kind);
-    // The PLAYER is the only one who acts down here (interactions are his
-    // alone), and he is a squad like any other — so the deed is ТОГО, НА КОМ
-    // ФЛАЖОК. Вселение есть не более чем перенос флажка «за кого играем»
-    // (вердикт владельца 2026-10-12), поэтому обысканный сундук в теле лорда
-    // — дело ЛОРДА; ровно та же дверь, что у расписок за его павших людей
-    // двадцатью строками выше («a worn lord's men pay their deaths back into
-    // HIS squad», A2 2026-09-17). Ординал выдан ЕДИНЫМ эмитентом (M-255) и
-    // спрашивается у записи; здесь стоял литерал 0x7FFFFFFF.
+    // КТО СДЕЛАЛ — ГОВОРИТ ЗВОНЯЩИЙ. Дверь несёт ординал, какой ей назвали
+    // (единый эмитент, M-255; 0 = «никто», закон нуля-ординала) — и ни одной
+    // догадки о нём: пока здесь стоял ординал флажка игрока, факт о ЧУЖОМ
+    // скваде был невыразим этой дверью вовсе, а «игрок ничем не особенен»
+    // (вердикт владельца 2026-11-03) есть закон, а не оборот речи. Оба
+    // нынешних звонящих — акты ИГРОКА, поэтому платят флажком, и вселение
+    // остаётся переносом флажка «за кого играем» (вердикт владельца
+    // 2026-10-12): круг, пройденный в теле лорда, — дело ЛОРДА, ровно как
+    // расписки за его павших людей («a worn lord's men pay their deaths back
+    // into HIS squad», A2 2026-09-17). До M-255 здесь стоял литерал
+    // 0x7FFFFFFF, до этой правки — вызов двери флажка.
     f.subjectKind = std::uint8_t(FactSubject::Squad);
-    f.subject = objects_ ? player_flag_ordinal(*gs_, (*mw_.store)) : 0u;
+    f.subject = subjectOrdinal;
     // When the deed was done TO a named place, the place rides as the object
     // by its place ordinal (v54: one id space names it alone).
     if (objectRootedId > 0) {
@@ -4750,7 +4755,12 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     // `amount` in a vocabulary of its own (owner, 2026-08-28: unify through
     // annihilation — a drained thing is the place itself changed, and the
     // fact points at the place).
-    record_world_fact(FactKind::Drained, cx, cy, /*amount*/0, spireOrdinal);
+    // И СУБЪЕКТ — ТОЖЕ ПЛАТА ЭТОГО ЗВОНЯЩЕГО: орб взят РУКОЙ ИГРОКА
+    // (интеракции его одного), значит деяние подшивается под тем, на ком
+    // флажок, — не под тем, кого дверь угадала бы за него.
+    record_world_fact(FactKind::Drained, cx, cy, /*amount*/0,
+                      objects_ ? player_flag_ordinal(*gs_, (*mw_.store)) : 0u,
+                      spireOrdinal);
     set_status("The orb's light passes into you.");
     return true;
 }

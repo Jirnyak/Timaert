@@ -76,6 +76,7 @@ enum class SmokeAction : std::uint8_t {
     RestSp,
     TimeAdvanceBurst,
     ChronicleRate,
+    DeltaCapProbe,
     MacroNpcTrace,
     OpenCodex,
     OpenSpells,

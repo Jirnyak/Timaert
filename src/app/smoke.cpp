@@ -114,6 +114,7 @@ static void smoke_give_visual(sm::sub::SubObjects& objs, int s,
 #include "macro/player_entity.h"
 #include "bus/entry_context.h"  // unpack_entry_dir — закон доли марша (M-244a)
 #include "bus/store.h"
+#include "macro/delta_apply.h"   // дверь границы тика — её же зовёт прибор капа
 #include <bit>
 
 namespace sm::app {
@@ -408,6 +409,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"rest_sp", SmokeAction::RestSp},
     {"timeadvance_burst", SmokeAction::TimeAdvanceBurst},
     {"chronicle_rate", SmokeAction::ChronicleRate},
+    {"delta_cap_probe", SmokeAction::DeltaCapProbe},
     {"macro_npc_trace", SmokeAction::MacroNpcTrace},
     {"open_codex", SmokeAction::OpenCodex},
     {"open_spells", SmokeAction::OpenSpells},
@@ -6046,6 +6048,178 @@ bool run_chronicle_rate_smoke(App& app) {
     return true;
 }
 
+// ПРИБОР КАПА ДЕЛЬТЫ — «СПЕРВА ЗАМЕР, ПОТОМ РЕШЕНИЕ» (ЗАКОН КАПА п.2).
+//
+// Капы `kDeltaStockCap`/`kDeltaFactCap@src/bus/delta.h` объявлены ОПЕРАЦИЯМИ
+// ЗА ОДИН МАКРО-ТИК, и у этого тика есть точная длина: `kSubworldTickDivisor`
+// (= 64) шагов субмира (`core/time.h`), потому что применение стоит ровно на
+// той границе (`main.cpp`, «ДЕЛЬТА ВВЕРХ → ТИК МАКРО → СВЕЖЕЕ ОКНО ВНИЗ»).
+// Их шапка говорила «числа v1, калибруются замером» — замера не было, и это
+// тот самый род числа, который ЗАКОН КАПА запрещает оставлять без счёта.
+//
+// ЧТО ЭТО ЗА ХУДШИЙ СЛУЧАЙ, И ПОЧЕМУ ИМЕННО ОН. Строк рода 3 в дельте четыре
+// писателя (`push_stock_op@src/sub/engine.cpp`: рубка, жатва, расписка павшей
+// головы, число фичи), и ТРИ из них — АКТЫ ИГРОКА, то есть заперты
+// восстановлением (ЗАКОН СПОСОБНОСТИ): рубка стоит
+// `kHarvestActSeconds@src/sub/ability.h` = 1.5 с = 96 шагов простоя, а тик
+// длится 64 шага, значит рубка, жатва и дренаж орба дают НЕ БОЛЬШЕ ОДНОЙ
+// строки на тик каждая — арифметикой, а не везением. Четвёртый писатель,
+// РАСПИСКА павшей головы, не заперт ничем: жнец (`resolve_subworld_deaths`)
+// снимает до `kMaxSubworldDeathsPerStep` = 512 тел ЗА ШАГ, то есть до 32 768
+// расписок за тик, и упирается он не в кап буфера, а в НАСЕЛЕНИЕ ОКНА.
+// Поэтому прибор устраивает ровно это: весь населённый кадр умирает внутри
+// одного тика.
+//
+// СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11): он не надеется, что в окне
+// кто-то стоит, — он пересчитывает головы с расписками и ОТКАЗЫВАЕТСЯ мерить
+// пустое окно. Применение дельты ОДИН РАЗ в начале — той же дверью, что
+// граница тика: иначе пик мерился бы вместе с хвостом прошлых шагов.
+//
+// ЗАМЕР 2026-11-05, ГОРОДСКОЕ ОКНО, ЧЕТЫРЕ СИДА (`enter_first_settlement`
+// ставит игрока в первый город; стартовая клетка та же, поэтому
+// `subworld_enter` мерит ТО ЖЕ окно — проверено печатью `cell=`):
+//   сид 12345: тел 5119, расписок 5119 → спрос 5119, собрано 1024, дроп 4095
+//   сид     1: тел 5112, расписок 5111 → спрос 5111, собрано 1024, дроп 4087
+//   сид     7: тел 5727, расписок 5726 → спрос 5726, собрано 1024, дроп 4702
+//   сид   999: тел 5035, расписок 5034 → спрос 5034, собрано 1024, дроп 4010
+// То есть `kDeltaStockCap` = 1024 покрывает ПЯТУЮ ЧАСТЬ худшего случая, и
+// остальное мир не слышит; род 5 при этом не шелохнулся (пик 0 из 256) —
+// его потолок структурный: `kMaxSubZones` = 32 круга на окно плюс дренаж
+// орба, то есть 33 строки на тик (та же граница, что уже стоит под
+// `static_assert` у `kFactsSinceFillCap@src/sub/engine.h`).
+//
+// ТАБЛИЦА «МУТАЦИЯ → ИСХОД» (ПРОГНАНО 2026-11-05, сид 12345, числа
+// фактические):
+//  - P1 `push_stock_op` отказывает ВСЕГДА (`{ ++d.droppedOps; return; }`
+//    первой строкой) → КРАСНЫЙ плечом 1: собрано 0, дроп 5119. Эта мутация и
+//    есть причина, по которой плеча 2 не хватает: мёртвый писатель ЧЕСТНО
+//    считает отказы, и сохранение сходится;
+//  - P2 отказ по капу МОЛЧАЛИВЫЙ (`return;` без `++droppedOps`) → КРАСНЫЙ
+//    плечом 2: собрано 1024, дроп 0, спрос 1024 против 5119 расписок;
+//  - P3 жнец не собирает расписку (`if (false)` на гейте ряда) → КРАСНЫЙ
+//    плечом 1: собрано 0, дроп 0;
+//  - ДОЛЖНА МОЛЧАТЬ: кап 1024 → 32768 (= `kMaxSubworldDeathsPerStep` ×
+//    `kSubworldTickDivisor`, потолок самого жнеца) → ЗЕЛЁНЫЙ на всех четырёх
+//    сидах: собрано 5119/5111/5726/5034, дроп 0, слив за 10-12 шагов из 64.
+//    Прибор КАП НЕ СУДИТ — он его мерит, и поднятый кап он просто покажет.
+bool run_delta_cap_probe_smoke(App& app) {
+    if (!app.subworld.active() || app.sceneObjects == nullptr) {
+        smoke_fail(app, "delta_cap_probe needs subworld_enter first");
+        return false;
+    }
+    sm::sub::SubObjects& objs = (*app.sceneObjects);
+    sm::DeltaBuffer& d = app.subworld.delta_buffer();
+
+    // Чистый старт — ТОЙ ЖЕ дверью, что макро-тик (ноль своих протоколов).
+    {
+        sm::MacroWorld mw = macro_world(app);
+        sm::apply_local_delta(mw, d);
+    }
+
+    // ПЕРЕПИСЬ ОКНА: живые тела, годные в НПЦ, и сколько из них несут
+    // расписку — по РЯДУ расписки, потому что именно ряд станет строкой
+    // операции.
+    int bodies = 0, withDebt = 0;
+    std::array<int, std::size_t(sm::MacroStock::Count)> byStock{};
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+        if ((objs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
+        if (!sm::sub::slot_npc_candidate(objs, s)) continue;
+        if (objs.is_avatar_slot(s)) continue;
+        ++bodies;
+        if (const auto* dbt = sm::sub::slot_debt(objs, s)) {
+            if (dbt->stock < std::uint8_t(sm::MacroStock::Count)
+                && dbt->amount != 0) {
+                ++withDebt;
+                ++byStock[std::size_t(dbt->stock)];
+            }
+        }
+    }
+    if (bodies <= 0) {
+        smoke_fail(app, "delta_cap_probe: окно пусто — мерить нечего "
+                        "(предусловие прибора не сложилось)");
+        return false;
+    }
+
+    // ХУДШИЙ СЛУЧАЙ: всё окно получает смертельный удар ОДНИМ шагом, дверью
+    // урона (ноль рукописных hp = 0 — тот же путь, которым бьёт сцена).
+    int struck = 0;
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+        if ((objs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
+        if (!sm::sub::slot_npc_candidate(objs, s)) continue;
+        if (objs.is_avatar_slot(s)) continue;
+        sm::sub::apply_lethal_damage(objs, app.macroStore.get(), s,
+                                     sm::sub::DamageSource{},
+                                     sm::sub::DamageKind::Script, &app.bus);
+        ++struck;
+    }
+
+    // …и ровно ОДИН макро-тик шагов субмира, с пробой пика после каждого
+    // шага: жнец живёт в `tick` и снимает до 512 тел за шаг.
+    std::uint32_t peakStock = d.stockCount, peakFact = d.factCount;
+    std::uint32_t dropped = d.droppedOps;
+    int stepsToDrain = 0;
+    for (std::uint32_t step = 0; step < sm::kSubworldTickDivisor; ++step) {
+        app.subworld.tick(0.016f);
+        if (d.stockCount > peakStock) {
+            peakStock = d.stockCount;
+            stepsToDrain = int(step) + 1;
+        }
+        if (d.factCount > peakFact) peakFact = d.factCount;
+        if (d.droppedOps > dropped) dropped = d.droppedOps;
+    }
+
+    std::printf("[smoke] delta_cap_probe cell=%d,%d bodies=%d withDebt=%d "
+                "struck=%d peakStock=%u/%u peakFact=%u/%u dropped=%u "
+                "steps=%d/%u\n",
+                app.subworld.mgr().center_cx(), app.subworld.mgr().center_cy(),
+                bodies, withDebt, struck,
+                unsigned(peakStock), unsigned(sm::kDeltaStockCap),
+                unsigned(peakFact), unsigned(sm::kDeltaFactCap),
+                unsigned(dropped), stepsToDrain,
+                unsigned(sm::kSubworldTickDivisor));
+    // Ряды — ОРДИНАЛАМИ `MacroStock` (`tables/stock_key.h`): имён у рядов
+    // нет, и заводить их здесь значило бы завести второй словарь ради
+    // печати (ЗАКОН СЛОВАРЯ п.3).
+    std::printf("[smoke] delta_cap_probe rows:");
+    for (std::size_t k = 0; k < byStock.size(); ++k) {
+        if (byStock[k] == 0) continue;
+        std::printf(" stock%zu=%d", k, byStock[k]);
+    }
+    std::printf("\n");
+    std::fflush(stdout);
+
+    // ВЕРДИКТ — ПО ТОМУ, ЧТО ПРИБОР УСТРОИЛ САМ, А НЕ ПО ВЕЗЕНИЮ, И ОН ИЗ
+    // ДВУХ ПЛЕЧ. Первое: хоть одна строка ОБЯЗАНА быть собрана — ноль значит,
+    // что обратный поток шва мёртв (и этого плеча мало в одиночку: писатель,
+    // отказывающий ВСЕГДА, честно считает отказы, и «сколько-то операций
+    // случилось» было бы верно при полностью мёртвом канале). Второе —
+    // СОХРАНЕНИЕ РАСПИСКИ: каждая павшая голова с распиской даёт РОВНО одну
+    // операцию, собранную или посчитанную потерянной, поэтому
+    // `peakStock + dropped` обязано совпасть с переписью голов. Молчаливая
+    // потеря есть мир, соврвший игроку о том, что он сделал (ЗАКОН ДВУХ
+    // ТЕМПОВ п.3), и видна она только этим равенством.
+    //
+    // САМ КАП ПРИБОР НЕ СУДИТ: он его МЕРИТ (ЗАКОН КАПА п.1-2 — сперва
+    // число, потом решение), а читатель напечатанной строки — человек,
+    // калибрующий кап. Ровно та же роль, что у `chronicle_rate` выше.
+    const std::uint32_t demand = peakStock + dropped;
+    if (peakStock == 0u) {
+        smoke_fail(app, "окно умерло целиком, а дельта не собрала ни одной "
+                        "строки: обратный поток шва мёртв");
+        return false;
+    }
+    if (demand != std::uint32_t(withDebt)) {
+        std::fprintf(stderr,
+                     "[smoke] delta_cap_probe demand=%u withDebt=%d\n",
+                     unsigned(demand), withDebt);
+        std::fflush(stderr);
+        smoke_fail(app, "расписки павших голов не сошлись со спросом: часть "
+                        "смертей не стала ни строкой, ни посчитанной потерей");
+        return false;
+    }
+    return true;
+}
+
 bool run_console_smoke(App& app) {
     if (!smoke_boot_invariants_hold(app)) {
         smoke_print_counts(app, "console_boot_failed");
@@ -9665,6 +9839,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=chronicle_rate\n");
             std::fflush(stderr);
             if (run_chronicle_rate_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::DeltaCapProbe:
+            std::fprintf(stderr, "[smoke] action=delta_cap_probe\n");
+            std::fflush(stderr);
+            if (run_delta_cap_probe_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::MacroNpcTrace:
             std::fprintf(stderr, "[smoke] action=macro_npc_trace\n");
