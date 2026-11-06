@@ -2398,6 +2398,7 @@ timaert_test(frame_fill_test
         src/macro/cell_facts.cpp
         src/macro/spires.cpp
         src/macro/squad_index.cpp
+        src/macro/nav_field.cpp   # nav_step — походка вектора марша (M-317)
         src/bus/anketa.cpp
         src/tables/items.cpp
         src/macro/macro_stock.cpp

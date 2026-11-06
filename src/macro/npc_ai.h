@@ -1,5 +1,6 @@
 // Macroworld NPC AI: behaviour dispatch for persistent macro NPCs.
 #pragma once
+#include <algorithm>   // std::max — закон темпа марша ниже
 #include <limits>
 #include <cstddef>
 #include <cstdint>
@@ -14,6 +15,7 @@
 #include "tables/squad_type.h"
 #include "macro/squad_index.h"
 #include "bus/squad_walk.h"
+#include "tables/movement_cost.h"  // закон темпа марша (march_cells_per_think)
 #include "macro/tree_layer.h"
 
 namespace sm {
@@ -398,5 +400,17 @@ int squad_bags_hygiene_daily(MacroWorld& mw);
 // минимум `gs` и `store`; остальные слои — опциональный вклад (TickContext).
 void tick_macro_npc_ai(MacroWorld& mw,
                        MacroNpcAiRuntime& runtime, std::uint64_t ticks);
+
+// ТЕМП МАРША — КЛЕТКИ ЗА ДУМКУ, ОДИН ЗАКОН НА ОБА ЧИТАТЕЛЯ (try_move и
+// вектор пакета squad_march_vector@src/macro/frame_fill.cpp, M-317): база
+// одна на игрока и сквад (kMacroWalkCellsPerHour), резвость листа
+// (moveMult), рельеф ТЕКУЩЕЙ клетки одной пробой на думку; летуну рельеф —
+// воздух (его вес звонящий подаёт единицей, внутри он не читается).
+inline float march_cells_per_think(const ecs::MacroNpcRuntime& rt,
+                                   float cellWeight) {
+    return kMacroWalkCellsPerHour * kAiTickGameHours
+         * std::max(0.0f, rt.moveMult)
+         * (rt.flying != 0 ? 1.0f : terrain_speed_mult(cellWeight));
+}
 
 } // namespace sm

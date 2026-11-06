@@ -557,6 +557,10 @@ float edge_weight(const TickContext& ctx, int fx, int fy, int tx, int ty) {
     return w;
 }
 
+// (Закон темпа марша — march_cells_per_think@src/macro/npc_ai.h: одна
+// inline-дверь на оба читателя, try_move ниже и вектор пакета
+// squad_march_vector@src/macro/frame_fill.cpp — M-317.)
+
 // THE march, and since 2026-10-06 it takes NO BARS: a step has no price, so
 // the walk has no business holding the block it used to debit. What it still
 // owns is the geometry — budget, the baked gait, the greedy fallback and the
@@ -598,11 +602,8 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
     // (terrain_speed_mult of the CURRENT cell — one sample per think, the
     // same approximation the player's per-frame walk makes). Base numbers:
     // 3 cells per think on a road, ~1 in open water.
-    const float perThink = kMacroWalkCellsPerHour * kAiTickGameHours
-                           * std::max(0.0f, rt.moveMult)
-                           * (flying ? 1.0f
-                                     : terrain_speed_mult(
-                                           cell_weight(ctx, ix, iy)));
+    const float perThink =
+        march_cells_per_think(rt, flying ? 1.0f : cell_weight(ctx, ix, iy));
     // КВАНТОВЫЙ ХОД (вердикт владельца 2026-11-02: «никаких флоатов всё
     // чисто инт», «дошол до 127 … и меняет клетку с другой стороны»).
     // Производство думки — целые кванты доли; банка между думками умерла
@@ -5133,6 +5134,10 @@ void tick_macro_npc_ai(MacroWorld& mw,
     for (std::uint64_t i = 0; i < ticks; ++i)
         tick_macro_npc_ai_one(mw, runtime);
 }
+
+// (Вектор марша для пакета — squad_march_vector@src/macro/frame_fill.cpp:
+// живёт у сборщика, своего единственного звонящего; закон темпа берёт той
+// же дверью march_cells_per_think@src/macro/npc_ai.h, что try_move выше.)
 
 // (tick_macro_npc_visuals жил здесь и умер с M-244a: глайд карты — чистое
 // ПРЕДСТАВЛЕНИЕ, и его интегратор переехал в кэш глаз оверлея —
