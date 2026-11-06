@@ -1,4 +1,4 @@
-// Свидетель ЗАКОНА ПОРЯДКА ОБХОДА (macro/squad_walk.h, эпик 2 шаг 1а/1в):
+// Свидетель ЗАКОНА ПОРЯДКА ОБХОДА (bus/squad_walk.h, эпик 2 шаг 1а/1в):
 // обход сквадов идёт по ординалу рождения, а не по порядку слотов store
 // (кластер 7: моста нет, население — сами слоты).
 //
@@ -9,7 +9,7 @@
 #include "check.h"
 
 #include "ecs/components.h"
-#include "macro/squad_walk.h"
+#include "bus/squad_walk.h"
 #include "bus/store.h"
 
 #include <cstdint>

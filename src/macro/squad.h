@@ -17,7 +17,7 @@
 #include "macro/macro_stock.h"
 #include "macro/player_entity.h"
 #include "bus/spell_book_state.h"
-#include "macro/squad_walk.h"
+#include "bus/squad_walk.h"
 #include "macro/state.h"
 #include "macro/zones.h"
 #include "bus/store.h"

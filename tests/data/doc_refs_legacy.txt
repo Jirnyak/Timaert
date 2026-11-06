@@ -156,7 +156,6 @@ SKELETON.md	cell_facts.cpp:21-22
 SKELETON.md	cell_facts.h:13-17
 SKELETON.md	chronicle.cpp:14-15
 SKELETON.md	chronicle.cpp:214
-SKELETON.md	chronicle.h:345
 SKELETON.md	collide.cpp:120-195
 SKELETON.md	collide.cpp:26
 SKELETON.md	commodity.h:101
@@ -460,7 +459,6 @@ jopus_prompts.md	app_state.h:306
 jopus_prompts.md	balance_run.cpp:260
 jopus_prompts.md	base_generator.cpp:565
 jopus_prompts.md	biomes.h:64
-jopus_prompts.md	chronicle.h:345
 jopus_prompts.md	deposit_layer.h:81
 jopus_prompts.md	econ_day.cpp:200
 jopus_prompts.md	econ_day.cpp:40-55
@@ -655,7 +653,6 @@ macro-registry.md	app_state.h:424-425
 macro-registry.md	balance_run.cpp:279
 macro-registry.md	behaviour.h:28
 macro-registry.md	chronicle.h:151
-macro-registry.md	chronicle.h:257
 macro-registry.md	components.h:25-26
 macro-registry.md	currency.h:184
 macro-registry.md	design_characters_test.cpp:139

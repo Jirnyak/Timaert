@@ -12,7 +12,7 @@
 // избыточность законна, а счётчиком промахов этот путь не является. Уедет
 // пакетом вместе с дальномиром (M-151), не этим ломтём.
 #include "macro/cell_facts.h"
-#include "macro/chronicle.h"  // fact_kind_def + chronicle_record — тело, не заголовок
+#include "tables/fact_kinds.h"  // fact_kind_def — горизонт интереса рода (дедуп зон)
 #include "tables/faction.h"
 #include "macro/squad.h"
 #include "macro/player_entity.h"
@@ -2343,20 +2343,21 @@ void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
     if (factsSinceFillCount_ < int(factsSinceFill_.size())) {
         factsSinceFill_[std::size_t(factsSinceFillCount_++)] = f;
     }
-    if (mw_.store) {
-        // СТРОКОЙ ДЕЛЬТЫ (ломоть 5): подшивка и слава платятся на границе
-        // тика той же дверью record_deed — внутри apply_local_delta. Сам
-        // момент деяния сцена уже знает карманом выше; миру факт станет
-        // виден свежим окном после применения.
-        if (delta_.factCount < kDeltaFactCap) {
-            delta_.factOps[delta_.factCount++] = f;
-        } else {
-            ++delta_.droppedOps;
-        }
+    // СТРОКОЙ ДЕЛЬТЫ (ломоть 5): подшивка и слава платятся на границе
+    // тика той же дверью record_deed — внутри apply_local_delta. Сам
+    // момент деяния сцена уже знает карманом выше; миру факт станет
+    // виден свежим окном после применения.
+    //
+    // Здесь стояла ветка else «мира под сессией нет — писать в летопись
+    // напрямую» (chronicle_record). Она была МЕРТВА ПО ПОСТРОЕНИЮ: enter
+    // зануляет gs_ в том же гейте, что проверяет mw_.store, то есть пара
+    // (gs_ != 0, store == 0) невыразима, а фикстуры с ней нет ни одной.
+    // Снесена ломтём 5 M-171 — она была вторым писателем летописи из шва
+    // при живом первом (DOD п.6).
+    if (delta_.factCount < kDeltaFactCap) {
+        delta_.factOps[delta_.factCount++] = f;
     } else {
-        // No macro world under this session (a bare harness): there is
-        // nobody to pay, and the fact alone is still the truth.
-        chronicle_record(gs_->chronicle, f);
+        ++delta_.droppedOps;
     }
 }
 

@@ -53,7 +53,7 @@
 #include "macro/npc_spawn.h"
 #include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
 #include "macro/squad.h"         // резолв по ординалу: место и сквад
-#include "macro/squad_walk.h"    // SquadWalkEntry — порядок закона
+#include "bus/squad_walk.h"    // SquadWalkEntry — порядок закона
 #include "macro/state.h"
 #include "bus/store.h"
 

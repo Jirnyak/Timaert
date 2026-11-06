@@ -13,7 +13,7 @@
 #include "macro/spawners.h"
 #include "tables/squad_type.h"
 #include "macro/squad_index.h"
-#include "macro/squad_walk.h"
+#include "bus/squad_walk.h"
 #include "macro/tree_layer.h"
 
 namespace sm {

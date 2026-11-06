@@ -877,7 +877,7 @@ DOD п.6 (второй ответ на один вопрос — дефект).
 ландмарков — умер (ломтик F: каркас клеток `SquadIndex@src/macro/squad_index.h`), навигация (6 полей ×N +
 планы u16×planeCount×N, `nav_field.h`), угроза u32×R (`nav_field.h:149`),
 следы u16×F×N×2 (`state.h:884`, `scent_field.h`), владение клеткой u8×N
-(`politik.h:77`), индекс летописи u32×N/64 (`chronicle.h:345`), оптический
+(`politik.h:77`), индекс летописи u32×N/64 (`chronicle.h`), оптический
 кэш f32×2×N (представление, `app_state.h:177`), A\* скрэтч 7×N
 (`pathfinding.h:207`), `deserterPool@src/macro/state.h`, `MacroStore` (уже
 под своим `static_assert` на `sizeof` — `MacroStore@src/bus/store.h`, строка

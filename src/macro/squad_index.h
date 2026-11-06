@@ -41,7 +41,7 @@
 #include <iterator>
 #include <vector>
 
-#include "macro/squad_walk.h"      // SquadWalkEntry + порядок закона; store.h
+#include "bus/squad_walk.h"      // SquadWalkEntry + порядок закона; store.h
 #include "tables/squad_type.h"     // ось рода + kRootedYieldOrder
 
 namespace sm {
@@ -89,7 +89,7 @@ void bucket_scatter(CellBuckets& g, int gx, int gy, std::uint32_t item);
 
 struct SquadIndex {
     CellBuckets grid;
-    // Порядок закона (macro/squad_walk.h): скаттер идёт по ординалу, поэтому
+    // Порядок закона (bus/squad_walk.h): скаттер идёт по ординалу, поэтому
     // содержимое бакетов не зависит от внутренностей EnTT. Член — чтобы
     // пересборка на каждый свип не аллоцировала (тот же довод, что cursor).
     std::vector<SquadWalkEntry> order;
