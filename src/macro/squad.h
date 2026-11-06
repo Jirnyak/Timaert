@@ -615,21 +615,32 @@ inline CharacterSheet* owned_sheet(MacroStore& st, MacroHandle h) {
 inline std::uint32_t* renown_slot(MacroStore& st,
                                   std::uint8_t participantKind,
                                   std::uint32_t ordinal) {
-    switch (fact_subject_kind(participantKind)) {
-        case std::uint8_t(FactSubject::Squad): {
+    switch (FactSubject(fact_subject_kind(participantKind))) {
+        case FactSubject::Squad:
+        case FactSubject::Rooted: {
+            // ОДНА ветка, потому что это ОДИН резолв: ветки Squad и Rooted
+            // стояли побайтово одинаковыми — различитель рода «место»,
+            // переживший снос рода (МЕСТ НЕТ, ЗАКОН ПОЛЯ п.4). Ординал един
+            // (M-37), слава — колонка runtime.renown ТЕЛА, а род субъекта
+            // остаётся словом ЛЕТОПИСИ.
             const MacroHandle h = macro_handle_by_spawn_id(st, ordinal);
             return st.valid(h) ? &st.runtime[h.slot].renown : nullptr;
         }
-        case std::uint8_t(FactSubject::Rooted): {
-            // Слава места — колонка runtime.renown его ТЕЛА; строки нет,
-            // резолв тот же, что у сквада (одно пространство ординалов,
-            // M-37), род субъекта остаётся словом ЛЕТОПИСИ.
-            const MacroHandle h = macro_handle_by_spawn_id(st, ordinal);
-            return st.valid(h) ? &st.runtime[h.slot].renown : nullptr;
-        }
-        default:
+        case FactSubject::None:
+        case FactSubject::Cell:
+            // У земли славы нет и не будет (шапка выше); у «никого» — тем
+            // более. Поимённо, не default: глотающий default прятал бы и
+            // следующий род (ЗАКОН СЛОВАРЯ п.4).
+            return nullptr;
+        case FactSubject::Faction:
+            // Будущий жилец ЭТОЙ ЖЕ двери (politics track, шапка выше):
+            // поля ещё нет, ответ честно пуст — и -Wswitch назовёт это
+            // место, когда род приедет с колонкой.
+            return nullptr;
+        case FactSubject::Count:
             return nullptr;
     }
+    return nullptr;   // незаконный байт из летописи — пустой ответ, не UB
 }
 
 inline std::uint32_t renown_of(MacroStore& st,

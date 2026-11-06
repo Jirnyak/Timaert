@@ -270,12 +270,6 @@ inline constexpr ObjectArchetype object_type_archetype(ObjectType t) {
         : ObjectArchetype::Misc;
 }
 
-inline constexpr const char* object_type_id(ObjectType t) {
-    return std::size_t(t) < std::size_t(ObjectType::Count)
-        ? kObjectTypes[std::size_t(t)].id
-        : "?";
-}
-
 // ── СТЕНА ПОД КОМПИЛЯТОРОМ ────────────────────────────────────────────────
 // ТИПЫ ОТСОРТИРОВАНЫ ПО АРХЕТИПУ — без этого «все строки архетипа» перестают
 // быть диапазоном, потому что строки идут по типам. Тип, вставленный не в свою

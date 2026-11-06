@@ -16,11 +16,6 @@ enum Biome : std::uint8_t {
     // roads remain orthogonal *features* composed on top of it.
     Mountain = 10,
 };
-// Number of biomes produced by the 3x3 temperature x moisture matrix. Water
-// (9) and Mountain (10) are elevation overrides outside the matrix, so this
-// count is unchanged by their existence.
-constexpr int kBiomeLandCount = 9;
-
 struct BiomeDef {
     Biome id;
     const char* name;

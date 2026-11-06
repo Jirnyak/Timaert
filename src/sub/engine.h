@@ -595,13 +595,6 @@ public:
     // mover, and inheriting it meant arriving in a new scene at a run, in the
     // old scene's direction.
     void  reset_player_motion();
-    // Are the legs in motion? Asked by the recovery law, which runs BEFORE
-    // the mover has moved anybody — so it asks the INTENT, which is the
-    // honest question anyway: legs that are trying to walk are not resting,
-    // whether or not a wall happened to stop them this step.
-    bool  player_marching() const {
-        return playerIntentVx_ != 0.0f || playerIntentVy_ != 0.0f;
-    }
     // HARNESS ONLY: hold an intent for `steps` simulation steps, as a held
     // key would. Needed because the input path restates the intent EVERY step
     // (and zeroes it when the keys are not the player's), so a headless run

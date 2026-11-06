@@ -71,7 +71,6 @@ struct Outline {
         return d2 <= bound * bound;
     }
 
-    float min_radius() const { return *std::min_element(r.begin(), r.end()); }
     float max_radius() const { return *std::max_element(r.begin(), r.end()); }
 
     // A plain disk — the shape a place has before anything has made it

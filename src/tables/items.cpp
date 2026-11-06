@@ -11,6 +11,7 @@
 #include "tables/faction.h"   // mint columns — what the neutrality witness walks
 #include "tables/progression.h"   // clamp_to_ladder — ОДНА посадка числа на ступень
 #include "tables/world_row.h"   // вторая половина пространства строк — value_of
+#include "core/time.h"   // steps_from_seconds — авторские секунды → ТИКИ, constexpr
 
 #include <algorithm>
 #include <cmath>
@@ -187,12 +188,14 @@ constexpr ItemDef kCatalog[] = {
         // дверью восстановления. До 2026-09-19 зелья пились даром.
         /*slot*/0, /*blocks*/0, /*def*/{}, /*dice*/{},
         /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Count,
-        /*delivery*/Delivery::Melee, /*range*/0.0f, /*useSeconds*/1.0f},
+        /*delivery*/Delivery::Melee, /*range*/0.0f,
+        /*useTicks*/ steps_from_seconds(1.0f)},
     {"potion_mp",   "Mana Potion",     ObjectType::Consumable, 75, 300, "\xE2\x9C\xA8",
         "Restores 15 MP", {{std::uint8_t(BonusId::HealMp), 15}},
         /*slot*/0, /*blocks*/0, /*def*/{}, /*dice*/{},
         /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Count,
-        /*delivery*/Delivery::Melee, /*range*/0.0f, /*useSeconds*/1.0f},
+        /*delivery*/Delivery::Melee, /*range*/0.0f,
+        /*useTicks*/ steps_from_seconds(1.0f)},
     // ── АРХЕТИП Food: ЧТО ПОТРЕБЛЯЮТ ЗА СЫТОСТЬ ───────────────────────────
     // Здесь живёт ГОЛОДНАЯ строка лестницы нужд, и она обязана быть РОВНО
     // одна (static_assert ниже по файлу).
@@ -203,7 +206,8 @@ constexpr ItemDef kCatalog[] = {
         // бою была бесплатна по времени и не занимала руку (перепись M-174).
         /*slot*/0, /*blocks*/0, /*def*/{}, /*dice*/{},
         /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Count,
-        /*delivery*/Delivery::Melee, /*range*/0.0f, /*useSeconds*/1.0f},
+        /*delivery*/Delivery::Melee, /*range*/0.0f,
+        /*useTicks*/ steps_from_seconds(1.0f)},
     // ПИЩА — архетип ЕДА, а не материал: ею гасят голод (econ_day.h
     // лестница), и она терминальна — её растят и добывают, а не варят.
     {"food",    "Provisions",      ObjectType::Ration,     5, 1000, "\xF0\x9F\x8C\xBE",
@@ -215,7 +219,8 @@ constexpr ItemDef kCatalog[] = {
         // Кус занимает руку как глоток — см. food_meat выше (M-174).
         /*slot*/0, /*blocks*/0, /*def*/{}, /*dice*/{},
         /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Count,
-        /*delivery*/Delivery::Melee, /*range*/0.0f, /*useSeconds*/1.0f},
+        /*delivery*/Delivery::Melee, /*range*/0.0f,
+        /*useTicks*/ steps_from_seconds(1.0f)},
     // ── АРХЕТИП Material: РЕСУРСЫ, ИЗ КОТОРЫХ КРАФТЯТ ────────────────────
     // МОНЕТНЫЕ МЕТАЛЛЫ (тип `ore`). Каждая стоимость ВЫВЕДЕНА, а не выбрана:
     // 128 монет из единицы (единый выход чеканки, kPartsAuthoring — выбор

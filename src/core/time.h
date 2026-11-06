@@ -193,7 +193,8 @@ inline constexpr std::uint64_t ticks_to_advance_hours(std::uint64_t from,
 // than the display, so on a 60 Hz screen the world runs at 60 ticks a second
 // rather than 64 — a day takes 136 real seconds instead of 128. Under this
 // model that is not a bug; the real-second figure was always the nominal.
-inline constexpr float kTickPeriodSeconds = 1.0f / float(kTicksPerRealSecond);
+// (kTickPeriodSeconds — float-СЕКУНДНАЯ константа этого закона — умерла
+// 2026-11-06: читателей ноль, мир калибруется в тиках, не в секундах.)
 
 // ── The world's clock ─────────────────────────────────────────────────────
 // ONE field. Day, hour and minute are not stored beside it — they are read off

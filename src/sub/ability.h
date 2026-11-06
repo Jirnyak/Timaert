@@ -113,36 +113,28 @@ inline void charge_body(ecs::Combat* gate, std::uint32_t pacedTicks) {
 
 // ЗАНЯТЬ РУКУ на длину, которую называет СТРОКА действия.
 //
-// `baseSeconds` — колонка строки (спелла, предмета, действия), а делится она
-// на природную резвость (линейная ставка Spd, M-389) и на генерик своего
-// домена — ту же
-// `recovery_steps`, которой платят удар и каст (S14 «один рычаг на ручку»).
-// Генерик — это домен, а не вкус: руки (Армсмастер) у удара, выстрела,
-// глотка и рычага; касты (Спеллкрафт) у магии.
+// `baseTicks` — колонка строки (спелла, предмета, действия), УЖЕ В ТИКАХ
+// (секунда живёт только в авторинге, constexpr-дверью steps_from_seconds в
+// самой таблице — M-396). Делится база на природную резвость (линейная
+// ставка Spd, M-389) и на генерик своего домена — ту же `recovery_steps`,
+// которой платят удар и каст (S14 «один рычаг на ручку»). Генерик — это
+// домен, а не вкус: руки (Армсмастер) у удара, выстрела, глотка и рычага;
+// касты (Спеллкрафт) у магии.
 //
 // НОЛЬ — ЧЕСТНЫЙ ЧАСТНЫЙ СЛУЧАЙ, и он проходит здесь насквозь: строка с
 // базой 0 не занимает тело вовсе (мир в пошаговом режиме не сдвинется), и
 // это законно — так объявляются действия, которые времени не стоят.
 // Ненулевая база всегда стоит хотя бы квант времени: пол в один шаг ставит
 // сама `recovery_steps`, здесь его не переписывают.
-inline void charge_ability(ecs::Combat* gate, float baseSeconds,
-                           const Attributes& attributes, const Skills& skills,
-                           SkillId generic) {
-    if (gate == nullptr) return;
-    if (baseSeconds <= 0.0f) return;           // ноль — значит ноль
-    // Секунды → тики ЗДЕСЬ: дверь восстановления берёт ТИКИ (M-369). Пока
-    // зелье и рычаг не переехали строками в единую таблицу, их авторские
-    // секунды переводятся на месте вызова — так флоат уходит носитель за
-    // носителем, а дверь остаётся одна.
-    charge_body(gate, std::uint32_t(recovery_steps(
-        steps_from_seconds(baseSeconds), attributes, skills, generic)));
-}
+//
+// (Флоат-передняя `charge_ability(float baseSeconds)` умерла 2026-11-06:
+// последним носителем был глоток зелья, и его колонка `useTicks@src/tables/
+// items.h` теперь авторится тиками, как у всех строк действий.)
 
-// ТА ЖЕ ДВЕРЬ ДЛЯ СТРОК ТАБЛИЦЫ ДЕЙСТВИЙ — база уже в ЦЕЛЫХ ТИКАХ (M-396:
-// секунда живёт только в авторинге), переводить нечего. Это не второй закон
-// заряда, а тот же без флоат-передней: рубка и жатва зовут её строкой
-// (`kLabourActions@src/tables/actions.h`); флоат-двойник выше доживает у
-// носителей, ещё не переехавших строками, — новых звонящих ему не заводить.
+// ДВЕРЬ ЗАРЯДА — база в ЦЕЛЫХ ТИКАХ (M-396: секунда живёт только в
+// авторинге), переводить нечего: рубка и жатва зовут её строкой
+// (`kLabourActions@src/tables/actions.h`), глоток — колонкой useTicks своей
+// строки предмета.
 inline void charge_ability_ticks(ecs::Combat* gate, std::uint32_t baseTicks,
                                  const Attributes& attributes,
                                  const Skills& skills, SkillId generic) {
@@ -159,11 +151,11 @@ inline void charge_ability_ticks(ecs::Combat* gate, std::uint32_t baseTicks,
 // ли маны, есть ли что под прицелом, лежит ли зелье в сумке) — дело самой
 // способности, и спрашивается ДО этой двери: отказ по своей причине не
 // должен жечь рекавери.
-inline bool try_ability(ecs::Combat* gate, float baseSeconds,
+inline bool try_ability(ecs::Combat* gate, std::uint32_t baseTicks,
                         const Attributes& attributes, const Skills& skills,
                         SkillId generic) {
     if (!body_is_free(gate)) return false;
-    charge_ability(gate, baseSeconds, attributes, skills, generic);
+    charge_ability_ticks(gate, baseTicks, attributes, skills, generic);
     return true;
 }
 

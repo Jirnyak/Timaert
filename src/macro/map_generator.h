@@ -208,10 +208,6 @@ struct TerrainData {
         if (!world_shape_ok(width, height)) return 0u;
         return rgba[std::size_t(cell_of(x, y, width)) * 4 + 1];
     }
-    inline std::uint16_t temperature_at(int x, int y) const {
-        if (!world_shape_ok(width, height)) return 0u;
-        return rgba[std::size_t(cell_of(x, y, width)) * 4 + 2];
-    }
     // ── ЕДИНСТВЕННЫЙ ОТВЕТ «ВОДА ЛИ КЛЕТКА» ──────────────────────────────
     // Вердикт владельца (2026-09-25, дословно): «НИКАКИХ МАСОК строго единый
     // порог высоты УРОВЕНЬ моря это кстати и для макро и для микро верно».

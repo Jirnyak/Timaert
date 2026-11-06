@@ -11,7 +11,8 @@
 // `recovery@src/tables/spells.h` (каст) · `useSeconds@src/tables/items.h`
 // (зелье) · `cooldown@src/tables/army.h` (удар существа) ·
 // `weapon_swing_seconds@src/tables/items.h` (удар оружием — выводится из массы,
-// строки нет) · `actSeconds@src/sub/map_data.h` (дверь, обыск, чтение) ·
+// строки нет) · `actSeconds` в map_data.h (дверь, обыск, чтение — колонка
+// оказалась СИРОТОЙ: её не заряжал никто, снесена 2026-11-06) ·
 // `kHarvestActSeconds@src/sub/ability.h` (рубка — константа); у крафта и работы
 // базы нет вовсе, и он завёл СВОЙ счётчик занятости. Шесть имён одной величины
 // врут не теоретически: шапка самой двери восстановления обещала «the item

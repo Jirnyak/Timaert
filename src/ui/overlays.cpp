@@ -832,7 +832,7 @@ namespace sm::ui
                                 // него ещё нет, но архетип уже отвечает —
                                 // снос тернарника домена, M-369).
                                 if (!sm::sub::try_ability(
-                                        gate, def->useSeconds,
+                                        gate, def->useTicks,
                                         effPanel.attributes, effPanel.skills,
                                         sm::tempo_generic(
                                             sm::ActionArchetype::Interaction))) {

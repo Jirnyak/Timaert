@@ -1025,11 +1025,11 @@ inline void fauna_field_write(GameState& gs, int x, int y, int value) {
     gs.faunaField.write(x, y, std::int32_t(value < 0 ? 0 : value));
 }
 
-// ── Двери поля света — та же идиома (M-370) ─────────────────────────────
+// ── Дверь поля света — та же идиома (M-370) ─────────────────────────────
 // Значение — упаковка «палитра + сила» (`tables/light_palette.h`); 0 = тьма.
-inline int light_emission_read(const GameState& gs, int x, int y) {
-    return int(gs.lightEmission.at(x, y));
-}
+// (read-дверь умерла 2026-11-06: единственный читатель поля —
+// macro_lighting.cpp — идёт for_each_live по живым клеткам, поклеточного
+// вопроса никто не задаёт.)
 inline void light_emission_write(GameState& gs, int x, int y, int value) {
     if (!gs.lightEmission.live()) {
         if (gs.mapW <= 0 || gs.mapH <= 0) return;   // no world, no field

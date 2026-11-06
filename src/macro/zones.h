@@ -19,9 +19,10 @@ constexpr int kZoneCount = 10;
 inline constexpr std::uint8_t zone_band(std::uint8_t z) {
     return std::uint8_t((int(z) * kZoneCount) >> 8);
 }
-// The exit gate's "settled land" ceiling: everything the old quantiser called
-// bands 0..2 — derived, not tuned: 3 * 256 / kZoneCount - 1 = 75.
-inline constexpr int kSafeExitDanger = (3 * 256) / kZoneCount - 1;
+// (kSafeExitDanger — потолок «обжитой земли» у гейта выхода — умер
+// 2026-11-06: сам гейт уничтожен вердиктом владельца «не должно быть
+// никакого байта зоны… ВАЖНА ТОЛЬКО ОПАСНОСТЬ РЯДОМ С ТОБОЙ» —
+// exit_blocked_by_danger спрашивает близость врага, не байт зоны.)
 
 struct ZoneSeed { int x, y; };
 

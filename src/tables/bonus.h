@@ -280,13 +280,6 @@ inline constexpr const BonusDef& bonus_def(BonusId id) {
     return kBonusDefs[std::size_t(id)];
 }
 
-// Whether a row lands on the SHEET (standing) or on a POOL (instant). Derived
-// from the target rather than stored beside it: two columns that must agree
-// are one column and a bug waiting.
-inline constexpr bool bonus_is_instant(const BonusDef& d) {
-    return d.target == BonusTarget::Pool;
-}
-
 // The authoring key resolved to its ordinal. Content names a bonus by string
 // (a table, a plot file); the runtime never does. Returns None for an unknown
 // key — REFUSAL, not a silent zero-th row, because those are the same value

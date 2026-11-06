@@ -36,18 +36,15 @@ struct LoadedCell {
     // вопрос; какой модуль пишет клетку, спрашивается дверью
     // (`open_air_gen_for@src/sub/gens/dispatch.h`) в момент генерации.
     Biome biome = Biome::Meadow;
-    // 3×3 macro biome ring captured at generation (owner at index 4) — the
-    // TRUE biomes, water included: generation (height remap, tree scatter)
-    // reads this one.
-    Biome nbBiome[9] = {Biome::Meadow, Biome::Meadow, Biome::Meadow,
-                        Biome::Meadow, Biome::Meadow, Biome::Meadow,
-                        Biome::Meadow, Biome::Meadow, Biome::Meadow};
-    // The same ring through ground_biome(): every Water entry replaced by
+    // (Колонка nbBiome — копия TRUE-кольца биомов в cells_ — умерла
+    // 2026-11-06: генерация читает кольцо из staging-джоба, а эту копию не
+    // читал никто, кроме мёртвого аксессора cell_biome_ring.)
+    // The ring through ground_biome(): every Water entry replaced by
     // that cell's unflooded climate ground. The ground-material dither
     // (sub/material.h pick_ground_biome) reads THIS one — ground never
     // blends water, so the ring it consumes carries none, and a water
     // cell's dry banks paint as the land their climate says they are.
-    // Captured with nbBiome, so material bytes stay window-independent.
+    // Captured at generation, so material bytes stay window-independent.
     Biome nbGround[9] = {Biome::Meadow, Biome::Meadow, Biome::Meadow,
                          Biome::Meadow, Biome::Meadow, Biome::Meadow,
                          Biome::Meadow, Biome::Meadow, Biome::Meadow};
@@ -182,7 +179,6 @@ public:
     // здесь, а контексты для воркера собирает flush — его зовёт движок из
     // frame_resynced(), когда app уже перезаполнил фрейм на новый центр.
     void flush_pending_generation();
-    bool has_pending_generation() const { return pendingFreshCount_ > 0; }
 
     // ЗДЕСЬ СТОЯЛ СНИМОК ОКНА В КЭШ СЕССИИ — `snapshot_all_to_cache()`, — и с
     // ним весь асинхронный конвейер снимков. Снесён 2026-10-19 (M-262,
@@ -271,11 +267,6 @@ public:
 
     // Per-cell biome of the 3×3 grid (idx = (oy+1)*3 + (ox+1), ox/oy in -1..1).
     Biome cell_biome(int idx) const { return cells_[std::size_t(idx)].biome; }
-    // The cell's captured 3×3 macro biome ring (owner at index 4) — the true
-    // biomes, water included. Placeholders hold a uniform ring (their biome).
-    const Biome* cell_biome_ring(int idx) const {
-        return cells_[std::size_t(idx)].nbBiome;
-    }
     // The cell's captured 3×3 GROUND ring (LoadedCell::nbGround) — what the
     // ground-material dither consumes: never a Water entry, a flooded cell
     // answers with its unflooded climate ground (map_data.h ground_biome).
@@ -362,14 +353,6 @@ private:
         dirtyHeightCells_[std::size_t(idx)] = true;
         dirtyMaterialCells_[std::size_t(idx)] = true;
     }
-    // Road/height smooth pass: every vertex height (hence trees) may move, but
-    // the tile material ids are unchanged — skip the 9 MB material rebuild.
-    void mark_composite_height_all() {
-        compositeDirty_ = true;
-        dirtyFullHeight_ = true;
-        dirtyStructs_ = true;
-        dirtyHeightCells_.fill(true);
-    }
     // One cell's HEIGHT changed and nothing else: the smoothing pass moves
     // heights only within kRoadSmoothReach tiles of a road, so it names the
     // cells it could have reached instead of claiming the whole window. Note
@@ -430,12 +413,7 @@ private:
         int acx = 0;
         int acy = 0;
         std::uint64_t generation = 0;
-        // (та же сирота, что у `LoadedCell` выше — асинк-джоб возил её через
-        // поток ради нулевого числа читателей)
         Biome biome = Biome::Meadow;
-        Biome nbBiome[9] = {Biome::Meadow, Biome::Meadow, Biome::Meadow,
-                            Biome::Meadow, Biome::Meadow, Biome::Meadow,
-                            Biome::Meadow, Biome::Meadow, Biome::Meadow};
         Biome nbGround[9] = {Biome::Meadow, Biome::Meadow, Biome::Meadow,
                              Biome::Meadow, Biome::Meadow, Biome::Meadow,
                              Biome::Meadow, Biome::Meadow, Biome::Meadow};
