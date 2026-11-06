@@ -11,7 +11,7 @@
 // дверей, и прибор судит каждую порознь плюс их композицию:
 //   1. КТО АКТОР  — `slot_macro_record@src/sub/record.h`: бэклинк `MacroOrigin`
 //      несут РОВНО аватары, расписку займа — головы инвентаря;
-//   2. ЧЬЁ ЗНАМЯ — `squad_faction_slot@src/macro/squad.h`: ординал колонки
+//   2. ЧЬЁ ЗНАМЯ — `squad_faction_slot@src/bus/store.h`: ординал колонки
 //      записи, и «записи нет» названо `kNoFactionSlot`;
 //   3. ЧТО ЕДЕТ   — `add_faction_standing@src/macro/factions.h`: парная запись
 //      по ординалам, три отказа-значения.

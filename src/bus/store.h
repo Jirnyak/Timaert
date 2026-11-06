@@ -53,6 +53,8 @@
 #include "bus/spell_book_state.h"   // SpellBook — колонка книги
 #include "bus/squad_row.h"          // сквадные формы — род 2 фрейма
 #include "bus/upkeep.h"             // SquadUpkeep + Wellbeing
+#include "tables/faction.h"         // FactionSlot — ординал знамени записи
+#include "tables/squad_type.h"      // squad_archetype — ось рода у резолва Rooted
 
 namespace sm {
 
@@ -692,6 +694,46 @@ inline ecs::MacroCell squad_cell(const MacroStore& s, MacroHandle h) {
 // вопроса «чем она воплощается и под чьим знаменем».
 inline ecs::NPCKind squad_kind(const MacroStore& s, MacroHandle h) {
     return s.valid(h) ? s.kind[h.slot] : ecs::NPCKind{};
+}
+
+// РЕЗОЛВ МЕСТА: тот же резолв субъекта + гейт оси рода. Пространство
+// ординалов ОДНО (M-37), и после смерти строки мест «это место?» отвечает
+// только ось тела — звонящий, которому нужен именно НЕПОДВИЖНЫЙ сквад,
+// обязан спрашивать этой дверью, а не голым резолвом.
+// (Переехала из macro/squad.h ломтём 5 M-171: дверь рода 2 живёт НА шине —
+// вердикт владельца 2026-11-03, читает только колонки store и каталог.)
+inline MacroHandle rooted_handle_by_ordinal(const MacroStore& st,
+                                           std::uint32_t index) {
+    const MacroHandle h = macro_handle_by_spawn_id(st, index);
+    return st.valid(h)
+            && squad_archetype(SquadType(st.runtime[h.slot].squadType)) == SquadArchetype::Rooted
+        ? h : MacroHandle{};
+}
+
+// ── УРОВЕНЬ СКВАДА — ОДНА ДВЕРЬ НАД АНКЕТОЙ (ЗАКОН АНКЕТЫ, M-246а) ───────
+// Владелец, дословно: «анкета источник». Здесь жила колонка `ecs::NpcLevel`
+// РЯДОМ с `sheet.levelData.level` — два ответа на один вопрос о мире, и
+// приговор ей закон вынес раньше наряда. Колонка умерла 2026-10-18; всякий
+// вопрос «какой он уровня» читает ЭТУ дверь. В анкете нуля не бывает:
+// `LevelData::level = 1` по умолчанию, и `make_character_sheet` клампит
+// `level < 1` в 1 — то есть после этой двери нулевой порог НЕВЫРАЗИМ
+// (полная история дефекта нулевой колонки — у двери роста в macro/squad.h).
+inline int squad_level(const MacroStore& st, std::uint16_t slot) {
+    return level_of(st.sheet[slot].levelData);
+}
+
+// ЧЬЁ ЗНАМЯ НОСИТ ЭТА ЗАПИСЬ, ЧИСЛОМ — ядро вопроса, и «никого» у него
+// НАЗВАНО (ЗАКОН СЛОВАРЯ: внутри мира живут только ординалы).
+//
+// ПОЧЕМУ ДВЕРЬ, А НЕ `squad_kind(st, h).factionIdx` НА МЕСТЕ: `squad_kind` на
+// невалидном хэндле отдаёт `ecs::NPCKind{}`, то есть `factionIdx = 0`, а ноль
+// реестра — ЖИВАЯ СТРОКА «wildlife» (`kFactionDefs[0]`). Запись, которой нет,
+// уверенно отвечала бы «зверь», и отвечала бы без ошибки — ровно тот класс
+// умолчания, что врёт молча. Здесь «нет записи» есть `kNoFactionSlot`, и
+// каждая дверь отношений его отвергает сама.
+inline FactionSlot squad_faction_slot(const MacroStore& st, MacroHandle h) {
+    return st.valid(h) ? FactionSlot(st.kind[h.slot].factionIdx)
+                       : kNoFactionSlot;
 }
 
 // «Какое у этой записи лицо» — вход воплощения тела; лицо есть ФАКТ записи,

@@ -235,24 +235,10 @@ inline const char* squad_name(const MacroStore& st, std::uint16_t slot) {
     return npc_def(squad_row_type(st, slot)).label;
 }
 
-// ── УРОВЕНЬ СКВАДА — ОДНА ДВЕРЬ НАД АНКЕТОЙ (ЗАКОН АНКЕТЫ, M-246а) ───────
-// Владелец, дословно: «анкета источник». Здесь жила колонка `ecs::NpcLevel`
-// РЯДОМ с `sheet.levelData.level` — два ответа на один вопрос о мире, и
-// приговор ей закон вынес раньше наряда. Колонка умерла 2026-10-18; всякий
-// вопрос «какой он уровня» читает ЭТУ дверь.
-//
-// И СНОС БЫЛ НЕ КОСМЕТИКОЙ — КОЛОНКА ДЕРЖАЛА ЖИВОЙ БАГ, НЕДОСТУПНЫЙ АНКЕТЕ
-// ПО ПОСТРОЕНИЮ. Колонка умела быть НУЛЁМ: `birth_squad` её не писал вовсе,
-// а рождение слота обнуляет (`store_birth`). Нулевой уровень обнулял и
-// кривую — `exp_to_next_level(0)` = 0 (`anketa.h`), — поэтому `while (xp >=
-// порог)` срабатывал на ЛЮБОМ положительном xp, и первая же победа
-// неподвижного сквада выдавала ему даровой уровень, а вместе с ним перекат
-// анкеты из сида (см. шрам у двери роста ниже). В анкете нуля не бывает:
-// `LevelData::level = 1` по умолчанию, и `make_character_sheet` клампит
-// `level < 1` в 1 — то есть после этой двери нулевой порог НЕВЫРАЗИМ.
-inline int squad_level(const MacroStore& st, std::uint16_t slot) {
-    return level_of(st.sheet[slot].levelData);
-}
+// (ДВЕРЬ УРОВНЯ `squad_level` ПЕРЕЕХАЛА в bus/store.h ломтём 5 M-171 вместе
+//  со своей историей M-246а — «анкета источник», нулевой порог после неё
+//  НЕВЫРАЗИМ; шрам нулевой колонки остался у двери роста ниже. Приезжает
+//  сюда транзитом bus/store.h.)
 
 // ── СКОРОСТЬ КАРТИНКИ — ОДНА ДВЕРЬ, И ВЕЛИЧИНА У НЕЁ «РАССТОЯНИЕ ЗА ВРЕМЯ» ─
 // Колонка `visualSpeed@src/ecs/components.h` сама это и объявляет
@@ -312,17 +298,9 @@ inline std::uint16_t actions_of(const MacroStore& st, MacroHandle h) {
     return squad_kind(SquadType(st.runtime[h.slot].squadType)).actions;
 }
 
-// РЕЗОЛВ МЕСТА: тот же резолв субъекта + гейт оси рода. Пространство
-// ординалов ОДНО (M-37), и после смерти строки мест «это место?» отвечает
-// только ось тела — звонящий, которому нужен именно НЕПОДВИЖНЫЙ сквад,
-// обязан спрашивать этой дверью, а не голым резолвом.
-inline MacroHandle rooted_handle_by_ordinal(const MacroStore& st,
-                                           std::uint32_t index) {
-    const MacroHandle h = macro_handle_by_spawn_id(st, index);
-    return st.valid(h)
-            && squad_archetype(SquadType(st.runtime[h.slot].squadType)) == SquadArchetype::Rooted
-        ? h : MacroHandle{};
-}
+// (РЕЗОЛВ МЕСТА `rooted_handle_by_ordinal` ПЕРЕЕХАЛ в bus/store.h ломтём 5
+//  M-171 — дверь рода 2 живёт НА шине, тело читает только колонки store и
+//  ось рода каталога; приезжает сюда транзитом bus/store.h.)
 
 // (ВТОРОЙ ДВЕРИ У ЭТОГО ВОПРОСА БОЛЬШЕ НЕТ — M-271. Здесь стояла её «горячая»
 //  пара, бравшая порядок драйва отдельным параметром: пока голый резолв был
@@ -1331,19 +1309,10 @@ static_assert(BattleFact{}.victim == MacroHandle{}
                   && BattleFact{}.killer == MacroHandle{},
               "сентинель BattleFact = пустой MacroHandle (id 0 — «никто»)");
 
-// ЧЬЁ ЗНАМЯ НОСИТ ЭТА ЗАПИСЬ, ЧИСЛОМ — ядро вопроса, и «никого» у него
-// НАЗВАНО (ЗАКОН СЛОВАРЯ: внутри мира живут только ординалы).
-//
-// ПОЧЕМУ ДВЕРЬ, А НЕ `squad_kind(st, h).factionIdx` НА МЕСТЕ: `squad_kind` на
-// невалидном хэндле отдаёт `ecs::NPCKind{}`, то есть `factionIdx = 0`, а ноль
-// реестра — ЖИВАЯ СТРОКА «wildlife» (`kFactionDefs[0]`). Запись, которой нет,
-// уверенно отвечала бы «зверь», и отвечала бы без ошибки — ровно тот класс
-// умолчания, что врёт молча. Здесь «нет записи» есть `kNoFactionSlot`, и
-// каждая дверь отношений его отвергает сама.
-inline FactionSlot squad_faction_slot(const MacroStore& st, MacroHandle h) {
-    return st.valid(h) ? FactionSlot(st.kind[h.slot].factionIdx)
-                       : kNoFactionSlot;
-}
+// (ДВЕРЬ ЗНАМЕНИ `squad_faction_slot` ПЕРЕЕХАЛА в bus/store.h ломтём 5
+//  M-171 вместе со своим законом «нет записи ≠ зверь»: субмиру она нужна
+//  для отношений, а читает она только колонку kind и сентинел каталога.
+//  Приезжает сюда транзитом bus/store.h.)
 
 // The faction a macro body wears — its INSTANCE colours (Inc 2), not its row.
 // СТРОКОВАЯ ФОРМА — ГРАНИЦА над ядром выше: имя нужно летописи и авторезолву,

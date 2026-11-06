@@ -366,7 +366,7 @@ const char* subworld_attacker_label(const sub::SubObjects& objs, int slot) {
 
 // ── КТО УДАРИЛ: ФРАКЦИЯ ЕГО ЗАПИСИ, И НИКОГДА ЕГО ТЕЛА ───────────────────
 // Фракция АКТОРА берётся у МАКРО-ЗАПИСИ его сквада
-// (`squad_faction_slot@src/macro/squad.h`), а не у тела на арене, и это не
+// (`squad_faction_slot@src/bus/store.h`), а не у тела на арене, и это не
 // вкус: колонка `NPCKind` слота аватара НЕ ЗАПОЛНЯЕТСЯ ВОВСЕ
 // (`spawn_player_entity` ставит бэклинк, бары, удар и шаг — но не род), то
 // есть `alloc` оставляет там `factionIdx = 0`, а ноль реестра есть ЖИВАЯ
