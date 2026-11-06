@@ -909,6 +909,18 @@ void test_wide_front_meets_as_one_wall() {
     std::vector<int> slot;
     std::vector<int> hist;
     int worstGap = 0;
+    // MEASUREMENT ANCHORS (§8 п.3, the named scar of this very file): the
+    // old print showed «worst gap=0» both when the wall was solid AND when
+    // not a single histogram window was ever sampled — zero samples read as
+    // zero gaps. `windows` counts sampled histograms, `peakEngaged` is the
+    // production MoveStats proof that a front line actually formed.
+    // МУТАЦИЯ → ИСХОД (§8 п.6, замерено 2026-11-06): «alert never seeds»
+    // (movement.cpp, сев тревоги = 0) → gap=0 windows=0 peakEngaged=0, ОБА
+    // якоря КРАСНЫЕ — а старый одиночный CHECK на этом вакууме был зелен;
+    // живое дерево → gap=0 windows=23 peakEngaged≈5600, якоря МОЛЧАТ.
+    MoveStats st{};
+    std::uint32_t peakEngaged = 0;
+    int windows = 0;
     const MoveParams prm{};
     for (int t = 0; t < 1400; ++t) {
         u.clear();
@@ -927,7 +939,8 @@ void test_wide_front_meets_as_one_wall() {
         }
         if (alive[0] < perSide / 50 || alive[1] < perSide / 50) break;
 
-        advance(u, fine, pick, f, flat, prm, dt, nullptr);
+        advance(u, fine, pick, f, flat, prm, dt, &st);
+        peakEngaged = std::max(peakEngaged, st.engaged);
 
         // The segmentation shows LATE, when both armies have thinned together
         // (the old code fought as 3–4 separate knots around the 5–15% band),
@@ -943,6 +956,7 @@ void test_wide_front_meets_as_one_wall() {
                 maxY = std::max(maxY, u.y[std::size_t(i)]);
             }
             if (maxY > minY + 32.0f) {
+                ++windows;
                 const float binW = 16.0f;
                 const int bins = int((maxY - minY) / binW) + 1;
                 hist.assign(std::size_t(bins), 0);
@@ -979,8 +993,15 @@ void test_wide_front_meets_as_one_wall() {
             }
         }
     }
-    std::fprintf(stderr, "[battle_ai] 8192/side wide-front worst gap=%d bins\n",
-                 worstGap);
+    std::fprintf(stderr,
+                 "[battle_ai] 8192/side wide-front worst gap=%d bins "
+                 "windows=%d peakEngaged=%u\n",
+                 worstGap, windows, peakEngaged);
+    CHECK(windows > 0,
+          "the front histogram was sampled at least once "
+          "(zero samples must not read as zero gaps)");
+    CHECK(peakEngaged > std::uint32_t(perSide / 4),
+          "a real front line formed (bodies reached strike contact)");
     CHECK(worstGap < 3,
           "a wide front fights as one wall (no lane/blob segmentation)");
 }

@@ -85,10 +85,15 @@ std::size_t idx(const sm::TerrainData &td, int x, int y)
     return std::size_t(y) * std::size_t(td.width) + std::size_t(x);
 }
 
-// Reference reimplementation of build_feature_layer's composing passes.
-// Features are MAN-MADE only: mountains are the elevation-classified Mountain
-// biome and forests are the tree-count field (macro/tree_layer.h) — neither
-// appears here. Passes apply last-writer-wins: dirt roads, then roads.
+// Reference reimplementation of build_feature_layer's composing passes OVER
+// AN EMPTY INPUT LAYER — and only that. Features are MAN-MADE only: mountains
+// are the elevation-classified Mountain biome and forests are the tree-count
+// field (macro/tree_layer.h) — neither appears here. On an empty layer the
+// passes reduce to last-writer-wins: dirt roads, then roads. Закон 2026-10-23
+// («дорога ложится на пустоту, фича рода не трогается») на пустом входе
+// неотличим от last-writer-wins, поэтому здесь он НЕ перевычисляется второй
+// копией (§8 п.5) — его утверждает свойствами
+// test_settlement_feature_survives_road_pass ниже, на ПОСЕЯННОМ слое.
 sm::FeatureLayer build_reference_feature_layer(
     const sm::TerrainData &td,
     const std::vector<std::uint8_t> &roadMask,
@@ -444,6 +449,65 @@ void test_feature_water_filter_uses_map_sea_level()
                  "грунтовка под плоскостью моря — тот же пролёт, тот же камень");
 }
 
+// ── ЗАКОН 2026-10-23: ФИЧА РОДА НЕПРИКОСНОВЕННА, ДОРОГА ЛОЖИТСЯ НА ПУСТОТУ ──
+// Коммит 82e623e8 сменил last-writer-wins на «грунтовка на пустоту, камень
+// поверх грунтовки, поселение не трогается» — и не привёз свидетеля: все
+// прочие фикстуры этого файла подают ПУСТОЙ слой, на котором оба гейта
+// (spawners.cpp: `!= FT_None` у грунтовки и `cur != FT_None && cur !=
+// FT_DirtRoad` у камня) структурно недостижимы. Этот свидетель РОЖДАЕТ
+// предусловие сам (§8 п.11): сеет фичу рода пробником и утверждает СВОЙСТВА
+// слоя до/после, а не вторую копию формулы (§8 п.5). В мире предусловие
+// реально: populate_rooted_from_politik ставит FT_City/FT_Village ДО укладки
+// дорог (world_gen.cpp), и эти гейты — единственное, что их держит.
+//
+// ТАБЛИЦА «МУТАЦИЯ → ИСХОД» (§8 п.6):
+//   снять гейт камня `cur != FT_None && cur != FT_DirtRoad` → КРАСНЕЕТ (п.1);
+//   снять гейт грунтовки `!= FT_None`                       → КРАСНЕЕТ (п.2);
+//   посеять FT_None вместо фичи рода                        → МОЛЧИТ (п.4 —
+//   пустота под маской обязана мосититься: детектор, краснеющий на всё,
+//   не детектор).
+void test_settlement_feature_survives_road_pass()
+{
+    sm::TerrainData td = make_terrain(4, 4, 240.0f / 255.0f);   // вся суша
+
+    std::vector<std::uint8_t> road(std::size_t(td.width) * td.height, 0);
+    std::vector<std::uint8_t> dirt(std::size_t(td.width) * td.height, 0);
+    for (int x = 0; x < td.width; ++x)
+    {
+        road[idx(td, x, 0)] = 255;   // камень — весь ряд y=0
+        dirt[idx(td, x, 2)] = 255;   // грунтовка — весь ряд y=2
+    }
+
+    sm::FeatureLayer fl;
+    fl.resize(td.width, td.height);
+    // Предусловие СЕЕТСЯ, а не ждётся от генератора: город на пути камня,
+    // деревня на пути грунтовки, грунтовка под камнем. Дверь слой не обнулит:
+    // covers() истинна, resize внутри не случится.
+    sm::FeatureLayerProbe::set(fl, 1, 0, sm::FT_City);
+    sm::FeatureLayerProbe::set(fl, 1, 2, sm::FT_Village);
+    sm::FeatureLayerProbe::set(fl, 2, 0, sm::FT_DirtRoad);
+    sm::build_feature_layer(fl, td, road, &dirt);
+
+    // 1. Фича рода на пути КАМНЯ неприкосновенна.
+    CHECK(fl.at(1, 0) == sm::FT_City,
+          "камень не перетирает фичу рода: город на пути дороги остаётся городом");
+    // 2. Фича рода на пути ГРУНТОВКИ неприкосновенна.
+    CHECK(fl.at(1, 2) == sm::FT_Village,
+          "грунтовка ложится только на пустоту: деревня остаётся деревней");
+    // 3. Камень бьёт грунтовку — свой же класс ниже рангом.
+    CHECK(fl.at(2, 0) == sm::FT_Road,
+          "камень кладётся поверх грунтовки — приоритет внутри класса дорог");
+    // 4. ОБРАТНАЯ ПОЛЯРНОСТЬ: пустота под масками ПОЛУЧАЕТ дорогу — гейт
+    //    держит фичу рода, а не запрещает проход вообще.
+    CHECK(fl.at(0, 0) == sm::FT_Road && fl.at(3, 0) == sm::FT_Road,
+          "пустота под камнем мостится: гейт держит фичу, а не дорогу");
+    CHECK(fl.at(0, 2) == sm::FT_DirtRoad && fl.at(3, 2) == sm::FT_DirtRoad,
+          "пустота под грунтовкой мостится тем же проходом");
+    // 5. Клетка без маски не тронута проходом.
+    CHECK(fl.at(1, 1) == sm::FT_None,
+          "клетка без маски остаётся как была — проход не трогает чужое");
+}
+
 // ── M-112: ЗАПИСЬ ФИЧИ ХОДИТ ОДНОЙ ДВЕРЬЮ, И АДРЕС У НЕЁ ОДИН ─────────────
 // Наряд снял девять сырых `data[y*w+x] = FT_…`. Утверждение «второй записи
 // нет» адреса в коде не имеет (AGENTS §0 п.2) и потому указывает СЮДА: тут
@@ -511,6 +575,7 @@ int main()
     test_feature_layer_reference_matrix();
     test_feature_water_is_the_plane_not_the_mask();
     test_feature_water_filter_uses_map_sea_level();
+    test_settlement_feature_survives_road_pass();
     test_feature_write_goes_through_one_door();
     return sm::test::report("feature_layer_parity_test");
 }
