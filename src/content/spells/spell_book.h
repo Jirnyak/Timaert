@@ -86,7 +86,7 @@ bool spellbook_cast(sub::SubObjects* objs, MacroStore* st,
 void spellbook_tick(SpellBook& sb, ecs::Pools& combat, std::uint32_t steps);
 
 // ── ДВЕРИ КЛАССА ИЗМЕНЕНИЙ «БАФ» — УРОВНЕМ СКВАДА (M-301) ────────────────
-// Сустейн СТОИТ на скваде (`standing_bonuses_sum@src/macro/squad.h` читает
+// Сустейн СТОИТ на скваде (`standing_bonuses_sum@src/bus/squad_sheet.h` читает
 // его биты рядом с надетым), значит всякое его переключение двигает
 // производные анкеты — потолки полос, спину и скорость. Писателей у набора
 // сустейна ровно ДВА, и второй не действие игрока вовсе: тик ГАСИТ платящие

@@ -1367,7 +1367,7 @@ libstdc++/MSVC (32 Б). Ещё две строки той же породы: `Ci
 - Было: три `std::string name`. Стало: `NameCol name{}` в `Landmark`,
   `City`, `PlayerState`.
 - Писатели: `state.cpp:184-187,360`, `politik.cpp:192,235,295` —
-  `name_set(x.name, generate_name(...))`; src/app/main.cpp:3149 «    if (cs.name[0] != '\0') app.gs.player.name = cs.name;» —
+  `name_set(x.name, generate_name(...))`; src/app/main.cpp:3152 «    if (cs.name[0] != '\0') app.gs.player.name = cs.name;» —
   `name_set(app.gs.player.name, cs.name)`.
 - Читатели: `.c_str()` → само поле; `.empty()` → `name[0] == '\0'`;
   procedural.cpp †426 (снесён) `ctx.name = s.name` — если `ctx.name` — `std::string`
@@ -2214,7 +2214,7 @@ DOD п.9 (у колонки обязан быть смысл и ОДИН пис�
    считаются НА ЧТЕНИИ дверью `calculate_derived`, нигде не хранятся;
  - **5 кэшированных колонок** `MacroNpcRuntime@src/ecs/components.h`:
    `travelRank`, `marathonRank`, `scoutRank`, `moveMult`, `carryPerSoulG` —
-   ОДНА дверь `refresh_body_from_sheet@src/macro/squad.h`, и это разряд Б;
+   ОДНА дверь `refresh_body_from_sheet`, и это разряд Б;
  - `overloadCost` — производная СУМКИ, а не листа: её обновляет свип ИИ каждую
    думку (`refresh_overload_cost@src/macro/npc_ai.cpp`). Спросить вслух, почему
    она колонка, если это чистая функция от `rt` и контейнера;

@@ -16,7 +16,8 @@
 #include "tables/npc.h"
 #include "tables/stock_key.h"   // MacroStock/MacroStockKey — словарь расписки
 #include "tables/forest.h"
-#include "macro/squad.h"              // sheet_of — THE door to "who is this"
+#include "bus/squad_sheet.h"          // sheet_of — THE door to "who is this"
+#include "bus/world_row.h"            // CreatureRef — головы контейнера (раньше ехал транзитом macro/squad.h)
 #include "sub/record.h"
 #include "tables/squad_type.h"   // squad_archetype — ось рода (M-90)
 #include "sub/body.h"

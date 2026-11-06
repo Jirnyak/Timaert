@@ -940,8 +940,11 @@ void draw_pre_battle_modal(App& app) {
     const auto& kind = st.kind[npc.slot];
     const sm::NpcTypeDef& def =
         sm::npc_def(sm::NPCType(std::uint8_t(kind.type)));
-    // Имя — колонка анкеты, одна дверь чтения (вердикт 3, ход 2).
-    const char* name = sm::squad_name(st, npc.slot);
+    // Имя — колонка анкеты, одна дверь чтения (вердикт 3, ход 2). Безымянной
+    // записи UI подставляет ярлык строки сам: фолбэк — забота ПРЕДСТАВЛЕНИЯ,
+    // слотовое написание двери с ним снесено ломтём 5 M-171 (DOD п.6).
+    const char* name = sm::squad_name(st, sm::handle_at(st, npc.slot));
+    if (!name) name = def.label;
     const int level = sm::squad_level(st, npc.slot);
     ImGui::Text("%s the %s (level %d) blocks your way!",
                 name, def.label, level);

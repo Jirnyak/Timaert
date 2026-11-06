@@ -228,7 +228,7 @@ const SpellBook* player_spellbook(const GameState& gs, const MacroStore& st);
 //  было неправдой по трём классам изменений сразу — надевание, квестовый
 //  опыт и гашение сустейна не звали её ни разу, а держали их две страховки.
 //  Теперь пересчёт зовёт не МОМЕНТ, а сама ДВЕРЬ изменения, и её имя —
-//  `refresh_squad_body@src/macro/squad.h`: у игрока здесь нет своего пути,
+//  `refresh_squad_body@src/bus/squad_sheet.h`: у игрока здесь нет своего пути,
 //  как не было и своего закона.)
 
 // THE player's OWNED base sheet — the ordinary CharacterSheet column of

@@ -10077,7 +10077,7 @@ onArrival  uint8    ЧЕМ СТАТЬ, КОГДА ПРИШЁЛ — NPCState
    · там же `avatarHealthFraction` при `maxHp == 0` отдавал 1.0 — ложная
      единица «полностью здоров» поверх hp = 0;
    · сила места была НЕМОНОТОННА ПО УСПЕХУ: победа поднимала потолок через
-     `squad_award_exp@src/macro/squad.h`, после чего доля здоровья `0/maxHp`
+     `squad_award_exp@src/bus/squad_sheet.h`, после чего доля здоровья `0/maxHp`
      = 0 и вклад анкеты ИСЧЕЗАЛ — город, выигравший бой, слабел;
    · `settle_avatar_fraction@src/macro/squad.h` при `maxHp == 0` звал
      `std::clamp(0, 1, 0)` — lo > hi, UB по стандарту, и достижимо это из
@@ -11467,7 +11467,7 @@ worldPlaces); потолок проекции мёртв, Roster-заём скв
 
 **Системы модификаторов заводить не надо — она уже есть.** Цепочка целиком:
 ячейка строки `{BonusId, magnitude}` → `BonusTotals` (`standing_bonuses_sum`) →
-эффективная анкета (`effective_sheet@src/macro/squad.h`) и её производные
+эффективная анкета (`effective_sheet@src/bus/anketa.h`) и её производные
 (`calculate_derived`, `get_carry_capacity`). Объект-модуль становится ТРЕТЬИМ
 слагаемым рядом с надетым и сустейн-спеллами, и нового типа вклада не появляется.
 

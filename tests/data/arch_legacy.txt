@@ -39,10 +39,8 @@
 channel	src/sub/engine.cpp	#include "macro/cell_facts.h"
 channel	src/sub/engine.cpp	#include "macro/map_generator.h"
 channel	src/sub/engine.cpp	#include "macro/player_entity.h"
-channel	src/sub/engine.cpp	#include "macro/squad.h"
 channel	src/sub/engine.cpp	#include "macro/state.h"
 channel	src/sub/engine.h	#include "macro/macro_world.h"
-channel	src/sub/spawn.cpp	#include "macro/squad.h"
 verdict	SKELETON.md	**Вердикт владельца 2026-09-25:** app-слой есть РЕДАКТОР над миром (ЗАКОН АГНОСТИЧНО�
 verdict	SKELETON.md	**ПРАВИЛО ОДЕВАНИЯ.** Ни один шаг не считается сделанным, пока в этом файле не �
 verdict	SKELETON.md	- интерьеры/этажи, берущие население и фауну клетки двери — смешение двух аг�

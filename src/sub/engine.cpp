@@ -14,7 +14,12 @@
 #include "macro/cell_facts.h"
 #include "tables/fact_kinds.h"  // fact_kind_def — горизонт интереса рода (дедуп зон)
 #include "tables/faction.h"
-#include "macro/squad.h"
+// Нитка `macro/squad.h` СНЯТА (ломоть 5 M-171): все её двери, которыми жил
+// этот файл, — rooted_handle_by_ordinal / squad_faction_slot / squad_name
+// (bus/store.h), standing_bonuses_of / squad_award_exp (bus/squad_sheet.h),
+// kill_fallen_squad_creatures (bus/squad_sweep.h) — формализованы НА шине.
+#include "bus/squad_sheet.h"
+#include "bus/squad_sweep.h"
 #include "macro/player_entity.h"
 #include "sub/vk_camera_math.h"
 #include "sub/lighting.h"

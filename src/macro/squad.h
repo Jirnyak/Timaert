@@ -17,6 +17,8 @@
 #include "macro/macro_stock.h"
 #include "macro/player_entity.h"
 #include "bus/spell_book_state.h"
+#include "bus/squad_sheet.h"
+#include "bus/squad_sweep.h"
 #include "bus/squad_walk.h"
 #include "macro/state.h"
 #include "macro/zones.h"
@@ -28,118 +30,10 @@
 
 namespace sm {
 
-// THE «sheet → body» refresh — ONE door for every body of the macro map,
-// the player's squad included: the sheet is the law, and everything derived
-// from it — the three bar ceilings AND the four cached scalars a march reads
-// (ecs::MacroNpcRuntime) — is refreshed here and nowhere else. Called by
-// make_npc at birth, by squad_award_exp when a level changes the sheet, by
-// the player's creation / point-spend / gear-change moments through the same
-// signature. It grew out of `refresh_leader_travel_stats` (maxSp + caches)
-// when landing 4 made the lord's fraction-preserving level-up rescale THE
-// rescale for all three bars of every body — before that the player's
-// ceilings moved by «keep the number, clamp» in one place and a full heal in
-// another, while the lord's kept the fraction: three laws for one event.
-// The KIND is required, not defaulted: the back this avatar hauls with is a
-// column of his row (npc.h NpcTypeDef::haulMult), and a default of "a person"
-// would be silently wrong for exactly the rows that matter — a caravan given a
-// man's shoulders is a caravan that can no longer afford to travel. A missing
-// argument should be a compile error, not a stranded trade route.
-// `standing` — what stands on the body beyond its sheet (worn Derived rows:
-// MovePct, CarryKg — bonus.h affix tail). nullptr = nothing stands, which is
-// every avatar until macro NPCs wear gear; the sheet passed in is already the
-// EFFECTIVE one, so only the derived cells are read from it here.
-// `pools` is the body whose bars this sheet caps: the ceiling and the value
-// it caps must be refreshed by one door, or `maxSp` drifts away from the `sp`
-// it bounds — the drift the old helper was written to prevent. `rt` may be
-// null for a body with no march (none exists today on the macro map; the
-// argument keeps the door honest about what is bars and what is legs).
-inline void refresh_body_from_sheet(ecs::Pools& pools,
-                                    ecs::MacroNpcRuntime* rt,
-                                    const CharacterSheet& sheet,
-                                    NPCType type,
-                                    const BonusTotals* standing = nullptr) {
-    // ── The ceilings, each bar preserving its FRACTION ────────────────────
-    // Owner 2026-09-10: «доля у всех» — the lord's level-up law is now the
-    // ONLY rescale in the game, the player's included. A level, a spent point
-    // or a donned coat is never a free heal and never a theft: the ceiling
-    // follows the sheet, the fraction is what survives. A bar whose ceiling
-    // did not move is not touched AT ALL — this door is walked on every macro
-    // tick of the player's squad, and an unconditional rescale would be a
-    // slow rounding drain, not an identity. Dead stays dead: a growing
-    // ceiling must not resurrect a zero hp. An exhaustion DEBT (sp <= 0)
-    // survives any rescale as-is — levelling mid-collapse does not forgive
-    // it. The roundings are the ones the lord's level-up always used
-    // (truncation on hp/mp, lround on sp) — kept verbatim so the one door is
-    // byte-identical to the law it absorbed.
-    {
-        const int newMax = body_max_hp(sheet, npc_def(type).combat);
-        if (newMax != pools.maxHp) {
-            const float frac = pools.maxHp > 0
-                ? std::clamp(float(pools.hp) / float(pools.maxHp), 0.0f, 1.0f)
-                : 1.0f;
-            pools.maxHp = newMax;
-            if (pools.hp > 0) {
-                pools.hp = std::clamp(int(float(newMax) * frac), 1, newMax);
-            }
-        }
-    }
-    {
-        const int newMax = body_max_mp(sheet, npc_def(type).combat);
-        if (newMax != pools.maxMp) {
-            const float frac = pools.maxMp > 0
-                ? std::clamp(float(pools.mp) / float(pools.maxMp), 0.0f, 1.0f)
-                : 1.0f;
-            pools.maxMp = newMax;
-            pools.mp = std::clamp(int(float(newMax) * frac), 0, newMax);
-        }
-    }
-    {
-        const int newMax = body_max_sp(sheet, npc_def(type).combat);
-        if (newMax != pools.maxSp) {
-            const float frac =
-                float(pools.sp) / float(std::max<int>(1, pools.maxSp));
-            pools.maxSp = newMax;
-            if (pools.sp > 0) {
-                pools.sp = std::clamp(
-                    int(std::lround(frac * float(newMax))), 1, newMax);
-            }
-        }
-    }
-
-    // ── The march caches, when the body has legs ──────────────────────────
-    if (!rt) return;
-    rt->travelRank = std::uint8_t(
-        std::clamp(sheet.skills.of(SkillId::Travel), 0, kMaxSkillRank));
-    rt->marathonRank = std::uint8_t(
-        std::clamp(sheet.skills.of(SkillId::Marathon), 0, kMaxSkillRank));
-    rt->scoutRank = std::uint8_t(
-        std::clamp(sheet.skills.of(SkillId::Scouting), 0, kMaxSkillRank));
-    // The cache is the walk's own float; the LAW is whole percent (4в).
-    rt->moveMult = float(
-        (standing
-             ? calculate_derived(sheet.attributes, sheet.skills, *standing)
-             : calculate_derived(sheet.attributes, sheet.skills))
-            .moveSpeedPct)
-        / 100.0f;
-    // СВОЯ СПИНА — ЭТО АНКЕТА И ЕЁ СИЛА, И КОЛОНКИ СТРОКИ ЗДЕСЬ НЕТ ВОВСЕ
-    // (ЗАКОН ДВУХ ТАБЛИЦ, вердикт владельца 2026-10-20: «атрибут сила за
-    // пернеосимый вес … а существа дают доп вес»). Здесь стоял множитель
-    // `haul > 0.0f ? haul : 1.0f`, и он врал ДВАЖДЫ: переворачивал АВТОРСКИЙ
-    // НОЛЬ колонки (та объявляет безрукие строки прямо — «ни кролика, ни
-    // волка, ни ястреба, ни дракона в этом мире не запрягают», а умолчание
-    // колонки есть 1.0, так что перехватить он мог ТОЛЬКО авторский ноль) и
-    // делал переносимый вес сквада функцией его СТРОКИ, тогда как строка —
-    // понятие таблицы ОБЪЕКТОВ, а сквад есть АНКЕТА. `haulMult` читается
-    // теперь ровно в одном месте — по головам инвентаря, дверью ниже.
-    rt->carryPerSoulG = standing
-        ? get_carry_capacity(sheet.attributes, sheet.skills, *standing)
-        : get_carry_capacity(sheet.attributes, sheet.skills);
-    // (ЗДЕСЬ СТОЯЛО `rt->carryCap = rt->carryPerSoul` — засев второй колонки,
-    //  которую потом догоняла `refresh_squad_carry`. Обе снесены 2026-10-20:
-    //  весь обоз теперь СКЛАДЫВАЕТСЯ У МЕСТА УПОТРЕБЛЕНИЯ дверью
-    //  `carry_capacity_g` ниже, поэтому «засеять, а потом не забыть
-    //  догнать» перестало существовать как форма.)
-}
+// (ДВЕРЬ «sheet → body» `refresh_body_from_sheet` ПЕРЕЕХАЛА в
+//  bus/squad_sheet.h ломтём 5 M-171 вместе со всей историей трёх законов
+//  одного события; здесь остался её потребитель carry_capacity_g ниже.
+//  Приезжает сюда транзитом bus/squad_sheet.h.)
 
 // ── ОБОЗ = СВОЯ СПИНА ОТ АНКЕТЫ ПЛЮС ГРАММЫ ОБЪЕКТОВ ─────────────────────
 // CANON S10 дословно: «берёт по своей грузоподъёмности — СУММА листов
@@ -203,37 +97,14 @@ inline std::int64_t carry_capacity_g(const MacroStore& st,
 //  читает ТОЛЬКО стор и живёт у эмитента, рядом со справочником, который
 //  отвечает. Здесь стоял его СКАН всех 16384 слотов — M-271.)
 
-// ── СТРОКА СКВАДА — ОДНА ДВЕРЬ НАД КОЛОНКОЙ РОДА (M-301) ────────────────
-// `npc_def` индексирует каталог БЕЗ проверки, поэтому у вопроса «какая у
-// него строка» есть ровно один законный вид: отсечь выход за каталог и
-// ответить `Peasant`. Он был выписан ТРИЖДЫ дословно (`squad_name`,
-// `auto_battle_side_of`, `squad_award_exp`), а дверь листа игрока
-// (`refresh_player_body`) спрашивала то же НЕЗАЩИЩЁННО —
-// `NPCType(kind.type)`, то есть на порченой колонке читала мимо каталога.
-// Один закон — одна дверь (DOD п.6).
-//
-// ДВА СОСЕДНИХ САЙТА СЮДА НЕ СЛИВАЮТСЯ, И ЭТО НЕ НЕДОДЕЛКА: `sheet_owned_at`
-// отвечает на выход за каталог «не именной», а счёт награды за павшего
-// лидера — «награды нет». Это ДРУГИЕ законы, а не та же проверка (DOD п.6
-// судит два ответа на ОДИН вопрос, а не похожие выражения).
-inline NPCType squad_row_type(const MacroStore& st,
-                              std::uint16_t slot) noexcept {
-    const std::uint16_t raw = st.kind[slot].type;
-    return raw < std::uint16_t(NPCType::Count)
-        ? NPCType(std::uint8_t(raw)) : NPCType::Peasant;
-}
+// (ДВЕРЬ СТРОКИ `squad_row_type` ПЕРЕЕХАЛА в bus/store.h ломтём 5 M-171 —
+//  дверь над колонкой рода, читает только kind и каталог; приезжает сюда
+//  транзитом bus/store.h.)
 
-// ── ИМЯ СКВАДА — ОДНА ДВЕРЬ ЧТЕНИЯ КОЛОНКИ (вердикт 3, ход 2) ───────────
-// Имя анкеты живёт колонкой store (ecs::SquadName, рождение рендерит дефолт
-// из names[...]); всякий показ имени читает ЕЁ, а не перевыводит из индекса
-// — перевывод был бы вторым ответом на «как его зовут» (DOD п.6) и
-// сломался бы первым же переименованием. Пустая колонка (порченые данные) —
-// честный fail-soft в ярлык строки каталога.
-inline const char* squad_name(const MacroStore& st, std::uint16_t slot) {
-    const char* t = st.name[slot].text;
-    if (t[0] != '\0') return t;
-    return npc_def(squad_row_type(st, slot)).label;
-}
+// (СЛОТОВОЕ НАПИСАНИЕ `squad_name(st, slot)` СНЕСЕНО ломтём 5 M-171 —
+//  второй ответ на «как его зовут» рядом с хэндловой дверью
+//  `squad_name@src/bus/store.h` (DOD п.6). Фолбэк в ярлык строки был
+//  заботой ПРЕДСТАВЛЕНИЯ и уехал в единственный сайт вызова — UI.)
 
 // (ДВЕРЬ УРОВНЯ `squad_level` ПЕРЕЕХАЛА в bus/store.h ломтём 5 M-171 вместе
 //  со своей историей M-246а — «анкета источник», нулевой порог после неё
@@ -497,78 +368,10 @@ inline void reconcile_rooted_flock(GameState& gs, MacroStore& st,
     }
 }
 
-// ── ЗДЕСЬ БЫЛ ПАРАМЕТР `GameState& gs`, И ОН СНЯТ ВМЕСТЕ С ЧУЖОЙ ЗАПИСЬЮ ───
-// Он был нужен РОВНО для `shift_home_flock` (некролог в теле ниже), то есть
-// для того единственного, что эта дверь делать не вправе. Сняв запись, мы
-// сняли и мир из подписи — и это не косметика, а СТЕНА ПОД КОМПИЛЯТОРОМ
-// (§8 п.6: лучшая форма свидетеля — нарушение, которое невозможно собрать):
-// дверь без `GameState` не может написать число поля НИКАК, потому что
-// `feature_number_write` без мира невыразима. Комментарий можно не прочесть,
-// подпись — нельзя.
-//
-// И ОНА ЖЕ СУЖАЕТ КАНАЛ: двое звонящих живут в `src/sub/engine.cpp`, и у них
-// пропал повод доставать `*gs_` — то есть макро-состояние — ради вызова,
-// которому оно не нужно (ЗАКОН ДВУХ МИРОВ п.3: канал узок ПО ПОСТРОЕНИЮ, а не
-// по дисциплине).
-inline int kill_fallen_squad_creatures(MacroStore& st) {
-    int killed = 0;
-    // The player's own squad is never swept: он не лидер, чьи люди уходят,
-    // когда он падает, — его родная запись есть БИТ КОЛОНКИ (playerFlag.home,
-    // M-255), тот же предикат, каким владение листом узнаёт сквад игрока
-    // (sheet_owned_at).
-    // Это вопрос «ЧЬЯ ЭТО ЗАПИСЬ», а не «кто умер», поэтому веткой по роду
-    // убитого он не является и вердикт «не важно кто умер» его не касается.
-    // Существа живут в ЕДИНОМ контейнере сквада (M-71).
-    // Порядок обхода — закон (squad_walk.h): «чьи люди легли первыми» не
-    // должно зависеть от кишки хранилища. Население — ВЕДОМОСТЬ ПАВШИХ
-    // (M-376): прежний скан всех 16384 слотов на КАЖДЫЙ вызов умер, свип
-    // читает O(павших); строку перерождённого слота отсеивает перепроверка
-    // alive+dead. Вектор пуст почти каждый тик (смерть — редкое событие),
-    // аллокации нет.
-    std::vector<SquadWalkEntry> order;
-    for (std::uint32_t i = 0; i < st.deadRowCount; ++i) {
-        const std::uint16_t slot = st.deadRows[i];
-        if (st.alive[slot] == 0 || st.dead[slot] == 0) continue;
-        if (st.playerFlag[slot].home != 0) continue;
-        order.push_back({st.spawnId[slot].index, slot});
-    }
-    std::sort(order.begin(), order.end(),
-              [](const SquadWalkEntry& a, const SquadWalkEntry& b) {
-                  return a.ordinal < b.ordinal;
-              });
-    for (const SquadWalkEntry& sw : order) {
-        auto& bag = st.inventory[sw.slot];
-        if (creatures_empty(bag.inv)) continue;
-        killed += creatures_kill_all(bag.inv);
-        // ЗДЕСЬ СТОЯЛ `shift_home_flock(gs, st, parent_of(st, sw.slot),
-        // -homeSouls)` — ТО ЕСТЬ ЭТА ДВЕРЬ ВЕЛА ЧУЖУЮ ЧАСТНОСТЬ, и вела её
-        // ИЗ ШВА: двое из шести её звонящих живут в `src/sub/engine.cpp`
-        // (жнец мёртвых тел и `leave`). Снято ТОЙ ЖЕ правкой, какой её уже
-        // снял соседний ряд стока (`write_creatures@src/macro/macro_stock.cpp`),
-        // и по тому же вердикту владельца 2026-10-27, дословно: «прописывать
-        // вручную смену поля не надо тут потому что им занимается сам модуль
-        // города … а тут по единой системе просто убийство существа в
-        // субмире». Основание — ЗАКОН КОНТЕЙНЕРА п.3: «Убил кого-то в
-        // субмире — дельта снимает голову из контейнера, и БОЛЬШЕ НИЧЕГО;
-        // прописывать оттуда смену числа поля ЗАПРЕЩЕНО».
-        //
-        // РАЗЛИЧИТЕЛЬ ТОТ ЖЕ ОДИН ВОПРОС: ЦЕЛЬ ЛИ ПОЛЕ У ДЕЙСТВИЯ. У рубки и
-        // копки поле ЕСТЬ предмет способности, поэтому их дельта пишет поле по
-        // праву. У смерти головы целью было ТЕЛО, а число паствы — посторонняя
-        // величина рядом, да ещё и под клеткой ТРЕТЬЕГО сквада (дома павшего).
-        //
-        // И ЗАПИСЬ БЫЛА НЕ НЕСУЩЕЙ, что проверяется построением, а не надеждой:
-        // число паствы сводит `reconcile_rooted_flock@src/macro/squad.h` —
-        // АБСОЛЮТОМ по контейнерам, раз в день (`src/macro/world_tick.cpp`), и
-        // в его проход мёртвый слот не попадает вовсе (гейт `st.dead[slot]`).
-        // Значит ответ не потерян, а передан модулю места, которому он и
-        // принадлежит; инкремент же был разрядом Б по DOD п.9 — дисциплиной
-        // поверх свода, который разойтись не может.
-        // (→ `SCARS.md` «контейнер-пара-дверей»: сведение этой пары в одну
-        //  дверь само стало дефектом — дверь принялась вести чужую частность.)
-    }
-    return killed;
-}
+// (СВИП ПАВШИХ `kill_fallen_squad_creatures` ПЕРЕЕХАЛ в bus/squad_sweep.h
+//  ломтём 5 M-171 вместе со всей историей снятой чужой записи («контейнер-
+//  пара-дверей»): подпись без GameState — стена под компилятором, двое из
+//  шести звонящих — шов. Приезжает сюда транзитом bus/squad_sweep.h.)
 
 // (`dead_rosters_remain` вырезана 2026-09-22: её комментарий утверждал «тик-
 // драйверы спрашивают это», а вызовов не было НИ ОДНОГО — ни одного с тех
@@ -782,91 +585,14 @@ inline CharacterSheet* owned_sheet(MacroStore& st, MacroHandle h) {
 //
 // `sheet_owned_at` ОСТАЁТСЯ, И ЭТО НЕ ОСТАТОК: он отвечает на ДРУГОЙ вопрос
 // — «владеет ли сквад своим листом», то есть надо ли писать в него рост.
-inline CharacterSheet sheet_of(const MacroStore& st, MacroHandle h) {
-    if (!st.valid(h))
-        return make_character_sheet(NPCType::Peasant, 1, avatar_sheet_seed(0));
-    return st.sheet[h.slot];
-}
+// (сама дверь `sheet_of` ПЕРЕЕХАЛА в bus/squad_sheet.h ломтём 5 M-171 —
+//  история дуализма выше осталась у места, где он жил.)
 
-// WHAT STANDS ON A MACRO BODY, summed once: what it is wearing
-// (ecs::BodyEquipment) and what is burning on it (the sustained bits of its
-// own SpellBook) — both opt-in components any macro body may carry, both
-// rows of the one bonus registry. Grew out of player_standing_bonuses
-// (посадка Б): the player is this door's ordinary case — the coat hangs on
-// his squad entity like on any lord's. Sustained magnitudes are scaled by
-// the BASE training on purpose: the standing sum cannot read the sheet it
-// is itself a term of.
-// Сам закон суммирования — ОДИН, от указателей: слот-дверь ниже зовёт его,
-// второй копии закона не существует (метод §5 п.1).
-inline BonusTotals standing_bonuses_sum(const ecs::BodyEquipment* eq,
-                                        const Inventory* inv,
-                                        const SpellBook* book,
-                                        const Skills& base) {
-    BonusTotals t{};
-    if (eq && inv) t += worn_bonuses(eq->gear, *inv);
-    if (book) {
-        for (int ord = 0; ord < kSpellCount; ++ord) {
-            if (!spellbook_has_sustained(*book, ord)) continue;
-            const SpellDef& def = kSpellDefs[ord];
-            for (const Bonus& b : def.effects) {
-                accumulate(t, spell_bonus(b, base, spell_school(def)));
-            }
-        }
-    }
-    return t;
-}
-// Дверь по хэндлу — целиком по колонкам.
-inline BonusTotals standing_bonuses_of(const MacroStore& st, MacroHandle h) {
-    if (!st.valid(h)) return BonusTotals{};
-    return standing_bonuses_sum(&st.gear[h.slot], &st.inventory[h.slot].inv,
-                                &st.spellBook[h.slot],
-                                sheet_of(st, h).skills);
-}
-
-// The sheet the world should actually ask about ANY macro body — THE
-// effective door (phase 4 law, generalized by посадка Б): the character it
-// is (sheet_of) PLUS everything standing on it. Every reader of a body's
-// numbers (bars, damage, march, carry, prices, XP, the daily bread law)
-// walks through here; writes (level-up, learning) go to the OWNED base
-// sheet, never to this copy.
-// Эффективный лист по хэндлу — та же композиция, оба слагаемых по колонкам.
-inline CharacterSheet effective_sheet_of(const MacroStore& st, MacroHandle h) {
-    return effective_sheet(sheet_of(st, h), standing_bonuses_of(st, h));
-}
-
-// ── ПЕРЕСЧЁТ ПРОИЗВОДНЫХ АНКЕТЫ — ОДНА ДВЕРЬ УРОВНЕМ СКВАДА (M-301) ──────
-// Вся сводка в одном месте: что на скваде стоит (`standing`), какой у него
-// эффективный лист, какая строка — и единственная дверь листа. Ниже стоят
-// ДВЕРИ КЛАССОВ ИЗМЕНЕНИЙ, и каждая кончается этим звонком, поэтому забыть
-// пересчёт в них невыразимо (разряд А, вердикт владельца «давай А»).
-//
-// ЗДЕСЬ СХОДЯТСЯ ПЯТЬ ОТВЕТОВ НА ОДИН ВОПРОС МИРА — «свежа ли производная
-// анкеты», — и четыре из них были лишними. Перепись П-26 назвала их все:
-//  1. ДИСЦИПЛИНА ЗВОНКОВ `refresh_player_body` — 8 прод-сайтов, и у трёх
-//     классов изменений звонка не было вовсе (надевание, квестовый опыт,
-//     гашение сустейна);
-//  2. СТОРОЖ главного цикла — каждый тик сравнивал сумму надетого с прошлой
-//     (`lastStandingBonuses`), то есть делал работу вслепую и только за
-//     игрока (вердикт владельца: «да он финя сноси какойто говносторож»);
-//  3. БЕЗУСЛОВНЫЙ ПЕРЕСЧЁТ КАЖДЫЙ МАКРО-ТИК в хвосте
-//     `ensure_macro_player_entity` — страховка за забытые звонки, и шапка
-//     сама это говорила: «a sheet-change moment anywhere that forgets its
-//     own refresh_player_body call heals within one macro tick». Наверху
-//     она делала сторожа чистой избыточностью (оба в одном тике), а под
-//     землёй не работала вовсе — там `ensure_macro_player_entity` не
-//     зовётся, и переодевание ловил сторож один;
-//  4. САМОГЕЙТ ПОТОЛКОВ внутри двери листа — он ЗАКОНЕН и остаётся: это не
-//     ответ на «свежа ли», а защита от дрейфа округлений при тождестве.
-// Цена трёх лишних была числом: `standing_bonuses_of` сканирует 480 ячеек
-// тела (`kEquipCells`) и 10 ординалов спеллов, и наверху игрок платил этот
-// скан ДВАЖДЫ за макро-тик.
-inline void refresh_squad_body(MacroStore& st, MacroHandle h) {
-    if (!st.valid(h)) return;
-    const BonusTotals bt = standing_bonuses_of(st, h);
-    refresh_body_from_sheet(st.pools[h.slot], &st.runtime[h.slot],
-                            effective_sheet(st.sheet[h.slot], bt),
-                            squad_row_type(st, h.slot), &bt);
-}
+// (КЛАСТЕР ДВЕРЕЙ АНКЕТЫ — standing_bonuses_sum / standing_bonuses_of /
+//  effective_sheet_of / refresh_squad_body — ПЕРЕЕХАЛ в bus/squad_sheet.h
+//  ломтём 5 M-171: тела читают только стор, анкету и каталоги. История
+//  пяти ответов на «свежа ли производная» (П-26) — рядом M-301 реестра.
+//  Приезжает сюда транзитом bus/squad_sheet.h.)
 
 // (Двери связи — suzerain_of / parent_of / set_relation / tithe_of /
 // owes_tithe — живут у эмитента идентичности, `store.h`: рождение места
@@ -1089,127 +815,15 @@ inline AutoBattleSide auto_battle_side_of(const MacroStore& st, MacroHandle h) {
     return s;
 }
 
-// Pay a squad's victory. XP flows through the ONE reward law
-// (npc_xp_reward) and is consumed by the SAME curve the player climbs
-// (exp_to_next_level, inside award_exp); a level gained recomputes the
-// body's ceilings from its OWN grown sheet while PRESERVING the wound
-// fraction — the currency wounds already travel in. This is what makes the
-// "wandering tsar" a data row: any squad that wins fights, levels.
-// ── ОПЛАТА УБИЙСТВА: ОДНА дверь роста для ВСЯКОГО сквада ─────────────────
-// §41 корень 5, вердикт владельца 2026-09-10: «байт умирает; жнец резолвит
-// лидера убийцы для ВСЕХ — игрок просто лидер своего сквада». Всякий сквад
-// растёт ЧЕРЕЗ СВОЮ АНКЕТУ: exp в лист с WIS-дивидендом его эффективного
-// листа, очки атрибутов/скиллов КОПЯТСЯ нетраченными до контента трат
-// (учителя/ИИ-траты — вердикт «копить»); потолки полос следуют за листом
-// через ту же одну дверь пересборки.
-//
-// ЗДЕСЬ БЫЛО ДВА ЗАКОНА РОСТА, И ВТОРОЙ СТИРАЛ АНКЕТЫ (слиты 2026-10-18,
-// вердикт владельца «одна дверь роста для всех»). Невладеющий лист шёл в
-// `award_leader_xp`, которая копила опыт в СВОЕЙ колонке `runtime.xp`, вела
-// СВОЙ счёт уровней по колонке `ecs::NpcLevel` и на каждом уровне
-// ПЕРЕКАТЫВАЛА анкету из сида — `st.sheet[slot] = make_character_sheet(…)`.
-// Для сквада, чья анкета пришла не броском, а ТАБЛИЦЕЙ, это было стирание:
-// город и деревня теряли все свои ремёсла и торговлю НАВСЕГДА (веса роли
-// `Peasant` дают этим пяти ранга́м вес 0, то есть обратно они не отрастают
-// по построению), и мир переставал производить. Достижимо это было одной
-// победой: индекс сквадов фильтрует только `dead`, поэтому неподвижный
-// сквад — законный противник автобоя и законный победитель.
-//
-// ЗАКОН АНКЕТЫ п.5 и назвал верную форму заранее: «ПУСТОЙ ЛИСТ ЕСТЬ
-// ЗАКОННОЕ ЗНАЧЕНИЕ… Отдельной ветки „а это место“ для них не нужно:
-// пустота — значение, а не исключение». Одна дверь, ветки по владению нет.
-//
-// ЧТО УМЕРЛО ВМЕСТЕ С ВТОРЫМ ЗАКОНОМ: колонка `ecs::NpcLevel` (уровень —
-// `levelData.level`, M-246а) и колонка `runtime.xp` (опыт — `levelData.exp`,
-// и он уже ехал в сейв внутри листа; её единственные писатель и читатель
-// жили ВНУТРИ снесённой функции, то есть она была сиротой по DOD п.9).
-//
-// БАЛАНСНОЕ СЛЕДСТВИЕ, НАЗВАННОЕ ВСЛУХ (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ): у
-// транзиентных сквадов атрибуты и ранги больше не добираются сами на
-// уровне-апе — очки КОПЯТСЯ нетраченными, как у игрока и именных. До
-// контента трат такой сквад слабее прежнего; это калибровка, и двигать её
-// надо числами, а не возвратом второго закона.
-// ── ДВЕРЬ КЛАССА «ПРОКАЧКА» (M-301) ──────────────────────────────────────
-// ЗДЕСЬ ЗВАЛАСЬ `award_kill_xp`, И ИМЯ ВРАЛО ПРО ОХВАТ: дверь никогда не
-// спрашивала, откуда опыт, — убийство, квестовая награда и консоль суть ОДИН
-// класс изменения анкеты. Квестовая награда при этом шла МИМО
-// (`award_exp(sheet->levelData,…)@src/events/quests/quest_engine.cpp`), то
-// есть правила роста у неё были свои: ни пересчёта производных, ни единой
-// точки. Переименование законно и обязательно (ЗАКОН ИМЕНИ п.5): имя
-// называло один звонящий вместо класса.
-inline int squad_award_exp(MacroStore& st, MacroHandle h, int xp) {
-    if (xp <= 0 || !st.valid(h)) return 0;
-    const std::uint16_t slot = h.slot;
-    CharacterSheet& own = st.sheet[slot];
-    // ЧТО СТОИТ НА СКВАДЕ — СЧИТАЕТСЯ ОДИН РАЗ И ЕДЕТ ДАЛЬШЕ ЦЕЛИКОМ (M-301).
-    // Здесь дважды звалась `effective_sheet_of`, то есть сумма надетого
-    // считалась ДВА раза, и — хуже — второй её результат уходил в дверь
-    // БЕЗ ЧЕТВЁРТОГО АРГУМЕНТА. Эффективный лист несёт только ячейки
-    // атрибутов и рангов; ПРОИЗВОДНЫЕ ячейки надетого (`MovePct`, `CarryKg`
-    // — хвост реестра бонусов) дверь накладывает отдельно, по `standing`.
-    // Значит пересчёт на уровне-апе СТИРАЛ их из обеих кэшированных колонок:
-    // надетый аффикс `of_the_mule` пропадал из спины `carryPerSoulG`, а
-    // хаста — из `moveMult`, и возвращались они только переодеванием.
-    //
-    // ПОЛЛ-ГЕЙТ ГЛАВНОГО ЦИКЛА ЭТУ ДЫРУ НЕ ЛОВИТ ПО ПОСТРОЕНИЮ: он сторожит
-    // ИЗМЕНЕНИЕ суммы надетого (`main.cpp` — `standing != lastStandingBonuses`),
-    // а на уровне-апе надетое не менялось, значит сторож молчит и стёртое
-    // значение живёт до следующего переодевания.
-    //
-    // СЕГОДНЯ ЭТО СТРЕЛЯЕТ ТОЛЬКО ПО ИГРОКУ, И ЭТО ЗАМЕРЕНО, А НЕ ВЫВЕДЕНО:
-    // зонд на 3 сидах × 128 дней дал 15 уровней-апов, из них с непустыми
-    // производными ячейками — НОЛЬ, потому что макро-сквад не носит ничего
-    // (`gear_init` ставит пустые ячейки при рождении, надевает только игрок
-    // через вкладку снаряжения и консоль). Правка всё равно нужна: пустота
-    // здесь — свойство КОНТЕНТА, а не формы, и первый надетый НПЦ-плащ сделал
-    // бы дефект живым молча.
-    const BonusTotals standing = standing_bonuses_of(st, h);
-    const CharacterSheet eff = effective_sheet(own, standing);
-    const int gained = award_exp(
-        own.levelData, xp,
-        calculate_derived(eff.attributes, eff.skills).expMultPct);
-    if (gained > 0) {
-        // Потолки и доли следуют за листом через ТУ ЖЕ одну дверь пересчёта
-        // — она сама читает колонки слота ПОСЛЕ роста (`own` — ссылка на
-        // колонку, и `award_exp` уже сдвинул её `levelData`). Сумма надетого
-        // считается внутри двери второй раз, и это осознанно: разойтись она
-        // не может (между двумя звонками мир не менялся), а цена — один скан
-        // против своего пути пересчёта рядом с общим.
-        refresh_squad_body(st, h);
-    }
-    return gained;
-}
+// (ДВЕРЬ КЛАССА «ПРОКАЧКА» `squad_award_exp` ПЕРЕЕХАЛА в bus/squad_sheet.h
+//  ломтём 5 M-171 вместе с вердиктами «одна дверь роста для всех» и
+//  «байт умирает; жнец резолвит лидера убийцы для ВСЕХ»; история второго
+//  закона роста, стиравшего анкеты, — ряд M-246а.)
 
-// ── ДВЕРЬ КЛАССА «ТРАТА ОЧКОВ» (M-301) ───────────────────────────────────
-// Уровень даёт ОЧКИ, а лист двигает их ТРАТА — значит классов изменений тут
-// два, и у второго три входа: атрибут, ранг умения, изучение с нуля. Низкие
-// двери (`spend_*@src/bus/anketa.h`) остаются и остаются ПУБЛИЧНЫМИ: их
-// законно зовёт создание персонажа (`src/ui/screens.cpp`) и прокат листа
-// (`make_character_sheet`), где тела ещё нет вовсе и пересчитывать нечего.
-// Разница названа вслух: ниже — АРИФМЕТИКА ЛИСТА, здесь — ИЗМЕНЕНИЕ АНКЕТЫ
-// ЖИВОГО СКВАДА, и только у второго есть производные.
-inline bool squad_spend_attribute(MacroStore& st, MacroHandle h,
-                                  AttributeId id) {
-    if (!st.valid(h)) return false;
-    CharacterSheet& own = st.sheet[h.slot];
-    if (!spend_attribute_point(own.levelData, own.attributes, id)) return false;
-    refresh_squad_body(st, h);
-    return true;
-}
-inline bool squad_spend_skill(MacroStore& st, MacroHandle h, SkillId id) {
-    if (!st.valid(h)) return false;
-    CharacterSheet& own = st.sheet[h.slot];
-    if (!spend_skill_point(own.levelData, own.skills, id)) return false;
-    refresh_squad_body(st, h);
-    return true;
-}
-inline bool squad_spend_learn(MacroStore& st, MacroHandle h, SkillId id) {
-    if (!st.valid(h)) return false;
-    CharacterSheet& own = st.sheet[h.slot];
-    if (!spend_learn_pick(own.levelData, own.skills, id)) return false;
-    refresh_squad_body(st, h);
-    return true;
-}
+// (ДВЕРИ КЛАССА «ТРАТА ОЧКОВ» squad_spend_attribute/skill/learn ПЕРЕЕХАЛИ
+//  в bus/squad_sheet.h ломтём 5 M-171; низкие двери spend_* остаются в
+//  bus/anketa.h публичными — там арифметика листа, тут было изменение
+//  анкеты живого сквада.)
 
 // ── ДВЕРЬ КЛАССА «УРОВЕНЬ ПО КНОПКЕ» (M-301) ─────────────────────────────
 // Отдельный вход в тот же класс, что `squad_award_exp`: опыт уже накоплен, и

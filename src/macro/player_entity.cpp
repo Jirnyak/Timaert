@@ -187,7 +187,7 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
     // свидетель его не видел.
     //
     // Теперь пересчёт живёт ВНУТРИ дверей классов изменений
-    // (`refresh_squad_body@src/macro/squad.h` и её звонящие), поэтому
+    // (`refresh_squad_body@src/bus/squad_sheet.h` и её звонящие), поэтому
     // страховать нечего: место, где анкета изменилась, и место, где она
     // пересчитана, — одно и то же место.
 }
@@ -317,7 +317,7 @@ const ecs::Pools* player_pools(const GameState& gs, const MacroStore& st) {
 
 // (Тело `refresh_player_body` снесено — M-301; см. некролог в шапке. Строка
 //  существа, которую она читала НЕЗАЩИЩЁННО (`NPCType(kind.type)`), спрашивается
-//  теперь дверью `squad_row_type@src/macro/squad.h`.)
+//  теперь дверью `squad_row_type@src/bus/store.h`.)
 
 SpellBook* player_spellbook(const GameState& gs, MacroStore& st) {
     const std::uint16_t slot = flag_slot_or_none(gs, st);
