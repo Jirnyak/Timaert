@@ -469,7 +469,7 @@ void settle_march_rhythm(MacroHandle e, const MacroPos& p,
         && rt.state != std::uint8_t(NPCState::Resting)) {
         rt.stateAfterPause = rt.state;   // пауза, не амнезия (components.h)
         rt.state = std::uint8_t(NPCState::Resting);
-        rt.stateTimer = 0;
+        rt.recoverySteps = 0;
     }
 
     // A body is STOPPED when it is where it meant to be, when it DECIDED to
@@ -831,8 +831,7 @@ void ai_home_wanderer(MacroHandle self, MacroPos& p,
     ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
 
     if (rt.state == std::uint8_t(NS::Idle)) {
-        --rt.stateTimer;
-        if (rt.stateTimer <= 0) {
+        if (!squad_recovering(rt)) {
             float dsq = torus_dist_sq(p.x, p.y, home.x, home.y,
                                       float(ctx.mapW), float(ctx.mapH));
             if (dsq > 400.0f) {
@@ -852,7 +851,8 @@ void ai_home_wanderer(MacroHandle self, MacroPos& p,
         || rt.state == std::uint8_t(NS::Returning)) {
         if (at_goal(p, g, ctx)) {
             ecs::goal_arrive(g, rt);
-            rt.stateTimer = std::int16_t(10 + rand_int(ctx, 20));
+            charge_squad_recovery(rt,
+                std::uint32_t((10 + rand_int(ctx, 20)) * kAiTicks));
             return;
         }
         const XY t = goal_xy(g, ctx);
@@ -1095,7 +1095,7 @@ bool find_home_pasture(const TickContext& ctx, float px, float py,
 void wake_from_rest(ecs::MacroNpcRuntime& rt) {
     rt.state = rt.stateAfterPause;
     rt.stateAfterPause = std::uint8_t(NPCState::Idle);
-    rt.stateTimer = 0;
+    rt.recoverySteps = 0;
 }
 
 
@@ -1505,13 +1505,10 @@ private:
     const TickContext& ctx_;
 };
 
-// ПЕРИОД ПРОИЗВОДСТВЕННОГО АКТА — ДЕНЬ, СЧИТАННЫЙ В ДУМКАХ, И ОН ВЫВЕДЕН, А
-// НЕ НАЗНАЧЕН (ЗАКОН КОНСТАНТ + «калибровать только в тиках игры»): думка
-// сквада идёт раз в `kAiTicks` мировых тиков, в сутках `kTicksPerDay`
-// тиков — значит сутки есть ровно их отношение, 8192/32 = 256 думок.
-// Делимость уже прибита `static_assert@src/macro/npc_ai.h` при `kAiTicks`,
-// поэтому остатка здесь не бывает по построению.
-inline constexpr int kCraftThinksPerDay = int(kTicksPerDay / kAiTicks);
+// (Здесь жил `kCraftThinksPerDay` = kTicksPerDay/kAiTicks — день, пересчи-
+// танный в ДУМКИ под прежний носитель `stateTimer`. Гейт занятости ходит
+// МИРОВЫМИ ТИКАМИ, и пересчёт умер вместе с единицей: день есть
+// `kTicksPerDay`, своего имени у него здесь больше нет.)
 
 // ПУЛЬТ: глаголы-двери — всё, чем модуль касается мира и соседей.
 class AiPult {
@@ -1740,8 +1737,8 @@ public:
     // И ГЛАГОЛ САМ СТАВИТ ВОССТАНОВЛЕНИЕ — ОДНА ДВЕРЬ ЗАРЯДА (ЗАКОН
     // СПОСОБНОСТИ п.4): период производства назначает не модуль, а эта
     // точка, поэтому «произвёл дважды за сутки» невыразимо. Носитель —
-    // существующий `stateTimer`, четвёртого рукописного таймера не
-    // заводится.
+    // гейт занятости `recoverySteps@src/bus/squad_row.h`, тот же, что у
+    // всех актов сквада.
     //
     // ЗВОНЯЩИЕ — `village_think` и `city_think` (ломоть 5а M-72), и они
     // ЕДИНСТВЕННЫЕ: прежний вызов `econ_produce_day` из
@@ -1760,7 +1757,7 @@ public:
             heads > 0 ? std::max(1, heads / kCreaturesPerCityWorker) : 0,
             heads,
             faction_or_freefolk(std::int16_t(st.kind[slot].factionIdx)));
-        s.rt.stateTimer = std::int16_t(kCraftThinksPerDay);
+        charge_squad_recovery(s.rt, std::uint32_t(kTicksPerDay));
         return made;
     }
     // ── РОЖДЕНИЕ ПАРЫ РОДИТЕЛЬ↔РОЖДЁННЫЙ — ОДИН ГЛАГОЛ ──────────────────
@@ -1895,8 +1892,7 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
     };
 
     if (s.rt.state == std::uint8_t(NS::Idle)) {
-        --s.rt.stateTimer;
-        if (s.rt.stateTimer <= 0) {
+        if (!squad_recovering(s.rt)) {
             // ПОЛНАЯ СПИНА ИДЁТ ДОМОЙ (S10 «возвращается, кладёт на склад»):
             // отдых посреди дорогого маршрута будит артель в Idle, а Idle
             // слал её к жиле — даже с грузом, которому на жиле нечего взять.
@@ -1984,7 +1980,8 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
     if (s.rt.state == std::uint8_t(NS::Traveling)) {
         if (view.at(s.pos, g)) {
             ecs::goal_arrive(g, s.rt);  // → Working: цель несла «чем стать»
-            s.rt.stateTimer = std::int16_t(8 + pult.rand(8));
+            charge_squad_recovery(s.rt,
+                std::uint32_t((8 + pult.rand(8)) * kAiTicks));
             return;
         }
         const float ox = s.pos.x, oy = s.pos.y;
@@ -1998,8 +1995,7 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
         return;
     }
     if (s.rt.state == std::uint8_t(NS::Working)) {
-        --s.rt.stateTimer;
-        if (s.rt.stateTimer <= 0) {
+        if (!squad_recovering(s.rt)) {
             // Решение потерялось (битый тег цели) — честно домой: новое
             // решение примет Idle, работы из воздуха нет (fail-closed).
             if (!def) { go_home(); return; }
@@ -2055,7 +2051,7 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
             const bool budgetSpent = tookSomething && !ecs::goal_spend(g);
             if (tookSomething && !backsFull && !barSpent && !budgetSpent) {
                 // Still standing at the worksite, still able: work again.
-                s.rt.stateTimer = 1;
+                charge_squad_recovery(s.rt, std::uint32_t(kAiTicks));
                 return;
             }
             go_home();
@@ -2080,7 +2076,8 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
                     pult.deliver_home(s.h, m);
             }
             ecs::goal_arrive(g, s.rt);   // → Idle
-            s.rt.stateTimer = std::int16_t(6 + pult.rand(12));
+            charge_squad_recovery(s.rt,
+                std::uint32_t((6 + pult.rand(12)) * kAiTicks));
             return;
         }
         const XY t = view.goal_pos(g);
@@ -2604,8 +2601,7 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
     auto& rt = s.rt;
 
     if (rt.state == std::uint8_t(NS::Idle)) {
-        --rt.stateTimer;
-        if (rt.stateTimer > 0) return;
+        if (squad_recovering(rt)) return;
         // ПОГРУЗКА — ТОЛЬКО ДОМА («ничего не телепортируется», S5): Idle
         // вне дома — это пробуждение после привала в пути (Resting будит в
         // Idle), и рейс ПРОДОЛЖАЕТСЯ, а не грузится телепатией со склада —
@@ -2656,7 +2652,8 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
         if (inventory_mass_g(s.bag) <= 0
             && inventory_value(s.bag) <= 0) {
             // Nothing to sell and nothing owed: wait out the morning.
-            rt.stateTimer = std::int16_t(40 + pult.rand(40));
+            charge_squad_recovery(rt,
+                std::uint32_t((40 + pult.rand(40)) * kAiTicks));
             return;
         }
         ecs::goal_set(g, view.rooted_cell(market),
@@ -2669,7 +2666,8 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
     if (rt.state == std::uint8_t(NS::Traveling)) {
         if (view.at(s.pos, g)) {
             ecs::goal_arrive(g, rt);   // → Working
-            rt.stateTimer = std::int16_t(4 + pult.rand(4));
+            charge_squad_recovery(rt,
+                std::uint32_t((4 + pult.rand(4)) * kAiTicks));
             return;
         }
         const float ox = s.pos.x, oy = s.pos.y;
@@ -2683,8 +2681,7 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
         return;
     }
     if (rt.state == std::uint8_t(NS::Working)) {
-        --rt.stateTimer;
-        if (rt.stateTimer > 0) return;
+        if (squad_recovering(rt)) return;
         if (const std::uint16_t market = view.goal_rooted(g);
             market != kMacroNoSlot && view.is_settlement(market)) {
             // ЧТО ВЕЗТИ ДОМОЙ судит ВЕДОМОСТЬ ДОМА, а не память крю
@@ -2806,7 +2803,8 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
                 pult.dump_bag_home(s, homeSlot);
             }
             ecs::goal_arrive(g, rt);   // → Idle
-            rt.stateTimer = std::int16_t(10 + pult.rand(15));
+            charge_squad_recovery(rt,
+                std::uint32_t((10 + pult.rand(15)) * kAiTicks));
             return;
         }
         const XY t = view.goal_pos(g);
@@ -2903,7 +2901,8 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
             // Вылив дани домой — ОДНА сделка (ломоть 2 M-72).
             pult.dump_bag_home(s, homeSlot);
             ecs::goal_arrive(g, rt);   // → Idle
-            rt.stateTimer = std::int16_t(10 + pult.rand(15));
+            charge_squad_recovery(rt,
+                std::uint32_t((10 + pult.rand(15)) * kAiTicks));
             return;
         }
         const XY t = view.goal_pos(g);
@@ -2939,8 +2938,7 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
     }
 
     if (rt.state == std::uint8_t(NS::Idle)) {
-        --rt.stateTimer;
-        if (rt.stateTimer > 0) return;
+        if (squad_recovering(rt)) return;
         // Дома и с пустыми руками — идём за долгом; дома с грузом — сдаём.
         if (view.home_dist_sq(s.pos, home) >= 4.0f) {
             ecs::goal_set(g, view.rooted_cell(vassal),
@@ -2953,7 +2951,8 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
         if (!view.owes_tithe(vassal)) {
             // Должник рассчитался (собрали или простили) — ждать нечего,
             // ротация завтра переторгует эту строку заново.
-            rt.stateTimer = std::int16_t(8 + pult.rand(8));
+            charge_squad_recovery(rt,
+                std::uint32_t((8 + pult.rand(8)) * kAiTicks));
             return;
         }
         ecs::goal_set(g, view.rooted_cell(vassal),
@@ -2966,7 +2965,8 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
     if (rt.state == std::uint8_t(NS::Traveling)) {
         if (view.at(s.pos, g)) {
             ecs::goal_arrive(g, rt);   // → Working
-            rt.stateTimer = std::int16_t(2 + pult.rand(3));
+            charge_squad_recovery(rt,
+                std::uint32_t((2 + pult.rand(3)) * kAiTicks));
             return;
         }
         // НОГИ. Без этой строки машина СТОИТ, вечно числясь «в пути»:
@@ -2978,8 +2978,7 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
         return;
     }
     if (rt.state == std::uint8_t(NS::Working)) {
-        --rt.stateTimer;
-        if (rt.stateTimer > 0) return;
+        if (squad_recovering(rt)) return;
         pult.collect_tithe(s, vassal, homeSlot);
         ecs::goal_set(g, cell_of(int(home.x), int(home.y), view.map_w()),
                       0, 0, std::uint8_t(NS::Idle));
@@ -2993,7 +2992,8 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
         if (view.at(s.pos, g)) {
             pult.dump_bag_home(s, homeSlot);
             ecs::goal_arrive(g, rt);   // → Idle
-            rt.stateTimer = std::int16_t(10 + pult.rand(15));
+            charge_squad_recovery(rt,
+                std::uint32_t((10 + pult.rand(15)) * kAiTicks));
             return;
         }
         const XY t = view.goal_pos(g);
@@ -3001,7 +3001,7 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
         return;
     }
     rt.state = std::uint8_t(NS::Idle);
-    rt.stateTimer = std::int16_t(4);
+    charge_squad_recovery(rt, std::uint32_t(4 * kAiTicks));
 }
 
 // Переходник пятёрки — тот же, что у образца и у рейса сбыта.
@@ -3029,8 +3029,9 @@ void ai_collector(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
 // ьвсе системы - архетип эоо как ТЕБЯ видят другие а не какой ты (город
 // деревню и столицу видят как места наприме корвоаны - что за бред». Поэтому
 // ниже — тот же `AiSelf` + const-`AiView` + `AiPult`, что у трёх образцов
-// выше, та же ось ступеней `NPCState` и тот же `stateTimer`. Архетип в этих
-// телах не упомянут ни разу, и законов «места» среди них нет ни одного.
+// выше, та же ось ступеней `NPCState` и тот же гейт занятости
+// `recoverySteps`. Архетип в этих телах не упомянут ни разу, и законов
+// «места» среди них нет ни одного.
 //
 // ЧЕГО В НИХ НЕТ — И ЭТО ИХ ВНУТРЕННЕЕ ДЕЛО, А НЕ СВОЙСТВО РОДА: ни `march`,
 // ни преамбулы рефлексов. Ногами эти два модуля сегодня не пользуются;
@@ -3072,16 +3073,15 @@ bool has_spare_souls_(const AiSelf& s) {
 
 // ДНЕВНОЙ ГЕЙТ — ОДИН НА ОБА МОДУЛЯ ПО ФОРМЕ, НО СВОЙ У КАЖДОГО ПО ТЕЛУ
 // (DOD п.5: похожий код в двух модулях есть НОРМА). Период назначает не
-// модуль, а глагол (`AiPult::craft` ставит `stateTimer` сам — ЗАКОН
-// СПОСОБНОСТИ п.4), поэтому здесь только трата кванта: думка идёт раз в
-// `kAiTicks`, в сутках `kCraftThinksPerDay` думок — значит ход, на котором
-// счётчик дошёл до нуля, И ЕСТЬ новый день. Решения рождения стоят за этим же
-// гейтом нарочно: `AiView::has_child` — холодный проход капом, и его шапка
-// требует дневного каденса прямым текстом.
+// модуль, а глагол (`AiPult::craft` заряжает гейт занятости сам — ЗАКОН
+// СПОСОБНОСТИ п.4), поэтому здесь только вопрос «занят ли»: слив кванта
+// живёт в свипе, и ход, на котором гейт дотаял до нуля, И ЕСТЬ новый день.
+// Решения рождения стоят за этим же гейтом нарочно: `AiView::has_child` —
+// холодный проход капом, и его шапка требует дневного каденса прямым
+// текстом.
 
 void village_think(AiSelf& s, const AiView& view, AiPult& pult) {
-    --s.rt.stateTimer;
-    if (s.rt.stateTimer > 0) return;
+    if (squad_recovering(s.rt)) return;
     pult.craft(s);
 
     // АРТЕЛЬ — ПРИ СВОБОДНЫХ ДУШАХ И ЖИВОЙ НУЖДЕ. Нужда спрашивается ТОЙ ЖЕ
@@ -3105,8 +3105,7 @@ void village_think(AiSelf& s, const AiView& view, AiPult& pult) {
 }
 
 void city_think(AiSelf& s, const AiView& view, AiPult& pult) {
-    --s.rt.stateTimer;
-    if (s.rt.stateTimer > 0) return;
+    if (squad_recovering(s.rt)) return;
     pult.craft(s);
 
     // СБОРЩИК — ТОЛЬКО ПРИ ВАССАЛЕ-ДОЛЖНИКЕ, И ВОПРОС ЭТОТ ЗАДАЁТСЯ СВОИМИ
@@ -3160,8 +3159,7 @@ void ai_trader(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     const int myHomeId = parent_of(st, self.slot);
 
     if (rt.state == std::uint8_t(NS::Idle)) {
-        --rt.stateTimer;
-        if (rt.stateTimer <= 0) {
+        if (!squad_recovering(rt)) {
             // Pick another city (id != home).
             int candidates = 0;
             for_each_rooted(st, [&](std::uint16_t slot) {
@@ -3185,7 +3183,7 @@ void ai_trader(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                     taken = true;
                 });
             } else {
-                rt.stateTimer = 20;
+                charge_squad_recovery(rt, std::uint32_t(20 * kAiTicks));
             }
         }
         return;
@@ -3193,7 +3191,8 @@ void ai_trader(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Traveling)) {
         if (at_goal(p, g, ctx)) {
             ecs::goal_arrive(g, rt);   // → Working
-            rt.stateTimer = std::int16_t(15 + rand_int(ctx, 20));
+            charge_squad_recovery(rt,
+                std::uint32_t((15 + rand_int(ctx, 20)) * kAiTicks));
             return;
         }
         const XY t = goal_xy(g, ctx);
@@ -3201,8 +3200,7 @@ void ai_trader(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
         return;
     }
     if (rt.state == std::uint8_t(NS::Working)) {
-        --rt.stateTimer;
-        if (rt.stateTimer <= 0) {
+        if (!squad_recovering(rt)) {
             ecs::goal_set(g, cell_of(int(home.x), int(home.y), ctx.mapW),
                           0, 0, std::uint8_t(NS::Idle));
             rt.state = std::uint8_t(NS::Returning);
@@ -3212,7 +3210,8 @@ void ai_trader(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Returning)) {
         if (at_goal(p, g, ctx)) {
             ecs::goal_arrive(g, rt);   // → Idle
-            rt.stateTimer = std::int16_t(20 + rand_int(ctx, 30));
+            charge_squad_recovery(rt,
+                std::uint32_t((20 + rand_int(ctx, 30)) * kAiTicks));
             return;
         }
         const XY t = goal_xy(g, ctx);
@@ -3229,8 +3228,7 @@ void ai_nomad(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                               ? int(ecs::goal_ordinal(g.what))
                               : 0;
     if (rt.state == std::uint8_t(NS::Idle)) {
-        --rt.stateTimer;
-        if (rt.stateTimer <= 0) {
+        if (!squad_recovering(rt)) {
             int candidates = 0;
             for_each_rooted(st, [&](std::uint16_t slot) {
                 if (is_other_city(st, slot, lastRooted))
@@ -3251,7 +3249,7 @@ void ai_nomad(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                     taken = true;
                 });
             } else {
-                rt.stateTimer = 10;
+                charge_squad_recovery(rt, std::uint32_t(10 * kAiTicks));
             }
         }
         return;
@@ -3259,7 +3257,8 @@ void ai_nomad(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Traveling)) {
         if (at_goal(p, g, ctx)) {
             ecs::goal_arrive(g, rt);   // → Idle
-            rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
+            charge_squad_recovery(rt,
+                std::uint32_t((10 + rand_int(ctx, 15)) * kAiTicks));
             return;
         }
         const XY t = goal_xy(g, ctx);
@@ -3278,13 +3277,13 @@ void ai_aggressive(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     // What is left below is the row's untroubled day: wander.
     if (rt.state == std::uint8_t(NS::Chasing)) {
         rt.state = std::uint8_t(NS::Idle);
-        rt.stateTimer = std::int16_t(5 + rand_int(ctx, 10));
+        charge_squad_recovery(rt,
+            std::uint32_t((5 + rand_int(ctx, 10)) * kAiTicks));
         return;
     }
     ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
     if (rt.state == std::uint8_t(NS::Idle)) {
-        --rt.stateTimer;
-        if (rt.stateTimer <= 0) {
+        if (!squad_recovering(rt)) {
             XY t = pick_random_nearby(p.x, p.y, 20, ctx);
             ecs::goal_set(g, cell_of(int(t.x), int(t.y), ctx.mapW),
                           0, 0, std::uint8_t(NS::Idle));
@@ -3295,7 +3294,8 @@ void ai_aggressive(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Wandering)) {
         if (at_goal(p, g, ctx)) {
             ecs::goal_arrive(g, rt);   // → Idle
-            rt.stateTimer = std::int16_t(8 + rand_int(ctx, 15));
+            charge_squad_recovery(rt,
+                std::uint32_t((8 + rand_int(ctx, 15)) * kAiTicks));
             return;
         }
         const XY t = goal_xy(g, ctx);
@@ -3398,7 +3398,8 @@ void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                 rt.visualSpeed = 0.0f;
                 if (!macro_dead(st, self)) {
                     rt.state = std::uint8_t(NS::Idle);
-                    rt.stateTimer = std::int16_t(3 + rand_int(ctx, 5));
+                    charge_squad_recovery(rt,
+                        std::uint32_t((3 + rand_int(ctx, 5)) * kAiTicks));
                 }
                 return;
             }
@@ -3419,12 +3420,11 @@ void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     // прогулка по околице. Поводка нет — слово владельца.
     if (rt.state == std::uint8_t(NS::Chasing)) {
         rt.state = std::uint8_t(NS::Idle);
-        rt.stateTimer = 0;
+        rt.recoverySteps = 0;
         return;
     }
     if (rt.state == std::uint8_t(NS::Idle)) {
-        --rt.stateTimer;
-        if (rt.stateTimer <= 0) {
+        if (!squad_recovering(rt)) {
             ecs::goal_set(g,
                           cell_of(rand_int(ctx, ctx.mapW),
                                   rand_int(ctx, ctx.mapH), ctx.mapW),
@@ -3436,7 +3436,8 @@ void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Wandering)) {
         if (at_goal(p, g, ctx)) {
             ecs::goal_arrive(g, rt);   // → Idle
-            rt.stateTimer = std::int16_t(8 + rand_int(ctx, 15));
+            charge_squad_recovery(rt,
+                std::uint32_t((8 + rand_int(ctx, 15)) * kAiTicks));
             return;
         }
         const XY t = goal_xy(g, ctx);
@@ -3543,7 +3544,8 @@ void ai_dragon(MacroHandle self, MacroPos& p,
                 rt.visualSpeed = 0.0f;
                 if (!macro_dead(st, self)) {
                     rt.state = std::uint8_t(NS::Idle);
-                    rt.stateTimer = std::int16_t(5 + rand_int(ctx, 8));
+                    charge_squad_recovery(rt,
+                        std::uint32_t((5 + rand_int(ctx, 8)) * kAiTicks));
                 }
                 return;
             }
@@ -3571,8 +3573,7 @@ void ai_dragon(MacroHandle self, MacroPos& p,
     }
     // Дома и сыт: кружи по округе логова.
     if (rt.state == std::uint8_t(NS::Idle)) {
-        --rt.stateTimer;
-        if (rt.stateTimer <= 0) {
+        if (!squad_recovering(rt)) {
             XY t = pick_random_nearby(lairX, lairY, int(radius), ctx);
             ecs::goal_set(g, cell_of(int(t.x), int(t.y), ctx.mapW),
                           0, 0, std::uint8_t(NS::Idle));
@@ -3583,7 +3584,8 @@ void ai_dragon(MacroHandle self, MacroPos& p,
     if (rt.state == std::uint8_t(NS::Wandering)) {
         if (at_goal(p, g, ctx)) {
             ecs::goal_arrive(g, rt);   // → Idle
-            rt.stateTimer = std::int16_t(10 + rand_int(ctx, 20));
+            charge_squad_recovery(rt,
+                std::uint32_t((10 + rand_int(ctx, 20)) * kAiTicks));
             return;
         }
         const XY t = goal_xy(g, ctx);
@@ -3591,7 +3593,8 @@ void ai_dragon(MacroHandle self, MacroPos& p,
         return;
     }
     rt.state = std::uint8_t(NS::Idle);
-    rt.stateTimer = std::int16_t(3 + rand_int(ctx, 5));
+    charge_squad_recovery(rt,
+        std::uint32_t((3 + rand_int(ctx, 5)) * kAiTicks));
 }
 
 // (ЗДЕСЬ ЖИЛА ПАТРУЛЬНАЯ ВЫЛАЗКА — снесена 2026-09-21 вместе с механикой.
@@ -3614,22 +3617,24 @@ void ai_dragon(MacroHandle self, MacroPos& p,
 void ai_teleporter(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                    [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
     ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
-    if (rt.teleportCooldown > 0) --rt.teleportCooldown;
-    if (rt.teleportCooldown <= 0 && rand_f01(ctx) < 0.005f) {
+    // ПРЫЖОК — АКТ, и занятость ему ставит ТОТ ЖЕ гейт, что всем актам
+    // сквада. Здесь жил `teleportCooldown` — второй счётчик того же
+    // субъекта со своим ручным сливом, буквально «своя таблица
+    // восстановления у отдельного рода действий» (ЗАКОН СПОСОБНОСТИ п.6);
+    // прежняя пара «кулдаун 50 думок + пауза Idle 10» слилась в один заряд.
+    if (!squad_recovering(rt) && rand_f01(ctx) < 0.005f) {
         XY t = pick_random_nearby(p.x, p.y, 40, ctx);
         p.x = t.x; p.y = t.y;
         // A jump has no entry edge — the sentinel degrades placement to the
         // whole-cell scatter instead of inventing a side.
         rt.entryDir = kEntryDirNone;
         rt.entryTicks = 0;
-        rt.teleportCooldown = 50;
+        charge_squad_recovery(rt, std::uint32_t(50 * kAiTicks));
         rt.state = std::uint8_t(NS::Idle);
-        rt.stateTimer = 10;
         return;
     }
     if (rt.state == std::uint8_t(NS::Idle)) {
-        --rt.stateTimer;
-        if (rt.stateTimer <= 0) {
+        if (!squad_recovering(rt)) {
             XY t = pick_random_nearby(p.x, p.y, 15, ctx);
             ecs::goal_set(g, cell_of(int(t.x), int(t.y), ctx.mapW),
                           0, 0, std::uint8_t(NS::Idle));
@@ -3640,7 +3645,8 @@ void ai_teleporter(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Wandering)) {
         if (at_goal(p, g, ctx)) {
             ecs::goal_arrive(g, rt);   // → Idle
-            rt.stateTimer = std::int16_t(12 + rand_int(ctx, 20));
+            charge_squad_recovery(rt,
+                std::uint32_t((12 + rand_int(ctx, 20)) * kAiTicks));
             return;
         }
         const XY t = goal_xy(g, ctx);
@@ -3652,8 +3658,7 @@ void ai_wanderer(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                  [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
     ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
     if (rt.state == std::uint8_t(NS::Idle)) {
-        --rt.stateTimer;
-        if (rt.stateTimer <= 0) {
+        if (!squad_recovering(rt)) {
             XY t = pick_random_nearby(p.x, p.y, 25, ctx);
             ecs::goal_set(g, cell_of(int(t.x), int(t.y), ctx.mapW),
                           0, 0, std::uint8_t(NS::Idle));
@@ -3664,7 +3669,8 @@ void ai_wanderer(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     if (rt.state == std::uint8_t(NS::Wandering)) {
         if (at_goal(p, g, ctx)) {
             ecs::goal_arrive(g, rt);   // → Idle
-            rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
+            charge_squad_recovery(rt,
+                std::uint32_t((10 + rand_int(ctx, 15)) * kAiTicks));
             return;
         }
         const XY t = goal_xy(g, ctx);
@@ -3793,7 +3799,7 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
         // Threat gone: a fleeing squad calms down and resumes its life.
         if (rt.state == std::uint8_t(NS::Fleeing)) {
             rt.state = std::uint8_t(NS::Idle);
-            rt.stateTimer = 0;
+            rt.recoverySteps = 0;
         }
         return false;
     }
@@ -3833,7 +3839,8 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
         rt.visualSpeed = 0.0f;
         if (!macro_dead(st, self)) {
             rt.state = std::uint8_t(NS::Idle);
-            rt.stateTimer = std::int16_t(3 + rand_int(ctx, 5));
+            charge_squad_recovery(rt,
+                std::uint32_t((3 + rand_int(ctx, 5)) * kAiTicks));
         }
         // A beaten-but-alive enemy runs; distance is what prevents an
         // immediate rematch, and the winner's next think re-evaluates.
@@ -3881,7 +3888,7 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
 
     if (rt.state == std::uint8_t(NS::Fleeing)) {
         rt.state = std::uint8_t(NS::Idle);
-        rt.stateTimer = 0;
+        rt.recoverySteps = 0;
     }
     return false;
 }
@@ -4091,13 +4098,11 @@ void ai_waypoints(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
         orders->currentWaypoint =
             std::uint8_t((i + 1) % orders->waypointCount);
         ecs::goal_arrive(g, rt);   // → Idle
-        rt.stateTimer = std::int16_t(2 + rand_int(ctx, 4));
+        charge_squad_recovery(rt,
+            std::uint32_t((2 + rand_int(ctx, 4)) * kAiTicks));
         return;
     }
-    if (rt.state == std::uint8_t(NS::Idle) && rt.stateTimer > 0) {
-        --rt.stateTimer;
-        return;
-    }
+    if (rt.state == std::uint8_t(NS::Idle) && squad_recovering(rt)) return;
     rt.state = std::uint8_t(NS::Traveling);
     const XY t = goal_xy(g, ctx);
     try_move(p, rt, t.x, t.y, ctx);
@@ -4995,6 +5000,15 @@ static void tick_macro_npc_ai_one(MacroWorld& mw, MacroNpcAiRuntime& runtime) {
         // думать молча и навсегда. Дверь делает расхождение невыразимым.
         if (!try_spend(rt.tickAccum, kAiTicks)) continue;
         ++runtime.thinksDone;   // метр-свидетель: квант оплачен — думка была
+
+        // ГЕЙТ ЗАНЯТОСТИ ТАЕТ ВРЕМЕНЕМ, И ТОЛЬКО ЗДЕСЬ (ломоть stateTimer
+        // M-369; аналог `tick_body_recovery@src/sub/ability.h`): оплаченный
+        // квант думки = kAiTicks мировых тиков прошло для ЭТОГО сквада — в
+        // походе, в привале и в бою одинаково. Прежний носитель декременти-
+        // ровался 18 строками ВНУТРИ веток состояний, то есть часы шли
+        // только в «своём» состоянии и стояли во всех прочих. `sub_sat` —
+        // дверь «угасание следа»: ниже нуля долг не бывает.
+        rt.recoverySteps = sub_sat(rt.recoverySteps, std::uint32_t(kAiTicks));
 
         if (kind.type >= std::uint16_t(NPCType::Count)) continue;
         // A battle earlier in this very sweep may have killed this squad —

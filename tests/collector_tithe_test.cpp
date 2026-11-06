@@ -108,7 +108,7 @@ MacroHandle make_collector(MacroStore& st, int x, int y,
     ecs::MacroNpcRuntime rt{};
     rt.squadType = std::uint8_t(SquadType::Collector);
     rt.state = std::uint8_t(NPCState::Idle);
-    rt.stateTimer = 0;
+    rt.recoverySteps = 0;
     ecs::Pools pools{};
     refresh_body_from_sheet(
         pools, &rt,

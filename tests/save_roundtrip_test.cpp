@@ -187,8 +187,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
                       sm::ecs::goal_what(sm::ecs::GoalKind::Rooted, 4u),
                       7, std::uint8_t(sm::NPCState::Working));
     a.runtime.lairCell = sm::ecs::cell_index(45, 46, 512);
-    a.runtime.stateTimer = 11;
-    a.runtime.teleportCooldown = 3;
+    a.runtime.recoverySteps = 11;
     a.pools.sp = -25;                 // exhaustion DEBT must survive a load
     a.pools.maxSp = 130;
     a.runtime.travelRank = 2;
@@ -860,9 +859,8 @@ void run_roundtrip() {
         if (a.runtime.lairCell != want.runtime.lairCell) {
             FAIL_BAIL("lair cell lost");
         }
-        if (a.runtime.stateTimer != want.runtime.stateTimer
-            || a.runtime.teleportCooldown != want.runtime.teleportCooldown) {
-            FAIL_BAIL("macro runtime clocks lost");
+        if (a.runtime.recoverySteps != want.runtime.recoverySteps) {
+            FAIL_BAIL("macro runtime clock lost");
         }
         // Кэши листа, которые марш читает per-think: до M-254 ни у одного из
         // шести не было ассерта НИ В ОДНОМ тесте дерева — их только ставили.

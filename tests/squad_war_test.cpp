@@ -631,12 +631,22 @@ void test_spawn_squad_is_one_spec_one_door() {
           "waypoint orders MARCH the squad east toward its route - the "
           "override, not the row, is steering");
 
-    // Reaching a waypoint advances the route.
-    for (int i = 0; i < 20; ++i) drive(gs, st, rt, 1);
-    CHECK(st.orders[avatar.slot].currentWaypoint != 0
-              || float(ecs::cell_x(st.cell[avatar.slot], kMap)) < 23.0f,
-          "the route advances at a reached waypoint (or is already homing "
-          "back on the second leg)");
+    // Reaching a waypoint ADVANCES the route — считаются ПРОДВИЖЕНИЯ, а не
+    // угадывается фаза патруля на фиксированной думке. Маршрут циклический
+    // ((i+1) % count), поэтому «где сквад на 23-й думке» — литерал фазы:
+    // он лёг ровно на угол (wp=0, x=23) при смене кванта пауз (ломоть
+    // stateTimer M-369), когда сам закон — «достигнутая точка продвигает
+    // маршрут» — работал (зонд показал 4 продвижения за 20 думок).
+    std::uint8_t lastWp = st.orders[avatar.slot].currentWaypoint;
+    int advances = 0;
+    for (int i = 0; i < 20; ++i) {
+        drive(gs, st, rt, 1);
+        const std::uint8_t wp = st.orders[avatar.slot].currentWaypoint;
+        if (wp != lastWp) ++advances;
+        lastWp = wp;
+    }
+    CHECK(advances >= 1,
+          "the route advances at a reached waypoint");
 
     // A second squad continues the ordinal line — two squads, two names.
     SquadSpec other = spec;

@@ -83,7 +83,7 @@ sm::MacroHandle make_woodcutter(sm::MacroStore& st, float x, float y,
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime rt{};
     rt.state = std::uint8_t(NPCState::Idle);
-    rt.stateTimer = 0;
+    rt.recoverySteps = 0;
     ecs::Pools pools{};
     const CharacterSheet sheet = make_character_sheet(
         NPCType::Peasant, 3, avatar_sheet_seed(11u));
@@ -252,7 +252,7 @@ void test_the_farmer_works_the_field() {
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime prt{};
     prt.state = std::uint8_t(NPCState::Idle);
-    prt.stateTimer = 0;
+    prt.recoverySteps = 0;
     ecs::Pools pools{};
     refresh_body_from_sheet(
         pools, &prt, make_character_sheet(NPCType::Peasant, 2, avatar_sheet_seed(12u)),
@@ -327,7 +327,7 @@ void test_farmer_without_terrain_conjures_nothing() {
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime prt{};
     prt.state = std::uint8_t(NPCState::Idle);
-    prt.stateTimer = 0;
+    prt.recoverySteps = 0;
     ecs::Pools pools{};
     refresh_body_from_sheet(
         pools, &prt, make_character_sheet(NPCType::Peasant, 2, avatar_sheet_seed(12u)),
@@ -421,7 +421,7 @@ void test_the_mine_runs_while_the_player_is_away() {
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime rt{};
     rt.state = std::uint8_t(NPCState::Idle);
-    rt.stateTimer = 0;
+    rt.recoverySteps = 0;
     ecs::Pools pools{};
     refresh_body_from_sheet(
         pools, &rt, make_character_sheet(NPCType::Peasant, 3, avatar_sheet_seed(13u)),
@@ -532,7 +532,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     // Дом (деревня) — ребро Parent, ставится после пина ординала (M-245).
     crt.squadType = std::uint8_t(SquadType::Caravan);
     crt.state = std::uint8_t(NPCState::Idle);
-    crt.stateTimer = 0;
+    crt.recoverySteps = 0;
     ecs::Pools pools{};
     refresh_body_from_sheet(
         pools, &crt, make_character_sheet(NPCType::Peasant, 3, avatar_sheet_seed(13u)),
@@ -667,7 +667,7 @@ void test_the_miner_works_the_vein() {
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime rt{};
     rt.state = std::uint8_t(NPCState::Idle);
-    rt.stateTimer = 0;
+    rt.recoverySteps = 0;
     ecs::Pools pools{};
     refresh_body_from_sheet(
         pools, &rt, make_character_sheet(NPCType::Peasant, 3, avatar_sheet_seed(13u)),
@@ -825,7 +825,7 @@ void test_the_catch_lands_as_creatures() {
                                    std::uint16_t(faction_index("timaert"))};
     ecs::MacroNpcRuntime prt{};
     prt.state = std::uint8_t(NPCState::Idle);
-    prt.stateTimer = 0;
+    prt.recoverySteps = 0;
     ecs::Pools pools{};
     refresh_body_from_sheet(
         pools, &prt,

@@ -69,8 +69,9 @@ sm::MacroHandle spawn_ai(sm::MacroStore& st,
     sm::ecs::MacroNpcRuntime rt{};
     // Цель новорождённого — «ничего» (kNoCell): колонку цели нулит дверь
     // рождения, фикстура ставит её лишь там, где тест того требует.
-    rt.stateTimer = std::int16_t(timer);
-    rt.teleportCooldown = 0;
+    // Параметр `timer` — в думках (как авторские паузы модулей); гейт
+    // занятости ходит тиками, перевод — квант думки.
+    rt.recoverySteps = std::uint32_t(timer) * std::uint32_t(sm::kAiTicks);
     rt.state = std::uint8_t(state);
     rt.visualSpeed = 0.0f;
     rt.tickAccum = 0.0f;
@@ -385,7 +386,11 @@ void test_aggressive_spares_a_friend() {
 // ландмарка после слияния гарнизона (CANON S10, наряд Б-1) — и свидетеля
 // тогда писать ПО НОВОЙ ФОРМЕ, а не воскрешать этот.)
 
-void test_teleporter_cooldown_counts_down() {
+// Гейт занятости тает ВРЕМЕНЕМ в одной точке свипа (ломоть stateTimer
+// M-369) — здесь прежде жил ручной слив `teleportCooldown`, второго
+// счётчика того же субъекта; его смерть и проверяется тем, что заряженный
+// дверью долг тает центральным сливом, а не чьей-то веткой.
+void test_recovery_gate_melts_by_think_quantum() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -394,14 +399,23 @@ void test_teleporter_cooldown_counts_down() {
     sm::MacroStore& st = *worldStore_;
     auto e = spawn_ai(st, sm::NPCType::Witch, 20.0f, 20.0f, -1);
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
-    rt.teleportCooldown = 2;
+    sm::ecs::charge_squad_recovery(rt, 2u * std::uint32_t(sm::kAiTicks));
 
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 70u);
     tick_once(gs, st, runtime);
 
-    CHECK(rt.teleportCooldown == 1,
-          "a Teleporter's cooldown burns down one AI tick at a time");
+    CHECK(rt.recoverySteps == std::uint32_t(sm::kAiTicks),
+          "гейт занятости тает в свипе ровно квантом думки: kAiTicks тиков "
+          "за оплаченную думку, не больше и не веткой модуля");
+
+    // ЗАРЯД МОНОТОННЫЙ: дверь не умеет укоротить чужой долг (класс M-313 —
+    // привал, зануляя счётчик, учетверял крафт). Короткий заряд поверх
+    // длинного обязан ПРОИГРАТЬ.
+    sm::ecs::charge_squad_recovery(rt, 1u);
+    CHECK(rt.recoverySteps == std::uint32_t(sm::kAiTicks),
+          "короткий заряд не укорачивает длинный долг: дверь максимум, "
+          "не присваивание");
 }
 
 void test_wanderer_enters_wandering_state() {
@@ -435,7 +449,7 @@ void test_the_camp_is_a_pause_not_amnesia() {
     // Прерванная нога — возврат домой; лагерь её ЗАПОМНИЛ.
     rt.state = std::uint8_t(sm::NPCState::Resting);
     rt.stateAfterPause = std::uint8_t(sm::NPCState::Returning);
-    rt.stateTimer = 42;
+    rt.recoverySteps = 42;
 
     sm::wake_from_rest(rt);
     CHECK(rt.state == std::uint8_t(sm::NPCState::Returning),
@@ -445,7 +459,7 @@ void test_the_camp_is_a_pause_not_amnesia() {
     CHECK(rt.stateAfterPause == std::uint8_t(sm::NPCState::Idle),
           "и память о ноге ТРАТИТСЯ подъёмом: второй подъём не вернёт её "
           "снова");
-    CHECK(rt.stateTimer == 0,
+    CHECK(rt.recoverySteps == 0,
           "часы прерванного состояния не переносятся в новое");
 
     // НЕГАТИВНЫЙ КОНТРОЛЬ: тело, легшее БЕЗ прерванной ноги, встаёт в Idle —
@@ -645,7 +659,7 @@ int main() {
     test_nomad_excludes_current_target();
     test_aggressive_chases_visible_player();
     test_aggressive_spares_a_friend();
-    test_teleporter_cooldown_counts_down();
+    test_recovery_gate_melts_by_think_quantum();
     test_wanderer_enters_wandering_state();
     test_the_camp_is_a_pause_not_amnesia();
     test_resting_recovery_prevents_permanent_stall();

@@ -119,8 +119,7 @@ MacroHandle make_npc(MacroStore& st, NPCType type,
     rt.flying             = def.combat.cruiseM > 0.0f ? 1 : 0;
     // Цель новорождённого — «ничего» (kNoCell, колонка обнулена рождением).
     rt.state              = std::uint8_t(NPCState::Idle);
-    rt.stateTimer         = 0;
-    rt.teleportCooldown   = 0;
+    rt.recoverySteps      = 0;   // рождённый свободен: долга актов ещё нет
     rt.visualSpeed        = 0.0f;
     rt.tickAccum          = std::uint32_t(rng.next_int(0, int(kAiTicks)));  // de-sync
     // The march caches (maxSp/travel/marathon/pace) come from the ORDINAL
