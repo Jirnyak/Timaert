@@ -1251,7 +1251,7 @@ void SubworldEngine::spawn_player_entity() {
                        std::uint8_t(hs.dmgType), playerPace,
                        hs.delivery == Delivery::Missile && hs.range > 0.0f
                            ? hs.range : armReach,
-                       /*strikeTicks*/std::uint32_t(hs.recoverySteps), 0u,
+                       /*strikeTicks*/std::uint32_t(hs.strikeTicks), 0u,
                        hs.delivery == Delivery::Missile
                            ? ecs::Combat::Missile : ecs::Combat::Melee,
                        /*armorSteps*/std::uint16_t{0}});
@@ -1433,7 +1433,7 @@ void SubworldEngine::sync_player_entity_position() {
                 // dagger's; haste (+Spd on the effective sheet) quickens the
                 // arm exactly as it quickens the legs below. Целые тики
                 // насквозь (M-396) — конверсий секунда↔тик здесь больше нет.
-                c->strikeTicks = std::uint32_t(hs.recoverySteps);
+                c->strikeTicks = std::uint32_t(hs.strikeTicks);
                 // DELIVERY rides it too (shooting law, 2026-09-09): draw a
                 // bow mid-fight and the next press looses an arrow at the
                 // row's range; put it away and the arm is a melee arm again.

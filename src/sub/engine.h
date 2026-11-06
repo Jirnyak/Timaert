@@ -125,7 +125,7 @@ struct CombatLogEntry {
 // body's own for a possession). One quantity, one door: player_arm_reach().
 // kPlayerMeleeCooldown is DEAD (recovery door, CANON S14 2026-09-07): the
 // swing's tempo comes from the held weapon's MASS through hand_strike_fields
-// (.recoverySteps — `weapon_mass_recovery_ticks@src/tables/items.h` ÷ линейная
+// (.strikeTicks — `weapon_mass_recovery_ticks@src/tables/items.h` ÷ линейная
 // ставка Spd ÷ Armsmaster), refreshed each tick like the dice. Прежний текст
 // звал АСИМПТОТУ Spd и файл `anatomy.h`: асимптота снята M-389 (ставка
 // линейна и без предела), а дверь массы переехала в `tables/` — шапка врала

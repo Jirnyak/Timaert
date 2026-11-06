@@ -498,7 +498,7 @@ StrikeFields hand_strike_fields(const Attributes& attributes,
         worn.derived_of(DerivedModId::SwingPct),
         kDerivedPctFloor, kDerivedPctCeil);
     const int paced = steps * 100 / swingPct;
-    out.recoverySteps = paced < 1 ? 1 : paced;
+    out.strikeTicks = paced < 1 ? 1 : paced;
     return out;
 }
 

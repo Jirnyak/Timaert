@@ -624,7 +624,7 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
     // — ровно то, что общая дверь и считает; а строка `Adventurer` несёт
     // нулевую защиту, так что множитель брони-как-эффективных-HP у него 1.
     s.avatarDpsOverride =
-        swing / sm::seconds_from_steps(std::uint32_t(hs.recoverySteps));
+        swing / sm::seconds_from_steps(std::uint32_t(hs.strikeTicks));
     return s;
 }
 
@@ -4974,7 +4974,7 @@ void register_console_commands(App& app) {
             const sm::StrikeFields hf = sm::hand_strike_fields(
                 eff.attributes, eff.skills, eqc ? &eqc->gear : nullptr, &bag);
             const float handSec = sm::seconds_from_steps(
-                std::uint32_t(hf.recoverySteps));
+                std::uint32_t(hf.strikeTicks));
             c.printfln(Lvl::Ok, "hand: %-16s %.2fs swing",
                        w ? w->id : "(fist)", handSec);
             for (int ord = 0; ord < sm::kSpellCount; ++ord) {

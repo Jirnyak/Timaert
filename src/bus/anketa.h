@@ -2092,7 +2092,7 @@ struct StrikeFields {
     // the strike row's base plus the mass add. Default = the bare hand at a
     // zero sheet — САМА строка `strike` (96 тиков), не её дубль числом
     // (M-396), so a fields{} harness literal swings honestly.
-    int           recoverySteps = int(action_def(kActionStrike).recoveryTicks);
+    int           strikeTicks = int(action_def(kActionStrike).recoveryTicks);
     Delivery      delivery = Delivery::Melee;
     float         range    = 0.0f;
 };
