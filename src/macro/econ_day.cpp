@@ -58,7 +58,9 @@ const ResolvedTables& resolved() {
 int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
                      const Skills& hands, int workers,
                      int population,
-                     int mintFactionIdx) {
+                     int mintFactionIdx,
+                     std::uint32_t* dayBaseTicksOut) {
+    if (dayBaseTicksOut) *dayBaseTicksOut = 0;
     if (workers <= 0) return 0;
     // The mint's outputs: the faction's own coin family, GOLD FIRST — the
     // same metal-per-day tempo strikes 100× the value when the store holds
@@ -97,6 +99,8 @@ int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
         int perDay;      // партий на рабочий день (труд строки × КПД места)
         int yield;       // единиц в партии
         int base;        // ItemDef::value выхода
+        std::uint8_t action;   // ординал Craft-строки рецепта — база дня
+                               // (recoveryTicks) читается по нему
     };
     Cand cands[std::size_t(kRecipeCount) + 2];
     int candCount = 0;
@@ -108,7 +112,7 @@ int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
     const int popLog =
         population > 1 ? (std::bit_width(unsigned(population)) - 1) : 0;
     const auto push_cand = [&](int outIdx, int commodity, bool isMint,
-                               int ratePerDay) {
+                               int ratePerDay, std::uint8_t actionOrd) {
         // -1 = минт без монеты (не двор) или мёртвый id — fail closed.
         if (outIdx < 0) return;
         if (item_parts(outIdx).empty()) return;   // без состава нет партий
@@ -118,7 +122,7 @@ int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
             outIdx, commodity, isMint,
             season_demand_for(outIdx, needDebt, population, hands, &store),
             std::max(1, ratePerDay * popLog / 4),
-            item_yield(outIdx), def->value};
+            item_yield(outIdx), def->value, actionOrd};
     };
     for (int i = 0; i < kRecipeCount; ++i) {
         // Право и темп — колонки Craft-строки рецепта: ОДНА строка на оба
@@ -129,9 +133,11 @@ int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
         const ResolvedRecipe& rr = t.recipes[i];
         if (rr.isMint) {
             for (int m = 0; m < 3; ++m)
-                push_cand(mintRows[m], -1, true, act.spRatePerDay);
+                push_cand(mintRows[m], -1, true, act.spRatePerDay,
+                          kRecipes[i].action);
         } else {
-            push_cand(rr.outItem, rr.output, false, act.spRatePerDay);
+            push_cand(rr.outItem, rr.output, false, act.spRatePerDay,
+                      kRecipes[i].action);
         }
     }
 
@@ -178,6 +184,24 @@ int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
         }
         madeBatches[std::size_t(best)] += bestBatches;
         total += bestBatches;
+    }
+    // БАЗА ИСПОЛНЕННОГО ДНЯ — МАКСИМУМ `recoveryTicks` строк, чьи партии
+    // сегодня состоялись (ломоть stateTimer M-369: макро читает базу дня
+    // ИЗ СТРОК, а не из своей константы). День раздаёт руки по нескольким
+    // рецептам, поэтому «базы выбранного рецепта» не существует — место
+    // виснет столько, сколько велит самая длинная из ИСПОЛНЕННЫХ строк;
+    // сегодня весь Craft-подотрезок несёт ровно kTicksPerDay («рабочий
+    // день тиками», M-326), разойдутся строки — день честно последует за
+    // ними. Ноль = партий не было: решает звонящий (глагол `craft`).
+    if (dayBaseTicksOut) {
+        std::uint32_t base = 0;
+        for (int c = 0; c < candCount; ++c)
+            if (madeBatches[std::size_t(c)] > 0)
+                base = std::max(
+                    base,
+                    action_def(int(cands[std::size_t(c)].action))
+                        .recoveryTicks);
+        *dayBaseTicksOut = base;
     }
     // (ЗДЕСЬ СТОЯЛ ПРОХОД ДОКЛАДА `Minted`/`Produced` — он умер 2026-11-03
     //  вместе со вторым фактным путём, некролог в econ_day.h. Выпуск назван

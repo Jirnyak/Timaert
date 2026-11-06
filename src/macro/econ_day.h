@@ -413,10 +413,15 @@ struct Depot {
 // `needDebt` — счёт места (CANON S10): спрос, по которому ранжируются
 // руки, читает ОСТАТОК ДОЛГА (season_demand_for); nullptr — фикстура без
 // счёта, прямая часть спроса падает на лестницу населения.
+// `dayBaseTicksOut` (ломоть stateTimer M-369): максимум `recoveryTicks`
+// Craft-строк, чьи партии сегодня состоялись, — база «сделал → вишу» для
+// гейта занятости места; 0 = партий не было. nullptr — звонящему (фикстуре)
+// база не нужна.
 int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
                      const Skills& hands, int workers,
                      int population,
-                     int mintFactionIdx = -1);
+                     int mintFactionIdx = -1,
+                     std::uint32_t* dayBaseTicksOut = nullptr);
 
 // (`ConsumeOutcome` и `econ_debt_boundary` УНИЧТОЖЕНЫ 2026-10-06, M-233:
 // это была ВТОРАЯ дверь содержания, и в день границы сезона поселение

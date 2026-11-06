@@ -1296,6 +1296,9 @@ struct AiSelf {
     ecs::Pools& pools;
     ecs::SquadGoal& goal;
     Inventory& bag;   // свой контейнер: руки, спина, души
+    // СВОЯ анкета (ЗАКОН АНКЕТЫ п.2: «анкета источник») — эффективное
+    // рековери акта считается из НЕЁ той же дверью, что у руки внизу.
+    const CharacterSheet& sheet;
 };
 
 // ВИД: const-чтение мира. Новая нужда модуля = новый const-метод, никогда
@@ -1738,7 +1741,12 @@ public:
     // СПОСОБНОСТИ п.4): период производства назначает не модуль, а эта
     // точка, поэтому «произвёл дважды за сутки» невыразимо. Носитель —
     // гейт занятости `recoverySteps@src/bus/squad_row.h`, тот же, что у
-    // всех актов сквада.
+    // всех актов сквада. БАЗА — ИЗ ИСПОЛНЕННЫХ CRAFT-СТРОК (их
+    // `recoveryTicks`, «рабочий день тиками» — M-326), пустой день пробует
+    // через kTicksPerDay; ЭФФЕКТИВНОЕ считает та же дверь
+    // `recovery_steps@src/bus/anketa.h`, что у руки внизу (CANON «БАЗОВОЕ И
+    // ЭФФЕКТИВНОЕ»: Spd и генерик домена труда только укорачивают день —
+    // второй двери темпа не существует).
     //
     // ЗВОНЯЩИЕ — `village_think` и `city_think` (ломоть 5а M-72), и они
     // ЕДИНСТВЕННЫЕ: прежний вызов `econ_produce_day` из
@@ -1752,12 +1760,19 @@ public:
         MacroStore& st = store_ctx(ctx_);
         const std::uint16_t slot = s.h.slot;
         const int heads = count_human_souls(s.bag);
+        std::uint32_t dayBase = 0;
         const int made = econ_produce_day(
             s.bag, st.upkeep[slot].needDebt, st.sheet[slot].skills,
             heads > 0 ? std::max(1, heads / kCreaturesPerCityWorker) : 0,
             heads,
-            faction_or_freefolk(std::int16_t(st.kind[slot].factionIdx)));
-        charge_squad_recovery(s.rt, std::uint32_t(kTicksPerDay));
+            faction_or_freefolk(std::int16_t(st.kind[slot].factionIdx)),
+            &dayBase);
+        const CharacterSheet& sheet = st.sheet[slot];
+        charge_squad_recovery(
+            s.rt, std::uint32_t(recovery_steps(
+                      dayBase > 0 ? dayBase : std::uint32_t(kTicksPerDay),
+                      sheet.attributes, sheet.skills,
+                      tempo_generic(ActionArchetype::Labour))));
         return made;
     }
     // ── РОЖДЕНИЕ ПАРЫ РОДИТЕЛЬ↔РОЖДЁННЫЙ — ОДИН ГЛАГОЛ ──────────────────
@@ -1979,9 +1994,11 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
     }
     if (s.rt.state == std::uint8_t(NS::Traveling)) {
         if (view.at(s.pos, g)) {
+            // АКТ МГНОВЕНЕН (ЗАКОН СПОСОБНОСТИ п.1): прежний счётчик «8 +
+            // rand(8) думок ДО цикла» был castTime-манерой, убитой ещё у
+            // спеллов, — первый цикл случится первой же свободной думкой,
+            // а длительность работы повиснет ПОСЛЕ него базой СТРОКИ.
             ecs::goal_arrive(g, s.rt);  // → Working: цель несла «чем стать»
-            charge_squad_recovery(s.rt,
-                std::uint32_t((8 + pult.rand(8)) * kAiTicks));
             return;
         }
         const float ox = s.pos.x, oy = s.pos.y;
@@ -2005,8 +2022,9 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
             // 8 — зверь честно вчетверо дороже за единицу; рука берёт один
             // объект всегда, вердикт 2026-09-16). Та же строка ценит топор
             // субмира (M-369). Пустой бар — домой отдыхать, не работа в ноль.
-            const int cycleCost = sp_price(
-                int(pools.maxSp), action_def(int(def->action)).spRatePerDay);
+            const ActionDef& act = action_def(int(def->action));
+            const int cycleCost = sp_price(int(pools.maxSp),
+                                           act.spRatePerDay);
             if (int(pools.sp) < cycleCost) { go_home(); return; }
             // Рабочее место — АДРЕС ЦЕЛИ: прибытие его не гасит (адрес есть
             // кэш предиката), работа читает его клеткой. (Здесь артель
@@ -2028,6 +2046,16 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
                 // drain one purse, which is the whole law.
                 pools.spCarry -= float(cycleCost);
                 settle_sp_carry(pools);
+                // АКТ СЛУЧИЛСЯ — ДОЛГ ПОВИС («сделал → вишу», ломоть
+                // stateTimer M-369): база — `recoveryTicks` СТРОКИ акта
+                // (жатва/рубка/жила — замах, поимка лошади — рабочий ДЕНЬ
+                // 8192), эффективное — та же дверь `recovery_steps`, что у
+                // руки внизу. Темп циклов задаёт СТРОКА, а не авторская
+                // пауза модуля.
+                charge_squad_recovery(
+                    s.rt, std::uint32_t(recovery_steps(
+                              act.recoveryTicks, s.sheet.attributes,
+                              s.sheet.skills, action_tempo_generic(act))));
                 // A DEPOSIT worked down to nothing is a fact of the world
                 // (FactKind::Drained); forest and wheat regrow by their own
                 // law, so their emptied cells write nothing. Факт судится
@@ -2050,8 +2078,8 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
             const bool barSpent = int(pools.sp) < cycleCost;
             const bool budgetSpent = tookSomething && !ecs::goal_spend(g);
             if (tookSomething && !backsFull && !barSpent && !budgetSpent) {
-                // Still standing at the worksite, still able: work again.
-                charge_squad_recovery(s.rt, std::uint32_t(kAiTicks));
+                // Стоит у места и способен: следующий цикл запейсит долг
+                // акта выше — своей строкой, не второй паузой.
                 return;
             }
             go_home();
@@ -2109,7 +2137,8 @@ void ai_artel(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
     // оставляет роль решать заново, — и двух законов у реакции больше нет.
     if (scent_hunt_step(e, p, kind, rt, pools, ctx)) return;
     AiSelf self{e, p, rt, pools, store_ctx(ctx).goal[e.slot],
-                store_ctx(ctx).inventory[e.slot].inv};
+                store_ctx(ctx).inventory[e.slot].inv,
+                store_ctx(ctx).sheet[e.slot]};
     const AiView view(ctx);
     AiPult pult(ctx);
     artel_think(self, view, pult);
@@ -2665,9 +2694,9 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
     }
     if (rt.state == std::uint8_t(NS::Traveling)) {
         if (view.at(s.pos, g)) {
+            // АКТ МГНОВЕНЕН: сделка случится первой же свободной думкой,
+            // её длительность повиснет ПОСЛЕ как долг (инверсия castTime).
             ecs::goal_arrive(g, rt);   // → Working
-            charge_squad_recovery(rt,
-                std::uint32_t((4 + pult.rand(4)) * kAiTicks));
             return;
         }
         const float ox = s.pos.x, oy = s.pos.y;
@@ -2689,6 +2718,12 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
             // складом и своим счётом.
             const CaravanDeal leg = pult.trade_at(s, market, homeSlot);
             if (leg.movedTableValue > 0) {
+                // СДЕЛКА СОСТОЯЛАСЬ — ДОЛГ ПОВИС («сделал → вишу»): тики
+                // авторские, своей строки у сделки пока нет (придёт с
+                // ИИ-модулями M-307). Пустой визит акта не делал — долга
+                // нет, развилка рейса решается той же думкой.
+                charge_squad_recovery(rt,
+                    std::uint32_t((4 + pult.rand(4)) * kAiTicks));
                 pult.traded_fact(s, cell_x(g.cell, view.map_w()),
                                  cell_y(g.cell, view.map_w()),
                                  leg.movedTableValue,
@@ -2828,7 +2863,8 @@ void ai_vendor(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
     if (squad_threat_step(e, p, kind, rt, pools, ctx)) return;
     if (scent_hunt_step(e, p, kind, rt, pools, ctx)) return;
     AiSelf self{e, p, rt, pools, store_ctx(ctx).goal[e.slot],
-                store_ctx(ctx).inventory[e.slot].inv};
+                store_ctx(ctx).inventory[e.slot].inv,
+                store_ctx(ctx).sheet[e.slot]};
     const AiView view(ctx);
     AiPult pult(ctx);
     caravan_think(self, view, pult);
@@ -2964,9 +3000,9 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
     }
     if (rt.state == std::uint8_t(NS::Traveling)) {
         if (view.at(s.pos, g)) {
+            // АКТ МГНОВЕНЕН: взыскание случится первой же свободной думкой,
+            // его длительность повиснет ПОСЛЕ как долг (инверсия castTime).
             ecs::goal_arrive(g, rt);   // → Working
-            charge_squad_recovery(rt,
-                std::uint32_t((2 + pult.rand(3)) * kAiTicks));
             return;
         }
         // НОГИ. Без этой строки машина СТОИТ, вечно числясь «в пути»:
@@ -2980,6 +3016,10 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
     if (rt.state == std::uint8_t(NS::Working)) {
         if (squad_recovering(rt)) return;
         pult.collect_tithe(s, vassal, homeSlot);
+        // ВЗЫСКАНИЕ СЛУЧИЛОСЬ — ДОЛГ ПОВИС («сделал → вишу»): тики
+        // авторские, своей строки у взыскания пока нет (придёт с M-307).
+        charge_squad_recovery(rt,
+            std::uint32_t((2 + pult.rand(3)) * kAiTicks));
         ecs::goal_set(g, cell_of(int(home.x), int(home.y), view.map_w()),
                       0, 0, std::uint8_t(NS::Idle));
         rt.state = std::uint8_t(NS::Returning);
@@ -3017,7 +3057,8 @@ void ai_collector(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
     if (squad_threat_step(e, p, kind, rt, pools, ctx)) return;
     if (scent_hunt_step(e, p, kind, rt, pools, ctx)) return;
     AiSelf self{e, p, rt, pools, store_ctx(ctx).goal[e.slot],
-                store_ctx(ctx).inventory[e.slot].inv};
+                store_ctx(ctx).inventory[e.slot].inv,
+                store_ctx(ctx).sheet[e.slot]};
     const AiView view(ctx);
     AiPult pult(ctx);
     collector_think(self, view, pult);
@@ -3134,7 +3175,8 @@ void ai_village(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
                 ecs::Pools& pools, const TickContext& ctx) {
     if (!ctx.mw.store || !ctx.mw.gs) return;
     AiSelf self{e, p, rt, pools, store_ctx(ctx).goal[e.slot],
-                store_ctx(ctx).inventory[e.slot].inv};
+                store_ctx(ctx).inventory[e.slot].inv,
+                store_ctx(ctx).sheet[e.slot]};
     const AiView view(ctx);
     AiPult pult(ctx);
     village_think(self, view, pult);
@@ -3144,7 +3186,8 @@ void ai_city(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
              ecs::Pools& pools, const TickContext& ctx) {
     if (!ctx.mw.store || !ctx.mw.gs) return;
     AiSelf self{e, p, rt, pools, store_ctx(ctx).goal[e.slot],
-                store_ctx(ctx).inventory[e.slot].inv};
+                store_ctx(ctx).inventory[e.slot].inv,
+                store_ctx(ctx).sheet[e.slot]};
     const AiView view(ctx);
     AiPult pult(ctx);
     city_think(self, view, pult);
