@@ -542,8 +542,16 @@ void spawn_player_squad(SubObjects& objs,
 // кластер 5, M-220): запись носителя флажка НЕ проецируется — его тело в
 // сцене АВАТАР, не проекция. Субмиру даётся ссылка, не мир; пустой хэндл
 // (id 0) у фикстуры без игрока честно не пропускает никого.
+// СПИСОК СКВАДОВ ОКНА ПРИХОДИТ ПАРАМЕТРОМ — ЭТО РОД 2 ПАКЕТА (M-317): у
+// движка это `frame.squads`/`frame.squadCount` локального фрейма
+// (наполняет `fill_local_frame` каркасом `squads_in_frame`), у свидетелей —
+// их собственное предусловие (§8 п.11). Хэндлы едут АДРЕСОМ: всё о скваде
+// проход читает живым стором, слепок не копия. Пакет шире окна (5×5),
+// воплощение остаётся 3×3 — гейт по смещению клетки внутри двери.
 int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      const SeamlessSubworldManager& mgr,
+                                     const MacroHandle* windowSquads,
+                                     std::uint32_t windowSquadCount,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
@@ -552,6 +560,8 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
 
 int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      const std::vector<std::uint8_t>& tiles,
+                                     const MacroHandle* windowSquads,
+                                     std::uint32_t windowSquadCount,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,

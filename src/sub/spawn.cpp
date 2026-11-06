@@ -1499,18 +1499,24 @@ void spawn_player_squad(SubObjects& objs,
 
 int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      const SeamlessSubworldManager& mgr,
+                                     const MacroHandle* windowSquads,
+                                     std::uint32_t windowSquadCount,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids,
                                      MacroHandle playerFlagRef) {
-    return project_macro_npcs_into_subworld(objs, st, mgr.tiles(), centerCx,
-                                            centerCy, mapW, mapH, seed,
-                                            seaLevel, solids, playerFlagRef);
+    return project_macro_npcs_into_subworld(objs, st, mgr.tiles(),
+                                            windowSquads, windowSquadCount,
+                                            centerCx, centerCy, mapW, mapH,
+                                            seed, seaLevel, solids,
+                                            playerFlagRef);
 }
 
 int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      const std::vector<std::uint8_t>& tiles,
+                                     const MacroHandle* windowSquads,
+                                     std::uint32_t windowSquadCount,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
@@ -1520,17 +1526,19 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
     const bool tilesUsable =
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
 
-    // ИСТОЧНИК — ЖИВЫЕ СЛОТЫ STORE, И СНИМКА ИМ НЕ НУЖНО. Здесь стоял вектор
-    // `sources` и при нём объяснение: «проекция эмплейсит в те самые пулы, по
-    // которым идёт вьюха, и может реаллоцировать их, инвалидировав живой
-    // итератор». Причина УМЕРЛА с переворотом стора (M-150): обход идёт по
-    // ПЛОСКИМ колонкам фиксированной длины `kUnifiedCap` — реаллокация им
-    // невыразима по построению, — а макро-слотов проекция не рождает ни
-    // одного (`st.alloc` из `src/sub/` не зовёт никто; тело пишет САМУ
-    // запись, а не создаёт новую). Снимок пережил свою причину и стоил
-    // аллокации на каждом ре-центре; теперь фильтры и рождение идут ОДНИМ
-    // проходом в том же порядке слотов, то есть тем же потоком солей, что и
-    // раньше (`projected` входит в соль — порядок обязан совпадать).
+    // ИСТОЧНИК — РОД 2 ПАКЕТА (M-317). Список сквадов окна приходит
+    // параметром: у движка это колонка локального фрейма
+    // `frame.squads`/`frame.squadCount`, которую наполняет
+    // `fill_local_frame@src/macro/frame_fill.cpp` КАРКАСОМ
+    // (`squads_in_frame@src/macro/squad_index.h`); у свидетелей — их
+    // собственное предусловие (§8 п.11). Прежний обход ВСЕХ `kUnifiedCap`
+    // слотов стора умер: скан всех энтити мира на вопрос «кто в окне» —
+    // дефект ЗАКОНА КЛЕТОЧНОГО КАРКАСА, и он же держал колонку рода 2
+    // write-only (писатель был, читателей в src/ ноль). Хэндлы едут
+    // АДРЕСОМ, не копией: всё о скваде проход читает ЖИВЫМ стором по
+    // хэндлу — протухший на тик хэндл слепка отвечает «мёртв» у той же
+    // двери, что и прежде. Пакет шире окна (5×5 — кольцо контекста),
+    // ВОПЛОЩЕНИЕ остаётся 3×3: гейт по смещению клетки стоит ниже.
     //
     // Кого проход пропускает: игроцкий флажок — его тело в сцене есть АВАТАР,
     // а не чужая проекция; и ТЕЛО МЕСТА (M-90 шаг 5, ось рода) — место стоит
@@ -1593,15 +1601,14 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
     }
 
     int projected = 0;
-    for (std::uint32_t s32 = 0; s32 < kUnifiedCap; ++s32) {
-        const std::uint16_t slot = std::uint16_t(s32);
+    for (std::uint32_t i = 0; i < windowSquadCount; ++i) {
+        const MacroHandle macro = windowSquads[i];
         // «Занят ли слот и не труп ли в нём» — ОДНА дверь на оба байта
-        // (`macro_dead@src/bus/store.h`): протухший хэндл отвечает «мёртв», а
-        // хэндл живого слота годен и в `valid`, и дальше по проходу. Здесь
-        // стояла пара `alive[slot] == 0 || dead[slot] != 0` — то же равенство
-        // СВОИМ правописанием, то есть второй ответ рядом с дверью.
-        const MacroHandle macro = handle_at(st, slot);
+        // (`macro_dead@src/bus/store.h`): хэндл слепка мог протухнуть на
+        // тик (сквад умер между наполнением фрейма и этим зовом) — он
+        // отвечает «мёртв» и честно пропускается.
         if (macro_dead(st, macro)) continue;
+        const std::uint16_t slot = macro.slot;
         if (slot == flagSlot) continue;
         // АВАТАРА АНКЕТЫ У НЕПОДВИЖНОГО РОДА НЕТ — ОДНА ДВЕРЬ НА ВСЮ ИГРУ
         // (`squad_has_avatar@src/tables/squad_type.h`). Здесь стояло

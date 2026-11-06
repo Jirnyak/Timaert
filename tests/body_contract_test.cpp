@@ -390,8 +390,16 @@ void test_a_squad_on_the_map_projects_its_creatures() {
         std::size_t(sub::kFullSize) * sub::kFullSize, sub::TILE_GRASS);
     // The lord stands at macro cell (10,12) — the helper's position — so
     // centre the window there.
+    // РОД 2 ПАКЕТА — предусловие свидетеля (§8 п.11, M-317): список окна
+    // подаёт фикстура, у движка его несёт frame.squads локального фрейма.
+    std::vector<sm::MacroHandle> ws;
+    for (std::uint32_t s = 0; s < sm::kUnifiedCap; ++s) {
+        const sm::MacroHandle h = sm::handle_at(*worldStore_, std::uint16_t(s));
+        if (!sm::macro_dead(*worldStore_, h)) ws.push_back(h);
+    }
     const int projected = sub::project_macro_npcs_into_subworld(
-        arena, *worldStore_, ground, /*centerCx*/10, /*centerCy*/12,
+        arena, *worldStore_, ground, ws.data(), std::uint32_t(ws.size()),
+        /*centerCx*/10, /*centerCy*/12,
         /*mapW*/64, /*mapH*/64, /*seed*/5u,
         sm::sub::WATER_LEVEL);
     CHECK(projected == 3,

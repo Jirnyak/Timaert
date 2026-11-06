@@ -937,7 +937,8 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // Runs AFTER the world fill and BEFORE the player entity so projections
     // are part of the scene the player enters.
     const int projected = project_macro_npcs_into_subworld(
-        (*objects_), *mw_.store, mgr_, cx, cy,
+        (*objects_), *mw_.store, mgr_,
+        frame_->squads.data(), frame_->squadCount, cx, cy,
         frame_->side, frame_->side,
         cell_seed(frame_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
         scene_sea_level(), &structIndex_, frame_->playerFlag);
@@ -1047,6 +1048,23 @@ void SubworldEngine::frame_resynced() {
     frameResyncNeeded_ = false;
     factsSinceFillCount_ = 0;   // свежее окно эти факты уже несёт (род 5)
     mgr_.flush_pending_generation();
+    // СКВАД, ВОШЕДШИЙ В ОКНО, ВОПЛОЩАЕТСЯ ИЗ СЛЕДУЮЩЕГО СЛЕПКА (M-317,
+    // ЗАКОН ШВА: «сквады по единому закону воплощаются в субмире» — это не
+    // заморозка мира, встречи и засады живы). До M-317 событие «вошёл в
+    // рамку» не наблюдал никто: проекция звалась только на входе в сцену и
+    // на ре-центре, и сквад, пришедший между ними, стоял наверху
+    // невидимкой. Дверь идемпотентна (план битов по стоящим телам), лишний
+    // зов стоит O(сквадов окна); данж окна не несёт по закону двух миров.
+    if (gs_ && objects_ && frame_ && sceneKind_ != SceneKind::Dungeon) {
+        const int cx = mgr_.center_cx();
+        const int cy = mgr_.center_cy();
+        project_macro_npcs_into_subworld(
+            (*objects_), *mw_.store, mgr_,
+            frame_->squads.data(), frame_->squadCount, cx, cy,
+            frame_->side, frame_->side,
+            cell_seed(frame_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
+            scene_sea_level(), &structIndex_, frame_->playerFlag);
+    }
 }
 
 // Якорь сдвинулся против снимка → фрейм ждёт плановой пересинхронизации.
@@ -1966,7 +1984,8 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
         const int cx = mgr_.center_cx();
         const int cy = mgr_.center_cy();
         project_macro_npcs_into_subworld(
-            (*objects_), *mw_.store, mgr_, cx, cy,
+            (*objects_), *mw_.store, mgr_,
+            frame_->squads.data(), frame_->squadCount, cx, cy,
             frame_->side, frame_->side,
             cell_seed(frame_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
             scene_sea_level(), &structIndex_, frame_->playerFlag);

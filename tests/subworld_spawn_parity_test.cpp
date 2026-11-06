@@ -22,6 +22,19 @@
 
 namespace {
 
+// РОД 2 ПАКЕТА — ПРЕДУСЛОВИЕ СВИДЕТЕЛЯ (§8 п.11, M-317): дверь проекции
+// берёт список сквадов окна параметром (у движка — frame.squads локального
+// фрейма); фикстура подаёт ВСЕ живые сквады своего мира — тот же охват,
+// что у fill_local_frame, и гейт окна 3×3 внутри двери судится честно.
+std::vector<sm::MacroHandle> window_squads_of(const sm::MacroStore& st) {
+    std::vector<sm::MacroHandle> v;
+    for (std::uint32_t s = 0; s < sm::kUnifiedCap; ++s) {
+        const sm::MacroHandle h = sm::handle_at(st, std::uint16_t(s));
+        if (!sm::macro_dead(st, h)) v.push_back(h);
+    }
+    return v;
+}
+
 struct SpawnRecord {
     std::uint16_t type = 0;
     std::uint16_t faction = 0;
@@ -672,8 +685,10 @@ bool run_beast_member_projection_case(
             std::uint16_t(sm::NPCType::Guard), 2, 5002u));
     }
 
+    const auto wsl = window_squads_of(stl);
     const int projected = sm::sub::project_macro_npcs_into_subworld(
-        objs, stl, mgr, /*cx*/0, /*cy*/0, kMapW, kMapH, 0xBEA57u,
+        objs, stl, mgr, wsl.data(), std::uint32_t(wsl.size()),
+        /*cx*/0, /*cy*/0, kMapW, kMapH, 0xBEA57u,
         sm::sub::WATER_LEVEL);
     if (projected != 3) return false;   // the avatar and both of his members
 
@@ -803,8 +818,10 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     }
     if (faunaBefore <= 0) return false;   // sanity: fauna actually present
 
+    const auto ws = window_squads_of(*worldStore_);
     const int projected = sm::sub::project_macro_npcs_into_subworld(
-        objs, *worldStore_, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+        objs, *worldStore_, mgr, ws.data(), std::uint32_t(ws.size()),
+        kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
         sm::sub::WATER_LEVEL);
     if (projected != 3) return false;     // three in-window, the far one skipped
 
@@ -915,8 +932,11 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // выключен» проходила 127/127 ctest и смоуки ЗЕЛЁНОЙ, потому что ни один
     // прогон не звал дверь по одному миру дважды (замер M-260, 2026-10-13).
     {
+        const auto wsAgain = window_squads_of(*worldStore_);
         const int again = sm::sub::project_macro_npcs_into_subworld(
-            objs, *worldStore_, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+            objs, *worldStore_, mgr, wsAgain.data(),
+            std::uint32_t(wsAgain.size()),
+            kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
             sm::sub::WATER_LEVEL);
         if (again != 0) return false;   // второй зов не рождает ни одного тела
         int standing = 0;
@@ -958,8 +978,10 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     auto world2Arena_ = sm::test::make_scene_arena();
     sm::sub::SubObjects& objs2 = *world2Arena_;   // арена сцены — предусловие рождения тел (кусок 1, §8 п.11)
     seed_macro_npcs(*world2Store_, kMapW);
+    const auto ws2 = window_squads_of(*world2Store_);
     const int projected2 = sm::sub::project_macro_npcs_into_subworld(
-        objs2, *world2Store_, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+        objs2, *world2Store_, mgr, ws2.data(), std::uint32_t(ws2.size()),
+        kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
         sm::sub::WATER_LEVEL);
     if (projected2 != 3) return false;
     const std::vector<std::array<float, 3>> fp2 = projection_fingerprint(objs2);
@@ -1006,8 +1028,10 @@ bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
     sm::MacroStore& st = *storeMem;
 
     // Трое в окне встают телами (четвёртый за окном) — как в кейсе проекции.
+    const auto wsFirst = window_squads_of(st);
     if (sm::sub::project_macro_npcs_into_subworld(
-            objs, st, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+            objs, st, mgr, wsFirst.data(), std::uint32_t(wsFirst.size()),
+            kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
             sm::sub::WATER_LEVEL) != 3) return false;
 
     auto count_origins = [&](bool wantValid) {
@@ -1056,8 +1080,10 @@ bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
 
     // ЗАКОН: новая запись воплощается, призрак её не прикрыл. Двое уже
     // стоящих при этом не удваиваются — тот же гейт идемпотентности.
+    const auto wsReborn = window_squads_of(st);
     if (sm::sub::project_macro_npcs_into_subworld(
-            objs, st, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+            objs, st, mgr, wsReborn.data(), std::uint32_t(wsReborn.size()),
+            kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
             sm::sub::WATER_LEVEL) != 1) return false;
     if (count_origins(/*wantValid*/true) != 3) return false;
     if (count_origins(/*wantValid*/false) != 1) return false;   // призрак так и стоит
