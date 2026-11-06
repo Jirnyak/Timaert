@@ -569,7 +569,7 @@ constexpr Row kAppRows[] = {
     //  игрока вернётся конструктором задач на форме цели рода 2.)
     {"appliedEventCount", Rod::Session, ""},
     {"appliedStoryResultCount", Rod::Session, ""},
-    {"appliedSpawnEventCount", Rod::Session, ""},
+    // (appliedSpawnEventCount умер с тегом SpawnEntity — M-410.)
     {"npcAi", Rod::WorldVars,
      "живая половина ритма макро-ИИ (после M-379 — джиттер + метр думок); "
      "сейв-образ gs.macroAiRhythm; индекс сквадов — кэш на драйв"},

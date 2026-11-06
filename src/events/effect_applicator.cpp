@@ -19,8 +19,11 @@ namespace sm {
 // закон. Восстановление здоровья и опыт остаются там, где у них есть настоящие
 // двери: `apply_instant` над реестром бонусов и `award_exp`.
 
+// Параметр `bag` умер с веткой PlayerGoldChange (M-410): он был её
+// единственным читателем, а у тега не было эмитента — колонка без
+// читателя не лежит тихо (DOD п.9).
 void apply_events(std::span<const GameEvent> events, GameState& gs,
-                  Inventory* bag, SpellBook* book,
+                  SpellBook* book,
                   std::vector<GameEvent>* followups) {
     for (auto& ev : events) {
         switch (ev.tag) {
@@ -52,34 +55,20 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
                 // merge will retire it); the book itself is ordinals only.
                 if (book) spellbook_learn(*book, spell_ordinal(ev.s1));
                 break;
-            case EventTag::PlayerGoldChange:
-                if (ev.b != kEventEffectAlreadyApplied) {
-                    if (!bag) break;
-                    // Gold is VALUE, и ОТДАТЬ её можно (по одному закону
-                    // плотности), а ВЗЯТЬСЯ ей неоткуда: выдача монет из
-                    // воздуха снесена (M-139, вердикт владельца 2026-09-26).
-                    // Положительная дельта здесь больше не выплачивается —
-                    // платит только тот, у кого стоимость есть (даритель
-                    // квеста через `transfer_value_dense`), а процедурную
-                    // награду будет раздавать пул лута.
-                    if (ev.ix < 0) pay_value_dense(*bag, -ev.ix);
-                }
-                break;
-            case EventTag::ReputationChange:
-                if (ev.b != kEventEffectAlreadyApplied) {
-                    add_player_reputation(gs, ev.s1.c_str(), ev.ix);
-                }
-                break;
+            // (Ветки PlayerGoldChange/ReputationChange умерли с тегами —
+            //  M-410: эмитентов у обоих не было ни одного, теоретический
+            //  канал effects пуст у всего авторского контента; золото и
+            //  слава мира живут родом 5 — Traded и record_deed.)
             default: break;
         }
     }
 }
 
 void apply_events(const std::vector<GameEvent>& events, GameState& gs,
-                  Inventory* bag, SpellBook* book,
+                  SpellBook* book,
                   std::vector<GameEvent>* followups) {
     apply_events(std::span<const GameEvent>(events.data(), events.size()), gs,
-                 bag, book, followups);
+                 book, followups);
 }
 
 } // namespace sm

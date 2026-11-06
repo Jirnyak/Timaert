@@ -2279,92 +2279,46 @@ bool run_timeadvance_burst_smoke(App& app) {
     app.gs.worldTime = sm::world_time_at(0, 6, 0);
     sm::reset_world_tick_runtime(app.gs.worldTickRt, app.gs.worldSeed);
 
-    std::array<int, 8> days{};
-    std::array<int, 8> hours{};
-    int count = 0;
-    const std::uint32_t subId =
-        app.bus.on(sm::EventTag::TimeAdvance, [&](const sm::GameEvent& ev) {
-            if (count >= int(hours.size())) {
-                return;
-            }
-            days[std::size_t(count)] = int(ev.a);
-            hours[std::size_t(count)] = ev.iy;
-            ++count;
-        });
-
-    // Three whole hours and a minute past 06:00 -> hourly events at 07, 08, 09.
+    // Three whole hours and a minute past 06:00 — the clock must advance
+    // exactly three hours. (Подписки на TimeAdvance стояли здесь и умерли с
+    // тегом — M-410: у тега не было ни одного продакшен-читателя, а часы
+    // мира судятся самим WorldTickResult, без шины.)
     const RuntimeFrameStats stats = advance_sim_steps(
         app, int(sm::ticks_to_advance_minutes(app.gs.worldTime.tick, 181)), false);
-    app.bus.unsubscribe(subId);
 
-    // A second, separate burst: one hour past 09:00 must deliver exactly one
-    // TimeAdvance at 10:00. The old check read this off the bus's history
-    // ring; the ring is gone (the past lives in the chronicle/journal, S20.1),
-    // so the live source is the same subscription contract as above.
-    int lateCount = 0;
-    int lateDay = -1;
-    int lateHour = -1;
-    const std::uint32_t lateSubId =
-        app.bus.on(sm::EventTag::TimeAdvance, [&](const sm::GameEvent& ev) {
-            ++lateCount;
-            lateDay = int(ev.a);
-            lateHour = ev.iy;
-        });
+    // A second, separate burst: one hour past 09:00 advances exactly one.
     app.gs.worldTime = sm::world_time_at(0, 9, 0);
     sm::reset_world_tick_runtime(app.gs.worldTickRt, app.gs.worldSeed);
     const RuntimeFrameStats lateStats =
         advance_sim_steps(
             app, int(sm::ticks_to_advance_minutes(app.gs.worldTime.tick, 61)),
             false);
-    app.bus.unsubscribe(lateSubId);
 
     // pause mask in the report (the SMOKE-7 lesson): hoursAdvanced=0 has
     // meant «the world stood paused under the harness», and without the mask
     // that read as a broken clock instead of a held one.
     std::fprintf(stderr,
-                 "[smoke] timeadvance_burst hoursAdvanced=%d count=%d "
-                 "events=[%d:%02d,%d:%02d,%d:%02d] lateCount=%d latest=%d:%02d "
+                 "[smoke] timeadvance_burst hoursAdvanced=%d late=%d "
                  "pause=0x%02X\n",
                  stats.timeTick.hoursAdvanced,
-                 count,
-                 days[0], hours[0],
-                 days[1], hours[1],
-                 days[2], hours[2],
-                 lateCount,
-                 lateDay, lateHour,
+                 lateStats.timeTick.hoursAdvanced,
                  unsigned(pause_reasons(app)));
     std::fflush(stderr);
 
-    // The verdict was one `ok`; behind it stood sixteen facts — `subscriberOk`
-    // folded ten and `lateBurstOk` six. The clock, the pause gate, the event
-    // count and each delivered hour are separate laws: a world that stood
-    // PAUSED and a world that SKIPPED an hour used to print the same red,
-    // which is why the pause mask had to be added to the printf to tell them
-    // apart by eye (SMOKE-7). Now they are told apart by the verdict.
+    // Часы, гейт паузы и счёт часов — отдельные законы: мир, стоявший в
+    // ПАУЗЕ, и мир, ПРОГЛОТИВШИЙ час, печатали одинаковый красный, поэтому
+    // маска паузы стоит в printf (SMOKE-7). Предмет смоука — ЧАСОВОЙ КАДАНС
+    // МИРА; шинная половина (события на час) умерла с тегом TimeAdvance.
     SMOKE_CHECK(app, stats.ticked, "the world ticked at all under the burst");
     SMOKE_CHECK(app, !stats.subworldActive,
                 "the burst ran on the MACRO clock, with no scene standing");
     SMOKE_CHECK(app, stats.timeTick.hoursAdvanced == 3,
                 "three hours of ticks advanced exactly three hours");
-    SMOKE_CHECK(app, count == 3,
-                "three hours delivered exactly three TimeAdvance events — "
-                "no hour doubled, none swallowed");
-    if (count == 3) {
-        SMOKE_CHECK(app, days[0] == 0 && hours[0] == 7, "the first hour is 07:00");
-        SMOKE_CHECK(app, days[1] == 0 && hours[1] == 8, "the second hour is 08:00");
-        SMOKE_CHECK(app, days[2] == 0 && hours[2] == 9, "the third hour is 09:00");
-    }
-    // The second, separate burst: one hour past 09:00 delivers exactly one.
     SMOKE_CHECK(app, lateStats.ticked, "the world ticked under the late burst");
     SMOKE_CHECK(app, !lateStats.subworldActive,
                 "the late burst ran on the macro clock too");
     SMOKE_CHECK(app, lateStats.timeTick.hoursAdvanced == 1,
                 "one hour of ticks advanced exactly one hour");
-    SMOKE_CHECK(app, lateCount == 1, "one hour delivered exactly one event");
-    if (lateCount == 1) {
-        SMOKE_CHECK(app, lateDay == 0 && lateHour == 10,
-                    "the late event is 10:00 — the hour that actually passed");
-    }
     return true;
 }
 
@@ -10001,24 +9955,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 1.2f});
             const int beforeProjectiles = smoke_projectile_count(*app.sceneObjects);
             const int beforeCombatLog = app.subworld.combat_log_count();
-            const int beforeSpellCastEvents =
-                count_tick_events(app.bus, sm::EventTag::SpellCast);
+            // (Проверка «SpellCast event was not emitted honestly» умерла с
+            //  тегом — M-410: канал был мёртв, суть каста судят снаряд и
+            //  боевой журнал ниже.)
             if (!cast_active_spell(app)) {
                 smoke_fail(app, "active spell cast failed");
-                break;
-            }
-            const int afterSpellCastEvents =
-                count_tick_events(app.bus, sm::EventTag::SpellCast);
-            const sm::GameEvent* spellEvent =
-                latest_tick_event(app.bus, sm::EventTag::SpellCast);
-            if (afterSpellCastEvents <= beforeSpellCastEvents
-                || !spellEvent
-                || spellEvent->ix != 1
-                || spellEvent->s1
-                       != sm::kSpellDefs[smoke_player_book(app).activeSpell].id
-                || spellEvent->a != sm::stable_spell_id(
-                    sm::kSpellDefs[smoke_player_book(app).activeSpell].id)) {
-                smoke_fail(app, "SpellCast event was not emitted honestly");
                 break;
             }
             const int afterProjectiles = smoke_projectile_count(*app.sceneObjects);
@@ -10055,7 +9996,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr,
                          "[smoke] spell_projectile active=%s dist=%.2f muzzleZ=%.2f "
                          "shell=%.2f projectiles=%d->%d alive=%d "
-                         "targetHp=%.1f mp=%d cd=%zu event=%d log=\"%s\"\n",
+                         "targetHp=%.1f mp=%d cd=%zu log=\"%s\"\n",
                          sm::spell_ordinal_ok(book.activeSpell)
                              ? sm::kSpellDefs[book.activeSpell].id : "(none)",
                          // The three numbers that decide whether a bolt can
@@ -10071,7 +10012,6 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          targetHp ? double(targetHp->hp) : -1.0,
                          player_pools(app).mp,
                          std::size_t(smoke_player_recovery_steps(app)),
-                         afterSpellCastEvents - beforeSpellCastEvents,
                          combatLog ? combatLog->text : "");
             std::fflush(stderr);
             if (!hitLogged) {

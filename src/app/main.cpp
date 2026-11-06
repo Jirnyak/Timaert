@@ -481,16 +481,8 @@ void refresh_player_settlement(App& app) {
                                         app.npcAi.squadIndex);
     const int previousId = app.gs.subState.settlementId;
     if (id == previousId) return;
-    if (previousId >= 0) {
-        const sm::MacroHandle previous =
-            settlement_by_id(*app.macroStore, previousId);
-        sm::GameEvent leave{sm::EventTag::PlayerLeaveSettlement};
-        leave.a = std::uint32_t(previousId);
-        leave.ix = previousId;
-        if (app.macroStore->valid(previous))
-            leave.s1 = app.macroStore->name[previous.slot].text;
-        app.bus.emit(leave);
-    }
+    // (Эмит PlayerLeaveSettlement стоял здесь и умер с тегом — M-410:
+    //  читателей не было ни одного; вход в поселение жив ниже.)
     app.gs.subState.settlementId = id;
     // Открытая панель следует за игроком ТЕМ ЖЕ носителем, что всякий другой
     // субъект, — хэндлом (M-290). Ординал жил здесь вторым носителем.
@@ -1021,18 +1013,9 @@ void draw_pre_battle_modal(App& app) {
     ImGui::EndPopup();
 }
 
-void emit_player_move(App& app, float prevX, float prevY, float dist) {
-    if (dist <= 0.0f) return;
-    sm::GameEvent ev{sm::EventTag::PlayerMove};
-    ev.fx = prevX;
-    ev.fy = prevY;
-    const sm::ecs::MacroCell* evc = sm::player_flag_cell(app.gs, *app.macroStore);
-    ev.ix = evc ? sm::ecs::cell_x(*evc, app.gs.mapW) : 0;
-    ev.iy = evc ? sm::ecs::cell_y(*evc, app.gs.mapW) : 0;
-    ev.a = std::uint32_t(std::max(0.0f, dist) * 1000.0f);
-    app.bus.emit(ev);
-    refresh_player_settlement(app);
-}
+// (emit_player_move умерла с тегом PlayerMove — M-410: эмитент без
+// читателя. Живой побочный зов refresh_player_settlement переехал к её
+// звонящему — шаг ходока.)
 
 float& player_sp_carry(App& app);   // defined with the world-query helpers
 
@@ -1044,11 +1027,6 @@ float& player_sp_carry(App& app);   // defined with the world-query helpers
 // All of it priced a STEP; a body pays for HOURS now, settled once per turn in
 // the macro branch of the main loop (macro/recovery.h settle_pools_over_time).
 void step_macro_walk_and_emit(App& app, float dt, float cellsPerSec) {
-    const sm::ecs::MacroCell* before = sm::player_flag_cell(app.gs, *app.macroStore);
-    const float prevX = before ? float(sm::ecs::cell_x(*before, app.gs.mapW))
-                               : 0.0f;
-    const float prevY = before ? float(sm::ecs::cell_y(*before, app.gs.mapW))
-                               : 0.0f;
     const std::size_t stepped =
         sm::ui::step_macro_walk(
             app.gs, *app.macroStore, app.cursor, dt, cellsPerSec,
@@ -1062,9 +1040,9 @@ void step_macro_walk_and_emit(App& app, float dt, float cellsPerSec) {
                                              x, y);
             },
             &app);
-    // Distance travelled = whole cells stepped; the walker stamped the entry
-    // edge per step itself — nothing to re-derive from coordinates here.
-    emit_player_move(app, prevX, prevY, float(stepped));
+    // Вход/выход из поселения судится после шага — прежде этот зов нёс
+    // хвост emit_player_move (тег умер с M-410, побочный зов — жилец).
+    if (stepped > 0) refresh_player_settlement(app);
 }
 
 // Weight of the ground under the player's feet, from the SAME baked cost grid
@@ -1317,7 +1295,6 @@ void destroy_world(App& app) {
 #endif
     app.appliedEventCount = 0;
     app.appliedStoryResultCount = 0;
-    app.appliedSpawnEventCount = 0;
     {
         // All three fractional remainders die with the session — they are
         // the body's own (Pools carries), not the App's.
@@ -2211,44 +2188,10 @@ std::vector<sm::PathPoint> build_flight_path(int sx, int sy, int gx, int gy,
     return path;
 }
 
-void emit_spell_cast(App& app, const std::string& id,
-                     bool ok, const char* reason, float cooldown = 0.0f) {
-    sm::GameEvent ev{sm::EventTag::SpellCast};
-    ev.s1 = id;
-    // (No `s2 = reason`. Six call sites filled it and NOBODY has ever read it
-    // — not production, not a test, not the harness. A string built and
-    // deep-copied into the tick buffer and the history for no reader at all.)
-    (void)reason;
-    ev.ix = ok ? 1 : 0;
-    if (app.subworld.active()) {
-        ev.fx = app.subworld.player_x();
-        ev.fy = app.subworld.player_y();
-    } else if (const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.gs, *app.macroStore)) {
-        ev.fx = float(sm::ecs::cell_x(*pc, app.gs.mapW));
-        ev.fy = float(sm::ecs::cell_y(*pc, app.gs.mapW));
-    }
-    ev.a = sm::stable_spell_id(id);
-    ev.b = std::uint32_t(cooldown * 1000.0f);
-    app.bus.emit(ev);
-}
-
-int count_tick_events(const sm::EventBus& bus, sm::EventTag tag) {
-    int count = 0;
-    for (const auto& ev : bus.tick_events()) {
-        if (ev.tag == tag) ++count;
-    }
-    return count;
-}
-
-const sm::GameEvent* latest_tick_event(const sm::EventBus& bus,
-                                       sm::EventTag tag) {
-    const auto& events = bus.tick_events();
-    for (std::size_t i = events.size(); i > 0; --i) {
-        const sm::GameEvent& ev = events[i - 1];
-        if (ev.tag == tag) return &ev;
-    }
-    return nullptr;
-}
+// (emit_spell_cast и пара приборных читателей count_tick_events /
+//  latest_tick_event умерли с тегом SpellCast — M-410: продакшен-читателей
+//  у тега не было, жил только смоук — свидетель мёртвого канала снесён
+//  вместе с каналом, суть смоука каста судят снаряд и боевой журнал.)
 
 void tick_subworld_hit_flash(App& app, float dt) {
     if (!app.subworld.active()) {
@@ -2444,12 +2387,8 @@ void draw_subworld_combat_log(const sm::sub::SubworldEngine& subworld,
 bool cast_active_spell(App& app) {
     if (!app.worldLoaded) return false;
     const int ord = player_book(app).activeSpell;
-    if (!sm::spell_ordinal_ok(ord)) {
-        emit_spell_cast(app, "", false, "No active spell");
-        return false;
-    }
+    if (!sm::spell_ordinal_ok(ord)) return false;
     const sm::SpellDef* def = &sm::kSpellDefs[ord];
-    const std::string id = def->id;   // the EVENT still speaks the string id
 
     const bool inMicro = app.subworld.active();
     // The body's gate, for the check's honest phrasing («Recovery 1.4s»);
@@ -2467,11 +2406,7 @@ bool cast_active_spell(App& app) {
     const sm::CastCheck check = sm::spellbook_can_cast_ex(
         player_book(app), player_pools(app), ord, inMicro,
         gateSteps);
-    if (!check.ok) {
-        emit_spell_cast(app, id, false, check.reason.c_str(),
-                        check.recoveryRemaining);
-        return false;
-    }
+    if (!check.ok) return false;
 
     if (!inMicro) {
         // A world-map cast needs something the world map can DO with it: a
@@ -2480,16 +2415,12 @@ bool cast_active_spell(App& app) {
         for (const sm::Bonus& b : def->effects) {
             if (b.row != 0 && b.value != 0) saysSomething = true;
         }
-        if (!def->sustained || !saysSomething) {
-            emit_spell_cast(app, id, false, "World-map spell effect not implemented");
-            return false;
-        }
+        if (!def->sustained || !saysSomething) return false;
         // Каст с макро-карты — это ровно переключение сустейна (гейт выше
         // требует `def->sustained`), то есть класс «баф». Дверь уровня
         // сквада пересчитает производные сама (M-301).
         sm::squad_cast_start(*app.macroStore,
                              sm::player_flag_handle(app.gs), ord);
-        emit_spell_cast(app, id, true, "");
         return true;
     }
 
@@ -2527,7 +2458,6 @@ bool cast_active_spell(App& app) {
         &app.subworld.spell_rng(),
         // Мир для законов о положении игрока (вселение, 1е кластер 5).
         &app.gs);
-    emit_spell_cast(app, id, ok, ok ? "" : "Cast failed");
     // ANY cast that happened sounds (one door, one voice — a stance flip
     // included); the deferred «звук каста» of 443f0f5, delivered 2026-09-09.
     if (ok) app.audio.play_sfx(sm::SfxId::SpellCast);
@@ -3125,7 +3055,7 @@ void apply_pending_event_effects(App& app) {
         // are emitted AFTER the span walk (emit grows the very vector the
         // span points into) — the while loop picks them up as the next batch.
         std::vector<sm::GameEvent> followups;
-        sm::apply_events(pending, app.gs, sm::player_inventory(app.gs, *app.macroStore),
+        sm::apply_events(pending, app.gs,
                          sm::player_spellbook(app.gs, *app.macroStore), &followups);
         bool spireDied = false;
         for (const sm::GameEvent& ev : pending) {
@@ -3267,45 +3197,11 @@ void apply_pending_story_results(App& app) {
 // в игре не рождал никто — единственным отправителем был смоук. Настоящая
 // встреча идёт одной дверью: `detect_forced_encounter` → `PreBattle`.
 
-// The SpawnEntity consumer. The event had two producers (quest onAccept in
-// content/quests/procedural.cpp) and ZERO consumers — kill-contracts never
-// produced their targets (history/audit.md II.5). Each event now becomes one hostile
-// macro NPC at the named cell; walking there embodies it in the subworld via
-// the ordinary macro projection (Inc 5d), and its death feeds the DestroyNpc
-// objective through the ordinary NpcDeath path.
-void handle_pending_spawn_entity_events(App& app) {
-    const auto& events = app.bus.tick_events();
-    if (app.appliedSpawnEventCount >= events.size()) return;
-
-    const std::size_t begin = app.appliedSpawnEventCount;
-    const std::size_t end = events.size();
-    for (std::size_t i = begin; i < end; ++i) {
-        const sm::GameEvent& ev = events[i];
-        if (ev.tag != sm::EventTag::SpawnEntity) continue;
-        if (sm::spawn_npc_at(app.gs, *app.macroStore, app.terrain,
-                             ev.s1.c_str(), ev.ix, ev.iy, int(ev.a))) {
-            std::string line = "Word spreads of trouble near the marked area: ";
-            line += ev.s1;
-            sm::session_feed_push(app.gs.sessionFeed, line.c_str());
-        }
-    }
-    app.appliedSpawnEventCount = end;
-}
-
-void emit_time_advance_if_needed(App& app, const sm::WorldTickResult& tick) {
-    if (tick.hoursAdvanced <= 0) return;
-
-    const int currentAbsHour = app.gs.worldTime.day() * 24 + app.gs.worldTime.hour();
-    const int rawFirstAbsHour = currentAbsHour - tick.hoursAdvanced + 1;
-    const int firstAbsHour = rawFirstAbsHour > 0 ? rawFirstAbsHour : 0;
-    for (int absHour = firstAbsHour; absHour <= currentAbsHour; ++absHour) {
-        sm::GameEvent ev{sm::EventTag::TimeAdvance};
-        ev.a = std::uint32_t(absHour / 24);
-        ev.ix = 1;
-        ev.iy = absHour % 24;
-        app.bus.emit(ev);
-    }
-}
+// (handle_pending_spawn_entity_events умер с тегом SpawnEntity — M-410:
+//  эмитентов не было ни одного со смертью квест-машины, читатель держал
+//  тег в одиночку. emit_time_advance_if_needed умер с тегом TimeAdvance —
+//  продакшен-читателей ноль, жил только смоук; часы мира несёт род 4
+//  фрейма и WorldTickResult.)
 
 bool modal_overlay_active(const App& app) {
     return app.showDialogOpen ||
@@ -3435,17 +3331,14 @@ void handle_dialog_node_activation(App& app) {
 void process_world_events(App& app) {
     apply_pending_event_effects(app);
     apply_pending_story_results(app);
-    handle_pending_spawn_entity_events(app);
     app.bus.flush();
     app.appliedEventCount = 0;
     app.appliedStoryResultCount = 0;
-    app.appliedSpawnEventCount = 0;
     app.logic.tick(app.bus, app.gs.player);
     // (Тик квестов, кэш подписи маркеров и раскрытие карты по пину
     //  умерли с квест-машиной — ломоть 3 M-72, вариант А.)
     apply_pending_event_effects(app);
     apply_pending_story_results(app);
-    handle_pending_spawn_entity_events(app);
     capture_presentation_events(app);
 }
 
@@ -3636,7 +3529,6 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // отличается только числом приходящих тиков (≤1 на шаг).
         sm::tick_macro_npc_ai(subMacroWorld, app.npcAi,
                               std::uint64_t(stats.timeTick.ticksAdvanced));
-        emit_time_advance_if_needed(app, stats.timeTick);
         process_world_events(app);
     } else {
         if (allowInput) poll_movement(app, dt);
@@ -3755,7 +3647,6 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // (Здесь стояло обнуление sweepAccum/pendingSweeps/sweepCursor —
         //  потеря №3 по M-105: накопленный под землёй долг думок исчезал на
         //  первом же кадре карты. Теперь его доплачивает дверь выше.)
-        emit_time_advance_if_needed(app, stats.timeTick);
         process_world_events(app);
         // Flush any pending glow refresh now, on the macro path, before this
         // frame renders the map: covers population drift this frame and drift
@@ -6552,7 +6443,7 @@ void frame(App& app, int simSteps) {
                     app.ui.settlement = true;
                 }
             }
-            sm::ui::draw_show_dialog(app.gs, sm::player_inventory(app.gs, *app.macroStore), app.showDialogEvent, app.bus,
+            sm::ui::draw_show_dialog(app.gs, app.showDialogEvent, app.bus,
                                      app.showDialogUi, &app.showDialogOpen);
             handle_dialog_node_activation(app);
             sm::ui::draw_story_overlay(app.storyOverlay, app.bus);

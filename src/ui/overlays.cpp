@@ -105,16 +105,9 @@ namespace sm::ui
             copy_cstr(state.nodeId.data(), state.nodeId.size(), nodeId.c_str());
         }
 
-        int dialog_choice_gold_cost(const DialogChoicePayload &choice)
-        {
-            int cost = 0;
-            for (const GameEvent &effect : choice.effects)
-            {
-                if (effect.tag == EventTag::PlayerGoldChange && effect.ix < 0)
-                    cost += -effect.ix;
-            }
-            return cost;
-        }
+        // (dialog_choice_gold_cost умерла с тегом PlayerGoldChange — M-410:
+        //  контент не авторит effects, цена всегда была нулём; цена выбора
+        //  вернётся строкой последствия диалога, не тегом шины — M-175.)
 
         void log_dialog_choice(GameState &gs,
                                const GameEvent &dialog,
@@ -2251,7 +2244,6 @@ namespace sm::ui
     }
 
     void draw_show_dialog(GameState &gs,
-                          const Inventory *bag,
                           const GameEvent &dialog,
                           EventBus &bus,
                           DialogOverlayState &state,
@@ -2312,12 +2304,9 @@ namespace sm::ui
                     if (ImGui::Button(choice.label.empty() ? "Continue" : choice.label.c_str(),
                                       ImVec2(-FLT_MIN, 0.0f)))
                     {
-                        const int goldCost = dialog_choice_gold_cost(choice);
-                        if (goldCost > (bag ? inventory_value(*bag) : 0))
-                        {
-                            set_dialog_result(state, "Not enough gold!");
-                        }
-                        else
+                        // (Гейт «Not enough gold!» умер с тегом
+                        //  PlayerGoldChange — M-410: цена всегда была
+                        //  нулём, ветка не срабатывала ни разу.)
                         {
                             log_dialog_choice(gs, dialog, choice);
                             request_dialog_node_activation(state, choice.nodeId);

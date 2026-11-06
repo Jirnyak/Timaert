@@ -12,56 +12,43 @@
 namespace sm
 {
 
-    // Every tag below HAS A PRODUCER, and that sentence stood here while it was
-    // FALSE — the M-116 census (2026-09-28) counted three tags nobody in the
-    // world emitted, each kept alive by its own READER arm. So the rule is
-    // written as the census states it: a tag is a tag when something in `src/`
-    // constructs it; a reader alone is not a producer, and a shape reachable
-    // only through authored data (Quest::onAccept, Reward::event,
-    // DialogChoicePayload::effects) that no content actually authors is not one
-    // either.
+    // ПРЕДМЕТ ШИНЫ — ПРОСЬБЫ ПРЕДСТАВЛЕНИЮ И ВНУТРЕННИЕ ПРОСЬБЫ app→logic,
+    // И БОЛЬШЕ НИЧЕГО (M-410, 2026-11-06). «Событием МИРА» здесь не живёт
+    // ни один тег: факты мира — РОД 5 канонического фрейма (bus/fact.h,
+    // летопись; вниз пакетом, вверх дельтой, в сейв дампом), и квесты
+    // судят ЛЕТОПИСЬЮ (kTaskVerbs — «квест = предикат над фактами»), а не
+    // шиной. Правило тега прежнее: тег есть тег, когда что-то в src/ его
+    // КОНСТРУИРУЕТ и что-то в src/ его ЧИТАЕТ; остальное — мертвечина, и
+    // она уже отрастала заново (M-116 снёс трёх читателей без эмитента —
+    // M-410 нашёл трёх НОВЫХ таких же).
     //
-    // Deleted by that rule, 2026-09-28 (owner's ruling «сносим всё что не
-    // системное»): ApplyEffect (its arm carried the last string verb table —
-    // "heal_hp"/"restore_mp"/"drain_sp"/"grant_xp" — restating arithmetic the
-    // bonus registry already owns), CodexUnlock (the codex bits live on and are
-    // seeded by macro/state.cpp), BattleStart (its reader booted the subworld
-    // and spawned a body BY STRING NAME — a second way into combat beside the
-    // one that matters, detect_forced_encounter → PreBattle).
-    // Earlier passes deleted 16 tags (2026-08-05: PlayerLevelUp, PlayerDeath,
-    // NpcSpawn, NpcGreeted, Encounter, SettlementChangeOwner, QuestAbandoned,
-    // Trade, NpcHpChange, SettlementMoodChange, PlayerStatChange, BattleEnd,
-    // MagicSurge, FactionRelationChange, DialogStart, CameraMove) and three
-    // more (M-116 part 1: SettlementVisit, PlaceChangeOwner, WorldCellChange).
-    // Values are DENSE and implicit: the old TS-parity numeric anchors died
-    // with the parity, and every renumbering invalidates saves (kSaveVersion).
+    // Снесено M-410 (2026-11-06), поимённо: NpcDeath (голый тег — оба
+    // конца умерли ломтём 5 M-171), PlayerMove / SpellCast / TimeAdvance /
+    // PlayerLeaveSettlement (эмитент без продакшен-читателя; двое жили
+    // только смоуком — свидетели мёртвого канала снесены с каналом),
+    // PlayerGoldChange / ReputationChange / SpawnEntity (читатель без
+    // эмитента — теоретический канал emit_all(choice.effects) кормился
+    // только пустыми effects, которых контент не авторит), алиас
+    // LastSerializable (врал именем: в сейв не идёт ни байта шины) и
+    // стражи kEventEffectAlreadyApplied («TSPA», читатели умерли с
+    // ветками) и kNoNpcType (сирота NpcDeath).
+    // Прежние сносы: 16 тегов 2026-08-05; SettlementVisit /
+    // PlaceChangeOwner / WorldCellChange (M-116 часть 1); ApplyEffect /
+    // CodexUnlock / BattleStart (M-116, 2026-09-28); четыре квестовых —
+    // ломоть 3 M-72.
     //
-    // Six tags below have a producer but no PRODUCTION reader — PlayerMove,
-    // QuestStart, QuestUpdate, SpellCast, TimeAdvance, PlayerLeaveSettlement.
-    // They are facts without a listener, and who listens is M-116 (CANON S20);
-    // they are NOT dead ends of the same kind as the deleted ones.
-    // ShowDialog/ShowStory/StoryResult are not world facts at all — they are
-    // requests to the UI (CANON.md «Окна диалогов и сюжетные слайды — не факты,
-    // а просьбы к UI от логических узлов») and leave with M-175.
+    // ShowDialog/ShowStory/StoryResult/PlayerEnterSettlement — просьбы
+    // представлению (CANON: «Окна диалогов и сюжетные слайды — не факты,
+    // а просьбы к UI от логических узлов»), выселяются в ui/ нарядом
+    // M-175. SpireDepleted→SpellLearned — внутренняя просьба app→logic
+    // (слив факта Drained учит спеллу; реестр спеллов знает только
+    // content/). Нумерация плотная и неявная; сейва это не касается.
     enum class EventTag : std::uint16_t
     {
-        PlayerMove = 0,
-        NpcDeath,         // ix = NPCKind.type, iy = spell id. Идентичности
-                          // в a/b НЕТ ВОВСЕ (обе сироты снесены вердиктами
-                          // 2026-10-10 — сценная и макро; живая макро-
-                          // цепочка идёт конвертом BattleFact мимо события;
-                          // системная форма — эпиком событий/фрейма)
-        // (Четыре квестовых тега умерли с квест-машиной — ломоть 3 M-72,
-        //  вариант А: эмитентов не осталось ни одного.)
-        SpellCast,
-        SpellLearned,
-        TimeAdvance,      // a = day, iy = hour, ix = 1 event per elapsed hour
-        PlayerGoldChange, // ix = delta, iy = optional new total
-        ReputationChange, // s1 = factionId, ix = delta, iy = optional new value
+        SpellLearned = 0, // s1 = spell id; петля аппликатора (анонс учёбы)
         ShowDialog,       // s1 = title, s2 = description, ix = choice count
         ShowStory,        // s1 = source node, s2 = story id, ix/iy/a/b = counts
         StoryResult,      // storyResult = choices keyed by phase id
-        SpawnEntity,      // s1 = npc type id/name, ix/iy = x/y, a = level
         Custom,           // ДЕФОЛТ ИНИЦИАЛИЗАЦИИ, НЕ СОБЫТИЕ: the value a
                           // freshly declared GameEvent::tag (below) and
                           // ConditionSlot::tag (events/logic_nodes.h) carry
@@ -69,29 +56,17 @@ namespace sm
                           // emits it; making the default a real tag would have
                           // every uninitialised event claim to be that one.
         PlayerEnterSettlement, // s1 = settlement name, a/ix = settlement id
-        PlayerLeaveSettlement, // s1 = settlement name, a/ix = settlement id
         SpireDepleted,    // a = spire id, b = spell registry ordinal,
-                          // ix/iy = the spire's macro cell. The world fact
-                          // "this spire is consumed"; the spell itself lands
-                          // via the SpellLearned event the app layer emits
-                          // after resolving the ordinal (only content/ knows
-                          // the registry).
-        LastSerializable = SpireDepleted,
+                          // ix/iy = the spire's macro cell. Слив факта
+                          // Drained (spire_fact_sink): the spell lands via
+                          // the SpellLearned event the applicator emits
+                          // after resolving the ordinal.
+        Count,            // НЕ ТЕГ — выведенный счёт (ёмкость подписок
+                          // шины); новый тег встаёт ВЫШЕ этой строки.
     };
-
-    static_assert(EventTag::LastSerializable == EventTag::SpireDepleted);
-
-    // Native-only guard: event is still observable/history-visible, but the
-    // TS-equivalent state mutation already happened before emit.
-    constexpr std::uint32_t kEventEffectAlreadyApplied = 0x54535041u; // "TSPA"
 
     struct DialogChoicePayload;
     struct StoryResultPayload;
-
-    // NpcDeath carries the dead body's NPCKind.type in `ix`. A body with no
-    // NPCKind at all reports this instead of a plausible-looking 0, which is a
-    // real type id (Peasant) and would have been counted as one.
-    inline constexpr int kNoNpcType = -1;
 
     struct GameEvent
     {

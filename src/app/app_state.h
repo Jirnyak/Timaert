@@ -215,9 +215,8 @@ struct App {
     //  Задание игрока вернётся конструктором задач на форме цели рода 2.)
     std::size_t          appliedEventCount = 0;
     std::size_t          appliedStoryResultCount = 0;
-    // (appliedCombatEventCount died with EventTag::BattleStart — M-116,
-    //  2026-09-28: nothing in the world emitted that tag.)
-    std::size_t          appliedSpawnEventCount = 0;
+    // (appliedCombatEventCount died with EventTag::BattleStart — M-116;
+    //  appliedSpawnEventCount — с тегом SpawnEntity, M-410.)
     // (No playerRecovery accumulator. The fractional HP/MP rest remainders
     // are Pools::hpCarry/mpCarry on the player's squad entity — the same
     // slots every lord's are, and unlike the App-side pair they ride the
@@ -461,9 +460,7 @@ bool world_paused(const App& app);
 void sync_relative_mouse_mode(App& app);
 std::vector<sm::PathPoint> build_flight_path(int sx, int sy, int gx, int gy,
                                              int mapW, int mapH);
-int count_tick_events(const sm::EventBus& bus, sm::EventTag tag);
-const sm::GameEvent* latest_tick_event(const sm::EventBus& bus,
-                                       sm::EventTag tag);
+// (count_tick_events/latest_tick_event умерли с тегом SpellCast — M-410.)
 // HIS march caches — the two columns every squad carries (travelRank,
 // marathonRank, carryPerSoulG), on the FLAG. The hourly burn reads them, and so
 // does the camp-repays question.

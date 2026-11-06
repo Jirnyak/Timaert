@@ -60,7 +60,7 @@ private:
     std::uint32_t nextSubId_ = 1;
 
     static constexpr std::size_t kEventTagSlotCount =
-        static_cast<std::size_t>(EventTag::LastSerializable) + 1u;
+        static_cast<std::size_t>(EventTag::Count);
     std::array<std::vector<Sub>, kEventTagSlotCount> subsByTag_{};
     std::size_t subscriptionCount_ = 0;
 };

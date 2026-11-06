@@ -129,8 +129,10 @@ void draw_settlement(GameState& gs,
                      float scale = 1.0f);
 // (draw_quest_log умер с квест-машиной — ломоть 3 M-72, вариант А.)
 void draw_codex(GameState& gs, bool* open, float scale = 1.0f);
+// (Параметр bag умер с гейтом цены выбора — M-410: тег PlayerGoldChange
+//  снесён, контент effects не авторит; цена выбора вернётся строкой
+//  последствия диалога — M-175.)
 void draw_show_dialog(GameState& gs,
-                      const Inventory* bag,
                       const GameEvent& dialog,
                       EventBus& bus,
                       DialogOverlayState& state,

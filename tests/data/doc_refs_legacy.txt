@@ -196,7 +196,6 @@ SKELETON.md	engine.cpp:2301
 SKELETON.md	engine.cpp:232-234
 SKELETON.md	engine.cpp:2622
 SKELETON.md	engine.h:609
-SKELETON.md	event_bus.h:54-55
 SKELETON.md	faction.h:320
 SKELETON.md	features.h:131
 SKELETON.md	features.h:173
@@ -321,7 +320,6 @@ SKELETON.md	settlement_score.cpp:103
 SKELETON.md	settlement_score.h:115-116
 SKELETON.md	settlement_score.h:52
 SKELETON.md	settlement_score.h:53
-SKELETON.md	smoke.cpp:1827
 SKELETON.md	smoke.cpp:5450
 SKELETON.md	spawn.cpp:1010
 SKELETON.md	spawn.cpp:1225
