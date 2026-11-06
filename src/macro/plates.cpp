@@ -1,6 +1,7 @@
 #include "macro/plates.h"
 
 #include "core/rng.h"
+#include "core/torus.h"  // wrap_axis — заворот решётки маской (ЗАКОН АДРЕСА)
 
 #include <algorithm>
 #include <cmath>
@@ -114,10 +115,11 @@ PlateSample plate_sample(const PlateMap& map, float u, float v,
             const int cx = bx + ox;
             const int cy = by + oy;
             // Заворот решётки. `L` есть сторона мира, делённая на пролёт, и
-            // обе — степени двойки (ЗАКОН АДРЕСА), значит это маска; знаковый
-            // остаток берётся явно, потому что `cx` законно отрицателен.
-            const int wx = ((cx % L) + L) % L;
-            const int wy = ((cy % L) + L) % L;
+            // обе — степени двойки (ЗАКОН АДРЕСА), значит это МАСКА:
+            // `wrap_axis` заворачивает и отрицательный `cx` честно (двоичное
+            // дополнение под маской и есть знаковый остаток).
+            const int wx = wrap_axis(cx, L);
+            const int wy = wrap_axis(cy, L);
             const std::size_t ri = std::size_t(wy) * std::size_t(L) + std::size_t(wx);
             const PlateRow& row = map.rows[ri];
             // Представитель плиты РЯДОМ С ЗАПРОСОМ: её строка хранит затравку
