@@ -369,20 +369,10 @@ std::span<const ItemPart> item_parts(int defIdx) noexcept;
 // apart unseen.
 int item_yield(int defIdx) noexcept;
 
-// The row's LABOUR: batches one person-day of work runs (owner verdicts
-// 2026-09-12, «единая SP-система труда»). ONE number serves three workers:
-//   · the CITY prices its production day with it (econ_produce_day — a
-//     person-day is what a population buys, «чем больше населения, тем
-//     больше SP на дела»);
-//   · the HAND pays SP with it: one person-day = one FULL SP bar (the
-//     anchor kGatherPerWorkerDay is already derived from the quarter-bar
-//     work cycle), so a batch costs maxSp / labour — into the negative,
-//     with the march's own exhaustion bite («как в Elin», no second labour
-//     law);
-//   · a future harvest/craft SKILL multiplies through this same column
-//     (owner: «потом расширяемо») — appended, not designed now.
-// 0 = the row is not made by work (terminal raw matter).
-int item_labour(int defIdx) noexcept;
+// (`item_labour` УМЕРЛА 2026-11-06, ломоть «крафт + работа» M-369: темп
+// партий — `spRatePerDay` Craft-строки РЕЦЕПТА (tables/actions.h, ссылка
+// `kRecipes@src/macro/econ_day.h`), одно число на день города и SP руки;
+// носителей темпа труда в мире осталось РОВНО ОДИН род — строка действия.)
 
 // ── Закон МАССЫ удара и строка кулака (переехали из macro/anatomy.h, M-183:
 // это законы КАТАЛОГА оружия — темп выводится из веса СТРОКИ, никогда не

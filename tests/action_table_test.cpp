@@ -47,6 +47,7 @@
 #include "core/time.h"        // kTicksPerRealSecond — квант, на котором стоят якори
 #include "tables/actions.h"   // ЕДИНАЯ строка действия
 #include "tables/econ_laws.h" // sp_price/kGatherPerWorkerDay — закон цены труда
+#include "macro/econ_day.h"   // kRecipes — спецтаблица-половина крафта (M-369)
 #include "tables/items.h"     // weapon_mass_recovery_ticks — добавка массы (M-396)
 #include "tables/npc.h"       // kWitchCombat/kPeasantCombat — наборы строк существ
 
@@ -366,16 +367,78 @@ void labour_segment_prices_by_rate_for_both_worlds() {
                     "«не темповая», а не отсутствие");
 
     // ПОЛНОТА ОТРЕЗКА: цикл, который мерит, утверждает, что померил.
+    // «Весь труд — Gather» снято ломтём «крафт + работа» (M-369): трудовых
+    // ТИПА два, и они стоят ГРУППАМИ без чересполосицы (ЗАКОН ЛЕСТНИЦЫ п.2).
     int samples = 0, defects = 0;
+    ActionType prev = sm::kActionTypeLabourFirst;
     for (int i = 0; i < sm::kActionLabourCount; ++i) {
         const sm::ActionDef& a = sm::action_def(sm::kActionLabourFirst + i);
-        if (a.type != ActionType::Gather) ++defects;
+        if (sm::archetype_of(a.type) != ActionArchetype::Labour) ++defects;
+        if (a.type < prev) ++defects;
+        prev = a.type;
         if (a.spRatePerDay <= 0) ++defects;
         ++samples;
     }
     CHECK(samples == sm::kActionLabourCount && defects == 0,
-                    "каждая строка трудового отрезка — Gather с темповой "
-                    "ценой: нетемповый труд отдавал бы весь бар за акт");
+                    "каждая строка трудового отрезка — трудового типа "
+                    "(Gather|Craft группами) с темповой ценой: нетемповый "
+                    "труд отдавал бы весь бар за акт");
+}
+
+// ── 9. Крафтовый подотрезок: рецепт ссылается, строка несёт всё (M-369,
+// ломоть «крафт + работа») ───────────────────────────────────────────────
+void craft_segment_is_the_recipes_other_half() {
+    // 1:1 с рецептами — рантайм-тождество того, что стена
+    // `recipe_rows_point_at_craft@src/macro/econ_day.h` держит компилятором.
+    CHECK(sm::kActionCraftCount == sm::kRecipeCount,
+                    "крафтовых строк ровно столько, сколько рецептов: "
+                    "строка без рецепта — колонка-сирота");
+
+    const sm::ActionDef& mint =
+        sm::action_def(int(sm::action_slot("mint_coin")));
+    const sm::ActionDef& bricks =
+        sm::action_def(int(sm::action_slot("fire_bricks")));
+    const sm::ActionDef& sword =
+        sm::action_def(int(sm::action_slot("forge_sword")));
+    const sm::ActionDef& dagger =
+        sm::action_def(int(sm::action_slot("forge_dagger")));
+
+    // ПРАВО ПЕРЕЕХАЛО ДОСЛОВНО (колонки craft/minRank рецепта умерли в
+    // gateSkill/minRank строки): чеканка — кузнечное дело ранга 30.
+    CHECK(mint.gateSkill == sm::SkillId::Blacksmith && mint.minRank == 30,
+                    "право чеканки — пара «ремесло + минранг» СТРОКИ "
+                    "действия, перенос из колонок рецепта дословный");
+
+    // ТЕМП ПЕРЕЕХАЛ ДОСЛОВНО из умершей колонки perDay материи: кирпич —
+    // восьмушка бара, клинок — полдня, лёгкая строка — вдвое резвее клинка.
+    CHECK(bricks.spRatePerDay == 8,
+                    "темп кирпича: 8 партий на человеко-день — число "
+                    "умершей колонки perDay, переездом не сдвинуто");
+    CHECK(dagger.spRatePerDay == 2 * sword.spRatePerDay,
+                    "лестница темпа снаряжения: лёгкая строка вдвое резвее "
+                    "клинка (4 против 2) — отношение, не литерал");
+    CHECK(sm::sp_price(256, bricks.spRatePerDay) * bricks.spRatePerDay
+                        == 256,
+                    "цена партии — ровно доля бара: бар/темп × темп = бар "
+                    "(тот же закон sp_price, что у добычи и у руки)");
+
+    // ПОЛНОТА ПОДОТРЕЗКА: у всякой Craft-строки право НАЗВАНО (в отличие от
+    // добычи, где SkillId::Count — «рангом не ограничено»), база — рабочий
+    // ДЕНЬ тиками («сделал → вишу», M-326), охват — оба мира (город и
+    // рука), домен темпа — Армсмастер через лестницу.
+    int samples = 0, defects = 0;
+    for (int i = 0; i < sm::kActionLabourCount; ++i) {
+        const sm::ActionDef& a = sm::action_def(sm::kActionLabourFirst + i);
+        if (a.type != ActionType::Craft) continue;
+        if (a.gateSkill == sm::SkillId::Count) ++defects;
+        if (a.recoveryTicks != std::uint32_t(sm::kTicksPerDay)) ++defects;
+        if (a.scope != sm::ActionScope::MicroMacro) ++defects;
+        if (sm::action_tempo_generic(a) != sm::SkillId::Armsmaster) ++defects;
+        ++samples;
+    }
+    CHECK(samples == sm::kActionCraftCount && defects == 0,
+                    "каждая Craft-строка: право названо, база — день "
+                    "(сделал → вишу), охват MicroMacro, темп — Армсмастер");
 }
 
 } // namespace
@@ -389,5 +452,6 @@ int main() {
     cost_is_all_or_nothing_across_three_pools();
     combat_segment_strike_mass_and_row_sets();
     labour_segment_prices_by_rate_for_both_worlds();
+    craft_segment_is_the_recipes_other_half();
     return sm::test::report("action_table_test");
 }

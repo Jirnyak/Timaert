@@ -154,7 +154,7 @@ constexpr ItemDef kCatalog[] = {
     // всю лестницу (400 г за единицу блока), и держит её `static_assert`, а
     // не честное слово: два литерала о одной вещи иначе разъезжаются молча.
     // Темп работы делится тем же шагом (4 → 2 → 1 партия на рабочий день,
-    // `kPartsAuthoring` ниже).
+    // Craft-строки щитов в tables/actions.h).
     //
     // МАССА ЧИТАЕТСЯ СОСТАВОМ: кулачный щит — ЖЕЛЕЗНЫЙ диск (руда 4000 г →
     // вещь 2000 г), павеза — ДОСКИ с оковкой (10 000 г материи → 8000 г
@@ -443,71 +443,66 @@ struct PartsAuthoringRow {
     // yield is pinned to the price anchor by the value-neutrality witness
     // (item_parts_test), so 32 here and silver's value 32 cannot drift.
     int yield = 1;
-    // LABOUR: batches per person-day (items.h item_labour — the one column
-    // the city's production day, the hand's SP price and a future craft
-    // skill all read). The economy rows carry their retired kRecipes tempo
-    // VERBATIM (self-play balance unmoved); the hand-craft rows are new
-    // round po2 authoring under the same witnesses.
-    int perDay = 1;
+    // (Колонка ТРУДА `perDay` умерла 2026-11-06, ломоть «крафт + работа»
+    // M-369: темп партий — `spRatePerDay` Craft-строки рецепта в
+    // tables/actions.h, числа перенесены ДОСЛОВНО; носитель темпа труда
+    // один на добычу и крафт, на оба мира.)
 };
 constexpr PartsAuthoringRow kPartsAuthoring[] = {
     // The MINT rows (CANON S10 unified 2026-09-12): one silver strikes 32
     // nominal-1 coins of any realm — the same matter table, the same scrap
     // door melts them back (64 coins → 1 silver by the pooled entropy law).
-    // Labour 4 = the old mint tempo «4 металла на рабочий-день», the
-    // emission-rate balance knob.
     // Coins: 1 metal → 128 coins of ITS metal (verdict №1, «1 металл → 32
     // монеты своего металла», raised to 128 by the owner 2026-09-18: «128
     // норм» — an ore grade of 32 % by the weight columns, see
     // mint_yield_is_mass_honest). One yield for all twelve rows;
     // nominal × 32 == the metal's value, held by mint_is_value_neutral.
-    {"coin_empire_copper",  {{"copper", 1}}, 128, 4},
-    {"coin_empire_silver",  {{"silver", 1}}, 128, 4},
-    {"coin_empire_gold",    {{"gold",   1}}, 128, 4},
-    {"coin_magika_copper",  {{"copper", 1}}, 128, 4},
-    {"coin_magika_silver",  {{"silver", 1}}, 128, 4},
-    {"coin_magika_gold",    {{"gold",   1}}, 128, 4},
-    {"coin_timaert_copper", {{"copper", 1}}, 128, 4},
-    {"coin_timaert_silver", {{"silver", 1}}, 128, 4},
-    {"coin_timaert_gold",   {{"gold",   1}}, 128, 4},
-    {"coin_barbar_copper",  {{"copper", 1}}, 128, 4},
-    {"coin_barbar_silver",  {{"silver", 1}}, 128, 4},
-    {"coin_barbar_gold",    {{"gold",   1}}, 128, 4},
+    {"coin_empire_copper",  {{"copper", 1}}, 128},
+    {"coin_empire_silver",  {{"silver", 1}}, 128},
+    {"coin_empire_gold",    {{"gold",   1}}, 128},
+    {"coin_magika_copper",  {{"copper", 1}}, 128},
+    {"coin_magika_silver",  {{"silver", 1}}, 128},
+    {"coin_magika_gold",    {{"gold",   1}}, 128},
+    {"coin_timaert_copper", {{"copper", 1}}, 128},
+    {"coin_timaert_silver", {{"silver", 1}}, 128},
+    {"coin_timaert_gold",   {{"gold",   1}}, 128},
+    {"coin_barbar_copper",  {{"copper", 1}}, 128},
+    {"coin_barbar_silver",  {{"silver", 1}}, 128},
+    {"coin_barbar_gold",    {{"gold",   1}}, 128},
     // Consumables: alchemy is herb-matter. ПИЩА СТРОКИ ЗДЕСЬ НЕ ИМЕЕТ — она
     // ТЕРМИНАЛЬНА (CANON S10 «ЕДА НЕ ПРОИЗВОДИТСЯ — ЕДА ДОБЫВАЕТСЯ»), и её
     // отсутствие И ЕСТЬ этот закон: без состава день производства не берёт
     // строку в кандидаты вовсе (econ_day.cpp item_parts().empty()).
-    {"potion_hp",   {{"mat_herb", 2}}, 1, 8},
-    {"potion_mp",   {{"mat_herb", 2}}, 1, 8},
+    {"potion_hp",   {{"mat_herb", 2}}, 1},
+    {"potion_mp",   {{"mat_herb", 2}}, 1},
     // The economy's goods — former kRecipes inputs AND tempos, verbatim.
-    {"cloth",       {{"fibre", 2}}, 1, 4},
-    {"bricks",      {{"clay", 1}}, 1, 8},
-    {"tools",       {{"iron", 1}, {"wood", 1}}, 1, 2},
-    {"furniture",   {{"wood", 2}}, 1, 2},
-    {"wagon",       {{"wood", 4}, {"iron", 1}}, 1, 1},
-    {"jewelry",     {{"iron", 1}, {"stone", 1}}, 1, 1},
-    {"carving",     {{"wood", 1}}, 1, 2},
-    {"statue",      {{"stone", 8}}, 1, 1},
+    {"cloth",       {{"fibre", 2}}, 1},
+    {"bricks",      {{"clay", 1}}, 1},
+    {"tools",       {{"iron", 1}, {"wood", 1}}, 1},
+    {"furniture",   {{"wood", 2}}, 1},
+    {"wagon",       {{"wood", 4}, {"iron", 1}}, 1},
+    {"jewelry",     {{"iron", 1}, {"stone", 1}}, 1},
+    {"carving",     {{"wood", 1}}, 1},
+    {"statue",      {{"stone", 8}}, 1},
     // Equipment: the metal ladder follows the swing-mass ladder (a mace is
     // more metal than a dagger); hafted rows carry their wood honestly so
-    // crafting one EATS wood and scrapping one returns it. Labour: a blade
-    // is half a smith-day (2/day), the light rows turn faster (4/day).
-    {"wpn_dagger",  {{"iron", 1}}, 1, 4},
-    {"wpn_sword",   {{"iron", 2}}, 1, 2},
-    {"wpn_spear",   {{"wood", 1}, {"iron", 1}}, 1, 2},
-    {"wpn_axe",     {{"iron", 2}, {"wood", 1}}, 1, 2},
-    {"wpn_mace",    {{"iron", 3}}, 1, 2},
-    {"wpn_staff",   {{"wood", 1}}, 1, 4},
-    {"wpn_bow",     {{"wood", 1}}, 1, 2},
-    {"arm_leather", {{"mat_hide", 3}}, 1, 2},
+    // crafting one EATS wood and scrapping one returns it. Labour lives on
+    // the recipe's action row (forge_sword 2/day, forge_dagger 4/day…).
+    {"wpn_dagger",  {{"iron", 1}}, 1},
+    {"wpn_sword",   {{"iron", 2}}, 1},
+    {"wpn_spear",   {{"wood", 1}, {"iron", 1}}, 1},
+    {"wpn_axe",     {{"iron", 2}, {"wood", 1}}, 1},
+    {"wpn_mace",    {{"iron", 3}}, 1},
+    {"wpn_staff",   {{"wood", 1}}, 1},
+    {"wpn_bow",     {{"wood", 1}}, 1},
+    {"arm_leather", {{"mat_hide", 3}}, 1},
     // ЩИТЫ (M-390): состав читается с той же лестницы, что масса и блок —
     // кулачный есть ЖЕЛЕЗНЫЙ диск, круглый есть доска с оковкой, павеза есть
-    // три доски с оковкой. Труд делится тем же шагом, которым растёт масса:
-    // 4 → 2 → 1 партия на рабочий день, как лёгкая строка оружия (4) против
-    // клинка (2) против повозки (1).
-    {"shield_buckler", {{"iron", 1}}, 1, 4},
-    {"shield_round",   {{"wood", 1}, {"iron", 1}}, 1, 2},
-    {"shield_tower",   {{"wood", 3}, {"iron", 1}}, 1, 1},
+    // три доски с оковкой. Труд делится тем же шагом, которым растёт масса
+    // (Craft-строки щитов в tables/actions.h: 4 → 2 → 1 партия на день).
+    {"shield_buckler", {{"iron", 1}}, 1},
+    {"shield_round",   {{"wood", 1}, {"iron", 1}}, 1},
+    {"shield_tower",   {{"wood", 3}, {"iron", 1}}, 1},
 };
 
 // ── The mint is value-neutral, BY LITERAL (owner 2026-09-12) ───────────────
@@ -945,7 +940,6 @@ struct ResolvedParts {
     ItemPart p[kMaxItemParts]{};
     int      n = 0;
     int      yield = 1;
-    int      perDay = 0;   // 0 = not made by work (terminal)
 };
 
 const std::array<ResolvedParts, std::size(kCatalog)>& parts_table() {
@@ -959,7 +953,6 @@ const std::array<ResolvedParts, std::size(kCatalog)>& parts_table() {
             if (idx < 0) continue;
             ResolvedParts& out = t[std::size_t(idx)];
             out.yield = row.yield > 1 ? row.yield : 1;
-            out.perDay = row.perDay > 0 ? row.perDay : 1;
             for (const auto& part : row.p) {
                 if (!part.mat || part.n <= 0) continue;
                 const int mi = item_index(part.mat);
@@ -986,12 +979,6 @@ int item_yield(int defIdx) noexcept {
     const auto& t = parts_table();
     if (defIdx < 0 || defIdx >= int(t.size())) return 1;
     return t[std::size_t(defIdx)].yield;
-}
-
-int item_labour(int defIdx) noexcept {
-    const auto& t = parts_table();
-    if (defIdx < 0 || defIdx >= int(t.size())) return 0;
-    return t[std::size_t(defIdx)].perDay;
 }
 
 std::vector<ItemRef> roll_loot_profile(const char* lootId, int level, RngFn rng,

@@ -979,6 +979,15 @@ namespace sm::ui
                             const auto parts = item_parts(ci);
                             if (parts.empty())
                                 continue;
+                            // Партию ценит и пускает Craft-строка РЕЦЕПТА
+                            // (одна на оба мира, M-369 «крафт + работа»);
+                            // состав без рецепта невыразим — биекцию держит
+                            // свидетель (item_parts_test), здесь fail-closed.
+                            const int ri = recipe_of_item(ci);
+                            if (ri < 0)
+                                continue;
+                            const ActionDef &act =
+                                action_def(int(kRecipes[ri].action));
                             const int yield = item_yield(ci);
                             const ItemDef &row = catalog[std::size_t(ci)];
                             ImGui::TableNextRow();
@@ -1026,19 +1035,37 @@ namespace sm::ui
                             }
                             // The SP price of ONE batch: a person-day is a
                             // FULL bar (the kGatherPerWorkerDay anchor's own
-                            // derivation), so a batch costs bar / labour —
-                            // and it is paid INTO THE NEGATIVE (owner
-                            // 2026-09-12, «как в Elin», the march law): the
-                            // button never greys on fatigue, forging on an
-                            // empty bar simply leaves you exhausted for the
-                            // exhaustion bite to find.
+                            // derivation), so a batch costs bar / tempo —
+                            // the recipe's own action row, the same number
+                            // the town's production day divides by — and it
+                            // is paid INTO THE NEGATIVE (owner 2026-09-12,
+                            // «как в Elin», the march law): the button never
+                            // greys on fatigue, forging on an empty bar
+                            // simply leaves you exhausted for the exhaustion
+                            // bite to find.
                             const int spCost =
-                                sp_price(int(pools.maxSp), item_labour(ci));
+                                sp_price(int(pools.maxSp), act.spRatePerDay);
                             ImGui::SameLine();
                             ImGui::TextDisabled("SP %d", spCost);
+                            // ПРАВО — та же пара «ремесло + минранг», которой
+                            // гейтится город (recipe_known, M-146 «гейт руки
+                            // и гейт города — один»): нулевой кузнечный
+                            // больше не чеканит монету.
+                            const bool known = recipe_known(
+                                sheet.skills, act.gateSkill,
+                                int(act.minRank));
+                            if (!known)
+                            {
+                                ImGui::SameLine();
+                                ImGui::TextColored(
+                                    ImVec4(0.9f, 0.35f, 0.3f, 1.0f),
+                                    "%s %d",
+                                    skill_def(act.gateSkill).label,
+                                    int(act.minRank));
+                            }
                             ImGui::TableNextColumn();
                             ImGui::PushID(ci);
-                            ImGui::BeginDisabled(!can);
+                            ImGui::BeginDisabled(!can || !known);
                             if (ImGui::SmallButton("Craft"))
                             {
                                 if (craft_item(playerBag, ci, 1))

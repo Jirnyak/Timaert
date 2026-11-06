@@ -43,6 +43,7 @@
 #include <array>
 #include <cstdint>
 #include "bus/anketa.h"   // SkillId/Skills — ремесло открывает рецепт
+#include "tables/actions.h"   // строка труда: темп, право, база — одна на оба мира
 #include "tables/commodity.h"
 #include "tables/econ_laws.h" // kGatherPerWorkerDay/sp_price — законы труда
                               // уехали в нейтральный слой (их читает субмир);
@@ -90,6 +91,13 @@ int commodity_of_item(int itemIdx);
 // -1 у строки, чей id каталогу неизвестен.
 int recipe_out_item(int recipeRow);
 
+// ОБРАТНЫЙ КОНЕЦ ТОГО ЖЕ МОСТА: строка каталога → ЕЁ рецепт (-1 у строки
+// без состава). Монетные строки (архетип Currency) отвечают минтом: двенадцать
+// номиналов делает ОДИН рецепт kMintOutput, это его разворот фракцией.
+// Читатель — верстак руки (вкладка Craft): цена и право партии приходят из
+// Craft-строки рецепта, второго носителя у них нет.
+int recipe_of_item(int itemIdx);
+
 // МОНЕТНАЯ СЕМЬЯ ФРАКЦИИ — КАТАЛОЖНЫМИ ОРДИНАЛАМИ, ЗОЛОТО ПЕРВЫМ (тот же
 // порядок, которым чеканит день: старший номинал бьёт тем же темпом в 100×
 // стоимости). Резолв один раз на фракцию: три хеш-поиска по строкам монет
@@ -112,21 +120,23 @@ const std::array<int, 3>& faction_mint_rows(int factionIdx);
 // потому, что она деревня, а потому что её кузнечный ранг ноль.)
 
 // Рецепт открыт этим рукам? Один вопрос, один ответ, ноль веток по виду.
+// Пара «ремесло + минранг» приходит из СТРОКИ ДЕЙСТВИЯ рецепта
+// (`gateSkill`/`minRank` его Craft-строки): город и рука спрашивают ОДНУ
+// строку, второго гейта нет (M-146, «гейт руки и гейт города — один»).
 inline bool recipe_known(const Skills& sk, SkillId craft, int minRank) {
     return sk.of(craft) >= minRank;
 }
 
-// A recipe names only THE SCHEDULE — what this kind of place works on, and
-// where. Its MATTER became the catalog row's composition on 2026-09-11, and
-// its TEMPO followed on 2026-09-12 (owner: «единая SP-система труда»):
-// batches-per-person-day is the item's own labour column (tables/items.h
-// item_labour), the same number the hand's SP price divides by. Two tables
-// of «из чего ткань» — and then two of «сколько труда в ткани» — each
-// drifted apart exactly once before they were merged.
+// РЕЦЕПТ — СПЕЦТАБЛИЦА-ПОЛОВИНА ТРУДА (ломоть «крафт + работа» M-369, та же
+// форма, какой добыча делит строку с kGathererDefs): универсальная половина
+// — база, цена-темп и ПРАВО — живёт Craft-строкой таблицы действий, ссылка
+// ординалом; здесь остаётся только СВОЁ — что выходит из партии. МАТЕРИЯ
+// стала составом строки каталога 2026-09-11; ТЕМП жил колонкой предмета
+// (item_labour) с 2026-09-12 и уехал в строку действия 2026-11-06 — носитель
+// темпа труда теперь ОДИН на добычу и крафт, на оба мира.
 struct RecipeDef {
-    const char*  output;    // commodity id
-    SkillId      craft;     // ЧЬИ руки это делают
-    std::uint8_t minRank;   // и с какого ранга умеют
+    const char*  output;    // id выходной строки (товар, монета, вещь)
+    std::uint8_t action;    // ссылка-ординал Craft-строки таблицы действий
 };
 
 // The MINT output marker: not a commodity row — the produce scheduler
@@ -139,47 +149,86 @@ inline constexpr const char* kMintOutput = "coin";
 // к единой системе»): it is the COIN ROW'S OWN composition — {silver 1} →
 // yield 32 (items.cpp kPartsAuthoring, «состав монеты и есть монетный
 // двор») — so striking and MELTING coin are the one reaction every other
-// item runs. What this row keeps is the RIGHT and the TEMPO: only a place
-// with a coin named runs it, at outputPerWorkerDay BATCHES (= metal units)
-// a day.
+// item runs. What this row keeps is only the LINK: the right and the tempo
+// are the mint_coin action row's own columns, like every other recipe's.
 
 // (ЯКОРЬ ТЕМПА `kGatherPerWorkerDay` УЕХАЛ в tables/econ_laws.h ломтём 1б
 // эпика пакетов v1 — его читает субмир, а §11 запрещает ему macro/. Таблица
 // рецептов ниже задаёт тот же темп «за рабочий день» и читается рядом с ним.)
 
-// РЕМЕСЛО И РАНГ вместо вида места. Ранги расставлены редко и без претензии:
-// это РАННЯЯ ДЕМКА (владелец, 2026-09-18) — закладывается СИСТЕМА, а рецептов
-// у ремесла со временем станет много, и тогда шаг между ними станет узким сам
-// собой. Ремесло названо по МАТЕРИИ, с которой работают руки.
+// РЕМЕСЛО И РАНГ — колонки Craft-СТРОКИ рецепта (tables/actions.h); ранги
+// расставлены редко и без претензии: это РАННЯЯ ДЕМКА (владелец, 2026-09-18)
+// — закладывается СИСТЕМА, а рецептов у ремесла со временем станет много, и
+// тогда шаг между ними станет узким сам собой.
 //
-// ДЕРЕВООБРАБОТКИ отдельной строкой пока нет (пять ремёсел — слово владельца),
-// поэтому мебель и резьба квартируют у masonry как «что сложено и сколочено».
-// Переселить их = поменять одну колонку, кода это не касается.
+// ПОКРЫТИЕ ПОЛНОЕ (вердикт владельца 2026-09-27, «оружие и броня — товар
+// производства… ВКЛЮЧАЕТСЯ СРАЗУ, И ПРИБОР — СУДЬЯ», включено ломтём
+// 2026-11-06): всякая строка каталога с СОСТАВОМ имеет рецепт — оружие, кожа
+// и щиты встали рядом с товарами, город кует их тем же argmax-ом дня.
+// Биекцию «состав ⇔ рецепт» держит свидетель (tests/item_parts_test.cpp).
 inline constexpr RecipeDef kRecipes[] = {
-    // What each output CONSUMES — and HOW FAST it turns — lives on its
-    // catalog row: items.cpp kPartsAuthoring composition + labour columns.
-    // ПИЩИ ЗДЕСЬ НЕТ И БЫТЬ НЕ МОЖЕТ (CANON S10 «ЕДА НЕ ПРОИЗВОДИТСЯ — ЕДА
-    // ДОБЫВАЕТСЯ»): у пищевой строки нет состава, а кандидат без состава
-    // отсеивается дверью производства (econ_day.cpp item_parts().empty()).
-    // ЧЕКАНКА — кузнечное дело высокого ранга. Права чеканки КОЛОНКОЙ не
-    // существует (канон, вердикт №12): чеканит тот, чьи руки умеют.
-    {kMintOutput, SkillId::Blacksmith, 30},
-    {"bricks",    SkillId::Masonry,     1},
-    {"cloth",     SkillId::Tailoring,   1},
-    {"tools",     SkillId::Blacksmith,  1},
-    {"furniture", SkillId::Masonry,    10},
-    {"wagon",     SkillId::Blacksmith, 15},
-    {"jewelry",   SkillId::Blacksmith, 20},
-    {"carving",   SkillId::Masonry,     5},
-    {"statue",    SkillId::Masonry,    25},
+    // What each output CONSUMES lives on its catalog row (items.cpp
+    // kPartsAuthoring); HOW FAST it turns and WHOSE hands may — on its
+    // action row. ПИЩИ ЗДЕСЬ НЕТ И БЫТЬ НЕ МОЖЕТ (CANON S10 «ЕДА НЕ
+    // ПРОИЗВОДИТСЯ — ЕДА ДОБЫВАЕТСЯ»): у пищевой строки нет состава, а
+    // кандидат без состава отсеивается дверью производства (econ_day.cpp
+    // item_parts().empty()).
+    // ЧЕКАНКА — кузнечное дело высокого ранга (право — строкой mint_coin).
+    // Права чеканки КОЛОНКОЙ не существует (канон, вердикт №12): чеканит
+    // тот, чьи руки умеют.
+    {kMintOutput, action_slot("mint_coin")},
+    {"bricks",    action_slot("fire_bricks")},
+    {"cloth",     action_slot("weave_cloth")},
+    {"tools",     action_slot("forge_tools")},
+    {"furniture", action_slot("join_furniture")},
+    {"wagon",     action_slot("build_wagon")},
+    {"jewelry",   action_slot("cut_jewelry")},
+    {"carving",   action_slot("carve_figure")},
+    {"statue",    action_slot("hew_statue")},
     // ЗЕЛЬЯ ВАРЯТ (владелец, 2026-09-18). Состав у них в каталоге был всегда
     // ({mat_herb 2} → 8), в производственном дне — не было. Пока травы в мир
     // не приходят, строка честно варит ноль партий: у рецепта нет материи, а
     // не нет рецепта.
-    {"potion_hp", SkillId::Alchemy,     1},
-    {"potion_mp", SkillId::Alchemy,    10},
+    {"potion_hp", action_slot("brew_potion_hp")},
+    {"potion_mp", action_slot("brew_potion_mp")},
+    // СНАРЯЖЕНИЕ — рецепты пришли 2026-11-06 вместе с правом в строках
+    // действий: прежде состав был у этих вещей всегда, а права не было ни у
+    // одной («город не кует оружие НИКОГДА» — расхождение M-146, закрыто).
+    {"wpn_dagger",      action_slot("forge_dagger")},
+    {"wpn_sword",       action_slot("forge_sword")},
+    {"wpn_spear",       action_slot("forge_spear")},
+    {"wpn_axe",         action_slot("forge_axe")},
+    {"wpn_mace",        action_slot("forge_mace")},
+    {"wpn_staff",       action_slot("carve_staff")},
+    {"wpn_bow",         action_slot("carve_bow")},
+    {"arm_leather",     action_slot("sew_leather")},
+    {"shield_buckler",  action_slot("forge_buckler")},
+    {"shield_round",    action_slot("bind_round_shield")},
+    {"shield_tower",    action_slot("bind_tower_shield")},
 };
 inline constexpr int kRecipeCount = int(sizeof(kRecipes) / sizeof(kRecipes[0]));
+
+// ── СТЕНА СПЕЦТАБЛИЦЫ: ССЫЛКА МИМО КРАФТОВОГО ПОДОТРЕЗКА НЕСОБИРАЕМА ─────
+// Та же стена, что у добычи (`gatherer_rows_point_at_labour@src/macro/
+// npc_ai.cpp`): ордината, глядящая в чужой тип, означала бы право и темп из
+// чужого закона. Плюс 1:1 — у двух рецептов не бывает одной строки действия
+// (у каждого СВОЁ право и СВОЙ темп), и крафтовых строк без рецепта не
+// бывает (строка без читателя — колонка-сирота, DOD п.9).
+inline constexpr bool recipe_rows_point_at_craft() {
+    if (kRecipeCount != kActionCraftCount) return false;
+    for (int i = 0; i < kRecipeCount; ++i) {
+        const int ord = int(kRecipes[i].action);
+        if (!action_ordinal_valid(ord)) return false;
+        if (action_def(ord).type != ActionType::Craft) return false;
+        for (int j = 0; j < i; ++j)
+            if (kRecipes[j].action == kRecipes[i].action) return false;
+    }
+    return true;
+}
+static_assert(recipe_rows_point_at_craft(),
+              "спецтаблица рецептов: каждая строка ссылается на СВОЮ "
+              "Craft-строку таблицы действий (1:1, без дублей), и крафтовых "
+              "строк без рецепта не существует");
 
 // ── НУЖДА ЕСТЬ ДОЛЯ БЮДЖЕТА ГОРОЖАНИНА, А НЕ СТРОКА АВТОРСКОЙ ЛЕСТНИЦЫ ────
 //

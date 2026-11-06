@@ -154,12 +154,13 @@ int main() {
             }
             if (int(part.count) <= 0) return fail("recipe qty <= 0");
         }
-        // ...and its tempo = the same row's labour column (2026-09-12): a
-        // scheduled output nobody's day can turn is a dead recipe row. The
-        // mint's output resolves per town — its labour lives on the coin
-        // rows, checked with their composition below.
-        if (out >= 0 && item_labour(commodity_item_index(out)) <= 0) {
-            return fail("recipe output has no labour (batches/person-day)");
+        // ...and its tempo = the recipe's own ACTION row (M-369 «крафт +
+        // работа», 2026-11-06): a scheduled output nobody's day can turn is
+        // a dead recipe row. The compile-time walls already make a rate-less
+        // Craft row unbuildable; this line keeps the runtime witness honest
+        // about the same door the day actually reads.
+        if (action_def(int(kRecipes[r].action)).spRatePerDay <= 0) {
+            return fail("recipe action has no tempo (batches/person-day)");
         }
     }
     // ЛЕСТНИЦА kNeeds УМЕРЛА (M-137): нужда есть доля бюджета горожанина, а
@@ -673,8 +674,13 @@ int main() {
         for (int i = 0; i < kRecipeCount; ++i) {
             const RecipeDef& r = kRecipes[i];
             const bool isMint = std::strcmp(r.output, kMintOutput) == 0;
-            const bool village = recipe_known(VILLAGE, r.craft, r.minRank);
-            const bool city = recipe_known(CITY, r.craft, r.minRank);
+            // Право рецепта — колонки его Craft-строки (M-369): тот же
+            // вопрос, та же дверь, что у дня производства.
+            const ActionDef& act = action_def(int(r.action));
+            const bool village =
+                recipe_known(VILLAGE, act.gateSkill, int(act.minRank));
+            const bool city =
+                recipe_known(CITY, act.gateSkill, int(act.minRank));
             if (isMint) {
                 ++mintRows;
                 CHECK(!village, "деревня НЕ чеканит — ранг ниже монетного");

@@ -119,8 +119,13 @@ void test_the_registry_is_addressable_by_ordinal() {
         CHECK(d.key != nullptr && d.key[0] != '\0', "every row names itself");
         CHECK(d.label != nullptr && d.label[0] != '\0', "and labels itself");
         bool namedByRecipe = false;
+        // Право рецепта — колонки его Craft-строки (M-369): ремесло
+        // спрашивается у той же двери, что и день производства.
         for (const RecipeDef& r : kRecipes)
-            if (r.craft == SkillId(i)) { namedByRecipe = true; break; }
+            if (action_def(int(r.action)).gateSkill == SkillId(i)) {
+                namedByRecipe = true;
+                break;
+            }
         if (namedByRecipe) ++craftRows;
         bool sleeps = false;
         for (SkillId s : kSleepers) if (s == SkillId(i)) { sleeps = true; break; }

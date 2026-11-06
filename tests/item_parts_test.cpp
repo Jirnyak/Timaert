@@ -21,6 +21,7 @@
 
 #include "tables/commodity.h"
 #include "macro/currency.h"
+#include "macro/econ_day.h"   // kRecipes/recipe_of_item — биекция состав⇔рецепт
 #include "bus/anketa.h"
 
 #include <cstring>
@@ -37,6 +38,22 @@ ItemRef plain(const char* id, int n) {
     r.def = std::uint16_t(item_index(id));
     r.count = n;
     return r;
+}
+
+// Рецепт строки каталога — ИЗ АВТОРСКИХ ТАБЛИЦ (kRecipes по id выхода;
+// монетные строки отвечает минт — двенадцать номиналов делает один рецепт
+// kMintOutput, его разворот фракцией живёт в econ_day.cpp).
+int recipe_row_for(int defIdx) {
+    const ItemDef* d = item_def_at(defIdx);
+    if (!d) return -1;
+    if (item_archetype(*d) == ObjectArchetype::Currency) {
+        for (int ri = 0; ri < kRecipeCount; ++ri)
+            if (std::strcmp(kRecipes[ri].output, kMintOutput) == 0) return ri;
+        return -1;
+    }
+    for (int ri = 0; ri < kRecipeCount; ++ri)
+        if (item_index(kRecipes[ri].output) == defIdx) return ri;
+    return -1;
 }
 
 int slot_of(const Inventory& inv, int defIdx) {
@@ -59,14 +76,25 @@ void test_table_laws() {
               "a row's parts fit the 4-slot ceiling");
         const int yield = item_yield(i);
         CHECK(yield >= 1, "a row's yield is at least one item per batch");
-        // LABOUR pairs with matter (owner 2026-09-12, «единая SP-система
-        // труда»): what is made by work states its tempo; raw matter is not
-        // made at all — so the hand's SP price (bar/labour) and the city's
-        // day (labour × workers) can never divide by zero or invent work.
+        // LABOUR pairs with matter THROUGH THE RECIPE TABLE (M-369 «крафт +
+        // работа», 2026-11-06): what is made by work has a RECIPE, whose
+        // Craft-строка states the tempo; raw matter has neither — so the
+        // hand's SP price (bar/tempo) and the city's day can never divide
+        // by zero or invent work. Это БИЕКЦИЯ «состав ⇔ рецепт»: строка с
+        // составом и без рецепта — дыра покрытия (прежде так жило оружие:
+        // состав есть, права нет, «город не кует НИКОГДА», M-146). Свидетель
+        // спрашивает АВТОРСКИЕ таблицы (kRecipes + каталог), а не дверь-кэш
+        // recipe_of_item — у двери свой дом (econ_day.cpp), у закона — та
+        // таблица, из которой дверь выведена.
         if (parts.empty()) {
-            CHECK(item_labour(i) == 0, "terminal rows carry no labour");
+            CHECK(recipe_row_for(i) < 0, "terminal rows have no recipe");
         } else {
-            CHECK(item_labour(i) >= 1, "every made row states its labour");
+            const int ri = recipe_row_for(i);
+            CHECK(ri >= 0, "every made row has its recipe");
+            if (ri >= 0) {
+                CHECK(action_def(int(kRecipes[ri].action)).spRatePerDay >= 1,
+                      "every made row's craft action states its labour");
+            }
         }
         long batchMatterValue = 0;
         for (const ItemPart& p : parts) {

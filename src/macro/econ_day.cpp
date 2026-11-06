@@ -102,12 +102,13 @@ int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
     int candCount = 0;
     // THE population-efficiency law (owner 2026-08-30, CANON S10, ?31
     // closed): КПД = log2(популяции)/4 — «город вдвое больше работает на
-    // четверть лучше». Integer log2 (bit width); темп = колонка труда
-    // выходной строки (items.h item_labour — то же число, которым платит
+    // четверть лучше». Integer log2 (bit width); темп = spRatePerDay
+    // Craft-строки рецепта (tables/actions.h — то же число, которым платит
     // рука в SP), в ПАРТИЯХ.
     const int popLog =
         population > 1 ? (std::bit_width(unsigned(population)) - 1) : 0;
-    const auto push_cand = [&](int outIdx, int commodity, bool isMint) {
+    const auto push_cand = [&](int outIdx, int commodity, bool isMint,
+                               int ratePerDay) {
         // -1 = минт без монеты (не двор) или мёртвый id — fail closed.
         if (outIdx < 0) return;
         if (item_parts(outIdx).empty()) return;   // без состава нет партий
@@ -116,17 +117,21 @@ int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
         cands[std::size_t(candCount++)] = Cand{
             outIdx, commodity, isMint,
             season_demand_for(outIdx, needDebt, population, hands, &store),
-            std::max(1, item_labour(outIdx) * popLog / 4),
+            std::max(1, ratePerDay * popLog / 4),
             item_yield(outIdx), def->value};
     };
     for (int i = 0; i < kRecipeCount; ++i) {
-        if (!recipe_known(hands, kRecipes[i].craft, kRecipes[i].minRank))
+        // Право и темп — колонки Craft-строки рецепта: ОДНА строка на оба
+        // мира, город спрашивает её же, что и рука (M-146: гейт один).
+        const ActionDef& act = action_def(int(kRecipes[i].action));
+        if (!recipe_known(hands, act.gateSkill, int(act.minRank)))
             continue;
         const ResolvedRecipe& rr = t.recipes[i];
         if (rr.isMint) {
-            for (int m = 0; m < 3; ++m) push_cand(mintRows[m], -1, true);
+            for (int m = 0; m < 3; ++m)
+                push_cand(mintRows[m], -1, true, act.spRatePerDay);
         } else {
-            push_cand(rr.outItem, rr.output, false);
+            push_cand(rr.outItem, rr.output, false, act.spRatePerDay);
         }
     }
 
@@ -304,6 +309,34 @@ int hunger_item_index() { return commodity_item_index(hunger_commodity_ordinal()
 int recipe_out_item(int recipeRow) {
     return (recipeRow >= 0 && recipeRow < kRecipeCount)
         ? resolved().recipes[recipeRow].outItem : -1;
+}
+
+// Строка каталога → ЕЁ рецепт, резолв один раз (тот же паттерн, что мост
+// товаров ниже). Монетные строки отвечают минтом: его outItem = -1 («coin»
+// не строка каталога), поэтому их вяжет архетип Currency, а не id.
+int recipe_of_item(int itemIdx) {
+    static const std::vector<std::int16_t> kBack = [] {
+        std::vector<std::int16_t> b(item_catalog().size(), -1);
+        int mintRow = -1;
+        for (int ri = 0; ri < kRecipeCount; ++ri) {
+            if (resolved().recipes[ri].isMint) { mintRow = ri; continue; }
+            const int row = resolved().recipes[ri].outItem;
+            if (row >= 0 && row < int(b.size())) {
+                b[std::size_t(row)] = std::int16_t(ri);
+            }
+        }
+        if (mintRow >= 0) {
+            for (int i = 0; i < int(b.size()); ++i) {
+                const ItemDef* d = item_def_at(i);
+                if (d && item_archetype(*d) == ObjectArchetype::Currency) {
+                    b[std::size_t(i)] = std::int16_t(mintRow);
+                }
+            }
+        }
+        return b;
+    }();
+    return (itemIdx >= 0 && itemIdx < int(kBack.size()))
+        ? int(kBack[std::size_t(itemIdx)]) : -1;
 }
 
 int commodity_of_item(int itemIdx) {

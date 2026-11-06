@@ -65,6 +65,7 @@ enum class ActionType : std::uint8_t {
     Strike, // бой: замах тела — пустая рука; масса оружия говорит ДОБАВКОЙ
     Spell,  // магия: авторский отрезок ниже, построчно выровнен с kSpellDefs
     Gather, // труд: выемка стока мира — жатва, охота, рубка, копка, поимка
+    Craft,  // труд: партия у верстака — спецтаблица рецептов ссылается сюда
     Count
 };
 
@@ -74,7 +75,7 @@ enum class ActionType : std::uint8_t {
 inline constexpr ActionType kActionTypeMagicFirst = ActionType::Spell;
 inline constexpr ActionType kActionTypeMagicLast  = ActionType::Spell;
 inline constexpr ActionType kActionTypeLabourFirst = ActionType::Gather;
-inline constexpr ActionType kActionTypeLabourLast  = ActionType::Gather;
+inline constexpr ActionType kActionTypeLabourLast  = ActionType::Craft;
 
 inline constexpr ActionArchetype archetype_of(ActionType t) {
     return (t >= kActionTypeMagicFirst && t <= kActionTypeMagicLast)
@@ -92,6 +93,10 @@ static_assert(archetype_of(ActionType::Strike) == ActionArchetype::Combat,
 static_assert(archetype_of(ActionType::Gather) == ActionArchetype::Labour,
               "добыча — трудовой архетип: её темп платит Армсмастер (руки), "
               "а цену — закон бара (S14.1), не плоская колонка");
+static_assert(archetype_of(ActionType::Craft) == ActionArchetype::Labour,
+              "крафт — тот же трудовой архетип, что добыча: один закон цены "
+              "(бар/темп), один домен темпа; вторая лестница труда не "
+              "заводится");
 
 // ДОМЕН ТЕМПА — ЭТО СВОЙСТВО АРХЕТИПА, А НЕ КОЛОНКА СТРОКИ, и здесь умирает
 // тернарник `cast ? SkillId::Spellcraft : SkillId::Armsmaster`, девять раз
@@ -326,6 +331,143 @@ inline constexpr ActionDef kLabourActions[] = {
      .spRatePerDay = 1,
      .gateSkill = SkillId::Count, .minRank = 0,
      .type = ActionType::Gather,  .scope = ActionScope::MacroOnly},
+
+    // ── КРАФТ (ломоть «крафт + работа» M-369) ────────────────────────────
+    // ОДНА СТРОКА — ОБА МИРА: наверху день места назначает руки по этим же
+    // строкам (`econ_produce_day@src/macro/econ_day.cpp`), внизу верстак руки
+    // ценит партию тем же темпом (вкладка Craft, `src/ui/overlays.cpp`).
+    // Спецтаблица рецептов (`kRecipes@src/macro/econ_day.h`) ссылается сюда
+    // ординалом и несёт только СВОЁ — ЧТО выходит из партии; состав и выход
+    // остаются строкой каталога (ЗАКОН ДВУХ ТАБЛИЦ).
+    //
+    // ТЕМП — ПАРТИЙ НА ЧЕЛОВЕКО-ДЕНЬ, перенесён ДОСЛОВНО из умершей колонки
+    // `perDay` авторской таблицы материи (items.cpp kPartsAuthoring):
+    // self-play баланс держится ровно на этих числах, перенос — не сдвиг.
+    // Цена партии руки = бар/темп (sp_price), как у всякого труда.
+    //
+    // ПРАВО — ПЕРВЫЕ СТРОКИ ТАБЛИЦЫ С НЕНУЛЕВЫМ ГЕЙТОМ: пара «ремесло +
+    // минранг» переехала сюда из колонок рецепта (`craft`/`minRank`), и
+    // теперь город и рука спрашивают ОДНУ строку (гейт руки = гейт города,
+    // M-146: игрок с нулевым кузнечным монету больше не чеканит). Ранги
+    // оружия/кожи/щитов — новый авторинг, баланс; деревообработки отдельным
+    // ремеслом нет (пять ремёсел — слово владельца), дерево квартирует у
+    // masonry («что сложено и сколочено»), как мебель и резьба.
+    //
+    // БАЗА — РАБОЧИЙ ДЕНЬ ТИКАМИ («сделал → вишу», M-326: выпуск падает
+    // мгновенно, затем висит восстановление; квантование партий отклонено
+    // владельцем). Макро сегодня держит тот же день своим счётчиком
+    // (`stateTimer = kCraftThinksPerDay`) и прочтёт эту базу, когда счётчик
+    // умрёт в рековери (поздний ломоть M-369).
+    {.id = "mint_coin",       .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 4,
+     .gateSkill = SkillId::Blacksmith, .minRank = 30,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "fire_bricks",     .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 8,
+     .gateSkill = SkillId::Masonry, .minRank = 1,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "weave_cloth",     .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 4,
+     .gateSkill = SkillId::Tailoring, .minRank = 1,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "forge_tools",     .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 2,
+     .gateSkill = SkillId::Blacksmith, .minRank = 1,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "join_furniture",  .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 2,
+     .gateSkill = SkillId::Masonry, .minRank = 10,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "build_wagon",     .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 1,
+     .gateSkill = SkillId::Blacksmith, .minRank = 15,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "cut_jewelry",     .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 1,
+     .gateSkill = SkillId::Blacksmith, .minRank = 20,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "carve_figure",    .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 2,
+     .gateSkill = SkillId::Masonry, .minRank = 5,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "hew_statue",      .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 1,
+     .gateSkill = SkillId::Masonry, .minRank = 25,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "brew_potion_hp",  .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 8,
+     .gateSkill = SkillId::Alchemy, .minRank = 1,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "brew_potion_mp",  .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 8,
+     .gateSkill = SkillId::Alchemy, .minRank = 10,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "forge_dagger",    .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 4,
+     .gateSkill = SkillId::Blacksmith, .minRank = 1,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "forge_sword",     .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 2,
+     .gateSkill = SkillId::Blacksmith, .minRank = 5,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "forge_spear",     .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 2,
+     .gateSkill = SkillId::Blacksmith, .minRank = 3,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "forge_axe",       .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 2,
+     .gateSkill = SkillId::Blacksmith, .minRank = 5,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "forge_mace",      .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 2,
+     .gateSkill = SkillId::Blacksmith, .minRank = 8,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "carve_staff",     .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 4,
+     .gateSkill = SkillId::Masonry, .minRank = 1,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "carve_bow",       .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 2,
+     .gateSkill = SkillId::Masonry, .minRank = 5,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "sew_leather",     .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 2,
+     .gateSkill = SkillId::Tailoring, .minRank = 5,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "forge_buckler",   .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 4,
+     .gateSkill = SkillId::Blacksmith, .minRank = 3,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "bind_round_shield", .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 2,
+     .gateSkill = SkillId::Masonry, .minRank = 3,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
+    {.id = "bind_tower_shield", .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 1,
+     .gateSkill = SkillId::Masonry, .minRank = 8,
+     .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
 };
 
 // ── ТАБЛИЦА И ЕЁ ОТРЕЗКИ ─────────────────────────────────────────────────
@@ -406,15 +548,20 @@ static_assert(action_id_eq(action_def(kActionReapWheat).id, "reap_wheat")
               "перестановка трудового отрезка без их правки несобираема");
 
 // ── ЦЕЛОСТНОСТЬ ТРУДОВОГО ОТРЕЗКА — СТЕНА ПОД КОМПИЛЯТОРОМ ──────────────
-// Три закона одной проверкой: (1) тип строк — Gather; (2) цена труда
-// ТЕМПОВАЯ (rate > 0) при плоских нулях-значениях — два закона цены на
-// одной строке невыразимы; (3) акт не быстрее пустого замаха — у топора
-// есть масса, и она не бывает меньше нуля (страж умершей константы
-// kHarvestActSeconds, теперь на ВЕСЬ отрезок).
+// Четыре закона одной проверкой: (1) тип строк — трудовой (Gather | Craft),
+// и типы идут ГРУППАМИ без чересполосицы (ЗАКОН ЛЕСТНИЦЫ п.2: «все строки
+// типа» — непрерывный диапазон ординалов); (2) цена труда ТЕМПОВАЯ
+// (rate > 0) при плоских нулях-значениях — два закона цены на одной строке
+// невыразимы; (3) акт не быстрее пустого замаха — у топора есть масса, и
+// она не бывает меньше нуля (страж умершей константы kHarvestActSeconds,
+// теперь на ВЕСЬ отрезок).
 inline constexpr bool labour_segment_is_rate_priced() {
+    ActionType prev = kActionTypeLabourFirst;
     for (int i = 0; i < kActionLabourCount; ++i) {
         const ActionDef& a = kLabourActions[std::size_t(i)];
-        if (a.type != ActionType::Gather) return false;
+        if (archetype_of(a.type) != ActionArchetype::Labour) return false;
+        if (a.type < prev) return false;  // чересполосица типов — разрыв отрезка
+        prev = a.type;
         if (a.spRatePerDay <= 0) return false;
         if (a.costHp != 0 || a.costMp != 0 || a.costSp != 0) return false;
         if (a.recoveryTicks < action_def(kActionStrike).recoveryTicks)
@@ -423,8 +570,24 @@ inline constexpr bool labour_segment_is_rate_priced() {
     return true;
 }
 static_assert(labour_segment_is_rate_priced(),
-              "трудовой отрезок: тип Gather, цена темпом (бар/rate, плоские "
-              "нули — значения), акт не быстрее замаха strike");
+              "трудовой отрезок: типы Gather|Craft непрерывными группами, "
+              "цена темпом (бар/rate, плоские нули — значения), акт не "
+              "быстрее замаха strike");
+
+// Границы КРАФТ-подотрезка — ВЫВОДЯТСЯ из таблицы (ЗАКОН СЛОВАРЯ п.3:
+// ручной счёт рядом с таблицей — второй словарь). Их читает стена
+// спецтаблицы рецептов (`kRecipes@src/macro/econ_day.h`): ссылка-ординал
+// мимо крафтового подотрезка несобираема.
+inline constexpr int craft_action_count_() {
+    int n = 0;
+    for (int i = 0; i < kActionLabourCount; ++i)
+        if (kLabourActions[std::size_t(i)].type == ActionType::Craft) ++n;
+    return n;
+}
+inline constexpr int kActionCraftCount = craft_action_count_();
+static_assert(kActionCraftCount > 0,
+              "тип Craft перечислен — значит у него обязаны быть строки "
+              "(шапка ActionType: тип без строк — заглушка)");
 
 // ...и обратная стена: ВНЕ труда темповой цены не существует — ноль там
 // есть значение «цена не темповая», и строка с обоими законами цены сразу

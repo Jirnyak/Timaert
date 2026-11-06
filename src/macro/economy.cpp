@@ -117,7 +117,11 @@ int demand_for_(int itemIdx, const std::int32_t* needDebt,
             // gate the growers' own granaries priced at the scarcity
             // ceiling and the caravans' loans bought a quarter of the lot
             // (measured, balance_run 2026-08-30).
-            if (!recipe_known(hands, r.craft, r.minRank)) continue;
+            // Право рецепта — колонки его Craft-строки (одна строка на оба
+            // мира; M-146: гейт один).
+            const ActionDef& act = action_def(int(r.action));
+            if (!recipe_known(hands, act.gateSkill, int(act.minRank)))
+                continue;
             // The recipe's matter = its output row's composition (the one
             // matter table, items.h). The mint's output is no catalog row
             // (-1 → empty span), and its silver demand was always zero:

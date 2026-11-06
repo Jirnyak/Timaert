@@ -31,8 +31,9 @@ inline constexpr int kGatherPerWorkerDay = 32;
 // It is a DOOR because the sentence was written five times in three dialects
 // — `maxSp / kWorkCyclesPerBar` (three copies in npc_ai.cpp), `maxSp /
 // kGatherPerWorkerDay` (the player's harvest), `maxSp / item_labour` (a craft
-// batch) — each with its own `max(1, …)`. The numbers agreed; the spelling did
-// not, and the sixth author would have got the divisor wrong in silence.
+// batch; the column died 2026-11-06 into the recipe's action row) — each with
+// its own `max(1, …)`. The numbers agreed; the spelling did not, and the
+// sixth author would have got the divisor wrong in silence.
 //
 // The floor of 1 is the law, not a guard: an action a body can perform is an
 // action it can be tired by, so no rate however generous makes work free.
