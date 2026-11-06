@@ -1050,21 +1050,24 @@ namespace sm::ui
                             // ПРАВО — та же пара «ремесло + минранг», которой
                             // гейтится город (recipe_known, M-146 «гейт руки
                             // и гейт города — один»): нулевой кузнечный
-                            // больше не чеканит монету.
+                            // больше не чеканит монету. Метка стоит в колонке
+                            // КНОПКИ, которую глушит: в колонке материалов её
+                            // срезал клип у всякой строки с двумя частями
+                            // (живой стенд, скриншот 2026-11-06).
                             const bool known = recipe_known(
                                 sheet.skills, act.gateSkill,
                                 int(act.minRank));
+                            ImGui::TableNextColumn();
+                            ImGui::PushID(ci);
                             if (!known)
                             {
-                                ImGui::SameLine();
                                 ImGui::TextColored(
                                     ImVec4(0.9f, 0.35f, 0.3f, 1.0f),
                                     "%s %d",
                                     skill_def(act.gateSkill).label,
                                     int(act.minRank));
+                                ImGui::SameLine();
                             }
-                            ImGui::TableNextColumn();
-                            ImGui::PushID(ci);
                             ImGui::BeginDisabled(!can || !known);
                             if (ImGui::SmallButton("Craft"))
                             {
