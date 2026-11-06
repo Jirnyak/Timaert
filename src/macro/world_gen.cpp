@@ -189,11 +189,10 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
             for (std::uint16_t os : villageRows) {
                 if (os == vs || suzerain_of(st, os) != suzerain_of(st, vs))
                     continue;
-                const int dx = std::abs(rooted_x(vs) - rooted_x(os));
-                const int dy = std::abs(rooted_y(vs) - rooted_y(os));
-                const int ddx = std::min(dx, gs.mapW - dx);
-                const int ddy = std::min(dy, gs.mapH - dy);
-                nearest = std::min(nearest, std::max(ddx, ddy));
+                nearest = std::min(nearest,
+                                   torus_cheb_cells(rooted_x(vs), rooted_y(vs),
+                                                    rooted_x(os), rooted_y(os),
+                                                    gs.mapW));
             }
             if (nearest < (1 << 20)) { nnSum += nearest; ++nnCount; }
         }
@@ -290,11 +289,10 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
                 zoneMax = std::max(zoneMax, z);
                 for (std::uint16_t os : spireRows) {
                     if (os == ss) continue;
-                    const int dx = std::abs(rooted_x(ss) - rooted_x(os));
-                    const int dy = std::abs(rooted_y(ss) - rooted_y(os));
-                    const int ddx = std::min(dx, gs.mapW - dx);
-                    const int ddy = std::min(dy, gs.mapH - dy);
-                    minPair = std::min(minPair, std::max(ddx, ddy));
+                    minPair = std::min(
+                        minPair, torus_cheb_cells(rooted_x(ss), rooted_y(ss),
+                                                  rooted_x(os), rooted_y(os),
+                                                  gs.mapW));
                 }
             }
             std::fprintf(stderr,

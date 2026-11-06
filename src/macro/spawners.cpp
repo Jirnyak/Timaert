@@ -573,11 +573,7 @@ namespace sm
                     {
                         const int lx = wrap_axis(lm.x, W);
                         const int ly = wrap_axis(lm.y, H);
-                        int dx = std::abs(lx - vx);
-                        dx = std::min(dx, W - dx);
-                        int dy = std::abs(ly - vy);
-                        dy = std::min(dy, H - dy);
-                        const int d = std::max(dx, dy);
+                        const int d = torus_cheb_cells(lx, ly, vx, vy, W);
                         if (d < bestD)
                         {
                             bestD = d;
@@ -768,11 +764,8 @@ namespace sm
         if (mines.empty()) return;
 
         const auto torus_cheb = [&](std::uint32_t a, std::uint32_t b) {
-            int dx = std::abs(cell_x(a, W) - cell_x(b, W));
-            int dy = std::abs(cell_y(a, W) - cell_y(b, W));
-            dx = std::min(dx, W - dx);
-            dy = std::min(dy, H - dy);
-            return std::max(dx, dy);
+            return torus_cheb_cells(cell_x(a, W), cell_y(a, W),
+                                    cell_x(b, W), cell_y(b, W), W);
         };
 
         // Связные кластеры живых жил (8-смежность) — обход однократным

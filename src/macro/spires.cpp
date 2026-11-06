@@ -22,14 +22,6 @@ namespace {
 // relaxing the gate one zone, not by drawing harder.
 constexpr int kSpireCandidateTries = 64;
 
-int torus_chebyshev(int ax, int ay, int bx, int by, int w, int h) {
-    int dx = std::abs(ax - bx);
-    dx = std::min(dx, w - dx);
-    int dy = std::abs(ay - by);
-    dy = std::min(dy, h - dy);
-    return std::max(dx, dy);
-}
-
 // ЗАНЯТА ЛИ КЛЕТКА — ВОПРОС К ФИЧЕ, А НЕ К СКВАДУ (вердикт владельца
 // 2026-10-26: «ФИЧИ ПРОСТО ЕСТЬ В МИРЕ»). Клетка разрабатывается РОВНО ОДНИМ
 // способом (ЗАКОН ПОЛЯ п.3), и отвечает об этом БАЙТ — та же дверь и тот же
@@ -88,9 +80,9 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
                 if (cell_taken(features, x, y)) continue;
                 int score = gs.mapW + gs.mapH;   // no spires yet: any site wins
                 for (const std::uint32_t c : placedCells)
-                    score = std::min(score, torus_chebyshev(
+                    score = std::min(score, torus_cheb_cells(
                         x, y, cell_x(c, gs.mapW), cell_y(c, gs.mapW),
-                        gs.mapW, gs.mapH));
+                        gs.mapW));
                 if (score > bestScore) {
                     bestScore = score;
                     bestX = x;

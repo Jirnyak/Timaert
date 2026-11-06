@@ -24,14 +24,6 @@ constexpr int kRuinCandidateTries = 64;
 // (a bigger politik raises more cities AND leaves more dead ones behind).
 constexpr int kRuinBaseCount = 4;
 
-int torus_chebyshev_(int ax, int ay, int bx, int by, int w, int h) {
-    int dx = std::abs(ax - bx);
-    dx = std::min(dx, w - dx);
-    int dy = std::abs(ay - by);
-    dy = std::min(dy, h - dy);
-    return std::max(dx, dy);
-}
-
 // ЗАНЯТА ЛИ КЛЕТКА — ВОПРОС К ФИЧЕ, А НЕ К СКВАДУ (вердикт владельца
 // 2026-10-26: «МЕСТ НЕТ! СКВАДЫ ЭТО СКВАДЫ ФИЧИ АГНОСТИЧНЫЙ НЕЗАВИСИМЫЙ
 // СКВАД МОДУЛЬ РЕШАЕТ ЧТО ТАМ ПРОИСХОДИТ С НИМ И МИРОМ ФИЧИ ПРОСТО ЕСТЬ В
@@ -92,9 +84,9 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
             if (cell_taken_(features, x, y)) continue;
             int score = gs.mapW + gs.mapH;   // no ruins yet: any site wins
             for (const std::uint32_t c : placedCells)
-                score = std::min(score, torus_chebyshev_(
+                score = std::min(score, torus_cheb_cells(
                     x, y, cell_x(c, gs.mapW), cell_y(c, gs.mapW),
-                    gs.mapW, gs.mapH));
+                    gs.mapW));
             if (score > bestScore) {
                 bestScore = score;
                 bestX = x;

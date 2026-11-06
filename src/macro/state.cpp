@@ -249,11 +249,7 @@ void populate_rooted_from_politik(GameState& gs, MacroStore& st,
     std::vector<PlacedVillage> pressed;
 
     const auto torus_cheb = [&](int ax, int ay, int bx, int by) {
-        const int ddx = std::min(std::abs(ax - bx),
-                                 gs.mapW - std::abs(ax - bx));
-        const int ddy = std::min(std::abs(ay - by),
-                                 gs.mapH - std::abs(ay - by));
-        return std::max(ddx, ddy);
+        return torus_cheb_cells(ax, ay, bx, by, gs.mapW);
     };
 
     for (const auto& s : cityRefs) {

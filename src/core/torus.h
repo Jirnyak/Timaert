@@ -146,16 +146,42 @@ inline float torus_delta(float d, float period) {
 // `torus_step_toward`) и ещё дважды снаружи — `politik.cpp torus_dist2` и
 // `pathfinding.cpp octile_torus`. Шесть тел одной арифметики: ровно та
 // форма, из-за которой UI однажды промахивался мимо метки на целый мир.
+//
+// СВЁРТКА ПОЛНАЯ С 2026-11-06: тело — `torus_delta` (remainder складывает
+// ЛЮБУЮ разницу). Прежняя форма «|a−b|, и если больше полупериода — period −
+// d» исправляла ровно ОДИН период и при |a−b| > period возвращала
+// ОТРИЦАТЕЛЬНОЕ расстояние (посчитано: torus_span(0, 2000, 1024) = −976),
+// которое квадрат у torus_dist_sq съедал МОЛЧА — ровно тот грех, в котором
+// шапка torus_delta обвиняет одиночное условное вычитание. Для входов внутри
+// периода ответ побайтово прежний (remainder точен по IEEE).
 inline float torus_span(float a, float b, float period) {
-    const float d = std::fabs(a - b);
-    return d > period * 0.5f ? period - d : d;
+    return std::fabs(torus_delta(a - b, period));
 }
+
+// СВЁРТКА ГОТОВОЙ ЦЕЛОЙ РАЗНИЦЫ КЛЕТОЧНОЙ ОСИ МИРА: маска сворачивает ЛЮБУЮ
+// разницу в [0, side) ОДНИМ действием (сторона — степень двойки, ЗАКОН
+// АДРЕСА), складка добивает знак — (−side/2, side/2]. Форма родилась руками
+// как `wrap_dc` в frame_fill.cpp и оказалась СИЛЬНЕЕ тогдашней канонической
+// двери (та исправляла один период); с 2026-11-06 тело ОДНО и живёт здесь.
+// `side`, не бывшая стороной МИРА, сюда не передаётся — как у `wrap_axis`.
+inline int torus_fold(int d, int side) {
+    const int m = int(std::uint32_t(d) & (std::uint32_t(side) - 1u));
+    return m > side / 2 ? m - side : m;
+}
+
 // Знаковая версия для целых осей: «куда и насколько», короткой стороной.
-inline int torus_offset(int from, int to, int period) {
-    int d = to - from;
-    if (d >  period / 2) d -= period;
-    else if (d < -period / 2) d += period;
-    return d;
+inline int torus_offset(int from, int to, int side) {
+    return torus_fold(to - from, side);
+}
+
+// ЧЕБЫШЕВСКАЯ ДИСТАНЦИЯ КЛЕТОК НА ТОРЕ — одно тело вместо ДЕВЯТИ рукописных
+// «abs + min(d, side−d)» (перепись 2026-11-06: ruins, spires, spawners ×2,
+// npc_spawn, world_gen ×2, state — у всех входы уже в [0, side), поэтому
+// сведение побайтово нейтрально). Мир квадратен — одна сторона на обе оси.
+inline int torus_cheb_cells(int ax, int ay, int bx, int by, int side) {
+    const int dx = std::abs(torus_fold(ax - bx, side));
+    const int dy = std::abs(torus_fold(ay - by, side));
+    return dx > dy ? dx : dy;
 }
 
 inline float torus_dist(float ax, float ay, float bx, float by, float w, float h) {

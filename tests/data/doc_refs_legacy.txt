@@ -273,7 +273,6 @@ SKELETON.md	npc_ai.cpp:917
 SKELETON.md	npc_ai.h:102
 SKELETON.md	npc_spawn.cpp:216
 SKELETON.md	npc_spawn.cpp:304
-SKELETON.md	npc_spawn.cpp:396-399
 SKELETON.md	npc_spawn.cpp:79-80
 SKELETON.md	optics.h:141-144
 SKELETON.md	optics.h:142-143
@@ -300,7 +299,6 @@ SKELETON.md	resource_field.h:213-217
 SKELETON.md	resource_field.h:268
 SKELETON.md	resource_field.h:336-341
 SKELETON.md	resource_field.h:64-83
-SKELETON.md	ruins.cpp:25-31
 SKELETON.md	ruins.cpp:44
 SKELETON.md	ruins.cpp:73
 SKELETON.md	scent_field.cpp:15
@@ -335,7 +333,6 @@ SKELETON.md	spawners.cpp:400-446
 SKELETON.md	spawners.cpp:484
 SKELETON.md	spawners.cpp:53-54
 SKELETON.md	spawners.cpp:545
-SKELETON.md	spawners.cpp:585-589
 SKELETON.md	spawners.cpp:609
 SKELETON.md	spawners.cpp:675-679
 SKELETON.md	spawners.cpp:681
@@ -343,7 +340,6 @@ SKELETON.md	spell_effects.cpp:111
 SKELETON.md	spell_effects.cpp:151
 SKELETON.md	spell_effects.cpp:409
 SKELETON.md	spell_effects.cpp:48-70
-SKELETON.md	spires.cpp:23-29
 SKELETON.md	spires.cpp:45
 SKELETON.md	spires.cpp:81
 SKELETON.md	squad.h:190
@@ -355,7 +351,6 @@ SKELETON.md	squad.h:896
 SKELETON.md	squad_walk.h:42
 SKELETON.md	stacks.h:125
 SKELETON.md	state.cpp:124
-SKELETON.md	state.cpp:266-272
 SKELETON.md	state.cpp:277-307
 SKELETON.md	state.cpp:88
 SKELETON.md	state.h:510
@@ -407,7 +402,6 @@ SKELETON.md	vk_renderer_3d.cpp:2305-2321
 SKELETON.md	vk_renderer_3d.cpp:2742
 SKELETON.md	vk_renderer_3d.cpp:2986-2990
 SKELETON.md	world_fields.cpp:79
-SKELETON.md	world_gen.cpp:152-156
 SKELETON.md	world_gen.cpp:193-199
 SKELETON.md	world_gen.cpp:207
 SKELETON.md	world_gen.cpp:213

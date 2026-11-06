@@ -355,10 +355,8 @@ static void resolve_mountain_peaks(const TerrainData& terrain,
                 if (h <= bestH) continue;
                 bool tooClose = false;
                 for (int i = 0; i < slot; ++i) {
-                    const int dx = std::abs(peaks[i].x - x);
-                    const int dy = std::abs(peaks[i].y - y);
-                    const int cheb = std::max(std::min(dx, mapW - dx),
-                                              std::min(dy, mapH - dy));
+                    const int cheb = torus_cheb_cells(
+                        peaks[i].x, peaks[i].y, x, y, mapW);
                     if (cheb < minSpacing) { tooClose = true; break; }
                 }
                 if (tooClose) continue;

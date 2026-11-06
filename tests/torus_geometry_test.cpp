@@ -29,7 +29,10 @@ namespace {
 
 bool approx(float a, float b) { return std::fabs(a - b) < 1e-4f; }
 
-constexpr int W = 100, H = 100;
+// ЗАКОН АДРЕСА: мир ВСЕГДА квадрат и степень двойки — здесь стояло 100×100,
+// и фикстура лгала о мире ровно там, где дверь с 2026-11-06 заворачивает
+// МАСКОЙ (torus_fold): на не-степени-двойки маска бессмысленна по построению.
+constexpr int W = 128, H = 128;
 // cos thresholds: kRoadFanCosThreshold in politik.cpp is 0.90 (~26°).
 constexpr float kFan = 0.90f;
 
@@ -66,7 +69,7 @@ void test_coincident_cells_have_no_bearing() {
 void test_bearing_takes_the_short_way_across_the_seam() {
     using namespace sm;
     float ux = 0.0f, uy = 0.0f;
-    // From x=95 to x=2 on a width-100 torus is +7 east (the short way), NOT
+    // From x=95 to x=2 on a width-128 torus is +35 east (the short way), NOT
     // −93 west. A world that is merely tiled would answer west here.
     CHECK_OR_RETURN(torus_bearing(95, 50, 2, 50, W, H, ux, uy),
                     "cells on opposite sides of the seam have a bearing");

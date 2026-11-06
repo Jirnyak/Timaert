@@ -15,14 +15,10 @@
 
 namespace sm {
 
-// Знаковая кратчайшая разница клеточных КООРДИНАТ на торе: заворот — маска
-// (ЗАКОН АДРЕСА: сторона — степень двойки), полмира и дальше — короткая
-// дорога с другой стороны.
+// (Местная `wrap_dc` стала КАНОНИЧЕСКОЙ дверью `torus_fold@src/core/torus.h`
+// 2026-11-06: форма родилась здесь руками и оказалась СИЛЬНЕЕ тогдашней
+// двери тора — та исправляла ровно один период.)
 namespace {
-inline int wrap_dc(int d, int side) {
-    d &= side - 1;
-    return d > side / 2 ? d - side : d;
-}
 
 // ── ВЕКТОР МАРША ДЛЯ ПАКЕТА (M-317, ЗАКОН ШВА п.3) ───────────────────────
 // Вторая колонка рода 2, СЧИТАЕТСЯ при наполнении (вердикт: «вектор есть
@@ -64,8 +60,8 @@ SquadVel squad_march_vector(const MacroWorld& mw, const MacroStore& st,
     if (dx == 0 && dy == 0) {
         // Прямой торовый шаг — фолбэк, байтово тай-брейкер жадного закона.
         const Step s = torus_step_toward(ix, iy, itx, ity, side, side);
-        dx = wrap_dc(s.nx - ix, side);
-        dy = wrap_dc(s.ny - iy, side);
+        dx = torus_fold(s.nx - ix, side);
+        dy = torus_fold(s.ny - iy, side);
     }
     // Вес текущей клетки — та же одна проба на думку, что в try_move; вне
     // собранного грида (голая фикстура) — честная единица (cell_weight).
@@ -139,8 +135,8 @@ void fill_local_frame(const MacroWorld& w, std::uint32_t centerCell,
             const int cy = cell_y(cell, side);
             const int ccx = cell_x(centerCell, side);
             const int ccy = cell_y(centerCell, side);
-            const int ddx = wrap_dc(cx - ccx, side);
-            const int ddy = wrap_dc(cy - ccy, side);
+            const int ddx = torus_fold(cx - ccx, side);
+            const int ddy = torus_fold(cy - ccy, side);
             if (ddx < -half || ddx > half || ddy < -half || ddy > half)
                 return -1;
             return (ddy + half) * kFrameSpan + (ddx + half);
@@ -192,8 +188,8 @@ void fill_local_frame(const MacroWorld& w, std::uint32_t centerCell,
         out.worldDay - int(kChronicleLongestInterestDays) + 1,
         [](void* u, const WorldFact& f) {
             Sink& s = *static_cast<Sink*>(u);
-            const int ddx = wrap_dc(int(f.x) - s.ccx, s.side);
-            const int ddy = wrap_dc(int(f.y) - s.ccy, s.side);
+            const int ddx = torus_fold(int(f.x) - s.ccx, s.side);
+            const int ddy = torus_fold(int(f.y) - s.ccy, s.side);
             if (ddx < -(kFrameSpan / 2) || ddx > kFrameSpan / 2
                 || ddy < -(kFrameSpan / 2) || ddy > kFrameSpan / 2)
                 return;

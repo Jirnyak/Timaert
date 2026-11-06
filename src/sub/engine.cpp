@@ -1706,10 +1706,8 @@ int SubworldEngine::frame_cell_index(int cx, int cy) const {
     if (!frame_ || frame_->side <= 0) return -1;
     const int side = frame_->side;
     const int half = kFrameSpan / 2;
-    const int rx = (cx - cell_x(frame_->centerCell, side)) & (side - 1);
-    const int ry = (cy - cell_y(frame_->centerCell, side)) & (side - 1);
-    const int dx = rx > side / 2 ? rx - side : rx;
-    const int dy = ry > side / 2 ? ry - side : ry;
+    const int dx = torus_fold(cx - cell_x(frame_->centerCell, side), side);
+    const int dy = torus_fold(cy - cell_y(frame_->centerCell, side), side);
     if (dx < -half || dx > half || dy < -half || dy > half) return -1;
     return (dy + half) * kFrameSpan + (dx + half);
 }

@@ -127,7 +127,6 @@ inline void squads_in_frame(const SquadIndex& g, const MacroStore& st,
     const int g1x = fdiv(wx + radiusCells, b.cellSize);
     const int g0y = fdiv(wy - radiusCells, b.cellSize);
     const int g1y = fdiv(wy + radiusCells, b.cellSize);
-    const int half = mapW / 2;
     for (int gy = g0y; gy <= g1y; ++gy) {
         for (int gx = g0x; gx <= g1x; ++gx) {
             const int bx = ((gx % b.cols) + b.cols) % b.cols;
@@ -137,10 +136,8 @@ inline void squads_in_frame(const SquadIndex& g, const MacroStore& st,
                  it != end; ++it) {
                 const std::uint16_t slot = g.order[*it].slot;
                 const auto& c = st.cell[slot];
-                int dx = (ecs::cell_x(c, mapW) - wx) & (mapW - 1);
-                int dy = (ecs::cell_y(c, mapW) - wy) & (mapW - 1);
-                if (dx > half) dx = dx - mapW;
-                if (dy > half) dy = dy - mapW;
+                const int dx = torus_fold(ecs::cell_x(c, mapW) - wx, mapW);
+                const int dy = torus_fold(ecs::cell_y(c, mapW) - wy, mapW);
                 if (dx < -radiusCells || dx > radiusCells
                     || dy < -radiusCells || dy > radiusCells) {
                     continue;
@@ -167,11 +164,12 @@ inline MacroHandle settlement_at(const SquadIndex& g, const MacroStore& st,
     const CellBuckets& b = g.grid;
     if (b.cols <= 0 || b.rows <= 0 || b.begin.empty()) return MacroHandle{};
     const int mapW = b.cols * b.cellSize;
-    const int mapH = b.rows * b.cellSize;
-    // Заворот мира — МАСКА (ЗАКОН АДРЕСА: сторона — степень двойки, у обеих
-    // осей одна арифметика; деление по рантайм-делителю — дефект ревью).
+    // Заворот мира — МАСКА, и она ОДНА у обеих осей (ЗАКОН АДРЕСА: мир
+    // КВАДРАТЕН; здесь стояла вторая маска по mapH — один файл писал один
+    // закон двумя способами, а сравнение ниже декодирует по mapW: при
+    // mapW != mapH строки были бы из разных систем счисления, D3).
     const int wx = x & (mapW - 1);
-    const int wy = y & (mapH - 1);
+    const int wy = y & (mapW - 1);
     const int gx = wx / b.cellSize;
     const int gy = wy / b.cellSize;
     MacroHandle best{};
