@@ -30,11 +30,11 @@ inline int wrap_dc(int d, int side) {
 // ТОЙ ЖЕ походки, что ведёт марш (запечённый `nav_step@src/macro/
 // nav_field.cpp`; фолбэк — прямой торовый шаг, он же тай-брейкер жадного
 // закона try_move), ТЕМП — тот же `march_cells_per_think@src/macro/
-// npc_ai.h`, которым платит try_move, в КВАНТАХ ДОЛИ ЗА ДУМКУ. Третьего
-// закона движения не рождается: обе половины — чтения существующих.
-// {0,0} — честное «стоит»: нет цели, цель — текущая клетка (доезд в центр
-// маршем не считается), заминка боя (fighting гасит ноги и тут, как в
-// try_move).
+// npc_ai.h`, которым платит try_move, в ТАЙЛАХ СЦЕНЫ ЗА МИРОВОЙ ТИК
+// (единица канала — разбор у колонки squadVel пакета). Третьего закона
+// движения не рождается: обе половины — чтения существующих. {0,0} —
+// честное «стоит»: нет цели, цель — текущая клетка (доезд в центр маршем
+// не считается), заминка боя (fighting гасит ноги и тут, как в try_move).
 SquadVel squad_march_vector(const MacroWorld& mw, const MacroStore& st,
                             MacroHandle h) {
     if (!mw.gs || !st.valid(h)) return SquadVel{0, 0};
@@ -69,7 +69,7 @@ SquadVel squad_march_vector(const MacroWorld& mw, const MacroStore& st,
     }
     const int q = int(std::lround(
         march_cells_per_think(rt, rt.flying != 0 ? 1.0f : cellW)
-        * float(2 * ecs::kCellSubEdge)));
+        * float(kSubworldTilesPerMacroCell) / float(kAiTicks)));
     return SquadVel{std::int16_t(dx * q), std::int16_t(dy * q)};
 }
 } // namespace
