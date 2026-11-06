@@ -41,6 +41,15 @@ SquadVel squad_march_vector(const MacroWorld& mw, const MacroStore& st,
     const std::uint16_t slot = h.slot;
     const auto& rt = st.runtime[slot];
     if (rt.fighting != 0) return SquadVel{0, 0};
+    // ЗАНЯТ АКТОМ — СТОИТ (его же гейт занятости): цель по прибытии НЕ
+    // гасится (кэш предиката, goal_arrive), поэтому сквад на привале или
+    // в работе всё ещё несёт дальний адрес — судить «идёт ли» по одной
+    // цели значило бы вести тела ВПЕРЁД стоящего сквада.
+    if (squad_recovering(rt)) return SquadVel{0, 0};
+    // РЕАЛЬНО ШЁЛ в последнюю думку — кванты проехали (kMarchAdvanced).
+    // Протухание флага ограничено одной думкой: заминка боя зануляет его
+    // своим гейтом, новая думка с маршем переписывает.
+    if ((rt.marchFlags & ecs::kMarchAdvanced) == 0) return SquadVel{0, 0};
     const ecs::SquadGoal& goal = st.goal[slot];
     if (goal.cell == ecs::kNoCell) return SquadVel{0, 0};
     const int side = mw.gs->mapW;

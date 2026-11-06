@@ -678,6 +678,9 @@ bool run_beast_member_projection_case(
     stl.pools[hl.slot] = sm::ecs::Pools{10, 10};
     // Ступень = НАКОПЛЕННЫЙ ОПЫТ, второго носителя нет (M-383).
     stl.sheet[hl.slot].levelData.exp = sm::exp_at_level(3);
+    // ДОЛЯ КЛЕТКИ — предусловие якоря точки (M-317): воплощение обязано
+    // прочитать ЕЁ, а не разбросать по клетке.
+    stl.runtime[hl.slot].sub = sm::ecs::CellSub{127, -64};
     {
         auto& bag = stl.inventory[hl.slot];
         sm::creatures_push(bag.inv, sm::make_soldier(kBeast, 2, 5001u));
@@ -717,7 +720,33 @@ bool run_beast_member_projection_case(
     }
     // One wolf, two men (the avatar and his guard) — the creatures was honoured
     // member by member, not flattened to one kind.
-    return beasts == 1 && men == 2;
+    if (!(beasts == 1 && men == 2)) return false;
+
+    // ТОЧКА ИЗ ДОЛИ (M-317, ЗАКОН ШВА: «не абы как а по координатам
+    // сквада»): аватар встаёт в развёртку СВОЕЙ доли клетки. Ожидание
+    // читает ТУ ЖЕ дверь (scene_axis_of_sub@src/sub/spawn.h) — не копию
+    // формулы; допуск — один квант сухой опоры (4 тайла) на ось.
+    {
+        int avatarSlot = -1;
+        for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+            if ((objs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u)
+                continue;
+            if (sm::sub::slot_macro_origin(objs, s) == hl) {
+                avatarSlot = s;
+                break;
+            }
+        }
+        if (avatarSlot < 0) return false;
+        const auto* ap = sm::sub::slot_pos(objs, avatarSlot);
+        if (ap == nullptr) return false;
+        const float wantX = sm::sub::scene_axis_of_sub(0, 127);
+        const float wantY = sm::sub::scene_axis_of_sub(0, -64);
+        const float quant =
+            float(sm::sub::kCellSize) / float(sm::ecs::kCellSubQuantum);
+        if (std::fabs(ap->x - wantX) > quant + 0.01f) return false;
+        if (std::fabs(ap->y - wantY) > quant + 0.01f) return false;
+    }
+    return true;
 }
 
 // The strength of a body is its ROW seen through its SHEET — the law that made
