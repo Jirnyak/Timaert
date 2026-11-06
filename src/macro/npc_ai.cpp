@@ -469,7 +469,11 @@ void settle_march_rhythm(MacroHandle e, const MacroPos& p,
         && rt.state != std::uint8_t(NPCState::Resting)) {
         rt.stateAfterPause = rt.state;   // пауза, не амнезия (components.h)
         rt.state = std::uint8_t(NPCState::Resting);
-        rt.recoverySteps = 0;
+        // ГЕЙТ ЗАНЯТОСТИ ПРИВАЛ НЕ ТРОГАЕТ (шаг E ломтя stateTimer M-369):
+        // здесь стояло обнуление — ровно та форма, которой M-313 купил себе
+        // закон (лагерь, зануляя чужой долг, учетверял крафт места). Часы
+        // тают временем и в лагере — как у тела («re-deriving would cancel
+        // a swing mid-recovery», sub/spawn.cpp).
     }
 
     // A body is STOPPED when it is where it meant to be, when it DECIDED to
@@ -1095,7 +1099,9 @@ bool find_home_pasture(const TickContext& ctx, float px, float py,
 void wake_from_rest(ecs::MacroNpcRuntime& rt) {
     rt.state = rt.stateAfterPause;
     rt.stateAfterPause = std::uint8_t(NPCState::Idle);
-    rt.recoverySteps = 0;
+    // Гейт занятости подъём НЕ трогает (шаг E ломтя stateTimer M-369):
+    // прежнее «часы прерванного состояния не переносятся» было законом
+    // СЛУЧАЯ — у единого гейта долг акта переживает привал, как у тела.
 }
 
 
@@ -3463,7 +3469,6 @@ void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     // прогулка по околице. Поводка нет — слово владельца.
     if (rt.state == std::uint8_t(NS::Chasing)) {
         rt.state = std::uint8_t(NS::Idle);
-        rt.recoverySteps = 0;
         return;
     }
     if (rt.state == std::uint8_t(NS::Idle)) {
@@ -3842,7 +3847,6 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
         // Threat gone: a fleeing squad calms down and resumes its life.
         if (rt.state == std::uint8_t(NS::Fleeing)) {
             rt.state = std::uint8_t(NS::Idle);
-            rt.recoverySteps = 0;
         }
         return false;
     }
@@ -3931,7 +3935,6 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
 
     if (rt.state == std::uint8_t(NS::Fleeing)) {
         rt.state = std::uint8_t(NS::Idle);
-        rt.recoverySteps = 0;
     }
     return false;
 }
