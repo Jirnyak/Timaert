@@ -16,7 +16,7 @@
 
 #include "core/math.h"
 
-#include "assets/sprite_bank.h"
+#include "gpu/sprite_bank.h"
 #include "sub/height.h"     // kHeightQuads / SubworldHeightField — the world's
                             // vertical truth, which this renderer only READS
 #include "sub/map_data.h"   // WATER_LEVEL — the default sea plane (seaLevel01_)

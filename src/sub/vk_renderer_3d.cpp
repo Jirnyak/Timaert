@@ -442,7 +442,7 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
         std::fprintf(stderr, "[Renderer3DVk] particle buffer FAILED\n");
     }
-    // A4: the drawn-body bank (assets/sprite_bank.h) — one image, one sampler,
+    // A4: the drawn-body bank (gpu/sprite_bank.h) — one image, one sampler,
     // one descriptor set, filled completely before the first frame. The pool it
     // replaced needed its staging ring sliced to match OUR frame ring exactly,
     // or the CPU memcpy raced the previous frame's copy out of the same staging

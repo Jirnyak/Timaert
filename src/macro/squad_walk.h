@@ -37,7 +37,7 @@ struct SquadWalkEntry {
     std::uint32_t  ordinal;
     std::uint16_t  slot;
 };
-// Перепись штабелей (core/stacks.h «каркас клеток: порядок закона») цитирует
+// Перепись штабелей (macro/stacks.h «каркас клеток: порядок закона») цитирует
 // этот размер ЛИТЕРАЛОМ — включить сюда stacks.h нельзя (цикл через store.h).
 // Названный размер стоит под компилятором, не в прозе (DOD п.10).
 static_assert(sizeof(SquadWalkEntry) == 8,

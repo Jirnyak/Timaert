@@ -45,7 +45,7 @@ ImGui_ImplVulkan_AddTexture вызывает vkAllocateDescriptorSets, кото�
 ## Следующие шаги для фикса — ОТМЕНЕНЫ
 «Фаза C пейпердолла» (атлас/общий сэмплер/батчинг для paperdoll) отменена
 сносом самой системы 2026-08-20: вид = одна статичная картинка на строку
-таблицы, банк 5 слотов 256×256 (`src/assets/sprite_bank.*`, sprites.md, снесён → CANON S16).
+таблицы, банк 5 слотов 256×256 (`src/gpu/sprite_bank.*`, sprites.md, снесён → CANON S16).
 
 ---
 

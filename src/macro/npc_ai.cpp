@@ -1,7 +1,7 @@
 // Macroworld NPC AI — full behaviour set, faithful port of `npc-ai.ts`.
 #include "macro/npc_ai.h"
 #include <numbers>                 // sqrt2 — евклидова дорога картинки
-#include "core/stacks.h"           // kUnifiedCap — резерв скрэтчей порядка
+#include "core/caps.h"             // kUnifiedCap — резерв скрэтчей порядка
 #include "macro/upkeep_window.h"   // ОДИН суд границы на всякий контейнер
 #include "macro/characters.h"  // стол анкет — ступень лестницы поведения
 #include "macro/chronicle.h"

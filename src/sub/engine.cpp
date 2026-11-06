@@ -1,7 +1,6 @@
 #include "sub/engine.h"
 #include "bus/local_frame.h"   // ЛОКАЛЬНЫЙ ФРЕЙМ — вход по сводке (ломоть 4)
 #include "sub/ability.h"   // THE ability door — every act pays the one gate
-#include "content/spells/casting.h"   // kSpellCasterRadius — the player body radius's one home
 // Нитка `macro/macro_stock.h` СНЯТА (ломоть 3 эпика пакетов v1): этот файл
 // держал её ОДНИМ фолбэком `macro_stock_read` в `fauna_stock_at` — вторым
 // путём к состоянию мира мимо фрейма. Фолбэк мёртв, а словарь ведомости

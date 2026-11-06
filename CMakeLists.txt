@@ -149,6 +149,11 @@ file(GLOB_RECURSE SAMOSBOR_SOURCES CONFIGURE_DEPENDS
 
 # GPU (Vulkan) sources, also reused standalone by the gpu_smoke bring-up target.
 file(GLOB TIMAERT_GPU_SOURCES CONFIGURE_DEPENDS src/gpu/*.cpp)
+# Банк спрайтов — не бэкенд, а потребитель бэкенда: он декодирует картинки
+# (stbi_load), а имплементацию stb несёт ХОЗЯИН таргета (в игре —
+# sprite_atlas.cpp, в gpu_smoke3d — сам харнесс). Харнессам без банка
+# (gpu_smoke, macro_shot) он не нужен и stb им не навязывает.
+list(REMOVE_ITEM TIMAERT_GPU_SOURCES ${CMAKE_SOURCE_DIR}/src/gpu/sprite_bank.cpp)
 
 # Open-air subworld generators: the shared kit plus ONE TU per kind (mirrors
 # src/sub/dgn/). Named once because fourteen test targets link them — the old
@@ -344,10 +349,10 @@ if(NOT MSVC)
 endif()
 
 # Phase 5 subworld 3D foundation harness (depth + mesh pipeline + camera).
-# Carries the real SpriteBank (body.frag set1 contract) — hence the assets TU
+# Carries the real SpriteBank (body.frag set1 contract) — hence the bank TU
 # and the stb include dir.
 add_executable(gpu_smoke3d tests/gpu_smoke3d.cpp ${TIMAERT_GPU_SOURCES}
-    src/assets/sprite_bank.cpp)
+    src/gpu/sprite_bank.cpp)
 add_dependencies(gpu_smoke3d timaert_shaders)
 set_target_properties(gpu_smoke3d PROPERTIES
     CXX_STANDARD 23
@@ -2503,7 +2508,7 @@ timaert_test(air_law_test)
 # 2026-10-01). Счёт двинулся по названной причине, и так и должно читаться в
 # дифе. Содержимое переписи (штабелей, итог по капам) стоит КЛАССОМ ЦИФР:
 # снос `Landmark` (M-90) и работы по рельефу двигают эти числа по делу, а
-# решение уже видно в дифе `core/stacks.h` — точный пин добавил бы второе место
+# решение уже видно в дифе `macro/stacks.h` — точный пин добавил бы второе место
 # правки и ни одной новой видимости. Класс цифр при этом требует, чтобы граница
 # в строке СТОЯЛА: PASS без неё не напечатать.
 timaert_test(stack_census_test

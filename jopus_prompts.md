@@ -480,7 +480,7 @@ o.npcType`, на каждую смерть) и `damage_door_test`.
 
 **1. Контекст.** Читать: `src/macro/save.cpp:26-60` (капы сторожа),
 `:1031-1250` (`write_payload` — порядок блоков; из каждого блока нужен только
-КАП и размер записи), `:1251-1270`; `src/core/stacks.h:70-100` (капы мира:
+КАП и размер записи), `:1251-1270`; `src/core/stacks.h` (капы мира:
 `kWorldCells`, `kWorldPlaces`, `kWorldSquads`, `kMacroEntityCap`);
 `src/macro/save_stream.h` — только ширину примитивов (`u8/u16/u32/u64`,
 `count`). Остальное не читать.
@@ -1331,7 +1331,7 @@ DOD п.6 (две записи одной фичи — второй ответ). 
 **Как сейчас (SKELETON I.10):** `Landmark::name` — `std::string`
 (`state.h:469`), единственная строка на сущности ×32768; из-за неё
 `static_assert(sizeof(Place) == 42400)` и `sizeof(GameState) == 49456`
-(`core/stacks.h:125,141`) верны ТОЛЬКО на libc++ (24 Б) и падают на
+(`core/stacks.h`) верны ТОЛЬКО на libc++ (24 Б) и падают на
 libstdc++/MSVC (32 Б). Ещё две строки той же породы: `City::name`
 (`politik.h:62`), `PlayerState::name@src/macro/state.h`. Генератор —
 `generate_name` (`language.cpp:164-177`, возвращает `std::string` —
@@ -1341,7 +1341,7 @@ libstdc++/MSVC (32 Б). Ещё две строки той же породы: `Ci
 **1. Контекст.** Читать: `src/macro/state.h:462-475, 670-682`,
 `src/macro/politik.h:55-70`, `src/macro/language.cpp:136-180` и
 `language.h:20-35` (`minSyllables/maxSyllables`, шаблоны слогов — для
-расчёта N), `src/core/stacks.h:110-145` (сторожа `sizeof`),
+расчёта N), `src/core/stacks.h` (сторожа `sizeof`),
 `src/macro/save.cpp:665-680, 715-725, 750-785`, `src/macro/save_stream.h:20-75`
 (примитивы), читатели имени: `src/macro/rooted_iter.h:45-55`,
 `src/macro/state.cpp:180-192, 360-370`, `src/macro/politik.cpp:188-196,
@@ -1723,7 +1723,7 @@ return -1` — второй запрет мира рядом с водой. Го
 **Закон (ЗАКОН ПОЛЯ п.1-2, владелец дословно):** «ВСЕ ПОЛЯ ОДИНАКОВЫ ПО
 ФОРМЕ… ПОЛЕ ЛЕСА ПОЛЯ ФЕРТИЛЬНОСТИ И ТЕПЕРЬ ПОЛЕ РУДЫ (ВСЕ ПОЛЯ
 ОДИНАКОВЫЕ ТИПА ДЛЯ РАСШИРЯЕМОСТИ И МОДУЛЬНОСТИ) ПРОСТО ОНИ МОГУТ
-ГЕНЕРИТЬСЯ ПО РАЗНОМУ ПРИ ГЕНЕРАЦИИ МИРА». Перепись `core/stacks.h:150-158`
+ГЕНЕРИТЬСЯ ПО РАЗНОМУ ПРИ ГЕНЕРАЦИИ МИРА». Перепись `core/stacks.h`
 (2026-09-22, владелец: «ПОЧЕМУ ПОЛЯ РЕСУРСОВ И ЖИЛЫ И ЛЕС РАЗДЕЛЬНО? ВЕДЬ
 ЛЕС ЭТО ПОЛЕ РЕСУРСОВ И ЖИЛО УЖЕ НА УРОВНЕ СТРУКТУРЫ ПРОБЛЕМА»).
 
@@ -1743,7 +1743,7 @@ trees, horses, stone, silver, copper, …) описывает все ряды О
 560-600` (реестр рядов, `allocate_world_fields`, двери чтения/записи),
 `src/macro/deposit_layer.h` и `.cpp` (двери `remaining_at/kind_near/any_at/
 create_deposit/set_deposit_remaining`, `reach`), `src/macro/tree_layer.h`
-(`at/set_tree_count/revision`), `src/core/stacks.h:140-170`,
+(`at/set_tree_count/revision`), `src/core/stacks.h`,
 `src/macro/save.cpp` — `rg -n "deposits|treeLayer|resourceScarCells"`
 (провод сейва), читатели вне `macro/`: `rg -n "treeLayer|trees->|deposits->|
 DepositLayer|TreeLayer" src/app src/sub src/ui` (список, не тела:

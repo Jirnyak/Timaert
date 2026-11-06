@@ -6,7 +6,7 @@
 #include "macro/features.h"         // kFeatureDefs — метки чистых фич (M-374)
 #include "macro/macro_world.h"      // MacroWorld — конверт слоёв, читается по
                                     // членам ниже (до M-171 2б-II приезжал
-                                    // транзитом store.h → core/stacks.h)
+                                    // транзитом store.h → macro/stacks.h)
 #include "macro/map_generator.h"
 #include "macro/markers.h"
 #include "macro/player_entity.h"

@@ -1343,7 +1343,7 @@ void run_every_sub_state_kind_survives() {
 //
 // Мир фикстуры выбран не по вкусу, а по переписи: ПАМЯТЬ ИГРОКА стоит на
 // СВОЁМ капе (`PlayerState::kJournalFactsCap`), а мест в нём столько, сколько их
-// насчитала перепись штабелей в ЗАМЕРЕННОМ мире (core/stacks.h: «~76 МиБ в
+// насчитала перепись штабелей в ЗАМЕРЕННОМ мире (macro/stacks.h: «~76 МиБ в
 // замеренном мире (~1 880 мест)»). Это законный мир, а не патология.
 //
 // НЕГАТИВНЫЙ КОНТРОЛЬ ВСТРОЕН, И ОН НЕ ЧЕРЕЗ `git checkout`: payload такого
@@ -1353,7 +1353,7 @@ void run_every_sub_state_kind_survives() {
 void run_payload_cap_is_a_fact() {
     constexpr std::uint64_t kOldLiteralCap = 64ull * 1024ull * 1024ull;
     constexpr std::uint32_t kHeaderBytes = 4u + 4u + 8u + 4u;
-    constexpr int kCensusRooted = 1880;   // core/stacks.h, замеренный мир
+    constexpr int kCensusRooted = 1880;   // macro/stacks.h, замеренный мир
 
     const std::string path = temp_save_path("timaert_save_payload_cap.bin");
     const std::string overPath = temp_save_path("timaert_save_payload_over.bin");

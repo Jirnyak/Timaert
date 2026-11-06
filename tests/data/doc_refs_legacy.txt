@@ -461,8 +461,6 @@ jopus_prompts.md	balance_run.cpp:260
 jopus_prompts.md	base_generator.cpp:565
 jopus_prompts.md	biomes.h:64
 jopus_prompts.md	chronicle.h:345
-jopus_prompts.md	core/stacks.h:125
-jopus_prompts.md	core/stacks.h:150-158
 jopus_prompts.md	deposit_layer.h:81
 jopus_prompts.md	econ_day.cpp:200
 jopus_prompts.md	econ_day.cpp:40-55
@@ -530,9 +528,6 @@ jopus_prompts.md	src/app/smoke.cpp:346
 jopus_prompts.md	src/app/smoke.cpp:7155-7226
 jopus_prompts.md	src/app/smoke.cpp:7949
 jopus_prompts.md	src/app/smoke.cpp:9640-9650
-jopus_prompts.md	src/core/stacks.h:110-145
-jopus_prompts.md	src/core/stacks.h:140-170
-jopus_prompts.md	src/core/stacks.h:70-100
 jopus_prompts.md	src/events/event_types.h:20-64
 jopus_prompts.md	src/events/logic_nodes.h:20-26
 jopus_prompts.md	src/events/node_registry.cpp:15-25

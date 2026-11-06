@@ -21,7 +21,7 @@
 // binary; this harness doesn't link that TU, so it hosts its own.
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-#include "assets/sprite_bank.h"
+#include "gpu/sprite_bank.h"
 
 #include "core/math.h"
 #include "sub/lighting.h" // GpuLightBuffer — exact std430 layout for set0/binding1
@@ -144,7 +144,7 @@ namespace
 
     // Distinct drawn bodies resident in the sprite bank; instances reference
     // them round-robin. Derived from THE sprite table, not chosen: the bank
-    // holds one slot per drawn body row (assets/sprite_bank.h), so the harness
+    // holds one slot per drawn body row (gpu/sprite_bank.h), so the harness
     // exercises exactly the set the game ships and can never index an empty
     // layer if the artist adds or removes a picture.
     constexpr std::uint32_t kNpcDollCount = sm::sprite_bank_slot_count();

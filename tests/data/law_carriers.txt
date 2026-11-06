@@ -39,7 +39,7 @@
 ПРОЗА	ЗАКОН ГЕНЕРАЦИИ — ЭТО ОТДЕЛЬНЫЙ МОДУЛЬ, И ЕГО ЗАКОНЫ НЕ ЗАКОНЫ ЖИВОГО МИРА
 # ЗАКОН ПОЛЯ: строка мира с vector/хешем несобираема (контуры), sizeof мира
 # прибит; бюджеты «байт на клетку» — CHECK_BUDGET@tests/stack_census_test.cpp.
-СТЕНА	ЗАКОН ПОЛЯ — агенты ломают это чаще всего	sizeof(GameState)@src/core/stacks.h
+СТЕНА	ЗАКОН ПОЛЯ — агенты ломают это чаще всего	sizeof(GameState)@src/macro/stacks.h
 # Свёртка: wrapi по стороне мира — ноль; wrapf/голый %/рукописный y*W+x —
 # тающий список world_fold_legacy.txt; свидетель — tests/torus_wrap_test.cpp.
 РАТЧЕТ	ЗАКОН АДРЕСА — ЯДРО ЯДРИЩЕ	kLegacyList@tests/world_fold_law_test.cpp

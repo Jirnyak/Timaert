@@ -4,7 +4,7 @@
 #include "bus/world_row.h"   // область существ единого контейнера (M-71)
 #include "macro/deposit_layer.h"
 #include "macro/state.h"
-#include "core/stacks.h"       // капы штабелей — один источник (перепись)
+#include "macro/stacks.h"       // капы штабелей — один источник (перепись)
 #include "macro/macro_snapshot.h"
 #include "macro/characters.h"
 

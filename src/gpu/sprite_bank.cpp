@@ -10,7 +10,7 @@
 #define STBI_NO_PNM
 #include <stb_image.h>
 
-#include "assets/sprite_bank.h"
+#include "gpu/sprite_bank.h"
 #include "gpu/vk_device.h"
 
 #include <algorithm>
