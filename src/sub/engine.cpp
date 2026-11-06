@@ -2736,7 +2736,8 @@ void SubworldEngine::tick_player_melee() {
 // (Флоат-близнец `charge_act(float)` умер ломтём «Добыча» M-369 вместе с
 // последним звонящим: рубка и жатва заряжают ТИКАМИ строки; глоток зелья
 // заряжает `charge_ability@src/sub/ability.h` напрямую из оверлея.)
-void SubworldEngine::charge_act_ticks(std::uint32_t baseTicks) {
+void SubworldEngine::charge_act_ticks(const ActionDef& act) {
+    const std::uint32_t baseTicks = act.recoveryTicks;
     if (!objects_ || baseTicks == 0u) return;
     sub::SubObjects* objs = objects_;
     if (objs == nullptr) return;
@@ -2755,10 +2756,12 @@ void SubworldEngine::charge_act_ticks(std::uint32_t baseTicks) {
         : sub::slot_sheet(*objs, s);
     static const Attributes kBareA{};
     static const Skills kBareS{};
+    // Домен темпа — ЛЕСТНИЦА строки (снос тернарника домена, M-369):
+    // Армсмастер здесь больше не вписан рукой звонящего.
     sub::charge_ability_ticks(gate, baseTicks,
                               cs ? cs->attributes : kBareA,
                               cs ? cs->skills : kBareS,
-                              SkillId::Armsmaster);
+                              action_tempo_generic(act));
 }
 
 // ЦЕЛЬ → СТРОКА АКТА ДОБЫЧИ: колос жнут, всё прочее под топором рубят.
@@ -2871,7 +2874,7 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
         // Отказ сумки: проп стоит, мир цел, добыча не испарилась. Замах
         // случился и оплачен — действие честно потрачено впустую.
         set_status("Your pack is full.");
-        charge_act_ticks(act.recoveryTicks);
+        charge_act_ticks(act);
         return true;
     }
     if (!mgr_.remove_prop(victim)) {
@@ -2944,7 +2947,7 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
         const std::string msg = std::string(verb) + " (" + picked + ")";
         set_status(msg.c_str());
     }
-    charge_act_ticks(act.recoveryTicks);
+    charge_act_ticks(act);
     return true;
 }
 

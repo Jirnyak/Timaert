@@ -1880,17 +1880,21 @@ inline CombatTemplate project_combat(const CharacterSheet& sheet,
     // Spd + the generic of the attack's domain divide it — a quick veteran
     // bandit genuinely strikes faster than a peasant with the same club. One
     // rounding, in the door.
-    // The GENERIC of the act's own domain: Spellcraft paces a CAST, and
-    // Armsmaster paces every physical act — a swing and a SHOT alike (a bow
-    // is drawn by arms, not by a casting hand; before the split, the row's
-    // delivery column decided this too).
+    // The GENERIC of the act's own domain — ЧЕРЕЗ ЛЕСТНИЦУ, не подстановкой
+    // звонящего (снос тернарника домена, M-369): каст несёт СВОЮ строку
+    // действия (castAct), и её архетип называет Спеллкрафт; естественный
+    // замах существа строки в таблице действий не имеет (форма (а): его
+    // база — колонка ЕГО строки), поэтому домен спрашивается у архетипа
+    // Combat напрямую — a swing and a SHOT alike (a bow is drawn by arms,
+    // not by a casting hand).
     // База — ЦЕЛЫЕ ТИКИ колонки строки (M-396: колонка слита с recoveryTicks
     // строки действия по имени, типу и единице; авторские секунды живут
     // только в авторинге). Дверь берёт тики и возвращает ШАГИ — то же число
     // мира, и флоата на пути восстановления не остаётся ни одного.
     out.recoveryTicks = std::uint32_t(recovery_steps(
         base.recoveryTicks, sheet.attributes, sheet.skills,
-        cast ? SkillId::Spellcraft : SkillId::Armsmaster));
+        cast ? action_tempo_generic(action_def(int(castAct)))
+             : tempo_generic(ActionArchetype::Combat)));
     // The POWER half of the same split: the typed skill multiplies the dice
     // (the door above already gave the generic pair to TEMPO — one handle,
     // one lever). Both consumers read THIS field now: the fought body

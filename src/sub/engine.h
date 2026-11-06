@@ -41,6 +41,7 @@ struct TreeLayer;
 // только указатель, полную форму включает engine.cpp (цена заголовка §5 п.13).
 struct LocalContext;
 struct CellFacts;   // строка клетки рода 1 (src/bus/cell_row.h)
+struct ActionDef;   // строка действия (tables/actions.h) — вход двери заряда
 // (Блок предобъявлений `ecs::NpcCharacter`/`NpcInventory`/`NpcTraits` снят
 // 2026-10-09, M-150 ломоть 1: ни одно из трёх имён в этом заголовке больше
 // не упоминается — `NpcInventory` осиротел со смертью `inventoryOverride`
@@ -335,8 +336,10 @@ public:
     // Занять руки на срок, который назвала СТРОКА действия (CANON S13 «в
     // субмире всё — способность»): одна точка заряда гейта на весь движок,
     // база — ЦЕЛЫЕ ТИКИ строки (флоат-близнец умер ломтём «Добыча» M-369
-    // вместе с последним звонящим).
-    void charge_act_ticks(std::uint32_t baseTicks);
+    // вместе с последним звонящим). Вход — САМА СТРОКА: домен темпа даёт
+    // лестница (`action_tempo_generic@src/tables/actions.h`), а не литерал
+    // звонящего (снос тернарника домена, M-369).
+    void charge_act_ticks(const ActionDef& act);
     // Pay out a broken world prop through the ONE loot registry: its kind
     // names a profile (map_data.h structure_loot_id), the profile rolls items,
     // the yield scales by the prop's own metric height. Items go straight to

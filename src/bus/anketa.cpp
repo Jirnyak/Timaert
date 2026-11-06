@@ -491,7 +491,9 @@ StrikeFields hand_strike_fields(const Attributes& attributes,
     // SwingPct rows speak LAST, clamped po2.
     const int steps = recovery_steps(
         action_def(kActionStrike).recoveryTicks + weapon_mass_recovery_ticks(w),
-        attributes, skills, SkillId::Armsmaster);
+        attributes, skills,
+        // Домен темпа — лестница СТРОКИ ЗАМАХА (снос тернарника, M-369).
+        action_tempo_generic(action_def(kActionStrike)));
     const int swingPct = 100 + std::clamp(
         worn.derived_of(DerivedModId::SwingPct),
         kDerivedPctFloor, kDerivedPctCeil);

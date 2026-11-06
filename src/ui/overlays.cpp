@@ -836,10 +836,15 @@ namespace sm::ui
                                 // Занять руки — через ТУ ЖЕ дверь, что удар
                                 // и каст; лист берётся эффективный, так что
                                 // хаста ускоряет глоток без кода здесь.
+                                // Домен — лестница АРХЕТИПА (глоток — акт
+                                // интеракции; своей строки у него ещё нет,
+                                // но архетип уже отвечает — снос тернарника
+                                // домена, M-369).
                                 sm::sub::charge_ability(
                                     gate, def->useSeconds,
                                     effPanel.attributes, effPanel.skills,
-                                    sm::SkillId::Armsmaster);
+                                    sm::tempo_generic(
+                                        sm::ActionArchetype::Interaction));
                                 }
                             }
                             // SCRAP — the reverse ход of the one reaction
