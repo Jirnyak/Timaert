@@ -1638,32 +1638,28 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
             (std::uint32_t(projected) * 2654435761u);
         Rng rng(seed ^ salt);
 
-        // Entry-side scatter within this window cell's sub-region
-        // (bus/entry_context.h): the band starts at the edge this NPC walked
-        // in from and deepens with its time in the macro cell, so a party that
-        // just chased somebody across the border materialises AT that border,
-        // behind them — while a local that has been here forever gets the full
-        // uniform cell (the band formula degrades to exactly the old scatter).
-        // Water is dodged per attempt like the fauna path (spawn_cell_npcs) —
-        // but what is dodged is WET FOOTING, not a wet tile: a body may
-        // stand on whatever would carry it above the water plane, so the
-        // deck of a bridge is a perfectly good place to meet a caravan
-        // (sub/height.h is_dry_footing). Falls back to the cell centre if 20
-        // tries all land in water (never lose the NPC).
-        std::uint8_t entryDir = kEntryDirNone;
-        std::uint8_t entryTicks = 0;
-        squad_entry_side(st, macro, entryDir, entryTicks);
-        int sdx = 0, sdy = 0;
-        (void)unpack_entry_dir(entryDir, sdx, sdy);
-        const int originX = (ox + 1) * kCellSize;
-        const int originY = (oy + 1) * kCellSize;
-        float fx = float(originX) + float(kCellSize) * 0.5f;
-        float fy = float(originY) + float(kCellSize) * 0.5f;
+        // ТОЧКА ТЕЛ СКВАДА — РАЗВЁРТКА ЕГО ДОЛИ КЛЕТКИ (M-317, вердикт
+        // владельца: «не абы как а по координатам сквада»). Полоса входа
+        // умерла ЗДЕСЬ не потому, что была неверна, а потому что доля несёт
+        // ту же семантику ТОЧНО: марш пишет `cell_sub_after_step` ровно край
+        // входа, и глубина в клетке растёт квантами хода — «погоня
+        // материализуется у границы» теперь факт доли, а не статистика
+        // полосы (у входа ИГРОКА полоса жива: его переход шва — семантика
+        // сцены, engine.cpp). Вода обходится как прежде — мокрой считается
+        // ОПОРА, не тайл (мост держит carried_above_water); сухая опора
+        // ищется 20 попытками В ПРЕДЕЛАХ ОДНОГО КВАНТА доли — точнее кванта
+        // истина макро не существует, шире кванта тело уже «не в точке».
+        // Все мокрые — тело встаёт В САМУ ТОЧКУ (не теряется; прежний
+        // фолбэк в центр клетки врал бы о положении на целых полклетки).
+        const ecs::CellSub msub = st.runtime[macro.slot].sub;
+        const float px = scene_axis_of_sub(ox, msub.x);
+        const float py = scene_axis_of_sub(oy, msub.y);
+        constexpr float kSubQuantTiles =
+            float(kCellSize) / float(ecs::kCellSubQuantum);   // 4 тайла
+        float fx = px, fy = py;
         for (int attempt = 0; attempt < 20; ++attempt) {
-            const float tx = float(originX) + entry_axis_pos(
-                sdx, entryTicks, float(kCellSize), rng.next_f01());
-            const float ty = float(originY) + entry_axis_pos(
-                sdy, entryTicks, float(kCellSize), rng.next_f01());
+            const float tx = px + (rng.next_f01() - 0.5f) * 2.0f * kSubQuantTiles;
+            const float ty = py + (rng.next_f01() - 0.5f) * 2.0f * kSubQuantTiles;
             const int ix = int(tx), iy = int(ty);
             if (ix < 0 || ix >= kFullSize || iy < 0 || iy >= kFullSize) continue;
             if (tilesUsable &&

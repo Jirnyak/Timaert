@@ -421,6 +421,19 @@ void rebase_subworld_entities(SubObjects& objs, float dxTiles, float dyTiles);
 // stores the macro cell and asks this at the moment it needs a window position.
 int toroidal_cell_offset(int a, int c, int n);
 
+// РАЗВЁРТКА ДОЛИ КЛЕТКИ В ОСЬ СЦЕНЫ — точка тел сквада (M-317, ЗАКОН ШВА:
+// «вниз клетка РАЗВОРАЧИВАЕТСЯ в континуум»). Обратная дверь свёртки
+// `fold_player_sub@src/sub/engine.cpp`: o — клетка окна от центра рамки
+// (−1..0..1), subAxis — доля −127..127 (0 = центр клетки, ecs::CellSub).
+// Квант доли = kCellSize / ecs::kCellSubQuantum = 4 тайла; точнее кванта
+// истина макро не существует, поэтому и джиттер сухой опоры у читателя не
+// шире кванта.
+inline constexpr float scene_axis_of_sub(int o, std::int8_t subAxis) {
+    return float(o + 1) * float(kCellSize)
+         + (0.5f + float(subAxis) / float(ecs::kCellSubQuantum))
+               * float(kCellSize);
+}
+
 // Destroy world-owned subworld creatures whose Position now lies outside the
 // composite window [0,kFullSize)²; player-side projections are never evicted.
 // Run after rebase on a re-centre to evict exactly the cells that left the 3×3.
