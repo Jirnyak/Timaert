@@ -59,7 +59,18 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
             //  M-410: эмитентов у обоих не было ни одного, теоретический
             //  канал effects пуст у всего авторского контента; золото и
             //  слава мира живут родом 5 — Traded и record_deed.)
-            default: break;
+            // ПОИМЁННО, НЕ default (ЗАКОН СЛОВАРЯ п.4): у этих тегов
+            // применения ЗДЕСЬ нет ПО ПРАВУ — презентационные ведёт свой
+            // обработчик (main.cpp, очередь модалок), Custom — дефолт
+            // инициализации, не событие, Count — счёт, не тег. Новый тег
+            // больше не глотается молча: без default его назовёт -Wswitch.
+            case EventTag::ShowDialog:
+            case EventTag::ShowStory:
+            case EventTag::StoryResult:
+            case EventTag::Custom:
+            case EventTag::PlayerEnterSettlement:
+            case EventTag::Count:
+                break;
         }
     }
 }

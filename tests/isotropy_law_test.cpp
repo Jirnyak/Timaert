@@ -96,7 +96,10 @@ namespace fs = std::filesystem;
 namespace {
 
 constexpr const char* kRoot = TIMAERT_SOURCE_DIR;
-constexpr const char* kScanDir = "src/sub";
+// src/content/spells — дыра скана, закрытая 2026-11-06 (вердикт «делай как
+// лучше»): геометрия способностей живёт и там, а сканировался один src/sub.
+// На день закрытия каталог ЧИСТ (0 находок).
+constexpr const char* kScanDirs[] = {"src/sub", "src/content/spells"};
 constexpr const char* kLedger = "tests/data/isotropy_planar.txt";
 
 std::string read_file(const fs::path& p) {
@@ -351,17 +354,20 @@ Key key_of(const std::string& cls, const std::string& file,
 } // namespace
 
 int main() {
-    const fs::path dir = fs::path(kRoot) / fs::path(kScanDir);
-    CHECK(fs::exists(dir), "дерево субмира на месте — иначе прибор мерит пустоту");
-
     std::vector<Site> sites;
     int filesSeen = 0;
     std::vector<fs::path> files;
-    for (const fs::directory_entry& e : fs::recursive_directory_iterator(dir)) {
-        if (!e.is_regular_file()) continue;
-        const std::string ext = e.path().extension().string();
-        if (ext != ".h" && ext != ".cpp") continue;
-        files.push_back(e.path());
+    for (const char* scan : kScanDirs) {
+        const fs::path dir = fs::path(kRoot) / fs::path(scan);
+        CHECK(fs::exists(dir),
+              "дерево скана на месте — иначе прибор мерит пустоту");
+        for (const fs::directory_entry& e :
+             fs::recursive_directory_iterator(dir)) {
+            if (!e.is_regular_file()) continue;
+            const std::string ext = e.path().extension().string();
+            if (ext != ".h" && ext != ".cpp") continue;
+            files.push_back(e.path());
+        }
     }
     std::sort(files.begin(), files.end());
     for (const fs::path& p : files) {
@@ -432,7 +438,7 @@ int main() {
                      n - got, n, k.c_str());
     }
     CHECK(unlisted == 0,
-          "новая плоская сумма квадратов в src/sub без строки ведомости — "
+          "новая плоская сумма квадратов в зоне скана без строки ведомости — "
           "ЗАКОН ИЗОТРОПИИ: у трёхосной величины считаются ТРИ оси, а плоская "
           "обязана назвать, почему она плоская ПО ПРИРОДЕ");
     CHECK(stale == 0,
@@ -449,7 +455,7 @@ int main() {
 
     char scope[220];
     std::snprintf(scope, sizeof(scope),
-                  "плоских сумм %zu в src/sub · природа %d · долг %d — "
+                  "плоских сумм %zu в src/sub+content/spells · природа %d · долг %d — "
                   "прибор судит ФОРМУ выражения, не СМЫСЛ гейта",
                   sites.size(), listedNature, listedDebt);
     return sm::test::report("isotropy_law_test", scope);

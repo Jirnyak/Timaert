@@ -98,6 +98,10 @@ namespace fs = std::filesystem;
 constexpr std::string_view kScanDirs[] = {
     "src/core",
     "src/macro", "src/app", "src/content", "src/ecs", "src/ui", "src/events",
+    // src/bus — дыра скана, закрытая 2026-11-06 (вердикт «делай как лучше»):
+    // по ЗАКОНУ ФРЕЙМА новая колонка мира пишется именно сюда, и свёртка в
+    // ней судилась бы никем. На день закрытия каталог ЧИСТ (0 находок).
+    "src/bus",
 };
 
 constexpr const char* kLegacyList = "tests/data/world_fold_legacy.txt";

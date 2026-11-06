@@ -626,8 +626,11 @@ inline void goal_arrive(const SquadGoal& g, MacroNpcRuntime& rt) {
 // цикл списывается, и false значит «остаток ВЫШЕЛ». Первый писатель и
 // читатель — модуль Artel (ломоть 4 M-72).
 inline bool goal_spend(SquadGoal& g) {
-    if (g.amount == 0) return true;
-    g.amount = std::uint16_t(g.amount - 1u);
+    if (g.amount == 0) return true;   // 0 = бессрочно — значение, не дыра
+    // Вычитание — дверью (ЗАКОН ТРЁХ ДВЕРЕЙ): семантический гейт выше
+    // закрывает андерфлоу и сегодня, но закон места — насыщение, и он
+    // обязан стоять в типе, а не держаться на соседней строке.
+    g.amount = sub_sat(g.amount, std::uint16_t(1u));
     return g.amount > 0;
 }
 

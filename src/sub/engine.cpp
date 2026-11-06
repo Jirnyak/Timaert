@@ -4699,7 +4699,8 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
             dungeon_roof_hatch_point(ses.ref, ex, ey);
             break;
         case DungeonArrival::Door:
-        default:
+            // Без default: пятый вид прибытия не встанет МОЛЧА на дверной
+            // порог — его назовёт -Wswitch (ЗАКОН СЛОВАРЯ п.4).
             dungeon_entry_point(ses.ref, ex, ey);
             break;
     }

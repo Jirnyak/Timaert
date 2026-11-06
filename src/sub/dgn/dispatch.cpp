@@ -38,11 +38,17 @@ static void gen_dungeon_void(const CellContext& ctx, SubworldMapData& out) {
 }
 
 Tile dungeon_floor_tile(const DungeonRef& ref) {
-    switch (ref.kind) {
+    // ПОИМЁННО, НЕ default: switch по uint8 не судился -Wswitch вовсе —
+    // новый род данжа молча получал TILE_SQUARE (ЗАКОН СЛОВАРЯ п.4).
+    switch (DungeonRef::Kind(ref.kind)) {
         case DungeonRef::Cave:         return TILE_ROCK;  // scree
         case DungeonRef::PrologueRoad: return TILE_ROAD;  // the paved bed
-        default:                       return TILE_SQUARE; // flagged hall
+        case DungeonRef::House:
+        case DungeonRef::SpireTower:   return TILE_SQUARE; // flagged hall
+        case DungeonRef::None:
+        case DungeonRef::Void:         return TILE_SQUARE; // sealed filler
     }
+    return TILE_SQUARE;   // незаконный байт рода — не UB, а пол-заглушка
 }
 
 // kind, id, death node, household≥0, vermin≥0, den family, ladder, hatch,
@@ -118,20 +124,31 @@ std::uint8_t dungeon_kind_from_token(const char* token) {
 }
 
 DungeonRoom dungeon_room(const DungeonRef& ref) {
-    switch (ref.kind) {
+    switch (DungeonRef::Kind(ref.kind)) {
         case DungeonRef::House:        return dungeon_house_room(ref);
         case DungeonRef::Cave:         return dungeon_cave_room(ref);
         case DungeonRef::SpireTower:   return dungeon_spire_tower_room(ref);
         case DungeonRef::PrologueRoad: return dungeon_prologue_road_room(ref);
-        default:                       return DungeonRoom{};
+        // «Про тебя забыли» и «ты пустота» — РАЗНЫЕ метки (правило этого же
+        // файла ниже): None — не данж вовсе, Void — запечатанный филлер
+        // кольца; пустая комната у обоих ПО ПРАВУ, а новый род без своей
+        // строки здесь не соберётся (-Wswitch, default снят).
+        case DungeonRef::None:         return DungeonRoom{};
+        case DungeonRef::Void:         return DungeonRoom{};
     }
+    return DungeonRoom{};
 }
 
 int dungeon_storey_count(const DungeonRef& ref) {
-    switch (ref.kind) {
-        case DungeonRef::SpireTower: return dungeon_spire_tower_floors(ref);
-        default:                     return 1;
+    switch (DungeonRef::Kind(ref.kind)) {
+        case DungeonRef::SpireTower:   return dungeon_spire_tower_floors(ref);
+        case DungeonRef::House:
+        case DungeonRef::Cave:
+        case DungeonRef::PrologueRoad:
+        case DungeonRef::None:
+        case DungeonRef::Void:         return 1;
     }
+    return 1;
 }
 
 void dungeon_entry_point(const DungeonRef& ref, float& x, float& y) {
@@ -254,15 +271,20 @@ void stamp_dungeon_shaft(SubworldMapData& out, bool up, float x, float y,
 }
 
 void dispatch_generate_dungeon(const CellContext& ctx, SubworldMapData& out) {
-    switch (ctx.dungeon.kind) {
+    switch (DungeonRef::Kind(ctx.dungeon.kind)) {
         case DungeonRef::House:      gen_dungeon_house(ctx, out);       break;
         case DungeonRef::Cave:       gen_dungeon_cave(ctx, out);        break;
         case DungeonRef::SpireTower: gen_dungeon_spire_tower(ctx, out); break;
         case DungeonRef::PrologueRoad:
             gen_dungeon_prologue_road(ctx, out);
             break;
-        case DungeonRef::Void:
-        default:                     gen_dungeon_void(ctx, out);        break;
+        // Void — «ты пустота» ПО ПРАВУ (запечатанный филлер кольца).
+        case DungeonRef::Void:       gen_dungeon_void(ctx, out);        break;
+        // None — «про тебя забыли»: сюда с ним не приходят; каменная
+        // пустота вместо тихой подмены рода. Новый род данжа без своей
+        // строки здесь НЕ СОБЕРЁТСЯ (-Wswitch, default снят) — ровно та
+        // красная сборка, которую правило ниже требует дословно.
+        case DungeonRef::None:       gen_dungeon_void(ctx, out);        break;
     }
     // The scene's floor catalog (CANON S28): every trav==1 tile becomes a
     // stand point, folded HERE — the one moment `trav` is alive and the one

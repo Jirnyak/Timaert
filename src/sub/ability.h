@@ -66,9 +66,11 @@ inline void tick_body_recovery(SubObjects& objs, std::uint32_t steps) {
         const std::uint16_t f = objs.flags[std::size_t(s)];
         if ((f & kObjAlive) == 0u || (f & kObjHasCombat) == 0u) continue;
         ecs::Combat& c = objs.combat[std::size_t(s)];
-        c.recoverySteps = c.recoverySteps > steps ? c.recoverySteps - steps : 0u;
-        c.armorSteps = c.armorSteps > steps
-                           ? std::uint16_t(c.armorSteps - steps) : std::uint16_t{0};
+        // Слив — дверью sub_sat (ЗАКОН ТРЁХ ДВЕРЕЙ: угасание долга — ровно
+        // её закон); рукописные тернарники стояли вторым написанием.
+        c.recoverySteps = sub_sat(c.recoverySteps, steps);
+        c.armorSteps = std::uint16_t(
+            sub_sat(std::uint32_t(c.armorSteps), steps));
     }
 }
 

@@ -2815,7 +2815,7 @@ target_compile_definitions(arch_guard_test
 # генерация карты законно растёт новыми генераторами, и пин на ней был бы
 # налогом на контент, а не стражем закона.
 timaert_test(isotropy_law_test
-    PIN "OK isotropy_law_test .9 checks. .плоских сумм [0-9]+ в src/sub · природа [0-9]+ · долг 0 — прибор судит ФОРМУ выражения, не СМЫСЛ гейта")
+    PIN "OK isotropy_law_test .10 checks. .плоских сумм [0-9]+ в src/sub.content/spells · природа [0-9]+ · долг 0 — прибор судит ФОРМУ выражения, не СМЫСЛ гейта")
 target_compile_definitions(isotropy_law_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
