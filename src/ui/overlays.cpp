@@ -821,7 +821,20 @@ namespace sm::ui
                                         gate = sm::sub::slot_combat(*objs, s);
                                     }
                                 }
-                                if (!sm::sub::body_is_free(gate)) {
+                                // Спроси-и-займи ОДНИМ вызовом — try_ability,
+                                // каноническая форма закона целиком (первый
+                                // живой звонящий; прежде пара body_is_free +
+                                // charge_ability стояла здесь руками). Лист
+                                // эффективный — хаста ускоряет глоток без
+                                // кода здесь; домен — лестница АРХЕТИПА
+                                // (глоток — акт интеракции; своей строки у
+                                // него ещё нет, но архетип уже отвечает —
+                                // снос тернарника домена, M-369).
+                                if (!sm::sub::try_ability(
+                                        gate, def->useSeconds,
+                                        effPanel.attributes, effPanel.skills,
+                                        sm::tempo_generic(
+                                            sm::ActionArchetype::Interaction))) {
                                     lastUseMessage = "Still recovering.";
                                 } else {
                                 PlayerCombatSlice pc{
@@ -833,18 +846,6 @@ namespace sm::ui
                                 pools.hp = pc.currentHp;
                                 pools.mp = pc.currentMp;
                                 pools.sp = pc.currentSp;
-                                // Занять руки — через ТУ ЖЕ дверь, что удар
-                                // и каст; лист берётся эффективный, так что
-                                // хаста ускоряет глоток без кода здесь.
-                                // Домен — лестница АРХЕТИПА (глоток — акт
-                                // интеракции; своей строки у него ещё нет,
-                                // но архетип уже отвечает — снос тернарника
-                                // домена, M-369).
-                                sm::sub::charge_ability(
-                                    gate, def->useSeconds,
-                                    effPanel.attributes, effPanel.skills,
-                                    sm::tempo_generic(
-                                        sm::ActionArchetype::Interaction));
                                 }
                             }
                             // SCRAP — the reverse ход of the one reaction

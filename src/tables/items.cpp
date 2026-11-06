@@ -197,7 +197,13 @@ constexpr ItemDef kCatalog[] = {
     // Здесь живёт ГОЛОДНАЯ строка лестницы нужд, и она обязана быть РОВНО
     // одна (static_assert ниже по файлу).
     {"food_meat",   "Raw Meat",        ObjectType::Ration,     15, 500, "\xF0\x9F\x8D\x96",
-        "Restores 15 HP", {{std::uint8_t(BonusId::HealHp), 15}}},
+        "Restores 15 HP", {{std::uint8_t(BonusId::HealHp), 15}},
+        // Кус — то же ДЕЙСТВИЕ, что глоток зелья (CANON S13). Прежний 0.0
+        // был не вердиктом «мгновенно», а НЕЗААВТОРЕННЫМ умолчанием: еда в
+        // бою была бесплатна по времени и не занимала руку (перепись M-174).
+        /*slot*/0, /*blocks*/0, /*def*/{}, /*dice*/{},
+        /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Count,
+        /*delivery*/Delivery::Melee, /*range*/0.0f, /*useSeconds*/1.0f},
     // ПИЩА — архетип ЕДА, а не материал: ею гасят голод (econ_day.h
     // лестница), и она терминальна — её растят и добывают, а не варят.
     {"food",    "Provisions",      ObjectType::Ration,     5, 1000, "\xF0\x9F\x8C\xBE",
@@ -205,7 +211,11 @@ constexpr ItemDef kCatalog[] = {
         // Съеденное лечит — как всякая еда каталога; величина от СТОИМОСТИ
         // строки (5), чтобы не заводить второго числа о той же вещи: хлеб
         // стоил 10 и лечил 10, мясо стоит 15 и лечит 15.
-        {{std::uint8_t(BonusId::HealHp), 5}}},
+        {{std::uint8_t(BonusId::HealHp), 5}},
+        // Кус занимает руку как глоток — см. food_meat выше (M-174).
+        /*slot*/0, /*blocks*/0, /*def*/{}, /*dice*/{},
+        /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Count,
+        /*delivery*/Delivery::Melee, /*range*/0.0f, /*useSeconds*/1.0f},
     // ── АРХЕТИП Material: РЕСУРСЫ, ИЗ КОТОРЫХ КРАФТЯТ ────────────────────
     // МОНЕТНЫЕ МЕТАЛЛЫ (тип `ore`). Каждая стоимость ВЫВЕДЕНА, а не выбрана:
     // 128 монет из единицы (единый выход чеканки, kPartsAuthoring — выбор
