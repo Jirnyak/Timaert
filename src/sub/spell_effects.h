@@ -3,7 +3,6 @@
 
 #include <cstdint>
 #include <limits>
-#include "events/event_bus.h"
 #include "sub/caps.h"       // kMaxSubObjects — длина буфера кандидатов В ТИПЕ
 #include "sub/damage.h"
 #include "sub/objects.h"    // SubObjects — арена сцены, явный параметр (ломоть E)
@@ -103,7 +102,6 @@ bool projectile_owner_is_player_side(const SubObjects& objs,
 // на колонку арены (фолбэк slot_pools_of — безголовые свидетели).
 void tick_spell_projectiles(SubObjects& objs,
                             MacroStore* st,
-                            EventBus* bus,
                             float dt,
                             SpellNeighborsFn neighborsFn,
                             void* neighborsUser,

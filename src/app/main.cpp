@@ -267,18 +267,34 @@ sm::FactNaming app_fact_naming(App& app) {
     return n;
 }
 
+// СЛИВ ПРИМЕНЁННЫХ ФАКТОВ ДЕЛЬТЫ (ломоть 5 M-171): факт Drained с ненулевым
+// amount — это орб шпиля (amount = заряд = ординал спелла + 1, ноль у орба
+// невыразим гейтом сцены; артельный Drained рождается НАВЕРХУ и через дельту
+// не идёт). Из него прикладной слой рождает тот же GameEvent{SpireDepleted},
+// каким жил прямой эмит из тика субмира до сноса: обучение спеллу и свет
+// карты (main.cpp spireDied) не тронуты, сдвинулся только МОМЕНТ — на
+// границу тика, туда же, где гаснет заряд фичи.
+void spire_fact_sink(void* user, const sm::WorldFact& f) {
+    auto& app = *static_cast<App*>(user);
+    if (f.kind != std::uint16_t(sm::FactKind::Drained) || f.amount <= 0)
+        return;
+    sm::GameEvent ev{sm::EventTag::SpireDepleted};
+    ev.a = f.objectKind == std::uint8_t(sm::FactSubject::Rooted)
+        ? int(f.object) : 0;
+    ev.b = f.amount - 1;   // the spell ordinal the orb held
+    ev.ix = int(f.x);
+    ev.iy = int(f.y);
+    app.bus.emit(ev);
+}
+
 void raise_macro_fact(void* user, const sm::BattleFact& fact) {
     auto& app = *static_cast<App*>(user);
     if (fact.kind != sm::BattleFact::Kind::Death) return;
-    // Идентичность в a/b НЕ кладётся — вторая сирота снесена (вердикт
-    // владельца 2026-10-10: «сноси»): читателей a/b у NpcDeath не было ни
-    // одного, живая цепочка идентичности идёт КОНВЕРТОМ BattleFact
-    // (fact.victim/killer → macro_identity_of / record_deed ниже) мимо
-    // события. Живой закон события — род (ix, квесты DestroyNpc).
-    sm::GameEvent ev{sm::EventTag::NpcDeath};
-    ev.ix = fact.npcType < std::uint16_t(sm::NPCType::Count)
-        ? int(fact.npcType) : sm::kNoNpcType;
-    app.bus.emit(ev);
+    // ЗДЕСЬ ЭМИТИЛСЯ GameEvent{NpcDeath} — СНЕСЁН ломтём 5 M-171 (вердикт
+    // владельца 2026-11-06: дубль рода 5 не живёт). Читателей у события не
+    // было НИ ОДНОГО; живая цепочка идентичности идёт КОНВЕРТОМ BattleFact
+    // (fact.victim/killer → macro_identity_of / record_deed ниже), а квесты
+    // судят ЛЕТОПИСЬЮ (kTaskVerbs: «квест = предикат над фактами»).
 
     // ...AND THE WORLD REMEMBERS IT. This is the first real writer into the
     // chronicle (CANON S20.1), and it is the one that matters most for the
@@ -1592,7 +1608,7 @@ void enter_subworld(App& app) {
     // флагоносца (ровно тот центр, на который enter() посадит окно).
     const sm::MacroWorld w = macro_world(app);
     sm::fill_local_frame(w, player_anchor_cell(app), app.frame);
-    app.subworld.enter(w, *app.sceneObjects, app.bus, &app.frame);
+    app.subworld.enter(w, *app.sceneObjects, &app.frame);
 }
 
 // Raise an authored SCENE over the standing world (release.md §3, owner
@@ -1612,7 +1628,7 @@ void begin_scene(App& app, const sm::content::SceneDef& scene) {
         const sm::MacroWorld w = macro_world(app);
         sm::fill_local_frame(w, player_anchor_cell(app), app.frame);
         app.subworld.enter_pocket_scene(w, *app.sceneObjects,
-                                        app.bus, &app.frame, ref,
+                                        &app.frame, ref,
                                         scene.floorHeight);
     }
     if (!app.subworld.active()) {
@@ -3568,7 +3584,8 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                 >= sm::kSubworldTickDivisor) {
             app.subworld.fold_player_sub();
             sm::MacroWorld deltaWorld = macro_world(app);
-            sm::apply_local_delta(deltaWorld, app.subworld.delta_buffer());
+            sm::apply_local_delta(deltaWorld, app.subworld.delta_buffer(),
+                                  &spire_fact_sink, &app);
         }
         stats.timeTick =
             sm::tick_world_subworld_steps(app.gs, app.gs.worldTickRt, 1);
@@ -3638,7 +3655,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
             if (dlt.stockCount > 0 || dlt.factCount > 0
                 || dlt.droppedOps > 0) {
                 sm::MacroWorld dw = macro_world(app);
-                sm::apply_local_delta(dw, dlt);
+                sm::apply_local_delta(dw, dlt, &spire_fact_sink, &app);
             }
         }
         sm::MacroWorld macroTickWorld = macro_world(app);

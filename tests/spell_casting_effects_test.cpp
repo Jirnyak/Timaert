@@ -563,7 +563,7 @@ int main() {
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok45, "fireball expiry setup cast rejected");
     if (!ok45) return 1;
-    sm::sub::tick_spell_projectiles(fireExpiryObjs, fireExpiryWorldStore_.get(), nullptr, 3.1f,
+    sm::sub::tick_spell_projectiles(fireExpiryObjs, fireExpiryWorldStore_.get(), 3.1f,
                                    &sm::test::all_live_slots,
                                    &fireExpiryObjs);
     const bool ok46 = !(!nearf(hp_of(fireExpiryObjs, fireExpiryVictim), 100.0f)
@@ -597,7 +597,7 @@ int main() {
         add_target(blastObjs, 48.0f, 0.0f, 100.0f, false);
     const auto blastOutside =
         add_target(blastObjs, 53.0f, 0.0f, 100.0f, false);
-    sm::sub::tick_spell_projectiles(blastObjs, blastWorldStore_.get(), nullptr, 0.0f,
+    sm::sub::tick_spell_projectiles(blastObjs, blastWorldStore_.get(), 0.0f,
                                    &sm::test::all_live_slots,
                                    &blastObjs);
     const bool ok47 = !(!(hp_of(blastObjs, blastEdge) < 100.0f)
@@ -887,7 +887,7 @@ int main() {
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok78, "magic_bolt agnostic-hit setup cast rejected");
     if (!ok78) return 1;
-    sm::sub::tick_spell_projectiles(hitObjs, hitWorldStore_.get(), nullptr, 0.25f,
+    sm::sub::tick_spell_projectiles(hitObjs, hitWorldStore_.get(), 0.25f,
                                    &sm::test::all_live_slots,
                                    &hitObjs);
     const bool ok79 = !(nearf(hp_of(hitObjs, friendly), 100.0f)
@@ -915,10 +915,10 @@ int main() {
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok80, "magic_bolt hostile-hit setup cast rejected");
     if (!ok80) return 1;
-    sm::sub::tick_spell_projectiles(hostObjs, hostWorldStore_.get(), nullptr, 0.25f,
+    sm::sub::tick_spell_projectiles(hostObjs, hostWorldStore_.get(), 0.25f,
                                    &sm::test::all_live_slots,
                                    &hostObjs);
-    sm::sub::tick_spell_projectiles(hostObjs, hostWorldStore_.get(), nullptr, 0.25f,
+    sm::sub::tick_spell_projectiles(hostObjs, hostWorldStore_.get(), 0.25f,
                                    &sm::test::all_live_slots,
                                    &hostObjs);
     const bool ok81 = !(!(hp_of(hostObjs, hostile) < 100.0f)
@@ -946,7 +946,7 @@ int main() {
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok82, "energy_beam effect setup cast rejected");
     if (!ok82) return 1;
-    sm::sub::tick_spell_projectiles(beamObjs, beamWorldStore_.get(), nullptr, 0.40f,
+    sm::sub::tick_spell_projectiles(beamObjs, beamWorldStore_.get(), 0.40f,
                                    &sm::test::all_live_slots,
                                    &beamObjs);
     const bool ok83 = !(!(hp_of(beamObjs, beamHit) < 100.0f)
@@ -982,7 +982,7 @@ int main() {
                                             1.0f, 0.0f, 0.0f, true));
     CHECK(ok84, "lightning_chain effect setup cast rejected");
     if (!ok84) return 1;
-    sm::sub::tick_spell_projectiles(chainObjs, chainWorldStore_.get(), nullptr, 0.35f,
+    sm::sub::tick_spell_projectiles(chainObjs, chainWorldStore_.get(), 0.35f,
                                    &sm::test::all_live_slots,
                                    &chainObjs);
     // Agnostic projectiles (owner design decision 2026-07-30): the bolt strikes
@@ -1094,7 +1094,7 @@ int main() {
     if (!ok94) return 1;
     const auto armVictim =
         add_target(armObjs, meteorX, meteorY, 1000.0f, false);
-    sm::sub::tick_spell_projectiles(armObjs, armWorldStore_.get(), nullptr, 1.0f,
+    sm::sub::tick_spell_projectiles(armObjs, armWorldStore_.get(), 1.0f,
                                    &sm::test::all_live_slots,
                                    &armObjs);
     const bool ok95 = !(!(hp_of(armObjs, armVictim) < 1000.0f)
@@ -1138,7 +1138,7 @@ int main() {
                 .dmgType = std::uint8_t(sm::DamageType::Fire),
                 .critical = false},
             sm::ecs::Position{0.0f, 0.0f, 0.0f});
-        sm::sub::tick_spell_projectiles(selfObjs, selfWorldStore_.get(), nullptr, 0.0f,
+        sm::sub::tick_spell_projectiles(selfObjs, selfWorldStore_.get(), 0.0f,
                                    &sm::test::all_live_slots,
                                    &selfObjs);
         const bool ok96 = !(!(hp_of(selfObjs, selfPlayer) < 100.0f)
@@ -1179,7 +1179,7 @@ int main() {
                 .dmgType = std::uint8_t(sm::DamageType::Arcane),
                 .critical = false},
             sm::ecs::Position{0.0f, 0.0f, 0.0f});
-        sm::sub::tick_spell_projectiles(shieldObjs, shieldWorldStore_.get(), nullptr, 0.0f,
+        sm::sub::tick_spell_projectiles(shieldObjs, shieldWorldStore_.get(), 0.0f,
                                    &sm::test::all_live_slots,
                                    &shieldObjs);
         const bool ok97 = !(!nearf(hp_of(shieldObjs, shieldPlayer), 90.0f));
@@ -1216,7 +1216,7 @@ int main() {
                 .dmgType = std::uint8_t(sm::DamageType::Fire),
                 .critical = false},
             sm::ecs::Position{0.0f, 0.0f, 0.0f});
-        sm::sub::tick_spell_projectiles(npcObjs, npcWorldStore_.get(), nullptr, 0.0f,
+        sm::sub::tick_spell_projectiles(npcObjs, npcWorldStore_.get(), 0.0f,
                                    &sm::test::all_live_slots,
                                    &npcObjs);
         const bool ok98 = !(!(hp_of(npcObjs, npcCaster) < 100.0f)
@@ -1301,7 +1301,7 @@ int main() {
             // Production-sized ticks, until the bolt is spent.
             for (int i = 0; i < 64 && projectile_count(sweepObjs) > 0; ++i) {
                 sm::sub::tick_spell_projectiles(
-                    sweepObjs, sweepWorldStore_.get(), nullptr, 1.0f / 64.0f,
+                    sweepObjs, sweepWorldStore_.get(), 1.0f / 64.0f,
                     &sm::test::all_live_slots,
                     &sweepObjs);
             }

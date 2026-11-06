@@ -5,8 +5,6 @@
 #include "tables/npc.h"
 #include <algorithm>
 #include <cmath>
-#include "events/event_bus.h"
-#include "events/event_types.h"
 
 namespace sm::sub {
 
@@ -130,7 +128,7 @@ Mitigated mitigate(SubObjects& objs, MacroStore* st, int s, int amount,
 
 DamageResult apply_damage(SubObjects& objs, MacroStore* st, int targetSlot,
                           const DamageSource& src, int amount,
-                          DamageKind kind, DamageType type, EventBus* bus) {
+                          DamageKind kind, DamageType type) {
     DamageResult out{};
     // «Тела на арене нет» (-1 адаптера или протухший ref_slot) и мёртвый/
     // переиспользованный слот — честный no-op, как невалидная сущность
@@ -204,20 +202,12 @@ DamageResult apply_damage(SubObjects& objs, MacroStore* st, int targetSlot,
         // Смерть тела сцены — бит kObjDead маски слота (ломоть 1б);
         // запись-макро судит свой байт судьбы своим путём (пулы, жнец).
         slot_flag_set(objs, s, kObjDead);
-        if (bus != nullptr && !objs.is_avatar_slot(s)) {
-            // Идентичность в a/b НЕ кладётся — сирота снесена (вердикт
-            // владельца 2026-10-10: «сносим сносим мы всегда потом по уму
-            // сделать можем заново уже системно»): читателей a/b у сценной
-            // смерти не было ни одного, а перегруженное поле без читателя —
-            // колонка-сирота (DOD п.9). Живой закон события — род (ix,
-            // квесты: quest_engine DestroyNpc) и спелл (iy). Системная
-            // форма идентичности придёт эпиком событий/фрейма.
-            GameEvent ev{EventTag::NpcDeath};
-            const auto* kindRow = slot_kind(objs, s);
-            ev.ix = kindRow ? int(kindRow->type) : kNoNpcType;
-            ev.iy = int(src.spellId);
-            bus->emit(ev);
-        }
+        // ЗДЕСЬ ЭМИТИЛСЯ GameEvent{NpcDeath} — СНЕСЁН ломтём 5 M-171
+        // (вердикт владельца 2026-11-06: события субмира едут ДЕЛЬТОЙ).
+        // Читателей у события не было НИ ОДНОГО (единственный — свидетель
+        // damage_door_test), а факт смерти миру сообщает ЖНЕЦ
+        // (resolve_subworld_deaths) строкой WorldFact{Killed} в factOps —
+        // выход по дельте, один канал вместо второго словаря.
     }
     return out;
 }
@@ -226,7 +216,7 @@ DamageResult apply_damage(SubObjects& objs, MacroStore* st, int targetSlot,
 // был damage_door_test, слот-форма — единственное тело закона.)
 DamageResult apply_lethal_damage(SubObjects& objs, MacroStore* st,
                                  int targetSlot, const DamageSource& src,
-                                 DamageKind kind, EventBus* bus) {
+                                 DamageKind kind) {
     if (targetSlot < 0 || !slot_flag(objs, targetSlot, kObjAlive)) return {};
     const auto* hp = st != nullptr ? slot_pools_of(objs, targetSlot, *st)
                                    : slot_pools(objs, targetSlot);
@@ -234,7 +224,7 @@ DamageResult apply_lethal_damage(SubObjects& objs, MacroStore* st,
     // The bar is integer now (4г), so "everything it has left" needs no ceil
     // — the whole remaining number is exactly one lethal blow.
     return apply_damage(objs, st, targetSlot, src, hp->hp, kind,
-                        DamageType::Blunt, bus);
+                        DamageType::Blunt);
 }
 
 } // namespace sm::sub

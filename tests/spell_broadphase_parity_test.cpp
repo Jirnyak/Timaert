@@ -296,7 +296,7 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
     }
 
     for (int t = 0; t < ticks; ++t) {
-        sm::sub::tick_spell_projectiles(objs, wStore_.get(), nullptr, dt, fn, user);
+        sm::sub::tick_spell_projectiles(objs, wStore_.get(), dt, fn, user);
     }
 
     std::vector<float> hp;

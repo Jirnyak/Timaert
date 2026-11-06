@@ -11,7 +11,8 @@
 
 namespace sm {
 
-void apply_local_delta(MacroWorld& w, DeltaBuffer& d) {
+void apply_local_delta(MacroWorld& w, DeltaBuffer& d,
+                       WorldFactSink sink, void* sinkUser) {
     if (!w.gs) return;
     const int side = w.gs->mapW;
 
@@ -43,6 +44,7 @@ void apply_local_delta(MacroWorld& w, DeltaBuffer& d) {
         } else {
             chronicle_record(w.gs->chronicle, d.factOps[i]);
         }
+        if (sink) sink(sinkUser, d.factOps[i]);
     }
 
     // Потерянная строка — громко: тихий дроп операции есть мир, соврвший

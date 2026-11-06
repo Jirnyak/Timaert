@@ -3149,8 +3149,7 @@ bool run_dungeon_house_smoke(App& app) {
             sm::sub::apply_lethal_damage(*bObjs, app.macroStore.get(),
                                          beastSlot,
                                          sm::sub::DamageSource{},
-                                         sm::sub::DamageKind::Script,
-                                         &app.bus);
+                                         sm::sub::DamageKind::Script);
             app.subworld.tick(0.016f);
             faunaAfter = sm::macro_stock_read(mw, sm::MacroStock::FaunaCount,
                                               key);
@@ -3176,8 +3175,7 @@ bool run_dungeon_house_smoke(App& app) {
             }
             sm::sub::apply_lethal_damage(*cObjs, app.macroStore.get(), s,
                                          sm::sub::DamageSource{},
-                                         sm::sub::DamageKind::Script,
-                                         &app.bus);
+                                         sm::sub::DamageKind::Script);
         }
         app.subworld.tick(0.016f);
         if (app.subworld.debug_take_stairs(/*up*/false)) {
@@ -3316,7 +3314,7 @@ bool run_dungeon_house_smoke(App& app) {
         popBefore = sm::macro_stock_read(mw, sm::MacroStock::Creatures, key);
         sm::sub::apply_lethal_damage(*rObjs, app.macroStore.get(), victimSlot,
                                      sm::sub::DamageSource{},
-                                     sm::sub::DamageKind::Script, &app.bus);
+                                     sm::sub::DamageKind::Script);
         app.subworld.tick(0.016f);
         // Расписка смерти — строка дельты; город худеет на ГРАНИЦЕ тика.
         smoke_advance_to_macro_tick(app);
@@ -4384,6 +4382,14 @@ bool run_spire_climb_smoke(App& app) {
             std::atan2(-2.0f, 0.0f) - app.subworld.cam_yaw(), 0.0f);
         app.subworld.interact();
         app.subworld.tick(0.016f);
+        // ВЕСЬ АКТ ГАСНЕТ НА ГРАНИЦЕ ТИКА, ОДНИМ МОМЕНТОМ (ломоть 5 M-171):
+        // дренаж орба — строка дельты ряда FeatureNumber, а СОБЫТИЕ
+        // SpireDepleted рождает слив применения дельты (spire_fact_sink из
+        // факта Drained) — прямой эмит из тика субмира снесён. До этой
+        // правки заряд гас на границе, а спелл учился в кадре нажатия —
+        // две половины одного акта расходились на секунду; теперь пин
+        // стоит ПОСЛЕ границы, где случаются обе.
+        smoke_advance_to_macro_tick(app);
         // The pump: emits land in the LIVE tick buffer, so applying pending
         // effects is all the frame loop itself would do (its flush comes
         // after application, not before). One call — the pump loops until
@@ -4392,9 +4398,6 @@ bool run_spire_climb_smoke(App& app) {
         apply_pending_event_effects(app);
         learned = sm::spellbook_has_learned(smoke_player_book(app),
                                             sm::spell_ordinal(def.id));
-        // Дренаж орба — строка дельты ряда FeatureNumber: число фичи гаснет на
-        // ГРАНИЦЕ тика, не в кадре нажатия (ломоть 5).
-        smoke_advance_to_macro_tick(app);
         // ВЫКАЧАННОСТЬ СПРАШИВАЕТСЯ У КЛЕТКИ, КОТОРУЮ ОБОБРАЛИ (M-320).
         // Здесь стоял резолв сквада по ординалу (`rooted_handle_by_ordinal`),
         // чтобы узнать адрес шпиля, — а у шпиля нет ни сквада, ни ординала,
@@ -6150,7 +6153,7 @@ bool run_delta_cap_probe_smoke(App& app) {
         if (objs.is_avatar_slot(s)) continue;
         sm::sub::apply_lethal_damage(objs, app.macroStore.get(), s,
                                      sm::sub::DamageSource{},
-                                     sm::sub::DamageKind::Script, &app.bus);
+                                     sm::sub::DamageKind::Script);
         ++struck;
     }
 
@@ -6795,7 +6798,7 @@ bool run_console_smoke(App& app) {
             sm::sub::DamageSource{
                 .attacker = wObjs->avatar,
                 .playerOwned = true},
-            sm::sub::DamageKind::Dev, &app.bus);
+            sm::sub::DamageKind::Dev);
         app.subworld.tick(0.016f);
         if (sm::player_sheet(app.gs, *app.macroStore)->levelData.exp <= std::uint32_t(expBefore)) {
             restore(); smoke_fail(app, "console wolf kill granted no XP"); return false;
@@ -8423,7 +8426,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 sm::sub::DamageSource{
                     .attacker = hObjs.avatar,
                     .playerOwned = true},
-                sm::sub::DamageKind::Dev, &app.bus);
+                sm::sub::DamageKind::Dev);
             app.subworld.leave(true);
             const sm::LevelData afterDeathXp = sm::player_sheet(app.gs, *app.macroStore)->levelData;
             if (sm::level_of(afterDeathXp) <= sm::level_of(beforeDeathXp)
@@ -9311,8 +9314,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 sm::sub::apply_lethal_damage(*fObjs, app.macroStore.get(),
                                              bodySlot,
                                              sm::sub::DamageSource{},
-                                             sm::sub::DamageKind::Script,
-                                             &app.bus);
+                                             sm::sub::DamageKind::Script);
                 std::fprintf(stderr,
                              "[smoke] wild body culled at cell %d,%d "
                              "(count %d)\n",
@@ -9403,7 +9405,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 sm::sub::apply_damage(wObjs, app.macroStore.get(), bodySlot,
                                       sm::sub::DamageSource{}, wound,
                                       sm::sub::DamageKind::Script,
-                                      sm::DamageType::Blunt, &app.bus);
+                                      sm::DamageType::Blunt);
                 std::fprintf(stderr,
                              "[smoke] tracked body struck for %d "
                              "(macro hp %.1f -> %.1f)\n",
@@ -9433,8 +9435,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 }
                 sm::sub::apply_lethal_damage(wObjs, app.macroStore.get(), ts,
                                              sm::sub::DamageSource{},
-                                             sm::sub::DamageKind::Script,
-                                             &app.bus);
+                                             sm::sub::DamageKind::Script);
                 app.smoke.trackedPhase = 2;
                 break;      // let the reaper run
             }

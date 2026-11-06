@@ -23,7 +23,6 @@
 #include "sub/spell_effects.h"
 #include "sub/movement.h"
 #include "sub/vk_renderer_3d.h"
-#include "events/event_bus.h"
 
 #include <vulkan/vulkan.h>
 
@@ -186,7 +185,7 @@ public:
     // вход субмира по сводке. Заполняет app (fill_local_frame) ДО входа и
     // далее в ПЛАНОВЫХ точках (граница мирового тика, ре-центр, акт смены
     // сцены); движок только читает. Указатель живёт дольше сессии сцены.
-    void enter(const MacroWorld& mw, SubObjects& scene, EventBus& bus,
+    void enter(const MacroWorld& mw, SubObjects& scene,
                const LocalContext* frame,
                const float* posOverride = nullptr);
     // Raise a POCKET scene directly — no street door, no overworld session
@@ -195,7 +194,7 @@ public:
     // plot's teardown (leave(true)). `floorHeight` is the pocket's macro
     // height in the normalised [0,1] range the heightmap law reads.
     void enter_pocket_scene(const MacroWorld& mw, SubObjects& scene,
-                            EventBus& bus, const LocalContext* frame,
+                            const LocalContext* frame,
                             const DungeonRef& ref, float floorHeight);
     void leave(bool force = false);
     // ── ПЛАНОВАЯ ПЕРЕСИНХРОНИЗАЦИЯ ФРЕЙМА (ЗАКОН ШВА: никогда стихийная) ──
@@ -820,7 +819,6 @@ private:
     // реестром — движок держит сам единый массив объектов, store идёт
     // конвертом mw_ (шаг «курьер»).
     SubObjects*         objects_  = nullptr;
-    EventBus*           bus_      = nullptr;
     // (вид `zones_` умер ломтём 1 эпика фрейма: ноль читателей — байт
     // опасности приезжает клетке через `cell_facts().zone`, DOD п.9)
     // (вид `treeLayer_` умер ломтём 3 эпика пакетов v1 по той же причине и с
@@ -1031,8 +1029,7 @@ private:
     // mw_, so a scene raised with only the named views left the deposit and
     // population rows fail-closed — a house with no residents and kills that
     // never thinned the town (found by the dungeon_house smoke, 2026-08-24).
-    void enter_dungeon_scene(const MacroWorld& mw, SubObjects& scene,
-                             EventBus& bus);
+    void enter_dungeon_scene(const MacroWorld& mw, SubObjects& scene);
     // Rebuild what the engine keeps ABOUT props, from the one composite:
     // the lights of lit props (hung as ordinary `LightEmitter` bodies, so a
     // street lantern and a carried torch reach the shader through the same
@@ -1141,7 +1138,8 @@ private:
     // нарочно: оно вернуло бы догадку двери под видом удобства.
     void record_world_fact(FactKind kind, int cellX, int cellY, int amount,
                            std::uint32_t subjectOrdinal,
-                           int objectRootedId = 0);
+                           int objectOrdinal = 0,
+                           FactSubject objectKind = FactSubject::Rooted);
 
     // Watch for the player crossing INTO a zone. Called from tick().
     void tick_zones();

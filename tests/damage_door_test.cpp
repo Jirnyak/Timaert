@@ -34,7 +34,6 @@
 #include "sub/ability.h"   // tick_body_recovery — та же дверь слива (кусок 2)
 #include "tables/npc.h"
 #include "ecs/components.h"
-#include "events/event_bus.h"
 #include "events/event_types.h"
 #include "bus/store.h"
 
@@ -65,19 +64,11 @@ int make_body(sm::sub::SubObjects& objs, int hp, bool withKind = true) {
 using sm::test::fx_of;
 using sm::test::last_hit_of;
 
-int death_events(const sm::EventBus& bus) {
-    int n = 0;
-    for (const auto& ev : bus.tick_events())
-        if (ev.tag == sm::EventTag::NpcDeath) ++n;
-    return n;
-}
-
-const sm::GameEvent* last_death(const sm::EventBus& bus) {
-    const sm::GameEvent* found = nullptr;
-    for (const auto& ev : bus.tick_events())
-        if (ev.tag == sm::EventTag::NpcDeath) found = &ev;
-    return found;
-}
+// (Половина свидетеля «смерть эмитит GameEvent{NpcDeath}» СНЕСЕНА ломтём 5
+// M-171 вместе с самим механизмом: событие не читал никто, а факт смерти
+// миру сообщает ЖНЕЦ (resolve_subworld_deaths) строкой WorldFact{Killed} в
+// дельту — выход по дельте, один канал. Закон ДВЕРИ — урон, броня,
+// летальность, бит Dead, DamageFx, атрибуция — утверждается ниже как и был.)
 
 // One lethal blow of each kind must leave the identical death protocol.
 void test_death_is_indistinguishable() {
@@ -87,7 +78,6 @@ void test_death_is_indistinguishable() {
     for (const DamageKind kind : kinds) {
         auto arena_ = sm::test::make_scene_arena();
         sm::sub::SubObjects& objs = *arena_;
-        sm::EventBus bus;
         // Жертва — НЕ слот 0: у свежей арены первое тело садится в нулевой
         // слот, и пин пустоты a/b был бы слеп к воскрешению битов ссылки
         // (мутация «вернуть ev.a» прошла зелёной, 2026-10-10).
@@ -99,8 +89,7 @@ void test_death_is_indistinguishable() {
         const DamageSource src{sm::sub::ObjRef{9, 42u}, false,
                                kind == DamageKind::Spell ? 900u : 0u};
         const DamageResult hit = apply_damage(objs, nullptr, s, src, 25.0f,
-                                              kind, sm::DamageType::Blunt,
-                                              &bus);
+                                              kind, sm::DamageType::Blunt);
 
         CHECK(hit.applied == 25.0f, "lethal blow applies its full amount");
         CHECK(hit.lethal, "a blow past remaining hp is lethal");
@@ -110,20 +99,6 @@ void test_death_is_indistinguishable() {
               "every kind stamps DamageFx");
         CHECK((fx_of(objs, s) & sm::sub::kDmgFxLethal) != 0,
               "the killing blow's DamageFx is lethal");
-        CHECK(death_events(bus) == 1, "every kind emits exactly one NpcDeath");
-        if (const sm::GameEvent* ev = last_death(bus)) {
-            // Идентичность в a/b СНЕСЕНА (вердикт владельца 2026-10-10):
-            // читателей у неё не было, прежние пины охраняли случай (§8
-            // п.5). Пустота — негативный контроль против молчаливого
-            // воскрешения; умрёт вместе с системной формой идентичности
-            // (эпик событий/фрейма).
-            CHECK(ev->a == 0u && ev->b == 0u,
-                  "scene NpcDeath carries no identity (orphan demolished)");
-            CHECK(ev->ix == int(kTestNpcType),
-                  "NpcDeath.ix carries the victim's kind");
-            CHECK(ev->iy == (kind == DamageKind::Spell ? 900 : 0),
-                  "NpcDeath.iy carries the spell id and only for spells");
-        }
 
         // Attribution is the kind row's DATA, not a per-site omission.
         const bool wantsKiller =
@@ -143,7 +118,6 @@ void test_death_is_indistinguishable() {
 void test_armour_softens_by_the_row_and_the_kind() {
     auto arena_ = sm::test::make_scene_arena();
     sm::sub::SubObjects& objs = *arena_;
-    sm::EventBus bus;
 
     // The Guard row wears plate; the test's own kind (7) wears nothing. Same
     // door, same blow, two rows — this is the negative control that says the
@@ -159,11 +133,11 @@ void test_armour_softens_by_the_row_and_the_kind() {
     const DamageResult onBare =
         apply_damage(objs, nullptr, bare,
                      DamageSource{}, blow, DamageKind::Melee,
-                     sm::DamageType::Blunt, &bus);
+                     sm::DamageType::Blunt);
     const DamageResult onPlate =
         apply_damage(objs, nullptr, plated,
                      DamageSource{}, blow, DamageKind::Melee,
-                     sm::DamageType::Blunt, &bus);
+                     sm::DamageType::Blunt);
 
     CHECK(onBare.applied == blow, "an unarmoured row takes the whole blow");
     CHECK(onPlate.applied < onBare.applied,
@@ -196,7 +170,7 @@ void test_armour_softens_by_the_row_and_the_kind() {
     const DamageResult tink =
         apply_damage(objs, nullptr, turtle, DamageSource{},
                      float(guard.block_of(sm::DamageType::Blunt)),
-                     DamageKind::Melee, sm::DamageType::Blunt, &bus);
+                     DamageKind::Melee, sm::DamageType::Blunt);
     CHECK(guard.block_of(sm::DamageType::Blunt) > 0,
           "предусловие своё: у выданных лат строки стража колонка блока есть");
     CHECK(tink.applied == 0.0f,
@@ -226,7 +200,7 @@ void test_armour_softens_by_the_row_and_the_kind() {
     const DamageResult fell =
         apply_damage(objs, nullptr, falling,
                      DamageSource{}, blow, DamageKind::Fall,
-                     sm::DamageType::Blunt, &bus);
+                     sm::DamageType::Blunt);
     CHECK(fell.applied == blow,
           "plate does not soften the ground: the fall row says armour is not "
           "in the way, and that is DATA, not an `if` in the door");
@@ -292,14 +266,13 @@ void test_players_worn_plate_stands_underground() {
     // alone never zeroes a blow (M-193 split the two jobs apart).
     const DamageResult tink =
         apply_damage(objs, store.get(), body, DamageSource{},
-                     float(block), DamageKind::Melee, sm::DamageType::Blunt,
-                     nullptr);
+                     float(block), DamageKind::Melee, sm::DamageType::Blunt);
     CHECK(tink.applied == 0,
           "the map-side coat blocks the dungeon-side poke in full");
     // ...and a big blow is softened by exactly THE law over the coat's columns.
     const DamageResult big =
         apply_damage(objs, store.get(), body, DamageSource{}, 20,
-                     DamageKind::Melee, sm::DamageType::Blunt, nullptr);
+                     DamageKind::Melee, sm::DamageType::Blunt);
     CHECK(big.applied == sm::mitigate_amount(20, armour, block),
           "the worn columns meet the defence law like any other defence");
 
@@ -310,7 +283,7 @@ void test_players_worn_plate_stands_underground() {
     const DamageResult bare =
         apply_damage(objs, store.get(), bystander,
                      DamageSource{}, 20, DamageKind::Melee,
-                     sm::DamageType::Blunt, nullptr);
+                     sm::DamageType::Blunt);
     CHECK(bare.applied == 20,
           "negative control: the player's coat covers the player alone");
 }
@@ -366,8 +339,7 @@ void test_armor_downtime() {
     //    ставил любой удар, он покраснел бы здесь.
     const DamageResult poke =
         apply_damage(objs, store.get(), body, DamageSource{},
-                     float(block), DamageKind::Melee, sm::DamageType::Blunt,
-                     nullptr);
+                     float(block), DamageKind::Melee, sm::DamageType::Blunt);
     CHECK(poke.applied == 0.0f && poke.blocked,
           "тычку в размер блока съел блок");
     CHECK(clock.armorSteps == 0u,
@@ -375,7 +347,7 @@ void test_armor_downtime() {
 
     // 2. УДАР СКВОЗЬ БЛОК ВЫБИВАЕТ БРОНЮ, и часы берутся от ВЕСА надетого.
     apply_damage(objs, store.get(), body, DamageSource{}, 200.0f,
-                 DamageKind::Melee, sm::DamageType::Blunt, nullptr);
+                 DamageKind::Melee, sm::DamageType::Blunt);
     const std::uint16_t charged = clock.armorSteps;
     CHECK(charged > 0u, "удар сквозь блок выбил броню из строя");
 
@@ -384,7 +356,7 @@ void test_armor_downtime() {
     const int hp0 = int(sm::sub::slot_pools_of(objs, body, *store)->hp);
     const DamageResult naked =
         apply_damage(objs, store.get(), body, DamageSource{}, 200.0f,
-                     DamageKind::Melee, sm::DamageType::Blunt, nullptr);
+                     DamageKind::Melee, sm::DamageType::Blunt);
     CHECK(naked.applied == float(200 - block),
           "в простое проходит удар МИНУС блок: процентная колонка выключена, "
           "плоская осталась");
@@ -420,7 +392,7 @@ void test_armor_downtime() {
     const int hide = make_body(objs, 1000.0f, /*withKind*/true);
     sm::test::give_combat(objs, hide, sm::ecs::Combat{});
     apply_damage(objs, store.get(), hide, DamageSource{}, 200.0f,
-                 DamageKind::Melee, sm::DamageType::Blunt, nullptr);
+                 DamageKind::Melee, sm::DamageType::Blunt);
     CHECK(sm::sub::slot_combat(objs, hide)->armorSteps == 0u,
           "шкура строки существа простоя не знает: надетого веса ноль");
 }
@@ -503,7 +475,7 @@ void test_shield_blocks_without_downtime() {
                              // снаряжение каталога на сотом ранге
     const DamageResult r0 =
         apply_damage(objs, store.get(), body, DamageSource{}, blow,
-                     DamageKind::Melee, sm::DamageType::Blunt, nullptr);
+                     DamageKind::Melee, sm::DamageType::Blunt);
     CHECK(r0.applied < blow, "надетый щит СНИЖАЕТ прошедший урон");
     CHECK(blow - int(r0.applied) == block,
           "на ранге 0 снято ровно столько, сколько стоит в колонке блока "
@@ -523,7 +495,7 @@ void test_shield_blocks_without_downtime() {
     skills.rank[std::size_t(sm::SkillId::Shield)] = 100;
     const DamageResult r100 =
         apply_damage(objs, store.get(), body, DamageSource{}, blow,
-                     DamageKind::Melee, sm::DamageType::Blunt, nullptr);
+                     DamageKind::Melee, sm::DamageType::Blunt);
     const int stopped0 = blow - int(r0.applied);
     const int stopped100 = blow - int(r100.applied);
     CHECK(stopped100 > stopped0,
@@ -555,7 +527,7 @@ void test_shield_blocks_without_downtime() {
           "база простоя есть РОВНО куртка: щит рядом с ней не прибавил своих "
           "восьми килограммов");
     apply_damage(objs, store.get(), body, DamageSource{}, blow,
-                 DamageKind::Melee, sm::DamageType::Blunt, nullptr);
+                 DamageKind::Melee, sm::DamageType::Blunt);
     CHECK(clock.armorSteps > 0u,
           "негативный контроль: вещь С процентом простой СТАВИТ — значит нули "
           "выше есть ФАКТ щита, а не слепота прибора");
@@ -568,7 +540,7 @@ void test_shield_blocks_without_downtime() {
         skills, sm::DamageType::Blunt);
     const DamageResult inDowntime =
         apply_damage(objs, store.get(), body, DamageSource{}, blow,
-                     DamageKind::Melee, sm::DamageType::Blunt, nullptr);
+                     DamageKind::Melee, sm::DamageType::Blunt);
     CHECK(inDowntime.applied == sm::mitigate_amount(blow, 0, worn.block),
           "в простое процент выключен, а блок щита в строю — ровно закон "
           "защиты от нулевой брони и полного блока");
@@ -649,11 +621,10 @@ void test_mitigation_law_shape() {
 void test_survivor_protocol() {
     auto arena_ = sm::test::make_scene_arena();
     sm::sub::SubObjects& objs = *arena_;
-    sm::EventBus bus;
     const int s = make_body(objs, 30.0f);
     const DamageResult hit = apply_damage(
         objs, nullptr, s, DamageSource{sm::sub::ObjRef{5, 7u}, true},
-        10.0f, DamageKind::Melee, sm::DamageType::Blunt, &bus);
+        10.0f, DamageKind::Melee, sm::DamageType::Blunt);
     CHECK(hit.applied == 10.0f,
           "a body in its own skin keeps the whole blow: armour 0 is the "
           "limiting case of the law, applied == asked to the bit");
@@ -662,7 +633,6 @@ void test_survivor_protocol() {
           "hp drops by exactly the applied amount");
     CHECK(!sm::test::flag_of(objs, s, sm::sub::kObjDead),
           "a survivor is not Dead");
-    CHECK(death_events(bus) == 0, "a survivor emits nothing");
     CHECK((fx_of(objs, s) & sm::sub::kDmgFxPending) != 0,
           "DamageFx is stamped on every hit that lands");
     CHECK((fx_of(objs, s) & sm::sub::kDmgFxLethal) == 0,
@@ -680,56 +650,38 @@ void test_player_death_is_not_an_npc_kill() {
     for (const DamageKind kind : kinds) {
         auto arena_ = sm::test::make_scene_arena();
         sm::sub::SubObjects& objs = *arena_;
-        sm::EventBus bus;
         const int s = make_body(objs, 5.0f);
         sm::test::make_avatar(objs, s);
         const DamageResult hit =
             apply_damage(objs, nullptr, s,
                          DamageSource{sm::sub::ObjRef{3, 3u}, false},
                          50.0f, kind,
-                         sm::DamageType::Blunt, &bus);
+                         sm::DamageType::Blunt);
         CHECK(hit.lethal, "the player body does die");
         CHECK(sm::test::flag_of(objs, s, sm::sub::kObjDead),
               "Dead is stamped so the reconcile sees the death");
-        CHECK(death_events(bus) == 0,
-              "no NpcDeath for a player death, whatever the weapon");
     }
 }
 
-// The spell path used to stay silent for a body with no NPCKind while every
-// other weapon reported kNoNpcType. One door, one answer.
-void test_kindless_body_still_reports() {
-    auto arena_ = sm::test::make_scene_arena();
-    sm::sub::SubObjects& objs = *arena_;
-    sm::EventBus bus;
-    const int s = make_body(objs, 5.0f, /*withKind=*/false);
-    apply_damage(objs, nullptr, s,
-                 DamageSource{sm::sub::ObjRef{1, 21u}, false, 33u},
-                 50.0f, DamageKind::Spell, sm::DamageType::Blunt, &bus);
-    CHECK(death_events(bus) == 1, "a kindless death still emits");
-    if (const sm::GameEvent* ev = last_death(bus)) {
-        CHECK(ev->ix == sm::kNoNpcType,
-              "a body with no NPCKind reports kNoNpcType, not a plausible 0");
-    }
-}
+// (test_kindless_body_still_reports СНЕСЁН вместе с событием: его предмет —
+//  честность колонки ix у NpcDeath — умер носителем. Род жертвы жнец читает
+//  колонкой арены напрямую.)
 
 // The ONE already-dead guard: a corpse takes no second blow.
 void test_no_second_blow() {
     auto arena_ = sm::test::make_scene_arena();
     sm::sub::SubObjects& objs = *arena_;
-    sm::EventBus bus;
     const int s = make_body(objs, 10.0f);
     apply_damage(objs, nullptr, s, DamageSource{sm::sub::ObjRef{1, 1u}, false},
-                 50.0f, DamageKind::Melee, sm::DamageType::Blunt, &bus);
+                 50.0f, DamageKind::Melee, sm::DamageType::Blunt);
     const float hpAfterDeath = (*sm::sub::slot_pools(objs, s)).hp;
     const DamageResult again = apply_damage(
         objs, nullptr, s, DamageSource{sm::sub::ObjRef{2, 2u}, false},
-        50.0f, DamageKind::Spell, sm::DamageType::Blunt, &bus);
+        50.0f, DamageKind::Spell, sm::DamageType::Blunt);
     CHECK(again.applied == 0.0f, "a corpse takes no damage");
     CHECK(!again.lethal, "a no-op blow is not lethal");
     CHECK((*sm::sub::slot_pools(objs, s)).hp == hpAfterDeath,
           "a corpse's hp does not move");
-    CHECK(death_events(bus) == 1, "a corpse dies once — one event, ever");
     CHECK(last_hit_of(objs, s) == (sm::sub::ObjRef{1, 1u}),
           "the kill stays attributed to the killer, not the corpse-kicker");
 }
@@ -737,30 +689,26 @@ void test_no_second_blow() {
 void test_execution_helper() {
     auto arena_ = sm::test::make_scene_arena();
     sm::sub::SubObjects& objs = *arena_;
-    sm::EventBus bus;
     // Whole hp: every combat writer is integer now (phase 3), so a whole bar
     // is the world's own case. The fractional-bar edge (ceil = overkill by
     // under a point, still one blow) is asserted separately below.
     const int s = make_body(objs, 37.0f);
     const DamageResult hit = apply_lethal_damage(
-        objs, nullptr, s, DamageSource{.playerOwned = true}, DamageKind::Dev,
-        &bus);
+        objs, nullptr, s, DamageSource{.playerOwned = true}, DamageKind::Dev);
     CHECK(hit.lethal, "an execution is lethal by construction");
     CHECK(hit.applied == 37, "an execution strikes exactly remaining hp");
     CHECK((*sm::sub::slot_pools(objs, s)).hp == 0.0f,
           "an execution lands the body at exactly zero");
     const DamageResult again = apply_lethal_damage(
-        objs, nullptr, s, DamageSource{.playerOwned = true}, DamageKind::Dev,
-        &bus);
+        objs, nullptr, s, DamageSource{.playerOwned = true}, DamageKind::Dev);
     CHECK(again.applied == 0, "executing a corpse is a no-op");
-    CHECK(death_events(bus) == 1, "one execution, one event");
 
     // The bar is INTEGER now (4г): the execution blow is exactly what is
     // left, and one blow is always enough — no ceil, no survivor.
     const int odd = make_body(objs, 13);
     const DamageResult oddHit = apply_lethal_damage(
         objs, nullptr, odd,
-        DamageSource{.playerOwned = true}, DamageKind::Dev, &bus);
+        DamageSource{.playerOwned = true}, DamageKind::Dev);
     CHECK(oddHit.lethal && oddHit.applied == 13,
           "the whole remaining bar is one lethal blow, never a survivor");
 }
@@ -773,14 +721,13 @@ void test_execution_helper() {
 void test_stale_attacker_ref_resolves_to_nobody() {
     auto arena_ = sm::test::make_scene_arena();
     sm::sub::SubObjects& arena = *arena_;
-    sm::EventBus bus;
     const int killer = make_body(arena, 10);
     const int victim = make_body(arena, 30);
     CHECK(killer >= 0, "предусловие своё: у убийцы есть слот арены");
     const sm::sub::ObjRef killerRef = sm::sub::ref_of(arena, killer);
     apply_damage(arena, nullptr, victim,
                  DamageSource{killerRef, false}, 10.0f,
-                 DamageKind::Melee, sm::DamageType::Blunt, &bus);
+                 DamageKind::Melee, sm::DamageType::Blunt);
     CHECK(last_hit_of(arena, victim) == killerRef,
           "живая ссылка хранится дословно");
     CHECK(sm::sub::ref_slot(arena, killerRef) == killer,
@@ -821,11 +768,10 @@ void test_stale_attacker_ref_resolves_to_nobody() {
 void test_zero_and_missing_target() {
     auto arena_ = sm::test::make_scene_arena();
     sm::sub::SubObjects& objs = *arena_;
-    sm::EventBus bus;
     const int s = make_body(objs, 10.0f);
     const DamageResult zero =
         apply_damage(objs, nullptr, s, DamageSource{},
-                     0.0f, DamageKind::Melee, sm::DamageType::Blunt, &bus);
+                     0.0f, DamageKind::Melee, sm::DamageType::Blunt);
     CHECK(zero.applied == 0.0f, "a zero blow is a no-op");
     CHECK(fx_of(objs, s) == 0u,
           "a no-op stamps nothing — zero is a silent contribution");
@@ -836,7 +782,7 @@ void test_zero_and_missing_target() {
     const DamageResult none =
         apply_damage(objs, nullptr, bare,
                      DamageSource{}, 10.0f, DamageKind::Melee,
-                     sm::DamageType::Blunt, &bus);
+                     sm::DamageType::Blunt);
     CHECK(none.applied == 0.0f, "a body without Health cannot be struck");
 }
 
@@ -854,7 +800,6 @@ void test_zero_and_missing_target() {
 void test_the_blow_lands_on_the_record() {
     auto arena_ = sm::test::make_scene_arena();
     sm::sub::SubObjects& objs = *arena_;
-    sm::EventBus bus;
 
     // Запись — СЛОТ STORE (шаг 2 1е): фикстура рожает слот, как рожает мир.
     auto store = sm::make_macro_store();
@@ -866,7 +811,7 @@ void test_the_blow_lands_on_the_record() {
 
     const DamageResult hit =
         apply_damage(objs, store.get(), body, DamageSource{}, 30,
-                     DamageKind::Script, sm::DamageType::Blunt, &bus);
+                     DamageKind::Script, sm::DamageType::Blunt);
     CHECK(hit.applied == 30, "the blow landed");
     CHECK((*sm::body_state<sm::ecs::Pools>(*store, record)).hp == 70,
           "a projected body's wound is its RECORD's wound, in the tick it "
@@ -888,7 +833,7 @@ void test_the_blow_lands_on_the_record() {
     // any reason at all.
     const int orphan = make_body(objs, 100);
     apply_damage(objs, store.get(), orphan, DamageSource{}, 30,
-                 DamageKind::Script, sm::DamageType::Blunt, &bus);
+                 DamageKind::Script, sm::DamageType::Blunt);
     CHECK((*sm::sub::slot_pools(objs, orphan)).hp == 70,
           "a body nothing above remembers spends its own bar — the detector "
           "above reads a real difference");
@@ -897,7 +842,7 @@ void test_the_blow_lands_on_the_record() {
     // kill by another. Three more Script blows of 30 leave the record at -20.
     for (int i = 0; i < 3; ++i) {
         apply_damage(objs, store.get(), body, DamageSource{}, 30,
-                     DamageKind::Script, sm::DamageType::Blunt, &bus);
+                     DamageKind::Script, sm::DamageType::Blunt);
     }
     CHECK(sm::test::flag_of(objs, body, sm::sub::kObjDead)
               && (*sm::body_state<sm::ecs::Pools>(*store, record)).hp <= 0,
@@ -964,7 +909,6 @@ int main() {
     test_shield_rank_does_not_thicken_the_skin();
     test_survivor_protocol();
     test_player_death_is_not_an_npc_kill();
-    test_kindless_body_still_reports();
     test_no_second_blow();
     test_execution_helper();
     test_stale_attacker_ref_resolves_to_nobody();

@@ -120,7 +120,6 @@ void apply_spell_damage(SubObjects& objs,
                         MacroStore* st,
                         std::array<std::uint16_t, kMaxSpellReaps>& reaps,
                         int& reapCount,
-                        EventBus* bus,
                         int target,
                         const ecs::Projectile& p,
                         int damage,
@@ -141,7 +140,7 @@ void apply_spell_damage(SubObjects& objs,
     const DamageResult hit = apply_damage(objs, st,
                                           target, src, damage,
                                           DamageKind::Spell,
-                                          DamageType(p.dmgType), bus);
+                                          DamageType(p.dmgType));
     if (hit.applied <= 0) return;
     if (playerOwned && logFn
         && !(objs.is_avatar_slot(target)
@@ -231,7 +230,6 @@ void apply_spell_blast(SubObjects& objs,
                        MacroStore* st,
                        std::array<std::uint16_t, kMaxSpellReaps>& reaps,
                        int& reapCount,
-                       EventBus* bus,
                        const ecs::Position& pos,
                        const ecs::Projectile& p,
                        SpellDamageLogFn logFn,
@@ -253,7 +251,7 @@ void apply_spell_blast(SubObjects& objs,
             const float dz = tp.z - pos.z;
             const float r = p.blastRadius;
             if (dx * dx + dy * dy + dz * dz <= r * r) {
-                apply_spell_damage(objs, st, reaps, reapCount, bus, s, p, p.damage,
+                apply_spell_damage(objs, st, reaps, reapCount, s, p, p.damage,
                                    logFn, logUser, canHitFn, canHitUser);
             }
         });
@@ -263,7 +261,6 @@ void apply_spell_beam(SubObjects& objs,
                       MacroStore* st,
                       std::array<std::uint16_t, kMaxSpellReaps>& reaps,
                       int& reapCount,
-                      EventBus* bus,
                       const ecs::Position& beamPos,
                       const ecs::Projectile& p,
                       SpellDamageLogFn logFn,
@@ -304,7 +301,7 @@ void apply_spell_beam(SubObjects& objs,
             const float pz = dz - nz_b * along;
             const float r = p.radius * 2.0f + slot_body_radius(objs, s);
             if (px * px + py * py + pz * pz <= r * r) {
-                apply_spell_damage(objs, st, reaps, reapCount, bus, s, p, p.damage,
+                apply_spell_damage(objs, st, reaps, reapCount, s, p, p.damage,
                                    logFn, logUser, canHitFn, canHitUser);
             }
         });
@@ -323,7 +320,6 @@ void apply_spell_chain(SubObjects& objs,
                        MacroStore* st,
                        std::array<std::uint16_t, kMaxSpellReaps>& reaps,
                        int& reapCount,
-                       EventBus* bus,
                        int first,
                        const ecs::Projectile& p,
                        SpellDamageLogFn logFn,
@@ -365,7 +361,7 @@ void apply_spell_chain(SubObjects& objs,
                 }
             });
         if (best < 0) break;
-        apply_spell_damage(objs, st, reaps, reapCount, bus, best, p, damage,
+        apply_spell_damage(objs, st, reaps, reapCount, best, p, damage,
                            logFn, logUser, canHitFn, canHitUser);
         chainHits[std::size_t(hitCount++)] = best;
         current = best;
@@ -390,7 +386,6 @@ bool projectile_owner_is_player_side(const SubObjects& objs,
 
 void tick_spell_projectiles(SubObjects& objs,
                             MacroStore* st,
-                            EventBus* bus,
                             float dt,
                             SpellNeighborsFn neighborsFn,
                             void* neighborsUser,
@@ -426,11 +421,11 @@ void tick_spell_projectiles(SubObjects& objs,
         p.lifeTimer -= dt;
         if (p.lifeTimer <= 0.0f) {
             if (p.kind == ecs::Projectile::Beam) {
-                apply_spell_beam(pobjs, st, reaps, reapCount, bus, pos, p,
+                apply_spell_beam(pobjs, st, reaps, reapCount, pos, p,
                                  logFn, logUser, canHitFn, canHitUser,
                                  neighborsFn, neighborsUser);
             } else if (p.explodeOnExpiry) {
-                apply_spell_blast(pobjs, st, reaps, reapCount, bus, pos, p,
+                apply_spell_blast(pobjs, st, reaps, reapCount, pos, p,
                                   logFn, logUser, canHitFn, canHitUser,
                                   neighborsFn, neighborsUser);
                 // Detonated on expiry (only bolts with a blast do this) — burst.
@@ -606,13 +601,13 @@ void tick_spell_projectiles(SubObjects& objs,
         }
         if (hit >= 0) {
             if (p.blastRadius > 0.0f) {
-                apply_spell_blast(pobjs, st, reaps, reapCount, bus, pos, p,
+                apply_spell_blast(pobjs, st, reaps, reapCount, pos, p,
                                   logFn, logUser, canHitFn, canHitUser,
                                   neighborsFn, neighborsUser);
             } else {
-                apply_spell_damage(objs, st, reaps, reapCount, bus, hit, p, p.damage,
+                apply_spell_damage(objs, st, reaps, reapCount, hit, p, p.damage,
                                    logFn, logUser, canHitFn, canHitUser);
-                apply_spell_chain(pobjs, st, reaps, reapCount, bus, hit, p,
+                apply_spell_chain(pobjs, st, reaps, reapCount, hit, p,
                                   logFn, logUser, canHitFn, canHitUser,
                                   neighborsFn, neighborsUser);
             }
@@ -631,7 +626,7 @@ void tick_spell_projectiles(SubObjects& objs,
         // two surfaces ever had, kept exactly as it was.
         if (worldStops) {
             if (p.blastRadius > 0.0f) {
-                apply_spell_blast(pobjs, st, reaps, reapCount, bus, pos, p, logFn,
+                apply_spell_blast(pobjs, st, reaps, reapCount, pos, p, logFn,
                                   logUser, canHitFn, canHitUser,
                                   neighborsFn, neighborsUser);
             }

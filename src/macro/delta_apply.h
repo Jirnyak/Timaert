@@ -11,9 +11,16 @@ namespace sm {
 
 struct MacroWorld;
 
+// СЛИВ ПРИМЕНЁННЫХ ФАКТОВ — прикладной слой слушает границу тика (прецедент
+// BattleFactSink@src/macro/macro_world.h): L1 не видит L3, поэтому GameEvent
+// для сюжета рождает ЗВОНЯЩИЙ из применённой строки, а не это тело. Нулевой
+// слив законен — смоуки и приборы слушателя не держат.
+using WorldFactSink = void (*)(void* user, const WorldFact& fact);
+
 // Применить и опустошить буфер. Переполнение, назвавшее себя droppedOps,
 // печатается вслух (потерянная операция — мир, соврвший игроку; ЗАКОН ДВУХ
 // ТЕМПОВ п.3) — и счёт обнуляется вместе со строками.
-void apply_local_delta(MacroWorld& w, DeltaBuffer& d);
+void apply_local_delta(MacroWorld& w, DeltaBuffer& d,
+                       WorldFactSink sink = nullptr, void* sinkUser = nullptr);
 
 } // namespace sm

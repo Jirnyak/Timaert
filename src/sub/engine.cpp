@@ -261,12 +261,12 @@ float dist3sq(float ax, float ay, float az, float bx, float by, float bz) {
 // it. The physics stays float and rounds ONCE, here — the blow past this
 // line is integer like every combat quantity.
 int apply_fall_damage(sub::SubObjects& objs, MacroStore* st, int s,
-                      float impactVz, float radius, EventBus* bus) {
+                      float impactVz, float radius) {
     const int dmg = int(std::lround(fall_damage(impactVz, radius)));
     if (dmg <= 0) return 0;
     // Typed Blunt for form's sake — the Fall row says armour is not in the way.
     return apply_damage(objs, st, s, DamageSource{}, dmg, DamageKind::Fall,
-                        DamageType::Blunt, bus)
+                        DamageType::Blunt)
         .applied;
 }
 
@@ -713,7 +713,7 @@ void SubworldEngine::destroy(const gpu::VulkanDevice& dev) {
 }
 
 void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
-                           EventBus& bus, const LocalContext* frame,
+                           const LocalContext* frame,
                            const float* posOverride) {
     statusLine_.clear();
     statusTimer_ = 0.0f;
@@ -736,7 +736,6 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
         frame_ = nullptr;
         terrain_ = nullptr;
         objects_ = nullptr;
-        bus_ = nullptr;
         active_ = false;
         pendingUpload3d_ = {};
         set_status("Subworld unavailable: invalid terrain");
@@ -751,7 +750,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     mw_ = mw;
     gs_ = mw_.gs; terrain_ = mw_.terrain;
     frame_ = frame;
-    objects_ = &scene; bus_ = &bus;
+    objects_ = &scene;
     GameState& gs = *gs_;
     // The scene raises around the FLAG HOLDER's cell — «кем я на карте» is
     // where "here" is (подпосадка 4). The entry-side context reads the same
@@ -2343,7 +2342,8 @@ void SubworldEngine::tick_zones() {
 
 void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
                                        int amount, std::uint32_t subjectOrdinal,
-                                       int objectRootedId) {
+                                       int objectOrdinal,
+                                       FactSubject objectKind) {
     if (!gs_) return;
     WorldFact f{};
     f.day = frame_ ? frame_->worldDay : 0;
@@ -2361,11 +2361,13 @@ void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
     // 0x7FFFFFFF, до этой правки — вызов двери флажка.
     f.subjectKind = std::uint8_t(FactSubject::Squad);
     f.subject = subjectOrdinal;
-    // When the deed was done TO a named place, the place rides as the object
-    // by its place ordinal (v54: one id space names it alone).
-    if (objectRootedId > 0) {
-        f.objectKind = std::uint8_t(FactSubject::Rooted);
-        f.object = std::uint32_t(objectRootedId);
+    // When the deed was done TO somebody, the victim rides as the object by
+    // its ordinal; the KIND is the caller's statement (v54: one id space) —
+    // a place for Drained/Explored, a squad for Killed (scan_kills судит
+    // объект родом Squad, и род обязан назвать звонящий, а не дверь).
+    if (objectOrdinal > 0) {
+        f.objectKind = std::uint8_t(objectKind);
+        f.object = std::uint32_t(objectOrdinal);
     }
     f.x = std::int16_t(cellX);
     f.y = std::int16_t(cellY);
@@ -2727,7 +2729,7 @@ void SubworldEngine::tick_player_melee() {
                      .playerOwned = true,
                      .critical = swing.critical},
         swing.amount, DamageKind::Melee,
-        DamageType(strikeStats.dmgType), bus_);
+        DamageType(strikeStats.dmgType));
     const char* label = subworld_attacker_label(objs, target);
     if (combatLog) {
         std::fprintf(stderr,
@@ -3945,8 +3947,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
             DamageSource{.attacker = sub::ref_of(arena, attacker),
                          .playerOwned = playerOwned,
                          .critical = swing.critical},
-            swing.amount, DamageKind::Melee, DamageType(c.dmgType),
-            bus_);
+            swing.amount, DamageKind::Melee, DamageType(c.dmgType));
         // A blocked or dead-blocked swing still swung: the recovery pays
         // either way, or a fully-armoured target would grant free retries
         // every step.
@@ -4176,6 +4177,44 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     gs_, mst,
                     sub::slot_macro_record(arena, killerSlot, mst),
                     kind ? FactionSlot(kind->factionIdx) : kNoFactionSlot);
+
+                // ФАКТ МИРА — СТРОКОЙ ДЕЛЬТЫ (ломоть 5 M-171; дыра M-270):
+                // до этой записи субмир не писал Killed ВОВСЕ — контракт
+                // «убей» засчитывался только автобоем, убитый РУКАМИ отряд
+                // следа в летописи не оставлял, а NpcDeath, который эмитился
+                // здесь рядом, не читал никто. Семантика строки — та же, что
+                // у макро-писателя (raise_macro_fact): субъект — сквад
+                // убийцы (0 = «никто», закон нуля-ординала), объект — СКВАД
+                // жертвы (scan_kills судит ровно этот род), место — клетка
+                // расписки головы или тела-записи. Жертва без макро-
+                // идентичности (чистая массовка данжа) факта не оставляет —
+                // наверху её нет как актора (ЗАКОН ДВУХ ТАБЛИЦ).
+                {
+                    std::uint32_t victimOrd = 0;
+                    int fx = -1, fy = -1;
+                    if (const auto* vd = sub::slot_debt(arena, ds);
+                        vd != nullptr && vd->subject > 0) {
+                        victimOrd = std::uint32_t(vd->subject);
+                        fx = int(vd->cellX);
+                        fy = int(vd->cellY);
+                    } else if (const MacroHandle vh =
+                                   sub::slot_macro_origin(arena, ds);
+                               vh.id != 0) {
+                        victimOrd = vh.id;
+                        if (const auto* c =
+                                body_state<ecs::MacroCell>(mst, vh)) {
+                            fx = int(ecs::cell_x(*c, gs_->mapW));
+                            fy = int(ecs::cell_y(*c, gs_->mapW));
+                        }
+                    }
+                    if (victimOrd != 0u && fx >= 0) {
+                        record_world_fact(
+                            FactKind::Killed, fx, fy, /*amount*/1,
+                            mst.valid(avatar)
+                                ? mst.spawnId[avatar.slot].index : 0u,
+                            int(victimOrd), FactSubject::Squad);
+                    }
+                }
             }
 
             // ТРУПА-КОНТЕЙНЕРА ЗДЕСЬ БОЛЬШЕ НЕТ — вердикт владельца
@@ -4295,7 +4334,6 @@ void SubworldEngine::leave(bool force) {
     factsSinceFillCount_ = 0;
     terrain_ = nullptr;
     objects_ = nullptr;
-    bus_ = nullptr;
     structIndex_.clear();
     structIndexDirty_ = true;
     propLights_.clear();   // reaped with the scene above
@@ -4421,7 +4459,6 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     const std::array<WorldFact, kFactsSinceFillCap> since = factsSinceFill_;
     const int sinceCount = factsSinceFillCount_;
     sub::SubObjects& scene = *objects_;   // leave() resets the views — capture first
-    EventBus& bus = *bus_;
     leave();
     if (active_) return false;
 
@@ -4430,12 +4467,12 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     frame_ = frame;
     factsSinceFill_ = since;
     factsSinceFillCount_ = sinceCount;
-    enter_dungeon_scene(mwCopy, scene, bus);
+    enter_dungeon_scene(mwCopy, scene);
     return true;
 }
 
 void SubworldEngine::enter_pocket_scene(const MacroWorld& mw,
-                                        sub::SubObjects& scene, EventBus& bus,
+                                        sub::SubObjects& scene,
                                         const LocalContext* frame,
                                         const DungeonRef& ref,
                                         float floorHeight) {
@@ -4452,12 +4489,11 @@ void SubworldEngine::enter_pocket_scene(const MacroWorld& mw,
     dungeon_.settlementId = 0;
     sceneKind_ = SceneKind::Dungeon;
     frame_ = frame;
-    enter_dungeon_scene(mw, scene, bus);
+    enter_dungeon_scene(mw, scene);
 }
 
 void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
-                                         sub::SubObjects& scene,
-                                         EventBus& bus) {
+                                         sub::SubObjects& scene) {
     // NO `mw.features` HERE any more (наряд M-152): an interior's ground comes
     // from the synthetic resolver below, and the one thing that used to reach
     // the feature column from in here — the nine-cell step weight — is gone
@@ -4484,7 +4520,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // the town, vermin from the fauna stock) pay through mw_ like any scene.
     mw_ = mw;
     gs_ = mw_.gs; terrain_ = mw_.terrain;
-    objects_ = &scene; bus_ = &bus;
+    objects_ = &scene;
 
     // Synthetic resolver: the door cell IS the interior, the ring is sealed
     // by whatever filler the kind's row names (Void rock today; an open
@@ -4741,7 +4777,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
 }
 
 bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
-    if (!active_ || !gs_ || !bus_ || !terrain_
+    if (!active_ || !gs_ || !terrain_
         || sceneKind_ != SceneKind::Overworld) {
         return false;
     }
@@ -4790,15 +4826,14 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     // то есть промежуток ноль и радиус 4 м остаётся тем, чем был.
     mgr_.fell_prop_near(orb.x, orb.y, orb.zBase, 4.0f, mcx, mcy, nullptr,
                         &orbKind);
-    // The world fact for every observer. The spell itself lands through
-    // SpellLearned once the app layer resolves the ordinal — only content/
-    // knows the registry, and this engine never will.
-    GameEvent ev{EventTag::SpireDepleted};
-    ev.a = spireOrdinal;
-    ev.b = charge - 1;   // the spell ordinal the orb held (feature number = ordinal+1)
-    ev.ix = cx;
-    ev.iy = cy;
-    bus_->emit(ev);
+    // ЗДЕСЬ ЭМИТИЛСЯ GameEvent{SpireDepleted} — СНЕСЁН ломтём 5 M-171
+    // (вердикт владельца 2026-11-06: события субмира едут ДЕЛЬТОЙ, второго
+    // выхода рядом с ней нет). Ординал спелла едет КОЛОНКОЙ amount факта
+    // Drained ниже (charge = ординал + 1, ноль невыразим — гейт выше), а
+    // GameEvent для прикладного слоя рождает слив применения дельты
+    // (apply_local_delta, main.cpp) — обучение спеллу сдвинулось на границу
+    // тика, туда же, где уже гаснет заряд фичи: две половины одного акта
+    // снова одновременны.
 
     // ...AND THE WORLD REMEMBERS IT (CANON S20.1). This is the micro→macro
     // door, and the whole of it is one line of translation: a fact that
@@ -4824,7 +4859,9 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     // И СУБЪЕКТ — ТОЖЕ ПЛАТА ЭТОГО ЗВОНЯЩЕГО: орб взят РУКОЙ ИГРОКА
     // (интеракции его одного), значит деяние подшивается под тем, на ком
     // флажок, — не под тем, кого дверь угадала бы за него.
-    record_world_fact(FactKind::Drained, cx, cy, /*amount*/0,
+    record_world_fact(FactKind::Drained, cx, cy, /*amount: заряд = ординал
+                      спелла + 1 — слив дельты вернёт его прикладному слою*/
+                      charge,
                       objects_ ? flag_ordinal(gs_, mw_.store) : 0u,
                       spireOrdinal);
     set_status("The orb's light passes into you.");
@@ -4982,7 +5019,6 @@ bool SubworldEngine::try_take_dungeon_stairs() {
 
     const MacroWorld mwCopy = mw_;
     sub::SubObjects& scene = *objects_;
-    EventBus& bus = *bus_;
 
     // Storey teardown: the same reaping as an exit (deaths settle their
     // ledgers, every scene body goes), but we never surface — the next scene
@@ -5000,7 +5036,7 @@ bool SubworldEngine::try_take_dungeon_stairs() {
     dungeon_.ref.level = std::int8_t(target);
     dungeon_.arrival = arrival;
     sceneKind_ = SceneKind::Dungeon;
-    enter_dungeon_scene(mwCopy, scene, bus);
+    enter_dungeon_scene(mwCopy, scene);
     set_status(target > level ? "Up the stairs." : "Down the stairs.");
     return true;
 }
@@ -5087,7 +5123,6 @@ bool SubworldEngine::try_exit_dungeon() {
     const MacroWorld mwCopy = mw_;
     GameState& gs = *gs_;
     sub::SubObjects& scene = *objects_;
-    EventBus& bus = *bus_;
     const DungeonSession ses = dungeon_;
 
     // Interior teardown: deaths settle their ledgers (write-backs), then the
@@ -5124,7 +5159,7 @@ bool SubworldEngine::try_exit_dungeon() {
     const float pos[2] = {
         float(kCellSize) + (roofExit ? crownX : ses.returnLocalX),
         float(kCellSize) + (roofExit ? crownY : ses.returnLocalY)};
-    enter(mwCopy, scene, bus, frame_, pos);
+    enter(mwCopy, scene, frame_, pos);
     if (roofExit && active_) {
         // enter() seated the player on the terrain 128 m below — and it has
         // already indexed the scene's solids, so ASK what is up here instead
@@ -5320,7 +5355,7 @@ void SubworldEngine::sync_player_vertical(float dt) {
             MacroStore* const* stp = mw_.store != nullptr ? &mw_.store : nullptr;
             const int dmg = ps >= 0
                 ? apply_fall_damage(*objs, stp != nullptr ? *stp : nullptr,
-                                    ps, -prevVz, player_body_radius(), bus_)
+                                    ps, -prevVz, player_body_radius())
                 : 0;
             if (dmg > 0) {
                 char msg[96];
@@ -5488,7 +5523,7 @@ int SubworldEngine::dev_kill_all_hostiles() {
             // битами законной сущности 0 и честность держалась совпадением.
             const DamageResult hit = apply_lethal_damage(
                 *objs, st, victims[std::size_t(i)],
-                DamageSource{.playerOwned = true}, DamageKind::Dev, bus_);
+                DamageSource{.playerOwned = true}, DamageKind::Dev);
             if (hit.lethal) ++killed;
         }
     } while (batch > 0);
@@ -5673,8 +5708,7 @@ void SubworldEngine::tick(float dt) {
                         apply_fall_damage(arena,
                                           stp != nullptr ? *stp : nullptr,
                                           s, -prevVz,
-                                          sub::slot_body_radius(arena, s),
-                                          bus_);
+                                          sub::slot_body_radius(arena, s));
                     }
                 }
             }
@@ -5741,7 +5775,7 @@ void SubworldEngine::tick(float dt) {
         tick_player_melee();
         sub::tick_body_visual_interp((*objects_), dt);
         sub::tick_body_recovery((*objects_), /*steps=*/1u);
-        tick_spell_projectiles((*objects_), mw_.store, bus_, dt,
+        tick_spell_projectiles((*objects_), mw_.store, dt,
                                // Broad phase: the battle contact grid, built
                                // by tick_subworld_bodies moments ago. ТРЕТЬИМ
                                // аргументом, к обязательным (M-261): полного

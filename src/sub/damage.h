@@ -35,7 +35,6 @@
 #include <cstdint>
 
 namespace sm {
-class EventBus;
 struct MacroStore;
 }
 
@@ -125,7 +124,7 @@ struct DamageResult {
 // ref_slot) — честный no-op, как невалидная сущность прежде.
 DamageResult apply_damage(SubObjects& objs, MacroStore* st, int targetSlot,
                           const DamageSource& src, int amount,
-                          DamageKind kind, DamageType type, EventBus* bus);
+                          DamageKind kind, DamageType type);
 
 // An execution: one blow of exactly the target's remaining hp, through the
 // same door (typed Blunt for form's sake — its kinds bypass armour by row).
@@ -133,6 +132,6 @@ DamageResult apply_damage(SubObjects& objs, MacroStore* st, int targetSlot,
 // hand-writing hp = 0 with a private copy of the protocol.
 DamageResult apply_lethal_damage(SubObjects& objs, MacroStore* st,
                                  int targetSlot, const DamageSource& src,
-                                 DamageKind kind, EventBus* bus);
+                                 DamageKind kind);
 
 } // namespace sm::sub
