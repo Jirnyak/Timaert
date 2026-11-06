@@ -278,6 +278,15 @@ void test_village_produces_through_its_own_think() {
     const int effTicks = recovery_steps(
         std::uint32_t(kTicksPerDay), sheet.attributes, sheet.skills,
         tempo_generic(ActionArchetype::Labour));
+    // ЯКОРЬ ИЗВНЕ ФОРМУЛЫ (§8 п.6 «тождество одной формулы слепо к самой
+    // формуле»): прибор ниже зовёт ТУ ЖЕ recovery_steps с теми же входами,
+    // что продакшен, и ошибка внутри неё сошлась бы сама с собой. Независимо
+    // известный факт мира: анкета МЕСТА делит день на 1.00, значит
+    // эффективный день РАВЕН календарному. Поплывёт дверь или анкета —
+    // краснеет ЭТОТ якорь и получает перевердикт, а не молчаливое согласие.
+    CHECK(effTicks == int(kTicksPerDay),
+          "якорь: эффективный день места равен календарному (делитель "
+          "анкеты места — ровно 1.00)");
     const int periodThinks = (effTicks + kAiTicks - 1) / kAiTicks;
     CHECK(periodThinks > 1,
           "эффективный день места длиннее одной думки — иначе период акта "
