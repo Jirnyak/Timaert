@@ -20,7 +20,6 @@
 // kill_fallen_squad_creatures (bus/squad_sweep.h) — формализованы НА шине.
 #include "bus/squad_sheet.h"
 #include "bus/squad_sweep.h"
-#include "macro/player_entity.h"
 #include "sub/vk_camera_math.h"
 #include "sub/lighting.h"
 #include "sub/crowd_layout.h"  // раскладка населения сцены по роду
@@ -192,10 +191,39 @@ constexpr std::uint32_t kNpcMissileSpellId = 0x4E50434Du; // "NPCM"
 // THE player's bag — his squad entity's ordinary NpcInventory. The engine
 // reaches it through the same door the macro layer does; a scene without a
 // macro world (a bare harness) gets a scratch pack rather than a null.
+// ── КОЛОНКИ ЗАПИСИ ПОД ФЛАЖКОМ — КАНОНИЧЕСКОЙ ДВЕРЬЮ body_state ─────────
+// Хэндл берётся из кэша gs->playerFlagRef, а НЕ из frame_->playerFlag:
+// кэш правится вселением НЕМЕДЛЕННО (transfer_player_flag), хэндл фрейма
+// обновляется только границей тика — читать его здесь значило бы смотреть
+// на старое тело весь первый тик посессии. Нитка macro/player_entity.h
+// этим снята (ломоть 5 M-171): двери player_* больше не нужны субмиру.
+ecs::Pools* flag_pools(GameState* gs, MacroStore* st) {
+    return (gs && st) ? body_state<ecs::Pools>(*st, gs->playerFlagRef)
+                      : nullptr;
+}
+CharacterSheet* flag_sheet(GameState* gs, MacroStore* st) {
+    return (gs && st) ? body_state<CharacterSheet>(*st, gs->playerFlagRef)
+                      : nullptr;
+}
+SpellBook* flag_book(GameState* gs, MacroStore* st) {
+    return (gs && st) ? body_state<SpellBook>(*st, gs->playerFlagRef)
+                      : nullptr;
+}
+Inventory* flag_inventory(const GameState* gs, MacroStore* st) {
+    ecs::NpcInventory* w = (gs && st)
+        ? body_state<ecs::NpcInventory>(*st, gs->playerFlagRef) : nullptr;
+    return w ? &w->inv : nullptr;
+}
+std::uint32_t flag_ordinal(const GameState* gs, const MacroStore* st) {
+    const ecs::MacroSpawnId* id = (gs && st)
+        ? body_state<ecs::MacroSpawnId>(*st, gs->playerFlagRef) : nullptr;
+    return id ? id->index : 0u;
+}
+
 Inventory& player_bag_of(const GameState* gs, MacroStore* st) {
     static Inventory scratch{};
     Inventory* bag = (gs && st)
-        ? player_inventory(*gs, *st) : nullptr;
+        ? flag_inventory(gs, st) : nullptr;
     return bag ? *bag : scratch;
 }
 
@@ -885,8 +913,8 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
         }
     }
     spawn_player_squad((*objects_),
-                       player_inventory(gs, (*mw_.store))
-                           ? *player_inventory(gs, (*mw_.store))
+                       flag_inventory(&gs, mw_.store)
+                           ? *flag_inventory(&gs, mw_.store)
                            : Inventory{},
                        mgr_, playerX_, playerY_,
         cell_seed(frame_->worldSeed, cx, cy) ^ kSquadSpawnSalt,
@@ -927,7 +955,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     if (gs_) {
         {
         const SpellBook* book = (objects_ && gs_)
-            ? player_spellbook(*gs_, (*mw_.store)) : nullptr;
+            ? flag_book(gs_, mw_.store) : nullptr;
         set_flying(book
                    && spellbook_rule_active(*book, SpellRuleId::Flight));
     }
@@ -1040,7 +1068,9 @@ void SubworldEngine::sync_macro_player_to_center() {
     // The remap is a jump, not a walk — the jump door erases the entry edge,
     // so the next enter() falls back to the centre until the player actually
     // crosses a macro cell boundary again.
-    if (objects_) player_jump_to_cell(*gs_, (*mw_.store), nx, ny);
+    if (objects_)
+        squad_jump_to_cell((*mw_.store), gs_->playerFlagRef, nx, ny,
+                           gs_->mapW);
 }
 
 // (follow_flag_to_its_record stood here until 2026-09-14. It moved the macro
@@ -1107,9 +1137,9 @@ void SubworldEngine::spawn_player_entity() {
     // ственный дефенсив: мира без флага не бывает — потерянный флаг
     // возвращается на собственный сквад.
     MacroStore& pst = (*mw_.store);
-    MacroHandle flagRec = gs_ ? player_flag_handle(*gs_) : MacroHandle{};
+    MacroHandle flagRec = gs_ ? gs_->playerFlagRef : MacroHandle{};
     if (gs_ && !pst.valid(flagRec)) {
-        const MacroHandle psq = player_squad_handle(*gs_);
+        const MacroHandle psq = gs_->playerSquadRef;
         if (pst.valid(psq)) {
             // Оба носителя одной дверью (5б): колонка анкеты + кэш битов.
             transfer_player_flag(pst, gs_->playerFlagRef, psq);
@@ -1162,7 +1192,7 @@ void SubworldEngine::spawn_player_entity() {
         // property, and the seam pulls/pushes this same block each tick.
         ecs::Pools pools{};
         if (const ecs::Pools* squadPools = gs_
-                ? player_pools(*gs_, (*mw_.store)) : nullptr) {
+                ? flag_pools(gs_, mw_.store) : nullptr) {
             pools = *squadPools;
         }
         pools.maxHp = std::max(1, pools.maxHp);
@@ -1188,7 +1218,7 @@ void SubworldEngine::spawn_player_entity() {
     const BonusTotals standing = (gs_ && pst.valid(flagRec))
         ? standing_bonuses_of(pst, flagRec) : BonusTotals{};
     const CharacterSheet* baseSheet =
-        gs_ ? player_sheet(*gs_, (*mw_.store)) : nullptr;
+        gs_ ? flag_sheet(gs_, mw_.store) : nullptr;
     const CharacterSheet effBody = baseSheet
         ? effective_sheet(*baseSheet, standing) : CharacterSheet{};
     const Inventory* flagBag = gs_ ? squad_container(pst, flagRec) : nullptr;
@@ -1379,7 +1409,7 @@ void SubworldEngine::sync_player_entity_position() {
                     ? standing_bonuses_of((*mw_.store), rec)
                     : BonusTotals{};
                 const CharacterSheet* base = gs_
-                    ? player_sheet(*gs_, (*mw_.store)) : nullptr;
+                    ? flag_sheet(gs_, mw_.store) : nullptr;
                 const CharacterSheet eff = base
                     ? effective_sheet(*base, st) : CharacterSheet{};
                 const DerivedBonuses d = calculate_derived(
@@ -1498,7 +1528,7 @@ void SubworldEngine::report_player_damage() {
     // THE STORE still matters for exactly one rule, stated below: dying inside
     // a body you wear is your own death.
     ecs::Pools* squadPools =
-        gs_ ? player_pools(*gs_, (*mw_.store)) : nullptr;
+        gs_ ? flag_pools(gs_, mw_.store) : nullptr;
     if (!squadPools) return;
     // Слот аватара — ОДИН раз ((ii-б)): ниже его же держал try_get ради
     // колонки lastHitBy, то есть функция уже брала слот, но позже четырёх
@@ -2306,7 +2336,7 @@ void SubworldEngine::tick_zones() {
         // флажок. Мира под сессией может не быть вовсе (голая фикстура) —
         // тогда честный ответ 0, «никто».
         record_world_fact(z.kind, z.cellX, z.cellY, z.amount,
-                          objects_ ? player_flag_ordinal(*gs_, (*mw_.store))
+                          objects_ ? flag_ordinal(gs_, mw_.store)
                                    : 0u);
     }
 }
@@ -2572,7 +2602,7 @@ int SubworldEngine::player_display_hp() const {
             }
         }
         if (const ecs::Pools* squadPools = gs_
-                ? player_pools(*gs_, (*mw_.store)) : nullptr) {
+                ? flag_pools(gs_, mw_.store) : nullptr) {
             return squadPools->hp;
         }
     }
@@ -2978,7 +3008,7 @@ bool SubworldEngine::grant_prop_loot(const Structure& prop,
     // world's props carry no worn things to load dice for, and 0 keeps the
     // deterministic-per-place contract above exactly as cheap as it reads.
     const CharacterSheet* lootSheet =
-        gs_ ? player_sheet(*gs_, (*mw_.store)) : nullptr;
+        gs_ ? flag_sheet(gs_, mw_.store) : nullptr;
     auto stacks = roll_loot_profile(lootId,
                                     lootSheet ? level_of(lootSheet->levelData) : 1,
                                     &loot_rng_f01, /*affixPower*/ 0);
@@ -4700,7 +4730,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     if (gs_) {
         {
         const SpellBook* book = (objects_ && gs_)
-            ? player_spellbook(*gs_, (*mw_.store)) : nullptr;
+            ? flag_book(gs_, mw_.store) : nullptr;
         set_flying(book
                    && spellbook_rule_active(*book, SpellRuleId::Flight));
     }
@@ -4795,7 +4825,7 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     // (интеракции его одного), значит деяние подшивается под тем, на ком
     // флажок, — не под тем, кого дверь угадала бы за него.
     record_world_fact(FactKind::Drained, cx, cy, /*amount*/0,
-                      objects_ ? player_flag_ordinal(*gs_, (*mw_.store)) : 0u,
+                      objects_ ? flag_ordinal(gs_, mw_.store) : 0u,
                       spireOrdinal);
     set_status("The orb's light passes into you.");
     return true;
@@ -5080,7 +5110,8 @@ bool SubworldEngine::try_exit_dungeon() {
     // at the very spot the door was opened from — or, through the hatch, ON
     // the tower's crown: the cylinder's centre, one tower height above the
     // ground the honest support physics already carries bodies on.
-    player_jump_to_cell(gs, (*mw_.store), ses.doorCx, ses.doorCy);
+    squad_jump_to_cell((*mw_.store), gs.playerFlagRef, ses.doorCx,
+                       ses.doorCy, gs.mapW);
     // Out through the crown: you come up ON THE HATCH you climbed to, not on
     // the tower's axis — the axis is where the orb's plinth stands, and a body
     // put there materialised INSIDE the shrine, its eye in the burning head
@@ -5959,7 +5990,7 @@ void SubworldEngine::record_main(VkCommandBuffer cmd, VkExtent2D ext,
                                  std::uint32_t frameIndex) {
     if (!active_ || !gs_) return;
     const SpellBook* hasteBook =
-        objects_ ? player_spellbook(*gs_, (*mw_.store)) : nullptr;
+        objects_ ? flag_book(gs_, mw_.store) : nullptr;
     const bool hasteAura =
         (hasteBook
          && spellbook_has_sustained(*hasteBook, spell_ordinal("haste")));

@@ -38,7 +38,6 @@
 # Наполнено ЗАМЕРОМ 2026-09-28 (наряд M-169), не рукой.
 channel	src/sub/engine.cpp	#include "macro/cell_facts.h"
 channel	src/sub/engine.cpp	#include "macro/map_generator.h"
-channel	src/sub/engine.cpp	#include "macro/player_entity.h"
 channel	src/sub/engine.cpp	#include "macro/state.h"
 channel	src/sub/engine.h	#include "macro/macro_world.h"
 verdict	SKELETON.md	**Вердикт владельца 2026-09-25:** app-слой есть РЕДАКТОР над миром (ЗАКОН АГНОСТИЧНО�

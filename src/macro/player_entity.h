@@ -127,17 +127,10 @@ inline bool player_flag_point(const GameState& gs, const MacroStore& st,
 // без игрокового кода») — a short hop glides, a far jump snaps via the
 // eye cache's own teleport backstop (tick_macro_eyes).
 inline void player_jump_to_cell(GameState& gs, MacroStore& st, int x, int y) {
-    const MacroHandle h = player_flag_handle(gs);
-    if (!st.valid(h)) return;
-    st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(x, y, gs.mapW)};
-    // A jump is not a walk: no entry edge for the next subworld enter, and
-    // the think cadence restarts (the accumulator doubles as the player's
-    // entry-tick clock — same kAiTicks law as every squad's think).
-    auto& rt = st.runtime[h.slot];
-    rt.entryDir = kEntryDirNone;
-    rt.entryTicks = 0;
-    rt.tickAccum = 0;
-    st.runtime[h.slot].sub = {};   // прыжок — центр клетки (M-244)
+    // Тело переехало в squad_jump_to_cell@src/bus/store.h (ломоть 5 M-171):
+    // прыжок — операция рода 2 по хэндлу. Здесь остались резолв флажка и
+    // сторона мира — ровно то, чему нужен GameState.
+    squad_jump_to_cell(st, player_flag_handle(gs), x, y, gs.mapW);
 }
 
 // ОЧНУТЬСЯ В СВОЁМ ТЕЛЕ — the one thing that makes possession an EFFECT rather

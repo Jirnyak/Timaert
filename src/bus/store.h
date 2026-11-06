@@ -51,6 +51,7 @@
 #include "bus/anketa.h"             // CharacterSheet — колонка анкеты
 #include "bus/interests.h"          // Interests — колонка связей
 #include "bus/spell_book_state.h"   // SpellBook — колонка книги
+#include "bus/entry_context.h"      // kEntryDirNone — прыжок стирает край входа
 #include "bus/squad_row.h"          // сквадные формы — род 2 фрейма
 #include "bus/upkeep.h"             // SquadUpkeep + Wellbeing
 #include "tables/faction.h"         // FactionSlot — ординал знамени записи
@@ -808,6 +809,29 @@ inline const char* squad_name(const MacroStore& s, MacroHandle h) {
 inline void squad_set_sub(MacroStore& s, MacroHandle h, ecs::CellSub sub) {
     if (!s.valid(h)) return;
     s.runtime[h.slot].sub = sub;
+}
+
+// THE macro jump (escape teleport, console goto, subworld exit door): set
+// the holder's cell and erase the entry edge (a jump is not a walk —
+// SubworldEngine::enter must fall back to the centre). The map EYE is left
+// to the one glide cache on purpose (owner 2026-09-10: «универсально
+// без игрокового кода»).
+// (Тело переехало из macro/player_entity.h ломтём 5 M-171: прыжок — операция
+// над колонками рода 2 по хэндлу, мира в ней нет; `side` приходит параметром
+// — сторона мира у звонящего (gs.mapW наверху). player_jump_to_cell остался
+// тонкой переадресацией — один закон, одно тело.)
+inline void squad_jump_to_cell(MacroStore& st, MacroHandle h, int x, int y,
+                               std::int32_t side) {
+    if (!st.valid(h)) return;
+    st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(x, y, side)};
+    // A jump is not a walk: no entry edge for the next subworld enter, and
+    // the think cadence restarts (the accumulator doubles as the player's
+    // entry-tick clock — same kAiTicks law as every squad's think).
+    auto& rt = st.runtime[h.slot];
+    rt.entryDir = kEntryDirNone;
+    rt.entryTicks = 0;
+    rt.tickAccum = 0;
+    rt.sub = {};   // прыжок — центр клетки (M-244)
 }
 
 // ── «Я СРАЖАЮСЬ» — ЕДИНСТВЕННАЯ ОПЕРАЦИЯ, КОТОРУЮ БОЙ СУБМИРА ГОВОРИТ
