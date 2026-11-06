@@ -4846,7 +4846,7 @@ void register_console_commands(App& app) {
                 sm::calculate_derived(eff.attributes, eff.skills, standing);
             c.printfln(Lvl::Info,
                        "quickness %d%%  move %d%%  phys +%d  spell +%d  "
-                       "exp %d%%  trade -%d%%",
+                       "exp %d%%  trade power %d%%",
                        sm::quickness_pct(eff.attributes.of(sm::AttributeId::Spd)),
                        d.moveSpeedPct, d.rawPhysDamage, d.rawSpellDamage,
                        d.expMultPct, d.tradeDiscountPct);

@@ -546,9 +546,14 @@ namespace sm::ui
         const int armyTotal = army ? creature_count(*army) : 0;
         // Upkeep is maintenance, not a deal (2026-09-17): no CHA discount,
         // and the bill is the SEASON'S — paid a season ahead at the boundary
-        // window, the same law every squad pays by.
-        const int armyUpkeep = army
+        // window, the same law every squad pays by. BOARD AND WAGE ARE TWO
+        // SEPARATE BILLS (owner verdict 2026-11-06): they are independent
+        // («бывает, что едят, но не платишь»), and their outcomes differ —
+        // board unpaid starves heads, wage unpaid walks them (UpkeepBill).
+        const int armyWage = army
             ? calculate_squad_upkeep(*army) * kDaysPerSeason : 0;
+        const int armyBoard = army
+            ? int(army->sum().boardPerDay) * kDaysPerSeason : 0;
 
         ImGui::SetNextWindowSize(ImVec2(760 * scale, 560 * scale), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Character", open))
@@ -634,7 +639,10 @@ namespace sm::ui
                         ImGui::Text("Spell dmg +%d", derived.rawSpellDamage);
                         ImGui::Text("EXP %d%%", derived.expMultPct);
                         ImGui::Text("Move %d%%", derived.moveSpeedPct);
-                        ImGui::Text("Trade %d%%", derived.tradeDiscountPct);
+                        // ТОРГОВАЯ СИЛА одной стороны, не скидка: цена
+                        // считается РАЗНИЦЕЙ сил двух сторон (trade_edge),
+                        // и торг с равным даёт ноль (A4, 2026-11-06).
+                        ImGui::Text("Trade power %d%%", derived.tradeDiscountPct);
                         ImGui::Text("Carry %.1f / %.0f kg", carryWeight, carryCap);
                         ImGui::EndTable();
                     }
@@ -1111,13 +1119,15 @@ namespace sm::ui
                     *tab = CharacterPanelTab::Army;
                 if (armyOpen)
                 {
-                    ImGui::Text("Total: %d  Upkeep: %d g/season", armyTotal, armyUpkeep);
-                    if (ImGui::BeginTable("army_grid", 3,
+                    ImGui::Text("Total: %d  Wage: %d g/season  Board: %d food/season",
+                                armyTotal, armyWage, armyBoard);
+                    if (ImGui::BeginTable("army_grid", 4,
                                           ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
                     {
                         ImGui::TableSetupColumn("Unit");
                         ImGui::TableSetupColumn("Count");
-                        ImGui::TableSetupColumn("Upkeep");
+                        ImGui::TableSetupColumn("Wage");
+                        ImGui::TableSetupColumn("Board");
                         ImGui::TableHeadersRow();
                         for (int ti = 0; ti < npc_type_count(); ++ti)
                         {
@@ -1126,14 +1136,50 @@ namespace sm::ui
                                 army ? creature_count_of(*army, t) : 0;
                             if (count <= 0 && !npc_hireable(t))
                                 continue;
+                            // Плата — ТОЙ ЖЕ дверью, что платит мир
+                            // (slot_tally → soldier_upkeep: база × фактор
+                            // УРОВНЯ головы), а не базой рода: уровень живёт
+                            // в слоте, и столбец обязан его спросить.
+                            int wageDay = 0;
+                            if (count > 0 && army)
+                            {
+                                const std::uint16_t row =
+                                    world_row_of_creature(t);
+                                for (int i = army->creature_first();
+                                     i < kMaxInventorySlots; ++i)
+                                {
+                                    const ItemRef& s =
+                                        army->slots[std::size_t(i)];
+                                    if (s.def == row)
+                                        wageDay += soldier_upkeep(
+                                            std::uint16_t(t), s.level)
+                                            * s.count;
+                                }
+                            }
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
                             ImGui::Text("%s", npc_def(t).label);
                             ImGui::TableNextColumn();
                             ImGui::Text("%d", count);
                             ImGui::TableNextColumn();
-                            ImGui::Text("%d g/season",
-                                        npc_upkeep_base(t) * kDaysPerSeason);
+                            if (count > 0)
+                                ImGui::Text("%d g/season",
+                                            wageDay * kDaysPerSeason);
+                            else
+                                ImGui::TextDisabled("%d g/head",
+                                                    soldier_upkeep(
+                                                        std::uint16_t(t),
+                                                        npc_def(t).baseLevel)
+                                                        * kDaysPerSeason);
+                            ImGui::TableNextColumn();
+                            if (count > 0)
+                                ImGui::Text("%d food/season",
+                                            npc_board_per_day(t) * count
+                                                * kDaysPerSeason);
+                            else
+                                ImGui::TextDisabled("%d food/head",
+                                                    npc_board_per_day(t)
+                                                        * kDaysPerSeason);
                         }
                         ImGui::EndTable();
                     }
@@ -1501,10 +1547,27 @@ namespace sm::ui
                             }
                             else
                             {
-                                // Gate 0: the panel pauses the world, so the
-                                // body's recovery is not racing this frame.
+                                // THE SAME INPUTS THE REAL CAST ASKS
+                                // (cast_active_spell): scope is judged by the
+                                // world the player is actually in — a MicroOnly
+                                // row on the world map must say so, not
+                                // «Ready» — and the body gate is the avatar's
+                                // real recoverySteps, so «Recovery» is
+                                // reachable. The panel pauses the world, so
+                                // the value is not racing this frame.
+                                const bool stInMicro = sceneObjs != nullptr;
+                                std::uint32_t stGate = 0u;
+                                if (sceneObjs != nullptr)
+                                {
+                                    const int as =
+                                        sm::sub::avatar_slot(*sceneObjs);
+                                    if (as >= 0)
+                                        if (const auto* c = sm::sub::
+                                                slot_combat(*sceneObjs, as))
+                                            stGate = c->recoverySteps;
+                                }
                                 const CastCheck check = spellbook_can_cast_ex(
-                                    book, pools, ord, true, 0u);
+                                    book, pools, ord, stInMicro, stGate);
                                 if (check.ok)
                                 {
                                     ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "Ready");
@@ -2108,9 +2171,12 @@ namespace sm::ui
                         ImGui::PopID();
                     }
                     ImGui::Spacing();
+                    // Харч и плата — врозь (вердикт 2026-11-06): независимые
+                    // счета с разными исходами (харч — смерть, плата — уход).
                     ImGui::TextDisabled(
-                        "Season upkeep: %d g",
-                        calculate_squad_upkeep(playerBag) * kDaysPerSeason);
+                        "Season wage: %d g   board: %d food",
+                        calculate_squad_upkeep(playerBag) * kDaysPerSeason,
+                        int(playerBag.sum().boardPerDay) * kDaysPerSeason);
                     ImGui::EndTabItem();
                 }
                 }   // acts & kMapActHire
@@ -2268,9 +2334,6 @@ namespace sm::ui
             const char *body = dialog.s2.empty() ? "(no description)" : dialog.s2.c_str();
             const std::vector<DialogChoicePayload> *choices =
                 dialog.dialogChoices ? dialog.dialogChoices.get() : nullptr;
-            const int choiceCount = choices && !choices->empty()
-                ? static_cast<int>(choices->size())
-                : (dialog.ix > 0 ? dialog.ix : 1);
 
             ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "%s", title);
             ImGui::Separator();
@@ -2297,6 +2360,7 @@ namespace sm::ui
 
             if (choices && !choices->empty())
             {
+                const int choiceCount = static_cast<int>(choices->size());
                 for (int i = 0; i < choiceCount; ++i)
                 {
                     const DialogChoicePayload &choice = (*choices)[std::size_t(i)];
@@ -2331,35 +2395,14 @@ namespace sm::ui
                 return;
             }
 
-            if (dialog.ix <= 0)
-            {
-                if (ImGui::Button("Continue", ImVec2(-FLT_MIN, 0.0f)))
-                {
-                    state = DialogOverlayState{};
-                    *open = false;
-                    ImGui::CloseCurrentPopup();
-                }
-                ImGui::EndPopup();
-                return;
-            }
-
-            ImGui::TextDisabled("Choices in payload: %d", choiceCount);
-            for (int i = 0; i < choiceCount; ++i)
-            {
-                ImGui::PushID(i);
-                ImGui::BeginDisabled();
-                ImGui::Button("Choice label/effect unavailable", ImVec2(-FLT_MIN, 0.0f));
-                ImGui::EndDisabled();
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                {
-                    ImGui::SetTooltip(
-                        "Missing backend: ShowDialog GameEvent has no DialogChoice label, nodeId, or effects fields; only ix=choice count was provided.");
-                }
-                ImGui::PopID();
-            }
-
-            ImGui::Separator();
-            if (ImGui::Button("Close", ImVec2(-FLT_MIN, 0.0f)))
+            // БЕЗ PAYLOAD ВЫБОРА НЕТ — ЕСТЬ ОДИН ЧЕСТНЫЙ ВЫХОД. Подпись и
+            // эффект выбора живут только в DialogChoicePayload; событие,
+            // привёзшее один счёт (ix), выбора не привезло, и рисовать ему
+            // серые кнопки-заглушки запрещено (ZERO MOCKS, A2 2026-11-06).
+            // Count-only форма сама по себе законна — смоук
+            // TriggerCountOnlyDialog охраняет её ПРОНОС до оверлея, а не
+            // кнопки, — и рисуется она этим же «Continue».
+            if (ImGui::Button("Continue", ImVec2(-FLT_MIN, 0.0f)))
             {
                 state = DialogOverlayState{};
                 *open = false;
