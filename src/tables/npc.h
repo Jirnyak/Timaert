@@ -10,6 +10,7 @@
 #pragma once
 #include <array>
 #include "core/table_guard.h"
+#include "core/time.h"          // steps_from_seconds — авторские секунды → тики восстановления
 #include "tables/attributes.h"   // AttrWeights/SkillWeights — колонки весов роли (M-263)
 #include "tables/army.h"        // CombatTemplate — боевой лист строки существа
 #include "tables/behaviour.h"
@@ -652,28 +653,29 @@ struct NpcTypeDef {
     // называет только своё. Три спутника влиты выше.
 };
 
-// Humanoid cooldowns are authored ON THE MASS CURVE (anatomy.h
-// weapon_swing_seconds, owner 2026-09-07): a humanoid's natural attack IS an
-// implied weapon, so its tempo = kHandSwingS + implied_kg × kSwingSecondsPerKg
-// — the same second a real ItemDef of that heft would cost anyone's hand, so
-// the day these rows hold real inventories nothing about their pace changes.
+// Humanoid recovery bases are authored ON THE MASS CURVE
+// (`weapon_mass_recovery_ticks@src/tables/items.h`, owner 2026-09-07): a
+// humanoid's natural attack IS an implied weapon, so its tempo = the strike
+// row's base + implied_kg × kSwingTicksPerKg — the same ticks a real ItemDef
+// of that heft would cost anyone's hand, so the day these rows hold real
+// inventories nothing about their pace changes.
 // Implied hefts: peasant/merchant/caravaner club-or-knife-and-fear ~3 kg (an
 // untrained wide swing), woodcutter's felling axe ~2.5 kg, bandit blade and
 // guard sword ~2 kg. Casters are not mass: their bolt tempo sits on the SPELL
 // rows' own scale (combat spells author 1.5–4 s cooldowns — spells.h).
 // Beast rows below keep their own authored tempos: a fang has no kilograms.
-inline constexpr CombatTemplate kPeasantCombat   {25,{3,1}, 1.0f, 2.0f, 3.0f, "Psr", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
-inline constexpr CombatTemplate kWoodcutterCombat{30,{8,1}, 1.0f, 2.0f, 2.75f, "Wdc", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
-inline constexpr CombatTemplate kMerchantCombat  {30,{5,1}, 1.25f, 2.0f, 3.0f, "Mrc", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
-inline constexpr CombatTemplate kBanditCombat    {50,{12,1}, 2.25f, 3.0f, 2.5f, "Bnd", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
-inline constexpr CombatTemplate kGuardCombat     {55,{14,1}, 1.75f, 3.0f, 2.5f, "Grd", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+inline constexpr CombatTemplate kPeasantCombat   {25,{3,1}, 1.0f, 2.0f, steps_from_seconds(3.0f), "Psr", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+inline constexpr CombatTemplate kWoodcutterCombat{30,{8,1}, 1.0f, 2.0f, steps_from_seconds(2.75f), "Wdc", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+inline constexpr CombatTemplate kMerchantCombat  {30,{5,1}, 1.25f, 2.0f, steps_from_seconds(3.0f), "Mrc", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+inline constexpr CombatTemplate kBanditCombat    {50,{12,1}, 2.25f, 3.0f, steps_from_seconds(2.5f), "Bnd", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+inline constexpr CombatTemplate kGuardCombat     {55,{14,1}, 1.75f, 3.0f, steps_from_seconds(2.5f), "Grd", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
 // The adventurer's own template — the PLAYER's row. Base hp 100: the bare
 // level-1 bar the sheet law always built for him (bar_ceilings' default
 // base). Until landing 4 that base hid in a default ARGUMENT while his row
 // shared the guard's 55 — a player-special number smuggled through a
 // signature; now the row carries it like every other body's floor, and his
 // ceilings go through body_max_hp like every other body's do.
-inline constexpr CombatTemplate kAdventurerCombat{100,{14,1}, 1.75f, 3.0f, 2.5f, "Adv", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+inline constexpr CombatTemplate kAdventurerCombat{100,{14,1}, 1.75f, 3.0f, steps_from_seconds(2.5f), "Adv", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
 // THE canonical base bars (CANON S14). The whole bar law — creation, the
 // rescale door, the rest law's 8-hour night — is tuned around a bare
 // level-1 body of 100/100/100, and the adventurer's row IS that bare body.
@@ -699,7 +701,7 @@ static_assert(kAdventurerCombat.hp == 100.0f && kAdventurerCombat.mp == 100
 // Their DAMAGE is the bandit's, untouched (owner: «но не ваншотеров»): 12 a
 // blow every 2.5 s against ~130 player HP is eleven blows — a real fight
 // that he loses, not an execution.
-inline constexpr CombatTemplate kAmbusherCombat  {100,{12,1}, 2.25f, 3.0f, 2.5f, "Amb", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu, /*bodyHeight*/0.0f, /*sight*/1000.0f};
+inline constexpr CombatTemplate kAmbusherCombat  {100,{12,1}, 2.25f, 3.0f, steps_from_seconds(2.5f), "Amb", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu, /*bodyHeight*/0.0f, /*sight*/1000.0f};
 // КАСТУЮЩИЕ РЯДЫ НАЗЫВАЮТ СВОЙ СПЕЛЛ (вердикт владельца 2026-09-17,
 // построено 2026-09-19): «каст у нас через систему спелов». Их собственные
 // кубы больше не читаются — как у игрока, у кастера есть ЛИСТ и СПЕЛЛ, а
@@ -710,15 +712,15 @@ inline constexpr CombatTemplate kAmbusherCombat  {100,{12,1}, 2.25f, 3.0f, 2.5f,
 // ДОЛГ: у Void нет спелла с уроном, поэтому лич (Void) временно кастует
 // Arcane-луч — это строка КОНТЕНТА, которой Void ещё не написали (S15
 // «школа = набор спеллов»), а не дыра закона.
-inline constexpr CombatTemplate kWitchCombat     {60,{18,1}, 1.5f, 20.0f,4.0f, "Wtc", CombatTemplate::Missile, 180, 0, 0xFFA070D0u, /*bodyHeight*/0.0f, kNpcSightDefaultM, /*mp*/100, /*sp*/100, DamageType::Blunt, /*cruiseM*/0.0f, /*castSpell*/spell_ordinal("magic_bolt")};
-inline constexpr CombatTemplate kSorceressCombat {70,{22,1}, 1.25f, 25.0f,3.6f, "Src", CombatTemplate::Missile, 200, 6, 0xFF70C0E0u, /*bodyHeight*/0.0f, kNpcSightDefaultM, /*mp*/100, /*sp*/100, DamageType::Blunt, /*cruiseM*/0.0f, /*castSpell*/spell_ordinal("lightning_chain")};
+inline constexpr CombatTemplate kWitchCombat     {60,{18,1}, 1.5f, 20.0f,steps_from_seconds(4.0f), "Wtc", CombatTemplate::Missile, 180, 0, 0xFFA070D0u, /*bodyHeight*/0.0f, kNpcSightDefaultM, /*mp*/100, /*sp*/100, DamageType::Blunt, /*cruiseM*/0.0f, /*actions*/{action_slot("magic_bolt"), kActionNone}};
+inline constexpr CombatTemplate kSorceressCombat {70,{22,1}, 1.25f, 25.0f,steps_from_seconds(3.6f), "Src", CombatTemplate::Missile, 200, 6, 0xFF70C0E0u, /*bodyHeight*/0.0f, kNpcSightDefaultM, /*mp*/100, /*sp*/100, DamageType::Blunt, /*cruiseM*/0.0f, /*actions*/{action_slot("lightning_chain"), kActionNone}};
 // Дракон (владелец 2026-09-10): «маленькая армия в одном теле» — hp 500,
 // огненный шар = обычные Missile-колонки (бласт 2.5 м — АоЕ, цвет огня),
 // урон 3d20 Fire (тип — колонка dmgType ниже дефолтов, авторится в строке
 // project_combat не трогается). ЛЕТУН: cruiseM 10 — честный полёт (конверт
 // игрока), рождается с ecs::Flying; на карте марш не платит рельеф.
 // bodyHeight 6 — башня, не человек (одна колонка, не ветка рендера).
-inline constexpr CombatTemplate kDragonCombat    {500,{3,20}, 1.6f, 40.0f,3.0f, "Drg", CombatTemplate::Missile, 260, 2.5f, 0xFF3060FFu, /*bodyHeight*/6.0f, /*sight*/60.0f, /*mp*/100, /*sp*/100, DamageType::Fire, /*cruiseM*/10.0f, /*castSpell*/spell_ordinal("fireball")};
+inline constexpr CombatTemplate kDragonCombat    {500,{3,20}, 1.6f, 40.0f,steps_from_seconds(3.0f), "Drg", CombatTemplate::Missile, 260, 2.5f, 0xFF3060FFu, /*bodyHeight*/6.0f, /*sight*/60.0f, /*mp*/100, /*sp*/100, DamageType::Fire, /*cruiseM*/10.0f, /*actions*/{action_slot("fireball"), kActionNone}};
 
 // КРЕСТЬЯНЕ РАБОТАЮТ ЗА ЕДУ (владелец 2026-09-18: «пусть будут 0, чтобы не
 // нарушать единство систем — их зп 0 в деньгах»): upkeepGoldPerDay = 0 у
@@ -975,9 +977,9 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Cultist,
         .baseLevel = 22,
         .ai = AIBehaviour::Aggressive,
-        .combat = {45, {3,6}, 1.5f, 22.0f, 2.2f, "Cul", CombatTemplate::Missile, 190,
+        .combat = {45, {3,6}, 1.5f, 22.0f, steps_from_seconds(2.2f), "Cul", CombatTemplate::Missile, 190,
          0.0f, 0xFFA060E0u, /*bodyHeight*/1.8f, kNpcSightDefaultM, 100, 100,
-         DamageType::Arcane, /*cruiseM*/0.0f, /*castSpell*/spell_ordinal("magic_bolt")},
+         DamageType::Arcane, /*cruiseM*/0.0f, /*actions*/{action_slot("magic_bolt"), kActionNone}},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 3,
@@ -1065,7 +1067,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Goblin,
         .baseLevel = 7,
         .ai = AIBehaviour::Aggressive,
-        .combat = {25, {8,1}, 2.0f, 3, 1.0f, "Gbl"},
+        .combat = {25, {8,1}, 2.0f, 3, steps_from_seconds(1.0f), "Gbl"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 4,
@@ -1092,7 +1094,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Kobold,
         .baseLevel = 4,
         .ai = AIBehaviour::Aggressive,
-        .combat = {20, {2,4}, 2.2f, 3.0f, 1.1f, "Kbd", CombatTemplate::Melee, 0, 0,
+        .combat = {20, {2,4}, 2.2f, 3.0f, steps_from_seconds(1.1f), "Kbd", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.1f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1123,7 +1125,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Orc,
         .baseLevel = 18,
         .ai = AIBehaviour::Aggressive,
-        .combat = {60, {2,8}, 1.8f, 3.0f, 1.4f, "Orc", CombatTemplate::Melee, 0, 0,
+        .combat = {60, {2,8}, 1.8f, 3.0f, steps_from_seconds(1.4f), "Orc", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.9f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1153,7 +1155,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Troll,
         .baseLevel = 72,
         .ai = AIBehaviour::Aggressive,
-        .combat = {120, {25,1}, 1.25f, 4, 2.0f, "Trl"},
+        .combat = {120, {25,1}, 1.25f, 4, steps_from_seconds(2.0f), "Trl"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 1,
@@ -1180,7 +1182,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Ogre,
         .baseLevel = 70,
         .ai = AIBehaviour::Aggressive,
-        .combat = {140, {3,12}, 1.2f, 4.0f, 2.2f, "Ogr", CombatTemplate::Melee, 0, 0,
+        .combat = {140, {3,12}, 1.2f, 4.0f, steps_from_seconds(2.2f), "Ogr", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/3.0f, kNpcSightDefaultM, 100, 100,
          DamageType::Blunt},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1209,7 +1211,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Minotaur,
         .baseLevel = 75,
         .ai = AIBehaviour::Aggressive,
-        .combat = {130, {4,10}, 1.9f, 4.0f, 1.8f, "Min", CombatTemplate::Melee, 0, 0,
+        .combat = {130, {4,10}, 1.9f, 4.0f, steps_from_seconds(1.8f), "Min", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/2.6f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1238,7 +1240,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Yeti,
         .baseLevel = 90,
         .ai = AIBehaviour::Aggressive,
-        .combat = {200, {4,11}, 1.5f, 2.4f, 1.9f, "Yti", CombatTemplate::Melee, 0, 0,
+        .combat = {200, {4,11}, 1.5f, 2.4f, steps_from_seconds(1.9f), "Yti", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/2.6f, kNpcSightDefaultM, 100, 100,
          DamageType::Blunt},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1268,7 +1270,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Harpy,
         .baseLevel = 9,
         .ai = AIBehaviour::Aggressive,
-        .combat = {30, {2,7}, 2.9f, 3.0f, 1.0f, "Hrp", CombatTemplate::Melee, 0, 0,
+        .combat = {30, {2,7}, 2.9f, 3.0f, steps_from_seconds(1.0f), "Hrp", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.6f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce, /*cruiseM*/8.0f},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1296,7 +1298,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Manticore,
         .baseLevel = 78,
         .ai = AIBehaviour::Aggressive,
-        .combat = {118, {4,8}, 2.2f, 2.2f, 1.3f, "Mnt", CombatTemplate::Melee, 0, 0,
+        .combat = {118, {4,8}, 2.2f, 2.2f, steps_from_seconds(1.3f), "Mnt", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.8f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce, 4.0f},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1327,7 +1329,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Griffin,
         .baseLevel = 75,
         .ai = AIBehaviour::Aggressive,
-        .combat = {110, {3,11}, 2.4f, 2.0f, 1.4f, "Grf", CombatTemplate::Melee, 0, 0,
+        .combat = {110, {3,11}, 2.4f, 2.0f, steps_from_seconds(1.4f), "Grf", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.7f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce, 5.0f},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1392,7 +1394,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Rabbit,
         .baseLevel = 1,
         .ai = AIBehaviour::Flee,
-        .combat = {5, {0,1}, 2.75f, 0, 9.0f, "Rbt"},
+        .combat = {5, {0,1}, 2.75f, 0, steps_from_seconds(9.0f), "Rbt"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 15,
@@ -1451,7 +1453,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::GiantRat,
         .baseLevel = 3,
         .ai = AIBehaviour::Aggressive,
-        .combat = {14, {2,4}, 2.5f, 2.0f, 1.0f, "Rat", CombatTemplate::Melee, 0, 0,
+        .combat = {14, {2,4}, 2.5f, 2.0f, steps_from_seconds(1.0f), "Rat", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/0.5f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1480,7 +1482,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Deer,
         .baseLevel = 1,
         .ai = AIBehaviour::Flee,
-        .combat = {15, {2,1}, 2.5f, 2, 2.0f, "Der"},
+        .combat = {15, {2,1}, 2.5f, 2, steps_from_seconds(2.0f), "Der"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 12,
@@ -1508,7 +1510,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Fox,
         .baseLevel = 2,
         .ai = AIBehaviour::Wanderer,
-        .combat = {12, {4,1}, 2.25f, 2, 1.2f, "Fox"},
+        .combat = {12, {4,1}, 2.25f, 2, steps_from_seconds(1.2f), "Fox"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 8,
@@ -1536,7 +1538,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Wolf,
         .baseLevel = 10,
         .ai = AIBehaviour::Aggressive,
-        .combat = {30, {10,1}, 2.5f, 3, 1.0f, "Wlf"},
+        .combat = {30, {10,1}, 2.5f, 3, steps_from_seconds(1.0f), "Wlf"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 6,
@@ -1565,7 +1567,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::DireWolf,
         .baseLevel = 80,
         .ai = AIBehaviour::Aggressive,
-        .combat = {115, {4,7}, 2.3f, 1.8f, 1.0f, "DWf", CombatTemplate::Melee, 0, 0,
+        .combat = {115, {4,7}, 2.3f, 1.8f, steps_from_seconds(1.0f), "DWf", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.2f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1594,7 +1596,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Bear,
         .baseLevel = 50,
         .ai = AIBehaviour::Aggressive,
-        .combat = {80, {18,1}, 1.75f, 3, 1.5f, "Ber"},
+        .combat = {80, {18,1}, 1.75f, 3, steps_from_seconds(1.5f), "Ber"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 3,
@@ -1621,7 +1623,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Shatun,
         .baseLevel = 82,
         .ai = AIBehaviour::Aggressive,
-        .combat = {150, {3,14}, 1.7f, 2.0f, 1.8f, "Sht", CombatTemplate::Melee, 0, 0,
+        .combat = {150, {3,14}, 1.7f, 2.0f, steps_from_seconds(1.8f), "Sht", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/2.0f, kNpcSightDefaultM, 100, 100,
          DamageType::Blunt},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1650,7 +1652,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Boar,
         .baseLevel = 16,
         .ai = AIBehaviour::Aggressive,
-        .combat = {40, {12,1}, 2.0f, 3, 1.2f, "Bor"},
+        .combat = {40, {12,1}, 2.0f, 3, steps_from_seconds(1.2f), "Bor"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 5,
@@ -1680,7 +1682,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::GreatBoar,
         .baseLevel = 72,
         .ai = AIBehaviour::Aggressive,
-        .combat = {105, {3,10}, 2.0f, 1.7f, 1.5f, "GBr", CombatTemplate::Melee, 0, 0,
+        .combat = {105, {3,10}, 2.0f, 1.7f, steps_from_seconds(1.5f), "GBr", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.3f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1709,7 +1711,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Snake,
         .baseLevel = 4,
         .ai = AIBehaviour::Aggressive,
-        .combat = {10, {8,1}, 1.5f, 2, 0.8f, "Snk"},
+        .combat = {10, {8,1}, 1.5f, 2, steps_from_seconds(0.8f), "Snk"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 4,
@@ -1737,7 +1739,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Crocodile,
         .baseLevel = 28,
         .ai = AIBehaviour::Aggressive,
-        .combat = {50, {15,1}, 1.25f, 3, 1.5f, "Crc"},
+        .combat = {50, {15,1}, 1.25f, 3, steps_from_seconds(1.5f), "Crc"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 4,
@@ -1765,7 +1767,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Basilisk,
         .baseLevel = 65,
         .ai = AIBehaviour::Aggressive,
-        .combat = {95, {3,10}, 1.6f, 3.0f, 1.5f, "Bsk", CombatTemplate::Melee, 0, 0,
+        .combat = {95, {3,10}, 1.6f, 3.0f, steps_from_seconds(1.5f), "Bsk", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.4f, kNpcSightDefaultM, 100, 100,
          DamageType::Earth},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1797,7 +1799,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::SeaSerpent,
         .baseLevel = 110,
         .ai = AIBehaviour::Aggressive,
-        .combat = {300, {4,14}, 2.0f, 3.4f, 1.8f, "SSr", CombatTemplate::Melee, 0, 0,
+        .combat = {300, {4,14}, 2.0f, 3.4f, steps_from_seconds(1.8f), "SSr", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/2.2f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1826,7 +1828,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Hydra,
         .baseLevel = 105,
         .ai = AIBehaviour::Aggressive,
-        .combat = {280, {5,11}, 1.6f, 3.0f, 1.7f, "Hyd", CombatTemplate::Melee, 0, 0,
+        .combat = {280, {5,11}, 1.6f, 3.0f, steps_from_seconds(1.7f), "Hyd", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/2.4f, kNpcSightDefaultM, 100, 100,
          DamageType::Water},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1855,7 +1857,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::SandWyrm,
         .baseLevel = 95,
         .ai = AIBehaviour::Aggressive,
-        .combat = {210, {4,12}, 1.8f, 2.8f, 1.9f, "SWm", CombatTemplate::Melee, 0, 0,
+        .combat = {210, {4,12}, 1.8f, 2.8f, steps_from_seconds(1.9f), "SWm", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.8f, kNpcSightDefaultM, 100, 100,
          DamageType::Earth},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1885,7 +1887,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::JungleTyrant,
         .baseLevel = 88,
         .ai = AIBehaviour::Aggressive,
-        .combat = {170, {4,10}, 2.1f, 2.2f, 1.4f, "JTy", CombatTemplate::Melee, 0, 0,
+        .combat = {170, {4,10}, 2.1f, 2.2f, steps_from_seconds(1.4f), "JTy", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/2.2f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -1918,7 +1920,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         // ЛЕТУН: cruiseM 5 — ястреб честно в воздухе (полёт-посадка
         // 2026-09-10), гравитации нет, конверт общий с игроком.
         .ai = AIBehaviour::Wanderer,
-        .combat = {8, {5,1}, 3.0f, 3, 1.0f, "Hwk", CombatTemplate::Melee, 0, 0, 0xFFFFFFFFu, 0.0f, kNpcSightDefaultM, 100, 100, DamageType::Blunt, 5.0f},
+        .combat = {8, {5,1}, 3.0f, 3, steps_from_seconds(1.0f), "Hwk", CombatTemplate::Melee, 0, 0, 0xFFFFFFFFu, 0.0f, kNpcSightDefaultM, 100, 100, DamageType::Blunt, 5.0f},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 3,
@@ -1947,7 +1949,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .baseLevel = 3,
         // ЛЕТУН: cruiseM 6 — орёл выше ястреба, тот же закон.
         .ai = AIBehaviour::Wanderer,
-        .combat = {12, {7,1}, 3.25f, 3, 1.0f, "Egl", CombatTemplate::Melee, 0, 0, 0xFFFFFFFFu, 0.0f, kNpcSightDefaultM, 100, 100, DamageType::Blunt, 6.0f},
+        .combat = {12, {7,1}, 3.25f, 3, steps_from_seconds(1.0f), "Egl", CombatTemplate::Melee, 0, 0, 0xFFFFFFFFu, 0.0f, kNpcSightDefaultM, 100, 100, DamageType::Blunt, 6.0f},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 4,
@@ -1975,7 +1977,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Roc,
         .baseLevel = 100,
         .ai = AIBehaviour::Aggressive,
-        .combat = {230, {4,13}, 2.5f, 2.6f, 1.6f, "Roc", CombatTemplate::Melee, 0, 0,
+        .combat = {230, {4,13}, 2.5f, 2.6f, steps_from_seconds(1.6f), "Roc", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/3.0f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce, 9.0f},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -2004,7 +2006,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Frog,
         .baseLevel = 1,
         .ai = AIBehaviour::Flee,
-        .combat = {3, {0,1}, 1.5f, 0, 9.0f, "Frg"},
+        .combat = {3, {0,1}, 1.5f, 0, steps_from_seconds(9.0f), "Frg"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 10,
@@ -2059,7 +2061,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Squid,
         .baseLevel = 25,
         .ai = AIBehaviour::Aggressive,
-        .combat = {28, {2,6}, 1.1f, 1.6f, 2.0f, "Sqd", CombatTemplate::Melee, 0, 0,
+        .combat = {28, {2,6}, 1.1f, 1.6f, steps_from_seconds(2.0f), "Sqd", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/0.9f, kNpcSightDefaultM, 100, 100,
          DamageType::Blunt},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -2092,7 +2094,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Kakula,
         .baseLevel = 55,
         .ai = AIBehaviour::Aggressive,
-        .combat = {70, {4,5}, 1.9f, 2.0f, 0.9f, "Kkl", CombatTemplate::Melee, 0, 0,
+        .combat = {70, {4,5}, 1.9f, 2.0f, steps_from_seconds(0.9f), "Kkl", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.1f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -2122,7 +2124,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Shark,
         .baseLevel = 85,
         .ai = AIBehaviour::Aggressive,
-        .combat = {120, {3,12}, 2.1f, 2.2f, 1.6f, "Shk", CombatTemplate::Melee, 0, 0,
+        .combat = {120, {3,12}, 2.1f, 2.2f, steps_from_seconds(1.6f), "Shk", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.3f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -2154,7 +2156,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Whale,
         .baseLevel = 95,
         .ai = AIBehaviour::Flee,
-        .combat = {260, {5,10}, 1.4f, 3.0f, 2.6f, "Whl", CombatTemplate::Melee, 0, 0,
+        .combat = {260, {5,10}, 1.4f, 3.0f, steps_from_seconds(2.6f), "Whl", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/4.0f, kNpcSightDefaultM, 100, 100,
          DamageType::Blunt},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -2186,7 +2188,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::CaveBat,
         .baseLevel = 2,
         .ai = AIBehaviour::Aggressive,
-        .combat = {8, {1,6}, 3.0f, 2.0f, 0.9f, "Bat", CombatTemplate::Melee, 0, 0,
+        .combat = {8, {1,6}, 3.0f, 2.0f, steps_from_seconds(0.9f), "Bat", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/0.4f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce, /*cruiseM*/2.5f},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -2215,7 +2217,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::CaveSpider,
         .baseLevel = 6,
         .ai = AIBehaviour::Aggressive,
-        .combat = {26, {2,6}, 2.4f, 2.0f, 1.0f, "Spd", CombatTemplate::Melee, 0, 0,
+        .combat = {26, {2,6}, 2.4f, 2.0f, steps_from_seconds(1.0f), "Spd", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/0.7f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -2244,7 +2246,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::SandScorpion,
         .baseLevel = 24,
         .ai = AIBehaviour::Aggressive,
-        .combat = {35, {12,1}, 1.75f, 3, 1.0f, "Ssc"},
+        .combat = {35, {12,1}, 1.75f, 3, steps_from_seconds(1.0f), "Ssc"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 5,
@@ -2282,7 +2284,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Deer,
         .baseLevel = 2,
         .ai = AIBehaviour::Flee,
-        .combat = {40, {1,4}, 2.2f, 1.2f, 1.6f, "Hrs"},
+        .combat = {40, {1,4}, 2.2f, 1.2f, steps_from_seconds(1.6f), "Hrs"},
         .upkeepGoldPerDay = 0,
         .hireable = true,
         .radius = 0.8f,
@@ -2344,7 +2346,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Goat,
         .baseLevel = 1,
         .ai = AIBehaviour::Flee,
-        .combat = {12, {1,3}, 1.3f, 1.0f, 3.0f, "Shp"},
+        .combat = {12, {1,3}, 1.3f, 1.0f, steps_from_seconds(3.0f), "Shp"},
         .upkeepGoldPerDay = 0,
         .hireable = false,
         .weight = 5,
@@ -2371,7 +2373,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Goat,
         .baseLevel = 2,
         .ai = AIBehaviour::Flee,
-        .combat = {20, {5,1}, 2.0f, 2, 1.5f, "Mgt"},
+        .combat = {20, {5,1}, 2.0f, 2, steps_from_seconds(1.5f), "Mgt"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 8,
@@ -2405,7 +2407,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Skeleton,
         .baseLevel = 11,
         .ai = AIBehaviour::Aggressive,
-        .combat = {35, {10,1}, 1.5f, 3, 1.2f, "Skl"},
+        .combat = {35, {10,1}, 1.5f, 3, steps_from_seconds(1.2f), "Skl"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 3,
@@ -2432,7 +2434,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Zombie,
         .baseLevel = 10,
         .ai = AIBehaviour::Aggressive,
-        .combat = {55, {2,8}, 0.8f, 3.0f, 2.0f, "Zmb", CombatTemplate::Melee, 0, 0,
+        .combat = {55, {2,8}, 0.8f, 3.0f, steps_from_seconds(2.0f), "Zmb", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.75f, kNpcSightDefaultM, 100, 100,
          DamageType::Blunt},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -2461,7 +2463,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Ghoul,
         .baseLevel = 24,
         .ai = AIBehaviour::Aggressive,
-        .combat = {48, {3,6}, 2.4f, 3.0f, 1.2f, "Ghl", CombatTemplate::Melee, 0, 0,
+        .combat = {48, {3,6}, 2.4f, 3.0f, steps_from_seconds(1.2f), "Ghl", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.7f, kNpcSightDefaultM, 100, 100,
          DamageType::Pierce},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -2490,7 +2492,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Wraith,
         .baseLevel = 40,
         .ai = AIBehaviour::Aggressive,
-        .combat = {55, {3,8}, 2.0f, 4.0f, 1.4f, "Wrh", CombatTemplate::Melee, 0, 0,
+        .combat = {55, {3,8}, 2.0f, 4.0f, steps_from_seconds(1.4f), "Wrh", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/1.9f, kNpcSightDefaultM, 100, 100,
          DamageType::Void},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -2518,7 +2520,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::IceWraith,
         .baseLevel = 42,
         .ai = AIBehaviour::Aggressive,
-        .combat = {45, {16,1}, 1.75f, 5, 1.3f, "Iwr"},
+        .combat = {45, {16,1}, 1.75f, 5, steps_from_seconds(1.3f), "Iwr"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 2,
@@ -2544,7 +2546,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::StoneGolem,
         .baseLevel = 68,
         .ai = AIBehaviour::Aggressive,
-        .combat = {150, {20,1}, 0.75f, 4, 2.5f, "Glm"},
+        .combat = {150, {20,1}, 0.75f, 4, steps_from_seconds(2.5f), "Glm"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 1,
@@ -2572,7 +2574,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Gargoyle,
         .baseLevel = 45,
         .ai = AIBehaviour::Aggressive,
-        .combat = {90, {3,8}, 1.4f, 3.0f, 1.6f, "Grg", CombatTemplate::Melee, 0, 0,
+        .combat = {90, {3,8}, 1.4f, 3.0f, steps_from_seconds(1.6f), "Grg", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/2.2f, kNpcSightDefaultM, 100, 100,
          DamageType::Earth, /*cruiseM*/7.0f},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -2600,7 +2602,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Imp,
         .baseLevel = 5,
         .ai = AIBehaviour::Aggressive,
-        .combat = {18, {2,5}, 2.8f, 2.0f, 0.9f, "Imp", CombatTemplate::Melee, 0, 0,
+        .combat = {18, {2,5}, 2.8f, 2.0f, steps_from_seconds(0.9f), "Imp", CombatTemplate::Melee, 0, 0,
          0xFFFFFFFFu, /*bodyHeight*/0.8f, kNpcSightDefaultM, 100, 100,
          DamageType::Fire},
         .upkeepGoldPerDay = kNpcUpkeepNone,
@@ -2628,7 +2630,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::SwampThing,
         .baseLevel = 38,
         .ai = AIBehaviour::Aggressive,
-        .combat = {60, {14,1}, 1.0f, 4, 1.5f, "Swt"},
+        .combat = {60, {14,1}, 1.0f, 4, steps_from_seconds(1.5f), "Swt"},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 3,
@@ -2656,9 +2658,9 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .sprite = SpriteId::Lich,
         .baseLevel = 100,
         .ai = AIBehaviour::Aggressive,
-        .combat = {110, {4,12}, 1.1f, 28.0f, 2.6f, "Lch", CombatTemplate::Missile, 210,
+        .combat = {110, {4,12}, 1.1f, 28.0f, steps_from_seconds(2.6f), "Lch", CombatTemplate::Missile, 210,
          3.0f, 0xFF90FFB0u, /*bodyHeight*/1.9f, kNpcSightDefaultM, 100, 100,
-         DamageType::Void, /*cruiseM*/0.0f, /*castSpell*/spell_ordinal("void_arrow")},
+         DamageType::Void, /*cruiseM*/0.0f, /*actions*/{action_slot("void_arrow"), kActionNone}},
         .upkeepGoldPerDay = kNpcUpkeepNone,
         .hireable = false,
         .weight = 1,

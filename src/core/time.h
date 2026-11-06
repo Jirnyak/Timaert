@@ -63,7 +63,7 @@ inline constexpr std::uint64_t kSubworldTickDivisor = 64;   // 2^6
 inline constexpr std::uint32_t kStepsPerSecond =
     static_cast<std::uint32_t>(kTicksPerRealSecond);
 
-// Authored seconds (a table's `cooldown`) → steps. Rounds to nearest so a row
+// Authored seconds (a table row's base) → steps. Rounds to nearest so a row
 // that says 0.8 s is not silently truncated to 51 steps' worth of 0.797.
 inline constexpr std::uint32_t steps_from_seconds(float seconds) {
     return seconds > 0.0f

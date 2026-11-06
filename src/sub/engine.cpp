@@ -1217,7 +1217,7 @@ void SubworldEngine::spawn_player_entity() {
                        std::uint8_t(hs.dmgType), playerPace,
                        hs.delivery == Delivery::Missile && hs.range > 0.0f
                            ? hs.range : armReach,
-                       seconds_from_steps(std::uint32_t(hs.recoverySteps)), 0u,
+                       /*strikeTicks*/std::uint32_t(hs.recoverySteps), 0u,
                        hs.delivery == Delivery::Missile
                            ? ecs::Combat::Missile : ecs::Combat::Melee,
                        /*armorSteps*/std::uint16_t{0}});
@@ -1397,9 +1397,9 @@ void SubworldEngine::sync_player_entity_position() {
                 // TEMPO rides the same refresh as the dice (recovery door,
                 // S14): equip a dagger mid-fight and the NEXT swing is a
                 // dagger's; haste (+Spd on the effective sheet) quickens the
-                // arm exactly as it quickens the legs below.
-                c->cooldown =
-                    seconds_from_steps(std::uint32_t(hs.recoverySteps));
+                // arm exactly as it quickens the legs below. Целые тики
+                // насквозь (M-396) — конверсий секунда↔тик здесь больше нет.
+                c->strikeTicks = std::uint32_t(hs.recoverySteps);
                 // DELIVERY rides it too (shooting law, 2026-09-09): draw a
                 // bow mid-fight and the next press looses an arrow at the
                 // row's range; put it away and the arm is a melee arm again.
@@ -2610,7 +2610,7 @@ void SubworldEngine::tick_player_melee() {
     // free and silent — holding attack in a clearing "swung" every frame and
     // the first real feedback of the whole melee loop was the enemy's flash.
     // Written BEFORE any emplace below (see the dangling note above).
-    pc->recoverySteps = steps_from_seconds(strikeStats.cooldown);
+    pc->recoverySteps = strikeStats.strikeTicks;
     queue_sfx(SfxId::MeleeSwing);
     // TIMAERT_COMBAT_LOG: the owner's verification channel — one stderr line
     // per swing, greppable as [melee].
@@ -2638,9 +2638,9 @@ void SubworldEngine::tick_player_melee() {
                           playerZ_ + dirZ * strikeStats.attackRange);
         if (combatLog) {
             std::fprintf(stderr,
-                         "[melee] loose range=%.1f cd=%.2fs\n",
+                         "[melee] loose range=%.1f cd=%ut\n",
                          double(strikeStats.attackRange),
-                         double(strikeStats.cooldown));
+                         unsigned(strikeStats.strikeTicks));
         }
         return;
     }
@@ -2670,8 +2670,8 @@ void SubworldEngine::tick_player_melee() {
         // HARVEST» — gathering is WORK with an SP price (harvest_action),
         // never a free side effect of a weapon arc.
         if (combatLog) {
-            std::fprintf(stderr, "[melee] swing target=none cd=%.2fs\n",
-                         double(strikeStats.cooldown));
+            std::fprintf(stderr, "[melee] swing target=none cd=%ut\n",
+                         unsigned(strikeStats.strikeTicks));
         }
         return;
     }
@@ -2696,10 +2696,10 @@ void SubworldEngine::tick_player_melee() {
     if (combatLog) {
         std::fprintf(stderr,
                      "[melee] swing target=%s rolled=%d applied=%d blocked=%d"
-                     " crit=%d lethal=%d cd=%.2fs\n",
+                     " crit=%d lethal=%d cd=%ut\n",
                      label, swing.amount, hit.applied, hit.blocked ? 1 : 0,
                      swing.critical ? 1 : 0, hit.lethal ? 1 : 0,
-                     double(strikeStats.cooldown));
+                     unsigned(strikeStats.strikeTicks));
     }
     if (hit.blocked) {
         // The plate swallowed the whole blow — SAY so (owner 2026-09-06:
@@ -3884,7 +3884,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         // A blocked or dead-blocked swing still swung: the recovery pays
         // either way, or a fully-armoured target would grant free retries
         // every step.
-        c.recoverySteps = steps_from_seconds(c.cooldown);
+        c.recoverySteps = c.strikeTicks;
         (void)hit;
     };
 
@@ -3925,7 +3925,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
             const ecs::Position& tp = arena.pos[std::size_t(targetSlot)];
             spawn_npc_missile(arena, s, p, c, combatRng_, tp.x, tp.y, tp.z,
                               targetSlot);
-            c.recoverySteps = steps_from_seconds(c.cooldown);
+            c.recoverySteps = c.strikeTicks;
             continue;
         }
         strike(s, targetSlot, c, owned);

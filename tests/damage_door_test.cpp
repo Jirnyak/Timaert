@@ -458,7 +458,7 @@ int wear_by_id(sm::MacroStore& store, sm::MacroHandle squad, const char* id) {
 //      неуязвимости в этом мире не существует);
 //   4. ПРОСТОЯ ОН НЕ СТАВИТ НИ РАЗУ, хотя удар прошёл сквозь блок, — потому
 //      что процента у него нет, а база простоя берёт вес ровно тех вещей, у
-//      которых процент есть (`armor_downtime_weight@src/bus/anketa.cpp`);
+//      которых процент есть (`armor_downtime_grams@src/bus/anketa.cpp`);
 //   5. и НЕГАТИВНЫЙ КОНТРОЛЬ прибора: вещь С процентом (кожаная куртка) на том
 //      же теле простой СТАВИТ, значит ноль в п.4 есть факт, а не слепота.
 void test_shield_blocks_without_downtime() {
@@ -508,9 +508,9 @@ void test_shield_blocks_without_downtime() {
     CHECK(blow - int(r0.applied) == block,
           "на ранге 0 снято ровно столько, сколько стоит в колонке блока "
           "строки — ни пунктом больше");
-    const float wShield = sm::armor_downtime_weight(
+    const int wShield = sm::armor_downtime_grams(
         store->gear[squad.slot].gear, store->inventory[squad.slot].inv);
-    CHECK(wShield == 0.0f,
+    CHECK(wShield == 0,
           "вес ЩИТА базы простоя не платит: простой выключает процент, а "
           "процента у него нет — терять в простое нечего");
     CHECK(clock.armorSteps == 0u,
@@ -549,9 +549,9 @@ void test_shield_blocks_without_downtime() {
     const sm::ItemDef& coat = *sm::item_def_at(coatIdx);
     CHECK(coat.defense.has_armor_percent(),
           "контроль читает ту вещь, ради которой он взят: у куртки процент ЕСТЬ");
-    CHECK(sm::armor_downtime_weight(store->gear[squad.slot].gear,
-                                    store->inventory[squad.slot].inv)
-              == float(double(coat.massG) / 1000.0),
+    CHECK(sm::armor_downtime_grams(store->gear[squad.slot].gear,
+                                   store->inventory[squad.slot].inv)
+              == int(coat.massG),
           "база простоя есть РОВНО куртка: щит рядом с ней не прибавил своих "
           "восьми килограммов");
     apply_damage(objs, store.get(), body, DamageSource{}, blow,

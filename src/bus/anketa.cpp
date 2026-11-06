@@ -355,10 +355,10 @@ DefenseSum worn_defense(const Gear& g, const Inventory& inv,
     return sum;
 }
 
-// СУММА ЦЕЛАЯ, ДЕЛЕНИЕ ОДНО — тем же выводом, что у `inventory_weight`:
-// сумма флоатов зависела от ПОРЯДКА обхода ячеек экипировки, а простой чинит
-// это тем, что складывать нечему. Подпись остаётся килограммами: её читает
-// закон простоя брони через `kArmorRecoverySecondsPerKg`, то есть секунды.
+// СУММА ЦЕЛАЯ, И ДЕЛЕНИЯ НЕТ ВОВСЕ — тем же выводом, что у `inventory_weight`:
+// сумма флоатов зависела от ПОРЯДКА обхода ячеек экипировки. Подпись — ГРАММЫ
+// ЦЕЛЫМИ (M-396): закон простоя переводит их в тики одной целой арифметикой
+// (`kArmorRecoveryTicksPerKg`), и флоата на пути восстановления нет ни одного.
 //
 // ВЕС ПЛАТИТ РОВНО ТО, ЧТО ПРОСТОЙ ВЫКЛЮЧАЕТ (M-390). Простой гасит
 // ПРОЦЕНТНУЮ колонку и никогда плоскую, значит вещь, у которой процента нет
@@ -370,7 +370,7 @@ DefenseSum worn_defense(const Gear& g, const Inventory& inv,
 // щит с «of Fire Warding» ЕСТЬ вещь с процентом — и его вес обязан платить за
 // то, что простой у него отнимет. Спроси здесь только строку, и у одной вещи
 // завелось бы два ответа на «есть ли ей что терять».
-float armor_downtime_weight(const Gear& g, const Inventory& inv) {
+int armor_downtime_grams(const Gear& g, const Inventory& inv) {
     std::int32_t grams = 0;
     for (int i = 0; i < kEquipCells; ++i) {
         const std::uint16_t v = g.worn[std::size_t(i)];
@@ -395,25 +395,26 @@ float armor_downtime_weight(const Gear& g, const Inventory& inv) {
         if (!hasPercent) continue;
         grams += item_mass_g(*def);
     }
-    return float(double(grams) / 1000.0);
+    return grams;
 }
 
 int armor_recovery_steps(const Gear& g, const Inventory& inv,
                          const Attributes& a, const Skills& s) {
-    const float kg = armor_downtime_weight(g, inv);
-    if (kg <= 0.0f) return 0;
+    const int grams = armor_downtime_grams(g, inv);
+    if (grams <= 0) return 0;
     // ТА ЖЕ ДВЕРЬ ТЕМПА, что у замаха и каста (`recovery_steps`), и тот же
     // ГЕНЕРИК-скилл: `Armsmaster`. Типовому доспешному роду вход сюда ЗАПРЕЩЁН
     // — он рычаг СИЛЫ (множит обе колонки защиты), и посчитанный ещё и в темп
     // дал бы скрытый квадрат, ровно тот, из-за которого генерик-пару убрали из
     // урона 2026-09-07. Итог: типовой множит защиту, Армсмастер сокращает
     // простой, у каждой ручки ровно одна работа.
-    // Секунды → тики ЗДЕСЬ: дверь берёт тики (M-369). Броня действием не
-    // является (ЗАКОН СПОСОБНОСТИ п.5), поэтому строки в единой таблице у неё
-    // не будет — её база так и останется выведенной из МАССЫ надетого, то есть
+    // Граммы → тики ЦЕЛЫМИ (M-396). Броня действием не является (ЗАКОН
+    // СПОСОБНОСТИ п.5), поэтому строки в единой таблице у неё не будет — её
+    // база так и останется выведенной из МАССЫ надетого, то есть
     // модификатором контекста того же рода, что масса оружия.
-    return recovery_steps(steps_from_seconds(kg * kArmorRecoverySecondsPerKg),
-                          a, s, SkillId::Armsmaster);
+    return recovery_steps(
+        std::uint32_t(grams) * kArmorRecoveryTicksPerKg / 1000u,
+        a, s, SkillId::Armsmaster);
 }
 
 DefenseSum body_defense(const Defense& row, const Skills& skills,
@@ -483,16 +484,14 @@ StrikeFields hand_strike_fields(const Attributes& attributes,
                    + worn.derived_of(DerivedModId::DmgFlat);
     out.flatAdd = std::int16_t(flat < 0 ? 0 : flat);
     out.luck    = std::uint8_t(attributes.of(AttributeId::Lck));
-    // The TEMPO half (CANON S14 «один рычаг»): the MASS law's base through
-    // the recovery door; the worn SwingPct rows speak LAST, clamped po2.
-    // Секунды → тики ЗДЕСЬ: дверь берёт тики (M-369). Эта база переедет в
-    // единую таблицу ломтем «базы удара и существа» (M-396), и переедет
-    // РАЗДЕЛЁННОЙ: база = замах ПУСТОЙ РУКИ строкой действия, масса оружия =
-    // ДОБАВКА в тиках (вердикт владельца 2026-11-04: модификаторы рекавери —
-    // расширяемый род; `weapon_swing_seconds` складывает, а не множит).
-    const int steps = recovery_steps(steps_from_seconds(weapon_swing_seconds(w)),
-                                     attributes, skills,
-                                     SkillId::Armsmaster);
+    // The TEMPO half (CANON S14 «один рычаг»): база — СТРОКА ЗАМАХА таблицы
+    // действий (пустая рука, `kActionStrike`), масса оружия — АДДИТИВНАЯ
+    // добавка в целых тиках (M-396, вердикт 2026-11-04: модификаторы
+    // рекавери — расширяемый род; масса складывает, не множит); worn
+    // SwingPct rows speak LAST, clamped po2.
+    const int steps = recovery_steps(
+        action_def(kActionStrike).recoveryTicks + weapon_mass_recovery_ticks(w),
+        attributes, skills, SkillId::Armsmaster);
     const int swingPct = 100 + std::clamp(
         worn.derived_of(DerivedModId::SwingPct),
         kDerivedPctFloor, kDerivedPctCeil);

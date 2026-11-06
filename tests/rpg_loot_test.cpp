@@ -59,7 +59,8 @@ static void test_project_combat_melee() {
 
     CombatTemplate base{};
     base.hp = 50; base.dice = {6, 1}; base.speedMarchMult = 1.65f; base.attackRange = 3.5f;
-    base.cooldown = 1.25f; base.label = "TST"; base.attackKind = CombatTemplate::Melee;
+    base.recoveryTicks = sm::steps_from_seconds(1.25f); base.label = "TST";
+    base.attackKind = CombatTemplate::Melee;
     base.missileSpeed = 12.5f; base.missileBlast = 4.0f; base.missileColorRGBA = 0xAABBCCDDu;
 
     const CombatTemplate out = project_combat(cs, base);
@@ -81,15 +82,16 @@ static void test_project_combat_melee() {
           "melee: pace (as a fraction of the march) preserved");
     CHECK(approx(out.attackRange, base.attackRange), "melee: range preserved");
     // Tempo is the ONE exception to "identity preserved verbatim" since the
-    // recovery door (CANON S14 «один рычаг», 2026-09-07): the row's cooldown
+    // recovery door (CANON S14 «один рычаг», 2026-09-07): the row's base
     // is the BASE and the sheet divides it — through exactly the door, so
     // this expectation moves when the law moves, never a pinned number.
-    CHECK(approx(out.cooldown,
-                 seconds_from_steps(std::uint32_t(recovery_steps(
-                     sm::steps_from_seconds(base.cooldown), cs.attributes,
-                     cs.skills, sm::SkillId::Armsmaster)))),
-          "melee: cooldown == the recovery door's verdict (Armsmaster)");
-    CHECK(out.cooldown < base.cooldown,
+    // Целые тики насквозь (M-396): равенство точное, approx умер.
+    CHECK(out.recoveryTicks
+              == std::uint32_t(recovery_steps(base.recoveryTicks,
+                                              cs.attributes, cs.skills,
+                                              sm::SkillId::Armsmaster)),
+          "melee: recoveryTicks == the recovery door's verdict (Armsmaster)");
+    CHECK(out.recoveryTicks < base.recoveryTicks,
           "melee: a quick sheet strikes faster than its row's base");
     CHECK(out.attackKind == CombatTemplate::Melee, "melee: kind preserved");
     CHECK(out.label == base.label, "melee: label pointer preserved");
@@ -134,7 +136,7 @@ static void test_project_combat_missile() {
     const int ord = sm::spell_ordinal("magic_bolt");
     CHECK(sm::spell_ordinal_ok(ord), "fixture: the named spell exists");
     CombatTemplate cast = shot;
-    cast.castSpell = ord;
+    cast.actions[0] = std::uint8_t(sm::action_of_spell(ord));
     const CombatTemplate castOut = project_combat(cs, cast);
     CHECK(castOut.flatAdd == std::int16_t(std::floor(expD.rawSpellDamage)),
           "cast: the add is the caster's INT — magic, and it says so");
@@ -144,19 +146,20 @@ static void test_project_combat_missile() {
     // TEMPO follows the same split: Spellcraft paces a cast, Armsmaster
     // paces a shot (a bow is drawn by arms, not by a casting hand).
     CombatTemplate cdShot{};
-    cdShot.cooldown = 2.0f; cdShot.attackKind = CombatTemplate::Missile;
+    cdShot.recoveryTicks = sm::steps_from_seconds(2.0f);
+    cdShot.attackKind = CombatTemplate::Missile;
     CombatTemplate cdCast = cdShot;
-    cdCast.castSpell = ord;
-    CHECK(approx(project_combat(cs, cdCast).cooldown,
-                 seconds_from_steps(std::uint32_t(recovery_steps(
-                     sm::steps_from_seconds(cdCast.cooldown), cs.attributes,
-                     cs.skills, sm::SkillId::Spellcraft)))),
-          "cast: cooldown == the recovery door's verdict (Spellcraft)");
-    CHECK(approx(project_combat(cs, cdShot).cooldown,
-                 seconds_from_steps(std::uint32_t(recovery_steps(
-                     sm::steps_from_seconds(cdShot.cooldown), cs.attributes,
-                     cs.skills, sm::SkillId::Armsmaster)))),
-          "shot: cooldown == the recovery door's verdict (Armsmaster)");
+    cdCast.actions[0] = std::uint8_t(sm::action_of_spell(ord));
+    CHECK(project_combat(cs, cdCast).recoveryTicks
+              == std::uint32_t(recovery_steps(cdCast.recoveryTicks,
+                                              cs.attributes, cs.skills,
+                                              sm::SkillId::Spellcraft)),
+          "cast: recoveryTicks == the recovery door's verdict (Spellcraft)");
+    CHECK(project_combat(cs, cdShot).recoveryTicks
+              == std::uint32_t(recovery_steps(cdShot.recoveryTicks,
+                                              cs.attributes, cs.skills,
+                                              sm::SkillId::Armsmaster)),
+          "shot: recoveryTicks == the recovery door's verdict (Armsmaster)");
 }
 
 // ── make_character_sheet: the level point-budget identity ────────────────────

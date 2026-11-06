@@ -166,7 +166,7 @@ struct ItemDef {
     // A second `armorKind` column beside this one would be two dictionaries
     // answering the same question, which S26 forbids.
     // There is deliberately NO tempo column: a weapon's swing time is
-    // DERIVED from its `weight` above (weapon_swing_seconds ниже
+    // DERIVED from its `weight` above (weapon_mass_recovery_ticks ниже
     // — owner verdict 2026-09-07: «скорость привязать к массе»), so every
     // future row gets its pace for free from the one kilogram figure the
     // carry law already prices, and the two can never disagree.
@@ -392,50 +392,52 @@ int item_labour(int defIdx) noexcept;
 // law's threshold branch doing its work, not a bug.
 inline constexpr Dice kFistDice{1, 2};
 
-// A weapon's base tempo is DERIVED from its weight, never authored twice:
-// «скорость привязать к массе — масса кулака бесконечно мала, он самый
-// быстрый» (owner verdict 2026-09-07).
-//   base = kHandSwingS + weight_kg × kSwingSecondsPerKg
-// kHandSwingS — the EMPTY hand at a zero sheet, the game's slowest striker.
-inline constexpr float kHandSwingS = 1.5f;
-// One kilogram of steel costs half a second of swing: pins the 1 kg dagger
-// at 2.0 s and the implied 2 kg one-hand sword at 2.5 s.
-inline constexpr float kSwingSecondsPerKg = 0.5f;
-
-// ОДИН КИЛОГРАММ ЖЕЛЕЗА СТОИТ ПОЛСЕКУНДЫ ПРОСТОЯ БРОНИ — тем же законом массы
-// (owner verdict 2026-09-07 «скорость привязать к массе», распространён на
-// броню 2026-09-30: «да сумма веса надетого норм»). База простоя = суммарный
-// вес НАДЕТОЙ брони × это число, дальше дверь восстановления делит её на
-// быстроту и Армсмастера (M-194).
+// Темп оружия ВЫВОДИТСЯ из массы и говорит АДДИТИВНОЙ ДОБАВКОЙ К БАЗЕ
+// ЗАМАХА, никогда второй строкой: «скорость привязать к массе — масса кулака
+// бесконечно мала, он самый быстрый» (owner verdict 2026-09-07); база удара
+// есть замах ПУСТОЙ РУКИ — СТРОКА `strike` таблицы действий
+// (`kActionStrike@src/tables/actions.h`, M-396), и прежняя константа
+// kHandSwingS = 1.5f умерла в неё. Аддитивность — вердикт 2026-11-04 (CANON
+// S14): масса — добавка В ТИКАХ, слово «множитель темпа» снято владельцем.
 //
-// ВТОРАЯ КОНСТАНТА, А НЕ ПЕРЕИСПОЛЬЗОВАНИЕ `kSwingSecondsPerKg`, И ЭТО НЕ
+// ОДИН КИЛОГРАММ ЖЕЛЕЗА СТОИТ ПОЛСЕКУНДЫ ЗАМАХА = 32 ТИКА (0.5 с/кг ×
+// 64 тика/с, `kTicksPerRealSecond@src/core/time.h`): кинжал 1000 г несёт
+// +32 тика над базой 96 — его прежние 2.0 с, число мира не сдвинулось;
+// подразумеваемый 2-кг одноручный меч — +64 (2.5 с).
+inline constexpr std::uint32_t kSwingTicksPerKg = 32;
+
+// ОДИН КИЛОГРАММ ЖЕЛЕЗА СТОИТ ПОЛСЕКУНДЫ ПРОСТОЯ БРОНИ = 32 ТИКА — тем же
+// законом массы (owner verdict 2026-09-07 «скорость привязать к массе»,
+// распространён на броню 2026-09-30: «да сумма веса надетого норм»). База
+// простоя = суммарный вес НАДЕТОЙ брони × это число, дальше дверь
+// восстановления делит её на быстроту и Армсмастера (M-194).
+//
+// ВТОРАЯ КОНСТАНТА, А НЕ ПЕРЕИСПОЛЬЗОВАНИЕ `kSwingTicksPerKg`, И ЭТО НЕ
 // дубль: величины РАЗНЫЕ (темп замаха против простоя защиты), а равное
 // значение — лишь стартовая калибровка. Сведи их в одну, и развести темп
 // оружия с простоем брони станет невозможно без правки структуры — ровно та
 // связка двух ручек, которой этот проект уже платил (ЗАКОН ПРИОРИТЕТА
 // СТРУКТУРЫ: числа это баланс, и балансу нужна свобода).
 //
-// ЧТО ОНО ДАЁТ, ЧИСЛАМИ: кожаная куртка 5 кг → 2.5 с базы (ровно один замах
-// одноручным мечом, то есть доля в строю ≈ 1/2 — та самая, которую кредитует
-// авторезолв); полная латная сбруя ≈ 25 кг → 12.5 с, и при ранге Армсмастера
-// 100 это ≈ 2 с. Латы простаивают дольше — это и есть выгода лёгких колец,
-// названная владельцем желаемой.
-inline constexpr float kArmorRecoverySecondsPerKg = 0.5f;
+// ЧТО ОНО ДАЁТ, ЧИСЛАМИ: кожаная куртка 5 кг → 160 тиков базы (2.5 с — ровно
+// один замах одноручным мечом, то есть доля в строю ≈ 1/2 — та самая,
+// которую кредитует авторезолв); полная латная сбруя ≈ 25 кг → 800 тиков
+// (12.5 с), и при ранге Армсмастера 100 это ≈ 2 с. Латы простаивают дольше —
+// это и есть выгода лёгких колец, названная владельцем желаемой.
+inline constexpr std::uint32_t kArmorRecoveryTicksPerKg = 32;
 
-// THE base swing of whatever the hand holds. nullptr = the bare, massless
-// hand. Weapons only — a spell's base tempo is its own row's cooldown, and a
-// creature's natural weapon carries an authored cooldown in ITS row.
+// ДОБАВКА МАССЫ К БАЗЕ ЗАМАХА, В ЦЕЛЫХ ТИКАХ. nullptr = голая рука, добавка
+// ноль ПО ПРИРОДЕ («масса кулака бесконечно мала, он самый быстрый») — страж
+// массы сюда не зовётся сознательно: один шаг колонки вместо нуля сделал бы
+// кулак на грамм тяжелее замысла. Oружию здесь НЕ дом базы: база — строка
+// `strike` (`kActionStrike@src/tables/actions.h`), спелл несёт свою строку
+// действия, естественный удар существа — колонку ЕГО строки (M-396).
 //
-// ГРАММЫ ДЕЛЯТСЯ НА КИЛОГРАММ ЗДЕСЬ, И ЭТО ЗАКОННАЯ ГРАНИЦА ФЛОАТА: выход
-// есть СЕКУНДЫ, которые дверь восстановления берёт флоатом (`recovery_steps`),
-// то есть величина уже не наша. Делением в `double`, а не `× 0.001f`, — тем же
-// выводом, что у `inventory_weight`: умножение на обратное врёт ВВЕРХ.
-// Страж массы сюда НЕ зовётся сознательно: безоружная рука и есть `nullptr`,
-// её масса ноль ПО ПРИРОДЕ («масса кулака бесконечно мала, он самый быстрый»),
-// и один шаг колонки вместо неё сделал бы кулак на грамм тяжелее замысла.
-inline float weapon_swing_seconds(const ItemDef* w) {
-    const double kg = w ? double(w->massG) / 1000.0 : 0.0;
-    return kHandSwingS + float(kg * double(kSwingSecondsPerKg));
+// Граммы делятся на килограмм ЦЕЛЫМИ, и флоата на пути восстановления не
+// остаётся ни одного (вердикт M-396); отброшенная дробь — меньше тика, ниже
+// кванта времени мира.
+inline constexpr std::uint32_t weapon_mass_recovery_ticks(const ItemDef* w) {
+    return w ? std::uint32_t(w->massG) * kSwingTicksPerKg / 1000u : 0u;
 }
 
 // Loot generation. `rng()` returns float in [0, 1).

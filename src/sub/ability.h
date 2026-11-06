@@ -139,10 +139,12 @@ inline bool try_ability(ecs::Combat* gate, float baseSeconds,
 // КОЛОНКА, а не формула»), и цена SP одного объекта уже считается из неё.
 // Время берётся оттуда же: замах топора — это та же работа, что платит бар,
 // и авторской секунды рядом с существующим темпом не заводится. Взмах руки
-// (kHandSwingS) — нижняя граница: рубить быстрее, чем махать, нельзя.
+// (строка `strike` таблицы действий) — нижняя граница: рубить быстрее, чем
+// махать, нельзя.
 inline constexpr float kHarvestActSeconds = 1.5f;
-static_assert(kHarvestActSeconds >= 1.5f,
-              "рубка не быстрее пустого замаха (kHandSwingS): у топора есть "
-              "масса, и она не бывает меньше нуля");
+static_assert(steps_from_seconds(kHarvestActSeconds)
+                  >= action_def(kActionStrike).recoveryTicks,
+              "рубка не быстрее пустого замаха (строка strike): у топора "
+              "есть масса, и она не бывает меньше нуля");
 
 } // namespace sm::sub

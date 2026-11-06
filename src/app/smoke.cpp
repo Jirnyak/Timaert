@@ -4583,7 +4583,8 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
     smoke_give_combat(sceneArena, hostileSlot, sm::ecs::Combat{
         sm::Dice{7, 1}, std::int16_t(0), std::int16_t(100), std::uint8_t(0),
         std::uint8_t(sm::DamageType::Blunt),
-        0.0f, 8.0f, 0.30f, 0u, sm::ecs::Combat::Melee, /*armorSteps*/std::uint16_t{0}});
+        0.0f, 8.0f, /*strikeTicks*/sm::steps_from_seconds(0.30f), 0u,
+        sm::ecs::Combat::Melee, /*armorSteps*/std::uint16_t{0}});
     smoke_give_ai(sceneArena, hostileSlot, sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat, 0.0f, 0.0f, 0.0f, 0.0f, 1.2f});
     smoke_give_sprite(sceneArena, hostileSlot, sm::ecs::Sprite{
         std::uint16_t(0x1FE),
@@ -4716,7 +4717,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
         std::uint8_t(sm::DamageType::Blunt),
         0.0f,
         45.0f,
-        0.30f,
+        /*strikeTicks*/sm::steps_from_seconds(0.30f),
         0u,
         sm::ecs::Combat::Missile, /*armorSteps*/std::uint16_t{0}});
     smoke_give_missile(sceneArena, hostileSlot,
@@ -5574,7 +5575,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     smoke_give_combat(sceneArena, targetSlot, sm::ecs::Combat{
         sm::Dice{3, 1}, std::int16_t(0), std::int16_t(100), std::uint8_t(0),
         std::uint8_t(sm::DamageType::Blunt),
-        20.0f, 2.0f, 1.5f, 0u,
+        20.0f, 2.0f, /*strikeTicks*/sm::steps_from_seconds(1.5f), 0u,
         sm::ecs::Combat::Melee, /*armorSteps*/std::uint16_t{0}});
     smoke_give_ai(sceneArena, targetSlot, sm::ecs::SubworldAi{sm::ecs::SubworldAi::Flee,
         3.0f, 0.0f, 0.0f, 8.0f, 0.55f});

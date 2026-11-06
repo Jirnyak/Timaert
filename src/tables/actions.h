@@ -61,6 +61,7 @@ enum class ActionArchetype : std::uint8_t {
 // которого ещё нет ни одной строки, запрещено: это заглушка (§1 ZERO MOCKS), а
 // лестница судится не длиной перечисления, а непрерывностью отрезков.
 enum class ActionType : std::uint8_t {
+    Strike, // бой: замах тела — пустая рука; масса оружия говорит ДОБАВКОЙ
     Spell,  // магия: авторский отрезок ниже, построчно выровнен с kSpellDefs
     Count
 };
@@ -74,11 +75,14 @@ inline constexpr ActionType kActionTypeMagicLast  = ActionType::Spell;
 inline constexpr ActionArchetype archetype_of(ActionType t) {
     return (t >= kActionTypeMagicFirst && t <= kActionTypeMagicLast)
                ? ActionArchetype::Magic
-               : ActionArchetype::Combat;  // недостижимо, пока тип один
+               : ActionArchetype::Combat;
 }
 static_assert(archetype_of(ActionType::Spell) == ActionArchetype::Magic,
               "магический отрезок обязан накрывать свой единственный тип: "
               "разъезд лестницы с группами не ловится компилятором иначе");
+static_assert(archetype_of(ActionType::Strike) == ActionArchetype::Combat,
+              "удар — боевой архетип: его темп платит Армсмастер, не "
+              "Спеллкрафт");
 
 // ДОМЕН ТЕМПА — ЭТО СВОЙСТВО АРХЕТИПА, А НЕ КОЛОНКА СТРОКИ, и здесь умирает
 // тернарник `cast ? SkillId::Spellcraft : SkillId::Armsmaster`, девять раз
@@ -148,6 +152,33 @@ static_assert(sizeof(ActionDef) == 32,
               "указателя (DOD: у структуры, чей размер назван, размер под "
               "static_assert)");
 static_assert(std::is_trivially_copyable_v<ActionDef>);
+
+// ── БОЕВОЙ ОТРЕЗОК — ПЕРВЫЕ СТРОКИ (M-396) ───────────────────────────────
+//
+// `strike` — ЗАМАХ ПУСТОЙ РУКИ, самый медленный боец игры при нулевом листе.
+// Вердикт владельца 2026-11-04 (CANON S14 «БАЗОВОЕ И ЭФФЕКТИВНОЕ РЕКОВЕРИ»):
+// база удара есть замах ПУСТОЙ РУКИ, а масса оружия — АДДИТИВНАЯ добавка в
+// тиках (`weapon_mass_recovery_ticks@src/tables/items.h`), не множитель.
+// Сюда умерла константа kHandSwingS = 1.5f: у действия теперь СТРОКА, как
+// велит ЗАКОН СПОСОБНОСТИ п.1, и 1.5 с = 96 тиков — то же число мира.
+//
+// Цена 0/0/0 — ЗНАЧЕНИЕ, не отсутствие (ЗАКОН СПОСОБНОСТИ п.2): удар сегодня
+// бесплатен, цена SP придёт правкой колонки, не новой веткой. Право не
+// гейтится рангом (SkillId::Count): бить может всякий, Армсмастер двигает
+// ТЕМП через генерик домена, не право.
+//
+// Естественный удар СУЩЕСТВА строки здесь не имеет (вердикт владельца
+// 2026-11-06, форма (а)): его база — колонка `recoveryTicks` ЕГО строки
+// (`CombatTemplate@src/tables/army.h`) — «у массовки всё из его таблицы»
+// (ЗАКОН ДВУХ ТАБЛИЦ), слитая с этой колонкой по имени, типу и единице.
+// Авторские удары с колонками стана/отброса лягут сюда строками, когда
+// придут их модули (брейншторм M-369: «у боя малая таблица ударов»).
+inline constexpr ActionDef kCombatActions[] = {
+    {.id = "strike",          .recoveryTicks = steps_from_seconds(1.5f),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .gateSkill = SkillId::Count, .minRank = 0,
+     .type = ActionType::Strike,  .scope = ActionScope::MicroMacro},
+};
 
 // ── МАГИЧЕСКИЙ ОТРЕЗОК — АВТОРСКИЙ; ДОМ УНИВЕРСАЛЬНЫХ ЧИСЕЛ ТЕПЕРЬ ЗДЕСЬ ──
 //
@@ -221,13 +252,17 @@ inline constexpr ActionDef kMagicActions[] = {
 // («строк этого архетипа пока нет»), а не заглушка: ординалы при приходе
 // нового отрезка ЗАКОННО сдвигаются (ЗАКОН ЛЕСТНИЦЫ п.3, формат сейва
 // ограничением не является).
-inline constexpr int kActionCombatFirst = 0;
-inline constexpr int kActionCombatCount = 0;
-inline constexpr int kActionMagicFirst  = kActionCombatFirst + kActionCombatCount;
-// Счёт ВЫВОДИТСЯ из таблицы (ЗАКОН СЛОВАРЯ п.3: ручной счёт рядом с таблицей
+// Счёт ВЫВОДИТСЯ из таблиц (ЗАКОН СЛОВАРЯ п.3: ручной счёт рядом с таблицей
 // — второй словарь).
+inline constexpr int kActionCombatFirst = 0;
+inline constexpr int kActionCombatCount = int(std::size(kCombatActions));
+inline constexpr int kActionMagicFirst  = kActionCombatFirst + kActionCombatCount;
 inline constexpr int kActionMagicCount  = int(std::size(kMagicActions));
 inline constexpr int kActionCount       = kActionMagicFirst + kActionMagicCount;
+
+// Именованный ординал замаха: его базу читают руки
+// (`hand_strike_fields@src/bus/anketa.cpp` — пустая рука плюс добавка массы).
+inline constexpr int kActionStrike = kActionCombatFirst;
 
 // ── ТОЖДЕСТВО ОТРЕЗКА С КАТАЛОГОМ СПЕЛЛОВ — СТЕНА ПОД КОМПИЛЯТОРОМ ──────
 // Ключ сверяется ПОСИМВОЛЬНО (указатели двух литералов сравнивать нельзя,
@@ -265,14 +300,51 @@ inline constexpr bool action_ordinal_valid(int ord) {
 }
 
 inline constexpr const ActionDef& action_def(int ord) {
-    return kMagicActions[std::size_t(ord - kActionMagicFirst)];
+    return ord < kActionMagicFirst
+               ? kCombatActions[std::size_t(ord - kActionCombatFirst)]
+               : kMagicActions[std::size_t(ord - kActionMagicFirst)];
 }
+static_assert(action_id_eq(action_def(kActionStrike).id, "strike"),
+              "именованный ординал замаха обязан смотреть на свою строку: "
+              "сдвиг боевого отрезка без правки kActionStrike несобираем");
 
 // Спелл → его действие. Одна дверь перевода, чтобы «частный случай» не
 // превратился в арифметику по месту вызова.
 inline constexpr int action_of_spell(int spellOrd) {
     return kActionMagicFirst + spellOrd;
 }
+// ...и обратная: ординал магического отрезка → строка спелла. Пара дверей,
+// никогда вычитание по месту вызова.
+inline constexpr int spell_of_action(int actionOrd) {
+    return actionOrd - kActionMagicFirst;
+}
+
+// ── НАБОРЫ: ЧЕМ СТРОКА-ВЛАДЕЛЕЦ ССЫЛАЕТСЯ НА ДЕЙСТВИЯ ────────────────────
+// Вердикт владельца 2026-11-06, дословно: «существа берут что они могут
+// делать в свои таблицы и модули из неё» — набор актора есть МАЛЫЙ МАССИВ
+// ординалов этой таблицы в СТРОКЕ владельца (membership здесь не живёт,
+// шапка файла). «Нет действия» — ПОСЛЕДНЕЕ значение узкого типа хранения,
+// не −1 (ЗАКОН УЗКОГО ИНДЕКСА: слот 0 — законная строка strike).
+inline constexpr std::uint8_t kActionNone = 255;
+static_assert(kActionCount < int(kActionNone),
+              "пространство ординалов действий переросло u8-носитель "
+              "наборов: подними тип слота набора вместе с сентинелом");
+// Слотов в наборе строки существа — 2: наибольший сегодняшний набор (один
+// спелл) плюс слот второго действия; балансное число, поднимается строкой.
+inline constexpr int kCreatureActionSlots = 2;
+
+// Авторский ключ → ординал ДЕЙСТВИЯ для u8-слота набора, constexpr: резолв
+// происходит В КОМПИЛЯТОРЕ (ЗАКОН СЛОВАРЯ п.1). Неизвестный ключ в
+// constexpr-авторинге НЕСОБИРАЕМ: выход за границу таблицы — не константное
+// выражение.
+inline constexpr std::uint8_t action_slot(const char* id) {
+    for (int i = 0; i < kActionCount; ++i)
+        if (action_id_eq(action_def(i).id, id)) return std::uint8_t(i);
+    return std::uint8_t(
+        kMagicActions[std::size_t(kActionCount)].recoveryTicks);
+}
+static_assert(action_slot("strike") == std::uint8_t(kActionStrike),
+              "дверь авторинга наборов обязана находить свою строку");
 
 // Домен темпа строки — через лестницу, без ветки у звонящего.
 inline constexpr SkillId action_tempo_generic(const ActionDef& a) {

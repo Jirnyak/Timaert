@@ -4,6 +4,7 @@
 // the NPC registry's CombatTemplate; there is no separate unit schema.
 #pragma once
 
+#include "tables/actions.h"       // набор строки — ординалы таблицы действий (M-396)
 #include "tables/damage_types.h"
 #include "tables/progression.h"   // ЛЕСТНИЦА: kMaxTier + clamp_to_ladder
 
@@ -63,7 +64,18 @@ struct CombatTemplate {
     // is that they now mean something.
     float       speedMarchMult;
     float       attackRange;
-    float       cooldown;
+    // БАЗОВОЕ РЕКОВЕРИ ЕСТЕСТВЕННОГО УДАРА, В ЦЕЛЫХ ТИКАХ — та же величина,
+    // то же имя и та же единица, что `recoveryTicks` строки действия
+    // (`ActionDef@src/tables/actions.h`): M-396, «У НАС ЕДИНАЯ СИСТЕМА
+    // РЕКАВЕРИ», имя `cooldown` умерло. Строка СВОЕЙ строки действия не
+    // имеет (вердикт владельца 2026-11-06, форма (а)): «у массовки всё из
+    // его таблицы» (ЗАКОН ДВУХ ТАБЛИЦ). Авторится СЕКУНДАМИ через
+    // constexpr `steps_from_seconds` на месте строки (вердикт M-396:
+    // хранится ЦЕЛЫЙ тик, секунда живёт только в авторинге). Эффективное
+    // считает одна дверь `recovery_steps@src/bus/anketa.h` (у аватаров —
+    // через project_combat); голова инвентаря читается сырой колонкой
+    // (`head_power@src/macro/auto_battle.h`).
+    std::uint32_t recoveryTicks;
     const char* label;
     AttackKind  attackKind = Melee;
     float       missileSpeed = 0.0f;
@@ -118,30 +130,28 @@ struct CombatTemplate {
     // платится, вода не требует корабля).
     float cruiseM = 0.0f;
 
-    // ЧТО ЭТА СТРОКА КАСТУЕТ (owner verdict 2026-09-17, built 2026-09-19 —
-    // РАСКЛЕЙКА КАСТА И ВЫСТРЕЛА): «каст у нас через систему спелов а есть
-    // ещё система стрельбы (метание/луки/арбалеты/мушкеты и тд)».
+    // НАБОР ДЕЙСТВИЙ СТРОКИ — ординалы ЕДИНОЙ таблицы действий (M-396;
+    // вердикт владельца 2026-11-06, дословно: «существа берут что они могут
+    // делать в свои таблицы и модули из неё»). Здесь жил `int castSpell =
+    // −1` — ординал СПЕЛЛА с сентинелом, который владелец не любит; сентинел
+    // умер в `kActionNone` (последнее значение u8, ЗАКОН УЗКОГО ИНДЕКСА), а
+    // ординал стал ординалом ДЕЙСТВИЯ.
     //
-    // ORDINAL of the spell registry row, ≥ 0 = this creature ATTACKS BY
-    // CASTING: its blow is then the SPELL's — the spell's dice, the spell's
-    // damage type, the caster's INT, the rank of the spell's own school —
-    // through the very doors the player's hand casts through. −1 = it does
-    // not cast, and then a Missile row is a SHOT: dice + the shooting skill,
-    // NO attribute add (CANON S14 «урон стрелкового БЕЗ добавки атрибута»).
+    // ФОРМА — ФИКСИРОВАННЫЙ МАЛЫЙ МАССИВ, А НЕ ОТРЕЗОК (назначено рядом
+    // M-369): лестница действий упорядочена по архетипу, поэтому укус (бой)
+    // и дыхание (магия) одного существа непрерывными быть не могут. Сегодня
+    // набор несёт МАГИЮ строки — её каст идёт кубами и типом урона СПЕЛЛА
+    // через те же двери, что рука игрока (расклейка каста и выстрела,
+    // 2026-09-17: строка без магии в наборе и с `Missile` — это ВЫСТРЕЛ,
+    // кости + стрелковый скилл, БЕЗ добавки атрибута). Естественный удар
+    // живёт колонкой `recoveryTicks` выше (форма (а), 2026-11-06), авторские
+    // боевые строки придут в наборы со своими модулями.
     //
-    // A NUMBER, not a string (owner, 2026-09-19: «а то засрём данные»): the
-    // registry law is «strings stay the AUTHORING key in tables, the runtime
-    // carries the ordinal» — the same law `faction_index` and every item row
-    // already obey. Rows author it as `spell_ordinal("fireball")`, which is
-    // constexpr, so the lookup happens in the COMPILER and a body's birth
-    // (project_combat, run per spawn, thousands per scene) never walks the
-    // spell table comparing strings.
-    //
-    // Until this column existed, `attackKind == Missile` MEANT "caster" —
-    // every Missile row in the game happened to be one — so the first
-    // NPC archer would have been handed an INT bonus to his arrows by a
-    // column that never claimed to speak about magic.
-    int castSpell = -1;
+    // Авторится `action_slot("fireball")` — constexpr, резолв в КОМПИЛЯТОРЕ
+    // (ЗАКОН СЛОВАРЯ), рождение тела строк не сравнивает. Кап 2 — наибольший
+    // сегодняшний набор (один спелл) плюс слот второго действия; балансное
+    // число, поднимается строкой (static_assert ширины — у `kActionNone`).
+    std::uint8_t actions[kCreatureActionSlots] = {kActionNone, kActionNone};
 
     // ── Filled by project_combat, never authored (a row has no sheet) ──────
     // The sheet's attribute ADD to every roll of the dice above (STR-derived
@@ -158,6 +168,18 @@ struct CombatTemplate {
     // schools multiplied nothing.
     std::int16_t multPct = 100;
 };
+
+// ЧЕМ СТРОКА КАСТУЕТ — первое МАГИЧЕСКОЕ действие её набора; kActionNone =
+// не кастует вовсе. Вопрос решает ОТРЕЗОК лестницы, не новая колонка (ЗАКОН
+// ЛЕСТНИЦЫ п.2); одна дверь, чтобы «первый маг-ординал набора» не стал
+// арифметикой по месту вызова.
+inline constexpr std::uint8_t row_cast_action(const CombatTemplate& row) {
+    for (std::uint8_t a : row.actions)
+        if (a != kActionNone
+            && archetype_of(action_def(int(a)).type) == ActionArchetype::Magic)
+            return a;
+    return kActionNone;
+}
 
 // ── ЗАКОН УРОВНЯ СТРОКИ: ОСТАЛСЯ ОДИН, И ОН ПРО ЭКОНОМИКУ ─────────────────
 // Здесь стояли ДВЕ двери — «посади уровень на лестницу» и «во сколько раз он

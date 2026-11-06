@@ -479,7 +479,7 @@ void test_npc_strikes_with_his_sheet() {
     archer.attributes[AttributeId::Str]  = 40;
     archer.skills[SkillId::Bow] = 20;
     CombatTemplate shot{};
-    shot.attackKind = CombatTemplate::Missile;      // castSpell stays null
+    shot.attackKind = CombatTemplate::Missile;      // набор действий пуст
     const CombatTemplate shotOut = project_combat(archer, shot);
     CHECK(shotOut.flatAdd == 0,
           "a SHOT takes no attribute add — not INT, and not STR either");
@@ -495,7 +495,7 @@ void test_npc_strikes_with_his_sheet() {
     CombatTemplate casterRow{};
     casterRow.attackKind = CombatTemplate::Missile;
     casterRow.dice = Dice{1, 1};                    // the row's own dice…
-    casterRow.castSpell = spell_ordinal("fireball");               // …are not read at all
+    casterRow.actions[0] = action_slot("fireball"); // …are not read at all
     const SpellDef* fire = spell_find("fireball");
     CHECK(fire != nullptr, "the fixture's spell exists");
     CharacterSheet mage{};

@@ -19,6 +19,12 @@
 //      негативный контроль на снятый кламп `if (mp < 0) mp = 0`, которым
 //      полуплатёж был выразим.
 //
+//   5. БОЕВОЙ ОТРЕЗОК (ломоть «базы удара и существа», M-396): база удара —
+//      замах ПУСТОЙ РУКИ строкой `strike`, масса оружия — АДДИТИВНАЯ добавка
+//      в тиках, база существа — колонка ЕГО строки той же единицей (форма
+//      (а), вердикт 2026-11-06), а чем строка кастует — говорит её НАБОР
+//      ординалов действий (сентинел −1 умер в kActionNone).
+//
 // ЯКОРИ — НЕ ПЕРЕСЧЁТ ПРОДАКШЕН-ФОРМУЛЫ (§8 п.5-6), А НЕЗАВИСИМО ИЗВЕСТНЫЕ
 // ФАКТЫ МИРА: квант времени мира есть 64 тика в секунде
 // (`kTicksPerRealSecond@src/core/time.h`), поэтому авторские 2.3 с fireball
@@ -34,6 +40,8 @@
 #include "core/pools.h"       // ecs::Pools — тройка HP/MP/SP
 #include "core/time.h"        // kTicksPerRealSecond — квант, на котором стоят якори
 #include "tables/actions.h"   // ЕДИНАЯ строка действия
+#include "tables/items.h"     // weapon_mass_recovery_ticks — добавка массы (M-396)
+#include "tables/npc.h"       // kWitchCombat/kPeasantCombat — наборы строк существ
 
 #include <cstdio>
 #include <cstring>
@@ -224,6 +232,62 @@ void cost_is_all_or_nothing_across_three_pools() {
                     "бесплатное действие проходит дверь цены при пустых пулах");
 }
 
+// ── 7. Боевой отрезок: замах, добавка массы, набор строки (M-396) ────────
+void combat_segment_strike_mass_and_row_sets() {
+    const sm::ActionDef& strike = sm::action_def(sm::kActionStrike);
+    CHECK(std::strcmp(strike.id, "strike") == 0
+                        && strike.type == ActionType::Strike
+                        && sm::archetype_of(strike.type)
+                               == ActionArchetype::Combat,
+                    "первая боевая строка — strike, и лестница зовёт её боем");
+    CHECK(strike.recoveryTicks == 96u,
+                    "strike: замах пустой руки есть 96 тиков мира (1.5 с × "
+                    "64) — число бывшей kHandSwingS, не сдвинутое переездом");
+    CHECK(strike.costHp == 0 && strike.costMp == 0 && strike.costSp == 0,
+                    "удар сегодня бесплатен ТРЕМЯ нулями-значениями");
+    CHECK(strike.scope == ActionScope::MicroMacro,
+                    "удар законен обоими мирами: внизу бьёт тело, наверху — "
+                    "авторезолв");
+
+    // ДОБАВКА МАССЫ — АДДИТИВНА И ЦЕЛАЯ (вердикт 2026-11-04: база = пустая
+    // рука, масса складывает, не множит). Якорь мира: кинжал в 1000 г бил
+    // 2.0 с все эпохи этого закона — 96 + 32 = 128 тиков, та же величина.
+    CHECK(sm::weapon_mass_recovery_ticks(nullptr) == 0u,
+                    "голая рука не несёт добавки: её масса ноль ПО ПРИРОДЕ");
+    sm::ItemDef dagger{};
+    dagger.massG = 1000;
+    CHECK(sm::weapon_mass_recovery_ticks(&dagger) == 32u,
+                    "килограмм железа стоит 32 тика замаха (0.5 с/кг × 64)");
+    CHECK(strike.recoveryTicks + sm::weapon_mass_recovery_ticks(&dagger)
+                        == 128u,
+                    "кинжал: 96 + 32 = 128 тиков — прежние 2.0 с закона "
+                    "массы, число мира переездом не сдвинуто");
+
+    // НАБОР СТРОКИ СУЩЕСТВА: чем кастует — говорит row_cast_action над
+    // ординалами ЕДИНОЙ таблицы; не-кастер честно отвечает kActionNone.
+    const std::uint8_t witchCast = sm::row_cast_action(sm::kWitchCombat);
+    CHECK(witchCast != sm::kActionNone
+                        && witchCast == std::uint8_t(sm::action_of_spell(
+                               sm::spell_ordinal("magic_bolt"))),
+                    "ведьма несёт свой болт ординалом ДЕЙСТВИЯ в наборе "
+                    "строки — сентинел −1 умер");
+    CHECK(sm::row_cast_action(sm::kPeasantCombat) == sm::kActionNone,
+                    "крестьянин не кастует: пустой набор отвечает kActionNone");
+    // Негативный контроль двери: БОЕВОЙ ординал в наборе кастом не считается
+    // — вопрос решает отрезок лестницы, а не занятость слота.
+    sm::CombatTemplate rowWithStrike = sm::kPeasantCombat;
+    rowWithStrike.actions[0] = sm::action_slot("strike");
+    CHECK(sm::row_cast_action(rowWithStrike) == sm::kActionNone,
+                    "strike в наборе — не каст: дверь спрашивает АРХЕТИП "
+                    "ординала, а не факт занятости слота");
+
+    // База существа — та же единица, что у строки действия (слияние имени и
+    // типа, M-396). Якорь кванта: крестьянин авторит 3.0 с = 192 тика.
+    CHECK(sm::kPeasantCombat.recoveryTicks == 192u,
+                    "база удара крестьянина: авторские 3.0 с есть 192 тика — "
+                    "колонка строки существа слита с единицей таблицы действий");
+}
+
 } // namespace
 
 int main() {
@@ -233,5 +297,6 @@ int main() {
     tempo_domain_comes_from_the_ladder();
     scope_has_three_values_and_no_nowhere();
     cost_is_all_or_nothing_across_three_pools();
+    combat_segment_strike_mass_and_row_sets();
     return sm::test::report("action_table_test");
 }

@@ -54,7 +54,7 @@ constexpr ItemDef kCatalog[] = {
     // included, without the row knowing an octopus exists.
     //
     // ТЕМПО — НИЧЬЯ КОЛОНКА: килограмм строки оценивает замах единым законом
-    // массы (`weapon_swing_seconds@src/tables/items.h` — кинжал 2.0 с … булава
+    // массы (`weapon_mass_recovery_ticks@src/tables/items.h` — кинжал 2.0 с … булава
     // 3.25 с), поэтому лестница ниже торгует СКОРОСТЬ за растущий куб. Здесь
     // стояла фраза «лук сознательно ОТСУТСТВУЕТ, ему нужен универсальный закон
     // стрельбы» — закон пришёл (`Delivery::Missile`), лук стоит в этой же
@@ -70,7 +70,7 @@ constexpr ItemDef kCatalog[] = {
         // 1d4 piercing through the Dagger skill: a rusty sticker — mean 2.5
         // against the fist's 1.5, and the point slips where a club cannot.
         // Its pace needs no column: the 1 kg above prices the swing through
-        // the mass law (anatomy.h weapon_swing_seconds).
+        // the mass law (weapon_mass_recovery_ticks@src/tables/items.h).
         /*blocks*/0, /*def*/{}, /*dice*/{1, 4},
         /*dmgType*/DamageType::Pierce, /*skill*/SkillId::Dagger},
     {"wpn_sword",   "Worn Sword",      ObjectType::Sword,      60, 2000, "\xE2\x9A\x94",
@@ -140,7 +140,7 @@ constexpr ItemDef kCatalog[] = {
     //   · ПРОЦЕНТ — ноль на всех восьми, и это МЕХАНИКА, а не пустая
     //     колонка: простой выключает ровно процент, поэтому вещи без
     //     процента в простое терять нечего — и база простоя её веса не
-    //     берёт вовсе (`armor_downtime_weight@src/bus/anketa.cpp`). Щит
+    //     берёт вовсе (`armor_downtime_grams@src/bus/anketa.cpp`). Щит
     //     стоит весь бой ПО ПОСТРОЕНИЮ, а не по ветке в двери урона;
     //   · ДВЕ ФИЗИЧЕСКИЕ КОЛОНКИ ИЗ ВОСЬМИ (`physical_block`): доска с
     //     оковкой стоит на пути того, что летит и бьёт, а шесть школ её
@@ -371,7 +371,7 @@ static_assert(catalog_is_all_things(),
 // Три утверждения одной функцией, потому что они одно: щит работает БЛОКОМ.
 //   · ПРОЦЕНТА НЕТ НИ В ОДНОЙ КОЛОНКЕ — отсюда и следует «щит не ставит
 //     простоя»: база простоя берёт вес ровно тех вещей, у которых процент
-//     есть (`armor_downtime_weight@src/bus/anketa.cpp`). Автор, дописавший
+//     есть (`armor_downtime_grams@src/bus/anketa.cpp`). Автор, дописавший
 //     щиту процент, красит СБОРКУ — и правильно: он завёл бы щит, который
 //     сбивает броню носителя своим весом, то есть блок, вызывающий простой;
 //   · БЛОК НЕНУЛЕВОЙ НА ДВУХ ФИЗИЧЕСКИХ колонках и НУЛЕВОЙ на шести школах

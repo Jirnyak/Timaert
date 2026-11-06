@@ -730,8 +730,10 @@ bool sheet_lifts_every_body(sm::sub::SubObjects& objs) {
         // the sheet may only QUICKEN the row's authored tempo — Spd and the
         // generic skill divide, nothing multiplies — and never to zero.
         if (const auto* c = sm::sub::slot_combat(objs, s)) {
-            if (!(c->cooldown > 0.0f
-                  && c->cooldown <= row.combat.cooldown + 1.0e-4f)) {
+            // Целые тики (M-396): минимум двери — один шаг, поэтому у строки
+            // с нулевой базой эффективное честно равно единице.
+            if (!(c->strikeTicks >= 1u
+                  && c->strikeTicks <= std::max(1u, row.combat.recoveryTicks))) {
                 return false;
             }
         }

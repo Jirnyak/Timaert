@@ -22,6 +22,7 @@
 #pragma once
 
 #include "core/rng.h"
+#include "core/time.h"  // kTicksPerRealSecond — период удара в целых тиках (M-396)
 #include "bus/anketa.h"
 #include "tables/npc.h"
 #include "tables/squad_type.h"   // squad_has_avatar — вклад аватара под гейтом
@@ -189,10 +190,14 @@ inline float avatar_power(const CharacterSheet& sheet, NPCType type,
     // because two answers to «как бьёт НПЦ» is two laws of battle (S13).
     // Crit expectation is uncredited like the threshold branch — both need
     // the opponent, which a per-fighter scalar lacks.
+    // Период удара — ЦЕЛЫЕ ТИКИ (M-396): dps = урон · тики-в-секунду ÷ период.
+    // Страж единицы — эффективная база двери не бывает ниже 1 шага
+    // (`recovery_steps` клампит), но dpsOverride-ветви он не касается.
     const float dps = dpsOverride >= 0.0f
         ? dpsOverride
         : float(strike_mean_x2(pc.dice, pc.flatAdd, pc.multPct))
-              * 0.5f / std::max(0.1f, pc.cooldown);
+              * 0.5f * float(kTicksPerRealSecond)
+              / float(std::max(1u, pc.recoveryTicks));
     return hp * dps;
 }
 
@@ -246,8 +251,12 @@ inline float head_power(NPCType type) {
     // НОЛЬ — ЗАКОННЫЙ ОТВЕТ: строка с `dice.n == 0` («no roll, total 0») не
     // бьёт вовсе, и кролик со жабой честно не добавляют скваду силы. До M-300
     // им её выдумывала добавка STR сгенерированной анкеты.
+    // Период удара — СЫРАЯ колонка строки в целых тиках (без двери: у головы
+    // анкеты нет); страж единицы держит строку с нулевой базой от деления на
+    // ноль — нулевая база законна («мгновенно»), бесконечная сила нет.
     const float dps = float(strike_mean_x2(row.dice, row.flatAdd, row.multPct))
-                    * 0.5f / std::max(0.1f, row.cooldown);
+                    * 0.5f * float(kTicksPerRealSecond)
+                    / float(std::max(1u, row.recoveryTicks));
     return hp * dps;
 }
 

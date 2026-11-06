@@ -117,7 +117,10 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
         // and the resolver credits the same mean, so the agreement is exact).
         f.dmg = float(strike_mean_x2(pc.dice, pc.flatAdd, 100)) * 0.5f;
         f.cd = 0.0f;
-        f.cdMax = std::max(0.1f, pc.cooldown);
+        // Период удара — целые тики проекции (M-396); харнесс мерит время
+        // секундами, перевод один и тот же у обоих концов паритета.
+        f.cdMax = float(std::max(1u, pc.recoveryTicks))
+                / float(sm::kTicksPerRealSecond);
         f.reach = pc.attackRange;
         f.speed = sm::march_speed(pc.speedMarchMult);
         f.radius = npc_body_radius(def);

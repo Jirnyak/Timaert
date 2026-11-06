@@ -321,7 +321,8 @@ int main() {
     sm::test::give_combat(objs, hostile, sm::ecs::Combat{
         sm::Dice{5, 1}, std::int16_t(0), std::int16_t(100),
         std::uint8_t(0), std::uint8_t(sm::DamageType::Blunt),
-        20.0f, 3.0f, 1.0f, 0u, sm::ecs::Combat::Melee, /*armorSteps*/std::uint16_t{0}});
+        20.0f, 3.0f, /*strikeTicks*/sm::steps_from_seconds(1.0f), 0u,
+        sm::ecs::Combat::Melee, /*armorSteps*/std::uint16_t{0}});
     sm::test::give_ai(objs, hostile,
                       sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat,
                                           0.0f, 4.0f, 4.0f, 8.0f, 1.0f});

@@ -289,7 +289,7 @@ ecs::Combat combat_from_sheet(const CharacterSheet& sheet,
     return ecs::Combat{
         pc.dice, pc.flatAdd, pc.multPct, pc.luck,
         std::uint8_t(pc.dmgType), march_speed(pc.speedMarchMult),
-        pc.attackRange, pc.cooldown, /*recoverySteps*/0u,
+        pc.attackRange, /*strikeTicks*/pc.recoveryTicks, /*recoverySteps*/0u,
         pc.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
                                                  : ecs::Combat::Melee,
         // Броня в строю: простой — факт ПРОИСШЕДШЕГО удара, а не свойство

@@ -64,7 +64,12 @@ struct Combat {
     std::uint8_t dmgType;
     float speed;            // grid units / s
     float attackRange;
-    float cooldown;         // authored seconds (the table's own number)
+    // ЭФФЕКТИВНАЯ база удара ЭТОГО тела, в целых тиках: выход двери
+    // восстановления (project_combat / hand_strike_fields), уже поделённый
+    // резвостью Spd и генериком домена. Каждый замах заряжает гейт ниже
+    // ровно этим числом — секунды на пути восстановления не живут нигде
+    // (M-396, ЗАКОН ТИПА п.5; имя cooldown умерло вместе с флоатом).
+    std::uint32_t strikeTicks;
     // THE recovery gate — the body's ONE «occupied» clock (owner verdict
     // 2026-09-09): steps left before this body may ACT again. A swing charges
     // it, a cast charges it (spellbook_cast), a future shot will charge it —

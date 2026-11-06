@@ -1783,8 +1783,8 @@ inline CharacterSheet effective_sheet(const CharacterSheet& base,
 //   damage = base.damage + (missile ? intl·(1+spellcraft·0.05)  // caster: spell stats
 //                                    : str ·(1+fighter   ·0.05)) // melee : physical stats
 // The authored template supplies the per-role HP/damage FLOOR plus the attack
-// identity (speed / range / cooldown / kind / missile params / label), all
-// preserved verbatim. Level is captured implicitly by the sheet's spent points
+// identity (speed / range / recovery base / kind / missile params / label),
+// all preserved verbatim. Level is captured implicitly by the sheet's spent points
 // (a level-N sheet has more attributes/skills), so callers MUST NOT apply an
 // additional per-level multiplier on top of this — the sheet IS the scaling.
 //
@@ -1805,8 +1805,11 @@ inline int sheet_strike_mult_pct(const CharacterSheet& sheet,
     // A CAST reads the rank of the spell's OWN school — the very sentence the
     // player's cast reads (spell_book.cpp spell_mult_pct). A sleeping tag
     // (no school) multiplies by nothing, exactly as it does for the player.
-    if (spell_ordinal_ok(base.castSpell)) {
-        const SkillId school = spell_school(kSpellDefs[base.castSpell]);
+    // Чем строка кастует — говорит её НАБОР действий (M-396, row_cast_action).
+    if (const std::uint8_t castAct = row_cast_action(base);
+        castAct != kActionNone) {
+        const SkillId school =
+            spell_school(kSpellDefs[spell_of_action(int(castAct))]);
         return school == SkillId::Count
                    ? 100 : skill_mult_pct(sheet.skills, school);
     }
@@ -1853,8 +1856,10 @@ inline CombatTemplate project_combat(const CharacterSheet& sheet,
     //
     // Until the spell column existed, `Missile` MEANT "caster", so the first
     // NPC archer would have drawn an INT bonus from a column about delivery.
-    const SpellDef* cast = spell_ordinal_ok(base.castSpell)
-                               ? &kSpellDefs[base.castSpell] : nullptr;
+    const std::uint8_t castAct = row_cast_action(base);
+    const SpellDef* cast =
+        castAct != kActionNone
+            ? &kSpellDefs[spell_of_action(int(castAct))] : nullptr;
     float atkBonus = 0.0f;
     if (cast) {
         out.dice    = cast->dice;
@@ -1871,22 +1876,21 @@ inline CombatTemplate project_combat(const CharacterSheet& sheet,
     out.luck    = std::uint8_t(sheet.attributes.of(AttributeId::Lck));
     // TEMPO through the same recovery door as the player's hand (CANON S14
     // «один рычаг», 2026-09-07 — S4: спец-кода игрока нет, значит и спец-
-    // кривой НПЦ нет): the row's authored cooldown is the BASE, the sheet's
+    // кривой НПЦ нет): the row's authored base is the BASE, the sheet's
     // Spd + the generic of the attack's domain divide it — a quick veteran
     // bandit genuinely strikes faster than a peasant with the same club. One
-    // rounding, in the door; seconds again for the float carrier the strike
-    // pass converts per swing (steps_from_seconds).
+    // rounding, in the door.
     // The GENERIC of the act's own domain: Spellcraft paces a CAST, and
     // Armsmaster paces every physical act — a swing and a SHOT alike (a bow
     // is drawn by arms, not by a casting hand; before the split, the row's
     // delivery column decided this too).
-    // Авторские СЕКУНДЫ строки существа переводятся в тики ЗДЕСЬ, на месте
-    // вызова: дверь берёт тики (M-369), а эта база ещё не переехала в единую
-    // таблицу — её ломоть «базы удара и существа» (M-396). Арифметика
-    // тождественна прежней: тот же `steps_from_seconds`, то же округление.
-    out.cooldown = seconds_from_steps(std::uint32_t(recovery_steps(
-        steps_from_seconds(base.cooldown), sheet.attributes, sheet.skills,
-        cast ? SkillId::Spellcraft : SkillId::Armsmaster)));
+    // База — ЦЕЛЫЕ ТИКИ колонки строки (M-396: колонка слита с recoveryTicks
+    // строки действия по имени, типу и единице; авторские секунды живут
+    // только в авторинге). Дверь берёт тики и возвращает ШАГИ — то же число
+    // мира, и флоата на пути восстановления не остаётся ни одного.
+    out.recoveryTicks = std::uint32_t(recovery_steps(
+        base.recoveryTicks, sheet.attributes, sheet.skills,
+        cast ? SkillId::Spellcraft : SkillId::Armsmaster));
     // The POWER half of the same split: the typed skill multiplies the dice
     // (the door above already gave the generic pair to TEMPO — one handle,
     // one lever). Both consumers read THIS field now: the fought body
@@ -2033,8 +2037,9 @@ bool wears_armor(const Gear& g, const Inventory& inv);
 // дверью, прямо против вердикта владельца («блок никогда вообще не вызывает
 // простой это другая колонка даже в том и смысл»). Вес платит ровно то, что
 // простой выключает, и вопрос задаётся КОЛОНКЕ (`has_armor_percent`), а не
-// роду вещи.
-float armor_downtime_weight(const Gear& g, const Inventory& inv);
+// роду вещи. Подпись — ГРАММЫ ЦЕЛЫМИ (M-396): перевод в тики делает закон
+// простоя одной целой арифметикой, флоат на пути восстановления умер.
+int armor_downtime_grams(const Gear& g, const Inventory& inv);
 // ...и сама база, пропущенная через дверь темпа: шаги простоя, которые ставит
 // удар, дошедший сквозь блок. НОЛЬ, если брони не надето — и это не ветка, а
 // предельный случай: у голого тела и у вросшей шкуры сбивать нечего, поэтому
@@ -2080,9 +2085,10 @@ struct StrikeFields {
     std::int16_t  multPct = 100;
     std::uint8_t  luck    = 0;
     // Steps the arm needs between blows — the recovery door's verdict over
-    // the mass law's base. Default = the bare hand at a zero sheet
-    // (kHandSwingS × 64), so a fields{} harness literal swings honestly.
-    int           recoverySteps = 96;
+    // the strike row's base plus the mass add. Default = the bare hand at a
+    // zero sheet — САМА строка `strike` (96 тиков), не её дубль числом
+    // (M-396), so a fields{} harness literal swings honestly.
+    int           recoverySteps = int(action_def(kActionStrike).recoveryTicks);
     Delivery      delivery = Delivery::Melee;
     float         range    = 0.0f;
 };
