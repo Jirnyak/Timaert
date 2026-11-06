@@ -47,7 +47,6 @@ SKELETON.md	:1219-1222
 SKELETON.md	:1260-1266
 SKELETON.md	:1277
 SKELETON.md	:129
-SKELETON.md	:132
 SKELETON.md	:1321
 SKELETON.md	:143
 SKELETON.md	:156-158
@@ -182,7 +181,6 @@ SKELETON.md	econ_day.cpp:209
 SKELETON.md	econ_day.cpp:95-99
 SKELETON.md	econ_day.h:114-115
 SKELETON.md	econ_day.h:18-19
-SKELETON.md	econ_day.h:86
 SKELETON.md	econ_v1_test.cpp:565
 SKELETON.md	economy.cpp:46-63
 SKELETON.md	economy.cpp:85
@@ -207,7 +205,6 @@ SKELETON.md	features.h:202
 SKELETON.md	gens/dispatch.cpp:95
 SKELETON.md	gpu/vk_renderer.cpp:239-244
 SKELETON.md	height.h:147
-SKELETON.md	items.cpp:254-303
 SKELETON.md	items.cpp:28
 SKELETON.md	items.cpp:444-447
 SKELETON.md	items.cpp:466-470
@@ -404,7 +401,6 @@ SKELETON.md	threat_field.h:55
 SKELETON.md	tree_layer.cpp:34
 SKELETON.md	tree_layer.cpp:5
 SKELETON.md	ui/map_screen.cpp:335
-SKELETON.md	ui/overlays.cpp:1253
 SKELETON.md	ui/overlays.cpp:1653-1660
 SKELETON.md	ui/overlays.cpp:2764-2765
 SKELETON.md	ui/screens.cpp:387-392
