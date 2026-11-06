@@ -610,6 +610,70 @@ void collect_identity(std::vector<Site>& out) {
     }
 }
 
+// ── R9: ГЕЙТ ЗАНЯТОСТИ ПИШЕТСЯ ТОЛЬКО ДВЕРЬЮ ЗАРЯДА (M-174) ───────────────
+//
+// Субъектов-гейтов `recoverySteps` два — ТЕЛО (`ecs::Combat`) и СКВАД
+// (`MacroNpcRuntime`), у каждого ровно одна МОНОТОННАЯ дверь заряда
+// (`charge_body@src/sub/ability.h`, `charge_squad_recovery@src/bus/squad_row.h`)
+// и ровно один слив. Сырая запись мимо двери — класс дефекта M-313: заряд
+// поверх идущего долга молча УКОРАЧИВАЛ его (живая дыра до M-174 —
+// безгейтовый путь рубки: консольная chop и смоук-лаборатории зовут
+// `harvest_prop_near_player` мимо `harvest_action`). Дома дверей и сливов
+// исключены из скана ПОИМЁННО, как store.h у R8; допуск один — сброс
+// прибора смоука (телепорт-фикстура освобождает руку аватара, max-дверью
+// сброс невыразим), и он стоит строкой тающего списка.
+//
+// Скан — только src/: свидетель РОЖАЕТ своё предусловие (§8 п.11), и
+// фикстура теста, пишущая гейт рантаймом, законна по построению — судить
+// её значило бы запретить тестам ставить мир.
+bool line_writes_recovery_steps(const std::string& line) {
+    std::string code = line;
+    const std::size_t comment = code.find("//");
+    if (comment != std::string::npos) code.resize(comment);
+    constexpr std::string_view kField = "recoverySteps";
+    for (std::size_t key = code.find(kField); key != std::string::npos;
+         key = code.find(kField, key + 1)) {
+        if (key > 0 && ident_char(code[key - 1])) continue;  // чужой префикс
+        std::size_t i = key + kField.size();
+        if (i < code.size() && ident_char(code[i])) continue;  // чужой хвост
+        while (i < code.size() && code[i] == ' ') ++i;
+        // Чужой `-=`/`+=` — тоже запись: слив у каждого гейта один.
+        if (i + 1 < code.size() && (code[i] == '-' || code[i] == '+')
+            && code[i + 1] == '=')
+            return true;
+        if (i < code.size() && code[i] == '='
+            && (i + 1 >= code.size() || code[i + 1] != '='))
+            return true;
+    }
+    return false;
+}
+
+void collect_recovery_writers(std::vector<Site>& out) {
+    const fs::path dir = fs::path(kRoot) / fs::path("src");
+    if (!fs::is_directory(dir)) return;
+    std::vector<fs::path> files;
+    for (const auto& e : fs::recursive_directory_iterator(dir)) {
+        if (!e.is_regular_file()) continue;
+        const std::string ext = e.path().extension().string();
+        if (ext == ".cpp" || ext == ".h") files.push_back(e.path());
+    }
+    std::sort(files.begin(), files.end());
+    for (const fs::path& p : files) {
+        const std::string rel =
+            fs::relative(p, fs::path(kRoot)).generic_string();
+        // Сами двери, сливы и объявления гейтов — поимённые дома закона.
+        if (rel == "src/sub/ability.h") continue;    // charge_body + слив тела
+        if (rel == "src/bus/squad_row.h") continue;  // дверь сквада + колонка
+        if (rel == "src/macro/npc_ai.cpp") continue; // слив сквада (свип)
+        if (rel == "src/macro/npc_spawn.cpp") continue;  // рождение свободным
+        const std::vector<std::string> lines = split_lines(read_file(p));
+        for (std::size_t n = 0; n < lines.size(); ++n) {
+            if (!line_writes_recovery_steps(lines[n])) continue;
+            out.push_back({"recovery", rel, collapse(lines[n]), int(n) + 1});
+        }
+    }
+}
+
 // ── R5: КАРКАС КАТАЛОГОВ ЗАКРЫТ ───────────────────────────────────────────
 // Чистая сверка двух множеств — на неё стоит негативный контроль ниже.
 struct DirDiff {
@@ -790,6 +854,10 @@ Boundary test_melting_rules() {
     const std::size_t identityCount = sites.size() - channelCount
                                       - verdictCount - enttCount - subcapCount
                                       - minusCount;
+    collect_recovery_writers(sites);
+    const std::size_t recoveryCount = sites.size() - channelCount
+                                      - verdictCount - enttCount - subcapCount
+                                      - minusCount - identityCount;
 
     CHECK(channelCount > 0,
           "включения macro/ из src/sub ЕСТЬ — иначе судить нечего, и зелёный "
@@ -820,9 +888,10 @@ Boundary test_melting_rules() {
           "архитектурный долг не вырос: новых включений macro/ в src/sub, "
           "новых безадресных вердиктов в SKELETON.md, новых файлов с entt "
           "(M-188), новых чтений макро-капа из src/sub (шаг 0 M-150), "
-          "новых голых -= в macro/sub/bus/tables (ЗАКОН ТРЁХ ДВЕРЕЙ, M-243) "
-          "и новых "
-          "сырых писателей spawnId мимо двери стора (M-271) нет");
+          "новых голых -= в macro/sub/bus/tables (ЗАКОН ТРЁХ ДВЕРЕЙ, M-243), "
+          "новых "
+          "сырых писателей spawnId мимо двери стора (M-271) и новых сырых "
+          "писателей гейта recoverySteps мимо дверей заряда (M-174) нет");
     CHECK(diff.stale == 0, "в белом списке нет строк, которых в дереве уже нет");
 
     std::printf(
@@ -833,9 +902,12 @@ Boundary test_melting_rules() {
         "(КАНДИДАТОВ; перепись по типам M-218 2026-10-12: беззнаковых среди "
         "них 1, и та не величина симуляции — две копилки тиков переведены на "
         "try_spend)\n"
+        "  сырых писателей recoverySteps %zu (M-174: ЗАПРЕТ — двери и сливы "
+        "обоих гейтов стоят поимёнными домами; допуск один — сброс прибора "
+        "смоука)\n"
         "  строк списка %zu (может только таять)\n",
         channelCount, verdictCount, enttCount, subcapCount, minusCount,
-        identityCount, allowed.size());
+        identityCount, recoveryCount, allowed.size());
 
     return Boundary{channelCount, verdictCount, enttCount};
 }
@@ -903,6 +975,23 @@ void test_detectors_actually_see() {
           "копия колонки в локаль — тоже чтение");
     CHECK(!line_writes_spawn_id("// было: st.spawnId[h.slot] = {7u};"),
           "запись в комментарии — проза, не код");
+
+    // R9: запись гейта ловится в обеих манерах, чтение и проза — нет.
+    CHECK(line_writes_recovery_steps("    pc->recoverySteps = ticks;"),
+          "сырая запись гейта видна детектору");
+    CHECK(line_writes_recovery_steps("    c.recoverySteps -= steps;"),
+          "чужой декремент мимо слива — тоже запись");
+    CHECK(line_writes_recovery_steps(
+              "    if (t > rt.recoverySteps) rt.recoverySteps = t;"),
+          "запись после чтения в той же строке видна (форма max-двери)");
+    CHECK(!line_writes_recovery_steps("    if (c->recoverySteps > 0u) return;"),
+          "ЧТЕНИЕ гейта законно — детектор на него молчит");
+    CHECK(!line_writes_recovery_steps("    return gate->recoverySteps == 0u;"),
+          "сравнение — чтение, а не запись");
+    CHECK(!line_writes_recovery_steps("// было: c.recoverySteps = 0;"),
+          "запись в комментарии — проза, не код");
+    CHECK(!line_writes_recovery_steps("    std::uint32_t recoverySteps;"),
+          "объявление без инициализатора записью не является");
 
     // R3: три законные формы адреса опознаются, а безадресное — нет.
     CHECK(has_address("дверь `cell_of@src/core/torus.h` — ПРАВДА"),

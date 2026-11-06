@@ -107,3 +107,4 @@ minus	src/tables/movement_cost.h	carry -= float(whole);
 minus	src/bus/anketa.h	p.hp -= a.costHp;
 minus	src/bus/anketa.h	p.mp -= a.costMp;
 minus	src/bus/anketa.h	p.sp -= a.costSp;
+recovery	src/app/smoke.cpp	if (auto* c = sm::sub::slot_combat(objs, av)) c->recoverySteps = 0u;
