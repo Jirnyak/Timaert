@@ -21,6 +21,7 @@
 #include "sub/record.h"
 #include "tables/squad_type.h"   // squad_archetype — ось рода (M-90)
 #include "sub/body.h"
+#include "sub/ability.h"         // charge_body — ОДНА дверь заряда гейта тела
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -786,7 +787,7 @@ bool refresh_body_strike(SubObjects& objs, const MacroStore* st, int s) {
     // how strong it is (ecs::Combat::recoverySteps).
     const std::uint32_t recovering = combat->recoverySteps;
     *combat = combat_from_sheet(eff, def);
-    combat->recoverySteps = recovering;
+    charge_body(combat, recovering);  // свежий лист рождается свободным — max = перенос
     return true;
 }
 

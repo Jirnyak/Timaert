@@ -6,6 +6,7 @@
 #include "macro/squad.h"   // refresh_squad_body — пересчёт производных анкеты
 #include "sub/body.h"   // body_radius — the caster shell the muzzle clears
 #include "sub/record.h" // state_of — whose sheet the casting body mirrors
+#include "sub/ability.h" // charge_ability_ticks — ОДНА дверь заряда тела
 
 #include <cstddef>
 #include <cmath>
@@ -220,22 +221,21 @@ bool spellbook_cast(sub::SubObjects* objs, MacroStore* st,
                                gate ? gate->recoverySteps : 0u).ok)
         return false;
     const SpellDef* d = &kSpellDefs[spellOrd];
-    // Every action that HAPPENS charges the one gate with the row's recovery
-    // through THE door (S14: Spd asymptote × Spellcraft — the casts' generic;
-    // the school stays the POWER lever). A master returns fire sooner, haste
-    // (+Spd on the effective sheet) quickens every cast with no code here.
-    // Floor = one step (the time quantum), so even a zero-base row occupies
-    // the body for the instant it acted in.
+    // Every action that HAPPENS charges the one gate through THE door — the
+    // same `charge_ability_ticks@src/sub/ability.h` a swing and a sip pay
+    // (S14: линейная ставка Spd × генерик домена; the school stays the POWER
+    // lever). A master returns fire sooner, haste (+Spd on the effective
+    // sheet) quickens every cast with no code here. Нулевая база (magic_bolt,
+    // haste, flight) НЕ занимает тело вовсе: ноль — значение (ЗАКОН
+    // СПОСОБНОСТИ п.2); прежняя запись гейта своей рукой ставила ей пол в
+    // один тик — второй закон нуля рядом с дверью, снесён (M-174).
     const auto charge_gate = [&] {
-        if (gate) {
-            // База — КОЛОНКА строки действия в тиках; домен темпа даёт
-            // ЛЕСТНИЦА (`action_tempo_generic@src/tables/actions.h`), а не
-            // подстановка звонящего: Спеллкрафт здесь больше не вписан руками.
-            const ActionDef& act = action_def(action_of_spell(spellOrd));
-            gate->recoverySteps = std::uint32_t(recovery_steps(
-                act.recoveryTicks, attributes, skills,
-                action_tempo_generic(act)));
-        }
+        // База — КОЛОНКА строки действия в тиках; домен темпа даёт
+        // ЛЕСТНИЦА (`action_tempo_generic@src/tables/actions.h`), а не
+        // подстановка звонящего: Спеллкрафт здесь больше не вписан руками.
+        const ActionDef& act = action_def(action_of_spell(spellOrd));
+        sub::charge_ability_ticks(gate, act.recoveryTicks, attributes,
+                                  skills, action_tempo_generic(act));
     };
     // ОДИН ВХОД В НАЧАЛО КАСТА НА ВЕСЬ ЭТОТ ФАЙЛ (M-301): если субъект
     // назван — дверь уровня сквада (она пересчитает производные, когда

@@ -92,6 +92,25 @@ inline void tick_body_visual_interp(SubObjects& objs, float dt) {
     }
 }
 
+// ЗАНЯТЬ ТЕЛО — ЕДИНСТВЕННАЯ ЗАПИСЬ ГЕЙТА ЗАНЯТОСТИ, И ОНА МОНОТОННА.
+// Зеркало сквадной `charge_squad_recovery@src/bus/squad_row.h`: один закон
+// восстановления, два субъекта-гейта (тело и сквад), и обе двери заряда не
+// умеют ни укоротить, ни обнулить чужой долг — класс дефекта M-313
+// (обнуление гейта чужой рукой) невыразим ПО ПОСТРОЕНИЮ, а не дисциплиной.
+// Куплено живой дырой: безгейтовый путь рубки (консольная `chop`,
+// смоук-лаборатории зовут `harvest_prop_near_player` мимо `harvest_action`)
+// заряжал поверх идущего долга и УКОРАЧИВАЛ его до длины своего акта.
+// Сюда приходит ЭФФЕКТИВНОЕ число тиков: базу строки резвостью Spd и
+// генериком домена делит `recovery_steps@src/bus/anketa.h` у звонящего —
+// у замаха ещё при пересборке листа (колонка `strikeTicks`), у прочих
+// действий в двух передних ниже. Слив один — `tick_body_recovery` выше,
+// долг тает только временем; сброс прибора смоука — поимённый допуск
+// стены `arch_guard_test`, в симуляции сброса не существует.
+inline void charge_body(ecs::Combat* gate, std::uint32_t pacedTicks) {
+    if (gate == nullptr) return;
+    if (pacedTicks > gate->recoverySteps) gate->recoverySteps = pacedTicks;
+}
+
 // ЗАНЯТЬ РУКУ на длину, которую называет СТРОКА действия.
 //
 // `baseSeconds` — колонка строки (спелла, предмета, действия), а делится она
@@ -115,8 +134,8 @@ inline void charge_ability(ecs::Combat* gate, float baseSeconds,
     // зелье и рычаг не переехали строками в единую таблицу, их авторские
     // секунды переводятся на месте вызова — так флоат уходит носитель за
     // носителем, а дверь остаётся одна.
-    gate->recoverySteps = std::uint32_t(recovery_steps(
-        steps_from_seconds(baseSeconds), attributes, skills, generic));
+    charge_body(gate, std::uint32_t(recovery_steps(
+        steps_from_seconds(baseSeconds), attributes, skills, generic)));
 }
 
 // ТА ЖЕ ДВЕРЬ ДЛЯ СТРОК ТАБЛИЦЫ ДЕЙСТВИЙ — база уже в ЦЕЛЫХ ТИКАХ (M-396:
@@ -129,8 +148,8 @@ inline void charge_ability_ticks(ecs::Combat* gate, std::uint32_t baseTicks,
                                  const Skills& skills, SkillId generic) {
     if (gate == nullptr) return;
     if (baseTicks == 0u) return;               // ноль — значит ноль
-    gate->recoverySteps = std::uint32_t(
-        recovery_steps(int(baseTicks), attributes, skills, generic));
+    charge_body(gate, std::uint32_t(
+        recovery_steps(int(baseTicks), attributes, skills, generic)));
 }
 
 // ТА САМАЯ ОДНА ДВЕРЬ: спросить гейт и, если рука свободна, занять её.

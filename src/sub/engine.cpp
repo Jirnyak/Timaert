@@ -2640,7 +2640,7 @@ void SubworldEngine::tick_player_melee() {
     // action shares (a cast charges the same field via spellbook_cast), so a
     // hand mid-recovery from anything swings nothing. Drained by the one
     // tick_body_recovery like every fighter's.
-    if (pc->recoverySteps > 0u) return;
+    if (!sub::body_is_free(pc)) return;
     const ecs::Combat strikeStats = *pc;  // scalars up front (see above)
     // EVERY swing swings (owner 2026-09-06, the «не чувствуется сражение»
     // session): the recovery is paid and the whoosh is heard whether the arc
@@ -2648,7 +2648,7 @@ void SubworldEngine::tick_player_melee() {
     // free and silent — holding attack in a clearing "swung" every frame and
     // the first real feedback of the whole melee loop was the enemy's flash.
     // Written BEFORE any emplace below (see the dangling note above).
-    pc->recoverySteps = strikeStats.strikeTicks;
+    sub::charge_body(pc, strikeStats.strikeTicks);
     queue_sfx(SfxId::MeleeSwing);
     // TIMAERT_COMBAT_LOG: the owner's verification channel — one stderr line
     // per swing, greppable as [melee].
@@ -3951,7 +3951,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         // A blocked or dead-blocked swing still swung: the recovery pays
         // either way, or a fully-armoured target would grant free retries
         // every step.
-        c.recoverySteps = c.strikeTicks;
+        sub::charge_body(&c, c.strikeTicks);
         (void)hit;
     };
 
@@ -3985,14 +3985,14 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         auto* cp = sub::slot_combat(arena, s);
         if (!cp) continue;
         auto& c = *cp;
-        if (c.recoverySteps > 0u) continue;
+        if (!sub::body_is_free(&c)) continue;
         const bool owned = sub::slot_flag(arena, s, sub::kObjPlayerSoldier);
         if (c.kind == ecs::Combat::Missile) {
             const ecs::Position& p = arena.pos[std::size_t(s)];
             const ecs::Position& tp = arena.pos[std::size_t(targetSlot)];
             spawn_npc_missile(arena, s, p, c, combatRng_, tp.x, tp.y, tp.z,
                               targetSlot);
-            c.recoverySteps = c.strikeTicks;
+            sub::charge_body(&c, c.strikeTicks);
             continue;
         }
         strike(s, targetSlot, c, owned);
