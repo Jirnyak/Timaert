@@ -142,10 +142,8 @@ endif()
 # platform/input/audio only. See ARCHITECTURE.md Rendering & Compute Backend.
 find_package(Vulkan REQUIRED)
 
-file(GLOB_RECURSE SAMOSBOR_SOURCES CONFIGURE_DEPENDS
-    src/app/*.cpp src/core/*.cpp src/bus/*.cpp src/gpu/*.cpp src/ecs/*.cpp
-    src/tables/*.cpp src/macro/*.cpp src/sub/*.cpp src/events/*.cpp
-    src/content/*.cpp src/ui/*.cpp src/assets/*.cpp)
+# (SAMOSBOR_SOURCES умер с ломтём 5 M-171: игра собирается модулями-видами
+#  timaert_module ниже, по глобу НА МОДУЛЬ — закон GLOB_RECURSE цел.)
 
 # GPU (Vulkan) sources, also reused standalone by the gpu_smoke bring-up target.
 file(GLOB TIMAERT_GPU_SOURCES CONFIGURE_DEPENDS src/gpu/*.cpp)
@@ -182,17 +180,9 @@ set(TIMAERT_GENS_SOURCES
     src/sub/gens/road.cpp
     src/sub/gens/field.cpp)
 
-add_executable(${PROJECT_NAME} ${SAMOSBOR_SOURCES})
-target_sources(${PROJECT_NAME} PRIVATE ${IMGUI_SOURCES})
-target_include_directories(${PROJECT_NAME} PRIVATE
-    ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
-if(TIMAERT_DEBUG_UI)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE TIMAERT_DEBUG_UI)
-endif()
-
-
-target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_SOURCE_DIR}/src ${stb_SOURCE_DIR})
+# (СБОРКА ИГРЫ ПЕРЕЕХАЛА НИЖЕ `timaert_build_flags` — ломоть 5 M-171: игра
+#  собирается МОДУЛЯМИ-ВИДАМИ (`timaert_module`), и каждому модулю нужен
+#  таргет флагов, объявленный раньше его. Здесь остался только штамп хэша.)
 
 # The built commit's hash, stamped into the title-menu footer. Regenerated
 # every build (not at configure time — that goes stale between commits);
@@ -204,11 +194,6 @@ add_custom_target(timaert_git_hash
         -P ${CMAKE_SOURCE_DIR}/cmake/git_hash.cmake
     BYPRODUCTS ${CMAKE_BINARY_DIR}/generated/git_hash.h
     COMMENT "Stamping git hash")
-add_dependencies(${PROJECT_NAME} timaert_git_hash)
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_BINARY_DIR}/generated)
-if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
-    target_compile_definitions(${PROJECT_NAME} PRIVATE TIMAERT_HAS_SDL_MIXER=1)
-endif()
 
 # Asset symlink: build/assets -> ../public/assets (TS reference assets).
 set(_TIMAERT_TS_ASSETS "${CMAKE_SOURCE_DIR}/assets")
@@ -216,24 +201,6 @@ if(EXISTS "${_TIMAERT_TS_ASSETS}")
     if(NOT EXISTS "${CMAKE_BINARY_DIR}/assets")
         execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
             "${_TIMAERT_TS_ASSETS}" "${CMAKE_BINARY_DIR}/assets")
-    endif()
-endif()
-
-target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2 Vulkan::Vulkan)
-if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
-    target_link_libraries(${PROJECT_NAME} PRIVATE ${TIMAERT_SDL2_MIXER_TARGET})
-endif()
-if(WIN32)
-    target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2main)
-    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:SDL2::SDL2>
-            $<TARGET_FILE_DIR:${PROJECT_NAME}>)
-    if(TARGET SDL2_mixer::SDL2_mixer)
-        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_FILE:SDL2_mixer::SDL2_mixer>
-                $<TARGET_FILE_DIR:${PROJECT_NAME}>)
     endif()
 endif()
 
@@ -290,7 +257,140 @@ else()
         # -fno-finite-math-only keeps NaN/Inf checks working under fast-math.
         -ffast-math -fno-finite-math-only)
 endif()
-target_link_libraries(${PROJECT_NAME} PRIVATE timaert_build_flags)
+# ── ВИД ДЕРЕВА: СТЕНА ФРЕЙМА п.7 СТАВИТСЯ ПРЕПРОЦЕССОРОМ (ломоть 5 M-171) ──
+# Вердикт владельца: «ЭТО ЛУШЧ ЕДАЖЕ КАКТО НЕ СЛОВАМИ А СТРОГО НА УРОВНЕ
+# КОМПИЛЯТОРО КОНТРОЛИРВАТЬ ЧТОБЫ НИ ОДИН БИТ МИМО ШИНЫ ПАКЕТОВ НЕ
+# ПРОСОЧИЛСЯ». Механизм — РАЗНЫЕ ПУТИ ВКЛЮЧЕНИЯ У РАЗНЫХ ТАРГЕТОВ: игра
+# собирается OBJECT-модулями по поддеревьям src/, и единственный include-путь
+# модуля — каталог-вид из симлинков ТОЛЬКО на разрешённые поддеревья, поэтому
+# запрещённый заголовок для препроцессора НЕ СУЩЕСТВУЕТ (fatal error: file
+# not found), а не «замечен на ревью». `#include "sub/engine.h"` работает
+# дословно — ноль правок в исходниках.
+#
+# Список разрешённого перестал быть прозой §11 и стал аргументом VIEW; долг
+# стоит ФИЗИЧЕСКОЙ ссылкой в build/view/<модуль>/ — его снимают, а не помнят.
+# Тесты остаются на полном src/ — они приборы и законно видят оба мира.
+set(TIMAERT_VIEW_ROOT ${CMAKE_BINARY_DIR}/view)
+
+function(timaert_module _name)
+    cmake_parse_arguments(_m "" "" "VIEW;LINK;INCLUDE" ${ARGN})
+
+    # ЗАКОН GLOB ЦЕЛ (§6): глоб идёт по РЕАЛЬНОМУ src/ — новый .cpp модуля
+    # подхватывается сам, а пути TU в диагностике и в .ninja_log остаются
+    # настоящими (прибор tu_time_jump помнит TU по имени файла).
+    file(GLOB_RECURSE _srcs CONFIGURE_DEPENDS
+        ${CMAKE_SOURCE_DIR}/src/${_name}/*.cpp)
+    if(NOT _srcs)
+        message(FATAL_ERROR "timaert_module(${_name}): ни одного .cpp")
+    endif()
+
+    # ВИД ПЕРЕСОБИРАЕТСЯ ЦЕЛИКОМ НА КАЖДОЙ КОНФИГУРАЦИИ. Иначе снятое из
+    # VIEW поддерево оставалось бы ссылкой в build/ и стена МОЛЧА переставала
+    # бы быть стеной — ровно тот класс дефекта, ради которого она заводится.
+    set(_view ${TIMAERT_VIEW_ROOT}/${_name})
+    file(REMOVE_RECURSE ${_view})
+    file(MAKE_DIRECTORY ${_view})
+    foreach(_sub ${_m_VIEW})
+        if(NOT IS_DIRECTORY ${CMAKE_SOURCE_DIR}/src/${_sub})
+            message(FATAL_ERROR "timaert_module(${_name}): нет src/${_sub}")
+        endif()
+        file(CREATE_LINK ${CMAKE_SOURCE_DIR}/src/${_sub} ${_view}/${_sub}
+            SYMBOLIC)
+    endforeach()
+
+    add_library(timaert_${_name} OBJECT ${_srcs})
+    set_target_properties(timaert_${_name} PROPERTIES
+        CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+    # ЕДИНСТВЕННЫЙ путь к дереву исходников — вид; src/ здесь нет и быть
+    # не может.
+    target_include_directories(timaert_${_name} PRIVATE ${_view} ${_m_INCLUDE})
+    target_link_libraries(timaert_${_name} PRIVATE timaert_build_flags
+        ${_m_LINK})
+    if(TIMAERT_DEBUG_UI)
+        target_compile_definitions(timaert_${_name} PRIVATE TIMAERT_DEBUG_UI)
+    endif()
+    if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
+        target_compile_definitions(timaert_${_name} PRIVATE
+            TIMAERT_HAS_SDL_MIXER=1)
+        # Включения миксера (SDL_mixer.h у macro/audio.cpp) приезжают
+        # usage-requirement'ом цели; линкует миксер по-прежнему exe.
+        target_link_libraries(timaert_${_name} PRIVATE
+            ${TIMAERT_SDL2_MIXER_TARGET})
+    endif()
+    set_property(GLOBAL APPEND PROPERTY TIMAERT_MODULES timaert_${_name})
+endfunction()
+
+# Списки VIEW — лестница §11, ЗАМЫКАНИЕМ (вид обязан нести транзитивные
+# заголовки, не только прямые включения). core/ и ecs/ заголовочные — своих
+# модулей у них нет, они живут внутри чужих видов.
+timaert_module(tables  VIEW core tables)
+timaert_module(bus     VIEW bus core tables)
+# gpu видит tables — нейтральный слой каталогов («по обе стороны», §11);
+# обратного ребра нет: вид gpu БЕЗ macro и sub — ЗАКОН ТУПИКА РЕНДЕРА
+# впервые держит компилятор, а не проза.
+timaert_module(gpu     VIEW core gpu tables
+                       LINK SDL2::SDL2 Vulkan::Vulkan
+                       INCLUDE ${stb_SOURCE_DIR})
+# macro — точно §11: ноль долга, стена встаёт сразу (sub в виде НЕТ).
+timaert_module(macro   VIEW bus core ecs gpu macro tables
+                       LINK SDL2::SDL2 Vulkan::Vulkan)
+# ДОЛГ КАНАЛА — ссылка macro в виде субмира: 4 нитки (конверт macro_world,
+# cell_facts + map_generator — дальномир M-151, state.h — род 6). Стена
+# sub↛macro поднимается снятием ЭТОЙ строки, когда канал опустеет; events
+# из вида УЖЕ снят (ломоть 5 шаг 1и — событий субмир больше не трогает).
+timaert_module(sub     VIEW bus core ecs gpu macro sub tables
+                       LINK SDL2::SDL2 Vulkan::Vulkan)
+timaert_module(events  VIEW bus core ecs events macro tables)
+timaert_module(content VIEW bus content core ecs events macro sub tables
+                       LINK SDL2::SDL2 Vulkan::Vulkan)
+# ДОЛГ: sprite_atlas включает ui/ui_gpu.h снизу вверх — ссылка ui в виде
+# assets стоит до его разбора (дом долга — ряд M-171).
+timaert_module(assets  VIEW assets core gpu tables ui
+                       LINK SDL2::SDL2 Vulkan::Vulkan
+                       INCLUDE ${imgui_SOURCE_DIR} ${stb_SOURCE_DIR})
+timaert_module(ui      VIEW assets bus content core ecs events gpu macro sub
+                            tables ui
+                       LINK SDL2::SDL2 Vulkan::Vulkan
+                       INCLUDE ${imgui_SOURCE_DIR}
+                               ${imgui_SOURCE_DIR}/backends
+                               ${stb_SOURCE_DIR}
+                               ${CMAKE_BINARY_DIR}/generated)
+timaert_module(app     VIEW app assets bus content core ecs events gpu macro
+                            sub tables ui
+                       LINK SDL2::SDL2 Vulkan::Vulkan
+                       INCLUDE ${imgui_SOURCE_DIR}
+                               ${imgui_SOURCE_DIR}/backends
+                               ${stb_SOURCE_DIR})
+
+# git_hash.h — ВХОД КОМПИЛЯЦИИ одного TU (src/ui/screens.cpp): зависимость
+# стоит на МОДУЛЕ, на exe она компиляцию объектов не упорядочила бы.
+add_dependencies(timaert_ui timaert_git_hash)
+
+# Сам exe несёт только imgui-TU (чужой код, -Wno-error свойством выше);
+# игра — это её модули.
+get_property(_timaert_modules GLOBAL PROPERTY TIMAERT_MODULES)
+add_executable(${PROJECT_NAME} ${IMGUI_SOURCES})
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    ${_timaert_modules} timaert_build_flags SDL2::SDL2 Vulkan::Vulkan)
+add_dependencies(${PROJECT_NAME} timaert_git_hash)
+if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${TIMAERT_SDL2_MIXER_TARGET})
+endif()
+if(WIN32)
+    target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2main)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:SDL2::SDL2>
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+    if(TARGET SDL2_mixer::SDL2_mixer)
+        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:SDL2_mixer::SDL2_mixer>
+                $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+    endif()
+endif()
 
 # Vulkan bring-up verification target (fast compile/run loop for the migration).
 # Compile GLSL -> SPIR-V with glslc (located by find_package(Vulkan)).
@@ -2579,11 +2679,28 @@ if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
     endif()
 endif()
 list(JOIN _timaert_probe_head "\n" _timaert_probe_head_text)
+# ПРОБНИК СУДИТ ЦЕНУ ЗАГОЛОВКА, А НЕ СТЕНУ — ему нужен ПОЛНЫЙ вид дерева.
+# После разреза игры на модули-виды (ломоть 5 M-171) включения exe опустели
+# (игра — это её модули), и чтение путей с ${PROJECT_NAME} оставило бы
+# пробник без src/ МОЛЧА-ГРОМКО: каждый заголовок стал бы fatal error.
+# Полная поверхность живёт своим INTERFACE-таргетом — одно место путей.
+add_library(timaert_probe_includes INTERFACE)
+target_include_directories(timaert_probe_includes INTERFACE
+    ${CMAKE_SOURCE_DIR}/src ${CMAKE_BINARY_DIR}/generated
+    ${stb_SOURCE_DIR} ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+if(TIMAERT_DEBUG_UI)
+    target_compile_definitions(timaert_probe_includes INTERFACE
+        TIMAERT_DEBUG_UI)
+endif()
+if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
+    target_compile_definitions(timaert_probe_includes INTERFACE
+        TIMAERT_HAS_SDL_MIXER=1)
+endif()
 file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/generated/header_probe.args CONTENT
 "${_timaert_probe_head_text}
 $<JOIN:$<TARGET_PROPERTY:timaert_build_flags,INTERFACE_COMPILE_OPTIONS>,\n>
--D$<JOIN:$<TARGET_PROPERTY:${PROJECT_NAME},COMPILE_DEFINITIONS>,\n-D>
--I$<JOIN:$<TARGET_PROPERTY:${PROJECT_NAME},INCLUDE_DIRECTORIES>,\n-I>
+-D$<JOIN:$<TARGET_PROPERTY:timaert_probe_includes,INTERFACE_COMPILE_DEFINITIONS>,\n-D>
+-I$<JOIN:$<TARGET_PROPERTY:timaert_probe_includes,INTERFACE_INCLUDE_DIRECTORIES>,\n-I>
 $<$<BOOL:$<TARGET_PROPERTY:Vulkan::Vulkan,INTERFACE_INCLUDE_DIRECTORIES>>:-I$<JOIN:$<TARGET_PROPERTY:Vulkan::Vulkan,INTERFACE_INCLUDE_DIRECTORIES>,\n-I>>
 ")
 
