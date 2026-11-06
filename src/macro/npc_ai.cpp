@@ -16,6 +16,7 @@
 #include "macro/labour.h"           // ОДИН пул рук места (CANON S4)
 #include "macro/rooted_iter.h"    // for_each_rooted — обход мест по оси рода
 #include "tables/squad_type.h"   // SquadType/rooted_is_settlement — ось рода
+#include "tables/actions.h"   // kLabourActions — строки добычи, одни на оба мира
 #include "tables/movement_cost.h"
 #include "tables/npc.h"
 #include "macro/nav_field.h"        // локальные поля-округи (CANON S7)
@@ -865,9 +866,10 @@ void ai_home_wanderer(MacroHandle self, MacroPos& p,
 // worksite the row names → travel → WORK (take from the resource-field
 // registry into the OWN bag — kill the man on the road and the haul is
 // loot, not bookkeeping) → return (deliver into the HOME store).
-// kGatherPerWorkerDay is the same anchor the economy day-loop gathers by:
-// one law of labour. No worksite or no wired layer = the home wander, fail
-// closed — nothing is conjured.
+// The rate is the ROW's spRatePerDay (`kLabourActions@src/tables/actions.h`,
+// anchored to kGatherPerWorkerDay) — the same row the subworld's axe charges
+// by: one law of labour, one row for both worlds (M-369). No worksite or no
+// wired layer = the home wander, fail closed — nothing is conjured.
 //
 // The `type` column died with the professions (owner 2026-09-02, «сносим
 // полностью»): a row names WHAT to gather, and WHO gathers it is whichever
@@ -901,39 +903,57 @@ struct GathererDef {
     // реестра полей и таблицы фич — см. gatherer_item_index ниже; второй
     // носитель того же ответа здесь был бы вторым словарём, DOD п.6.)
     Worksite        worksite;
-    // СКОЛЬКО ОДИН РАБОТНИК БЕРЁТ ЗА ДЕНЬ — темп ЭТОГО источника. Колонка
-    // появилась с ПИЩЕЙ (владелец, 2026-09-18: «просто сделать, что охота не
-    // такая выгодная по добыче, как поле»): один и тот же товар честно
-    // приходит из разных источников с разной отдачей, и это ЧИСЛО, а не
-    // ветка. Якорь мира — kGatherPerWorkerDay (S10, «добытчик кормит 32»).
-    int perWorkerDay;
+    // СТРОКА АКТА — ССЫЛКА ОРДИНАЛОМ в единую таблицу действий (парадигма
+    // трёх контент-систем, CANON 1г: связи между системами — ординалом).
+    // Темп источника и цена цикла — ЕЁ колонка spRatePerDay (бар/темп,
+    // sp_price); прежняя колонка perWorkerDay умерла в неё ломтём «Добыча»
+    // M-369 — это та самая строка, которой платит топор субмира: один закон
+    // труда, одна строка на оба мира. Эта спецтаблица — половина рода при
+    // типе: ЧТО покидает мир и ГДЕ работать, чего L0 не выразит (реестр
+    // полей — слой macro).
+    std::uint8_t    action;
 };
 
 constexpr GathererDef kGathererDefs[] = {
     // ПИЩА из двух источников: пашня — полный якорь, охота — четверть его
-    // (зверь бегает, а колос стоит; число — крутилка дубль-прогона). Именно
+    // (зверь бегает, а колос стоит; темпы — колонки строк актов). Именно
     // это кормит хутор на скале, где пашни нет, а зверь есть.
-    {ResourceFieldId::Wheat,  Worksite::HomeField,     kGatherPerWorkerDay},
-    {ResourceFieldId::Fauna,  Worksite::HomeFauna,     kGatherPerWorkerDay / 4},
+    {ResourceFieldId::Wheat,  Worksite::HomeField,     action_slot("reap_wheat")},
+    {ResourceFieldId::Fauna,  Worksite::HomeFauna,     action_slot("hunt_fauna")},
     // ЛЁН — ТА ЖЕ ЗЕМЛЯ, СВОЯ ПАРЦЕЛЛА (владелец, 2026-09-20: «на пашне уже
     // пшеница-пища, значит нужна фича льняное поле»). Ряд тот же арабельный:
     // клетка под льном — это клетка, не занятая хлебом, и конкуренция за
-    // землю выходит сама, без второго поля и без нового ресурса. Четверть
-    // якоря — тем же числом охота слабее пашни (крутилка дубль-прогона).
+    // землю выходит сама, без второго поля и без нового ресурса.
     // ЧТО с парцеллы берут — говорит ФИЧА (FT_FlaxField → fibre), не цель.
-    {ResourceFieldId::Wheat,  Worksite::HomeFlaxField, kGatherPerWorkerDay / 4},
+    {ResourceFieldId::Wheat,  Worksite::HomeFlaxField, action_slot("reap_flax")},
     // ШАХТЁР — ОДНА ЦЕЛЬ НА ВСЕ ЖИЛЫ (вердикт 2026-10-23: артель не
     // профессия, добыча универсальна): что добудется, решает фича шахты,
     // на которую артель пришла, — её строка, не строка цели.
-    {ResourceFieldId::Vein,   Worksite::Deposit,       kGatherPerWorkerDay},
-    {ResourceFieldId::Trees,  Worksite::ForestCell,    kGatherPerWorkerDay},
-    // ЛОШАДЬ-ЮНИТ: темп 1 — поимка стоит работнику ДЕНЬ (цикл = целый бар
-    // по закону цены труда S14.1), против 32 колосьев той же ценой; выход
-    // не товар, а существо — умолчание ряда Livestock (реестр полей).
-    {ResourceFieldId::Livestock, Worksite::HomePasture, 1},
+    {ResourceFieldId::Vein,   Worksite::Deposit,       action_slot("mine_vein")},
+    {ResourceFieldId::Trees,  Worksite::ForestCell,    action_slot("fell_tree")},
+    // ЛОШАДЬ-ЮНИТ: поимка стоит работнику ДЕНЬ (темп 1 её строки = целый
+    // бар по закону цены труда S14.1) против 32 колосьев той же ценой;
+    // выход не товар, а существо — умолчание ряда Livestock (реестр полей).
+    {ResourceFieldId::Livestock, Worksite::HomePasture,
+     action_slot("catch_livestock")},
 };
 constexpr int kGathererGoalCount =
     int(sizeof(kGathererDefs) / sizeof(kGathererDefs[0]));
+
+// Спецтаблица добычи обязана ссылаться ТОЛЬКО на трудовой отрезок: цена
+// цикла ниже делит бар на spRatePerDay строки, и нетемповая строка (0)
+// молча отдавала бы весь бар за акт (sp_price(bar, 0) = bar).
+constexpr bool gatherer_rows_point_at_labour() {
+    for (const GathererDef& d : kGathererDefs) {
+        const ActionDef& a = action_def(int(d.action));
+        if (archetype_of(a.type) != ActionArchetype::Labour) return false;
+        if (a.spRatePerDay <= 0) return false;
+    }
+    return true;
+}
+static_assert(gatherer_rows_point_at_labour(),
+              "каждая цель добытчика — строка Gather с темповой ценой: "
+              "ссылка ординалом мимо трудового отрезка несобираема");
 
 // ФИЧА, КОТОРУЮ ПОДРАЗУМЕВАЕТ WORKSITE ЦЕЛИ — мост от «где работа» к «что
 // кладут в руки»: оверрайд выхода читается СО СТРОКИ ФИЧИ (features.h), не
@@ -1985,12 +2005,12 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
             if (!def) { go_home(); return; }
             ecs::Pools& pools = s.pools;
             // WORK COSTS SP through the one stamina law (CANON S14.1): цена
-            // цикла — бар / темп СВОЕГО источника (пашня 32 в день, охота
+            // цикла — бар / темп СТРОКИ своего акта (пашня 32 в день, охота
             // 8 — зверь честно вчетверо дороже за единицу; рука берёт один
-            // объект всегда, вердикт 2026-09-16). Пустой бар — домой
-            // отдыхать, не работа в ноль.
-            const int cycleCost =
-                sp_price(int(pools.maxSp), def->perWorkerDay);
+            // объект всегда, вердикт 2026-09-16). Та же строка ценит топор
+            // субмира (M-369). Пустой бар — домой отдыхать, не работа в ноль.
+            const int cycleCost = sp_price(
+                int(pools.maxSp), action_def(int(def->action)).spRatePerDay);
             if (int(pools.sp) < cycleCost) { go_home(); return; }
             // Рабочее место — АДРЕС ЦЕЛИ: прибытие его не гасит (адрес есть
             // кэш предиката), работа читает его клеткой. (Здесь артель

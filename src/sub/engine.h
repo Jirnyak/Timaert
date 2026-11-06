@@ -220,10 +220,12 @@ public:
     // зоны и солнце — ровно то, что свидетель обязан ловить.
     std::uint64_t frame_world_tick() const;   // тело в .cpp: тип фрейма тут неполон
     // ── ВЫХОД ШВА — ДЕЛЬТА (ломоть 5, M-98) ──────────────────────────────
-    // Буфер строк-операций родов 3 и 5; применяет app ОДНОЙ точкой на
-    // границе макро-тика (apply_local_delta@src/macro/delta_apply.h:
-    // дельта вверх → тик → свежее окно вниз) и сам движок на leave()
-    // (подъём/смена сцены — конец аренды, несданное применяется там же).
+    // Буфер строк-операций родов 3 и 5; применяет ТОЛЬКО app ОДНОЙ точкой
+    // на границе макро-тика (apply_local_delta@src/macro/delta_apply.h:
+    // дельта вверх → тик → свежее окно вниз), включая остаток на подъёме —
+    // та же дверь из main. (Здесь стояло «и сам движок на leave()» —
+    // перепись 2026-11-06 такого вызова не нашла: в src/sub применения
+    // дельты НЕТ ни одного, движок макро-поля не пишет никогда.)
     DeltaBuffer& delta_buffer() { return delta_; }
     // Свёртка позиции тела в долю клетки {subX,subY} флаг-записи — ТРЕТЬЯ
     // дверь CellSub (M-244: рождение — центр, марш — край входа, шов — эта);
@@ -316,20 +318,25 @@ public:
     bool harvest_prop_near_player(float maxDist, int* outCellX = nullptr,
                                   int* outCellY = nullptr,
                                   int* outPrevCount = nullptr,
-                                  const Structure::Kind* onlyKind = nullptr);
+                                  const Structure::Kind* onlyKind = nullptr,
+                                  Structure::Kind* outKind = nullptr);
     // The HARVEST action (owner verdict 2026-09-12, CANON «Вердикты ТРУДА»:
     // «жмёшь Harvest — платишь SP»): fell the nearest lootable prop at arm's
     // reach and pay the gather law's SP price — one felled object = one unit
-    // = bar/kGatherPerWorkerDay, the exact rate a macro crew's cycle already
-    // pays — INTO THE NEGATIVE (the march law bites exhaustion, not this
-    // door). The weapon swing no longer harvests anything.
+    // = bar / the ROW's spRatePerDay (`kLabourActions@src/tables/actions.h`:
+    // reap_wheat for a crop, fell_tree for the rest — the exact rate a macro
+    // crew's cycle pays through its gatherer spec-table, one row for both
+    // worlds, M-369) — INTO THE NEGATIVE (the march law bites exhaustion,
+    // not this door). The weapon swing no longer harvests anything.
     // `reachOverride` is the smoke lab's seam ONLY (<0 = the honest arm's
     // reach): spawn points sit on roads, so a deterministic witness of the
     // SP law needs the window's reach — the game always calls bare.
     bool harvest_action(float reachOverride = -1.0f);
     // Занять руки на срок, который назвала СТРОКА действия (CANON S13 «в
-    // субмире всё — способность»): одна точка заряда гейта на весь движок.
-    void charge_act(float baseSeconds);
+    // субмире всё — способность»): одна точка заряда гейта на весь движок,
+    // база — ЦЕЛЫЕ ТИКИ строки (флоат-близнец умер ломтём «Добыча» M-369
+    // вместе с последним звонящим).
+    void charge_act_ticks(std::uint32_t baseTicks);
     // Pay out a broken world prop through the ONE loot registry: its kind
     // names a profile (map_data.h structure_loot_id), the profile rolls items,
     // the yield scales by the prop's own metric height. Items go straight to

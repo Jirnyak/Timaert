@@ -40,7 +40,8 @@
 #include "macro/state.h"
 #include "bus/entry_context.h"
 #include "tables/npc.h"
-#include "tables/econ_laws.h" // kGatherPerWorkerDay/sp_price — the harvest SP law
+#include "tables/econ_laws.h" // sp_price — закон цены труда: бар / темп строки
+#include "tables/actions.h"   // kLabourActions — строки добычи, одни на оба мира
 #include "macro/map_generator.h"
 // Нитка `macro/features.h` СНЯТА (ломоть 1г эпика пакетов v1, M-342): этот
 // файл брал оттуда ровно `FT_None` — один ТИП, а тип живёт в нейтральном
@@ -2732,8 +2733,11 @@ void SubworldEngine::tick_player_melee() {
 // (это руки — глоток, рычаг и топор живут в одном домене). Лист берётся с
 // тела через мирную дверь: у аватара он свой, и хаста ускоряет обыск ровно
 // так же, как замах.
-void SubworldEngine::charge_act(float baseSeconds) {
-    if (!objects_ || baseSeconds <= 0.0f) return;
+// (Флоат-близнец `charge_act(float)` умер ломтём «Добыча» M-369 вместе с
+// последним звонящим: рубка и жатва заряжают ТИКАМИ строки; глоток зелья
+// заряжает `charge_ability@src/sub/ability.h` напрямую из оверлея.)
+void SubworldEngine::charge_act_ticks(std::uint32_t baseTicks) {
+    if (!objects_ || baseTicks == 0u) return;
     sub::SubObjects* objs = objects_;
     if (objs == nullptr) return;
     const int s = sub::avatar_slot(*objs);
@@ -2751,10 +2755,19 @@ void SubworldEngine::charge_act(float baseSeconds) {
         : sub::slot_sheet(*objs, s);
     static const Attributes kBareA{};
     static const Skills kBareS{};
-    sub::charge_ability(gate, baseSeconds,
-                        cs ? cs->attributes : kBareA,
-                        cs ? cs->skills : kBareS,
-                        SkillId::Armsmaster);
+    sub::charge_ability_ticks(gate, baseTicks,
+                              cs ? cs->attributes : kBareA,
+                              cs ? cs->skills : kBareS,
+                              SkillId::Armsmaster);
+}
+
+// ЦЕЛЬ → СТРОКА АКТА ДОБЫЧИ: колос жнут, всё прочее под топором рубят.
+// Резолвер цели — дело исполнителя своего мира (ЗАКОН СПОСОБНОСТИ: строка
+// агностична); наверху ту же строку называет спецтаблица добычи
+// (`kGathererDefs@src/macro/npc_ai.cpp`) — одна строка, два резолвера цели.
+static const ActionDef& harvest_action_row(Structure::Kind k) {
+    return action_def(k == Structure::Crop ? kActionReapWheat
+                                           : kActionFellTree);
 }
 
 bool SubworldEngine::harvest_action(float reachOverride) {
@@ -2781,10 +2794,15 @@ bool SubworldEngine::harvest_action(float reachOverride) {
     if (gateCol == nullptr) return false;
     float reach = gateCol->attackRange + 1.5f;
     if (reachOverride > 0.0f) reach = reachOverride;   // smoke lab only
-    if (!harvest_prop_near_player(reach)) return false;
+    Structure::Kind felledKind = Structure::Tree;
+    if (!harvest_prop_near_player(reach, nullptr, nullptr, nullptr, nullptr,
+                                  &felledKind))
+        return false;
     // The gather law's SP price (CANON «Вердикты ТРУДА», owner 2026-09-12):
-    // one felled object = one unit = bar / kGatherPerWorkerDay — the exact
-    // rate a macro crew's quarter-bar cycle already pays for its 8 objects.
+    // one felled object = one unit = bar / the ROW's spRatePerDay — the row
+    // the scene's target resolver named (reap_wheat for a crop, fell_tree
+    // for the rest), the SAME row a macro crew's cycle prices by through its
+    // gatherer spec-table (M-369: одна строка — оба мира).
     // Paid INTO THE NEGATIVE: the march's exhaustion law owns the bite,
     // this door only spends.
     //
@@ -2800,23 +2818,28 @@ bool SubworldEngine::harvest_action(float reachOverride) {
         ? sub::slot_pools_of(*objsP, playerSlot, **payStp)
         : sub::slot_pools(*objsP, playerSlot);
     // ONE price law (CANON S14.1): the bar divided by the rate. The player's
-    // rate is objects-in-a-day, and since 2026-09-16 so is a macro crew's —
-    // it takes one object per HAND at this very price. The hero and the artel
-    // are not two laws that happen to agree; they are one law, and the crew's
-    // whole advantage is how many hands it brings.
+    // rate is the ROW's objects-in-a-day, and since 2026-09-16 so is a macro
+    // crew's — it takes one object per HAND at this very price. The hero and
+    // the artel are not two laws that happen to agree; they are one law, and
+    // the crew's whole advantage is how many hands it brings.
     // THE spend door (movement_cost.h apply_stamina_cost): debit + the one
     // QUADRATIC law of zero in a single move — felling on an empty bar is
     // never refused, it bites HP at the spend (CANON S14.1, 2026-09-17).
-    if (pay) apply_stamina_cost(*pay, sp_price(pay->maxSp, kGatherPerWorkerDay));
-    // …и ВРЕМЯ, не только выносливость: рубка занимает руки на свой срок.
-    charge_act(kHarvestActSeconds);
+    if (pay)
+        apply_stamina_cost(*pay, sp_price(pay->maxSp,
+                                          harvest_action_row(felledKind)
+                                              .spRatePerDay));
+    // ВРЕМЯ занял сам замах (внутри harvest_prop_near_player, оба исхода —
+    // и добыча, и полная сумка): второго заряда здесь нет — присваивание
+    // было дублем одной и той же величины.
     return true;
 }
 
 bool SubworldEngine::harvest_prop_near_player(float maxDist,
                                               int* outCellX, int* outCellY,
                                               int* outPrevCount,
-                                              const Structure::Kind* onlyKind) {
+                                              const Structure::Kind* onlyKind,
+                                              Structure::Kind* outKind) {
     if (!active_ || !gs_) return false;
     int mcx = 0, mcy = 0;
     Structure victim{};
@@ -2829,6 +2852,11 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
     if (!mgr_.peek_prop_near(playerX_, playerY_, playerZ_, maxDist, mcx, mcy,
                              &victim, onlyKind))
         return false;
+    // Род цели наружу СРАЗУ: звонящий (harvest_action) ценит акт строкой
+    // этого рода на ОБОИХ true-исходах — и добыча, и полная сумка.
+    if (outKind) *outKind = victim.kind;
+    // Строка акта — по роду жертвы; заряжают её оба исхода замаха ниже.
+    const ActionDef& act = harvest_action_row(victim.kind);
 
     // ── The micro half first: what the prop WAS becomes cargo ──
     // Resolved through the ONE loot registry a kill goes through — the prop's
@@ -2843,7 +2871,7 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
         // Отказ сумки: проп стоит, мир цел, добыча не испарилась. Замах
         // случился и оплачен — действие честно потрачено впустую.
         set_status("Your pack is full.");
-        charge_act(kHarvestActSeconds);
+        charge_act_ticks(act.recoveryTicks);
         return true;
     }
     if (!mgr_.remove_prop(victim)) {
@@ -2916,7 +2944,7 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
         const std::string msg = std::string(verb) + " (" + picked + ")";
         set_status(msg.c_str());
     }
-    charge_act(kHarvestActSeconds);
+    charge_act_ticks(act.recoveryTicks);
     return true;
 }
 

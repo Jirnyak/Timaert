@@ -40,6 +40,7 @@
 
 #include "core/time.h"          // steps_from_seconds — авторские секунды → ТИКИ, constexpr
 #include "tables/attributes.h"  // SkillId — чей ранг пускает к строке
+#include "tables/econ_laws.h"   // kGatherPerWorkerDay — якорь темпа труда (S10)
 #include "tables/spells.h"      // kSpellDefs — тождество отрезка прибито к каталогу
 
 namespace sm {
@@ -63,6 +64,7 @@ enum class ActionArchetype : std::uint8_t {
 enum class ActionType : std::uint8_t {
     Strike, // бой: замах тела — пустая рука; масса оружия говорит ДОБАВКОЙ
     Spell,  // магия: авторский отрезок ниже, построчно выровнен с kSpellDefs
+    Gather, // труд: выемка стока мира — жатва, охота, рубка, копка, поимка
     Count
 };
 
@@ -71,10 +73,14 @@ enum class ActionType : std::uint8_t {
 // границы групп стоят здесь и только здесь.
 inline constexpr ActionType kActionTypeMagicFirst = ActionType::Spell;
 inline constexpr ActionType kActionTypeMagicLast  = ActionType::Spell;
+inline constexpr ActionType kActionTypeLabourFirst = ActionType::Gather;
+inline constexpr ActionType kActionTypeLabourLast  = ActionType::Gather;
 
 inline constexpr ActionArchetype archetype_of(ActionType t) {
     return (t >= kActionTypeMagicFirst && t <= kActionTypeMagicLast)
                ? ActionArchetype::Magic
+           : (t >= kActionTypeLabourFirst && t <= kActionTypeLabourLast)
+               ? ActionArchetype::Labour
                : ActionArchetype::Combat;
 }
 static_assert(archetype_of(ActionType::Spell) == ActionArchetype::Magic,
@@ -83,6 +89,9 @@ static_assert(archetype_of(ActionType::Spell) == ActionArchetype::Magic,
 static_assert(archetype_of(ActionType::Strike) == ActionArchetype::Combat,
               "удар — боевой архетип: его темп платит Армсмастер, не "
               "Спеллкрафт");
+static_assert(archetype_of(ActionType::Gather) == ActionArchetype::Labour,
+              "добыча — трудовой архетип: её темп платит Армсмастер (руки), "
+              "а цену — закон бара (S14.1), не плоская колонка");
 
 // ДОМЕН ТЕМПА — ЭТО СВОЙСТВО АРХЕТИПА, А НЕ КОЛОНКА СТРОКИ, и здесь умирает
 // тернарник `cast ? SkillId::Spellcraft : SkillId::Armsmaster`, девять раз
@@ -135,6 +144,15 @@ struct ActionDef {
     std::int32_t costMp;
     std::int32_t costSp;
 
+    // ЦЕНА ТРУДА — ТЕМПОМ, НЕ ПЛОСКОЙ КОЛОНКОЙ (CANON S14.1, носитель закона
+    // `sp_price@src/tables/econ_laws.h`: «ratePerDay is a COLUMN of whatever
+    // is acting» — у добычи действует сама строка). Цена акта = бар / это
+    // число актов в день, и платится она дверью ИСТОЩЕНИЯ В МИНУС
+    // (`apply_stamina_cost`): отказа у труда нет, пустой бар кусает HP.
+    // 0 — ЗНАЧЕНИЕ «цена не темповая»: правят плоские колонки выше, sp_price
+    // к строке не зовётся; оба направления прибиты static_assert ниже.
+    std::int32_t spRatePerDay;
+
     // ПРАВО НА СТРОКУ — ТИПОВОЙ скилл и его минранг. Это ДРУГОЙ вопрос, чем
     // домен темпа выше: форма уже работает у рецептов (`craft` + `minRank` в
     // `RecipeDef@src/macro/econ_day.h`). `SkillId::Count` значит «рангом не
@@ -148,9 +166,9 @@ struct ActionDef {
 };
 static_assert(sizeof(ActionDef) == 32,
               "раскладка строки действия закреплена: 8 ключ + 4 база + 12 цена "
-              "+ 2 право + 2 лестница, и четыре байта добивает выравнивание "
-              "указателя (DOD: у структуры, чей размер назван, размер под "
-              "static_assert)");
+              "+ 4 темп цены + 2 право + 2 лестница — ровно 32, колонка темпа "
+              "заняла бывший паддинг указателя (DOD: у структуры, чей размер "
+              "назван, размер под static_assert)");
 static_assert(std::is_trivially_copyable_v<ActionDef>);
 
 // ── БОЕВОЙ ОТРЕЗОК — ПЕРВЫЕ СТРОКИ (M-396) ───────────────────────────────
@@ -247,6 +265,69 @@ inline constexpr ActionDef kMagicActions[] = {
      .type = ActionType::Spell,   .scope = ActionScope::MicroOnly},
 };
 
+// ── ТРУДОВОЙ ОТРЕЗОК — ДОБЫЧА (ломоть «Добыча» M-369) ───────────────────
+//
+// ОДНА СТРОКА — ОБА МИРА (замысел владельца 2026-11-06: сквад с модулем
+// добычи «через ту же способность меняет значение в поле — то есть единая
+// системность»): внизу акт исполняет ТЕЛО (`harvest_action@src/sub/engine.cpp`
+// читает строку по роду пропа в руке), наверху — МОДУЛЬ сквада (спецтаблица
+// добычи `kGathererDefs@src/macro/npc_ai.cpp` ссылается ординалом). ЧТО
+// считается целью — дело исполнителя своего мира (проп / клетка worksite);
+// какой СТОК покидает мир и ГДЕ работать — колонки спецтаблицы: реестр
+// полей — слой macro, и L0 его не видит ПО ПОСТРОЕНИЮ (§11). Это та же
+// форма «спецтаблицы-половины одного пространства ординалов», какой магия
+// делит строку с kSpellDefs.
+//
+// ОБЪЁМ ЗА АКТ — ЕДИНИЦА ЗАКОНОМ, НЕ КОЛОНКОЙ (вердикт 2026-09-16: «рука
+// берёт один объект всегда»; артель умножает РУКАМИ, не строкой): колонка
+// сплошных единиц не имела бы различающего читателя (DOD п.9).
+//
+// ТЕМП ИСТОЧНИКА — spRatePerDay, он и цена (бар/темп), и дневная норма
+// одного работника; якорь — kGatherPerWorkerDay («1 добытчик кормит 32
+// души», CANON S10). Пашня и лес — полный якорь; охота и лён — четверть
+// (зверь бегает, а колос стоит; та же земля, своя культура — числа-крутилки
+// дубль-прогона, переехавшие из спецтаблицы ЦЕЛИКОМ, не сдвинутые).
+//
+// БАЗА — ЗАМАХ РУКИ: та же нижняя граница strike, что держала умершую здесь
+// константу kHarvestActSeconds (1.5 с = 96 тиков; страж — в проверке
+// отрезка ниже). ПОИМКА ЛОШАДИ — акт ценой в ЦЕЛЫЙ бар (темп 1, S10
+// «ЛОШАДЬ — ЮНИТ»: поимка стоит работнику ДЕНЬ), и её база — рабочий ДЕНЬ
+// тиками: «сделал → вишу», длительность ЕСТЬ восстановление (ЗАКОН
+// СПОСОБНОСТИ п.1); макро прочтёт эту базу счётчиком, когда stateTimer
+// умрёт в рековери (поздний ломоть M-369 по ряду).
+inline constexpr ActionDef kLabourActions[] = {
+    {.id = "reap_wheat",      .recoveryTicks = steps_from_seconds(1.5f),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = kGatherPerWorkerDay,
+     .gateSkill = SkillId::Count, .minRank = 0,
+     .type = ActionType::Gather,  .scope = ActionScope::MicroMacro},
+    {.id = "hunt_fauna",      .recoveryTicks = steps_from_seconds(1.5f),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = kGatherPerWorkerDay / 4,
+     .gateSkill = SkillId::Count, .minRank = 0,
+     .type = ActionType::Gather,  .scope = ActionScope::MacroOnly},
+    {.id = "reap_flax",       .recoveryTicks = steps_from_seconds(1.5f),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = kGatherPerWorkerDay / 4,
+     .gateSkill = SkillId::Count, .minRank = 0,
+     .type = ActionType::Gather,  .scope = ActionScope::MacroOnly},
+    {.id = "mine_vein",       .recoveryTicks = steps_from_seconds(1.5f),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = kGatherPerWorkerDay,
+     .gateSkill = SkillId::Count, .minRank = 0,
+     .type = ActionType::Gather,  .scope = ActionScope::MacroOnly},
+    {.id = "fell_tree",       .recoveryTicks = steps_from_seconds(1.5f),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = kGatherPerWorkerDay,
+     .gateSkill = SkillId::Count, .minRank = 0,
+     .type = ActionType::Gather,  .scope = ActionScope::MicroMacro},
+    {.id = "catch_livestock", .recoveryTicks = std::uint32_t(kTicksPerDay),
+     .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 1,
+     .gateSkill = SkillId::Count, .minRank = 0,
+     .type = ActionType::Gather,  .scope = ActionScope::MacroOnly},
+};
+
 // ── ТАБЛИЦА И ЕЁ ОТРЕЗКИ ─────────────────────────────────────────────────
 // Отрезки стоят в порядке лестницы. Отрезок нулевой длины — это ЗНАЧЕНИЕ
 // («строк этого архетипа пока нет»), а не заглушка: ординалы при приходе
@@ -258,11 +339,21 @@ inline constexpr int kActionCombatFirst = 0;
 inline constexpr int kActionCombatCount = int(std::size(kCombatActions));
 inline constexpr int kActionMagicFirst  = kActionCombatFirst + kActionCombatCount;
 inline constexpr int kActionMagicCount  = int(std::size(kMagicActions));
-inline constexpr int kActionCount       = kActionMagicFirst + kActionMagicCount;
+inline constexpr int kActionLabourFirst = kActionMagicFirst + kActionMagicCount;
+inline constexpr int kActionLabourCount = int(std::size(kLabourActions));
+inline constexpr int kActionCount       = kActionLabourFirst + kActionLabourCount;
 
 // Именованный ординал замаха: его базу читают руки
 // (`hand_strike_fields@src/bus/anketa.cpp` — пустая рука плюс добавка массы).
 inline constexpr int kActionStrike = kActionCombatFirst;
+
+// Именованные ординалы добычи СУБМИРА: резолвер цели сцены (`harvest_action@
+// src/sub/engine.cpp` — колос жнут, прочее под топором рубят) читает их
+// строки напрямую, потому что спецтаблица добычи ему недоступна по слою
+// (она macro). Макро именованных ординалов не держит — он ссылается
+// колонкой спецтаблицы.
+inline constexpr int kActionReapWheat = kActionLabourFirst + 0;
+inline constexpr int kActionFellTree  = kActionLabourFirst + 4;
 
 // ── ТОЖДЕСТВО ОТРЕЗКА С КАТАЛОГОМ СПЕЛЛОВ — СТЕНА ПОД КОМПИЛЯТОРОМ ──────
 // Ключ сверяется ПОСИМВОЛЬНО (указатели двух литералов сравнивать нельзя,
@@ -302,11 +393,53 @@ inline constexpr bool action_ordinal_valid(int ord) {
 inline constexpr const ActionDef& action_def(int ord) {
     return ord < kActionMagicFirst
                ? kCombatActions[std::size_t(ord - kActionCombatFirst)]
-               : kMagicActions[std::size_t(ord - kActionMagicFirst)];
+           : ord < kActionLabourFirst
+               ? kMagicActions[std::size_t(ord - kActionMagicFirst)]
+               : kLabourActions[std::size_t(ord - kActionLabourFirst)];
 }
 static_assert(action_id_eq(action_def(kActionStrike).id, "strike"),
               "именованный ординал замаха обязан смотреть на свою строку: "
               "сдвиг боевого отрезка без правки kActionStrike несобираем");
+static_assert(action_id_eq(action_def(kActionReapWheat).id, "reap_wheat")
+                  && action_id_eq(action_def(kActionFellTree).id, "fell_tree"),
+              "именованные ординалы добычи обязаны смотреть на свои строки: "
+              "перестановка трудового отрезка без их правки несобираема");
+
+// ── ЦЕЛОСТНОСТЬ ТРУДОВОГО ОТРЕЗКА — СТЕНА ПОД КОМПИЛЯТОРОМ ──────────────
+// Три закона одной проверкой: (1) тип строк — Gather; (2) цена труда
+// ТЕМПОВАЯ (rate > 0) при плоских нулях-значениях — два закона цены на
+// одной строке невыразимы; (3) акт не быстрее пустого замаха — у топора
+// есть масса, и она не бывает меньше нуля (страж умершей константы
+// kHarvestActSeconds, теперь на ВЕСЬ отрезок).
+inline constexpr bool labour_segment_is_rate_priced() {
+    for (int i = 0; i < kActionLabourCount; ++i) {
+        const ActionDef& a = kLabourActions[std::size_t(i)];
+        if (a.type != ActionType::Gather) return false;
+        if (a.spRatePerDay <= 0) return false;
+        if (a.costHp != 0 || a.costMp != 0 || a.costSp != 0) return false;
+        if (a.recoveryTicks < action_def(kActionStrike).recoveryTicks)
+            return false;
+    }
+    return true;
+}
+static_assert(labour_segment_is_rate_priced(),
+              "трудовой отрезок: тип Gather, цена темпом (бар/rate, плоские "
+              "нули — значения), акт не быстрее замаха strike");
+
+// ...и обратная стена: ВНЕ труда темповой цены не существует — ноль там
+// есть значение «цена не темповая», и строка с обоими законами цены сразу
+// несобираема.
+inline constexpr bool rate_price_lives_only_in_labour() {
+    for (int i = 0; i < kActionCount; ++i) {
+        const ActionDef& a = action_def(i);
+        if (archetype_of(a.type) != ActionArchetype::Labour
+            && a.spRatePerDay != 0) return false;
+    }
+    return true;
+}
+static_assert(rate_price_lives_only_in_labour(),
+              "темповая цена — закон ТРУДА: у боевой и магической строки "
+              "spRatePerDay обязан быть нулём-значением");
 
 // Спелл → его действие. Одна дверь перевода, чтобы «частный случай» не
 // превратился в арифметику по месту вызова.

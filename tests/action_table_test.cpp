@@ -25,6 +25,12 @@
 //      (а), вердикт 2026-11-06), а чем строка кастует — говорит её НАБОР
 //      ординалов действий (сентинел −1 умер в kActionNone).
 //
+//   6. ТРУДОВОЙ ОТРЕЗОК (ломоть «Добыча» M-369): цена труда — ТЕМПОМ
+//      (бар / spRatePerDay строки, закон S14.1), и строка ОДНА на оба мира —
+//      топор субмира и цикл артели ценят ею же. Якорь мира: «1 добытчик
+//      кормит 32 души» (kGatherPerWorkerDay, CANON S10). Отношения, не
+//      литералы: зверь вчетверо дороже колоса, поимка лошади — целый бар.
+//
 // ЯКОРИ — НЕ ПЕРЕСЧЁТ ПРОДАКШЕН-ФОРМУЛЫ (§8 п.5-6), А НЕЗАВИСИМО ИЗВЕСТНЫЕ
 // ФАКТЫ МИРА: квант времени мира есть 64 тика в секунде
 // (`kTicksPerRealSecond@src/core/time.h`), поэтому авторские 2.3 с fireball
@@ -40,6 +46,7 @@
 #include "core/pools.h"       // ecs::Pools — тройка HP/MP/SP
 #include "core/time.h"        // kTicksPerRealSecond — квант, на котором стоят якори
 #include "tables/actions.h"   // ЕДИНАЯ строка действия
+#include "tables/econ_laws.h" // sp_price/kGatherPerWorkerDay — закон цены труда
 #include "tables/items.h"     // weapon_mass_recovery_ticks — добавка массы (M-396)
 #include "tables/npc.h"       // kWitchCombat/kPeasantCombat — наборы строк существ
 
@@ -57,8 +64,12 @@ using sm::SkillId;
 void segment_is_aligned_with_spells() {
     CHECK(sm::kActionMagicCount == sm::kSpellCount,
                     "магический отрезок накрывает ВСЕ строки спеллов");
-    CHECK(sm::kActionCount == sm::kActionMagicFirst + sm::kSpellCount,
+    CHECK(sm::kActionCount == sm::kActionCombatCount + sm::kActionMagicCount
+                                  + sm::kActionLabourCount,
                     "ординальное пространство действий есть сумма отрезков");
+    CHECK(sm::kActionLabourFirst == sm::kActionMagicFirst + sm::kSpellCount,
+                    "трудовой отрезок стоит ВПЛОТНУЮ за магическим: дыра "
+                    "была бы ординалом без строки");
 
     int samples = 0, mismatches = 0;
     for (int i = 0; i < sm::kSpellCount; ++i) {
@@ -288,6 +299,85 @@ void combat_segment_strike_mass_and_row_sets() {
                     "колонка строки существа слита с единицей таблицы действий");
 }
 
+// ── 8. Трудовой отрезок: одна строка — оба мира, цена темпом (M-369) ─────
+void labour_segment_prices_by_rate_for_both_worlds() {
+    const sm::ActionDef& fell  = sm::action_def(sm::kActionFellTree);
+    const sm::ActionDef& wheat = sm::action_def(sm::kActionReapWheat);
+    const sm::ActionDef& hunt =
+        sm::action_def(int(sm::action_slot("hunt_fauna")));
+    const sm::ActionDef& flax =
+        sm::action_def(int(sm::action_slot("reap_flax")));
+    const sm::ActionDef& horse =
+        sm::action_def(int(sm::action_slot("catch_livestock")));
+
+    CHECK(std::strcmp(fell.id, "fell_tree") == 0
+                        && fell.type == ActionType::Gather
+                        && sm::archetype_of(fell.type)
+                               == ActionArchetype::Labour,
+                    "рубка — строка трудового отрезка, и лестница зовёт её "
+                    "трудом");
+
+    // ЯКОРЬ МИРА (CANON S10, независимый факт, не пересчёт формулы):
+    // «1 добытчик кормит 32 души» — темп пашни и леса есть САМ якорь.
+    CHECK(wheat.spRatePerDay == sm::kGatherPerWorkerDay
+                        && fell.spRatePerDay == sm::kGatherPerWorkerDay,
+                    "темп пашни и леса — якорь мира kGatherPerWorkerDay, а "
+                    "не совпадающее с ним число");
+
+    // ОТНОШЕНИЯ, НЕ ЛИТЕРАЛЫ (§8 п.4): зверь бегает, колос стоит — единица
+    // охоты вчетверо дороже; лён — та же земля, та же четверть; поимка
+    // лошади стоит работнику ЦЕЛЫЙ бар (sp_price при темпе 1 отдаёт бар).
+    CHECK(hunt.spRatePerDay * 4 == wheat.spRatePerDay,
+                    "охота вчетверо медленнее пашни — зверь честно дороже "
+                    "за единицу");
+    CHECK(flax.spRatePerDay * 4 == wheat.spRatePerDay,
+                    "лён — четверть якоря: та же земля, своя культура");
+    CHECK(horse.spRatePerDay == 1
+                        && sm::sp_price(977, horse.spRatePerDay) == 977,
+                    "поимка лошади — целый бар: темп 1 есть «акт стоит "
+                    "рабочий день»");
+
+    // ПОЛНЫЙ БАР = ДНЕВНАЯ НОРМА АКТОВ, ЦЕЛЫМИ: у бара, кратного темпу,
+    // цена × темп выбирает его РОВНО — день труда и бар SP одно и то же.
+    const int bar = 256;
+    CHECK(sm::sp_price(bar, wheat.spRatePerDay) * wheat.spRatePerDay == bar,
+                    "бар 256: 32 акта по 8 SP выбирают бар ровно — цена есть "
+                    "бар/темп без остатка на кратном баре");
+
+    // ОДНА СТРОКА — ОБА МИРА: обе строки субмира (колос и дерево) законны
+    // обоими мирами, и база рубки — число умершей kHarvestActSeconds
+    // (1.5 с × 64 = 96 тиков), не сдвинутое переездом в строку.
+    CHECK(fell.scope == ActionScope::MicroMacro
+                        && wheat.scope == ActionScope::MicroMacro,
+                    "жатва и рубка законны обоими мирами: внизу топор, "
+                    "наверху цикл артели — одна строка");
+    CHECK(fell.recoveryTicks == 96u && wheat.recoveryTicks == 96u,
+                    "база рубки и жатвы: 1.5 с = 96 тиков — число умершей "
+                    "константы kHarvestActSeconds, переездом не сдвинуто");
+
+    // ДВА ЗАКОНА ЦЕНЫ НЕ ВСТРЕЧАЮТСЯ НА ОДНОЙ СТРОКЕ (стены — static_assert
+    // таблицы, рантайм дублирует выборочно): у труда плоские нули-значения,
+    // вне труда темп — ноль-значение.
+    CHECK(fell.costHp == 0 && fell.costMp == 0 && fell.costSp == 0,
+                    "цена труда — темпом: плоские колонки рубки — "
+                    "нули-значения");
+    CHECK(sm::action_def(sm::kActionStrike).spRatePerDay == 0,
+                    "у боевой строки темповой цены нет: ноль — значение "
+                    "«не темповая», а не отсутствие");
+
+    // ПОЛНОТА ОТРЕЗКА: цикл, который мерит, утверждает, что померил.
+    int samples = 0, defects = 0;
+    for (int i = 0; i < sm::kActionLabourCount; ++i) {
+        const sm::ActionDef& a = sm::action_def(sm::kActionLabourFirst + i);
+        if (a.type != ActionType::Gather) ++defects;
+        if (a.spRatePerDay <= 0) ++defects;
+        ++samples;
+    }
+    CHECK(samples == sm::kActionLabourCount && defects == 0,
+                    "каждая строка трудового отрезка — Gather с темповой "
+                    "ценой: нетемповый труд отдавал бы весь бар за акт");
+}
+
 } // namespace
 
 int main() {
@@ -298,5 +388,6 @@ int main() {
     scope_has_three_values_and_no_nowhere();
     cost_is_all_or_nothing_across_three_pools();
     combat_segment_strike_mass_and_row_sets();
+    labour_segment_prices_by_rate_for_both_worlds();
     return sm::test::report("action_table_test");
 }

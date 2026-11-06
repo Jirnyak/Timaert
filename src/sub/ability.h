@@ -112,11 +112,25 @@ inline void charge_ability(ecs::Combat* gate, float baseSeconds,
     if (gate == nullptr) return;
     if (baseSeconds <= 0.0f) return;           // ноль — значит ноль
     // Секунды → тики ЗДЕСЬ: дверь восстановления берёт ТИКИ (M-369). Пока
-    // зелье, рычаг и топор не переехали строками в единую таблицу, их
-    // авторские секунды переводятся на месте вызова — так флоат уходит
-    // носитель за носителем, а дверь остаётся одна.
+    // зелье и рычаг не переехали строками в единую таблицу, их авторские
+    // секунды переводятся на месте вызова — так флоат уходит носитель за
+    // носителем, а дверь остаётся одна.
     gate->recoverySteps = std::uint32_t(recovery_steps(
         steps_from_seconds(baseSeconds), attributes, skills, generic));
+}
+
+// ТА ЖЕ ДВЕРЬ ДЛЯ СТРОК ТАБЛИЦЫ ДЕЙСТВИЙ — база уже в ЦЕЛЫХ ТИКАХ (M-396:
+// секунда живёт только в авторинге), переводить нечего. Это не второй закон
+// заряда, а тот же без флоат-передней: рубка и жатва зовут её строкой
+// (`kLabourActions@src/tables/actions.h`); флоат-двойник выше доживает у
+// носителей, ещё не переехавших строками, — новых звонящих ему не заводить.
+inline void charge_ability_ticks(ecs::Combat* gate, std::uint32_t baseTicks,
+                                 const Attributes& attributes,
+                                 const Skills& skills, SkillId generic) {
+    if (gate == nullptr) return;
+    if (baseTicks == 0u) return;               // ноль — значит ноль
+    gate->recoverySteps = std::uint32_t(
+        recovery_steps(int(baseTicks), attributes, skills, generic));
 }
 
 // ТА САМАЯ ОДНА ДВЕРЬ: спросить гейт и, если рука свободна, занять её.
@@ -134,17 +148,9 @@ inline bool try_ability(ecs::Combat* gate, float baseSeconds,
     return true;
 }
 
-// ДЛИНА ОДНОЙ РУБКИ. Не выдумана: у добычи уже ЕСТЬ свой темп — колонка
-// `kGatherPerWorkerDay` (объектов за рабочий день, CANON S14.1 «темп —
-// КОЛОНКА, а не формула»), и цена SP одного объекта уже считается из неё.
-// Время берётся оттуда же: замах топора — это та же работа, что платит бар,
-// и авторской секунды рядом с существующим темпом не заводится. Взмах руки
-// (строка `strike` таблицы действий) — нижняя граница: рубить быстрее, чем
-// махать, нельзя.
-inline constexpr float kHarvestActSeconds = 1.5f;
-static_assert(steps_from_seconds(kHarvestActSeconds)
-                  >= action_def(kActionStrike).recoveryTicks,
-              "рубка не быстрее пустого замаха (строка strike): у топора "
-              "есть масса, и она не бывает меньше нуля");
+// (Константа kHarvestActSeconds умерла ломтём «Добыча» M-369: длина рубки и
+// жатвы — колонка recoveryTicks ИХ строк в `kLabourActions@src/tables/
+// actions.h`, страж «не быстрее замаха strike» стоит там же на весь
+// трудовой отрезок — `labour_segment_is_rate_priced`.)
 
 } // namespace sm::sub
