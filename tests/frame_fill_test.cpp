@@ -170,38 +170,6 @@ int main() {
         if (frame.squads[s] == deadSquad) sawDead = true;
     CHECK(!sawDead, "a dead record on a frame cell is not addressed");
 
-    // ── Род 2, вторая колонка: ВЕКТОР МАРША (M-317) ───────────────────────
-    // Предусловия свидетель рожает сам (§8 п.11): цель, листовую резвость и
-    // факт хода последней думки (kMarchAdvanced). Фикстура без запечённых
-    // округ — вектор идёт фолбэком прямого торового шага.
-    {
-        const auto vel_of = [](const sm::LocalContext& f,
-                               sm::MacroHandle h) -> sm::SquadVel {
-            for (std::uint32_t s = 0; s < f.squadCount; ++s)
-                if (f.squads[s] == h) return f.squadVel[s];
-            return sm::SquadVel{-1, -1};   // не найден — отличим от нуля
-        };
-        const sm::SquadVel idle = vel_of(frame, inSquad);
-        CHECK(idle.x == 0 && idle.y == 0,
-              "a standing squad rides a zero march vector (a value)");
-        st.goal[inSquad.slot].cell = sm::cell_of(ccx + 2, ccy - 2, gs.mapW);
-        st.runtime[inSquad.slot].moveMult = 1.0f;
-        st.runtime[inSquad.slot].marchFlags = sm::ecs::kMarchAdvanced;
-        sm::LocalContext marchF{};
-        sm::fill_local_frame(mw, center, marchF);
-        const sm::SquadVel east = vel_of(marchF, inSquad);
-        CHECK(east.x > 0 && east.y == 0,
-              "a squad marching east rides an eastward vector, tempo > 0");
-        // Заминка боя глушит вектор тем же законом, что ноги марша (M-319A).
-        st.runtime[inSquad.slot].halted = 2;
-        sm::LocalContext fightF{};
-        sm::fill_local_frame(mw, center, fightF);
-        const sm::SquadVel held = vel_of(fightF, inSquad);
-        CHECK(held.x == 0 && held.y == 0,
-              "the fighting lull rides a zero vector");
-        st.runtime[inSquad.slot].halted = 0;
-        st.runtime[inSquad.slot].marchFlags = 0;
-    }
 
     // ── Род 5: факт окна есть, дальний — нет ──────────────────────────────
     bool factIn = false, factOut = false;

@@ -1,7 +1,5 @@
 #include "macro/frame_fill.h"
 
-#include <cmath>   // lround — кванты вектора марша (M-317)
-
 #include "core/torus.h"
 #include "macro/cell_facts.h"
 #include "macro/chronicle.h"
@@ -9,8 +7,6 @@
 #include "macro/resource_field.h"
 #include "macro/player_entity.h"
 #include "macro/squad_index.h"
-#include "macro/npc_ai.h"     // march_cells_per_think — закон темпа (M-317)
-#include "macro/nav_field.h"  // nav_step — запечённая походка (M-317)
 #include "macro/state.h"
 
 namespace sm {
@@ -20,63 +16,6 @@ namespace sm {
 // двери тора — та исправляла ровно один период.)
 namespace {
 
-// ── ВЕКТОР МАРША ДЛЯ ПАКЕТА (M-317, ЗАКОН ШВА п.3) ───────────────────────
-// Вторая колонка рода 2, СЧИТАЕТСЯ при наполнении (вердикт: «вектор есть
-// колонка пакета, а не новая колонка мира»). НАПРАВЛЕНИЕ — следующий шаг
-// ТОЙ ЖЕ походки, что ведёт марш (запечённый `nav_step@src/macro/
-// nav_field.cpp`; фолбэк — прямой торовый шаг, он же тай-брейкер жадного
-// закона try_move), ТЕМП — тот же `march_cells_per_think@src/macro/
-// npc_ai.h`, которым платит try_move, в ТАЙЛАХ СЦЕНЫ ЗА МИРОВОЙ ТИК
-// (единица канала — разбор у колонки squadVel пакета). Третьего закона
-// движения не рождается: обе половины — чтения существующих. {0,0} —
-// честное «стоит»: нет цели, цель — текущая клетка (доезд в центр маршем
-// не считается), стопер ног (halted гасит ноги и тут, как в try_move — M-418).
-SquadVel squad_march_vector(const MacroWorld& mw, const MacroStore& st,
-                            MacroHandle h) {
-    if (!mw.gs || !st.valid(h)) return SquadVel{0, 0};
-    const std::uint16_t slot = h.slot;
-    const auto& rt = st.runtime[slot];
-    if (rt.halted != 0) return SquadVel{0, 0};
-    // ЗАНЯТ АКТОМ — СТОИТ (его же гейт занятости): цель по прибытии НЕ
-    // гасится (кэш предиката, goal_arrive), поэтому сквад на привале или
-    // в работе всё ещё несёт дальний адрес — судить «идёт ли» по одной
-    // цели значило бы вести тела ВПЕРЁД стоящего сквада.
-    if (squad_recovering(rt)) return SquadVel{0, 0};
-    // РЕАЛЬНО ШЁЛ в последнюю думку — кванты проехали (kMarchAdvanced).
-    // Протухание флага ограничено одной думкой: заминка боя зануляет его
-    // своим гейтом, новая думка с маршем переписывает.
-    if ((rt.marchFlags & ecs::kMarchAdvanced) == 0) return SquadVel{0, 0};
-    const ecs::SquadGoal& goal = st.goal[slot];
-    if (goal.cell == ecs::kNoCell) return SquadVel{0, 0};
-    const int side = mw.gs->mapW;
-    const std::uint32_t here = st.cell[slot].idx;
-    if (goal.cell == here) return SquadVel{0, 0};
-    const int ix = cell_x(here, side), iy = cell_y(here, side);
-    const int itx = cell_x(goal.cell, side), ity = cell_y(goal.cell, side);
-    int dx = 0, dy = 0;
-    if (rt.flying == 0 && mw.nav && mw.nav->baked()) {
-        if (!nav_step(*mw.nav, ix, iy, itx, ity, dx, dy)) { dx = 0; dy = 0; }
-    }
-    if (dx == 0 && dy == 0) {
-        // Прямой торовый шаг — фолбэк, байтово тай-брейкер жадного закона.
-        const Step s = torus_step_toward(ix, iy, itx, ity, side, side);
-        dx = torus_fold(s.nx - ix, side);
-        dy = torus_fold(s.ny - iy, side);
-    }
-    // Вес текущей клетки — та же одна проба на думку, что в try_move; вне
-    // собранного грида (голая фикстура) — честная единица (cell_weight).
-    float cellW = 1.0f;
-    if (const PathCostData* pcw = mw.pathCost;
-        pcw && pcw->width > 0 && pcw->height > 0
-        && pcw->costGrid.size()
-               == std::size_t(pcw->width) * std::size_t(pcw->height)) {
-        cellW = pcw->cost_at(ix, iy);
-    }
-    const int q = int(std::lround(
-        march_cells_per_think(rt, rt.flying != 0 ? 1.0f : cellW)
-        * float(kSubworldTilesPerMacroCell) / float(kAiTicks)));
-    return SquadVel{std::int16_t(dx * q), std::int16_t(dy * q)};
-}
 } // namespace
 
 // Пины словарей фрейма к их носителям — ЕДИНСТВЕННОЕ место, где оба числа
@@ -151,26 +90,16 @@ void fill_local_frame(const MacroWorld& w, std::uint32_t centerCell,
             squads_in_frame(*w.squads, st, ccx, ccy, half,
                             [&](std::uint16_t slot, int, int) {
                 if (st.alive[slot] == 0 || st.dead[slot] != 0) return;
-                if (out.squadCount < out.squads.size()) {
-                    const MacroHandle sh = handle_at(st, slot);
-                    // Вторая колонка рода 2 — вектор марша, СЧИТАЕТСЯ при
-                    // наполнении (колонка пакета, не мира — M-317).
-                    out.squadVel[out.squadCount] =
-                        squad_march_vector(w, st, sh);
-                    out.squads[out.squadCount++] = sh;
-                }
+                if (out.squadCount < out.squads.size())
+                    out.squads[out.squadCount++] = handle_at(st, slot);
             });
         } else {
             for (std::uint32_t s32 = 0; s32 < kUnifiedCap; ++s32) {
                 const std::uint16_t slot = std::uint16_t(s32);
                 if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
                 if (on_frame_cell(st.cell[slot].idx) < 0) continue;
-                if (out.squadCount < out.squads.size()) {
-                    const MacroHandle sh = handle_at(st, slot);
-                    out.squadVel[out.squadCount] =
-                        squad_march_vector(w, st, sh);
-                    out.squads[out.squadCount++] = sh;
-                }
+                if (out.squadCount < out.squads.size())
+                    out.squads[out.squadCount++] = handle_at(st, slot);
             }
         }
     }

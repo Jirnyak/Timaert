@@ -403,8 +403,8 @@ int squad_bags_hygiene_daily(MacroWorld& mw);
 void tick_macro_npc_ai(MacroWorld& mw,
                        MacroNpcAiRuntime& runtime, std::uint64_t ticks);
 
-// ТЕМП МАРША — КЛЕТКИ ЗА ДУМКУ, ОДИН ЗАКОН НА ОБА ЧИТАТЕЛЯ (try_move и
-// вектор пакета squad_march_vector@src/macro/frame_fill.cpp, M-317): база
+// ТЕМП МАРША — КЛЕТКИ ЗА ДУМКУ, ОДИН ЗАКОН (ядро try_move и темп думки;
+// вектор пакета жил вторым читателем один день — снесён ЗАХВАТОМ): база
 // одна на игрока и сквад (kMacroWalkCellsPerHour), резвость листа
 // (moveMult), рельеф ТЕКУЩЕЙ клетки одной пробой на думку; летуну рельеф —
 // воздух (его вес звонящий подаёт единицей, внутри он не читается).

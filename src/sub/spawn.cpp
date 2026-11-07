@@ -1484,13 +1484,12 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids,
-                                     MacroHandle playerFlagRef,
-                                     const SquadVel* windowVels) {
+                                     MacroHandle playerFlagRef) {
     return project_macro_npcs_into_subworld(objs, st, mgr.tiles(),
                                             windowSquads, windowSquadCount,
                                             centerCx, centerCy, mapW, mapH,
                                             seed, seaLevel, solids,
-                                            playerFlagRef, windowVels);
+                                            playerFlagRef);
 }
 
 int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
@@ -1501,8 +1500,7 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids,
-                                     MacroHandle playerFlagRef,
-                                     const SquadVel* windowVels) {
+                                     MacroHandle playerFlagRef) {
     const float seaM = sea_level_m(seaLevel);
     const bool tilesUsable =
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
@@ -1640,21 +1638,11 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
         // Все мокрые — тело встаёт В САМУ ТОЧКУ (не теряется; прежний
         // фолбэк в центр клетки врал бы о положении на целых полклетки).
         const ecs::CellSub msub = st.runtime[macro.slot].sub;
-        float px = scene_axis_of_sub(ox, msub.x);
-        float py = scene_axis_of_sub(oy, msub.y);
-        // УПРЕЖДЕНИЕ РОЖДЕНИЯ (замер стенда 2026-11-07): точка store
-        // обновляется только думкой, истина ушла на vel × tickAccum —
-        // рождаем тело там, куда его поведёт пасс движка ТОЙ ЖЕ формулой,
-        // иначе марширующий сквад воплощается до 0.75 клетки позади себя
-        // и лаг замораживается навсегда (равные темпы не смыкают).
-        if (windowVels != nullptr) {
-            const SquadVel v = windowVels[i];
-            const float acc = float(st.runtime[macro.slot].tickAccum);
-            px = std::clamp(px + float(v.x) * acc, 1.0f,
-                            float(kFullSize) - 2.0f);
-            py = std::clamp(py + float(v.y) * acc, 1.0f,
-                            float(kFullSize) - 2.0f);
-        }
+        const float px = scene_axis_of_sub(ox, msub.x);
+        const float py = scene_axis_of_sub(oy, msub.y);
+        // (Упреждение рождения по вектору пакета жило здесь один день и
+        //  снесено вердиктом ЗАХВАТА 2026-11-07: истина входа — store
+        //  (клетка+доля думки), лосси-цена развёртки названа в ряду.)
         constexpr float kSubQuantTiles =
             float(kCellSize) / float(ecs::kCellSubQuantum);   // 4 тайла
         float fx = px, fy = py;

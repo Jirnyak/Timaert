@@ -209,4 +209,3 @@
 природа	src/sub/dgn/cave.cpp	dx/dy
 природа	src/sub/dgn/spire_tower.cpp	dx/dy
 природа	src/sub/dgn/spire_tower.cpp	dx/dy
-природа	src/sub/engine.cpp	dx/dy

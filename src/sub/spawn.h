@@ -12,7 +12,6 @@
 #include "sub/seamless_manager.h"
 #include "tables/biomes.h"
 #include "bus/anketa.h"
-#include "bus/local_frame.h"   // SquadVel — вторая колонка рода 2 (M-317)
 #include "tables/npc.h"
 #include "tables/stock_key.h"   // MacroStock/MacroStockKey — словарь расписки
 
@@ -549,13 +548,6 @@ void spawn_player_squad(SubObjects& objs,
 // их собственное предусловие (§8 п.11). Хэндлы едут АДРЕСОМ: всё о скваде
 // проход читает живым стором, слепок не копия. Пакет шире окна (5×5),
 // воплощение остаётся 3×3 — гейт по смещению клетки внутри двери.
-// `windowVels` — вторая колонка рода 2 (вектор марша, параллельна
-// windowSquads): рождение ставит тело в УПРЕЖДЁННУЮ точку «доля + vel ×
-// tickAccum» — ту же, к которой ведёт пасс движка. Точка store
-// обновляется только думкой (раз в 32 тика), и без упреждения караван
-// рождался до 0.75 клетки ПОЗАДИ собственного марша — лаг замораживался
-// навсегда (замер стенда 2026-11-07: дист 547 тайлов на рождении).
-// nullptr = без упреждения (фикстуры без марша).
 int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      const SeamlessSubworldManager& mgr,
                                      const MacroHandle* windowSquads,
@@ -564,8 +556,7 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids = nullptr,
-                                     MacroHandle playerFlagRef = {},
-                                     const SquadVel* windowVels = nullptr);
+                                     MacroHandle playerFlagRef = {});
 
 int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      const std::vector<std::uint8_t>& tiles,
@@ -575,8 +566,7 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids = nullptr,
-                                     MacroHandle playerFlagRef = {},
-                                     const SquadVel* windowVels = nullptr);
+                                     MacroHandle playerFlagRef = {});
 
 // (Вселение — перенос флажка — живёт в sub/possess.h: header-only дверь,
 // которую зовут эффект спелла possession и харнесс, без линковки слоя

@@ -556,10 +556,6 @@ float edge_weight(const PathCostData* pc, int fx, int fy, int tx, int ty) {
     return w;
 }
 
-// (Закон темпа марша — march_cells_per_think@src/macro/npc_ai.h: одна
-// inline-дверь на оба читателя, try_move ниже и вектор пакета
-// squad_march_vector@src/macro/frame_fill.cpp — M-317.)
-
 // ТОНКИЙ ЗВОНЯЩИЙ ДУМКИ (M-412а/б): ядро закона марша экспортировано
 // (`try_move@src/macro/npc_ai.h`) и зовётся обоими ходоками — думкой НПЦ
 // отсюда и маршем игрока из `step_macro_walk@src/ui/macro_overlay.cpp`.
@@ -5162,9 +5158,6 @@ float try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
     return walked;
 }
 
-// (Вектор марша для пакета — squad_march_vector@src/macro/frame_fill.cpp:
-// живёт у сборщика, своего единственного звонящего; закон темпа берёт той
-// же дверью march_cells_per_think@src/macro/npc_ai.h, что try_move выше.)
 
 // (tick_macro_npc_visuals жил здесь и умер с M-244a: глайд карты — чистое
 // ПРЕДСТАВЛЕНИЕ, и его интегратор переехал в кэш глаз оверлея —

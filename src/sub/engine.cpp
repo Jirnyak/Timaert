@@ -750,7 +750,6 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     mw_ = mw;
     gs_ = mw_.gs; terrain_ = mw_.terrain;
     frame_ = frame;
-    refill_march_vel_();   // перекладка рода 2 — тем же входом, что frame_
     objects_ = &scene;
     GameState& gs = *gs_;
     // The scene raises around the FLAG HOLDER's cell — «кем я на карте» is
@@ -942,8 +941,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
         frame_->squads.data(), frame_->squadCount, cx, cy,
         frame_->side, frame_->side,
         cell_seed(frame_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
-        scene_sea_level(), &structIndex_, frame_->playerFlag,
-        frame_->squadVel.data());
+        scene_sea_level(), &structIndex_, frame_->playerFlag);
     if (projected > 0) {
         char msg[80];
         std::snprintf(msg, sizeof(msg), "%d overworld figure%s nearby",
@@ -1049,7 +1047,6 @@ void SubworldEngine::fold_player_sub() {
 void SubworldEngine::frame_resynced() {
     frameResyncNeeded_ = false;
     factsSinceFillCount_ = 0;   // свежее окно эти факты уже несёт (род 5)
-    refill_march_vel_();        // свежие векторы рода 2 — тем же слепком
     mgr_.flush_pending_generation();
     // СКВАД, ВОШЕДШИЙ В ОКНО, ВОПЛОЩАЕТСЯ ИЗ СЛЕДУЮЩЕГО СЛЕПКА (M-317,
     // ЗАКОН ШВА: «сквады по единому закону воплощаются в субмире» — это не
@@ -1066,115 +1063,15 @@ void SubworldEngine::frame_resynced() {
             frame_->squads.data(), frame_->squadCount, cx, cy,
             frame_->side, frame_->side,
             cell_seed(frame_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
-            scene_sea_level(), &structIndex_, frame_->playerFlag,
-            frame_->squadVel.data());
+            scene_sea_level(), &structIndex_, frame_->playerFlag);
     }
 }
 
-// Перекладка второй колонки рода 2 на адрес слота (M-317): squads[] и
-// squadVel[] параллельны по i, а телам отвечать надо по СЛОТУ их хэндла —
-// O(1) на тело в пассе ведения вместо поиска по списку окна. Протухание
-// хэндла не прикрывает нового жильца: пасс валидирует хэндл тела стором,
-// а слот умершего сквада в следующем слепке перекладка перепишет нулём.
-void SubworldEngine::refill_march_vel_() {
-    marchVelBySlot_.fill(SquadVel{0, 0});
-    if (frame_ == nullptr) return;
-    int marching = 0;
-    SquadVel sample{0, 0};
-    for (std::uint32_t i = 0; i < frame_->squadCount; ++i) {
-        const SquadVel v = frame_->squadVel[i];
-        marchVelBySlot_[frame_->squads[i].slot] = v;
-        if (v.x != 0 || v.y != 0) {
-            if (marching == 0) sample = v;
-            ++marching;
-        }
-    }
-    // TIMAERT_MARCH_LOG — ВРЕМЕННЫЙ канал живого стенда (M-317, §5 п.10):
-    // одна строка на пересинхронизацию (раз в мировой тик). СНЕСТИ после
-    // ответа владельца — лог есть инструмент вопроса, не жилец.
-    static const bool marchLog = std::getenv("TIMAERT_MARCH_LOG") != nullptr;
-    if (marchLog) {
-        std::fprintf(stderr,
-                     "[march] tick=%llu окноСквадов=%u маршируют=%d "
-                     "вектор0=(%d,%d) телВедено=%d дистТела0=%.1f\n",
-                     (unsigned long long)frame_->worldTick,
-                     frame_->squadCount, marching,
-                     int(sample.x), int(sample.y),
-                     marchDrivenLastStep_, double(marchFirstDist_));
-        std::fflush(stderr);
-    }
-}
-
-// ── МАРШ ПРОЕКЦИЙ: ТЕЛО ВЕДЁТСЯ, А НЕ СТАВИТСЯ (M-317, ЗАКОН ШВА п.3а) ───
-// Раз в шаг тела сквадов с ИДУЩИМ макро-маршем получают интент к точке
-// «проекция доли + вектор пакета × прошедшее с думки»; прошедшее — их же
-// колонка шины tickAccum (мировые тики), вектор — тайлы сцены за тик, так
-// что макро-констант субмиру не нужно ни одной (единица канала). Пишется
-// ПОСЛЕ мозга сцены: бродилка перезаписана маршем, а ВОЙНА всё равно
-// сильнее интента по закону стиринга («war is not a suggestion»,
-// steer_bodies) — встречи и бои тел живы, после боя интент снова ведёт к
-// сквадной точке. Стоячий сквад (vel {0,0}) тел не дёргает — их ведёт их
-// собственный ИИ; ноги игрока — его ввод; данж окна не несёт.
-void SubworldEngine::drive_projection_march_() {
-    // Счётчики — ТОЛЬКО для временного лога стенда (см. refill_march_vel_).
-    marchDrivenLastStep_ = 0;
-    marchFirstDist_ = -1.0f;
-    if (!objects_ || !frame_ || mw_.store == nullptr) return;
-    if (sceneKind_ == SceneKind::Dungeon) return;
-    sub::SubObjects& arena = *objects_;
-    const MacroStore& st = *mw_.store;
-    const int side = frame_->side;
-    if (side <= 0) return;
-    const int ccx = mgr_.center_cx(), ccy = mgr_.center_cy();
-    const int avatar = sub::avatar_slot(arena);
-    for (int s = 0; s < int(kMaxSubObjects); ++s) {
-        if ((arena.flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
-        if (s == avatar) continue;
-        auto* ai = sub::slot_ai(arena, s);
-        if (ai == nullptr) continue;
-        const MacroHandle h = sub::slot_squad_of(arena, s, st);
-        if (!st.valid(h)) continue;
-        const SquadVel vel = marchVelBySlot_[h.slot];
-        if (vel.x == 0 && vel.y == 0) continue;
-        const ecs::MacroCell mc = squad_cell(st, h);
-        const int ox =
-            sub::toroidal_cell_offset(ecs::cell_x(mc, side), ccx, side);
-        const int oy =
-            sub::toroidal_cell_offset(ecs::cell_y(mc, side), ccy, side);
-        if (ox < -1 || ox > 1 || oy < -1 || oy > 1) continue;
-        const auto& rt = st.runtime[h.slot];
-        const float elapsed = float(rt.tickAccum);
-        const float txp = sub::scene_axis_of_sub(ox, rt.sub.x)
-                        + float(vel.x) * elapsed;
-        const float typ = sub::scene_axis_of_sub(oy, rt.sub.y)
-                        + float(vel.y) * elapsed;
-        const ecs::Position& p = arena.pos[std::size_t(s)];
-        const float dx = txp - p.x, dy = typ - p.y;
-        const float d2 = dx * dx + dy * dy;
-        // Порог прибытия — ПОЛКВАНТА доли (2 тайла): точнее истина макро
-        // не выражается, ближе вести — толкаться с сепарацией строя.
-        constexpr float kArriveTiles = 2.0f;
-        if (d2 <= kArriveTiles * kArriveTiles) {
-            ai->wantVx = 0.0f;
-            ai->wantVy = 0.0f;
-            continue;
-        }
-        const float d = std::sqrt(d2);
-        // ПОХОДНЫЙ ТЕМП ЛИСТА, не прогулка (замер стенда 2026-11-07):
-        // wanderSpeed — темп БРОДИЛКИ, и тело отставало от собственного
-        // сквада на ~26 тайлов/тик навсегда; маршевый темп тела несёт его
-        // боевая колонка speed (та же, которой ходит стиринг).
-        const auto* bodyCombat = sub::slot_combat(arena, s);
-        const float pace =
-            (bodyCombat != nullptr && bodyCombat->speed > ai->wanderSpeed)
-                ? bodyCombat->speed
-                : ai->wanderSpeed;
-        ai->wantVx = dx / d * pace;
-        ai->wantVy = dy / d * pace;
-        if (marchFirstDist_ < 0.0f) marchFirstDist_ = d;
-        ++marchDrivenLastStep_;
-    }
-}
+// (Перекладка вектора и пасс-погоня «тело к точке+вектор» жили здесь один
+//  день и снесены вердиктом ЗАХВАТА 2026-11-07: «скорость не из анкеты а
+//  подгон под макрокоординаты … ошибочное решение (не только А а ваще в
+//  широком смысле)». В окне ведёт СУБМИР: тела ходят анкетной скоростью к
+//  СВОИМ целям по маршрутным полям — эпик ЗАХВАТА, ряды реестра.)
 
 // Якорь сдвинулся против снимка → фрейм ждёт плановой пересинхронизации.
 // Никогда не ГАСИТ уже поднятый флаг (ре-центр мог поднять его раньше).
@@ -2097,8 +1994,7 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
             frame_->squads.data(), frame_->squadCount, cx, cy,
             frame_->side, frame_->side,
             cell_seed(frame_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
-            scene_sea_level(), &structIndex_, frame_->playerFlag,
-            frame_->squadVel.data());
+            scene_sea_level(), &structIndex_, frame_->playerFlag);
     }
 }
 
@@ -5900,10 +5796,6 @@ void SubworldEngine::tick(float dt) {
                     // Два хэндла игрока — ссылками из GameState (1е кл.5).
                     frame_ ? frame_->playerFlag : MacroHandle{},
                     frame_ ? frame_->playerSquad : MacroHandle{});
-        // Марш проекций — ПОСЛЕ мозга (его бродилку перезаписывает), ДО
-        // сбора толпы (интент уезжает в BodyCrowd этим же шагом). Война
-        // сильнее интента по закону стиринга — порядок ничего не отнимает.
-        drive_projection_march_();
         tick_subworld_bodies(dt);
         // The player's swing AFTER the combat gather: it asks the battle pick
         // grid the same way the spell contact does, and the grid it asks must
