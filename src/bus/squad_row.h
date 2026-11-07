@@ -94,7 +94,10 @@ inline constexpr CellSub cell_sub_after_step(int dx, int dy,
 inline constexpr std::uint8_t kMarchAdvanced = 1u;  // кванты проехали
 inline constexpr std::uint8_t kMarchRefused = 2u;   // шага к цели нет
 
-// СРОК ЗАМИНКИ БОЯ, В ДУМКАХ (MacroNpcRuntime::fighting, M-319A). Мера —
+// СРОК ЗАМИНКИ НОГ — УНИВЕРСАЛЬНОГО АГНОСТИЧНОГО СТОПЕРА (MacroNpcRuntime::
+// halted; M-319A → M-418, вердикт владельца 2026-11-07: «лучше обобщить бой
+// стопер до универслаьного агностичног стопера и потом добалять частные
+// случаи»). Бой — ПЕРВЫЙ эмитент, не весь закон. Мера —
 // ДУМКА, а не тик и не секунда: гейт стоит в марше, марш живёт думкой, и
 // третьей единицы у заминки быть не должно (калибровка — только в тиках
 // игры). Почему две: удар внизу приходит МЕЖДУ думками сквада, значит одна
@@ -102,7 +105,7 @@ inline constexpr std::uint8_t kMarchRefused = 2u;   // шага к цели не
 // держит заминку при темпе ударов реже думки — иначе ноги мигали бы «встал-
 // пошёл» между взмахами. Число — БАЛАНС (не по-двойка, ЗАКОН ПРИОРИТЕТА
 // СТРУКТУРЫ): система от него не зависит, темп боя калибруется им свободно.
-inline constexpr std::uint8_t kFightingThinks = 2u;
+inline constexpr std::uint8_t kHaltThinks = 2u;
 
 // ДОЕЗД В ЦЕНТР — вторая половина квантового хода (M-375): пересечение края
 // оставляет тело НА КРАЮ новой клетки, поэтому всякое ПРИБЫТИЕ (цель этой
@@ -390,7 +393,7 @@ struct MacroNpcRuntime {
     // удар внизу штампует его заново, поэтому «бой кончился» есть ОТСУТСТВИЕ
     // удара, а не сообщение о нём. Ноль — «не сражаюсь», и это значение, а не
     // отсутствие.
-    std::uint8_t  fighting = 0;
+    std::uint8_t  halted = 0;
     std::uint8_t  state;         // NPCState
     // Entry-side context (bus/entry_context.h): the packed signed step of the
     // last cell change (0xFF = none: spawned here / teleported), and a
@@ -566,8 +569,8 @@ inline void squad_recovery_elapsed(MacroNpcRuntime& rt, std::uint32_t ticks) {
 // снизу не надо и нельзя: «бой кончился» есть ОТСУТСТВИЕ нового удара.
 // Звонящих двое — свип думок (после ритма, когда думку заминка уже
 // отработала) и часы флажка (свип игрока не водит).
-inline void squad_fighting_cooled(MacroNpcRuntime& rt) {
-    rt.fighting = sub_sat(rt.fighting, std::uint8_t(1));
+inline void squad_halt_cooled(MacroNpcRuntime& rt) {
+    rt.halted = sub_sat(rt.halted, std::uint8_t(1));
 }
 
 // ОДНО ПРАВОПИСАНИЕ ВОПРОСА «ЗАНЯТ ЛИ СКВАД» — у `stateTimer` их было три

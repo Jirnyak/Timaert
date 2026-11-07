@@ -193,13 +193,13 @@ int main() {
         CHECK(east.x > 0 && east.y == 0,
               "a squad marching east rides an eastward vector, tempo > 0");
         // Заминка боя глушит вектор тем же законом, что ноги марша (M-319A).
-        st.runtime[inSquad.slot].fighting = 2;
+        st.runtime[inSquad.slot].halted = 2;
         sm::LocalContext fightF{};
         sm::fill_local_frame(mw, center, fightF);
         const sm::SquadVel held = vel_of(fightF, inSquad);
         CHECK(held.x == 0 && held.y == 0,
               "the fighting lull rides a zero vector");
-        st.runtime[inSquad.slot].fighting = 0;
+        st.runtime[inSquad.slot].halted = 0;
         st.runtime[inSquad.slot].marchFlags = 0;
     }
 

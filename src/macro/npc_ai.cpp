@@ -4904,9 +4904,9 @@ static void tick_macro_npc_ai_one(MacroWorld& mw, MacroNpcAiRuntime& runtime) {
                             ctx, overloadBurden, groundWeight);
         // ЗАМИНКА БОЯ УГАСАЕТ ПО ДУМКАМ (M-319A), угасание ПОСЛЕ ритма —
         // эту думку заминка уже отработала. Дверью
-        // (`squad_fighting_cooled@src/bus/squad_row.h`, M-412д): второй
+        // (`squad_halt_cooled@src/bus/squad_row.h`, M-412д): второй
         // звонящий — часы флажка, свип игрока не водит.
-        ecs::squad_fighting_cooled(rt);
+        ecs::squad_halt_cooled(rt);
         // Марш свою долю ведёт САМ (квантовый ход, вердикт 2026-11-02);
         // драйверу остался только ПРЫЖОК: телепорт штампует kEntryDirNone,
         // и такая смена клетки честно ставит центр. Запись — ЕДИНСТВЕННОЙ
@@ -4960,7 +4960,7 @@ float try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
     // урок M-313, где гейт, гасивший думку, остановил и ПРОИЗВОДСТВО. Флаги
     // марша зануляются и здесь: ритм марша (`settle_march_rhythm`) обязан
     // прочесть честное «стоял» и дать фоновый реген без жжения.
-    if (rt.fighting != 0) {
+    if (rt.halted != 0) {
         rt.marchFlags = 0;
         return 0.0f;
     }

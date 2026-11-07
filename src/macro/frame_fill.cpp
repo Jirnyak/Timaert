@@ -30,13 +30,13 @@ namespace {
 // (единица канала — разбор у колонки squadVel пакета). Третьего закона
 // движения не рождается: обе половины — чтения существующих. {0,0} —
 // честное «стоит»: нет цели, цель — текущая клетка (доезд в центр маршем
-// не считается), заминка боя (fighting гасит ноги и тут, как в try_move).
+// не считается), стопер ног (halted гасит ноги и тут, как в try_move — M-418).
 SquadVel squad_march_vector(const MacroWorld& mw, const MacroStore& st,
                             MacroHandle h) {
     if (!mw.gs || !st.valid(h)) return SquadVel{0, 0};
     const std::uint16_t slot = h.slot;
     const auto& rt = st.runtime[slot];
-    if (rt.fighting != 0) return SquadVel{0, 0};
+    if (rt.halted != 0) return SquadVel{0, 0};
     // ЗАНЯТ АКТОМ — СТОИТ (его же гейт занятости): цель по прибытии НЕ
     // гасится (кэш предиката, goal_arrive), поэтому сквад на привале или
     // в работе всё ещё несёт дальний адрес — судить «идёт ли» по одной
