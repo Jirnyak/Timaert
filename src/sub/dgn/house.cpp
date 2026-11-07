@@ -149,6 +149,8 @@ bool try_place_furnish(SubworldMapData& out, Rng& rng, const RoomRect& r,
 
 } // namespace
 
+Tile dungeon_house_floor() { return TILE_SQUARE; }   // flagged hall
+
 void gen_dungeon_house(const CellContext& ctx, SubworldMapData& out) {
     const std::size_t n = std::size_t(kCellSize) * kCellSize;
     const DungeonRoom room = dungeon_house_room(ctx.dungeon);
@@ -169,7 +171,7 @@ void gen_dungeon_house(const CellContext& ctx, SubworldMapData& out) {
     for (int y = y0; y <= y1; ++y) {
         for (int x = x0; x <= x1; ++x) {
             const std::size_t i = cell_at(x, y);
-            out.tiles[i] = TILE_SQUARE;
+            out.tiles[i] = std::uint8_t(dungeon_house_floor());
             out.trav[i] = 1;
         }
     }

@@ -89,6 +89,8 @@ DungeonRoom dungeon_prologue_road_room(const DungeonRef& ref) {
     return room;
 }
 
+Tile dungeon_prologue_road_floor() { return TILE_ROAD; }   // the paved bed
+
 void gen_dungeon_prologue_road(const CellContext& ctx, SubworldMapData& out) {
     const int W = kCellSize;
     const std::size_t n = std::size_t(W) * W;
@@ -154,7 +156,7 @@ void gen_dungeon_prologue_road(const CellContext& ctx, SubworldMapData& out) {
                 const std::size_t i = std::size_t(y) * W + wx;
                 const float d = std::fabs(float(x) - axis);
                 if (d <= kRoadHalfWidth) {
-                    out.tiles[i] = std::uint8_t(TILE_ROAD);
+                    out.tiles[i] = std::uint8_t(dungeon_prologue_road_floor());
                     out.heightmap[i] = hAxis;
                 } else {
                     out.heightmap[i] = 0.5f * (out.heightmap[i] + hAxis);

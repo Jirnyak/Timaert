@@ -75,7 +75,7 @@ void carve_disc(SubworldMapData& out, float cx, float cy, float r) {
             const float dy = float(y) + 0.5f - cy;
             if (dx * dx + dy * dy > r2) continue;
             const std::size_t i = cell_at(x, y);
-            out.tiles[i] = TILE_ROCK;
+            out.tiles[i] = std::uint8_t(dungeon_cave_floor());
             out.trav[i] = 1;
         }
     }
@@ -122,6 +122,8 @@ DungeonRoom dungeon_cave_room(const DungeonRef& ref) {
     room.hy = std::clamp(ref.footHy * kMouthScale, kChamberMinHalf, maxHalf);
     return room;
 }
+
+Tile dungeon_cave_floor() { return TILE_ROCK; }   // scree — carved floor
 
 void gen_dungeon_cave(const CellContext& ctx, SubworldMapData& out) {
     const std::size_t n = std::size_t(kCellSize) * kCellSize;

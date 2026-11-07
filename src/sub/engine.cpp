@@ -1149,10 +1149,11 @@ void SubworldEngine::sync_macro_player_to_center() {
     if (!gs_ || !terrain_ || terrain_->width <= 0 || terrain_->height <= 0) {
         return;
     }
-    int nx = mgr_.center_cx() % terrain_->width;
-    int ny = mgr_.center_cy() % terrain_->height;
-    if (nx < 0) nx += terrain_->width;
-    if (ny < 0) ny += terrain_->height;
+    // Заворот мира — МАСКА (ЗАКОН АДРЕСА; здесь стояло двойное деление со
+    // знаковой починкой — сторона мира степень двойки, маска честна и для
+    // отрицательных).
+    const int nx = wrap_axis(mgr_.center_cx(), terrain_->width);
+    const int ny = wrap_axis(mgr_.center_cy(), terrain_->height);
     // The remap is a jump, not a walk — the jump door erases the entry edge,
     // so the next enter() falls back to the centre until the player actually
     // crosses a macro cell boundary again.
@@ -5645,8 +5646,6 @@ void SubworldEngine::tick(float dt) {
     // …and the town he is standing in keeps following the sun.
     tick_day_pump(dt);
     int prevCx = mgr_.center_cx(), prevCy = mgr_.center_cy();
-    seamShiftCellsX_ = 0;
-    seamShiftCellsY_ = 0;
     const auto seamStart = Clock::now();
     // A dungeon window is STATIC: no seam, no re-centre — the interior is
     // walled and its ring is sealed Void filler. The initial build was fully
@@ -5681,8 +5680,6 @@ void SubworldEngine::tick(float dt) {
         // the cells that genuinely left are despawned.
         const int dx = mgr_.center_cx() - prevCx;
         const int dy = mgr_.center_cy() - prevCy;
-        seamShiftCellsX_ = dx;
-        seamShiftCellsY_ = dy;
         repopulate_after_recenter(dx, dy);
         // Отложка генерации — ТОЛЬКО оверворлду: его резолвер читает снимок,
         // и соседи свежей полосы ждут нового охвата (flush в frame_resynced).

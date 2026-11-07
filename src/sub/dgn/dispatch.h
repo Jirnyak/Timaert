@@ -202,6 +202,15 @@ DungeonRoom dungeon_house_room(const DungeonRef& ref);
 // the MOUTH chamber: the part the shared rules address, the rest is walked.
 void gen_dungeon_cave(const CellContext& ctx, SubworldMapData& out);
 DungeonRoom dungeon_cave_room(const DungeonRef& ref);
+// ПОЛ НАЗЫВАЕТ МОДУЛЬ (вердикт владельца 2026-11-07: «модуль вообще сам
+// решает и свой пол — агностичные инкапсулированные модули»): одна
+// константа на модуль, ЕЮ ЖЕ модуль красит базовый пол у себя, и ЕЁ ЖЕ
+// отдаёт дверь dungeon_floor_tile — второй ответ на «что есть пол»
+// невыразим по построению.
+Tile dungeon_cave_floor();
+Tile dungeon_house_floor();
+Tile dungeon_spire_tower_floor();
+Tile dungeon_prologue_road_floor();
 
 // Spire tower interior (sub/dgn/spire_tower.cpp — self-contained module).
 // One round hall per storey; the "room" is the hall's bounding square.

@@ -50,6 +50,8 @@ DungeonRoom dungeon_spire_tower_room(const DungeonRef&) {
     return room;
 }
 
+Tile dungeon_spire_tower_floor() { return TILE_SQUARE; }   // flagged hall
+
 void gen_dungeon_spire_tower(const CellContext& ctx, SubworldMapData& out) {
     const std::size_t n = std::size_t(kCellSize) * kCellSize;
     const DungeonRoom room = dungeon_spire_tower_room(ctx.dungeon);
@@ -71,7 +73,7 @@ void gen_dungeon_spire_tower(const CellContext& ctx, SubworldMapData& out) {
             const float dy = float(y) + 0.5f - room.cy;
             if (dx * dx + dy * dy > r2) continue;
             const std::size_t i = cell_at(x, y);
-            out.tiles[i] = TILE_SQUARE;
+            out.tiles[i] = std::uint8_t(dungeon_spire_tower_floor());
             out.trav[i] = 1;
         }
     }

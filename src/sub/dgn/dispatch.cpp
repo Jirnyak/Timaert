@@ -38,13 +38,16 @@ static void gen_dungeon_void(const CellContext& ctx, SubworldMapData& out) {
 }
 
 Tile dungeon_floor_tile(const DungeonRef& ref) {
-    // ПОИМЁННО, НЕ default: switch по uint8 не судился -Wswitch вовсе —
-    // новый род данжа молча получал TILE_SQUARE (ЗАКОН СЛОВАРЯ п.4).
+    // ПОЛ НАЗЫВАЕТ МОДУЛЬ, дверь только диспетчит (вердикт 2026-11-07):
+    // до этого дня дверь несла СВОИ литералы, а строители красили СВОИ —
+    // два ответа на один вопрос, прод не звал дверь ни разу, её держали
+    // только тесты. Теперь краска модуля и ответ двери — одна функция.
+    // ПОИМЁННО, НЕ default (ЗАКОН СЛОВАРЯ п.4).
     switch (DungeonRef::Kind(ref.kind)) {
-        case DungeonRef::Cave:         return TILE_ROCK;  // scree
-        case DungeonRef::PrologueRoad: return TILE_ROAD;  // the paved bed
-        case DungeonRef::House:
-        case DungeonRef::SpireTower:   return TILE_SQUARE; // flagged hall
+        case DungeonRef::Cave:         return dungeon_cave_floor();
+        case DungeonRef::PrologueRoad: return dungeon_prologue_road_floor();
+        case DungeonRef::House:        return dungeon_house_floor();
+        case DungeonRef::SpireTower:   return dungeon_spire_tower_floor();
         case DungeonRef::None:
         case DungeonRef::Void:         return TILE_SQUARE; // sealed filler
     }
