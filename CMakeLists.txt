@@ -1864,6 +1864,34 @@ timaert_test(avatar_standing_test
         src/bus/anketa.cpp
         src/tables/items.cpp)
 
+# ИЗЪЯТИЕ НОГ ПО АРЕНДЕ (ломоть 2 M-419): в девяти клетках окна ноги макро
+# отказывают без флагов, шаг В аренду — последний, цель/доля/планка
+# захваченного живут. Замыкание — как у flag_march_test: гейты живут в
+# ядре марша (npc_ai.cpp).
+timaert_test(capture_legs_test
+    SOURCES
+        src/macro/npc_spawn.cpp
+        src/macro/npc_ai.cpp
+        src/macro/squad_index.cpp
+        src/macro/deal.cpp
+        src/macro/recovery.cpp
+        src/macro/nav_field.cpp
+        src/macro/economy.cpp
+        src/macro/macro_stock.cpp
+        src/macro/fauna.cpp
+        src/tables/fauna.cpp
+        src/macro/tree_layer.cpp
+        src/bus/anketa.cpp
+        src/tables/items.cpp
+        src/macro/econ_day.cpp
+        src/macro/world_tick.cpp
+        src/macro/spires.cpp
+        src/macro/threat_field.cpp
+        src/macro/scent_field.cpp
+        src/macro/chronicle.cpp
+        src/macro/deposit_layer.cpp
+    LINK_SDL)
+
 # FOLD ЗАХВАТА (ломоть 1 M-419): клетка+доля одной дверью squad_fold_pos,
 # румб честный, прыжка нет. Дверь header-only в bus/store.h — замыкание то
 # же, что у avatar_standing_test: контейнер и каталог нужны самой анкете.

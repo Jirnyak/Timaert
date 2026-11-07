@@ -420,9 +420,14 @@ ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
 // поведения, и передаёт сюда. МОМЕНТ РАСЧЁТА ОСТАВЛЕН ТОТ ЖЕ, что был у
 // снесённой колонки `overloadCost`, — менялись с тех пор только тип числа
 // (`int16` → `int` → `float`) и его РОЛЬ в формуле (слагаемое → множитель).
+// `captured` — АРЕНДОВАН ЛИ СТАРТ ДУМКИ (ЗАХВАТ, ломоть 2 M-419): свип
+// сэмплит его тем же моментом, что землю часа, и передаёт параметром — как
+// грунт и груз. Захваченный для ритма ВСТАЛ (макро-ног в окне нет: реген —
+// фон, жжения нет — «жжение только при движении»), а доезд доли в центр для
+// него не бежит: доля — писателя fold.
 void settle_march_rhythm(MacroHandle e, const MacroPos& p,
                          ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
-                         bool moved, const TickContext& ctx,
+                         bool moved, bool captured, const TickContext& ctx,
                          float overloadBurden, float groundWeight) {
     const int maxSp = std::max<int>(1, hp.maxSp);
 
@@ -486,7 +491,8 @@ void settle_march_rhythm(MacroHandle e, const MacroPos& p,
     // The banking marcher never trips this: his budget is spent below one.
     // Measured 2026-08-31: a silver crew froze at 48/110 SP for days at a
     // river bank — walking nowhere, resting never.
-    const bool stopped = rt.state == std::uint8_t(NPCState::Resting)
+    const bool stopped = captured
+                         || rt.state == std::uint8_t(NPCState::Resting)
                          || at_goal(p, store_ctx(ctx).goal[e.slot], ctx)
                          || (!moved
                              && (rt.marchFlags & ecs::kMarchRefused) != 0);
@@ -502,7 +508,9 @@ void settle_march_rhythm(MacroHandle e, const MacroPos& p,
     // иначе навсегда оставила бы долю на краю входа. Темп — базовый шаг
     // думки (та же величина, что производит марш); это НЕ марш — resting
     // уже вычислен, жжения доезд не несёт.
-    if (resting) {
+    // …НО НЕ В АРЕНДЕ: доля захваченного — писателя fold (ЗАХВАТ, ломоть 2
+    // M-419); доезд сверху был бы вторым писателем той же величины.
+    if (resting && !captured) {
         ecs::cell_sub_walk_home(
             rt.sub,
             std::uint32_t(std::lround(kMacroWalkCellsPerHour
@@ -579,6 +587,10 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
     g.side = ctx.mapW;
     g.playerCellX = wrap_axis(int(ctx.playerX), ctx.mapW);
     g.playerCellY = wrap_axis(int(ctx.playerY), ctx.mapH);
+    // Центр аренды — ядру (изъятие ног, ломоть 2 M-419). Тернар обязателен:
+    // `ctx.mw.gs` нуллим по контракту (те же `if (ctx.mw.gs && …)` у судов
+    // автобоя ниже).
+    g.leaseCenter = ctx.mw.gs ? ctx.mw.gs->leasedWindow : kNoWindowLease;
     const float walked = sm::try_move(p, rt, tx, ty, quanta, g);
     // Скорость картинки — евклидова ДОРОГА думки за её период, одна дверь
     // (`set_visual_speed@src/macro/squad.h`). Пишется и нулём: стоящее тело
@@ -3477,7 +3489,16 @@ void ai_teleporter(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     // субъекта со своим ручным сливом, буквально «своя таблица
     // восстановления у отдельного рода действий» (ЗАКОН СПОСОБНОСТИ п.6);
     // прежняя пара «кулдаун 50 думок + пауза Idle 10» слилась в один заряд.
-    if (!squad_recovering(rt) && rand_f01(ctx) < 0.005f) {
+    // ПРЫЖОК ИЗ АРЕНДЫ ОТЛАГАЕТСЯ (ЗАХВАТ, ломоть 2 M-419): в окне позицию
+    // ведёт субмир — прыжок макро был бы вторым писателем (тело осталось бы
+    // в сцене, запись уехала). Прыжок В окно законен: вошедший захватывается
+    // следующим слепком. Форма гейта — та же, что у судов автобоя
+    // (`ctx.mw.gs && cell_is_leased(…)`); он стоит ПЕРВЫМ, чтобы отложенный
+    // прыжок не сжигал ролл.
+    const bool jumpLeased = ctx.mw.gs
+        && cell_is_leased(*ctx.mw.gs,
+                          cell_of(int(p.x), int(p.y), ctx.mapW));
+    if (!jumpLeased && !squad_recovering(rt) && rand_f01(ctx) < 0.005f) {
         XY t = pick_random_nearby(p.x, p.y, 40, ctx);
         p.x = t.x; p.y = t.y;
         // A jump has no entry edge — the sentinel degrades placement to the
@@ -4891,6 +4912,11 @@ static void tick_macro_npc_ai_one(MacroWorld& mw, MacroNpcAiRuntime& runtime) {
         // на дорогу» платит по дороге (промах до ×31). Адрес назван СТАРТОМ, а
         // не `p`, чтобы следующая правка порядка не сменила смысл молча.
         const float groundWeight = cell_weight(ctx.mw.pathCost, int(x0), int(y0));
+        // АРЕНДОВАН ЛИ СТАРТ ДУМКИ (ЗАХВАТ, ломоть 2 M-419) — один сэмпл,
+        // тем же моментом, что земля часа строкой выше: вошедший в окно
+        // СРЕДИ думки честно оплатил свой марш и станет захваченным только
+        // со следующей.
+        const bool captured = cell_is_leased(gs, cell.idx);
         rt.marchFlags = 0;   // флаги марша живут одну думку
         if (gate == ThinkGate::Think)
             dispatch(h, p, rt, hp, ctx);
@@ -4899,7 +4925,7 @@ static void tick_macro_npc_ai_one(MacroWorld& mw, MacroNpcAiRuntime& runtime) {
         settle_march_rhythm(h, p, rt, hp,
                             p.x != x0 || p.y != y0
                                 || (rt.marchFlags & ecs::kMarchAdvanced) != 0,
-                            ctx, overloadBurden, groundWeight);
+                            captured, ctx, overloadBurden, groundWeight);
         // Марш свою долю ведёт САМ (квантовый ход, вердикт 2026-11-02);
         // драйверу остался только ПРЫЖОК: телепорт штампует kEntryDirNone,
         // и такая смена клетки честно ставит центр. Запись — ЕДИНСТВЕННОЙ
@@ -4962,6 +4988,16 @@ float try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
     // кванты, которым некуда идти, сгорают (kMarchRefused скажет ритму).
     rt.marchFlags = 0;
     float walked = 0.0f;   // евклидова дорога — только для картинки
+
+    // ИЗЪЯТИЕ НОГ ПО АРЕНДЕ (ЗАХВАТ, ломоть 2 M-419): в девяти клетках окна
+    // позицию ведёт СУБМИР, fold сворачивает её на границе тика — макро-ноги
+    // здесь отказывают ЦЕЛИКОМ: ни клетки, ни доли (доля тоже fold'а).
+    // БЕЗ ФЛАГОВ: kMarchRefused был бы ложью «мир не пускает» —
+    // march_is_stuck_ перезаписал бы живую цель на дом, а цели захваченных
+    // ЖИВУТ (думка идёт, M-313). Ритму «тело стоит» скажет параметр
+    // captured свипа, не флаг.
+    if (cell_in_lease_frame(g.leaseCenter, cell_of(ix, iy, g.side), g.side))
+        return 0.0f;
 
     while (quanta > 0) {
         int bx = -1, by = -1;
@@ -5125,6 +5161,13 @@ float try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
         // cell where the door can see it. (Для марша САМОГО игрока гейт
         // спит: g.playerCellX = −1 вне тора.)
         if (ix == g.playerCellX && iy == g.playerCellY) break;
+
+        // ШАГ В АРЕНДУ — ПОСЛЕДНИЙ ШАГ ДУМКИ (ЗАХВАТ, ломоть 2 M-419):
+        // вошедший в окно встаёт на ПЕРВОЙ арендованной клетке и
+        // захватывается следующим слепком — пролёт насквозь за одну думку
+        // был бы сквадом в окне, которого слепок не воплотил.
+        if (cell_in_lease_frame(g.leaseCenter,
+                                cell_of(ix, iy, g.side), g.side)) break;
     }
 
     // ПРИБЫЛ — ДОЕЗЖАЕТ В ЦЕНТР (M-375, вторая половина хода): пересечение

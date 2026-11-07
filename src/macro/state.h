@@ -961,19 +961,27 @@ inline void release_window(GameState& gs) {
     gs.leasedWindow = kNoWindowLease;
 }
 
-// ЭТА КЛЕТКА В АРЕНДЕ? Центр плюс восемь румбов — `cell_step` по ЗАКОНУ
-// АДРЕСА, то есть без ручной свёртки и без пары координат. Девять сравнений
-// целых, ни одного деления: вопрос задаётся в свипе и в суде встречи, то
-// есть на горячем пути.
-inline bool cell_is_leased(const GameState& gs, std::uint32_t cell) noexcept {
-    if (gs.leasedWindow == kNoWindowLease) return false;
-    const int side = gs.mapW;
+// ЭТА КЛЕТКА В РАМКЕ 3×3 ОТ ЦЕНТРА АРЕНДЫ? Голая геометрия БЕЗ GameState:
+// её же спрашивает ядро марша через `MarchGround::leaseCenter` (изъятие ног,
+// ломоть 2 M-419), которому мир по подписи не положен. Центр плюс восемь
+// румбов — `cell_step` по ЗАКОНУ АДРЕСА, то есть без ручной свёртки и без
+// пары координат. Девять сравнений целых, ни одного деления: вопрос задаётся
+// в свипе, в суде встречи и в цикле марша — на горячем пути.
+inline bool cell_in_lease_frame(std::uint32_t center, std::uint32_t cell,
+                                int side) noexcept {
+    if (center == kNoWindowLease) return false;
     for (int dy = -1; dy <= 1; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {
-            if (cell_step(gs.leasedWindow, dx, dy, side) == cell) return true;
+            if (cell_step(center, dx, dy, side) == cell) return true;
         }
     }
     return false;
+}
+
+// ЭТА КЛЕТКА В АРЕНДЕ? Обёртка над геометрией для читателей с миром на
+// руках (суды автобоя/встречи, свип мёртвых записей).
+inline bool cell_is_leased(const GameState& gs, std::uint32_t cell) noexcept {
+    return cell_in_lease_frame(gs.leasedWindow, cell, gs.mapW);
 }
 
 // (landmark_index_by_id / landmark_by_id / add_landmark / set_landmark_type

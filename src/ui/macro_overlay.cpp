@@ -617,6 +617,10 @@ std::size_t step_macro_walk(GameState& gs, MacroStore& stw, MacroCursor& cursor,
     route.idx = cursor.pathIdx;
     MarchGround g;
     g.side = W;
+    // Центр аренды — честным значением (изъятие ног, ломоть 2 M-419): на
+    // карте аренды нет по построению (ходок недостижим при активном
+    // субмире, подъём её снимает), так что гейт спит ЗНАЧЕНИЕМ, не веткой.
+    g.leaseCenter = gs.leasedWindow;
     MacroPos p{float(ecs::cell_x(*cell, W)), float(ecs::cell_y(*cell, W))};
     const std::size_t idx0 = route.idx;
     const int cx0 = int(p.x), cy0 = int(p.y);
