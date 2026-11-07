@@ -848,7 +848,8 @@ bool run_subworld_clock_smoke(App& app) {
     const std::uint64_t t0 = app.subworld.frame_world_tick();
     // С ЦЕНТРА — ПРОЧЬ: в середине клетки свёртка доли и её дефолт совпадают
     // (0 == 0), и свидетель третьей двери был бы тавтологией — мутация
-    // «fold_player_sub мёртв» прошла тут зелёной, пока тело стояло в центре.
+    // «fold мёртв» прошла тут зелёной, пока тело стояло в центре
+    // (fold_captured_subs; прежнее имя fold_player_sub умерло ломтём 1 M-419).
     app.subworld.set_player_pos(float(sm::sub::kCellSize) + 173.0f,
                                 float(sm::sub::kCellSize) + 691.0f);
     // Два полных мировых тика подземного темпа: один шаг мира стоит
@@ -880,7 +881,8 @@ bool run_subworld_clock_smoke(App& app) {
     // ТРЕТЬЯ ДВЕРЬ ДОЛИ КЛЕТКИ (M-244, ломоть 5): на границе тика позиция
     // тела свёрнута в {subX,subY} флаг-записи той же арифметикой, которой
     // точку разворачивает player_flag_point (cell + sub/256). Паритет
-    // формулы — зеркало fold_player_sub.
+    // формулы — зеркало fold_captured_subs (для флажка полоса центральная,
+    // формула байтово та же, что у прежнего fold_player_sub).
     {
         const sm::MacroHandle fh = app.gs.playerFlagRef;
         bool folded = false;

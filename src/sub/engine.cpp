@@ -1020,24 +1020,45 @@ std::uint64_t SubworldEngine::frame_world_tick() const {
     return frame_ ? frame_->worldTick : 0u;
 }
 
-// Свёртка позиции тела в долю клетки флаг-записи — ТРЕТЬЯ дверь CellSub
-// (M-244; вниз клетка разворачивается в континуум, вверх континуум
-// СВОРАЧИВАЕТСЯ в числа клетки — ЗАКОН ШВА). Центр окна 3×3 держит полосу
-// [kCellSize, 2·kCellSize); доля — смещение от середины этой полосы в
-// квантах 1/256 клетки, ровно та арифметика, которой точку разворачивает
-// player_flag_point@src/macro/player_entity.h (cell + sub/256).
-void SubworldEngine::fold_player_sub() {
-    if (!gs_ || !mw_.store || !active_) return;
+// Свёртка позиции КАЖДОГО захваченного тела в клетку+долю его макро-записи
+// — обобщение fold, ломоть 1 эпика ЗАХВАТА (M-419; вниз клетка
+// разворачивается в континуум, вверх континуум СВОРАЧИВАЕТСЯ в числа клетки
+// — ЗАКОН ШВА). Прежде дверь сворачивала ОДНУ долю ОДНОМУ флажку; с захвата
+// сворачивается всякое tracked-тело с бэклинком (аватар сквада и игрок —
+// «игрок ничем не особенен», теперь в обе стороны): полоса окна 3×3 даёт
+// клетку (центр + полоса − 1 маской тора), смещение от середины полосы —
+// долю в квантах 1/256 клетки, ровно та арифметика, которой точку
+// разворачивает scene_axis_of_sub@src/sub/spawn.h. Головы инвентаря
+// бэклинка не несут и мира не двигают — сквад в макро АТОМАРЕН, его точка
+// есть тело аватара. Писатель на время захвата — субмир (изъятие ног макро
+// по клеткам окна — ломоть 2).
+void SubworldEngine::fold_captured_subs() {
+    if (!gs_ || !mw_.store || !active_ || !objects_ || !frame_) return;
     if (sceneKind_ == SceneKind::Dungeon) return;   // данж вне клеток окна
     MacroStore& st = *mw_.store;
-    const MacroHandle fh = gs_->playerFlagRef;
-    if (!st.valid(fh)) return;
-    const auto quant = [](float wpos) {
-        const float frac01 = (wpos - float(kCellSize)) / float(kCellSize);
+    const std::int32_t side = frame_->side;
+    const auto quant = [](float wpos, int strip) {
+        const float frac01 = wpos / float(kCellSize) - float(strip);
         const int q = int((frac01 - 0.5f) * 256.0f);
         return std::int8_t(std::clamp(q, -127, 127));
     };
-    squad_set_sub(st, fh, ecs::CellSub{quant(playerX_), quant(playerY_)});
+    // Свип арены по биту — идиома зеркала (mirror_bodies_from_record):
+    // fold живёт только у носителя бэклинка, у снаряда origin нулевой.
+    sub::SubObjects* objs = objects_;
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+        if ((objs->flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
+        const MacroHandle h = sub::slot_macro_origin(*objs, s);
+        if (h.id == 0 || !st.valid(h)) continue;
+        const ecs::Position* p = sub::slot_pos(*objs, s);
+        if (p == nullptr) continue;
+        // Полоса окна по оси ∈ {0,1,2}; тело не покидает композита 3072²
+        // по построению, кламп — страж области определения, не поведение.
+        const int sx = std::clamp(int(p->x) / int(kCellSize), 0, 2);
+        const int sy = std::clamp(int(p->y) / int(kCellSize), 0, 2);
+        squad_fold_pos(st, h, wrap_axis(mgr_.center_cx() + sx - 1, side),
+                       wrap_axis(mgr_.center_cy() + sy - 1, side), side,
+                       ecs::CellSub{quant(p->x, sx), quant(p->y, sy)});
+    }
 }
 
 // Квитанция app «фрейм заполнен заново». Здесь же достраивается генерация,

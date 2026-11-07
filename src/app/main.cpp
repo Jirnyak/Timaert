@@ -3472,10 +3472,11 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // tick_world_subworld_steps@src/macro/world_tick.cpp («total =
         // remainder + steps»); предикат стоит ДО тика, потому что операции
         // обязаны лечь в мир, который сейчас шагнёт. Здесь же — свёртка
-        // позиции в долю клетки (третья дверь CellSub, M-244).
+        // позиций ВСЕХ захваченных в клетку+долю (обобщение fold, ломоть 1
+        // ЗАХВАТА M-419; прежде — одна доля одному флажку).
         if (app.gs.worldTickRt.subworldStepRemainder + 1
                 >= sm::kSubworldTickDivisor) {
-            app.subworld.fold_player_sub();
+            app.subworld.fold_captured_subs();
             sm::MacroWorld deltaWorld = macro_world(app);
             sm::apply_local_delta(deltaWorld, app.subworld.delta_buffer(),
                                   &spire_fact_sink, &app);

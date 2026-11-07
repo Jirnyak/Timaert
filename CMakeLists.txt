@@ -1864,6 +1864,14 @@ timaert_test(avatar_standing_test
         src/bus/anketa.cpp
         src/tables/items.cpp)
 
+# FOLD ЗАХВАТА (ломоть 1 M-419): клетка+доля одной дверью squad_fold_pos,
+# румб честный, прыжка нет. Дверь header-only в bus/store.h — замыкание то
+# же, что у avatar_standing_test: контейнер и каталог нужны самой анкете.
+timaert_test(capture_fold_test
+    SOURCES
+        src/bus/anketa.cpp
+        src/tables/items.cpp)
+
 # ЕДИНАЯ ТАБЛИЦА ДЕЙСТВИЙ (M-369, ломоть 1): отрезок выведен из каталога
 # спеллов, два слоя рекавери, домен из лестницы, цена тремя колонками.
 timaert_test(action_table_test

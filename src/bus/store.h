@@ -799,16 +799,43 @@ inline const char* squad_name(const MacroStore& s, MacroHandle h) {
     return s.name[h.slot].text;
 }
 
-// ── ПИСАТЕЛЬ ДОЛИ КЛЕТКИ — ТРЕТЬЯ ДВЕРЬ CellSub (ЗАКОН ШВА) ──────────────
+// ── FOLD ЗАХВАТА — ТРЕТЬЯ ДВЕРЬ CellSub, ТЕПЕРЬ КЛЕТКА+ДОЛЯ (ЗАКОН ШВА,
+// обобщение fold — ломоть 1 эпика M-419) ─────────────────────────────────
 // Вниз клетка РАЗВОРАЧИВАЕТСЯ в континуум, вверх континуум СВОРАЧИВАЕТСЯ в
-// числа клетки, и свёртку пишет СЦЕНА — для того сквада, которым играют
-// (поправка 2026-10-26: у прочих субмир положения не пишет вовсе). Дверь, а
-// не прямая запись колонки, по той же причине, что у `macro_mark_dead`:
-// писателей колонки мира обязано быть видно поимённо. Протухший хэндл —
-// no-op: доля не ложится поверх нового жильца слота.
-inline void squad_set_sub(MacroStore& s, MacroHandle h, ecs::CellSub sub) {
-    if (!s.valid(h)) return;
-    s.runtime[h.slot].sub = sub;
+// числа клетки, и свёртку пишет СЦЕНА — с ЗАХВАТА для КАЖДОГО захваченного
+// сквада окна, не только для того, которым играют (прежняя дверь
+// `squad_set_sub` писала одну ДОЛЮ одному ФЛАЖКУ и умерла в эту; поправка
+// 2026-10-26 «у прочих субмир положения не пишет вовсе» снята ЗАХВАТОМ).
+// Клетка и доля — ОДНОЙ операцией на границе макро-тика. Смена клетки —
+// честный румб входа: тело ПРОШЛО границу ногами, это не прыжок, поэтому
+// доля НЕ зануляется (анти-`squad_jump_to_cell`), а часы думки не трогаются.
+// Дверь, а не прямая запись колонки, по той же причине, что у
+// `macro_mark_dead`: писателей колонки мира обязано быть видно поимённо.
+// Протухший хэндл — no-op: позиция не ложится поверх нового жильца слота.
+inline void squad_fold_pos(MacroStore& st, MacroHandle h, int x, int y,
+                           std::int32_t side, ecs::CellSub sub) {
+    if (!st.valid(h)) return;
+    auto& rt = st.runtime[h.slot];
+    auto& cell = st.cell[h.slot];
+    const std::uint32_t newIdx = ecs::cell_index(x, y, side);
+    if (newIdx != cell.idx) {
+        // Румб — маской тора (ЗАКОН АДРЕСА: заворот — маска, не деление).
+        // Fold зовут на границе КАЖДОГО макро-тика, тело окна не уходит
+        // дальше соседа за тик, значит шаг оси ∈ {-1, 0, +1} по построению;
+        // свёртка через половину стороны — на случай торового шва.
+        const std::uint32_t mask = std::uint32_t(side) - 1u;
+        const auto axis_step = [mask, side](int from, int to) {
+            const int w = int((std::uint32_t(to) - std::uint32_t(from)) & mask);
+            const int d = w > side / 2 ? w - side : w;
+            return d < 0 ? -1 : (d > 0 ? 1 : 0);
+        };
+        rt.entryDir = pack_entry_dir(
+            axis_step(cell_x(cell.idx, side), x),
+            axis_step(cell_y(cell.idx, side), y));
+        rt.entryTicks = 0;
+        cell.idx = newIdx;
+    }
+    rt.sub = sub;
 }
 
 // THE macro jump (escape teleport, console goto, subworld exit door): set
