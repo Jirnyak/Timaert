@@ -609,8 +609,10 @@ void steer_bodies(BodyCrowd& u, const UnitGrid& fine, const UnitGrid& pick,
 
         // ── 2. Where this body WANTS to be ─────────────────────────────────
         float seekX = 0.0f, seekY = 0.0f;
-        if (!passive && best < 0 && u.enemyMask[si] != 0ull
-            && !field.hasSite.empty()) {
+        // (Гейт `!field.hasSite.empty()` снесён ломтём 3 M-419: у
+        // std::array он constexpr-ложь всегда — мёртвый пережиток времён
+        // std::vector, читавшийся как живая проверка.)
+        if (!passive && best < 0 && u.enemyMask[si] != 0ull) {
             // No contact: read ONE field cell. This is the whole long-range
             // navigation system — no neighbour query, no player special case,
             // and no distance leash. The body advances iff its cell is ALERTED,

@@ -202,7 +202,7 @@ struct BodyDesc {
 
 // ── Struct of arrays ───────────────────────────────────────────────────────
 // One FIXED column per attribute, every column the length of THE ceiling:
-// 64 B per body × kMaxSubObjects = exactly 1 MiB, in ONE block. Nothing is ever
+// 64 B per body × kMaxSubObjects = exactly 4 MiB, in ONE block. Nothing is ever
 // reserved, grown or reallocated — `add` refuses past the last slot, `clear`
 // only rewinds `count` — so no index taken during a pass can dangle, and a
 // capacity that has drifted out of step with the cap cannot exist. That promise
@@ -211,7 +211,7 @@ struct BodyDesc {
 //
 // The block is far too big for a stack frame, so the crowd is NON-COPYABLE,
 // NON-MOVABLE and born only through `make_body_crowd()` — the shape
-// `make_macro_store` already uses one layer up. Deliberate: "1 MiB on the
+// `make_macro_store` already uses one layer up. Deliberate: "4 MiB on the
 // stack" stops being a rule somebody must remember and becomes a line that
 // does not compile.
 struct BodyCrowd {
@@ -243,7 +243,7 @@ struct BodyCrowd {
 
     // Rewinds to empty. The columns keep their (stale) contents on purpose:
     // every slot below `count` is overwritten by `add` before anyone reads it,
-    // and wiping 1 MiB per tick would buy nothing but a memset.
+    // and wiping 4 MiB per tick would buy nothing but a memset.
     void clear();
     // Takes the next slot; returns its index, or -1 once kMaxSubObjects is full.
     int add(const BodyDesc& d);
@@ -262,10 +262,10 @@ private:
 // Named per DOD п.10: a size that is stated out loud is nailed down here, so it
 // can never quietly drift from the picture of memory.
 static_assert(sizeof(BodyCrowd) == std::size_t(kMaxSubObjects) * 64u + 16u,
-              "one flat MiB: 64 B/body, nothing hidden but four bytes of pad");
+              "one flat 4 MiB block: 64 B/body, nothing hidden but 16 B head");
 
 // Births the crowd in its own heap block. Defined in movement.cpp on purpose:
-// a 1 MiB object named with an initializer inside a HEADER is paid by every
+// a 4 MiB object named with an initializer inside a HEADER is paid by every
 // translation unit that includes it (AGENTS §5 п.13 — measured at 74× on
 // make_macro_store, 55.6 s for one empty TU).
 std::unique_ptr<BodyCrowd> make_body_crowd();

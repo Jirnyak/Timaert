@@ -880,6 +880,9 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // + settlement citizens), so the whole visible 3×3 is populated up front
     // and neighbouring cities are alive before you ever step toward them.
     refresh_window_step_weights();
+    // Поля курса (M-420): вход в сцену — новый композит, прежние веса и
+    // поля о нём ничего не знают; перепекутся бюджетом тиков.
+    if (course_) course_invalidate(*course_);
     spawn_all_cells();
     // The squad wears its owner's colours — the FLAG RECORD's own row (banner
     // rule): his own realm as himself, the lord's realm while he wears one
@@ -1977,6 +1980,10 @@ void SubworldEngine::spawn_all_cells() {
 // vanishes; only the far cells that actually left do.
 void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
     refresh_window_step_weights();
+    // Поля курса протухают сменой окна ЦЕЛИКОМ (M-420): веса читали чужие
+    // тайлы, точечные ключи — чужие координаты. Перепекутся бюджетом
+    // тиков; до свежих полей потребители живут фолбэком, не враньём.
+    if (course_) course_invalidate(*course_);
     // РЕ-ЦЕНТР ЕСТЬ СМЕНА АРЕНДЫ, а не отдельное событие: прежние девять
     // клеток мир забирает назад (и это один из двух равноправных концов
     // аренды), новые сдаёт — ТОЙ ЖЕ дверью.
@@ -2120,8 +2127,24 @@ void SubworldEngine::tick_day_pump(float dt) {
                 }
                 continue;
             }
-            a.wantVx = dx / d * a.wanderSpeed;
-            a.wantVy = dy / d * a.wanderSpeed;
+            // Курс вместо тупого пеленга (M-420: «тупая прямая умирает
+            // классом») — ходок-домой спускается тем же точечным полем,
+            // что захваченные: все идущие к одной двери делят один бейк.
+            // kCourseNoStep — и внутри ячейки цели, и пока поле печётся:
+            // последняя миля и фолбэк — один честный пеленг.
+            std::uint8_t courseDir = kCourseNoStep;
+            if (course_ && frame_ != nullptr) {
+                courseDir = course_dir_point(
+                    *course_, h.x, h.y, p.x, p.y,
+                    std::uint32_t(frame_->worldTick));
+            }
+            if (courseDir != kCourseNoStep) {
+                a.wantVx = kCourseDirUx[courseDir] * a.wanderSpeed;
+                a.wantVy = kCourseDirUy[courseDir] * a.wanderSpeed;
+            } else {
+                a.wantVx = dx / d * a.wanderSpeed;
+                a.wantVy = dy / d * a.wanderSpeed;
+            }
         }
         // HE IS HOME, so he is no longer embodied — and nothing is settled.
         // A macro debt is paid where a body DIES (the reaper above); a man who
@@ -3743,6 +3766,20 @@ int SubworldEngine::battle_relation_callback(void* user, const FactionSet& set,
 void SubworldEngine::tick_subworld_bodies(float dt) {
     if (!objects_ || dt <= 0.0f) return;
 
+    // ── Поля курса (M-420): обслуживание РАЗ В ТИК — один чанк весов, пока
+    // они не свежи, затем не больше одного бейка. Амортизация по
+    // построению: рывка «всё пересобрать разом» не существует, недопечённый
+    // потребитель живёт фолбэком. Данж вне мира — курса нет (окна нет).
+    if (course_ && sceneKind_ != SceneKind::Dungeon) {
+        const std::vector<std::uint8_t>& courseTiles = mgr_.tiles();
+        if (courseTiles.size()
+            >= std::size_t(kFullSize) * std::size_t(kFullSize)) {
+            course_maintain(*course_, courseTiles.data(),
+                            mgr_.structures().data(),
+                            mgr_.structures().size());
+        }
+    }
+
     // ── Gather: ECS → SoA, O(N) ────────────────────────────────────────────
     // Every living body enters the snapshot — the SAME set the spell pass
     // targets (is_spell_target: Health columns, alive), so a body that a
@@ -3859,6 +3896,63 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
             // the combat drive may not conscript it.
             if (ai->kind == ecs::SubworldAi::Flee) d.flags |= B_Passive;
         }
+        // ── ЗАХВАТ, ломоть 3 (M-419/M-420): собственное намерение
+        // захваченного тела — КУРС к его макро-цели, анкетной скоростью.
+        // Пишется ТОЛЬКО интент, и иерархия воли держится по построению:
+        // ВОЙНА сильнее курса (боевой привод вытесняет намерение без
+        // смешивания — «ВОЙНА ТЕЛА НЕ СПРАШИВАЕТ»), ПАНИКА сильнее курса
+        // (Flee с живым словом не перекрывается), курс сильнее ПРОГУЛКИ
+        // (wander — слово без цели). Цель читается из стора по хэндлу:
+        // род 2 фрейма едет АДРЕСОМ, истина всегда в макромире (ЗАКОН
+        // ШВА). Паритет темпа уже в таблице (march_speed) — подгона нет.
+        if (!isPlayer && course_ && mw_.store && frame_
+            && sceneKind_ != SceneKind::Dungeon && d.speed > 0.0f) {
+            const MacroHandle origin = sub::slot_macro_origin(arena, s);
+            if (origin.id != 0 && mw_.store->valid(origin)) {
+                const ecs::SquadGoal& goal = mw_.store->goal[origin.slot];
+                const bool hasGoal =
+                    ecs::goal_kind(goal.what) != ecs::GoalKind::None
+                    && goal.cell != ecs::kNoCell;
+                bool panicking = false;
+                if (const auto* ai = sub::slot_ai(arena, s)) {
+                    panicking = ai->kind == ecs::SubworldAi::Flee
+                                && (ai->wantVx * ai->wantVx
+                                    + ai->wantVy * ai->wantVy) > 1.0e-6f;
+                }
+                if (hasGoal && !panicking) {
+                    const std::int32_t side = frame_->side;
+                    const int ox = toroidal_cell_offset(
+                        cell_x(goal.cell, side), mgr_.center_cx(), side);
+                    const int oy = toroidal_cell_offset(
+                        cell_y(goal.cell, side), mgr_.center_cy(), side);
+                    std::uint8_t courseDir = kCourseNoStep;
+                    if (ox >= -1 && ox <= 1 && oy >= -1 && oy <= 1) {
+                        // Цель В ОКНЕ — точечное поле на центр её клетки
+                        // (поле делят ВСЕ идущие туда — цели квантованы).
+                        courseDir = course_dir_point(
+                            *course_, (float(ox) + 1.5f) * float(kCellSize),
+                            (float(oy) + 1.5f) * float(kCellSize), p.x, p.y,
+                            std::uint32_t(frame_->worldTick));
+                    } else {
+                        // Цель ЗА ОКНОМ — румбовое поле к кромке по знакам
+                        // торового смещения; выход из захвата — ломоть 4.
+                        const std::uint8_t rumb = course_rumb_of(
+                            ox > 0 ? 1 : (ox < 0 ? -1 : 0),
+                            oy > 0 ? 1 : (oy < 0 ? -1 : 0));
+                        if (rumb != kCourseNoStep) {
+                            courseDir = course_dir_rumb(*course_, rumb, p.x,
+                                                        p.y);
+                        }
+                    }
+                    if (courseDir != kCourseNoStep) {
+                        // Интент несёт СВОЙ темп (закон вектора намерения).
+                        d.intentVx = kCourseDirUx[courseDir] * d.speed;
+                        d.intentVy = kCourseDirUy[courseDir] * d.speed;
+                    }
+                }
+            }
+        }
+
         // A body flagged individually hostile to the player records that as a
         // private grudge, and hands the player side the reciprocal bit — the one
         // per-entity exception survives as data, never as a branch in the loop.
@@ -5676,7 +5770,13 @@ void SubworldEngine::tick(float dt) {
     // AFTER the upload above so each solid seats on the fresh heightfield.
     // Every mover below (ground-follow support, flight floor, player, AI,
     // battle, spells) reads the index this same tick.
-    if (dirtyNow.structs || dirtyNow.fullHeight) structIndexDirty_ = true;
+    if (dirtyNow.structs || dirtyNow.fullHeight) {
+        structIndexDirty_ = true;
+        // Набор строений сменился (рубка, шов) — солиды и перекрашенные
+        // тайлы меняют веса курса (M-420): то же событие, что кормит
+        // индекс солидов, кормит и протухание полей.
+        if (course_ && dirtyNow.structs) course_invalidate(*course_);
+    }
     if (structIndexDirty_) {
         structIndex_.rebuild(mgr_.structures(),
                              &SubworldEngine::ground_height_callback, this);

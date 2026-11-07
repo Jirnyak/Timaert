@@ -19,6 +19,7 @@
 #include "sub/seamless_manager.h"
 #include "sub/camera.h"
 #include "sub/collide.h"
+#include "sub/course.h"
 #include "sub/particles.h"
 #include "sub/spell_effects.h"
 #include "sub/movement.h"
@@ -743,6 +744,11 @@ private:
     std::unique_ptr<UnitGrid> crowdFine_ = make_unit_grid();   // body separation
     std::unique_ptr<UnitGrid> crowdPick_ = make_unit_grid();   // contact / target search
     std::unique_ptr<InfluenceField> crowdField_ = make_influence_field();
+    // Поля курса (M-420, эпик ЗАХВАТА): весовые потоковые поля «куда идти»
+    // для мирного намерения тел — один плоский блок ~15 МиБ (static_assert
+    // в course.h), рождён один раз; обслуживание — один чанк/бейк за тик в
+    // tick_subworld_bodies, протухание — ре-центр и смена строений.
+    std::unique_ptr<CourseWorld> course_ = make_course_world();
     MoveParams            moveParams_{};
     // Parallel column of the crowd: the arena SLOT each SoA index came from
     // (ступень (iv) ломтя 7 — сущность из карты толпы умерла: всё

@@ -396,6 +396,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"macro_kill_writeback", SmokeAction::MacroKillWriteback},
     {"fauna_kill_writeback", SmokeAction::FaunaKillWriteback},
     {"spawn_squad_at_player", SmokeAction::SpawnSquadAtPlayer},
+    {"capture_course", SmokeAction::CaptureCourse},
     {"force_encounter", SmokeAction::ForceEncounter},
     {"capture_frame", SmokeAction::CaptureFrame},
     {"stats_settle", SmokeAction::StatsSettle},
@@ -828,6 +829,82 @@ bool run_subworld_walk_smoke(App& app) {
         return false;
     }
     std::fprintf(stderr, "[smoke] subworld_walk OK\n");
+    std::fflush(stderr);
+    return true;
+}
+
+// КУРС ЗАХВАЧЕННОГО (ломоть 3 эпика M-419; M-420): тело чужой записи с
+// макро-целью ЗА окном идёт к своей кромке по румбовому полю курса
+// анкетным темпом — конец «захваченные стоят» межломтевого шва ломтя 2.
+// Субъекта рожает предыдущий токен (spawn_squad_at_player — свидетель
+// рожает предусловие сам, §8 п.11); цель ставит харнесс и ПЕРЕШТАМПОВЫВАЕТ
+// каждый шаг: закон под проверкой — НОГИ (курс ведёт тело), а не думка
+// (которая вправе переписывать свою цель когда хочет).
+bool run_capture_course_smoke(App& app) {
+    if (!app.subworld.active()) {
+        smoke_fail(app, "capture_course outside the subworld");
+        return false;
+    }
+    sm::sub::SubObjects& wObjs = *app.sceneObjects;
+    sm::MacroStore& st = *app.macroStore;
+    int bodySlot = -1;
+    // Свип арены по биту жизни: гейт чужой записи сам отсекает снаряды,
+    // игрока и его солдат (та же выборка, что у macro_kill_writeback).
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+        if ((wObjs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
+        if (!smoke_projects_foreign_record(app, s)) continue;
+        bodySlot = s;
+        break;
+    }
+    if (bodySlot < 0) {
+        smoke_fail(app, "capture_course found no tracked body");
+        return false;
+    }
+    const sm::MacroHandle macro = sm::sub::slot_macro_origin(wObjs, bodySlot);
+    if (!st.valid(macro)) {
+        smoke_fail(app, "capture_course: tracked body backlinks nothing");
+        return false;
+    }
+    const auto bodyRef = sm::sub::ref_of(wObjs, bodySlot);
+    const int side = app.gs.mapW;
+    const float x0 = wObjs.pos[std::size_t(bodySlot)].x;
+    const float y0 = wObjs.pos[std::size_t(bodySlot)].y;
+    // 3 реальные секунды субмира: прогрев полей (8 чанков весов + бейк) —
+    // ~9 тиков, дальше тело идёт анкетным темпом.
+    constexpr int kCourseSmokeSteps = 192;
+    for (int i = 0; i < kCourseSmokeSteps; ++i) {
+        if (!st.valid(macro)) break;
+        // Цель — 8 клеток на восток (за окном ⇒ румбовое поле E);
+        // заворот — МАСКА (ЗАКОН АДРЕСА).
+        const int gy = sm::ecs::cell_y(st.cell[macro.slot], side);
+        const int gx = (sm::ecs::cell_x(st.cell[macro.slot], side) + 8)
+                       & (side - 1);
+        sm::ecs::goal_set(st.goal[macro.slot],
+                          sm::ecs::cell_index(gx, gy, side),
+                          sm::ecs::goal_what(sm::ecs::GoalKind::Cell, 0), 0,
+                          std::uint8_t(sm::NPCState::Idle));
+        advance_sim_steps(app, 1, /*allowInput*/false);
+    }
+    const int ts = sm::sub::ref_slot(wObjs, bodyRef);
+    if (ts < 0 || !st.valid(macro)) {
+        smoke_fail(app, "capture_course: тело или запись пропали в пути");
+        return false;
+    }
+    const float dxEast = wObjs.pos[std::size_t(ts)].x - x0;
+    const float dyDrift = wObjs.pos[std::size_t(ts)].y - y0;
+    std::fprintf(stderr, "[smoke] capture_course dx=%.1f dy=%.1f steps=%d\n",
+                 double(dxEast), double(dyDrift), kCourseSmokeSteps);
+    std::fflush(stderr);
+    // Порог — 24 тайла (3 ячейки курса) на восток, и обе полярности
+    // ЗАМЕРЕНЫ (2026-11-07, сид 12345): курс жив → dx=31.2; гейт интента
+    // снят (мутация `if (false && …)`) → dx=15.5 — дрейф сепарации, НЕ
+    // ход, и смоук красен. Порог стоит между полярностями; сид
+    // детерминирован, так что зазор не флачит.
+    if (dxEast < 24.0f) {
+        smoke_fail(app, "capture_course: captured body does not walk its course");
+        return false;
+    }
+    std::fprintf(stderr, "[smoke] capture_course OK\n");
     std::fflush(stderr);
     return true;
 }
@@ -7278,6 +7355,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=subworld_walk\n");
             std::fflush(stderr);
             if (run_subworld_walk_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::CaptureCourse:
+            std::fprintf(stderr, "[smoke] action=capture_course\n");
+            std::fflush(stderr);
+            if (run_capture_course_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::SubworldSeam:
             std::fprintf(stderr, "[smoke] action=subworld_seam\n");

@@ -60,6 +60,9 @@ attack_first_npc
 # Writebacks: the spawn goes FIRST — spawn_squad_at_player refuses inside a
 # subworld by construction, so it cannot follow the entry.
 spawn_squad_at_player,subworld_enter,macro_kill_writeback
+# Курс захваченного (ломоть 3 M-419/M-420): тело чужой записи с целью за
+# окном идёт к своей кромке по румбовому полю — «стоять» не проходит.
+spawn_squad_at_player,subworld_enter,capture_course
 subworld_enter,fauna_kill_writeback
 force_encounter
 

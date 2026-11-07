@@ -2515,6 +2515,13 @@ timaert_test(movement_steering_test
     SOURCES
         src/sub/movement.cpp)
 
+# Поля курса (M-420): модуль headless по построению — Дейкстра по весам
+# поверхности над синтетическим композитом, ни движка, ни Vulkan. Якоря —
+# отношения той же таблицы kTileGroundWeight, что читает код.
+timaert_test(course_field_test
+    SOURCES
+        src/sub/course.cpp)
+
 # The spell broad phase is a structural swap and this is its proof: for the
 # same scene, the grid-backed candidate enumeration produces EXACTLY the hits
 # of the full O(N·M) scan it replaced (the reference is the shipping nullptr
