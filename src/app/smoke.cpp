@@ -114,6 +114,7 @@ static void smoke_give_visual(sm::sub::SubObjects& objs, int s,
 #include "macro/player_entity.h"
 #include "bus/entry_context.h"  // unpack_entry_dir — закон доли марша (M-244a)
 #include "bus/store.h"
+#include "bus/world_row.h"   // creatures_push_stack — предусловие ростера (Б8)
 #include "macro/delta_apply.h"   // дверь границы тика — её же зовёт прибор капа
 #include <bit>
 
@@ -404,6 +405,8 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"capture_course", SmokeAction::CaptureCourse},
     {"capture_exit", SmokeAction::CaptureExit},
     {"city_point_probe", SmokeAction::CityPointProbe},
+    {"goto_marcher", SmokeAction::GotoMarcher},
+    {"marcher_probe", SmokeAction::MarcherProbe},
     {"force_encounter", SmokeAction::ForceEncounter},
     {"capture_frame", SmokeAction::CaptureFrame},
     {"stats_settle", SmokeAction::StatsSettle},
@@ -986,6 +989,123 @@ bool run_city_point_probe_smoke(App& app) {
         return false;
     }
     std::fprintf(stderr, "[smoke] city_point_probe OK\n");
+    std::fflush(stderr);
+    return true;
+}
+
+// ЖИВОЙ МАРШИРУЮЩИЙ СКВАД С РОСТЕРОМ — НЕ СИНТЕТИКА (Б8 заход 2: смоук с
+// синтетическим сквадом был ЗЕЛЁНЫМ при красной игре — у синтетики нет
+// живой думки, перепиcывающей цель). Субъекта выбирает goto_marcher
+// АГНОСТИЧНО (вердикт владельца: «не подгоняй под артель … системно
+// универсально агностично»): ЛЮБОЙ подвижный сквад, чья цель не его
+// клетка и в инвентаре ≥ 1 головы. Здесь — наблюдение в сцене: аватар
+// обязан ИДТИ (не стоять), ростер — идти следом.
+bool run_marcher_probe_smoke(App& app) {
+    if (!app.subworld.active()) {
+        smoke_fail(app, "marcher_probe outside the subworld");
+        return false;
+    }
+    sm::sub::SubObjects& wObjs = *app.sceneObjects;
+    sm::MacroStore& st = *app.macroStore;
+    const sm::MacroHandle macro = app.smoke.trackedMacro;
+    if (!st.valid(macro)) {
+        smoke_fail(app, "marcher_probe: goto_marcher handed no live squad");
+        return false;
+    }
+    int bodySlot = -1;
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+        if ((wObjs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
+        if (sm::sub::slot_pools(wObjs, s) == nullptr) continue;
+        if (sm::sub::slot_macro_origin(wObjs, s).id != macro.id) continue;
+        bodySlot = s;
+        break;
+    }
+    if (bodySlot < 0) {
+        smoke_fail(app, "marcher_probe: the marcher did not embody");
+        return false;
+    }
+    const auto bodyRef = sm::sub::ref_of(wObjs, bodySlot);
+    const float x0 = wObjs.pos[std::size_t(bodySlot)].x;
+    const float y0 = wObjs.pos[std::size_t(bodySlot)].y;
+    float rx0 = 0.0f, ry0 = 0.0f;
+    int roster0 = 0;
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+        if ((wObjs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
+        if ((wObjs.flags[std::size_t(s)] & sm::sub::kObjProjectile) != 0u)
+            continue;
+        if (sm::sub::slot_macro_origin(wObjs, s).id != 0) continue;
+        if (sm::sub::slot_squad_of(wObjs, s, st).id != macro.id) continue;
+        rx0 += wObjs.pos[std::size_t(s)].x;
+        ry0 += wObjs.pos[std::size_t(s)].y;
+        ++roster0;
+    }
+    if (roster0 > 0) { rx0 /= float(roster0); ry0 /= float(roster0); }
+    constexpr int kProbeSteps = 640;   // 10 реальных секунд сцены
+    for (int i = 0; i < kProbeSteps; ++i) {
+        if (sm::sub::ref_slot(wObjs, bodyRef) < 0) break;   // ушёл кромкой
+        if ((i & 127) == 0 && st.valid(macro)) {
+            const auto& g = st.goal[macro.slot];
+            const int ts0 = sm::sub::ref_slot(wObjs, bodyRef);
+            std::fprintf(stderr,
+                "[smoke] marcher i=%d pos=%.0f,%.0f goalKind=%u goalCell=%u "
+                "cell=%u state=%u\n",
+                i,
+                ts0 >= 0 ? double(wObjs.pos[std::size_t(ts0)].x) : -1.0,
+                ts0 >= 0 ? double(wObjs.pos[std::size_t(ts0)].y) : -1.0,
+                unsigned(sm::ecs::goal_kind(g.what)), g.cell,
+                st.cell[macro.slot].idx,
+                unsigned(st.runtime[macro.slot].state));
+            std::fflush(stderr);
+        }
+        advance_sim_steps(app, 1, /*allowInput*/false);
+    }
+    const int ts = sm::sub::ref_slot(wObjs, bodyRef);
+    if (ts < 0) {
+        // Дошёл до кромки и вышел — марш состоялся сильнее любого порога.
+        std::fprintf(stderr, "[smoke] marcher left through the rim — OK\n");
+        std::fflush(stderr);
+        return true;
+    }
+    const float ddx = wObjs.pos[std::size_t(ts)].x - x0;
+    const float ddy = wObjs.pos[std::size_t(ts)].y - y0;
+    const float disp = std::sqrt(ddx * ddx + ddy * ddy);
+    float rx1 = 0.0f, ry1 = 0.0f;
+    int roster1 = 0;
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+        if ((wObjs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
+        if ((wObjs.flags[std::size_t(s)] & sm::sub::kObjProjectile) != 0u)
+            continue;
+        if (sm::sub::slot_macro_origin(wObjs, s).id != 0) continue;
+        if (sm::sub::slot_squad_of(wObjs, s, st).id != macro.id) continue;
+        rx1 += wObjs.pos[std::size_t(s)].x;
+        ry1 += wObjs.pos[std::size_t(s)].y;
+        ++roster1;
+    }
+    float rosterDisp = 0.0f;
+    if (roster0 > 0 && roster1 > 0) {
+        rx1 /= float(roster1);
+        ry1 /= float(roster1);
+        const float rdx = rx1 - rx0;
+        const float rdy = ry1 - ry0;
+        rosterDisp = std::sqrt(rdx * rdx + rdy * rdy);
+    }
+    std::fprintf(stderr,
+                 "[smoke] marcher_probe disp=%.1f rosterDisp=%.1f "
+                 "roster=%d/%d steps=%d\n",
+                 double(disp), double(rosterDisp), roster0, roster1,
+                 kProbeSteps);
+    std::fflush(stderr);
+    // 10 секунд анкетного хода — сотни тайлов; «стоит кружком» (Б8) —
+    // единицы. Порог консервативен к бою/рельефу по дороге.
+    if (disp < 24.0f) {
+        smoke_fail(app, "marcher_probe: a live marching squad stands still");
+        return false;
+    }
+    if (roster0 > 0 && rosterDisp < 12.0f) {
+        smoke_fail(app, "marcher_probe: the roster does not march with it");
+        return false;
+    }
+    std::fprintf(stderr, "[smoke] marcher_probe OK\n");
     std::fflush(stderr);
     return true;
 }
@@ -7568,6 +7688,123 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=city_point_probe\n");
             std::fflush(stderr);
             if (run_city_point_probe_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::GotoMarcher: {
+            // Субъект — ЖИВОЙ марширующий сквад с ростером, агностично по
+            // типу (Б8 заход 2): цель не своя клетка, в инвентаре ≥ 1
+            // головы. Мира может не хватить на день 0 — ждём думок.
+            std::fprintf(stderr, "[smoke] action=goto_marcher\n");
+            std::fflush(stderr);
+            if (app.subworld.active()) {
+                smoke_fail(app, "goto_marcher inside the subworld");
+                break;
+            }
+            sm::MacroStore& st = *app.macroStore;
+            sm::MacroHandle found{};
+            sm::MacroHandle headless{};
+            int artelsAlive = 0;
+            for (int tries = 0; tries < 400 && found.id == 0; ++tries) {
+                artelsAlive = 0;
+                headless = sm::MacroHandle{};   // цели думок протухают с ходом
+                for (std::uint16_t slot = 0; slot < sm::kUnifiedCap; ++slot) {
+                    const sm::MacroHandle h = sm::handle_at(st, slot);
+                    if (h.id == 0 || sm::macro_dead(st, h)) continue;
+                    if (!sm::squad_has_avatar(
+                            sm::SquadType(sm::squad_type_ordinal(st, h))))
+                        continue;
+                    artelsAlive += sm::squad_type_ordinal(st, h)
+                                   == std::uint8_t(sm::SquadType::Artel);
+                    const auto& g = st.goal[slot];
+                    if (sm::ecs::goal_kind(g.what) == sm::ecs::GoalKind::None
+                        || g.cell == sm::ecs::kNoCell
+                        || g.cell == st.cell[slot].idx)
+                        continue;
+                    const sm::MacroHandle psq =
+                        sm::player_squad_handle(app.gs);
+                    if (psq.id != 0 && h.id == psq.id) continue;
+                    // Ступени предпочтения (диагнозу Б8 нужен больной род,
+                    // проба при этом умеет ЛЮБОЙ): артель с думкой > любой
+                    // с ростером > любой марширующий.
+                    const sm::Inventory* bag = sm::squad_container(st, h);
+                    const bool hasHeads =
+                        bag != nullptr && sm::creature_count(*bag) >= 1;
+                    if (sm::squad_type_ordinal(st, h)
+                        == std::uint8_t(sm::SquadType::Artel)) {
+                        found = h;
+                        break;
+                    }
+                    if (hasHeads && headless.id == 0) headless = h;
+                    if (headless.id == 0) headless = h;
+                }
+                if (found.id != 0) break;
+                if ((tries & 63) == 0) {
+                    std::fprintf(stderr,
+                                 "[smoke] goto_marcher waiting: try=%d "
+                                 "artelsAlive=%d\n", tries, artelsAlive);
+                    std::fflush(stderr);
+                }
+                // Дали миру ~3 дня на марширующую артель — дальше что есть.
+                if (tries >= 384 && headless.id != 0) {
+                    found = headless;
+                    break;
+                }
+                advance_sim_steps(app, 64, /*allowInput*/false);
+            }
+            if (found.id == 0) {
+                int mobile = 0, marching = 0, withHeads = 0;
+                for (std::uint16_t slot = 0; slot < sm::kUnifiedCap; ++slot) {
+                    const sm::MacroHandle h = sm::handle_at(st, slot);
+                    if (h.id == 0 || sm::macro_dead(st, h)) continue;
+                    if (!sm::squad_has_avatar(
+                            sm::SquadType(sm::squad_type_ordinal(st, h))))
+                        continue;
+                    ++mobile;
+                    const auto& g = st.goal[slot];
+                    const bool m =
+                        sm::ecs::goal_kind(g.what) != sm::ecs::GoalKind::None
+                        && g.cell != sm::ecs::kNoCell
+                        && g.cell != st.cell[slot].idx;
+                    marching += m;
+                    const sm::Inventory* bag = sm::squad_container(st, h);
+                    withHeads += m && bag && sm::creature_count(*bag) >= 1;
+                }
+                std::fprintf(stderr,
+                             "[smoke] goto_marcher census: mobile=%d "
+                             "marching=%d marchingWithHeads=%d\n",
+                             mobile, marching, withHeads);
+                std::fflush(stderr);
+                smoke_fail(app, "goto_marcher: мир не дал марширующего "
+                                "сквада с ростером");
+                break;
+            }
+            // Предусловие Б8 — РОСТЕР (симптом: «стоит кучей»). Мир ранних
+            // дней маршей с головами не держит — харнесс даёт головы САМ
+            // (§8 п.11), той же дверью, что любой вклад в контейнер.
+            if (sm::creature_count(*sm::squad_container(st, found)) < 1) {
+                (void)sm::creatures_push_stack(
+                    st.inventory[found.slot].inv, sm::NPCType::Peasant, 2, 3);
+            }
+            const int ax = sm::ecs::cell_x(st.cell[found.slot], app.gs.mapW);
+            const int ay = sm::ecs::cell_y(st.cell[found.slot], app.gs.mapW);
+            smoke_teleport_player(app, ax, ay);
+            app.cursor.path.clear();
+            app.cursor.pathIdx = 0;
+            app.smoke.trackedMacro = found;
+            std::fprintf(stderr,
+                         "[smoke] goto_marcher id=%u type=%u cell=%d,%d "
+                         "goalCell=%u heads=%d\n",
+                         found.id,
+                         unsigned(sm::squad_type_ordinal(st, found)), ax, ay,
+                         st.goal[found.slot].cell,
+                         sm::creature_count(*sm::squad_container(st, found)));
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::MarcherProbe:
+            std::fprintf(stderr, "[smoke] action=marcher_probe\n");
+            std::fflush(stderr);
+            if (run_marcher_probe_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::SubworldSeam:
             std::fprintf(stderr, "[smoke] action=subworld_seam\n");

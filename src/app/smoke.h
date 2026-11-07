@@ -66,6 +66,8 @@ enum class SmokeAction : std::uint8_t {
     CaptureCourse,
     CaptureExit,
     CityPointProbe,
+    GotoMarcher,
+    MarcherProbe,
     ForceEncounter,
     CaptureFrame,
     StatsSettle,

@@ -69,6 +69,11 @@ spawn_squad_at_player,subworld_enter,capture_exit
 # Чистая точка рода Rooted (ломоть 5 Б8): у места окна есть носитель точки
 # сквада — бэклинк без пулов; ни один свип мира его не видит.
 enter_first_settlement,city_point_probe
+# ЖИВОЙ марширующий сквад мира (не синтетика; Б8 заход 2): субъекта выбирает
+# goto_marcher агностично (артель > с ростером > любой марширующий; ждёт
+# мира до ~3 дней), харнесс даёт головы при нужде — аватар обязан ИДТИ,
+# ростер — идти следом. Смоук с синтетикой был зелёным при красной игре.
+goto_marcher,subworld_enter,marcher_probe
 subworld_enter,fauna_kill_writeback
 force_encounter
 

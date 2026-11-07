@@ -4077,6 +4077,37 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
                     // не прогулки) сильнее курса, курс сильнее прогулки.
                     const bool panicking =
                         flee_word_is_panic(sub::slot_ai(arena, s));
+                    // Диагностический лог Б8 (ВРЕМЕННЫЙ, под env-флагом —
+                    // инструмент вопроса живого стенда, сносится после
+                    // диагноза): раз в секунду на тело — всё, что решает
+                    // курс-ветка.
+                    {
+                        static const bool capLog =
+                            std::getenv("TIMAERT_CAPTURE_LOG") != nullptr;
+                        if (capLog) {
+                            static std::uint64_t lastTick = ~0ull;
+                            static int printedThisTick = 0;
+                            if (frame_->worldTick != lastTick) {
+                                lastTick = frame_->worldTick;
+                                printedThisTick = 0;
+                            }
+                            if (printedThisTick < 8) {
+                                ++printedThisTick;
+                                std::fprintf(stderr,
+                                    "[cap] id=%u kind=%u goal=%u cell=%u "
+                                    "ox=%d oy=%d dir=%u panic=%d w=%d "
+                                    "pos=%.0f,%.0f spd=%.1f\n",
+                                    origin.id,
+                                    unsigned(ecs::goal_kind(goal.what)),
+                                    goal.cell,
+                                    mw_.store->cell[origin.slot].idx, ox, oy,
+                                    unsigned(courseDir), int(panicking),
+                                    int(course_->weightRowsDone),
+                                    double(p.x), double(p.y),
+                                    double(d.speed));
+                            }
+                        }
+                    }
                     if (courseDir != kCourseNoStep && !panicking) {
                         // Интент несёт СВОЙ темп (закон вектора намерения).
                         d.intentVx = kCourseDirUx[courseDir] * d.speed;
