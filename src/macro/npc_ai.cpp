@@ -299,8 +299,9 @@ void settle_exhaustion(MacroHandle e, const ecs::Pools& hp,
 // The weight of the ground under a body, from the one baked grid (defined
 // below, beside the edge weight the greedy step reads). Declared here because
 // the march rhythm needs it to price its hour, and the rhythm is settled
-// before the stepping code is written.
-float cell_weight(const TickContext& ctx, int x, int y);
+// before the stepping code is written. Берёт САМУ вес-сетку, не TickContext:
+// это всё, что вес читает (M-412 — тем же входом его зовёт и марш игрока).
+float cell_weight(const PathCostData* pc, int x, int y);
 
 // РЕФЛЕКС УГРОЗЫ — ОБЪЯВЛЕН ЗДЕСЬ, ПОТОМУ ЧТО ЕГО ЗОВУТ МОДУЛИ, А НЕ ДИСПЕТЧ
 // (первая половина M-307, ломоть 5а M-72). Преамбула рефлексов переехала из
@@ -529,9 +530,8 @@ void settle_march_rhythm(MacroHandle e, const MacroPos& p,
 }
 
 // Weight of a macro cell from the baked grid the player's A* walks
-// (ctx.mw.pathCost); a missing grid reads as a featureless free-road world.
-float cell_weight(const TickContext& ctx, int x, int y) {
-    const PathCostData* pc = ctx.mw.pathCost;
+// (mw.pathCost); a missing grid reads as a featureless free-road world.
+float cell_weight(const PathCostData* pc, int x, int y) {
     if (!pc || pc->width <= 0 || pc->height <= 0
         || pc->costGrid.size()
                != std::size_t(pc->width) * std::size_t(pc->height)) {
@@ -543,9 +543,8 @@ float cell_weight(const TickContext& ctx, int x, int y) {
 // The EDGE weight of one greedy step — the cell half from the baked grid
 // plus the uphill climb half (movement_cost.h: the law's two halves; the
 // squad walks the same slopes the player and both A*s pay for).
-float edge_weight(const TickContext& ctx, int fx, int fy, int tx, int ty) {
-    const PathCostData* pc = ctx.mw.pathCost;
-    float w = cell_weight(ctx, tx, ty);
+float edge_weight(const PathCostData* pc, int fx, int fy, int tx, int ty) {
+    float w = cell_weight(pc, tx, ty);
     if (pc && pc->width > 0 && pc->height > 0
         && pc->height16.size() == pc->costGrid.size()) {
         // Адрес клетки — одна дверь cell_of (здесь стояли две рукописные
@@ -561,227 +560,33 @@ float edge_weight(const TickContext& ctx, int fx, int fy, int tx, int ty) {
 // inline-дверь на оба читателя, try_move ниже и вектор пакета
 // squad_march_vector@src/macro/frame_fill.cpp — M-317.)
 
-// THE march, and since 2026-10-06 it takes NO BARS: a step has no price, so
-// the walk has no business holding the block it used to debit. What it still
-// owns is the geometry — budget, the baked gait, the greedy fallback and the
-// entry stamp. Who pays for the hours is settle_march_rhythm, once per think.
+// ТОНКИЙ ЗВОНЯЩИЙ ДУМКИ (M-412а/б): ядро закона марша экспортировано
+// (`try_move@src/macro/npc_ai.h`) и зовётся обоими ходоками — думкой НПЦ
+// отсюда и маршем игрока из `step_macro_walk@src/ui/macro_overlay.cpp`.
+// Здесь остался только состав БЮДЖЕТА этого звонящего: клетки за думку —
+// the SAME march the player walks (kMacroWalkCellsPerHour per game hour),
+// paced by the avatar's own sheet (moveMult: spd × athletics) and by the
+// ground underfoot (terrain_speed_mult of the CURRENT cell — one sample
+// per think). Base numbers: 3 cells per think on a road, ~1 in open water.
+// ЛЕТУН (v93): воздух — его стихия; рельеф не платится (вес — единица),
+// внутри ядра любая клетка держит — ОДИН цикл марша, меняется стихия.
 void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
               float tx, float ty, const TickContext& ctx) {
-    // ГЕЙТ НОГ ЗАМИНКИ БОЯ (M-319A, вердикт владельца 2026-10-26: «да только
-    // ходить пусть перестаёт … типа заминочка»). Стоит ЗДЕСЬ, в ОДНОЙ точке
-    // марша, а не в 17 звонящих: `try_move` — единственный писатель и клетки
-    // (`p.x/p.y`), и доли (`rt.sub`), значит одна эта строка держит и смену
-    // клетки, и внутриклеточный квантовый ход. Воля сквада при этом ЦЕЛА:
-    // думка уже исполнилась (`dispatch` отработал, цель выбрана), встали
-    // ровно НОГИ — прямой урок M-313, где гейт, гасивший думку, остановил
-    // вместе с ногами ПРОИЗВОДСТВО. Флаги марша зануляются и здесь: ритм
-    // марша (`settle_march_rhythm`) обязан прочесть честное «стоял» и дать
-    // фоновый реген без жжения — заминка оплачивается покоем, а не потом.
-    if (rt.fighting != 0) {
-        rt.marchFlags = 0;
-        return;
-    }
-    int ix = int(p.x), iy = int(p.y);
-    int itx = int(tx), ity = int(ty);
-    // НАСТОЯЩАЯ цель рейса — посадка судится по ней, а не по вейпоинту:
-    // сквад, ДОШЕДШИЙ до своего дока, проверял «нужна ли вода до дока»
-    // (нет) и не садился на собственный корабль (измерено: out=63, вся
-    // деревня вечно в отлучке).
-    const int realTx = itx, realTy = ity;
-    // ЛЕТУН (v93): воздух — его стихия, как вода у паруса. Море ему не
-    // «недостижимо посуху», док не нужен, рельеф не платится, любая клетка
-    // держит — ОДИН цикл марша, меняется только стихия (образец кораблей).
     const bool flying = rt.flying != 0;
-    (void)realTx; (void)realTy;
-    const float oldX = p.x, oldY = p.y;
-    const float mapWf = float(ctx.mapW), mapHf = float(ctx.mapH);
-
-    // Cells this think may cover — the SAME march the player walks
-    // (kMacroWalkCellsPerHour per game hour), paced by the avatar's own sheet
-    // (moveMult: spd × athletics) and by the ground underfoot
-    // (terrain_speed_mult of the CURRENT cell — one sample per think, the
-    // same approximation the player's per-frame walk makes). Base numbers:
-    // 3 cells per think on a road, ~1 in open water.
-    const float perThink =
-        march_cells_per_think(rt, flying ? 1.0f : cell_weight(ctx, ix, iy));
-    // КВАНТОВЫЙ ХОД (вердикт владельца 2026-11-02: «никаких флоатов всё
-    // чисто инт», «дошол до 127 … и меняет клетку с другой стороны»).
-    // Производство думки — целые кванты доли; банка между думками умерла
-    // вместе с float-бюджетом: прогресс марша И ЕСТЬ доля rt.sub, а кванты,
-    // которым некуда идти, сгорают с думкой (kMarchRefused скажет ритму).
-        std::uint32_t quanta = std::uint32_t(
+    const float perThink = march_cells_per_think(
+        rt, flying ? 1.0f : cell_weight(ctx.mw.pathCost, int(p.x), int(p.y)));
+    const std::uint32_t quanta = std::uint32_t(
         std::lround(perThink * float(2 * ecs::kCellSubEdge)));
-    rt.marchFlags = 0;
-    float walked = 0.0f;   // евклидова дорога думки — только для картинки
-
-    const int playerCellX = wrap_axis(int(ctx.playerX), ctx.mapW);
-    const int playerCellY = wrap_axis(int(ctx.playerY), ctx.mapH);
-
-    while (quanta > 0 && (ix != itx || iy != ity)) {
-        // Greedy steering (Session 21, owner's choice over per-squad A*):
-        // among the eight neighbours, keep those strictly CLOSER to the
-        // target and step onto the cheapest by the one weight grid. The
-        // straight torus step wins ties, so a featureless world walks
-        // exactly the line the old flat step walked — and a coast is walked
-        // AROUND (land is 2-5×, water 10×), while a river with no cheap way
-        // through is finally forded at its honest price. O(8) per cell:
-        // 16384 squads can afford it where a pathfind each would starve
-        // the frame.
-        int bx = -1, by = -1;
-        float bw = 1e30f;
-        // Сосед шага — арифметика ИНДЕКСА (cell_step, ЗАКОН АДРЕСА): здесь
-        // стояло четыре wrapi — аппаратное деление на каждом шаге марша
-        // каждого сквада.
-        const std::uint32_t hereIdx = cell_of(ix, iy, ctx.mapW);
-
-        // ЗАПЕЧЁННАЯ ПОХОДКА (CANON S7, 2026-09-02): округи + порталы +
-        // граф — три чтения, ни волны, ни поиска. Жадный шаг остаётся миру
-        // без запечённого слоя.
-        // Гейт «стоит на суше» снят 2026-10-06 вместе со стеной: после единой
-        // заливки у КАЖДОЙ клетки тора есть округа, поэтому походке больше
-        // нечего не знать — она отвечает и из воды.
-        if (!flying && ctx.mw.nav && ctx.mw.nav->baked()) {
-            int fdx = 0, fdy = 0;
-            if (nav_step(*ctx.mw.nav, ix, iy, itx, ity, fdx, fdy)) {
-                const std::uint32_t n = cell_step(hereIdx, fdx, fdy, ctx.mapW);
-                bx = cell_x(n, ctx.mapW);
-                by = cell_y(n, ctx.mapW);
-                bw = edge_weight(ctx, ix, iy, bx, by);
-            }
-        }
-
-        if (bx < 0) {
-            // Жадный шаг — закон дальних маршей вне округ (Session 21).
-            const Step straight =
-                torus_step_toward(ix, iy, itx, ity, ctx.mapW, ctx.mapH);
-            // The straight step is the TIE-BREAKER candidate, and since
-            // 2026-10-06 it is nothing but that: it used to be filtered by the
-            // standing predicate, and so did every neighbour below, and the
-            // predicate's three exceptions (dry feet, flight, a fleeing body's
-            // ford) were three answers to one question. All four died
-            // together. Water is now simply the dearest row of the price list,
-            // so a coast is walked AROUND because it is expensive, and a river
-            // IS forded when going round costs more — which was Session 21's
-            // own design before the wall overrode it.
-            const auto walker_w = [&](int nx2, int ny2) {
-                if (flying) return 1.0f;   // воздух — дорога летуна
-                return edge_weight(ctx, ix, iy, nx2, ny2);
-            };
-            bx = straight.nx;
-            by = straight.ny;
-            bw = walker_w(bx, by);
-            const float dHere =
-                torus_dist_sq(float(ix), float(iy), float(itx), float(ity),
-                              mapWf, mapHf);
-            for (int oy = -1; oy <= 1; ++oy) {
-                for (int ox = -1; ox <= 1; ++ox) {
-                    if (ox == 0 && oy == 0) continue;
-                    const std::uint32_t n =
-                        cell_step(hereIdx, ox, oy, ctx.mapW);
-                    const int nx = cell_x(n, ctx.mapW);
-                    const int ny = cell_y(n, ctx.mapW);
-                    if (nx == bx && ny == by) continue;
-                    const float d = torus_dist_sq(float(nx), float(ny),
-                                                  float(itx), float(ity),
-                                                  mapWf, mapHf);
-                    if (d >= dHere) continue;   // only steps that progress
-                    const float w = walker_w(nx, ny);
-                    if (w < bw) { bx = nx; by = ny; bw = w; }
-                }
-            }
-        }
-        if (bx < 0) {
-            // Шага, приближающего к цели, нет — кванты сгорают, а ритм
-            // марша узнаёт «ноги отказали» флагом (прежде это говорил
-            // банк `moveBudget >= 1.0f`, умерший с флоатом).
-            rt.marchFlags |= ecs::kMarchRefused;
-            break;
-        }
-
-        // Entry-side stamp: the signed step of THIS cell change, torus-folded
-        // (stepping east off the map's edge is still +1, not -(w-1)).
-        int dx = bx - ix;
-        if (dx > 1) dx = -1; else if (dx < -1) dx = 1;
-        int dy = by - iy;
-        if (dy > 1) dy = -1; else if (dy < -1) dy = 1;
-
-        // ЦЕНА ПЕРЕСЕЧЕНИЯ — доехать долей до края по каждой активной оси;
-        // оси едут ВМЕСТЕ, поэтому диагональ стоит те же 2×127 кванта от
-        // края до края, что и прямой ход, — прежний закон «клетка = 1.0
-        // бюджета в любом румбе», теперь целыми числами.
-        const int costX =
-            dx != 0 ? ecs::kCellSubEdge - dx * int(rt.sub.x) : 0;
-        const int costY =
-            dy != 0 ? ecs::kCellSubEdge - dy * int(rt.sub.y) : 0;
-        const std::uint32_t cost = std::uint32_t(costX > costY ? costX : costY);
-
-        // Кванты уходят ДВЕРЬЮ drain (ЗАКОН ТРЁХ ДВЕРЕЙ): взять сколько
-        // есть, факт честен — хватило на край или нет, решает возврат.
-        const std::uint32_t spent = drain(quanta, cost);
-        rt.marchFlags |= ecs::kMarchAdvanced;
-        walked += float(spent) / float(2 * ecs::kCellSubEdge)
-                  * ((dx != 0 && dy != 0) ? std::numbers::sqrt2_v<float>
-                                          : 1.0f);
-        if (spent < cost) {
-            // Края не достигли: доля едет ВНУТРИ текущей клетки (ось у
-            // своего края стоит клампом), позиция мира не меняется —
-            // «сквад локально хранит свою промежуточную позицию».
-            if (dx != 0) {
-                const int nx = int(rt.sub.x) + dx * int(spent);
-                rt.sub.x = std::int8_t(std::clamp(
-                    nx, -ecs::kCellSubEdge, ecs::kCellSubEdge));
-            }
-            if (dy != 0) {
-                const int ny = int(rt.sub.y) + dy * int(spent);
-                rt.sub.y = std::int8_t(std::clamp(
-                    ny, -ecs::kCellSubEdge, ecs::kCellSubEdge));
-            }
-            break;
-        }
-
-        // ПЕРЕСЕЧЕНИЕ КРАЯ: клетка меняется, активные оси входят с
-        // противоположного края, пассивная ось долю СОХРАНЯЕТ.
-        rt.sub = ecs::cell_sub_after_step(dx, dy, rt.sub);
-        rt.entryDir = pack_entry_dir(dx, dy);
-        rt.entryTicks = 0;
-
-        ix = bx; iy = by;
-
-        // NOTHING IS CHARGED HERE, AND THAT IS THE LAW (2026-10-06). A step
-        // has no price: what the body pays is the HOUR it spends on ground,
-        // settled once per think by settle_march_rhythm above. Three things
-        // stood on this spot and all three went together — the per-step
-        // charge, the legs' REFUSAL of a step they could not pay for, and the
-        // `sp < 0` break that ended a think mid-stride. Each was a second
-        // writer of the same bar, and the refusal was a THIRD wall: a body
-        // could be stopped by price as surely as by water.
-        //
-        // What stops a body now is the world, not a gate: heavy ground is
-        // slower (terrain_speed_mult feeds `perThink`), debt bites HP
-        // quadratically, and a bar below an eighth pitches camp by DECISION.
-        // «Pressing on is priced, never gated» (CANON S14.1) finally holds on
-        // the macro march too.
-
-        // Never hop OVER the player's cell in a multi-cell think: the forced
-        // encounter (Inc 6) is geometric, so the squad stops ON the meeting
-        // cell where the door can see it.
-        if (ix == playerCellX && iy == playerCellY) break;
-    }
-
-    // ПРИБЫЛ — ДОЕЗЖАЕТ В ЦЕНТР (M-375, вторая половина хода): пересечение
-    // оставило тело на краю клетки-цели, остаток квантов думки доводит его
-    // внутрь. Это не марш (флагов и жжения не добавляет — тело уже дома).
-    if (ix == itx && iy == ity && quanta > 0u) {
-        walked += float(ecs::cell_sub_walk_home(rt.sub, quanta))
-                  / float(2 * ecs::kCellSubEdge);
-    }
-
-    p.x = float(ix);
-    p.y = float(iy);
-    // Скорость картинки — евклидова ДОРОГА, пройденная этой думкой (клетки
-    // плюс кванты доли), за её период — одна дверь
-    // (`set_visual_speed@src/macro/squad.h`), общая с маршем игрока.
-    (void)oldX; (void)oldY;
+    MarchGround g;
+    g.pathCost = ctx.mw.pathCost;
+    g.nav = ctx.mw.nav;
+    g.side = ctx.mapW;
+    g.playerCellX = wrap_axis(int(ctx.playerX), ctx.mapW);
+    g.playerCellY = wrap_axis(int(ctx.playerY), ctx.mapH);
+    const float walked = sm::try_move(p, rt, tx, ty, quanta, g);
+    // Скорость картинки — евклидова ДОРОГА думки за её период, одна дверь
+    // (`set_visual_speed@src/macro/squad.h`). Пишется и нулём: стоящее тело
+    // (заминка боя, отказ ног) показывает ноль, а не прошлый темп.
     set_visual_speed(rt, walked, kAiPeriodSeconds);
 
     // Exhaustion is settled by the DISPATCHER after the think (it owns the
@@ -5053,14 +4858,15 @@ static void tick_macro_npc_ai_one(MacroWorld& mw, MacroNpcAiRuntime& runtime) {
         if (!try_spend(rt.tickAccum, kAiTicks)) continue;
         ++runtime.thinksDone;   // метр-свидетель: квант оплачен — думка была
 
-        // ГЕЙТ ЗАНЯТОСТИ ТАЕТ ВРЕМЕНЕМ, И ТОЛЬКО ЗДЕСЬ (ломоть stateTimer
-        // M-369; аналог `tick_body_recovery@src/sub/ability.h`): оплаченный
-        // квант думки = kAiTicks мировых тиков прошло для ЭТОГО сквада — в
-        // походе, в привале и в бою одинаково. Прежний носитель декременти-
-        // ровался 18 строками ВНУТРИ веток состояний, то есть часы шли
-        // только в «своём» состоянии и стояли во всех прочих. `sub_sat` —
-        // дверь «угасание следа»: ниже нуля долг не бывает.
-        rt.recoverySteps = sub_sat(rt.recoverySteps, std::uint32_t(kAiTicks));
+        // ГЕЙТ ЗАНЯТОСТИ ТАЕТ ВРЕМЕНЕМ (ломоть stateTimer M-369; аналог
+        // `tick_body_recovery@src/sub/ability.h`): оплаченный квант думки =
+        // kAiTicks мировых тиков прошло для ЭТОГО сквада — в походе, в
+        // привале и в бою одинаково. Прежний носитель декрементировался 18
+        // строками ВНУТРИ веток состояний, то есть часы шли только в
+        // «своём» состоянии и стояли во всех прочих. Слив — дверью
+        // (`squad_recovery_elapsed@src/bus/squad_row.h`, M-412д): второй
+        // звонящий — часы флажка, свип игрока не водит.
+        ecs::squad_recovery_elapsed(rt, std::uint32_t(kAiTicks));
 
         if (kind.type >= std::uint16_t(NPCType::Count)) continue;
         // A battle earlier in this very sweep may have killed this squad —
@@ -5086,7 +4892,7 @@ static void tick_macro_npc_ai_one(MacroWorld& mw, MacroNpcAiRuntime& runtime) {
         // цена обязаны говорить об одной и той же земле, иначе думка «из воды
         // на дорогу» платит по дороге (промах до ×31). Адрес назван СТАРТОМ, а
         // не `p`, чтобы следующая правка порядка не сменила смысл молча.
-        const float groundWeight = cell_weight(ctx, int(x0), int(y0));
+        const float groundWeight = cell_weight(ctx.mw.pathCost, int(x0), int(y0));
         rt.marchFlags = 0;   // флаги марша живут одну думку
         if (gate == ThinkGate::Think)
             dispatch(h, p, rt, hp, ctx);
@@ -5096,25 +4902,17 @@ static void tick_macro_npc_ai_one(MacroWorld& mw, MacroNpcAiRuntime& runtime) {
                             p.x != x0 || p.y != y0
                                 || (rt.marchFlags & ecs::kMarchAdvanced) != 0,
                             ctx, overloadBurden, groundWeight);
-        // ЗАМИНКА БОЯ УГАСАЕТ ПО ДУМКАМ, И ОДНОЙ ТОЧКОЙ (M-319A). Мера —
-        // ДУМКА, потому что гейт стоит в марше, а марш живёт думкой; угасание
-        // ПОСЛЕ ритма, то есть после того, как эту думку заминка уже
-        // отработала. `sub_sat` — та самая дверь «угасание следа» (ЗАКОН ТРЁХ
-        // ДВЕРЕЙ): ниже нуля срок не бывает, а голое `-=` над беззнаковым
-        // завернуло бы заминку в 255 думок молча. Снимать её снизу не надо и
-        // нельзя: «бой кончился» есть ОТСУТСТВИЕ нового удара.
-        rt.fighting = sub_sat(rt.fighting, std::uint8_t(1));
-        const std::uint32_t newIdx = ecs::cell_index(int(p.x), int(p.y),
-                                                     gs.mapW);
+        // ЗАМИНКА БОЯ УГАСАЕТ ПО ДУМКАМ (M-319A), угасание ПОСЛЕ ритма —
+        // эту думку заминка уже отработала. Дверью
+        // (`squad_fighting_cooled@src/bus/squad_row.h`, M-412д): второй
+        // звонящий — часы флажка, свип игрока не водит.
+        ecs::squad_fighting_cooled(rt);
         // Марш свою долю ведёт САМ (квантовый ход, вердикт 2026-11-02);
         // драйверу остался только ПРЫЖОК: телепорт штампует kEntryDirNone,
-        // и такая смена клетки честно ставит центр.
-        if (newIdx != cell.idx) {
-            int sdx = 0, sdy = 0;
-            unpack_entry_dir(rt.entryDir, sdx, sdy);
-            if (sdx == 0 && sdy == 0) st.runtime[slot].sub = {};
-        }
-        cell.idx = newIdx;
+        // и такая смена клетки честно ставит центр. Запись — ЕДИНСТВЕННОЙ
+        // дверью settle_walk_cell (M-412г), той же, что у шага игрока.
+        settle_walk_cell(cell, rt,
+                         ecs::cell_index(int(p.x), int(p.y), gs.mapW));
     }
 
     // The END of every dead squad's story, once per tick (CANON S4): any
@@ -5138,6 +4936,230 @@ void tick_macro_npc_ai(MacroWorld& mw,
     if (!mw.gs || !mw.store) return;   // no store, no thinking (fail-closed)
     for (std::uint64_t i = 0; i < ticks; ++i)
         tick_macro_npc_ai_one(mw, runtime);
+}
+
+// ── ОДИН ЗАКОН МАРША — ЯДРО (M-412) ────────────────────────────────────
+// THE march, and since 2026-10-06 it takes NO BARS: a step has no price, so
+// the walk has no business holding the block it used to debit. What it owns
+// is the geometry — the baked gait, the greedy fallback, the entry stamp and
+// the quantum ride of the cell sub-coordinate. Who pays for the hours is
+// settle_march_rhythm, once per think; the BUDGET of quanta is the caller's
+// law (M-412б). Экспортировано из анонимного неймспейса (M-412а): до того
+// марш игрока (`step_macro_walk@src/ui/macro_overlay.cpp`) был второй
+// реализацией этой же оплаты — из ui ядро было физически невызываемо.
+float try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
+               float tx, float ty, std::uint32_t quanta,
+               const MarchGround& g, MarchRoute* route) {
+    // ГЕЙТ НОГ ЗАМИНКИ БОЯ (M-319A, вердикт владельца 2026-10-26: «да только
+    // ходить пусть перестаёт … типа заминочка»). Стоит ЗДЕСЬ, в ОДНОЙ точке
+    // марша, а не в звонящих: ядро — единственный писатель и клетки
+    // (`p.x/p.y`), и доли (`rt.sub`), значит одна эта строка держит и смену
+    // клетки, и внутриклеточный квантовый ход — у НПЦ и у игрока (M-412д:
+    // привилегия «ноги игрока после боя встают сразу» умерла этим гейтом).
+    // Воля при этом ЦЕЛА: думка уже исполнилась, встали ровно НОГИ — прямой
+    // урок M-313, где гейт, гасивший думку, остановил и ПРОИЗВОДСТВО. Флаги
+    // марша зануляются и здесь: ритм марша (`settle_march_rhythm`) обязан
+    // прочесть честное «стоял» и дать фоновый реген без жжения.
+    if (rt.fighting != 0) {
+        rt.marchFlags = 0;
+        return 0.0f;
+    }
+    int ix = int(p.x), iy = int(p.y);
+    const int itx = int(tx), ity = int(ty);
+    // ЛЕТУН (v93): воздух — его стихия, как вода у паруса. Море ему не
+    // «недостижимо посуху», рельеф не платится, любая клетка держит — ОДИН
+    // цикл марша, меняется только стихия (образец кораблей).
+    const bool flying = rt.flying != 0;
+    const float sidef = float(g.side);
+
+    // КВАНТОВЫЙ ХОД (вердикт владельца 2026-11-02: «никаких флоатов всё
+    // чисто инт», «дошол до 127 … и меняет клетку с другой стороны»).
+    // Производство думки/кадра — целые кванты доли; банка между думками
+    // умерла вместе с float-бюджетом: прогресс марша И ЕСТЬ доля rt.sub, а
+    // кванты, которым некуда идти, сгорают (kMarchRefused скажет ритму).
+    rt.marchFlags = 0;
+    float walked = 0.0f;   // евклидова дорога — только для картинки
+
+    while (quanta > 0) {
+        int bx = -1, by = -1;
+        int dx = 0, dy = 0;
+        if (route != nullptr) {
+            // «ШАГ ЗАДАН» (M-412в): маршрут A* игрока исполняется БУКВАЛЬНО
+            // — какие клетки выбрал поиск, те ноги и оплачивают; походка
+            // ядра спит. Румб — знак тор-свёрнутой разницы (torus_fold);
+            // вейпоинт своей же клетки — пропуск, не смена.
+            if (route->idx >= route->count) break;
+            const PathPoint& nxt = route->pts[route->idx];
+            const int fdx = torus_fold(nxt.x - ix, g.side);
+            const int fdy = torus_fold(nxt.y - iy, g.side);
+            dx = fdx > 0 ? 1 : (fdx < 0 ? -1 : 0);
+            dy = fdy > 0 ? 1 : (fdy < 0 ? -1 : 0);
+            if (dx == 0 && dy == 0) {   // вейпоинт — своя же клетка
+                ++route->idx;
+                continue;
+            }
+            bx = nxt.x;
+            by = nxt.y;
+        } else {
+            if (ix == itx && iy == ity) break;
+            // Greedy steering (Session 21, owner's choice over per-squad
+            // A*): among the eight neighbours, keep those strictly CLOSER
+            // to the target and step onto the cheapest by the one weight
+            // grid. The straight torus step wins ties, so a featureless
+            // world walks exactly the line the old flat step walked — and a
+            // coast is walked AROUND (land is 2-5×, water 10×), while a
+            // river with no cheap way through is finally forded at its
+            // honest price. O(8) per cell: 16384 squads can afford it where
+            // a pathfind each would starve the frame.
+            float bw = 1e30f;
+            // Сосед шага — арифметика ИНДЕКСА (cell_step, ЗАКОН АДРЕСА).
+            const std::uint32_t hereIdx = cell_of(ix, iy, g.side);
+
+            // ЗАПЕЧЁННАЯ ПОХОДКА (CANON S7, 2026-09-02): округи + порталы +
+            // граф — три чтения, ни волны, ни поиска. Жадный шаг остаётся
+            // миру без запечённого слоя. Гейт «стоит на суше» снят
+            // 2026-10-06 вместе со стеной: после единой заливки у КАЖДОЙ
+            // клетки тора есть округа — походка отвечает и из воды.
+            if (!flying && g.nav && g.nav->baked()) {
+                int fdx = 0, fdy = 0;
+                if (nav_step(*g.nav, ix, iy, itx, ity, fdx, fdy)) {
+                    const std::uint32_t n =
+                        cell_step(hereIdx, fdx, fdy, g.side);
+                    bx = cell_x(n, g.side);
+                    by = cell_y(n, g.side);
+                }
+            }
+
+            if (bx < 0) {
+                // Жадный шаг — закон дальних маршей вне округ (Session 21).
+                const Step straight =
+                    torus_step_toward(ix, iy, itx, ity, g.side, g.side);
+                // The straight step is the TIE-BREAKER candidate, and since
+                // 2026-10-06 it is nothing but that: the standing predicate
+                // and its three exceptions (dry feet, flight, a fleeing
+                // body's ford) died together. Water is now simply the
+                // dearest row of the price list — a coast is walked AROUND
+                // because it is expensive, and a river IS forded when going
+                // round costs more.
+                const auto walker_w = [&](int nx2, int ny2) {
+                    if (flying) return 1.0f;   // воздух — дорога летуна
+                    return edge_weight(g.pathCost, ix, iy, nx2, ny2);
+                };
+                bx = straight.nx;
+                by = straight.ny;
+                bw = walker_w(bx, by);
+                const float dHere =
+                    torus_dist_sq(float(ix), float(iy),
+                                  float(itx), float(ity), sidef, sidef);
+                for (int oy = -1; oy <= 1; ++oy) {
+                    for (int ox = -1; ox <= 1; ++ox) {
+                        if (ox == 0 && oy == 0) continue;
+                        const std::uint32_t n =
+                            cell_step(hereIdx, ox, oy, g.side);
+                        const int nx = cell_x(n, g.side);
+                        const int ny = cell_y(n, g.side);
+                        if (nx == bx && ny == by) continue;
+                        const float d =
+                            torus_dist_sq(float(nx), float(ny),
+                                          float(itx), float(ity),
+                                          sidef, sidef);
+                        if (d >= dHere) continue;  // only steps that progress
+                        const float w = walker_w(nx, ny);
+                        if (w < bw) { bx = nx; by = ny; bw = w; }
+                    }
+                }
+            }
+            if (bx < 0) {
+                // Шага, приближающего к цели, нет — кванты сгорают, а ритм
+                // марша узнаёт «ноги отказали» флагом.
+                rt.marchFlags |= ecs::kMarchRefused;
+                break;
+            }
+
+            // Entry-side stamp: the signed step of THIS cell change,
+            // torus-folded (stepping east off the map's edge is still +1,
+            // not -(w-1)) — та же дверь torus_fold, что у маршрута.
+            const int fdx = torus_fold(bx - ix, g.side);
+            const int fdy = torus_fold(by - iy, g.side);
+            dx = fdx > 0 ? 1 : (fdx < 0 ? -1 : 0);
+            dy = fdy > 0 ? 1 : (fdy < 0 ? -1 : 0);
+        }
+
+        // ЦЕНА ПЕРЕСЕЧЕНИЯ — доехать долей до края по каждой активной оси;
+        // оси едут ВМЕСТЕ, поэтому диагональ стоит те же 2×127 кванта от
+        // края до края, что и прямой ход, — прежний закон «клетка = 1.0
+        // бюджета в любом румбе», теперь целыми числами.
+        const int costX =
+            dx != 0 ? ecs::kCellSubEdge - dx * int(rt.sub.x) : 0;
+        const int costY =
+            dy != 0 ? ecs::kCellSubEdge - dy * int(rt.sub.y) : 0;
+        const std::uint32_t cost = std::uint32_t(costX > costY ? costX : costY);
+
+        // Кванты уходят ДВЕРЬЮ drain (ЗАКОН ТРЁХ ДВЕРЕЙ): взять сколько
+        // есть, факт честен — хватило на край или нет, решает возврат.
+        const std::uint32_t spent = drain(quanta, cost);
+        rt.marchFlags |= ecs::kMarchAdvanced;
+        // Дорога картинки ЕВКЛИДОВА: диагональный квант ведёт обе оси и
+        // стоит √2 дистанции — глаз, квотированный без этого, отставал на
+        // диагоналях (замер глайд-смоука: maxGap 3.54 клетки).
+        walked += float(spent) / float(2 * ecs::kCellSubEdge)
+                  * ((dx != 0 && dy != 0) ? std::numbers::sqrt2_v<float>
+                                          : 1.0f);
+        if (spent < cost) {
+            // Края не достигли: доля едет ВНУТРИ текущей клетки (ось у
+            // своего края стоит клампом), позиция мира не меняется —
+            // «сквад локально хранит свою промежуточную позицию».
+            if (dx != 0) {
+                const int nx = int(rt.sub.x) + dx * int(spent);
+                rt.sub.x = std::int8_t(std::clamp(
+                    nx, -ecs::kCellSubEdge, ecs::kCellSubEdge));
+            }
+            if (dy != 0) {
+                const int ny = int(rt.sub.y) + dy * int(spent);
+                rt.sub.y = std::int8_t(std::clamp(
+                    ny, -ecs::kCellSubEdge, ecs::kCellSubEdge));
+            }
+            break;
+        }
+
+        // ПЕРЕСЕЧЕНИЕ КРАЯ: клетка меняется, активные оси входят с
+        // противоположного края, пассивная ось долю СОХРАНЯЕТ.
+        rt.sub = ecs::cell_sub_after_step(dx, dy, rt.sub);
+        rt.entryDir = pack_entry_dir(dx, dy);
+        rt.entryTicks = 0;
+
+        ix = bx; iy = by;
+        if (route != nullptr) ++route->idx;
+
+        // NOTHING IS CHARGED HERE, AND THAT IS THE LAW (2026-10-06). A step
+        // has no price: what the body pays is the HOUR it spends on ground,
+        // settled once per think by settle_march_rhythm (НПЦ) или ходом
+        // макро-ветки главного цикла (игрок). «Pressing on is priced, never
+        // gated» (CANON S14.1) holds on the macro march.
+
+        // Never hop OVER the player's cell in a multi-cell think: the forced
+        // encounter (Inc 6) is geometric, so the squad stops ON the meeting
+        // cell where the door can see it. (Для марша САМОГО игрока гейт
+        // спит: g.playerCellX = −1 вне тора.)
+        if (ix == g.playerCellX && iy == g.playerCellY) break;
+    }
+
+    // ПРИБЫЛ — ДОЕЗЖАЕТ В ЦЕНТР (M-375, вторая половина хода): пересечение
+    // оставило тело на краю клетки-цели, остаток квантов доводит его
+    // внутрь. Это не марш (флагов и жжения не добавляет — тело уже дома).
+    // Для маршрута «цель» — его исчерпание: тот же доезд закрывает и
+    // прежнюю idle-ветку игрока «маршрута нет, а доля не дома» (M-375/Б5).
+    const bool goalDone = route != nullptr
+        ? route->idx >= route->count
+        : (ix == itx && iy == ity);
+    if (goalDone && quanta > 0u) {
+        walked += float(ecs::cell_sub_walk_home(rt.sub, quanta))
+                  / float(2 * ecs::kCellSubEdge);
+    }
+
+    p.x = float(ix);
+    p.y = float(iy);
+    return walked;
 }
 
 // (Вектор марша для пакета — squad_march_vector@src/macro/frame_fill.cpp:

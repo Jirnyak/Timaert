@@ -15,6 +15,8 @@
 #include "tables/squad_type.h"
 #include "macro/squad_index.h"
 #include "bus/squad_walk.h"
+#include "bus/entry_context.h"     // румб входа/часы клетки — двери марша ниже
+#include "core/subtract.h"         // sub_sat — угасание заминки и рековери
 #include "tables/movement_cost.h"  // закон темпа марша (march_cells_per_think)
 #include "macro/tree_layer.h"
 
@@ -411,6 +413,84 @@ inline float march_cells_per_think(const ecs::MacroNpcRuntime& rt,
     return kMacroWalkCellsPerHour * kAiTickGameHours
          * std::max(0.0f, rt.moveMult)
          * (rt.flying != 0 ? 1.0f : terrain_speed_mult(cellWeight));
+}
+
+// ── ОДИН ЗАКОН МАРША — ЯДРО try_move ЭКСПОРТИРОВАНО (M-412) ─────────────
+// Вердикт владельца: «игрок — просто один из сквадов, в микромире это
+// аватар, и он просто оперирует данными с инпутов» — особенное только
+// центрирование рамки 3×3. До M-412 марш игрока был ВТОРОЙ реализацией
+// этого закона (`step_macro_walk@src/ui/macro_overlay.cpp` дублировал
+// оплату квантов, румб входа и доезд в центр, а гейт заминки боя у него
+// ОТСУТСТВОВАЛ — привилегия). Теперь оба ходока зовут одно ядро.
+
+struct NavWorld;
+
+// Реально читаемое маршем — TickContext целиком ему не нужен (M-412а):
+// вес-сетка, запечённая походка, сторона тора, клетка игрока.
+struct MarchGround {
+    const PathCostData* pathCost = nullptr; // вес жадного шага; null = ровный мир
+    const NavWorld*     nav      = nullptr; // походка; null = жадный шаг
+    int side = 0;   // сторона тора — одна на обе оси (мир КВАДРАТЕН, ЗАКОН АДРЕСА)
+    // Закон «не перепрыгнуть встречу» (Inc 6): многоклеточная думка встаёт
+    // НА клетке игрока. Для марша САМОГО игрока гейта нет (−1 — вне тора):
+    // его встречу судит detect_forced_encounter после шага.
+    int playerCellX = -1;
+    int playerCellY = -1;
+};
+
+// «ШАГ ЗАДАН» рядом с «цель задана» (M-412в) — ОДНА функция, два входа
+// цели: маршрут A* игрока исполняется БУКВАЛЬНО (какие клетки выбрал
+// поиск, те ноги и оплачивают; своя походка nav+жадный шаг спит), idx —
+// in/out прогресс маршрута. Вейпоинт своей же клетки — пропуск, не смена.
+struct MarchRoute {
+    const PathPoint* pts = nullptr;
+    std::size_t count = 0;
+    std::size_t idx = 0;
+};
+
+// Бюджет квантов — ЕДИНСТВЕННЫЙ вход темпа (M-412б): его состав — закон
+// ЗВОНЯЩЕГО (думка: march_cells_per_think выше; кадр игрока: его темп в
+// main.cpp). Возвращает евклидову дорогу В КЛЕТКАХ — скорость картинки
+// платит звонящий СВОИМ периодом (думка kAiPeriodSeconds, кадр dt).
+// При route != nullptr tx/ty не читаются.
+float try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, float tx, float ty,
+               std::uint32_t quanta, const MarchGround& ground,
+               MarchRoute* route = nullptr);
+
+// ЕДИНСТВЕННЫЙ ПИСАТЕЛЬ КЛЕТКИ ПОСЛЕ ХОДА (M-412г; прежде их было два —
+// драйвер свипа у НПЦ и сам ходок у игрока, порознь). Марш оставил румб
+// входа — доля цела; смена клетки БЕЗ румба — телепорт, тело встаёт в
+// центр (kEntryDirNone штампуют прыжковые двери).
+inline void settle_walk_cell(ecs::MacroCell& cell, ecs::MacroNpcRuntime& rt,
+                             std::uint32_t newIdx) {
+    if (newIdx != cell.idx) {
+        int sdx = 0, sdy = 0;
+        unpack_entry_dir(rt.entryDir, sdx, sdy);
+        if (sdx == 0 && sdy == 0) rt.sub = {};
+    }
+    cell.idx = newIdx;
+}
+
+// ЧАСЫ ФЛАЖКА (M-412д). Свип игрока не водит НИКОГДА (ни флажок, ни родной
+// сквад — пропуск в теле свипа), поэтому его время идёт ЗДЕСЬ, тем же
+// kAiTicks-кадансом НА ТЕХ ЖЕ КОЛОНКАХ: время-в-клетке (entryTicks),
+// заминка боя (fighting — без этого угасания первый же удар внизу
+// замуровал бы ноги игрока навсегда: штамп ставит дверь урона субмира, а
+// гаситель НПЦ живёт в свипе, который игрока пропускает) и рековери.
+// recoverySteps гаснет тиками напрямую (его единица — мировой тик; у НПЦ
+// тот же закон амортизирован по kAiTicks на думку), fighting — думками.
+// tickAccum у флажка — часы времени-в-клетке (смена клетки его обнуляет),
+// а не фаза думки: пока ноги стоят заминкой, клетка не меняется, значит
+// часы заминки идут всегда, когда они нужны.
+inline void advance_flag_clock(ecs::MacroNpcRuntime& rt, std::uint32_t ticks) {
+    ecs::squad_recovery_elapsed(rt, ticks);
+    rt.tickAccum += ticks;
+    // Квант часов — дверью «всё или ничего» (M-218: гейт и голое `-=`
+    // двумя строками и есть try_spend, написанный руками над беззнаковым).
+    while (try_spend(rt.tickAccum, kAiTicks)) {
+        rt.entryTicks = saturate_entry_ticks(rt.entryTicks);
+        ecs::squad_fighting_cooled(rt);
+    }
 }
 
 } // namespace sm

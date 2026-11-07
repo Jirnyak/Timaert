@@ -15,6 +15,7 @@
 // одним дифом, и ни одно из двух нельзя было бы проверить отдельно.
 #pragma once
 #include "core/torus.h"        // cell_of/cell_x/cell_y — ОДИН адрес клетки мира
+#include "core/subtract.h"     // sub_sat — сливы гейта и заминки (двери ниже)
 #include "bus/anketa.h"        // Inventory + Gear — ровно их носят колонки ниже
 #include <array>
 #include <cstdint>
@@ -252,9 +253,11 @@ struct MacroNpcRuntime {
     // «занят до» на сквад, зеркало `recoverySteps@src/ecs/components.h` тела:
     // единица — МИРОВОЙ ТИК (= шагу субмира по построению,
     // `kStepsPerSecond = kTicksPerRealSecond@src/core/time.h`). Заряжает ОДНА
-    // дверь `charge_squad_recovery` ниже; тают ТОЛЬКО временем — одной точкой
-    // слива в свипе (`tick_macro_npc_ai_one@src/macro/npc_ai.cpp`), в походе,
-    // в привале и в бою одинаково; смена состояния часов НЕ трогает (прежний
+    // дверь `charge_squad_recovery` ниже; тают ТОЛЬКО временем — одной
+    // дверью слива `squad_recovery_elapsed` ниже (звонящих двое: свип думок
+    // `tick_macro_npc_ai_one@src/macro/npc_ai.cpp` и часы флажка
+    // `advance_flag_clock@src/macro/npc_ai.h` — свип игрока не водит), в
+    // походе, в привале и в бою одинаково; смена состояния часов НЕ трогает (прежний
     // закон «часы прерванного состояния не переносятся» СНЯТ — он и был
     // формой шрама M-313: привал, зануляя чужой долг, учетверял крафт).
     // Движение гейт не читает НИКОГДА («двигаться можно всегда»); читают его
@@ -547,6 +550,24 @@ static_assert(sizeof(MacroNpcRuntime) == 48,
 // строки нет, её авторские тики едут той же дверью записи.
 inline void charge_squad_recovery(MacroNpcRuntime& rt, std::uint32_t ticks) {
     if (ticks > rt.recoverySteps) rt.recoverySteps = ticks;
+}
+
+// СЛИВ ГЕЙТА — угасание ВРЕМЕНЕМ, и дверь одна (M-174: у сквадного субъекта
+// ровно одна дверь заряда и ровно один слив; M-412д дал сливу второго
+// ЗВОНЯЩЕГО — часы флажка, — но не второе правописание). `sub_sat` — дверь
+// «угасание следа»: ниже нуля долг не бывает.
+inline void squad_recovery_elapsed(MacroNpcRuntime& rt, std::uint32_t ticks) {
+    rt.recoverySteps = sub_sat(rt.recoverySteps, ticks);
+}
+
+// УГАСАНИЕ ЗАМИНКИ БОЯ — НА ОДНУ ДУМКУ, и дверь одна (M-319A + M-412д).
+// Мера — ДУМКА, потому что гейт стоит в марше, а марш живёт думкой; голое
+// `-=` над беззнаковым завернуло бы заминку в 255 думок молча. Снимать её
+// снизу не надо и нельзя: «бой кончился» есть ОТСУТСТВИЕ нового удара.
+// Звонящих двое — свип думок (после ритма, когда думку заминка уже
+// отработала) и часы флажка (свип игрока не водит).
+inline void squad_fighting_cooled(MacroNpcRuntime& rt) {
+    rt.fighting = sub_sat(rt.fighting, std::uint8_t(1));
 }
 
 // ОДНО ПРАВОПИСАНИЕ ВОПРОСА «ЗАНЯТ ЛИ СКВАД» — у `stateTimer` их было три

@@ -3630,19 +3630,18 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // The other half of the geometric meeting: a squad may have stepped
         // onto the PLAYER's cell during its own think.
         detect_forced_encounter(app);
-        // The flag holder's time-in-cell advances on the same kAiTicks
-        // cadence the NPC counter uses, ON THE SAME FIELDS: the input-driven
-        // squad is excluded from the AI sweep, so its rt.tickAccum is this
-        // driver's clock (подпосадка 4 — «тот же закон, ИИ тут это инпуты»).
-        // A cell crossing resets it in step_macro_walk.
+        // The flag holder's time advances on the same kAiTicks cadence the
+        // NPC counter uses, ON THE SAME FIELDS: the input-driven squad is
+        // excluded from the AI sweep, so this door is its clock (подпосадка
+        // 4 — «тот же закон, ИИ тут это инпуты»; M-412д: вместе с временем-
+        // в-клетке здесь гаснут заминка боя и рековери флажка — без этого
+        // первый же удар внизу замуровал бы ноги игрока навсегда). A cell
+        // crossing resets tickAccum in step_macro_walk.
         if (const sm::MacroHandle fh = sm::player_flag_handle(app.gs);
             app.macroStore->valid(fh)) {
-            auto& frt = app.macroStore->runtime[fh.slot];
-            frt.tickAccum += std::uint32_t(stats.timeTick.ticksAdvanced);
-            while (frt.tickAccum >= sm::kAiTicks) {
-                frt.tickAccum -= sm::kAiTicks;
-                frt.entryTicks = sm::saturate_entry_ticks(frt.entryTicks);
-            }
+            sm::advance_flag_clock(
+                app.macroStore->runtime[fh.slot],
+                std::uint32_t(stats.timeTick.ticksAdvanced));
         }
         // (Здесь стояло обнуление sweepAccum/pendingSweeps/sweepCursor —
         //  потеря №3 по M-105: накопленный под землёй долг думок исчезал на

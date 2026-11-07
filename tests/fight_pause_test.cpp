@@ -21,6 +21,19 @@
 //  - ДОЛЖНА МОЛЧАТЬ: `kFightingThinks` 2 → 3 (срок есть БАЛАНС) → ЗЕЛЁНЫЙ
 //    11/11 без правки прибора: фаза А ездит по самому числу, значит закон
 //    судит ФОРМУ, а не калибровку.
+//
+// ТАБЛИЦА ФАЗЫ В — МАРШ ФЛАЖКА (M-412; ПРОГНАНО 2026-11-07, числа
+// фактические, сюита выросла 11 → 17 проверок):
+//  - гейт ног снят в ЯДРЕ (`if (rt.fighting != 0)` в try_move) → КРАСНЫЙ,
+//    4 из 17: оба мира разом — «ПЛЕЧО 1 — НОГИ ВСТАЛИ» (НПЦ) и три проверки
+//    флажка («ГЕЙТ ДЕРЖИТ И ФЛАЖОК», «стоял», «НОГИ ВЕРНУЛИСЬ»: без гейта
+//    первый зов съедает маршрут, второму нечего идти) — один гейт на обоих;
+//  - затухание fighting снято из `advance_flag_clock` → КРАСНЫЙ, 3 из 17:
+//    «ЧАСЫ ФЛАЖКА ГАСЯТ ЗАМИНКУ», «НОГИ ВЕРНУЛИСЬ У ФЛАЖКА», «ОДИН ПИСАТЕЛЬ
+//    КЛЕТКИ» — ровно та замуровка игрока первым ударом внизу, от которой
+//    M-412д и заведён; свип НПЦ при этом цел (его гаситель — в свипе);
+//  - ДОЛЖНА МОЛЧАТЬ: `kFightingThinks` 2 → 3 → ЗЕЛЁНЫЙ 17/17 — и фаза В
+//    ездит по самому числу.
 #include "check.h"
 
 #include "bus/store.h"
@@ -106,10 +119,12 @@ int main() {
         spawn_twin(st, 2001, 80, 50, homeOrdinal, f.gs.mapW);
 
     // ОПЕРАЦИЯ СНИЗУ — ровно та, которую бой субмира говорит наверх.
+    // (Колонкой, не дверью: дверь чтения squad_fighting снесена M-412 —
+    // прод-читателей по хэндлу у вопроса не было, закон читает свою строку.)
     sm::squad_mark_fighting(st, stamped);
-    CHECK(sm::squad_fighting(st, stamped),
-          "штамп заминки поставлен: дверь отвечает «сражаюсь»");
-    CHECK(!sm::squad_fighting(st, control),
+    CHECK(st.runtime[stamped.slot].fighting != 0,
+          "штамп заминки поставлен: колонка отвечает «сражаюсь»");
+    CHECK(st.runtime[control.slot].fighting == 0,
           "близнец чист: заминка не разлилась на соседний слот");
     // Идемпотентность штампа: сто ударов за думку — тот же срок, что один.
     sm::squad_mark_fighting(st, stamped);
@@ -144,6 +159,60 @@ int main() {
     drive_thinks(f, 2);
     CHECK(!(spot_of(st, stamped) == stampedA),
           "НОГИ ВЕРНУЛИСЬ: угасшая заминка не держит сквад вечно");
+
+    // ── ФАЗА В — МАРШ ФЛАЖКА: ТОТ ЖЕ ГЕЙТ, ТЕ ЖЕ ЧАСЫ (M-412) ────────────
+    // Свип игрока не водит НИКОГДА, поэтому его марш — ядро try_move входом
+    // «шаг задан» (ровно так его зовёт step_macro_walk), а его время — дверь
+    // advance_flag_clock (ровно так её зовёт главный цикл). До M-412 гейт
+    // заминки у игрока ОТСУТСТВОВАЛ (привилегия), а затухание fighting для
+    // флажка не исполнял НИКТО — сведение без часов замуровало бы ноги
+    // навсегда первым ударом внизу.
+    const sm::MacroHandle walker =
+        spawn_twin(st, 2002, 90, 50, homeOrdinal, f.gs.mapW);
+    sm::ecs::MacroNpcRuntime& wrt = st.runtime[walker.slot];
+    const sm::PathPoint path[] = {{91, 50}, {92, 50}};
+    sm::MarchRoute route;
+    route.pts = path;
+    route.count = 2;
+    sm::MarchGround ground;
+    ground.side = f.gs.mapW;
+    // Бюджет — четыре клетки квантами: заведомо больше цены маршрута.
+    const std::uint32_t budget =
+        std::uint32_t(4 * 2 * sm::ecs::kCellSubEdge);
+    sm::MacroPos wp{90.0f, 50.0f};
+
+    sm::squad_mark_fighting(st, walker);
+    const float walkedGated =
+        sm::try_move(wp, wrt, wp.x, wp.y, budget, ground, &route);
+    CHECK(walkedGated == 0.0f && route.idx == 0 && int(wp.x) == 90
+              && wrt.sub.x == 0,
+          "ГЕЙТ ДЕРЖИТ И ФЛАЖОК: в заминке маршрут не тронут, доля дома");
+    CHECK(wrt.marchFlags == 0,
+          "заминка пишет ритму честное «стоял» и у флажка");
+
+    // Часы флажка: kFightingThinks думок по kAiTicks тиков гасят заминку.
+    // Мутация «fighting не гаснет у флажка» обязана краснеть ЗДЕСЬ,
+    // а не замуровывать игрока.
+    sm::advance_flag_clock(wrt, sm::ecs::kFightingThinks * sm::kAiTicks);
+    CHECK(wrt.fighting == 0,
+          "ЧАСЫ ФЛАЖКА ГАСЯТ ЗАМИНКУ: срок вышел без операции снизу");
+    const float walkedFree =
+        sm::try_move(wp, wrt, wp.x, wp.y, budget, ground, &route);
+    CHECK(walkedFree > 0.0f && route.idx == 2 && int(wp.x) == 92
+              && int(wp.y) == 50,
+          "НОГИ ВЕРНУЛИСЬ У ФЛАЖКА: маршрут A* исполнен буквально");
+    CHECK(wrt.sub.x == 0 && wrt.sub.y == 0,
+          "доезд в центр: остаток квантов довёл долю до нуля (M-375)");
+    // Запись клетки — той же единственной дверью, что у драйвера свипа
+    // (M-412г): марш оставил румб входа, доля цела (центр не ставится).
+    wrt.sub.x = -5;   // довесок: докажем, что дверь долю НЕ зануляет
+    sm::settle_walk_cell(st.cell[walker.slot], wrt,
+                         sm::ecs::cell_index(int(wp.x), int(wp.y),
+                                             f.gs.mapW));
+    CHECK(st.cell[walker.slot].idx
+                  == sm::ecs::cell_index(92, 50, f.gs.mapW)
+              && wrt.sub.x == -5,
+          "ОДИН ПИСАТЕЛЬ КЛЕТКИ: румб марша стоит — дверь долю сохранила");
 
     return sm::test::report("fight_pause_test");
 }

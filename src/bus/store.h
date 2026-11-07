@@ -847,12 +847,10 @@ inline void squad_mark_fighting(MacroStore& s, MacroHandle h) {
     if (!s.valid(h)) return;
     s.runtime[h.slot].fighting = ecs::kFightingThinks;
 }
-// Вопрос ног: «занят ли этот сквад боем». Протухший хэндл отвечает «нет» —
-// спрашивать о сменившемся жильце слота нечего, а fail-closed здесь значил бы
-// «мёртвый слот стоит в вечном бою».
-inline bool squad_fighting(const MacroStore& s, MacroHandle h) noexcept {
-    return s.valid(h) && s.runtime[h.slot].fighting != 0;
-}
+// (Дверь чтения `squad_fighting` снесена M-412: прод-читателей по хэндлу у
+// вопроса не было ни одного — гейт ног читает `rt.fighting` СВОЕЙ строки в
+// ядре марша, вектор пакета — свою строку в frame_fill; дверь держал один
+// свидетель, и он читает колонку.)
 
 // Судьба макро-сквада — байт колонки (труп стоит до слива, AI-2); тело
 // сцены отвечает тегом ecs::Dead своим путём (кластер 4). Протухший хэндл
