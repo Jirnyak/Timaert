@@ -37,7 +37,7 @@ namespace sm::sub::kit {
 //
 //  · `coreRadius` is the disk the place holds no matter what the ground says.
 //    It is a GUARANTEE, relied on by everyone who needs to know where the
-//    town's people can be (sub/city_layout.h settlement_population_radius), so
+//    town's people can be (модули плана толпы, sub/crowd_plan.h), so
 //    the grown outline never dips below it.
 //  · `targetArea` is how much ground the place occupies in total, in tiles².
 //    Growth stops when it has taken that much — so a town that spreads far

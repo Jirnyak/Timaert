@@ -32,6 +32,7 @@
 #include "tables/faction.h"
 #include "macro/features.h"   // feature_of_rooted_kind — байт из колонки рода
 #include "sub/city_layout.h"
+#include "sub/crowd_plan.h"   // план толпы — модуль рода (M-414), прод-дверь
 #include "sub/map_data.h"
 #include "sub/seamless_manager.h"
 #include "sub/spawn.h"
@@ -192,8 +193,31 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
                              &homeSouls,
                              now);
 
+    // The centre window cell (ox=0) occupies [kCellSize, 2·kCellSize); both
+    // generators build on that cell's centre.
+    const float cx = float(sm::sub::kCellSize) * 1.5f;
+    const float cy = cx;
+    // ДИСК ПАСТВЫ — МОДУЛЕМ РОДА, тем же, каким его берёт спавнер
+    // (`crowd_plan_for@src/sub/crowd_plan.h`, M-414): прибор судит
+    // прод-дверь, а не свою копию формулы (здесь стояла вторая копия
+    // сравнения `place == City` + settlement_population_radius(bool)).
+    // `city` ниже — знание ФИКСТУРЫ о том, что она сама построила (reach —
+    // предел геометрии рода), а не второй диспетч закона.
     const bool city = place == sm::SquadType::City;
-    const float radius = sm::sub::settlement_population_radius(city, pop);
+    const sm::sub::CrowdPlanFn planFn = sm::sub::crowd_plan_for(place);
+    CHECK(planFn != nullptr, "у рода поселения есть модуль плана толпы");
+    const sm::sub::CrowdPlan plan = planFn(sm::sub::CrowdPlanIn{
+        mgr.structures(), cx, cy,
+        /*originX*/int(sm::sub::kCellSize), /*originY*/int(sm::sub::kCellSize),
+        pop});
+    const float radius = plan.discRadius;
+    // СВОЙСТВО РОДА, а не пересказ формулы: верхний квартал с донжоном —
+    // отличие ГОРОДСКОГО плана (его крыши уже стоят — донжон находится),
+    // у деревенского его не бывает. Ровно эта проверка краснит подмену
+    // модуля города деревенским — зелёную мутацию М1 без неё (72/72 при
+    // чужой стройке) поймал прогон 2026-11-07.
+    CHECK(plan.haveQuarter == city,
+          "план толпы — модулем СВОЕГО рода: квартал у города, не у деревни");
     // The furthest a place of this size may ever reach (sub/city_layout.h).
     // For a village that is its palisade, which stands OUTSIDE the guaranteed
     // radius by design — the conservative scalar was never the village's edge
@@ -206,10 +230,6 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
                                     / std::max(1.0f,
                                         sm::sub::village_core_radius(pop))
                                   : 1.0f));
-    // The centre window cell (ox=0) occupies [kCellSize, 2·kCellSize); both
-    // generators build on that cell's centre.
-    const float cx = float(sm::sub::kCellSize) * 1.5f;
-    const float cy = cx;
     const auto& tiles = mgr.tiles();
     const std::array<float, kWallBins> wallProfile =
         outer_wall_profile(tiles, cx, cy);

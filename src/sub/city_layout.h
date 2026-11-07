@@ -470,32 +470,14 @@ inline float city_upper_radius(int population) {
 
 
 
-// THE query the citizen spawner asks: within what radius of the cell centre are
-// this settlement's inhabitants born? The built-up disk, clipped to what the
-// enclosing wall actually guarantees — never the whole macro cell. A hamlet with
-// no wall is bounded by its house core alone.
-inline float settlement_population_radius(bool city, int population) {
-    if (city) {
-        // The GUARANTEED part of the town, since this function answers with a
-        // scalar and the town is no longer a disk: the core, reduced by the
-        // ring noise's worst inward excursion.
-        //
-        // The cost of answering conservatively is real and known: the lobes a
-        // city grows down its tract hold houses and streets but no crowd, so
-        // the rim reads quieter than the heart. Closing that means handing the
-        // populator the town's actual outline instead of a number — the
-        // generator already computes one (sub/gens/kit/outline.h) and the
-        // subworld map is never serialized, so it can simply carry it. That is
-        // the next increment, not a hidden debt.
-        return std::min(city_house_radius(population),
-                        wall_inner_bound(city_core_radius(population),
-                                         city_wall_roughness()));
-    }
-    const float core = village_core_radius(population);
-    if (!village_is_walled(population)) return core;
-    return std::min(core, wall_inner_bound(village_wall_radius(population),
-                                           kSettlementWallRing.villageRoughness));
-}
+// (settlement_population_radius жила здесь и СНЕСЕНА M-414: род был свёрнут
+// в bool на входе — третьему роду функция не умела ответить по построению,
+// и Capital получал деревенский диск молча. Диск паствы называет МОДУЛЬ
+// рода — `crowd_plan_city`/`crowd_plan_village@src/sub/crowd_plan.h`,
+// диспетч таблицей; её составные части — формулы этого файла. Названный ею
+// долг «отдать популятору настоящий контур города вместо скаляра»
+// (sub/gens/kit/outline.h) живёт теперь в шапке crowd_plan_city — это
+// следующий инкремент, не скрытый долг.)
 
 // The two numbers the LANE KIT asks this file for. Everything else that stood
 // in this struct described the dead radial-concentric plan and was deleted
