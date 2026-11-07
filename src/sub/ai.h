@@ -17,6 +17,12 @@ namespace sm::sub {
 // fighter's default sight, read from its one home (macro/army.h
 // kNpcSightDefaultM) instead of a second 200 kept here by hand.
 constexpr float kDetectionRadius  = kNpcSightDefaultM;
+// Темп бегства Flee-мозга — множитель к wanderSpeed. Живёт в заголовке,
+// потому что он ещё и РАЗЛИЧИТЕЛЬ: мозг пишет панику и мирную прогулку в
+// ОДНО слово want, и единственное, что их разделяет, — темп (прогулка —
+// ровно ×1.0). Читатель иерархии воли (курс/следование, engine.cpp) судит
+// панику порогом между ними; «слово ≠ 0» паникой НЕ является (шрам Б8).
+constexpr float kFleeSpeedMult = 2.2f;
 // kHostileThreshold moved to macro/faction.h (Session 15): the macro squad
 // threat step needs the same line the battle masks draw, and one number
 // cannot live in two headers. Unqualified uses in sm::sub still resolve.

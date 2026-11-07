@@ -186,6 +186,11 @@ static bool smoke_projects_foreign_record(App& app, int s) {
     sm::sub::SubObjects* objs = app.sceneObjects.get();
     if (objs == nullptr || s < 0
         || !sm::sub::slot_flag(*objs, s, sm::sub::kObjAlive)) return false;
+    // ЧИСТАЯ ТОЧКА РОДА ROOTED — НЕ ТЕЛО (ломоть 5 Б8: Position + бэклинк и
+    // ничего больше). Предикат отвечает «чужое tracked-ТЕЛО», и «тело» тут
+    // судит тот же сентинел, что все свипы мира: пулы есть. Без этого гейта
+    // сценарии ран/курса/выхода хватали неподвижную неранимую точку города.
+    if (sm::sub::slot_pools(*objs, s) == nullptr) return false;
     const sm::MacroHandle origin = sm::sub::slot_macro_origin(*objs, s);
     if (origin.id == 0
         || !app.macroStore->valid(origin)) return false;
@@ -398,6 +403,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"spawn_squad_at_player", SmokeAction::SpawnSquadAtPlayer},
     {"capture_course", SmokeAction::CaptureCourse},
     {"capture_exit", SmokeAction::CaptureExit},
+    {"city_point_probe", SmokeAction::CityPointProbe},
     {"force_encounter", SmokeAction::ForceEncounter},
     {"capture_frame", SmokeAction::CaptureFrame},
     {"stats_settle", SmokeAction::StatsSettle},
@@ -870,6 +876,24 @@ bool run_capture_course_smoke(App& app) {
     const int side = app.gs.mapW;
     const float x0 = wObjs.pos[std::size_t(bodySlot)].x;
     const float y0 = wObjs.pos[std::size_t(bodySlot)].y;
+    // РОСТЕР СЛЕДУЕТ ЗА АВАТАРОМ (ломоть 5 Б8): голова инвентаря сквада —
+    // derived-тело с распиской (origin нулевой) — обязана идти следом, а не
+    // стоять кучей. Субъект — первая голова этого сквада.
+    int memberSlot = -1;
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+        if ((wObjs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
+        if ((wObjs.flags[std::size_t(s)] & sm::sub::kObjProjectile) != 0u)
+            continue;
+        if (sm::sub::slot_macro_origin(wObjs, s).id != 0) continue;
+        if (sm::sub::slot_squad_of(wObjs, s, st).id != macro.id) continue;
+        memberSlot = s;
+        break;
+    }
+    if (memberSlot < 0) {
+        smoke_fail(app, "capture_course: squad head was not embodied");
+        return false;
+    }
+    const float mx0 = wObjs.pos[std::size_t(memberSlot)].x;
     // 3 реальные секунды субмира: прогрев полей (8 чанков весов + бейк) —
     // ~9 тиков, дальше тело идёт анкетным темпом.
     constexpr int kCourseSmokeSteps = 192;
@@ -893,19 +917,75 @@ bool run_capture_course_smoke(App& app) {
     }
     const float dxEast = wObjs.pos[std::size_t(ts)].x - x0;
     const float dyDrift = wObjs.pos[std::size_t(ts)].y - y0;
-    std::fprintf(stderr, "[smoke] capture_course dx=%.1f dy=%.1f steps=%d\n",
-                 double(dxEast), double(dyDrift), kCourseSmokeSteps);
+    const bool memberAlive =
+        (wObjs.flags[std::size_t(memberSlot)] & sm::sub::kObjAlive) != 0u;
+    const float dxMember =
+        memberAlive ? wObjs.pos[std::size_t(memberSlot)].x - mx0 : 0.0f;
+    std::fprintf(stderr,
+                 "[smoke] capture_course dx=%.1f dy=%.1f dxMember=%.1f "
+                 "steps=%d\n",
+                 double(dxEast), double(dyDrift), double(dxMember),
+                 kCourseSmokeSteps);
     std::fflush(stderr);
-    // Порог — 24 тайла (3 ячейки курса) на восток, и обе полярности
-    // ЗАМЕРЕНЫ (2026-11-07, сид 12345): курс жив → dx=31.2; гейт интента
-    // снят (мутация `if (false && …)`) → dx=15.5 — дрейф сепарации, НЕ
-    // ход, и смоук красен. Порог стоит между полярностями; сид
-    // детерминирован, так что зазор не флачит.
+    // Порог — 24 тайла (3 ячейки курса) на восток, и ВСЕ полярности
+    // ЗАМЕРЕНЫ ЗАНОВО после ломтя 5 (2026-11-07, сид 12345): курс жив →
+    // dx=54.5, ростер за ним dxMember=45.8; гейт курса снят → dx=3.6
+    // (красен); гейт следования снят → dxMember=0.9 — «куча стоит», Б8
+    // (красен). Прежние 31.2/15.5 ломтя 3 частично держались на бросках
+    // прогулки Flee-мозга: предикат «паника = слово ≠ 0» читал мирную
+    // прогулку как панику и крал курс (лечение — kFleeSpeedMult-порог).
     if (dxEast < 24.0f) {
         smoke_fail(app, "capture_course: captured body does not walk its course");
         return false;
     }
+    // Голова идёт следом (слабина 8 тайлов съедает часть пути; порог ниже
+    // аватарного, но «стоит кучей» (Б8) не проходит никогда).
+    if (!memberAlive || dxMember < 16.0f) {
+        smoke_fail(app, "capture_course: the roster does not follow its avatar");
+        return false;
+    }
     std::fprintf(stderr, "[smoke] capture_course OK\n");
+    std::fflush(stderr);
+    return true;
+}
+
+// ЧИСТАЯ ТОЧКА РОДА ROOTED (ломоть 5 Б8; вердикт владельца: «аватар сквада
+// был всегда (чатсный случай это невидимый просто)»): у места в окне есть
+// носитель точки сквада — слот с бэклинком и БЕЗ ПУЛОВ (Position + origin
+// и ничего больше, прецедент пламени пропа: без пулов его не видит ни один
+// свип мира). Свип считает такие слоты; ноль в сцене поселения = проекция
+// точек мертва.
+// ОБЕ ПОЛЯРНОСТИ ЗАМЕРЕНЫ (2026-11-07, сид 12345): точки живы → points=1
+// (стартовое поселение); рождение точки снято (мутация `continue;` в ветке
+// Rooted) → points=0, КРАСЕН.
+bool run_city_point_probe_smoke(App& app) {
+    if (!app.subworld.active()) {
+        smoke_fail(app, "city_point_probe outside the subworld");
+        return false;
+    }
+    sm::sub::SubObjects& wObjs = *app.sceneObjects;
+    sm::MacroStore& st = *app.macroStore;
+    int points = 0;
+    int trackedBodies = 0;
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+        if ((wObjs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
+        const sm::MacroHandle origin = sm::sub::slot_macro_origin(wObjs, s);
+        if (origin.id == 0 || !st.valid(origin)) continue;
+        if (sm::sub::slot_pools(wObjs, s) == nullptr) {
+            ++points;
+        } else {
+            ++trackedBodies;
+        }
+    }
+    std::fprintf(stderr, "[smoke] city_point_probe points=%d tracked=%d\n",
+                 points, trackedBodies);
+    std::fflush(stderr);
+    if (points < 1) {
+        smoke_fail(app,
+                   "city_point_probe: no rooted point avatar in the scene");
+        return false;
+    }
+    std::fprintf(stderr, "[smoke] city_point_probe OK\n");
     std::fflush(stderr);
     return true;
 }
@@ -7483,6 +7563,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=capture_exit\n");
             std::fflush(stderr);
             if (run_capture_exit_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::CityPointProbe:
+            std::fprintf(stderr, "[smoke] action=city_point_probe\n");
+            std::fflush(stderr);
+            if (run_city_point_probe_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::SubworldSeam:
             std::fprintf(stderr, "[smoke] action=subworld_seam\n");

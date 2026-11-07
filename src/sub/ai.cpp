@@ -12,7 +12,8 @@
 namespace sm::sub {
 
 static constexpr float kFleeRadius    = 60.0f;
-static constexpr float kFleeSpeedMult = 2.2f;
+// (kFleeSpeedMult уехал в ai.h ломтём 5 Б8: он различитель паники для
+//  иерархии воли, а не частность этого файла.)
 
 // This file is a BRAIN, not a body. It decides what a mind wants — a wander
 // bearing, a flee vector — and writes that intent into SubworldAi.wantVx/Vy.

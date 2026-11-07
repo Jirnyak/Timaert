@@ -66,6 +66,9 @@ spawn_squad_at_player,subworld_enter,capture_course
 # Выход из захвата (ломоть 4 M-419): тело в сидовой ячейке кромки при цели
 # за окном — клетка шагает наружу дверями марша, все тела сквада гаснут.
 spawn_squad_at_player,subworld_enter,capture_exit
+# Чистая точка рода Rooted (ломоть 5 Б8): у места окна есть носитель точки
+# сквада — бэклинк без пулов; ни один свип мира его не видит.
+enter_first_settlement,city_point_probe
 subworld_enter,fauna_kill_writeback
 force_encounter
 

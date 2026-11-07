@@ -2210,24 +2210,16 @@ void SubworldEngine::tick_day_pump(float dt) {
                 }
                 continue;
             }
-            // Курс вместо тупого пеленга (M-420: «тупая прямая умирает
-            // классом») — ходок-домой спускается тем же точечным полем,
-            // что захваченные: все идущие к одной двери делят один бейк.
-            // kCourseNoStep — и внутри ячейки цели, и пока поле печётся:
-            // последняя миля и фолбэк — один честный пеленг.
-            std::uint8_t courseDir = kCourseNoStep;
-            if (course_ && frame_ != nullptr) {
-                courseDir = course_dir_point(
-                    *course_, h.x, h.y, p.x, p.y,
-                    std::uint32_t(frame_->worldTick));
-            }
-            if (courseDir != kCourseNoStep) {
-                a.wantVx = kCourseDirUx[courseDir] * a.wanderSpeed;
-                a.wantVy = kCourseDirUy[courseDir] * a.wanderSpeed;
-            } else {
-                a.wantVx = dx / d * a.wanderSpeed;
-                a.wantVy = dy / d * a.wanderSpeed;
-            }
+            // ПЕЛЕНГ, И ЭТО ВЕРДИКТ (владелец 2026-11-07, Б8): поход
+            // горожанина к двери — ЧАСТНОСТЬ модуля города, «не часть
+            // единой системы … единые системы сквадов никак не должны
+            // зависеть от особенности горожан». Ломоть 3 подключал сюда
+            // точечные поля курса — и купил мясорубку слотов (замер Б8:
+            // ~1441 LRU-вытеснение/тик — дверей сотни, дверь КАЖДОГО дома
+            // не есть квантованная цель), душившую поля настоящих сквадов.
+            // Осмысленный ходок единой системы — АВАТАР сквада, и только.
+            a.wantVx = dx / d * a.wanderSpeed;
+            a.wantVy = dy / d * a.wanderSpeed;
         }
         // HE IS HOME, so he is no longer embodied — and nothing is settled.
         // A macro debt is paid where a body DIES (the reaper above); a man who
@@ -3863,6 +3855,59 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         }
     }
 
+    // ── ЛОМОТЬ 5 ЗАХВАТА (Б8, вердикт владельца): «осмысленный ходок это
+    // сквад типа либо аватар … ростер вокруг него как центра масс движется».
+    // Карта аватаров тика — носители бэклинка с живой записью; МАРШИРУЕТ ли
+    // сквад, судят ДАННЫЕ (цель жива и не своя клетка — город никого никуда
+    // не тянет), не архетип (его гейт в проходе запрещён его же шапкой).
+    // Кап пинов: сквадов с телами в окне больше, чем даёт проекция девяти
+    // клеток, не бывает; перелив не теряет — лишние поведут ростер
+    // следующим тиком (отсрочка, не усечение).
+    struct AvatarPin {
+        std::uint32_t id;
+        float x, y;
+        bool marching;
+    };
+    constexpr int kAvatarPinCap = 64;
+    std::array<AvatarPin, kAvatarPinCap> avatarPins{};
+    int avatarPinCount = 0;
+    if (mw_.store && frame_ && sceneKind_ != SceneKind::Dungeon) {
+        MacroStore& pst = *mw_.store;
+        sub::SubObjects& parena = (*objects_);
+        for (int s = 0;
+             s < int(kMaxSubObjects) && avatarPinCount < kAvatarPinCap; ++s) {
+            if ((parena.flags[std::size_t(s)] & sub::kObjAlive) == 0u)
+                continue;
+            const MacroHandle h = sub::slot_macro_origin(parena, s);
+            if (h.id == 0 || !pst.valid(h)) continue;
+            const ecs::SquadGoal& g = pst.goal[h.slot];
+            avatarPins[std::size_t(avatarPinCount)] = AvatarPin{
+                h.id, parena.pos[std::size_t(s)].x,
+                parena.pos[std::size_t(s)].y,
+                ecs::goal_kind(g.what) != ecs::GoalKind::None
+                    && g.cell != ecs::kNoCell
+                    && g.cell != pst.cell[h.slot].idx};
+            ++avatarPinCount;
+        }
+    }
+    // Слабина следования: внешняя кромка кольца воплощения инвентаря
+    // (2..5 тайлов, spawn.cpp) + два тела (0.55 × 2) + запас сепарации —
+    // свежевоплощённая куча в покое не дёргается. Баланс, двигается
+    // замером.
+    constexpr float kFollowSlackTiles = 8.0f;
+    // ПАНИКА — ЭТО ТЕМП СЛОВА, НЕ ЕГО НАЛИЧИЕ (шрам Б8): Flee-мозг пишет и
+    // панику, и мирную прогулку в ОДНО want, прогулка — ровно ×1.0
+    // wanderSpeed, бегство — ×kFleeSpeedMult; порог — середина. Предикат
+    // «слово ≠ 0» читал прогулку как панику, и курс не применялся —
+    // зелень ломтей 3-4 частично держалась на бросках прогулки.
+    const auto flee_word_is_panic = [](const ecs::SubworldAi* ai) {
+        if (ai == nullptr || ai->kind != ecs::SubworldAi::Flee) return false;
+        const float w2 = ai->wantVx * ai->wantVx + ai->wantVy * ai->wantVy;
+        const float panicFloor =
+            ai->wanderSpeed * (1.0f + kFleeSpeedMult) * 0.5f;
+        return w2 > panicFloor * panicFloor;
+    };
+
     // ── Gather: ECS → SoA, O(N) ────────────────────────────────────────────
     // Every living body enters the snapshot — the SAME set the spell pass
     // targets (is_spell_target: Health columns, alive), so a body that a
@@ -4028,18 +4073,52 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
                                                         p.y);
                         }
                     }
-                    // ПРИМЕНЕНИЕ — по иерархии воли: паника (Flee с живым
-                    // словом) сильнее курса, курс сильнее прогулки.
-                    bool panicking = false;
-                    if (const auto* ai = sub::slot_ai(arena, s)) {
-                        panicking = ai->kind == ecs::SubworldAi::Flee
-                                    && (ai->wantVx * ai->wantVx
-                                        + ai->wantVy * ai->wantVy) > 1.0e-6f;
-                    }
+                    // ПРИМЕНЕНИЕ — по иерархии воли: паника (слово бегства,
+                    // не прогулки) сильнее курса, курс сильнее прогулки.
+                    const bool panicking =
+                        flee_word_is_panic(sub::slot_ai(arena, s));
                     if (courseDir != kCourseNoStep && !panicking) {
                         // Интент несёт СВОЙ темп (закон вектора намерения).
                         d.intentVx = kCourseDirUx[courseDir] * d.speed;
                         d.intentVy = kCourseDirUy[courseDir] * d.speed;
+                    }
+                }
+            }
+        }
+
+        // ── РОСТЕР СЛЕДУЕТ ЗА АВАТАРОМ (ломоть 5 Б8): тело с распиской
+        // Creatures тянется к носителю точки СВОЕГО сквада, когда тот
+        // марширует и ушёл дальше слабины. Иерархия воли: война (привод)
+        // > паника (Flee с живым словом) > ходок модуля (kObjGoingHome —
+        // частность места, единая система его не трогает) > СЛЕДОВАНИЕ >
+        // прогулка. Пер-тельных курсов не существует — осмысленный ходок
+        // один, аватар (вердикт владельца).
+        if (!isPlayer && !owned && avatarPinCount > 0 && d.speed > 0.0f
+            && mw_.store != nullptr
+            && !sub::slot_flag(arena, s, sub::kObjGoingHome)
+            && sub::slot_macro_origin(arena, s).id == 0) {
+            if (const ecs::MacroDebt* debt = sub::slot_debt(arena, s)) {
+                if (debt->stock == std::uint8_t(MacroStock::Creatures)) {
+                    const std::uint32_t ownerId = std::uint32_t(debt->subject);
+                    for (int pi = 0; pi < avatarPinCount; ++pi) {
+                        const AvatarPin& pin = avatarPins[std::size_t(pi)];
+                        if (pin.id != ownerId) continue;
+                        if (!pin.marching) break;
+                        if (flee_word_is_panic(sub::slot_ai(arena, s))) break;
+                        // Плоскость ПО ПРИРОДЕ (ведомость isotropy_planar):
+                        // «догонять ли» — ходовой вопрос, ноги бегут по
+                        // земле, как шаг бегства Flee.
+                        const float fdx = pin.x - p.x;
+                        const float fdy = pin.y - p.y;
+                        const float fd2 = fdx * fdx + fdy * fdy;
+                        if (fd2 > kFollowSlackTiles * kFollowSlackTiles) {
+                            const float fd = std::sqrt(fd2);
+                            // Полный анкетный темп, не прогулочный: ростер
+                            // обязан ДОГОНЯТЬ марш, а не отставать навсегда.
+                            d.intentVx = fdx / fd * d.speed;
+                            d.intentVy = fdy / fd * d.speed;
+                        }
+                        break;
                     }
                 }
             }

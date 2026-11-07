@@ -1589,16 +1589,6 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
         if (macro_dead(st, macro)) continue;
         const std::uint16_t slot = macro.slot;
         if (slot == flagSlot) continue;
-        // АВАТАРА АНКЕТЫ У НЕПОДВИЖНОГО РОДА НЕТ — ОДНА ДВЕРЬ НА ВСЮ ИГРУ
-        // (`squad_has_avatar@src/tables/squad_type.h`). Здесь стояло
-        // `squad_archetype(...) == SquadArchetype::Rooted` СВОИМ
-        // правописанием, то есть второй ответ на тот же вопрос, на который
-        // отвечает авторезолв (DOD п.6). Семантика не изменилась ни на бит:
-        // отсекается ровно тот же отрезок оси. И НЕ ПУТАТЬ С ТОЛПОЙ: головы
-        // контейнера города воплощаются агностично своим проходом (ЗАКОН
-        // КОНТЕЙНЕРА) — этот гейт про АВАТАРА сквада, не про его инвентарь.
-        if (!squad_has_avatar(SquadType(squad_type_ordinal(st, macro))))
-            continue;
         const ecs::MacroCell mcell = squad_cell(st, macro);
         const int mcx = ecs::cell_x(mcell, mapW);
         const int mcy = ecs::cell_y(mcell, mapW);
@@ -1608,6 +1598,30 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
         if (ox < -1 || ox > 1 || oy < -1 || oy > 1) continue;
         if ((projectedSlots[std::size_t(slot) >> 6] >> (slot & 63u)) & 1ull)
             continue;
+        // АВАТАР У СКВАДА ЕСТЬ ВСЕГДА — У НЕПОДВИЖНОГО РОДА ОН ЧИСТАЯ ТОЧКА
+        // (вердикт владельца 2026-11-07, Б8: «можно сделать чтобы технически
+        // аватар сквада был всегда (чатсный случай это невидимый просто)»).
+        // Rooted не ходит и не дерётся телом — его носитель точки рождается
+        // по прецеденту пламени пропа: Position + бэклинк и НИЧЕГО больше.
+        // Без пулов его не видит НИ ОДИН свип по построению (сентинел
+        // maxHp == 0 — doors.h slot_pools): не толпа, не цель спелла, не
+        // кандидат прицела, неубиваем, не рисуется (нет kObjHasSprite).
+        // Прежний гейт «аватара у Rooted нет» стоял здесь дверью
+        // squad_has_avatar и СНЯТ этим вердиктом для проекции; КОЛЬЦО
+        // ИНВЕНТАРЯ у Rooted по-прежнему не рождается — толпу места ведёт
+        // его модуль (помпа дня), вторая толпа была бы двойным воплощением
+        // (шрам ЗАКОНА КОНТЕЙНЕРА: «паства 6272 → тел 11774»).
+        if (!squad_has_avatar(SquadType(squad_type_ordinal(st, macro)))) {
+            const ecs::CellSub psub = st.runtime[macro.slot].sub;
+            const int pointSlot = objs.alloc(ecs::Position{
+                scene_axis_of_sub(ox, psub.x), scene_axis_of_sub(oy, psub.y),
+                0.0f});
+            if (pointSlot >= 0) {
+                slot_set_origin(objs, pointSlot, macro);
+                ++projected;
+            }
+            continue;
+        }
 
         // (The projection cap that stood here — kMaxProjectedMacroNpcs, 128
         // for the whole scene — died with §42 Инк 6, owner: «потолков нет».

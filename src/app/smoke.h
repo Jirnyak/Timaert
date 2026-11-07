@@ -65,6 +65,7 @@ enum class SmokeAction : std::uint8_t {
     SpawnSquadAtPlayer,
     CaptureCourse,
     CaptureExit,
+    CityPointProbe,
     ForceEncounter,
     CaptureFrame,
     StatsSettle,
