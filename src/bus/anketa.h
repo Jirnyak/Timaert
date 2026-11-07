@@ -1454,19 +1454,39 @@ inline std::int64_t inventory_mass_g(const Inventory& inv) noexcept {
     return inv.sum().massG;
 }
 
+// Рецепт открыт этим рукам? Один вопрос, один ответ, ноль веток по виду.
+// Пара «ремесло + минранг» приходит из СТРОКИ ДЕЙСТВИЯ рецепта
+// (`gateSkill`/`minRank` его Craft-строки): город и рука спрашивают ОДНУ
+// строку, второго гейта нет (M-146, «гейт руки и гейт города — один»).
+// Жил в macro/econ_day.h и переехал к двери craft_item (M-415/Б2): право
+// спрашивает САМА дверь, а шина macro/ не видит. SkillId::Count — «рангом
+// не ограничено» (словарь tables/actions.h): права такая строка не требует.
+inline bool recipe_known(const Skills& sk, SkillId craft, int minRank) {
+    if (craft == SkillId::Count) return true;
+    return sk.of(craft) >= minRank;
+}
+
 // ── The reversible reaction (CANON «Крафт/Скрап», owner 2026-09-11/12) ─────
 // FORWARD — craft: consume exactly n BATCHES of the composition (full
 // price), emit n × yield WHITE base items (seed 0, no affixes — «закон
 // нулевых аффиксов»: affixes are born in the world, never at a bench).
-// Refuses terminal rows (nothing composes them), missing materials or a
-// full bag — NOTHING ELSE (owner verdict 2026-09-12, ЗАГЛАВНЫМИ: «У НАС
-// БАРТЕРНАЯ ЭКОНОМИКА... ПРОСТО ГОРОД ДЕЛАЕТ МОНЕТЫ ЧЕРЕЗ СИСТЕМУ КРАФТА
-// ПО СВОЕМУ АИ»): coin is a commodity like cloth, the mint IS this door run
-// by the town's own AI, and hand-striking coin is harmless by arithmetic —
-// the reaction is value-neutral (the static_assert beside the table), so a
-// forger earns nothing a smith doesn't. All-or-nothing on a copy: a refused
-// craft leaves the bag untouched (CANON S5 — goods never evaporate).
-bool craft_item(Inventory& inv, int defIdx, int n);
+// Refuses terminal rows (nothing composes them), missing materials, a full
+// bag — И ЗАКРЫТЫЙ РЕЦЕПТ (M-415/Б2, ревизия 2026-11-06: право = пара
+// gateSkill/minRank Craft-строки ДЕЙСТВИЯ, M-369, и спрашивает её САМА
+// дверь гейтом recipe_known выше — до того право игрока охранял ровно
+// ImGui::BeginDisabled, то есть закон мира жил в представлении, а смоук
+// и консоль ковали без права вовсе). Прежняя шапка кончала список словами
+// «NOTHING ELSE» (owner verdict 2026-09-12, ЗАГЛАВНЫМИ: «У НАС БАРТЕРНАЯ
+// ЭКОНОМИКА... ПРОСТО ГОРОД ДЕЛАЕТ МОНЕТЫ ЧЕРЕЗ СИСТЕМУ КРАФТА ПО СВОЕМУ
+// АИ») — тот вердикт О ЧЕКАНКЕ, и он ЦЕЛ: монета — товар как сукно, двор
+// есть эта дверь в руках ИИ города, отдельного права чеканки КОЛОНКОЙ не
+// существует; чеканит тот, чьи руки умеют (строка mint_coin), — а это и
+// есть гейт права, тот же, что у всякого рецепта. Value-neutral (the
+// static_assert beside the table), so a forger earns nothing a smith
+// doesn't. All-or-nothing on a copy: a refused craft leaves the bag
+// untouched (CANON S5 — goods never evaporate).
+bool craft_item(Inventory& inv, int defIdx, int n,
+                const Skills& hands, std::uint8_t action);
 // REVERSE — scrap: n units of the SLOT (the instance is what is scrapped,
 // not the id — a rolled sword and its bare twin are different stacks) melt
 // back HALF THEIR TOTAL MATTER, floored per part: floor(n × count / (2 ×

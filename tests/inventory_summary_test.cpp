@@ -276,7 +276,13 @@ void test_copy_and_commit_doors() {
 
     const int wagon = item_index("wagon");
     CHECK(wagon >= 0, "каталог знает повозку");
-    CHECK(craft_item(bag, wagon, 1), "повозка собирается");
+    // Право рождает сам свидетель (§8 п.11): дверь спрашивает его сама
+    // (M-415/Б2), руки — ровно минранг строки build_wagon.
+    constexpr std::uint8_t wagonAct = action_slot("build_wagon");
+    Skills wright{};
+    wright[action_def(int(wagonAct)).gateSkill] =
+        action_def(int(wagonAct)).minRank;
+    CHECK(craft_item(bag, wagon, 1, wright, wagonAct), "повозка собирается");
     settled(bag, "craft_item: приход и расход одной копией");
 
     int wagonSlot = -1;

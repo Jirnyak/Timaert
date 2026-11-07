@@ -176,7 +176,7 @@ int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
         // door: a full store is a day that did not happen, the inputs never
         // left, and no fact lies about goods that do not exist.
         if (!craft_item(store, cands[std::size_t(best)].outIdx,
-                        bestBatches)) {
+                        bestBatches, hands, cands[std::size_t(best)].action)) {
             // Склад не принял (переполнение слотов) — кандидат мёртв на
             // сегодня, иначе рука зациклится на несостоявшемся дне.
             cands[std::size_t(best)].perDay = 0;

@@ -9582,7 +9582,15 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const int ironBefore = bag.count("iron");
             const int swordBefore = bag.count_of(sword);
             bag.add("iron", 2);
-            const bool crafted = sm::craft_item(bag, sword, 1);
+            // Право рождает сам свидетель (§8 п.11): руки ровно с минрангом
+            // СВОЕЙ строки действия — дверь теперь спрашивает его сама
+            // (M-415/Б2), и смоук больше не куёт без права.
+            constexpr std::uint8_t forgeAct = sm::action_slot("forge_sword");
+            sm::Skills hands{};
+            hands[sm::action_def(int(forgeAct)).gateSkill] =
+                sm::action_def(int(forgeAct)).minRank;
+            const bool crafted =
+                sm::craft_item(bag, sword, 1, hands, forgeAct);
             const bool whiteBase = [&] {
                 for (const sm::ItemRef& s : bag.slots) {
                     if (!s.empty() && s.def == std::uint16_t(sword)

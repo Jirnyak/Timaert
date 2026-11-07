@@ -1064,10 +1064,14 @@ namespace sm::ui
                                     int(act.minRank));
                                 ImGui::SameLine();
                             }
+                            // Гейт здесь — ПРЕДСТАВЛЕНИЕ (серость кнопки и
+                            // причина отказа); закон права спрашивает сама
+                            // дверь craft_item тем же recipe_known (M-415/Б2).
                             ImGui::BeginDisabled(!can || !known);
                             if (ImGui::SmallButton("Craft"))
                             {
-                                if (craft_item(playerBag, ci, 1))
+                                if (craft_item(playerBag, ci, 1, sheet.skills,
+                                               kRecipes[ri].action))
                                 {
                                     // THE spend door (movement_cost.h): the
                                     // debit and the one QUADRATIC law of

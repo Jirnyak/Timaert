@@ -14,9 +14,20 @@
 //     terminals; both are all-or-nothing (a refused act leaves the bag
 //     byte-identical, CANON S5);
 //   · the material byte (1 + raw commodity row) substitutes part 0 at scrap;
-//   · the craft door refuses coin (чеканка = право двора, CANON S10);
+//   · ПРАВО СПРАШИВАЕТ САМА ДВЕРЬ (M-415/Б2): пара gateSkill/minRank
+//     Craft-строки действия, гейт recipe_known внутри craft_item — руки
+//     ниже минранга получают отказ всё-или-ничего (прежняя строка «craft
+//     door refuses coin» снята вердиктом 2026-09-12: чеканит тот, чьи руки
+//     умеют, mint_coin — такой же рецепт);
 //   · auto_scrap_overflow frees slots down to the half mark, cheapest
 //     non-fungible first, and never touches plain (fungible) stacks.
+//
+// ТАБЛИЦА «МУТАЦИЯ → ИСХОД» ПРАВА ДВЕРИ (ПРОГНАНО 2026-11-07, фактически):
+//  - гейт recipe_known снят из craft_item → КРАСНЫЙ, 3 из 522: «закрытый
+//    рецепт — отказ ДВЕРИ», «отказ права — всё-или-ничего» и следом
+//    «2 iron craft a sword» (зелёные руки съели железо);
+//  - ДОЛЖНА МОЛЧАТЬ: minRank forge_sword 5 → 6 (ранг есть БАЛАНС) →
+//    ЗЕЛЁНЫЙ 522/522 — фикстуры рук ездят по САМОЙ строке действия.
 #include "check.h"
 
 #include "tables/commodity.h"
@@ -182,8 +193,28 @@ void test_craft_door() {
     Inventory inv;
     inv.add("iron", 3);
 
+    // Право рождает сам свидетель (§8 п.11): руки ровно с минрангом СВОЕЙ
+    // Craft-строки — дверь спрашивает право САМА (M-415/Б2).
+    constexpr std::uint8_t forgeAct = action_slot("forge_sword");
+    Skills smith{};
+    smith[action_def(int(forgeAct)).gateSkill] =
+        action_def(int(forgeAct)).minRank;
+
+    // ПРАВО — ГЕЙТ САМОЙ ДВЕРИ, не UI: нулевые руки получают отказ, и
+    // сумка нетронута (негативный контроль M-415/Б2 — до правки игрока
+    // держал ровно ImGui::BeginDisabled, а смоук и консоль ковали без
+    // права вовсе).
+    {
+        const Skills green{};   // ни ранга: ниже минранга forge_sword
+        const Inventory before = inv;
+        CHECK(!craft_item(inv, sword, 1, green, forgeAct),
+              "закрытый рецепт — отказ ДВЕРИ, право больше не живёт в UI");
+        CHECK(std::memcmp(&before, &inv, sizeof(Inventory)) == 0,
+              "отказ права — всё-или-ничего: сумка байт-в-байт");
+    }
+
     // Full price in, white base out.
-    CHECK(craft_item(inv, sword, 1), "2 iron craft a sword");
+    CHECK(craft_item(inv, sword, 1, smith, forgeAct), "2 iron craft a sword");
     CHECK(inv.count("iron") == 1, "craft ate exactly the composition");
     const int s = slot_of(inv, sword);
     CHECK(s >= 0, "the sword landed");
@@ -195,8 +226,10 @@ void test_craft_door() {
 
     // Refusals are all-or-nothing: the bag stays byte-identical.
     const Inventory before = inv;
-    CHECK(!craft_item(inv, sword, 1), "1 iron cannot craft a 2-iron sword");
-    CHECK(!craft_item(inv, iron, 1), "terminal rows cannot be crafted");
+    CHECK(!craft_item(inv, sword, 1, smith, forgeAct),
+          "1 iron cannot craft a 2-iron sword");
+    CHECK(!craft_item(inv, iron, 1, smith, forgeAct),
+          "terminal rows cannot be crafted");
     CHECK(std::memcmp(&before, &inv, sizeof(Inventory)) == 0,
           "a refused craft leaves the bag untouched (negative control)");
 
@@ -207,7 +240,13 @@ void test_craft_door() {
     Inventory mint;
     mint.add("silver", 1);
     const int coin = item_index("coin_empire_silver");
-    CHECK(craft_item(mint, coin, 1), "one silver strikes a batch of coin");
+    // Чеканит тот, чьи руки умеют (строка mint_coin — тот же гейт права).
+    constexpr std::uint8_t mintAct = action_slot("mint_coin");
+    Skills minter{};
+    minter[action_def(int(mintAct)).gateSkill] =
+        action_def(int(mintAct)).minRank;
+    CHECK(craft_item(mint, coin, 1, minter, mintAct),
+          "one silver strikes a batch of coin");
     CHECK(mint.count("coin_empire_silver") == item_yield(coin),
           "the batch struck exactly the row's yield");
     CHECK(mint.count("silver") == 0, "the metal was consumed whole");

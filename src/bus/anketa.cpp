@@ -15,8 +15,15 @@
 
 namespace sm {
 
-bool craft_item(Inventory& inv, int defIdx, int n) {
+bool craft_item(Inventory& inv, int defIdx, int n,
+                const Skills& hands, std::uint8_t action) {
     if (n <= 0) return false;
+    // ПРАВО — пара Craft-строки ДЕЙСТВИЯ, и спрашивает её САМА ДВЕРЬ
+    // (M-415/Б2): город и рука идут одним гейтом recipe_known; UI остаётся
+    // только отображение причины отказа. До этого право игрока охранял
+    // ImGui::BeginDisabled — закон мира в представлении.
+    const ActionDef& act = action_def(int(action));
+    if (!recipe_known(hands, act.gateSkill, int(act.minRank))) return false;
     const auto parts = item_parts(defIdx);
     if (parts.empty()) return false;             // terminal: nothing composes it
     // All-or-nothing on a copy (the deal-door idiom, macro/deal.h): remove_of can succeed
