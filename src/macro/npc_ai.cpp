@@ -4240,11 +4240,11 @@ int max_affordable_lot_(int base, int have, int demand, bool selling,
     int lo = 0, hi = cap;
     while (lo < hi) {
         const int mid = lo + (hi - lo + 1) / 2;
-        const int shelf = selling ? have + mid : have - mid;
-        const int unit0 = stock_price(base, shelf, demand);
-        const int unit = selling
-            ? trade_sell_price(unit0, myPct, theirPct)
-            : trade_buy_price(unit0, myPct, theirPct);
+        // Цена границы — ТА ЖЕ композиция, что цена списания ниже
+        // (`lot_unit_price@src/macro/economy.h`, M-415/Б3): полка после
+        // сделки + маржа одной строкой, разрыв наценки невыразим.
+        const int unit =
+            lot_unit_price(base, have, demand, mid, selling, myPct, theirPct);
         const long long cost = (long long)mid * unit;
         if (cost <= wallet) lo = mid; else hi = mid - 1;
     }
@@ -4298,10 +4298,10 @@ CaravanDeal trade_caravan_at_station(MacroStore& st,
             // and trade skill claw back part of the house margin — a
             // caravan out-trades a peasant because its ROW rolls a better
             // sheet, never because the code knows who it is (owner,
-            // 2026-08-30).
-            const int price = trade_sell_price(
-                stock_price(base, have + n, demand),
-                myTradePct, theirTradePct);
+            // 2026-08-30). Композиция — одной дверью lot_unit_price (Б3).
+            const int price = lot_unit_price(base, have, demand, n,
+                                             /*selling=*/true,
+                                             myTradePct, theirTradePct);
             // ТОВАР И ОПЛАТА — ОДНА СДЕЛКА (ломоть 2 M-72): exact-лоты,
             // недоплаченная поставка невыразима — не покрыл рынок счёт,
             // не уехал и товар.
@@ -4312,7 +4312,7 @@ CaravanDeal trade_caravan_at_station(MacroStore& st,
             goods[0].exact = 1;
             DealLine pay[64];
             const StagedValue sv = stage_value_lines(ms, n * price, pay);
-            if (sv.value < n * price) continue;
+            if (!deal_covered(sv.value, n * price)) continue;
             const DealFact f =
                 deal(st, traderSlot, marketSlot, goods,
                      std::span<DealLine>(pay, std::size_t(sv.lines)),
@@ -4334,9 +4334,9 @@ CaravanDeal trade_caravan_at_station(MacroStore& st,
                                     inventory_value(hold), n,
                                     myTradePct, theirTradePct);
             if (n <= 0) continue;
-            const int cost =
-                n * trade_buy_price(stock_price(base, have - n, demand),
-                                    myTradePct, theirTradePct);
+            const int cost = n * lot_unit_price(base, have, demand, n,
+                                                /*selling=*/false,
+                                                myTradePct, theirTradePct);
             DealLine goods[1];
             goods[0] = DealLine{};
             goods[0].want = n;
@@ -4344,7 +4344,7 @@ CaravanDeal trade_caravan_at_station(MacroStore& st,
             goods[0].exact = 1;
             DealLine pay[64];
             const StagedValue sv = stage_value_lines(hold, cost, pay);
-            if (sv.value < cost) continue;
+            if (!deal_covered(sv.value, cost)) continue;
             const DealFact f =
                 deal(st, traderSlot, marketSlot,
                      std::span<DealLine>(pay, std::size_t(sv.lines)), goods,
@@ -4400,9 +4400,10 @@ CaravanDeal trade_vendor_at_market(MacroStore& st,
         if (n <= 0) continue;
         // Same ONE trade-price law as the station: a village hand haggles
         // with a peasant's charisma, a caravan with a trader's — the sheet
-        // is the whole difference.
-        const int price = trade_sell_price(
-            stock_price(base, have + n, demand), myTradePct, theirTradePct);
+        // is the whole difference. Композиция — одной дверью (Б3).
+        const int price = lot_unit_price(base, have, demand, n,
+                                         /*selling=*/true,
+                                         myTradePct, theirTradePct);
         // ТОВАР И ОПЛАТА — ОДНА СДЕЛКА: недоплаченная поставка невыразима.
         DealLine goods[1];
         goods[0] = DealLine{};
@@ -4411,7 +4412,7 @@ CaravanDeal trade_vendor_at_market(MacroStore& st,
         goods[0].exact = 1;
         DealLine pay[64];
         const StagedValue sv = stage_value_lines(ms, n * price, pay);
-        if (sv.value < n * price) continue;
+        if (!deal_covered(sv.value, n * price)) continue;
         const DealFact f =
             deal(st, traderSlot, marketSlot, goods,
                  std::span<DealLine>(pay, std::size_t(sv.lines)),
@@ -4476,8 +4477,9 @@ CaravanDeal trade_vendor_at_market(MacroStore& st,
             const int demand =
                 season_demand_for(id, st.upkeep[marketSlot].needDebt,
                                   souls_home(st, marketSlot), site, &ms);
-            const int buyHere = trade_buy_price(
-                stock_price(base, have, demand), myTradePct, theirTradePct);
+            const int buyHere =
+                lot_unit_price(base, have, demand, /*n=*/0,
+                               /*selling=*/false, myTradePct, theirTradePct);
             // Чего это стоит ДОМА — тем же счётом и той же кривой.
             const int homeDemand =
                 season_demand_for(id, st.upkeep[hSlot].needDebt,
@@ -4523,9 +4525,9 @@ CaravanDeal trade_vendor_at_market(MacroStore& st,
                                     inventory_value(bag), n,
                                     myTradePct, theirTradePct);
             if (n <= 0) continue;
-            const int cost =
-                n * trade_buy_price(stock_price(base, have - n, demand),
-                                    myTradePct, theirTradePct);
+            const int cost = n * lot_unit_price(base, have, demand, n,
+                                                /*selling=*/false,
+                                                myTradePct, theirTradePct);
             DealLine goods[1];
             goods[0] = DealLine{};
             goods[0].want = n;
@@ -4533,7 +4535,7 @@ CaravanDeal trade_vendor_at_market(MacroStore& st,
             goods[0].exact = 1;
             DealLine pay[64];
             const StagedValue sv = stage_value_lines(bag, cost, pay);
-            if (sv.value < cost) continue;
+            if (!deal_covered(sv.value, cost)) continue;
             const DealFact f =
                 deal(st, traderSlot, marketSlot,
                      std::span<DealLine>(pay, std::size_t(sv.lines)), goods,

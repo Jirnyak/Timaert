@@ -317,27 +317,13 @@ namespace sm::ui
         // настроением: у цены остались кривая дефицита и разница торговых
         // сил, третьего множителя не существует.)
 
-        // ДВЕ СТОРОНЫ, ДВЕ АНКЕТЫ (CANON S25; починено 2026-09-21). Здесь
-        // стояло `trade_price(база, харизма, ранг Торговли)` — то есть на
-        // месте ЧУЖОЙ торговой силы стоял собственный скилл покупателя, а
-        // контрагента сделка не спрашивала вовсе. Следствия оба видны
-        // игроку: наценка выходила `(Cha − ранг Trade)/100`, значит прокачка
-        // Торговли ДЕЛАЛА ЦЕНУ ХУЖЕ, а торг с нищим бродягой и со столицей
-        // стоил одинаково. Обе стороны теперь называют своё производное
-        // одной дверью trade_power_of.
-        int trade_overlay_buy_price(int baseValue, int myTradePct,
-                                    int theirTradePct)
-        {
-            return sm::trade_price(baseValue, myTradePct, theirTradePct,
-                                   /*buying*/ true);
-        }
-
-        int trade_overlay_sell_price(int baseValue, int myTradePct,
-                                     int theirTradePct)
-        {
-            return sm::trade_price(baseValue, myTradePct, theirTradePct,
-                                   /*buying*/ false);
-        }
+        // ДВЕ СТОРОНЫ, ДВЕ АНКЕТЫ (CANON S25; починено 2026-09-21): обе
+        // стороны называют своё производное одной дверью trade_power_of.
+        // (Пара обёрток trade_overlay_buy/sell_price жила здесь дословными
+        // дублями trade_price и снесена M-415/Б3: композицию цены лямбды
+        // торговли берут той же дверью `lot_unit_price@src/macro/
+        // economy.h`, что корован и вендор, — цена игрока и цена НПЦ
+        // склеены по построению.)
 
         // (Хелперы квестов objective_kind_label/quest_category_label
         //  умерли с квест-машиной — ломоть 3 M-72, вариант А.)
@@ -1865,31 +1851,27 @@ namespace sm::ui
                     // только ШАБЛОН РОЖДЕНИЯ (`birth_squad` ставит
                     // `st.sheet[slot] = squad_birth(kind).sheet`), после него
                     // истина у анкеты — она качается (ЗАКОН АНКЕТЫ).
+                    // Композиция цены — ОДНА дверь lot_unit_price (Б3):
+                    // полка после сделки + маржа, та же, что у корована.
                     const auto buyUnit = [&](const ItemRef &ref, int n) {
-                        return trade_overlay_buy_price(
-                            stock_price(value_of(ref),
-                                        sInv.count_of(int(ref.def)) - n,
-                                        season_demand_for(
-                                            int(ref.def),
-                                            st.upkeep[slot].needDebt,
-                                            souls_home(st, slot),
-                                            sSheet.skills,
-                                            &sInv)),
-                            h.tradePct,
-                            trade_power_of(sSheet));
+                        return lot_unit_price(
+                            value_of(ref), sInv.count_of(int(ref.def)),
+                            season_demand_for(int(ref.def),
+                                              st.upkeep[slot].needDebt,
+                                              souls_home(st, slot),
+                                              sSheet.skills, &sInv),
+                            n, /*selling=*/false,
+                            h.tradePct, trade_power_of(sSheet));
                     };
                     const auto sellUnit = [&](const ItemRef &ref, int n) {
-                        return trade_overlay_sell_price(
-                            stock_price(value_of(ref),
-                                        sInv.count_of(int(ref.def)) + n,
-                                        season_demand_for(
-                                            int(ref.def),
-                                            st.upkeep[slot].needDebt,
-                                            souls_home(st, slot),
-                                            sSheet.skills,
-                                            &sInv)),
-                            h.tradePct,
-                            trade_power_of(sSheet));
+                        return lot_unit_price(
+                            value_of(ref), sInv.count_of(int(ref.def)),
+                            season_demand_for(int(ref.def),
+                                              st.upkeep[slot].needDebt,
+                                              souls_home(st, slot),
+                                              sSheet.skills, &sInv),
+                            n, /*selling=*/true,
+                            h.tradePct, trade_power_of(sSheet));
                     };
                     // ВТОРАЯ ПОЛОВИНА СДЕЛКИ — ДВЕРЬ ПАСТВЫ, И ТА ЖЕ, ЧТО У
                     // НАЙМА (M-292, ЗАКОН КОНТЕЙНЕРА п.3). Контейнер и число
@@ -2149,7 +2131,7 @@ namespace sm::ui
                             DealLine pay[16];
                             const StagedValue sv =
                                 stage_value_lines(playerBag, cost, pay);
-                            if (st.valid(pf) && sv.value >= cost)
+                            if (st.valid(pf) && deal_covered(sv.value, cost))
                                 deal(st, pf.slot, slot,
                                      std::span<DealLine>(
                                          pay, std::size_t(sv.lines)),

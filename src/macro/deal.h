@@ -119,4 +119,16 @@ struct StagedValue {
 StagedValue stage_value_lines(const Inventory& inv, int value,
                               std::span<DealLine> out);
 
+// ПОКРЫТА ЛИ СДЕЛКА — ОДИН ВОПРОС, ОДНО ПРАВОПИСАНИЕ (M-415/Б3, вердикт
+// владельца 2026-11-07 «один помощник рядом»). Прежде стоял СЕМЬЮ
+// рукописными выражениями: четыре `sv.value < cost` у корована и вендора
+// (npc_ai.cpp), найм оверлея, откуп от засады (main.cpp) и `balanced`
+// виджета бартера (trade_widgets.h). Берёт ЧИСЛА, а не StagedValue —
+// виджет судит те же две суммы ДО стейджинга. Сам deal() стоимости
+// по-прежнему не знает: «VALUE fairness is the caller's law» (вердикт
+// 2026-10-22 п.3) цел — помощник стоит РЯДОМ с дверью, не внутри.
+inline bool deal_covered(long long offered, long long cost) {
+    return offered >= cost;
+}
+
 } // namespace sm

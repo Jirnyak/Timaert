@@ -397,7 +397,9 @@ inline bool draw_barter_deal_button(BarterState& st, MacroStore& store,
     ImGui::SameLine();
     ImGui::Text("You receive: %d g", takeValue);
     ImGui::SameLine();
-    const bool balanced = giveValue >= takeValue;
+    // Покрытие — той же дверью, что у корована, найма и откупа
+    // (deal_covered, M-415/Б3): UI больше не носитель закона честности.
+    const bool balanced = deal_covered(giveValue, takeValue);
     const bool can = !st.empty() && balanced;
     bool dealt = false;
     if (!can) ImGui::BeginDisabled();

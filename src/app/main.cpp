@@ -738,7 +738,7 @@ const PreBattleAction kPreBattleActions[] = {
              sm::DealLine pay[16];
              const sm::StagedValue sv =
                  sm::stage_value_lines(player_bag(app), cost, pay);
-             if (sv.value >= cost
+             if (sm::deal_covered(sv.value, cost)
                  && sm::deal(st, pf.slot, npc.slot,
                              std::span<sm::DealLine>(pay,
                                                      std::size_t(sv.lines)),

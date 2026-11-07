@@ -74,6 +74,24 @@ int trade_sell_price(int basePrice, int myTradePct, int theirTradePct);
 float stock_scarcity(int supply, int demandSeason);
 int stock_price(int baseValue, int supply, int demandSeason);
 
+// ── ОДНА КОМПОЗИЦИЯ ЦЕНЫ ЛОТА (M-415/Б3, вердикт владельца 2026-11-07:
+// «один помощник рядом» — deal() стоимости по-прежнему не знает) ─────────
+// «Почём ЕДИНИЦА лота размера n на ЭТОЙ полке контрагента»: полка берётся
+// ПОСЛЕ сделки — моя продажа кладёт n НА полку (have + n), моя покупка
+// снимает n С неё (have − n), — кривая цены (stock_price) и маржа торговых
+// сил (trade_price) одной строкой; n = 0 — проба полки как есть. `selling`
+// — действие МОЕЙ стороны (той, чей myTradePct). Это написание жило
+// ВОСЕМЬЮ копиями: шесть в npc_ai.cpp (граница лота, корован ×2, вендор
+// ×3) и две лямбды оверлея торговли — через пару обёрток-дублей
+// trade_overlay_*_price, снесённых этим же ходом. Цена игрока и цена НПЦ
+// теперь склеены ПО ПОСТРОЕНИЮ: разъехаться им больше нечем.
+inline int lot_unit_price(int base, int have, int demandSeason, int n,
+                          bool selling, int myTradePct, int theirTradePct) {
+    return trade_price(
+        stock_price(base, selling ? have + n : have - n, demandSeason),
+        myTradePct, theirTradePct, /*buying=*/!selling);
+}
+
 // A settlement's SEASON demand for an item (CANON S10 «спрос читается из
 // ДОЛГА»): прямая часть = ОСТАТОК СЧЁТА места по этой строке лестницы —
 // непогашенная нужда и есть спрос, — PLUS the derived demand of every
