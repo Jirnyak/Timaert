@@ -1828,9 +1828,10 @@ timaert_test(ai_cadence_test
         src/macro/deposit_layer.cpp
     LINK_SDL)
 
-# ЗАМИНКА БОЯ: ноги встали, воля цела (M-319A). Замыкание — то же, что у
-# ai_cadence_test: предмет живёт в драйвере думок и в марше.
-timaert_test(fight_pause_test
+# МАРШ ФЛАЖКА: ядро try_move «шаг задан», часы флажка, один писатель клетки
+# (M-412; перепредмечен шагом 0 ЗАХВАТА M-419 — заминка боя умерла со
+# стопером). Замыкание — npc_ai.cpp: ядро марша живёт там.
+timaert_test(flag_march_test
     SOURCES
         src/macro/npc_spawn.cpp
         src/macro/npc_ai.cpp
