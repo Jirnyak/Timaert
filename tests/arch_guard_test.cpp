@@ -131,7 +131,9 @@ constexpr std::string_view kTopDirs[] = {
     // "bus" — вердикт владельца (M-171, дословно в реестре): «ШИНА ЖИВЁТ В
     // src/bus/» — L0 рядом с core/, формы пакетов канонического фрейма;
     // каталог рождён ломтём 3 эпика фрейма 2026-10-17.
-    "app", "assets", "bus",  "content", "core", "ecs", "events",
+    // («assets» растворён в ui — M-411: единственный жилец sprite_atlas был
+    //  ImGui-рисовалкой с потребителями app/ui, нитка снизу вверх умерла.)
+    "app", "bus",  "content", "core", "ecs", "events",
     "gpu", "macro",  "sub",  "tables",  "ui",
 };
 

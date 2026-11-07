@@ -29,7 +29,7 @@
 #include "macro/features.h"
 #include "macro/map_generator.h"
 #include "macro/macro_night.h"   // ОДНА дверь «сколько сейчас ночи» (M-165)
-#include "assets/sprite_atlas.h"
+#include "ui/sprite_atlas.h"
 
 #include "imgui.h"
 #include "bus/store.h"

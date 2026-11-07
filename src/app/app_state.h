@@ -82,7 +82,6 @@
 #include "ui/ui_gpu.h"
 #include "ui/keymap.h"
 #include "ui/ui_settings.h"
-#include "assets/sprite_atlas.h"
 #include "app/debug_console.h"
 
 #include "imgui.h"

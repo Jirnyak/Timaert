@@ -13,7 +13,7 @@
 #define STBI_NO_PNM
 #include <stb_image.h>
 
-#include "assets/sprite_atlas.h"
+#include "ui/sprite_atlas.h"
 #include "ui/ui_gpu.h"
 
 #include <array>

@@ -12,7 +12,7 @@
 //
 // Which rows get a slot is DERIVED, never chosen: a row that can stand in the
 // world as a body (`archetype != kNoBody`) and names drawn art. Places and
-// interface marks are drawn flat by ImGui out of assets/sprite_atlas and never
+// interface marks are drawn flat by ImGui out of ui/sprite_atlas and never
 // enter the 3D world, so they cost nothing here.
 //
 // Every slot is filled ONCE at load, before the first frame, through the

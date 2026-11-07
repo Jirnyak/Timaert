@@ -343,19 +343,18 @@ timaert_module(sub     VIEW bus core ecs gpu macro sub tables
 timaert_module(events  VIEW bus core ecs events macro tables)
 timaert_module(content VIEW bus content core ecs events macro sub tables
                        LINK SDL2::SDL2 Vulkan::Vulkan)
-# ДОЛГ: sprite_atlas включает ui/ui_gpu.h снизу вверх — ссылка ui в виде
-# assets стоит до его разбора (дом долга — ряд M-171).
-timaert_module(assets  VIEW assets core gpu tables ui
-                       LINK SDL2::SDL2 Vulkan::Vulkan
-                       INCLUDE ${imgui_SOURCE_DIR} ${stb_SOURCE_DIR})
-timaert_module(ui      VIEW assets bus content core ecs events gpu macro sub
+# (Модуль assets растворён в ui — M-411, вердикт владельца 2026-11-07:
+#  единственный жилец sprite_atlas был ImGui-рисовалкой с потребителями
+#  app/ui, а его нитка assets→ui_gpu шла снизу вверх; лестничный долг
+#  умер вместе с каталогом.)
+timaert_module(ui      VIEW bus content core ecs events gpu macro sub
                             tables ui
                        LINK SDL2::SDL2 Vulkan::Vulkan
                        INCLUDE ${imgui_SOURCE_DIR}
                                ${imgui_SOURCE_DIR}/backends
                                ${stb_SOURCE_DIR}
                                ${CMAKE_BINARY_DIR}/generated)
-timaert_module(app     VIEW app assets bus content core ecs events gpu macro
+timaert_module(app     VIEW app bus content core ecs events gpu macro
                             sub tables ui
                        LINK SDL2::SDL2 Vulkan::Vulkan
                        INCLUDE ${imgui_SOURCE_DIR}

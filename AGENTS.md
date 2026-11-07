@@ -1895,7 +1895,7 @@ reads it».
   внутрисборочная воспроизводимость одного сида — и она держится даже с
   `-ffast-math`.
 - **GLOB_RECURSE.** Новые `.cpp` под
-  `src/{app,core,gpu,ecs,macro,sub,events,content,ui,assets}` подхватываются
+  `src/{app,core,gpu,ecs,macro,sub,events,content,ui}` подхватываются
   сами — `CMakeLists.txt` для отдельных файлов не правится.
 
 ## 7. ИНВАРИАНТЫ ИГРЫ

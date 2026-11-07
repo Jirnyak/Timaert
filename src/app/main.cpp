@@ -93,7 +93,7 @@
 #include "ui/ui_gpu.h"
 #include "ui/keymap.h"
 #include "ui/ui_settings.h"
-#include "assets/sprite_atlas.h"
+#include "ui/sprite_atlas.h"
 #include "app/debug_console.h"
 #include "app/app_state.h"
 #include "app/smoke.h"
