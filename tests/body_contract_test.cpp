@@ -22,7 +22,7 @@
 #include "sub/body.h"
 #include "sub/map_data.h"
 #include "ecs/components.h"
-#include "ecs/npc_character.h"
+#include "bus/squad_row.h"   // NpcCharacter + ролл лица (M-411: ecs/npc_character.h растворён)
 #include "bus/anketa.h"
 #include "bus/world_row.h"
 #include "macro/macro_stock.h"   // macro_stock_apply — ведомость осталась в macro/,

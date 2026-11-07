@@ -11,7 +11,7 @@
 #include "bus/store.h"
 #include "bus/anketa.h"
 #include "ecs/components.h"
-#include "ecs/npc_character.h"
+#include "bus/squad_row.h"   // NpcCharacter + ролл лица (M-411: ecs/npc_character.h растворён)
 #include "core/torus.h"
 #include "core/rng.h"
 #include <algorithm>

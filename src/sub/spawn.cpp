@@ -12,7 +12,7 @@
                                // чист, значит живёт нейтральным слоем)
 #include "tables/faction.h"
 #include "ecs/components.h"
-#include "ecs/npc_character.h"
+#include "bus/squad_row.h"   // NpcCharacter + ролл лица (M-411: ecs/npc_character.h растворён)
 #include "core/rng.h"
 #include "tables/npc.h"
 #include "tables/stock_key.h"   // MacroStock/MacroStockKey — словарь расписки

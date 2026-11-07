@@ -1,6 +1,6 @@
 #include "macro/player_entity.h"
 #include "ecs/components.h"
-#include "ecs/npc_character.h"
+#include "bus/squad_row.h"   // NpcCharacter + ролл лица (M-411: ecs/npc_character.h растворён)
 #include "bus/entry_context.h"
 #include "macro/rooted_iter.h"   // for_each_rooted — места по слотам
 #include "tables/faction.h"
