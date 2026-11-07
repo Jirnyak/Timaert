@@ -242,6 +242,14 @@ std::uint8_t course_dir_rumb(CourseWorld& cw, std::uint8_t rumb, float xTiles,
     return cw.fields[rumb].step[std::size_t(course_cell_of(xTiles, yTiles))];
 }
 
+bool course_rumb_arrived(const CourseWorld& cw, std::uint8_t rumb,
+                         float xTiles, float yTiles) {
+    if (rumb >= std::uint8_t(kCourseRumbFields)) return false;
+    if (cw.meta[rumb].state != kCourseFresh) return false;
+    return cw.fields[rumb].step[std::size_t(course_cell_of(xTiles, yTiles))]
+           == kCourseNoStep;
+}
+
 std::uint8_t course_dir_point(CourseWorld& cw, float txTiles, float tyTiles,
                               float xTiles, float yTiles,
                               std::uint32_t nowTick) {

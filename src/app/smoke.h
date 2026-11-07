@@ -64,6 +64,7 @@ enum class SmokeAction : std::uint8_t {
     FaunaKillWriteback,
     SpawnSquadAtPlayer,
     CaptureCourse,
+    CaptureExit,
     ForceEncounter,
     CaptureFrame,
     StatsSettle,

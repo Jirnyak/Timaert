@@ -240,4 +240,13 @@ std::uint8_t course_dir_point(CourseWorld& cw, float txTiles, float tyTiles,
                               float xTiles, float yTiles,
                               std::uint32_t nowTick);
 
+// «ПРИШЁЛ»: ячейка тела — СИД румбового поля (ломоть 4 ЗАХВАТА: кромка =
+// выход из захвата). На СВЕЖЕМ поле kCourseNoStep несёт ТОЛЬКО сид:
+// непроходимых весов не существует (солид — сверхдорогая строка, вердикт
+// 2026-11-07), сетка связна, значит всякая не-сидовая ячейка осажена и
+// несёт шаг. Несвежее поле отвечает «нет» — выход не судится протухшим
+// словом. Отдельного числа «кромка» не заводится: кромка И ЕСТЬ сиды.
+bool course_rumb_arrived(const CourseWorld& cw, std::uint8_t rumb,
+                         float xTiles, float yTiles);
+
 } // namespace sm::sub

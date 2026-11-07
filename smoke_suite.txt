@@ -63,6 +63,9 @@ spawn_squad_at_player,subworld_enter,macro_kill_writeback
 # Курс захваченного (ломоть 3 M-419/M-420): тело чужой записи с целью за
 # окном идёт к своей кромке по румбовому полю — «стоять» не проходит.
 spawn_squad_at_player,subworld_enter,capture_course
+# Выход из захвата (ломоть 4 M-419): тело в сидовой ячейке кромки при цели
+# за окном — клетка шагает наружу дверями марша, все тела сквада гаснут.
+spawn_squad_at_player,subworld_enter,capture_exit
 subworld_enter,fauna_kill_writeback
 force_encounter
 

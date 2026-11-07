@@ -1045,6 +1045,13 @@ void SubworldEngine::fold_captured_subs() {
         const int q = int((frac01 - 0.5f) * 256.0f);
         return std::int8_t(std::clamp(q, -127, 127));
     };
+    // ── ЛОМОТЬ 4 ЗАХВАТА: вышедшие этой границей тика — их тела гасит
+    // второй свип ниже. Кап — не усечение, а честная ОТСРОЧКА: не
+    // вошедший в список выходит следующей границей (выходов за одну
+    // границу реально единицы, 16 покрывает окно с запасом).
+    constexpr int kCaptureExitCap = 16;
+    std::array<std::uint32_t, kCaptureExitCap> exited{};
+    int exitedCount = 0;
     // Свип арены по биту — идиома зеркала (mirror_bodies_from_record):
     // fold живёт только у носителя бэклинка, у снаряда origin нулевой.
     sub::SubObjects* objs = objects_;
@@ -1058,9 +1065,85 @@ void SubworldEngine::fold_captured_subs() {
         // по построению, кламп — страж области определения, не поведение.
         const int sx = std::clamp(int(p->x) / int(kCellSize), 0, 2);
         const int sy = std::clamp(int(p->y) / int(kCellSize), 0, 2);
+
+        // ── КРОМКА ОКНА — ВЫХОД ИЗ ЗАХВАТА (ломоть 4 M-419; ЗАКОН ШВА,
+        // ЗАХВАТ п.4: «клетка шагает его же дверью марша, тело гаснет —
+        // караван уходит в закат»). Выход судят ДВА факта: цель сквада
+        // лежит ЗА окном, и румбовое поле её стороны привело тело в СВОЮ
+        // сидовую ячейку (на свежем поле kCourseNoStep есть ТОЛЬКО сид —
+        // непроходимых весов не существует). Клетка шагает НАРУЖУ теми же
+        // дверями, которыми ходит марш: `squad_fold_pos` штампует честный
+        // румб входа, `cell_sub_after_step` ставит долю на край входа —
+        // это ШАГ, не телепорт (squad_jump_to_cell стёр бы всё). Цены у
+        // шага нет по закону (платится час ритма, а захваченный для
+        // ритма ВСТАЛ — ломоть 2). Игрок и его сквад не выходят никогда:
+        // их кромка — ре-центр рамки. Боевого гейта в костяке нет
+        // сознательно: выход судит позиция + цель («потом доработаем»).
+        if (course_ && exitedCount < kCaptureExitCap
+            && h.id != frame_->playerFlag.id
+            && h.id != frame_->playerSquad.id) {
+            const ecs::SquadGoal& goal = st.goal[h.slot];
+            if (ecs::goal_kind(goal.what) != ecs::GoalKind::None
+                && goal.cell != ecs::kNoCell) {
+                const int ox = toroidal_cell_offset(
+                    cell_x(goal.cell, side), mgr_.center_cx(), side);
+                const int oy = toroidal_cell_offset(
+                    cell_y(goal.cell, side), mgr_.center_cy(), side);
+                if (ox < -1 || ox > 1 || oy < -1 || oy > 1) {
+                    const int rdx = ox > 0 ? 1 : (ox < 0 ? -1 : 0);
+                    const int rdy = oy > 0 ? 1 : (oy < 0 ? -1 : 0);
+                    const std::uint8_t rumb = course_rumb_of(rdx, rdy);
+                    if (rumb != kCourseNoStep
+                        && course_rumb_arrived(*course_, rumb, p->x, p->y)) {
+                        const int ncx = wrap_axis(
+                            mgr_.center_cx() + sx - 1 + rdx, side);
+                        const int ncy = wrap_axis(
+                            mgr_.center_cy() + sy - 1 + rdy, side);
+                        // Сид румба лежит в наружной полосе своей оси,
+                        // значит шаг пересекает рамку по построению;
+                        // страж области определения — не поведение.
+                        if (!cell_is_leased(*gs_,
+                                ecs::cell_index(ncx, ncy, side))) {
+                            squad_fold_pos(
+                                st, h, ncx, ncy, side,
+                                ecs::cell_sub_after_step(
+                                    rdx, rdy, st.runtime[h.slot].sub));
+                            exited[std::size_t(exitedCount)] = h.id;
+                            ++exitedCount;
+                            continue;   // позиция финальна — не фолдить
+                        }
+                    }
+                }
+            }
+        }
+
         squad_fold_pos(st, h, wrap_axis(mgr_.center_cx() + sx - 1, side),
                        wrap_axis(mgr_.center_cy() + sy - 1, side), side,
                        ecs::CellSub{quant(p->x, sx), quant(p->y, sy)});
+    }
+    // ── «ТЕЛО ГАСНЕТ»: все тела вышедших сквадов — занулением слота
+    // (ЗАКОН ДВУХ МИРОВ п.4: исчезновение — зануление, причина не важна).
+    // Возврат займа — ОТСУТСТВИЕ операции: проекция ничем не владеет,
+    // инвентарь сквада цел наверху (идиома жнеца окна
+    // despawn_subworld_entities_outside_window); расписку гасит только
+    // смерть. Следующий слепок сквад с внешней клеткой не воплотит —
+    // гейт 3×3 проекции отсеет его сам.
+    if (exitedCount > 0) {
+        for (int s = 0; s < int(kMaxSubObjects); ++s) {
+            if ((objs->flags[std::size_t(s)] & sub::kObjAlive) == 0u)
+                continue;
+            if ((objs->flags[std::size_t(s)] & sub::kObjProjectile) != 0u)
+                continue;
+            if (objs->is_avatar_slot(s)) continue;
+            const MacroHandle owner = sub::slot_squad_of(*objs, s, st);
+            if (owner.id == 0) continue;
+            for (int i = 0; i < exitedCount; ++i) {
+                if (owner.id == exited[std::size_t(i)]) {
+                    objs->free(s);
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -3913,13 +3996,14 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
                 const bool hasGoal =
                     ecs::goal_kind(goal.what) != ecs::GoalKind::None
                     && goal.cell != ecs::kNoCell;
-                bool panicking = false;
-                if (const auto* ai = sub::slot_ai(arena, s)) {
-                    panicking = ai->kind == ecs::SubworldAi::Flee
-                                && (ai->wantVx * ai->wantVx
-                                    + ai->wantVy * ai->wantVy) > 1.0e-6f;
-                }
-                if (hasGoal && !panicking) {
+                if (hasGoal) {
+                    // СПРОС поля — ВСЕГДА, пока цель жива: спрос и есть
+                    // заявка на бейк, и душить его паникой нельзя — поле,
+                    // которое никто не спросил, не печётся никогда, и
+                    // запаниковавшее у кромки тело замуровало бы свой же
+                    // выход (ломоть 4; поймано зондом живого прогона:
+                    // Flee-тело, прижатое фауной к кромке, держало want
+                    // ненулевым все 256 шагов — румб так и остался Empty).
                     const std::int32_t side = frame_->side;
                     const int ox = toroidal_cell_offset(
                         cell_x(goal.cell, side), mgr_.center_cx(), side);
@@ -3944,7 +4028,15 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
                                                         p.y);
                         }
                     }
-                    if (courseDir != kCourseNoStep) {
+                    // ПРИМЕНЕНИЕ — по иерархии воли: паника (Flee с живым
+                    // словом) сильнее курса, курс сильнее прогулки.
+                    bool panicking = false;
+                    if (const auto* ai = sub::slot_ai(arena, s)) {
+                        panicking = ai->kind == ecs::SubworldAi::Flee
+                                    && (ai->wantVx * ai->wantVx
+                                        + ai->wantVy * ai->wantVy) > 1.0e-6f;
+                    }
+                    if (courseDir != kCourseNoStep && !panicking) {
                         // Интент несёт СВОЙ темп (закон вектора намерения).
                         d.intentVx = kCourseDirUx[courseDir] * d.speed;
                         d.intentVy = kCourseDirUy[courseDir] * d.speed;

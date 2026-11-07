@@ -397,6 +397,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"fauna_kill_writeback", SmokeAction::FaunaKillWriteback},
     {"spawn_squad_at_player", SmokeAction::SpawnSquadAtPlayer},
     {"capture_course", SmokeAction::CaptureCourse},
+    {"capture_exit", SmokeAction::CaptureExit},
     {"force_encounter", SmokeAction::ForceEncounter},
     {"capture_frame", SmokeAction::CaptureFrame},
     {"stats_settle", SmokeAction::StatsSettle},
@@ -905,6 +906,123 @@ bool run_capture_course_smoke(App& app) {
         return false;
     }
     std::fprintf(stderr, "[smoke] capture_course OK\n");
+    std::fflush(stderr);
+    return true;
+}
+
+// ВЫХОД ИЗ ЗАХВАТА НА КРОМКЕ (ломоть 4 эпика M-419; ЗАКОН ШВА, ЗАХВАТ
+// п.4): тело чужой записи, приведённое румбовым полем в сидовую ячейку
+// кромки при цели ЗА окном, выходит — клетка шагает НАРУЖУ дверями марша
+// (честный румб, не прыжок), ВСЕ тела сквада гаснут, запись жива. Субъекта
+// рожает spawn_squad_at_player; К КРОМКЕ его ставит харнесс (прецедент
+// стенда прицела: позиция тела subworld-owned, зеркало её не перепишет),
+// цель перештамповывает каждый шаг до выхода — закон под проверкой КРОМКА,
+// не думка.
+// ОБЕ ПОЛЯРНОСТИ ЗАМЕРЕНЫ (2026-11-07, сид 12345): выход жив → steps=55
+// (первая граница макро-тика), ox=2, entryDir честный, тел сквада 0; гейт
+// выхода снят (мутация `if (false && …)` в fold) → «the rim did not
+// release the body», КРАСЕН. Этим же прогоном куплен урок: паника НЕ
+// смеет душить СПРОС поля (Flee-тело, прижатое фауной к кромке, держало
+// want ненулевым все 256 шагов — румб оставался Empty и выход был
+// замурован; спрос — всегда, паника побеждает только ПРИМЕНЕНИЕ).
+bool run_capture_exit_smoke(App& app) {
+    if (!app.subworld.active()) {
+        smoke_fail(app, "capture_exit outside the subworld");
+        return false;
+    }
+    sm::sub::SubObjects& wObjs = *app.sceneObjects;
+    sm::MacroStore& st = *app.macroStore;
+    int bodySlot = -1;
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+        if ((wObjs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
+        if (!smoke_projects_foreign_record(app, s)) continue;
+        bodySlot = s;
+        break;
+    }
+    if (bodySlot < 0) {
+        smoke_fail(app, "capture_exit found no tracked body");
+        return false;
+    }
+    const sm::MacroHandle macro = sm::sub::slot_macro_origin(wObjs, bodySlot);
+    if (!st.valid(macro)) {
+        smoke_fail(app, "capture_exit: tracked body backlinks nothing");
+        return false;
+    }
+    const auto bodyRef = sm::sub::ref_of(wObjs, bodySlot);
+    const int side = app.gs.mapW;
+    const int pcx = int(smoke_player_x(app));   // центр окна = клетка игрока
+    // Предусловие — тело в сидовой ячейке восточной кромки (композит
+    // [0,3072), сид — наружные 8 тайлов; мувер клампит в [1, 3070] —
+    // 3066 законна и переживает тик).
+    {
+        sm::ecs::Position& bp = wObjs.pos[std::size_t(bodySlot)];
+        bp.x = float(sm::sub::kFullSize) - 6.0f;
+        bp.z = app.subworld.ground_height_at(bp.x, bp.y);
+        if (auto* vp = sm::sub::slot_visual(wObjs, bodySlot)) {
+            vp->vx = bp.x;
+            vp->vy = bp.y;
+        }
+    }
+    // Четыре границы макро-тика: прогрев полей ~10 тиков, граница — раз в
+    // kSubworldTickDivisor шагов, выход ждём на первой-второй.
+    constexpr int kExitSmokeSteps = 256;
+    bool freed = false;
+    int stepsRun = 0;
+    for (; stepsRun < kExitSmokeSteps; ++stepsRun) {
+        if (!st.valid(macro)) break;
+        if (sm::sub::ref_slot(wObjs, bodyRef) < 0) {
+            freed = true;
+            break;
+        }
+        const int gy = sm::ecs::cell_y(st.cell[macro.slot], side);
+        const int gx = (sm::ecs::cell_x(st.cell[macro.slot], side) + 8)
+                       & (side - 1);
+        sm::ecs::goal_set(st.goal[macro.slot],
+                          sm::ecs::cell_index(gx, gy, side),
+                          sm::ecs::goal_what(sm::ecs::GoalKind::Cell, 0), 0,
+                          std::uint8_t(sm::NPCState::Idle));
+        advance_sim_steps(app, 1, /*allowInput*/false);
+    }
+    if (!freed) {
+        smoke_fail(app, "capture_exit: the rim did not release the body");
+        return false;
+    }
+    if (!st.valid(macro) || sm::macro_dead(st, macro)) {
+        smoke_fail(app,
+                   "capture_exit: exit must extinguish the body, not the squad");
+        return false;
+    }
+    const int mcx = sm::ecs::cell_x(st.cell[macro.slot], side);
+    const int ox = sm::sub::toroidal_cell_offset(mcx, pcx, side);
+    const bool steppedOut = ox >= 2;   // вне окна 3×3 ⇒ вне аренды
+    const bool walkedNotJumped =
+        st.runtime[macro.slot].entryDir != sm::kEntryDirNone;
+    int squadBodies = 0;
+    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+        if ((wObjs.flags[std::size_t(s)] & sm::sub::kObjAlive) == 0u) continue;
+        if ((wObjs.flags[std::size_t(s)] & sm::sub::kObjProjectile) != 0u)
+            continue;
+        if (sm::sub::slot_squad_of(wObjs, s, st).id == macro.id) ++squadBodies;
+    }
+    std::fprintf(stderr,
+                 "[smoke] capture_exit steps=%d ox=%d entryDir=%u "
+                 "squadBodies=%d\n",
+                 stepsRun, ox, unsigned(st.runtime[macro.slot].entryDir),
+                 squadBodies);
+    std::fflush(stderr);
+    if (!steppedOut) {
+        smoke_fail(app, "capture_exit: cell did not step outside the lease");
+        return false;
+    }
+    if (!walkedNotJumped) {
+        smoke_fail(app, "capture_exit: exit stamped a jump, not a march step");
+        return false;
+    }
+    if (squadBodies != 0) {
+        smoke_fail(app, "capture_exit: a body of the exited squad survived");
+        return false;
+    }
+    std::fprintf(stderr, "[smoke] capture_exit OK\n");
     std::fflush(stderr);
     return true;
 }
@@ -7360,6 +7478,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=capture_course\n");
             std::fflush(stderr);
             if (run_capture_course_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::CaptureExit:
+            std::fprintf(stderr, "[smoke] action=capture_exit\n");
+            std::fflush(stderr);
+            if (run_capture_exit_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::SubworldSeam:
             std::fprintf(stderr, "[smoke] action=subworld_seam\n");
