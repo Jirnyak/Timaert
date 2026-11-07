@@ -13,7 +13,7 @@ namespace {
 
 // ── The timber's own dimensions, every one of them a fact about a tree ────
 //
-// A tile is a metre (vk_renderer_3d.cpp kTileMeters), so these read directly.
+// A tile is a metre (kTileMeters@src/sub/map_data.h), so these read directly.
 
 // The trunk the village fells, carries on two shoulders and drops into a pit:
 // half a metre through, four metres standing. Both come from the prop table's

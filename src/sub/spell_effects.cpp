@@ -24,7 +24,7 @@ constexpr std::uint32_t kSpellEventIdMask =
 
 // How finely a projectile's step is walked when asking the WORLD (ground,
 // masonry) whether it got through. Derived, not chosen: it is one TILE, and a
-// tile is a metre here (vk_renderer_3d.cpp kTileMeters) — the resolution the
+// tile is a metre here (kTileMeters@src/sub/map_data.h) — the resolution the
 // heightfield and the solidity index are built at. Finer would sample the same
 // two cells twice and buy nothing that exists; coarser would step over terrain
 // the world genuinely has. The sample count is therefore bounded by the

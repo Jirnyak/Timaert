@@ -652,7 +652,7 @@ const std::vector<MinimapBlip>& SubworldEngine::collect_minimap_blips() const {
 float SubworldEngine::crosshair_stance() const {
     if (!objects_ || !gs_) return std::numeric_limits<float>::quiet_NaN();
 
-    // Camera aim ray in 3D (tile/metre space — kTileMeters = 1).
+    // Camera aim ray in 3D (tile/metre space — kTileMeters@src/sub/map_data.h).
     const float cp = std::cos(cam_.pitch);
     const float fx = std::cos(cam_.yaw) * cp;
     const float fy = std::sin(cam_.yaw) * cp;
@@ -1402,8 +1402,9 @@ void SubworldEngine::rebuild_prop_cache() {
             float((row.lightRgb >> 16) & 0xFFu) / 255.0f,
             float((row.lightRgb >>  8) & 0xFFu) / 255.0f,
             float( row.lightRgb        & 0xFFu) / 255.0f,
-            // A tile IS a metre in this world (the renderer's kTileMeters is
-            // 1), so the row's reach in tiles is its reach in metres.
+            // A tile IS a metre in this world (kTileMeters@src/sub/map_data.h,
+            // под static_assert), so the row's reach in tiles is its reach
+            // in metres.
             row.lightRadiusTiles,
             1.0f});
         propLights_.push_back(sub::ref_of(*objs, slot));
@@ -2405,7 +2406,7 @@ void SubworldEngine::tick_zones() {
         const float dy = playerY_ - zy;
         // ИЗОТРОПНО — ШАР, НЕ КРУГ (вердикт владельца 2026-11-06 «дать
         // вертикаль изотропно»; ЗАКОН ИЗОТРОПИИ п.1: радиус ОДИН на три
-        // оси, тайл ≡ метр — kTileMeters = 1). Третья ось — высота игрока
+        // оси, тайл ≡ метр — kTileMeters@src/sub/map_data.h). Третья ось — высота игрока
         // над землёй ЦЕНТРА зоны: пролёт высоко над кругом силы визитом
         // не считается, новой колонки и новой константы не заведено.
         const float dz = playerZ_ - mgr_.height_field().sample(zx, zy);
@@ -2622,8 +2623,8 @@ void SubworldEngine::spell_fx_emit_callback(void* user,
 
     if (event == SpellFxEvent::Trail) {
         float wax = 0.0f, waz = 0.0f, wbx = 0.0f, wbz = 0.0f;
-        Renderer3DVk::tile_to_world(ax, ay, wax, waz);
-        Renderer3DVk::tile_to_world(bx, by, wbx, wbz);
+        tile_to_world(ax, ay, wax, waz);
+        tile_to_world(bx, by, wbx, wbz);
         // az/bz are the projectile's actual world-space altitude (metres) —
         // use directly instead of sampling terrain height.
         const float ya = az;
@@ -2642,7 +2643,7 @@ void SubworldEngine::spell_fx_emit_callback(void* user,
     // otherwise a crisp arcane point-pop (MagicBurst). Scale grows (gently,
     // capped) with the blast so a fat fireball erupts bigger than a small charge.
     float wx = 0.0f, wz = 0.0f;
-    Renderer3DVk::tile_to_world(bx, by, wx, wz);
+    tile_to_world(bx, by, wx, wz);
     const float y = bz; // actual projectile altitude
     if (blastRadius > 0.0f) {
         const float scale = std::clamp(1.0f + blastRadius * 0.04f, 1.0f, 3.0f);
@@ -3188,7 +3189,7 @@ void SubworldEngine::tick_damage_fx() {
         const float scale = fxLethal ? 1.8f : 1.0f;
 
         float wx = 0.0f, wz = 0.0f;
-        Renderer3DVk::tile_to_world(pos.x, pos.y, wx, wz);
+        tile_to_world(pos.x, pos.y, wx, wz);
         const float y = pos.z + kSprayHeightM;
         particles_.emit(kind, vec3{wx, y, wz}, nullptr, scale);
 
@@ -5929,10 +5930,10 @@ void SubworldEngine::tick(float dt) {
         constexpr float kFlameFxRangeM = 48.0f;
         // Центр FX-LOD — ИГРОК, не камера прохода рисования (M-416/C1,
         // ЗАКОН ТУПИКА РЕНДЕРА: cam_ пишется только в record_shadow, и тик
-        // читал рендер). Конверсия та же, что у пропа ниже; её переезд
-        // вниз — вторая половина ряда (C2).
+        // читал рендер). Конверсия — дверью дома (`tile_to_world@src/sub/
+        // map_data.h`, C2 исполнен: у рендерера своей больше нет).
         float pwx = 0.0f, pwz = 0.0f;
-        Renderer3DVk::tile_to_world(playerX_, playerY_, pwx, pwz);
+        tile_to_world(playerX_, playerY_, pwx, pwz);
         sub::SubObjects& flameArena = (*objects_);
         for (std::size_t i = 0; i < propLights_.size(); ++i) {
             // Протухшую ссылку (чужой жнец) отсеивает ref_slot (iii-в).
@@ -5942,7 +5943,7 @@ void SubworldEngine::tick(float dt) {
             const auto* le = sub::slot_light(flameArena, s);
             if (le == nullptr) continue;
             float wx = 0.0f, wz = 0.0f;
-            Renderer3DVk::tile_to_world(pos->x, pos->y, wx, wz);
+            tile_to_world(pos->x, pos->y, wx, wz);
             const float dx = wx - pwx;
             const float dz = wz - pwz;
             if (dx * dx + dz * dz > kFlameFxRangeM * kFlameFxRangeM) {
@@ -5994,7 +5995,7 @@ void SubworldEngine::tick(float dt) {
             }
             const ecs::Position& pos = arena.pos[std::size_t(s)];
             float wx = 0.0f, wz = 0.0f;
-            Renderer3DVk::tile_to_world(pos.x, pos.y, wx, wz);
+            tile_to_world(pos.x, pos.y, wx, wz);
             push_stamp(wx + (stampRng_.next_f01() - 0.5f) * 0.3f,
                        wz + (stampRng_.next_f01() - 0.5f) * 0.3f,
                        0.06f + stampRng_.next_f01() * 0.04f,
@@ -6008,9 +6009,12 @@ void SubworldEngine::tick(float dt) {
 float SubworldEngine::particle_ground_callback(void* user, float wx, float wz) {
     auto* self = static_cast<SubworldEngine*>(user);
     // Particles live in world metres (vWorld); the heightfield answers in
-    // window-tile coords — the inverse of Renderer3DVk::tile_to_world.
-    return self->ground_height_at(wx + float(kFullSize) * 0.5f,
-                                  wz + float(kFullSize) * 0.5f);
+    // window-tile coords — ОБРАТНАЯ дверь (`world_to_tile@src/sub/map_data.h`).
+    // Здесь стояла рукописная инверсия «+ kFullSize/2», молча потерявшая
+    // множитель kTileMeters, — верная только при тождестве тайл ≡ метр.
+    float tx = 0.0f, ty = 0.0f;
+    world_to_tile(wx, wz, tx, ty);
+    return self->ground_height_at(tx, ty);
 }
 
 void SubworldEngine::particle_land_callback(void* user, const Particle& p) {
@@ -6117,7 +6121,7 @@ void SubworldEngine::record_shadow(VkCommandBuffer cmd) {
     // rendering must never advance the simulation.
     if (gs_) {
         float wx = 0, wz = 0;
-        Renderer3DVk::tile_to_world(playerX_, playerY_, wx, wz);
+        tile_to_world(playerX_, playerY_, wx, wz);
         cam_.pos = {wx, player_muzzle_z(), wz};
     }
     renderer3dVk_.record_shadow(cmd, cam_, render_time());

@@ -151,7 +151,11 @@ static_assert(far_ladder_nests(),
 // ground reaches half of the 3×3 window, so the finest ring's hole is that
 // same distance measured in its own steps. Change the window and this fails
 // here rather than as a brown wall at the join.
-static_assert(kFarHoleQuadHalf * kFarRing0StepM == kFullSize / 2,
+// Слева МЕТРЫ (шаг кольца), справа ТАЙЛЫ (полуокно) — равенство держит
+// тождество «тайл ≡ метр», и теперь оно стоит в формуле СВОИМ именем
+// (`kTileMeters@src/sub/map_data.h`), а не молчаливым допущением.
+static_assert(float(kFarHoleQuadHalf * kFarRing0StepM)
+                  == float(kFullSize / 2) * kTileMeters,
               "the finest ring's hole must be exactly the composite's reach");
 
 // ── WHICH QUADS A RING EMITS, AS A FORMULA ────────────────────────────────

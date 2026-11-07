@@ -8603,12 +8603,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // tick, which runs AFTER this frame was recorded — so re-aim
                 // every held frame and arm the capture only at the end.
                 float wx = 0.0f, wz = 0.0f, tx = 0.0f, tz = 0.0f;
-                sm::sub::Renderer3DVk::tile_to_world(app.subworld.player_x(),
-                                                     app.subworld.player_y(),
-                                                     wx, wz);
-                sm::sub::Renderer3DVk::tile_to_world(app.smoke.gateAimX,
-                                                     app.smoke.gateAimY,
-                                                     tx, tz);
+                sm::sub::tile_to_world(app.subworld.player_x(),
+                                       app.subworld.player_y(), wx, wz);
+                sm::sub::tile_to_world(app.smoke.gateAimX,
+                                       app.smoke.gateAimY, tx, tz);
                 const float wantYaw = std::atan2(tz - wz, tx - wx);
                 const float flat = std::sqrt((tx - wx) * (tx - wx)
                                            + (tz - wz) * (tz - wz));

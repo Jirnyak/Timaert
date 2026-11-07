@@ -170,7 +170,6 @@ public:
     // ground draws a given look is a question for the eye.
     void set_ground_debug_mask(std::uint32_t m) { groundDebugMask_ = m; }
     std::uint32_t ground_debug_mask() const { return groundDebugMask_; }
-    static void tile_to_world(float px, float py, float& wx, float& wz);
 
 private:
     // Fill lightBuf_[slot] (the current frame's host-mapped point-light SSBO)

@@ -44,8 +44,10 @@ static_assert(Renderer3DVk::kFramesInFlight
 
 namespace {
 
-// Physical scale — must match the GL Renderer3D exactly.
-constexpr float kTileMeters  = 1.0f;
+// Полуширина окна в метрах — производная констант ДОМА (kTileMeters и
+// kFullSize живут в sub/map_data.h, M-416/C2: рендерер — читатель закона
+// клетка↔метры, не хозяин; сама константа масштаба жила здесь в анонимном
+// неймспейсе и цитировала мёртвый GL-рендерер).
 constexpr float kWorldExtent = float(kFullSize) * kTileMeters * 0.5f; // 1536 m
 
 // HOW MUCH FAR GROUND IS BUILT — not how far one can see (S18.1 forbids such
@@ -1430,12 +1432,13 @@ void Renderer3DVk::stage_stamps(VkCommandBuffer cmd, const StampInstance* cmds,
     if (stampPipe_.pipeline == VK_NULL_HANDLE) return; // canvas never born
     count = std::min(count, kMaxStamps);
 
-    // The camera's tile in window space — the same +kFullSize/2 offset
-    // stamp.vert and mesh.frag bake into their canvas mapping.
-    const int camTx =
-        static_cast<int>(std::floor(camWx)) + kFullSize / 2;
-    const int camTz =
-        static_cast<int>(std::floor(camWz)) + kFullSize / 2;
+    // The camera's tile in window space — ОДНА обратная дверь
+    // (`world_to_tile@src/sub/map_data.h`); то же отображение stamp.vert и
+    // mesh.frag запекают литералами в свой канвас (пин выше).
+    float camTxF = 0.0f, camTzF = 0.0f;
+    world_to_tile(camWx, camWz, camTxF, camTzF);
+    const int camTx = static_cast<int>(std::floor(camTxF));
+    const int camTz = static_cast<int>(std::floor(camTzF));
     const int half = static_cast<int>(kCanvasTiles) / 2;
     const int dx = camTx - canvasCamTileX_;
     const int dz = camTz - canvasCamTileZ_;
@@ -1709,7 +1712,10 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
     const SubworldHeightField& hf = mgr.height_field();
     const auto compositeHeightM = [&hf](float wx, float wz) {
         if (!hf.built()) return -1.0f;
-        return hf.sample(wx + kWorldExtent, wz + kWorldExtent);
+        // Метры → тайл окна: обратной дверью, не рукописным сдвигом.
+        float tx = 0.0f, ty = 0.0f;
+        world_to_tile(wx, wz, tx, ty);
+        return hf.sample(tx, ty);
     };
     // HALF A MACRO CELL of band, the generator's own blend scale and the very
     // number the march apron feathers over for the same reason.
@@ -2608,8 +2614,8 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 // re-sort of 56 000 instances would cost more than it saves;
                 // the player never stands further than half a cell from that
                 // centre, so the error is bounded by construction.
-                const float dxM = (s.x - float(kFullSize) * 0.5f) * kTileMeters;
-                const float dzM = (s.y - float(kFullSize) * 0.5f) * kTileMeters;
+                float dxM = 0.0f, dzM = 0.0f;   // позиция = смещение от центра
+                tile_to_world(s.x, s.y, dxM, dzM);
                 const float distM = std::sqrt(dxM * dxM + dzM * dzM);
                 // 384 m — about where a 15 m tree stops filling more than a
                 // couple of degrees of screen, so facets and tiers are still
@@ -4248,15 +4254,10 @@ void Renderer3DVk::gather_point_lights(sub::SubObjects* objs, std::uint32_t slot
     buf->count = n;
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// tile_to_world — composite tile coords → world metres.
-// Exact copy from GL Renderer3D.
-// ──────────────────────────────────────────────────────────────────────
-void Renderer3DVk::tile_to_world(float tileX, float tileY,
-                                 float& wx, float& wz) {
-    wx = (tileX - float(kFullSize) * 0.5f) * kTileMeters;
-    wz = (tileY - float(kFullSize) * 0.5f) * kTileMeters;
-}
+// (tile_to_world жила здесь статическим методом — «Exact copy from GL
+// Renderer3D», то есть цитировала мёртвого; уехала ВНИЗ вместе с
+// kTileMeters и обратной дверью — `tile_to_world@src/sub/map_data.h`,
+// M-416/C2: рендерер читает закон клетка↔метры, а не владеет им.)
 
 
 } // namespace sm::sub
