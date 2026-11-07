@@ -1,5 +1,6 @@
 #include "sub/spawn.h"
 #include "sub/city_layout.h"
+#include "sub/crowd_plan.h"    // план толпы поселения — модуль на род (M-414)
 #include "sub/crowd_layout.h"  // раскладка населения сцены по роду — данные субмира
 #include "sub/dgn/dispatch.h"   // dungeon_scene_seed, dungeon_has_upper —
                                 // the household/partition law (CANON S28)
@@ -516,18 +517,23 @@ void spawn_rooted_population(SubObjects& objs,
     const auto& tiles = mgr.tiles();
 
     // Both settlement generators build on the CELL CENTRE, and the disk they
-    // build in is defined once in sub/city_layout.h. The City/Village split
-    // here is the LAYOUT's own vocabulary (walled rings vs a house core) —
-    // geometry dispatch, exactly like resolve_mode; every other kind's
-    // exterior stands in the village-core disk until its own layout law
-    // earns a name (§42 Инк 5, the genesis increment).
+    // build in is defined once in sub/city_layout.h.
     const float centerX = float(originX) + float(kCellSize) * 0.5f;
     const float centerY = float(originY) + float(kCellSize) * 0.5f;
-    // The disk is the settlement's MASONRY footprint — a function of its
-    // population (the walls were built for everyone), never of the street
-    // remainder: souls at their hearths do not shrink the town.
-    const float populationRadius =
-        settlement_population_radius(rooted == SquadType::City, pop);
+    // ПЛАН ТОЛПЫ — МОДУЛЬ РОДА, диспетч таблицей (`crowd_plan_for@src/sub/
+    // crowd_plan.h`, M-414): спавнер план ИСПОЛНЯЕТ, а не решает — здесь
+    // стояли два сравнения `== SquadType::City` (радиус диска и поиск
+    // донжона), и Capital — старший род — получал деревенский диск молча.
+    // Диск — каменный след паствы (стены строились на всех), квартал с
+    // донжоном — свойство рода по ЕГО модулю («стража везде, просто в
+    // верхнем квартале её больше», владелец 2026-09-13); каждая вторая
+    // душа берёт квартал. Род без модуля (Capital до особого генератора,
+    // вердикт «nullptr, как в геометрии») толпой не встаёт.
+    const sub::CrowdPlanFn planFn = sub::crowd_plan_for(rooted);
+    if (planFn == nullptr) return;
+    const sub::CrowdPlan plan = planFn(sub::CrowdPlanIn{
+        mgr.structures(), centerX, centerY, originX, originY, pop});
+    const float populationRadius = plan.discRadius;
     // …and the shape the generator actually built, measured once off the
     // ground. The scalar above stays the FLOOR (an unwalled hamlet has no
     // masonry to measure, and a place whose walls did not reach still holds
@@ -540,33 +546,6 @@ void spawn_rooted_population(SubObjects& objs,
     // (Строки фиксированных постов вырезаны 2026-09-22 вместе с колонкой
     // реестра: она стояла пустой у всех родов мест, и эта ветка была
     // недостижима по данным. Толпу целиком катает полоса места.)
-
-    // ПОЛОВИНА ТОЛПЫ СТОИТ В ВЕРХНЕМ КВАРТАЛЕ (владелец, 2026-09-13: «стража
-    // везде, просто в верхнем квартале её больше, например половина»). Квартал
-    // НАХОДИТСЯ, а не передаётся: его донжон — самая высокая крыша, поднятая
-    // генератором, а размер — чистая функция паствы (city_layout.h
-    // city_upper_radius). Закон переехал сюда из гарнизонной половины спавна,
-    // уничтоженной вместе с разделом «гарнизон/мирные»: толпа теперь ОДНА, и
-    // квартал — свойство города, а не сословия.
-    float keepX = centerX, keepY = centerY;
-    bool haveKeep = false;
-    if (rooted == SquadType::City) {
-        const Structure* keep = nullptr;
-        for (const Structure& st : mgr.structures()) {
-            if (st.kind != Structure::House) continue;
-            if (st.x < float(originX)
-                || st.x >= float(originX + kCellSize)) continue;
-            if (st.y < float(originY)
-                || st.y >= float(originY + kCellSize)) continue;
-            if (keep == nullptr || st.height > keep->height) keep = &st;
-        }
-        if (keep != nullptr) {
-            keepX = keep->x;
-            keepY = keep->y;
-            haveKeep = true;
-        }
-    }
-    const float quarterR = city_upper_radius(pop);
 
     // ВОПЛОЩАЕТСЯ ИНВЕНТАРЬ СУЩЕСТВ, АГНОСТИЧНО (вердикт владельца
     // 2026-09-30, дословно: «если ты пришёл в субмире в клетку 3х3 со
@@ -601,10 +580,10 @@ void spawn_rooted_population(SubObjects& objs,
         // размере толпы и не требует второго броска. Кто не встал в тесном
         // квартале, встаёт на улицах ниже — квартал БЫВАЕТ ПОЛОН, и это
         // замерено (104 из 392 на городе 5 488), а не случайность.
-        const bool inQuarter = haveKeep && (placed % 2) == 0;
+        const bool inQuarter = plan.haveQuarter && (placed % 2) == 0;
         const bool stood = inQuarter
-            && find_city_spawn_spot(tiles, rng, keepX, keepY,
-                                    quarterR, townShape, fx, fy);
+            && find_city_spawn_spot(tiles, rng, plan.keepX, plan.keepY,
+                                    plan.quarterR, townShape, fx, fy);
         if (!stood
             && !find_city_spawn_spot(tiles, rng, centerX, centerY,
                                      populationRadius, townShape, fx, fy)) {
@@ -1505,12 +1484,13 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids,
-                                     MacroHandle playerFlagRef) {
+                                     MacroHandle playerFlagRef,
+                                     const SquadVel* windowVels) {
     return project_macro_npcs_into_subworld(objs, st, mgr.tiles(),
                                             windowSquads, windowSquadCount,
                                             centerCx, centerCy, mapW, mapH,
                                             seed, seaLevel, solids,
-                                            playerFlagRef);
+                                            playerFlagRef, windowVels);
 }
 
 int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
@@ -1521,7 +1501,8 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      int mapW, int mapH,
                                      std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids,
-                                     MacroHandle playerFlagRef) {
+                                     MacroHandle playerFlagRef,
+                                     const SquadVel* windowVels) {
     const float seaM = sea_level_m(seaLevel);
     const bool tilesUsable =
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
@@ -1659,8 +1640,21 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
         // Все мокрые — тело встаёт В САМУ ТОЧКУ (не теряется; прежний
         // фолбэк в центр клетки врал бы о положении на целых полклетки).
         const ecs::CellSub msub = st.runtime[macro.slot].sub;
-        const float px = scene_axis_of_sub(ox, msub.x);
-        const float py = scene_axis_of_sub(oy, msub.y);
+        float px = scene_axis_of_sub(ox, msub.x);
+        float py = scene_axis_of_sub(oy, msub.y);
+        // УПРЕЖДЕНИЕ РОЖДЕНИЯ (замер стенда 2026-11-07): точка store
+        // обновляется только думкой, истина ушла на vel × tickAccum —
+        // рождаем тело там, куда его поведёт пасс движка ТОЙ ЖЕ формулой,
+        // иначе марширующий сквад воплощается до 0.75 клетки позади себя
+        // и лаг замораживается навсегда (равные темпы не смыкают).
+        if (windowVels != nullptr) {
+            const SquadVel v = windowVels[i];
+            const float acc = float(st.runtime[macro.slot].tickAccum);
+            px = std::clamp(px + float(v.x) * acc, 1.0f,
+                            float(kFullSize) - 2.0f);
+            py = std::clamp(py + float(v.y) * acc, 1.0f,
+                            float(kFullSize) - 2.0f);
+        }
         constexpr float kSubQuantTiles =
             float(kCellSize) / float(ecs::kCellSubQuantum);   // 4 тайла
         float fx = px, fy = py;

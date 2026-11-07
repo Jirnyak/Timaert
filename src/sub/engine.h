@@ -814,6 +814,10 @@ private:
     std::array<SquadVel,
                std::tuple_size_v<decltype(LocalContext::squads)>>
         marchVelBySlot_;
+    // Счётчики временного лога стенда TIMAERT_MARCH_LOG (M-317, §5 п.10) —
+    // снести вместе с логом после ответа владельца.
+    int   marchDrivenLastStep_ = 0;
+    float marchFirstDist_ = -1.0f;
     // Флаг «якорь фрейма сдвинулся» — ре-центр шва и вход/выход данжа ставят
     // его, app заполняет фрейм и квитирует frame_resynced(). Движок сам
     // макро не тянет НИКОГДА (пересинхронизация плановая, не стихийная).

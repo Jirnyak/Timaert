@@ -942,7 +942,8 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
         frame_->squads.data(), frame_->squadCount, cx, cy,
         frame_->side, frame_->side,
         cell_seed(frame_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
-        scene_sea_level(), &structIndex_, frame_->playerFlag);
+        scene_sea_level(), &structIndex_, frame_->playerFlag,
+        frame_->squadVel.data());
     if (projected > 0) {
         char msg[80];
         std::snprintf(msg, sizeof(msg), "%d overworld figure%s nearby",
@@ -1065,7 +1066,8 @@ void SubworldEngine::frame_resynced() {
             frame_->squads.data(), frame_->squadCount, cx, cy,
             frame_->side, frame_->side,
             cell_seed(frame_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
-            scene_sea_level(), &structIndex_, frame_->playerFlag);
+            scene_sea_level(), &structIndex_, frame_->playerFlag,
+            frame_->squadVel.data());
     }
 }
 
@@ -1077,8 +1079,30 @@ void SubworldEngine::frame_resynced() {
 void SubworldEngine::refill_march_vel_() {
     marchVelBySlot_.fill(SquadVel{0, 0});
     if (frame_ == nullptr) return;
-    for (std::uint32_t i = 0; i < frame_->squadCount; ++i)
-        marchVelBySlot_[frame_->squads[i].slot] = frame_->squadVel[i];
+    int marching = 0;
+    SquadVel sample{0, 0};
+    for (std::uint32_t i = 0; i < frame_->squadCount; ++i) {
+        const SquadVel v = frame_->squadVel[i];
+        marchVelBySlot_[frame_->squads[i].slot] = v;
+        if (v.x != 0 || v.y != 0) {
+            if (marching == 0) sample = v;
+            ++marching;
+        }
+    }
+    // TIMAERT_MARCH_LOG — ВРЕМЕННЫЙ канал живого стенда (M-317, §5 п.10):
+    // одна строка на пересинхронизацию (раз в мировой тик). СНЕСТИ после
+    // ответа владельца — лог есть инструмент вопроса, не жилец.
+    static const bool marchLog = std::getenv("TIMAERT_MARCH_LOG") != nullptr;
+    if (marchLog) {
+        std::fprintf(stderr,
+                     "[march] tick=%llu окноСквадов=%u маршируют=%d "
+                     "вектор0=(%d,%d) телВедено=%d дистТела0=%.1f\n",
+                     (unsigned long long)frame_->worldTick,
+                     frame_->squadCount, marching,
+                     int(sample.x), int(sample.y),
+                     marchDrivenLastStep_, double(marchFirstDist_));
+        std::fflush(stderr);
+    }
 }
 
 // ── МАРШ ПРОЕКЦИЙ: ТЕЛО ВЕДЁТСЯ, А НЕ СТАВИТСЯ (M-317, ЗАКОН ШВА п.3а) ───
@@ -1092,6 +1116,9 @@ void SubworldEngine::refill_march_vel_() {
 // сквадной точке. Стоячий сквад (vel {0,0}) тел не дёргает — их ведёт их
 // собственный ИИ; ноги игрока — его ввод; данж окна не несёт.
 void SubworldEngine::drive_projection_march_() {
+    // Счётчики — ТОЛЬКО для временного лога стенда (см. refill_march_vel_).
+    marchDrivenLastStep_ = 0;
+    marchFirstDist_ = -1.0f;
     if (!objects_ || !frame_ || mw_.store == nullptr) return;
     if (sceneKind_ == SceneKind::Dungeon) return;
     sub::SubObjects& arena = *objects_;
@@ -1133,8 +1160,19 @@ void SubworldEngine::drive_projection_march_() {
             continue;
         }
         const float d = std::sqrt(d2);
-        ai->wantVx = dx / d * ai->wanderSpeed;
-        ai->wantVy = dy / d * ai->wanderSpeed;
+        // ПОХОДНЫЙ ТЕМП ЛИСТА, не прогулка (замер стенда 2026-11-07):
+        // wanderSpeed — темп БРОДИЛКИ, и тело отставало от собственного
+        // сквада на ~26 тайлов/тик навсегда; маршевый темп тела несёт его
+        // боевая колонка speed (та же, которой ходит стиринг).
+        const auto* bodyCombat = sub::slot_combat(arena, s);
+        const float pace =
+            (bodyCombat != nullptr && bodyCombat->speed > ai->wanderSpeed)
+                ? bodyCombat->speed
+                : ai->wanderSpeed;
+        ai->wantVx = dx / d * pace;
+        ai->wantVy = dy / d * pace;
+        if (marchFirstDist_ < 0.0f) marchFirstDist_ = d;
+        ++marchDrivenLastStep_;
     }
 }
 
@@ -2059,7 +2097,8 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
             frame_->squads.data(), frame_->squadCount, cx, cy,
             frame_->side, frame_->side,
             cell_seed(frame_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
-            scene_sea_level(), &structIndex_, frame_->playerFlag);
+            scene_sea_level(), &structIndex_, frame_->playerFlag,
+            frame_->squadVel.data());
     }
 }
 
