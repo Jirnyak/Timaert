@@ -32,6 +32,24 @@ bool craft_item(Inventory& inv, int defIdx, int n) {
     return true;
 }
 
+ScrapReturn scrap_part_return(const ItemRef& ref, std::size_t partIdx,
+                              int n) {
+    const auto parts = item_parts(int(ref.def));
+    ScrapReturn r{};
+    if (partIdx >= parts.size() || n <= 0) return r;
+    r.def = int(parts[partIdx].def);
+    // The instance's material byte substitutes part 0 (ItemRef.material:
+    // 1 + raw commodity row) — a steel sword returns steel.
+    if (partIdx == 0 && ref.material != 0
+        && int(ref.material) <= kRawCommodityCount) {
+        const int sub = item_index(kCommodities[ref.material - 1].id);
+        if (sub >= 0) r.def = sub;
+    }
+    r.count = n * int(parts[partIdx].count)
+            / (2 * item_yield(int(ref.def)));
+    return r;
+}
+
 bool scrap_at(Inventory& inv, int slot, int n) {
     if (slot < 0 || slot >= kMaxInventorySlots || n <= 0) return false;
     const ItemRef ref = inv.slots[std::size_t(slot)];
@@ -41,21 +59,14 @@ bool scrap_at(Inventory& inv, int slot, int n) {
     Inventory work = inv;
     if (!work.remove_at(slot, n)) return false;
     for (std::size_t i = 0; i < parts.size(); ++i) {
-        int mat = int(parts[i].def);
-        // The instance's material byte substitutes part 0 (ItemRef.material:
-        // 1 + raw commodity row) — a steel sword returns steel.
-        if (i == 0 && ref.material != 0
-            && int(ref.material) <= kRawCommodityCount) {
-            const int sub = item_index(kCommodities[ref.material - 1].id);
-            if (sub >= 0) mat = sub;
-        }
         // POOLED entropy (owner 2026-09-12): half the TOTAL matter of the n
         // units, floored — one sword still pays 1 iron, a lone dagger's
         // handle still burns whole, two daggers pool into 1 iron, and 64
         // coins (yield 32: each is 1/32 silver) melt to exactly 1 silver.
-        // Affix cells are simply never read: they burn.
-        const int back = n * int(parts[i].count) / (2 * item_yield(int(ref.def)));
-        if (back > 0 && !work.add_of(mat, back)) return false;
+        // Affix cells are simply never read: they burn. Арифметика — ОДНОЙ
+        // дверью с превью (scrap_part_return, M-415/Б4).
+        const ScrapReturn r = scrap_part_return(ref, i, n);
+        if (r.count > 0 && !work.add_of(r.def, r.count)) return false;
     }
     inv = work;
     return true;

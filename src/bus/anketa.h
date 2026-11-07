@@ -1477,6 +1477,13 @@ bool craft_item(Inventory& inv, int defIdx, int n);
 // arithmetic). A non-zero material byte substitutes part 0 (see
 // ItemRef.material). Terminal rows refuse: raw matter has no reverse.
 // All-or-nothing on a copy.
+// ВОЗВРАТ ОДНОЙ ЧАСТИ СОСТАВА ПРИ СКРАПЕ n ЕДИНИЦ — ОДНА арифметика на
+// дверь и превью (M-415/Б4: UI переписывал формулу строка в строку, и
+// перекалибровка двери оставила бы превью врать молча — паритет слеп к
+// представлению по построению). Pooled-энтропия floor(n×count/(2×yield)),
+// байт материала подменяет часть 0; count 0 = часть сгорает в шлак.
+struct ScrapReturn { int def = 0; int count = 0; };
+ScrapReturn scrap_part_return(const ItemRef& ref, std::size_t partIdx, int n);
 bool scrap_at(Inventory& inv, int slot, int n);
 // The AI's slot hygiene (CANON: «склад не забивается говном»). While MORE
 // than half the container is occupied, scrap the CHEAPEST non-fungible stacks
@@ -2130,3 +2137,4 @@ TIMAERT_ROW(sm::CharacterSheet);
 TIMAERT_ROW(sm::csheet_detail::SheetRng);
 TIMAERT_ROW(sm::Gear);
 TIMAERT_ROW(sm::StrikeFields);
+TIMAERT_ROW(sm::ScrapReturn);

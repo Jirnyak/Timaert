@@ -856,7 +856,10 @@ private:
         // and the filing are now one truth (SUB-3).
         int   cellX = 0, cellY = 0;
         float localX = 0.0f, localY = 0.0f;   // tiles inside that cell
-        float radius = 0.0f;        // 0 = this slot is empty
+        // 0 = this slot is empty. РАДИУС ШАРА: вход судится тремя осями
+        // (вердикт 2026-11-06, ЗАКОН ИЗОТРОПИИ) — третья ось считается от
+        // земли центра зоны, своей колонки у неё нет по построению.
+        float radius = 0.0f;
         FactKind kind = FactKind::None;
         std::int32_t amount = 0;
         // ONCE, AS LONG AS THE WORLD REMEMBERS IT — not once per visit, and

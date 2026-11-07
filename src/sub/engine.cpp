@@ -2403,7 +2403,14 @@ void SubworldEngine::tick_zones() {
         const float zy = float((oy + 1) * kCellSize) + z.localY;
         const float dx = playerX_ - zx;
         const float dy = playerY_ - zy;
-        const bool inside = (dx * dx + dy * dy) <= (z.radius * z.radius);
+        // ИЗОТРОПНО — ШАР, НЕ КРУГ (вердикт владельца 2026-11-06 «дать
+        // вертикаль изотропно»; ЗАКОН ИЗОТРОПИИ п.1: радиус ОДИН на три
+        // оси, тайл ≡ метр — kTileMeters = 1). Третья ось — высота игрока
+        // над землёй ЦЕНТРА зоны: пролёт высоко над кругом силы визитом
+        // не считается, новой колонки и новой константы не заведено.
+        const float dz = playerZ_ - mgr_.height_field().sample(zx, zy);
+        const bool inside =
+            (dx * dx + dy * dy + dz * dz) <= (z.radius * z.radius);
         if (!inside) { subZonesEntered_ &= ~bit; continue; }
         if (subZonesEntered_ & bit) continue;   // already inside since last step
         subZonesEntered_ |= bit;
@@ -5920,6 +5927,12 @@ void SubworldEngine::tick(float dt) {
             smokeAccum_.assign(propLights_.size(), 0.0f);
         }
         constexpr float kFlameFxRangeM = 48.0f;
+        // Центр FX-LOD — ИГРОК, не камера прохода рисования (M-416/C1,
+        // ЗАКОН ТУПИКА РЕНДЕРА: cam_ пишется только в record_shadow, и тик
+        // читал рендер). Конверсия та же, что у пропа ниже; её переезд
+        // вниз — вторая половина ряда (C2).
+        float pwx = 0.0f, pwz = 0.0f;
+        Renderer3DVk::tile_to_world(playerX_, playerY_, pwx, pwz);
         sub::SubObjects& flameArena = (*objects_);
         for (std::size_t i = 0; i < propLights_.size(); ++i) {
             // Протухшую ссылку (чужой жнец) отсеивает ref_slot (iii-в).
@@ -5930,8 +5943,8 @@ void SubworldEngine::tick(float dt) {
             if (le == nullptr) continue;
             float wx = 0.0f, wz = 0.0f;
             Renderer3DVk::tile_to_world(pos->x, pos->y, wx, wz);
-            const float dx = wx - cam_.pos.x;
-            const float dz = wz - cam_.pos.z;
+            const float dx = wx - pwx;
+            const float dz = wz - pwz;
             if (dx * dx + dz * dz > kFlameFxRangeM * kFlameFxRangeM) {
                 emberAccum_[i] = 0.0f;
                 smokeAccum_[i] = 0.0f;

@@ -862,35 +862,24 @@ namespace sm::ui
                             const auto parts = item_parts(int(st.def));
                             if (!parts.empty())
                             {
-                                // The preview prints the door's own POOLED
-                                // arithmetic — floor(n×count/(2×yield)) per
-                                // part, the variant byte substituting part 0
-                                // — so the player reads the entropy price of
-                                // exactly the n he is about to pay.
-                                const int rowYield = item_yield(int(st.def));
+                                // Превью СПРАШИВАЕТ дверь, а не повторяет
+                                // её арифметику (M-415/Б4: копия формулы
+                                // строка в строку оставила бы превью врать
+                                // после перекалибровки двери — и ctest бы
+                                // этого не увидел, паритет слеп к UI).
                                 const auto returns_for = [&](int n) {
                                     std::string back;
                                     for (std::size_t pi = 0;
                                          pi < parts.size(); ++pi)
                                     {
-                                        int mat = int(parts[pi].def);
-                                        if (pi == 0 && st.material != 0
-                                            && int(st.material)
-                                                   <= kRawCommodityCount)
-                                        {
-                                            const int sub = item_index(
-                                                kCommodities[st.material - 1]
-                                                    .id);
-                                            if (sub >= 0) mat = sub;
-                                        }
-                                        const int amt =
-                                            n * int(parts[pi].count)
-                                            / (2 * rowYield);
-                                        if (amt <= 0) continue;
-                                        const ItemDef *md = item_def_at(mat);
+                                        const ScrapReturn r =
+                                            scrap_part_return(st, pi, n);
+                                        if (r.count <= 0) continue;
+                                        const ItemDef *md =
+                                            item_def_at(r.def);
                                         if (!md) continue;
                                         if (!back.empty()) back += ", ";
-                                        back += std::to_string(amt);
+                                        back += std::to_string(r.count);
                                         back += "x ";
                                         back += md->name;
                                     }
