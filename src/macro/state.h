@@ -458,7 +458,7 @@ namespace sm {
 // 150 — M-379: долг свипов умер вместе с бюджетным драйвером — блок ритма
 // макро-ИИ усох до одного джиттера (sweepAccum/pendingSweeps/sweepCursor
 // покинули провод): ритм живёт пер-сквадно в rt.tickAccum строк сквадов.
-constexpr int kSaveVersion = 154;
+constexpr int kSaveVersion = 155;
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система

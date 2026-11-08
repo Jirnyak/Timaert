@@ -224,7 +224,6 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     a.traits.count = 2;
     a.traits.traits[0] = 1;
     a.traits.traits[1] = 4;
-    a.character.visualSeed = 0xABCD1234u;
     a.character.bodyShape = 2;
     a.hasOrders = 1;
     a.orders.waypointCount = 2;
@@ -510,7 +509,6 @@ sm::GameState make_state(sm::MacroStore& st) {
         // Honest-day readouts (v29) — every field non-default; носитель с
         // v127 — колонка wellbeing ТЕЛА.
         sm::Wellbeing& wb = st.wellbeing[row.slot];
-        wb.starvedYesterday = 12;
         wb.popGrowthCarry = 0.375f;
         // Паства едет в сейв СЛОЕМ чисел фич (v122), а не колонкой
         // записи: фикстура селит души дверью мира, и круг сейва обязан
@@ -523,7 +521,6 @@ sm::GameState make_state(sm::MacroStore& st) {
             gs, st, sm::SquadType::Village, 45, 85, 2, "Round Hamlet");
         st.inventory[row.slot].inv.add("food_meat", 4);
         sm::Wellbeing& wb = st.wellbeing[row.slot];
-        wb.starvedYesterday = 5;
         wb.popGrowthCarry = -0.25f;
         sm::settle_souls(gs, st, row.slot, kFixtureVillageSouls);
         // Феод — запись реестра интересов, и ставится он дверью на оба
@@ -895,13 +892,13 @@ int run_roundtrip() {
         if (a.traits.count != 2 || a.traits.traits[1] != 4) {
             FAIL_BAIL("macro traits lost");
         }
-        // ЛИЦО ЦЕЛИКОМ, А НЕ ПОЛОВИНОЙ (M-246б): колонка 12 → 8 Б, и обе её
-        // значащие величины утверждаются. Прежде здесь стоял `nameIdx` —
-        // ВХОД ГЕНЕРАТОРА, который и не должен был ехать в сейв, — а
-        // `bodyShape` не утверждался НИ ОДНИМ тестом дерева, хотя рост тела
-        // субмира выводится ровно из него.
-        if (a.character.visualSeed != 0xABCD1234u
-            || a.character.bodyShape != 2) {
+        // ЛИЦО ЦЕЛИКОМ (M-246б, M-430): колонка 12 → 8 → 4 Б, и её
+        // единственная значащая величина утверждается. Прежде здесь стоял
+        // `nameIdx` — ВХОД ГЕНЕРАТОРА, который и не должен был ехать в
+        // сейв, — а `bodyShape` не утверждался НИ ОДНИМ тестом дерева, хотя
+        // рост тела субмира выводится ровно из него. `visualSeed` снесён
+        // вердиктом владельца: шапка обещала вариацию спрайта, которой нет.
+        if (a.character.bodyShape != 2) {
             FAIL_BAIL("macro character identity lost");
         }
         if (a.hasOrders != 1 || a.orders.waypointCount != 2
@@ -1055,7 +1052,7 @@ int run_roundtrip() {
     }
     {
         const sm::Wellbeing& wb = loadedStore.wellbeing[cityLm.slot];
-        if (wb.starvedYesterday != 12 || !nearf(wb.popGrowthCarry, 0.375f)) {
+        if (!nearf(wb.popGrowthCarry, 0.375f)) {
             FAIL_BAIL("settlement honest-day readouts (v29) lost");
         }
     }
@@ -1079,7 +1076,7 @@ int run_roundtrip() {
     }
     {
         const sm::Wellbeing& wb = loadedStore.wellbeing[vilLm.slot];
-        if (wb.starvedYesterday != 5 || !nearf(wb.popGrowthCarry, -0.25f)) {
+        if (!nearf(wb.popGrowthCarry, -0.25f)) {
             FAIL_BAIL("village honest-day readouts (v29) lost");
         }
     }

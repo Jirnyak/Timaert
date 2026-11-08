@@ -442,17 +442,24 @@ void test_a_famine_is_recorded_once_when_it_begins() {
     runtime.nextDailyTickDay = 1;
     sm::process_world_daily_ticks(gs, st, runtime, 64);
 
-    struct Count { int famines = 0; int total = 0; };
+    struct Count { int famines = 0; int total = 0; long long taken = 0; };
     Count c;
     sm::chronicle_near(gs.chronicle, 8, 8, /*radiusCells*/1, /*sinceDay*/0,
                        [](void* u, const sm::WorldFact& f) {
                            Count& n = *static_cast<Count*>(u);
                            ++n.total;
-                           if (f.kind == std::uint16_t(sm::FactKind::Starved))
+                           if (f.kind == std::uint16_t(sm::FactKind::Starved)) {
                                ++n.famines;
+                               n.taken += f.amount;   // СКОЛЬКО забрали
+                           }
                        }, &c);
 
-    CHECK(st.wellbeing[town.slot].starvedYesterday > 0,
+    // НОСИТЕЛЬ СМЕНИЛСЯ, ЗАКОН ОСТАЛСЯ (M-430): колонка `starvedYesterday`
+    // снесена вердиктом владельца, и «взыскание забрало души» спрашивается
+    // теперь у ЛЕТОПИСИ — у того самого рода 5, который пишет всё и не
+    // забывает. Он и есть системный носитель события, а колонка была его
+    // копией для глаза.
+    CHECK(c.famines > 0,
           "the fixture is honest: this town's bill took souls");
     CHECK(cell_number_at(gs, st, town.slot) < 100,
           "паства упала на съеденных: число фичи и головы идут ПАРОЙ");
@@ -472,7 +479,12 @@ void test_a_famine_is_recorded_once_when_it_begins() {
         // ровно этот дубль сюита и поймала на первой попытке).
         CHECK(wb.seasonWellbeing < 255 / 8,
               "неоплаченный сезон рушит благополучие почти в ноль");
-        CHECK(int(wb.starvedYesterday) > sm::souls_home(st, l),
+        // ТОТ ЖЕ ЗАКОН НА ВЫЖИВШЕМ НОСИТЕЛЕ (M-430). «Сколько забрали»
+        // держала колонка `starvedYesterday`, снесённая вердиктом владельца;
+        // но это же число есть у ЛЕТОПИСИ — в `amount` факта голода, то есть
+        // у рода 5, который пишет всё и не забывает. Колонка была копией
+        // летописи для глаза, и закон пережил её без единой правки смысла.
+        CHECK(c.taken > sm::souls_home(st, l),
               "взыскание забрало БОЛЬШЕ душ, чем осталось: место обезлюдело, "
               "а не поголодало");
         CHECK(cell_number_at(gs, st, l) == sm::souls_home(st, l),
@@ -644,8 +656,11 @@ void test_one_upkeep_door_judges_every_squad_once() {
     CHECK(sm::creature_count(st.inventory[a].inv) == souls - 1,
           "одна непокрытая сезонная доля рта забрала РОВНО одну голову: "
           "двойной суд забрал бы почти весь состав");
-    CHECK(int(st.wellbeing[a].starvedYesterday) == 1,
-          "исход суда записан в колонку подсудимого, а не потерян");
+    // (Проверка «исход записан в колонку подсудимого» умерла вместе со
+    //  своей колонкой `starvedYesterday` — M-430, вердикт владельца. Закон,
+    //  который она охраняла — «забрана РОВНО одна голова», — утверждается
+    //  строкой выше по инвентарю, то есть по единственному носителю того,
+    //  чем сквад владеет, а не по его копии для глаза.)
     const int wb = int(st.wellbeing[a].seasonWellbeing);
     CHECK(wb > 0 && wb < 255,
           "АРТЕЛЬ ПОЛУЧИЛА БЛАГОПОЛУЧИЕ: прежде оно жило во второй двери, "

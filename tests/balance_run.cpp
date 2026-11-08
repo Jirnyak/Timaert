@@ -393,7 +393,9 @@ int main(int argc, char** argv) {
         // говорит одним глаголом» — разные болезни: пространство объекта у
         // каждого глагола своё (нужды / округа / слой фич), и молчит оно
         // поотдельности.
-        std::fprintf(fl, "day\tid\ttype\tpop\twellbeing\tstarved"
+        // (КОЛОНКА `starved` УШЛА 2026-11-08 вместе со своей колонкой мира
+        // `Wellbeing::starvedYesterday` — вердикт владельца, M-430.)
+        std::fprintf(fl, "day\tid\ttype\tpop\twellbeing"
                          "\tdebtFood\tdebtComfort\tfood\tcloth\tiron\tcoin"
                          "\ttrees\ttreesNear"
                          "\toffers\toffFetch\toffKill\toffVisit\n");
@@ -559,15 +561,13 @@ int main(int argc, char** argv) {
                             ++offByVerb[offers[i].verb];
                     }
                     std::fprintf(fl,
-                                 "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%lld\t%d\t%d"
+                                 "%d\t%d\t%d\t%d\t%d\t%d\t%lld\t%d\t%d"
                                  "\t%d\t%lld\t%d\t%d\t%d\t%d\t%d\t%d\n",
                                  gs.worldTime.day(),
                                  int(macroStore->spawnId[slot].index),
                                  int(kind), int(flock),
                                  int(macroStore->wellbeing[slot]
                                          .seasonWellbeing),
-                                 int(macroStore->wellbeing[slot]
-                                         .starvedYesterday),
                                  hungerOrd >= 0
                                      ? macroStore->upkeep[slot]
                                            .needDebt[hungerOrd]

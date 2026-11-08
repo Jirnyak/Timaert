@@ -155,7 +155,12 @@ struct NPCKind { std::uint16_t type; std::uint16_t factionIdx; };
 // паддинга, а он не зануляется — байтовые свидетели снапшота читали бы мусор
 // (шрам `upkeepDebtPad@src/macro/macro_snapshot.h`).
 struct NpcCharacter {
-    std::uint32_t visualSeed;   // drives procedural sprite variation
+    // (КОЛОНКА `visualSeed` УНИЧТОЖЕНА 2026-11-08 по вердикту владельца,
+    //  M-430. Её шапка обещала «drives procedural sprite variation» и
+    //  ЛГАЛА: воплощение тела читает только `bodyShape`, а билборд
+    //  сеется от `atlasId` и id рождения. Единственным живым читателем
+    //  был выбор реплики в панели субъекта — он перешёл на ОРДИНАЛ
+    //  сквада, то есть на личность, которая и так есть.)
     std::uint8_t  bodyShape;    // 0..3 (small / med / large / huge)
     std::uint8_t  pad0, pad1, pad2;
 };
@@ -171,7 +176,6 @@ struct NpcCharacter {
 // (`nameIdx` — вход генератора, не состояние; `tintR/G/B` — сироты).
 inline NpcCharacter roll_npc_character(Rng& rng) {
     NpcCharacter ch{};
-    ch.visualSeed = rng.next_u32();
     ch.bodyShape = std::uint8_t(rng.next_u32() & std::uint32_t{0x3});
     return ch;
 }

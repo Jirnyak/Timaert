@@ -195,8 +195,7 @@ void test_every_squad_body_is_a_whole_body() {
 // One macro entity, shaped the way the overworld shapes them.
 sm::MacroHandle make_macro_lord(sm::MacroStore& st, sm::NPCType type,
                                 std::uint16_t faction, int level,
-                                int hp, int maxHp,
-                                std::uint32_t visualSeed) {
+                                int hp, int maxHp) {
     const sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = sm::ecs::MacroCell{sm::ecs::cell_index(10, 12, 64)};
     st.kind[h.slot] = sm::ecs::NPCKind{std::uint16_t(type), faction};
@@ -205,7 +204,6 @@ sm::MacroHandle make_macro_lord(sm::MacroStore& st, sm::NPCType type,
     st.sheet[h.slot] = sm::make_character_sheet(
         type, level, sm::avatar_sheet_seed(st.spawnId[h.slot].index));
     sm::ecs::NpcCharacter face{};
-    face.visualSeed = visualSeed;
     // Отличимое от дефолта телосложение: продукт лица (рост спрайта) обязан
     // отличаться от роста нулевой формы, иначе свидетель продукта слеп.
     face.bodyShape = 3;
@@ -228,7 +226,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     // Half dead on the map, with a face and belongings of his own.
     const sm::MacroHandle macro = make_macro_lord(
         *worldStore_, NPCType::Guard, /*faction*/5, /*level*/4,
-        /*hp*/15.0f, /*maxHp*/30.0f, /*visualSeed*/0xFEEDu);
+        /*hp*/15.0f, /*maxHp*/30.0f);
 
     const int slot =
         sub::spawn_tracked_body(arena, *worldStore_, macro,
@@ -303,7 +301,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     // from passing by wounding everyone.
     const sm::MacroHandle whole = make_macro_lord(
         *worldStore_, NPCType::Bandit, /*faction*/2, /*level*/3,
-        /*hp*/9.0f, /*maxHp*/9.0f, /*visualSeed*/0xB0B0u);
+        /*hp*/9.0f, /*maxHp*/9.0f);
     const int wholeSlot =
         sub::spawn_tracked_body(arena, *worldStore_, whole,
                                 60.0f, 61.0f, 778u, true);
@@ -338,7 +336,7 @@ void test_a_body_that_is_not_an_entity_is_refused() {
     // утверждение стало бы проверять не то, что написано в его тексте.
     const sm::MacroHandle monster = make_macro_lord(
         *worldStore_, NPCType::Peasant, /*faction*/1, /*level*/2,
-        /*hp*/10, /*maxHp*/10, /*visualSeed*/0u);
+        /*hp*/10, /*maxHp*/10);
     worldStore_->kind[monster.slot].type = std::uint16_t(0x103);
     CHECK(sub::spawn_tracked_body(arena, *worldStore_, monster,
                                   5.0f, 5.0f, 1u, false)
@@ -376,7 +374,7 @@ void test_a_squad_on_the_map_projects_its_creatures() {
 
     sm::MacroHandle macro = make_macro_lord(
         *worldStore_, NPCType::Guard, /*faction*/5, /*level*/4,
-        /*hp*/30.0f, /*maxHp*/30.0f, /*visualSeed*/0xCAFEu);
+        /*hp*/30.0f, /*maxHp*/30.0f);
     sm::store_rename_ordinal(*worldStore_, macro, 9u);
     {
         auto& mbag = worldStore_->inventory[macro.slot];

@@ -198,8 +198,8 @@ static_assert(sizeof(ecs::MacroNpcRuntime) == 44,
               "поручения был вторым носителем `SquadGoal::what`)");
 static_assert(sizeof(ecs::Pools) == 36, "строка полос");
 static_assert(sizeof(ecs::CellSub) == 2, "доля клетки (M-244)");
-static_assert(sizeof(ecs::NpcCharacter) == 8,
-              "строка лица: 12 → 8 Б (M-246б — `nameIdx` стал локалью рождения, тинты были сиротами)");
+static_assert(sizeof(ecs::NpcCharacter) == 4,
+              "строка лица: 12 → 8 → 4 Б (M-430 снёс `visualSeed`; M-246б — `nameIdx` стал локалью рождения, тинты были сиротами)");
 static_assert(sizeof(ecs::NpcInventory) == 41024,
               "инвентарь сущности: 1024 стака по 40 Б (единый контейнер "
               "32×32, шаг А слияния 2026-09-24) плюс сводка 64 Б — одна "

@@ -619,8 +619,7 @@ MacroSeeds seed_macro_npcs(sm::MacroStore& st, int mapW) {
     // identity every persistent macro NPC carries (Inc 5e-2).
     std::uint32_t spawnIndex = 1;   // выдача с 1: ординал 0 — «никто»
     auto mk = [&](sm::NPCType type, std::uint16_t faction, int cx, int cy,
-                  int hp, int maxHp, std::int16_t level,
-                  std::uint32_t vseed) {
+                  int hp, int maxHp, std::int16_t level) {
         sm::MacroHandle h = sm::store_birth(st);
         sm::store_rename_ordinal(st, h, spawnIndex++);
         h = sm::handle_at(st, h.slot);
@@ -632,7 +631,6 @@ MacroSeeds seed_macro_npcs(sm::MacroStore& st, int mapW) {
         st.sheet[h.slot] = sm::make_character_sheet(
             type, level, sm::avatar_sheet_seed(st.spawnId[h.slot].index));
         sm::ecs::NpcCharacter ch{};
-        ch.visualSeed = vseed;
         // Отличимое от дефолта телосложение: лицо на теле не хранится
         // (кусок 1), закон «лицо — факт головы» свидетельствуется ростом,
         // и рост нулевой формы был бы неотличим от «лицо потеряно».
@@ -645,10 +643,10 @@ MacroSeeds seed_macro_npcs(sm::MacroStore& st, int mapW) {
     // v80; the old float 3.5f truncated to exactly this) — the wound the
     // projection has to carry down. Everyone else is whole, so "arrives
     // whole" has a control standing right next to "arrives wounded".
-    s.bandit  = mk(sm::NPCType::Bandit,   3, 0,        0,   3,  7, 4, 0xB0B0u);
-    s.peasant = mk(sm::NPCType::Peasant,  1, 1,        0,  12, 12, 2, 0xCAFEu);
-    s.wrap    = mk(sm::NPCType::Guard,    2, mapW - 1, 0,  30, 30, 5, 0x1234u);
-    s.far     = mk(sm::NPCType::Merchant, 1, 50,       50, 20, 20, 3, 0x9999u);
+    s.bandit  = mk(sm::NPCType::Bandit,   3, 0,        0,   3,  7, 4);
+    s.peasant = mk(sm::NPCType::Peasant,  1, 1,        0,  12, 12, 2);
+    s.wrap    = mk(sm::NPCType::Guard,    2, mapW - 1, 0,  30, 30, 5);
+    s.far     = mk(sm::NPCType::Merchant, 1, 50,       50, 20, 20, 3);
     return s;
 }
 
@@ -1102,7 +1100,6 @@ bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
     st.sheet[reborn.slot].levelData.exp = sm::exp_at_level(2);
     {
         sm::ecs::NpcCharacter ch{};
-        ch.visualSeed = 0xFEEDu;
         ch.bodyShape = 3;
         st.character[reborn.slot] = ch;
     }

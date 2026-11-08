@@ -115,7 +115,6 @@ inline UpkeepWindowOutcome upkeep_season_window(Upkeep& r, Inventory& store,
         for (int c = 0; c < kCommodityCount; ++c) r.needDebt[c] = 0;
         r.wageDebt = 0;
         wb.seasonWellbeing = 0;
-        wb.starvedYesterday = 0;
         return out;
     }
     const UpkeepBill lastBill = upkeep_bill(store);
@@ -228,8 +227,6 @@ inline UpkeepWindowOutcome upkeep_season_window(Upkeep& r, Inventory& store,
     wb255 = wb255 * std::int64_t(souls - out.starved) / std::int64_t(souls);
     if (comfortTotal > 0) wb255 = wb255 * comfortPaid / comfortTotal;
     wb.seasonWellbeing = std::uint8_t(std::clamp<std::int64_t>(wb255, 0, 255));
-    wb.starvedYesterday =
-        std::uint16_t(std::min(out.starved, 0xFFFF));
 
     // ── ДВА ИСХОДА СУДА — ДВЕ КОЛОНКИ `out`, И БОЛЬШЕ НИЧЕГО ─────────────
     // Здесь стоял доклад ведомости склада душ двумя строками — `Starved` и

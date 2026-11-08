@@ -1721,8 +1721,6 @@ namespace sm::ui
             {
                 ImGui::Text("Population: %d", cell_number_of(gs, st, slot));
                 ImGui::Text("Wellbeing: %d%%", wellbeing_pct(st, slot));
-                ImGui::Text("Starved last boundary: %d",
-                            int(st.wellbeing[slot].starvedYesterday));
             }
             // ГЛАГОЛЫ БАННЕРА — ПО МАСКЕ, И ЭТО СТРОЖЕ, ЧЕМ БЫЛО: ветка
             // сквада рисовала обе кнопки безусловно, мимо колонки, которая
@@ -1734,7 +1732,15 @@ namespace sm::ui
                 {
                     g_squadTalkFor = subject;
                     g_squadTalkLine = bodyDef.talkCount > 0
-                        ? bodyDef.talkLines[st.character[slot].visualSeed
+                        // Реплика берётся от ОРДИНАЛА сквада — его
+                        // собственной личности. Прежде её выбирала колонка
+                        // `visualSeed`, снесённая по вердикту владельца
+                        // (M-430): шапка обещала «procedural sprite
+                        // variation», которой не существовало, а живым
+                        // читателем был только этот выбор. Ординал держит
+                        // реплику постоянной у каждого НПЦ, не стоя при этом
+                        // ни одного байта — личность у сквада уже есть.
+                        ? bodyDef.talkLines[st.spawnId[slot].index
                                             % std::uint32_t(bodyDef.talkCount)]
                         : "...";
                 }
@@ -1781,9 +1787,6 @@ namespace sm::ui
                                                    cell_number_of(gs, st, slot));
                             draw_info_overview_row("Wellbeing %",
                                                    wellbeing_pct(st, slot));
-                            draw_info_overview_row(
-                                "Starved last boundary",
-                                int(st.wellbeing[slot].starvedYesterday));
                         }
                         draw_info_overview_row("Faction index", int(sFaction));
                         draw_info_overview_row("Creatures",
