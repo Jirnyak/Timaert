@@ -1014,7 +1014,9 @@ timaert_test(audio_runtime_test
         src/macro/audio.cpp
     LINK_SDL LINK_MIXER)
 
-timaert_test(spawn_entity_event_test
+# Звался `spawn_entity_event_test` по событию SpawnEntity, снесённому M-410;
+# судит он КОНТРАКТ МАКРО-СПАВНА и ни одного события не трогает (M-436).
+timaert_test(macro_spawn_contract_test
     SOURCES
         src/macro/npc_spawn.cpp
         src/bus/anketa.cpp

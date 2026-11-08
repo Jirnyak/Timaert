@@ -3012,8 +3012,9 @@ inline int head_xp_reward(NPCType t) {
 // console). Purely data-driven off kNpcTypeDefs: a new type is matchable the
 // moment its row exists, no per-type branch. Returns false on no match — the
 // CALLER decides its own fallback (the subworld console spawner keeps its
-// historical silent-Bandit default; the SpawnEntity consumer refuses to
-// spawn).
+// historical silent-Bandit default; the macro spawn door `spawn_npc_at@src/
+// macro/npc_spawn.h` refuses to spawn — здесь стояло «the SpawnEntity
+// consumer», а события этого нет с M-410, правка шапки M-436).
 inline bool npc_type_from_label(const char* token, NPCType& out) {
     if (!token || token[0] == '\0') return false;
     const auto matches = [](const char* t, const char* name) {

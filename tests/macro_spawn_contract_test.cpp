@@ -1,9 +1,15 @@
-// Locks the SpawnEntity consumer half (macro/npc_spawn.cpp spawn_npc_at).
+// КОНТРАКТ МАКРО-СПАВНА — `spawn_npc_at@src/macro/npc_spawn.h`.
 //
-// Before 2026-08-05 the SpawnEntity event had two producers (quest onAccept,
-// content/quests/procedural.cpp) and ZERO consumers — it was emitted into the
-// void and kill-contracts never produced their targets (history/audit.md II.5). This
-// test pins the consumer's contract:
+// ПРИБОР ПЕРЕИМЕНОВАН 2026-11-08 (M-436), И ЭТО НЕ КОСМЕТИКА. Он звался
+// `spawn_entity_event_test`, а шапка начиналась словами «Locks the SpawnEntity
+// consumer half» — то есть прибор был назван по СОБЫТИЮ, которого в игре нет с
+// M-410: во всём дереве `SpawnEntity` остался тремя некрологами (тег без
+// читателя, мёртвый обработчик, мёртвый счётчик), а с 2026-11-08 шины событий
+// не существует вовсе (ФРЕЙМ, род 5). Имя прибора — тоже свидетель, и врущее
+// имя посылает следующего агента искать систему, которой нет; в этом же файле
+// такая посылка уже стоила вопроса владельцу (ЗАКОН ИМЕНИ).
+//
+// ЧТО ОН СУДИЛ ВСЁ ЭТО ВРЕМЯ — ровно контракт двери, и ни одного события:
 //   * a known token spawns exactly one macro NPC of that registry type;
 //   * an Aggressive type joins the "bandits" faction (boot-spawner parity);
 //   * level > 0 pins NpcLevel;
@@ -12,6 +18,11 @@
 //     (possession identity stays unique);
 //   * an unknown token spawns NOTHING and returns false (no silent Bandit
 //     fallback here — that is the subworld console's own historical rule).
+//
+// И ОДНА ИЗ ЭТИХ ПРОВЕРОК ЕСТЬ ПРЕДУСЛОВИЕ ЧУЖОГО СВИДЕТЕЛЯ: той же дверью
+// `squad_creatures_test` рождает себе бандита, прежде чем спрашивать про его
+// ростер (§8 п.11 — свидетель обязан сам рождать своё предусловие). Поэтому
+// у двери ноль прод-звонящих и она НЕ сирота.
 
 #include "check.h"
 #include "macro/npc_spawn.h"
@@ -106,5 +117,5 @@ void run_spawn_contract() {
 
 int main() {
     run_spawn_contract();
-    return sm::test::report("spawn_entity_event_test");
+    return sm::test::report("macro_spawn_contract_test");
 }

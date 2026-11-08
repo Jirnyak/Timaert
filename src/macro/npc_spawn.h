@@ -44,12 +44,25 @@ void spawn_macro_npcs(GameState& gs, MacroStore& st,
 void spawn_design_characters(GameState& gs, MacroStore& st,
                              const TerrainData& terrain, Rng& rng);
 
-// Spawn ONE macro NPC of the named registry type near macro cell (x, y) —
-// the consumer half of the SpawnEntity event (quest onAccept is the producer:
-// s1 = type token, ix/iy = cell, a = level). Token resolves case-insensitively
-// against kNpcTypeDefs labels (npc_type_from_label); unknown token spawns
-// nothing and returns false. Aggressive types join "bandits"; civil types take
-// the faction of the land they stand on. Level > 0 pins the NPC's level.
+// Spawn ONE macro NPC of the named registry type near macro cell (x, y).
+// Token resolves case-insensitively against kNpcTypeDefs (npc_type_from_label,
+// machine `id` first); unknown token spawns nothing and returns false.
+// Aggressive types join "bandits"; civil types take the faction of the land
+// they stand on. Level > 0 pins the NPC's level.
+//
+// ЗДЕСЬ СТОЯЛО «the consumer half of the SpawnEntity event (quest onAccept is
+// the producer: s1 = type token, ix/iy = cell, a = level)» — И СОБЫТИЯ ЭТОГО
+// НЕ СУЩЕСТВУЕТ С M-410 (правка шапки — M-436, 2026-11-08). Во всём дереве
+// `SpawnEntity` остался НЕКРОЛОГАМИ: тег без читателя (`event_types.h`),
+// мёртвый `handle_pending_spawn_entity_events` (`main.cpp`), мёртвый счётчик
+// `appliedSpawnEventCount` (`app_state.h`). Ни продюсера, ни консьюмера, ни
+// очереди; с 2026-11-08 шины событий не существует вовсе (ФРЕЙМ, род 5).
+//
+// ЧЕМ ЭТА ДВЕРЬ ЖИВА НА САМОМ ДЕЛЕ: она ФИКСТУРА по §8 п.11 — свидетель
+// обязан САМ РОЖАТЬ своё предусловие, и `squad_creatures_test` рождает ею
+// бандита, прежде чем спрашивать про его ростер. Прод-звонящих у неё ноль, и
+// это НЕ делает её сиротой: снос унёс бы способность свидетелей строить мир,
+// в котором есть кого спросить.
 bool spawn_npc_at(GameState& gs, MacroStore& st,
                   const TerrainData& terrain,
                   const char* typeToken, int x, int y, int level);

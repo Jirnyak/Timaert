@@ -226,9 +226,25 @@ inline int transfer_value_dense(Inventory& from, Depot to, int value,
 
 // VALUE of the COIN rows of a bag — a census over the faction registry's
 // mint columns (deduped: culture groups fold onto their realm's family).
-// This is ANALYTICS for assessments that are defined over coin — the tithe's
-// coin half averages it so it never double-counts the goods half it stands
-// beside. No payment law branches on it: debits go by density, always.
+// This is ANALYTICS. No payment law branches on it: debits go by density,
+// always.
+//
+// ЗДЕСЬ СТОЯЛО «the tithe's coin half averages it so it never double-counts
+// the goods half it stands beside», И ЭТО БЫЛА ЛОЖЬ О ЖИВОМ ЧИТАТЕЛЕ (M-436,
+// 2026-11-08). У дани нет монетной половины: `tithe_daily_@src/macro/
+// world_tick.cpp` усредняет ВСЮ сумку одной дверью `inventory_value`, а
+// `collect_tithe@src/macro/npc_ai.cpp` грузит по спросу дома и по плотности —
+// ни один из двоих эту перепись не зовёт, и во всём `src/` её зовёт ровно
+// один сайт, смоук. Опасна такая шапка не словом, а тем, что называет ЖИВОГО
+// читателя: следующий агент снимает дверь как сироту — и не находит его, либо
+// оставляет её как несущую — и ошибается в обратную сторону.
+//
+// ЧИТАТЕЛИ У НЕЁ НАСТОЯЩИЕ, И ОНА ИМИ ДЕРЖИТСЯ: это СВИДЕТЕЛИ СОХРАНЕНИЯ
+// МОНЕТЫ — `price_law_test` («монет у игрока плюс монет у торговца = 1200»),
+// `caravan_deal_test` (сумма «трюм + полка» до и после сделки),
+// `auto_resolve_speaks_test` и `econ_v1_test`. То есть дверь жива НЕ как
+// геймплейный путь, а как носитель закона «ценность входит в мир ОДНИМ
+// способом», и снос её унёс бы этот закон (§5 п.6).
 inline int coin_census_value(const Inventory& inv) {
     struct CoinRow { int idx; int value; };
     static const std::vector<CoinRow> rows = [] {
