@@ -9659,7 +9659,44 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const sm::Inventory* pArmy = sm::player_inventory(app.gs, *app.macroStore);
             const int armyBefore = pArmy ? sm::creature_count(*pArmy) : 0;
             const int hpBefore = player_pools(app).hp;
+            // ПОТОК RNG СВИПА ПРИНАДЛЕЖИТ ТОЛЬКО МИРУ (M-378). Авторезолв —
+            // одна из трёх дверей, которыми модалка встречи бросала кости; все
+            // три крутили ТОТ ЖЕ генератор, которым думают сквады, то есть
+            // клик в меню сдвигал эволюцию мира и «воспроизводимость одного
+            // сида» (§6) переставала быть правдой. Свидетель стоит ровно на
+            // той двери, которую харнесс умеет нажать.
+            //
+            // МУТАЦИЯ → ИСХОД (сид 12345):
+            //   N1  вернуть авторезолву `app.npcAi.jitter`   → КРАСНЫЙ 2 из 7:
+            //       (регрессия, ради которой свидетель жив)    world 64bd8e72→
+            //                                                  ef83ec31, player
+            //                                                  не двинулся
+            //   N2  сменить соль 0x50A1 → 0x7777             → ЗЕЛЁНЫЙ 7/7:
+            //                                                  судится РАЗДЕЛЕНИЕ
+            //                                                  потоков, а не
+            //                                                  конкретная соль
+            //                                                  (она баланс)
+            const std::uint32_t worldRollBefore = app.npcAi.jitter.state;
+            const std::uint32_t playerRollBefore = app.gs.playerRoll.state;
             perform_encounter_auto(app, hostile, sm::Ambush::None);
+            SMOKE_CHECK(app, app.npcAi.jitter.state == worldRollBefore,
+                        "бросок ИГРОКА не сдвинул поток МИРА");
+            SMOKE_CHECK(app, app.gs.playerRoll.state != playerRollBefore,
+                        "и он сдвинул СВОЙ поток — дверь жива, а не выключена");
+            // НЕГАТИВНЫЙ КОНТРОЛЬ, ОБРАТНАЯ ПОЛЯРНОСТЬ: тот же прибор на
+            // броске ЧЕРЕЗ поток мира обязан увидеть сдвиг. Без него первая
+            // проверка зелена и у генератора, который вообще не крутится.
+            const std::uint32_t probe = app.npcAi.jitter.state;
+            (void)app.npcAi.jitter.next_u32();
+            SMOKE_CHECK(app, app.npcAi.jitter.state != probe,
+                        "контроль: бросок ЧЕРЕЗ поток мира его двигает — "
+                        "значит проверка выше судит, а не молчит");
+            app.npcAi.jitter.state = probe;   // контроль не смеет менять мир
+            std::fprintf(stderr,
+                         "[smoke] rng_streams world=%08x->%08x player=%08x->%08x\n",
+                         worldRollBefore, app.npcAi.jitter.state,
+                         playerRollBefore, app.gs.playerRoll.state);
+            std::fflush(stderr);
             if (app.gs.subState.kind != sm::GameSubStateKind::Exploring) {
                 smoke_fail(app, "auto-resolve did not hand the map back");
                 break;

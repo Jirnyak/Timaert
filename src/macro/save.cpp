@@ -168,7 +168,8 @@ constexpr std::uint64_t kRhythmBytes =               // v24, поле за по�
     + sizeof(WorldTickRuntime::nextDailyTickDay)
     + sizeof(WorldTickRuntime::subworldStepRemainder)
     + sizeof(WorldTickRuntime::jitter.state)
-    + sizeof(MacroAiRhythm::jitter.state);
+    + sizeof(MacroAiRhythm::jitter.state)
+    + sizeof(GameState::playerRoll.state);     // v153 (M-378)
 
 constexpr std::uint64_t kFactBytes =                 // write_fact
     sizeof(WorldFact::day) + sizeof(WorldFact::seq) + sizeof(WorldFact::kind)
@@ -995,6 +996,7 @@ void write_payload(Writer& w, const GameState& s,
     w.pod(s.worldTickRt.subworldStepRemainder);
     w.pod(s.worldTickRt.jitter.state);
     w.pod(s.macroAiRhythm.jitter.state);
+    w.pod(s.playerRoll.state);                 // v153 — поток бросков игрока
 
     // The world's own memory (macro/chronicle.h, CANON S20.1) — ОДИН ярус:
     // ярус анналов и его блок снесены (M-184, v138).
@@ -1067,6 +1069,7 @@ void read_payload(Reader& r, GameState& s, std::uint32_t& storeNextSpawnId,
     r.pod(s.worldTickRt.subworldStepRemainder);
     r.pod(s.worldTickRt.jitter.state);
     r.pod(s.macroAiRhythm.jitter.state);
+    r.pod(s.playerRoll.state);                 // v153
 
     // The world's own memory. Read in the SAME order it was written — the ring
     // sizes itself from the map first, because a fact's slot is its sequence

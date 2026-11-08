@@ -679,7 +679,7 @@ void perform_encounter_auto(App& app, sm::MacroHandle npc, sm::Ambush ambush) {
     const sm::AutoBattleOutcome o = sm::resolve_auto_battle(
         player_auto_battle_side(app),
         sm::auto_battle_side_of(st, npc),
-        ambush, app.npcAi.jitter);
+        ambush, app.gs.playerRoll);
     sm::MacroWorld mw = macro_world(app);
     const int xp = sm::settle_player_auto_battle(mw, npc, o, true);
     const bool won = o.winner == 0;
@@ -716,7 +716,7 @@ const PreBattleAction kPreBattleActions[] = {
              sm::npc_def(sm::NPCType(std::uint8_t(kind.type)));
          if (def.talkCount > 0) {
              app.encounterTalkLine = def.talkLines[std::size_t(
-                 app.npcAi.jitter.next_u32() % def.talkCount)];
+                 app.gs.playerRoll.next_u32() % def.talkCount)];
          }
          return false;   // stays open — words are not an exit
      },
@@ -778,7 +778,7 @@ const PreBattleAction kPreBattleActions[] = {
      },
      [](App&, sm::MacroHandle) { return true; },
      [](App& app, sm::MacroHandle npc) {
-         if (app.npcAi.jitter.next_f01() < encounter_flee_chance(app, npc)) {
+         if (app.gs.playerRoll.next_f01() < encounter_flee_chance(app, npc)) {
              // Slip two cells straight away from them, dodging water; a
              // failed search leaves you where you stand — graced, but they
              // may catch you again.

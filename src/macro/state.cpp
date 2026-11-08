@@ -106,6 +106,12 @@ GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
     gs.worldTime    = world_time_at(1, 8, 0);   // day 1, 08:00
     gs.subState     = GameSubState{};       // Exploring
     gs.player       = default_player();
+    // ПОТОК БРОСКОВ ИГРОКА — ЗДЕСЬ, А НЕ У ЗВОНЯЩЕГО (M-378). Соль выведена
+    // в state.h рядом с полем; сеять его в `boot_world` было бы ПОТЕРЕЙ —
+    // `generate_macro_world@src/macro/world_gen.cpp` строит весь GameState
+    // этой дверью ПОСЛЕ, и присваивание у звонящего затиралось целиком
+    // (зонд: 0x6098 на входе → 0x50a1 по выходу из генерации).
+    gs.playerRoll   = Rng{seed ^ 0x50A1u};
     create_factions(gs, seed);
     return gs;
 }

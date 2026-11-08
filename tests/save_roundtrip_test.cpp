@@ -438,6 +438,9 @@ sm::GameState make_state(sm::MacroStore& st) {
     gs.worldTickRt.subworldStepRemainder = 11;
     gs.worldTickRt.jitter.state = 0xDEADBEEFu;
     gs.macroAiRhythm.jitter.state = 0xFEEDF00Du;
+    // Поток бросков игрока (v153, M-378) — своё число, отличное от обоих
+    // соседей: равные состояния не отличили бы «уцелел» от «перепутан».
+    gs.playerRoll.state = 0x5A1700D5u;
     // Story progress (v25): the prologue is consumed, the arrival node is live.
     // УЗЛЫ НАЗВАНЫ ЖИВЫЕ (M-390): здесь стоял `plot_chapter_1` — узел-заглушка,
     // снесённый вместе со своим файлом, — и фикстура осталась бы ЕДИНСТВЕННЫМ
@@ -718,6 +721,9 @@ int run_roundtrip() {
     }
     if (loaded.macroAiRhythm.jitter.state != 0xFEEDF00Du) {
         FAIL_BAIL("macro-AI rhythm lost");
+    }
+    if (loaded.playerRoll.state != 0x5A1700D5u) {
+        FAIL_BAIL("player roll stream lost");
     }
     if (loaded.logicNodesRegistered.size() != 2
         || loaded.logicNodesRegistered[0] != "intro_main"

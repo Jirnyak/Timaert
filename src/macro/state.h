@@ -458,7 +458,7 @@ namespace sm {
 // 150 — M-379: долг свипов умер вместе с бюджетным драйвером — блок ритма
 // макро-ИИ усох до одного джиттера (sweepAccum/pendingSweeps/sweepCursor
 // покинули провод): ритм живёт пер-сквадно в rt.tickAccum строк сквадов.
-constexpr int kSaveVersion = 152;
+constexpr int kSaveVersion = 153;
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -820,6 +820,19 @@ struct GameState {
     // of App::npcAi's persistent half (see the two sync doors in main.cpp).
     WorldTickRuntime worldTickRt;
     MacroAiRhythm    macroAiRhythm;
+    // ПОТОК БРОСКОВ ИГРОКА — ОТДЕЛЬНО ОТ ПОТОКА МИРА (M-378). Модалка встречи
+    // бросала кости ТЕМ ЖЕ генератором, которым думают все сквады мира
+    // (`MacroAiRhythm::jitter`): нажал «Talk» — сдвинул поток, и дальше мир
+    // эволюционировал иначе. То есть «внутрисборочная воспроизводимость одного
+    // сида» (§6) была ложью, как только игрок трогал меню, а ЗАКОН
+    // АГНОСТИЧНОСТИ прямо запрещает миру знать, что игрок нажал.
+    //
+    // Соль выведена, а не взята с потолка: 0xA1F0 — соль думки мира
+    // (`reset_macro_npc_ai_runtime@src/macro/npc_ai.cpp`), 0xC0FFEE — соль
+    // дневного тика (`world_tick.cpp`); третья обязана отличаться от обеих,
+    // иначе два потока пошли бы одной последовательностью от одного сида.
+    // 0x50A1 («player») этому удовлетворяет и ни с чем в дереве не совпадает.
+    Rng              playerRoll{0x50A1u};
     // Story progress (v25): the ids of logic nodes that still EXIST (a
     // consumed one-shot stays consumed) and of those ACTIVE. Definitions are
     // code, re-registered on every boot; these two lists replay the

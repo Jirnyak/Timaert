@@ -408,6 +408,11 @@ constexpr Row kGameStateRows[] = {
     {"macroAiRhythm", Rod::WorldVars,
      "RNG макро-ИИ (после M-379 — один джиттер); сейв-образ живой половины "
      "App::npcAi"},
+    {"playerRoll", Rod::WorldVars,
+     "RNG бросков ИГРОКА (M-378): модалка встречи крутила поток мира, и клик "
+     "в меню сдвигал эволюцию мира. Род 4, потому что актор — сама сессия, а "
+     "не клетка и не сквад; едет в сейв рядом с macroAiRhythm, иначе загрузка "
+     "проигрывала бы ту же «случайность» заново (§10)"},
     {"logicNodesRegistered", Rod::Facts,
      "прогресс сюжета; форма vector<string> — M-180"},
     {"logicNodesActive", Rod::Facts,
