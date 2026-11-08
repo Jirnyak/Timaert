@@ -17,10 +17,27 @@
 // has with the shader's `bt_biome`. The mirror is what makes the law testable
 // at all; keeping the two in step is a hand duty, and the numbers here are
 // small enough that a drift shows up as a wrong frame immediately.
+// МУТАЦИЯ → ИСХОД для негативного контроля раздела 5 (до 2026-11-08 он был
+// ТАВТОЛОГИЕЙ: `d / kAirEFoldM == d / kAirEFoldM`, то есть одно и то же
+// выражение посимвольно, и высоты, слепоту к которой он объявлял, в нём не
+// было вовсе):
+//   altitude_monotone: `breaks == 0` → `breaks <= samples`  → КРАСНЫЙ 1 из 14,
+//     (детектор ослаблен настолько, что принял бы              и краснеет
+//      заменённую модель)                                     КОНТРОЛЬ, печатая
+//                                                             «control
+//                                                             breaks=177 of 178
+//                                                             samples»
+//   uniform_optical_depth: × 0.97 (модель пересчитана,     → ЗЕЛЁНЫЙ 14/14:
+//     но по-прежнему слепа к высоте)                         судится СЛЕПОТА,
+//                                                            а не величина
+// Первая мутация и есть причина делить предикат: пока у контроля был СВОЙ
+// порог (`breaks == samples - 1`), ослабление детектора оставляло его зелёным —
+// проверено, тот же прогон давал 14/14.
 #include "check.h"
 #include "sub/lighting.h"
 
 #include <cmath>
+#include <cstdio>
 
 using namespace sm;
 using sm::sub::air_optical_depth;
@@ -53,6 +70,52 @@ constexpr float kFieldRoof01 = 0.9647f;
 const float kMountainLineM = height_m(kMountainBiomeLevel);   // 1016 m
 const float kSummitM       = height_m(kFieldRoof01);          // 10830 m
 const float kPlainM        = kSeaLevelM + 200.0f;  // a typical lowland stance
+
+// THE REPLACED LAW, kept ONLY as this test's negative control: UNIFORM air,
+// where density does not fall with height, so a ray's cost is its length and
+// nothing else. Written with `air_optical_depth`'s OWN signature on purpose —
+// the altitude arguments exist and are ignored, which is what "blind to
+// altitude" MEANS and what makes the blindness measurable. Spelled as a
+// parameterless formula (what stood here until 2026-11-08), it was not
+// measurable at all: the control compared `d / kAirEFoldM` with
+// `d / kAirEFoldM` — the same expression character for character — so it
+// could not fail, and the altitude it claimed to be blind to never appeared
+// in it. Same shape as `pick_owner_only@tests/material_seam_test.cpp`.
+float uniform_optical_depth(float distanceM, float /*eyeM*/,
+                            float /*surfaceM*/, float /*seaLevelM*/) {
+    return distanceM / kAirEFoldM;   // f == 1 at every altitude
+}
+
+// THE ALTITUDE SWEEP — ONE LOOP, TWO LAWS, and the sharing is the point. The
+// detector and its control must walk the SAME altitudes with the SAME ray
+// length, or the control speaks about a sweep the detector never ran.
+// `prev` starts above any real depth, so the first sample is never a break;
+// a law that ignores altitude therefore breaks on every step after the first.
+const float kAltitudeRayM = 20000.0f;
+
+// THE LAW AS ONE PREDICATE, asked of both laws. This is what makes the control
+// a control rather than a second opinion: the detector asserts the real air
+// PASSES it, the control asserts the replaced air FAILS it. Loosen the
+// predicate far enough to admit uniform air and the CONTROL goes red — which
+// is the whole service a negative control is supposed to render, and which a
+// control with a threshold of its own cannot render at all.
+bool altitude_monotone(int breaks, int samples) {
+    return samples > 8 && breaks == 0;
+}
+
+template <typename Tau>
+int altitude_breaks(Tau tau, int& samples) {
+    float prev = 1e9f;
+    int breaks = 0;
+    samples = 0;
+    for (float h = kSeaLevelM; h <= kSummitM; h += 60.0f) {
+        const float t = tau(kAltitudeRayM, kPlainM, h, kSeaLevelM);
+        if (t >= prev) ++breaks;
+        prev = t;
+        ++samples;
+    }
+    return breaks;
+}
 
 } // namespace
 
@@ -110,16 +173,9 @@ int main() {
         // Altitude alone: the SAME ray length, aimed higher, carries less air.
         // This is the whole difference from the uniform model, which returned
         // one number here no matter where the ray pointed.
-        const float d = 20000.0f;
-        float prev = 1e9f;
-        int samples = 0, breaks = 0;
-        for (float h = kSeaLevelM; h <= kSummitM; h += 60.0f) {
-            const float t = air_optical_depth(d, kPlainM, h, kSeaLevelM);
-            if (t >= prev) ++breaks;
-            prev = t;
-            ++samples;
-        }
-        CHECK(samples > 8 && breaks == 0,
+        int samples = 0;
+        const int breaks = altitude_breaks(air_optical_depth, samples);
+        CHECK(altitude_monotone(breaks, samples),
               "a ray of fixed length carries LESS air the higher it reaches");
     }
     {
@@ -189,16 +245,25 @@ int main() {
     CHECK(air_transmittance(0.0f, kPlainM, kPlainM, kSeaLevelM) > 0.999f,
           "zero distance takes nothing");
     {
-        // The detector itself: a UNIFORM air (the model this replaced) fails
-        // check 2's altitude test, and this is what proves check 2 can see it.
-        // Uniform means f == 1 regardless of altitude, i.e. tau = d/D0.
-        const float d = 20000.0f;
-        const float uniformLow  = d / kAirEFoldM;
-        const float uniformHigh = d / kAirEFoldM;
-        CHECK(uniformLow == uniformHigh,
-              "control: uniform air is blind to altitude (what we replaced)");
-        CHECK(air_optical_depth(d, kPlainM, kSummitM, kSeaLevelM)
-                  < air_optical_depth(d, kPlainM, kPlainM, kSeaLevelM),
+        // THE DETECTOR, RUN AGAINST THE LAW IT REPLACED, AND JUDGED BY ITS
+        // OWN PREDICATE. The sweep above is handed the UNIFORM model instead
+        // of the real one, and `altitude_monotone` — the very predicate the
+        // detector passes — must REFUSE it. Uniform air is non-decreasing at
+        // every step, so it breaks on all `samples - 1` of them; the number is
+        // printed rather than asserted, because asserting it separately would
+        // give the control a threshold of its own and undo the sharing.
+        int controlSamples = 0;
+        const int controlBreaks =
+            altitude_breaks(uniform_optical_depth, controlSamples);
+        if (altitude_monotone(controlBreaks, controlSamples))
+            std::fprintf(stderr, "  control breaks=%d of %d samples\n",
+                         controlBreaks, controlSamples);
+        CHECK(controlSamples > 8
+                  && !altitude_monotone(controlBreaks, controlSamples),
+              "control: uniform air is blind to altitude (what we replaced) — "
+              "it FAILS the very predicate the detector just passed");
+        CHECK(air_optical_depth(kAltitudeRayM, kPlainM, kSummitM, kSeaLevelM)
+                  < air_optical_depth(kAltitudeRayM, kPlainM, kPlainM, kSeaLevelM),
               "control: the new air is NOT blind to it");
     }
 

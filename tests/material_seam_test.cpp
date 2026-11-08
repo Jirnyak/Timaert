@@ -18,9 +18,12 @@
 //      cell A matches the first column of its east neighbour B (each
 //      computed from its OWN ring, as in production) within a few percent:
 //      the distribution is continuous across the border, i.e. no wall.
-//      NEGATIVE CONTROL: the per-cell-constant rule (owner everywhere)
-//      yields a 100% step across the same border — the wall this test
-//      exists to prevent.
+//      NEGATIVE CONTROL: the per-cell-constant rule (owner everywhere) is
+//      REIMPLEMENTED here (pick_owner_only) and RUN over the same fixture,
+//      the same two border columns and the same probe, to show it yields a
+//      100% step — the wall this test exists to prevent. It shares the
+//      detector's tolerance (kSeamTol), so loosening the detector past that
+//      step reddens the control.
 //   4. Mid-seam balance — exactly on the border the two biomes mix ~50/50.
 //   5. Ground-alias law — the ring the dither consumes is a GROUND ring
 //      (map_data.h ground_biome): land answers with its biome no matter what
@@ -51,6 +54,15 @@
 //      every building in view jump brightness at the boundary. NEGATIVE
 //      CONTROL: the old window-relative keying is shown to differ across the
 //      same re-centre that the absolute keying survives.
+//
+// МУТАЦИЯ → ИСХОД для негативного контроля инварианта 3 (он до 2026-11-08 был
+// ТАВТОЛОГИЕЙ — `fabs(0.0 - 1.0) > 0.05`, сравнением двух литералов, при
+// шапке, обещавшей «без этого проверка выше не доказывает ничего о дефекте»):
+//   kSeamTol 0.05 → 1.5  (детектор ослаблен ЗА шаг, который делает старое
+//                         правило) → КРАСНЫЙ 1 из 37. Прежний контроль на эту
+//                         мутацию молчал: 1.0 > 0.05 верно всегда
+//   kSeamTol 0.05 → 0.5  (ослаблен, но всё ещё ПОД шагом) → ЗЕЛЁНЫЙ 37/37 —
+//                         контроль не краснеет на всякую правку числа
 //
 // Invariant 7 asserted NOTHING until 2026-08-06: it lived in the one `bool`
 // function of this file and returned `int fail() { return 1; }`, which reads as
@@ -83,6 +95,32 @@ double column_fraction(const Biome ring[9], int lx,
     for (int ly = 0; ly < n; ++ly) {
         if (pick_ground_biome(ring, lx, ly, kCellSize, ax0, ay0) == probe)
             ++hits;
+    }
+    return double(hits) / double(n);
+}
+
+// THE SEAM TOLERANCE — ONE CONSTANT FOR THE DETECTOR AND ITS CONTROL, and that
+// sharing IS the point. While the control was `fabs(0.0 - 1.0) > 0.05` — two
+// literals, a comparison that cannot fail — widening the detector's tolerance
+// to 1.5 would have left the control cheerfully green, and the test would have
+// gone on claiming it guards a wall it could no longer see. With one constant
+// the two move together: loosen the detector past the step the old rule makes,
+// and the CONTROL is what goes red first.
+constexpr double kSeamTol = 0.05;
+
+// The old, broken rule, kept ONLY as this test's negative control: the biome
+// was a per-cell CONSTANT — the owning cell's own biome, the ring's centre,
+// for every tile in the cell no matter where the tile sat. That is the texture
+// wall this file exists to prevent, and reproducing it here is the only way to
+// show the detector above can still see it.
+Biome pick_owner_only(const Biome ring[9]) { return ring[4]; }
+
+// `column_fraction` for the old rule: same column, same row count, same probe —
+// only the PICK differs, which is exactly the variable under test.
+double column_fraction_owner_only(const Biome ring[9], Biome probe, int n) {
+    int hits = 0;
+    for (int ly = 0; ly < n; ++ly) {
+        if (pick_owner_only(ring) == probe) ++hits;
     }
     return double(hits) / double(n);
 }
@@ -151,17 +189,26 @@ void test_seam_is_continuous_and_balanced() {
     const double fA = column_fraction(s.ringA, kCellSize - 1, s.ax0, s.ay0,
                                       Meadow, n);
     const double fB = column_fraction(s.ringB, 0, s.bx0, s.by0, Meadow, n);
-    if (std::fabs(fA - fB) > 0.05)
+    if (std::fabs(fA - fB) > kSeamTol)
         std::fprintf(stderr, "  fA=%.3f fB=%.3f\n", fA, fB);
-    CHECK(std::fabs(fA - fB) <= 0.05,
+    CHECK(std::fabs(fA - fB) <= kSeamTol,
           "the mix fraction is continuous across the seam: no texture wall");
 
-    // NEGATIVE CONTROL: the old per-cell-constant rule = owner everywhere, so
-    // the same two columns would read 0.0 and 1.0 — a 100% step. Without this
-    // the continuity check above proves nothing about the defect.
-    const double wallGap = std::fabs(0.0 /* A: pure Taiga */
-                                     - 1.0 /* B: pure Meadow */);
-    CHECK(wallGap > 0.05,
+    // NEGATIVE CONTROL, AND NOW IT ACTUALLY COMPUTES SOMETHING. It used to be
+    // `fabs(0.0 - 1.0) > 0.05` — two literals the author had worked out by
+    // hand, which is not a control but a restatement of the author's belief.
+    // Now the removed rule is RUN over the very same fixture, the same two
+    // border columns and the same probe biome, and only the pick differs. So
+    // this says what a control must say: «the detector above is pointed at a
+    // step that is really there, and it is big enough for the detector to
+    // see» — and it says it through the same `kSeamTol` the detector uses.
+    const double fAold = column_fraction_owner_only(s.ringA, Meadow, n);
+    const double fBold = column_fraction_owner_only(s.ringB, Meadow, n);
+    const double wallGap = std::fabs(fAold - fBold);
+    if (wallGap <= kSeamTol)
+        std::fprintf(stderr, "  control fAold=%.3f fBold=%.3f gap=%.3f\n",
+                     fAold, fBold, wallGap);
+    CHECK(wallGap > kSeamTol,
           "the negative control reproduces the wall the fix removed");
 
     // Mid-seam balance: on the border columns the foreign biome holds a
