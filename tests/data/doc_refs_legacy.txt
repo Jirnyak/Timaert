@@ -160,7 +160,6 @@ SKELETON.md	collide.cpp:120-195
 SKELETON.md	collide.cpp:26
 SKELETON.md	commodity.h:101
 SKELETON.md	commodity.h:111
-SKELETON.md	commodity.h:56-97
 SKELETON.md	core/time.h:30
 SKELETON.md	core/time.h:47
 SKELETON.md	core/time.h:49-59
@@ -175,7 +174,6 @@ SKELETON.md	deposit_layer.h:12-21
 SKELETON.md	deposit_layer.h:18-21
 SKELETON.md	econ_day.cpp:148-189
 SKELETON.md	econ_day.cpp:176
-SKELETON.md	econ_day.cpp:194
 SKELETON.md	econ_day.cpp:209
 SKELETON.md	econ_day.cpp:95-99
 SKELETON.md	econ_day.h:114-115
@@ -297,7 +295,6 @@ SKELETON.md	resource_field.h:12-14
 SKELETON.md	resource_field.h:213-217
 SKELETON.md	resource_field.h:268
 SKELETON.md	resource_field.h:336-341
-SKELETON.md	resource_field.h:64-83
 SKELETON.md	ruins.cpp:44
 SKELETON.md	ruins.cpp:73
 SKELETON.md	scent_field.cpp:15
@@ -361,7 +358,6 @@ SKELETON.md	sub/damage.cpp:10-11
 SKELETON.md	sub/damage.cpp:105
 SKELETON.md	sub/engine.cpp:1346-1356
 SKELETON.md	sub/engine.cpp:1402-1403
-SKELETON.md	sub/engine.cpp:2248
 SKELETON.md	sub/engine.cpp:2265-2266
 SKELETON.md	sub/engine.cpp:2658
 SKELETON.md	sub/engine.cpp:3413
