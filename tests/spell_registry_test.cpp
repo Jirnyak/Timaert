@@ -1,10 +1,36 @@
-// Guards of the spell DATA registry (macro/spells.h, history/ARCHITECTURE.md Rule 13).
+// Guards of the spell DATA registry (`kSpellDefs@src/tables/spells.h`).
 //
-// The one thing this file must never stop guarding: ORDINALS ARE APPEND-ONLY.
-// The row index rides in saves (Spire.spellOrdinal) and events, so the pins
-// below are not "restated numbers" — the pin IS the promise, exactly like a
-// save-format guard: reordering or inserting mid-table must turn this red,
-// appending must not.
+// ЗДЕСЬ СТОЯЛ ЗАПРЕТ, КОТОРОГО В ЗАКОНАХ НЕТ (снято 2026-11-08 ревизией).
+// Шапка говорила «ORDINALS ARE APPEND-ONLY… reordering or inserting mid-table
+// must turn this red», и восемь пинов «ординал → id» это исполняли. Довод был
+// «индекс строки едет в сейве (`Spire.spellOrdinal`)», и он мёртв дважды:
+// колонки `spellOrdinal` в проекте нет вовсе (два упоминания, оба проза), а
+// §10 разрешает ломать ординалы ПРЯМО: «Ломай раскладку, порядок полей,
+// ординалы… свободно и молча». ЗАКОН ЛЕСТНИЦЫ п.3 добавляет: «„дописать в
+// хвост, чтобы сохранённый ординал не переехал“ — МЁРТВЫЙ довод. Перестановка
+// ординалов ЗАКОННА». То есть свидетель охранял не закон, а СЛУЧАЙ, и по §8
+// п.7 («тест никогда не должен мешать развитию») он был тормозом: новая
+// строка в СВОЮ группу (а лестница требует именно этого) красила его ложно.
+//
+// ЧТО ИЗ НЕГО ЖИВОЕ И ОСТАЛОСЬ: авторская строка не смеет ИСЧЕЗНУТЬ молча —
+// это закон о содержании каталога, и он не зависит от порядка. Поэтому ниже
+// утверждаются ИМЕНА, а не индексы, и правка порядка строк проходит молча.
+//
+// И ПОПУТНО НАЙДЕН НАСТОЯЩИЙ НОСИТЕЛЬ ПОРЯДКА, КОТОРОГО ШАПКА НЕ НАЗЫВАЛА:
+// `magic_segment_matches_spells()@src/tables/actions.h` — `static_assert`,
+// требующий, чтобы магический отрезок таблицы действий шёл СТРОКА В СТРОКУ с
+// `kSpellDefs`. Это закон ПАРЫ таблиц, а не запрет перестановки: он говорит
+// «чини ПОРЯДОК, а не стену», то есть переставлять можно — обе вместе. Пины
+// же запрещали перестановку вообще, дублируя стену слабее её (§8 п.6).
+//
+// МУТАЦИЯ → ИСХОД (замерено 2026-11-08, обе полярности):
+//   М1 переставить две строки ТОЛЬКО в `kSpellDefs` → **НЕСОБИРАЕМО** стеной
+//      `magic_segment_matches_spells`, свидетель до прогона не доходит;
+//   М2 переименовать `haste` ТОЛЬКО в `kSpellDefs` → **НЕСОБИРАЕМО** той же
+//      стеной (id — ключ пары);
+//   М3 переименовать `haste` в ОБЕИХ таблицах (стена довольна) →
+//      **КРАСНЫЙ** свидетель, «FAIL 1 of 8», строка 41 — ровно тот закон,
+//      который этот файл теперь и несёт.
 #include "check.h"
 #include "bus/anketa.h"
 
@@ -14,26 +40,23 @@ namespace {
 
 using namespace sm;
 
-void test_ordinals_are_pinned() {
-    struct Pin { int ordinal; std::string_view id; };
-    // The registration order of 2026-08-14 (the order register_builtin_spells
-    // used to run), frozen forever. New spells append below flight.
-    constexpr Pin kPins[] = {
-        {0, "fireball"},
-        {1, "ice_shard"},
-        {2, "magic_bolt"},
-        {3, "lightning_chain"},
-        {4, "energy_beam"},
-        {5, "armageddon"},
-        {6, "haste"},
-        {7, "flight"},
+void test_shipped_rows_do_not_vanish() {
+    // Имена, уже отданные миру. Порядок этого списка НИЧЕГО не утверждает —
+    // он и не может: строка вправе переехать в свою группу лестницы.
+    constexpr std::string_view kShipped[] = {
+        "fireball", "ice_shard", "magic_bolt", "lightning_chain",
+        "energy_beam", "armageddon", "haste", "flight",
     };
-    CHECK(kSpellCount >= int(sizeof(kPins) / sizeof(kPins[0])),
-          "the table may only grow — a shrunken table lost a shipped spell");
-    for (const Pin& p : kPins) {
-        CHECK(p.ordinal < kSpellCount && kSpellDefs[p.ordinal].id == p.id,
-              "a shipped ordinal must keep its spell forever (append-only)");
+    int samples = 0, missing = 0;
+    for (const std::string_view id : kShipped) {
+        ++samples;
+        if (spell_find(id) == nullptr) ++missing;
     }
+    CHECK(samples > 0 && missing == 0,
+          "ни одна отданная миру строка каталога не исчезла — имя ищется "
+          "дверью, поэтому перестановка строк проходит молча (§10)");
+    CHECK(kSpellCount >= samples,
+          "каталог не усох ниже числа отданных строк");
 }
 
 void test_lookup_roundtrip() {
@@ -108,7 +131,7 @@ void test_rows_are_sane() {
 } // namespace
 
 int main() {
-    test_ordinals_are_pinned();
+    test_shipped_rows_do_not_vanish();
     test_lookup_roundtrip();
     test_keys_are_unique();
     test_rows_are_sane();

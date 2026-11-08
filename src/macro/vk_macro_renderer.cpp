@@ -1,5 +1,7 @@
 #include "macro/vk_macro_renderer.h"
 
+#include "macro/vk_macro_push.h"
+
 #include "gpu/vk_device.h"
 #include "macro/features.h"
 #include "tables/biomes.h"
@@ -20,31 +22,6 @@
 namespace sm {
 namespace {
 
-// std140/std430 push-constant block — must match shaders/macro.frag `Push`.
-struct MacroPush {
-    // `viewSize` стоял здесь вторым именем ОДНОЙ величины: и он, и
-    // `resolution` получали `ext.width/height`, а шейдер делил на первое,
-    // чтобы умножить на второе. Параллельные константы одной величины
-    // сводятся к одной (ЗАКОН КОНСТАНТ), выжил делитель `gl_FragCoord` —
-    // он честно называет кадровый буфер. Снос поля из СЕРЕДИНЫ блока
-    // безопасен именно потому, что ниже всё заполняется ПО ИМЕНИ: пропуск
-    // не компилируется, а не связывается молча (шрам сессии 31).
-    float resolution[2];
-    float mapSize[2];
-    float cam[2];
-    float zoom;
-    float seaLevel;
-    float seed;
-    float timeOfDay;
-    float nightDarken;
-    float elapsed;  // real seconds — drives haze flow / water shimmer
-    float mapStyle; // 0 = the living world; 1 = the CHART (map page document)
-    // ОТЛАДОЧНЫЙ ВИД ПОЛЕЙ НАВИГАЦИИ: 0 = мир, 1 = КАТЕГОРИЯ, 2 = СКАЛЯР.
-    // Шейдеру передаётся способ РАСКРАСКИ, а не смысл величины (смысл знает
-    // только `encode_nav_field` ниже) — иначе имя подсистемы мира попало бы
-    // в рендер, а поток обязан идти строго вниз.
-    float navView;
-};
 
 // БАЙТОВАЯ СЕТКА ГРУЗИТСЯ ОДНОЙ ДВЕРЬЮ — `create_r8`.
 // Здесь стояла вторая: `expand_r8` раздувал байт в RGBA8 (байт в R, нули и

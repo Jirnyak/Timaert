@@ -77,12 +77,9 @@ namespace
         if (!v || !*v) return fallback;
         return std::atoi(v);
     }
-    float env_float(const char* name, float fallback)
-    {
-        const char* v = SDL_getenv(name);
-        if (!v || !*v) return fallback;
-        return static_cast<float>(std::atof(v));
-    }
+    // `env_float` стояла здесь без ни одного звонящего и была НЕВИДИМА,
+    // пока харнесс не линковал общие флаги (§9): -Werror нашёл её первым же
+    // прогоном после правки 2026-11-08. Её близнец `env_int` жив и читается.
 
     struct Vtx
     {

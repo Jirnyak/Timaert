@@ -427,14 +427,12 @@ endforeach()
 add_custom_target(timaert_shaders DEPENDS ${_timaert_spv_files})
 add_dependencies(${PROJECT_NAME} timaert_shaders)
 
+# ЧУЖОЙ ДЕМО-TU ИДЁТ ПОД ТЕМ ЖЕ ПОСЛАБЛЕНИЕМ, ЧТО ОСТАЛЬНОЙ ImGui (см. блок
+# IMGUI_SOURCES выше): фатальность снимается только с чужого кода.
+set_source_files_properties(${imgui_SOURCE_DIR}/imgui_demo.cpp PROPERTIES
+    COMPILE_OPTIONS "-Wno-error")
 add_executable(gpu_smoke tests/gpu_smoke.cpp ${TIMAERT_GPU_SOURCES}
-    ${imgui_SOURCE_DIR}/imgui.cpp
-    ${imgui_SOURCE_DIR}/imgui_draw.cpp
-    ${imgui_SOURCE_DIR}/imgui_tables.cpp
-    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-    ${imgui_SOURCE_DIR}/imgui_demo.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp)
+    ${IMGUI_SOURCES} ${imgui_SOURCE_DIR}/imgui_demo.cpp)
 add_dependencies(gpu_smoke timaert_shaders)
 set_target_properties(gpu_smoke PROPERTIES
     CXX_STANDARD 23
@@ -442,10 +440,8 @@ set_target_properties(gpu_smoke PROPERTIES
     CXX_EXTENSIONS OFF)
 target_include_directories(gpu_smoke PRIVATE ${CMAKE_SOURCE_DIR}/src
     ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
-target_link_libraries(gpu_smoke PRIVATE SDL2::SDL2 Vulkan::Vulkan)
-if(NOT MSVC)
-    target_compile_options(gpu_smoke PRIVATE -fno-rtti -fno-exceptions)
-endif()
+target_link_libraries(gpu_smoke PRIVATE timaert_build_flags SDL2::SDL2 Vulkan::Vulkan)
+
 
 # Phase 5 subworld 3D foundation harness (depth + mesh pipeline + camera).
 # Carries the real SpriteBank (body.frag set1 contract) — hence the bank TU
@@ -459,10 +455,8 @@ set_target_properties(gpu_smoke3d PROPERTIES
     CXX_EXTENSIONS OFF)
 target_include_directories(gpu_smoke3d PRIVATE
     ${CMAKE_SOURCE_DIR}/src ${stb_SOURCE_DIR})
-target_link_libraries(gpu_smoke3d PRIVATE SDL2::SDL2 Vulkan::Vulkan)
-if(NOT MSVC)
-    target_compile_options(gpu_smoke3d PRIVATE -fno-rtti -fno-exceptions)
-endif()
+target_link_libraries(gpu_smoke3d PRIVATE timaert_build_flags SDL2::SDL2 Vulkan::Vulkan)
+
 
 # Offscreen macro-map screenshot tool: renders the shipping macro.frag via
 # MacroRendererVk into an offscreen image and dumps PPM frames (headless
@@ -480,10 +474,8 @@ set_target_properties(macro_shot PROPERTIES
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF)
 target_include_directories(macro_shot PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(macro_shot PRIVATE SDL2::SDL2 Vulkan::Vulkan)
-if(NOT MSVC)
-    target_compile_options(macro_shot PRIVATE -fno-rtti -fno-exceptions)
-endif()
+target_link_libraries(macro_shot PRIVATE timaert_build_flags SDL2::SDL2 Vulkan::Vulkan)
+
 
 # Balance harness (owner track 2026-08-30, CANON S10 «дубль-прогон»): the
 # world plays itself for N game days, fully headless — no SDL window, no
@@ -3019,7 +3011,13 @@ add_custom_target(check
 # то есть +4 %. ГОНЯТЬ их ctest по-прежнему не гоняет: `balance_run` — долгий
 # замер, а снимки требуют GPU — так что «собирается» и «проверен» здесь
 # по-прежнему разные слова.
+# ДОБАВЛЕНЫ 2026-11-08 ПО ТОЙ ЖЕ ПРИЧИНЕ, ЧТО ОСТАЛЬНЫЕ: ревизия нашла, что
+# `docs_sync_tool` и `prompt_loss_tool` собирались `cmake --build build`, но
+# НЕ зависимостью `check` — то есть ровно та конфигурация, которой куплен
+# M-217. У второго это особенно дорого: он инструмент ОДНОГО действия (его
+# зовут руками перед перезаписью промта), и упади он в несобираемое — узнали
+# бы в тот единственный момент, когда он нужен.
 add_dependencies(check ${PROJECT_NAME} ${_timaert_tests} tu_time_jump
                  gpu_smoke gpu_smoke3d macro_shot balance_run
                  height_census relief_census fauna_spread_census
-                 road_reach_census)
+                 road_reach_census docs_sync_tool prompt_loss_tool)

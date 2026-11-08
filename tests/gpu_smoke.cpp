@@ -3,6 +3,8 @@
 // in a Vulkan fragment shader (descriptor set 0 = combined image sampler). This
 // is the real macro data pipeline, minus main.cpp wiring. Dear ImGui overlays
 // on top. MoltenVK ICD auto-detected on macOS. GPU_SMOKE_FRAMES=N auto-exits.
+#include "macro/vk_macro_push.h"
+
 #include "gpu/vk_device.h"
 #include "gpu/vk_pipeline.h"
 #include "gpu/vk_renderer.h"
@@ -24,26 +26,12 @@
 
 namespace
 {
-    // MUST mirror shaders/macro.frag's push_constant Push block byte for byte
-    // (shared-shader contract: this harness compiles the SHIPPING shader). The
-    // old 32-byte layout drifted when the shader grew cam/viewSize/zoom and
-    // the night lanes — the pipeline then failed to build and the smoke could
-    // not validate anything.
-    struct Push
-    {
-        float resolution[2];
-        float mapSize[2];
-        float cam[2];       // world-pixel offset at screen centre
-        float viewSize[2];  // viewport size in pixels
-        float zoom;         // pixels per world cell
-        float seaLevel;
-        float seed;
-        float timeOfDay;    // 0..1
-        float nightDarken;  // 0..1
-        float elapsed;      // real seconds
-    };
-    static_assert(sizeof(Push) == 56,
-                  "macro.frag push block is 56 bytes — keep this in lockstep");
+    // ПУШ-БЛОК НЕ ДУБЛИРУЕТСЯ — ОН ОДИН (`MacroPush@src/macro/vk_macro_push.h`).
+    // Здесь стояла КОПИЯ структуры с обещанием «byte for byte» и своим
+    // `static_assert(sizeof == 56)`; копия разошлась с шипуемым шейдером на
+    // `c191fa06` и молчала 41 день, потому что ассерт судил СЕБЯ, а не
+    // шейдер. Разбор и урок — шапка `src/macro/vk_macro_push.h`.
+    using Push = ::sm::MacroPush;
 
     // A compact toroidal value-noise world: RGBA8 = height, moisture,
     // temperature, mask. Same spirit as the game's master texture (a real,
@@ -438,8 +426,6 @@ int main(int, char**)
             pc.zoom = static_cast<float>(ext.width) / 48.0f;
             pc.cam[0] = static_cast<float>(kWorld) * 0.5f * pc.zoom;
             pc.cam[1] = static_cast<float>(kWorld) * 0.5f * pc.zoom;
-            pc.viewSize[0] = static_cast<float>(ext.width);
-            pc.viewSize[1] = static_cast<float>(ext.height);
             pc.seaLevel = kSea;
             pc.seed = static_cast<float>(kSeed);
             pc.timeOfDay = 0.5f;   // noon — full daylight, night lanes inert

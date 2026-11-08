@@ -71,13 +71,32 @@ namespace {
 
 // The charged `int fail()` is dead (Testing law #1: tests/check.h is the
 // only way to fail). A gate that trips records into the ONE counter nothing
-// can invert, then bails exactly as the old flow did; reaching the end of
-// run_roundtrip() records the single positive check, so a run that bailed
-// early can never read as green and a run that ran nothing fails by count.
+// can invert, then bails exactly as the old flow did.
+//
+// THE PROMISE THIS HEADER USED TO MAKE AND THE CODE DID NOT KEEP (ревизия
+// 2026-11-08): it said «reaching the end of run_roundtrip() records the
+// single positive check», and there was NO such check — 112 FAIL_BAIL gates
+// and ZERO `CHECK` in the whole function, so gutting its body left the suite
+// GREEN. The promise is now a TYPE: the function RETURNS a NUMBER — how many
+// save-door round trips it actually took to judgement — and `main` asserts
+// that number is non-zero. Не тавтология (§8 п.2 запрещает `CHECK(true, …)`):
+// ранний обрыв даёт 0. И не только «дошёл до конца»: тело, выпотрошенное до
+// одного `return`, тоже даёт 0, потому что вердикт есть ЗАМЕР, а не факт
+// достижения последней строки (§8 п.3 — «цикл, который меряет, обязан
+// утверждать, что ПОМЕРИЛ»).
+//
+// МУТАЦИЯ → ИСХОД (замерено 2026-11-08, обе полярности, §8 п.6):
+//   М1 `return 0` первой строкой тела (ранний обрыв) → **КРАСНЫЙ**,
+//      «FAIL save_roundtrip_test: 1 of 22 checks failed»;
+//   М2 тело ДО правки (112 FAIL_BAIL, ни одного CHECK) → выпотрошенное тело
+//      читалось ЗЕЛЁНЫМ — ровно тот дефект, которым куплена эта форма;
+//   М3 снят ОДИН `++trips` из четырёх → **МОЛЧИТ**, «OK (22 checks)», и это
+//      верно: вердикт есть «померил хоть раз», а не пин на число прогонов
+//      (пин ломался бы на каждой новой проверке двери — §8 п.4).
 #define FAIL_BAIL(msg)                                              \
     do {                                                            \
         ::sm::test::check(false, (msg), __FILE__, __LINE__);        \
-        return;                                                     \
+        return 0;                                                   \
     } while (0)
 
 std::string join_path(const std::string& dir, const char* name) {
@@ -588,7 +607,8 @@ std::vector<std::uint16_t> make_tree_counts() {
 //  батарея полей GameEvent жила на onAccept; конверт событий больше в
 //  сейв не ездит — его блок умер вместе с write_event.)
 
-void run_roundtrip() {
+int run_roundtrip() {
+    int trips = 0;   // прогонов двери сейва, реально доведённых до суда
     // A pin reading `GameSubStateKind::Event != 4` stood here. It guarded the
     // ORDINAL a sub-state kind occupies in the file — that is, it made the
     // save LAYOUT a law, which the laws forbid outright: the format is broken
@@ -661,6 +681,7 @@ void run_roundtrip() {
                        loadedTrees, path)) {
         FAIL_BAIL("load_game failed");
     }
+    ++trips;
     if (loaded.version != sm::kSaveVersion) FAIL_BAIL("loaded version mismatch");
     if (loaded.saveName != "roundtrip") FAIL_BAIL("save name lost");
     if (loaded.savedAt != summary.savedAt) FAIL_BAIL("savedAt lost");
@@ -1140,6 +1161,7 @@ void run_roundtrip() {
                       sentinelMacro, sentinelTrees, truncatedPath)) {
         FAIL_BAIL("truncated payload accepted");
     }
+    ++trips;
     if (sentinel.mapW != 11 || sentinelTrees.size() != 3) {
         FAIL_BAIL("failed truncated load mutated state");
     }
@@ -1155,6 +1177,7 @@ void run_roundtrip() {
                       sentinelMacro, sentinelTrees, corruptPath)) {
         FAIL_BAIL("corrupt payload accepted");
     }
+    ++trips;
     if (sentinel.mapW != 22) {
         FAIL_BAIL("failed corrupt load mutated state");
     }
@@ -1177,6 +1200,7 @@ void run_roundtrip() {
                       badVersionPath)) {
         FAIL_BAIL("bad version accepted");
     }
+    ++trips;
     const sm::SaveSummary badSummary = sm::inspect_save(badVersionPath);
     if (badSummary.status != sm::SaveInspectStatus::VersionMismatch) {
         FAIL_BAIL("bad version inspect status wrong");
@@ -1283,6 +1307,7 @@ void run_roundtrip() {
     remove_slot_files(corruptPath);
     remove_slot_files(badVersionPath);
     remove_slot_files(path);
+    return trips;  // сколько прогонов двери сейва ПОМЕРЕНО; 0 красен
 }
 
 // EVERY LIVE SUB-STATE KIND SURVIVES THE ROUND TRIP.
@@ -1348,7 +1373,7 @@ void run_every_sub_state_kind_survives() {
 // мира обязан быть БОЛЬШЕ прежнего литерала. На старом коде свидетель
 // красный не оттого, что поменяли ожидание, а оттого, что сейв этого мира не
 // записывался вовсе.
-void run_payload_cap_is_a_fact() {
+bool run_payload_cap_is_a_fact() {
     constexpr std::uint64_t kOldLiteralCap = 64ull * 1024ull * 1024ull;
     constexpr std::uint32_t kHeaderBytes = 4u + 4u + 8u + 4u;
     constexpr int kCensusRooted = 1880;   // macro/stacks.h, замеренный мир
@@ -1460,13 +1485,18 @@ void run_payload_cap_is_a_fact() {
 
     remove_slot_files(path);
     remove_slot_files(overPath);
+    return true;   // как и у round trip: дошли до конца — значит гейты держали
 }
 
 } // namespace
 
 int main() {
-    run_roundtrip();
+    CHECK(run_roundtrip() > 0,
+          "дверь сейва померена хотя бы одним прогоном и ни один гейт не "
+          "оборвал тело — выпотрошенное тело и ранний обрыв оба дают 0");
     run_every_sub_state_kind_survives();
-    run_payload_cap_is_a_fact();
+    CHECK(run_payload_cap_is_a_fact(),
+          "потолок payload проверен до конца — ранний обрыв по FAIL_BAIL "
+          "больше не может прочитаться зелёным");
     return sm::test::report("save_roundtrip_test");
 }

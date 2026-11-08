@@ -7,10 +7,14 @@
 // ordinal in content/spells/ (kSpellEffects), the way a creature row binds to
 // its archetype silhouette in the shader.
 //
-// ORDINALS ARE APPEND-ONLY (the creature-catalog law): the row index rides in
-// saves (spire → spellOrdinal) and in events; reordering or inserting
-// mid-table silently re-keys every spire in every save. Add new spells at the
-// END. spell_registry_test pins the existing order.
+// ЗДЕСЬ СТОЯЛО «ORDINALS ARE APPEND-ONLY… Add new spells at the END» — СНЯТО
+// 2026-11-08: довод «индекс едет в сейве (spire → spellOrdinal)» мёртв,
+// колонки `spellOrdinal` в проекте нет, а §10 разрешает ломать ординалы
+// свободно и молча; ЗАКОН ЛЕСТНИЦЫ п.3 требует обратного — новая строка
+// встаёт В СВОЮ ГРУППУ, и перестановка ординалов ЗАКОННА (сдвиг мира при
+// этом замеряется и называется вслух, а не предотвращается кривой формой).
+// Свидетель `spell_registry_test` утверждает теперь ИМЕНА: отданная миру
+// строка не смеет исчезнуть, а порядок он не судит.
 //
 // Adding a spell = one row here + one effect row in content/spells (the
 // static_assert there refuses a mismatch).
