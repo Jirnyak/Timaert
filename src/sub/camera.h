@@ -16,8 +16,17 @@
 namespace sm::sub {
 
 constexpr float kFovRad      = 1.309f;          // ≈ 75°
-constexpr float kFovDeg      = kFovRad * (180.0f / kPi);
 constexpr float kMaxPitchRad = kPi / 3.0f;     // π/3
+// (ЗДЕСЬ СТОЯЛА `kFovDeg = kFovRad * (180/kPi)`, И ОНА БЫЛА ПОЛОВИНОЙ
+//  КРУГОВОГО ПЕРЕВОДА. Угол объявлен В РАДИАНАХ, переводился в градусы ЗДЕСЬ,
+//  ехал градусами колонкой камеры и переводился обратно в радианы у
+//  рендерера — а единственным читателем каждого звена было СЛЕДУЮЩЕЕ ЗВЕНО.
+//  Градусы не нужны ни одному настоящему читателю: Vulkan-проекция берёт
+//  радианы, и камера их уже несёт. Оба перевода умерли вместе, а с ними
+//  ушёл дрейф 4 ulp, который круг наживал на ровном месте — ЗАКОН КОНСТАНТ
+//  («параллельные константы одной величины сводятся к одной») и ЗАКОН ТУПИКА
+//  РЕНДЕРА: единицу выбирает тот, кто величину ОБЪЯВИЛ, а не тот, кто её
+//  рисует. M-433, хвост FOV.)
 // Vertical scale / eye height live in sub/height.h and the engine
 // (`kCameraEyeM`); the camera is seated by SubworldEngine::record_shadow
 // every frame, so pos here is just a pre-first-frame default.
@@ -26,7 +35,7 @@ struct Camera {
     vec3  pos     = {0, 0, 0};
     float yaw     = 0.0f;     // around +Y, 0 = looking +X
     float pitch   = 0.0f;     // around side axis (+ = up, clamped to ±π/3)
-    float fovDeg  = kFovDeg;
+    float fovRad  = kFovRad;  // РАДИАНЫ — единица объявления и единица чтения
 
     vec3 forward() const {
         float cp = std::cos(pitch), sp = std::sin(pitch);

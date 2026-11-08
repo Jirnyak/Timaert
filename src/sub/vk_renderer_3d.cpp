@@ -3503,7 +3503,7 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     // ── Camera matrices (Vulkan conventions) ──
     const float aspect = static_cast<float>(ext.width)
                          / static_cast<float>(std::max(ext.height, 1u));
-    const float fovRad = cam.fovDeg * kPi / 180.0f;
+    const float fovRad = cam.fovRad;   // камера несёт радианы — переводить нечего
     // ДАЛЬНЯЯ ПЛОСКОСТЬ ПОКРЫВАЕТ ТО, ЧТО ПОСТРОЕНО, и ничего не решает сама.
     // «Константы дальности прорисовки не существует» (CANON S18.1): что видно
     // — решает ВОЗДУХ, равнина растворяется сама, вершина сама доживает. Эта
