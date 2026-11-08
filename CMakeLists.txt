@@ -1900,6 +1900,34 @@ timaert_test(capture_fold_test
         src/bus/anketa.cpp
         src/tables/items.cpp)
 
+# «Я СРАЖАЮСЬ» ВВЕРХ (ломоть 6 M-419): штамп из двери урона лестницей
+# slot_squad_of, угасание в драйвере думок, гейта ног не существует.
+# Замыкание — capture_legs_test (драйвер думок) плюс сама дверь урона.
+timaert_test(fight_state_test
+    SOURCES
+        src/sub/damage.cpp
+        src/macro/npc_spawn.cpp
+        src/macro/npc_ai.cpp
+        src/macro/squad_index.cpp
+        src/macro/deal.cpp
+        src/macro/recovery.cpp
+        src/macro/nav_field.cpp
+        src/macro/economy.cpp
+        src/macro/macro_stock.cpp
+        src/macro/fauna.cpp
+        src/tables/fauna.cpp
+        src/macro/tree_layer.cpp
+        src/bus/anketa.cpp
+        src/tables/items.cpp
+        src/macro/econ_day.cpp
+        src/macro/world_tick.cpp
+        src/macro/spires.cpp
+        src/macro/threat_field.cpp
+        src/macro/scent_field.cpp
+        src/macro/chronicle.cpp
+        src/macro/deposit_layer.cpp
+    LINK_SDL)
+
 # ЕДИНАЯ ТАБЛИЦА ДЕЙСТВИЙ (M-369, ломоть 1): отрезок выведен из каталога
 # спеллов, два слоя рекавери, домен из лестницы, цена тремя колонками.
 timaert_test(action_table_test

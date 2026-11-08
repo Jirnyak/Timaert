@@ -145,10 +145,17 @@ DamageResult apply_damage(SubObjects& objs, MacroStore* st, int targetSlot,
     auto* hp = st != nullptr ? slot_pools_of(objs, s, *st)
                              : slot_pools(objs, s);
     if (hp == nullptr || hp->hp <= 0) return out;
-    // (Эмитент стопера ног — `squad_mark_halted` штампом до смягчения —
-    //  умер шагом 0 ЗАХВАТА (M-419): тело в окне держит сам бой сцены.
-    //  Операция «я сражаюсь» наверх осталась ЗАКОНОМ ШВА — её дверь построит
-    //  захват, и принимать её будет МОДУЛЬ сквада, не гейт ног.)
+    // «Я СРАЖАЮСЬ» ВВЕРХ — единственное, что бой субмира сообщает макро
+    // (ЗАХВАТ п.3 ЗАКОНА ШВА; ломоть 6 M-419). Штамп ДО смягчения — нарочно:
+    // в бой втягивает само НАПАДЕНИЕ, удар, съеденный блоком, — такой же бой
+    // (урок M-319A). Сквад жертвы называет лестница двух рождений; «ничей»
+    // (зверь из сида, проп) — пустой хэндл, и наверху этого боя нет.
+    // Нападающий втягивается ответным ударом сам; принимает состояние
+    // МОДУЛЬ сквада, не гейт ног (стопер снесён шагом 0 ЗАХВАТА).
+    if (st != nullptr)
+        if (const MacroHandle victim = slot_squad_of(objs, s, *st);
+            victim.id != 0)
+            squad_mark_fighting(*st, victim);
     // A crit found the armour gap: mitigation is not in the way, exactly as
     // the Fall row's column says plate is not in the way of the ground. И
     // ПРОСТОЙ КРИТ НЕ СТАВИТ: плита в таком ударе не участвовала вовсе, сбивать

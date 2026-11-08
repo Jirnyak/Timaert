@@ -4886,6 +4886,12 @@ static void tick_macro_npc_ai_one(MacroWorld& mw, MacroNpcAiRuntime& runtime) {
         // (`squad_recovery_elapsed@src/bus/squad_row.h`, M-412д): второй
         // звонящий — часы флажка, свип игрока не водит.
         ecs::squad_recovery_elapsed(rt, std::uint32_t(kAiTicks));
+        // «Я СРАЖАЮСЬ» УГАСАЕТ ВРЕМЕНЕМ ДУМОК тем же моментом, что слив
+        // гейта занятости строкой выше (ломоть 6 ЗАХВАТА M-419): снизу его
+        // только ВЗВОДЯТ (`squad_mark_fighting` из двери урона), снятие —
+        // одна эта точка. «Бой кончился» есть ОТСУТСТВИЕ удара: штамп,
+        // который перестали обновлять, тает сам за kFightThinks думок.
+        rt.fighting = sub_sat(rt.fighting, std::uint8_t{1});
 
         if (kind.type >= std::uint16_t(NPCType::Count)) continue;
         // A battle earlier in this very sweep may have killed this squad —
