@@ -2827,8 +2827,18 @@ target_compile_definitions(doc_tables_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 timaert_test(doc_refs_test SOURCES tests/doc_refs.cpp
-    PIN "OK doc_refs_test .30 checks. .доков [0-9]+ · ссылок [0-9]+ · вне слежения [0-9]+ · числа в доках НЕ судит")
+    PIN "OK doc_refs_test .30 checks. .доков [0-9]+ · ссылок [0-9]+ · вне слежения [0-9]+ · числа ЗАМЕРА НЕ судит")
 target_compile_definitions(doc_refs_test
+    PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+# Второй потребитель ТОГО ЖЕ ядра доков, и он закрывает ровно ту дыру, которую
+# `doc_refs_test` объявлял в своём вердикте вслух: число в документе не судил
+# никто. У одного рода чисел свидетель всё-таки есть — `static_assert(sizeof)`,
+# то есть компилятор, — и этот прибор берёт только его. Политику рода документа
+# он ЗАНИМАЕТ у `doc_refs` (`judges_name_liveness`), а не пишет второй список.
+timaert_test(sizeof_doc_test SOURCES tests/doc_refs.cpp
+    PIN "OK sizeof_doc_test .[0-9]+ checks. .размеров в коде [0-9]+ · претензий судимо [0-9]+ · вне суда [0-9]+ · дельты замера и зачёркнутое НЕ судит")
+target_compile_definitions(sizeof_doc_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 # Прибор на ЗАКОН АДРЕСА: клетка мира не сворачивается делением (M-124). До него

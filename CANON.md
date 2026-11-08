@@ -4523,7 +4523,7 @@ Ruin 0.5, остальные 1.0), то есть отвечала «что эт�
    включения `macro/upkeep.h` ecs-слоем и тащил макро транзитом в субмир),
    колонка
    `roster` в `SM_MACRO_STORE_COLUMNS@src/bus/store.h`, строка стека и пин
-   `sizeof(ecs::SquadUpkeep) == 72` в `src/macro/stacks.h`, ряд ведомости
+   `sizeof(ecs::SquadUpkeep) == 80` в `src/macro/stacks.h`, ряд ведомости
    `MacroStock::Creatures@src/tables/stock_key.h`, двери `upkeep_bill`,
    `upkeep_season_window`, `find_creatures`, `UpkeepBill`, `UpkeepWindowOutcome`.
    **ИСПОЛНЕНО, И СНОС ОКАЗАЛСЯ РАСЩЕПЛЕНИЕМ — ЭТО И ЕСТЬ ДОКАЗАТЕЛЬСТВО, ЧТО

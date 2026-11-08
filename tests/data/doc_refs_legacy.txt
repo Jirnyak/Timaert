@@ -348,12 +348,10 @@ SKELETON.md	squad.h:656-712
 SKELETON.md	squad.h:785
 SKELETON.md	squad.h:896
 SKELETON.md	squad_walk.h:42
-SKELETON.md	stacks.h:125
 SKELETON.md	state.cpp:124
 SKELETON.md	state.cpp:277-307
 SKELETON.md	state.cpp:88
 SKELETON.md	state.h:510
-SKELETON.md	state.h:616
 SKELETON.md	state.h:617
 SKELETON.md	state.h:623-626
 SKELETON.md	store.h:65
