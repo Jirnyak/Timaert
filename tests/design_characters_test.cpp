@@ -139,11 +139,13 @@ void test_spawn_births_the_row() {
     CHECK_OR_RETURN(wStore_->valid(e), "the preacher row became one body");
 
     const DesignCharacterDef& row = kDesignCharacterDefs[0];
-    // Индивид владеет листом (посадки А/Б) — и уровень строки дошёл.
-    const CharacterSheet* own = owned_sheet(*wStore_, e);
-    CHECK_OR_RETURN(own != nullptr, "the design character OWNS his sheet");
-    CHECK(sm::level_of(own->levelData) == int(row.level),
-          "the row's level reached the owned sheet");
+    // Уровень АВТОРСКОЙ СТРОКИ дошёл до колонки листа. Проверяется ЗНАЧЕНИЕ,
+    // а не наличие: колонка есть у каждого слота (предикат владения снесён
+    // 2026-11-08 — РОДОВ АНКЕТЫ НЕ ДВА), и ненулевой указатель не доказывал
+    // ничего о том, что строка доехала.
+    const CharacterSheet& own = wStore_->sheet[e.slot];
+    CHECK(sm::level_of(own.levelData) == int(row.level),
+          "the row's level reached the sheet column");
     // Здесь стояла проверка СОГЛАСИЯ колонки `ecs::NpcLevel` с анкетой — она
     // охраняла сам дубль, и её субъект умер вместе с колонкой (M-246а).
     // Остался закон «уровень спрашивают ОДНОЙ дверью, и она читает анкету»:
@@ -239,8 +241,10 @@ void test_snapshot_carries_the_ordinal() {
     const sm::MacroHandle back = find_design(*w2Store_, 0);
     CHECK_OR_RETURN(w2Store_->valid(back),
                     "restore re-stamped the design tag from the record");
-    CHECK(owned_sheet(*w2Store_, back) != nullptr,
-          "...and his owned sheet came back with it (колонка анкеты; опт-ина нет с M-246а)");
+    CHECK(sm::level_of(w2Store_->sheet[back.slot].levelData)
+              == int(kDesignCharacterDefs[0].level),
+          "...и уровень его листа вернулся С НИМ — колонка анкеты едет в "
+          "сейв, опт-ина нет с M-246а");
 }
 
 void test_king_peasant_births_by_home_faction() {
@@ -270,10 +274,8 @@ void test_king_peasant_births_by_home_faction() {
     CHECK(int(stk.kind[king.slot].factionIdx)
               == faction_index("king_peasant"),
           "his faction is his OWN registry row");
-    const CharacterSheet* own = owned_sheet(stk, king);
-    CHECK_OR_RETURN(own != nullptr, "the king OWNS his sheet");
-    CHECK(sm::level_of(own->levelData) == 70,
-          "the level-70 roll reached the sheet");
+    CHECK(sm::level_of(stk.sheet[king.slot].levelData) == 70,
+          "the level-70 roll reached the sheet column");
     // Лестница: приказов нет — ступень анкеты, доказуемо не строка типа
     // (Peasant.ai = Gatherer).
     const auto& kind = stk.kind[king.slot];
@@ -335,8 +337,13 @@ void test_dragons_nest_on_mountain_peaks() {
     CHECK(int(std_.kind[d1.slot].factionIdx)
               == faction_index("dragons"),
           "dragons share the ONE dragons faction row (owner verdict)");
-    CHECK(owned_sheet(std_, d1) != nullptr,
-          "the dragon OWNS his sheet like every design character");
+    // Дракон идёт ТОЙ ЖЕ колонкой листа, что всякий авторский, и ожидание
+    // выводится из ЕГО строки каталога (§8 п.4: литерал тут ломался бы на
+    // каждой перекалибровке контента).
+    CHECK(sm::level_of(std_.sheet[d1.slot].levelData)
+              == int(kDesignCharacterDefs[2].level),
+          "уровень строки дракона дошёл до колонки листа — та же дверь, что "
+          "у проповедника и короля");
     // РОД СКВАДА — АВТОРСКАЯ КОЛОНКА СТРОКИ (ломоть 6 M-72): дракон думает
     // модулем строки Dragon таблицы kAiModuleRows, а не лестницей None.
     CHECK(SquadType(std_.runtime[d1.slot].squadType) == SquadType::Dragon,

@@ -137,7 +137,7 @@ inline void refresh_body_from_sheet(ecs::Pools& pools,
 // Лист по хэндлу — ОДИН ОТВЕТ: КОЛОНКА. Протухший хэндл отвечает дефолтным
 // деривативом — читатель обязан был спросить valid() раньше.
 // (Дуализм owned/derived умер 2026-10-18; его полная история и цена числом
-// — у предиката владения `sheet_owned_at@src/macro/squad.h`.)
+// — у предиката владения `sheet_owned_at (снесён 2026-11-08)`.)
 inline CharacterSheet sheet_of(const MacroStore& st, MacroHandle h) {
     if (!st.valid(h))
         return make_character_sheet(NPCType::Peasant, 1, avatar_sheet_seed(0));

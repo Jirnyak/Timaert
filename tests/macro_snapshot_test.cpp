@@ -116,16 +116,25 @@ void test_snapshot_round_trips_the_living_map() {
     std::snprintf(wStore_->name[a.slot].text,
                   sizeof(wStore_->name[a.slot].text), "%s",
                   "Chornyy Voron");
-    // A bandit chief is a NAMED character (v90): born OWNING his sheet.
-    // His campaign diverges it from the birth roll — the owner's ММОРПГ
-    // point is that exactly this divergence survives the save.
-    CHECK_OR_RETURN(owned_sheet(*wStore_, a) != nullptr,
-                    "a named kind is born owning his sheet");
-    owned_sheet(*wStore_, a)->attributes[AttributeId::End] = 13;
-    // A peasant crew is TRANSIENT: no component, nothing stored — its
-    // generic sheet derives from its row (the negative control).
-    CHECK(owned_sheet(*wStore_, b) == nullptr,
-          "a transient crew owns no sheet");
+    // КОЛОНКА ЛИСТА ЕСТЬ У КАЖДОГО СЛОТА И ПИШЕТСЯ КАЖДЫМ РОЖДЕНИЕМ, поэтому
+    // проверяется не НАЛИЧИЕ листа, а то, что рождение его ЗАПОЛНИЛО: пустой
+    // лист — тоже анкета, и он врёт тише (END=1 даёт +10 hp КАЖДОЙ строке
+    // мира). Дальше кампания расходит его с броском рождения, и ММОРПГ-смысл
+    // владельца в том, что РАСХОЖДЕНИЕ переживает сейв.
+    // Ожидание выводится из СПЕЦИФИКАЦИИ рождения, а не из литерала: `> 0`
+    // здесь было бы почти тавтологией — у ПУСТОГО листа END равен 1, и такая
+    // проверка прошла бы над неродившейся анкетой (шрам «тихая анкета врёт
+    // так же, как громкая»). Пятая ступень — то, что спрашивал specA.
+    CHECK(sm::level_of(wStore_->sheet[a.slot].levelData) == 5,
+          "рождение именного довело ступень его СПЕЦИФИКАЦИИ до колонки листа");
+    wStore_->sheet[a.slot].attributes[AttributeId::End] = 13;
+    // ЗДЕСЬ СТОЯЛ НЕГАТИВНЫЙ КОНТРОЛЬ «a transient crew owns no sheet» — снят
+    // 2026-11-08 вместе с предикатом `sheet_owned_at` (вердикт владельца).
+    // Он утверждал РАЗЛИЧЕНИЕ двух родов анкеты, которого ЗАКОН АНКЕТЫ п.3 не
+    // допускает, и врал словами: колонка у транзитного отряда есть и пишется
+    // его же рождением. Контроль сейва держат ДВА других конца ниже — флаг
+    // игрока сел на того же лорда и ни на кого больше, и ординал B вернулся
+    // живым; оба умеют упасть.
 
     // Snapshot -> save -> load -> restore, through the REAL save file.
     const std::string path = temp_path("timaert_macro_snapshot_test.bin");
@@ -173,14 +182,12 @@ void test_snapshot_round_trips_the_living_map() {
     // "A has it" check).
     CHECK(player_flag_handle(gs2) == a2,
           "the possessed lord keeps the player flag across the save");
-    CHECK_OR_RETURN(owned_sheet(*w2Store_, a2) != nullptr,
-                    "the named chief still OWNS his sheet after the save");
     CHECK(w2Store_->sheet[a2.slot].attributes.of(AttributeId::End) == 13,
-          "…and his campaign's divergence from the birth roll survived");
+          "кампания именного лорда — расхождение листа с броском рождения — "
+          "пережила сейв ЗНАЧЕНИЕМ колонки, а не ненулевым указателем");
     const MacroHandle b2pre = find_by_ordinal(*w2Store_, ordinalB);
-    CHECK(w2Store_->valid(b2pre)
-              && owned_sheet(*w2Store_, b2pre) == nullptr,
-          "the transient crew still stores nothing (owned_sheet law)");
+    CHECK(w2Store_->valid(b2pre),
+          "транзитный отряд вернулся живым по своему ординалу");
     CHECK(w2Store_->valid(player_flag_handle(gs2)),
           "exactly one player flag restored — the handle is live");
 
@@ -248,10 +255,8 @@ void test_resnapshot_is_byte_identical() {
     // вторым законом роста, и закон «кампании лорда переживают сейв»
     // держится теперь на той величине, которая опыт и есть. Кумулятив несёт
     // И СТУПЕНЬ (M-383), поэтому прибавляется к ней, а не заменяет её.
-    owned_sheet(*wStore_, a)->levelData.exp = exp_at_level(5) + 777u;
-    CHECK_OR_RETURN(owned_sheet(*wStore_, a) != nullptr,
-                    "named lord owns his sheet");
-    owned_sheet(*wStore_, a)->attributes[AttributeId::End] = 13;
+    wStore_->sheet[a.slot].levelData.exp = exp_at_level(5) + 777u;
+    wStore_->sheet[a.slot].attributes[AttributeId::End] = 13;
 
     SquadSpec specB{};
     specB.avatarType = NPCType::Peasant;
