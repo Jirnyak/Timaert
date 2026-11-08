@@ -39,6 +39,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>    // ВРЕМЕННО: лог стенда TIMAERT_FIGHT_LOG — снести с ним
 #include <cstdlib>
 #include <cstring>
 #include <limits>
@@ -4891,7 +4892,20 @@ static void tick_macro_npc_ai_one(MacroWorld& mw, MacroNpcAiRuntime& runtime) {
         // только ВЗВОДЯТ (`squad_mark_fighting` из двери урона), снятие —
         // одна эта точка. «Бой кончился» есть ОТСУТСТВИЕ удара: штамп,
         // который перестали обновлять, тает сам за kFightThinks думок.
+        const std::uint8_t fightingWas = rt.fighting;
         rt.fighting = sub_sat(rt.fighting, std::uint8_t{1});
+        {
+            // ВРЕМЕННЫЙ ЛОГ СТЕНДА (TIMAERT_FIGHT_LOG) — снести после
+            // вердикта владельца (§5 п.10).
+            static const bool kFightLog =
+                std::getenv("TIMAERT_FIGHT_LOG") != nullptr;
+            if (kFightLog && fightingWas != 0 && rt.fighting == 0)
+                std::fprintf(stderr,
+                             "[fight] сквад ord=%u slot=%u type=%u УСПОКОИЛСЯ "
+                             "(срок угас)\n",
+                             st.spawnId[slot].index, unsigned(slot),
+                             unsigned(kind.type));
+        }
 
         if (kind.type >= std::uint16_t(NPCType::Count)) continue;
         // A battle earlier in this very sweep may have killed this squad —
