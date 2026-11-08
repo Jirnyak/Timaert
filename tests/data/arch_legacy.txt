@@ -108,3 +108,86 @@ minus	src/bus/anketa.h	p.hp -= a.costHp;
 minus	src/bus/anketa.h	p.mp -= a.costMp;
 minus	src/bus/anketa.h	p.sp -= a.costSp;
 recovery	src/app/smoke.cpp	if (auto* c = sm::sub::slot_combat(objs, av)) c->recoverySteps = 0u;
+#
+# ── ДОБАВЛЕНО 2026-11-08 РЕВИЗИЕЙ МЕРЫ R7 (наряд M-429 п.4) ─────────────
+# Список вырос на 56 строк, и это НЕ рост долга: долг был тот же, его не
+# ВИДЕЛИ. Три дыры меры закрыты разом, и каждая прибавка названа числом:
+#   · ключ дедуплицировался по ТЕКСТУ строки в одном файле (48 сайтов R7
+#     против 45 ключей), значит четвёртая копия белой строки вошла бы
+#     молча. Теперь ключ несёт номер повтора, суффикс `#N` у второго и
+#     дальше, у первого ключ прежний → +6 строк;
+#   · охват был 4 каталога из 11. Расширен на ВСЕ слои симуляции
+#     (`core`, `ecs`, `events`, `content`) — тот же довод, которым сюда
+#     вошли `bus` и `tables`: переезд в соседний слой уводил сайт из-под
+#     прибора, и счёт однажды упал «46 → 41 ПЕРЕЕЗДОМ, а не лечением» →
+#     +4 строки, все в `src/content` (в `core`, `ecs`, `events` голого
+#     вычитания нет вовсе). `app`, `ui`, `gpu` НЕ входят: закон про
+#     беззнаковую величину СИМУЛЯЦИИ, а это склейка, представление и
+#     рендер;
+#   · `--` не судился вовсе, хотя `x--` есть `x -= 1` и роняет
+#     беззнаковую в потолок типа так же молча → правило `decr`, +46 строк.
+#
+# ЧЕГО ЗДЕСЬ НЕТ И ПОЧЕМУ, НАЗВАНО ЧИСЛОМ: бинарное `a - b` закон тоже
+# называет, но в слоях симуляции его 1747 вхождений на 1515 строках.
+# Храповик на них сделал бы запись в этот список налогом на всякое
+# арифметическое выражение — прямо против §8 п.7 («прибор НИКОГДА не
+# должен мешать развитию»), — а отличить беззнаковую величину симуляции
+# от знаковой текстовая мера не умеет по построению (это сказано в шапке
+# правила про сам `-=`). Дыра названа вслух и оставлена открытой
+# СОЗНАТЕЛЬНО: молчаливый обрез охвата читался бы как «покрыто всё».
+decr	src/macro/chronicle.cpp	for (std::uint32_t seq = c.nextSeq; seq-- > oldest && offered < limit; ) {
+decr	src/macro/chronicle.cpp	while (n-- > 0 && len < cap - 1) out[len++] = tmp[n];
+minus	src/macro/currency.h	left -= take * d.value;	#2
+decr	src/macro/deal.cpp	if (r == 0) --i;
+decr	src/macro/language.cpp	for (int i = n - 1; i > 0; --i) {
+decr	src/macro/nav_field.cpp	for (std::size_t i = chain.size(); i-- > 0;) {
+decr	src/macro/npc_ai.cpp	--b)
+decr	src/macro/npc_ai.cpp	if (pick-- != 0) return;
+decr	src/macro/npc_ai.cpp	if (pick-- != 0) return;	#2
+decr	src/macro/resource_field.h	else if (was != 0 && v == 0) { --liveCells; stamp(x, y, -1); }
+decr	src/macro/resource_field.h	else if (c > 0u) --c;
+decr	src/macro/settlement_score.cpp	for (int k = kFieldsPerVillage - 1; k > slot; --k)
+decr	src/macro/spawners.cpp	for (int k = last; k > at; --k) best[k] = best[k - 1];
+decr	src/macro/tasks.cpp	needs[pick] = needs[--needCount]; // без повтора той же строки
+decr	src/macro/tasks.cpp	prey[pick] = prey[--preyCount];
+decr	src/macro/tasks.cpp	sights[pick] = sights[--sightCount];
+decr	src/macro/upkeep_window.h	while (dying-- > 0 && !creatures_empty(store)) {
+decr	src/macro/upkeep_window.h	while (walkers-- > 0 && !creatures_empty(store)) {
+decr	src/macro/world_tick.cpp	--runtime.pendingDailyTicks;
+minus	src/sub/ai.cpp	a.aiTimer -= dt;	#2
+decr	src/sub/course.cpp	--live;
+decr	src/sub/engine.cpp	if (debugIntentSteps_ > 0) --debugIntentSteps_;
+decr	src/sub/gens/kit/growth.cpp	for (int gy = H - 1; gy >= 0; --gy) {
+decr	src/sub/gens/kit/growth.cpp	for (int gx = W - 1; gx >= 0; --gx) {
+decr	src/sub/gens/kit/plots.cpp	if (quota > 0) --quota;
+decr	src/sub/gens/road.cpp	for (int i = chords - 1; i >= 0; --i) {
+decr	src/sub/height.cpp	for (int srcY = copyH - 1; srcY >= 0; --srcY)
+minus	src/sub/material.h	n -= std::floor(n);	#2
+decr	src/sub/movement.cpp	for (int cy = f.rows - 1; cy >= 0; --cy) {
+decr	src/sub/movement.cpp	for (int cx = f.cols - 1; cx >= 0; --cx) {
+decr	src/sub/objects.h	--count;
+decr	src/sub/particles.cpp	pool_[i] = pool_[--count_];
+decr	src/sub/particles.cpp	pool_[i] = pool_[--count_];	#2
+decr	src/sub/seamless_manager.cpp	for (int srcY = copyH - 1; srcY >= 0; --srcY) {
+decr	src/sub/seamless_manager.cpp	--activeSmoothJobs_;
+decr	src/sub/seamless_manager.cpp	--activeGenerationJobs_;
+decr	src/sub/seamless_manager.cpp	while (remaining-- > 0 && installed < maxJobs) {
+decr	src/sub/seamless_manager.cpp	while (remaining-- > 0 && applied < maxJobs) {
+decr	src/sub/spawn.cpp	--budget;
+decr	src/bus/anketa.h	--first;
+decr	src/bus/interests.h	for (int i = interests_count(r) - 1; i >= 0; --i) {
+decr	src/bus/interests.h	if (--r.slots[i].term != 0) continue;
+decr	src/bus/store.h	for (std::uint32_t i = s.ordCount; i > lo; --i) {
+decr	src/bus/store.h	const std::uint16_t slot = s.freeSlots[--s.freeCount];
+decr	src/bus/store.h	--s.ordCount;
+decr	src/bus/store.h	--s.aliveCount;
+decr	src/bus/world_row.h	for (int i = kMaxInventorySlots - 1; i >= first; --i) {
+decr	src/bus/world_row.h	for (int i = kMaxInventorySlots - 1; i >= first; --i) {	#2
+decr	src/bus/world_row.h	--slot_;
+decr	src/tables/movement_cost.h	for (int sp = from - 1; sp >= pools.sp; --sp) lost += exhaustion_bite(sp);
+decr	src/events/event_bus.cpp	if (subscriptionCount_ > 0u) --subscriptionCount_;
+minus	src/content/spells/spell_book.cpp	sb.sustainedDrainCarry -= float(drain);
+minus	src/content/spells/spell_book.cpp	combat.mp -= drain;
+decr	src/content/spells/spell_book.cpp	for (int i = kSpellCount; i-- > 0 && remainingDrain > 0; ) {
+minus	src/content/spells/spell_book.cpp	remainingDrain -= spellDrain;
+minus	src/content/spells/spell_book.cpp	remainingMp -= spellDrain;

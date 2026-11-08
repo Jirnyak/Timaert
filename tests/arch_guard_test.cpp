@@ -74,6 +74,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <set>
 #include <sstream>
 #include <string>
@@ -179,10 +180,22 @@ struct Site {
     std::string file;
     std::string text;
     int line = 0;       // только для печати; в ключ НЕ входит
+    // Порядковый номер ПОВТОРА этой же строки в этом же файле (0 = первый).
+    int dup = 0;
 };
 
+// КЛЮЧ НЕСЁТ ПОРЯДКОВЫЙ НОМЕР ПОВТОРА, И ЭТО ЗАКРЫВАЕТ ТИХУЮ ДЫРУ МЕРЫ.
+// Ключ был `правило + файл + ТЕКСТ СТРОКИ`, то есть ДВЕ одинаковые строки в
+// одном файле давали ОДИН ключ: замер 2026-11-08 — 48 сайтов R7 против 45
+// ключей, значит три повтора уже схлопывались, а ЧЕТВЁРТАЯ копия белой строки
+// вошла бы в дерево МОЛЧА, не тронув ни `unlisted`, ни `stale`. Номер повтора
+// это чинит, не ломая список: у ПЕРВОГО вхождения ключ в точности прежний,
+// суффикс получают только второе и дальше, поэтому растут ровно те строки,
+// которые прежде были невидимы. Номер строки в ключ не годится: он сдвигается
+// от любой правки выше, и список churn'ился бы на каждый коммит.
 std::string key_of(const Site& s) {
-    return s.rule + "\t" + s.file + "\t" + s.text;
+    const std::string base = s.rule + "\t" + s.file + "\t" + s.text;
+    return s.dup == 0 ? base : base + "\t#" + std::to_string(s.dup + 1);
 }
 
 // ── R1: КОНТУР НА МЕСТЕ ───────────────────────────────────────────────────
@@ -524,11 +537,39 @@ bool line_has_bare_minus_assign(const std::string& line) {
     return false;
 }
 
+// `--` ТОЙ ЖЕ МЕРОЙ, ЧТО `-=`: декремент есть вычитание единицы, и над
+// беззнаковой величиной симуляции он роняет её в потолок типа так же молча.
+// Отсекается `a - -b` и стрелка `->`; комментарии срезаются, как у соседа.
+bool line_has_bare_decrement(const std::string& line) {
+    std::string code = line;
+    const std::size_t comment = code.find("//");
+    if (comment != std::string::npos) code.resize(comment);
+    for (std::size_t i = 0; i + 1 < code.size(); ++i) {
+        if (code[i] != '-' || code[i + 1] != '-') continue;
+        if (i > 0 && (code[i - 1] == '-' || code[i - 1] == '<')) continue;
+        if (i + 2 < code.size() && code[i + 2] == '=') continue;
+        return true;
+    }
+    return false;
+}
+
 void collect_minus(std::vector<Site>& out) {
+    // ОХВАТ — ВСЕ СЛОИ СИМУЛЯЦИИ, А НЕ ЧЕТЫРЕ ИЗ НИХ. Файл выше сам записал,
+    // чем кончается узкий охват: переезд в нейтральный слой увёл пять сайтов
+    // из-под прибора и счёт упал «46 → 41 ПЕРЕЕЗДОМ, а не лечением». Та же
+    // дыра оставалась открытой на `core/ecs/events/content`, и закрыть её
+    // стоило ЧЕТЫРЕ сайта (все в `src/content`): в `core`, `ecs` и `events`
+    // голого вычитания нет вовсе. `src/app`, `src/ui` и `src/gpu` НЕ входят
+    // и входить не должны — закон про «беззнаковую величину СИМУЛЯЦИИ», а это
+    // склейка приложения, представление и рендер (ЗАКОН ТУПИКА РЕНДЕРА).
     for (std::string_view top : {std::string_view("src/macro"),
                                  std::string_view("src/sub"),
                                  std::string_view("src/bus"),
-                                 std::string_view("src/tables")}) {
+                                 std::string_view("src/tables"),
+                                 std::string_view("src/core"),
+                                 std::string_view("src/ecs"),
+                                 std::string_view("src/events"),
+                                 std::string_view("src/content")}) {
         const fs::path dir = fs::path(kRoot) / fs::path(top);
         if (!fs::is_directory(dir)) continue;
         std::vector<fs::path> files;
@@ -542,12 +583,25 @@ void collect_minus(std::vector<Site>& out) {
             const std::string rel =
                 fs::relative(p, fs::path(kRoot)).generic_string();
             const std::vector<std::string> lines = split_lines(read_file(p));
+            // Счётчик повторов — на ФАЙЛ: одинаковая строка, встреченная
+            // второй раз, получает свой ключ вместо того, чтобы слиться с
+            // первой (см. key_of).
+            std::map<std::string, int> seenInFile;
             for (std::size_t n = 0; n < lines.size(); ++n) {
-                if (!line_has_bare_minus_assign(lines[n])) continue;
-                // Ключ — файл + СТРОКА ДОСЛОВНО: перевод одного сайта на
-                // дверь топит ровно его строку, не весь файл.
-                out.push_back({"minus", rel, collapse(lines[n]),
-                               int(n) + 1});
+                const bool assign = line_has_bare_minus_assign(lines[n]);
+                // `x--` ЕСТЬ `x -= 1`, И ЗАКОН ТОТ ЖЕ: `uint16 n = 0; n--`
+                // кладёт 65535 так же молча, как `n -= 1`. Правило своё,
+                // чтобы ключи двух родов не сливались, а долг был виден
+                // врозь.
+                const bool decr = !assign && line_has_bare_decrement(lines[n]);
+                if (!assign && !decr) continue;
+                const char* rule = assign ? "minus" : "decr";
+                const std::string text = collapse(lines[n]);
+                // Ключ — файл + СТРОКА ДОСЛОВНО (+ номер повтора): перевод
+                // одного сайта на дверь топит ровно его строку, не весь файл.
+                const std::string k = std::string(rule) + "\t" + text;
+                out.push_back({rule, rel, text, int(n) + 1,
+                               seenInFile[k]++});
             }
         }
     }
@@ -760,6 +814,19 @@ bool starts_new_unit(const std::string& t) {
     return i > 0 && i + 1 < t.size() && t[i] == '.' && t[i + 1] == ' ';
 }
 
+// МУТАЦИЯ → ИСХОД для меры R7 (ревизия 2026-11-08, M-429 п.4):
+//   S1  третья копия УЖЕ БЕЛОЙ строки в том же файле  → КРАСНЫЙ: «НОВОЕ
+//       (`left -= take * d.value;` в currency.h)        НАРУШЕНИЕ [minus]
+//                                                       currency.h:204».
+//                                                       ПРЕЖНЯЯ мера молчала
+//                                                       по построению: ключ
+//                                                       дедуплицировался по
+//                                                       тексту (48 сайтов → 45
+//                                                       ключей)
+//   S2  голое `--` в `src/app`                        → ЗЕЛЁНЫЙ 64/64: охват
+//       (вне охвата СОЗНАТЕЛЬНО)                        назван и держится, а не
+//                                                       расползается молча
+//
 // МУТАЦИЯ → ИСХОД для контроля границы единицы:
 //   R1  снять `flush()` на начале новой единицы   → КРАСНЫЙ: «два безадресных
 //       (петля слепляет соседние пункты)            пункта подряд — ДВА сайта»
