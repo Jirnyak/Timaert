@@ -23,13 +23,13 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include "core/math.h"   // kPi/kTwoPi — одно написание на мир
 
 using namespace sm;
 using namespace sm::sub;
 
 namespace {
 
-constexpr float kTwoPi = 6.28318530718f;
 
 // The angular resolution of every claim below: eight sectors of 45°, which is
 // what "a whole quadrant stood empty" was measured in.

@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <iostream>
 #include <vector>
+#include "core/math.h"   // kPi/kTwoPi — одно написание на мир
 
 namespace {
 
@@ -671,7 +672,7 @@ int main() {
         const float ringR = kSpireTowerRadiusTiles - wallHalf;
         int uncovered = 0;
         for (int k = 0; k < 256; ++k) {
-            const float a = float(k) * 6.2831853f / 256.0f;
+            const float a = float(k) * kTwoPi / 256.0f;
             const float px = float(center) + std::cos(a) * ringR;
             const float py = float(center) + std::sin(a) * ringR;
             bool covered = false;
@@ -704,7 +705,7 @@ int main() {
         }
         int holes = 0;
         for (int k = 0; k < 256; ++k) {
-            const float a = float(k) * 6.2831853f / 256.0f;
+            const float a = float(k) * kTwoPi / 256.0f;
             const float px = float(center) + std::cos(a) * ringR;
             const float py = float(center) + std::sin(a) * ringR;
             bool covered = false;

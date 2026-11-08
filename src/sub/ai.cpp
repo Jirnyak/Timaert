@@ -8,6 +8,7 @@
                          // читается шовной слот-дверью зеркала
 #include <cmath>
 #include <algorithm>
+#include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
 namespace sm::sub {
 
@@ -110,7 +111,7 @@ void tick_npc_ai(SubObjects& objs, MacroStore* st,
                 if (rng.next_f01() < 0.40f) {
                     a.wantVx = a.wantVy = 0.0f;
                 } else {
-                    float ang = rng.next_f01() * 6.2831853f;
+                    float ang = rng.next_f01() * kTwoPi;
                     a.wantVx = std::cos(ang) * a.wanderSpeed;
                     a.wantVy = std::sin(ang) * a.wanderSpeed;
                 }
@@ -148,7 +149,7 @@ void tick_npc_ai(SubObjects& objs, MacroStore* st,
                     if (rng.next_f01() < 0.40f) {
                         a.wantVx = a.wantVy = 0.0f;
                     } else {
-                        float ang = rng.next_f01() * 6.2831853f;
+                        float ang = rng.next_f01() * kTwoPi;
                         a.wantVx = std::cos(ang) * a.wanderSpeed;
                         a.wantVy = std::sin(ang) * a.wanderSpeed;
                     }

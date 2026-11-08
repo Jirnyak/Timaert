@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
 namespace sm {
 
@@ -69,7 +70,7 @@ PlateMap make_plates(int side, std::uint32_t seed) {
             PlateRow& row = map.rows[std::size_t(gy) * std::size_t(L) + std::size_t(gx)];
             row.u = (float(gx) + jx) / float(L);
             row.v = (float(gy) + jy) / float(L);
-            row.drift = dr * 6.2831853f;   // полный оборот
+            row.drift = dr * kTwoPi;   // полный оборот
             // АВТОРСКИЙ СТОЛБЕЦ ПУСТ, И ЭТО ЗНАЧЕНИЕ: «дизайнер не прислал»
             // тождественно «прислал ровно серое» (см. шапку заголовка).
             row.levelBias = 0.0f;

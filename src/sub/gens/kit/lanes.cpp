@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
 namespace sm::sub::kit {
 
@@ -155,7 +156,7 @@ LaneNet grow_lanes(SubworldMapData& out, const Outline& area, float wallInset,
     // would otherwise grow entirely on one side of its own square.
     for (int i = 0; i < plan.heartSpokes; ++i) {
         const float a = (float(i) / float(std::max(1, plan.heartSpokes)))
-                      * 6.28318530718f + r.next_f01() * 0.4f;
+                      * kTwoPi + r.next_f01() * 0.4f;
         const float sx = heartX + std::cos(a) * plan.heartRadius;
         const float sy = heartY + std::sin(a) * plan.heartRadius;
         // The mouth of the street is joined to the square by its own first

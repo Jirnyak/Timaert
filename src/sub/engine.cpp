@@ -69,6 +69,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <utility>
+#include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
 namespace sm::sub {
 
@@ -3003,7 +3004,7 @@ void SubworldEngine::tick_damage_fx() {
                        MarkType::Pool);
             constexpr int kSplats = 6; // ref: 3 + goreLevel*3, goreLevel 1
             for (int i = 0; i < kSplats; ++i) {
-                const float ang = (float(i) / kSplats) * 6.28318531f
+                const float ang = (float(i) / kSplats) * kTwoPi
                                   + (stampRng_.next_f01() - 0.5f) * 1.2f;
                 const float dist = 0.3f + stampRng_.next_f01() * 1.1f;
                 const float rad = 0.18f + stampRng_.next_f01() * 0.08f;
@@ -3242,7 +3243,7 @@ void SubworldEngine::place_body_ring(Rng& rng, float& fx, float& fy) const {
     const bool tilesUsable =
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
     for (int attempt = 0; attempt < kRingAttempts; ++attempt) {
-        const float angle = rng.next_f01() * 6.2831853f;
+        const float angle = rng.next_f01() * kTwoPi;
         const float radius = kRingRadiusMin + rng.next_f01() * kRingRadiusSpread;
         fx = std::clamp(playerX_ + std::cos(angle) * radius,
                         1.0f, float(kFullSize - 2));

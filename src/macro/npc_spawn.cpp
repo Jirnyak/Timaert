@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
+#include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
 namespace sm {
 
@@ -290,7 +291,7 @@ void spawn_macro_npcs(GameState& gs, MacroStore& st,
         const std::uint16_t ref = cities[rng.next_u32() % nSet];
         const int rx = ecs::cell_x(st.cell[ref], gs.mapW);
         const int ry = ecs::cell_y(st.cell[ref], gs.mapW);
-        float angle = rng.next_f01() * 6.2831853f;
+        float angle = rng.next_f01() * kTwoPi;
         int dist  = 25 + int(rng.next_u32() % 35u);
         int cx = wrap_axis(rx + int(std::lround(std::cos(angle) * dist)), mw);
         int cy = wrap_axis(ry + int(std::lround(std::sin(angle) * dist)), mh);
@@ -306,7 +307,7 @@ void spawn_macro_npcs(GameState& gs, MacroStore& st,
         const std::uint16_t ref = cities[rng.next_u32() % nSet];
         const int rx = ecs::cell_x(st.cell[ref], gs.mapW);
         const int ry = ecs::cell_y(st.cell[ref], gs.mapW);
-        float angle = rng.next_f01() * 6.2831853f;
+        float angle = rng.next_f01() * kTwoPi;
         int dist  = 30 + int(rng.next_u32() % 40u);
         int cx = wrap_axis(rx + int(std::lround(std::cos(angle) * dist)), mw);
         int cy = wrap_axis(ry + int(std::lround(std::sin(angle) * dist)), mh);

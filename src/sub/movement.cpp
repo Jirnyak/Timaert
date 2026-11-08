@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+#include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
 namespace sm::sub {
 namespace {
@@ -34,7 +35,7 @@ inline std::uint32_t bucket_offset(int i, std::uint32_t span) {
 inline void tie_break_dir(int i, int j, float& dx, float& dy) {
     const std::uint32_t h =
         (std::uint32_t(i) * 2654435761u) ^ (std::uint32_t(j) * 2246822519u);
-    const float ang = float(h & 0xFFFFu) * (6.2831853f / 65536.0f);
+    const float ang = float(h & 0xFFFFu) * (kTwoPi / 65536.0f);
     dx = std::cos(ang);
     dy = std::sin(ang);
 }

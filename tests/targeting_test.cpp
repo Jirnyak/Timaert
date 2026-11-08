@@ -12,6 +12,7 @@
 #include "sub/targeting.h"
 
 #include <cmath>
+#include "core/math.h"   // kPi/kTwoPi — одно написание на мир
 
 using namespace sm;
 
@@ -30,7 +31,7 @@ static int make_enemy(sub::SubObjects& objs, float x, float y,
 
 // cos of a half-angle in degrees, for cone tests.
 static float cos_deg(float deg) {
-    return std::cos(deg * 3.14159265358979f / 180.0f);
+    return std::cos(deg * kPi / 180.0f);
 }
 
 // The forward argument is the normalised 3D look vector; the flat-ground

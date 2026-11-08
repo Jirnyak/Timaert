@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <memory>
 #include <vector>
+#include "core/math.h"   // kPi/kTwoPi — одно написание на мир
 
 namespace {
 
@@ -64,7 +65,7 @@ void build_scene(sm::sub::SubObjects& objs, int scenario) {
         break;
     case 1:                                   // blast
         for (int i = 0; i < 8; ++i) {         // inside the 12-unit sphere
-            const float a = float(i) * 0.7853982f;
+            const float a = float(i) * 0.25f * sm::kPi;
             add_body(objs, 500.0f + std::cos(a) * 8.0f,
                      500.0f + std::sin(a) * 8.0f, 1.0f + float(i % 3));
         }

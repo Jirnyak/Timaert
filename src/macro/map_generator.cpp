@@ -272,7 +272,7 @@ void synth_master(TerrainData& td, const LayerParameters& p, PlateMap& plates) {
             // and d/duy = π·sin(2π·uy) = 0 at both, so the profile closes
             // C¹-smooth across the wrap.
             const float latitude =
-                0.5f - 0.5f * std::cos(2.0f * 3.14159265358979f * uy);
+                0.5f - 0.5f * std::cos(2.0f * kPi * uy);
             const float noiseTemp = terrain_fbm(posX, posY, 3, 0.5f, 4.0f, seed + 300.0f) * 0.5f + 0.5f;
             float temp01 = latitude * (1.0f - p.temperatureVariation) + noiseTemp * p.temperatureVariation;
             temp01 = std::clamp(temp01, 0.0f, 1.0f);

@@ -47,6 +47,7 @@
 #include <cstdint>
 #include <memory>
 #include <vector>
+#include "core/math.h"   // kPi/kTwoPi — одно написание на мир
 
 // ЧИСЛО ПОЛЯ ФИЧ ПОД КЛЕТКОЙ СЛОТА — помощник ЭТОГО свидетеля, не дверь мира.
 // M-320 снёс `souls_flock`: она брала слот и тем утверждала, будто популяция
@@ -424,7 +425,7 @@ void test_roulette_is_red() {
     int violations = 0;
     while (darts.size() < 8) {
         // The old law, verbatim: a random angle, 4..14 cells, "is it land".
-        const float ang = rng.next_f01() * 6.2831853f;
+        const float ang = rng.next_f01() * kTwoPi;
         const int   dist = 4 + int(rng.next_u32() % 11u);
         const int   x = wrapi(c.x + int(std::cos(ang) * float(dist)), kW);
         const int   y = wrapi(c.y + int(std::sin(ang) * float(dist)), kH);

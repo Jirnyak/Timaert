@@ -27,6 +27,7 @@
 #include <limits>
 #include <queue>
 #include <vector>
+#include "core/math.h"   // kPi/kTwoPi — одно написание на мир
 
 using namespace sm;
 using namespace sm::sub;
@@ -327,7 +328,6 @@ void part_b_generated_city() {
     // closed curve that can enclose that area — 2√(πA), with equality only for
     // a perfect circle — so an organically grown ring is always longer than
     // this. Measured for pop 6000: 1838 tiles of chord against a floor of 1493.
-    constexpr float kPi = 3.14159265f;
     const int population = int(city.rooted.size);
     const float ringFloor =
         2.0f * std::sqrt(kPi * city_target_area(population));

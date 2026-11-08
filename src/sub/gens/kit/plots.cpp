@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
 namespace sm::sub::kit {
 
@@ -153,7 +154,7 @@ bool try_add_roadside_house(SubworldMapData& out, Rng& r,
         const float sizeRange = float(std::max(0, maxSize - minSize));
         const float w = float(minSize) + r.next_f01() * sizeRange;
         const float h = float(minSize) + r.next_f01() * sizeRange;
-        const float yaw = r.next_f01() * 3.14159265f;
+        const float yaw = r.next_f01() * kPi;
         // Ground somebody else has spoken for — the same discs the frontage
         // obeys, because a scatter house in a gateway's mouth blocks it just
         // as completely as a fronted one does.
@@ -297,7 +298,7 @@ int lay_backland_houses(SubworldMapData& out, Rng& r,
                     + r.next_f01() * (plan.heightMax - plan.heightMin);
                 // A free lean: a cottage on the backlands answers to no
                 // street, so nothing decides which way it faces but the ground.
-                const float yaw = r.next_f01() * 3.14159265f;
+                const float yaw = r.next_f01() * kPi;
                 if (add_house_obb(out, float(x), float(y), w * 0.5f, d * 0.5f,
                                   yaw, height, /*requireClear=*/true)) {
                     ++placed;

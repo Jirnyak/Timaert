@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
 namespace sm::sub {
 
@@ -84,15 +85,15 @@ void gen_dungeon_spire_tower(const CellContext& ctx, SubworldMapData& out) {
     // segment keeps the grid agreeing with the collision index.
     const float ringR = r + wallHalf;
     const float halfChord =
-        ringR * std::sin(3.14159265f / float(kWallSegments)) + wallHalf;
+        ringR * std::sin(kPi / float(kWallSegments)) + wallHalf;
     for (int s = 0; s < kWallSegments; ++s) {
-        const float a = (float(s) + 0.5f) * 2.0f * 3.14159265f
+        const float a = (float(s) + 0.5f) * 2.0f * kPi
                       / float(kWallSegments);
         Structure seg{};
         seg.kind = Structure::Wall;
         seg.x = room.cx + std::cos(a) * ringR;
         seg.y = room.cy + std::sin(a) * ringR;
-        seg.yaw = a + 3.14159265f / 2.0f; // tangent to the circle
+        seg.yaw = a + kPi / 2.0f; // tangent to the circle
         seg.hx = halfChord;
         seg.hy = wallHalf;
         seg.radius = seg.hx;

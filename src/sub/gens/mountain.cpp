@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstdint>
 #include <vector>
+#include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
 namespace sm::sub {
 // The kit is this module's vocabulary — primitives, never a sibling module.
@@ -55,7 +56,7 @@ static void scatter_cave_mouths(SubworldMapData& out, const CellContext& ctx) {
         m.hy = m.hx * (0.4f + r.next_f01() * 0.3f);
         m.radius = m.hx;
         m.height = structure_min_height(Structure::CaveMouth);
-        m.yaw = r.next_f01() * 3.14159265f;
+        m.yaw = r.next_f01() * kPi;
         m.tag = std::uint16_t(placed);
         out.structures.push_back(m);
         ++placed;

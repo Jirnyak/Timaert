@@ -22,6 +22,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
 namespace sm::sub {
 // The kit is this module's vocabulary — primitives, never a sibling module.
@@ -76,7 +77,7 @@ void gen_village(const GenInput& in, SubworldMapData& out) {
     // A walled village with no road neighbour still needs one way out to its
     // own fields — otherwise the ring finds no paving and closes solid.
     if (walled && !axes.anchored) {
-        const float ang = float(ctx.seed & 0xFFFFu) / 65535.0f * 6.2831853f;
+        const float ang = float(ctx.seed & 0xFFFFu) / 65535.0f * kTwoPi;
         const float reach = area.at(ang) + palisadeH;
         carve_organic_road(out, centre, centre,
                            int(std::floor(cf + std::cos(ang) * reach)),
@@ -105,9 +106,9 @@ void gen_village(const GenInput& in, SubworldMapData& out) {
     // off toward a neighbour nobody built a road to ("into the void").
     {
         const int spokes = std::clamp(4 + population / 40, 4, 8);
-        const float base = float(ctx.seed & 0xFFFFu) / 65535.0f * 6.2831853f;
+        const float base = float(ctx.seed & 0xFFFFu) / 65535.0f * kTwoPi;
         for (int i = 0; i < spokes; ++i) {
-            const float a = base + (float(i) / float(spokes)) * 6.2831853f;
+            const float a = base + (float(i) / float(spokes)) * kTwoPi;
             const float reach = std::max(20.0f, settleR * 0.95f);
             const int ex = int(std::floor(cf + std::cos(a) * reach));
             const int ey = int(std::floor(cf + std::sin(a) * reach));
@@ -143,7 +144,7 @@ void gen_village(const GenInput& in, SubworldMapData& out) {
     std::array<int, 40> fieldY{};
     int fields = 0;
     for (int attempt = 0; fields < targetFields && attempt < targetFields * 25; ++attempt) {
-        const float a = rBuild.next_f01() * 6.2831853f;
+        const float a = rBuild.next_f01() * kTwoPi;
         const float inner = area.at(a) + berm;
         const float d = inner + rBuild.next_f01() * std::max(1.0f, belt);
         const int fw = 8 + int(rBuild.next_u32() % 13u);
@@ -170,7 +171,7 @@ void gen_village(const GenInput& in, SubworldMapData& out) {
             float bestGap = 7.0f;
             for (int g = 0; g < gateCount; ++g) {
                 float gap = std::fabs(gates[std::size_t(g)].angle - want);
-                if (gap > 3.14159265f) gap = 6.2831853f - gap;
+                if (gap > kPi) gap = kTwoPi - gap;
                 if (gap < bestGap) { bestGap = gap; best = g; }
             }
             sx = int(gates[std::size_t(best)].x);

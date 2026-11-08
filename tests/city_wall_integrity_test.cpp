@@ -41,13 +41,13 @@
 #include <cstdint>
 #include <cstdio>
 #include <vector>
+#include "core/math.h"   // kPi/kTwoPi — одно написание на мир
 
 using namespace sm;
 using namespace sm::sub;
 
 namespace {
 
-constexpr float kTwoPi = 6.28318530718f;
 
 struct Town {
     SubworldMapData map;
@@ -259,7 +259,6 @@ void check_town(const char* what, SquadType kind, std::uint32_t seed,
     // 400-soul village (floor 441). The literal it replaces was `> 200`, which
     // a town twenty times too small would still have passed (M-132).
     const int wallTiles = count_tiles(t, TILE_WALL);
-    constexpr float kPi = 3.14159265f;
     const float enclosed =
         kind == SquadType::City
             ? city_target_area(population)

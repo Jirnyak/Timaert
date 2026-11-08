@@ -35,6 +35,7 @@
 #include <cmath>
 #include <cstdint>
 #include <vector>
+#include "core/math.h"   // kPi/kTwoPi — одно написание на мир
 
 using namespace sm;
 using namespace sm::sub;
@@ -244,7 +245,7 @@ void test_every_storey_of_every_tier() {
             const float wallHalf = structure_min_half_xy(Structure::Wall);
             int samples = 0, uncovered = 0;
             for (int k = 0; k < 128; ++k) {
-                const float a = float(k) * 6.2831853f / 128.0f;
+                const float a = float(k) * kTwoPi / 128.0f;
                 const float px = room.cx + std::cos(a) * (room.hx + wallHalf);
                 const float py = room.cy + std::sin(a) * (room.hx + wallHalf);
                 ++samples;
@@ -288,7 +289,7 @@ void test_seal_detector_sees_a_hole() {
     const float wallHalf = structure_min_half_xy(Structure::Wall);
     int uncovered = 0;
     for (int k = 0; k < 128; ++k) {
-        const float a = float(k) * 6.2831853f / 128.0f;
+        const float a = float(k) * kTwoPi / 128.0f;
         uncovered += covered_by_ground_solid(
                          map, room.cx + std::cos(a) * (room.hx + wallHalf),
                          room.cy + std::sin(a) * (room.hx + wallHalf))

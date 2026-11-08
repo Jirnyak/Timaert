@@ -39,8 +39,6 @@
 
 namespace
 {
-    constexpr float kPi = 3.14159265358979f;
-    constexpr float kTau = 6.28318530717959f;
 
     // ── Headless visual-capture helpers (opt-in; default run is unchanged) ──
     // A point-light billboard proof needs to be LOOKED at, but the shipping game
@@ -1386,8 +1384,8 @@ int main(int, char**)
                     // read as a spray, not a ring.
                     const float u = (static_cast<float>(i) + 0.5f)
                                     / static_cast<float>(s.n);
-                    const float ph = u * kTau * 2.0f + s.ox;      // azimuth churn
-                    const float el = (u - 0.5f) * 3.14159265f;    // -π/2..π/2
+                    const float ph = u * sm::kTwoPi * 2.0f + s.ox;      // azimuth churn
+                    const float el = (u - 0.5f) * sm::kPi;    // -π/2..π/2
                     const float t = u;                            // fake age 0..1
                     const float rad = 0.12f + t * s.spd * 0.14f;  // flung outward
                     ParticleInstanceGpu p{};
@@ -1441,7 +1439,7 @@ int main(int, char**)
                 const float sz = 0.30f - t * 0.16f;
                 const float a = 0.90f - t * 0.55f;
                 for (int i = 0; i < n; ++i) {
-                    const float ph = (static_cast<float>(i) / float(n)) * kTau
+                    const float ph = (static_cast<float>(i) / float(n)) * sm::kTwoPi
                                      + float(ring) * 0.6f;
                     ParticleInstanceGpu p{};
                     p.px = cx + std::cos(ph) * rad;
@@ -1471,7 +1469,7 @@ int main(int, char**)
                 const float g = 0.35f + (1.0f - t) * 0.55f;
                 const float b = 0.10f + (1.0f - t) * 0.45f;
                 for (int i = 0; i < n; ++i) {
-                    const float ph = (static_cast<float>(i) / float(n)) * kTau
+                    const float ph = (static_cast<float>(i) / float(n)) * sm::kTwoPi
                                      + float(ring) * 0.6f;
                     ParticleInstanceGpu p{};
                     p.px = cx + std::cos(ph) * rad;
@@ -1601,7 +1599,7 @@ int main(int, char**)
             sm::mat4 view = sm::mat4_lookAt(eye, center, worldUp);
             float aspect = static_cast<float>(ext.width)
                            / static_cast<float>(ext.height);
-            const float fov = 60.0f * kPi / 180.0f;
+            const float fov = 60.0f * sm::kPi / 180.0f;
             sm::mat4 proj = vk_perspective(fov, aspect, 0.1f, 100.0f);
             sm::mat4 mvp = sm::mat4_mul(proj, view);
 

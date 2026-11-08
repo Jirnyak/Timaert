@@ -117,6 +117,7 @@ static void smoke_give_visual(sm::sub::SubObjects& objs, int s,
 #include "bus/world_row.h"   // creatures_push_stack — предусловие ростера (Б8)
 #include "macro/delta_apply.h"   // дверь границы тика — её же зовёт прибор капа
 #include <bit>
+#include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
 namespace sm::app {
 
@@ -5789,7 +5790,7 @@ bool run_subworld_player_bow_smoke(App& app) {
     // ни один фиксированный курс: надеяться на везение сида и значит писать
     // красный смоук, который краснеет не от дефекта.
     for (int h = 0; h < 8 && !lineFound; ++h) {
-        const float a = float(h) * 0.78539816f;   // 2π/8
+        const float a = float(h) * 0.25f * kPi;   // 2π/8
         const float cx = px + std::cos(a) * shotRange;
         const float cy = py + std::sin(a) * shotRange;
         if (cx < 2.0f || cy < 2.0f
@@ -8238,14 +8239,14 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // from the current angles so it is exact regardless of the enter
             // default. Harness only; normal play is unaffected.
             if (const char* yy = std::getenv("TIMAERT_SMOKE_YAW")) {
-                const float target = float(std::atof(yy)) * 0.01745329252f;
+                const float target = float(std::atof(yy)) * kPi / 180.0f;
                 app.subworld.rotate_camera(target - app.subworld.cam_yaw(), 0.0f);
                 std::fprintf(stderr, "[smoke] force yaw -> %.1f deg\n",
                              std::atof(yy));
                 std::fflush(stderr);
             }
             if (const char* pp = std::getenv("TIMAERT_SMOKE_PITCH")) {
-                const float target = float(std::atof(pp)) * 0.01745329252f;
+                const float target = float(std::atof(pp)) * kPi / 180.0f;
                 app.subworld.rotate_camera(0.0f,
                                            target - app.subworld.cam_pitch());
                 std::fprintf(stderr, "[smoke] force pitch -> %.1f deg\n",
@@ -10976,7 +10977,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // kept (the creature is straight ahead along it). TIMAERT_SMOKE_PITCH
             // still wins if the caller set one — only override when unset.
             if (!std::getenv("TIMAERT_SMOKE_PITCH")) {
-                const float wantPitch = -18.0f * 0.01745329252f;
+                const float wantPitch = -18.0f * kPi / 180.0f;
                 app.subworld.rotate_camera(0.0f,
                                            wantPitch - app.subworld.cam_pitch());
             }

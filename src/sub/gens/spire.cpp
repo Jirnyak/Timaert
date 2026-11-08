@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstdint>
 #include <vector>
+#include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
 namespace sm::sub {
 // The kit is this module's vocabulary — primitives, never a sibling module.
@@ -155,16 +156,16 @@ void gen_spire(const GenInput& in, SubworldMapData& out) {
         const float wallHalf = structure_min_half_xy(Structure::Wall);
         const float ringR = kSpireTowerRadiusTiles - wallHalf;
         const float halfChord =
-            ringR * std::sin(3.14159265f / float(kCrownParapetSegments))
+            ringR * std::sin(kPi / float(kCrownParapetSegments))
             + wallHalf;
         for (int s = 0; s < kCrownParapetSegments; ++s) {
-            const float a = (float(s) + 0.5f) * 2.0f * 3.14159265f
+            const float a = (float(s) + 0.5f) * 2.0f * kPi
                           / float(kCrownParapetSegments);
             Structure seg{};
             seg.kind = Structure::Wall;
             seg.x = float(cx) + std::cos(a) * ringR;
             seg.y = float(cy) + std::sin(a) * ringR;
-            seg.yaw = a + 3.14159265f / 2.0f;   // tangent to the circle
+            seg.yaw = a + kPi / 2.0f;   // tangent to the circle
             seg.hx = halfChord;
             seg.hy = wallHalf;
             seg.radius = seg.hx;

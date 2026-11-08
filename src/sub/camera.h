@@ -17,7 +17,7 @@ namespace sm::sub {
 
 constexpr float kFovRad      = 1.309f;          // ≈ 75°
 constexpr float kFovDeg      = kFovRad * 57.29578f;
-constexpr float kMaxPitchRad = 1.04719755f;     // π/3
+constexpr float kMaxPitchRad = kPi / 3.0f;     // π/3
 // Vertical scale / eye height live in sub/height.h and the engine
 // (`kCameraEyeM`); the camera is seated by SubworldEngine::record_shadow
 // every frame, so pos here is just a pre-first-frame default.

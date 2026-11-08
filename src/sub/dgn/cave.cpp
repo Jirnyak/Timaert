@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstdint>
 #include <utility>
+#include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
 namespace sm::sub {
 
@@ -99,7 +100,7 @@ void carve_gallery(SubworldMapData& out, Rng& rng,
     const float sway = kGalleryHalf * (rng.next_f01() * 2.0f - 1.0f);
     for (int i = 0; i <= steps; ++i) {
         const float t = float(i) / float(steps);
-        const float bend = std::sin(t * 3.14159265f) * sway;
+        const float bend = std::sin(t * kPi) * sway;
         const float px = ax + dx * t - dy / len * bend;
         const float py = ay + dy * t + dx / len * bend;
         carve_disc(out, px, py, kGalleryHalf);
@@ -153,11 +154,11 @@ void gen_dungeon_cave(const CellContext& ctx, SubworldMapData& out) {
         + int(rng.next_u32() % std::uint32_t(kChambersMax - kChambersMin + 1));
     float lastX = mouth.cx;
     float lastY = mouth.cy;
-    float angle = rng.next_f01() * 6.2831853f;
+    float angle = rng.next_f01() * kTwoPi;
     for (int i = 0; i < chambers; ++i) {
         // Turn by up to a right angle each time: a cave meanders, it does not
         // zigzag on the spot and it does not run straight.
-        angle += (rng.next_f01() - 0.5f) * 3.14159265f;
+        angle += (rng.next_f01() - 0.5f) * kPi;
         const float half = kChamberMinHalf
             + rng.next_f01() * (kChamberMaxHalf - kChamberMinHalf);
         // Reach far enough that the galleries are worth walking, and clamp

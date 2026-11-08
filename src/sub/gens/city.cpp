@@ -39,6 +39,7 @@
 #include <cmath>
 #include <cstdint>
 #include <vector>
+#include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
 namespace sm::sub {
 // The kit is this module's vocabulary — primitives, never a sibling module.
@@ -196,7 +197,7 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     // The bearing is the cell's own coin, so the postern is where this town
     // put it and nowhere else.
     if (!axes.anchored) {
-        const float ang = float(ctx.seed & 0xFFFFu) / 65535.0f * 6.2831853f;
+        const float ang = float(ctx.seed & 0xFFFFu) / 65535.0f * kTwoPi;
         const float reach = rim.at(ang) + city_berm();
         carve_organic_road(out, centre, centre,
                            int(std::floor(cf + std::cos(ang) * reach)),
@@ -471,7 +472,7 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     std::array<int, 80> fieldY{};
     int fields = 0;
     for (int attempt = 0; fields < targetFields && attempt < targetFields * 18; ++attempt) {
-        const float a = rBuild.next_f01() * 6.2831853f;
+        const float a = rBuild.next_f01() * kTwoPi;
         const float inner = rim.at(a) + berm;
         const float outer = float(kCellSize) * 0.48f;
         const float d = inner + rBuild.next_f01() * std::max(1.0f, outer - inner);
@@ -502,7 +503,7 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
             float bestGap = 7.0f;   // larger than any angular gap (π)
             for (int g = 0; g < gateCount; ++g) {
                 float gap = std::fabs(gates[std::size_t(g)].angle - want);
-                if (gap > 3.14159265f) gap = 6.2831853f - gap;
+                if (gap > kPi) gap = kTwoPi - gap;
                 if (gap < bestGap) { bestGap = gap; best = g; }
             }
             carve_organic_road(out,

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
 namespace sm::sub {
 
@@ -83,7 +84,7 @@ void ParticleSystem::spawn_one(FxKind kind, const FxPreset& fx, vec3 p,
 
     // Random direction. spread=0 → tight hemisphere pointing up; spread=1 →
     // full sphere. Built from two angles so the distribution is smooth.
-    const float az = frand(rng_, 0.0f, 6.28318531f);
+    const float az = frand(rng_, 0.0f, kTwoPi);
     // Polar angle: cosTheta in [1-2*spread, 1] maps spread 0→straight up,
     // 1→whole sphere. Clamp so spread>0.5 still behaves.
     const float cosLo = 1.0f - 2.0f * fx.spread;

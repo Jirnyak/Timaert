@@ -38,6 +38,7 @@
 #include "sub/spawn.h"
 #include "sub/record.h"   // body_kind — род тела из колонки арены (кусок 1)
 #include "bus/store.h"
+#include "core/math.h"   // kPi/kTwoPi — одно написание на мир
 
 #include <array>
 #include <cmath>
@@ -46,7 +47,6 @@
 
 namespace {
 
-constexpr float kTwoPi = 6.28318530718f;
 
 // ── THE TWO LAWS THE OLD LITERALS STOOD IN FOR (M-132) ────────────────────
 //
@@ -154,9 +154,9 @@ std::array<float, kWallBins> outer_wall_profile(
             const float dx = float(x) + 0.5f - cx;
             const float dy = float(y) + 0.5f - cy;
             float a = std::atan2(dy, dx);
-            if (a < 0.0f) a += kTwoPi;
+            if (a < 0.0f) a += sm::kTwoPi;
             const std::size_t b =
-                std::size_t(int(a / kTwoPi * float(kWallBins)) % kWallBins);
+                std::size_t(int(a / sm::kTwoPi * float(kWallBins)) % kWallBins);
             const float d = std::sqrt(dx * dx + dy * dy);
             if (d > prof[b]) prof[b] = d;
         }
@@ -262,10 +262,10 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
         if (d > reach + 1.5f) ++s.outsideReach;
         if (d > radius * 0.5f) ++outerHalf;
         float a = std::atan2(dy, dx);
-        if (a < 0.0f) a += kTwoPi;
-        ++sector[std::size_t(int(a / kTwoPi * 8.0f) % 8)];
+        if (a < 0.0f) a += sm::kTwoPi;
+        ++sector[std::size_t(int(a / sm::kTwoPi * 8.0f) % 8)];
         const float wallHere =
-            wallProfile[std::size_t(int(a / kTwoPi * float(kWallBins))
+            wallProfile[std::size_t(int(a / sm::kTwoPi * float(kWallBins))
                                     % kWallBins)];
         if (wallHere > 0.0f && d > wallHere) ++s.outsideMasonry;
 
@@ -327,7 +327,6 @@ bool run_footprint_formula_parity() {
 // ground plus its market, at every population. This is the assertion the
 // radius formula could never make — density can no longer drift with size.
 bool city_density_holds() {
-    constexpr float kPi = 3.14159265f;
     for (int pop : {50, 200, 1000, 2000, 6000, 20000, 100000}) {
         const int houses = sm::sub::city_house_target(pop);
         if (houses <= 0) return false;
@@ -338,9 +337,9 @@ bool city_density_holds() {
         const float r = float(sm::sub::city_wall_radius(pop));
         const float cap = float(sm::sub::kCellSize) * 0.30f;
         if (r < cap - 0.5f) {
-            const float area = kPi * r * r;
+            const float area = sm::kPi * r * r;
             // Integer radius, so allow the rounding it costs.
-            if (std::fabs(area - want) > 2.0f * kPi * r + 4.0f) return false;
+            if (std::fabs(area - want) > 2.0f * sm::kPi * r + 4.0f) return false;
         }
     }
     return true;

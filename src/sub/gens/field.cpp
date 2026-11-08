@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstdint>
 #include <vector>
+#include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
 namespace sm::sub {
 // The kit is this module's vocabulary — primitives, never a sibling module.
@@ -97,7 +98,7 @@ static FieldFrame field_frame_at(float gx, float gy,
     FieldFrame f{};
     f.lane  = std::sqrt(second) - std::sqrt(best);
     f.theta = noise01(bi * 13 + 7, bj * 17 + 3, salt ^ 0xd153u)
-            * 3.14159265f;
+            * kPi;
     f.di = bi;
     f.dj = bj;
     const float cs = std::cos(f.theta);

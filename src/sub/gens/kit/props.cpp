@@ -3,6 +3,7 @@
 #include "core/rng.h"
 
 #include <cmath>
+#include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
 namespace sm::sub::kit {
 
@@ -80,7 +81,7 @@ void stamp_village_green(SubworldMapData& out, int center,
     Rng r(seed);
     // The well sits a few paces off the exact centre — a square with a hole
     // dead in the middle is a diagram, not a place.
-    const float ang = r.next_f01() * 6.2831853f;
+    const float ang = r.next_f01() * kTwoPi;
     const float off = 3.0f + r.next_f01() * 3.0f;
     Structure w{};
     w.kind = Structure::Well;
