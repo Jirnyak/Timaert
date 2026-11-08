@@ -27,6 +27,7 @@
 #include "macro/npc_spawn.h"
 #include "tables/biomes.h"
 #include "macro/features.h"
+#include "macro/feature_caption.h"   // подпись фичи ВЫВОДИТСЯ (M-433 п.1)
 #include "macro/map_generator.h"
 #include "macro/macro_night.h"   // ОДНА дверь «сколько сейчас ночи» (M-165)
 #include "ui/sprite_atlas.h"
@@ -71,31 +72,14 @@ inline bool on_screen(const ImVec2& p, int viewW, int viewH, float pad) {
 // mask, and a hard-coded 0.40 sea level at its call site. The one cascade is
 // map_generator.h biome_at_cell.)
 
-// БЕЗ `default:` ПО ЗАКОНУ СЛОВАРЯ п.4. Здесь стоял `default: return ""`,
-// а названы были ТРИ рода из восемнадцати — то есть пятнадцать (пашня, шесть
-// шахт, пастбище, лён и все пять поселений) рисовались пустой строкой, и
-// девятнадцатый род вошёл бы в ось МОЛЧА, потому что `default:` глушит
-// `-Wswitch`. Чинится ровно это: ось перечислена поимённо, и новая строка
-// краснит СБОРКУ здесь. То, что пятнадцати родам подпись не написана, —
-// отдельный вопрос КОНТЕНТА (колонки имени у `FeatureDef` нет вовсе), и он
-// вынесен в отчёт, а не решён молча выдумыванием пятнадцати слов.
-const char* feature_name(FeatureType f) {
-    switch (f) {
-        case FT_Road:       return "Road";
-        case FT_DirtRoad:   return "Dirt Road";
-        case FT_Bridge:     return "Bridge";
-        // ОСТАЛЬНЫЕ РОДА НАЗВАНЫ ПОИМЁННО И ПУСТОЙ СТРОКОЙ — СОЗНАТЕЛЬНО.
-        // Пусто здесь значит «подпись этому роду ещё не написана», и это
-        // вопрос КОНТЕНТА, а не меры; важно, что молчание стало ЯВНЫМ.
-        case FT_None: case FT_Field: case FT_Pasture:
-        case FT_FlaxField: case FT_ClayPit: case FT_Quarry:
-        case FT_CopperMine: case FT_IronMine: case FT_SilverMine:
-        case FT_GoldMine: case FT_Capital: case FT_City:
-        case FT_Village: case FT_Spire: case FT_Ruin:
-        case FT_Count:      return "";
-    }
-    return "";
-}
+// (ЗДЕСЬ ЖИЛА `feature_name` — switch по роду фичи, то есть СЛОВАРЬ,
+//  СПРЯТАННЫЙ В UI (ЗАКОН СТРОКИ КАТАЛОГА). Слово в нём имели ТРИ рода из
+//  восемнадцати, четырнадцать возвращали пустую строку поимённо, а
+//  девятнадцатый краснил бы сборку. Подпись стала ВЫВОДОМ из авторских
+//  колонок строки — `feature_caption@src/macro/feature_caption.h` (M-433 п.1,
+//  вердикт владельца «вывести из существующего контента»), и три слова лент
+//  переехали в свои строки колонкой `caption`. Нового слова не написано ни
+//  одного.)
 
 // The dot's colour is the row's own column (macro/npc.h kNpcMapColor) — the
 // switch that lived here was an if-chain over the registry (CANON S16).
@@ -318,7 +302,7 @@ void draw_macro_overlay(const MacroWorld& mw,
                 FeatureType f = features.at(cursor.hoverX, cursor.hoverY);
                 ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1), "%s",
                                    kBiomes[b].name);
-                const char* fn = feature_name(f);
+                const char* fn = feature_caption(f);
                 if (fn[0])
                     ImGui::TextColored(ImVec4(1.00f, 0.75f, 0.40f, 1), "%s", fn);
                 // Forest is a count class, not a feature: label it from the

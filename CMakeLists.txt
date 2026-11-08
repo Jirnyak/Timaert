@@ -1347,6 +1347,22 @@ timaert_test(subworld_sea_plane_test
 # so spawners.cpp now carries the registry chain (and macro state via the
 # macro_stock context envelope).
 
+# ПОДПИСЬ ФИЧИ ВЫВОДИТСЯ (M-433 п.1): свидетелю нужны все три источника вывода
+# — строка каталога предметов, строка существа и РЯД РЕЕСТРА (его таблица живёт
+# в macro_stock.cpp, а он тянет за собой летопись, лес и фауну).
+timaert_test(feature_caption_test
+    SOURCES
+        src/tables/items.cpp
+        src/macro/macro_stock.cpp
+        src/macro/chronicle.cpp
+        src/macro/tree_layer.cpp
+        src/macro/fauna.cpp
+        src/tables/fauna.cpp
+        # кап залежи — связность кластера жил (ряд Vein зовёт её из трёх своих
+        # законов: базовая, рост, запись)
+        src/macro/deposit_layer.cpp
+    LINK_SDL)
+
 timaert_test(feature_layer_parity_test
     SOURCES
         src/macro/spawners.cpp
