@@ -59,13 +59,14 @@ inline constexpr std::uint16_t kObjFlying        = 1u << 4; // Flying
 // ставит ТОЛЬКО дверь set_body_combat (record.h) — рассинхрон бита и
 // колонки невыразим второй дверью записи.
 inline constexpr std::uint16_t kObjHasCombat     = 1u << 5;
-// Кусок 3 — мозг и два ЛЕНИВЫХ состояния (бывшие компоненты-присутствия):
+// Кусок 3 — мозг и ЛЕНИВОЕ состояние (бывшая компонента-присутствие):
 // у мозга нуля-сентинела нет (Wander = 0 — законный род), бит ставит
-// дверь set_body_ai; «идёт домой» и «в воздухе» — состояния, что прежде
-// выражались самим наличием компоненты (GoingHome / Airborne), теперь —
-// бит + колонка, ставят/снимают только двери record.h.
+// дверь set_body_ai; «в воздухе» — состояние, что прежде выражалось самим
+// наличием компоненты (Airborne), теперь — бит + колонка, ставят/снимают
+// только двери. (Бит 1u << 7 — kObjGoingHome — умер с помпой дня
+// 2026-11-07; дыра номера оставлена честно, переезд битов — молчаливый
+// сдвиг чужих масок.)
 inline constexpr std::uint16_t kObjHasAi         = 1u << 6;
-inline constexpr std::uint16_t kObjGoingHome     = 1u << 7;
 inline constexpr std::uint16_t kObjAirborne      = 1u << 8;
 // Ломоть 4 — роль снаряда: запретного нуля у снаряда НЕТ (скорость 0,0,0
 // законна у метеоров армагеддона, kind Bolt = 0, жизнь — шкала, где ноль
@@ -203,14 +204,14 @@ struct SubObjects {
     std::array<ecs::Combat, std::size_t(kMaxSubObjects)> combat{};
     std::array<ecs::MissileAttack, std::size_t(kMaxSubObjects)> missile{};
     // ── Движение/думка (кусок 3 ломтя 2): бывшие ecs::SubworldAi /
-    // ecs::VisualPos / ecs::GoingHome / ecs::Airborne. Мозг — колонка +
-    // бит kObjHasAi (Wander = 0 законен, сентинела нет). Визуальная
-    // позиция — безусловная колонка слота: нулевая скорость = интерполятор
-    // стоит (законное авторское значение смоук-фикстур), биту нечего
-    // охранять. «Домой» и «в воздухе» — бит + колонка (см. маску).
+    // ecs::VisualPos / ecs::Airborne. Мозг — колонка + бит kObjHasAi
+    // (Wander = 0 законен, сентинела нет). Визуальная позиция —
+    // безусловная колонка слота: нулевая скорость = интерполятор стоит
+    // (законное авторское значение смоук-фикстур), биту нечего охранять.
+    // «В воздухе» — бит + колонка (см. маску). (Колонка goHome умерла с
+    // помпой дня 2026-11-07.)
     std::array<ecs::SubworldAi, std::size_t(kMaxSubObjects)> ai{};
     std::array<ecs::VisualPos, std::size_t(kMaxSubObjects)> visual{};
-    std::array<ecs::GoingHome, std::size_t(kMaxSubObjects)> goHome{};
     std::array<float, std::size_t(kMaxSubObjects)> airborneVz{};
     // ── СНАРЯД (ломоть 4): бывшая ecs::Projectile. Роль — бит
     // kObjProjectile (нуля-сентинела у снаряда нет: скорость 0,0,0 законна у
@@ -310,7 +311,6 @@ struct SubObjects {
             missile[std::size_t(s)] = ecs::MissileAttack{};
             ai[std::size_t(s)] = ecs::SubworldAi{};
             visual[std::size_t(s)] = ecs::VisualPos{};
-            goHome[std::size_t(s)] = ecs::GoingHome{};
             airborneVz[std::size_t(s)] = 0.0f;
             projectile[std::size_t(s)] = ecs::Projectile{};
             sheet[std::size_t(s)] = CharacterSheet{};
@@ -367,7 +367,10 @@ struct SubObjects {
 // на 65536 Б = 64 КиБ, БЕЗ ПАДДИНГА (38 928 404 = 65536 × 594 + 20; байт встал
 // в щель выравнивания, которую `level` оставлял за собой). Ассерт назвал цену
 // сам, в тот же прогон, и это ровно то, зачем он стоит.
-static_assert(sizeof(SubObjects) == std::size_t(kMaxSubObjects) * 594 + 20,
+// И В ЧЕТВЁРТЫЙ РАЗ, ВНИЗ: 594 → 586 (выжигание помпы дня, 2026-11-07) —
+// колонка goHome (8 Б) умерла со своей системой, сцена подешевела на
+// 8 Б × 65536 = 512 КиБ. Ассерт снова назвал цену сам.
+static_assert(sizeof(SubObjects) == std::size_t(kMaxSubObjects) * 586 + 20,
               "массив объектов сцены: 613 Б/слот (M-220: MacroOrigin несёт "
               "{слот, ID} — 4 → 8 Б) + служебные (ломоть D: avatarEnttBits "
               "умер с сущностью аватара, 24 → 20)");

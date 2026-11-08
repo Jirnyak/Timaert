@@ -59,19 +59,15 @@ void tick_npc_ai(SubObjects& objs, MacroStore* st,
         }
     }
 
-    // A body walking home is steered by the day's pump (engine tick_day_pump),
-    // not by its own errands — excluded here so the two never write the same
-    // intent in one step. The exclusion is the WHOLE integration: no new brain
-    // kind, no branch inside Wander.
     // Свип арены по биту kObjAlive (ломоть D): гейт slot_ai сам отсекает
-    // снаряды, пламёна и реквизит — мозга у них нет.
+    // снаряды, пламёна и реквизит — мозга у них нет. (Исключение «идёт
+    // домой» умерло с помпой дня 2026-11-07 — прогулка снова ведёт всех.)
     for (int s = 0; s < int(kMaxSubObjects); ++s) {
         if ((objs.flags[std::size_t(s)] & kObjAlive) == 0u) continue;
         // Мозг — колонка арены (кусок 3); тело без мозга (игрок, реквизит)
-        // здесь не живёт. «Идёт домой» — бит: его ведёт помпа дня, не мозг.
+        // здесь не живёт.
         ecs::SubworldAi* aiCol = slot_ai(objs, s);
         if (aiCol == nullptr) continue;
-        if (slot_flag(objs, s, kObjGoingHome)) continue;
         // A body wearing the scene flag is driven by player input (its
         // authoritative Position is written by the engine), not by its own
         // brain. Skip it entirely so Wander/Flee never fights the player. No

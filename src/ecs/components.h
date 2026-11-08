@@ -197,16 +197,10 @@ struct SubworldAi {
 // (kMaxSubObjects) = 640 КиБ, поэтому новая колонка мозга — решение, а не мелочь.
 static_assert(sizeof(SubworldAi) == 40, "мозг тела субмира — 40 Б");
 
-// GOING HOME. A townsman the day's pump has sent indoors, and the door he is
-// walking to (window tiles). He un-embodies when he reaches it.
-//
-// Data, not a second brain: the ordinary wander skips a body wearing this and
-// one pass aims its existing intent (SubworldAi.wantVx/wantVy) at the door, so
-// the mover, the ground law and the collision index all stay exactly as they
-// were. A citizen who is home is simply not embodied — his town never lost him
-// (no MacroDebt is settled; that happens only where a body DIES), and opening
-// his door finds him inside, because the interior draws from the same stock.
-struct GoingHome { float x, y; };
+// (ЗДЕСЬ ЖИЛ GoingHome — «идёт домой» ходока помпы дня. УМЕР 2026-11-07
+//  вместе со всей помпой, вердикт владельца: «лучше выжеч весь кал и
+//  сделать заново по правильному» — жизнь улицы сквозь время вернётся
+//  АИ-модулем места, не компонентой ядра. Ряд M-419.)
 
 // (SoldierLink УМЕР 2026-10-05, M-150 ломоть 2 кусок 1: писатель один,
 // читателей в src НОЛЬ — идентичность солдата {entityId, kind, level} УЖЕ
@@ -415,7 +409,6 @@ TIMAERT_ROW(sm::ecs::Combat);
 TIMAERT_ROW(sm::ecs::MissileAttack);
 TIMAERT_ROW(sm::ecs::Airborne);
 TIMAERT_ROW(sm::ecs::SubworldAi);
-TIMAERT_ROW(sm::ecs::GoingHome);
 TIMAERT_ROW(sm::ecs::MacroDebt);
 TIMAERT_ROW(sm::ecs::MacroOrigin);
 TIMAERT_ROW(sm::ecs::Sprite);

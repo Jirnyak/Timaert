@@ -1085,56 +1085,8 @@ int spawn_dungeon_residents(SubObjects& objs,
     return placed;
 }
 
-int spawn_street_arrivals(SubObjects& objs,
-                          std::uint32_t seed,
-                          std::uint16_t faction,
-                          const Inventory& homeSouls,
-                          int reserve,
-                          int deficit,
-                          std::array<int, std::size_t(NPCType::Count)>& liveByKind,
-                          const std::uint32_t* liveNamed, int liveNamedCount,
-                          const Structure* const* doors, int doorCount,
-                          MacroStockKey populationKey) {
-    // ГРУЗ — АДРЕС И СЧЁТ, НЕ КОНТЕЙНЕР (M-260, 2026-10-13): звонящий держит
-    // и двери, и именных в плоских массивах без аллокации, и подпись не
-    // смеет заставлять его заводить вектор ради зова.
-    if (deficit <= 0 || doorCount <= 0 || reserve < 0) return 0;
-    if (doors == nullptr || (liveNamed == nullptr && liveNamedCount > 0)) return 0;
-    Rng rng(seed ^ 0xDA47B00Du);
-    int placed = 0;
-    int seen = 0;
-    for (const CreatureRef head : creatures_range(homeSouls)) {
-        if (seen++ < reserve) continue;        // эта душа дома, за дверью
-        if (placed >= deficit) break;
-        if (!valid_npc_kind(head.kind)) continue;
-        if (head.entityId != 0) {
-            // Именная душа уже ходит по улице: её тело носит её entityId в
-            // займе, и второго её рассвет не рождает никогда.
-            if (std::find(liveNamed, liveNamed + liveNamedCount,
-                          head.entityId) != liveNamed + liveNamedCount) continue;
-        } else if (liveByKind[std::size_t(head.kind)] > 0) {
-            // Генерик взаимозаменяем ВНУТРИ рода: стоящее тело этого рода
-            // гасит одну голову того же рода, и состав улицы сходится с
-            // составом отрезка по-родно, а не только счётом.
-            --liveByKind[std::size_t(head.kind)];
-            continue;
-        }
-        const std::uint32_t soulId = creature_soul_id(head);
-        const Structure* d =
-            doors[std::size_t(rng.next_u32() % std::uint32_t(doorCount))];
-        MacroStockKey key = populationKey;
-        name_creature_in_loan(key, head);
-        spawn_derived_body(objs,
-            BodySpec{NPCType(head.kind), d->x, d->y, faction,
-                     clamp_to_ladder(head.level),
-                     seed ^ (soulId * 2654435761u),
-                     /*combatant*/false},
-            /*faceSalt*/soulId * 7919u,
-            BodyLoan::from(MacroStock::Creatures, key));
-        ++placed;
-    }
-    return placed;
-}
+// (Тело spawn_street_arrivals жило здесь — выжжено с помпой дня
+//  2026-11-07, вердикт владельца; ряд M-419.)
 
 int spawn_dungeon_vermin(SubObjects& objs,
                          std::uint32_t seed,

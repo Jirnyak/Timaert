@@ -258,21 +258,8 @@ inline ecs::Position* slot_pos(SubObjects& o, int s) {
 inline const ecs::Position* slot_pos(const SubObjects& o, int s) {
     return &o.pos[std::size_t(s)];
 }
-inline const ecs::GoingHome* slot_going_home(const SubObjects& o, int s) {
-    if (!slot_flag(o, s, kObjGoingHome)) return nullptr;
-    return &o.goHome[std::size_t(s)];
-}
-inline ecs::GoingHome* slot_going_home(SubObjects& o, int s) {
-    if (!slot_flag(o, s, kObjGoingHome)) return nullptr;
-    return &o.goHome[std::size_t(s)];
-}
-inline void slot_set_going_home(SubObjects& o, int s, ecs::GoingHome g) {
-    o.goHome[std::size_t(s)] = g;
-    slot_flag_set(o, s, kObjGoingHome);
-}
-inline void slot_clear_going_home(SubObjects& o, int s) {
-    slot_flag_clear(o, s, kObjGoingHome);
-}
+// (Четыре двери «идёт домой» — slot_going_home ×2 / slot_set_going_home /
+//  slot_clear_going_home — умерли с помпой дня 2026-11-07, ряд M-419.)
 inline float* slot_airborne_vz(SubObjects& o, int s) {
     if (!slot_flag(o, s, kObjAirborne)) return nullptr;
     return &o.airborneVz[std::size_t(s)];

@@ -115,8 +115,6 @@
 природа	src/sub/engine.cpp	dx/dy
 природа	src/sub/engine.cpp	dx/dy
 природа	src/sub/engine.cpp	dx/dy
-природа	src/sub/engine.cpp	dx/dy
-природа	src/sub/engine.cpp	dx/dy
 # `d.intentVx/d.intentVy` — МОДУЛЬ ПЛАНАРНОГО ШАГА, которым мерится клетка
 # сетки соседства; `dx/dz` — отсечение эмиттера искр по камере (рендер/FX);
 # две `(a.wx-cx)/(a.wz-cz)` — ключ сортировки штампов рендера в плоскости XZ.

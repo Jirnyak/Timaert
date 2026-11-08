@@ -190,7 +190,6 @@ SKELETON.md	effect_applicator.cpp:53-60
 SKELETON.md	effect_applicator.h:12
 SKELETON.md	engine.cpp:1223-1225
 SKELETON.md	engine.cpp:1388
-SKELETON.md	engine.cpp:1655-1660
 SKELETON.md	engine.cpp:2285
 SKELETON.md	engine.cpp:2301
 SKELETON.md	engine.cpp:232-234

@@ -2158,281 +2158,14 @@ void SubworldEngine::add_sub_zone(int cellX, int cellY,
 // next visit, because a place that somebody has already stood in remembers
 // that — and a second "visited" flag would be a second truth about one past,
 // with a save field to keep true.
-// ── THE DAY'S PUMP ────────────────────────────────────────────────────────
-//
-// A town's people are a conserved quantity in two vessels, and the sun moves
-// them (sub/city_layout.h crowd_outdoor_share01). The spawner gets the split
-// right at the moment a cell is entered; this keeps it right while the player
-// STANDS there and the clock runs on. Without it you could watch a market
-// square from dusk into the dark and see the same crowd at midnight.
-//
-// It is not a second population law. It reads the SAME partition the spawner
-// reads, compares it to the bodies actually standing there, and moves the
-// difference — which is why the two can never disagree about how many people
-// a town has on its streets.
-//
-// Scope: the CENTRE cell. A macro cell is a kilometre across and the player
-// stands in one of them; a neighbour's street settles the moment the window
-// re-centres on it, through the spawner's own use of the same law.
-void SubworldEngine::tick_day_pump(float dt) {
-    if (!gs_ || !objects_) return;
-    if (sceneKind_ == SceneKind::Dungeon) return;   // an interior has no street
-
-    // ── Every step: walk the leavers home. ──
-    // The body keeps its own legs, its own mover and its own ground law; all
-    // that is written here is the INTENT it already had a field for.
-    {
-        sub::SubObjects* walkObjs = objects_;
-        std::array<int, 256> arrived{};
-        int arrivedCount = 0;
-        // Свип арены по биту (ломоть D): гейт «идёт домой» отсекает всех,
-        // кто не ходок.
-        for (int s = 0;
-             walkObjs != nullptr && s < int(kMaxSubObjects); ++s) {
-            if ((walkObjs->flags[std::size_t(s)] & sub::kObjAlive) == 0u)
-                continue;
-            // «Идёт домой» — бит + колонка (кусок 3); мозг — колонка.
-            const ecs::GoingHome* hCol = sub::slot_going_home(*walkObjs, s);
-            if (hCol == nullptr) continue;
-            ecs::SubworldAi* aCol = sub::slot_ai(*walkObjs, s);
-            if (aCol == nullptr) continue;
-            const ecs::Position& p = walkObjs->pos[std::size_t(s)];
-            auto& a = *aCol;
-            const auto& h = *hCol;
-            const float dx = h.x - p.x;
-            const float dy = h.y - p.y;
-            const float d = std::sqrt(dx * dx + dy * dy);
-            // Arm's length of the door is home: the threshold is a tile wide
-            // and a body that has to hit a point exactly never gets there.
-            if (d <= a.radius + 1.0f) {
-                if (arrivedCount < int(arrived.size())) {
-                    arrived[std::size_t(arrivedCount++)] = s;
-                }
-                continue;
-            }
-            // ПЕЛЕНГ, И ЭТО ВЕРДИКТ (владелец 2026-11-07, Б8): поход
-            // горожанина к двери — ЧАСТНОСТЬ модуля города, «не часть
-            // единой системы … единые системы сквадов никак не должны
-            // зависеть от особенности горожан». Ломоть 3 подключал сюда
-            // точечные поля курса — и купил мясорубку слотов (замер Б8:
-            // ~1441 LRU-вытеснение/тик — дверей сотни, дверь КАЖДОГО дома
-            // не есть квантованная цель), душившую поля настоящих сквадов.
-            // Осмысленный ходок единой системы — АВАТАР сквада, и только.
-            a.wantVx = dx / d * a.wanderSpeed;
-            a.wantVy = dy / d * a.wanderSpeed;
-        }
-        // HE IS HOME, so he is no longer embodied — and nothing is settled.
-        // A macro debt is paid where a body DIES (the reaper above); a man who
-        // walked through his own door owes his town nothing, and opening that
-        // door finds him inside because the interior draws on the same stock.
-        for (int i = 0; i < arrivedCount; ++i) {
-            // Дверь смерти слота — СВОЯ (ломоть D): одна рука arena.free.
-            if (walkObjs != nullptr) walkObjs->free(arrived[std::size_t(i)]);
-        }
-    }
-    (void)dt;
-
-    // ── On the world's own tick: decide who goes and who comes. ──
-    // Not per frame: the share is a function of the clock, and the clock does
-    // not move between two steps of one tick.
-    const std::uint64_t nowTick = frame_->worldTick;
-    if (nowTick == pumpTick_) return;
-    pumpTick_ = nowTick;
-
-    const CellContext ctx = resolve_context(mgr_.center_cx(), mgr_.center_cy());
-    if (ctx.rooted.id < 0) return;
-    if (sub::crowd_layout(ctx.rooted.kind).crowdHabitat == 0) return;
-
-    // ЕДИНИЦА УЛИЦЫ — ГОЛОВЫ инвентаря места, не паства (D-хвост): паства
-    // (число фичи) считает и ушедших в поле, и помпа, меренная ею, рождала бы на
-    // улицу тела БЕЗ голов — тот же класс двойного счёта, что «6272 паствы →
-    // 11774 тела». Воплощаются только домашние души; улица = головы − резерв.
-    const MacroStore& st = (*mw_.store);
-    const MacroHandle ph = rooted_handle_by_ordinal(
-        st, std::uint32_t(ctx.rooted.id));
-    const Inventory* souls = squad_container(st, ph);
-    const int heads = souls ? home_creatures(*souls) : 0;
-    if (heads <= 0) return;
-
-    const float originX = float(kCellSize);
-    const float originY = float(kCellSize);
-    const int reserve = interior_reserve_for_cell(
-        mgr_.structures(), ctx.rooted.kind, ctx.worldSeed,
-        mgr_.center_cx(), mgr_.center_cy(), originX, originY, heads,
-        WorldTime{frame_->worldTick});
-    const int target = std::max(0, heads - reserve);
-
-    // The doors this town keeps — where a man goes home to, and where one
-    // steps out of at first light.
-    //
-    // КОЛОНКА СЦЕНЫ, А НЕ РАБОТА ТИКА (M-260, 2026-10-13). Список дверей есть
-    // ЧИСТАЯ ФУНКЦИЯ композита строений: отбор идёт по роду пропа и по
-    // ОКОННЫМ границам центральной клетки `[kCellSize, 2·kCellSize)`, то есть
-    // по константам, а не по макро-адресу центра. Значит пересобирать его
-    // каждый мировой тик незачем — а именно это и делалось, ценой **9 626 …
-    // 71 039 строений за тик** (замер трёх сидов) и двух-трёх реаллокаций
-    // вектора: резерв 256 против замеренных 621 … 1392 дверей.
-    //
-    // Ключ кэша — РЕВИЗИЯ, а не координаты центра: рубка пропа делает `erase`
-    // в композите, после которого указатели недействительны, и ре-центр тоже
-    // пересобирает список целиком. Одно число отвечает на оба случая
-    // (`struct_revision@src/sub/seamless_manager.h`).
-    if (pumpDoorsRevision_ != mgr_.struct_revision()) {
-        pumpDoors_.clear();
-        for (const Structure& s : mgr_.structures()) {
-            if (structure_opens(s.kind) == DungeonRef::None) continue;
-            if (structure_opens_top(s.kind)) continue;
-            if (!dungeon_kind_row(structure_opens(s.kind)).householdAbove) continue;
-            if (s.x < originX || s.x >= originX + float(kCellSize)) continue;
-            if (s.y < originY || s.y >= originY + float(kCellSize)) continue;
-            pumpDoors_.push_back(&s);
-        }
-        pumpDoorsRevision_ = mgr_.struct_revision();
-    }
-    if (pumpDoors_.empty()) return;
-
-    // Who is standing on this town's streets right now — asked of the LOAN
-    // each citizen carries (MacroDebt), because that is what says whose
-    // townsman a body is. A leaver still stands there but is already spoken
-    // for, so he is counted apart.
-    // СПИСКОВ ЗДЕСЬ БОЛЬШЕ НЕТ ВОВСЕ (M-260, 2026-10-13). Стояли два вектора
-    // слотов с резервами 512 и НОЛЬ против замеренных **5 076 … 5 486**
-    // стоящих и **до 2 983** уходящих — то есть десяток реаллокаций за мировой
-    // тик. Но дефект был не «вектор вместо массива», а СПИСОК вместо СЧЁТА:
-    // помпе нужны ровно числа (сколько стоит, сколько уходит) и действие над
-    // первыми N подходящими. И то и другое отвечается проходом по той же
-    // вьюхе, поэтому под них не берётся ни байта и кап выдумывать не пришлось.
-    //
-    // Голый слот законен внутри тика (вердикт (ii-б)), а живость судит бит
-    // kObjAlive, а не reg.valid: вопрос о ТЕЛЕ, не о сущности.
-    sub::SubObjects* objsP = objects_;
-    if (objsP == nullptr) return;
-    sub::SubObjects& objs = *objsP;
-    // Проходы ниже — свипы арены по биту (ломоть D): townsman гейтится
-    // мозгом и займом, снаряды и пламёна не проходят.
-    // ОДИН предикат «этот слот — горожанин ЭТОГО места» на все проходы:
-    // второго ответа на этот вопрос в помпе нет.
-    const auto townsman = [&](int s) {
-        if (sub::slot_ai(objs, s) == nullptr) return false;
-        const auto* dp = sub::slot_debt(objs, s);
-        if (dp == nullptr) return false;
-        if (dp->stock != std::uint8_t(MacroStock::Creatures)) return false;
-        if (dp->subject != ctx.rooted.id) return false;
-        return !(objs.is_avatar_slot(s)
-                 || sub::slot_flag(objs, s, sub::kObjPlayerSoldier));
-    };
-
-    int staying = 0;
-    int leavingCount = 0;
-    for (int s = 0; s < int(kMaxSubObjects); ++s) {
-        if ((objs.flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
-        if (!townsman(s)) continue;
-        if (sub::slot_flag(objs, s, sub::kObjGoingHome)) ++leavingCount;
-        else                                             ++staying;
-    }
-
-    const int surplus = staying - target;
-    if (surplus > 0) {
-        // Home is the NEAREST door — a man does not cross his town to sleep.
-        int sent = 0;
-        for (int s = 0; s < int(kMaxSubObjects); ++s) {
-            if (sent >= surplus) break;
-            if ((objs.flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
-            if (!townsman(s)) continue;
-            if (sub::slot_flag(objs, s, sub::kObjGoingHome)) continue;
-            const ecs::Position& p = objs.pos[std::size_t(s)];
-            const Structure* best = pumpDoors_.front();
-            float bestD2 = 1e30f;
-            for (const Structure* d : pumpDoors_) {
-                const float dx = d->x - p.x, dy = d->y - p.y;
-                const float d2 = dx * dx + dy * dy;
-                if (d2 < bestD2) { bestD2 = d2; best = d; }
-            }
-            sub::slot_set_going_home(objs, s,
-                                     ecs::GoingHome{best->x, best->y});
-            ++sent;
-        }
-        return;
-    }
-
-    // The sun is climbing: doors open. A man already on his way home turns
-    // round first — cheaper than birth, and truer, since he never left.
-    // КТО именно повернёт, законом не задано (уходящие равноправны);
-    // детерминизм держится порядком СЛОТОВ арены (ломоть D — прежний
-    // порядок вьюхи был такой же случайностью истории рождений).
-    int deficit = target - staying;
-    if (deficit > 0 && leavingCount > 0) {
-        for (int s = 0; s < int(kMaxSubObjects); ++s) {
-            if (deficit <= 0) break;
-            if ((objs.flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
-            if (!townsman(s)) continue;
-            if (!sub::slot_flag(objs, s, sub::kObjGoingHome)) continue;
-            if (sub::slot_flag(objs, s, sub::kObjAlive)) {
-                sub::slot_clear_going_home(objs, s);
-            }
-            --deficit;   // мёртвый уходящий тоже снимался со счёта и прежде
-        }
-    }
-    if (deficit <= 0) return;
-
-    // …and the rest step out of their doors — ГОЛОВАМИ уличного отрезка
-    // инвентаря, мимо тех, чьи тела уже стоят (ролл рода мёртв, D-хвост):
-    // генерики гасятся по-родным счётом живых, именные — по entityId займа.
-    // Именное тело в по-родный счёт НЕ входит — его голову гасит entityId,
-    // и генерик того же рода не был бы погашен дважды.
-    // ПРЕДЕЛ ИМЕНИТЫХ ВЫВЕДЕН, А НЕ ВЫБРАН: именной ключ головы — `entityId`
-    // СЛОТА контейнера (`CreatureRef@src/bus/world_row.h` берёт его у
-    // `ItemRef`), значит различных именных у места не больше, чем слотов
-    // инвентаря. Отсюда плоский массив длиной `kMaxInventorySlots` (4 КиБ) и
-    // ОБЯЗАТЕЛЬНАЯ склейка дубликатов: стак в одном слоте делит один
-    // entityId, и без склейки предел был бы ложью. Замер трёх городов дал
-    // именных **0** (все души генерики), так что склейка сегодня бесплатна;
-    // переполнение невозможно по выводу выше и потому говорит ВСЛУХ, а не
-    // режет молча (ЗАКОН КЛАМПА).
-    std::array<int, std::size_t(NPCType::Count)> liveByKind{};
-    std::array<std::uint32_t, std::size_t(kMaxInventorySlots)> liveNamed{};
-    int liveNamedCount = 0;
-    for (int s = 0; s < int(kMaxSubObjects); ++s) {
-        if ((objs.flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
-        if (!townsman(s)) continue;
-        if (sub::slot_flag(objs, s, sub::kObjGoingHome)) continue;
-        if (!sub::slot_flag(objs, s, sub::kObjAlive)) continue;
-        const auto* dOnStreet = sub::slot_debt(objs, s);
-        if (dOnStreet == nullptr) continue;
-        const auto& d = *dOnStreet;
-        if (d.detail > 0) {
-            const std::uint32_t id = std::uint32_t(d.detail);
-            bool seenId = false;
-            for (int i = 0; i < liveNamedCount; ++i) {
-                if (liveNamed[std::size_t(i)] == id) { seenId = true; break; }
-            }
-            if (!seenId) {
-                if (liveNamedCount >= int(kMaxInventorySlots)) {
-                    std::fprintf(stderr,
-                                 "[sub] ОТКАЗ: именных душ на улице больше, "
-                                 "чем слотов контейнера (%d) — место %d\n",
-                                 int(kMaxInventorySlots), ctx.rooted.id);
-                } else {
-                    liveNamed[std::size_t(liveNamedCount++)] = id;
-                }
-            }
-            continue;
-        }
-        const auto* kind = sub::slot_kind(objs, s);
-        if (kind != nullptr && kind->type < std::uint16_t(NPCType::Count)) {
-            ++liveByKind[std::size_t(kind->type)];
-        }
-    }
-    const std::uint16_t faction = faction_or_freefolk(ctx.rooted.factionIdx);
-    const MacroStockKey popKey{ctx.rooted.id,
-                               std::int16_t(mgr_.center_cx()),
-                               std::int16_t(mgr_.center_cy())};
-    spawn_street_arrivals((*objects_),
-                          ctx.seed ^ std::uint32_t(nowTick),
-                          faction, *souls, reserve, deficit,
-                          liveByKind, liveNamed.data(), liveNamedCount,
-                          pumpDoors_.data(), int(pumpDoors_.size()), popKey);
-}
+// (ЗДЕСЬ ЖИЛА ПОМПА ДНЯ — tick_day_pump, 259 строк: ведение ходоков
+//  домой, кэш дверей, рождения spawn_street_arrivals. ВЫЖЖЕНА ЦЕЛИКОМ
+//  вердиктом владельца 2026-11-07 («насрано в движке … лучше выжеч
+//  весь кал и сделать заново по правильному»), функционал сознательно
+//  НЕ сохранён: частность города в ядре — нарушение ФРЕЙМА п.6, жизнь
+//  улицы сквозь время вернётся АИ-модулем места. Начальное население
+//  улицы при входе/ре-центре — СПАВНЕР (spawn_rooted_population), он
+//  жив и помпой не был. Разбор и перепись носителей — ряд M-419.)
 
 void SubworldEngine::tick_zones() {
     if (!gs_ || subZoneCount_ == 0) return;
@@ -4094,13 +3827,12 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         // ── РОСТЕР СЛЕДУЕТ ЗА АВАТАРОМ (ломоть 5 Б8): тело с распиской
         // Creatures тянется к носителю точки СВОЕГО сквада, когда тот
         // марширует и ушёл дальше слабины. Иерархия воли: война (привод)
-        // > паника (Flee с живым словом) > ходок модуля (kObjGoingHome —
-        // частность места, единая система его не трогает) > СЛЕДОВАНИЕ >
-        // прогулка. Пер-тельных курсов не существует — осмысленный ходок
-        // один, аватар (вердикт владельца).
+        // > паника (Flee с живым словом) > СЛЕДОВАНИЕ > прогулка.
+        // Пер-тельных курсов не существует — осмысленный ходок один,
+        // аватар (вердикт владельца). (Ярус «ходок модуля» умер вместе с
+        // помпой дня — выжжена 2026-11-07.)
         if (!isPlayer && !owned && avatarPinCount > 0 && d.speed > 0.0f
             && mw_.store != nullptr
-            && !sub::slot_flag(arena, s, sub::kObjGoingHome)
             && sub::slot_macro_origin(arena, s).id == 0) {
             if (const ecs::MacroDebt* debt = sub::slot_debt(arena, s)) {
                 if (debt->stock == std::uint8_t(MacroStock::Creatures)) {
@@ -5877,8 +5609,7 @@ void SubworldEngine::tick(float dt) {
     pull_player_entity_to_scalars();
     // A place that means something notices him crossing into it.
     tick_zones();
-    // …and the town he is standing in keeps following the sun.
-    tick_day_pump(dt);
+    // (Зов помпы дня жил здесь — выжжен вердиктом 2026-11-07.)
     int prevCx = mgr_.center_cx(), prevCy = mgr_.center_cy();
     const auto seamStart = Clock::now();
     // A dungeon window is STATIC: no seam, no re-centre — the interior is

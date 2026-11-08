@@ -363,23 +363,8 @@ int spawn_dungeon_residents(SubObjects& objs,
                             // garrisoned storey FIGHTS for its place (true).
                             bool combatant = false);
 
-// РАССВЕТ ДОБИРАЕТ УЛИЦУ ГОЛОВАМИ, НЕ РОЛЛОМ: обход уличного отрезка
-// [reserve, heads) того же инвентаря, мимо голов, чьи тела УЖЕ стоят на
-// улице — генерики по счёту живых СВОЕГО РОДА (`liveByKind`, генерик
-// взаимозаменяем внутри рода), именные по entityId живого займа
-// (`liveNamed`). Рождение — та же дверь тела с тем же займом, что у улицы;
-// лицо выводится из головы, поэтому житель больше не меняет лицо каждый
-// рассвет. Возвращает число вставших.
-int spawn_street_arrivals(SubObjects& objs,
-                          std::uint32_t seed,
-                          std::uint16_t faction,
-                          const Inventory& homeSouls,
-                          int reserve,
-                          int deficit,
-                          std::array<int, std::size_t(NPCType::Count)>& liveByKind,
-                          const std::uint32_t* liveNamed, int liveNamedCount,
-                          const Structure* const* doors, int doorCount,
-                          MacroStockKey populationKey);
+// (spawn_street_arrivals — рассветные рождения улицы — умер с помпой
+//  дня 2026-11-07; единственным звонящим была она. Ряд M-419.)
 
 // The vermin of ONE interior (a cellar, a cave floor): creatures rolled from
 // the SAME global monster table the open world uses — `den` is the dungeon

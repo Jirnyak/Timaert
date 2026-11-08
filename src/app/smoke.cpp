@@ -394,7 +394,6 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"open_settlement_trade", SmokeAction::OpenSettlementTrade},
     {"enter_first_settlement", SmokeAction::EnterFirstSettlement},
     {"city_gate_probe", SmokeAction::CityGateProbe},
-    {"city_day_pump", SmokeAction::CityDayPump},
     {"focus_npc_panel", SmokeAction::FocusNpcPanel},
     {"open_npc_trade", SmokeAction::OpenNpcTrade},
     {"subject_panel_alive", SmokeAction::SubjectPanelAlive},
@@ -9386,66 +9385,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fflush(stderr);
             break;
         }
-        case SmokeAction::CityDayPump: {
-            // THE DAY'S PUMP, watched from the street. The spawner gets the
-            // split right at the moment a cell is entered; what this asks is
-            // whether it STAYS right while the clock runs and the player never
-            // moves — the thing a player does when he stands in a market at
-            // dusk. Counted on bodies, not on the law, so a law that is right
-            // on paper and never moves anybody still reddens.
-            std::fprintf(stderr, "[smoke] action=city_day_pump\n");
-            std::fflush(stderr);
-            if (!app.subworld.active()) {
-                smoke_fail(app, "city_day_pump without a subworld");
-                break;
-            }
-            auto street = [&app]() {
-                int n = 0;
-                sm::sub::SubObjects* stObjs =
-                    app.sceneObjects.get();
-                // Свип арены по биту жизни (ломоть D).
-                for (int ss = 0;
-                     stObjs != nullptr && ss < int(sm::kMaxSubObjects); ++ss) {
-                    if ((stObjs->flags[std::size_t(ss)]
-                         & sm::sub::kObjAlive) == 0u) continue;
-                    if (!sm::sub::slot_npc_candidate(*stObjs, ss)) continue;
-                    const auto* dS = sm::sub::slot_debt(*stObjs, ss);
-                    if (dS == nullptr) continue;
-                    const auto& d = *dS;
-                    if (d.stock != std::uint8_t(sm::MacroStock::Creatures)) {
-                        continue;
-                    }
-                    ++n;
-                }
-                return n;
-            };
-            const int atEntry = street();
-            // Midnight, forced the way every other clock-bending scenario
-            // forces it, then let the world RUN: the surplus has to walk to
-            // its doors on its own legs, so a count taken the same step would
-            // grade the town before anybody had moved.
-            app.gs.worldTime = sm::world_time_at(app.gs.worldTime.day(), 0, 0);
-            sm::reset_world_tick_runtime(app.gs.worldTickRt, app.gs.worldSeed);
-            advance_sim_steps(app, 900, /*allowInput*/false);
-            const int atNight = street();
-            std::fprintf(stderr,
-                         "[smoke] day_pump street entry=%d midnight=%d\n",
-                         atEntry, atNight);
-            std::fflush(stderr);
-            if (atEntry <= 0) {
-                smoke_fail(app, "city_day_pump found no crowd to pump");
-                break;
-            }
-            // Half is a floor, not a target: what is asserted is that the town
-            // visibly empties, and the exact figure belongs to the law's own
-            // witness (city_population_inside_walls_test walks all 24 hours).
-            if (atNight * 2 >= atEntry) {
-                smoke_fail(app, "the street did not empty as night fell");
-                break;
-            }
-            ++app.smoke.cursor;
-            break;
-        }
+        // (case CityDayPump жил здесь — смоук помпы дня; выжжен с ней
+        //  2026-11-07, ряд M-419.)
         case SmokeAction::FocusNpcPanel: {
             std::fprintf(stderr, "[smoke] action=focus_npc_panel\n");
             std::fflush(stderr);

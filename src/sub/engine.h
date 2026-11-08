@@ -1147,25 +1147,9 @@ private:
 
     // Watch for the player crossing INTO a zone. Called from tick().
     void tick_zones();
-    // THE DAY'S PUMP — the town's people following the sun between its streets
-    // and its hearths while the player stands in it (sub/city_layout.h
-    // crowd_outdoor_share01). Without it the count is only right at the moment
-    // a cell is entered: stand on the square from dusk to dark and the crowd
-    // never thins. Runs when the WORLD CLOCK ticks, not per frame — the share
-    // cannot move between two steps of the same tick.
-    void tick_day_pump(float dt);
-    std::uint64_t pumpTick_ = 0;   // world tick the pump last ran on
-    // ДВЕРИ ДОМОХОЗЯЙСТВ ЦЕНТРАЛЬНОЙ КЛЕТКИ — КОЛОНКА СЦЕНЫ, НЕ РАБОТА ТИКА
-    // (M-260). Список есть чистая функция композита строений, и ключ его
-    // свежести — `struct_revision@src/sub/seamless_manager.h`, а не центр
-    // окна: рубка делает `erase` в композите, после которого ЭТИ указатели
-    // недействительны. Резерв здесь законен (DOD п.4): длина не выводится из
-    // капа — у строений клетки именованного потолка нет вовсе, — а берётся он
-    // на ре-центре, не в тике; после прогрева capacity держится и не растёт.
-    // Замер до правки: 9 626 … 71 039 строений перебиралось КАЖДЫЙ мировой
-    // тик ради 621 … 1392 дверей.
-    std::vector<const Structure*> pumpDoors_;
-    std::uint32_t pumpDoorsRevision_ = 0;   // 0 = кэша не было
+    // (ЗДЕСЬ ЖИЛА ПОМПА ДНЯ — tick_day_pump + pumpTick_ + кэш дверей
+    //  pumpDoors_/pumpDoorsRevision_. ВЫЖЖЕНА вердиктом владельца
+    //  2026-11-07, функционал сознательно не сохранён — ряд M-419.)
 
     // Where the player is standing, in MACRO cells — the seam's own
     // coordinate, and the only translation the layers need between them.
