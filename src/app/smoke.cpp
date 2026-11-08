@@ -170,6 +170,43 @@ static void smoke_settle_on_foot(App& app) {
     }
 }
 
+// ── ИГРОК СМОТРИТ НА ВЕЩЬ ──────────────────────────────────────────────────
+// С 2026-11-08 прицел есть ЛУЧ (вердикт владельца «ЛУЧ — как ты и думал»), и
+// наклон камеры наконец значит ровно то, что обещает: смотришь в небо —
+// протыкаешь воздух. Поэтому свидетель, который трогает ЛЮК У НОГ или ШАР НА
+// ПОСТАМЕНТЕ, обязан на них ПОСМОТРЕТЬ — как посмотрел бы игрок, — а не
+// надеяться на азимутный конус, который наклон игнорировал.
+//
+// Прежде эти два места ставили `rotate_camera(yaw, -0.1f)` и `(yaw, 0.0f)`,
+// то есть били по уровню с двух метров: по лучу это промах в обоих случаях
+// (нужный наклон до люка с высоты глаза ≈ −45°). Красный `spire_climb` после
+// перехода на луч был дефектом СВИДЕТЕЛЯ, не мира (§8 п.7).
+static void smoke_look_at(App& app, float tx, float ty, float tz) {
+    const float dx = tx - app.subworld.player_x();
+    const float dy = ty - app.subworld.player_y();
+    const float dz = tz - app.subworld.player_muzzle_z();
+    const float flat = std::sqrt(dx * dx + dy * dy);
+    const float wantYaw = std::atan2(dy, dx);
+    const float wantPitch = std::atan2(dz, flat);
+    app.subworld.rotate_camera(wantYaw - app.subworld.cam_yaw(),
+                               wantPitch - app.subworld.cam_pitch());
+}
+
+// То же, но целью назван РОД ПРОПА: свидетель ищет его в композите и смотрит
+// в середину его сплошного пролёта — то есть туда, куда луч и обязан войти.
+static bool smoke_look_at_kind(App& app, sm::sub::Structure::Kind kind) {
+    for (const sm::sub::Structure& s : app.subworld.mgr().structures()) {
+        if (s.kind != kind) continue;
+        const float seat = app.subworld.mgr().height_field().sample(s.x, s.y);
+        float z0 = 0.0f, z1 = 0.0f;
+        sm::sub::structure_solid_span(s, seat, z0, z1);
+        smoke_look_at(app, s.x, s.y, 0.5f * (z0 + z1));
+        return true;
+    }
+    return false;
+}
+
+
 // Доведи мир до ГРАНИЦЫ МАКРО-ТИКА: операции дельты шва (ломоть 5, M-98)
 // ложатся в мир только там — свидетель, спрашивающий макро-эффект раньше
 // границы, спрашивает не так, как отвечает игра. Потолок цикла — один
@@ -3329,7 +3366,17 @@ bool run_dungeon_house_smoke(App& app) {
             // изотропная рука (M-178) честно отказывает. Дверная половина
             // уже встаёт на ноги; таблице тот же закон.
             smoke_settle_on_foot(app);
-            app.subworld.rotate_camera(0.5f * kPi - app.subworld.cam_yaw(), 0.0f);
+            // И ПОСМОТРЕТЬ НА НЕЁ: с 2026-11-08 прицел есть ЛУЧ, а табличка
+            // стоит ниже глаза — удар по уровню с двух метров пролетает над
+            // ней. Цель берётся серединой её СПЛОШНОГО ПРОЛЁТА, то есть той
+            // же геометрией, которой луч её и режет.
+            {
+                const float seat =
+                    app.subworld.mgr().height_field().sample(sign->x, sign->y);
+                float z0 = 0.0f, z1 = 0.0f;
+                sm::sub::structure_solid_span(*sign, seat, z0, z1);
+                smoke_look_at(app, sign->x, sign->y, 0.5f * (z0 + z1));
+            }
             readSign = app.subworld.interact();
         }
     }
@@ -4778,8 +4825,7 @@ bool run_spire_climb_smoke(App& app) {
     if (onRoof) {
         const float c = float(sm::sub::kCellSize) * 1.5f;
         app.subworld.set_player_pos(c, c + 2.0f);
-        app.subworld.rotate_camera(
-            std::atan2(-2.0f, 0.0f) - app.subworld.cam_yaw(), 0.0f);
+        smoke_look_at_kind(app, sm::sub::Structure::SpireOrb);
         app.subworld.interact();
         app.subworld.tick(0.016f);
         // ВЕСЬ АКТ ГАСНЕТ НА ГРАНИЦЕ ТИКА, ОДНИМ МОМЕНТОМ (ломоть 5 M-171):
@@ -4829,8 +4875,10 @@ bool run_spire_climb_smoke(App& app) {
         // 3D), not detection — so the hatch up here must open with the yard
         // alive, and this interact WITNESSES that law (owner 2026-09-11).
         app.subworld.set_player_pos(wx, wy + 2.0f);
-        app.subworld.rotate_camera(
-            std::atan2(-2.0f, 0.0f) - app.subworld.cam_yaw(), 0.0f);
+        // ЛЮК ЛЕЖИТ У НОГ, и с 2026-11-08 на него надо СМОТРЕТЬ: цель берётся
+        // родом пропа, а не углом на глаз (`smoke_look_at_kind` выше).
+        if (!smoke_look_at_kind(app, sm::sub::Structure::SpireHatch))
+            smoke_look_at(app, wx, wy, app.subworld.player_z());
         app.subworld.interact();
         app.subworld.tick(0.016f);
         backInside = app.subworld.in_dungeon();

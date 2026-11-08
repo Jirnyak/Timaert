@@ -3074,58 +3074,84 @@ bool SubworldEngine::exit_blocked_by_danger() const {
 // from the well" never touches this code.
 //
 // Targeting is by LOOK ONLY (owner ruling 2026-08-12): the thing under your
-// reticle, never the thing nearest your feet. The cone is on the camera yaw —
-// the same primitive possession aims with — so pitch never loses a target at
-// your feet, and two doors side by side are two different choices.
-constexpr float kInteractConeCos = 0.70710678f;   // 45° half-angle
-
-// Angular error of a point against the camera bearing; NaN-free and cheap.
-// Returns -1 when the point lies outside the cone (facing test failed).
-static float aim_score(float px, float py, float yaw, float tx, float ty) {
-    const float dx = tx - px;
-    const float dy = ty - py;
-    const float len = std::sqrt(dx * dx + dy * dy);
-    if (len < 1e-4f) return 1.0f;               // standing on it: perfect aim
-    const float dot = (std::cos(yaw) * dx + std::sin(yaw) * dy) / len;
-    return dot >= kInteractConeCos ? dot : -1.0f;
+// reticle, never the thing nearest your feet. И С 2026-11-08 «ВЗГЛЯД» ЗНАЧИТ
+// ЛУЧ — ТОТ ЖЕ, ЧТО У ТЕЛ И У СНАРЯДОВ.
+//
+// ЗДЕСЬ СТОЯЛ АЗИМУТНЫЙ КОНУС (`aim_score`, порог cos 45°), и он был ТРЕТЬИМ
+// ответом на вопрос «что под моим прицелом» — при том, что два первых честны
+// и трёхмерны:
+//   · тела  — `crosshair_stance` ниже: луч ИЗ ГЛАЗА (`player_muzzle_z`),
+//     ray-sphere по радиусу тела, побеждает БЛИЖАЙШИЙ ПО ЛУЧУ;
+//   · снаряды и спеллы — `tick_spell_projectiles@src/sub/spell_effects.cpp`:
+//     сметают честный трёхмерный СЕГМЕНТ с радиусом («swept, not sampled»);
+//   · лук игрока уже стреляет по лучу прицела ровно этой же арифметикой.
+// А проп судился косинусом азимута в плоскости XY, то есть pitch не
+// участвовал ВОВСЕ. Замер владельцу 2026-11-08: при руке 3.00 м цель
+// теряется по высоте на +3.4 м (трёхмерный гейт был честен), но ПО НАКЛОНУ
+// подсказка «Enter» предлагалась на 179 из 179 градусов — от −89° до +89°,
+// то есть глядя в зенит. Вердикт владельца: «ЛУЧ — как ты и думал».
+//
+// ПОЧЕМУ ТОЧНО, А НЕ С ДОПУСКОМ. Проп есть ОРИЕНТИРОВАННАЯ КОРОБКА: центр
+// `x,y`, поворот `yaw`, полуразмеры `structure_half_x/y`, вертикальный пролёт
+// `structure_solid_span`. Значит луч режется её плитами АНАЛИТИЧЕСКИ, и ни
+// одного балансного числа (толщины луча, радиуса прощения) заводить не надо —
+// ЗАКОН КОНСТАНТ не любит чисел, которые ничего не покупают. Поворот идёт
+// вокруг Z, поэтому вертикальная пара плит берётся в мировых координатах.
+// Возвращает параметр ВХОДА луча в коробку (≥ 0) или −1, если мимо.
+static float ray_enters_structure(const Structure& s, float z0, float z1,
+                                  float ax, float ay, float az,
+                                  float fx, float fy, float fz, float maxT) {
+    const float c = std::cos(s.yaw), sn = std::sin(s.yaw);
+    const float ox = ax - s.x, oy = ay - s.y;
+    const float org[3] = {ox * c + oy * sn, -ox * sn + oy * c, az};
+    const float dir[3] = {fx * c + fy * sn, -fx * sn + fy * c, fz};
+    const float hx = structure_half_x(s), hy = structure_half_y(s);
+    const float lo[3] = {-hx, -hy, z0};
+    const float hi[3] = { hx,  hy, z1};
+    float tMin = 0.0f, tMax = maxT;
+    for (int i = 0; i < 3; ++i) {
+        if (std::fabs(dir[i]) < 1e-6f) {
+            // Луч параллелен плите: либо он внутри её полосы, либо мимо вовсе.
+            if (org[i] < lo[i] || org[i] > hi[i]) return -1.0f;
+            continue;
+        }
+        const float inv = 1.0f / dir[i];
+        float t0 = (lo[i] - org[i]) * inv;
+        float t1 = (hi[i] - org[i]) * inv;
+        if (t0 > t1) { const float sw = t0; t0 = t1; t1 = sw; }
+        if (t0 > tMin) tMin = t0;
+        if (t1 < tMax) tMax = t1;
+        if (tMin > tMax) return -1.0f;
+    }
+    return tMin;
 }
 
-const Structure* SubworldEngine::aimed_prop(float reach, float& outScore) const {
+const Structure* SubworldEngine::aimed_prop(float reach) const {
+    // Начало — ГЛАЗ, а не ступни, и дверь высоты ОДНА на весь прицел
+    // (`player_muzzle_z`): луч из `playerZ_` шёл бы параллельно взгляду на
+    // рост ниже него и промахивался бы всем, как только игрок целится не
+    // по уровню — тот же класс дыры, что лечил `crosshair_stance`.
+    const float cp = std::cos(cam_.pitch);
+    const float fx = std::cos(cam_.yaw) * cp;
+    const float fy = std::sin(cam_.yaw) * cp;
+    const float fz = std::sin(cam_.pitch);
+    const float ax = playerX_, ay = playerY_, az = player_muzzle_z();
     const Structure* best = nullptr;
-    float bestScore = -1.0f;
+    // ПЕРВЫЙ ПРОТКНУТЫЙ И ЕСТЬ ЦЕЛЬ: предел сжимается найденным, поэтому
+    // дальний проп отсекается плитами, а не вторым сравнением. Предел руки
+    // мерится ПО ЛУЧУ — досягаемость и прицел стали одной величиной.
+    float bestT = reach;
     for (const Structure& s : interactProps_) {
         if (structure_interact(s.kind) == InteractId::None) continue;
-        // THE REACH IS ISOTROPIC — every prop, no fork by kind. The vertical
-        // gap to the prop's own solid span always joins the test.
-        //
-        // This used to add the vertical term ONLY when `s.zBase > 0 || s.zWorld`,
-        // on the reasoning that «a doorstep and a doorstep's doorstep never
-        // differ by storeys». True while the player STANDS; flight repeals it,
-        // and the owner caught it in a live run 2026-09-28: over a door's
-        // footprint `structure_surface_dist2` is the distance to a rectangle in
-        // the XY plane and carries no Z at all, so «E enter the door» offered
-        // itself from any altitude. A branch by ROD is what let one of the two
-        // candidates of this resolver be honest while the other was not — the
-        // corpse measured `dist3sq`, the prop did not. (Второго кандидата с
-        // 2026-10-05 нет вовсе: труп-контейнер снят, и разъехаться двум мерам
-        // больше негде. Изотропия здесь остаётся законом тела, а не следствием
-        // сравнения с кем-то.)
         const float seat = mgr_.height_field().sample(s.x, s.y);
         float zLow, zHigh;
         structure_solid_span(s, seat, zLow, zHigh);
-        const float dz = playerZ_ < zLow ? zLow - playerZ_
-                       : playerZ_ > zHigh ? playerZ_ - zHigh
-                                          : 0.0f;
-        const float d2 = structure_surface_dist2(s, playerX_, playerY_)
-                       + dz * dz;
-        if (d2 > reach * reach) continue;
-        const float score = aim_score(playerX_, playerY_, cam_.yaw, s.x, s.y);
-        if (score > bestScore) {
-            bestScore = score;
-            best = &s;
-        }
+        const float t = ray_enters_structure(s, zLow, zHigh, ax, ay, az,
+                                             fx, fy, fz, bestT);
+        if (t < 0.0f) continue;
+        bestT = t;
+        best = &s;
     }
-    outScore = bestScore;
     return best;
 }
 
@@ -3158,8 +3184,7 @@ SubworldEngine::AimedTarget SubworldEngine::aimed_target() const {
     // реестре, а не заткнута заглушкой). Вместе с трупом ушла и вторая
     // половина этого резолвера: сравнивать два счёта больше нечего, и
     // расходиться двум мерам негде по построению.
-    float propScore = -1.0f;
-    const Structure* prop = aimed_prop(reach, propScore);
+    const Structure* prop = aimed_prop(reach);
     if (prop != nullptr) {
         out.prop = prop;
         out.id = structure_interact(prop->kind);

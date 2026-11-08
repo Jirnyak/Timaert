@@ -1047,7 +1047,7 @@ private:
     // measured to the prop's SURFACE. `outScore` — счёт прицела победителя;
     // сравнивать его теперь не с кем (род цели один), но величина остаётся
     // мерой выбора МЕЖДУ ПРОПАМИ, а не служебным остатком снятого трупа.
-    const Structure* aimed_prop(float reach, float& outScore) const;
+    const Structure* aimed_prop(float reach) const;
     // Step through a door prop: resolves the building it belongs to (its
     // `tag` is that house's ordinal within the window cell) and raises the
     // interior. False if the building cannot be resolved.
