@@ -42,6 +42,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
+#include "core/math.h"   // kPi — одно написание на мир
 
 namespace {
 
@@ -140,7 +141,7 @@ Sample measure_cell(const TerrainData& td, int cx, int cy, std::uint32_t seed) {
         }
     std::sort(slope.begin(), slope.end());
     const auto deg = [](float dzPerM) {
-        return double(std::atan(dzPerM) * 57.2957795f);
+        return double(std::atan(dzPerM) * (180.0f / kPi));
     };
     s.slopeP50 = deg(slope[slope.size() / 2]);
     s.slopeP90 = deg(slope[slope.size() * 9 / 10]);

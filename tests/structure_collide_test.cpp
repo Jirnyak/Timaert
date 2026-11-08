@@ -139,7 +139,7 @@ void part_a_index_semantics() {
     // Lintel over "street" at (200, 100): 4 m span, solid z ∈ [5, 8].
     solids.push_back(make_box(200.0f, 100.0f, 4.0f, 1.1f, 0.0f, 3.0f, 5.0f));
     // Oriented plank: 16×1.1 at 45° around (300, 300).
-    solids.push_back(make_box(300.0f, 300.0f, 8.0f, 1.1f, 0.785398f, 5.0f));
+    solids.push_back(make_box(300.0f, 300.0f, 8.0f, 1.1f, 0.25f * kPi, 5.0f));
     // Round tower r=3 at (50, 50).
     solids.push_back(make_cylinder(50.0f, 50.0f, 3.0f, 10.0f));
     idx.rebuild(solids, &flat_height, nullptr);
@@ -180,7 +180,7 @@ void part_a_index_semantics() {
 
     // ── Oriented box: the yaw is honest ──
     // Along the plank's local X (45°): 6 units out is inside (hx 8).
-    const float c45 = std::cos(0.785398f);
+    const float c45 = std::cos(0.25f * kPi);
     CHECK(idx.blocked_at(300.0f + 6.0f * c45, 300.0f + 6.0f * c45, 0.3f, 0.0f, kManH),
           "point along the rotated plank axis is inside");
     // Along world X the same 6 units is ~4.2 off-axis in local Y (hy 1.1): free.

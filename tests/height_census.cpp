@@ -62,6 +62,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include "core/math.h"   // kPi — одно написание на мир
 
 namespace {
 
@@ -90,7 +91,7 @@ float percentile(std::vector<float>& sorted, float q) {
 }
 
 float degrees_per_cell(float riseM) {
-    return std::atan(riseM / kCellSpanM) * 57.2957795f;
+    return std::atan(riseM / kCellSpanM) * (180.0f / sm::kPi);
 }
 
 // Скользящее среднее s×s по ТОРУ, разделимое, бегущей суммой: O(N) на масштаб.

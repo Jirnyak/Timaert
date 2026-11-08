@@ -322,7 +322,7 @@ void gen_field(const GenInput& in, SubworldMapData& out) {
             s.radius = 0.9f;
             s.height = 0.7f
                 + noise01(gox + x, goy + y, salt ^ 0x0fe57u) * 0.5f;
-            s.yaw    = fr.theta + 1.5707963f;   // long side along the balk
+            s.yaw    = fr.theta + 0.5f * kPi;   // long side along the balk
             s.hx     = 1.3f;
             s.hy     = 0.5f;
             out.structures.push_back(s);

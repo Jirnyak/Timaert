@@ -3329,7 +3329,7 @@ bool run_dungeon_house_smoke(App& app) {
             // изотропная рука (M-178) честно отказывает. Дверная половина
             // уже встаёт на ноги; таблице тот же закон.
             smoke_settle_on_foot(app);
-            app.subworld.rotate_camera(1.5707963f - app.subworld.cam_yaw(), 0.0f);
+            app.subworld.rotate_camera(0.5f * kPi - app.subworld.cam_yaw(), 0.0f);
             readSign = app.subworld.interact();
         }
     }
@@ -3595,7 +3595,7 @@ bool run_dungeon_house_smoke(App& app) {
     app.subworld.set_player_pos(exitX, exitY);
     // Face the exit door: it stands on the south wall the threshold looks at,
     // and E is aim-driven, so the smoke must look at it like a player.
-    app.subworld.rotate_camera(1.5707963f - app.subworld.cam_yaw(), 0.0f);
+    app.subworld.rotate_camera(0.5f * kPi - app.subworld.cam_yaw(), 0.0f);
     app.subworld.tick(0.016f);
 
     // Opt-in (TIMAERT_SMOKE_DUNGEON_STAY=1, optionally with
@@ -3616,12 +3616,12 @@ bool run_dungeon_house_smoke(App& app) {
         // there, and set_player_pos does not resolve solids the way walking
         // does.)
         float sx = 0.0f, sy = 0.0f;
-        float faceYaw = -1.5707963f;            // north, up the hall
+        float faceYaw = -0.5f * kPi;            // north, up the hall
         if (app.subworld.dungeon_exit_point(sx, sy)) {
             // Back off the threshold into the room and turn round to look AT
             // it: the way out is the thing worth photographing.
             app.subworld.set_player_pos(sx, sy - 6.0f);
-            faceYaw = 1.5707963f;               // south, at the door
+            faceYaw = 0.5f * kPi;               // south, at the door
         }
         app.subworld.rotate_camera(faceYaw - app.subworld.cam_yaw(), 0.0f);
         app.subworld.tick(0.016f);
@@ -3757,7 +3757,7 @@ bool run_dungeon_house_smoke(App& app) {
     float x2 = 0.0f, y2 = 0.0f;
     if (app.subworld.dungeon_exit_point(x2, y2)) {
         app.subworld.set_player_pos(x2, y2);
-        app.subworld.rotate_camera(1.5707963f - app.subworld.cam_yaw(), 0.0f);
+        app.subworld.rotate_camera(0.5f * kPi - app.subworld.cam_yaw(), 0.0f);
         exited2 = app.subworld.interact() && !app.subworld.in_dungeon();
     }
 
@@ -4048,7 +4048,7 @@ bool run_dungeon_cave_smoke(App& app) {
     // Opt-in (TIMAERT_SMOKE_CAVE_STAY=1): stop inside, looking up the first
     // gallery, so a following capture_frame photographs the cavern.
     if (std::getenv("TIMAERT_SMOKE_CAVE_STAY")) {
-        app.subworld.rotate_camera(-1.5707963f - app.subworld.cam_yaw(), 0.0f);
+        app.subworld.rotate_camera(-0.5f * kPi - app.subworld.cam_yaw(), 0.0f);
         app.subworld.tick(0.016f);
         std::fprintf(stderr, "[smoke] dungeon_cave STAY in=%d\n",
                      inCave ? 1 : 0);
@@ -4655,7 +4655,7 @@ bool run_spire_climb_smoke(App& app) {
         const float vy = gate->y + 28.0f;
         app.subworld.set_player_pos(vx, vy);
         app.subworld.rotate_camera(
-            -1.5707963f - app.subworld.cam_yaw(), 0.35f);
+            -0.5f * kPi - app.subworld.cam_yaw(), 0.35f);
         app.subworld.tick(0.016f);
         return true;
     }
@@ -4684,7 +4684,7 @@ bool run_spire_climb_smoke(App& app) {
         }
         // The threshold is the hall's south edge: face NORTH, into the room.
         app.subworld.rotate_camera(
-            -1.5707963f - app.subworld.cam_yaw(), 0.05f);
+            -0.5f * kPi - app.subworld.cam_yaw(), 0.05f);
         app.subworld.tick(0.016f);
         return true;
     }
@@ -4764,7 +4764,7 @@ bool run_spire_climb_smoke(App& app) {
         const float c = float(sm::sub::kCellSize) * 1.5f;
         app.subworld.set_player_pos(c, c + 4.0f);
         app.subworld.rotate_camera(
-            -1.5707963f - app.subworld.cam_yaw(), -0.1f);
+            -0.5f * kPi - app.subworld.cam_yaw(), -0.1f);
         app.subworld.tick(0.016f);
         return true;
     }
@@ -11046,8 +11046,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          double(app.subworld.player_x()),
                          double(app.subworld.player_y()),
                          double(fx), double(fy),
-                         double(yaw * 57.2957795f),
-                         double(app.subworld.cam_pitch() * 57.2957795f));
+                         double(yaw * (180.0f / kPi)),
+                         double(app.subworld.cam_pitch() * (180.0f / kPi)));
             std::fflush(stderr);
             // Enter the settle phase instead of capturing now: the staging we
             // just did only reaches the recorded scene next frame (see the

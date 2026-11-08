@@ -146,9 +146,9 @@ LaneNet grow_lanes(SubworldMapData& out, const Outline& area, float wallInset,
             const float y = sy + uy * along;
             mark_served(x, y);
             const float side = (r.next_u32() & 1u) ? 1.0f : -1.0f;
-            tips.push_back({x, y, dir + side * 1.5707963f,
+            tips.push_back({x, y, dir + side * 0.5f * kPi,
                             LaneRank::Street, 0.0f, 0});
-            tips.push_back({x, y, dir - side * 1.5707963f,
+            tips.push_back({x, y, dir - side * 0.5f * kPi,
                             LaneRank::Street, 0.0f, 0});
         }
     }
@@ -277,7 +277,7 @@ LaneNet grow_lanes(SubworldMapData& out, const Outline& area, float wallInset,
                 && t.rank != LaneRank::Alley) {
                 t.sinceBranch = 0.0f;
                 const float side = (r.next_u32() & 1u) ? 1.0f : -1.0f;
-                tips.push_back({t.x, t.y, t.dir + side * 1.5707963f,
+                tips.push_back({t.x, t.y, t.dir + side * 0.5f * kPi,
                                 LaneRank(std::uint8_t(t.rank) + 1), 0.0f, 0});
             }
         }

@@ -32,6 +32,7 @@
 #include <cstring>
 #include <utility>
 #include <vector>
+#include "core/math.h"   // kPi — одно написание на мир
 
 namespace sm::sub {
 
@@ -3502,7 +3503,7 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     // ── Camera matrices (Vulkan conventions) ──
     const float aspect = static_cast<float>(ext.width)
                          / static_cast<float>(std::max(ext.height, 1u));
-    const float fovRad = cam.fovDeg * 0.0174533f;
+    const float fovRad = cam.fovDeg * kPi / 180.0f;
     // ДАЛЬНЯЯ ПЛОСКОСТЬ ПОКРЫВАЕТ ТО, ЧТО ПОСТРОЕНО, и ничего не решает сама.
     // «Константы дальности прорисовки не существует» (CANON S18.1): что видно
     // — решает ВОЗДУХ, равнина растворяется сама, вершина сама доживает. Эта
