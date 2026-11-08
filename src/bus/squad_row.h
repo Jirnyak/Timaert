@@ -578,6 +578,23 @@ inline void squad_recovery_elapsed(MacroNpcRuntime& rt, std::uint32_t ticks) {
     rt.recoverySteps = sub_sat(rt.recoverySteps, ticks);
 }
 
+// СЛИВ ШТАМПА «Я СРАЖАЮСЬ» — ТА ЖЕ ФОРМА, И ТЕПЕРЬ ТОЖЕ ОДНА ДВЕРЬ.
+// Ревизия 2026-11-08: закон этого слива был СКОПИРОВАН — две побайтово
+// одинаковые строки `rt.fighting = sub_sat(rt.fighting, 1)` стояли в
+// `advance_flag_clock@src/macro/npc_ai.h` и в драйвере думок
+// `src/macro/npc_ai.cpp`, то есть второй ответ на один вопрос мира (DOD
+// п.6) — при том что ЭТАЛОН одной двери с двумя звонящими стоял в ТЕХ ЖЕ
+// двух точках строкой выше (`squad_recovery_elapsed`). Квант здесь ОДИН
+// (думка), а не тик, поэтому и подписи у дверей разные: слив рековери
+// меряется тиками, слив штампа — думками, и их единица названа вслух.
+//
+// Взводят штамп только снизу (`squad_mark_fighting@src/bus/store.h` из
+// двери урона), снимает время: штамп, который перестали обновлять, тает
+// сам за `kFightThinks` думок. «Бой кончился» есть ОТСУТСТВИЕ удара.
+inline void squad_fighting_elapsed(MacroNpcRuntime& rt) {
+    rt.fighting = sub_sat(rt.fighting, std::uint8_t{1});
+}
+
 // ОДНО ПРАВОПИСАНИЕ ВОПРОСА «ЗАНЯТ ЛИ СКВАД» — у `stateTimer` их было три
 // (`<= 0` в then-ветке · `> 0 return` · гейт до декремента), то есть второй
 // словарь, спрятанный в глаголах (шапка `src/sub/ability.h` о том же гейте

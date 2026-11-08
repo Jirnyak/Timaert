@@ -16,10 +16,10 @@ Outline wall_ring_noise(const Outline& base, float roughness, Rng& r) {
     // derives the ring's worst INWARD excursion from them (wall_inner_bound)
     // so nobody is placed in a dip of the wall — i.e. outside their own town.
     // Same model for every ring; one authority.
-    const float phase1 = r.next_f01() * Outline::kTwoPi;
-    const float phase2 = r.next_f01() * Outline::kTwoPi;
+    const float phase1 = r.next_f01() * kTwoPi;
+    const float phase2 = r.next_f01() * kTwoPi;
     for (int i = 0; i < Outline::kBearings; ++i) {
-        const float angle = float(i) * Outline::kTwoPi / float(Outline::kBearings);
+        const float angle = float(i) * kTwoPi / float(Outline::kBearings);
         const float harmonic =
             std::sin(angle * 3.0f + phase1) * kSettlementWallRing.harmonic3Amp
           + std::sin(angle * 5.0f + phase2) * kSettlementWallRing.harmonic5Amp;

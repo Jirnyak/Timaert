@@ -17,7 +17,6 @@
 #include "macro/map_generator.h"   // LayerParameters
 #include "macro/save.h"            // SaveSummary
 
-namespace sm::ecs { struct World; }
 
 namespace sm {
 struct GameState;

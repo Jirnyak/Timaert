@@ -1,5 +1,6 @@
 #include "sub/gens/kit/streets.h"
 
+#include "core/math.h"   // kPi — ОДНО написание на весь мир
 #include "core/rng.h"
 #include "sub/height.h"
 
@@ -88,7 +89,6 @@ void carve_road_leg(SubworldMapData& out,
     const float invDist = 1.0f / dist;
     const float nx = -fdy * invDist;   // rotated 90°
     const float ny =  fdx * invDist;
-    constexpr float kPi   = 3.14159265f;
     constexpr float kFreq = 0.012f;      // gentle long-wavelength curve
     const float phase     = float(worldSeed & 0xfffffu) * 0.0001f;
     const int steps = int(std::ceil(dist));

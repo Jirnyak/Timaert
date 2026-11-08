@@ -8,6 +8,7 @@
 #include "sub/gens/kit/tiles.h"
 #include "sub/gens/kit/outline.h"
 #include "sub/city_layout.h"
+#include "core/math.h"   // kPi — ОДНО написание на весь мир
 #include "core/rng.h"
 #include "sub/height.h"
 #include <algorithm>
@@ -149,11 +150,10 @@ static void add_bridge_segment(SubworldMapData& out, int ax, int ay, int bx, int
         const float camberM = (anyDry && halfSpan > 0)
             ? std::min(kCamberMaxM, kCamberStepM * float(halfSpan))
             : 0.0f;
-        constexpr float kHalfPi = 1.57079633f;
         const auto arch_at = [&](int chordsFromBank) {
             const float r = halfSpan > 0
                 ? float(chordsFromBank) / float(halfSpan) : 0.0f;
-            return deckTopM + camberM * std::sin(kHalfPi * r);
+            return deckTopM + camberM * std::sin(0.5f * kPi * r);
         };
         // The ramp starts from the SPAN, not from the bare level: the first
         // wet chord is already up on the arch, so a ramp falling from the

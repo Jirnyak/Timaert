@@ -55,7 +55,7 @@ int stamp_palisade(SubworldMapData& out, const kit::Outline& outline,
     std::array<float, kNodes> xs{};
     std::array<float, kNodes> ys{};
     for (int i = 0; i < kNodes; ++i) {
-        const float angle = float(i) * kit::Outline::kTwoPi / float(kNodes);
+        const float angle = float(i) * kTwoPi / float(kNodes);
         xs[std::size_t(i)] = outline.cx + std::cos(angle) * outline.r[std::size_t(i)];
         ys[std::size_t(i)] = outline.cy + std::sin(angle) * outline.r[std::size_t(i)];
     }

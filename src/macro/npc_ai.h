@@ -499,7 +499,7 @@ inline void advance_flag_clock(ecs::MacroNpcRuntime& rt, std::uint32_t ticks) {
     // двумя строками и есть try_spend, написанный руками над беззнаковым).
     while (try_spend(rt.tickAccum, kAiTicks)) {
         rt.entryTicks = saturate_entry_ticks(rt.entryTicks);
-        rt.fighting = sub_sat(rt.fighting, std::uint8_t{1});
+        ecs::squad_fighting_elapsed(rt);
     }
 }
 

@@ -6,6 +6,8 @@
 // months). Adding a spell = one data row there + one effect row here.
 #include "content/spells/casting.h"
 
+#include "core/math.h"   // kTwoPi — ОДНО написание полного оборота
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -22,7 +24,6 @@ namespace sm {
 
 namespace {
 
-constexpr float kArmageddonTau = 6.28318530717958647692f;
 constexpr float kArmageddonPerMeteorBlast = 25.0f;
 constexpr int kArmageddonMinMeteors = 16;
 constexpr std::uint32_t kArmageddonMixA = std::uint32_t{747796405};
@@ -199,7 +200,7 @@ void spawn_armageddon(sub::SubObjects* objs, const SpellSpawnContext& c) {
     for (int i = 0; i < count; ++i) {
         const std::uint32_t seed =
             baseSeed + std::uint32_t(i) * kArmageddonMixA;
-        const float angle = spawn_random01(c, seed) * kArmageddonTau;
+        const float angle = spawn_random01(c, seed) * kTwoPi;
         const float dist = spawn_random01(c, seed ^ kArmageddonSaltA) * spread;
         const float delay = spawn_random01(c, seed ^ kArmageddonSaltB) * 0.5f;
         const float life = 0.3f + delay;

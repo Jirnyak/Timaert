@@ -15,7 +15,6 @@ namespace sm {
 struct MacroWorld;   // конверт слоёв мира (macro/macro_world.h)
 struct TreeLayer;
 struct FeatureLayer;
-namespace ecs { struct World; }
 }
 
 namespace sm::ui {

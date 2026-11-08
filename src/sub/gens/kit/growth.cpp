@@ -198,7 +198,7 @@ Outline grow_outline(const SubworldMapData& out, float cx, float cy,
     // walled town is anyway: you can walk from the square to any of its wall
     // without leaving it.
     for (int b = 0; b < Outline::kBearings; ++b) {
-        const float ang = float(b) * Outline::kTwoPi / float(Outline::kBearings);
+        const float ang = float(b) * kTwoPi / float(Outline::kBearings);
         const float ca = std::cos(ang), sa = std::sin(ang);
         float reach = coreRadius;
         for (float d = coreRadius; d <= maxRadius; d += float(kStep) * 0.5f) {

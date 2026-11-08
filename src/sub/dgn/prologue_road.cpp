@@ -25,13 +25,13 @@
 #include "sub/dgn/dispatch.h"
 #include "sub/base_generator.h"
 
+#include "core/math.h"   // kTwoPi — ОДНО написание полного оборота
+
 #include <cmath>
 
 namespace sm::sub {
 
 namespace {
-
-constexpr float kTau = 6.28318530718f;
 
 // The block: wrapCells×wrapCells variant cells, road down the vx==0 column.
 // The resolver anchors the entered window's centre on variant (0, 0). ONE
@@ -69,7 +69,7 @@ inline int wrap_variant(int v) {
 inline float road_axis_x(float gy) {
     const float period = float(block_cells() * kCellSize);
     return float(kCellSize) * 0.5f
-         + kRoadSwingTiles * std::sin(kTau * gy / period);
+         + kRoadSwingTiles * std::sin(kTwoPi * gy / period);
 }
 
 } // namespace
@@ -122,14 +122,14 @@ void gen_dungeon_prologue_road(const CellContext& ctx, SubworldMapData& out) {
     const float base = ctx.macroHeight;   // рельеф ЕСТЬ макровысота
     const float period = float(block_cells() * W);
     const std::uint32_t s = ctx.worldSeed * 2654435761u;
-    const float p1 = float(s & 0xFFu) * (kTau / 256.0f);
-    const float p2 = float((s >> 8) & 0xFFu) * (kTau / 256.0f);
-    const float p3 = float((s >> 16) & 0xFFu) * (kTau / 256.0f);
+    const float p1 = float(s & 0xFFu) * (kTwoPi / 256.0f);
+    const float p2 = float((s >> 8) & 0xFFu) * (kTwoPi / 256.0f);
+    const float p3 = float((s >> 16) & 0xFFu) * (kTwoPi / 256.0f);
     out.heightmap.assign(n, base);
     for (int y = 0; y < W; ++y) {
-        const float gy = kTau * float(vy * W + y) / period;
+        const float gy = kTwoPi * float(vy * W + y) / period;
         for (int x = 0; x < W; ++x) {
-            const float gx = kTau * float(vx * W + x) / period;
+            const float gx = kTwoPi * float(vx * W + x) / period;
             const float relief =
                 std::sin(9.0f * gx + p1) * std::sin(6.0f * gy + p2)
                 + 0.5f * std::sin(15.0f * gx - 9.0f * gy + p3)

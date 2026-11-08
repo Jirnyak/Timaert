@@ -152,11 +152,12 @@ struct MissileAttack {
 // (SubworldTag умер ломтём 6 M-150: «жилец сцены» = слот арены, биекция
 // «живой слот ⟷ сущность с ObjectSlot» — свидетель в body_contract_test;
 // тег был вторым ответом на вопрос, на который уже отвечал слот.)
-// Lazy vertical state (sub/height.h vertical_step): emplaced the moment a
-// non-flying body leaves its support surface (walked off a battlement, lost
-// flight, a future jump), removed on landing. Grounded bodies — the thousands
-// of common cases — carry nothing and cost nothing.
-struct Airborne { float vz = 0.0f; };
+// `Airborne { float vz }` СНЕСЕНА 2026-11-08 (ревизия, DOD п.9): ноль
+// конструкций, ноль чтений, ноль записей во всём дереве. Величину несут бит
+// `kObjAirborne` + колонка `airborneVz@src/sub/objects.h`, двери —
+// `src/sub/doors.h`; некролог той замены стоял рядом с битом ещё тогда, а
+// структуру забыли. Опциональность компоненты, за которую она жила, отменена
+// ЗАКОНОМ СТРОКИ КАТАЛОГА и единым плоским массивом тел.
 
 // (ObjectSlot УМЕР ломтём D M-150, 2026-10-16: слот стал САМОЙ
 // идентичностью тела — жильцы сцены живут в едином массиве sub/objects.h,
@@ -407,7 +408,6 @@ TIMAERT_ROW(sm::ecs::Position);
 TIMAERT_ROW(sm::ecs::VisualPos);
 TIMAERT_ROW(sm::ecs::Combat);
 TIMAERT_ROW(sm::ecs::MissileAttack);
-TIMAERT_ROW(sm::ecs::Airborne);
 TIMAERT_ROW(sm::ecs::SubworldAi);
 TIMAERT_ROW(sm::ecs::MacroDebt);
 TIMAERT_ROW(sm::ecs::MacroOrigin);

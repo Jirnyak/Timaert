@@ -13,6 +13,7 @@
 #include "tables/faction.h"
 #include "ecs/components.h"
 #include "bus/squad_row.h"   // NpcCharacter + ролл лица (M-411: ecs/npc_character.h растворён)
+#include "core/math.h"   // kPi/kTwoPi — ОДНО написание на весь мир
 #include "core/rng.h"
 #include "tables/npc.h"
 #include "tables/stock_key.h"   // MacroStock/MacroStockKey — словарь расписки
@@ -118,10 +119,9 @@ struct TownShape {
 
     bool holds(float x, float y, float inset) const {
         const float dx = x - cx, dy = y - cy;
-        constexpr float kTau = 6.2831853f;
         float a = std::atan2(dy, dx);
-        if (a < 0.0f) a += kTau;
-        int b = int(a / kTau * float(kBearings));
+        if (a < 0.0f) a += kTwoPi;
+        int b = int(a / kTwoPi * float(kBearings));
         if (b >= kBearings) b = kBearings - 1;
         const float bound = r[std::size_t(b)] - inset;
         if (bound <= 0.0f) return false;
@@ -147,9 +147,8 @@ TownShape measure_town(const std::vector<std::uint8_t>& tiles,
         s.r.fill(fallback);
         return s;
     }
-    constexpr float kTau = 6.2831853f;
     for (int b = 0; b < TownShape::kBearings; ++b) {
-        const float ang = float(b) * kTau / float(TownShape::kBearings);
+        const float ang = float(b) * kTwoPi / float(TownShape::kBearings);
         const float ca = std::cos(ang), sa = std::sin(ang);
         for (float d = 1.0f; d <= maxRadius; d += 1.0f) {
             const int x = int(cx + ca * d);
@@ -204,7 +203,6 @@ bool find_city_spawn_spot(const std::vector<std::uint8_t>& tiles,
         return false;
     }
     if (!(radius > 0.0f)) return false;
-    constexpr float kTau = 6.2831853f;
     // Sample the town's REACH and keep what its outline holds. Sampling the
     // guaranteed disk instead would put a round crowd in a town that is not
     // round — visible at a glance on the minimap, and wrong on the ground:
@@ -213,7 +211,7 @@ bool find_city_spawn_spot(const std::vector<std::uint8_t>& tiles,
     const bool found = resolve_stand(
         64,
         [&](float& sx, float& sy) {
-            const float a = rng.next_f01() * kTau;
+            const float a = rng.next_f01() * kTwoPi;
             const float r = reach * std::sqrt(rng.next_f01());
             sx = cx + std::cos(a) * r;
             sy = cy + std::sin(a) * r;
@@ -1349,8 +1347,6 @@ void spawn_player_squad(SubObjects& objs,
     if (creatures_empty(squad)) return;
 
     Rng rng(seed ^ 0x51AD5A11u);
-    constexpr float kPi = 3.1415926535f;
-    constexpr float kTau = kPi * 2.0f;
     const int count = std::max(1, creature_count(squad));
     const bool tilesUsable =
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
@@ -1371,7 +1367,7 @@ void spawn_player_squad(SubObjects& objs,
         float fy = playerY;
         bool placed = false;
         for (int attempt = 0; attempt < 24; ++attempt) {
-            const float baseAngle = (float(i) / float(count)) * kTau;
+            const float baseAngle = (float(i) / float(count)) * kTwoPi;
             const float jitter = (rng.next_f01() - 0.5f) * 0.7f;
             const float radius = 5.0f + float((i % 5) * 3) + rng.next_f01() * 2.0f;
             fx = std::clamp(playerX + std::cos(baseAngle + jitter) * radius,
@@ -1670,7 +1666,6 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
         // avatar's spot rather than being lost. The whole creatures walks in —
         // no ceiling (§42 Инк 6): an army of hundreds meets you as hundreds.
         if (const Inventory* mbag = squad_container(st, macro)) {
-            constexpr float kTau = 6.2831853f;
             const int memberCount = int(creature_count(*mbag));
             int m = -1;
             for (const CreatureRef rec : creatures_range(*mbag)) {
@@ -1679,7 +1674,7 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
 
                 float mfx = fx, mfy = fy;
                 for (int attempt = 0; attempt < 20; ++attempt) {
-                    const float ang = (float(m) / float(memberCount)) * kTau
+                    const float ang = (float(m) / float(memberCount)) * kTwoPi
                                       + (rng.next_f01() - 0.5f) * 0.9f;
                     const float rad = 2.0f + rng.next_f01() * 3.0f;
                     const float tx = std::clamp(fx + std::cos(ang) * rad,

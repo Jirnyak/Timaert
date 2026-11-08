@@ -32,6 +32,7 @@
 // a table promotion, not a rewrite.
 #pragma once
 
+#include "core/math.h"      // kPi — ОДНО написание на весь мир
 #include "sub/crowd_layout.h"  // гарнизонный сдвиг рода — данные субмира
 #include "sub/map_data.h"
 #include "sub/sky.h"       // time_of_day01 — the one clock the sun reads
@@ -289,7 +290,6 @@ inline float city_target_area(int population) {
 // cell it stands in, and it must leave room for its own fields beyond the
 // walls.
 inline int city_wall_radius(int population) {
-    constexpr float kPi = 3.14159265f;
     const float r = std::sqrt(city_target_area(population) / kPi);
     return int(std::min(float(kCellSize) * 0.30f, std::max(8.0f, r)));
 }
@@ -348,7 +348,7 @@ inline float village_core_radius_guaranteed(int population) {
 }
 inline float village_target_area(int population) {
     const float r = village_core_radius(population);
-    return 3.14159265f * r * r;
+    return kPi * r * r;
 }
 inline float village_max_radius(int population) {
     return std::min(float(kCellSize) * 0.20f,
@@ -450,7 +450,6 @@ inline float city_upper_area(int population) {
 }
 
 inline float city_upper_radius(int population) {
-    constexpr float kPi = 3.14159265f;
     return std::sqrt(std::max(1.0f, city_upper_area(population)) / kPi);
 }
 

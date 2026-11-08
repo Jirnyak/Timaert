@@ -5,8 +5,6 @@
 #include "tables/npc.h"
 #include <algorithm>
 #include <cmath>
-#include <cstdio>    // ВРЕМЕННО: лог стенда TIMAERT_FIGHT_LOG — снести с ним
-#include <cstdlib>   // ВРЕМЕННО: getenv того же лога
 
 namespace sm::sub {
 
@@ -157,18 +155,6 @@ DamageResult apply_damage(SubObjects& objs, MacroStore* st, int targetSlot,
     if (st != nullptr)
         if (const MacroHandle victim = slot_squad_of(objs, s, *st);
             victim.id != 0) {
-            // ВРЕМЕННЫЙ ЛОГ СТЕНДА (TIMAERT_FIGHT_LOG) — инструмент одного
-            // вопроса, снести после вердикта владельца (§5 п.10).
-            static const bool kFightLog =
-                std::getenv("TIMAERT_FIGHT_LOG") != nullptr;
-            if (kFightLog && st->valid(victim)
-                && st->runtime[victim.slot].fighting == 0)
-                std::fprintf(stderr,
-                             "[fight] сквад ord=%u slot=%u type=%u ВСТУПИЛ В "
-                             "БОЙ (удар по телу слота %d)\n",
-                             st->spawnId[victim.slot].index,
-                             unsigned(victim.slot),
-                             unsigned(st->kind[victim.slot].type), s);
             squad_mark_fighting(*st, victim);
         }
     // A crit found the armour gap: mitigation is not in the way, exactly as

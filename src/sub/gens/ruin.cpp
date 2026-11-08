@@ -8,6 +8,7 @@
 #include "sub/gens/kit/tiles.h"
 #include "sub/gens/kit/outline.h"
 #include "sub/city_layout.h"
+#include "core/math.h"   // kTwoPi — ОДНО написание полного оборота
 #include "core/rng.h"
 #include "sub/height.h"
 #include <algorithm>
@@ -55,8 +56,6 @@ static void build_ruin_wall(SubworldMapData& out,
                             float radius,
                             int segments,
                             float roughness) {
-    constexpr float kPi = 3.14159265f;
-    constexpr float kTwoPi = kPi * 2.0f;
     std::array<float, 16> xs{};
     std::array<float, 16> ys{};
     const float cx = float(kCellSize / 2);

@@ -7,10 +7,13 @@
 // inline-accessor idiom as seasons.h / squad_type.h / biomes.h: adding a
 // moon or a constellation is ONE row, no engine change, no if-chain.
 //
-// Ownership seam: this header is pure gameplay DATA and pure lookups with zero
-// dependencies beyond the standard library. The renderer (#include this header)
-// reads the tables to draw the sky — moon discs at their current illuminated
-// fraction and colour, constellation star-graphs at their fixed dome positions.
+// Ownership seam: this header is pure gameplay DATA and pure lookups with no
+// dependency above core/ — the one layer tables/ may see (AGENTS §11). Here it
+// takes `kTwoPi` from core/math.h: the full turn has ONE spelling in the world,
+// and a sky that rounded π on its own would be a second number for one angle.
+// The renderer (#include this header) reads the tables to draw the sky — moon
+// discs at their current illuminated fraction and colour, constellation
+// star-graphs at their fixed dome positions.
 // This layer also owns each body's PLACE in the sky (sun_dir / moon_dir below):
 // a moon's position and its phase derive from the one lag angle, so the disc
 // you see, the moonlight on the terrain and the moon-path on the water agree by
@@ -22,6 +25,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include "core/math.h"        // kTwoPi — ОДНО написание τ на весь мир
 #include "core/table_guard.h"
 #include <cstdint>
 
@@ -71,8 +75,7 @@ inline constexpr const MoonDef& moon_def(MoonId m) {
     return kMoons[std::size_t(m)];
 }
 
-inline constexpr float kCelTau      = 6.28318530718f;
-inline constexpr float kCelDegToRad = kCelTau / 360.0f;
+inline constexpr float kCelDegToRad = kTwoPi / 360.0f;
 
 // Phase position in [0,1): 0 = new moon, 0.5 = full moon, →1 = back to new.
 // The float-day form is the master formula: the sky moves smoothly through
@@ -98,7 +101,7 @@ inline float moon_phase01(MoonId m, int day) {
 // curve f = (1 - cos(2π·phase))/2. This is what the renderer scales the lit
 // disc / moonlight contribution by, replacing the hardcoded always-full moon.
 inline float moon_illumination01f(MoonId m, float dayf) {
-    return 0.5f * (1.0f - std::cos(kCelTau * moon_phase01f(m, dayf)));
+    return 0.5f * (1.0f - std::cos(kTwoPi * moon_phase01f(m, dayf)));
 }
 inline float moon_illumination01(MoonId m, int day) {
     return moon_illumination01f(m, float(day));
@@ -125,8 +128,8 @@ inline bool moon_is_waxing(MoonId m, int day) {
 // hardcode. Each orbit additionally tilts off the sun's plane by its own
 // orbitTiltDeg, swinging the arc into Z so two moons never stack on one line.
 
-// A direction on the celestial dome (unit length). Deliberately its own tiny
-// POD, not core/math's vec3 — this header's contract is zero deps.
+// A direction on the celestial dome (unit length). Its own tiny POD: a dome
+// bearing is not a world vector, and nothing here does vector algebra on it.
 struct SkyDir { float x, y, z; };
 
 // The sun's daily arc in the X-Y plane: tod 0.25 = sunrise (+X), 0.5 = noon
@@ -135,7 +138,7 @@ struct SkyDir { float x, y, z; };
 // celestial direction" a mechanism instead of a comment. tod is the fraction
 // of the day in [0,1), midnight = 0.
 inline SkyDir sun_dir(float tod) {
-    const float a = (tod - 0.25f) * kCelTau;
+    const float a = (tod - 0.25f) * kTwoPi;
     return { std::cos(a), std::sin(a), 0.0f };
 }
 
@@ -144,7 +147,7 @@ inline SkyDir sun_dir(float tod) {
 // midnight instead of stepping.
 inline SkyDir moon_dir(MoonId m, int day, float tod) {
     const float phase = moon_phase01f(m, float(day) + tod);
-    const float a = (tod - 0.25f) * kCelTau - phase * kCelTau;
+    const float a = (tod - 0.25f) * kTwoPi - phase * kTwoPi;
     const float tilt = moon_def(m).orbitTiltDeg * kCelDegToRad;
     return { std::cos(a),
              std::sin(a) * std::cos(tilt),

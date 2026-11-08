@@ -225,8 +225,21 @@ enum class NPCState : std::uint8_t {
     Bridging,
 };
 
+// ОСЬ НРАВА НЕСЁТ РОВНО ТО, ЧТО МИР ЧИТАЕТ (ревизия 2026-11-08, вердикт
+// владельца «снести» по DOD п.9). Здесь стояли ВОСЕМЬ значений —
+// `Greedy, Honorable, Cowardly, Brave, Aggressive, Generous, Suspicious,
+// Curious`, — и ПЯТЬ из них были колонкой-сиротой чистейшего вида: ролл
+// выдавал их каждому скваду при рождении (`npc_spawn.cpp`), они ехали в сейв
+// на все 16384 слота — и читал их ТОЛЬКО серый тултип
+// (`npc_trait_label@src/ui/overlays.cpp`). Механику читают трое, и они
+// остались: `Cowardly`/`Brave` → `bravery_of@src/macro/npc_ai.cpp`,
+// `Greedy` → `encounter_payoff_cost@src/app/main.cpp`.
+//
+// Новый нрав заводится ОДНОЙ строкой — тогда, когда у него появится
+// читатель-механика, а не «на будущее»: это тот же класс дефекта, что
+// `statusEffect = "burning"`, который читал один тултип.
 enum class NPCTrait : std::uint8_t {
-    Greedy = 0, Honorable, Cowardly, Brave, Aggressive, Generous, Suspicious, Curious,
+    Greedy = 0, Cowardly, Brave,
     Count,
 };
 

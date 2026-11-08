@@ -290,7 +290,7 @@ void carve_pomerium(SubworldMapData& out, const Outline& area, float inset,
     float px = 0.0f, py = 0.0f;
     for (int i = 0; i <= Outline::kBearings; ++i) {
         const int b = i % Outline::kBearings;
-        const float ang = float(b) * Outline::kTwoPi / float(Outline::kBearings);
+        const float ang = float(b) * kTwoPi / float(Outline::kBearings);
         const float rr = std::max(1.0f, area.r[std::size_t(b)] - inset);
         const float nx = area.cx + std::cos(ang) * rr;
         const float ny = area.cy + std::sin(ang) * rr;

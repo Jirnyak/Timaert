@@ -25,6 +25,7 @@
 // each settlement module's own business and lives with that module.
 #pragma once
 
+#include "core/math.h"   // kTwoPi — ОДНО написание полного оборота
 #include "core/rng.h"
 
 #include <algorithm>
@@ -39,7 +40,6 @@ struct Outline {
     // bins azimuth into — a town's shape and the assertion about it are then
     // sampled at the same resolution.
     static constexpr int kBearings = 64;
-    static constexpr float kTwoPi = 6.28318530718f;
 
     float cx = 0.0f, cy = 0.0f;
     std::array<float, kBearings> r{};

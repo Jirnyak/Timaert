@@ -261,17 +261,17 @@ namespace sm::ui
 
         const char* npc_trait_label(std::uint8_t raw)
         {
+            // БЕЗ `default:` — ЗАКОН СЛОВАРЯ п.4: ось расширяема, и новый
+            // нрав обязан назвать себя `-Wswitch`-ом здесь, а не молча
+            // стать «?». Пять значений, которые читал ТОЛЬКО этот тултип,
+            // снесены с осью (см. `NPCTrait@src/tables/npc.h`).
             switch (static_cast<NPCTrait>(raw)) {
-                case NPCTrait::Greedy:     return "Greedy";
-                case NPCTrait::Honorable:  return "Honorable";
-                case NPCTrait::Cowardly:   return "Cowardly";
-                case NPCTrait::Brave:      return "Brave";
-                case NPCTrait::Aggressive: return "Aggressive";
-                case NPCTrait::Generous:   return "Generous";
-                case NPCTrait::Suspicious: return "Suspicious";
-                case NPCTrait::Curious:    return "Curious";
-                default:                   return "?";
+                case NPCTrait::Greedy:   return "Greedy";
+                case NPCTrait::Cowardly: return "Cowardly";
+                case NPCTrait::Brave:    return "Brave";
+                case NPCTrait::Count:    break;
             }
+            return "?";   // мусор в колонке — не род оси, а порча байта
         }
 
         // (Пара обёрток «цена по нраву купца» вырезана 2026-09-19 вместе с

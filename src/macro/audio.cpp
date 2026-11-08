@@ -254,8 +254,6 @@ struct SynthRng {   // xorshift32; [-1,1) noise
     }
 };
 
-constexpr float kSynthPi = 3.14159265358979f;
-
 // The arc through the air: noise through a one-pole lowpass whose cutoff
 // rises and falls across the stroke — pink-ish rush, no tone of its own.
 void synth_melee_swing(std::vector<float>& mono) {
@@ -265,11 +263,11 @@ void synth_melee_swing(std::vector<float>& mono) {
     float lp = 0.0f;
     for (int i = 0; i < n; ++i) {
         const float ph = float(i) / float(n);            // 0..1 over the stroke
-        const float cutoff = 250.0f + 1900.0f * std::sin(kSynthPi * ph);
-        const float a = 1.0f - std::exp(-2.0f * kSynthPi * cutoff
+        const float cutoff = 250.0f + 1900.0f * std::sin(kPi * ph);
+        const float a = 1.0f - std::exp(-2.0f * kPi * cutoff
                                         / float(kSampleRate));
         lp += a * (rng.noise() - lp);
-        const float env = std::pow(std::sin(kSynthPi * ph), 1.5f);
+        const float env = std::pow(std::sin(kPi * ph), 1.5f);
         mono[std::size_t(i)] = lp * env;
     }
 }
@@ -284,7 +282,7 @@ void synth_melee_hit(std::vector<float>& mono) {
     for (int i = 0; i < n; ++i) {
         const float t = float(i) / float(kSampleRate);
         const float f = 60.0f + 110.0f * std::exp(-t * 28.0f);
-        phase += 2.0f * kSynthPi * f / float(kSampleRate);
+        phase += 2.0f * kPi * f / float(kSampleRate);
         const float body = std::sin(phase) * std::exp(-t * 26.0f);
         const float slap = rng.noise() * 0.8f * std::exp(-t * 600.0f);
         mono[std::size_t(i)] = body + slap;
@@ -303,7 +301,7 @@ void synth_melee_blocked(std::vector<float>& mono) {
         const float t = float(i) / float(kSampleRate);
         float v = 0.0f;
         for (int p = 0; p < 5; ++p) {
-            v += kAmp[p] * std::sin(2.0f * kSynthPi * kFreq[p] * t)
+            v += kAmp[p] * std::sin(2.0f * kPi * kFreq[p] * t)
                * std::exp(-t * (14.0f + kFreq[p] * 0.004f));
         }
         v += rng.noise() * 0.5f * std::exp(-t * 900.0f);
@@ -322,9 +320,9 @@ void synth_spell_cast(std::vector<float>& mono) {
         const float ph = float(i) / float(n);
         const float t = float(i) / float(kSampleRate);
         const float f = 320.0f + 1500.0f * ph * ph;
-        phase += 2.0f * kSynthPi * f / float(kSampleRate);
-        const float vib = 1.0f + 0.03f * std::sin(2.0f * kSynthPi * 9.0f * t);
-        const float env = std::pow(std::sin(kSynthPi * ph), 0.8f);
+        phase += 2.0f * kPi * f / float(kSampleRate);
+        const float vib = 1.0f + 0.03f * std::sin(2.0f * kPi * 9.0f * t);
+        const float env = std::pow(std::sin(kPi * ph), 0.8f);
         const float tone = std::sin(phase * vib) * 0.8f;
         const float air = rng.noise() * 0.3f;
         mono[std::size_t(i)] = (tone + air) * env;
@@ -341,7 +339,7 @@ void synth_player_hurt(std::vector<float>& mono) {
     for (int i = 0; i < n; ++i) {
         const float t = float(i) / float(kSampleRate);
         const float f = 42.0f + 70.0f * std::exp(-t * 18.0f);
-        phase += 2.0f * kSynthPi * f / float(kSampleRate);
+        phase += 2.0f * kPi * f / float(kSampleRate);
         const float body = std::sin(phase) * std::exp(-t * 12.0f);
         const float slap = rng.noise() * 0.5f * std::exp(-t * 300.0f);
         mono[std::size_t(i)] = body + slap;
@@ -359,10 +357,10 @@ void synth_death(std::vector<float>& mono) {
     for (int i = 0; i < n; ++i) {
         const float t = float(i) / float(kSampleRate);
         const float f = 55.0f + 170.0f * std::exp(-t * 7.0f);
-        phase += 2.0f * kSynthPi * f / float(kSampleRate);
+        phase += 2.0f * kPi * f / float(kSampleRate);
         const float body = std::sin(phase) * std::exp(-t * 7.0f);
         // the slump: low-passed noise swelling briefly as the ground takes it
-        const float a = 1.0f - std::exp(-2.0f * kSynthPi * 300.0f
+        const float a = 1.0f - std::exp(-2.0f * kPi * 300.0f
                                         / float(kSampleRate));
         lp += a * (rng.noise() - lp);
         const float thud = lp * 0.9f * std::exp(-t * 9.0f);

@@ -153,7 +153,7 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     {
         float best = -1.0f;
         for (int b = 0; b < Outline::kBearings; ++b) {
-            const float ang = float(b) * Outline::kTwoPi / float(Outline::kBearings);
+            const float ang = float(b) * kTwoPi / float(Outline::kBearings);
             // Sample where the castle would actually sit: a little inside the
             // curtain, since that is the ground it must stand on.
             const float d = std::max(1.0f, rim.r[std::size_t(b)]
@@ -164,7 +164,7 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
             if (h > best) { best = h; castleBin = b; }
         }
     }
-    const float castleAng = float(castleBin) * Outline::kTwoPi
+    const float castleAng = float(castleBin) * kTwoPi
                           / float(Outline::kBearings);
     const float castleR = city_upper_radius(population);
     const float castleDist = std::max(1.0f, rim.at(castleAng) - castleR * 0.75f);

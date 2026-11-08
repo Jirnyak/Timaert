@@ -210,14 +210,11 @@ std::uint32_t macro_identity_of(const App& app, sm::MacroHandle h) {
     return id ? id->index : 0u;
 }
 
-// Has this band done enough to be somebody? ONE number answers, and it lives
-// on the band (MacroNpcRuntime::renown — колонка store), so there is no flag
-// beside it to disagree. A stale handle — a creature row, a corpse — is nobody.
-bool squad_is_named(const App& app, sm::MacroHandle h) {
-    const auto* rt =
-        sm::body_state<sm::ecs::MacroNpcRuntime>((*app.macroStore), h);
-    return rt && sm::renown_is_named(rt->renown);
-}
+// (`squad_is_named` СНЕСЕНА 2026-11-08 ревизией: ноль вызовов во всём
+//  дереве, включая тесты и смоуки. Закон её остаётся и живёт у носителя —
+//  `renown_is_named@src/macro/chronicle.h` над колонкой `renown`; дверь
+//  приложения была лишним пересказом с одним читателем, и тот читатель
+//  умер раньше неё.)
 
 // (STANDING and THE deed door moved to the macro layer — macro/squad.h
 // renown_slot / renown_of / grant_renown / record_deed, beside their place
@@ -447,14 +444,24 @@ long file_size_bytes(const std::string& path) {
 // Ответ — СЛОТ места (ломтик F); пустой хэндл значит «такого места нет»,
 // и дверь резолва сама гейтит ось рода (None не пройдёт).
 sm::MacroHandle settlement_by_id(const sm::MacroStore& st, int id) {
-    return id >= 0 ? sm::rooted_handle_by_ordinal(st, std::uint32_t(id))
-                   : sm::MacroHandle{};
+    return id > 0 ? sm::rooted_handle_by_ordinal(st, std::uint32_t(id))
+                  : sm::MacroHandle{};
 }
 
+// НОЛЬ ЕСТЬ «НИКОГО», И ЭТО ЗАКОН СЛОВАРЯ п.6 (правка 2026-11-08). Дверь
+// ВОЗВРАЩАЛА `−1` в поле, которое само объявляет «0 = без места»
+// (`GameSubState::settlementId@src/macro/state.h`), и это число ехало в сейв;
+// читатели разошлись на три прочтения «никого» (`< 0`, `> 0`, `<= 0`) в
+// девятнадцати строках. Эмитент ординалов выдаёт С ЕДИНИЦЫ
+// (`nextSpawnId = 1@src/bus/store.h`), значит ноль свободен навсегда, а `−1`
+// у ординала-ИДЕНТИЧНОСТИ запрещён прямо («я не люблю −1» — владелец).
+// ОСТАТОК КАРЬЕРА НАЗВАН И НЕ ЗАКРЫТ: `MacroCursor::hover/clickedSettlementId`,
+// `RootedFacts/RootedContext/RootedView::id`, `DungeonSession::settlementId`,
+// `regionRootedId@src/macro/nav_field.h` — → M-75.
 int settlement_at_player(const sm::GameState& gs, const sm::MacroStore& st,
                          const sm::SquadIndex& idx, int radius = 3) {
     const sm::ecs::MacroCell* pc = sm::player_flag_cell(gs, st);
-    if (!pc) return -1;
+    if (!pc) return 0;   // «никого» у ординала-идентичности есть НОЛЬ
     const int px = sm::ecs::cell_x(*pc, gs.mapW);
     const int py = sm::ecs::cell_y(*pc, gs.mapW);
     // Место в радиусе — КАРКАСОМ (ломоть 6; скан всех мест умер): рамка
@@ -462,7 +469,7 @@ int settlement_at_player(const sm::GameState& gs, const sm::MacroStore& st,
     // Ответ — БЛИЖАЙШЕЕ место (прежний скан отдавал первое по ординалу —
     // при двух поселениях в диске выбор был порядком рождения, не миром).
     const int r2 = radius * radius;
-    int found = -1;
+    int found = 0;
     int bestD2 = r2 + 1;
     sm::squads_in_frame(idx, st, px, py, radius,
                         [&](std::uint16_t slot, int dx, int dy) {
@@ -488,7 +495,7 @@ void refresh_player_settlement(App& app) {
     // субъект, — хэндлом (M-290). Ординал жил здесь вторым носителем.
     if (app.ui.settlement)
         app.subjectSquad = settlement_by_id(*app.macroStore, id);
-    if (id < 0) return;
+    if (id == 0) return;
     const sm::MacroHandle s = settlement_by_id(*app.macroStore, id);
     sm::GameEvent ev{sm::EventTag::PlayerEnterSettlement};
     ev.a = std::uint32_t(id);
@@ -1779,7 +1786,7 @@ void boot_world(App& app, std::uint32_t seed,
     }
     boot_trace("starter kit dealt");
     if (app.gs.subState.kind == sm::GameSubStateKind::Exploring
-        && app.gs.subState.settlementId <= 0) {
+        && app.gs.subState.settlementId == 0) {
         boot_trace("settlement lookup start");
         app.gs.subState.settlementId = settlement_at_player(
             app.gs, *app.macroStore, app.npcAi.squadIndex);
@@ -3068,17 +3075,11 @@ void apply_pending_event_effects(App& app) {
     }
 }
 
-void emit_simple_dialog(App& app, const char* title, const std::string& body,
-                        const char* label) {
-    sm::GameEvent dialog{sm::EventTag::ShowDialog};
-    dialog.s1 = title ? title : "Event";
-    dialog.s2 = body;
-    dialog.dialogChoices = std::make_shared<std::vector<sm::DialogChoicePayload>>();
-    dialog.dialogChoices->push_back(
-        sm::DialogChoicePayload{label ? label : "Continue", {}, {}});
-    dialog.ix = static_cast<int>(dialog.dialogChoices->size());
-    app.bus.emit(dialog);
-}
+// (`emit_simple_dialog` СНЕСЕНА 2026-11-08 ревизией: ноль вызовов во всём
+//  дереве. Она стояла ВПЛОТНУЮ к некрологу соседки ниже, снесённой M-390 с
+//  доводом «держать пустую функцию и звонок в неё — ровно то, что §5 п.14
+//  запрещает» — снос прошёл по соседке и обошёл её. Узел с одним выбором
+//  рождается строкой диалог-системы, а не дверью приложения.)
 
 // (ЗДЕСЬ СТОЯЛА `apply_intro_story_result`, и всё её тело было одной строкой
 //  `app.logic.activate("plot_chapter_1")` — активацией узла-ЗАГЛУШКИ, чьё
