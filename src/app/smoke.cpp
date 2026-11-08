@@ -909,7 +909,7 @@ bool run_capture_course_smoke(App& app) {
                        & (side - 1);
         sm::ecs::goal_set(st.goal[macro.slot],
                           sm::ecs::cell_index(gx, gy, side),
-                          sm::ecs::goal_what(sm::ecs::GoalKind::Cell, 0), 0,
+                          0u, 0,
                           std::uint8_t(sm::NPCState::Idle));
         advance_sim_steps(app, 1, /*allowInput*/false);
     }
@@ -1179,7 +1179,7 @@ bool run_capture_exit_smoke(App& app) {
                        & (side - 1);
         sm::ecs::goal_set(st.goal[macro.slot],
                           sm::ecs::cell_index(gx, gy, side),
-                          sm::ecs::goal_what(sm::ecs::GoalKind::Cell, 0), 0,
+                          0u, 0,
                           std::uint8_t(sm::NPCState::Idle));
         advance_sim_steps(app, 1, /*allowInput*/false);
     }

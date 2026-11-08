@@ -1087,8 +1087,8 @@ void SubworldEngine::fold_captured_subs() {
             && h.id != frame_->playerFlag.id
             && h.id != frame_->playerSquad.id) {
             const ecs::SquadGoal& goal = st.goal[h.slot];
-            if (ecs::goal_kind(goal.what) != ecs::GoalKind::None
-                && goal.cell != ecs::kNoCell) {
+            // Клетка названа = цель жива (корень Б8: род курсу не судья).
+            if (goal.cell != ecs::kNoCell) {
                 const int ox = toroidal_cell_offset(
                     cell_x(goal.cell, side), mgr_.center_cx(), side);
                 const int oy = toroidal_cell_offset(
@@ -3889,12 +3889,12 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
             const MacroHandle h = sub::slot_macro_origin(parena, s);
             if (h.id == 0 || !pst.valid(h)) continue;
             const ecs::SquadGoal& g = pst.goal[h.slot];
+            // «Марширует» судит КЛЕТКА цели, не род (корень Б8): род None
+            // с живой клеткой — каноническое «иду в клетку».
             avatarPins[std::size_t(avatarPinCount)] = AvatarPin{
                 h.id, parena.pos[std::size_t(s)].x,
                 parena.pos[std::size_t(s)].y,
-                ecs::goal_kind(g.what) != ecs::GoalKind::None
-                    && g.cell != ecs::kNoCell
-                    && g.cell != pst.cell[h.slot].idx};
+                g.cell != ecs::kNoCell && g.cell != pst.cell[h.slot].idx};
             ++avatarPinCount;
         }
     }
@@ -4046,9 +4046,14 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
             const MacroHandle origin = sub::slot_macro_origin(arena, s);
             if (origin.id != 0 && mw_.store->valid(origin)) {
                 const ecs::SquadGoal& goal = mw_.store->goal[origin.slot];
-                const bool hasGoal =
-                    ecs::goal_kind(goal.what) != ecs::GoalKind::None
-                    && goal.cell != ecs::kNoCell;
+                // ЦЕЛЬ ЖИВА ⟺ КЛЕТКА НАЗВАНА — и только это (корень Б8,
+                // лог владельца 2026-11-08: думки пишут «иду в клетку»
+                // с what=0, род None + живая клетка — КАНОНИЧЕСКАЯ форма
+                // go_home/марша; гейт «kind != None» отрезал ровно их, и
+                // весь живой мир стоял, а зонды с целями рода 3/4 были
+                // зелёными). Род цели — тег ДЛЯ МОДУЛЕЙ прибытия; курсу
+                // он не принадлежит. Ноль — значение, не отсутствие.
+                const bool hasGoal = goal.cell != ecs::kNoCell;
                 // Диагностический лог Б8 (ВРЕМЕННЫЙ, env-флаг): КАЖДОЕ
                 // захваченное тело раз в мировой тик — даже без цели
                 // (если сквады владельца стоят с goal=None, это видно
