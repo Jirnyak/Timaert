@@ -151,6 +151,15 @@ struct SmokeScript {
     // would photograph the pre-mutation frame (same stale-frame trap as
     // light_probe_capture below).
     bool captureStaged = false;
+    // cast_bolt_capture obeys the SAME defer-by-a-frame rule, and for the same
+    // reason: the bolt is spawned in tick_smoke_script, which runs after this
+    // frame's 3D scene is already recorded, so arming the capture in the
+    // casting tick photographs the scene WITHOUT the bolt. It did exactly that
+    // from birth — a scenario whose whole purpose is the travelling elemental
+    // light photographed an empty hillside on every run, green every time,
+    // because no smoke asserts what a PNG contains (§8 п.6, «паритет слеп к
+    // UI»). So: cast on one frame, arm on the next. false = not yet cast.
+    bool boltCaptureStaged = false;
     // Deferred probe capture. light_probe_capture stages its actor + lights in
     // tick_smoke_script, which runs AFTER the frame's 3D scene is already
     // recorded — so a same-tick capture photographs the PRE-staging frame (the

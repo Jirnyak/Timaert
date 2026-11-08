@@ -655,6 +655,35 @@ bool write_smoke_frame_png(App& app, int actionIndex, const char* label) {
     return ok != 0;
 }
 
+// ГАСИТ ВСЕ ПРИЧИНЫ `modal_overlay_active`, И ЭТО НЕ СПИСОК, А ВОПРОС К НЕЙ.
+// Помощник звался «сбрось модалки» и гасил ДВЕ причины из трёх: диалог и
+// повесть — да, `PreBattle` встречи — нет. Третья причина приходит не от
+// сценария, а ОТ МИРА: `detect_forced_encounter@src/app/main.cpp` открывает
+// её, когда враждебный сквад доходит до игрока, и чем дольше крутились кадры
+// загрузки, тем вероятнее это случалось. Отсюда «гонка», которой на самом
+// деле не было: сценарий, просивший диалог, упирался в чужую модалку и
+// печатал «REFUSED: open=0 … pending=1» — зелёный в одиночку, красный в
+// полном свипе, то есть симптом везения, а не закона (§8 п.11: свидетель
+// обязан САМ рождать своё предусловие, а не надеяться, что миру не повезёт).
+// Проверка в конце — НЕГАТИВНЫЙ КОНТРОЛЬ ПРОТИВ ДРЕЙФА: заведут четвёртую
+// причину и забудут её здесь — упадёт этот помощник, а не чужой сценарий
+// через месяц.
+//
+// МУТАЦИЯ → ИСХОД (прогнано на сиде 12345, сценарий
+// `trigger_count_only_dialog`, который рождает себе `PreBattle` сам):
+//   M1  снять гашение PreBattle здесь            → КРАСНЫЙ, и ТЕМ ЖЕ
+//       (эта строка «до» правки)                   симптомом, что видел
+//                                                  полный свип: «REFUSED:
+//                                                  open=0 … pending=1
+//                                                  pause=0x04» (0x04 =
+//                                                  kPauseModal). То есть
+//                                                  диагноз «гонка кадра»
+//                                                  был неверен: чужая
+//                                                  модалка, а не кадр
+//   M2  гасить subState, но ОСТАВИТЬ              → ЗЕЛЁНЫЙ. Детектор не
+//       `preBattleNpc` и строку реплики             кричит на то, чего
+//                                                  `modal_overlay_active`
+//                                                  не читает
 void smoke_clear_modal_overlays(App& app) {
     app.showDialogOpen = false;
     app.showDialogEvent = sm::GameEvent{};
@@ -663,6 +692,16 @@ void smoke_clear_modal_overlays(App& app) {
     app.pendingPresentationCount = 0;
     app.pendingPresentationTick = std::uint32_t(-1);
     app.pendingPresentationSeen = 0;
+    // Встреча — модалка МИРА, и гасится она своей дверью состояния: игрок
+    // возвращается к исследованию, цель встречи забывается.
+    if (app.gs.subState.kind == sm::GameSubStateKind::PreBattle) {
+        app.gs.subState.kind = sm::GameSubStateKind::Exploring;
+        app.preBattleNpc = {};
+        app.encounterTalkLine.clear();
+    }
+    SMOKE_CHECK(app, !modal_overlay_active(app),
+                "smoke_clear_modal_overlays гасит ВСЕ причины "
+                "modal_overlay_active (дрейф списка ловится здесь)");
 }
 
 int smoke_total_minutes(const sm::WorldTime& t) {
@@ -10560,10 +10599,82 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // Graphics capture: spawn a spell bolt and photograph it MID-FLIGHT
             // so the travelling elemental point light (registry.cpp bolt_light)
             // is visible in the frame. Unlike cast_spell (which ticks 0.10s and
-            // asserts a hit, consuming the projectile), this casts and arms the
-            // capture in the SAME step with no consuming tick, leaving the fresh
-            // fireball at the muzzle directly ahead of the camera. Fireball is
-            // chosen deliberately: fattest radius (2.5) => widest, brightest pool.
+            // asserts a hit, consuming the projectile), this leaves the fresh
+            // fireball alive ahead of the camera. Fireball is chosen
+            // deliberately: fattest radius (2.5) => widest, brightest pool.
+            //
+            // TWO FRAMES, AND THAT IS THE WHOLE FIX. `frame()` records the 3D
+            // scene (record_main@src/app/main.cpp) ~550 lines BEFORE it runs
+            // tick_smoke_script, so the bolt this action spawns cannot be in
+            // the picture of the frame that spawns it. The old body armed the
+            // capture in the casting tick «same as capture_frame» — a sentence
+            // false in both halves: capture_frame does NOT arm on the frame it
+            // is reached (it stages and breaks without advancing the cursor,
+            // «capture arms NEXT frame»), and arming same-tick photographs the
+            // pre-cast scene. Проверено ГЛАЗАМИ, а не прогоном: кадр по
+            // дефолтному TIMAERT_SMOKE_BOLT_FLIGHT=0 нёс пустой склон без
+            // файрбола и без свечения, и смоук был ЗЕЛЁН (§8 п.6 — «паритет
+            // слеп к UI»: ни ctest, ни smoke не судят содержимое PNG).
+            // Починка проверена тем же способом, каким найдена: ДИФФОМ двух
+            // снимков одного кадра разными тинтами (fireball против
+            // magic_bolt) — расходятся точка света под прицелом и ТЁПЛАЯ
+            // засветка склона и тел, то есть в кадре ровно то, ради чего
+            // сценарий заведён.
+            //
+            // МУТАЦИЯ → ИСХОД (сид 12345, если не сказано иное):
+            //   M3  угол 0.22 рад вместо 0.70      → КРАСНЫЙ: «armed lit=0
+            //       (болт встречает склон за тик)    proj=0», checks 3/1 failed
+            //   M5  угол 1.00 рад                  → ЗЕЛЁНЫЙ: детектор молчит,
+            //                                       пока болт жив (не кричит
+            //                                       на всякую правку угла)
+            //   M4  снять отсрочку, взвести захват → ЗЕЛЁНЫЙ, И ЭТО ДЫРА,
+            //       в кадре каста                    НАЗВАННАЯ ВСЛУХ: проверка
+            //                                       живёт ВНУТРИ фазы взвода,
+            //                                       поэтому умирает вместе с
+            //                                       ней. Видно только по
+            //                                       строке харнесса
+            //                                       «measured-nothing action=
+            //                                       cast_bolt_capture» и по
+            //                                       счёту checks 3 → 2, а
+            //                                       вердикта у них нет (счёт
+            //                                       смоука никем не пинуется).
+            //                                       Закрыть это может только
+            //                                       пин счёта проверок на
+            //                                       сценарий — его нет, и
+            //                                       выдумывать его здесь
+            //                                       значит лечить не тот
+            //                                       наряд.
+            if (app.smoke.boltCaptureStaged) {
+                // ── Arm phase: the frame just recorded contains the bolt ──
+                int flownLit = 0;
+                if (const sm::sub::SubObjects* lo = app.sceneObjects.get()) {
+                    for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+                        const std::uint16_t f = lo->flags[std::size_t(s)];
+                        if ((f & sm::sub::kObjAlive) != 0u
+                            && (f & sm::sub::kObjHasLight) != 0u
+                            && (f & sm::sub::kObjProjectile) != 0u) {
+                            ++flownLit;
+                        }
+                    }
+                }
+                // ЕДИНСТВЕННАЯ проверка, которая не может быть тавтологией:
+                // она спрашивает про ТОТ кадр, который уйдёт в PNG. Болт,
+                // умерший до него, и есть ровно тот дефект, из-за которого
+                // этот сценарий всю жизнь фотографировал пустоту.
+                SMOKE_CHECK(app, flownLit > 0,
+                            "cast_bolt_capture: lit bolt alive in the "
+                            "RECORDED frame (the one the PNG shows)");
+                std::fprintf(stderr,
+                             "[smoke] cast_bolt_capture armed lit=%d proj=%d\n",
+                             flownLit,
+                             smoke_projectile_count(*app.sceneObjects));
+                std::fflush(stderr);
+                app.smoke.boltCaptureStaged = false;
+                app.smoke.capturePending = true;
+                app.smoke.captureActionIndex = app.smoke.cursor;
+                ++app.smoke.cursor;
+                break;
+            }
             std::fprintf(stderr, "[smoke] action=cast_bolt_capture\n");
             std::fflush(stderr);
             if (!app.worldLoaded) {
@@ -10580,6 +10691,32 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // warm lantern and the blue moon).
             const char* boltSpell = std::getenv("TIMAERT_SMOKE_SPELL");
             if (!boltSpell || boltSpell[0] == '\0') boltSpell = "fireball";
+            // СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11), и предусловие
+            // здесь — ЧИСТЫЙ ВОЗДУХ перед дулом. Спуск ставит игрока на склон
+            // лицом к толпе горожан; файрбол, пущенный по умолчанию прямо,
+            // детонирует о землю или о первого встречного ЗА ОДИН тик, и
+            // фотографировать уже нечего — замерено собственной проверкой
+            // ниже (lit=1 при касте, lit=0 кадром позже). Поэтому дуло
+            // поднимается на фиксированный угол ДО каста: абсолютный, а не
+            // нашлёпкой к текущему, чтобы кадр не зависел от того, куда
+            // смотрел игрок.
+            //
+            // ЧИСЛО ВЫВЕДЕНО ИЗ ШАГА БОЛТА ЗА ТИК, А НЕ ПОДОБРАНО НА ГЛАЗ.
+            // Файрбол идёт 280 клеток/с (`kSpellDefs@src/tables/spells.h`),
+            // тик — 1/64 с (`kStepSeconds@src/core/time.h`), значит за ОДИН
+            // тик — удерживаемый кадр — он проходит 280/64 = 4.375 клетки и
+            // обязан не встретить на них ни склона, ни горожанина. При
+            // 0.40 рад (≈22.9°) подъём за этот шаг равен 4.375·sin(0.40) ≈
+            // 1.70 клетки — выше толпы и круче спускового склона. Замер по
+            // четырём мирам: 0.22 рад — болт мёртв на 12345; 0.40 — жив на
+            // 12345, 1 и 7, мёртв на 999; 0.70 — жив на всех четырёх. Берём
+            // 0.70 (≈40.1°, подъём ≈ 2.82 клетки): запас против рельефа, но
+            // всё ещё НЕ зенит — болт идёт низко, и его свет ложится на
+            // землю, а в этом весь смысл снимка. Это баланс, не авторское
+            // (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ).
+            constexpr float kBoltPitchRad = 0.70f;
+            app.subworld.rotate_camera(
+                0.0f, kBoltPitchRad - app.subworld.cam_pitch());
             sm::spellbook_learn(smoke_player_book(app), sm::spell_ordinal(boltSpell));
             sm::spellbook_set_active(smoke_player_book(app), sm::spell_ordinal(boltSpell));
             // Refill mana so the cast cannot fail on cost in a fresh smoke run.
@@ -10635,12 +10772,13 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          beforeProjectiles, afterProjectiles, litProjectiles,
                          double(boltFlight), flownProjectiles);
             std::fflush(stderr);
-            // Arm the capture on THIS frame (same as capture_frame) so the
-            // in-flight bolt and its glow are photographed before any tick moves
-            // or consumes it.
-            app.smoke.capturePending = true;
-            app.smoke.captureActionIndex = app.smoke.cursor;
-            ++app.smoke.cursor;
+            // STAGE, never arm: the cursor does NOT advance, so the next frame
+            // re-enters this case through the arm phase at the top. That next
+            // frame records the scene with the bolt in it, and only then is the
+            // capture armed — the mutate-then-photograph law (§8 п.10), the one
+            // light_probe_capture, city_gate_probe, wait_visible and
+            // capture_frame all already obey.
+            app.smoke.boltCaptureStaged = true;
             break;
         }
         case SmokeAction::LightProbeCapture: {
@@ -11141,6 +11279,38 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (!app.worldLoaded) {
                 smoke_fail(app, "trigger_count_only_dialog without world");
                 break;
+            }
+            // ПРЕДУСЛОВИЕ РОЖДАЕТСЯ ЗДЕСЬ, А НЕ ВЫПРАШИВАЕТСЯ У ВЕЗЕНИЯ
+            // (§8 п.11). Сценарий был ЗЕЛЁН в одиночку и КРАСЕН в полном
+            // свипе — «REFUSED: open=0 … pending=1», — и читалось это как
+            // однокадровая гонка. Гонки не было: `capture_presentation_events`
+            // ОТКАЗЫВАЕТСЯ открывать окно, пока экран держит ЧУЖАЯ модалка, а
+            // третью её причину — `PreBattle` встречи — помощник сброса не
+            // гасил вовсе. Причина приходила ОТ МИРА: враждебный сквад
+            // доходил до игрока тем чаще, чем дольше крутились кадры. Значит
+            // свидетель обязан СОЗДАТЬ себе эту модалку сам и доказать, что
+            // сброс её снимает: иначе зелёный цвет означает «миру не
+            // случилось свести меня с врагом», а не «закон цел».
+            if (!app.subworld.active()) {
+                const sm::MacroHandle foe = smoke_birth_squad_at_player(
+                    app, sm::NPCType::Peasant, sm::faction_index("bandits"));
+                if (app.macroStore->valid(foe)) {
+                    const auto& fcell = app.macroStore->cell[foe.slot];
+                    smoke_teleport_player(
+                        app, int(sm::ecs::cell_x(fcell, app.gs.mapW)),
+                        int(sm::ecs::cell_y(fcell, app.gs.mapW)));
+                    app.cursor.path.clear();
+                    app.cursor.pathIdx = 0;
+                    // Один кадр, как в игре: свежий сквад входит в каркас
+                    // клеток пересборкой на драйве ИИ, и тот же кадр зовёт
+                    // detect_forced_encounter (см. force_encounter).
+                    advance_sim_steps(app, 1, /*allowInput*/false);
+                    SMOKE_CHECK(app,
+                                app.gs.subState.kind
+                                    == sm::GameSubStateKind::PreBattle,
+                                "встреча ОТКРЫТА — чужая модалка построена, "
+                                "значит дальше судится именно её сброс");
+                }
             }
             smoke_clear_modal_overlays(app);
             sm::GameEvent dialog{sm::EventTag::ShowDialog};

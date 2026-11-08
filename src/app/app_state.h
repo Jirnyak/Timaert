@@ -470,6 +470,14 @@ int apply_rest_promotion(App& app, int ticks);
 void apply_pending_event_effects(App& app);
 void apply_pending_story_results(App& app);
 void capture_presentation_events(App& app);
+// КТО ДЕРЖИТ ЭКРАН — ОДИН ОТВЕТ, И ТЕПЕРЬ ОН ВИДЕН СМОУКУ. Объявлена здесь
+// затем, чтобы `smoke_clear_modal_overlays` могла СПРОСИТЬ её, а не
+// пересказывать: пересказ разъехался — помощник гасил две причины из трёх
+// (диалог и повесть), а третью, `PreBattle` встречи, оставлял стоять, и
+// сценарий, просивший диалог, получал «open=0 pending=1» ровно тогда, когда
+// миру случалось свести игрока с врагом. Второй список причин — тот же второй
+// ответ на один вопрос (DOD п.6).
+bool modal_overlay_active(const App& app);
 void process_world_events(App& app);
 // Play an authored scene over the standing world (release.md §3): raises
 // the row's pocket, places its cast, holds the map if it says so. Declared
