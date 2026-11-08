@@ -9859,23 +9859,84 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 app.smoke.trackedPhase = 2;
                 break;      // let the reaper run
             }
-            // ЖНЕЦ УНИЧТОЖАЕТ РАСЧИТАННОЕ ТЕЛО (ломоть 6): труп — не жилец
-            // сцены (контейнер трупа снесён, ждём ПУЛ ЛУТА), слот возвращён
-            // хуком. Пятно куплено живой мутацией: «жнец расчитывает книги,
-            // но не зовёт destroy» пережил зелёными ctest 126/126 и смоук
-            // убийства — до этой строки.
+            if (app.smoke.trackedPhase == 2) {
+                // ЖНЕЦ УНИЧТОЖАЕТ РАСЧИТАННОЕ ТЕЛО (ломоть 6): труп — не
+                // жилец сцены (контейнер трупа снесён, ждём ПУЛ ЛУТА), слот
+                // возвращён хуком. Пятно куплено живой мутацией: «жнец
+                // расчитывает книги, но не зовёт destroy» пережил зелёными
+                // ctest 126/126 и смоук убийства — до этой строки.
+                if (sm::sub::ref_slot(wObjs, app.smoke.trackedBody) >= 0) {
+                    smoke_fail(app,
+                               "the reaper settled the books but left the "
+                               "corpse standing in the scene");
+                    break;
+                }
+                // НОКАУТ, НЕ СМЕРТЬ (ломоть 7, M-421): у сквада жива голова,
+                // значит смерть носителя точки — потеря сознания («моунт энд
+                // блейд стайл»): запись стоит, dead не поднят, hp ≤ 0 ждёт
+                // хила, а точка ведения ПЕРЕНАВЕШЕНА на голову. Красным здесь
+                // был бы старый закон Б10 — «смерть одного тела убивает сквад
+                // при живом стоящем ростере».
+                if (!st.valid(app.smoke.trackedMacro)
+                    || sm::macro_dead(st, app.smoke.trackedMacro)) {
+                    smoke_fail(app,
+                               "one body's death killed the squad while a "
+                               "head still stands (B10 law returned)");
+                    break;
+                }
+                const auto& koHp = (*body_state<sm::ecs::Pools>(
+                    st, app.smoke.trackedMacro));
+                if (!(koHp.hp <= 0.0f)) {
+                    smoke_fail(app,
+                               "knockout without the knockout: record hp "
+                               "above zero after the lethal blow");
+                    break;
+                }
+                int heir = -1;
+                for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
+                    if ((wObjs.flags[std::size_t(s)]
+                         & sm::sub::kObjAlive) == 0u) continue;
+                    if (sm::sub::slot_macro_origin(wObjs, s)
+                        != app.smoke.trackedMacro) continue;
+                    heir = s;
+                    break;
+                }
+                if (heir < 0) {
+                    smoke_fail(app,
+                               "the leading point landed on nobody: no live "
+                               "body carries the squad's backlink");
+                    break;
+                }
+                if (sm::sub::slot_debt(wObjs, heir) == nullptr) {
+                    smoke_fail(app,
+                               "the heir carries no receipt: the point sat "
+                               "on something that is not a container head");
+                    break;
+                }
+                std::fprintf(stderr,
+                             "[smoke] knockout: record stands (hp %.1f), "
+                             "point re-hooked to slot %d\n",
+                             double(koHp.hp), heir);
+                std::fflush(stderr);
+                app.smoke.trackedBody = sm::sub::ref_of(wObjs, heir);
+                sm::sub::apply_lethal_damage(wObjs, app.macroStore.get(),
+                                             heir, sm::sub::DamageSource{},
+                                             sm::sub::DamageKind::Script);
+                app.smoke.trackedPhase = 3;
+                break;      // let the reaper judge the EMPTY squad
+            }
+            // Phase 3. The heir was the LAST body: now — and only now — the
+            // squad dies. Two honest outcomes (CANON S4, 2026-08-29): the
+            // macro entity stands marked Dead at hp 0, OR it has already
+            // LEFT the map — the end-of-tick sweep (destroy_dead_macro_squads)
+            // reaps a drained Dead squad, and the macro clock still ticks
+            // (slowly) underground, so which of the two we observe is timing.
             if (sm::sub::ref_slot(wObjs, app.smoke.trackedBody) >= 0) {
                 smoke_fail(app,
-                           "the reaper settled the books but left the corpse "
-                           "standing in the scene");
+                           "the reaper settled the heir's books but left the "
+                           "corpse standing in the scene");
                 break;
             }
-            // Two honest outcomes (CANON S4, 2026-08-29): the macro entity
-            // stands marked Dead at hp 0, OR it has already LEFT the map —
-            // the end-of-tick sweep (destroy_dead_macro_squads) reaps a
-            // drained Dead squad, and the macro clock still ticks (slowly)
-            // underground, so which of the two we observe is timing. What
-            // would fail is the old bug: alive-and-whole on the map.
             const bool gone = !st.valid(app.smoke.trackedMacro);
             const bool dead = gone
                 || (sm::macro_dead(st, app.smoke.trackedMacro)
@@ -9886,7 +9947,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          dead ? 1 : 0, gone ? 1 : 0);
             std::fflush(stderr);
             if (!dead) {
-                smoke_fail(app, "killed underground, alive on the map");
+                smoke_fail(app, "squad emptied underground, alive on the map");
                 break;
             }
             ++app.smoke.cursor;

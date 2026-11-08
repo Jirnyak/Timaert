@@ -4054,6 +4054,32 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     }
 }
 
+// ПЕРЕНАВЕШИВАНИЕ ТОЧКИ ВЕДЕНИЯ (ломоть 7 ЗАХВАТА, M-421; вердикт владельца:
+// «лидер просто навешивается (и если один объект на которого навешино в
+// субмире умер/инактивен) перенавишеивает»): пал носитель бэклинка — точка
+// садится на живую голову ЕГО сквада (расписка займа и называет сквад).
+// Голова ОСТАЁТСЯ головой: зеркало (бары/лист/стандинг) гейтится распиской в
+// record.h, бэклинк здесь несёт только ведение — его читают fold, пины
+// ростера и курс. O(кап арены) — цена СОБЫТИЯ смерти носителя, не тика.
+bool SubworldEngine::rehook_squad_point_(MacroHandle squad, int dyingSlot) {
+    if (objects_ == nullptr) return false;
+    sub::SubObjects& arena = (*objects_);
+    for (int s = 0; s < int(kMaxSubObjects); ++s) {
+        if (s == dyingSlot) continue;
+        if (!sub::slot_flag(arena, s, sub::kObjAlive)) continue;
+        const auto* debt = sub::slot_debt(arena, s);
+        if (debt == nullptr
+            || debt->stock != std::uint8_t(MacroStock::Creatures)
+            || std::uint32_t(debt->subject) != squad.id)
+            continue;
+        const auto* hp = sub::slot_pools(arena, s);
+        if (hp == nullptr || hp->hp <= 0) continue;
+        sub::slot_set_origin(arena, s, squad);
+        return true;
+    }
+    return false;
+}
+
 void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
     if (!objects_ || !gs_) return;
     int deadCount = 0;
@@ -4117,18 +4143,32 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // for (problems.md 19.13). The reaper above is the ONE place that
             // knows a body has died, so this is the only place that can be.
             if (const MacroHandle reaped = sub::slot_macro_origin(arena, ds);
-                reaped.id != 0) {
+                reaped.id != 0 && mw_.store->valid(reaped)) {
                 MacroStore& st = (*mw_.store);
-                if (auto* mh = body_state<ecs::Pools>(st, reaped)) {
-                    mh->hp = 0;
+                // ПАЛА ЛИЧНОСТЬ ИЛИ ГОЛОВА-НОСИТЕЛЬ ТОЧКИ? Различает та же
+                // расписка, какой record.h гейтит зеркало: голова вела бар
+                // СВОЕЙ строки, бар записи её смерть не трогает.
+                const bool wasHead = sub::slot_debt(arena, ds) != nullptr;
+                auto* mh = body_state<ecs::Pools>(st, reaped);
+                if (!wasHead && mh != nullptr) mh->hp = 0;
+                // НОКАУТ, НЕ СМЕРТЬ (ломоть 7 ЗАХВАТА, M-421; вердикт
+                // владельца: «лидер потерял сознание (моунт энд блейд
+                // стайл) … анкета после боя с 0 или меньше хп и ждёт
+                // хилится»). Сквад мёртв ⟺ точке НЕКУДА сесть и личность
+                // без сознания — тот же предикат, каким макро-автобой судит
+                // аватара (creaturesWipedOut): окно воплощает контейнер
+                // целиком, «нет живой головы в сцене» и есть «ростер
+                // выбит». Иначе точка ведения ПЕРЕНАВЕШИВАЕТСЯ — «нет
+                // никакого челика это просто единая система точка котораая
+                // движет сквад осмысленно». Прежний закон «смерть одного
+                // tracked-тела = смерть сквада при живом стоящем ростере»
+                // умер этим блоком (bugs.md Б10).
+                const bool rehooked = rehook_squad_point_(reaped, ds);
+                if (!rehooked && (mh == nullptr || mh->hp <= 0)) {
                     macro_mark_dead(st, reaped);
-                    // …and his men stop being a squad THE MOMENT he falls,
-                    // exactly as they do when the auto-resolve kills him
-                    // (CANON S4: a avatarless squad's survivors fall into the
-                    // deserter pool). This used to wait for leave(), so a
-                    // beheaded warband stayed a live squad on the map for as
-                    // long as the player kept exploring — and the pool that
-                    // raises bandit bands was paid late by exactly that long.
+                    // …and his men stop being a squad the moment the LAST of
+                    // them falls (CANON S4: survivors to the deserter pool) —
+                    // под M-421 «последний» значит пустой сквад, не лидер.
                     kill_fallen_squad_creatures(*mw_.store);
                 }
             }

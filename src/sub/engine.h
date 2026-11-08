@@ -1121,6 +1121,10 @@ private:
     static int battle_relation_callback(void* user, const FactionSet& set,
                                         int a, int b);
     void resolve_subworld_deaths(bool drainAll = false);
+    // ПЕРЕНАВЕШИВАНИЕ ТОЧКИ ВЕДЕНИЯ (ломоть 7 ЗАХВАТА, M-421): пал носитель
+    // бэклинка — точка садится на живую голову ЕГО сквада в сцене (расписку
+    // спрашивает), и сквад продолжает вестись. false = сесть не на кого.
+    bool rehook_squad_point_(MacroHandle squad, int dyingSlot);
     void set_status(const char* msg);
 
     // THE one placement rule for a body spawned into the scene by fiat: a

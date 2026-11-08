@@ -181,10 +181,11 @@ struct SmokeScript {
     int probePixW = 0;
     int probePixH = 0;
     VkFormat probePixFmt = VK_FORMAT_UNDEFINED;
-    // macro_kill_writeback walks three phases with a frame between each, because
-    // what it is testing happens in the ENGINE tick (the writeback and the death
-    // settlement), not in this script: wound → let a tick pass → read the map →
-    // kill → let a tick pass → read the map.
+    // macro_kill_writeback walks FOUR phases with a frame between each, because
+    // what it is testing happens in the ENGINE tick (the writeback, the knockout
+    // re-hook and the death settlement), not in this script: wound → tick →
+    // read the map → kill the point-bearer → tick → knockout + re-hook → kill
+    // the heir → tick → the squad is dead only EMPTY (M-421).
     int trackedPhase = 0;
     sm::sub::ObjRef trackedBody{};
     // Запись — хэндлом store (шаг 2 1е): свидетель смерти слота обязан

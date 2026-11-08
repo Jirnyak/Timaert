@@ -1633,14 +1633,26 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
         // hand — the sheet, the combat template, the hostility from the row, the
         // copied identity — is the one birth now, so a lord and a townsman can
         // no longer differ in anything but what the axis says they differ in.
-        const int avatarSlot =
-            spawn_tracked_body(objs, st, macro, fx, fy,
-                               seed ^ salt ^ 0x5D0F11u,
-                               /*combatant*/false);
-        if (avatarSlot < 0) {
-            continue;   // not a body-shaped macro entity; nothing was created
+        //
+        // НОКАУТ ЛИЧНОСТИ (ломоть 7 ЗАХВАТА, M-421): лидер с hp ≤ 0 «потерял
+        // сознание … ждёт хилится» — телом НЕ воплощается; точку ведения
+        // понесёт первая воплощённая голова (цикл ниже), тем же навешиванием,
+        // каким жнец перенавешивает её в живой сцене. Очнулся (реген поднял
+        // hp выше нуля) — следующая плановая пересинхронизация воплотит его
+        // телом штатно.
+        const auto* macroPools = body_state<ecs::Pools>(st, macro);
+        const bool conscious = macroPools == nullptr || macroPools->hp > 0;
+        bool pointHooked = conscious;
+        if (conscious) {
+            const int avatarSlot =
+                spawn_tracked_body(objs, st, macro, fx, fy,
+                                   seed ^ salt ^ 0x5D0F11u,
+                                   /*combatant*/false);
+            if (avatarSlot < 0) {
+                continue;   // not a body-shaped macro entity; nothing created
+            }
+            ++projected;
         }
-        ++projected;
 
         // (БАФФ ЛИДЕРА СНЕСЁН 2026-10-18 вместе с `squad_bonuses`: та
         //  возвращала КОНСТАНТУ-НУЛИ с перковой чистки 2026-09-03, и
@@ -1708,7 +1720,7 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                 // spawn_derived_body (avatar's bonuses applied in it), and every
                 // body carries the same creatures receipt, so a wolf's death pays
                 // the pack back exactly like a spearman's.
-                spawn_derived_body(objs,
+                const int memberSlot = spawn_derived_body(objs,
                     BodySpec{
                         static_cast<NPCType>(rec.kind), mfx, mfy,
                         kind.factionIdx,
@@ -1725,6 +1737,14 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                         /*combatant*/true},
                     /*faceSalt*/std::uint32_t(m) * 2654435761u ^ 0x9E3779B9u,
                     loan);
+                // Точка ведения нокаутированного сквада — на первой живой
+                // голове (M-421): то же навешивание, что у жнеца; зеркало
+                // на ней гейтится распиской (record.h), голова остаётся
+                // головой.
+                if (!pointHooked && memberSlot >= 0) {
+                    slot_set_origin(objs, memberSlot, macro);
+                    pointHooked = true;
+                }
                 ++projected;
             }
         }
