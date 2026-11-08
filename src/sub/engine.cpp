@@ -882,7 +882,11 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     refresh_window_step_weights();
     // Поля курса (M-420): вход в сцену — новый композит, прежние веса и
     // поля о нём ничего не знают; перепекутся бюджетом тиков.
-    if (course_) course_invalidate(*course_);
+    if (course_) {
+        course_invalidate(*course_);
+        if (std::getenv("TIMAERT_CAPTURE_LOG") != nullptr)
+            std::fprintf(stderr, "[cap] invalidate: enter\n");
+    }
     spawn_all_cells();
     // The squad wears its owner's colours — the FLAG RECORD's own row (banner
     // rule): his own realm as himself, the lord's realm while he wears one
@@ -2066,7 +2070,11 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
     // Поля курса протухают сменой окна ЦЕЛИКОМ (M-420): веса читали чужие
     // тайлы, точечные ключи — чужие координаты. Перепекутся бюджетом
     // тиков; до свежих полей потребители живут фолбэком, не враньём.
-    if (course_) course_invalidate(*course_);
+    if (course_) {
+        course_invalidate(*course_);
+        if (std::getenv("TIMAERT_CAPTURE_LOG") != nullptr)
+            std::fprintf(stderr, "[cap] invalidate: recenter\n");
+    }
     // РЕ-ЦЕНТР ЕСТЬ СМЕНА АРЕНДЫ, а не отдельное событие: прежние девять
     // клеток мир забирает назад (и это один из двух равноправных концов
     // аренды), новые сдаёт — ТОЙ ЖЕ дверью.
@@ -4041,6 +4049,42 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
                 const bool hasGoal =
                     ecs::goal_kind(goal.what) != ecs::GoalKind::None
                     && goal.cell != ecs::kNoCell;
+                // Диагностический лог Б8 (ВРЕМЕННЫЙ, env-флаг): КАЖДОЕ
+                // захваченное тело раз в мировой тик — даже без цели
+                // (если сквады владельца стоят с goal=None, это видно
+                // первой же строкой).
+                {
+                    static const bool capLog =
+                        std::getenv("TIMAERT_CAPTURE_LOG") != nullptr;
+                    if (capLog) {
+                        static std::uint64_t lastT = ~0ull;
+                        static std::uint32_t seen[8];
+                        static int seenN = 0;
+                        if (frame_->worldTick != lastT) {
+                            lastT = frame_->worldTick;
+                            seenN = 0;
+                        }
+                        bool dup = false;
+                        for (int i = 0; i < seenN; ++i) {
+                            dup = dup || seen[i] == origin.id;
+                        }
+                        if (!dup && seenN < 8) {
+                            seen[seenN] = origin.id;
+                            ++seenN;
+                            std::fprintf(stderr,
+                                "[cap] t=%llu id=%u kind=%u goal=%u "
+                                "cell=%u hasGoal=%d w=%d pos=%.0f,%.0f "
+                                "spd=%.1f\n",
+                                (unsigned long long)frame_->worldTick,
+                                origin.id,
+                                unsigned(ecs::goal_kind(goal.what)),
+                                goal.cell, mw_.store->cell[origin.slot].idx,
+                                int(hasGoal),
+                                int(course_->weightRowsDone), double(p.x),
+                                double(p.y), double(d.speed));
+                        }
+                    }
+                }
                 if (hasGoal) {
                     // СПРОС поля — ВСЕГДА, пока цель жива: спрос и есть
                     // заявка на бейк, и душить его паникой нельзя — поле,
@@ -5977,7 +6021,11 @@ void SubworldEngine::tick(float dt) {
         // Набор строений сменился (рубка, шов) — солиды и перекрашенные
         // тайлы меняют веса курса (M-420): то же событие, что кормит
         // индекс солидов, кормит и протухание полей.
-        if (course_ && dirtyNow.structs) course_invalidate(*course_);
+        if (course_ && dirtyNow.structs) {
+            course_invalidate(*course_);
+            if (std::getenv("TIMAERT_CAPTURE_LOG") != nullptr)
+                std::fprintf(stderr, "[cap] invalidate: structs\n");
+        }
     }
     if (structIndexDirty_) {
         structIndex_.rebuild(mgr_.structures(),

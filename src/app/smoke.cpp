@@ -7723,17 +7723,15 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                         sm::player_squad_handle(app.gs);
                     if (psq.id != 0 && h.id == psq.id) continue;
                     // Ступени предпочтения (диагнозу Б8 нужен больной род,
-                    // проба при этом умеет ЛЮБОЙ): артель с думкой > любой
-                    // с ростером > любой марширующий.
-                    const sm::Inventory* bag = sm::squad_container(st, h);
-                    const bool hasHeads =
-                        bag != nullptr && sm::creature_count(*bag) >= 1;
+                    // проба при этом умеет ЛЮБОЙ): сквад С ЖИВОЙ ДУМКОЙ
+                    // (type != None — артель/караван/сборщик: владелец
+                    // видит «стоят» у них, а None-род у прибора шёл) >
+                    // любой марширующий.
                     if (sm::squad_type_ordinal(st, h)
-                        == std::uint8_t(sm::SquadType::Artel)) {
+                        != std::uint8_t(sm::SquadType::None)) {
                         found = h;
                         break;
                     }
-                    if (hasHeads && headless.id == 0) headless = h;
                     if (headless.id == 0) headless = h;
                 }
                 if (found.id != 0) break;
