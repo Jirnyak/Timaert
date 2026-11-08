@@ -270,9 +270,4 @@ bool read_world_fields(savefmt::Reader& r, const WorldFieldStoresMut& st) {
     return r.ok;
 }
 
-const char* world_field_id(WorldField f) {
-    const auto i = std::size_t(f);
-    return i < std::size_t(WorldField::Count) ? kWorldFields[i].name : "?";
-}
-
 } // namespace sm

@@ -12,9 +12,10 @@
 //   7 = WHEAT    (the Crop prop — not a species the temperature dispatch
 //                 ever picks; the renderer selects it by Structure::Crop)
 //
-// `tree_type_for(biome, hash)` mirrors the macro temperature → tp dispatch
-// using the biome enum (no temperature texture in subworld), so trees in
-// each subworld cell match the species shown on the macro map.
+// `tree_type_for_temperature(temperature, hash)` IS the dispatch, and the
+// subworld asks it with the bilinear temperature of its window's cells, so
+// trees below match the species shown on the macro map. (A biome-keyed twin
+// stood here and was never asked — its obituary is below, M-436.)
 #pragma once
 #include <cstdint>
 #include "tables/biomes.h"
@@ -36,8 +37,15 @@ inline constexpr int kCropSpriteRow = 7;
 // vary. Mirrors TS BaseSubworldGenerator.temperatureToTreeType().
 int tree_type_for_temperature(float temperature, float hash);
 
-// Fallback for callers that only have a biome.
-int tree_type_for(Biome b, float hash);
+// (`tree_type_for(Biome, hash)` СНЕСЕНА 2026-11-08, M-436. Она была ВТОРЫМ
+//  ОТВЕТОМ на вопрос «какой здесь вид дерева» — тот же выбор, но по биому
+//  вместо температуры, — и звалась «фолбэком для звонящих, у которых на
+//  руках только биом». Таких звонящих не оказалось ни одного: вид выбирает
+//  `tree_type_for_temperature` по билинейной температуре клеток окна
+//  (`vk_renderer_3d.cpp`, и так же смоук), и ровно это описывает скелет.
+//  Двенадцать строк switch'а по биому держали СВОЙ, независимо калиброванный
+//  набор порогов — то есть мир имел два мнения о видовом составе леса, и
+//  второе было недостижимо.)
 
 // ── Metric build of a tree ─────────────────────────────────────────────────
 // A tree's SIZE is authored in two halves, each in exactly one place:

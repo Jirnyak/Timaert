@@ -1155,9 +1155,9 @@ private:
     //  pumpDoors_/pumpDoorsRevision_. ВЫЖЖЕНА вердиктом владельца
     //  2026-11-07, функционал сознательно не сохранён — ряд M-419.)
 
-    // Where the player is standing, in MACRO cells — the seam's own
-    // coordinate, and the only translation the layers need between them.
-    void player_macro_cell(int& cx, int& cy) const;
+    // (`player_macro_cell` СНЕСЕНА 2026-11-08, M-436: её единственным
+    //  читателем была помпа дня — некролог прямо выше, — а свою макро-клетку
+    //  называет тот, кто поднимает ОПЕРАЦИЮ по ЗАКОНУ ШВА.)
 
     // Zones the player has entered THIS session, so a circle files its fact on
     // the step that crosses into it and not on every step inside it.

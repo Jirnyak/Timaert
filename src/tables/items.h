@@ -493,7 +493,10 @@ void grant_affixes(ItemRef& item, std::uint8_t power, RngFn rng);
 // The affix table's own listing, for printers (the dev console) — same
 // contract as loot_profile_count/loot_profile_id.
 std::size_t affix_def_count() noexcept;
-const char* affix_def_key(std::size_t i) noexcept;
+// (`affix_def_key` СНЕСЕНА 2026-11-08, M-436: печатника, для которого она
+//  заведена, в дереве нет — ноль звонящих в `src/` и в `tests/`. Ключ строки
+//  аффикса есть колонка `key` её строки, и дверь над ней вернётся в тот день,
+//  когда у неё родится читатель, а не раньше.)
 
 // How many affix cells actually say something — the number the UI tint and
 // the suffix read.

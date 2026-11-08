@@ -1076,10 +1076,6 @@ std::size_t affix_def_count() noexcept {
     return sizeof(kAffixDefs) / sizeof(kAffixDefs[0]);
 }
 
-const char* affix_def_key(std::size_t i) noexcept {
-    return i < affix_def_count() ? kAffixDefs[i].key : "";
-}
-
 namespace {
 
 // The affix-table row that speaks for a stored bonus row — how a saved

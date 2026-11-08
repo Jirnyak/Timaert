@@ -43,14 +43,13 @@ namespace gpu
         // until first written. Returns false on a Vulkan error.
         bool create_host_mapped(const VulkanDevice& dev, VkDeviceSize bytes,
                                 VkBufferUsageFlags usage);
-        // Overwrite `bytes` at `dstOffset` IN PLACE via a staging copy, reusing
-        // the existing device-local allocation (no realloc). Requires the buffer
-        // to have been created with create_device_local (which adds TRANSFER_DST)
-        // and [dstOffset, dstOffset+bytes) to lie within `size`. Same in-flight
-        // fence contract as create_device_local. Returns false on a Vulkan error
-        // or an out-of-range write.
-        bool update(const VulkanDevice& dev, const void* data, VkDeviceSize bytes,
-                    VkDeviceSize dstOffset = 0);
+        // (`update` СНЕСЕНА 2026-11-08, M-436: in-place перезапись через
+        //  staging-копию, у которой НОЛЬ звонящих в `src/` и в `tests/`. Живут
+        //  две соседки, и обе заняты: `create_device_local` грузит один раз
+        //  (4 сайта), `create_host_mapped` держит покадровые данные без
+        //  staging и без простоя очереди. Третьего пути — «перезаписать
+        //  device-local в кадре через transient pool и vkQueueWaitIdle» — в
+        //  дереве не просил никто, а он самый дорогой из трёх.)
         void destroy(const VulkanDevice& dev);
     };
 

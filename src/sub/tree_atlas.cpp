@@ -23,24 +23,6 @@ int tree_type_for_temperature(float temperature, float hash) {
     return 6;
 }
 
-int tree_type_for(Biome b, float hash) {
-    switch (b) {
-        case Biome::Tundra:
-        case Biome::Snow:   return 4;                          // PINE
-        case Biome::Taiga:  return hash < 0.6f ? 4 : 2;        // PINE / BIRCH
-        case Biome::Valley: return hash < 0.5f ? 2 : 3;        // BIRCH / AUTUMN
-        case Biome::Meadow: return hash < 0.45f ? 0
-                                   : (hash < 0.80f ? 3 : 5);   // OAK / AUTUMN / WILLOW
-        case Biome::Steppe: return hash < 0.7f ? 0 : 5;        // OAK / WILLOW
-        case Biome::Swamp:  return hash < 0.5f ? 5 : 6;        // WILLOW / JUNGLE
-        case Biome::Desert: return hash < 0.5f ? 5 : 0;        // sparse OAK/WILLOW
-        case Biome::Tropics:return 6;                          // JUNGLE
-        case Biome::Water:  return 0;
-        case Biome::Mountain:return 4;                         // PINE (subalpine)
-    }
-    return 0;
-}
-
 // Per-species height multiplier. Conifers overtop the broadleaves they share
 // a forest with, blossom and willow stay short — the spread a mixed stand
 // reads by. One row per atlas row: adding a species means adding a row here.

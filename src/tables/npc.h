@@ -586,24 +586,16 @@ struct NpcTypeDef {
     // колонки всё равно нельзя: это АДРЕС, а не классификация.
     ObjectType type;
 
-    // ИМЕНОВАННОСТЬ — СУБЪЕКТНОСТЬ РОДА (вердикт владельца 2026-09-10): у
-    // именованного рода КАЖДЫЙ экземпляр ВЛАДЕЕТ своим листом — он рождается
-    // с телом, качается на месте и едет в сейве, «он как игрок». Массовка
-    // (ротационные профессии, корованы — «они уничтожаются своим
-    // ландмарком») выводит генерик-лист из строки на месте и не хранит
-    // ничего. Дверь, говорящая этот раздел, — `sheet_of@src/bus/squad_sheet.h`.
-    //
-    // ЗДЕСЬ БЫЛА ТАБЛИЦА-СПУТНИК `kNamedKinds` ПО ТОМУ ЖЕ КЛЮЧУ, И ЕЁ
-    // СОБСТВЕННОЕ ОБОСНОВАНИЕ УМЕРЛО 2026-09-22 (M-263, влита 2026-10-12).
-    // Текст над ней говорил: стоит рядом со строками «only because the rows
-    // are positional aggregates and a trailing opt-in bool would cost every
-    // named row the whole light/haul/armor tail spelled by hand». Ровно тот
-    // ход, который влил ТРИ других спутника (`kNpcNature`/`kNpcPurse`/
-    // `kNpcMapColor`), перевёл строки на ИМЕНОВАННЫЕ поля и снёс это
-    // препятствие — а довод остался стоять и читался как живой. Вопрос
-    // владельца, дословно: «а почему обе таблицы? где единая таблица
-    // объектов? не пон».
-    bool named = false;
+    // (КОЛОНКА `named` СНЕСЕНА 2026-11-08, M-436, И СНЕСЕНА НЕ КАК СИРОТА, А
+    //  КАК ПОСЛЕДНИЙ НОСИТЕЛЬ ОТМЕНЁННОЙ МОДЕЛИ. Она говорила «ИМЕНОВАННОСТЬ —
+    //  субъектность рода»: у именованного рода каждый экземпляр ВЛАДЕЕТ своим
+    //  листом, а массовка выводит генерик-лист на месте и не хранит ничего. Эту
+    //  модель владелец отменил вердиктом того же дня — РОДОВ АНКЕТЫ НЕ ДВА
+    //  (ЗАКОН АНКЕТЫ п.3), — и предикат владения `owned_sheet`/`sheet_owned_at`
+    //  был снесён (M-433 п.3, коммит `3eef37ba`). Колонка пережила свою модель
+    //  ровно потому, что её единственный читатель — дверь `npc_named` — сам
+    //  никем не звался: ноль звонящих в `src/` и в `tests/`, то есть ось
+    //  делилась на два рода только на бумаге.)
 
     // ── ВЕСА РОЛИ: КУДА ЭТА СТРОКА ТРАТИТ БЮДЖЕТ АНКЕТЫ ─────────────────
     // Второй и ПОСЛЕДНИЙ спутник по ключу `NPCType`, влитый 2026-10-12
@@ -803,7 +795,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Business has been slow. Perhaps you need something?"}},
         .talkCount = 4,
         .type = ObjectType::Merchant,
-        .named = true,   // торговец-одиночка
         .attrWeights = role_attrs(1, 2, 2, 1, 1, 3, 4, 3),
         .skillWeights = role_skills(0,0,0,0,1,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,1,0,2, 2,0,0, 4, 0, 0,0,0,0),
         .mapColor = 0xF0C850u,
@@ -829,7 +820,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "The strong survive. The weak feed us."}},
         .talkCount = 4,
         .type = ObjectType::Bandit,
-        .named = true,   // вожак банды — банда не растворяется ландмарком
         .attrWeights = role_attrs(4, 3, 1, 1, 3, 2, 1, 1),
         .skillWeights = role_skills(2,0,0,0,3,2,0, 0,2,1,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,1, 2,1,2, 0, 0, 0,0,0,0),
         .mapColor = 0xDC3C3Cu,
@@ -947,7 +937,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "The forest knows all. Listen carefully."}},
         .talkCount = 4,
         .type = ObjectType::Mage,
-        .named = true,   // фигуры, не массовка
         .attrWeights = role_attrs(1, 2, 4, 4, 1, 2, 2, 3),
         .skillWeights = role_skills(0,0,0,0,1,0,2, 0,0,2,0, 2,2,0,2,0,1, 0,4, 0,4,1,1,0, 1,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0xB464C8u,
@@ -973,7 +962,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Power has a price. Are you willing to pay?"}},
         .talkCount = 4,
         .type = ObjectType::Mage,
-        .named = true,
         .attrWeights = role_attrs(1, 2, 5, 4, 1, 3, 3, 3),
         .skillWeights = role_skills(0,0,0,0,0,0,2, 0,1,2,0, 3,0,2,0,3,2, 0,5, 0,4,1,1,0, 1,0,0, 0, 0, 0,0,0,0),
         .mapColor = 0x78C8E6u,
@@ -1033,7 +1021,6 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         .talkLines = {{}},
         .talkCount = 0,
         .type = ObjectType::Adventurer,
-        .named = true,   // герой/игрок
         .attrWeights = role_attrs(2, 2, 2, 2, 2, 2, 2, 2),
         .skillWeights = role_skills(1,1,1,1,1,1,1, 1,1,1,1, 1,1,1,1,1,1, 1,1, 1,1,1,1,1, 1,1,1, 1, 0, 0,0,0,0),
         .mapColor = 0xC8C8C8u,
@@ -2792,14 +2779,11 @@ inline constexpr ObjectArchetype npc_archetype(NPCType t) {
     return object_type_archetype(npc_type_of(t));
 }
 
-// ИМЕНОВАННОСТЬ — КОЛОНКА СТРОКИ (`NpcTypeDef::named`, см. её разбор там же).
-// Дверь осталась той же подписи, поэтому ни один звонящий не тронут: менялось
-// ХРАНИЛИЩЕ ответа, а не вопрос. Новый именованный род — `.named = true` в его
-// строке, и больше нигде.
-inline constexpr bool npc_named(NPCType t) {
-    return kNpcTypeDefs[std::size_t(t) < std::size_t(NPCType::Count)
-                            ? std::size_t(t) : 0].named;
-}
+// (`npc_named` СНЕСЕНА 2026-11-08 вместе со своей колонкой, M-436. Её шапка
+//  уверяла, что «ни один звонящий не тронут: менялось ХРАНИЛИЩЕ ответа, а не
+//  вопрос», — и это было верно в день переезда M-263 и ложно с тех пор:
+//  звонящих у неё не было НИ ОДНОГО. Вопроса тоже больше нет — родов анкеты не
+//  два, вердикт владельца 2026-11-08.)
 
 // ВЕСА РОЛИ — ДВЕ ДВЕРИ К КОЛОНКАМ, И ОБЕ С ГРАНИЦЕЙ ОРДИНАЛА. Граница
 // приехала вместе с весами: снесённая `role_weights()` отвечала строкой 0 на

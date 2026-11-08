@@ -89,7 +89,10 @@ struct WorldFieldStoresMut {
 void write_world_fields(savefmt::Writer& w, const WorldFieldStores& st);
 bool read_world_fields(savefmt::Reader& r, const WorldFieldStoresMut& st);
 
-// The row's name, for logs and for tests that walk the table.
-const char* world_field_id(WorldField f);
+// (`world_field_id` СНЕСЕНА 2026-11-08, M-436. Её шапка обещала «for logs and
+//  for tests that walk the table», и ОБЕ половины были ложны: ни одного
+//  звонящего в `src/`, ни одного в `tests/` — за всю жизнь двери. Имя строки
+//  живёт колонкой `name` самой строки, и читает её тот, кому понадобится;
+//  дверь над колонкой без читателя есть колонка-сирота с лишним шагом.)
 
 } // namespace sm

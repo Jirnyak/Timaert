@@ -2122,31 +2122,18 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
     }
 }
 
-// THE MICRO→MACRO DOOR (CANON S20.1).
+// (ЗДЕСЬ ЖИЛА `player_macro_cell` — «где игрок стоит, в МАКРО-КЛЕТКАХ», и её
+//  шапка звала себя «THE MICRO→MACRO DOOR (CANON S20.1)» и «единственным
+//  переводом, который нужен слоям между собой». СНЕСЕНА 2026-11-08 (M-436):
+//  единственным её читателем была ПОМПА ДНЯ, выжженная вердиктом владельца
+//  2026-11-07 (M-419), и некролог помпы стоит двадцатью строками выше объявления
+//  в `engine.h`. Звонящих не осталось ни в `src/`, ни в `tests/` — ни одного.
 //
-// A subworld act with lasting meaning writes UP — the same pattern the chest
-// and the felled tree already follow — and here that means into the world's
-// one memory. The translation is a single sentence: what happened DOWN HERE
-// happened, as far as the world is concerned, in the MACRO CELL that contains
-// this subworld.
-//
-// That is what keeps «истина мира — макро» from being a slogan. The two layers
-// do not keep two memories that someone must reconcile; they keep one, and the
-// place is the seam between them. A ruin explored below is a fact ON the map,
-// and the witcher who walks past next week can read it without ever going
-// underground.
-void SubworldEngine::player_macro_cell(int& cx, int& cy) const {
-    // THE seam, said once. The window is 3x3 macro cells around the centre, so
-    // where the player stands inside it decides which one he is in.
-    const int mapW = frame_ ? frame_->side : 1;
-    const int mapH = mapW;
-    const int winCellX = int(playerX_) / kCellSize;
-    const int winCellY = int(playerY_) / kCellSize;
-    cx = (mgr_.center_cx() + winCellX - 1) % (mapW > 0 ? mapW : 1);
-    cy = (mgr_.center_cy() + winCellY - 1) % (mapH > 0 ? mapH : 1);
-    if (cx < 0) cx += mapW;
-    if (cy < 0) cy += mapH;
-}
+//  ЗАКОН, КОТОРЫЙ ОНА ОБЕЩАЛА, НЕ УМЕР С НЕЙ, И ЭТО ВАЖНО: «истина мира —
+//  макро» держится не этой дверью, а ЗАКОНОМ ШВА — вверх идут ОПЕРАЦИИ
+//  (дельта), и свою макро-клетку называет тот, кто операцию поднимает. Дверь
+//  была удобством помпы, а не носителем закона; удобство ушло вместе с тем,
+//  кому оно было нужно.)
 
 void SubworldEngine::add_sub_zone(int cellX, int cellY,
                                   float localX, float localY, float radius,
