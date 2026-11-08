@@ -120,7 +120,6 @@ MacroHandle make_npc(MacroStore& st, NPCType type,
     // Цель новорождённого — «ничего» (kNoCell, колонка обнулена рождением).
     rt.state              = std::uint8_t(NPCState::Idle);
     rt.recoverySteps      = 0;   // рождённый свободен: долга актов ещё нет
-    rt.visualSpeed        = 0.0f;
     rt.tickAccum          = std::uint32_t(rng.next_int(0, int(kAiTicks)));  // de-sync
     // The march caches (maxSp/travel/marathon/pace) come from the ORDINAL
     // sheet — the one every other consumer of "the avatar as a sheet" derives

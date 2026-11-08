@@ -73,7 +73,6 @@ sm::MacroHandle spawn_ai(sm::MacroStore& st,
     // занятости ходит тиками, перевод — квант думки.
     rt.recoverySteps = std::uint32_t(timer) * std::uint32_t(sm::kAiTicks);
     rt.state = std::uint8_t(state);
-    rt.visualSpeed = 0.0f;
     rt.tickAccum = 0.0f;
     st.runtime[h.slot] = rt;
     // ДОМ = РОДИТЕЛЬ (M-245): ребро Parent той же дверью, что у рождения.
@@ -329,8 +328,11 @@ void test_aggressive_chases_visible_player() {
               < 2.0f * sm::kStaminaPerWeightHour,
           "the trip costs its hours, which is far less than the two cells "
           "used to cost: the per-step price is gone and must stay gone");
-    CHECK(rt.visualSpeed > 0.0f,
-          "the visual speed reports that the chase actually moved");
+    // «Он правда шёл» спрашивается у колонки МАРША, а не у темпа картинки:
+    // темп уехал в кадровый кэш глаз (M-425), и спрашивать о мире у
+    // представления значит читать картинку как истину.
+    CHECK((rt.marchFlags & sm::ecs::kMarchAdvanced) != 0,
+          "the march flag reports that the chase actually moved");
 }
 
 // The negative twin: the SAME aggressive row, the SAME two-cell distance —
@@ -515,12 +517,18 @@ void test_macro_visual_smoothing_and_snap() {
     auto worldStore_ = sm::make_macro_store();
     sm::MacroStore& st = *worldStore_;
     auto e = spawn_ai(st, sm::NPCType::Peasant, 12.0f, 10.0f, -1);
-    auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     sm::ui::MacroEyeCache eyes{};
     eyes.primed = true;   // сеем глаз руками — снап «непраймленного» не закон этого свидетеля
     eyes.x[e.slot] = 10.0f;
     eyes.y[e.slot] = 10.0f;
-    rt.visualSpeed = 4.0f;
+    // СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11). Темп больше не колонка
+    // мира, а наблюдение кэша: он берётся из того, НА СКОЛЬКО сдвинулась
+    // заявленная точка и ЗА СКОЛЬКО. Прежняя точка (11,10) и нулевой счётчик
+    // времени дают ровно 1 клетку за 0.25 с = 4 клетки/с — то самое число,
+    // которое этот свидетель прежде вписывал в колонку руками.
+    eyes.lastTx[e.slot] = 11.0f;
+    eyes.lastTy[e.slot] = 10.0f;
+    eyes.sinceMove[e.slot] = 0.0f;
     sm::ui::tick_macro_eyes(st, eyes, 128, 128, 0.25f);
     CHECK(close_enough(eyes.x[e.slot], 11.0f)
               && close_enough(eyes.y[e.slot], 10.0f),
@@ -529,7 +537,14 @@ void test_macro_visual_smoothing_and_snap() {
     // Доля — часть цели: сквад, заявивший западный край, тянет глаз к
     // клетке МИНУС полклетки, а не к её центру (два кванта закона — одна цель).
     st.runtime[e.slot].sub = sm::ecs::cell_sub_after_step(+1, 0);   // вошёл с запада
-    sm::ui::tick_macro_eyes(st, eyes, 128, 128, 1.0f);
+    // НЕСКОЛЬКО ТИКОВ, И ЭТО НЕ ПОСЛАБЛЕНИЕ. Закон под проверкой — что ДОЛЯ
+    // входит в ЦЕЛЬ; скорость схождения — не он. Прежде темп был СТАРЫМ
+    // (колонка хранила его от прошлой думки, 4 клетки/с), и глаз доезжал за
+    // один тик случайно — от величины чужого остатка. Кэш меряет темп по
+    // СВЕЖЕМУ сдвигу цели (M-425), поэтому за один тик он проходит ровно
+    // столько, на сколько цель и сдвинулась, и сходится за два. Утверждать
+    // прибытие за один тик значило бы охранять прошлую СЛУЧАЙНОСТЬ.
+    for (int t = 0; t < 3; ++t) sm::ui::tick_macro_eyes(st, eyes, 128, 128, 1.0f);
     CHECK(close_enough(eyes.x[e.slot], 12.0f - 127.0f / 256.0f)
               && close_enough(eyes.y[e.slot], 10.0f),
           "the stated intra-cell point is part of the glide target");

@@ -653,7 +653,6 @@ std::size_t step_macro_walk(GameState& gs, MacroStore& stw, MacroCursor& cursor,
     // защита глаза от квантования кадра: нулевой по округлению кадр не
     // гасит глайд (у думки НПЦ период крупный, ей гейт не нужен).
     if (walked > 0.0f) {
-        set_visual_speed(*rt, walked, dt);
     }
 
     if (cursor.pathIdx >= cursor.path.size()) {

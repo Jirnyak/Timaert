@@ -1629,7 +1629,6 @@ bool run_subworld_recovery_smoke(App& app) {
             app.macroEyes.primed = true;
             app.macroEyes.x[slot] = wPx + 0.4f;        // mid-glide eye
             app.macroEyes.y[slot] = wPy;
-            stx.runtime[slot].visualSpeed = 2.0f;
             scaleWitness = sm::handle_at(stx, slot);
             wCellIdx = c.idx;
             wVx = app.macroEyes.x[slot]; wVy = app.macroEyes.y[slot];
@@ -2870,7 +2869,6 @@ bool run_macro_npc_trace_smoke(App& app) {
     hp.sp = 0;
     hp.spCarry = 0.0f;
     rt.tickAccum = 0;
-    rt.visualSpeed = 0.0f;
     // Resting exits at half the bar; the percent law (1/8 per game hour)
     // makes that 4 game hours ≈ 43 thinks from empty for ANY bar. 64 = margin.
     // Deliberately PARTIAL envelope: the trace checks recovery mechanics on a
@@ -2908,7 +2906,6 @@ bool run_macro_npc_trace_smoke(App& app) {
     rt.state = std::uint8_t(sm::NPCState::Traveling);
     hp.sp = std::int16_t(maxSp);
     rt.tickAccum = 0;
-    rt.visualSpeed = 0.0f;
 
     // No cost grid on purpose: the trace checks the march MECHANICS (budget,
     // glide) on a featureless world. Terrain pricing has its own ctest
@@ -2935,6 +2932,19 @@ bool run_macro_npc_trace_smoke(App& app) {
     const float statedX = logicalX
         + float(stt.runtime[traceH.slot].sub.x) / 256.0f;
     const float visualBefore = app.macroEyes.x[traceH.slot];
+    // ТЕМП ГЛАЙДА МЕРЯЕТ КЭШ ГЛАЗ (M-425), И ФИКСТУРА ОБЯЗАНА СКАЗАТЬ ЕМУ,
+    // СКОЛЬКО ВРЕМЕНИ МИР ПРОЖИЛ. Эта проба гонит `marchThinks` думок подряд,
+    // НЕ трогая глаза, — в игре так не бывает: там глаз идёт каждым кадром и
+    // копит время сам. Не скажи ему — и он отнесёт весь трёхклеточный сдвиг
+    // к одному кадру 0.25 с, получит 12 клеток/с и прыгнет на цель мгновенно,
+    // то есть проба мерила бы не глайд, а свой собственный артефакт.
+    // Прежде это сходило с рук, потому что темп лежал колонкой МИРА и помнил
+    // прошлую думку; теперь он наблюдение, и наблюдателю нужны оба числа.
+    const float marchSeconds = float(marchThinks) * float(sm::kAiTicks)
+                             / float(sm::kTicksPerRealSecond);
+    app.macroEyes.lastTx[traceH.slot] = float(baseX);
+    app.macroEyes.lastTy[traceH.slot] = float(baseY);
+    app.macroEyes.sinceMove[traceH.slot] = marchSeconds;
     sm::ui::tick_macro_eyes(*app.macroStore, app.macroEyes,
                             app.gs.mapW, app.gs.mapH, 0.25f);
     const float visualMid = app.macroEyes.x[traceH.slot];

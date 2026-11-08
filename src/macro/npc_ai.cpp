@@ -364,7 +364,6 @@ inline float overload_burden_of(const ecs::MacroNpcRuntime& rt,
 ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
                                  const ecs::Pools& hp) {
     if (hp.hp <= 0) {
-        rt.visualSpeed = 0.0f;
         return ThinkGate::Dead;
     }
 
@@ -382,7 +381,6 @@ ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
     // ends and the decider begins.
     if (state == NPCState::Resting) {
         if (int(hp.sp) >= maxSp / 2) wake_from_rest(rt);
-        rt.visualSpeed = 0.0f;
         return ThinkGate::Rest;
     }
 
@@ -592,11 +590,9 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
     // `ctx.mw.gs` нуллим по контракту (те же `if (ctx.mw.gs && …)` у судов
     // автобоя ниже).
     g.leaseCenter = ctx.mw.gs ? ctx.mw.gs->leasedWindow : kNoWindowLease;
-    const float walked = sm::try_move(p, rt, tx, ty, quanta, g);
-    // Скорость картинки — евклидова ДОРОГА думки за её период, одна дверь
-    // (`set_visual_speed@src/macro/squad.h`). Пишется и нулём: стоящее тело
-    // (заминка боя, отказ ног) показывает ноль, а не прошлый темп.
-    set_visual_speed(rt, walked, kAiPeriodSeconds);
+    // Возврат марша (пройденные клетки) больше никому не нужен: темп
+    // картинки меряет кадровый кэш глаз сам (M-425).
+    (void)sm::try_move(p, rt, tx, ty, quanta, g);
 
     // Exhaustion is settled by the DISPATCHER after the think (it owns the
     // entity + Health this function never sees): rest on land, the debt's
@@ -3250,7 +3246,6 @@ void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                 // резолву — тот же гард, что у threat step.
                 if (prey.slot == ctx.playerFlagSlot
                     || prey.slot == ctx.playerSquadSlot) {
-                    rt.visualSpeed = 0.0f;
                     return;
                 }
                 // ИЗЪЯТИЕ ПО КЛЕТКЕ, А НЕ ПО РОДУ СЦЕНЫ (M-226): клетка
@@ -3264,7 +3259,6 @@ void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                     auto_battle_side_of(st, prey),
                     Ambush::None, *ctx.rng);
                 settle_auto_battle(ctx.mw, self, prey, o);
-                rt.visualSpeed = 0.0f;
                 if (!macro_dead(st, self)) {
                     rt.state = std::uint8_t(NS::Idle);
                     charge_squad_recovery(rt,
@@ -3399,7 +3393,6 @@ void ai_dragon(MacroHandle self, MacroPos& p,
             if (int(p.x) == int(ep.x) && int(p.y) == int(ep.y)) {
                 if (prey.slot == ctx.playerFlagSlot
                     || prey.slot == ctx.playerSquadSlot) {
-                    rt.visualSpeed = 0.0f;
                     return;
                 }
                 if (ctx.mw.gs
@@ -3409,7 +3402,6 @@ void ai_dragon(MacroHandle self, MacroPos& p,
                     auto_battle_side_of(st, prey),
                     Ambush::SideA, *ctx.rng);
                 settle_auto_battle(ctx.mw, self, prey, o);
-                rt.visualSpeed = 0.0f;
                 if (!macro_dead(st, self)) {
                     rt.state = std::uint8_t(NS::Idle);
                     charge_squad_recovery(rt,
@@ -3697,7 +3689,6 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
         // the flag while the home squad stays home (player_entity.h).
         if (enemy.slot == ctx.playerFlagSlot
             || enemy.slot == ctx.playerSquadSlot) {
-            rt.visualSpeed = 0.0f;
             return true;
         }
         if (ctx.mw.gs
@@ -3712,7 +3703,6 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
             auto_battle_side_of(st, enemy),
             ambush ? Ambush::SideA : Ambush::None, *ctx.rng);
         settle_auto_battle(ctx.mw, self, enemy, o);
-        rt.visualSpeed = 0.0f;
         if (!macro_dead(st, self)) {
             rt.state = std::uint8_t(NS::Idle);
             charge_squad_recovery(rt,

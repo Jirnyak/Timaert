@@ -5731,7 +5731,7 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
         px = float(sm::ecs::cell_x(c, app.gs.mapW));
         py = float(sm::ecs::cell_y(c, app.gs.mapW));
         vx = app.macroEyes.x[sample]; vy = app.macroEyes.y[sample];
-        vspeed = rt.visualSpeed;
+        vspeed = app.macroEyes.speed[sample];
         sstate = int(rt.state);
     }
     std::fprintf(stderr,
@@ -5792,9 +5792,9 @@ void frame(App& app, int simSteps) {
     // on `>>` and called it what it was, 2026-09-09.
     //
     // `ticksAdvanced` is the right denominator and not merely a bigger one:
-    // MacroNpcRuntime::visualSpeed is quoted in cells per kAiPeriodSeconds,
-    // which IS kAiTicks of world clock, so the two only agree when both are
-    // counted in ticks. It also carries the subworld for free — down there
+    // the eye's own pace (MacroEyeCache::speed, M-425) is measured over the
+    // elapsed time between two target changes, so the two only agree when both
+    // are counted in ticks of the world clock. It also carries the subworld for free — down there
     // tick_world_subworld_steps advances the macro clock once per
     // kSubworldTickDivisor steps, so the squads think rarely and smooth rarely,
     // in the same crawling ratio.

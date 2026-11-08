@@ -25,11 +25,27 @@ void tick_macro_eyes(const MacroStore& st, MacroEyeCache& eyes,
                        + float(st.runtime[slot].sub.y) / 256.0f;
         float& ex = eyes.x[slot];
         float& ey = eyes.y[slot];
-        const auto& rt = st.runtime[slot];
         const auto& hp = st.pools[slot];
+        float& sp     = eyes.speed[slot];
+        float& ltx    = eyes.lastTx[slot];
+        float& lty    = eyes.lastTy[slot];
+        float& since  = eyes.sinceMove[slot];
         if (snapAll || hp.hp <= 0 || !std::isfinite(ex) || !std::isfinite(ey)) {
             ex = tx; ey = ty;
+            ltx = tx; lty = ty; since = 0.0f; sp = 0.0f;
             continue;
+        }
+
+        // ТЕМП ИЗ НАБЛЮДЕНИЯ, А НЕ ИЗ КОЛОНКИ МИРА (M-425): копим время, а
+        // когда заявленная точка сдвинулась — делим пройденное на реально
+        // прошедшее. Мир об этом числе больше не знает ничего.
+        since += dt;
+        const float mx = tx - ltx;
+        const float my = ty - lty;
+        const float movedSq = mx * mx + my * my;
+        if (movedSq > 0.000001f) {
+            if (since > 0.0f) sp = std::sqrt(movedSq) / since;
+            ltx = tx; lty = ty; since = 0.0f;
         }
 
         const float dx = tx - ex;
@@ -45,7 +61,7 @@ void tick_macro_eyes(const MacroStore& st, MacroEyeCache& eyes,
             continue;
         }
 
-        const float speed = rt.visualSpeed > 0.0f ? rt.visualSpeed : 2.0f;
+        const float speed = sp > 0.0f ? sp : 2.0f;
         const float step = speed * dt;
         if (step <= 0.0f || dSq <= 0.000001f) continue;
 

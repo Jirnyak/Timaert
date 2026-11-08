@@ -218,7 +218,6 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     a.runtime.state = 2;
     a.runtime.entryDir = 0x12;
     a.runtime.entryTicks = 9;
-    a.runtime.visualSpeed = 0.25f;
     a.runtime.tickAccum = 77;
     // (Кампании аватара поставлены ВЫШЕ, одним числом: опыт и ступень больше
     //  не два поля, и второй записи здесь быть не может — M-383.)
@@ -866,7 +865,6 @@ int run_roundtrip() {
             || a.runtime.entryDir != want.runtime.entryDir
             || a.runtime.entryTicks != want.runtime.entryTicks
             || a.runtime.tickAccum != want.runtime.tickAccum
-            || a.runtime.visualSpeed != want.runtime.visualSpeed
             || a.runtime.sub.x != want.runtime.sub.x
             || a.runtime.sub.y != want.runtime.sub.y
             || a.runtime.marchFlags != want.runtime.marchFlags) {

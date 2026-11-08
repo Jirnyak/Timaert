@@ -64,7 +64,7 @@ inline int cell_y(MacroCell c, int mapW) {
 // дельта-буфером эпика фрейма). Здесь стоял float-тройкой `MacroVisual`
 // {vx,vy,speed} — он умер этим же ходом («да убиваем макровиузуал он флоат
 // а флоаты это плохо»): глайд карты стал ПРЕДСТАВЛЕНИЕМ (кэш глаз у
-// оверлея), скорость глайда и прежде жила в MacroNpcRuntime::visualSpeed.
+// оверлея); скорость глайда жила тут до M-425 и уехала в MacroEyeCache.
 struct CellSub { std::int8_t x = 0, y = 0; };
 static_assert(sizeof(CellSub) == 2, "доля клетки — два байта-кванта");
 // КВАНТ КЛЕТКИ — 256 (вердикт владельца M-244 «да норм»); хранение int8
@@ -420,7 +420,6 @@ struct MacroNpcRuntime {
     // всё это время говорил правду.
     std::uint8_t  entryDir  = 0xFF;
     std::uint8_t  entryTicks = 0;
-    float         visualSpeed;   // last-tick travelled distance, cells/real s
     std::uint32_t tickAccum;     // WORLD ticks accumulated toward the next think
     // (Поле `xp` УМЕРЛО 2026-10-18 вместе со вторым законом роста, M-246а:
     //  опыт сквада есть `levelData.exp` его анкеты, и она едет в сейв той же
@@ -550,11 +549,12 @@ struct MacroNpcRuntime {
 //   `recoverySteps` (u32, тики) — те же четыре байта, ни дыры, ни роста.
 //   48 → 48 (2026-11-07, шаг 0 ЗАХВАТА M-419): колонка `halted` (1 Б, было
 //   смещение 23) умерла со стопером ног — `state`/`entryDir`/`entryTicks`
-//   подъехали, дыра перед `visualSpeed` выросла 1 → 2 Б (float держит 28).
+//   подъехали, дыра выросла 1 → 2 Б. M-425 вынул `visualSpeed` (float,
+//   «cells/real s») в кадровый кэш глаз: 48 → 44 Б, −64 КиБ на кап.
 //   48 → 48 (2026-11-08, ломоть 6 ЗАХВАТА M-419): колонка `fighting` (1 Б)
 //   встала в ту дыру обратно (2 → 1 Б) — «я сражаюсь» БЕЗ гейта ног.
-static_assert(sizeof(MacroNpcRuntime) == 48,
-              "рантайм марша: 48 Б × 16384 сквадов = 0.75 МиБ (AGENTS п.10)");
+static_assert(sizeof(MacroNpcRuntime) == 44,
+              "рантайм марша: 44 Б × 16384 сквадов = 0.69 МиБ (AGENTS п.10)");
 
 // ── ДВЕ ДВЕРИ ГЕЙТА ЗАНЯТОСТИ — ЗАРЯД И ВОПРОС (ЗАКОН СПОСОБНОСТИ п.4) ──
 // Заряд МОНОТОННЫЙ: дверь не умеет ни укоротить, ни обнулить чужой долг —

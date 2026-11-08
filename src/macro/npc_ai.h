@@ -35,21 +35,14 @@ inline constexpr std::uint32_t kAiTicks = 32;
 static_assert(kTicksPerDay % kAiTicks == 0,
               "the AI cadence must divide the day");
 
-// Real seconds one AI period lasts ON THE MACRO MAP — the only place these
-// interpolated positions are ever seen. PRESENTATION ONLY, and that claim is
-// about what is DERIVED from it, not about who touches it: its one reader is
-// set_visual_speed@src/macro/squad.h, which divides a think's travelled
-// DISTANCE by it (the door takes no other quantity — the march of the player
-// is quoted through it too, M-289) to fill
-// MacroNpcRuntime::visualSpeed — a number read by the frame
-// interpolator (app/main.cpp) and the camera glide (ui/macro_eyes.cpp) and by
-// nothing in the simulation. No law of the world is calibrated in real
-// seconds: the cadence itself is kAiTicks, counted in ticks of the world
-// clock. (It used to say "the AI itself never reads it", which was false to
-// the letter and sent a reader of this file looking for a reader that is right
-// here — M-272.)
-inline constexpr float kAiPeriodSeconds =
-    float(kAiTicks) / float(kTicksPerRealSecond);
+// (КОНСТАНТА `kAiPeriodSeconds` УНИЧТОЖЕНА 2026-11-08 ВМЕСТЕ С M-425. Она
+//  была последним числом макро-ИИ в РЕАЛЬНЫХ СЕКУНДАХ и держалась ровно одним
+//  читателем — дверью `set_visual_speed`, делившей путь думки на этот период
+//  ради колонки `visualSpeed`. Колонка оказалась величиной ПРЕДСТАВЛЕНИЯ
+//  (читателей мира — ноль), темп переехал в кадровый кэш глаз и меряется там
+//  реально прошедшим временем, а не предполагаемым периодом. Константа без
+//  читателя не живёт (DOD п.9), и с её смертью «калибровать в реальных
+//  секундах» стало в этом файле НЕВЫРАЗИМО, а не запрещено прозой.)
 
 // GAME HOURS one AI think covers — the exchange rate that lets a squad pay
 // and recover through the same per-game-hour laws the player uses
@@ -457,7 +450,7 @@ struct MarchRoute {
 // Бюджет квантов — ЕДИНСТВЕННЫЙ вход темпа (M-412б): его состав — закон
 // ЗВОНЯЩЕГО (думка: march_cells_per_think выше; кадр игрока: его темп в
 // main.cpp). Возвращает евклидову дорогу В КЛЕТКАХ — скорость картинки
-// платит звонящий СВОИМ периодом (думка kAiPeriodSeconds, кадр dt).
+// платит звонящий СВОИМ периодом (думка — своими тиками, кадр — dt).
 // При route != nullptr tx/ty не читаются.
 float try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, float tx, float ty,
                std::uint32_t quanta, const MarchGround& ground,
