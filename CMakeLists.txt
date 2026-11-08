@@ -2827,7 +2827,7 @@ target_compile_definitions(doc_tables_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 timaert_test(doc_refs_test SOURCES tests/doc_refs.cpp
-    PIN "OK doc_refs_test .31 checks. .доков [0-9]+ · ссылок [0-9]+ · вне слежения [0-9]+ · числа в доках НЕ судит")
+    PIN "OK doc_refs_test .30 checks. .доков [0-9]+ · ссылок [0-9]+ · вне слежения [0-9]+ · числа в доках НЕ судит")
 target_compile_definitions(doc_refs_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
@@ -2940,9 +2940,9 @@ target_link_libraries(docs_sync_tool PRIVATE timaert_build_flags)
 # Сознательно НЕ гейт `check`, и это ЗАМЕР, а не вкус: на трёх исторических
 # обвалах такой гейт выдал бы 235 / 194 / 55 жалоб уже после отбрасывания шума,
 # то есть встал бы стеной в худший момент (§8 п.7 — прибор не смеет мешать
-# развитию). Волатильные файлы (`NEXT_SESSION.md`, `jopus_prompts.md`) домом НЕ
-# считаются по построению: первая редакция детектора молчала о заведомо
-# потерянной переписи шва именно потому, что находила её в стёртом промте.
+# развитию). Волатильный `NEXT_SESSION.md` домом НЕ считается по построению:
+# первая редакция детектора молчала о заведомо потерянной переписи шва именно
+# потому, что находила её в стёртом промте.
 add_executable(prompt_loss_tool tests/prompt_loss_main.cpp)
 set_target_properties(prompt_loss_tool PROPERTIES
     CXX_STANDARD 23

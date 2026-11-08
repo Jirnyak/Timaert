@@ -254,8 +254,6 @@ void test_liveness_policy() {
           "законы судятся: их читает каждая сессия ДО кода");
     CHECK(!judges_name_liveness("macro-registry.md"),
           "реестр нарядов НЕ судится: наряд на снос называет снесённое");
-    CHECK(!judges_name_liveness("jopus_prompts.md"),
-          "архив промтов НЕ судится: его строка — снимок момента");
     // Дефолт СУДИТ, и это не вкус: документ, которого в списке нет, попадает
     // под гейт сам — иначе новый док начал бы писать адреса без свидетеля.
     CHECK(judges_name_liveness("doc_that_nobody_has_written_yet.md"),

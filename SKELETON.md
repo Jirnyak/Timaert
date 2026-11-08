@@ -66,7 +66,7 @@
 > `PASS_REGULAR_EXPRESSION` на строку `report`
 > (`report@tests/check.h`): `stack_census_test` 13, `state_census_test` 9,
 > `arch_guard_test` 42 (38 + 4 контроля правила subcap, 2026-10-09),
-> `doc_refs_test` 31, `header_cost_test` 14, `law_carrier_test` 20 (M-243,
+> `doc_refs_test` 30, `header_cost_test` 14, `law_carrier_test` 20 (M-243,
 > у него же ТОЧНО пинится счёт ПРОЗЫ) — счёт ТОЧНО, границы классом цифр. Четыре мутации прогнаны до заявления «ловит»: снятый
 > `CHECK` 13 → 12 при коде выхода 0 — КРАСНЫЙ; потолок ниже замера 482 против
 > 256 — КРАСНЫЙ; снятая граница при верном счёте — КРАСНЫЙ; ранний выход кодом 0
