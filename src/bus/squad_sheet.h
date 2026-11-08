@@ -196,7 +196,7 @@ inline CharacterSheet effective_sheet_of(const MacroStore& st, MacroHandle h) {
 // ДВЕРИ КЛАССОВ ИЗМЕНЕНИЙ, и каждая кончается этим звонком, поэтому забыть
 // пересчёт в них невыразимо (разряд А, вердикт владельца «давай А»).
 // (Полная история пяти ответов на «свежа ли производная» и цена трёх
-// лишних — П-26 — записана рядом M-301 реестра.)
+// лишних записана рядом **M-301** реестра.)
 inline void refresh_squad_body(MacroStore& st, MacroHandle h) {
     if (!st.valid(h)) return;
     const BonusTotals bt = standing_bonuses_of(st, h);
