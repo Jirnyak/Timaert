@@ -366,7 +366,7 @@ struct App {
                                            //   мертвит поколение
     // THE subject panel's squad (меню-сессия: одна панель на всех — клик по
     // сквад-ряду открывает её на нём; kMacroNoSlot = панель показывает
-    // ландмарк ui.settlementId). Runtime-only, как preBattleNpc; хэндл
+    // место). Runtime-only, как preBattleNpc; хэндл
     // {slot,gen} вместо entt-энтити — шаг 1г.
     sm::MacroHandle subjectSquad{};
     std::string  encounterTalkLine;

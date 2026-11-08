@@ -71,13 +71,30 @@ inline bool on_screen(const ImVec2& p, int viewW, int viewH, float pad) {
 // mask, and a hard-coded 0.40 sea level at its call site. The one cascade is
 // map_generator.h biome_at_cell.)
 
+// БЕЗ `default:` ПО ЗАКОНУ СЛОВАРЯ п.4. Здесь стоял `default: return ""`,
+// а названы были ТРИ рода из восемнадцати — то есть пятнадцать (пашня, шесть
+// шахт, пастбище, лён и все пять поселений) рисовались пустой строкой, и
+// девятнадцатый род вошёл бы в ось МОЛЧА, потому что `default:` глушит
+// `-Wswitch`. Чинится ровно это: ось перечислена поимённо, и новая строка
+// краснит СБОРКУ здесь. То, что пятнадцати родам подпись не написана, —
+// отдельный вопрос КОНТЕНТА (колонки имени у `FeatureDef` нет вовсе), и он
+// вынесен в отчёт, а не решён молча выдумыванием пятнадцати слов.
 const char* feature_name(FeatureType f) {
     switch (f) {
-        case FT_Road:     return "Road";
-        case FT_DirtRoad: return "Dirt Road";
-        case FT_Bridge:   return "Bridge";
-        default:          return "";
+        case FT_Road:       return "Road";
+        case FT_DirtRoad:   return "Dirt Road";
+        case FT_Bridge:     return "Bridge";
+        // ОСТАЛЬНЫЕ РОДА НАЗВАНЫ ПОИМЁННО И ПУСТОЙ СТРОКОЙ — СОЗНАТЕЛЬНО.
+        // Пусто здесь значит «подпись этому роду ещё не написана», и это
+        // вопрос КОНТЕНТА, а не меры; важно, что молчание стало ЯВНЫМ.
+        case FT_None: case FT_Field: case FT_Pasture:
+        case FT_FlaxField: case FT_ClayPit: case FT_Quarry:
+        case FT_CopperMine: case FT_IronMine: case FT_SilverMine:
+        case FT_GoldMine: case FT_Capital: case FT_City:
+        case FT_Village: case FT_Spire: case FT_Ruin:
+        case FT_Count:      return "";
     }
+    return "";
 }
 
 // The dot's colour is the row's own column (macro/npc.h kNpcMapColor) — the

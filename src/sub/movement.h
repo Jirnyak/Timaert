@@ -164,7 +164,12 @@ void build_faction_masks(FactionSet& fs,
 
 enum BodyFlags : std::uint8_t {
     B_None    = 0,
-    B_Missile = 1u << 0,   // fights at range: holds stand-off, never closes
+    // (БИТ 0 `B_Missile` УНИЧТОЖЕН 2026-11-08, M-430: два писателя — бой
+    //  субмира и фикстура автобоя — и НИ ОДНОГО читателя, при обещании
+    //  шапки «holds stand-off, never closes», которого в стиринге нет ни
+    //  строки: слова `standoff` в `src/sub/` не существовало вовсе. Трое
+    //  соседей по этому перечислению читаются, и это делало дыру видимой.
+    //  Бит остаётся свободным; значения соседей заданы явно и не поехали.)
     B_Pinned  = 1u << 1,   // a real target and a real obstacle, but NOT steered
                             // here (the player body — its mover is the input).
                             // Its position is never written back.

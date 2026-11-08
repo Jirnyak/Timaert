@@ -229,7 +229,12 @@ ParticleSystem::PackCounts ParticleSystem::pack(ParticleInstance* out,
     // Energy first, in pool order (additive is commutative — no sort). Matter
     // indices are collected for the sorted second segment.
     struct MatterRef {
-        float dist2; // squared distance to the camera (sort key)
+        // ИМЯ ЗНАЧИТ «В КВАДРАТЕ», А НЕ «В ДВУХ ОСЯХ»: значение честно
+        // трёхмерно (см. присваивание ниже). Омоним опасен тем, что в
+        // соседнем `src/sub/engine.cpp` `dist2` значило РОВНО ОБРАТНОЕ —
+        // плоскую меру, — поэтому имя названо вслух, а не оставлено
+        // догадке (ЗАКОН ИМЕНИ: имя — самый слабый свидетель).
+        float distSq3; // squared 3D distance to the camera (sort key)
         int index;   // pool index (tie-break: keeps packs deterministic)
     };
     MatterRef matter[kMaxParticles];
@@ -238,7 +243,7 @@ ParticleSystem::PackCounts ParticleSystem::pack(ParticleInstance* out,
         const Particle& q = pool_[i];
         if (q.blend == FxBlend::Matter) {
             const vec3 d = q.pos - camPos;
-            matter[matterCount].dist2 = d.x * d.x + d.y * d.y + d.z * d.z;
+            matter[matterCount].distSq3 = d.x * d.x + d.y * d.y + d.z * d.z;
             matter[matterCount].index = i;
             ++matterCount;
             continue;
@@ -249,7 +254,7 @@ ParticleSystem::PackCounts ParticleSystem::pack(ParticleInstance* out,
     // pool index so two equal-seed systems pack byte-identically.
     std::sort(matter, matter + matterCount,
               [](const MatterRef& a, const MatterRef& b) {
-                  if (a.dist2 != b.dist2) return a.dist2 > b.dist2;
+                  if (a.distSq3 != b.distSq3) return a.distSq3 > b.distSq3;
                   return a.index < b.index;
               });
     for (int i = 0; i < matterCount; ++i) {

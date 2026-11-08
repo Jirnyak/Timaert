@@ -208,8 +208,6 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
             d.faction = std::int16_t(f.side);
             d.enemyMask = mask_of(1 - f.side);
             // The row's ranged kind steers as ranged, like the engine feed
-            // (sub/engine.cpp: Combat::Missile ⇒ B_Missile).
-            if (f.missile) d.flags |= B_Missile;
             u.add(d);
             slot.push_back(int(i));
         }

@@ -186,23 +186,30 @@ int append_num(char* out, int cap, int len, long v) {
 // world, so an unresolvable ordinal still gets an honest noun.
 int append_who(char* out, int cap, int len, std::uint8_t packed,
                std::uint32_t id, const FactNaming& naming) {
-    const std::uint8_t kind = fact_subject_kind(packed);
+    // ОСЬ СУДИТСЯ СВОИМ ТИПОМ, А НЕ БАЙТОМ (ЗАКОН СЛОВАРЯ п.4). Здесь
+    // переключались по `std::uint8_t` с метками-кастами и `default:` — то
+    // есть `-Wswitch` молчал бы О НОВОМ РОДЕ ДАЖЕ БЕЗ `default:`, потому что
+    // ось была отмыта через байт. Теперь все шесть родов названы поимённо и
+    // умолчания нет: седьмой род краснит сборку. Образец рядом — `renown_slot
+    // @src/macro/squad.h`, который так и делает и пишет об этом вслух.
+    const FactSubject kind = FactSubject(fact_subject_kind(packed));
     const char* name = nullptr;
     switch (kind) {
-        case std::uint8_t(FactSubject::Squad):
+        case FactSubject::None: return append(out, cap, len, "someone");
+        case FactSubject::Count: return append(out, cap, len, "someone");
+        case FactSubject::Squad:
             if (naming.squad) name = naming.squad(naming.user, id);
             return append(out, cap, len, name ? name : "a band");
-        case std::uint8_t(FactSubject::Rooted):
+        case FactSubject::Rooted:
             if (naming.rooted) name = naming.rooted(naming.user, id);
             return append(out, cap, len, name ? name : "a place");
-        case std::uint8_t(FactSubject::Faction):
+        case FactSubject::Faction:
             if (naming.faction) name = naming.faction(naming.user, id);
             return append(out, cap, len, name ? name : "a people");
-        case std::uint8_t(FactSubject::Cell):
+        case FactSubject::Cell:
             return append(out, cap, len, "this place");
-        default:
-            return append(out, cap, len, "someone");
     }
+    return append(out, cap, len, "someone");
 }
 
 } // namespace

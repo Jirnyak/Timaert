@@ -240,11 +240,13 @@ float loot_rng_f01() {
     return gLootRng ? gLootRng->next_f01() : 0.0f;
 }
 
-float dist2(float ax, float ay, float bx, float by) {
-    const float dx = ax - bx;
-    const float dy = ay - by;
-    return dx * dx + dy * dy;
-}
+// (ПЛОСКАЯ `dist2` УНИЧТОЖЕНА 2026-11-08, M-430. Её последним потребителем
+//  был ТЕКСТ урона — «Hit by X for N (компас Nm)», — и он врал по ЗАКОНУ
+//  ИЗОТРОПИИ: летун в 60 м НАД игроком писал «0m», при том что гейт отрыва
+//  в этом же файле шестью строками ниже считает `dist3sq` и его шапка прямо
+//  объясняет почему. Две размерности у одного вопроса — второй закон места;
+//  после перевода текста на три оси у плоской двери не осталось ни одного
+//  звонящего, и компилятор сказал об этом сам.)
 
 float dist3sq(float ax, float ay, float az, float bx, float by, float bz) {
     const float dx = ax - bx;
@@ -1715,6 +1717,7 @@ void SubworldEngine::report_player_damage() {
             const char* label = "Hostile";
             float ax = playerX_;
             float ay = playerY_;
+            float az = playerZ_;   // третья ось — см. меру ниже
             // «Кто бил» — колонка lastHitBy, ссылка сцены (ступень (iii)):
             // «никто» — id == 0, протухшая (атакер умер/слот перерождён)
             // отваливается в ref_slot — компас не укажет на чужого жильца.
@@ -1726,13 +1729,22 @@ void SubworldEngine::report_player_damage() {
                     objsHit.pos[std::size_t(atkSlot)];
                 ax = ap.x;
                 ay = ap.y;
+                az = ap.z;
             }
             const bool lethal = after <= 0;
             char status[160]{};
             std::snprintf(status, sizeof(status), "Hit by %s for %d (%s %.0fm)",
                           label, dmg,
                           compass_from_delta(ax - playerX_, ay - playerY_),
-                          std::sqrt(dist2(ax, ay, playerX_, playerY_)));
+                          // ЧЕСТНЫЕ ТРИ ОСИ (ЗАКОН ИЗОТРОПИИ). Здесь стоял
+                          // плоский `dist2`, и летун в 60 м НАД игроком
+                          // писал «0m» — при том, что гейт отрыва в этом же
+                          // файле считает `dist3sq` и его шапка прямо
+                          // говорит, почему («угроза честно 3D»). Две
+                          // размерности у одного вопроса — второй закон
+                          // места; компас остаётся плоским по природе.
+                          std::sqrt(dist3sq(ax, ay, az,
+                                            playerX_, playerY_, playerZ_)));
             set_status(status);
             char logMsg[96]{};
             std::snprintf(logMsg, sizeof(logMsg), "%s %s you for %d",
@@ -3703,7 +3715,6 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         d.speed = c ? c->speed : 0.0f;
         d.reach = c ? c->attackRange : 0.0f;
         d.sight = slot_body_sight(arena, s);
-        if (c && c->kind == ecs::Combat::Missile) d.flags |= B_Missile;
         if (sub::slot_flag(arena, s, sub::kObjFlying)) d.flags |= B_Flying;
 
         const bool owned = sub::slot_flag(arena, s, sub::kObjPlayerSoldier);

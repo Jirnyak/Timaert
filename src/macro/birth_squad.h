@@ -199,7 +199,7 @@ inline MacroHandle birth_squad(GameState& gs, MacroStore& st, SquadType kind,
     // ДОМ МЕСТА — ОНО САМО: self-ребро Parent одной записью (M-245), той же
     // дверью, что у всякого рождения.
     set_relation(st, id, id, Stance::Parent);
-    ++gs.navEpoch;                        // событие состава (закон add_landmark)
+    ++gs.navEpoch;                        // событие состава округи навигации
     return h;
 }
 

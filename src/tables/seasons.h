@@ -31,9 +31,12 @@ struct SeasonDef {
     // (foliage today; biome tint / spawn containers are natural future readers).
     // Signed; consumers clamp the sum back into [0,1].
     float         tempOffset;
-    // Scales agricultural yield for a future economy consumer (CANON S19, бывший seasons.md).
-    // Declared now so the harvest cycle is one multiply away, not a schema change.
-    float         yieldMul;
+    // (КОЛОНКА `yieldMul` УНИЧТОЖЕНА 2026-11-08, M-430. Читателей по всему
+    //  дереву — НОЛЬ, и её собственная шапка это признавала: «for a future
+    //  economy consumer… declared now so the harvest cycle is one multiply
+    //  away». Колонка без названного читателя не живёт (DOD п.9) — она не
+    //  лежит тихо, её видит следующий и принимает за закон. Урожай придёт
+    //  СТРОКОЙ, когда придёт система, а не схемой, ждущей её годами.)
     std::uint32_t tintRGB;   // seasonal tint (0xRRGGBB): consumed by the subworld
                              // day sky (sub/sky.h seasonTint); map tint is a
                              // natural future reader
@@ -48,11 +51,11 @@ struct SeasonDef {
 inline constexpr int kDaysPerSeason = 32;
 
 inline constexpr SeasonDef kSeasons[std::size_t(Season::Count)] = {
-    // id              name       tempOffset  yieldMul  tintRGB
-    { Season::Spring, "Spring",     +0.00f,     1.10f,  0x8FBF6Bu },
-    { Season::Summer, "Summer",     +0.15f,     1.25f,  0xE0C060u },
-    { Season::Autumn, "Autumn",     -0.05f,     0.90f,  0xC87A3Au },
-    { Season::Winter, "Winter",     -0.20f,     0.60f,  0xBFD0E0u },
+    // id              name       tempOffset  tintRGB
+    { Season::Spring, "Spring",     +0.00f,  0x8FBF6Bu },
+    { Season::Summer, "Summer",     +0.15f,  0xE0C060u },
+    { Season::Autumn, "Autumn",     -0.05f,  0xC87A3Au },
+    { Season::Winter, "Winter",     -0.20f,  0xBFD0E0u },
 };
 static_assert(rows_in_enum_order(kSeasons, &SeasonDef::id),
               "kSeasons row order must mirror Season");

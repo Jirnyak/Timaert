@@ -27,9 +27,14 @@ float terrain_material_for(std::uint8_t tile, Biome biome) {
         case Biome::Tropics: return float(TM_Tropics);
         case Biome::Water:   return float(TM_Water);
         case Biome::Mountain: return float(TM_Rock);  // bare ledges read as rock
-        case Biome::Meadow:
-        default:             return float(TM_Meadow);
+        case Biome::Meadow:  return float(TM_Meadow);
     }
+    // БЕЗ `default:` ПО ЗАКОНУ СЛОВАРЯ п.4. Прежде он стоял, СЛИТЫЙ с телом
+    // `Meadow`, — и двенадцатый биом молча читался бы лугом, а `-Wswitch` об
+    // этом не сказал бы ни слова, потому что `default:` его и глушит. Теперь
+    // новая строка оси краснит СБОРКУ в этой точке. Возврат после switch —
+    // не умолчание оси, а требование языка к пути возврата.
+    return float(TM_Meadow);
 }
 
 bool material_is_authored(std::uint8_t tile) {

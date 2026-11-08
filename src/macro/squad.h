@@ -582,9 +582,11 @@ inline CharacterSheet* owned_sheet(MacroStore& st, MacroHandle h) {
 //
 // Owner's ruling, 2026-08-27: renown is not a squad's private counter — every
 // MACRO entity with an identity carries one. A band, a city, a people. Where
-// it lives, by participant kind: a squad's rides its runtime component, a
-// place's answers through the one place door (place_renown_slot,
-// state.h). A CELL has none and never will — the land has no standing — and
+// it lives: through the ONE door `renown_slot@src/macro/squad.h`, nine lines
+// below, which answers for squad and rooted alike in a single body — there is
+// no second door and no `place_renown_slot`, a name this comment carried for
+// months while existing in no file at all. A CELL has none and never will —
+// the land has no standing — and
 // a FACTION's is the politics track's to add: one field, read through this
 // same door. `renown_of` is what makes a deed contextual — killing a legend
 // is worth a share of the legend — and `grant_renown` is what makes fame
