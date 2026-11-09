@@ -54,7 +54,6 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(const MacroStore& st) {
         // «Кто оригинал» — ВТОРОЙ бит той же колонки (M-255): до него дом
         // ехал зарезервированным ординалом-литералом, и загрузка искала его
         // сканом по магическому числу.
-        m.playerHome = st.playerFlag[slot].home ? 1 : 0;
         out.push_back(std::move(m));
     }
     // Registry iteration order is an implementation detail; the ordinal is
@@ -112,7 +111,7 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
         // восстановления — сканом колонок, один раз на загрузке (SAVE-5
         // закрыт тем же законом: генезис на загрузке не гоняется, второй
         // сквад игрока не рождается).
-        st.playerFlag[h.slot] = PlayerFlag{m.playerFlag, m.playerHome};
+        st.playerFlag[h.slot] = PlayerFlag{m.playerFlag};
         if (!any || m.spawnId.index > maxOrdinal) maxOrdinal = m.spawnId.index;
         any = true;
     }

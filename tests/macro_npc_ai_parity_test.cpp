@@ -373,7 +373,7 @@ void test_aggressive_spares_a_friend() {
     auto player = spawn_ai(st, sm::NPCType::Adventurer, 12.0f, 10.0f, -1);
     (*sm::body_state<sm::ecs::NPCKind>(st, player)).factionIdx =
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
-    gs.playerSquadRef = player;
+    gs.playerFlagRef = player;
     (*sm::body_state<sm::ecs::Pools>(st, player)).hp = 5.0f;
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 50u);

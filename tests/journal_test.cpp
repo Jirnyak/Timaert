@@ -49,16 +49,16 @@ WorldFact fact(int day, FactKind kind, std::uint8_t subjKind,
 // world that cannot exist.
 //
 // СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ САМ (§8 п.11) и ходит ТЕМИ ЖЕ ДВЕРЬМИ,
-// что игра: ординал — от эмитента, дом — mark_player_home, флаг — дверь
+// что игра: ординал — от эмитента, активный — дверь переноса флажка
 // переноса. Прибей он ординал литералом, как раньше, — и свидетель проверял бы
 // форму, которой в игре больше нет.
 void stand_at(sm::GameState& gs, sm::MacroStore& st, int x, int y) {
-    if (!st.valid(sm::player_squad_handle(gs))) {
+    if (!st.valid(sm::player_flag_handle(gs))) {
         const sm::MacroHandle h = sm::store_birth(st);
         // Ординал выдала дверь рождения (M-220). Оба носителя — СВОЕЙ
         // дверью (5б + M-255): колонка playerFlag — истина, хэндл GameState
         // — кэш, и каждая дверь пишет их вместе.
-        sm::mark_player_home(st, gs.playerSquadRef, h);
+        sm::transfer_player_flag(st, gs.playerFlagRef, h);
         sm::transfer_player_flag(st, gs.playerFlagRef, h);
     }
     // Клетка пишется НОСИТЕЛЮ ФЛАЖКА — локальность журнал мерит по нему.
@@ -78,7 +78,7 @@ void test_participation_locality_and_silence() {
     chronicle_record(gs.chronicle,
                      fact(1, FactKind::Killed,
                           fact_subject(FactSubject::Squad),
-                          sm::player_home_ordinal(gs, *wStore_),
+                          sm::player_flag_ordinal(gs, *wStore_),
                           50, 50));
     // (b) Somebody else's deed on the player's cell — learned by LOCALITY.
     chronicle_record(gs.chronicle,
@@ -95,7 +95,7 @@ void test_participation_locality_and_silence() {
     CHECK(gs.player.journal.size() == 2,
           "participation and locality are learned; the far world is not");
     CHECK(gs.player.journal[0].subject
-                  == sm::player_home_ordinal(gs, *wStore_)
+                  == sm::player_flag_ordinal(gs, *wStore_)
               && gs.player.journal[1].subject == 777u,
           "the journal keeps the very records, in the order they happened");
 
@@ -109,12 +109,12 @@ void test_participation_locality_and_silence() {
                          fact_subject(FactSubject::Squad), 778u,
                          30, 30);
     hit.objectKind = fact_subject(FactSubject::Squad);
-    hit.object = sm::player_home_ordinal(gs, *wStore_);
+    hit.object = sm::player_flag_ordinal(gs, *wStore_);
     chronicle_record(gs.chronicle, hit);
     player_journal_capture(gs, *wStore_);
     CHECK(gs.player.journal.size() == 3
               && gs.player.journal[2].object
-                     == sm::player_home_ordinal(gs, *wStore_),
+                     == sm::player_flag_ordinal(gs, *wStore_),
           "being done-to is participation too");
 
     // Walking away changes what "here" means: the same foreign cell that was

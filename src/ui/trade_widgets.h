@@ -61,7 +61,13 @@ struct PlayerHaggler {
 inline PlayerHaggler player_haggler(const GameState& gs,
                                     const MacroStore& st) {
     PlayerHaggler h;
-    const MacroHandle squad = player_squad_handle(gs);
+    // СТОЯНИЕ — У АКТИВНОГО, А НЕ У ДОМА (ломоть 7б M-421). Здесь стоял
+    // `player_squad_handle`, то есть ДОМ, — и это был живой дефект того же
+    // класса, какой вердикт «вся семья» (2026-09-14) закрыл для девяти
+    // соседних дверей: торгуя в теле лорда, игрок торговался СВОИМ стоянием,
+    // а лист рядом брался у лорда (`player_effective_sheet` ниже). Один
+    // прилавок спрашивал двух人. Теперь обе половины — одна запись.
+    const MacroHandle squad = player_flag_handle(gs);
     if (st.valid(squad)) h.standing = standing_bonuses_of(st, squad);
     h.sheet = player_effective_sheet(gs, st);
     h.tradePct = trade_power_of(h.sheet);

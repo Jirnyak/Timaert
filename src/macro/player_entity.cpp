@@ -20,18 +20,9 @@ namespace sm {
 // ещё не назначены.)
 
 namespace {
-// ЕДИНСТВЕННЫЙ СКАН «ГДЕ ЕГО ДОМ» — по КОЛОНКЕ, и только на границе (буте и
-// загрузке), где кэш-биты ещё не назначены или протухли. До M-255 этот же
-// скан шёл по ЗАРЕЗЕРВИРОВАННОМУ ОРДИНАЛУ-ЛИТЕРАЛУ, то есть у вопроса «кто
-// оригинал» носителем было магическое число, а не колонка анкеты.
-// kMacroNoSlot — «дома нет вовсе» (мир ещё не родил игрока).
-MacroHandle find_player_home_column(const MacroStore& st) {
-    for (std::size_t s = 0; s < kUnifiedCap; ++s) {
-        if (!st.alive[s] || st.playerFlag[s].home == 0) continue;
-        return handle_at(st, std::uint16_t(s));
-    }
-    return MacroHandle{};
-}
+// (ЗДЕСЬ ЖИЛ `find_player_home_column` — единственный скан «где его дом» по
+//  биту колонки. Снесён ломтём 7б M-421 вместе с битом: «кто я» отвечает
+//  движущийся флажок, а «что у меня осталось» — фракция.)
 
 // СИД ЛИЦА ИГРОКА ПО УМОЛЧАНИЮ — СВОЁ ЧИСЛО, А НЕ ЧЕЙ-ТО ОРДИНАЛ (M-255).
 // Вывод: он ОДИН И ТОТ ЖЕ ЧЕЛОВЕК В ЛЮБОМ МИРЕ, пока экран создания не
@@ -64,10 +55,11 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
     // на буте хэндл резолвится КОЛОНКОЙ ОДИН раз (граница, не тик: валидный
     // хэндл — чтение без скана). Ревалидация спрашивает ту же колонку:
     // бит дома на том слоте, на который хэндл показывает.
-    MacroHandle home = player_squad_handle(gs);
-    if (!st.valid(home) || st.playerFlag[home.slot].home == 0) {
-        home = find_player_home_column(st);
-    }
+    // «ЕСТЬ ЛИ Я УЖЕ В ЭТОМ МИРЕ» — ОДИН ВОПРОС, ОДИН НОСИТЕЛЬ (ломоть 7б
+    // M-421): активный флажок, а если он протух (загрузка, снос слота) —
+    // старейший под контролем. Прежде здесь стоял БИТ ДОМА и его скан.
+    MacroHandle home = player_flag_handle(gs);
+    if (!st.valid(home)) home = eldest_controlled_squad(st);
     // РОЖДЕНИЕ ГАТИТСЯ ОТСУТСТВИЕМ СКВАДОВ ПОД КОНТРОЛЕМ, А НЕ БИТОМ ДОМА
     // (ломоть 7б M-421). Эта дверь зовётся КАЖДЫМ макро-тиком вне субмира
     // (`src/app/main.cpp`), поэтому гейт по биту дома был ТИХИМ
@@ -156,10 +148,10 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
         st.runtime[h.slot] = rt;
         home = h;
     }
-    // ДОМ СТАВИТСЯ ОДНОЙ ДВЕРЬЮ (M-255): колонка + кэш одним движением,
-    // ровно как флажок выше. Звонок на уже отмеченном слоте идемпотентен,
-    // невалидный хэндл — no-op (кэш не сжигается о протухшие биты).
-    mark_player_home(st, gs.playerSquadRef, home);
+    // АКТИВНЫЙ СТАВИТСЯ ОДНОЙ ДВЕРЬЮ: колонка + кэш одним движением; звонок
+    // на уже активном слоте идемпотентен, невалидный хэндл — no-op (мира без
+    // флажка не бывает). ЗДЕСЬ СТОЯЛИ ДВЕ ДВЕРИ — `mark_player_home` для дома
+    // и починка флажка ниже, — и ломоть 7б свёл их в одну: вопрос был один.
 
     // ── No position projection any more ──────────────────────────────────
     // The MacroCell of this record IS where he stands (подпосадка 4): the
@@ -177,9 +169,7 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
     // AvatarTag, a different question). Истина — колонка playerFlag анкеты
     // (5б); носитель, не переживший мир (невалидные биты), честно
     // складывается домой ДВЕРЬЮ переноса — мира без флага не бывает.
-    if (!st.valid(player_flag_handle(gs))) {
-        transfer_player_flag(st, gs.playerFlagRef, home);
-    }
+    transfer_player_flag(st, gs.playerFlagRef, home);
 
     // ЗДЕСЬ СТОЯЛ БЕЗУСЛОВНЫЙ ПЕРЕСЧЁТ ЛИСТА КАЖДЫЙ МАКРО-ТИК, И ОН СНЕСЁН
     // (M-301). Эта дверь зовётся из главного цикла каждым макро-тиком вне
@@ -239,35 +229,27 @@ void resolve_player_handles_after_load(GameState& gs, MacroStore& st) {
     // приехала колонкой playerFlag записей снапшота, оба кэша GameState
     // пересобираются из неё. Дом искался здесь ВТОРЫМ проходом по store —
     // сканом по зарезервированному ординалу-литералу; теперь он бит рядом.
-    MacroHandle flag{}, home{};
-    std::uint32_t flagHolders = 0, homeHolders = 0;
+    MacroHandle flag{};
+    std::uint32_t flagHolders = 0;
     for (std::size_t s = 0; s < kUnifiedCap; ++s) {
         if (!st.alive[s]) continue;
         if (st.playerFlag[s].on != 0) {
             ++flagHolders;
             flag = handle_at(st, std::uint16_t(s));
         }
-        if (st.playerFlag[s].home != 0) {
-            ++homeHolders;
-            home = handle_at(st, std::uint16_t(s));
-        }
     }
-    // Порченый файл не рождает ни мира с двумя домами, ни безфлажного мира,
-    // ни двух игроков: колонка чистится, носитель каждого бита остаётся ОДИН.
-    if (homeHolders > 1) {
-        for (std::size_t s = 0; s < kUnifiedCap; ++s)
-            st.playerFlag[s].home = 0;
-        if (st.valid(home)) st.playerFlag[home.slot].home = 1;
-    }
+    // Порченый файл не рождает ни безфлажного мира, ни двух игроков: колонка
+    // чистится, носитель бита остаётся ОДИН. А КУДА складывать флаг, когда в
+    // файле его нет или их двое, отвечает ФРАКЦИЯ — старейший под контролем
+    // (ломоть 7б M-421). Прежде ответом был бит дома, и порченый файл БЕЗ
+    // дома оставлял мир вовсе без игрока.
     if (flagHolders != 1) {
-        // Флаг честно складывается домой — мира без флага не бывает.
         for (std::size_t s = 0; s < kUnifiedCap; ++s)
             st.playerFlag[s].on = 0;
-        flag = home;
-        if (st.valid(home)) st.playerFlag[home.slot].on = 1;
+        flag = eldest_controlled_squad(st);
+        if (st.valid(flag)) st.playerFlag[flag.slot].on = 1;
     }
-    gs.playerSquadRef = home;
-    gs.playerFlagRef  = flag;
+    gs.playerFlagRef = flag;
 }
 
 // ── ВСЁ НИЖЕ СПРАШИВАЕТ ФЛАЖОК, А НЕ ОРДИНАЛ (2026-09-14) ────────────────

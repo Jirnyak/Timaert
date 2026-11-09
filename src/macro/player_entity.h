@@ -9,12 +9,13 @@
 // «ИГРОК = НПЦ» (CANON S4). «Кем я управляю сейчас» — a DIFFERENT question,
 // and it MOVES: onto a possessed lord, onto a body underground. That is why
 // it cannot be the thing that identifies his party, and why the two answers
-// are two carriers. С 5б (вердикт владельца 2026-09-29) ИСТИНА обоих —
-// анкета: биты ОДНОЙ колонки playerFlag — `on` («кем я на карте») и `home`
-// («кто оригинал», M-255); `GameState::playerFlagRef`/
-// `playerSquadRef` — КЭШИ-хэндлы этих колонок, и вопрос «где флажок»
-// остался чтением поля мира, скана нет. Перенос флажка — ОДНА дверь
-// transfer_player_flag (store.h): колонка + кэш одним движением.
+// are two carriers. ЭТО БОЛЬШЕ НЕ ТАК, И ЭТО ВЕРДИКТ: носителей ОДИН (ломоть
+// 7б M-421, владелец 2026-11-09 — «`.home` умирает совсем»). ИСТИНА — анкета:
+// ОДИН бит колонки playerFlag, `on` («кем я на карте»); `playerFlagRef` — его
+// КЭШ-хэндл, и вопрос «где флажок» остался чтением поля мира, скана нет.
+// Перенос — ОДНА дверь transfer_player_flag (store.h): колонка + кэш одним
+// движением. На вопрос «что у меня ещё есть» отвечает ФРАКЦИЯ
+// (`eldest_controlled_squad` ниже), а не второй бит.
 //
 // This entity used to be a HUSK: `Position` + a tag, recreated every macro
 // tick, deliberately invisible to render / proximity / AI, while the real
@@ -63,23 +64,15 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st);
 inline MacroHandle player_flag_handle(const GameState& gs) {
     return gs.playerFlagRef;
 }
-inline MacroHandle player_squad_handle(const GameState& gs) {
-    return gs.playerSquadRef;
-}
+// (`player_squad_handle` — «кто оригинал» — снесена ломтём 7б M-421 вместе
+//  с кэшом и битом. Всякий вопрос «чей лист/сумка/сбруя/стояние/дела»
+//  спрашивает АКТИВНОГО: «ты ПОЛНОСТЬЮ тот, в чьём теле стоишь» — вердикт
+//  владельца 2026-09-14, и три сайта переехали на него как на ПОЧИНКУ, а не
+//  как на миграцию: они читали дом, пока игрок носил лорда.)
 
-// ОРДИНАЛ ЕГО РОДНОГО СКВАДА — «ПОД КАКИМ НОМЕРОМ ПОДШИТЫ ЕГО ДЕЛА» (M-255).
-// Летопись, расписки за павших существ и имена фактов знают субъекта
-// ОРДИНАЛОМ, а не слотом, — потому что ординал переживает сейв, а слот нет.
-// До M-255 ответом был ЛИТЕРАЛ 0x7FFFFFFF, вписанный в каждого такого
-// читателя; теперь это распаковка кэша плюс чтение колонки, ноль сканов.
-// 0 — «никого»: мира с игроком без дома не бывает, но у фикстуры и у кадра
-// до рождения мира дома нет, и закон нуля-ординала даёт им честный ответ
-// (AGENTS, ЗАКОН СЛОВАРЯ И ОРДИНАЛА п.6).
-inline std::uint32_t player_home_ordinal(const GameState& gs,
-                                         const MacroStore& st) {
-    const MacroHandle home = player_squad_handle(gs);
-    return st.valid(home) ? st.spawnId[home.slot].index : 0u;
-}
+// (`player_home_ordinal` — «под каким номером подшиты его дела» — снесён
+//  ломтём 7б M-421: дела подшиваются под АКТИВНОГО, и ординал у него
+//  спрашивает `player_flag_ordinal` ниже.)
 
 // ОРДИНАЛ ТОГО, НА КОМ ФЛАЖОК — «ЧЬИМ ИМЕНЕМ СДЕЛАНО ДЕЛО». Пока он носит
 // лорда, дела подшиваются под ЛОРДА, где бы ни случились (A2, 2026-09-17:
@@ -194,10 +187,10 @@ MacroHandle eldest_controlled_squad(const MacroStore& st);
 // написания починки в мире быть не должно.
 bool keep_active_squad(GameState& gs, MacroStore& st);
 
-// ── ДВА ХЭНДЛА ИГРОКА В GameState (M-106 1е кластер 5) ───────────────────
-// `gs.playerSquadRef` (родной сквад) и `gs.playerFlagRef` («кем я на
-// карте») — MacroHandle {слот, ID} напрямую (M-220: упаковка в биты и её
-// сентинель «все единицы» умерли; «никого» — дефолтный хэндл, id == 0).
+// ── ОДИН ХЭНДЛ ИГРОКА В GameState (M-106; второй снесён ломтём 7б M-421) ─
+// `gs.playerFlagRef` («кем я на карте») — MacroHandle {слот, ID} напрямую
+// (M-220: упаковка в биты и её сентинель «все единицы» умерли; «никого» —
+// дефолтный хэндл, id == 0).
 
 // Пересборка кэшей игрока — звать строго ПОСЛЕ restore_macro_ecs: истина
 // «кто игрок» приехала колонкой playerFlag записей снапшота (5б), и оба
@@ -208,16 +201,10 @@ bool keep_active_squad(GameState& gs, MacroStore& st);
 // мира, ни двух игроков: колонка чистится, флаг честно складывается домой.
 void resolve_player_handles_after_load(GameState& gs, MacroStore& st);
 
-// «Я СЕЙЧАС НЕ В СЕБЕ» — the flag stands on somebody other than the original.
-// THE one honest way to ask «вселён ли я»: the fact IS the two handles being
-// different, and nothing else. Before this door the chronicle asked it by
-// comparing a spawn ordinal to a magic number (macro/journal.h) — a second,
-// hand-written answer to a question the flag already answers.
-inline bool player_wears_another_body(const GameState& gs) {
-    const MacroHandle flag = player_flag_handle(gs);
-    const MacroHandle home = player_squad_handle(gs);
-    return flag.id != 0 && home.id != 0 && !(flag == home);
-}
+// (`player_wears_another_body` — «вселён ли я» — снесён ломтём 7б M-421:
+//  он был РАЗНОСТЬЮ двух хэндлов, и со смертью второго вопрос перестал
+//  быть выразимым. Его единственный прод-читатель, летопись, спрашивает
+//  теперь ОДИН ординал активного.)
 
 // (player_roster умер слиянием M-71: армия игрока — область существ его же
 // контейнера, то есть ответ и на «армию», и на «сумку» — player_inventory.)

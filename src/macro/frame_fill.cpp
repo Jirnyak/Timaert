@@ -44,7 +44,6 @@ void fill_local_frame(const MacroWorld& w, std::uint32_t centerCell,
     out.leasedWindow = gs.leasedWindow;
     out.centerCell = centerCell;
     out.playerFlag = player_flag_handle(gs);
-    out.playerSquad = player_squad_handle(gs);
 
     // ── РОДА 1 и 3 — клетки 5×5 и запас рядов полей на них ────────────────
     // Соседство — арифметика над индексом (cell_step, ЗАКОН АДРЕСА).

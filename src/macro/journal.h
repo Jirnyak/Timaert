@@ -54,24 +54,18 @@ inline void player_journal_capture(GameState& gs, const MacroStore& st) {
     // ordinal to the reserved magic number — a second, hand-written answer to a
     // question the flag already answers, and one that would have drifted the
     // day «кто оригинал» stopped being spelled as that constant.
-    int possessed = -1;
-    if (player_wears_another_body(gs)) {
-        const MacroHandle flag = player_flag_handle(gs);
-        if (st.valid(flag)) possessed = int(st.spawnId[flag.slot].index);
-    }
-    // ОРДИНАЛ ЕГО ДОМА — ТОЙ ЖЕ ФОРМОЙ, ЧТО ОРДИНАЛ ВСЕЛЁННОГО ЛОРДА выше
-    // (M-255): распаковка кэша один раз ПЕРЕД циклом, ноль сканов на факт.
-    // Здесь стоял литерал 0x7FFFFFFF, и шапка рядом уже предупреждала, что
-    // он «задрейфует в день, когда „кто оригинал“ перестанет писаться этой
-    // константой». День пришёл: дом стал битом колонки playerFlag.home.
-    const std::uint32_t homeOrd = player_home_ordinal(gs, st);
-    const auto isHis = [possessed, homeOrd](std::uint8_t kind,
-                                            std::uint32_t ordinal) {
+    // «ЧЬИ ЭТО ДЕЛА» — ОДИН ОРДИНАЛ, АКТИВНОГО (ломоть 7б M-421). Здесь
+    // стояли ДВА ответа: ординал вселённого лорда (через
+    // `player_wears_another_body`) И ординал дома, — и сверка шла с обоими.
+    // Рода «дом» больше нет, а «вся семья» (2026-09-14) говорит, что дела
+    // подшиваются под того, кем ты есть; два ответа свелись в один.
+    // Распаковка кэша ОДИН раз перед циклом, ноль сканов на факт.
+    const std::uint32_t meOrd = player_flag_ordinal(gs, st);
+    const auto isHis = [meOrd](std::uint8_t kind, std::uint32_t ordinal) {
         if (fact_subject_kind(kind) != std::uint8_t(FactSubject::Squad))
             return false;
         // 0 — «никто» (закон нуля-ординала): безымянный субъект не его.
-        return (homeOrd != 0 && ordinal == homeOrd)
-            || (possessed >= 0 && ordinal == std::uint32_t(possessed));
+        return meOrd != 0 && ordinal == meOrd;
     };
     for (std::uint32_t s = p.journalSeenSeq + 1u; s < c.nextSeq; ++s) {
         const WorldFact& f = c.ring[std::size_t((s - 1u) % kChronicleFacts)];

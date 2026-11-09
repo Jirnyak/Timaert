@@ -228,7 +228,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // лута»; казна пула уничтожена 2026-10-11 (читателей ноль), и «сгорает»
     // осталось без числа. Но САМ ПЛАТЁЖ проверяем: пять монет кошелька ушли
     // в счёт, значит недоимка платы упала РОВНО на пять.
-    const sm::MacroHandle ph = sm::player_squad_handle(gs);
+    const sm::MacroHandle ph = sm::player_flag_handle(gs);
     CHECK(worldStore_->valid(ph), "фикстура: сквад игрока жив");
     CHECK(worldStore_->upkeep[ph.slot].wageDebt == wageSeason - 5,
           "плата УХОДИТ со склада и гасит счёт ровно на свою стоимость — "

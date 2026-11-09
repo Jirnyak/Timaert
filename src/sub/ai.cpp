@@ -26,39 +26,22 @@ static constexpr float kFleeRadius    = 60.0f;
 // remains back, so wander was a 0.1 s twitch per decision — and its
 // wall-handling was a near-verbatim copy of steering's. Both are gone.
 
-void tick_npc_ai(SubObjects& objs, MacroStore* st,
+void tick_npc_ai(SubObjects& objs,
                  float px, float py, float pz, float dt,
                  PlayerThreatFn threatFn,
                  void* threatUser,
                  GroundHeightFn heightFn,
-                 void* heightUser,
-                 MacroHandle playerFlagRef,
-                 MacroHandle playerSquadRef) {
+                 void* heightUser) {
 
-    // БЕЗ СОЗНАНИЯ (вердикт владельца №6, 2026-09-17): у брошенного сквада
-    // игрока нет флажка, и «без сознания» — не состояние, а ЕГО ОТСУТСТВИЕ,
-    // прочитанное на единственной двери ИИ. Пока владелец ходит в чужом теле,
-    // его собственный сквад стоит в сцене видимым и недвижимым: лидер — тело,
-    // чья запись (через зеркало) и есть сквад без AvatarTag; его люди — тела
-    // с контейнерным займом на тот же сквад. Флажок вернулся — мозги проснулись
-    // на следующем же тике, без единого компонента.
-    std::int32_t unconsciousSubject = -1;
-    MacroHandle unconsciousRec{};
-    {
-        // Флаг НЕ на родном скваде = хозяин ходит в чужом теле, его сквад
-        // без чувств. Ответ — сравнение двух хэндлов GameState (1е кластер
-        // 5, M-220). Ординал дома СПРАШИВАЕТСЯ У ЕГО ЗАПИСИ (M-255): он
-        // выдан тем же эмитентом, что всякому скваду.
-        const MacroHandle home = playerSquadRef;
-        if (home.id != 0 && !(playerFlagRef == playerSquadRef)
-            && st != nullptr) {
-            unconsciousRec = home;
-            // Ординал НЕСЁТ САМ ХЭНДЛ (M-220): `valid(h)` и есть проверка
-            // `spawnId[h.slot].index == h.id`, поэтому чтение колонки было
-            // вторым ответом на тот же вопрос — тождественным по построению.
-            unconsciousSubject = st->valid(home) ? std::int32_t(home.id) : -1;
-        }
-    }
+    // ЗДЕСЬ ЖИЛО «БЕЗ СОЗНАНИЯ» (вердикт владельца №6, 2026-09-17): пока
+    // хозяин ходит в чужом теле, его БРОШЕННЫЙ сквад стоял в сцене видимым
+    // и недвижимым — и лидер по записи, и его люди по контейнерному займу.
+    // СНЕСЕНО ломтём 7б M-421 вместе с родом «дом»: брошенного сквада как
+    // ОСОБОГО рода больше нет, он обычный сквад мира (вердикт того же дня
+    // «только за активным» — свип макро водит его, как всякого), и глушить
+    // ему мозг внизу значило бы держать единственного жильца снесённого
+    // рода. Тело под флажком по-прежнему изъято — его ведёт ввод, и это
+    // ДРУГОЙ вопрос (см. гейт `is_avatar_slot` ниже).
 
     // Свип арены по биту kObjAlive (ломоть D): гейт slot_ai сам отсекает
     // снаряды, пламёна и реквизит — мозга у них нет. (Исключение «идёт
@@ -75,21 +58,6 @@ void tick_npc_ai(SubObjects& objs, MacroStore* st,
         // component churn on possess/vacate — when the flag leaves, the
         // body's AI resumes automatically on the very next tick.
         if (objs.is_avatar_slot(s)) continue;
-        // …и тело брошенного сквада стоит без чувств (предикат выше): сам
-        // сквад — по записи, его люди — по контейнерному займу.
-        if (unconsciousRec.id != 0) {
-            if (st != nullptr
-                && slot_macro_record(objs, s, *st) == unconsciousRec) {
-                aiCol->wantVx = aiCol->wantVy = 0.0f;
-                continue;
-            }
-            if (const auto* debt = slot_debt(objs, s);
-                debt && debt->stock == std::uint8_t(MacroStock::Creatures)
-                && debt->subject == unconsciousSubject) {
-                aiCol->wantVx = aiCol->wantVy = 0.0f;
-                continue;
-            }
-        }
         const ecs::Position& p = objs.pos[std::size_t(s)];
         auto& a = *aiCol;
         // Deterministic per-decision seed: the ARENA BIRTH ID (iii-г, вердикт

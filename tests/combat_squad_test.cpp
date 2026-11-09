@@ -239,7 +239,8 @@ int main() {
 
     auto worldStore_ = sm::make_macro_store();
     // Арена сцены — предусловие рождения тел (§8 п.11); 38.3 МиБ, потому
-    // фабрика-uptr. Store едет в tick_npc_ai ЯВНЫМ аргументом (ломоть E).
+    // фабрика-uptr. (Store ехал в tick_npc_ai явным аргументом — параметр
+    // снесён ломтём 7б M-421: мозг субмира макро больше не спрашивает.)
     auto worldArena_ = sm::test::make_scene_arena();
     sm::sub::SubObjects& objs = *worldArena_;   // слоты телам — иначе бит некуда класть
     std::vector<std::uint8_t> emptyTiles;
@@ -326,7 +327,7 @@ int main() {
     sm::test::give_ai(objs, hostile,
                       sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat,
                                           0.0f, 4.0f, 4.0f, 8.0f, 1.0f});
-    sm::sub::tick_npc_ai(objs, worldStore_.get(), 140.0f, 100.0f, 0.0f, 0.5f);
+    sm::sub::tick_npc_ai(objs, 140.0f, 100.0f, 0.0f, 0.5f);
     const auto& combatPos = *sm::sub::slot_pos(objs, hostile);
     const auto& combatAi = *sm::sub::slot_ai(objs, hostile);
     // Ownership contract, TIGHTENED. tick_npc_ai must not touch a combat body at
@@ -347,7 +348,7 @@ int main() {
     sm::test::give_ai(objs, fallback,
                       sm::ecs::SubworldAi{sm::ecs::SubworldAi::Combat,
                                           0.0f, 0.0f, 0.0f, 8.0f, 1.0f});
-    sm::sub::tick_npc_ai(objs, worldStore_.get(), 140.0f, 100.0f, 0.0f, 0.5f);
+    sm::sub::tick_npc_ai(objs, 140.0f, 100.0f, 0.0f, 0.5f);
     const auto& fallbackPos = *sm::sub::slot_pos(objs, fallback);
     // A body with combat AI but NO ecs::Combat has no damage, no speed and no
     // reach — it cannot fight. The old code still walked it at the player
@@ -375,7 +376,7 @@ int main() {
     bool decidedToWalk = false;
     bool decidedToStand = false;
     for (int i = 0; i < 400; ++i) {
-        sm::sub::tick_npc_ai(objs, worldStore_.get(), 140.0f, 100.0f, 0.0f, 0.5f);
+        sm::sub::tick_npc_ai(objs, 140.0f, 100.0f, 0.0f, 0.5f);
         const auto& wai = *sm::sub::slot_ai(objs, wanderer);
         if (wai.wantVx != 0.0f || wai.wantVy != 0.0f) decidedToWalk = true;
         else decidedToStand = true;

@@ -146,10 +146,12 @@ inline constexpr std::size_t kMacroStoreRowBytes =
     + sizeof(ecs::NpcInventory)
     + sizeof(CharacterSheet) + sizeof(ecs::SquadOrders)
     + sizeof(ecs::BodyEquipment) + sizeof(ecs::DesignCharacterTag)
-    + sizeof(std::uint8_t) * 2u       // playerFlag — ДВА бита игрока: `on`
-                                      // («кем я на карте», 5б) и `home`
-                                      // («кто оригинал», M-255). Ширина
-                                      // названа байтами, а не `sizeof
+    + sizeof(std::uint8_t)            // playerFlag — ОДИН бит игрока: `on`
+                                      // («кем я на карте», 5б). Второй,
+                                      // `home` («кто оригинал», M-255),
+                                      // снесён ломтём 7б M-421 вместе с
+                                      // родом «дом»: 2 Б → 1 Б на слот.
+                                      // Ширина названа байтами, а не `sizeof
                                       // (PlayerFlag)`: сходимость с типом
                                       // держит ассерт ниже, в этом же файле.
     + sizeof(std::uint8_t)            // dead — байт судьбы
@@ -293,7 +295,10 @@ static_assert(sizeof(TreeLayer) == 40, "заголовок слоя леса");
 // 2026-11-03, M-379: 8472 → 8456. −16 Б — `MacroAiRhythm` усох до одного
 // джиттера: колонки долга свипов (`sweepAccum` u32 + `pendingSweeps` i32 +
 // `sweepCursor` u64 = 16 Б) умерли вместе с бюджетным драйвером.
-static_assert(sizeof(GameState) == 8456,
+// 2026-11-09, ломоть 7б M-421: 8456 → 8448. −8 Б — кэш `playerSquadRef`
+// («кто оригинал») снесён вместе с битом `playerFlag.home` и тремя дверями
+// над ним: у вопроса «кто я» остался ОДИН носитель.
+static_assert(sizeof(GameState) == 8448,
               "состояние мира: новое поле здесь = нарушение инварианта "
               "штабеля, пока не заведено строкой переписи");
 // 2026-09-25: +8 Б — указатель на MacroStore (гладкая память, M-106).

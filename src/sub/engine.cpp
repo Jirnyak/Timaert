@@ -1082,9 +1082,10 @@ void SubworldEngine::fold_captured_subs() {
         // ритма ВСТАЛ — ломоть 2). Игрок и его сквад не выходят никогда:
         // их кромка — ре-центр рамки. Боевого гейта в костяке нет
         // сознательно: выход судит позиция + цель («потом доработаем»).
+        // ОДИН хэндл: второй (дом) ушёл с `.home` (ломоть 7б M-421) —
+        // кромка брошенного сквада под контролем есть обычная кромка.
         if (course_ && exitedCount < kCaptureExitCap
-            && h.id != frame_->playerFlag.id
-            && h.id != frame_->playerSquad.id) {
+            && h.id != frame_->playerFlag.id) {
             const ecs::SquadGoal& goal = st.goal[h.slot];
             // Клетка названа = цель жива (корень Б8: род курсу не судья).
             if (goal.cell != ecs::kNoCell) {
@@ -1268,18 +1269,15 @@ void SubworldEngine::spawn_player_entity() {
     // все двери player_* отвечали nullptr — пустой лист, немой смерть-чек.
     // Теперь носимое тело сцены — проекция ЗАПИСИ ФЛАГА, кем бы она ни была:
     // его собственный сквад как собой, анкета лорда — пока он лорд. Един-
-    // ственный дефенсив: мира без флага не бывает — потерянный флаг
-    // возвращается на собственный сквад.
+    // ЗДЕСЬ СТОЯЛ ВТОРОЙ ЭКЗЕМПЛЯР ПОЧИНКИ ОСИРОТЕВШЕГО ФЛАЖКА, И ОН СНЕСЁН
+    // (ломоть 7б M-421). Вопрос «кто ведётся» имеет ОДНУ дверь
+    // (`keep_active_squad@src/macro/player_entity.h`), она зовётся каждым
+    // кадром игры, и к рождению тушки флажок осиротеть не может. Держать
+    // здесь сторож без живой причины значит оставить защитную форму, которая
+    // переживёт причину и начнёт читаться законом. Невалидный флажок ниже
+    // честно даёт тушку БЕЗ бэклинка — это и есть отказ вслух.
     MacroStore& pst = (*mw_.store);
-    MacroHandle flagRec = gs_ ? gs_->playerFlagRef : MacroHandle{};
-    if (gs_ && !pst.valid(flagRec)) {
-        const MacroHandle psq = gs_->playerSquadRef;
-        if (pst.valid(psq)) {
-            // Оба носителя одной дверью (5б): колонка анкеты + кэш битов.
-            transfer_player_flag(pst, gs_->playerFlagRef, psq);
-            flagRec = psq;
-        }
-    }
+    const MacroHandle flagRec = gs_ ? gs_->playerFlagRef : MacroHandle{};
     // Слот единого массива объектов (M-150 1а; ЧЕСТНЫЙ ОТКАЗ — ломоть 5):
     // тело игрока — обычный жилец арены. Позиция — колонка арены, и тушка
     // без слота была бы телом БЕЗ КООРДИНАТ (фантом угла окна). На входе в
@@ -4302,8 +4300,10 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     && (arena.is_avatar_slot(killerSlot)
                         || sub::slot_flag(arena, killerSlot,
                                           sub::kObjPlayerSoldier))) {
+                    // ПЛАТИТ АКТИВНАЯ ЗАПИСЬ, А НЕ ДОМ (ломоть 7б M-421,
+                    // «вся семья»): убил в теле лорда — качается лорд.
                     if (frame_) {
-                        const MacroHandle ps = frame_->playerSquad;
+                        const MacroHandle ps = frame_->playerFlag;
                         if (mw_.store->valid(ps)) avatar = ps;
                     }
                 }
@@ -5869,7 +5869,10 @@ void SubworldEngine::tick(float dt) {
         // onto the authoritative entity so hostiles target the true altitude.
         sync_player_vertical(dt);
         push_scalars_to_player_entity();
-        tick_npc_ai((*objects_), mw_.store,
+        // МАКРО-СТОР И ХЭНДЛЫ ИГРОКА УШЛИ ИЗ ПОДПИСИ МОЗГА (ломоть 7б
+        // M-421): они кормили «без сознания» брошенного сквада, а тот умер
+        // с родом «дом». Тик мозга субмира теперь не видит макро вовсе.
+        tick_npc_ai((*objects_),
                     playerX_, playerY_, playerZ_, dt,
                     &SubworldEngine::player_threat_callback, this,
                     // Восприятие земли под собой — для вертикального
@@ -5878,10 +5881,7 @@ void SubworldEngine::tick(float dt) {
                         return static_cast<SubworldEngine*>(user)
                             ->mgr_.height_field().sample(x, y);
                     },
-                    this,
-                    // Два хэндла игрока — ссылками из GameState (1е кл.5).
-                    frame_ ? frame_->playerFlag : MacroHandle{},
-                    frame_ ? frame_->playerSquad : MacroHandle{});
+                    this);
         tick_subworld_bodies(dt);
         // The player's swing AFTER the combat gather: it asks the battle pick
         // grid the same way the spell contact does, and the grid it asks must

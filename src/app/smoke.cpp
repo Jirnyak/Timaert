@@ -233,7 +233,7 @@ static bool smoke_projects_foreign_record(App& app, int s) {
     const sm::MacroHandle origin = sm::sub::slot_macro_origin(*objs, s);
     if (origin.id == 0
         || !app.macroStore->valid(origin)) return false;
-    const sm::MacroHandle psq = sm::player_squad_handle(app.gs);
+    const sm::MacroHandle psq = sm::eldest_controlled_squad(*app.macroStore);
     return psq.id == 0 || !(origin == psq);
 }
 
@@ -1652,7 +1652,7 @@ bool run_subworld_recovery_smoke(App& app) {
             const std::uint16_t slot = std::uint16_t(s32);
             if (stx.alive[slot] == 0 || stx.dead[slot] != 0) continue;
             // Игрок — БИТОМ КОЛОНКИ playerFlag.home (M-255), тег-exclude умер.
-            if (stx.playerFlag[slot].home != 0)
+            if (sm::handle_at(stx, slot) == sm::player_flag_handle(app.gs))
                 continue;
             auto& c = stx.cell[slot];
             auto& pools = stx.pools[slot];
@@ -2809,7 +2809,7 @@ sm::MacroHandle smoke_find_macro_npc_trace_target(App& app) {
         // (маршрут = waypointCount > 0; анкета стола = ordinal >= 0;
         // игрок = бит playerFlag.home, M-255).
         if (stf.dead[slot] != 0) continue;
-        if (stf.playerFlag[slot].home != 0) continue;
+        if (sm::handle_at(stf, slot) == sm::player_flag_handle(app.gs)) continue;
         if (stf.orders[slot].waypointCount > 0) continue;
         if (stf.designTag[slot].ordinal >= 0) continue;
         const auto& hp = stf.pools[slot];
@@ -5758,7 +5758,7 @@ bool run_subworld_player_bow_smoke(App& app) {
 
     // The bow into the hand through the door — the same gear cell the sheet
     // console edits, on the squad entity the per-tick refresh reads.
-    const sm::MacroHandle sq = sm::player_squad_handle(app.gs);
+    const sm::MacroHandle sq = sm::eldest_controlled_squad(*app.macroStore);
     if (!app.macroStore->valid(sq)) {
         smoke_fail(app, "subworld_player_bow no squad record");
         return false;
@@ -7730,7 +7730,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          ++s32) {
                         const std::uint16_t slot = std::uint16_t(s32);
                         if (app.macroStore->alive[slot] == 0) continue;
-                        if (app.macroStore->playerFlag[slot].home != 0)
+                        if (app.macroStore->playerFlag[slot].on != 0)
                             ++carriers;
                     }
                     // Флаг и родной сквад — биты GameState (1е кластер 5):
@@ -7738,10 +7738,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     const int flags = app.macroStore->valid(
                         sm::player_flag_handle(app.gs)) ? 1 : 0;
                     const sm::MacroHandle door =
-                        sm::player_squad_handle(app.gs);
+                        sm::eldest_controlled_squad(*app.macroStore);
                     const bool doorHonest =
                         app.macroStore->valid(door)
-                        && app.macroStore->playerFlag[door.slot].home != 0;
+                        && app.macroStore->playerFlag[door.slot].on != 0;
                     std::fprintf(stderr,
                                  "[smoke] load_boot player carriers=%d flags=%d "
                                  "door_honest=%d\n",
@@ -7822,7 +7822,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                         || g.cell == st.cell[slot].idx)
                         continue;
                     const sm::MacroHandle psq =
-                        sm::player_squad_handle(app.gs);
+                        sm::eldest_controlled_squad(*app.macroStore);
                     if (psq.id != 0 && h.id == psq.id) continue;
                     // Ступени предпочтения (диагнозу Б8 нужен больной род,
                     // проба при этом умеет ЛЮБОЙ): сквад С ЖИВОЙ ДУМКОЙ
@@ -8011,7 +8011,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 const int pcy = int(smoke_player_y(app));
                 int bestX = -1, bestY = -1;
                 long bestD = 1L << 60;
-                const sm::MacroHandle homeH = sm::player_squad_handle(app.gs);
+                const sm::MacroHandle homeH = sm::eldest_controlled_squad(*app.macroStore);
                 const sm::MacroStore& stn = *app.macroStore;
                 for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
                     const std::uint16_t slot = std::uint16_t(s32);
@@ -8697,7 +8697,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // Сначала доказываем, что вопрос вообще РАЗЛИЧАЕТ: оригинал и
                 // носимая запись — разные сущности с разными блоками. Без этой
                 // строки всё, что ниже, могло бы пройти на совпадении.
-                const sm::MacroHandle home = sm::player_squad_handle(app.gs);
+                const sm::MacroHandle home = sm::eldest_controlled_squad(*app.macroStore);
                 if (!app.macroStore->valid(home) || origin == home) {
                     smoke_fail(app, "exit_remap: original and worn record do not differ");
                     break;
@@ -8835,12 +8835,23 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
 
                 // ── ВЕРДИКТ №6 (2026-09-17): брошенный сквад СТОИТ в сцене —
                 // видимый, бездумный. Его клетка — центр окна (ты вошёл там,
-                // где вылез), так что проекция обязана существовать, а её
-                // намерение после кадра рантайма — нулевое: «без сознания» =
-                // отсутствие флажка, прочитанное дверью ИИ через зеркало.
+                // где вылез), так что проекция обязана существовать — и она
+                // ЖИВАЯ. ЗДЕСЬ УТВЕРЖДАЛОСЬ ОБРАТНОЕ: «намерение после кадра
+                // рантайма — нулевое, „без сознания“ есть отсутствие флажка,
+                // прочитанное дверью ИИ». Тот путь СНЕСЕН ломтём 7б M-421
+                // (вердикт владельца «только за активным»): брошенный сквад
+                // под контролем есть ОБЫЧНЫЙ сквад мира, и глушить ему мозг
+                // внизу было последним жильцом снесённого рода «дом».
+                //
+                // Поэтому свидетель утверждает теперь ДВА факта, и ни один из
+                // них не «стоит ли он»: тело ЕСТЬ и оно ЕГО (бэклинк на
+                // запись оставленного сквада), и у него ЖИВОЙ мозг — колонка
+                // ИИ на месте, то есть особого пути мимо общего нет. Само
+                // «стоит/идёт» утверждать нельзя: это решение его цели, и
+                // прибитая к нему проверка была бы случаем, а не законом.
                 sm::app::advance_sim_seconds(app, 0.016f, false);
                 int abandonedSlot = -1;
-                const sm::MacroHandle homeH = sm::player_squad_handle(app.gs);
+                const sm::MacroHandle homeH = sm::eldest_controlled_squad(*app.macroStore);
                 // Свип арены по биту жизни (ломоть D): бэклинк записи —
                 // колонка тела, у снаряда он пуст.
                 for (int s = 0; objs2 != nullptr && s < int(sm::kMaxSubObjects);
@@ -8855,17 +8866,17 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                         break;
                     }
                 }
-                const auto* aai = abandonedSlot >= 0
-                    ? sm::sub::slot_ai(*objs2, abandonedSlot) : nullptr;
-                const bool stands =
-                    aai && aai->wantVx == 0.0f && aai->wantVy == 0.0f;
+                const bool hasBrain = abandonedSlot >= 0
+                    && sm::sub::slot_ai(*objs2, abandonedSlot) != nullptr;
                 std::fprintf(stderr,
                              "[smoke] subworld_exit_remap abandoned present=%d "
-                             "stands=%d\n",
-                             abandonedSlot >= 0 ? 1 : 0, stands ? 1 : 0);
+                             "has_brain=%d\n",
+                             abandonedSlot >= 0 ? 1 : 0, hasBrain ? 1 : 0);
                 std::fflush(stderr);
-                if (abandonedSlot < 0 || !stands) {
-                    smoke_fail(app, "exit_remap: abandoned squad absent or walking");
+                if (abandonedSlot < 0 || !hasBrain) {
+                    smoke_fail(app, "exit_remap: оставленный сквад не воплощён "
+                                    "или его тело без мозга — особый путь "
+                                    "брошенного вернулся");
                     break;
                 }
                 app.subworld.leave(true);
@@ -8875,7 +8886,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // дверью переноса (колонка + кэш, 5б), ensure подтверждает
                 // инварианты.
                 sm::transfer_player_flag(*app.macroStore, app.gs.playerFlagRef,
-                                         sm::player_squad_handle(app.gs));
+                                         sm::eldest_controlled_squad(*app.macroStore));
                 sm::ensure_macro_player_entity(app.gs, *app.macroStore);
             }
             ++app.smoke.cursor;
@@ -9576,7 +9587,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
                 const std::uint16_t slot = std::uint16_t(s32);
                 if (stv.alive[slot] == 0) continue;
-                if (stv.playerFlag[slot].home != 0) continue;
+                if (sm::handle_at(stv, slot) == sm::player_flag_handle(app.gs)) continue;
                 const auto& hp = stv.pools[slot];
                 if (hp.hp <= 0) continue;
                 const auto& pcell = stv.cell[slot];
@@ -9618,7 +9629,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
                 const std::uint16_t slot = std::uint16_t(s32);
                 if (stv.alive[slot] == 0) continue;
-                if (stv.playerFlag[slot].home != 0) continue;
+                if (sm::handle_at(stv, slot) == sm::player_flag_handle(app.gs)) continue;
                 const auto& hp = stv.pools[slot];
                 if (hp.hp <= 0) continue;
                 const auto& pcell = stv.cell[slot];
@@ -9700,7 +9711,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
                 const std::uint16_t slot = std::uint16_t(s32);
                 if (stv.alive[slot] == 0) continue;
-                if (stv.playerFlag[slot].home != 0) continue;
+                if (sm::handle_at(stv, slot) == sm::player_flag_handle(app.gs)) continue;
                 const auto& hp = stv.pools[slot];
                 if (hp.hp <= 0) continue;
                 const auto& acell = stv.cell[slot];

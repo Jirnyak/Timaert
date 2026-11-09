@@ -241,10 +241,12 @@ sm::FactNaming app_fact_naming(App& app) {
         // Squads have no display names yet (a lord's name is a future
         // column); the one the journal's reader IS gets the honest pronoun.
         if (!a.macroStore) return nullptr;
-        const std::uint32_t home = sm::player_home_ordinal(a.gs, *a.macroStore);
-        // 0 — «никто» (закон нуля-ординала): до рождения мира дома нет, и
-        // безымянный субъект не вправе получить его местоимение.
-        return (home != 0 && ordinal == home) ? "You" : nullptr;
+        // МЕСТОИМЕНИЕ ПОЛУЧАЕТ АКТИВНЫЙ (ломоть 7б M-421): «ты» есть тот,
+        // кем играют СЕЙЧАС, а не «оригинал» — рода «дом» больше нет.
+        // 0 — «никто» (закон нуля-ординала): до рождения мира активного нет,
+        // и безымянный субъект не вправе получить его местоимение.
+        const std::uint32_t me = sm::player_flag_ordinal(a.gs, *a.macroStore);
+        return (me != 0 && ordinal == me) ? "You" : nullptr;
     };
     n.rooted = [](void* u, std::uint32_t id) -> const char* {
         // Имя места — колонка его ТЕЛА (ломтик F); конверт летописи несёт
@@ -1137,7 +1139,9 @@ sm::ecs::Pools& player_pools(App& app) {
 sm::BonusTotals player_standing_bonuses(const App& app) {
     if (!app.macroStore) return sm::BonusTotals{};
     const sm::MacroStore& st = *app.macroStore;
-    const sm::MacroHandle h = sm::player_squad_handle(app.gs);
+    // АКТИВНЫЙ, А НЕ ДОМ (ломоть 7б M-421): стояние есть свойство той
+    // записи, которой играют, — тот же вердикт «вся семья», что у листа.
+    const sm::MacroHandle h = sm::player_flag_handle(app.gs);
     if (!st.valid(h)) return sm::BonusTotals{};
     return sm::standing_bonuses_of(st, h);
 }
@@ -1571,9 +1575,9 @@ static std::uint32_t player_anchor_cell(App& app) {
 // догнать истину до ближайшего тика субмира.
 static void sync_subworld_frame(App& app, bool worldTicked) {
     if (!app.subworld.active()) return;
+    // ОДИН хэндл: второй (дом) ушёл с `.home` (ломоть 7б M-421).
     const bool handlesMoved =
-        !(app.frame.playerFlag == app.gs.playerFlagRef)
-        || !(app.frame.playerSquad == app.gs.playerSquadRef);
+        !(app.frame.playerFlag == app.gs.playerFlagRef);
     if (!worldTicked && !handlesMoved && !app.subworld.needs_frame_resync())
         return;
     const sm::MacroWorld w = macro_world(app);
@@ -4869,7 +4873,9 @@ void register_console_commands(App& app) {
             // worn SwingPct verdict), so what this prints and what the arm
             // does cannot be two spellings of the chain.
             const sm::ecs::BodyEquipment* eqc = nullptr;
-            if (const sm::MacroHandle pe = sm::player_squad_handle(app.gs);
+            // СБРУЯ — АКТИВНОГО (ломоть 7б M-421): печатать темп руки по
+            // сбруе ДОМА, стоя в теле лорда, значило показывать чужое число.
+            if (const sm::MacroHandle pe = sm::player_flag_handle(app.gs);
                 app.macroStore->valid(pe))
                 eqc = &app.macroStore->gear[pe.slot];
             const sm::Inventory& bag = player_bag(app);

@@ -43,7 +43,8 @@ constexpr std::uint32_t kFixtureIssuerAfter =
 // (0x7FFFFFFF), то есть игрок был единственной записью мира, чью личность
 // называло магическое число. Теперь он лежит в том же пространстве, что
 // записи 200 и 9 выше, и ниже эмитента 341 — как любой сквад; узнаётся он
-// БИТОМ `playerHome`, тем же, каким его узнаёт загрузка.
+// БИТОМ `playerFlag`, тем же, каким его узнаёт загрузка (бит `playerHome`
+// снесён ломтём 7б M-421 вместе с родом «дом»).
 constexpr std::uint32_t kFixturePlayerOrdinal = 150u;
 static_assert(kFixturePlayerOrdinal < kFixtureIssuerBase,
               "рукописный ординал записи обязан лежать НИЖЕ эмитента: одно "
@@ -269,7 +270,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     // загрузка, — то есть свидетель проверяет НАСТОЯЩЕГО носителя.
     sm::MacroNpcRecord player{};
     player.spawnId.index = kFixturePlayerOrdinal;
-    player.playerHome = 1;
+    player.playerFlag = 1;
     player.cell = {sm::ecs::cell_index(12, 13, 512)};
     player.kind = {std::uint16_t(sm::NPCType::Adventurer),
                    std::uint16_t(sm::faction_index(sm::kPlayerFactionId))};
@@ -788,7 +789,7 @@ int run_roundtrip() {
     {
         const sm::MacroNpcRecord* worn = nullptr;
         for (const sm::MacroNpcRecord& r : loadedMacro) {
-            if (r.playerHome != 0) worn = &r;
+            if (r.playerFlag != 0) worn = &r;
         }
         if (!worn) FAIL_BAIL("the player's own record did not come back");
         if (sm::worn_cells(worn->gear) != 1) FAIL_BAIL("worn gear lost");
@@ -957,7 +958,7 @@ int run_roundtrip() {
         // by the HOME BIT (M-255) and demand the build came back verbatim.
         const sm::MacroNpcRecord* prec = nullptr;
         for (const sm::MacroNpcRecord& r : loadedMacro) {
-            if (r.playerHome != 0) prec = &r;
+            if (r.playerFlag != 0) prec = &r;
         }
         if (!prec) FAIL_BAIL("the player's squad record vanished");
         const sm::CharacterSheet& sh = prec->sheet;
@@ -1002,7 +1003,7 @@ int run_roundtrip() {
         // (M-255) and demand the knowledge came back bit-for-bit.
         const sm::MacroNpcRecord* prec = nullptr;
         for (const sm::MacroNpcRecord& r : loadedMacro) {
-            if (r.playerHome != 0) prec = &r;
+            if (r.playerFlag != 0) prec = &r;
         }
         if (!prec) FAIL_BAIL("the player's squad record vanished");
         if (!sm::spellbook_has_learned(prec->book,
