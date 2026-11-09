@@ -1919,8 +1919,40 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // and BEFORE settlementId is recomputed below — that line legitimately
     // re-derives a field, and a witness must compare the fold, not the
     // world's own thinking.
+    // РОД 2 ПЕРЕСНИМАЕТСЯ С ЖИВОГО СТОРА, И БЕЗ ЭТОГО СВИДЕТЕЛЬ СРАВНИВАЛ ЕГО
+    // САМ С СОБОЙ (M-439, перепись 2026-11-09). Здесь стояло `loadedMacro` —
+    // ТОТ ЖЕ вектор, что ушёл в отпечаток файла выше, — поэтому запись сквада
+    // (757.80 МиБ по капу, 70.2 % сейва) давала В ОБА отпечатка одни и те же
+    // байты, и ПОТЕРЯ ВНУТРИ `restore_macro_ecs` была зелёному свидетелю
+    // неподвластна по построению. Проза над вызовом обещала сторожить
+    // применение «AFTER the store restore just above» — обещание держалось
+    // только для полей `GameState` и эмитента, то есть для меньшей половины.
+    // Снимок — работа загрузки, не тика (AGENTS §7 п.2), и платится один раз.
+    //
+    // ЛЕС ОСТАЁТСЯ СРАВНЁННЫМ С СОБОЙ, И ЭТО НАЗВАНО, А НЕ ЗАБЫТО: его
+    // `restore_tree_counts` стоит НИЖЕ (строка 1977), а свидетель обязан стоять
+    // ВЫШЕ пересчёта `settlementId` — переснять живой лес здесь значило бы
+    // сверять ещё не восстановленное и краснеть законно. Долг — в ряду M-439.
+    //
+    // ТАБЛИЦА «МУТАЦИЯ → ИСХОД», ОБЕ ПОЛЯРНОСТИ, снята на смоуке
+    // `save_game,open_load,load_game,wait_boot_done` (AGENTS §8 п.6; дерево
+    // после каждой мутации восстанавливалось `cp` и сверялось с HEAD):
+    //   БАЗА (целый код) ................................. PASS, checks=2 failed=0
+    //   M1b  `st.pools[h.slot].hp += 1` в restore_macro_ecs
+    //        · С ЭТОЙ ПЕРЕСЪЁМКОЙ ....................... FAIL «load fold lost state»
+    //        · С `loadedMacro` вместо `liveMacro` ....... PASS  ← ДЫРА, ЧИСЛОМ
+    //   M2   перестановка двух независимых присваиваний
+    //        (`character` ↔ `traits`), результат тождествен  PASS  ← детектор молчит
+    // Третья мутация записана отдельно, потому что она УЧИТ: снос
+    // `st.wellbeing[h.slot] = m.wellbeing` оставил смоук ЗЕЛЁНЫМ даже с
+    // пересъёмкой — поле в свежем мире уже дефолтное, то есть мутация НУЛЕВАЯ и
+    // детектора не судит вовсе (та же ловушка, что в §8 п.6: «эффект меньше
+    // порога наблюдения»). Красить обязана мутация с заведомо ненулевым
+    // эффектом, и M1b выбрана именно поэтому.
+    const std::vector<sm::MacroNpcRecord> liveMacro =
+        sm::snapshot_macro_ecs(*app.macroStore);
     const std::uint32_t liveFingerprint = sm::save_payload_fingerprint(
-        app.gs, app.macroStore->nextSpawnId, loadedMacro, loadedTrees);
+        app.gs, app.macroStore->nextSpawnId, liveMacro, loadedTrees);
     // A witness that answers "0" twice would agree with itself over a world it
     // never weighed: 0 is what the fingerprint returns when the writer FAILED.
     // Refuse that agreement out loud — a check that cannot fail is the defect
