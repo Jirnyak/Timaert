@@ -124,52 +124,58 @@ void test_the_mark_survives_losing_the_flag() {
           "and the borrowed body is not");
 }
 
-// ── 2b. Возвращение в оригинал, и цена его отсутствия ────────────────────
+// ── 2b. Переключение активного — ОДНА дверь, и возврат из вселения есть ОН
 //
-// «Если это эффект посессии, единственное отличие — что смерть это возвращение
-// в оригинал… если оригинал жив то возвращает в него, если мёртв и ты умираешь
-// в посессии то гейм овер» (владелец, 2026-09-14). Три случая, и третий —
-// причина, по которой `PlayerSquadTag` пережил ход 2: он и есть обратный
-// адрес, а адрес бывает мёртвым.
+// ЗДЕСЬ СТОЯЛ СВИДЕТЕЛЬ `wake_player_in_original_body` — «возвращение в
+// оригинал и цена его отсутствия», вердикт владельца 2026-09-14. Дверь СНЕСЕНА
+// ломтём 7б M-421 вердиктом того же владельца 2026-11-09: «`.home` умирает
+// совсем… возврат из вселения становится ТОЙ ЖЕ дверью переключения активного,
+// одна дверь на все переключения». Свидетель переехал на неё — те же ТРИ
+// случая, заданные двери, которая теперь на них отвечает.
+//
+// РАЗНИЦА НЕ В ИМЕНИ, А В ПРЕДМЕТЕ: прежняя дверь спрашивала «жив ли ОДИН
+// конкретный сквад (дом)», новая — «есть ли под контролем ХОТЬ КТО-ТО», и
+// третий случай стал тем самым единственным агностичным условием конца игры.
 void test_death_in_a_worn_body_wakes_him_at_home() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
     auto wStore_ = sm::make_macro_store();
     ensure_macro_player_entity(gs, *wStore_);
-    const MacroHandle mine = player_squad_handle(gs);
+    const MacroHandle mine = player_flag_handle(gs);
 
-    // (a) В СЕБЕ. Возвращаться некуда, потому что незачем — умер ты сам, и
-    //     дверь обязана сказать «нет» ровно этим же «нет».
-    CHECK(!player_wears_another_body(gs), "by default he is himself");
-    CHECK(!wake_player_in_original_body(gs, *wStore_),
-          "dying as yourself is the end — there is no return to make");
-    CHECK(gs.playerFlagRef == gs.playerSquadRef,
-          "and the flag did not wander");
+    // (a) АКТИВНЫЙ ЦЕЛ. Дверь не делает НИЧЕГО — ни переезда, ни отказа.
+    CHECK(keep_active_squad(gs, *wStore_),
+          "живой активный — игра идёт, и спрашивать больше нечего");
+    CHECK(player_flag_handle(gs) == mine, "и флажок не блуждал");
 
-    // (b) В ЧУЖОМ ТЕЛЕ, ОРИГИНАЛ ЖИВ. Флажок едет домой одним движением.
+    // (b) АКТИВНЫЙ ПАЛ, ПОД КОНТРОЛЕМ ЕСТЬ КТО. Флажок переезжает на
+    //     старейшего под контролем — им и оказывается его собственный сквад,
+    //     потому что лорд чужой фракции под контролем не считается.
     const MacroHandle lordH = npc_squad(*wStore_, 30.0f, 30.0f, 7u, 2);
     sm::transfer_player_flag(*wStore_, gs.playerFlagRef, lordH);
-    CHECK(player_wears_another_body(gs), "wearing a lord is asked of the flag");
-    CHECK(wake_player_in_original_body(gs, *wStore_),
-          "a living original is woken up in");
-    CHECK(gs.playerFlagRef == gs.playerSquadRef,
-          "exactly one flag, and it is home");
+    CHECK(player_flag_handle(gs) == lordH, "вселение двигает флажок");
+    sm::macro_mark_dead(*wStore_, lordH);
+    CHECK(keep_active_squad(gs, *wStore_),
+          "носимый сквад умер — активным стал старейший под контролем");
+    CHECK(player_flag_handle(gs) == mine,
+          "ровно один флажок, и он на том, кем игрок был");
+    CHECK(eldest_controlled_squad(*wStore_) == mine,
+          "якорь: старейший под контролем — его собственный сквад, а не лорд");
 
-    // (c) В ЧУЖОМ ТЕЛЕ, ОРИГИНАЛ МЁРТВ. Просыпаться не в чем ⇒ конец игры.
-    //     Негативный контроль к (b): та же расстановка, отличается ОДНО число.
-    sm::transfer_player_flag(*wStore_, gs.playerFlagRef, lordH);
+    // (c) ПОД КОНТРОЛЕМ НИКОГО. Дверь отказывает, и ЭТО конец игры.
+    //     Негативный контроль к (b): та же расстановка, отличается ОДИН байт.
+    sm::macro_mark_dead(*wStore_, mine);
+    CHECK(!keep_active_squad(gs, *wStore_),
+          "ноль живых сквадов фракции игрока — переключать некого, игра кончена");
+    CHECK(eldest_controlled_squad(*wStore_).id == 0,
+          "и дверь множества говорит то же самое: под контролем никого");
+
+    // …судится БАЙТ СУДЬБЫ, а не полоса: лежащая личность при живом ростере
+    // есть сквад под контролем (ЗАКОН ТОЧКИ — ноль здоровья это НОКАУТ).
+    wStore_->dead[mine.slot] = 0;
     wStore_->pools[mine.slot].hp = 0.0f;
-    CHECK(!wake_player_in_original_body(gs, *wStore_),
-          "a dead original is nothing to wake up in — that is the game over");
-    CHECK(player_flag_handle(gs) == lordH,
-          "and a refused return leaves the flag exactly where it was");
-
-    // …и колонка `dead` отвечает на тот же вопрос, что и ноль в полосе: тело
-    // может простоять тик на нуле прежде, чем жнец его пометит, и наоборот.
-    wStore_->pools[mine.slot].hp = 10.0f;
-    wStore_->dead[mine.slot] = 1;
-    CHECK(!wake_player_in_original_body(gs, *wStore_),
-          "a reaped original is dead however full its bar reads");
+    CHECK(eldest_controlled_squad(*wStore_) == mine,
+          "нокаутированный сквад остаётся под контролем — hp двери не указ");
 }
 
 // ── 3. The AI never drives the player's squad ────────────────────────────

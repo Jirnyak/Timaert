@@ -133,21 +133,16 @@ inline void player_jump_to_cell(GameState& gs, MacroStore& st, int x, int y) {
     squad_jump_to_cell(st, player_flag_handle(gs), x, y, gs.mapW);
 }
 
-// ОЧНУТЬСЯ В СВОЁМ ТЕЛЕ — the one thing that makes possession an EFFECT rather
-// than a bare flag swap (owner 2026-09-14: «если это эффект посессии,
-// единственное отличие — что смерть это возвращение в оригинал»). Called the
-// moment a possession ENDS: the worn body dying today, a spell expiring
-// tomorrow. The flag moves home in one movement — the same one displacement
-// that took the body, run backwards.
-//
-// Returns FALSE when there is nothing to wake up in, and that is the end of the
-// game (owner, same day): «если оригинал жив то возвращает в него, если мёртв и
-// ты умираешь в посессии то гейм овер». The original is known without storing
-// anything — it is `gs.playerSquadRef`, the home-bit record.
-//
-// No-op returning false if he was never wearing anyone: then the man who died
-// is himself, and there is no return to make.
-bool wake_player_in_original_body(GameState& gs, MacroStore& st);
+// (ЗДЕСЬ ЖИЛА `wake_player_in_original_body` — «ОЧНУТЬСЯ В СВОЁМ ТЕЛЕ», та
+//  самая строка, которой вселение было ЭФФЕКТОМ, а не голой сменой флажка
+//  (владелец 2026-09-14). СНЕСЕНА ломтём 7б M-421 по вердикту владельца
+//  2026-11-09: «`.home` умирает совсем … возврат из вселения становится ТОЙ ЖЕ
+//  дверью переключения активного, одна дверь на все переключения». Её закон
+//  цел и живёт в `keep_active_squad` выше — изменился лишь ВОПРОС: не «жив ли
+//  ОДИН конкретный сквад (дом)», а «есть ли под контролем хоть кто-то».
+//  Прод-звонящий у неё был ровно один, и он умер вместе с гейтом смерти по
+//  телу; держать дверь дальше значило бы хранить легаси, живое одним своим
+//  свидетелем.)
 
 // ── ЧТО У ИГРОКА ЕЩЁ ЕСТЬ — ОДНО АГНОСТИЧНОЕ УСЛОВИЕ НАД ФРАКЦИЕЙ ────────
 // Вердикт владельца 2026-11-09 (ломоть 7б M-421), дословно: «нужно агностично

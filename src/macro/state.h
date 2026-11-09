@@ -779,7 +779,7 @@ struct GameState {
     // и поэтому смена сквада это просто смена флажка что этот сквад (с этой
     // анкетой) игрок»). ИСТИНА — анкета: playerFlagRef кэширует носителя
     // колонки playerFlag == 1 («кем я на карте»; двигают вселение
-    // possess_entity и пробуждение wake_player_in_original_body — ОДНОЙ
+    // possess_entity и переключение активного keep_active_squad — ОДНОЙ
     // дверью transfer_player_flag, пишущей колонку и кэш вместе);
     // playerSquadRef кэширует носителя БИТА playerFlag.home (родной сквад,
     // «кто оригинал»; ставит его дверь mark_player_home). До M-255 дом был

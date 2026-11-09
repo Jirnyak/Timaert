@@ -234,25 +234,6 @@ bool keep_active_squad(GameState& gs, MacroStore& st) {
     return true;
 }
 
-bool wake_player_in_original_body(GameState& gs, MacroStore& st) {
-    const MacroHandle flag = player_flag_handle(gs);
-    const MacroHandle home = player_squad_handle(gs);
-    // He was never wearing anyone — the man who died is himself. Оба хэндла
-    // обязаны быть живыми: осиротевший флаг чинит ensure, не wake.
-    if (!st.valid(flag) || !st.valid(home)
-        || gs.playerFlagRef == gs.playerSquadRef) return false;
-    // ВОЗВРАЩАТЬСЯ ЕСТЬ КУДА, ТОЛЬКО ПОКА ЖИВ ОРИГИНАЛ. Asked of the record
-    // the same way the world asks it of every other body — the dead column
-    // the reaper stamps, and the bars themselves, because a body can be at
-    // zero for a tick before anything marks it.
-    if (st.dead[home.slot] != 0) return false;
-    if (st.pools[home.slot].hp <= 0.0f) return false;
-    // One displacement of one flag — вселение, проигранное назад, той же
-    // дверью (колонка + кэш одним движением; sub/possess.h ходит ею же).
-    transfer_player_flag(st, gs.playerFlagRef, home);
-    return true;
-}
-
 void resolve_player_handles_after_load(GameState& gs, MacroStore& st) {
     // ОДИН СКАН КОЛОНКИ, ДВА БИТА (5б + M-255): истина ОБОИХ вопросов
     // приехала колонкой playerFlag записей снапшота, оба кэша GameState
@@ -304,7 +285,8 @@ void resolve_player_handles_after_load(GameState& gs, MacroStore& st) {
 //
 // `player_squad_handle` остаётся ординальной семантикой — и это не
 // исключение, а другой вопрос: «КТО ОРИГИНАЛ», обратный адрес одержимости
-// (wake_player_in_original_body выше).
+// (дверь возврата из вселения снесена ломтём 7б M-421 — её закон живёт в
+//  `keep_active_squad` выше; некролог в шапке .h).
 
 namespace {
 // Один резолв на все колоночные двери: валидный слот носителя флажка или
