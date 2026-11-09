@@ -359,17 +359,23 @@ bool is_player_side_slot(const sub::SubObjects& objs, int s) {
 // Крайние значения отвечает сам `relation_of`: сентинел `kNoFaction` и всякий
 // протухший байт вне реестра дают 0, то есть нейтралитет, — ровно то же, что
 // давало пустое имя.
+// ДВЕ ОСИ, ОДНА ПАРА, ОДИН ОТВЕТ (M-422): у вопроса «враг ли он» две
+// законные оси — ВЕЧНОЕ отношение народов (род 6, персистентное) и ВРАЖДА
+// ЭТОЙ СЦЕНЫ (колонка арены, гаснет с нею), — и обе спрашиваются ОДНОЙ парой
+// ординалов. Прежде вторую ось нёс бит УДАРЕННОГО ТЕЛА, то есть пара
+// подменялась слотом, и ответ «кто мне враг» переставал быть функцией
+// фракций.
 bool hostile_to_player_slot(const sub::SubObjects& objs, int s,
                             const GameState* gs) {
     if (!gs) return false;   // нет мира — нет отношений, значит и вражды
     if (!alive_subworld_slot(objs, s) || is_player_side_slot(objs, s)) {
         return false;
     }
-    if (sub::slot_flag(objs, s, sub::kObjTempHostile)) return true;
     const auto* kind = sub::slot_kind(objs, s);
-    return factions_hostile(gs->factions, kPlayerFactionSlot,
-                            kind ? FactionSlot(kind->factionIdx)
-                                 : kNoFactionSlot);
+    const FactionSlot f = kind ? FactionSlot(kind->factionIdx)
+                               : kNoFactionSlot;
+    return objs.at_feud(kPlayerFactionSlot, f)
+        || factions_hostile(gs->factions, kPlayerFactionSlot, f);
 }
 
 // (Entity-адаптер hostile_to_player_entity умер в (ii-б): оба звонящих —
@@ -383,8 +389,10 @@ bool hostile_to_player_slot(const sub::SubObjects& objs, int s,
 // (SubworldEngine::battle_relation_callback) that build_faction_masks() applies
 // once per tick over the factions PRESENT, yielding a 64-bit enemy mask each; "is j my enemy" is a shift and an AND (BodyCrowd::hostile).
 // Player-vs-NPC still reads reputation, NPC-vs-NPC still reads the macro faction
-// matrix, and the per-entity TempHostileToPlayer exception rides in the unit's
-// own mask — same semantics, integer cost.
+// matrix, and SCENE feud rides in the same callback as a faction pair (M-422) —
+// same semantics, integer cost. The per-entity exception that used to be OR'd
+// onto the player side's mask afterwards is gone: a per-body bit folded into a
+// per-faction mask was two arithmetics for one question.
 
 // Слот-форма — конечная (ломоть 7); entity-адаптер умер в ступени (iv):
 // оба его звонящих (лог удара, melee-метка) берут слот сами.
@@ -409,30 +417,16 @@ const char* subworld_attacker_label(const sub::SubObjects& objs, int slot) {
 // СТРОКА «wildlife». Тело аватара, спрошенное о своём знамени, уверенно
 // соврало бы «зверь» — и соврало бы без ошибки.
 
-// ЗЛОПАМЯТНОСТЬ СЦЕНЫ — ИГРОВАЯ СЕССИЯ СУБМИРА, И ОБОБЩЕНИЮ НЕ ПОДЛЕЖИТ.
-// Бит `kObjTempHostile` значит «враждебен ИГРОКУ» (`hostile_to_player_slot`
-// выше): это состояние СЦЕНЫ, живущее до смерти тела или до конца сцены, а не
-// макро-величина, и второй такой обиды «на каждого аватара» в мире нет.
-// Ординалами — по той же причине, что и гейт враждебности: имя фракции здесь
-// не нужно никому, а круг «ординал → имя → ординал» стоял и тут.
-void maybe_flip_temp_hostile(sub::SubObjects& objs,
-                             int target,
-                             const GameState* gs,
-                             FactionSlot victimFaction) {
-    if (!gs || target < 0 || victimFaction < 0) return;
-    if (sub::slot_flag(objs, target, sub::kObjTempHostile)) return;
-    if (relation_of(gs->factions, kPlayerFactionSlot, victimFaction)
-            >= kAllyRepThreshold) {
-        return;
-    }
-
-    sub::slot_flag_set(objs, target, sub::kObjTempHostile);
-    if (auto* ai = sub::slot_ai(objs, target)) {
-        if (ai->kind == ecs::SubworldAi::Wander) {
-            ai->kind = ecs::SubworldAi::Combat;
-        }
-    }
-}
+// (ЗЛОПАМЯТНОСТЬ СЦЕНЫ ПЕРЕЕХАЛА В КОЛОНКУ, A `maybe_flip_temp_hostile`
+// УМЕРЛА — M-422, 2026-11-09. Она ставила бит ударенному ТЕЛУ, а вражду в бою
+// поднимала ФРАКЦИИ, то есть цвет и драка считались по разным ключам; теперь
+// обиду объявляет ОДНА дверь записи самой сцены — `declare_feud` колонки
+// `feud@src/sub/objects.h`. Вместе с нею умер её гейт «союзник прощает»
+// (`relation_of … >= kAllyRepThreshold`): он открывал сценическую ось
+// ПЕРСИСТЕНТНОЙ, то есть сращивал две системы, которые вердикт владельца
+// держит врозь, — а «агностично навес чтобы был файт а не терпилы» прощения
+// не знает вовсе. Цена названа вслух: своего же союзника дружественным огнём
+// теперь можно поднять на себя до конца сцены.)
 
 // ── УДАР АВАТАРА: СТАНДИНГ ОБОБЩЁН, ТРИГГЕР — НЕТ ───────────────────────
 // Вердикт владельца 2026-11-03, дословно: «любой воплощённый аватар сквада
@@ -459,9 +453,23 @@ void apply_avatar_hit_standing(sub::SubObjects& objs,
     const auto* victim = sub::slot_kind(objs, target);
     const FactionSlot victimFaction =
         victim ? FactionSlot(victim->factionIdx) : kNoFactionSlot;
-    add_faction_standing(gs->factions, squad_faction_slot(st, actorSquad),
-                         victimFaction, kHitRepPenalty);
-    maybe_flip_temp_hostile(objs, target, gs, victimFaction);
+    const FactionSlot actorFaction = squad_faction_slot(st, actorSquad);
+    add_faction_standing(gs->factions, actorFaction, victimFaction,
+                         kHitRepPenalty);
+    // ДВА ПОСЛЕДСТВИЯ ОДНОГО УДАРА, И ОНИ РАЗНОЙ ПРИРОДЫ (M-422). Вечное —
+    // строка выше: мир запомнил поступок навсегда. Сценическое — строка ниже:
+    // «он и его соратники не терпят» (владелец), то есть ВРАЖДА ЭТОЙ СЦЕНЫ
+    // между знаменем задетого и знаменем ударившего. Обидчика втягивает сама
+    // дверь, пишущая обе стороны, — второго зова здесь нет.
+    objs.declare_feud(victimFaction, actorFaction);
+    // А это уже не вражда, а РЕАКЦИЯ задетого тела: гуляка перестаёт гулять.
+    // Состояния вражды она не несёт (её несёт колонка) — несёт мозг, и потому
+    // стоит отдельной строкой, а не внутри двери отношений.
+    if (auto* ai = sub::slot_ai(objs, target)) {
+        if (ai->kind == ecs::SubworldAi::Wander) {
+            ai->kind = ecs::SubworldAi::Combat;
+        }
+    }
 }
 
 // ── УБИЙСТВО: ПЛАТИТ ЛЮБОЙ АВАТАР, И ТОЛЬКО АВАТАР ──────────────────────
@@ -597,32 +605,39 @@ void spawn_npc_missile(sub::SubObjects& objs,
 
 void clear_subworld_entities(sub::SubObjects& scene) {
     // Полный снос сцены (ломоть D): все жильцы — тела, снаряды, пламёна —
-    // слоты ОДНОЙ арены, и смерть сцены есть свип free по биту. Сущностных
-    // батчей больше нет: рождений в реестр не делает никто.
-    if (sub::SubObjects* objs = &scene) {
-        for (int s = 0; s < int(kMaxSubObjects); ++s) {
-            if ((objs->flags[std::size_t(s)] & sub::kObjAlive) != 0u) {
-                objs->free(s);
-            }
-        }
-    }
+    // слоты ОДНОЙ арены. Здесь стоял СВОЙ свип `free` по биту, и он был
+    // ВТОРЫМ НАПИСАНИЕМ той же смерти, что `SubObjects::clear` — отличался
+    // ровно тем, что щадил ссылку аватара, которую все три звонящих тут же
+    // снимали сами (`clear_player_entity` следующей строкой). Сведено в одну
+    // дверь (M-422): у «сцена кончилась» обязан быть ОДИН ответ, иначе
+    // сценическое состояние гаснет там, где про него вспомнили, а не там, где
+    // сцена умерла, — ровно так вражда и держалась СЛУЧАЙНО, на зануляющем
+    // маску `free`.
+    scene.clear();
 }
 
 } // namespace
 
 // Universal signed stance — reuses the SAME anonymous-namespace helpers and
 // thresholds the combat/AI paths use above, so a marker's colour cannot drift
-// from real hostility. The two saturation ends mirror hostile_to_player_entity
-// exactly (TempHostileToPlayer or reputation below kHostileThreshold read as
-// fully hostile); the positive end mirrors the ally threshold; 0 reputation is
+// from real hostility. The two saturation ends mirror hostile_to_player_slot
+// exactly (scene feud or reputation below kHostileThreshold read as fully
+// hostile); the positive end mirrors the ally threshold; 0 reputation is
 // dead-centre neutral. Each side is scaled independently by its own threshold
 // so an asymmetric retune stays correct. Alive/scene filtering is the caller's
 // job (collect_minimap_blips already iterates only live scene NPCs).
+//
+// И СЧИТАЕТСЯ ОН ТЕПЕРЬ ТЕМ ЖЕ КЛЮЧОМ, ЧТО ДРАКА (M-422): пара ординалов
+// фракций. Прежде здесь стоял бит ударенного ТЕЛА — цвет был «по телу», а бой
+// «по фракции», и один удар красил одного, а поднимал всех.
 float player_stance(const sub::SubObjects& objs, int s, const GameState* gs) {
     if (is_player_side_slot(objs, s)) return 1.0f;              // own side
-    if (sub::slot_flag(objs, s, sub::kObjTempHostile)) return -1.0f;  // provoked
-    const char* factionId =
-        faction_id_for_kind(sub::slot_kind(objs, s));
+    const ecs::NPCKind* kind = sub::slot_kind(objs, s);
+    if (objs.at_feud(kPlayerFactionSlot,
+                     kind ? FactionSlot(kind->factionIdx) : kNoFactionSlot)) {
+        return -1.0f;                                           // provoked
+    }
+    const char* factionId = faction_id_for_kind(kind);
     const int rep = player_reputation(gs, factionId);
     if (rep >= 0) {
         return std::min(1.0f, float(rep) / float(kAllyRepThreshold));
@@ -3600,11 +3615,33 @@ std::uint32_t SubworldEngine::spell_neighbors_callback(
 //
 // Passed as a plain function pointer so the pair loop itself can live in the
 // Vulkan-free, ECS-free module (and therefore be tested).
+//
+// ДВЕ ОСИ ОДНОГО ОТВЕТА, И ПОРОГ У НИХ ОДИН (M-422). Вечное отношение народов
+// читается из матрицы; ВРАЖДА ЭТОЙ СЦЕНЫ — из колонки арены, и выражается она
+// НИЗОМ ТОЙ ЖЕ ШКАЛЫ, а не вторым сравнением: порог враждебности выписан в
+// дереве однажды (`kHostileThreshold`), и единственный способ не завести ему
+// двойника — отвечать по его шкале. Прежде сценическая ось ехала мимо этой
+// двери — надбавкой `playerExtraMask`, которую сбор боя ПЕРЕСОБИРАЛ из битов
+// тел и дописывал к готовой маске руками, причём только стороне игрока; вражда
+// НПЦ с НПЦ в сцене была невыразима вовсе.
+//
+// ИНТЕРНИРОВАННЫЙ ИНДЕКС — АДРЕС ТИКА, И СЦЕНИЧЕСКОЕ СОСТОЯНИЕ ИМ НЕ
+// АДРЕСУЕТСЯ: набор интернируется с нуля каждый тик, значит `a`/`b` между
+// тиками означают разные народы. Поэтому пара переводится в ОРДИНАЛЫ реестра
+// — ими же спрашивается и матрица, так что круг «ординал → имя → ординал»,
+// стоявший здесь K² раз в тик, заодно разомкнут (`strcmp` на диагонали ушёл:
+// её отвечает сам `relation_of`).
 int SubworldEngine::battle_relation_callback(void* user, const FactionSet& set,
                                              int a, int b) {
     auto* self = static_cast<SubworldEngine*>(user);
     if (a < 0 || b < 0 || a >= set.count || b >= set.count) return 0;
-    return faction_relation(self->gs_, set.ids[a], set.ids[b]);
+    const FactionSlot fa = faction_index(set.ids[a]);
+    const FactionSlot fb = faction_index(set.ids[b]);
+    if (self->objects_ && self->objects_->at_feud(fa, fb)) {
+        return kRelationMin;
+    }
+    if (!self->gs_) return 0;   // нет мира — нет отношений, значит и вражды
+    return relation_of(self->gs_->factions, fa, fb);
 }
 
 void SubworldEngine::tick_subworld_bodies(float dt) {
@@ -3704,7 +3741,6 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     // The player side is interned FIRST so it owns a stable index for the tick;
     // it is an ordinary faction with an ordinary id, not a special case.
     crowdPlayerFaction_ = crowdFactions_.intern(kPlayerFactionId);
-    std::uint64_t playerExtraMask = 0ull;
     float threat2 = kNoThreatDistance2;
     // The fastest DRIVE in the crowd — combat sprint or brain intent,
     // whichever is larger — bounds how far any body can move per tick, which
@@ -3896,14 +3932,9 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
             }
         }
 
-        // A body flagged individually hostile to the player records that as a
-        // private grudge, and hands the player side the reciprocal bit — the one
-        // per-entity exception survives as data, never as a branch in the loop.
-        if (!isPlayer && !owned && d.faction >= 0
-            && sub::slot_flag(arena, s, sub::kObjTempHostile)
-            && crowdPlayerFaction_ >= 0) {
-            playerExtraMask |= (1ull << d.faction);
-        }
+        // (Надбавка «обида этого тела» СНЕСЕНА — M-422: вражда сцены есть
+        // отношение ФРАКЦИЙ, её читает одна дверь отношений
+        // `battle_relation_callback`, и маска тела — чистая маска его народа.)
 
         maxDrive = std::max(maxDrive, std::max(d.speed,
             std::sqrt(d.intentVx * d.intentVx + d.intentVy * d.intentVy)));
@@ -3938,19 +3969,15 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
                         &SubworldEngine::battle_relation_callback, this,
                         kHostileThreshold);
 
-    // Stamp each body's enemy mask from its faction, plus any private grudge, and
-    // fold in the nearest-threat-to-the-player distance while the data is hot —
-    // the HUD gem and the exit gate read that every frame and must never scan.
+    // Stamp each body's enemy mask from its faction — ЦЕЛИКОМ из маски народа,
+    // без дописок руками (M-422: обида сцены уже учтена дверью отношений, то
+    // есть лежит В САМОЙ маске) — and fold in the nearest-threat-to-the-player
+    // distance while the data is hot: the HUD gem and the exit gate read that
+    // every frame and must never scan.
     for (int i = 0; i < crowd_->count; ++i) {
         const std::size_t si = std::size_t(i);
         const std::int16_t f = crowd_->faction[si];
-        std::uint64_t mask = f >= 0 ? crowdFactions_.enemyMask[f] : 0ull;
-        if (f >= 0 && f == std::int16_t(crowdPlayerFaction_)) {
-            mask |= playerExtraMask;
-        } else if (playerExtraMask != 0ull && f >= 0 && crowdPlayerFaction_ >= 0
-                   && ((playerExtraMask >> f) & 1ull) != 0ull) {
-            mask |= (1ull << crowdPlayerFaction_);
-        }
+        const std::uint64_t mask = f >= 0 ? crowdFactions_.enemyMask[f] : 0ull;
         crowd_->enemyMask[si] = mask;
         if (crowdPlayerFaction_ >= 0
             && ((mask >> crowdPlayerFaction_) & 1ull) != 0ull) {

@@ -4465,15 +4465,34 @@ bool run_prologue_road_smoke(App& app) {
     // anchored him to.
     // The arrival popup (the smoke boot's own opening slide) pauses the
     // world — dismiss it the way the harness always does, or the ticked
-    // runtime below never runs. The wound lands on the SCALAR: the hero
-    // body's HP is macro-authoritative (pull_player_entity_to_scalars
-    // rewrites it from currentHp every tick — a body killed BETWEEN ticks
-    // heals back), and the scalar is the very number the intercept reads,
-    // the same one the macro auto-resolve writes. One step then: the
-    // intercept answers within the tick, and the witch event is still in
-    // this tick's bus.
+    // runtime below never runs.
+    //
+    // УБИВАЕТ ЗДЕСЬ ДВЕРЬ УРОНА, А НЕ ЗАПИСЬ СКАЛЯРА, И ЭТО ПОЧИНКА
+    // СВИДЕТЕЛЯ (2026-11-09, дефект нашёл владелец на стенде: «убивают
+    // игрока и застывает, не переносит в мир игры»). Здесь стояло
+    // `player_pools(app).hp = 0` — ровно то, что шапка самой двери называет
+    // дефектом («instead of hand-writing hp = 0 with a private copy of the
+    // protocol»), — и цена была не стилевая: запись скаляра НЕ СТАВИТ БИТ
+    // `kObjDead`, то есть смерть не входила в машинерию смерти вовсе. Жнец
+    // не бежал, слот павшего тела не освобождался, ссылка активного тела не
+    // протухала — и прибор оставался ЗЕЛЁНЫМ поверх игры, где пролог не
+    // проходится: после сноса изъятия активного тела (ломоть 7б M-421) жнец
+    // стал жать и его, а перехват сюжетной смерти спрашивал СЛОТ.
+    //
+    // Теперь удар идёт по тому же пути, каким игрока убивает бандит: бит,
+    // жнец, освобождение слота, — и прибор видит сюжетную смерть целиком.
     smoke_clear_modal_overlays(app);
-    player_pools(app).hp = 0;
+    {
+        sm::sub::SubObjects& deathArena = *app.sceneObjects;
+        const int heroSlot = sm::sub::avatar_slot(deathArena);
+        if (heroSlot < 0) {
+            smoke_fail(app, "prologue_road hero body absent before the blow");
+            return false;
+        }
+        sm::sub::apply_lethal_damage(deathArena, app.macroStore.get(),
+                                     heroSlot, sm::sub::DamageSource{},
+                                     sm::sub::DamageKind::Melee);
+    }
     advance_sim_seconds(app, 0.016f, false);
     const bool rescued = !app.subworld.active()
         && app.state == sm::ui::AppState::Playing
@@ -6133,8 +6152,13 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     }
 
     const int afterRep = sm::player_reputation(&app.gs, "empire");
-    const bool tempHostile =
-        sm::sub::slot_flag(tObjs, targetSlot, sm::sub::kObjTempHostile);
+    // ПЕРЕПРЕДМЕЧЕНО НА ЕДИНЫЙ НОСИТЕЛЬ (M-422): прежде здесь стоял бит
+    // ударенного ТЕЛА, и свидетель тем самым охранял форму, а не закон. Закон
+    // — «ударил нейтрала, и ЕГО СОРАТНИКИ не терпят», то есть вражда ЭТОЙ
+    // СЦЕНЫ между знаменем задетого и знаменем игрока; спрашивается она той же
+    // парой ординалов, какой её читают бой и миникарта.
+    const bool sceneFeud = tObjs.at_feud(
+        sm::kPlayerFactionSlot, sm::FactionSlot(sm::faction_index("empire")));
     const auto* ai = sm::sub::slot_ai(tObjs, targetSlot);
     const auto danger = app.subworld.danger_level();
     const int combatLogCount = app.subworld.combat_log_count();
@@ -6145,12 +6169,12 @@ bool run_subworld_reputation_hit_smoke(App& app) {
             != std::string_view::npos;
 
     std::fprintf(stderr,
-                 "[smoke] subworld_reputation_hit rep=%d->%d temp=%d "
+                 "[smoke] subworld_reputation_hit rep=%d->%d feud=%d "
                  "ai=%d danger=%d neutralMove=%.3f "
                  "spellHp=%d spellLog=%d friendlySpellHit=%d log=\"%s\"\n",
                  beforeRep,
                  afterRep,
-                 tempHostile ? 1 : 0,
+                 sceneFeud ? 1 : 0,
                  ai ? int(ai->kind) : -1,
                  int(danger),
                  double(neutralMove),
@@ -6168,7 +6192,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     // захардкоженным игроком: стандинг платит ЛЮБОЙ аватар, а охват триггера
     // остался тем же — рука игрока, см. шапку двери.)
     if (beforeRep != 0 || neutralMove > 0.001f || !friendlySpellHit
-        || afterRep != -1 || !tempHostile
+        || afterRep != -1 || !sceneFeud
         || !ai || ai->kind != sm::ecs::SubworldAi::Flee
         || danger != sm::sub::DangerLevel::Red
         || !logIsPlayerHit) {

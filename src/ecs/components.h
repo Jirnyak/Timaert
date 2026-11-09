@@ -134,8 +134,10 @@ struct MissileAttack {
 // a tag nobody reads is not a state, it is noise every spawn site paid for.)
 // (Dead / PlayerSoldierTag / TempHostileToPlayer / Flying УМЕРЛИ 2026-10-05,
 // M-150 ломоть 1б: четыре тега тел — БИТЫ маски flags единого массива
-// объектов, kObjDead/kObjPlayerSoldier/kObjTempHostile/kObjFlying
-// (sub/objects.h); читаются/пишутся дверями object_flag* (sub/record.h).)
+// объектов (sub/objects.h); читаются/пишутся дверями object_flag*
+// (sub/record.h). Трое живы битами; TempHostileToPlayer умер ВТОРОЙ РАЗ и
+// насовсем — 2026-11-09, M-422: вражда сцены есть отношение ФРАКЦИЙ, а не
+// свойство ударенного тела, и бита у неё больше нет вовсе.)
 // «Кем я на КАРТЕ» — the macro flag, and MACRO ONLY (scale split, owner
 // verdict 2026-09-10): it rides the player's own squad by default and a
 // possessed lord's while he wears one. С 1е (кластер 5) оба макро-вопроса —

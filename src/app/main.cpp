@@ -3718,25 +3718,38 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // ── СМЕРТЬ В КАРМАНЕ, КОТОРЫЙ САМ ГОВОРИТ, ЧТО ОНА ЗНАЧИТ ─────────────
     // Строка рода кармана несёт узел, который смерть здесь АКТИВИРУЕТ вместо
     // конца игры (`deathNode@src/sub/dgn/dispatch.h`; nullptr — везде, кроме
-    // пролога), и вопрос у неё СЦЕННЫЙ: «пало ли тело, в котором я стою», а
-    // не «что осталось у игрока». Бары берутся у ЗАПИСИ активного тела дверью
-    // зеркала: его собственного сквада как собой, лорда — пока он его носит,
-    // и собственного блока носимого ГЕНЕРИКА, которого не видит ни одна
-    // макро-дверь (закон шва, 2026-09-17). Рана УЖЕ на записи — её положил
-    // удар (`sub/record.h`), поэтому спрашивать нечего, кроме полосы.
+    // пролога).
+    //
+    // И СПРАШИВАЕТ ОН ЗАПИСЬ, А НЕ СЛОТ СЦЕНЫ, И ЭТО ПОЧИНКА (2026-11-09,
+    // вердикт владельца со стенда: «убивают игрока и застывает, не переносит
+    // в мир игры»). Здесь стояло «пало ли ТЕЛО, в котором я стою» — полоса
+    // бралась у записи ДВЕРЬЮ ЗЕРКАЛА, то есть ЧЕРЕЗ `avatar_slot`, а слот
+    // есть адрес СЦЕНЫ, и жнец его законно переиспользует: павшее тело
+    // освобождается безусловно (`arena.free@src/sub/engine.cpp`), ссылка
+    // активного тела протухает, и перехват получал `nullptr` — то есть
+    // НЕ СРАБАТЫВАЛ НИ РАЗУ. Игрок умирал, сюжетный узел не активировался,
+    // запись оставалась живой (её хранит гейт `deathIsStory` того же жнеца),
+    // значит и конца игры не было: сцена висела без тела.
+    //
+    // ПОЧЕМУ ЗАПИСЬ — ПРАВИЛЬНЫЙ НОСИТЕЛЬ ВОПРОСА: рана УЖЕ на ней (удар
+    // кладёт store-первой, `sub/record.h`), истина о живом всегда в макромире
+    // (ЗАКОН ШВА), и переживает она жнеца по построению. Тело же есть
+    // воплощение, и его исчезновение — зануление слота, причина не важна.
+    // Прежняя форма требовала, чтобы труп ДОЖДАЛСЯ кадра, — то есть покупала
+    // сюжет сроком жизни слота.
+    //
+    // ПОЧЕМУ ЭТО НЕ ВЕРНУЛО ИГРОКУ ОСОБЫЙ ПУТЬ: ветки по игроку здесь нет —
+    // гейт прежний и сценный («карман, чья строка объявила смерть сюжетом»),
+    // а `player_pools` есть дверь к записи ПОД ФЛАЖКОМ, кем бы она ни была
+    // (свой сквад, носимый лорд, носимый генерик).
     if (app.subworld.active() && app.subworld.in_dungeon()) {
         if (const char* storyNode = sm::sub::dungeon_kind_row(
                 app.subworld.dungeon_kind()).deathNode;
             storyNode != nullptr) {
-            sm::sub::SubObjects* sceneObjs = app.sceneObjects.get();
-            const int avatarSlot =
-                sceneObjs != nullptr ? sm::sub::avatar_slot(*sceneObjs) : -1;
-            const sm::ecs::Pools* bodyPools =
-                avatarSlot >= 0
-                    ? sm::sub::slot_pools_of(*sceneObjs, avatarSlot,
-                                             *app.macroStore)
-                    : nullptr;
-            if (bodyPools != nullptr && bodyPools->hp <= 0) {
+            const sm::ecs::Pools* rec =
+                app.macroStore ? sm::player_pools(app.gs, *app.macroStore)
+                               : nullptr;
+            if (rec != nullptr && rec->hp <= 0) {
                 end_scene_by_death(app, storyNode);
             }
         }
@@ -5203,7 +5216,12 @@ void draw_debug_panels(App& app) {
                         tags[ti++] = 'D';
                     if (sm::sub::slot_flag(*objs, s, sm::sub::kObjPlayerSoldier))
                         tags[ti++] = 'A';
-                    if (sm::sub::slot_flag(*objs, s, sm::sub::kObjTempHostile))
+                    // 'H' — ВРАЖДА СЦЕНЫ, и спрашивается она тем же ключом,
+                    // что бой: пара фракций, а не бит тела (M-422).
+                    if (const auto* k = sm::sub::slot_kind(*objs, s);
+                        objs->at_feud(sm::kPlayerFactionSlot,
+                                      k ? sm::FactionSlot(k->factionIdx)
+                                        : sm::kNoFactionSlot))
                         tags[ti++] = 'H';
                     tags[ti] = '\0';
                     ImGui::TextUnformatted(tags);
@@ -5270,7 +5288,16 @@ void draw_debug_panels(App& app) {
                 {"Sprite(col)",     maskCnt(sm::sub::kObjHasSprite)},
                 {"Dead(col)",       maskCnt(sm::sub::kObjDead)},
                 {"PlayerSoldier(col)", maskCnt(sm::sub::kObjPlayerSoldier)},
-                {"TempHostile(col)",   maskCnt(sm::sub::kObjTempHostile)},
+                // ВРАЖДА СЦЕНЫ — НЕ КОЛОНКА СЛОТА, А ОТНОШЕНИЕ НАРОДОВ
+                // (M-422), поэтому и счёт её — в народах, а не в телах:
+                // сколько фракций воюет с игроком в этой сцене.
+                {"FeudWithPlayer(factions)", [&arena] {
+                     std::size_t n = 0;
+                     for (int f = 0; f < sm::kMaxFactions; ++f) {
+                         if (arena.at_feud(sm::kPlayerFactionSlot, f)) ++n;
+                     }
+                     return n;
+                 }()},
             };
             if (ImGui::BeginTable("ecs", 2,
                                   ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {

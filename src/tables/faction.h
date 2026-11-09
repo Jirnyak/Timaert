@@ -76,10 +76,14 @@ static_assert(kRelationMin == -127 && kRelationMax == 127,
 inline constexpr int kHostileThreshold = -64;
 
 // THE friendship line, the other end of the same scale: at or above this a
-// faction is an ALLY — it cannot be provoked into a private grudge by a stray
-// hit (maybe_flip_temp_hostile), and the stance colours saturate to full
-// friend here. Lived as a private constant in engine.cpp while the hostile
-// line lived here; the two ends of one scale belong on one shelf.
+// faction is an ALLY, and the stance colours saturate to full friend here.
+// Lived as a private constant in engine.cpp while the hostile line lived
+// here; the two ends of one scale belong on one shelf.
+//
+// «СОЮЗНИКА СТРАЙФОМ НЕ ОБИДИШЬ» — ЭТОТ ЕГО СМЫСЛ УМЕР 2026-11-09 (M-422):
+// порог гейтил ПЕРСИСТЕНТНОЙ осью запись СЦЕНИЧЕСКОЙ вражды, то есть сращивал
+// две системы, которые вердикт владельца держит врозь. Вражда сцены прощения
+// не знает: ударил — воюешь до конца сцены, кем бы он тебе ни был.
 inline constexpr int kAllyRepThreshold = 32;
 
 // THE price of a kill the world holds against you (a life is a life, whoever

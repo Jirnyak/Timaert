@@ -1102,10 +1102,12 @@ inline int player_reputation(const GameState* gs, const char* factionId) {
 //   • the battle masks are its BAKED form — build_faction_masks applies the
 //     same threshold over the same matrix once per tick and hostility becomes
 //     a shift-and-AND (sub/movement.h);
-//   • the per-entity subworld door (hostile_to_player_entity) adds only
-//     SESSION state on top: the player's own side is never hostile, and a
-//     TempHostileToPlayer grudge overrides the matrix until the body dies or
-//     the scene ends;
+//   • the per-slot subworld door (hostile_to_player_slot) adds only SCENE
+//     state on top, and it adds it over the SAME faction pair: the player's own
+//     side is never hostile, and a scene FEUD (`feud@src/sub/objects.h`,
+//     M-422) overrides the matrix until the scene ends. Here stood a dead
+//     name (`hostile_to_player_entity`) and a dead carrier (a per-body
+//     TempHostileToPlayer bit that died with the BODY, not the scene);
 //   • the stance colours (player_stance) are its continuous projection for
 //     the eye — they may soften the answer, never contradict it.
 // Six hand-spelled `relation < threshold` comparisons converged here; the
