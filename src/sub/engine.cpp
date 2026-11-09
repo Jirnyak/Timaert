@@ -1631,7 +1631,17 @@ void SubworldEngine::mirror_bodies_from_record() {
     // бэклинка, у снаряда и пламени origin нулевой по alloc.
     for (int s = 0; s < int(kMaxSubObjects); ++s) {
         if ((objs->flags[std::size_t(s)] & sub::kObjAlive) == 0u) continue;
-        const MacroHandle originH = sub::slot_macro_origin(*objs, s);
+        // ЧЬИ ЭТО БАРЫ — СПРАШИВАЕТСЯ ДВЕРЬЮ ШВА, А НЕ БЭКЛИНКОМ НАПРЯМУЮ.
+        // Здесь стоял `slot_macro_origin`, и это был ВТОРОЙ ответ на вопрос,
+        // у которого уже есть дверь (`slot_macro_record@src/sub/record.h`,
+        // «РАСПИСКА СИЛЬНЕЕ ЗЕРКАЛА»): голова, несущая ТОЧКУ ВЕДЕНИЯ, бьётся
+        // СВОЕЙ строкой и зеркалом записи не живёт. До 7а разницы не было —
+        // тел с распиской И бэклинком не существовало; ломоть 7а их завёл, и
+        // расхождение стало НЕСУЩИМ: перенавешенная голова получала полосу
+        // НОКАУТИРОВАННОЙ личности (hp 0), умирала следующим тиком, точка
+        // съезжала на следующую — и перенавес, вместо спасения сквада,
+        // выкашивал его ростер по голове за тик.
+        const MacroHandle originH = sub::slot_macro_record(*objs, s, st);
         if (originH.id == 0) continue;
         // Зеркало — колонка арены (кусок 2); тело без баров (слот без
         // pools) зеркалом не живёт.
@@ -1660,11 +1670,19 @@ void SubworldEngine::report_player_damage() {
     // live on his squad», is gone with the selection it implemented (owner's
     // verdict 2026-09-12: выборка власти полос умирает).
     //
-    // THE STORE still matters for exactly one rule, stated below: dying inside
-    // a body you wear is your own death.
-    ecs::Pools* squadPools =
-        gs_ ? flag_pools(gs_, mw_.store) : nullptr;
-    if (!squadPools) return;
+    // ЗДЕСЬ СТОЯЛ ВТОРОЙ ПИСАТЕЛЬ СМЕРТИ ИГРОКА, И ОН СНЕСЕН (ломоть 7б
+    // M-421): пара строк `ecs::Pools* squadPools = flag_pools(...)` и
+    // `if (after <= 0) squadPools->hp = 0;` обнуляла полосу записи ПОД
+    // ФЛАЖКОМ, когда флажок и запись носимого тела разъехались, — то есть
+    // хоронила ЧУЖУЮ запись при живом её ростере. Своя шапка признавала это
+    // тождеством («for the hero the record IS the store and this line is an
+    // identity») — и тождество было ровно в том случае, где строка не нужна, а
+    // работала она в единственном, где врала: одержимость производного тела.
+    //
+    // Второго писателя больше нет вовсе: смерть тела судит ЖНЕЦ (одна дверь,
+    // один закон — перенавес или смерть пустого сквада), а конец игры —
+    // отсутствие сквадов под контролем (`keep_active_squad`). Здесь остался
+    // РОВНО фидбек: строка статуса, боевой лог и годмод.
     // Слот аватара — ОДИН раз ((ii-б)): ниже его же держал try_get ради
     // колонки lastHitBy, то есть функция уже брала слот, но позже четырёх
     // entity-дверей.
@@ -1706,11 +1724,6 @@ void SubworldEngine::report_player_damage() {
         // — a live-but-Dead player would be a zombie, silently excluded from
         // all incoming combat for the rest of the session.
         if (after > 0) sub::slot_flag_clear(objsHit, s, sub::kObjDead);
-        // If the body you inhabit dies, your consciousness dies with it — the
-        // game-over runs through the squad store exactly as it does for the
-        // hero. Needs no possession branch: for the hero the record IS the
-        // store and this line is an identity.
-        if (after <= 0) squadPools->hp = 0;
         if (after < before) {
             const int dmg = before - after;
             // Label + compass from the LastHit any incoming path (melee strike
@@ -4085,8 +4098,15 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
 // Голова ОСТАЁТСЯ головой: зеркало (бары/лист/стандинг) гейтится распиской в
 // record.h, бэклинк здесь несёт только ведение — его читают fold, пины
 // ростера и курс. O(кап арены) — цена СОБЫТИЯ смерти носителя, не тика.
-bool SubworldEngine::rehook_squad_point_(MacroHandle squad, int dyingSlot) {
-    if (objects_ == nullptr) return false;
+//
+// ВОЗВРАТ — СЛОТ НОВОГО НОСИТЕЛЯ, НЕ «ДА/НЕТ» (ломоть 7б), и это не удобство:
+// жнец обязан знать, КУДА переехала точка, потому что у сцены есть вторая
+// ссылка на то же тело — активное (`avatar`), и она адресует слот с ПОКОЛЕНИЕМ
+// (`is_avatar_slot` сверяет `id[slot] == avatar.id`). Жнец освобождает павший
+// слот, поколение сменится, и ссылка станет ВИСЯЧЕЙ — ввод перестал бы
+// адресовать кого-либо. Отказ — ОТРИЦАТЕЛЬНЫЙ СЛОТ: «сесть некуда».
+int SubworldEngine::rehook_squad_point_(MacroHandle squad, int dyingSlot) {
+    if (objects_ == nullptr) return -1;
     sub::SubObjects& arena = (*objects_);
     for (int s = 0; s < int(kMaxSubObjects); ++s) {
         if (s == dyingSlot) continue;
@@ -4099,13 +4119,28 @@ bool SubworldEngine::rehook_squad_point_(MacroHandle squad, int dyingSlot) {
         const auto* hp = sub::slot_pools(arena, s);
         if (hp == nullptr || hp->hp <= 0) continue;
         sub::slot_set_origin(arena, s, squad);
-        return true;
+        return s;
     }
-    return false;
+    return -1;
 }
 
 void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
     if (!objects_ || !gs_) return;
+    // СМЕРТЬ ЗДЕСЬ МОЖЕТ НЕ ЗНАЧИТЬ СМЕРТЬ, И ЭТО СТРОКА КАРМАНА, А НЕ ВЕТКА
+    // ПО ИГРОКУ: карман, несущий `deathNode@src/sub/dgn/dispatch.h`, объявляет
+    // смерть в себе СЮЖЕТОМ («nullptr = death is death» — его собственная
+    // шапка), и тогда павшее тело НЕ ХОРОНИТ СВОЮ ЗАПИСЬ: личность поднимет
+    // `end_scene_by_death@src/app/main.cpp`, а сквад не вправе оказаться
+    // мёртвым от события, которое карман смертью не считает.
+    //
+    // Гейта здесь не требовалось до ломтя 7б, и это не упущение прежнего
+    // автора: активное тело было вычеркнуто из жнеца целиком, а единственным
+    // телом с макро-записью в прологе был ровно игрок. Снос изъятия обнажил
+    // вопрос, и отвечает на него КОЛОНКА СТРОКИ (ЗАКОН СТРОКИ КАТАЛОГА) —
+    // ровно тот носитель, который сцена и так предъявляет наверх.
+    const bool deathIsStory =
+        sceneKind_ == SceneKind::Dungeon
+        && sub::dungeon_kind_row(dungeon_kind()).deathNode != nullptr;
     int deadCount = 0;
     // ЖНЕЦ НА ФЛАГАХ — свип арены (ломоть D): жертву находит БИТ kObjDead,
     // слот освобождает САМ ЖНЕЦ рукой arena.free — хук умер с ObjectSlot,
@@ -4118,11 +4153,15 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             const std::uint16_t f = arena.flags[std::size_t(s)];
             if ((f & sub::kObjAlive) == 0u) continue;
             if ((f & sub::kObjDead) == 0u) continue;
-            // The player is a combat entity but never a corpse: its death is
-            // a game-over read off THE RECORD (report_player_damage — the
-            // record's hp at 0 -> AppState::Dead), not a loot/XP/removal
-            // event; the body is reset on the next subworld enter().
-            if (arena.is_avatar_slot(s)) continue;
+            // ЗДЕСЬ СТОЯЛО ИЗЪЯТИЕ АКТИВНОГО ТЕЛА ИЗ ЖНЕЦА — «игрок боевая
+            // сущность, но никогда труп», — И ОНО СНЕСЕНО (ломоть 7б M-421,
+            // вердикт владельца: игрок «как все»). Оно и было причиной того,
+            // что названный владельцем ПЕРЕНАВЕС за игрока не звался НИ РАЗУ:
+            // слот вычёркивался ДО точки работы `rehook_squad_point_`, то есть
+            // ноль перенавесов, ноль `macro_mark_dead`, ноль факта смерти.
+            // Смерть активного тела судится ТЕМ ЖЕ законом, что смерть любого
+            // носителя точки: пал носитель — точка села на живую голову; сесть
+            // некуда — сквад мёртв (ЗАКОН ТОЧКИ).
             if (deadCount >= kMaxSubworldDeathsPerStep) break;
             dead[std::size_t(deadCount++)] = s;
         }
@@ -4167,7 +4206,8 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // for (problems.md 19.13). The reaper above is the ONE place that
             // knows a body has died, so this is the only place that can be.
             if (const MacroHandle reaped = sub::slot_macro_origin(arena, ds);
-                reaped.id != 0 && mw_.store->valid(reaped)) {
+                !deathIsStory && reaped.id != 0
+                && mw_.store->valid(reaped)) {
                 MacroStore& st = (*mw_.store);
                 // ПАЛА ЛИЧНОСТЬ ИЛИ ГОЛОВА-НОСИТЕЛЬ ТОЧКИ? Различает та же
                 // расписка, какой record.h гейтит зеркало: голова вела бар
@@ -4187,8 +4227,19 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 // движет сквад осмысленно». Прежний закон «смерть одного
                 // tracked-тела = смерть сквада при живом стоящем ростере»
                 // умер этим блоком (bugs.md Б10).
-                const bool rehooked = rehook_squad_point_(reaped, ds);
-                if (!rehooked && (mh == nullptr || mh->hp <= 0)) {
+                const int rehookedSlot = rehook_squad_point_(reaped, ds);
+                // КАМЕРА ЕДЕТ ЗА ТОЧКОЙ (ломоть 7б M-421; единственное НОВОЕ
+                // поведение, которого у перенавеса не было): у сцены две
+                // ссылки на павшее тело — бэклинк ведения и АКТИВНОЕ тело, —
+                // и вторую `slot_set_origin` не трогает. Жнец освободит слот
+                // ниже, поколение сменится, и ссылка станет висячей; значит
+                // перенавес обязан переставить её ТОЙ ЖЕ дверью, которой сцена
+                // держит активное тело. Гейт — «павший БЫЛ активным»: точка
+                // НПЦ-сквада камеры не касается.
+                if (rehookedSlot >= 0 && arena.is_avatar_slot(ds)) {
+                    sub::set_avatar_slot(arena, rehookedSlot);
+                }
+                if (rehookedSlot < 0 && (mh == nullptr || mh->hp <= 0)) {
                     macro_mark_dead(st, reaped);
                     // …and his men stop being a squad the moment the LAST of
                     // them falls (CANON S4: survivors to the deserter pool) —

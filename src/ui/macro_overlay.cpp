@@ -407,8 +407,12 @@ void draw_macro_overlay(const MacroWorld& mw,
         for (std::uint32_t s32 = 0; s32 < kUnifiedCap; ++s32) {
             const std::uint16_t slot = std::uint16_t(s32);
             if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
-            if (slot == flagSlot || st.playerFlag[slot].home != 0)
-                continue;
+            // ПРОПУСКАЕТСЯ РОВНО АКТИВНЫЙ (ломоть 7б M-421): здесь стоял
+            // ВТОРОЙ гейт — бит `.home`, «это ЕГО запись», — и он скрывал с
+            // карты все прочие сквады под контролем игрока. Их теперь может
+            // быть несколько (вердикт владельца: «у игрока может быть
+            // несколько сквадов под контролем»), и они рисуются как всякие.
+            if (slot == flagSlot) continue;
             const SquadType type = SquadType(st.runtime[slot].squadType);
             const SquadKindRow& row = squad_kind(type);
             const ArchetypeDrawRow& grp = archetype_draw(squad_archetype(type));
@@ -820,7 +824,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
         squads_in_frame(*mw.squads, st, px, py, 1,
                         [&](std::uint16_t slot, int dx, int dy) {
             if (st.alive[slot] == 0 || st.dead[slot] != 0) return;
-            if (slot == flagSlot || st.playerFlag[slot].home != 0) return;
+            if (slot == flagSlot) return;   // строка АКТИВНОГО — не ряд списка
             push_row(handle_at(st, slot), dx, dy);
         });
 

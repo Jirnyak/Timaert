@@ -68,6 +68,16 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
     if (!st.valid(home) || st.playerFlag[home.slot].home == 0) {
         home = find_player_home_column(st);
     }
+    // РОЖДЕНИЕ ГАТИТСЯ ОТСУТСТВИЕМ СКВАДОВ ПОД КОНТРОЛЕМ, А НЕ БИТОМ ДОМА
+    // (ломоть 7б M-421). Эта дверь зовётся КАЖДЫМ макро-тиком вне субмира
+    // (`src/app/main.cpp`), поэтому гейт по биту дома был ТИХИМ
+    // ВОСКРЕШЕНИЕМ, ждавшим своего случая: пока бит держала щада свипа, слот
+    // не сносился и ветка не достигалась; ломоть 7б щаду снёс, и у игрока с
+    // ДВУМЯ сквадами под контролем снос первого рождал бы ему второго
+    // молча. Фракция отвечает на тот же вопрос честно, а конец игры (ноль
+    // под контролем) до этой двери не доходит вовсе — мир при `Dead` не
+    // тикает.
+    if (home.id == 0 && eldest_controlled_squad(st).id != 0) return;
     if (home.id == 0) {
         // THE spawn cell, derived from the world itself (подпосадка 4 — no
         // position scalar exists to seed from): the realm's first city, the
@@ -190,6 +200,38 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
     // (`refresh_squad_body@src/bus/squad_sheet.h` и её звонящие), поэтому
     // страховать нечего: место, где анкета изменилась, и место, где она
     // пересчитана, — одно и то же место.
+}
+
+MacroHandle eldest_controlled_squad(const MacroStore& st) {
+    // Проход по КАПУ, а не по ведомости живых: ведомости живых в мире нет, а
+    // заводить её ради одного звонка в тик значило бы хранить тотал разрядом Б.
+    MacroHandle eldest{};
+    std::uint32_t eldestOrd = 0;
+    for (std::size_t s = 0; s < kUnifiedCap; ++s) {
+        // «ЖИВ» ЕСТЬ ЗАНЯТЫЙ СЛОТ БЕЗ БАЙТА СУДЬБЫ — те же два байта, какими
+        // живость сквада судят все свипы мира (store.h: «dead — БАЙТ СУДЬБЫ,
+        // не занятость слота»).
+        if (st.alive[s] == 0 || st.dead[s] != 0) continue;
+        if (int(st.kind[s].factionIdx) != kPlayerFactionSlot) continue;
+        const std::uint32_t ord = st.spawnId[s].index;
+        if (eldest.id == 0 || ord < eldestOrd) {
+            eldest = handle_at(st, std::uint16_t(s));
+            eldestOrd = ord;
+        }
+    }
+    return eldest;
+}
+
+bool keep_active_squad(GameState& gs, MacroStore& st) {
+    const MacroHandle active = player_flag_handle(gs);
+    // `macro_dead` отвечает «мёртв» и на протухший хэндл (fail-closed пара
+    // store.h), то есть оба повода переключения — исчезнувший слот и байт
+    // судьбы — спрашиваются ОДНИМ вопросом.
+    if (!macro_dead(st, active)) return true;
+    const MacroHandle next = eldest_controlled_squad(st);
+    if (next.id == 0) return false;
+    transfer_player_flag(st, gs.playerFlagRef, next);
+    return true;
 }
 
 bool wake_player_in_original_body(GameState& gs, MacroStore& st) {

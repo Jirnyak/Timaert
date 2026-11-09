@@ -1644,9 +1644,12 @@ namespace sm::ui
         // судит числа, а тут не сдвинулось ни одно). Дверь смерти одна —
         // `macro_dead@src/bus/store.h` над колонкой `dead`; HP есть ЦИФРА
         // тела, и спрашивать её о жизни значит предполагать род субъекта.
+        // «САМ НА СЕБЯ ПАНЕЛЬ НЕ ОТКРЫВАЕТ» — это АКТИВНЫЙ, а не бит `.home`
+        // (ломоть 7б M-421): прочие сквады под контролем игрока — обычные
+        // собеседники, и панель о них законна.
         const bool alive = st.valid(subject)
             && !macro_dead(st, subject)
-            && st.playerFlag[subject.slot].home == 0;
+            && !(subject == player_flag_handle(gs));
         if (!alive)
         {
             *open = false;

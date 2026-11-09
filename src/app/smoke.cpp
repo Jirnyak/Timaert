@@ -8410,76 +8410,149 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 return sm::MacroHandle{};
             };
 
-            // ── ПОЛОВИНА 1: оригинал ЖИВ ⇒ очнулся дома, игра идёт ──────
+            // УБИЙСТВО ТЕЛА ИДЁТ ДВЕРЬЮ УДАРА, А НЕ ЗАПИСЬЮ В ПОЛОСУ (ломоть
+            // 7б). Здесь стояло `player_pools(app).hp = 0` — прямая запись в
+            // ЗАПИСЬ, и её хватало ровно потому, что гейт конца игры читал
+            // полосу. Гейт теперь читает ФРАКЦИЮ, значит свидетелю нужен не
+            // ноль в полосе, а настоящая СМЕРТЬ ТЕЛА: только она поднимает
+            // `kObjDead`, только её видит жнец, и только жнец перенавешивает
+            // точку. Тот же довод, что у `macro_kill_writeback`: спрашивай то,
+            // что спрашивает механизм.
+            auto kill_the_active_body = [&]() -> int {
+                sm::sub::SubObjects& arena = *app.sceneObjects;
+                const int s = sm::sub::avatar_slot(arena);
+                if (s < 0) return -1;
+                sm::sub::apply_lethal_damage(arena, app.macroStore.get(), s,
+                                             sm::sub::DamageSource{},
+                                             sm::sub::DamageKind::Script);
+                return s;
+            };
+            // Два кадра на фазу: удар поднимает бит, а хоронит ЖНЕЦ — он
+            // тикает движком, не этой строкой (тот же порядок, что у
+            // `macro_kill_writeback`: «let the reaper run»).
+            auto let_the_reaper_run = [&]() {
+                smoke_clear_modal_overlays(app);
+                sm::app::advance_sim_seconds(app, 0.016f, false);
+                sm::app::advance_sim_seconds(app, 0.016f, false);
+            };
+
+            // ── ФАЗА A: ПАЛ НОСИТЕЛЬ ТОЧКИ ПРИ ЖИВОМ РОСТЕРЕ ⇒ ПЕРЕНАВЕС ──
             // Предусловие РОЖДЕНО, а не найдено, поэтому его отсутствие —
             // сломанный ФАКТ (считается, краснеет адресно, прогон живёт), а не
             // мёртвое предусловие, гасящее сценарий (AGENTS §8 п.11).
             SMOKE_CHECK(app, birth_a_neighbour_and_enter(),
                         "рождённый сосед даёт сцену, в которую можно войти");
             if (!app.subworld.active()) break;
-            const sm::MacroHandle home = sm::player_squad_handle(app.gs);
-            const bool homeLive = app.macroStore->valid(home);
+            // «КЕМ Я БЫЛ ДО ВСЕЛЕНИЯ» — ЯКОРЬ, И ОН НЕЗАВИСИМ ОТ ДВЕРИ ПОД
+            // ПРОВЕРКОЙ: спрашивается флажок ДО взятия чужого тела, а не
+            // `eldest_controlled_squad`, иначе ожидание фазы B считалось бы
+            // той же функцией, которую она судит (§8 п.6).
+            const sm::MacroHandle own = sm::player_flag_handle(app.gs);
+            const bool ownLive = app.macroStore->valid(own);
             sm::MacroHandle worn = take_a_projected_body();
-            SMOKE_CHECK(app, worn.id != 0 && homeLive,
+            SMOKE_CHECK(app, worn.id != 0 && ownLive,
                         "в сцене есть живое чужое тело с записью — его и берут");
-            if (worn.id == 0 || !homeLive) break;
-            // Где стоит ТВОЁ тело — оно всё это время стоит без сознания там,
-            // где ты его оставил, и проснуться ты обязан именно там.
-            const int homeX = int(sm::ecs::cell_x(
-                app.macroStore->cell[home.slot], app.gs.mapW));
-            const int homeY = int(sm::ecs::cell_y(
-                app.macroStore->cell[home.slot], app.gs.mapW));
+            if (worn.id == 0 || !ownLive) break;
+            // Где стоит ТВОЙ сквад — он всё это время стоит там, где ты его
+            // оставил, и вернуться ты обязан именно туда.
+            const int ownX = int(sm::ecs::cell_x(
+                app.macroStore->cell[own.slot], app.gs.mapW));
+            const int ownY = int(sm::ecs::cell_y(
+                app.macroStore->cell[own.slot], app.gs.mapW));
 
-            smoke_clear_modal_overlays(app);
-            player_pools(app).hp = 0;      // ← убить ТОГО, КЕМ Я ЕСТЬ
-            sm::app::advance_sim_seconds(app, 0.016f, false);
+            const int carrierSlot = kill_the_active_body();
+            SMOKE_CHECK(app, carrierSlot >= 0,
+                        "у сцены есть активное тело, которое можно убить");
+            if (carrierSlot < 0) break;
+            let_the_reaper_run();
 
-            const bool alive      = app.state == sm::ui::AppState::Playing;
-            const bool wokeHome   = sm::player_flag_handle(app.gs) == home;
-            const bool sceneEnded = !app.subworld.active();
-            const bool atOwnCell  = int(smoke_player_x(app)) == homeX
-                                 && int(smoke_player_y(app)) == homeY;
+            const bool aliveA   = app.state == sm::ui::AppState::Playing;
+            const bool stayedOn = sm::player_flag_handle(app.gs) == worn;
+            const bool sceneUpA = app.subworld.active();
+            const bool wornLive = app.macroStore->valid(worn)
+                               && !sm::macro_dead(*app.macroStore, worn);
+            const int  heirSlot = app.subworld.active()
+                                ? sm::sub::avatar_slot(*app.sceneObjects) : -1;
+            const bool rehooked = heirSlot >= 0 && heirSlot != carrierSlot;
             std::fprintf(stderr,
-                         "[smoke] possessed_death return alive=%d woke_home=%d "
-                         "scene_ended=%d at_own_cell=%d cell=%d,%d\n",
-                         alive ? 1 : 0, wokeHome ? 1 : 0, sceneEnded ? 1 : 0,
-                         atOwnCell ? 1 : 0, homeX, homeY);
+                         "[smoke] possessed_death rehook alive=%d stayed_on=%d "
+                         "scene_up=%d worn_live=%d carrier=%d heir=%d\n",
+                         aliveA ? 1 : 0, stayedOn ? 1 : 0, sceneUpA ? 1 : 0,
+                         wornLive ? 1 : 0, carrierSlot, heirSlot);
             std::fflush(stderr);
-            if (!alive || !wokeHome || !sceneEnded || !atOwnCell) {
-                smoke_fail(app, "possessed_death: a living original was not woken up in");
+            // ЗАКОН ЗДЕСЬ — «ИГРОК КАК ВСЕ» (ЗАКОН ТОЧКИ, вердикт владельца
+            // 2026-11-09): смерть тела при живом ростере не кончает ни игру,
+            // ни сцену и НЕ возвращает домой — точка садится на живую голову,
+            // и камера едет за ней. Красным здесь был бы ОТМЕНЁННЫЙ закон
+            // «смерть носимого тела = пробуждение в оригинале».
+            if (!aliveA || !stayedOn || !sceneUpA || !wornLive || !rehooked) {
+                smoke_fail(app, "possessed_death: the point did not re-hook — "
+                                "a body's death still ended the possession");
                 break;
             }
 
-            // ── ПОЛОВИНА 2: оригинал МЁРТВ ⇒ гейм овер ──────────────────
-            // Тот же сценарий, отличается ОДНО число — полоса оставленного
-            // тела. Без этой половины первая доказывала бы лишь «смерть в
-            // одержимости не убивает», что неверно.
-            SMOKE_CHECK(app, birth_a_neighbour_and_enter(),
-                        "вторая половина рождает себе СВОЕГО соседа — носитель "
-                        "первой половины уже мёртв");
-            if (!app.subworld.active()) break;
-            worn = take_a_projected_body();
-            SMOKE_CHECK(app, worn.id != 0,
-                        "у второй половины есть своё живое тело с записью");
-            if (worn.id == 0) break;
-            // Пока тебя нет, твоё тело убивают. Ты этого не замечаешь — дверь
-            // смерти спрашивает про ТЕБЯ, а ты сейчас лорд.
-            app.macroStore->pools[home.slot].hp = 0.0f;
-            smoke_clear_modal_overlays(app);
-            sm::app::advance_sim_seconds(app, 0.016f, false);
-            const bool survivedHomeDeath = app.state == sm::ui::AppState::Playing;
+            // ── ФАЗА B: ДОБИТЬ ПОСЛЕДНЮЮ ГОЛОВУ ⇒ НОСИМЫЙ СКВАД МЁРТВ ⇒
+            //            АКТИВНЫМ СТАНОВИТСЯ ТОТ, КЕМ Я БЫЛ ──────────────
+            // Рождённый сосед несёт РОВНО ОДНУ голову (`smoke_birth_squad_at_
+            // player`), поэтому второй смерти хватает: сесть точке больше
+            // некуда, и сквад умирает ПУСТЫМ — единственная смерть, которую
+            // ЗАКОН ТОЧКИ знает. Возврат из вселения тем самым идёт ТОЙ ЖЕ
+            // дверью переключения активного, а не своей «очнуться дома».
+            SMOKE_CHECK(app, kill_the_active_body() >= 0,
+                        "перенавешенная голова — тоже тело, и её можно убить");
+            let_the_reaper_run();
+            const bool aliveB     = app.state == sm::ui::AppState::Playing;
+            const bool wornDead   = !app.macroStore->valid(worn)
+                                 || sm::macro_dead(*app.macroStore, worn);
+            const bool backToOwn  = sm::player_flag_handle(app.gs) == own;
+            const bool sceneEnded = !app.subworld.active();
+            const bool atOwnCell  = int(smoke_player_x(app)) == ownX
+                                 && int(smoke_player_y(app)) == ownY;
+            std::fprintf(stderr,
+                         "[smoke] possessed_death empty alive=%d worn_dead=%d "
+                         "back_to_own=%d scene_ended=%d at_own_cell=%d "
+                         "cell=%d,%d\n",
+                         aliveB ? 1 : 0, wornDead ? 1 : 0, backToOwn ? 1 : 0,
+                         sceneEnded ? 1 : 0, atOwnCell ? 1 : 0, ownX, ownY);
+            std::fflush(stderr);
+            if (!aliveB || !wornDead || !backToOwn || !sceneEnded
+                || !atOwnCell) {
+                smoke_fail(app, "possessed_death: an emptied worn squad did "
+                                "not hand control back to the player's own");
+                break;
+            }
 
-            // …и теперь умирает носимое тело. Возвращаться не во что.
-            player_pools(app).hp = 0;
+            // ── ФАЗА C: ПОД КОНТРОЛЕМ НИКОГО ⇒ КОНЕЦ ИГРЫ ─────────────────
+            // И это ЕДИНСТВЕННОЕ условие конца (вердикт владельца: «чисто одно
+            // агностично условие есть ли сквады под контролем игрока хоть
+            // один»). Фракция помечается мёртвой ПРОХОДОМ ХАРНЕССА по капу, а
+            // не дверью `eldest_controlled_squad`: ожидание, посчитанное той
+            // же функцией, которую оно судит, проверяет умение копировать
+            // (§8 п.5/п.6). Дверь смерти записи — та же, что у жнеца.
+            {
+                sm::MacroStore& st = *app.macroStore;
+                int marked = 0;
+                for (std::size_t s = 0; s < sm::kUnifiedCap; ++s) {
+                    if (st.alive[s] == 0 || st.dead[s] != 0) continue;
+                    if (int(st.kind[s].factionIdx) != sm::kPlayerFactionSlot)
+                        continue;
+                    sm::macro_mark_dead(st, sm::handle_at(st,
+                                                          std::uint16_t(s)));
+                    ++marked;
+                }
+                SMOKE_CHECK(app, marked > 0,
+                            "у игрока был хоть один сквад под контролем — "
+                            "иначе фаза C судила бы пустоту");
+            }
             sm::app::advance_sim_seconds(app, 0.016f, false);
             const bool gameOver = app.state == sm::ui::AppState::Dead;
             std::fprintf(stderr,
-                         "[smoke] possessed_death no_address survived_home_death=%d "
-                         "game_over=%d\n",
-                         survivedHomeDeath ? 1 : 0, gameOver ? 1 : 0);
+                         "[smoke] possessed_death no_control game_over=%d\n",
+                         gameOver ? 1 : 0);
             std::fflush(stderr);
-            if (!survivedHomeDeath || !gameOver) {
-                smoke_fail(app, "possessed_death: a dead original did not end the game");
+            if (!gameOver) {
+                smoke_fail(app, "possessed_death: a player faction with no "
+                                "living squads did not end the game");
                 break;
             }
             ++app.smoke.cursor;

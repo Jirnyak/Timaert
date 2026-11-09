@@ -439,7 +439,11 @@ inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
     for (std::uint32_t i = 0; i < st.deadRowCount; ++i) {
         const std::uint16_t slot = st.deadRows[i];
         if (st.alive[slot] == 0 || st.dead[slot] == 0) continue;
-        if (st.playerFlag[slot].home != 0) continue;
+        // ЩАДА РОДНОЙ ЗАПИСИ ИГРОКА (`playerFlag.home`) СНЕСЕНА ломтём 7б
+        // M-421 — она держала его вне машинерии смерти. Щада АКТИВНОГО
+        // остаётся, и у неё ДРУГОЙ предмет: его запись читают ввод и панели
+        // ЭТИМ ЖЕ кадром, а дверь переключения активного (`keep_active_squad`)
+        // снимет флажок с мертвеца раньше, чем он тут понадобится.
         if (flagLive && slot == flag.slot) continue;
         if (cell_is_leased(gs, st.cell[slot].idx)) continue;
         snapshot.push_back({st.spawnId[slot].index, slot});

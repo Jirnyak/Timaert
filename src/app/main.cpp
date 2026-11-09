@@ -900,7 +900,7 @@ void detect_forced_encounter(App& app) {
             if (found.id != 0) return;
             if (dxCell != 0 || dyCell != 0) return;   // встреча = ОДНА клетка
             if (st.alive[slot] == 0 || st.dead[slot] != 0) return;
-            if (slot == flagSlot || st.playerFlag[slot].home != 0) return;
+            if (slot == flagSlot) return;   // себя не встречаешь — АКТИВНОГО
             if (sm::handle_at(st, slot) == app.encounterGraceNpc) return;
             // ТЕЛО МЕСТА — НЕ ВСТРЕЧНЫЙ СКВАД (ось рода, M-90 шаг 5): шаг
             // на клетку шпиля не есть бой с его телом; осаду построит свой
@@ -3711,77 +3711,57 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // engine files into the very macro cell he stands in.
     sm::player_journal_capture(app.gs, *app.macroStore);
     tick_subworld_hit_flash(app, dt);
-    // The bar that says «я умер» belongs to the body he is STANDING IN — its
-    // record's, through the mirror door: his own squad as himself, the lord's
-    // while he wears one, and a borrowed DERIVED body's own block, which no
-    // macro door can see because possession of a nobody never moves the macro
-    // flag (закон шва, 2026-09-17). Off-scene the flag record answers, as
-    // always. The REAL pools only: the scratch fallback is all zeros, and a
-    // frame before the squad entity exists must not read as a death.
-    const sm::ecs::Pools* deathPools = nullptr;
-    int avatarSlot = -1;
-    sm::sub::SubObjects* sceneObjs = nullptr;
-    if (app.subworld.active()) {
-        sceneObjs = app.sceneObjects.get();
-        if (sceneObjs != nullptr) {
-            avatarSlot = sm::sub::avatar_slot(*sceneObjs);
-            if (avatarSlot >= 0) {
-                deathPools = sm::sub::slot_pools_of(*sceneObjs, avatarSlot,
-                                                    *app.macroStore);
+    // ── СМЕРТЬ В КАРМАНЕ, КОТОРЫЙ САМ ГОВОРИТ, ЧТО ОНА ЗНАЧИТ ─────────────
+    // Строка рода кармана несёт узел, который смерть здесь АКТИВИРУЕТ вместо
+    // конца игры (`deathNode@src/sub/dgn/dispatch.h`; nullptr — везде, кроме
+    // пролога), и вопрос у неё СЦЕННЫЙ: «пало ли тело, в котором я стою», а
+    // не «что осталось у игрока». Бары берутся у ЗАПИСИ активного тела дверью
+    // зеркала: его собственного сквада как собой, лорда — пока он его носит,
+    // и собственного блока носимого ГЕНЕРИКА, которого не видит ни одна
+    // макро-дверь (закон шва, 2026-09-17). Рана УЖЕ на записи — её положил
+    // удар (`sub/record.h`), поэтому спрашивать нечего, кроме полосы.
+    if (app.subworld.active() && app.subworld.in_dungeon()) {
+        if (const char* storyNode = sm::sub::dungeon_kind_row(
+                app.subworld.dungeon_kind()).deathNode;
+            storyNode != nullptr) {
+            sm::sub::SubObjects* sceneObjs = app.sceneObjects.get();
+            const int avatarSlot =
+                sceneObjs != nullptr ? sm::sub::avatar_slot(*sceneObjs) : -1;
+            const sm::ecs::Pools* bodyPools =
+                avatarSlot >= 0
+                    ? sm::sub::slot_pools_of(*sceneObjs, avatarSlot,
+                                             *app.macroStore)
+                    : nullptr;
+            if (bodyPools != nullptr && bodyPools->hp <= 0) {
+                end_scene_by_death(app, storyNode);
             }
         }
     }
-    if (!deathPools) deathPools = sm::player_pools(app.gs, *app.macroStore);
-    if (const sm::ecs::Pools* pools = deathPools;
-        pools && pools->hp <= 0) {
-        // Death is the end of the game — that is the law (CANON S17) — and a
-        // PLACE may say otherwise about itself: the pocket's own kind row
-        // carries the story node dying there activates (dgn/dispatch
-        // deathNode; nullptr for everywhere else, which is everywhere but
-        // the prologue). Read off the SCENE, not off the player: ANY death
-        // there — blade, fall, anything — hands the body to that story, and
-        // the damage door and the game-over path stay untouched.
-        const char* storyNode =
-            sm::sub::dungeon_kind_row(app.subworld.dungeon_kind()).deathNode;
-        // «Чужое» спрашивается у СЦЕНЫ, когда она есть: носимый лорд И
-        // носимый генерик — оба «запись тела ≠ мой оригинал», хотя у генерика
-        // макро-флаг никуда не переезжал и player_wears_another_body молчит.
-        const sm::MacroHandle homeH = sm::player_squad_handle(app.gs);
-        const bool homeLive = app.macroStore->valid(homeH);
-        const bool foreignBody =
-            avatarSlot >= 0
-                ? (!homeLive
-                   || sm::sub::slot_macro_record(*sceneObjs, avatarSlot,
-                                                 *app.macroStore) != homeH)
-                : sm::player_wears_another_body(app.gs);
-        if (app.subworld.in_dungeon() && storyNode != nullptr) {
-            end_scene_by_death(app, storyNode);
-        } else if (foreignBody) {
-            // Умерло НОСИМОЕ тело, не ты. Одержимость — эффект, и его
-            // единственное отличие от голого переноса флажка в том, что смерть
-            // возвращает в оригинал (владелец 2026-09-14).
-            //
-            // Выйти из сцены надо ПОКА ФЛАЖОК ЕЩЁ НА МЕРТВЕЦЕ: leave() сносит
-            // центр окна на держателя флага, и забрать этот снос должен тот,
-            // кто сюда пришёл ногами, — а твоё тело всё это время стояло там,
-            // где ты его оставил, и приезжать ему сюда незачем.
-            if (app.subworld.active()) app.subworld.leave(true);
-            sm::wake_player_in_original_body(app.gs, *app.macroStore);
-            // Жив ⇔ флажок стоит ДОМА на живом оригинале: смерть лорда
-            // разбудила (флажок переехал), смерть генерика не двигала флажок
-            // вовсе — а мёртвый оригинал это «просыпаться не в чем», гейм
-            // овер (владелец 2026-09-14).
-            const bool homeAlive = homeLive
-                && app.macroStore->pools[homeH.slot].hp > 0
-                && app.macroStore->dead[homeH.slot] == 0;
-            const bool flagHome =
-                app.gs.playerFlagRef == app.gs.playerSquadRef;
-            if (!(flagHome && homeAlive)) {
-                app.state = sm::ui::AppState::Dead;
-            }
-        } else {
-            app.state = sm::ui::AppState::Dead;
-        }
+    // ── КОНЕЦ ИГРЫ ЕСТЬ ОТСУТСТВИЕ СКВАДОВ ПОД КОНТРОЛЕМ, А НЕ СМЕРТЬ ТЕЛА ─
+    // (ломоть 7б M-421; вердикты владельца 2026-11-09 — дословно в ряду.)
+    //
+    // ЗДЕСЬ СТОЯЛ ГЕЙТ ПО ТЕЛУ, И ОН СНЕСЕН ЦЕЛИКОМ: `pools->hp <= 0` у записи
+    // под флажком, три ветки («я умер в себе» · «я умер в чужом теле» ·
+    // карман), ДВА писателя `AppState::Dead` и ручное сравнение двух
+    // кэшей-хэндлов. Пустоту контейнера он не спрашивал НИ РАЗУ — то есть
+    // игрок умирал ТЕЛОМ, когда весь остальной мир умирал только ПУСТЫМ
+    // (ЗАКОН ТОЧКИ), и это было последнее место, где он был особенным.
+    //
+    // Вопросов теперь два, и они РАЗНЫЕ: «кто ведётся» отвечает дверь
+    // переключения активного (она же возврат из вселения), «жива ли игра» —
+    // её отказ. Ноль живых сквадов фракции игрока и есть конец.
+    //
+    // ПОДЪЁМ ИДЁТ ДО ПЕРЕКЛЮЧЕНИЯ, И ПОРЯДОК ЗДЕСЬ НЕ ВКУС: сцена есть окно
+    // 3×3 вокруг АКТИВНОГО сквада, а `leave()` сносит центр окна на держателя
+    // флажка. Забрать этот снос должен тот, кто пришёл сюда ногами, — новый
+    // активный всё это время стоял там, где стоял, и приезжать ему сюда
+    // незачем.
+    if (sm::macro_dead(*app.macroStore, sm::player_flag_handle(app.gs))
+        && app.subworld.active()) {
+        app.subworld.leave(true);
+    }
+    if (!sm::keep_active_squad(app.gs, *app.macroStore)) {
+        app.state = sm::ui::AppState::Dead;
     }
     return stats;
 }
@@ -5721,7 +5701,7 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
     for (std::uint32_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
         const std::uint16_t slot = std::uint16_t(s32);
         if (st.alive[slot] == 0 || st.dead[slot] != 0) continue;
-        if (slot == flagSlot || st.playerFlag[slot].home != 0)
+        if (slot == flagSlot)
             continue;
         // ТРЕЙС СМОТРИТ НА ТЕХ, КОГО КАРТА РИСУЕТ ФИГУРКОЙ, И СПРАШИВАЕТ ОБ
         // ЭТОМ ТУ ЖЕ КОЛОНКУ, ЧТО САМ ПРОХОД (`pictureFromBody` строки группы,
