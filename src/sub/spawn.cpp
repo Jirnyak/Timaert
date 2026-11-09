@@ -663,8 +663,7 @@ int spawn_derived_body(SubObjects& objs, const BodySpec& body,
 // subworld_spawn_parity_test, живой контроль контрабандой.)
 
 int spawn_tracked_body(SubObjects& objs, MacroStore& st, MacroHandle macro,
-                       float x, float y, std::uint32_t seed,
-                       bool combatant) {
+                       float x, float y, std::uint32_t seed) {
     // ЗАПИСЬ ЕСТЬ СЛОТ STORE, и другой формы больше нет (шаг 2 1е):
     // идентичность — хэндл, протухший хэндл честно отказывает.
     if (!st.valid(macro)) return -1;
@@ -692,7 +691,9 @@ int spawn_tracked_body(SubObjects& objs, MacroStore& st, MacroHandle macro,
     body.faction   = kind.factionIdx;
     body.level     = clamp_to_ladder(squad_level(st, macro.slot));
     body.seed      = seed;
-    body.combatant = combatant;
+    // `combatant` НЕ ВЫСТАВЛЯЕТСЯ: стойку аватара называет колонка поведения
+    // его строки через `subworld_ai_for` (шапка двери в spawn.h) — второго
+    // мнения о себе у тела с записью нет ни в одном поле.
     // HIMSELF, not a namesake: the record the macro layer keeps (owned by a
     // named lord, derived identically for a transient one) through the one
     // door that answers that question for anybody.
@@ -1642,8 +1643,7 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
         if (conscious) {
             const int avatarSlot =
                 spawn_tracked_body(objs, st, macro, fx, fy,
-                                   seed ^ salt ^ 0x5D0F11u,
-                                   /*combatant*/false);
+                                   seed ^ salt ^ 0x5D0F11u);
             if (avatarSlot < 0) {
                 continue;   // not a body-shaped macro entity; nothing created
             }

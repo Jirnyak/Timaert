@@ -230,8 +230,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
 
     const int slot =
         sub::spawn_tracked_body(arena, *worldStore_, macro,
-                                40.0f, 41.0f, 777u,
-                                /*combatant*/true);
+                                40.0f, 41.0f, 777u);
     CHECK_OR_RETURN(slot >= 0,
                     "a body-shaped macro entity can be embodied");
 
@@ -304,7 +303,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
         /*hp*/9.0f, /*maxHp*/9.0f);
     const int wholeSlot =
         sub::spawn_tracked_body(arena, *worldStore_, whole,
-                                60.0f, 61.0f, 778u, true);
+                                60.0f, 61.0f, 778u);
     CHECK_OR_RETURN(wholeSlot >= 0, "the control body was embodied");
     {
         const auto& h = (*sm::sub::slot_pools(arena, wholeSlot));
@@ -326,7 +325,7 @@ void test_a_body_that_is_not_an_entity_is_refused() {
     // (Кластер 7: «полу-запись» невыразима — записью адресует только
     // хэндл, и не-запись есть невалидный хэндл; отказ ниже покрывает оба.)
     CHECK(sub::spawn_tracked_body(arena, *worldStore_, sm::MacroHandle{},
-                                  5.0f, 5.0f, 1u, false)
+                                  5.0f, 5.0f, 1u)
               < 0,
           "nothing embodies nothing");
 
@@ -339,7 +338,7 @@ void test_a_body_that_is_not_an_entity_is_refused() {
         /*hp*/10, /*maxHp*/10);
     worldStore_->kind[monster.slot].type = std::uint16_t(0x103);
     CHECK(sub::spawn_tracked_body(arena, *worldStore_, monster,
-                                  5.0f, 5.0f, 1u, false)
+                                  5.0f, 5.0f, 1u)
               < 0,
           "a monster id cannot pass for a humanoid row");
 }

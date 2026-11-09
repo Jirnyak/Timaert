@@ -3426,8 +3426,7 @@ bool SubworldEngine::spawn_tracked_npc_body(MacroHandle macro) {
     }
 
     const int bodySlot =
-        spawn_tracked_body((*objects_), *mw_.store, macro,
-                           fx, fy, seed, /*combatant*/true);
+        spawn_tracked_body((*objects_), *mw_.store, macro, fx, fy, seed);
     if (bodySlot < 0) return false;
 
     char msg[160]{};
