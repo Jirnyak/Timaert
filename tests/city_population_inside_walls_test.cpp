@@ -354,7 +354,7 @@ int main() {
     {
         sm::sub::SeamlessSubworldManager mgr;
         mgr.init(0, 0, settlement_resolver(sm::SquadType::City, 1200));
-        mgr.consume_composite_dirty();
+        mgr.consume_composite_dirty_cells();   // сброс грязи: ответ не читается
         // NOON, because the spatial assertions below want the fullest street
         // the town ever has — at midnight the crowd is a handful and a claim
         // about angular coverage would be measuring the hour, not the layout.
@@ -459,7 +459,7 @@ int main() {
         sm::sub::SeamlessSubworldManager mgr;
         mgr.init(0, 0,
                  settlement_resolver(sm::SquadType::Village, 400));
-        mgr.consume_composite_dirty();
+        mgr.consume_composite_dirty_cells();   // сброс грязи: ответ не читается
         const sm::WorldTime vnoon = sm::world_time_at(1, 12, 0);
         const Spread s = measure(mgr, sm::SquadType::Village, 400,
                                  0x71114Eu, vnoon);

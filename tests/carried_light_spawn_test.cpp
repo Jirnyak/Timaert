@@ -192,7 +192,7 @@ void run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
 int main() {
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(0, 0, meadow_cell);
-    mgr.consume_composite_dirty();
+    mgr.consume_composite_dirty_cells();   // сброс грязи: ответ не читается
 
     // Both contracts assert for themselves now. They used to hand `main` a
     // bool, and `main` turned it into ONE message listing the four things it

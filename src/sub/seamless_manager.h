@@ -148,13 +148,23 @@ public:
               CellResolver farResolver = {});
     // Re-center if player crosses a boundary; loads/unloads as needed.
     void check_boundary(float& playerX, float& playerY);
-    // Returns whether anything changed and clears all dirty state. Kept as the
-    // coarse "something changed" signal (tests, callers that always rebuild).
-    bool consume_composite_dirty();
-    // Detailed variant: reports exactly which cells / whole-composite fields
-    // changed and clears all dirty state. The renderer uses this to upload only
-    // the affected regions. Consume via EITHER this or the bool form per frame,
-    // never both — each clears the shared dirty state.
+    // ОДНА ДВЕРЬ СЪЁМА ГРЯЗИ: сообщает, ЧТО именно изменилось, и чистит
+    // состояние. Рендер берёт отсюда адреса для частичной загрузки, а тому,
+    // кому нужен лишь грубый сигнал «что-то поменялось», отвечает поле `any`
+    // той же сводки — выведенное, а не второе.
+    //
+    // (БУЛЕВУ ФОРМУ `consume_composite_dirty` СНЕСЛИ 2026-11-09 ВЕРДИКТОМ
+    //  ВЛАДЕЛЬЦА «свести к одной сейчас». Она возвращала ровно
+    //  `compositeDirty_` — ту же величину, что ложится в `any`, — то есть
+    //  вторым ОТВЕТОМ не была; негодна она была ФОРМОЙ. Её шапка сама
+    //  записывала инвариант, держимый ДИСЦИПЛИНОЙ: «звать ЛИБО её, ЛИБО
+    //  клеточную за кадр, НИКОГДА обе — каждая чистит ОБЩЕЕ грязное
+    //  состояние». Два потребителя одного одноразового сигнала молча съедают
+    //  его друг у друга, и ловится это не компилятором, а внимательностью —
+    //  тот же род, что ЗАКОН КЛАМПА зовёт костылём, только на уровне API.
+    //  Теперь съём один, и «обе за кадр» НЕВЫРАЗИМО по построению.
+    //  Прод-звонящих у неё было ноль, тестовых 28 — все переведены на
+    //  `…_cells().any`, ни одно утверждение свидетелей шва не тронуто.)
     CompositeDirty consume_composite_dirty_cells();
     const SeamTiming& last_seam_timing() const { return lastTiming_; }
 

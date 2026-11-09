@@ -1003,13 +1003,6 @@ CompositeDirty SeamlessSubworldManager::pending_composite_dirty() const {
     return d;
 }
 
-bool SeamlessSubworldManager::consume_composite_dirty() {
-    const bool dirty = compositeDirty_;
-    heightField_.refresh(*this, pending_composite_dirty());
-    clear_composite_dirty();
-    return dirty;
-}
-
 CompositeDirty SeamlessSubworldManager::consume_composite_dirty_cells() {
     const CompositeDirty d = pending_composite_dirty();
     // THE WORLD'S HEIGHT BEFORE ANYONE ELSE'S. The field is refreshed here, at

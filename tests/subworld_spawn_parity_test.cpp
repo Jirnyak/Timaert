@@ -1119,7 +1119,7 @@ bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
 int main() {
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(0, 0, meadow_cell);
-    mgr.consume_composite_dirty();
+    mgr.consume_composite_dirty_cells();   // сброс грязи: ответ не читается
 
     // ── Per-cell fauna parity: the centre cell's ECS entities must match the
     // TS-derived roll, now scattered within the centre sub-region only. ──

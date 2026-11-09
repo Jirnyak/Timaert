@@ -132,7 +132,7 @@ void run_case(sm::sub::CellContext (*resolver)(int, int),
               sm::sub::SeamTiming& outTiming) {
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(0, 0, resolver);
-    mgr.consume_composite_dirty();
+    mgr.consume_composite_dirty_cells();   // сброс грязи: ответ не читается
 
     float playerX = float(sm::sub::kCellSize * 2 + 8);
     float playerY = float(sm::sub::kCellSize + 128);
@@ -143,7 +143,7 @@ void run_case(sm::sub::CellContext (*resolver)(int, int),
                     "center did not shift east");
     CHECK_OR_RETURN(std::fabs(playerX - float(sm::sub::kCellSize + 8)) <= 0.01f,
                     "player frame was not recentered");
-    CHECK_OR_RETURN(mgr.consume_composite_dirty(),
+    CHECK_OR_RETURN(mgr.consume_composite_dirty_cells().any,
                     "boundary did not mark composite dirty");
     outTiming = mgr.last_seam_timing();
     CHECK_OR_RETURN(outTiming.crossed && outTiming.smoothMs == 0.0,
@@ -161,7 +161,7 @@ void run_case(sm::sub::CellContext (*resolver)(int, int),
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         mgr.check_boundary(playerX, playerY);
         mgr.flush_pending_generation();
-        if (mgr.consume_composite_dirty()) {
+        if (mgr.consume_composite_dirty_cells().any) {
             ++outDirty;
         }
     }
@@ -177,7 +177,7 @@ void run_case(sm::sub::CellContext (*resolver)(int, int),
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             mgr.check_boundary(playerX, playerY);
             mgr.flush_pending_generation();
-            if (mgr.consume_composite_dirty()) {
+            if (mgr.consume_composite_dirty_cells().any) {
                 spurious = true;
             }
         }
@@ -212,7 +212,7 @@ void run_case(sm::sub::CellContext (*resolver)(int, int),
 void run_diagonal_plain_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(0, 0, resolve_plain_cell);
-    mgr.consume_composite_dirty();
+    mgr.consume_composite_dirty_cells();   // сброс грязи: ответ не читается
 
     float playerX = float(sm::sub::kCellSize * 2 + 16);
     float playerY = float(sm::sub::kCellSize * 2 + 24);
@@ -224,7 +224,7 @@ void run_diagonal_plain_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
     CHECK_OR_RETURN(std::fabs(playerX - float(sm::sub::kCellSize + 16)) <= 0.01f
                         && std::fabs(playerY - float(sm::sub::kCellSize + 24)) <= 0.01f,
                     "diagonal player frame was not recentered");
-    CHECK_OR_RETURN(mgr.consume_composite_dirty(),
+    CHECK_OR_RETURN(mgr.consume_composite_dirty_cells().any,
                     "diagonal boundary did not mark composite dirty");
     outTiming = mgr.last_seam_timing();
     CHECK_OR_RETURN(outTiming.crossed && outTiming.smoothMs == 0.0,
@@ -241,7 +241,7 @@ void run_diagonal_plain_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         mgr.check_boundary(playerX, playerY);
         mgr.flush_pending_generation();
-        if (mgr.consume_composite_dirty()) {
+        if (mgr.consume_composite_dirty_cells().any) {
             ++outDirty;
         }
     }
@@ -253,7 +253,7 @@ void run_diagonal_plain_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         mgr.check_boundary(playerX, playerY);
         mgr.flush_pending_generation();
-        if (mgr.consume_composite_dirty()) {
+        if (mgr.consume_composite_dirty_cells().any) {
             spurious = true;
         }
     }
@@ -296,7 +296,7 @@ void run_water_plane_invariant_case() {
 
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(0, 0, resolve_water_plane_cell);
-    mgr.consume_composite_dirty();
+    mgr.consume_composite_dirty_cells();   // сброс грязи: ответ не читается
 
     const auto& tiles = mgr.tiles();
     const auto& heights = mgr.heightmap();
@@ -352,13 +352,13 @@ void run_water_plane_invariant_case() {
 void run_water_placeholder_case() {
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(1, 0, resolve_water_plane_cell);
-    mgr.consume_composite_dirty();
+    mgr.consume_composite_dirty_cells();   // сброс грязи: ответ не читается
 
     float playerX = float(sm::sub::kCellSize * 2 + 8);
     float playerY = float(sm::sub::kCellSize + 128);
     mgr.check_boundary(playerX, playerY);
     mgr.flush_pending_generation();
-    CHECK_OR_RETURN(mgr.center_cx() == 2 && mgr.consume_composite_dirty(),
+    CHECK_OR_RETURN(mgr.center_cx() == 2 && mgr.consume_composite_dirty_cells().any,
                     "water placeholder boundary crossing failed");
 
     const int sampleX = sm::sub::kCellSize * 2 + 8;
@@ -378,19 +378,19 @@ void run_water_placeholder_case() {
 void run_rapid_reversal_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(0, 0, resolve_plain_cell);
-    mgr.consume_composite_dirty();
+    mgr.consume_composite_dirty_cells();   // сброс грязи: ответ не читается
 
     float playerX = float(sm::sub::kCellSize * 2 + 20);
     float playerY = float(sm::sub::kCellSize + 64);
     mgr.check_boundary(playerX, playerY);
     mgr.flush_pending_generation();
-    CHECK_OR_RETURN(mgr.center_cx() == 1 && mgr.consume_composite_dirty(),
+    CHECK_OR_RETURN(mgr.center_cx() == 1 && mgr.consume_composite_dirty_cells().any,
                     "rapid reversal initial east crossing failed");
 
     playerX = float(sm::sub::kCellSize - 20);
     mgr.check_boundary(playerX, playerY);
     mgr.flush_pending_generation();
-    CHECK_OR_RETURN(mgr.center_cx() == 0 && mgr.consume_composite_dirty(),
+    CHECK_OR_RETURN(mgr.center_cx() == 0 && mgr.consume_composite_dirty_cells().any,
                     "rapid reversal west crossing failed");
     outTiming = mgr.last_seam_timing();
     CHECK_OR_RETURN(outTiming.crossed && outTiming.smoothMs == 0.0,
@@ -401,7 +401,7 @@ void run_rapid_reversal_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         mgr.check_boundary(playerX, playerY);
         mgr.flush_pending_generation();
-        if (mgr.consume_composite_dirty()) {
+        if (mgr.consume_composite_dirty_cells().any) {
             ++outDirty;
         }
     }
@@ -413,7 +413,7 @@ void run_rapid_reversal_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         mgr.check_boundary(playerX, playerY);
         mgr.flush_pending_generation();
-        if (mgr.consume_composite_dirty()) {
+        if (mgr.consume_composite_dirty_cells().any) {
             spurious = true;
         }
     }

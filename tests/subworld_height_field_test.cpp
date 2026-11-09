@@ -97,7 +97,7 @@ std::size_t grid_mismatches(const SubworldHeightField& a,
 void case_full_build_and_door() {
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(0, 0, resolve_relief_cell);
-    mgr.consume_composite_dirty();
+    mgr.consume_composite_dirty_cells();   // сброс грязи: ответ не читается
 
     const SubworldHeightField& live = mgr.height_field();
     CHECK_OR_RETURN(live.built(), "the window composited but stated no height");
@@ -149,7 +149,7 @@ void case_full_build_and_door() {
 void case_seam_crossing_and_stitch() {
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(0, 0, resolve_relief_cell);
-    mgr.consume_composite_dirty();
+    mgr.consume_composite_dirty_cells();   // сброс грязи: ответ не читается
 
     float playerX = float(sm::sub::kCellSize * 2 + 8);
     float playerY = float(sm::sub::kCellSize + 128);
@@ -157,7 +157,7 @@ void case_seam_crossing_and_stitch() {
     mgr.flush_pending_generation();
     CHECK_OR_RETURN(mgr.center_cx() == 1 && mgr.center_cy() == 0,
                     "window did not cross the seam east");
-    CHECK_OR_RETURN(mgr.consume_composite_dirty(),
+    CHECK_OR_RETURN(mgr.consume_composite_dirty_cells().any,
                     "the crossing marked nothing dirty");
 
     // THE SLIDE. Straight after a crossing the grid is 6/9 memmoved overlap,
@@ -180,7 +180,7 @@ void case_seam_crossing_and_stitch() {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         mgr.check_boundary(playerX, playerY);
         mgr.flush_pending_generation();
-        if (!mgr.consume_composite_dirty()) continue;
+        if (!mgr.consume_composite_dirty_cells().any) continue;
         ++drains;
         SubworldHeightField ref;
         build_reference(mgr, ref);

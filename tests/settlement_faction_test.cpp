@@ -236,7 +236,7 @@ void run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
 int main() {
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(0, 0, meadow_cell);
-    mgr.consume_composite_dirty();
+    mgr.consume_composite_dirty_cells();   // сброс грязи: ответ не читается
 
     // Each contract asserts for itself. They used to hand `main` a bool that
     // became ONE message listing the three things it might have meant — and
