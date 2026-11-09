@@ -37,7 +37,10 @@ int fauna_cell_capacity_at(const MacroWorld& w, int x, int y);
 // Ids are one
 // contiguous ordinal space — the old `0x100 | catalog index` encoding is DEAD
 // (2026-08-20) — so `creature_def_from_kind` is just "the row, if it is a
-// beast", serving the death / loot path.
+// beast". Прод-звонящих у обеих НОЛЬ — здесь стояло «serving the death / loot
+// path», и это неверно (правка шапки 2026-11-09): держат их СВИДЕТЕЛИ —
+// `tests/fauna_registry_test.cpp` утверждает ими биекцию «ординал ↔ строка» и
+// три случая `nullptr`, то есть они носители живого закона, а не сироты.
 std::span<const FaunaEntry* const> creature_catalog();
 const FaunaEntry* creature_def(std::string_view id);        // nullptr if unknown
 const FaunaEntry* creature_def_from_kind(std::uint16_t kindType); // nullptr if not a monster

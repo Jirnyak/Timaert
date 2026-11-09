@@ -811,11 +811,9 @@ bool run_subworld_walk_smoke(App& app) {
         }
         app.subworld.set_move_intent(0.0f, 0.0f);
         std::fprintf(stderr,
-                     "[smoke] subworld_walk ground asked=%u underfoot=%u "
+                     "[smoke] subworld_walk ground asked=%u "
                      "speed=%.2f at=%.1f,%.1f from=%.1f,%.1f z=%.1f\n",
                      unsigned(tile),
-                     unsigned(app.subworld.debug_tile_at(
-                         app.subworld.player_x(), app.subworld.player_y())),
                      double(speed),
                      double(app.subworld.player_x()),
                      double(app.subworld.player_y()),
@@ -7664,13 +7662,15 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "saved slot not inspectable");
                 break;
             }
-            const long bytes = file_size_bytes(app.savePath);
-            if (bytes <= 0) {
-                smoke_fail(app, "saved slot empty");
-                break;
-            }
-            std::fprintf(stderr, "[smoke] saved path=%s bytes=%ld\n",
-                         app.savePath.c_str(), bytes);
+            // (ЗДЕСЬ СТОЯЛ ГЕЙТ `file_size_bytes(...) <= 0` — «saved slot
+            //  empty», — И УПАСТЬ ОН НЕ МОГ: четырьмя строками выше уже
+            //  проверен `status == Ready`, а эту готовность `inspect_save`
+            //  выдаёт лишь после размера, магии, версии, разбора шапки И
+            //  КОНТРОЛЬНОЙ СУММЫ. То есть сильный гейт стоял ПЕРЕД слабым, и
+            //  слабый был украшением. Снесён 2026-11-09 вместе с глазком
+            //  `file_size_bytes`, у которого других звонящих не было.)
+            std::fprintf(stderr, "[smoke] saved path=%s\n",
+                         app.savePath.c_str());
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -11029,64 +11029,17 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 app.subworld.rotate_camera(0.0f,
                                            wantPitch - app.subworld.cam_pitch());
             }
-            // Opt-in (TIMAERT_SMOKE_NO_PLAYER_LIGHT=1): strip the player's own
-            // carried lantern for this capture so the ONLY light in the scene is
-            // the staged actor's. This isolates a probed guard's data-driven torch
-            // (Inc 9) — otherwise the player's 16 m lantern overlaps a guard staged
-            // inside it and the two warm pools blend, making the torch impossible
-            // to attribute. Гашение бита — ровно то, чем ключуется сбор света
-            // (kObjHasLight + колонка light, ломоть 3), so the lantern simply
-            // drops out of the SSBO next frame. Harness only.
-            if (std::getenv("TIMAERT_SMOKE_NO_PLAYER_LIGHT")) {
-                int stripped = 0;
-                if (const int avs = sm::sub::avatar_slot(prObjs);
-                    avs >= 0
-                    && sm::sub::slot_flag(prObjs, avs,
-                                          sm::sub::kObjHasLight)) {
-                    sm::sub::slot_clear_light(prObjs, avs);
-                    ++stripped;
-                }
-                std::fprintf(stderr,
-                             "[smoke] light_probe_capture stripped player light "
-                             "x%d\n", stripped);
-                std::fflush(stderr);
-            }
-            // Opt-in (TIMAERT_SMOKE_SOLO_PROBE_LIGHT=1): the airtight isolation.
-            // Strip EVERY LightEmitter that is not on the probe actor itself —
-            // the player lantern AND every settlement guard's torch — so the
-            // scene is lit by exactly the probe's own carried light, or by
-            // nothing. A `guard` frame then shows a single warm ground pool; a
-            // `peasant` frame at identical staging is black. That pair attributes
-            // the pool to the guard's data-driven torch (Inc 9) with no other
-            // light source in play. Same universal key as the gather (бит
-            // kObjHasLight), so the stripped emitters simply drop out of the
-            // SSBO next frame. Harness only.
-            if (std::getenv("TIMAERT_SMOKE_SOLO_PROBE_LIGHT")) {
-                int stripped = 0;
-                // Свип арены по биту жизни (ломоть D).
-                for (int s = 0; s < int(sm::kMaxSubObjects); ++s) {
-                    if ((prObjs.flags[std::size_t(s)]
-                         & sm::sub::kObjAlive) == 0u) continue;
-                    if (s == probeSlot) continue;
-                    // свип видит снаряды — вьюха их не видела, а свет у
-                    // болта ЕСТЬ: гасить его значило бы править картинку
-                    // спелла, а не снимать фонари сцены
-                    if (sm::sub::slot_flag(prObjs, s, sm::sub::kObjProjectile))
-                        continue;
-                    if (!sm::sub::slot_flag(prObjs, s,
-                                            sm::sub::kObjHasLight)) continue;
-                    sm::sub::slot_clear_light(prObjs, s);
-                    ++stripped;
-                }
-                const bool probeLit =
-                    sm::sub::slot_flag(prObjs, probeSlot,
-                                       sm::sub::kObjHasLight);
-                std::fprintf(stderr,
-                             "[smoke] light_probe_capture solo probe light: "
-                             "stripped x%d probe_lit=%d\n",
-                             stripped, int(probeLit));
-                std::fflush(stderr);
-            }
+            // (ДВА OPT-IN БЛОКА СВЕТА СНЕСЕНЫ 2026-11-09. Они гасили фонарь
+            // игрока (`TIMAERT_SMOKE_NO_PLAYER_LIGHT`) и все чужие источники
+            // (`TIMAERT_SMOKE_SOLO_PROBE_LIGHT`), чтобы в снятом кадре приписать
+            // тёплое пятно именно факелу пробуемого стража. Инструмент был
+            // построен под КОНКРЕТНЫЙ вопрос и ответ получил — а §5 п.10 говорит
+            // о таком прямо: «временное логирование сносится после ответа — оно
+            // инструмент вопроса, не жилец». Стоячая сюита в эти блоки не входит
+            // ни разу: `smoke.sh` переменных не экспортирует, то есть ключ был
+            // ручной. Вместе с ними ушёл глазок `slot_clear_light` — его больше
+            // не зовёт никто. Понадобится снова — вернётся вместе со своим
+            // вопросом, а не будет ждать его годами.)
             std::fprintf(stderr,
                          "[smoke] light_probe_capture probe=%s dist=%.2f "
                          "player=%.1f,%.1f -> probe=%.1f,%.1f yaw=%.1f pitch=%.1f\n",
@@ -11219,10 +11172,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             app.subworld.set_flying(true);
-            const float flightH0 = app.subworld.flight_height_m();
+            const float flightH0 = app.subworld.player_z();
             app.subworld.rotate_camera(0.0f, 0.55f);
             app.subworld.move_player(0.0f, 12.8f);
-            const float flightH1 = app.subworld.flight_height_m();
+            const float flightH1 = app.subworld.player_z();
             if (!app.subworld.flying() || !(flightH1 > flightH0 + 1.0f)) {
                 smoke_fail(app, "flight subworld height invariant");
                 app.subworld.leave(true);
@@ -11236,14 +11189,14 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // pin would already sit on the ground), and a long soak lands it
             // back at the support it took off from.
             app.subworld.tick(0.016f);
-            const float flightBase = app.subworld.flight_height_m();
+            const float flightBase = app.subworld.player_z();
             app.subworld.move_player(0.0f, 12.8f);
-            const float flightApex = app.subworld.flight_height_m();
+            const float flightApex = app.subworld.player_z();
             app.subworld.set_flying(false);
             app.subworld.tick(0.25f);
-            const float fallMid = app.subworld.flight_height_m();
+            const float fallMid = app.subworld.player_z();
             for (int i = 0; i < 200; ++i) app.subworld.tick(0.05f);
-            const float fallRest = app.subworld.flight_height_m();
+            const float fallRest = app.subworld.player_z();
             // "Came to rest on its support" — asked directly, from the ONE
             // vertical integrator (engine player_grounded ← height.h
             // vertical_step): grounded means the feet rest on max(terrain,
@@ -11256,7 +11209,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // red for eternity. Not-sunk stays as the second half: grounded
             // ABOVE the terrain, never through it.
             for (int i = 0; i < 100; ++i) app.subworld.tick(0.05f);
-            const float fallSettled = app.subworld.flight_height_m();
+            const float fallSettled = app.subworld.player_z();
             const float landingGround = app.subworld.ground_height_at(
                 app.subworld.player_x(), app.subworld.player_y());
             const bool fellNotSnapped =
@@ -11282,9 +11235,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // support (≈1.3 m apex — no damage, it is under the safe speed).
             app.subworld.jump();
             app.subworld.tick(0.30f);
-            const float jumpMid = app.subworld.flight_height_m();
+            const float jumpMid = app.subworld.player_z();
             for (int i = 0; i < 60; ++i) app.subworld.tick(0.05f);
-            const float jumpRest = app.subworld.flight_height_m();
+            const float jumpRest = app.subworld.player_z();
             std::fprintf(stderr, "[smoke] jump mid=%.2f rest=%.2f\n",
                          jumpMid, jumpRest);
             std::fflush(stderr);

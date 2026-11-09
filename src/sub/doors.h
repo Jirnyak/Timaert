@@ -58,7 +58,10 @@ inline ObjRef ref_of(const SubObjects& o, int slot) {
 inline int avatar_slot(const SubObjects& o) {
     return ref_slot(o, o.avatar);
 }
-// Жива ли ссылка активного тела (гейты HUD/смоуков): тот же суд, что у
+// Жива ли ссылка активного тела (гейты СМОУКОВ — `console`/possess и
+// `subworld_exit_remap`, где закон «оба флага двигаются ОДНИМ тиком, иначе
+// всякое „кто я" между ними отвечает прежним человеком»; здесь стояло «гейты
+// HUD/смоуков», а HUD её не зовёт — правка шапки 2026-11-09): тот же суд, что у
 // ref_slot, но булев — ссылка есть, ID совпал, слот жив.
 inline bool avatar_ref_live(const SubObjects& o) {
     return o.avatar.id != 0u
@@ -213,10 +216,12 @@ inline void slot_set_light(SubObjects& o, int s, const ecs::LightEmitter& le) {
     o.light[std::size_t(s)] = le;
     slot_flag_set(o, s, kObjHasLight);
 }
-inline void slot_clear_light(SubObjects& o, int s) {
-    o.light[std::size_t(s)] = ecs::LightEmitter{};
-    slot_flag_clear(o, s, kObjHasLight);
-}
+// (`slot_clear_light` СНЕСЕНА 2026-11-09 вместе с двумя opt-in блоками смоука
+//  света, которые её звали: инструмент под КОНКРЕТНЫЙ вопрос — приписать
+//  тёплое пятно в снятом кадре факелу пробуемого стража, — и ответ он получил,
+//  §5 п.10 («инструмент вопроса, не жилец»). Стоячая сюита в те блоки не
+//  входила ни разу: ключом были переменные среды, которых `smoke.sh` не
+//  экспортирует. Гашение бита света вернётся вместе со своим читателем.)
 
 // ── Шов и квитанция (ломоть 4): сентинелы в значении ────────────────────
 inline MacroHandle slot_macro_origin(const SubObjects& o, int s) {

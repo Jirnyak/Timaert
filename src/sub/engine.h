@@ -243,7 +243,12 @@ public:
         return active_ && sceneKind_ == SceneKind::Dungeon;
     }
     // Storey of the active interior (0 outside one): 0 = the level the door
-    // opens onto, +1 up, -1 a cellar. Read by the HUD and the smokes.
+    // opens onto, +1 up, -1 a cellar.
+    // ЗВОНЯТ ТОЛЬКО СМОУКИ (`dungeon_house`/`dungeon_cave`/`spire_climb`), и
+    // держат они закон «в дом можно войти, подняться по этажам и выйти своей
+    // же дверью»: пещера — ОДИН уровень, у башни `topLevel == tier - 1`.
+    // Здесь стояло «Read by the HUD and the smokes» — HUD её не читает НИ
+    // ОДНОЙ строкой (правка шапки 2026-11-09, M-436).
     int dungeon_level() const {
         return in_dungeon() ? int(dungeon_.ref.level) : 0;
     }
@@ -257,7 +262,11 @@ public:
     // Window-tile position of this storey's street threshold — the tile E
     // leaves the building from. False when the storey has none (an upper
     // room, a cellar: their only ways out are their shafts), or outside an
-    // interior. Read by the HUD (way-out marker) and the smokes.
+    // interior.
+    // ЗВОНЯТ ТОЛЬКО СМОУКИ (`dungeon_house`/`dungeon_cave`/`prologue_road`):
+    // «из пещеры выходят её же устьем», а у кармана пролога порога нет вовсе.
+    // Здесь стояло «Read by the HUD (way-out marker)» — маркера выхода в HUD
+    // нет, читателей там ноль (правка шапки 2026-11-09, M-436).
     bool dungeon_exit_point(float& x, float& y) const;
     // Search a chest: hands over ONE stack from the store of the place that
     // owns this interior (a place's store is its Inventory — owner ruling
@@ -437,14 +446,11 @@ public:
     // HARNESS ONLY: his persistent velocity, as the mover left it.
     float debug_player_vx() const { return playerVx_; }
     float debug_player_vy() const { return playerVy_; }
-    // HARNESS ONLY: the ground id the world says is at a composite tile.
-    std::uint8_t debug_tile_at(float x, float y) const {
-        const auto& t = mgr_.tiles();
-        const int ix = std::clamp(int(x), 0, kFullSize - 1);
-        const int iy = std::clamp(int(y), 0, kFullSize - 1);
-        const std::size_t i = std::size_t(iy) * kFullSize + std::size_t(ix);
-        return i < t.size() ? t[i] : std::uint8_t(0);
-    }
+    // (`debug_tile_at` СНЕСЕНА 2026-11-09, вердикт владельца «глазки, если они
+    //  не обоснованы, нафиг нужны?»: её единственный сайт стоял ВНУТРИ `fprintf`
+    //  смоука `subworld_walk` и ни с чем не сравнивался — печать, а не проверка.
+    //  Закон «земля под ногами есть та, что спросили» остался без свидетеля и
+    //  БЕЗ ГЛАЗКА: он не был ни разу утверждён и за ним не стояло ничего.)
     // HARNESS ONLY (smoke `subworld_walk`): repaint every tile of the loaded
     // window with one ground id, so a measurement can isolate the ground law
     // from whatever the generator happened to lay here.
@@ -552,8 +558,11 @@ public:
 
     // Player feet altitude (metres). Kept under its historical name for the
     // flight smoke, but flight no longer has its own camera scalar — flying
-    // is plain 3D movement of playerZ_ with gravity switched off.
-    float flight_height_m() const { return playerZ_; }
+    // (`flight_height_m` СНЕСЕНА 2026-11-09: её телом было `return playerZ_;`,
+    //  то есть ПОБАЙТОВО то же, что у `player_z()` двадцатью строками выше —
+    //  ВТОРОЕ ИМЯ одной величины, а не второй вопрос (DOD п.6). Смоук
+    //  `toggle_flight` переведён на `player_z()` и не потерял ни одного
+    //  утверждения: закон гравитации и прыжка он проверяет тем же числом.)
     // Feet-on-support this tick — THE grounded property (height.h
     // vertical_step: a body rests on max(terrain, structure top)). Asked by
     // the flight smoke to state "came to rest on its support" directly —

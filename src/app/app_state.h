@@ -443,7 +443,9 @@ struct RuntimeFrameStats {
 // honest visibility, no second path.
 sm::Inventory& player_bag(App& app);
 sm::MacroWorld macro_world(App& app);
-long file_size_bytes(const std::string& path);
+// (`file_size_bytes` СНЕСЕНА 2026-11-09: её единственный звонящий — гейт
+//  смоука `save_game`, который не мог упасть, потому что стоял ПОСЛЕ проверки
+//  `status == Ready`, а та включает контрольную сумму файла.)
 bool route_macro_npc_attack(App& app, sm::MacroHandle npc);
 void perform_encounter_auto(App& app, sm::MacroHandle npc, sm::Ambush ambush);
 void detect_forced_encounter(App& app);
