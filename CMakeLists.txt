@@ -2859,6 +2859,16 @@ timaert_test(sizeof_doc_test SOURCES tests/doc_refs.cpp
 target_compile_definitions(sizeof_doc_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
+# ПРИБОР НА ПРЕТЕНЗИЮ-ЧИСЛО И ДУБЛЬ РЯДА (вердикт владельца 2026-11-08). Он
+# нужен потому, что `doc_refs` судит АДРЕС, а перепись M-437 показала: семь из
+# четырнадцати ложных рядов несли ЦЕЛЫЙ `symbol@path`, врал в них СЧЁТ. Политику
+# рода документа он ЗАНИМАЕТ у `doc_refs` (`judges_name_liveness`), а не пишет
+# второй список; сканирует дерево, поэтому знает его корень.
+timaert_test(doc_claims_test SOURCES tests/doc_refs.cpp
+    PIN "OK doc_claims_test .[0-9]+ checks.")
+target_compile_definitions(doc_claims_test
+    PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
 # Прибор на ЗАКОН АДРЕСА: клетка мира не сворачивается делением (M-124). До него
 # закон жил ТОЛЬКО в тексте AGENTS — и три из четырёх сайтов, снесённых M-124,
 # появились ПОСЛЕ его записи. Сканирует дерево, поэтому знает его корень.
