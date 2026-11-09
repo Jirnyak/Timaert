@@ -613,10 +613,23 @@ public:
         set_move_intent(dx, dy);
         debugIntentSteps_ = steps;
     }
-    // Direct displacement — the HARNESS door: a smoke script stepping a body
-    // across a scene to reach what it wants to test. Not a second mover for
-    // gameplay; nothing outside src/app/smoke.cpp calls it.
-    void  move_player(float dx, float dy);
+    // (`move_player` СНЕСЕНА 2026-11-09 — вердикт владельца о глазках, и его
+    //  же вопрос её и вскрыл: «у нас же игрок не особенный или это для субмира
+    //  там что-то?». Игрок НЕ особенный, и это ПОДТВЕРЖДЕНО КОДОМ: его
+    //  намерение читается в сборе тел ровно там, где у мозга крестьянина,
+    //  двигает его `steer_bodies`, а скаляры движка суть ВИД его тела. Шапка
+    //  двери это и говорила — «не второй мувер для геймплея, вне smoke.cpp её
+    //  не зовёт никто», — и была верна. Но она умалчивала о другом: дверь была
+    //  ВТОРОЙ КОПИЕЙ прод-композиции — та же камерная база, та же ветка питча
+    //  в полёте, те же клампы, то же блокирование твердью, — а прод-дверь
+    //  `set_move_intent` в своей шапке обещает «composed HERE and nowhere
+    //  else». То есть гарнесс держал свой экземпляр того, КАК двигается тело,
+    //  и разойдись он — смоук мерил бы мир, которого нет (§8 п.5).
+    //  Все три сайта переведены на пути, существующие В ИГРЕ: подход к дереву
+    //  — прод-телепортом `set_player_pos`, два подъёма в полёте — НАМЕРЕНИЕМ
+    //  через `debug_hold_intent` (он зовёт `set_move_intent`) плюс тики.
+    //  Замер подъёма после перевода: 777.38 → 786.79, падение на опору
+    //  774.25, `grounded=1` — утверждения те же, путь настоящий.)
     // Dev console: absolute teleport inside the current subworld window. The
     // next tick re-centres the seamless manager and repopulates if we crossed
     // a cell. Clamped to the walkable window by the implementation.

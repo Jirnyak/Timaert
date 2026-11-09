@@ -6338,7 +6338,12 @@ bool run_subworld_tree_anchor_smoke(App& app) {
         float yaw = std::atan2(dy, dx);
         app.subworld.rotate_camera(yaw - app.subworld.cam_yaw(), -0.10f);
         if (dist > 22.0f) {
-            app.subworld.move_player(0.0f, dist - 18.0f);
+            // ПРОД-ДВЕРЬ ТЕЛЕПОРТА, а не своя копия марша (2026-11-09): этому
+            // смоуку надо лишь ОКАЗАТЬСЯ у дерева, чтобы спросить про анкер, —
+            // ходьба здесь не предмет проверки. `set_player_pos` есть дверь
+            // дев-консоли, то есть путь, который в игре существует.
+            app.subworld.set_player_pos(focus->x - 18.0f * std::cos(yaw),
+                                        focus->y - 18.0f * std::sin(yaw));
             dx = focus->x - app.subworld.player_x();
             dy = focus->y - app.subworld.player_y();
             yaw = std::atan2(dy, dx);
@@ -11174,7 +11179,14 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.subworld.set_flying(true);
             const float flightH0 = app.subworld.player_z();
             app.subworld.rotate_camera(0.0f, 0.55f);
-            app.subworld.move_player(0.0f, 12.8f);
+            // ПОДЪЁМ ИДЁТ ПРОД-ПУТЁМ (2026-11-09): держим НАМЕРЕНИЕ, как
+            // держал бы палец клавишу, и крутим тики. Намерение складывает
+            // `set_move_intent` — та самая дверь, что говорит о себе
+            // «composed HERE and nowhere else», — значит смоук мерит ТОТ
+            // полёт, которым летает игрок, а не свою копию тригонометрии.
+            app.subworld.debug_hold_intent(0.0f,
+                                           sm::kSubworldWalkTilesPerSecond, 48);
+            for (int i = 0; i < 48; ++i) app.subworld.tick(1.0f / 64.0f);
             const float flightH1 = app.subworld.player_z();
             if (!app.subworld.flying() || !(flightH1 > flightH0 + 1.0f)) {
                 smoke_fail(app, "flight subworld height invariant");
@@ -11190,7 +11202,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // back at the support it took off from.
             app.subworld.tick(0.016f);
             const float flightBase = app.subworld.player_z();
-            app.subworld.move_player(0.0f, 12.8f);
+            app.subworld.debug_hold_intent(0.0f,
+                                           sm::kSubworldWalkTilesPerSecond, 48);
+            for (int i = 0; i < 48; ++i) app.subworld.tick(1.0f / 64.0f);
             const float flightApex = app.subworld.player_z();
             app.subworld.set_flying(false);
             app.subworld.tick(0.25f);

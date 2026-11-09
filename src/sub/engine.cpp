@@ -5527,63 +5527,6 @@ void SubworldEngine::set_move_intent(float dx, float dy) {
     }
 }
 
-void SubworldEngine::move_player(float dx, float dy) {
-    if (!active_) return;
-    // First-person walk: dy = forward (UP arrow / W), dx = strafe right.
-    // Camera-forward in tile-XY plane is (cos yaw, sin yaw); right is its
-    // 90° rotation (-sin yaw, cos yaw). Compose world delta from those
-    // basis vectors so UP always means "into the screen".
-    const float cy = std::cos(cam_.yaw), sy = std::sin(cam_.yaw);
-    const float fromX = playerX_;
-    const float fromY = playerY_;
-    float dz = 0.0f;
-    if (flying()) {
-        // Flight is plain 3D movement: the pitched forward vector moves all
-        // three coordinates, gravity is off (sync_player_vertical).
-        const float cp = std::cos(cam_.pitch);
-        const float sp = std::sin(cam_.pitch);
-        const float wx = dy * cy * cp - dx * sy;
-        const float wy = dy * sy * cp + dx * cy;
-        playerX_ += wx;
-        playerY_ += wy;
-        dz = dy * sp;
-    } else {
-        const float wx = dy * cy - dx * sy;
-        const float wy = dy * sy + dx * cy;
-        playerX_ += wx;
-        playerY_ += wy;
-    }
-    if (playerX_ < 0) playerX_ = 0;
-    if (playerY_ < 0) playerY_ = 0;
-    if (playerX_ > float(kFullSize)) playerX_ = float(kFullSize);
-    if (playerY_ > float(kFullSize)) playerY_ = float(kFullSize);
-    // Solid structures block the player exactly like every other body
-    // (sub/collide.h): a step into a wall/house side is refused with axis
-    // sliding, walking OR flying — flying over the top passes because a solid
-    // below the feet is a floor, not a wall. The escape rule inside
-    // resolve_step means a teleported/possessed body inside masonry can
-    // always walk out.
-    if (!structIndex_.empty()) {
-        structIndex_.resolve_step(fromX, fromY, playerX_, playerY_,
-                                  player_body_radius(), playerZ_,
-                                  player_body_height());
-        if (dz != 0.0f
-            && structIndex_.blocked_at(playerX_, playerY_, player_body_radius(),
-                                       playerZ_ + dz, player_body_height())
-            && !structIndex_.blocked_at(playerX_, playerY_,
-                                        player_body_radius(), playerZ_,
-                                        player_body_height())) {
-            // Vertical component: refuse rising/descending INTO a solid (a
-            // lintel overhead, a wall top below) — the honest head-bump.
-            dz = 0.0f;
-        }
-    }
-    playerZ_ += dz;
-    // Inc 5a: the entity Position is authoritative — commit the moved scalars
-    // onto it (the tick's top pull would otherwise revert this input next frame).
-    push_scalars_to_player_entity();
-}
-
 void SubworldEngine::set_player_pos(float x, float y) {
     if (!active_) return;
     playerX_ = std::clamp(x, 1.0f, float(kFullSize - 2));
