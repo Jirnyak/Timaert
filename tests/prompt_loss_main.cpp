@@ -50,7 +50,8 @@ namespace {
 
 // ПОСТОЯННЫЕ доки. Волатильных здесь нет и быть не может (см. шапку).
 const char* kPermanent[] = {
-    "AGENTS.md", "CANON.md", "SKELETON.md", "macro-registry.md",
+    "AGENTS.md", "CRAFT.md",  "CANON.md",  "SKELETON.md",
+    "macro-registry.md",
     "bugs.md",   "problems.md", "release.md", "README.md", "lore.md",
 };
 

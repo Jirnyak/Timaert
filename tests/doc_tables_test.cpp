@@ -44,7 +44,8 @@ namespace {
 #endif
 
 const char* kDocs[] = {
-    "AGENTS.md", "CANON.md", "SKELETON.md", "macro-registry.md",
+    "AGENTS.md", "CRAFT.md",  "CANON.md",  "SKELETON.md",
+    "macro-registry.md",
     "bugs.md",   "problems.md", "release.md", "README.md", "lore.md",
     "NEXT_SESSION.md",
 };
