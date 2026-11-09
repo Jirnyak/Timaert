@@ -200,6 +200,7 @@ static_assert(std::is_trivially_copyable_v<ActionDef>);
 inline constexpr ActionDef kCombatActions[] = {
     {.id = "strike",          .recoveryTicks = steps_from_seconds(1.5f),
      .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 0,          // цена НЕ темповая — ноль назван
      .gateSkill = SkillId::Count, .minRank = 0,
      .type = ActionType::Strike,  .scope = ActionScope::MicroMacro},
 };
@@ -231,42 +232,52 @@ inline constexpr ActionDef kCombatActions[] = {
 inline constexpr ActionDef kMagicActions[] = {
     {.id = "fireball",        .recoveryTicks = steps_from_seconds(2.3f),
      .costHp = 0, .costMp = 60,   .costSp = 0,
+     .spRatePerDay = 0,          // цена НЕ темповая — ноль назван
      .gateSkill = SkillId::Count, .minRank = 0,
      .type = ActionType::Spell,   .scope = ActionScope::MicroMacro},
     {.id = "ice_shard",       .recoveryTicks = steps_from_seconds(1.7f),
      .costHp = 0, .costMp = 30,   .costSp = 0,
+     .spRatePerDay = 0,          // цена НЕ темповая — ноль назван
      .gateSkill = SkillId::Count, .minRank = 0,
      .type = ActionType::Spell,   .scope = ActionScope::MicroMacro},
     {.id = "magic_bolt",      .recoveryTicks = steps_from_seconds(0.0f),
      .costHp = 0, .costMp = 10,   .costSp = 0,
+     .spRatePerDay = 0,          // цена НЕ темповая — ноль назван
      .gateSkill = SkillId::Count, .minRank = 0,
      .type = ActionType::Spell,   .scope = ActionScope::MicroOnly},
     {.id = "lightning_chain", .recoveryTicks = steps_from_seconds(4.1f),
      .costHp = 0, .costMp = 60,   .costSp = 0,
+     .spRatePerDay = 0,          // цена НЕ темповая — ноль назван
      .gateSkill = SkillId::Count, .minRank = 0,
      .type = ActionType::Spell,   .scope = ActionScope::MicroMacro},
     {.id = "energy_beam",     .recoveryTicks = steps_from_seconds(2.9f),
      .costHp = 0, .costMp = 100,  .costSp = 0,
+     .spRatePerDay = 0,          // цена НЕ темповая — ноль назван
      .gateSkill = SkillId::Count, .minRank = 0,
      .type = ActionType::Spell,   .scope = ActionScope::MicroOnly},
     {.id = "armageddon",      .recoveryTicks = steps_from_seconds(122.0f),
      .costHp = 0, .costMp = 1000, .costSp = 0,
+     .spRatePerDay = 0,          // цена НЕ темповая — ноль назван
      .gateSkill = SkillId::Count, .minRank = 0,
      .type = ActionType::Spell,   .scope = ActionScope::MicroMacro},
     {.id = "haste",           .recoveryTicks = steps_from_seconds(0.0f),
      .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 0,          // цена НЕ темповая — ноль назван
      .gateSkill = SkillId::Count, .minRank = 0,
      .type = ActionType::Spell,   .scope = ActionScope::MicroMacro},
     {.id = "flight",          .recoveryTicks = steps_from_seconds(0.0f),
      .costHp = 0, .costMp = 0,    .costSp = 0,
+     .spRatePerDay = 0,          // цена НЕ темповая — ноль назван
      .gateSkill = SkillId::Count, .minRank = 0,
      .type = ActionType::Spell,   .scope = ActionScope::MicroMacro},
     {.id = "possession",      .recoveryTicks = steps_from_seconds(4.0f),
      .costHp = 0, .costMp = 200,  .costSp = 0,
+     .spRatePerDay = 0,          // цена НЕ темповая — ноль назван
      .gateSkill = SkillId::Count, .minRank = 0,
      .type = ActionType::Spell,   .scope = ActionScope::MicroOnly},
     {.id = "void_arrow",      .recoveryTicks = steps_from_seconds(0.8f),
      .costHp = 0, .costMp = 30,   .costSp = 0,
+     .spRatePerDay = 0,          // цена НЕ темповая — ноль назван
      .gateSkill = SkillId::Count, .minRank = 0,
      .type = ActionType::Spell,   .scope = ActionScope::MicroOnly},
 };
