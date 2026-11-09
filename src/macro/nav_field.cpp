@@ -537,14 +537,6 @@ std::uint32_t nav_path_cost(const NavWorld& nv, int ax, int ay,
     return std::uint32_t(da) + mid + std::uint32_t(db);
 }
 
-float nav_path_days(const NavWorld& nv, int ax, int ay, int bx, int by,
-                    float cellsPerDay) {
-    const std::uint32_t c = nav_path_cost(nv, ax, ay, bx, by);
-    if (c == kNavFar) return -1.0f;
-    if (!(cellsPerDay > 0.0f)) return -1.0f;
-    return (float(c) / 16.0f) / cellsPerDay;
-}
-
 bool nav_step(const NavWorld& nv, int x, int y, int tx, int ty,
               int& sdx, int& sdy) {
     if (!nv.baked()) return false;

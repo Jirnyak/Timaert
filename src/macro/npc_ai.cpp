@@ -931,11 +931,11 @@ static_assert(kNavHandReach == kGathererReach,
 // вырезан 2026-09-22 вместе со стройкой артелей. Without a baked NavWorld
 // (bare test fixtures) the pick degrades to the nearest vein in the box by
 // straight line — the pre-v72 behaviour.
-// The sustained march pace every plan walks by: kMacroWalkCellsPerHour × 24
-// game hours, halved because the automaton rests to half a bar between
-// marches (think_gate) — half the calendar walks, half sleeps.
-constexpr float kSustainedMarchCellsPerDay =
-    kMacroWalkCellsPerHour * 24.0f / 2.0f;
+// (`kSustainedMarchCellsPerDay` СНЕСЕНА 2026-11-08, вердикт владельца M-6/M-436:
+//  это был ОДИН темп на всех ходоков мира — второй ответ на вопрос, на который
+//  ноги уже отвечали анкетой. Её вывод (24 часа, половина календаря на отдых)
+//  переехал ДОСЛОВНО в `march_cells_per_day@src/macro/npc_ai.h`, которая читает
+//  тот же `moveMult`, что и `march_cells_per_think` рядом с ней.)
 
 // (Тут стояла ДАЛЬНОСТЬ ИЗ ЦЕНЫ РЕЙСА — попытка вывести границу поиска из
 // окупаемости. Она снята 2026-09-18 в тот же день: у драгоценной строки
@@ -1064,7 +1064,8 @@ bool march_is_stuck_(const MacroPos& p, float oldX, float oldY,
 // живут рядом со своей торговой секцией, а дверь к ним обязана стоять ДО
 // классов, которые её проносят модулю. Переносить определения вверх значило
 // бы разорвать секцию с её шрамами.
-float march_days_(const TickContext& ctx, int ax, int ay, int bx, int by);
+float march_days_(const TickContext& ctx, int ax, int ay, int bx, int by,
+                  float moveMult);
 float route_fear_(const TickContext& ctx, int ax, int ay, int bx, int by);
 long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
                           std::uint16_t traderSlot, const Skills& site,
@@ -1315,8 +1316,10 @@ public:
     }
     // ДНИ ПУТИ и СТРАХ МАРШРУТА — две меры решения «дальше или домой», обе
     // над одной дверью навигации (nav_path_cost), обе чистое чтение.
-    float march_days(int ax, int ay, int bx, int by) const {
-        return march_days_(ctx_, ax, ay, bx, by);
+    // Темп — ПАРАМЕТР, и подаёт его звонящий из СВОЕЙ анкеты: мера решения
+    // обязана идти тем же темпом, что ноги (M-6/M-436, вердикт владельца).
+    float march_days(int ax, int ay, int bx, int by, float moveMult) const {
+        return march_days_(ctx_, ax, ay, bx, by, moveMult);
     }
     float route_fear(int ax, int ay, int bx, int by) const {
         return route_fear_(ctx_, ax, ay, bx, by);
@@ -1406,9 +1409,11 @@ public:
     // Пара выходных координат двери здесь не берётся: решение называет
     // МЕСТО, а его клетку спрашивают у колонок места (вид), и прежние два
     // мёртвых локала умерли вместе с этим вопросом.
-    int next_station(const MacroPos& p, int currentId, int prevId) {
+    int next_station(const MacroPos& p, int currentId, int prevId,
+                     float moveMult) {
         float outX = 0.0f, outY = 0.0f;
-        return pick_next_station_(ctx_, p, currentId, prevId, outX, outY);
+        return pick_next_station_(ctx_, p, currentId, prevId, moveMult,
+                                  outX, outY);
     }
     // ВЫЛИВ СУМКИ ДОМОЙ — ОДНА сделка лотом по всему словарю плюс остаток
     // стоимости той же дверью цены (ломоть 2 M-72). Один глагол на оба рейса
@@ -2070,7 +2075,8 @@ bool march_is_stuck_(const MacroPos& p, float oldX, float oldY,
 // здесь не воскресает: урна — только соседние округи, мест в ней единицы, и
 // самый дальний кандидат всё равно сосед.
 int pick_next_station_(const TickContext& ctx, const MacroPos& p,
-                       int currentId, int prevId, float& outX, float& outY) {
+                       int currentId, int prevId, float moveMult,
+                       float& outX, float& outY) {
     if (!ctx.mw.gs) return -1;
     const NavWorld* nv = ctx.mw.nav;
     const std::size_t R = nv ? nv->regionRootedId.size() : 0;
@@ -2082,16 +2088,14 @@ int pick_next_station_(const TickContext& ctx, const MacroPos& p,
     // В одну сторону: крю идёт ТУДА и едет дальше, а не возвращается.
     // Отрицательное = пути нет (kNavFar), и молчаливой подмены геометрией в
     // запечённом мире не бывает — кандидат просто выбывает.
+    // ОДНО НАПИСАНИЕ МЕРЫ НА ВЕСЬ МИР (M-6 закрыт 2026-11-08). Здесь лежала
+    // ТРЕТЬЯ копия арифметики «цена → дни» — своя ветка запечённости, своя
+    // хорда, свой делитель 16, — и была она ЧАСТНЫМ СЛУЧАЕМ `march_days_`:
+    // «от точки стояния до кандидата». Частный случай зовёт общий, а не
+    // пишет его заново (DOD п.6); цена — лишняя разыменовка `nav` на
+    // кандидата, которых в урне единицы.
     const auto days_to_ = [&](int tx, int ty) -> float {
-        if (baked) {
-            const std::uint32_t c =
-                nav_path_cost(*nv, int(p.x), int(p.y), tx, ty);
-            if (c == kNavFar) return -1.0f;
-            return float(c) / 16.0f / kSustainedMarchCellsPerDay;
-        }
-        return std::sqrt(torus_dist_sq(p.x, p.y, float(tx), float(ty),
-                                       float(ctx.mapW), float(ctx.mapH)))
-               / kSustainedMarchCellsPerDay;
+        return march_days_(ctx, int(p.x), int(p.y), tx, ty, moveMult);
     };
     // РУЛЕТКА ОДНИМ ПРОХОДОМ (взвешенный резервуар): кандидат берёт урну с
     // вероятностью своего веса в накопленной сумме. Второй проход по
@@ -2220,18 +2224,28 @@ constexpr int kThreatFearShift = 2;
 // nav_path_cost, что у аукциона; хорда — только в мире без дорог). Рейсу со
 // станции нужны ноги ОТ МЕСТА СТОЯНИЯ, а лямбда аукциона считает от дома —
 // это одна мера с двумя концами, а не второй закон.
-float march_days_(const TickContext& ctx, int ax, int ay, int bx, int by) {
+// ДВЕ ПРИЧИНЫ РАЗВЕДЕНЫ, И ЭТО ВТОРАЯ ПОЛОВИНА ВЕРДИКТА. Здесь стоял ОДИН
+// гейт `cells < 0`, и он сливал «мир не запечён» (ПРИБОР не готов — хорда
+// честна) с «пути нет» (ОТВЕТ мира — хорда есть ложь). Сегодня вторая ветка
+// ДРЕМЛЕТ: замер четырёх миров (сиды 12345/7/2026/777) дал `noRegion` 0 и
+// недостижимых пар округ 0 из 21 309 962 — вода перестала быть стеной, тор
+// замощён целиком. Но дремлющая ложь просыпается молча, а разведение стоит
+// четырёх строк, поэтому разведено сейчас.
+float march_days_(const TickContext& ctx, int ax, int ay, int bx, int by,
+                  float moveMult) {
+    const float perDay = march_cells_per_day(moveMult);
+    if (!(perDay > 0.0f)) return -1.0f;   // стоячий ходок никуда не дойдёт
     const NavWorld* nv = ctx.mw.nav;
-    float cells = -1.0f;
     if (nv && nv->baked()) {
         const std::uint32_t c = nav_path_cost(*nv, ax, ay, bx, by);
-        if (c != kNavFar) cells = float(c) / 16.0f;
+        if (c == kNavFar) return -1.0f;   // ПУТИ НЕТ — ответ мира, не хорда
+        return (float(c) / 16.0f) / perDay;
     }
-    if (cells < 0.0f)
-        cells = std::sqrt(torus_dist_sq(float(ax), float(ay), float(bx),
-                                        float(by), float(ctx.mapW),
-                                        float(ctx.mapH)));
-    return cells / kSustainedMarchCellsPerDay;
+    // МИР НЕ ЗАПЕЧЁН — прибора ещё нет (фикстуры и окно до первого свипа),
+    // и хорда здесь честная оценка, а не подмена ответа.
+    return std::sqrt(torus_dist_sq(float(ax), float(ay), float(bx),
+                                   float(by), float(ctx.mapW),
+                                   float(ctx.mapH))) / perDay;
 }
 
 // СТРАХ МАРШРУТА между двумя точками — тот же терм, что в аукционе: худшая
@@ -2589,14 +2603,15 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
             }
             const float daysHome =
                 view.march_days(int(s.pos.x), int(s.pos.y), int(home.x),
-                                int(home.y));
+                                int(home.y), s.rt.moveMult);
             const float bidHome =
                 daysHome > 0.0f ? float(homeValue) / daysHome : 0.0f;
             // КАНДИДАТ — СОСЕД ПО МЕМБРАНЕ, ИЗ ТОЧКИ СТОЯНИЯ (S7,
             // диффузия), и НЕ тот, откуда пришли: рынок, который только что
             // обслужили, шанса не получает.
             const int nextId = pult.next_station(
-                s.pos, int(view.rooted_id(market)), rt.prevStationId);
+                s.pos, int(view.rooted_id(market)), rt.prevStationId,
+                s.rt.moveMult);
             float bidGo = 0.0f;
             const std::uint16_t next = view.rooted_slot(nextId);
             if (next != kMacroNoSlot && next != homeSlot) {
@@ -2610,9 +2625,9 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
                 // от дома бесконечно — знаменатель обязан расти с отъездом.
                 const float daysGo =
                     view.march_days(int(s.pos.x), int(s.pos.y), nextX_,
-                                    nextY_)
+                                    nextY_, s.rt.moveMult)
                     + view.march_days(nextX_, nextY_, int(home.x),
-                                      int(home.y));
+                                      int(home.y), s.rt.moveMult);
                 if (daysGo > 0.0f)
                     bidGo = (float(gain)
                              - view.route_fear(int(s.pos.x), int(s.pos.y),
