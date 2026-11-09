@@ -490,6 +490,21 @@ RuntimeFrameStats advance_sim_steps(App& app, int steps, bool allowInput);
 // The avatar body's one occupancy gate (ecs::Combat::recoverySteps), 0 when
 // free — the number the turn-based stop derives from (main.cpp).
 std::uint32_t player_gate_steps(const App& app);
+// ЕДИНИЧНАЯ ДВЕРЬ ГАРНЕССА над тик-родным `advance_sim_steps` выше: переводит
+// отрезок времени в шаги и зовёт её. Прод-звонящих у неё НОЛЬ — игровой цикл
+// зовёт тик-родную напрямую, — и это НЕ делает её сиротой: в секундах думают
+// ровно те, кто пишет число РУКОЙ (гарнесс и консоль), а мир не спрашивает
+// никогда (вывод — у `sim_steps_for_seconds@src/app/main.cpp`).
+//
+// И ЭТО НЕ НАРУШЕНИЕ «КАЛИБРОВАТЬ ТОЛЬКО В ТИКАХ» — проверено 2026-11-09, когда
+// я объявил её нарушением 35 раз и ошибся: закон запрещает выводить величины из
+// РЕАЛЬНОЙ секунды, потому что та есть свойство ЖЕЛЕЗА игрока. Здесь секунда —
+// ровно `kTicksPerRealSecond` = 64 тика ПО ПОСТРОЕНИЮ (сутки 8192 тика, и на
+// любом мониторе они идут 128 секунд), то есть фиксированное кратное тика, а не
+// железная величина. Той же единицей живёт мир: `SpellDef::speed` — tiles/s,
+// `kSubworldWalkTilesPerSecond` — 24. Снос этой двери заставил бы два сайта
+// полёта болта переводить tiles/s в тики РУКОЙ, то есть ухудшил бы читаемость
+// ради мнимого закона.
 RuntimeFrameStats advance_sim_seconds(App& app, float seconds, bool allowInput);
 
 } // namespace sm::app
