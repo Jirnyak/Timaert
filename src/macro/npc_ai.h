@@ -132,7 +132,6 @@ struct TickContext {
     // — гейты встреч и исключение свипа; до смерти тегов заполняются из
     // тегов (make_tick_context), после — из GameState. kMacroNoSlot = нет.
     std::uint16_t playerFlagSlot  = kMacroNoSlot;
-    std::uint16_t playerSquadSlot = kMacroNoSlot;
     // ЗДЕСЬ СТОЯЛА `factionHostileMask[kMaxFactions]` — 512 Б запечённой
     // враждебности реестра, и она СНЕСЕНА (M-268, вердикт владельца
     // 2026-10-21: «отношения фракций однозначно динамические … ради полировки

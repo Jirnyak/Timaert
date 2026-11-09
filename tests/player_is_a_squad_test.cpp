@@ -178,7 +178,19 @@ void test_death_in_a_worn_body_wakes_him_at_home() {
           "нокаутированный сквад остаётся под контролем — hp двери не указ");
 }
 
-// ── 3. The AI never drives the player's squad ────────────────────────────
+// ── 3. Свип не водит АКТИВНОГО — и ВОДИТ прочих под контролем ────────────
+// ЗАКОН СУЗИЛСЯ ВЕРДИКТОМ ВЛАДЕЛЬЦА 2026-11-09 (ломоть 7б M-421, «только за
+// активным»). Прежде изъятых слотов было ДВА — флажок и родной сквад, — и
+// шапка этого свидетеля называла причину второго: «the exact state in which
+// the old exclude-guard let the AI take the wheel». Причина была верна для
+// мира, где у игрока РОВНО ОДИН сквад и «дом» есть отдельный род. Рода нет:
+// прочие сквады под контролем суть ОБЫЧНЫЕ сквады мира, и не водить их
+// значило бы выключать мир тем шире, чем больше у игрока партий.
+//
+// Поэтому свидетель перепредмечен и стал СИЛЬНЕЕ: он утверждает ОБЕ
+// полярности одним прогоном — активного свип не тронул, брошенного тронул.
+// Цена названа вслух: пока ты носишь лорда, твоя оставленная партия живёт
+// своей целью, а не стоит колом.
 void test_ai_leaves_the_player_squad_standing() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
@@ -186,45 +198,40 @@ void test_ai_leaves_the_player_squad_standing() {
     // derives the spawn cell from the world — map centre in a bare fixture.)
     auto wStore_ = sm::make_macro_store();
     ensure_macro_player_entity(gs, *wStore_);
-    const MacroHandle mineH = player_squad_handle(gs);
+    const MacroHandle mineH = player_flag_handle(gs);
     // Stand him on 20,20 the way any placement happens now: by writing the
     // squad's own cell (the jump door's core), not a scalar.
     wStore_->cell[mineH.slot].idx = ecs::cell_index(20, 20, 64);
 
-    // Possession, so the flag is NOT on his squad — the exact state in which
-    // the old exclude-guard let the AI take the wheel.
+    // Вселение: флажок УЕЗЖАЕТ со его сквада на лорда. Теперь изъят ЛОРД —
+    // он активный, — а прежний сквад игрока стал обычным сквадом мира.
     const MacroHandle lord = npc_squad(*wStore_, 30.0f, 30.0f, 7u, 0);
     sm::transfer_player_flag(*wStore_, gs.playerFlagRef, lord);
 
-    // The negative control: an idle NPC standing where the player stands. If
-    // the sweep is a no-op for everyone, this one's runtime never moves either
-    // and the test proves nothing.
-    const MacroHandle other = npc_squad(*wStore_, 20.0f, 20.0f, 8u, 0);
-
-    const auto before = wStore_->runtime[mineH.slot];
+    const auto beforeActive = wStore_->runtime[lord.slot];
     MacroNpcAiRuntime runtime;
     MacroWorld mw{};
     mw.gs = &gs;
     mw.store = wStore_.get();
     for (int i = 0; i < 8; ++i) tick_macro_npc_ai(mw, runtime, kAiTicks);
 
-    const auto& after = wStore_->runtime[mineH.slot];
-    CHECK(after.state == before.state,
-          "the player's squad kept its state through eight AI sweeps");
-    CHECK(wStore_->goal[mineH.slot].cell == ecs::kNoCell,
-          "nothing gave the player's squad somewhere to be");
-    CHECK(ecs::cell_x(wStore_->cell[mineH.slot], 64) == 20 &&
-          ecs::cell_y(wStore_->cell[mineH.slot], 64) == 20,
-          "and it did not walk off his cell");
-    // The sharpest witness: the per-NPC accumulator the sweep advances on
-    // everyone it visits. Untouched means never visited, not "visited and
-    // decided to stand".
-    CHECK(after.tickAccum == 0.0f,
-          "the sweep never so much as counted the player's squad");
+    // (а) АКТИВНОГО СВИП НЕ ТРОНУЛ. Самый резкий свидетель — накопитель,
+    //     который свип двигает КАЖДОМУ, кого посетил: нетронутый значит «не
+    //     посещён», а не «посещён и решил стоять».
+    const auto& active = wStore_->runtime[lord.slot];
+    CHECK(active.state == beforeActive.state,
+          "активный сквад сохранил состояние через восемь проходов свипа");
+    CHECK(active.tickAccum == 0.0f,
+          "свип не посчитал активного ни разу — его ноги у ввода");
 
-    const auto& drove = wStore_->runtime[other.slot];
+    // (б) НЕГАТИВНЫЙ КОНТРОЛЬ — И ОН ЖЕ ВТОРАЯ ПОЛОВИНА ЗАКОНА: прежний
+    //     сквад игрока свип ТРОНУЛ. Прежде здесь стоял посторонний НПЦ, и
+    //     контроль лишь доказывал «свип вообще работает»; теперь он
+    //     утверждает САМ вердикт — прочие сквады под контролем суть обычные
+    //     сквады мира.
+    const auto& drove = wStore_->runtime[mineH.slot];
     CHECK(drove.tickAccum != 0.0f || drove.state != std::uint8_t(NPCState::Idle),
-          "negative control: the same eight sweeps DID reach the squad beside him");
+          "брошенный сквад под контролем свип ВОДИТ, как всякий сквад мира");
 }
 
 // ── 4. Его люди гибнут СО ВСЕМИ — изъятия в машинерии смерти нет ─────────

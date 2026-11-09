@@ -261,7 +261,12 @@ void test_aggressive_chases_visible_player() {
     auto player = spawn_ai(st, sm::NPCType::Adventurer, 12.0f, 10.0f, -1);
     (*sm::body_state<sm::ecs::NPCKind>(st, player)).factionIdx =
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
-    gs.playerSquadRef = player;
+    // НОСИТЕЛЬ «КТО ИГРОК» — АКТИВНЫЙ ФЛАЖОК, А НЕ ДОМ (ломоть 7б M-421):
+    // фикстура ставила `playerSquadRef`, и погоня находила цель по следу,
+    // который мир клал за ДОМ. Дом умирает; след кладёт активный, поэтому
+    // фикстура обязана назвать игрока тем же носителем, каким его называет
+    // мир. Закон свидетеля не тронут — тронута его посылка.
+    gs.playerFlagRef = player;
     // And pursuit is the one STRENGTH law (squad_threat_step): a fighter
     // closes only fights it wins with margin. The player is wounded to 10%
     // so the chase is the law's own verdict, not a leftover reflex.

@@ -3259,10 +3259,14 @@ void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                 // Игрок в теле ведьмы: встреча принадлежит форс-двери
                 // игрока (main.cpp detect_forced_encounter), не тихому
                 // резолву — тот же гард, что у threat step.
-                if (prey.slot == ctx.playerFlagSlot
-                    || prey.slot == ctx.playerSquadSlot) {
-                    return;
-                }
+                // ИЗЪЯТИЕ ОСТАЁТСЯ ЗА АКТИВНЫМ, И ЭТО МАРШРУТ, А НЕ
+                // НЕУЯЗВИМОСТЬ: встреча активного принадлежит ЕГО двери
+                // (`detect_forced_encounter@src/app/main.cpp`), которая
+                // открывает предбоевой экран, — тихий авторезолв решил бы её
+                // за игрока. Второй слот (ДОМ) ушёл с `.home` (ломоть 7б
+                // M-421, вердикт владельца 2026-11-09 «только за активным»):
+                // прочие сквады под контролем есть ОБЫЧНЫЕ сквады мира.
+                if (prey.slot == ctx.playerFlagSlot) return;
                 // ИЗЪЯТИЕ ПО КЛЕТКЕ, А НЕ ПО РОДУ СЦЕНЫ (M-226): клетка
                 // встречи в аренде у субмира — значит её ведёт он, и решать
                 // этот бой наверху значило бы завести второго писателя.
@@ -3406,10 +3410,7 @@ void ai_dragon(MacroHandle self, MacroPos& p,
             const MacroPos ep{float(ecs::cell_x(ecell, ctx.mapW)),
                               float(ecs::cell_y(ecell, ctx.mapW))};
             if (int(p.x) == int(ep.x) && int(p.y) == int(ep.y)) {
-                if (prey.slot == ctx.playerFlagSlot
-                    || prey.slot == ctx.playerSquadSlot) {
-                    return;
-                }
+                if (prey.slot == ctx.playerFlagSlot) return;   // дом ушёл с `.home`
                 if (ctx.mw.gs
                     && cell_is_leased(*ctx.mw.gs, st.cell[self.slot].idx)) return;
                 const AutoBattleOutcome o = resolve_auto_battle(
@@ -3700,12 +3701,10 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
         // A player-controlled squad's meetings belong to the forced-encounter
         // door (Inc 6, main.cpp detect_forced_encounter): the squad stands ON
         // the meeting cell and the door opens the pre-battle screen — never
-        // the silent auto-resolve. Both slots, because possession moves
-        // the flag while the home squad stays home (player_entity.h).
-        if (enemy.slot == ctx.playerFlagSlot
-            || enemy.slot == ctx.playerSquadSlot) {
-            return true;
-        }
+        // the silent auto-resolve. ОДИН слот: второй (дом) ушёл с `.home`
+        // (ломоть 7б M-421) — брошенный сквад под контролем решает свои бои
+        // так же, как всякий сквад мира.
+        if (enemy.slot == ctx.playerFlagSlot) return true;
         if (ctx.mw.gs
             && cell_is_leased(*ctx.mw.gs, st.cell[self.slot].idx)) return false;
         ecs::MacroNpcRuntime* ert = &st.runtime[enemy.slot];
@@ -3830,8 +3829,9 @@ void scent_player_deposit(const TickContext& ctx) {
                          float(ecs::cell_y(c, ctx.mapW))};
         scent_squad_deposit(h, p, st.kind[slot], ctx);
     };
+    // След кладёт АКТИВНЫЙ. Дубль прохода по дому ушёл с `.home`
+    // (ломоть 7б M-421): компенсировать стало нечего.
     put(ctx.playerFlagSlot);
-    if (ctx.playerSquadSlot != ctx.playerFlagSlot) put(ctx.playerSquadSlot);
 }
 
 // (Крутилки охоты — kHuntBoldShift и kHuntScentFloor — в npc_ai.h: их
@@ -4767,8 +4767,6 @@ static TickContext make_tick_context(MacroWorld& mw,
             const MacroStore& st = *ctx.mw.store;
             const MacroHandle flag = player_flag_handle(*mw.gs);
             if (st.valid(flag)) ctx.playerFlagSlot = flag.slot;
-            const MacroHandle home = player_squad_handle(*mw.gs);
-            if (st.valid(home)) ctx.playerSquadSlot = home.slot;
         }
     }
     ctx.squads  = &runtime.squadIndex;
@@ -4859,12 +4857,14 @@ static void tick_macro_npc_ai_one(MacroWorld& mw, MacroNpcAiRuntime& runtime) {
     // (squad_walk.h): по ординалу, не по кишке хранилища. Лист на драйв
     // ОДИН — тот самый, что собрал build_squad_index выше (M-376: второй
     // скан капа умер; содержимое и порядок те же — живые по ординалу).
-    // Игрока свип не водит НИКОГДА — ни флажок, ни его родной сквад
-    // (слоты из ctx, пропуск в теле).
+    // Свип не водит АКТИВНОГО — его ноги у ввода, и двух писателей у одной
+    // записи не бывает. Второй слот (дом) ушёл с `.home` (ломоть 7б M-421,
+    // вердикт «только за активным»): прочие сквады под контролем ведутся
+    // свипом, как всякий сквад мира, — своей целью, которая у стоящего есть
+    // «стой тут».
     for (const SquadWalkEntry& sw : runtime.squadIndex.order) {
         const std::uint16_t slot = sw.slot;
-        if (slot == ctx.playerFlagSlot || slot == ctx.playerSquadSlot)
-            continue;
+        if (slot == ctx.playerFlagSlot) continue;
         const MacroHandle h = handle_at(st, slot);
         auto& cell = st.cell[slot];
         auto& kind = st.kind[slot];
