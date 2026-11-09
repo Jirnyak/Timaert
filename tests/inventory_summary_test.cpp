@@ -171,8 +171,10 @@ void test_creature_area_repair_keeps_the_summary() {
     const int bled = bleed_flock(bag, 2);
     CHECK(bled >= 0, "дверь паствы отвечает фактом");
     settled(bag, "bleed_flock");
-    CHECK(bleed_creatures(bag, 1) >= 0, "дверь голов отвечает фактом");
-    settled(bag, "bleed_creatures");
+    // (`bleed_creatures` снесена 2026-11-08 вердиктом владельца, M-436: её
+    //  модель — толпа данжа и «голод снимает любую голову» — отменена. Её
+    //  строка здесь была ВЫЗОВОМ ради соседнего `settled`; закон разряда А
+    //  держат оставшиеся четыре двери записи этого же обхода.)
 
     const int killed = creatures_kill_all(bag);
     CHECK(killed >= 0, "все гибнут одной дверью");

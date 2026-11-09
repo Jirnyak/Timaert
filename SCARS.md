@@ -129,7 +129,8 @@ index)`, разброс у стражника **976 против 254 за три
    (`write_creatures@src/macro/macro_stock.cpp`) принялась вести число места,
    то есть ЧУЖУЮ частность. Приход души по-прежнему идёт
    `settle_souls@src/macro/labour.h`, убыль по контейнеру —
-   `bleed_flock@src/bus/world_row.h` и `bleed_creatures@src/bus/world_row.h`;
+   `bleed_flock@src/bus/world_row.h` (вторая, `bleed_creatures`, снесена
+   2026-11-08 — некролог, адреса у имени нет);
    число же ведёт модуль места своей дверью (`shift_home_flock@src/macro/squad.h`)
    и в СВОЁМ дневном проходе, а не по звонку снизу.
 4. **ВСЕ, КТО В КОНТЕЙНЕРЕ, ЕДЯТ ПО ТАБЛИЦЕ** (владелец, тот же день: «с чего
