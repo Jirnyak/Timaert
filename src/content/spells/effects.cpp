@@ -257,21 +257,13 @@ void spawn_possession(sub::SubObjects* objs, const SpellSpawnContext& c) {
     // выше, разыменованная одной дверью.
     const int casterSlot = sub::avatar_slot(*objs);
     if (casterSlot < 0) return;
-    // 1-hop ban: the hero husk mirrors his own squad's record; any other
-    // record under the avatar means the caster is already wearing somebody.
-    // «Кто оригинал» — хэндл GameState (1е кластер 5, M-220): запись под
-    // аватаром сравнивается с `playerSquadRef` напрямую; derived-тело
-    // (записи нет) — пустой хэндл, честно ловит тот же запрет.
-    if (c.gs) {
-        const MacroHandle home = c.gs->playerSquadRef;
-        // Запись под аватаром — шовной слот-дверью: слот даёт сама ссылка
-        // сцены (суд выше), стора у фикстуры может не быть — «записи нет»
-        // (конверт несёт его полем store, ломоть E: ctx-мост умер).
-        const MacroHandle avRec = c.store != nullptr
-            ? sub::slot_macro_record(*objs, int(objs->avatar.slot), *c.store)
-            : MacroHandle{};
-        if (home.id != 0 && !(avRec == c.gs->playerSquadRef)) return;
-    }
+    // ЗДЕСЬ СТОЯЛ ЗАПРЕТ «ОДИН ПРЫЖОК» — сверка записи под аватаром с ДОМОМ
+    // (`playerSquadRef`), не дававшая вселиться, пока ты уже кого-то носишь.
+    // СНЯТ вердиктом владельца 2026-11-09 (ломоть 7б M-421, на развилку о
+    // гейте: «снять гейт целиком»): дома как носителя больше нет, а цепочка
+    // вселений объявлена ЗАКОННОЙ. Запрет и держался-то ровно на том, что
+    // «оригинал» существовал отдельной колонкой; с её смертью у запрета не
+    // стало ни носителя, ни предмета.
     // The body under the reticle, within THIS row's reach. The row is this
     // function's own binding (kSpellEffects), so reading it back is the
     // ordinal law, not a lookup of somebody else's numbers.
