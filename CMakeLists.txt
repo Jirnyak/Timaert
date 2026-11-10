@@ -551,7 +551,6 @@ add_executable(balance_run tests/balance_run.cpp
     src/macro/world_tick.cpp
     src/macro/threat_field.cpp
     src/macro/scent_field.cpp
-    src/macro/world_fields.cpp
     src/macro/player_entity.cpp
     src/sub/base_generator.cpp)
 set_target_properties(balance_run PROPERTIES
@@ -605,7 +604,6 @@ add_executable(road_reach_census tests/road_reach_census.cpp
     src/macro/world_tick.cpp
     src/macro/threat_field.cpp
     src/macro/scent_field.cpp
-    src/macro/world_fields.cpp
     src/macro/player_entity.cpp
     src/sub/base_generator.cpp)
 set_target_properties(road_reach_census PROPERTIES
@@ -702,7 +700,6 @@ add_executable(fauna_spread_census tests/fauna_spread_census.cpp
     src/macro/world_tick.cpp
     src/macro/threat_field.cpp
     src/macro/scent_field.cpp
-    src/macro/world_fields.cpp
     src/macro/player_entity.cpp
     src/sub/base_generator.cpp
     # M-391: вторая половина прибора мерит, КТО встаёт на клетке особой фичи, и
@@ -908,48 +905,21 @@ timaert_test(object_ladder_test
     SOURCES
         src/tables/items.cpp)
 
+# СЕЙВ ЕСТЬ ПРЯМОЙ ДАМП (M-439): файл — заголовок и два куска памяти мира.
+# Свидетель рожает мир теми же дверями, что игра (рождение сквадов, осёдлых,
+# флажок игрока, смерть), пишет и читает НАСТОЯЩИЙ файл и сверяет оба куска
+# побайтно; он же несёт законы живой карты, прежде стоявшие у снимка сквадов
+# (убитый остаётся мёртвым, ординал не переиздаётся, флажок возвращается).
 timaert_test(save_roundtrip_test
     SOURCES
-        # the deposit fixture sizes its vein FIELDS through the layer's door
-        src/macro/deposit_layer.cpp
-        src/events/event_bus.cpp
         src/macro/save.cpp
-        # the save carries the world's own memory (macro/chronicle.h)
+        # летопись и журнал — члены состояния; фикстура пишет в них дверями
         src/macro/chronicle.cpp
-        # the save carries what a body WEARS (macro/anatomy.h)
-        src/macro/world_fields.cpp
-        # wallet math reads the item catalog (currency.h).
-        src/bus/anketa.cpp
-        src/tables/items.cpp
-        # the fixture builds a real knowledge grid (v40) via knowledge_reset.
-        src/macro/knowledge.cpp
-        # npc.h now answers for BOTH halves of the kind id space.
-        src/macro/fauna.cpp
-        src/tables/fauna.cpp
-        # M-90 флип (v127): плечо места едет ЗАПИСЬЮ ЕГО ТЕЛА в блоке
-        # макро-сквадов, поэтому круг сейва снимает тела (snapshot_macro_ecs)
-        # и возвращает их (restore_macro_ecs + relink_place_bodies).
-        src/macro/macro_snapshot.cpp
-    LINK_SDL)
-
-# Sight-as-light: the knowledge layer's law (Unknown/Explored/Visible, decay,
-# reveal) over the shared optical sweep — relations against the cost table.
-timaert_test(knowledge_test
-    SOURCES
-        src/macro/knowledge.cpp)
-
-timaert_test(macro_snapshot_test
-    SOURCES
-        # the load path sizes the vein FIELDS to the world it just read
-        src/macro/deposit_layer.cpp
-        src/macro/save.cpp
-        # the save carries the world's own memory (macro/chronicle.h)
-        src/macro/chronicle.cpp
-        # the save carries what a body WEARS (macro/anatomy.h)
-        src/macro/world_fields.cpp
-        src/macro/macro_snapshot.cpp
-        # v116: хэндлы игрока резолвятся после restore пограничными дверьми
-        # (resolve_player_handles_after_load / player_flag_wire_ordinal).
+        # поле следов — член состояния; фикстура кроит его дверью поля
+        src/macro/scent_field.cpp
+        # лес — член состояния; фикстура пишет клетки дверью слоя
+        src/macro/tree_layer.cpp
+        # кэш носителя флажка пересобирается после загрузки пограничной дверью
         src/macro/player_entity.cpp
         # spawn_squad goes through make_npc — the one creation door — so the
         # test links the spawner and the loot it rolls.
@@ -960,6 +930,12 @@ timaert_test(macro_snapshot_test
         src/macro/fauna.cpp
         src/tables/fauna.cpp
     LINK_SDL)
+
+# Sight-as-light: the knowledge layer's law (Unknown/Explored/Visible, decay,
+# reveal) over the shared optical sweep — relations against the cost table.
+timaert_test(knowledge_test
+    SOURCES
+        src/macro/knowledge.cpp)
 
 # Header-only on purpose: the spell DATA registry (macro/spells.h) is a
 # constexpr table with no TU — the test guards its append-only ordinals.
@@ -1234,7 +1210,6 @@ timaert_test(design_characters_test
         src/tables/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/npc_spawn.cpp
-        src/macro/macro_snapshot.cpp
         src/bus/anketa.cpp
         src/tables/items.cpp
         src/macro/econ_day.cpp   # AiPult::craft жив в думке — долг гасится тут
@@ -2655,7 +2630,6 @@ timaert_test(player_is_a_squad_test
         src/macro/economy.cpp
         # the gatherer and the caravan file world facts (chronicle door)
         src/macro/chronicle.cpp
-        src/macro/macro_snapshot.cpp
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp

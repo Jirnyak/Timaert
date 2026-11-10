@@ -70,7 +70,7 @@ std::vector<std::int32_t> road_distance_field(const sm::FeatureLayer& f, int sid
     const std::size_t n = std::size_t(side) * std::size_t(side);
     std::vector<std::int32_t> dist(n, -1);
     std::deque<std::uint32_t> q;
-    for (std::size_t i = 0; i < n && i < f.data.size(); ++i) {
+    for (std::size_t i = 0; i < n && i < f.cell_count(); ++i) {
         if (is_road_byte(f.data[i])) { dist[i] = 0; q.push_back(std::uint32_t(i)); }
     }
     static const int dx[8] = {1, -1, 0, 0, 1, 1, -1, -1};
@@ -90,11 +90,12 @@ std::vector<std::int32_t> road_distance_field(const sm::FeatureLayer& f, int sid
 void census_seed(std::uint32_t seed) {
     std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
     sm::GameState& gs = *gsOwn;
+    sm::Session session;   // генезис якорит в ней игрока и объявляет событие состава
     sm::TerrainData terrain{};
     std::vector<sm::TreePoint> trees;
     std::unique_ptr<sm::DepositLayer> depositsOwn{new sm::DepositLayer()};
     sm::DepositLayer& deposits = *depositsOwn;
-    sm::FeatureLayer features;
+    sm::FeatureLayer& features = gs.features;
     sm::ZoneLayer zones;
     sm::TreeGrid treeGrid;
     sm::PathCostData pathCost;
@@ -107,10 +108,10 @@ void census_seed(std::uint32_t seed) {
     gp.seed = seed;
     sm::WorldGenOut go{};
     go.gs = &gs;
+    go.session = &session;
     go.terrain = &terrain;
     go.trees = &trees;
     go.deposits = &deposits;
-    go.features = &features;
     go.zones = &zones;
     go.treeGrid = &treeGrid;
     go.squadIndex = &ai.squadIndex;
@@ -120,7 +121,7 @@ void census_seed(std::uint32_t seed) {
 
     const int side = features.width > 0 ? features.width : terrain.width;
     std::size_t roadCells = 0;
-    for (std::size_t i = 0; i < features.data.size(); ++i)
+    for (std::size_t i = 0; i < features.cell_count(); ++i)
         if (is_road_byte(features.data[i])) ++roadCells;
 
     const std::vector<std::int32_t> dist = road_distance_field(features, side);

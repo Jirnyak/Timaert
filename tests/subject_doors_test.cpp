@@ -61,7 +61,7 @@ Fixture make_world(sm::MacroStore& st) {
     // отвечала бы «тем же объектом» по совпадению. С M-220 эмитент — у стора.
     st.nextSpawnId = 7u;
     const sm::MacroHandle city = sm::birth_squad(
-        gs, st, sm::SquadType::City, 10, 10, -1, "Testholm");
+        gs, nullptr, st, sm::SquadType::City, 10, 10, -1, "Testholm");
     fx.cityId = int(st.spawnId[city.slot].index);
     sm::creatures_push(st.inventory[city.slot].inv,
         sm::make_soldier(std::uint8_t(sm::NPCType::Guard), 2, 11u));
@@ -71,11 +71,11 @@ Fixture make_world(sm::MacroStore& st) {
     // A VILLAGE and a SPIRE on the same one id space (v54): the doors must
     // answer for them exactly as they do for the city — kind-blind.
     const sm::MacroHandle village = sm::birth_squad(
-        gs, st, sm::SquadType::Village, 20, 20, -1, "Hamlet");
+        gs, nullptr, st, sm::SquadType::Village, 20, 20, -1, "Hamlet");
     fx.vilId = int(st.spawnId[village.slot].index);
     sm::settle_souls(gs, st, village.slot, 40);
     const sm::MacroHandle spire =
-        sm::birth_squad(gs, st, sm::SquadType::Spire, 40, 40);
+        sm::birth_squad(gs, nullptr, st, sm::SquadType::Spire, 40, 40);
     fx.spireId = int(st.spawnId[spire.slot].index);
     return fx;
 }

@@ -1,4 +1,5 @@
 #include "check.h"
+#include <memory>
 
 #include "core/torus.h"
 #include "macro/spawners.h"
@@ -94,19 +95,20 @@ std::size_t idx(const sm::TerrainData &td, int x, int y)
 // неотличим от last-writer-wins, поэтому здесь он НЕ перевычисляется второй
 // копией (§8 п.5) — его утверждает свойствами
 // test_settlement_feature_survives_road_pass ниже, на ПОСЕЯННОМ слое.
-sm::FeatureLayer build_reference_feature_layer(
+std::unique_ptr<sm::FeatureLayer> build_reference_feature_layer(
     const sm::TerrainData &td,
     const std::vector<std::uint8_t> &roadMask,
     const std::vector<std::uint8_t> *dirtMask)
 {
-    sm::FeatureLayer fl;
+    std::unique_ptr<sm::FeatureLayer> flOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& fl = *flOwn;
     fl.resize(td.width, td.height);
-    if (td.width <= 0 || td.height <= 0 || fl.data.empty())
-        return fl;
+    if (td.width <= 0 || td.height <= 0 || fl.cell_count() == 0u)
+        return flOwn;
 
     const std::size_t total = std::size_t(td.width) * std::size_t(td.height);
     if (td.rgba.size() < total * 4u)
-        return fl;
+        return flOwn;
 
     // ОДИН ПРЕДИКАТ ВОДЫ, КАК В МИРЕ (M-109, вердикт владельца «НИКАКИХ
     // МАСОК»): здесь их было два — «маска ИЛИ высота» и «только маска», — и
@@ -141,7 +143,7 @@ sm::FeatureLayer build_reference_feature_layer(
         else
             fl.data[i] = sm::FT_Road;
     }
-    return fl;
+    return flOwn;
 }
 
 void test_feature_priority_and_water_filter()
@@ -161,7 +163,8 @@ void test_feature_priority_and_water_filter()
     road[idx(td, 1, 1)] = 255;
     road[idx(td, 2, 2)] = 255;
 
-    sm::FeatureLayer fl;
+    const std::unique_ptr<sm::FeatureLayer> flOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& fl = *flOwn;
     sm::build_feature_layer(fl, td, road, &dirt);
 
     CHECK(fl.width == 4 && fl.height == 4,
@@ -182,33 +185,44 @@ void test_feature_priority_and_water_filter()
 
 void test_empty_and_malformed_inputs_are_safe()
 {
-    sm::FeatureLayer empty;
+    const std::unique_ptr<sm::FeatureLayer> emptyOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& empty = *emptyOwn;
     empty.resize(0, 4);
     sm::FeatureLayerProbe::set(empty, 0, 0, sm::FT_Road);
 
-    sm::FeatureLayer shortStorage;
-    shortStorage.width = 4;
-    shortStorage.height = 4;
-    shortStorage.data.assign(1, std::uint8_t(sm::FT_DirtRoad));
-    sm::FeatureLayerProbe::set(shortStorage, 3, 3, sm::FT_Road);
+    // МИР ВНЕ КАПА КЛЕТОК (M-456). Здесь стояла «короткая память» — вектор
+    // короче своих сторон. У плоского слоя под капом клеток такое невыразимо:
+    // память всегда длиной в кап. Осталась одна форма «стороны названы, а
+    // клеток нет» — мир ШИРЕ капа, и слой обязан молчать о нём целиком, даже
+    // когда в его байтах что-то лежит.
+    const std::unique_ptr<sm::FeatureLayer> overCapOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& overCap = *overCapOwn;
+    overCap.width = int(sm::kWorldSideCap) * 2;
+    overCap.height = int(sm::kWorldSideCap) * 2;
+    overCap.data[0] = std::uint8_t(sm::FT_DirtRoad);
+    sm::FeatureLayerProbe::set(overCap, 3, 3, sm::FT_Road);
 
-    sm::FeatureLayer invalidStorage;
+    const std::unique_ptr<sm::FeatureLayer> invalidStorageOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& invalidStorage = *invalidStorageOwn;
     invalidStorage.resize(2, 2);
     invalidStorage.data[0] = 255u;
     invalidStorage.data[1] = std::uint8_t(sm::FT_DirtRoad);
 
-    sm::FeatureLayer invalidSet;
+    const std::unique_ptr<sm::FeatureLayer> invalidSetOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& invalidSet = *invalidSetOwn;
     invalidSet.resize(1, 1);
     sm::FeatureLayerProbe::set(invalidSet, 0, 0, static_cast<sm::FeatureType>(255u));
 
-    sm::FeatureLayer validStorage;
+    const std::unique_ptr<sm::FeatureLayer> validStorageOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& validStorage = *validStorageOwn;
     validStorage.resize(2, 2);
     validStorage.data[0] = std::uint8_t(sm::FT_Road);
     validStorage.data[1] = std::uint8_t(sm::FT_DirtRoad);
 
     // FT_Field is a first-class byte: valid, decodes to itself, sanitizer
     // passes it through.
-    sm::FeatureLayer fieldStorage;
+    const std::unique_ptr<sm::FeatureLayer> fieldStorageOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& fieldStorage = *fieldStorageOwn;
     fieldStorage.resize(1, 1);
     fieldStorage.data[0] = std::uint8_t(sm::FT_Field);
 
@@ -217,10 +231,11 @@ void test_empty_and_malformed_inputs_are_safe()
     sm::TerrainData td = make_terrain(2, 2, 200.0f / 255.0f);
     std::vector<std::uint8_t> shortRoad{255};
     std::vector<std::uint8_t> shortDirt{0, 255};
-    sm::FeatureLayer fl;
+    const std::unique_ptr<sm::FeatureLayer> flOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& fl = *flOwn;
     sm::build_feature_layer(fl, td, shortRoad, &shortDirt);
 
-    CHECK(empty.width == 0 && empty.height == 0 && empty.data.empty(),
+    CHECK(empty.width == 0 && empty.height == 0 && empty.cell_count() == 0u,
                  "empty feature resize must clear storage");
     CHECK(empty.at(0, 0) == sm::FT_None,
                  "empty feature lookup must be safe");
@@ -234,10 +249,11 @@ void test_empty_and_malformed_inputs_are_safe()
                      && sm::FeatureLayer::wrap_coord(std::numeric_limits<int>::max(), 4) == 3
                      && sm::FeatureLayer::wrap_coord(-1, 1024) == 1023,
                  "feature coordinate wrap must handle INT_MIN without overflow");
-    CHECK(shortStorage.at(0, 0) == sm::FT_DirtRoad,
-                 "short feature storage must allow valid prefix lookup");
-    CHECK(shortStorage.at(3, 3) == sm::FT_None,
-                 "short feature storage must fail closed outside backing data");
+    CHECK(overCap.cell_count() == 0u && !overCap.has_complete_storage(),
+                 "a world wider than the cell cap has no live cells");
+    CHECK(overCap.at(0, 0) == sm::FT_None && overCap.at(3, 3) == sm::FT_None
+                     && overCap.data[3 * overCap.width + 3] == 0u,
+                 "an over-cap layer fails closed everywhere: no read, no write");
     CHECK(invalidStorage.at(0, 0) == sm::FT_None,
                  "invalid feature bytes must decode to None");
     CHECK(invalidStorage.at(1, 0) == sm::FT_DirtRoad,
@@ -262,23 +278,24 @@ void test_empty_and_malformed_inputs_are_safe()
                  "feature upload view must use sanitized scratch for invalid cells");
     const std::uint8_t *validUpload =
         validStorage.complete_cells_or_sanitized(sanitized);
-    CHECK(validUpload == validStorage.data.data() && sanitized.empty(),
+    CHECK(validUpload == validStorage.data && sanitized.empty(),
                  "feature upload view must keep direct storage for valid cells");
-    CHECK(!shortStorage.has_invalid_cell_bytes(),
-                 "short feature storage must not scan outside valid cell backing");
-    CHECK(!shortStorage.copy_sanitized_cells(sanitized) && sanitized.empty(),
-                 "short feature storage must not produce a complete sanitized copy");
-    CHECK(shortStorage.complete_cells_or_sanitized(sanitized) == nullptr
+    CHECK(!overCap.has_invalid_cell_bytes(),
+                 "an over-cap layer has no cells to scan for invalid bytes");
+    CHECK(!overCap.copy_sanitized_cells(sanitized) && sanitized.empty(),
+                 "an over-cap layer must not produce a sanitized copy");
+    CHECK(overCap.complete_cells_or_sanitized(sanitized) == nullptr
                      && sanitized.empty(),
-                 "short feature storage must not expose an upload view");
+                 "an over-cap layer must not expose an upload view");
     CHECK(invalidSet.data[0] == std::uint8_t(sm::FT_None)
                      && invalidSet.at(0, 0) == sm::FT_None,
                  "feature setter must sanitize invalid enum casts");
 
-    sm::FeatureLayer hugeExtent;
+    const std::unique_ptr<sm::FeatureLayer> hugeExtentOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& hugeExtent = *hugeExtentOwn;
     hugeExtent.width = std::numeric_limits<int>::max();
     hugeExtent.height = 1;
-    hugeExtent.data.assign(1u, std::uint8_t(sm::FT_Road));
+    hugeExtent.data[0] = std::uint8_t(sm::FT_Road);
     sm::FeatureLayerProbe::set(hugeExtent, std::numeric_limits<int>::max() - 1, 0, sm::FT_DirtRoad);
     // ЗАКОН АДРЕСА (владелец, 2026-09-23) СДЕЛАЛ ЭТОТ ОТКАЗ ПОЛНЫМ. Прежде
     // слой с уродливыми размерами доверялся ЧАСТИЧНО: клетка (0,0) ещё
@@ -364,14 +381,17 @@ void test_feature_layer_reference_matrix()
             for (std::size_t i = 0; i < dirt.size(); ++i)
                 dirt[i] = (next_u8() & 5u) == 0u ? 255 : 0;
 
-            sm::FeatureLayer actual;
+            const std::unique_ptr<sm::FeatureLayer> actualOwn{new sm::FeatureLayer()};
+            sm::FeatureLayer& actual = *actualOwn;
     sm::build_feature_layer(actual, td, road, &dirt);
-            const sm::FeatureLayer expected =
+            const std::unique_ptr<sm::FeatureLayer> expectedOwn =
                 build_reference_feature_layer(td, road, &dirt);
+            const sm::FeatureLayer& expected = *expectedOwn;
 
             CHECK(actual.width == expected.width && actual.height == expected.height,
                          "reference matrix dimensions must match");
-            CHECK(actual.data == expected.data,
+            CHECK(std::equal(actual.cells().begin(), actual.cells().end(),
+                             expected.cells().begin(), expected.cells().end()),
                          "reference matrix must match feature pass contract");
         }
     }
@@ -398,7 +418,8 @@ void test_feature_water_is_the_plane_not_the_mask()
     dirt[idx(td, 2, 0)] = 255;
     dirt[idx(td, 3, 0)] = 255;
     const std::vector<std::uint8_t> empty(std::size_t(td.width) * td.height, 0);
-    sm::FeatureLayer fl;
+    const std::unique_ptr<sm::FeatureLayer> flOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& fl = *flOwn;
     sm::build_feature_layer(fl, td, empty, &dirt);
 
     CHECK(fl.at(0, 0) == sm::FT_DirtRoad,
@@ -430,9 +451,11 @@ void test_feature_water_filter_uses_map_sea_level()
     lowSeaTd.seaLevel16 = sm::field_word_of(0.30f);
     sm::TerrainData defaultSeaTd = td;
     defaultSeaTd.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
-    sm::FeatureLayer lowSea;
+    const std::unique_ptr<sm::FeatureLayer> lowSeaOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& lowSea = *lowSeaOwn;
     sm::build_feature_layer(lowSea, lowSeaTd, road, &dirt);
-    sm::FeatureLayer defaultSea;
+    const std::unique_ptr<sm::FeatureLayer> defaultSeaOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& defaultSea = *defaultSeaOwn;
     sm::build_feature_layer(defaultSea, defaultSeaTd, road, &dirt);
 
     CHECK(lowSea.at(0, 0) == sm::FT_Road,
@@ -478,7 +501,8 @@ void test_settlement_feature_survives_road_pass()
         dirt[idx(td, x, 2)] = 255;   // грунтовка — весь ряд y=2
     }
 
-    sm::FeatureLayer fl;
+    const std::unique_ptr<sm::FeatureLayer> flOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& fl = *flOwn;
     fl.resize(td.width, td.height);
     // Предусловие СЕЕТСЯ, а не ждётся от генератора: город на пути камня,
     // деревня на пути грунтовки, грунтовка под камнем. Дверь слой не обнулит:
@@ -516,7 +540,8 @@ void test_settlement_feature_survives_road_pass()
 void test_feature_write_goes_through_one_door()
 {
     constexpr int kSide = 16;   // ЗАКОН АДРЕСА: квадрат, степень двойки
-    sm::FeatureLayer fl;
+    const std::unique_ptr<sm::FeatureLayer> flOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& fl = *flOwn;
     fl.resize(kSide, kSide);
 
     // 1. ДВЕ ФОРМЫ — ОДНА ДВЕРЬ. Пара `x,y` и адрес одним числом обязаны
@@ -562,7 +587,7 @@ void test_feature_write_goes_through_one_door()
     sm::FeatureLayerProbe::set(fl, seamX, seamY, sm::FT_Bridge);
     const std::uint32_t door = sm::cell_of(seamX, seamY, kSide);
     CHECK(fl.at(door) == sm::FT_Bridge && fl.at(1, kSide - 1) == sm::FT_Bridge
-              && std::size_t(door) != raw && raw >= fl.data.size(),
+              && std::size_t(door) != raw && raw >= fl.cell_count(),
           "ручной y*w+x на шве уезжает с клетки — дверь заворачивает адрес");
 }
 

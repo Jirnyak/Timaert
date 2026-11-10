@@ -66,6 +66,9 @@ bool is_river(int x, int y) {
 struct Fixture {
     std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
     sm::GameState& gs = *gsOwn;
+    // Сессия фикстуры: счётчик события состава (`navEpoch`) живёт в ней, и
+    // рождение осёдлого объявляет событие по этому адресу.
+    sm::Session ses{};
     sm::PathCostData pc;
     sm::NavWorld nav;
     sm::MacroWorld mw{};
@@ -99,7 +102,7 @@ struct Fixture {
             const int x = sm::wrapi(lmx[i] + shiftX, W);
             const int y = sm::wrapi(lmy[i] + shiftY, H);
             const sm::MacroHandle h = sm::birth_squad(
-                gs, places(),
+                gs, &ses, places(),
                 i % 2 ? sm::SquadType::City : sm::SquadType::Village,
                 x, y);
             // Души — дверью мира (v122): паства в число фичи, головы
@@ -109,6 +112,7 @@ struct Fixture {
                 Place{x, y, int(places().spawnId[h.slot].index), h.slot});
         }
         mw.gs = &gs;
+        mw.session = &ses;
         mw.store = &places();
         mw.pathCost = &pc;
         sm::nav_bake(mw, nav);
@@ -139,19 +143,20 @@ struct Fixture {
         seeded.clear();
         {
             const sm::MacroHandle h =
-                sm::birth_squad(gs, places(), sm::SquadType::City, 5, 32);
+                sm::birth_squad(gs, &ses, places(), sm::SquadType::City, 5, 32);
             sm::settle_souls(gs, places(), h.slot, 100);
             seeded.push_back(
                 Place{5, 32, int(places().spawnId[h.slot].index), h.slot});
         }
         {
             const sm::MacroHandle h = sm::birth_squad(
-                gs, places(), sm::SquadType::Village, 40, 32);
+                gs, &ses, places(), sm::SquadType::Village, 40, 32);
             sm::settle_souls(gs, places(), h.slot, 100);
             seeded.push_back(
                 Place{40, 32, int(places().spawnId[h.slot].index), h.slot});
         }
         mw.gs = &gs;
+        mw.session = &ses;
         mw.store = &places();
         mw.pathCost = &pc;
         sm::nav_bake(mw, nav);
@@ -430,7 +435,7 @@ int main() {
         // житель обязан пережить перепёк, не потеряв своей округи.
         const int ruinId = f.seeded[1].id;
         const sm::MacroHandle bornH =
-            sm::birth_squad(f.gs, places(), sm::SquadType::Village, 40, 32);
+            sm::birth_squad(f.gs, &f.ses, places(), sm::SquadType::Village, 40, 32);
         sm::settle_souls(f.gs, places(), bornH.slot, 100);
         const int bornId = int(places().spawnId[bornH.slot].index);
         CHECK(sm::nav_ensure(f.mw, f.nav),

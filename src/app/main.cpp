@@ -55,7 +55,6 @@
 #include "bus/entry_context.h"
 #include "tables/faction.h"
 #include "macro/npc_spawn.h"
-#include "macro/macro_snapshot.h"
 #include "macro/currency.h"
 #include "macro/deal.h"   // откуп встречи — exact-лот одной сделки
 #include "macro/squad.h"
@@ -245,7 +244,7 @@ sm::FactNaming app_fact_naming(App& app) {
         // кем играют СЕЙЧАС, а не «оригинал» — рода «дом» больше нет.
         // 0 — «никто» (закон нуля-ординала): до рождения мира активного нет,
         // и безымянный субъект не вправе получить его местоимение.
-        const std::uint32_t me = sm::player_flag_ordinal(a.gs, *a.macroStore);
+        const std::uint32_t me = sm::player_flag_ordinal(a.session, *a.macroStore);
         return (me != 0 && ordinal == me) ? "You" : nullptr;
     };
     n.rooted = [](void* u, std::uint32_t id) -> const char* {
@@ -342,7 +341,7 @@ void raise_macro_fact(void* user, const sm::BattleFact& fact) {
 sm::Inventory& player_bag(App& app) {
     static sm::Inventory scratch{};
     sm::Inventory* bag = app.macroStore
-        ? sm::player_inventory(app.gs, *app.macroStore) : nullptr;
+        ? sm::player_inventory(app.session, *app.macroStore) : nullptr;
     return bag ? *bag : scratch;
 }
 
@@ -351,10 +350,10 @@ sm::MacroWorld macro_world(App& app) {
     mw.facts     = &raise_macro_fact;
     mw.factsUser = &app;
     mw.gs       = &app.gs;
+    mw.session  = &app.session;
     mw.store    = app.macroStore.get();
     mw.terrain  = &app.terrain;
     mw.deposits = &app.deposits;
-    mw.features = &app.features;
     mw.zones    = &app.zones;
     mw.pathCost = &app.pathCost;
     mw.treeGrid = &app.treeGrid;
@@ -425,18 +424,6 @@ std::string resolve_prefs_path(const char* fileName) {
 // no save compatibility (CANON S21), so there is nothing worth migrating.
 std::string resolve_save_path() { return resolve_prefs_path(kSaveFileName); }
 
-long file_size_bytes(const std::string& path) {
-    std::FILE* f = std::fopen(path.c_str(), "rb");
-    if (!f) return -1;
-    if (std::fseek(f, 0, SEEK_END) != 0) {
-        std::fclose(f);
-        return -1;
-    }
-    const long len = std::ftell(f);
-    std::fclose(f);
-    return len;
-}
-
 
 // Панель субъекта открывается для ЛЮБОГО ландмарка («меню города — хороший
 // пример, его обобщить»): у шпиля/руины это шапка + Info, поселенческие
@@ -459,9 +446,10 @@ sm::MacroHandle settlement_by_id(const sm::MacroStore& st, int id) {
 // ОСТАТОК КАРЬЕРА НАЗВАН И НЕ ЗАКРЫТ: `MacroCursor::hover/clickedSettlementId`,
 // `RootedFacts/RootedContext/RootedView::id`, `DungeonSession::settlementId`,
 // `regionRootedId@src/macro/nav_field.h` — → M-75.
-int settlement_at_player(const sm::GameState& gs, const sm::MacroStore& st,
+int settlement_at_player(const sm::GameState& gs, const sm::Session& ses,
+                         const sm::MacroStore& st,
                          const sm::SquadIndex& idx, int radius = 3) {
-    const sm::ecs::MacroCell* pc = sm::player_flag_cell(gs, st);
+    const sm::ecs::MacroCell* pc = sm::player_flag_cell(ses, st);
     if (!pc) return 0;   // «никого» у ординала-идентичности есть НОЛЬ
     const int px = sm::ecs::cell_x(*pc, gs.mapW);
     const int py = sm::ecs::cell_y(*pc, gs.mapW);
@@ -485,7 +473,7 @@ int settlement_at_player(const sm::GameState& gs, const sm::MacroStore& st,
 }
 
 void refresh_player_settlement(App& app) {
-    const int id = settlement_at_player(app.gs, *app.macroStore,
+    const int id = settlement_at_player(app.gs, app.session, *app.macroStore,
                                         app.npcAi.squadIndex);
     const int previousId = app.subState.settlementId;
     if (id == previousId) return;
@@ -597,7 +585,7 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
     // ходил. До этого контейнер/полосы шли по ординалу оригинала — §45 «два
     // ответа» об одном бое.
     sm::MacroStore& st = (*app.macroStore);
-    const sm::MacroHandle flagH = sm::player_flag_handle(app.gs);
+    const sm::MacroHandle flagH = sm::player_flag_handle(app.session);
     sm::AutoBattleSide s = sm::auto_battle_side_of(st, flagH);
     // The player's swing, credited exactly as the fought path rolls it: the
     // ONE assembly (hand_strike_fields) over the weapon actually in hand,
@@ -667,7 +655,7 @@ void close_pre_battle(App& app, bool grace) {
 void push_combat_log(App& app, std::string msg) {
     // Session words die with the moment (v58): the fading HUD feed, never
     // the save. What the world remembers went through the chronicle already.
-    sm::session_feed_push(app.gs.sessionFeed, msg.c_str());
+    sm::session_feed_push(app.session.feed, msg.c_str());
 }
 
 // The M&B auto-resolve button: the ONE resolver, the player as one side,
@@ -740,7 +728,7 @@ const PreBattleAction kPreBattleActions[] = {
          // (и даже ноль — «Paid 0 gold» с пропуском); теперь непокрытый
          // откуп не покупает ничего, и модалка остаётся открытой.
          sm::MacroStore& st = (*app.macroStore);
-         const sm::MacroHandle pf = sm::player_flag_handle(app.gs);
+         const sm::MacroHandle pf = sm::player_flag_handle(app.session);
          int paid = 0;
          if (st.valid(npc) && st.valid(pf)) {
              sm::DealLine pay[16];
@@ -785,7 +773,7 @@ const PreBattleAction kPreBattleActions[] = {
              // may catch you again.
              const auto& ec = (*app.macroStore).cell[npc.slot];
              const sm::ecs::MacroCell* pcell =
-                 sm::player_flag_cell(app.gs, *app.macroStore);
+                 sm::player_flag_cell(app.session, *app.macroStore);
              if (!pcell) return true;
              const int pcx = sm::ecs::cell_x(*pcell, app.gs.mapW);
              const int pcy = sm::ecs::cell_y(*pcell, app.gs.mapW);
@@ -816,7 +804,7 @@ const PreBattleAction kPreBattleActions[] = {
                  // а она лишь производное того же порога — третий спеллинг
                  // одного вопроса, и единственный её читатель во всём дереве.
                  if (app.terrain.is_water(tx, ty)) continue;
-                 sm::player_jump_to_cell(app.gs, *app.macroStore, tx, ty);
+                 sm::player_jump_to_cell(app.session, *app.macroStore, tx, ty, app.gs.mapW);
                  app.cursor.path.clear();
                  app.cursor.pathIdx = 0;
                  break;
@@ -862,7 +850,7 @@ void detect_forced_encounter(App& app) {
     if (!app.worldLoaded || app.subworld.active()) return;
     if (app.subState.kind != sm::GameSubStateKind::Exploring) return;
     if (modal_overlay_active(app)) return;
-    const sm::ecs::MacroCell* pcell = sm::player_flag_cell(app.gs, *app.macroStore);
+    const sm::ecs::MacroCell* pcell = sm::player_flag_cell(app.session, *app.macroStore);
     if (!pcell) return;
     const int px = sm::ecs::cell_x(*pcell, app.gs.mapW);
     const int py = sm::ecs::cell_y(*pcell, app.gs.mapW);
@@ -890,7 +878,7 @@ void detect_forced_encounter(App& app) {
     // невидимая стена»), СНЯТ этим новым: сегодня доля едет непрерывно, и
     // вход в занятую клетку больше не мгновенный прыжок через неё.
     const std::uint16_t flagSlot = [&]() -> std::uint16_t {
-        const sm::MacroHandle h = sm::player_flag_handle(app.gs);
+        const sm::MacroHandle h = sm::player_flag_handle(app.session);
         return app.macroStore->valid(h) ? h.slot : sm::kMacroNoSlot;
     }();
     if (flagSlot == sm::kMacroNoSlot) return;
@@ -1037,14 +1025,14 @@ float& player_sp_carry(App& app);   // defined with the world-query helpers
 void step_macro_walk_and_emit(App& app, float dt, float cellsPerSec) {
     const std::size_t stepped =
         sm::ui::step_macro_walk(
-            app.gs, *app.macroStore, app.cursor, dt, cellsPerSec,
+            app.gs, app.session, *app.macroStore, app.cursor, dt, cellsPerSec,
             // Писатель визита (6б M-72): игрок пришёл в клетку своей
             // цели-фичи — мир запоминает (Explored). Слот стоял пустым
             // (nullptr) с рождения колбэка.
             [](void* user, int x, int y) {
                 auto& a = *static_cast<App*>(user);
                 sm::task_note_player_arrival(*a.macroStore, a.gs,
-                                             sm::player_flag_handle(a.gs),
+                                             sm::player_flag_handle(a.session),
                                              x, y);
             },
             &app);
@@ -1064,7 +1052,7 @@ float macro_cell_cost_weight(const App& app) {
         return 1.0f;
     }
     const sm::ecs::MacroCell* pcell = app.macroStore
-        ? sm::player_flag_cell(app.gs, *app.macroStore) : nullptr;
+        ? sm::player_flag_cell(app.session, *app.macroStore) : nullptr;
     if (!pcell) return 1.0f;
     return pc.cost_at(sm::ecs::cell_x(*pcell, app.gs.mapW),
                       sm::ecs::cell_y(*pcell, app.gs.mapW));
@@ -1095,7 +1083,7 @@ float macro_cell_cost_weight(const App& app) {
 // the body whose bars `player_pools` returns. nullptr before a world exists.
 sm::ecs::MacroNpcRuntime* player_march_cache(App& app) {
     if (!app.macroStore) return nullptr;
-    const sm::MacroHandle h = sm::player_flag_handle(app.gs);
+    const sm::MacroHandle h = sm::player_flag_handle(app.session);
     if (!app.macroStore->valid(h)) return nullptr;
     return &app.macroStore->runtime[h.slot];
 }
@@ -1106,7 +1094,7 @@ sm::ecs::MacroNpcRuntime* player_march_cache(App& app) {
 float& player_sp_carry(App& app) {
     static float scratch = 0.0f;
     float* carry = app.macroStore
-        ? sm::player_sp_carry(app.gs, *app.macroStore) : nullptr;
+        ? sm::player_sp_carry(app.session, *app.macroStore) : nullptr;
     return carry ? *carry : scratch;
 }
 
@@ -1120,14 +1108,14 @@ float& player_sp_carry(App& app) {
 sm::SpellBook& player_book(App& app) {
     static sm::SpellBook scratch{};
     sm::SpellBook* book = app.macroStore
-        ? sm::player_spellbook(app.gs, *app.macroStore) : nullptr;
+        ? sm::player_spellbook(app.session, *app.macroStore) : nullptr;
     return book ? *book : scratch;
 }
 
 sm::ecs::Pools& player_pools(App& app) {
     static sm::ecs::Pools scratch{};
     sm::ecs::Pools* pools = app.macroStore
-        ? sm::player_pools(app.gs, *app.macroStore) : nullptr;
+        ? sm::player_pools(app.session, *app.macroStore) : nullptr;
     return pools ? *pools : scratch;
 }
 
@@ -1140,14 +1128,14 @@ sm::BonusTotals player_standing_bonuses(const App& app) {
     const sm::MacroStore& st = *app.macroStore;
     // АКТИВНЫЙ, А НЕ ДОМ (ломоть 7б M-421): стояние есть свойство той
     // записи, которой играют, — тот же вердикт «вся семья», что у листа.
-    const sm::MacroHandle h = sm::player_flag_handle(app.gs);
+    const sm::MacroHandle h = sm::player_flag_handle(app.session);
     if (!st.valid(h)) return sm::BonusTotals{};
     return sm::standing_bonuses_of(st, h);
 }
 
 sm::CharacterSheet player_effective_sheet(const App& app) {
     if (!app.macroStore) return sm::CharacterSheet{};
-    return sm::player_effective_sheet(app.gs, *app.macroStore);
+    return sm::player_effective_sheet(app.session, *app.macroStore);
 }
 
 // Is a RULE of the world switched on for him right now? A rule has no
@@ -1330,6 +1318,15 @@ void destroy_world(App& app) {
     sm::destroy_terrain(app.terrain);
     app.terrain = {};
     sm::game_state_reset(app.gs);
+    // СЕССИЯ УМИРАЕТ С МИРОМ — КРОМЕ СЧЁТЧИКА СОБЫТИЯ СОСТАВА. Лента HUD, кэш
+    // носителя флажка и аренда окна описывали мир, которого больше нет.
+    // `navEpoch` НЕ сбрасывается нарочно: он монотонен через перерождение
+    // мира (тот же закон, что у эмитента ординалов стора) — сброс в ноль
+    // позволил бы новому миру досчитать до числа, под которым запечена
+    // навигация прежнего, и она осталась бы стоять над чужим составом.
+    app.session.feed = sm::SessionFeed{};
+    app.session.playerFlagRef = sm::MacroHandle{};
+    sm::release_window(app.session);
     // Арена сцены умирает вместе с миром (ломоть D; реестр умер ломтём E —
     // смерть мира и есть SubObjects::clear()).
     if (app.sceneObjects) app.sceneObjects->clear();
@@ -1346,24 +1343,19 @@ void refresh_save_summary(App& app) {
     app.autosaveSummary = sm::inspect_save(app.autosavePath);
 }
 
-// Saving can FAIL (disk error, a vector past its save-side cap) and a failed
+// Saving can FAIL (a disk error, a slot that does not verify) and a failed
 // attempt leaves the PREVIOUS file intact — which inspect_save then happily
 // reports as Ready, so the summary alone can never tell the player anything
 // went wrong. Every shipping save goes through here: the verdict is spoken
 // into the event log, not inferred from the file on disk.
-// Stage everything the save needs out of App-owned runtime, in ONE door:
-// the flattened macro ECS, and the macro-AI rhythm image (its live half
-// stays on App::npcAi — the transient squad index never saves). Every save
-// call site takes its records from here.
-std::vector<sm::MacroNpcRecord> stage_save_state(App& app) {
-    app.gs.macroAiRhythm.jitter        = app.npcAi.jitter;
-    // (Колонки долга sweepAccum/pendingSweeps/sweepCursor умерли с M-379:
-    //  ритм единого драйвера живёт пер-сквадно в rt.tickAccum, который едет
-    //  в сейв строкой сквада; общего состояния у ритма не осталось.)
-    // (Прогресс сюжета v25 — списки logic-узлов — в сейв больше не едет,
-    //  v157: «существующие» узлы всегда равны реестру кода, а активный набор
-    //  поднимает регистрация на буте.)
-    return sm::snapshot_macro_ecs(*app.macroStore);
+//
+// ПЕРЕД ЗАПИСЬЮ — ОДНА СТРОКА СИНХРОНИЗАЦИИ: поток джиттера макро-ИИ живёт на
+// `App::npcAi`, а его образ в состоянии мира (`GameState::macroAiRhythm`) —
+// то, что уедет в файл. Больше готовить нечего: сейв есть прямой дамп
+// состояния и стора (`save_game@src/macro/save.h`), снимка сквадов и списка
+// «что взять с собой» у него нет.
+void stage_save_state(App& app) {
+    app.gs.macroAiRhythm.jitter = app.npcAi.jitter;
 }
 
 bool save_game_checked(App& app, bool autosave = false) {
@@ -1372,20 +1364,20 @@ bool save_game_checked(App& app, bool autosave = false) {
     // it, never saved — leaving IS the macro-return every underground action
     // must have.
     if (app.subworld.active()) {
-        sm::session_feed_push(app.gs.sessionFeed,
+        sm::session_feed_push(app.session.feed,
                               "You cannot save underground - return to the map.");
         return false;
     }
     const std::string& path = autosave ? app.autosavePath : app.savePath;
-    const bool ok = sm::save_game(app.gs, app.macroStore->nextSpawnId,
-                                  stage_save_state(app), path);
+    stage_save_state(app);
+    const bool ok = sm::save_game(app.gs, *app.macroStore, path);
     refresh_save_summary(app);
     if (!ok)
         std::fprintf(stderr, "save_game FAILED: %s\n", path.c_str());
     const char* msg = ok ? (autosave ? "Autosaved." : "Game saved.")
                          : (autosave ? "AUTOSAVE FAILED - progress is NOT on disk!"
                                      : "SAVE FAILED - progress is NOT on disk!");
-    sm::session_feed_push(app.gs.sessionFeed, msg);
+    sm::session_feed_push(app.session.feed, msg);
     return ok;
 }
 
@@ -1429,7 +1421,7 @@ sm::OpticalWorld optical_world(App& app) {
         }
     }
     sm::OpticalWorld world{};
-    world.features = &app.features;
+    world.features = &app.gs.features;
     world.heights = oc.heights.empty() ? nullptr : &oc.heights;
     world.treeDensity = oc.treeDensity.empty() ? nullptr : &oc.treeDensity;
     return world;
@@ -1462,7 +1454,7 @@ void bake_macro_light_field(App& app, std::vector<std::uint8_t>& out) {
     // переписывает СВОИ клетки (паства, орб, залежь — их же числами), затем
     // бейк разворачивает живые клетки поля в эмиттеры.
     const sm::MacroWorld mw = macro_world(app);
-    if (mw.features) sm::refresh_feature_lights(app.gs, *mw.features);
+    sm::refresh_feature_lights(app.gs);
     std::vector<sm::MacroLight> lights = sm::collect_macro_lights(mw);
     const sm::OpticalWorld world = optical_world(app);
     sm::bake_light_field(app.gs.mapW, app.gs.mapH, lights, out, world.features,
@@ -1487,8 +1479,9 @@ void rebake_macro_lights(App& app) {
 // ── THE rebaker (CANON S7, 2026-08-24) ────────────────────────────────────
 // Every DERIVED field of the world, rebaked whole, in dependency order, by
 // the same stage functions the genesis uses — no patching by place, no
-// second algorithm. The saved truths (world_fields.h rows + the macro
-// snapshot) are its inputs; nothing here invents state. Stages:
+// second algorithm. The saved truths — the world state and the smooth store,
+// the two blocks the save dumps — are its inputs; nothing here invents
+// state. Stages:
 //   1. danger zones     (read features, settlements/villages, living trees)
 //   2. place grid    (reads the place registers)
 //   3. night glow       (reads places + the optical world)
@@ -1523,14 +1516,14 @@ void rebake_world(App& app, bool uploadNow) {
         else                                zsVills.push_back({lx, ly});
     });
     app.zones = sm::generate_zones(app.gs.mapW, app.gs.mapH, app.gs.worldSeed,
-                                   zsCities, zsVills, app.features,
+                                   zsCities, zsVills, app.gs.features,
                                    &app.terrain, &app.gs.treeLayer);
     // (Перештамп фич из тел УМЕР 2026-10-23: «фичи делают 1 раз ПРИ
     // ГЕНЕРАЦИИ МИРА никаких загрузок ничего» — слой производен от сида,
     // фичи рода ставит дверь рождения места в генезисе.)
     sm::build_squad_index(app.npcAi.squadIndex, *app.macroStore,
                           app.gs.mapW, app.gs.mapH);
-    app.pathCost = sm::build_cost_grid(app.terrain, &app.features,
+    app.pathCost = sm::build_cost_grid(app.terrain, &app.gs.features,
                                        &app.gs.treeLayer);
     app.gs.lastWorldRebakeDay = app.gs.worldTime.day();
     if (uploadNow) {
@@ -1559,19 +1552,19 @@ void rebake_world(App& app, bool uploadNow) {
 // карте» и есть «где здесь» (подпосадка 4).
 static std::uint32_t player_anchor_cell(App& app) {
     const sm::MacroStore& st = *app.macroStore;
-    const sm::MacroHandle fh = sm::player_flag_handle(app.gs);
+    const sm::MacroHandle fh = sm::player_flag_handle(app.session);
     return st.valid(fh) ? st.cell[fh.slot].idx : 0u;
 }
 
 // Пересинхронизация по требованию движка или по границе мирового тика.
 // Третье условие — расхождение хэндлов игрока: вселение двигает
-// gs.playerFlagRef сквозной дверью рода 2 в обработке ввода, и снимок обязан
+// кэш сессии `playerFlagRef` сквозной дверью рода 2 в обработке ввода, и снимок обязан
 // догнать истину до ближайшего тика субмира.
 static void sync_subworld_frame(App& app, bool worldTicked) {
     if (!app.subworld.active()) return;
     // ОДИН хэндл: второй (дом) ушёл с `.home` (ломоть 7б M-421).
     const bool handlesMoved =
-        !(app.frame.playerFlag == app.gs.playerFlagRef);
+        !(app.frame.playerFlag == app.session.playerFlagRef);
     if (!worldTicked && !handlesMoved && !app.subworld.needs_frame_resync())
         return;
     const sm::MacroWorld w = macro_world(app);
@@ -1637,7 +1630,7 @@ void begin_scene(App& app, const sm::content::SceneDef& scene) {
                                     p.factionId, pos);
     }
     if (scene.feedLine != nullptr) {
-        sm::session_feed_push(app.gs.sessionFeed, scene.feedLine);
+        sm::session_feed_push(app.session.feed, scene.feedLine);
     }
 }
 
@@ -1661,6 +1654,36 @@ void end_scene_by_death(App& app, const char* storyNode) {
     // owner's first playtest: he died and no window came). The node fires
     // on the next logic tick, exactly the arrival slide's own channel.
     app.logic.activate(storyNode);
+}
+
+// ── ПОЛНАЯ ВЫГРУЗКА МАКРОМИРА В GPU — ОДНА ДВЕРЬ НА ОБА РОЖДЕНИЯ ────────────
+// Рельеф, поле фич, зоны, поле ночного света, лес и знание игрока — все
+// текстуры карты разом. Зовётся там, где мир ЗАМЕНЁН ЦЕЛИКОМ: рождение нового
+// мира и загрузка. Между ними текстуры обновляют хирургические двери по своим
+// счётчикам правок.
+//
+// ЗЕРКАЛА СЧЁТЧИКОВ ПЕРЕПИСЫВАЮТСЯ ЗДЕСЬ ЖЕ, И ЭТО ЗАКОН, А НЕ УБОРКА: счётчик
+// правок слоя едет в дампе вместе со слоем, и число из файла вправе совпасть с
+// числом слоя сида при РАЗНЫХ клетках. Кэш, сверяющий себя со счётчиком,
+// обязан быть назван протухшим прямо в двери, которая меняет слой целиком, —
+// сравнение двух чисел этого не скажет (ловушка ломтя 3 сейв-эпика).
+//
+// Universal night-light field: read every live cell of the emission field
+// (`GameState::lightEmission`, M-370 — authored by the feature row's light*
+// columns) and bake the per-cell RGB glow the macro shader adds at night.
+// Handed to the renderer as raw bytes so the GPU target keeps its minimal
+// link set.
+void upload_macro_world(App& app) {
+    std::vector<std::uint8_t> macroLightField;
+    bake_macro_light_field(app, macroLightField);
+    app.macro.upload(app.device, app.terrain, app.gs.features, app.zones,
+                     macroLightField.empty() ? nullptr : macroLightField.data(),
+                     std::uint32_t(app.gs.mapW), std::uint32_t(app.gs.mapH),
+                     &app.gs.treeLayer, &app.gs.knowledge);
+    app.uploadedTreeRev = app.gs.treeLayer.revision;
+    app.uploadedKnowledgeRev = app.gs.knowledge.revision;
+    app.macroLightsDirty = false;
+    app.zoneFieldDirty = false;
 }
 
 void boot_world(App& app, std::uint32_t seed,
@@ -1721,10 +1744,10 @@ void boot_world(App& app, std::uint32_t seed,
     gp.trace = boot_trace_enabled();
     sm::WorldGenOut go{};
     go.gs           = &app.gs;
+    go.session      = &app.session;
     go.terrain      = &app.terrain;
     go.trees        = &app.trees;
     go.deposits     = &app.deposits;
-    go.features     = &app.features;
     go.zones        = &app.zones;
     go.treeGrid     = &app.treeGrid;
     go.squadIndex   = &app.npcAi.squadIndex;
@@ -1743,21 +1766,7 @@ void boot_world(App& app, std::uint32_t seed,
     } else {
         boot_trace("macro renderer initialized");
     }
-    // Universal night-light field: read every live cell of the emission field
-    // (`GameState::lightEmission`, M-370 — authored by the feature row's
-    // light* columns) and bake the per-cell RGB glow the macro shader
-    // adds at night. Baked here on world-change only, never per frame; handed to
-    // the renderer as raw bytes so the GPU target keeps its minimal link set.
-    // app.features is built above (build_feature_layer), so the bake sees real
-    // terrain here. Shared bake helper keeps this identical to every refresh.
-    std::vector<std::uint8_t> macroLightField;
-    bake_macro_light_field(app, macroLightField);
-    app.macro.upload(app.device, app.terrain, app.features, app.zones,
-                     macroLightField.empty() ? nullptr : macroLightField.data(),
-                     std::uint32_t(app.gs.mapW), std::uint32_t(app.gs.mapH),
-                     &app.gs.treeLayer, &app.gs.knowledge);
-    app.uploadedTreeRev = app.gs.treeLayer.revision;
-    app.uploadedKnowledgeRev = app.gs.knowledge.revision;
+    upload_macro_world(app);
     boot_trace("world data uploaded");
     app.cursor = sm::ui::MacroCursor{};
     // Anchor camera at the player's CELL CENTRE (cell N spans [N..N+1]
@@ -1766,7 +1775,7 @@ void boot_world(App& app, std::uint32_t seed,
     // every NPC render at their cell centre, never at the cell
     // crossing. (The player himself is anchored by generate_macro_world.)
     if (float px = 0.0f, py = 0.0f;
-        sm::player_flag_point(app.gs, *app.macroStore, px, py)) {
+        sm::player_flag_point(app.session, *app.macroStore, app.gs.mapW, px, py)) {
         app.camX = app.camTargetX = px + 0.5f;
         app.camY = app.camTargetY = py + 0.5f;
     }
@@ -1782,7 +1791,7 @@ void boot_world(App& app, std::uint32_t seed,
     // имперских монет здесь печатались из воздуха, как и всё остальное
     // золото. Игрок начинает с ВЕЩЕЙ и добывает стоимость обменом; дыра
     // названа в M-139 и ждёт пула лута, времянки на её месте запрещены.
-    if (sm::Inventory* bag = sm::player_inventory(app.gs, *app.macroStore)) {
+    if (sm::Inventory* bag = sm::player_inventory(app.session, *app.macroStore)) {
         bag->add("potion_hp", 2);
         bag->add("food", 5);
     }
@@ -1791,7 +1800,7 @@ void boot_world(App& app, std::uint32_t seed,
         && app.subState.settlementId == 0) {
         boot_trace("settlement lookup start");
         app.subState.settlementId = settlement_at_player(
-            app.gs, *app.macroStore, app.npcAi.squadIndex);
+            app.gs, app.session, *app.macroStore, app.npcAi.squadIndex);
         boot_trace("settlement lookup done");
     }
 
@@ -1806,227 +1815,90 @@ void boot_world(App& app, std::uint32_t seed,
 }
 
 bool boot_world_from_save(App& app, const std::string& path) {
-    // В куче: состояние несёт слои мира плоскими массивами под капом клеток
-    // (M-180) и на стеке не живёт.
-    const std::unique_ptr<sm::GameState> freshOwn = sm::make_game_state();
-    sm::GameState& fresh = *freshOwn;
-    std::uint32_t loadedNextSpawnId = 1;
-    std::vector<sm::MacroNpcRecord> loadedMacro;
-    if (!sm::load_game(fresh, loadedNextSpawnId, loadedMacro, path)) {
-        return false;
-    }
-    // Лес приезжает полем состояния (ломоть 3 сейв-эпика) и ложится в мир
-    // свёрткой ниже, как всякое поле файла. Файл без блока леса игра не пишет
-    // (генезис рождает слой всегда); если такой пришёл — мир встанет без леса,
-    // и это сказано вслух, а не залечено девственным лесом сида.
-    if (!fresh.treeLayer.has_complete_storage()) {
-        std::fprintf(stderr,
-                     "load_game: the file carries NO forest field for a "
-                     "%dx%d world — the loaded world stands treeless.\n",
-                     fresh.mapW, fresh.mapH);
-        std::fflush(stderr);
-    }
-    // What the FILE says the world is, weighed before a single field of it is
-    // applied. Compared against the living world at the bottom of this
-    // function — see the fold witness there.
-    const std::uint32_t fileFingerprint = sm::save_payload_fingerprint(
-        fresh, loadedNextSpawnId, loadedMacro);
+    // ── 1. ФАЙЛ ЧИТАЕТСЯ В ЧЕРНОВИКИ, И ТОЛЬКО В НИХ ─────────────────────────
+    // Сейв есть прямой дамп двух кусков памяти (`save.h`): состояние макромира
+    // и гладкая память сквадов. Оба читаются в свежие куски в куче, и живой
+    // мир до исхода чтения не тронут: битый, чужой или обрезанный файл
+    // отказывается здесь, а игра остаётся стоять, где стояла. Цена — второй
+    // гигабайт на время загрузки, один раз (AGENTS §7: работа загрузки
+    // платится на загрузке, не в тике).
+    const std::unique_ptr<sm::GameState> fileGs = sm::make_game_state();
+    const std::unique_ptr<sm::MacroStore> fileStore = sm::make_macro_store();
+    if (!sm::load_game(*fileGs, *fileStore, path)) return false;
+
+    // ── 2. ПРОИЗВОДНОЕ ПОДНИМАЕТСЯ ОТ СИДА ФАЙЛА ─────────────────────────────
+    // Рельеф, жилы и прочие клетки рода 1 в файле не едут — они функция сида.
+    // Генезис поднимает их той же дверью, что новая игра; попутно он рождает
+    // и своё состояние с населением сида, которые следующий шаг заменит
+    // целиком. Сквадов и игрока генезис здесь не якорит: единственный
+    // источник людей мира — файл.
     // registerIntroStory=TRUE even on load (v25): node definitions are code
-    // and must all exist before the saved story progress is replayed below.
-    // The old `false` here was the 3-nodes -> 1 bug: a loaded game lost the
-    // intro and chapter 1 outright.
-    boot_world(app, fresh.worldSeed, fresh.mapW, fresh.mapH,
-               &fresh.mapParams, fresh.cityCountTarget,
+    // and must all exist; the old `false` here was the 3-nodes -> 1 bug.
+    boot_world(app, fileGs->worldSeed, fileGs->mapW, fileGs->mapH,
+               &fileGs->mapParams, fileGs->cityCountTarget,
                /*registerIntroStory=*/true, /*spawnMacroNpcs=*/false,
                /*anchorPlayer=*/false);
 
-    // ── THE fold: the world the file names REPLACES the world the seed made ─
+    // ── 3. МИР ФАЙЛА ЗАМЕНЯЕТ МИР СИДА: ДВА КОПИРОВАНИЯ БАЙТОВ ──────────────
+    // Здесь стояла СВЁРТКА — сперва рукописный список из 21 присваивания,
+    // терявший поля молча (SAVE-1: шрамы полей, корабли, следы, эмитент),
+    // потом «всё из файла, кроме поимённых двух», потом восстановление стора
+    // запись за записью и свидетель, взвешивавший мир тем же писателем, что
+    // файл. Всё это охраняло одно место — ПЕРЕНОС величин из формата файла в
+    // память мира. Переноса больше нет: файл И ЕСТЬ память, и списка величин,
+    // из которого можно выпасть, не существует. Свидетель свёртки умер вместе
+    // со свёрткой — сравнивать два копирования с их же источником нечем.
     //
-    // This used to be a hand-written list of 21 assignments, and a hand-written
-    // list is a fold that can drop a field: five of them rode the save and were
-    // simply not in it (SAVE-1 — the resource scars, the loot pool, the ships
-    // at cell, the scent fields, the place issuer). Nothing could see it.
-    // The forest a squad felled regrew on load, moored ships evaporated with
-    // the wood they cost, and the one place-id issuer restarted below its
-    // own living ids.
+    // Адреса обоих кусков не двигаются (состояние — член `App`, стор — тот же
+    // блок кучи, что рождён на старте): всё, что держит на них указатель —
+    // конверт слоёв, шина летописи, движок субмира, — остаётся право.
+    app.gs = *fileGs;
+    *app.macroStore = *fileStore;
+
+    // ── 4. СЕССИЯ И КЭШИ ПЕРЕСОБИРАЮТСЯ ОТ ЗАГРУЖЕННОГО МИРА ────────────────
+    // В файле мир без оговорок; всё ниже — то, что миром не является и потому
+    // в файл не ехало. Список закрыт и стоит здесь целиком.
     //
-    // So the direction is INVERTED. The file owns thirty of GameState's
-    // thirty-two fields; genesis owns two, and only those two are named here.
-    // A truth added to the save now arrives by construction — the only thing
-    // that can still be forgotten is a new field genesis owns, and that list
-    // is short, closed, and written out right here:
-    //
-    //   cellOwner   — whose land every cell is: the ownership FIELD politics
-    //                 floods at genesis. Derived from worldSeed by
-    //                 generate_macro_world and NOT in the file (save.h's
-    //                 opening line says so: the terrain/politik layers are
-    //                 regenerated). boot_world just flooded it for this exact
-    //                 seed, so it is the same ownership the save was written
-    //                 under. (The city PLAN that seeded the flood is genesis
-    //                 scratch and no longer outlives it — M-90.)
-    //   sessionFeed — presentation, never saved by design (state.h:684). The
-    //                 live one (just cleared by destroy_world) stays.
-    fresh.cellOwner   = app.gs.cellOwner;   // плоское поле — копия байтов
-    fresh.sessionFeed = std::move(app.gs.sessionFeed);
-    app.gs = std::move(fresh);
-    // ЛЕС ПРИЕХАЛ ЭТОЙ ЖЕ СВЁРТКОЙ, И КЭШ ОПТИКИ ОБЯЗАН УМЕРЕТЬ ЗДЕСЬ. Он
-    // сверяет себя со счётчиком правок леса (`optical_world` выше), а счётчик
-    // слоя из файла и счётчик девственного слоя генезиса суть два независимых
-    // числа: они вправе совпасть при РАЗНЫХ клетках, и тогда плотность крон
-    // осталась бы от леса сида. Пока лес накатывался отдельной дверью, она
-    // сама двигала счётчик живого слоя; свёртка заменяет слой целиком, так что
-    // протухание называется прямо, а не выводится из сравнения двух чисел.
+    // (а) Кэш носителя флажка: истина приехала колонкой `playerFlag` стора.
+    sm::resolve_player_handles_after_load(app.session, *app.macroStore);
+    // (б) Событие состава: осёдлые файла суть другое множество, чем осёдлые
+    //     сида, под которыми генезис только что запёк навигацию.
+    ++app.session.navEpoch;
+    // (в) Поток джиттера макро-ИИ: живая половина на `App::npcAi`, образ — в
+    //     состоянии; думка продолжает свой поток, а не начинает сидовый.
+    app.npcAi.jitter = app.gs.macroAiRhythm.jitter;
+    // (г) «Видно сейчас» в слое знания есть проекция места, где стоит игрок,
+    //     на момент записи. Список видимых клеток — сессия и в файл не ехал,
+    //     поэтому гасить эти клетки при уходе игрока было бы нечем: они
+    //     гаснут в «разведано» здесь, и первый же обзор откроет своё заново.
+    sm::knowledge_dim_sight(app.gs.knowledge);
+    // (д) Кэш оптики сверяет себя со счётчиком правок леса, а лес заменён
+    //     целиком — счётчик из файла вправе совпасть со счётчиком сида.
     app.optical = App::OpticalCache{};
-    // `fresh` is a husk from here on — every read below goes to app.gs.
-    //
-    // The bus's chronicle door is unaffected: it points at the MEMBER
-    // app.gs.chronicle (boot_world attached it), and that address does not
-    // move when the state is assigned into — the world owns the past, the bus
-    // only writes to it.
 
-    // The second sync door (v24): boot_world reset App::npcAi from the seed;
-    // the LOADED rhythm now overwrites that, so the AI resumes mid-phase with
-    // its own jitter stream instead of re-rolling the same sequence.
-    app.npcAi.jitter        = app.gs.macroAiRhythm.jitter;
-    // (Колонки долга и метры сохранения умерли с M-379; thinksDone — метр-
-    //  свидетель текущего запуска, его загрузка не трогает: фазы думок едут
-    //  пер-сквадно в rt.tickAccum строками сквадов.)
-    // (Реплей прогресса сюжета v25 умер в v157 вместе с обоими списками
-    //  logic-узлов: движок стоит так, как его поставила регистрация на буте
-    //  — активен системный `sys_settlement`, сюжетные узлы ждут своих
-    //  активаций.)
-    // (The explored map rode in with the state above — v40. Visible cells were
-    // clamped away on write; the first sight sweep after this load re-opens
-    // them from the restored position, since destroy_world invalidated the
-    // sight anchor. The features squads BUILT rode in too (v71): that list is
-    // the truth, and it is re-stamped onto the seed-baked grid below, before
-    // the rebaker reads it.)
-    // ── THE fold witness (SAVE-1) ─────────────────────────────────────────
-    //
-    // Everything above is the APPLY half of a load: a file already parsed into
-    // `fresh`, moved into the living world. That half was never watched by
-    // anything — save_roundtrip_test proves file→GameState, which is the half
-    // that worked, while five fields died right here, on the way in.
-    //
-    // The macro snapshot (Session 17): boot_world above spawned no SQUADS
-    // (spawnMacroNpcs=false) — but с флипа M-90 генезис рожает ТЕЛА МЕСТ в
-    // store, а их строки файл только что заменил своими. Store умирает
-    // ЗДЕСЬ, по построению, а не по совпадению флага: записи файла несут
-    // ВСЕХ (сквады и тела мест), и restore вселяет их в пустой store. A
-    // killed lord stays killed, a levelled avatar keeps his campaigns.
-    sm::store_reset(*app.macroStore);
-    sm::restore_macro_ecs(loadedMacro, *app.macroStore, loadedNextSpawnId);
-
-    // So weigh the living world with the same writer that weighed the file,
-    // on the same side vectors, and demand the two agree. The fields are
-    // ENUMERATED BY THE WRITER: a truth added to write_payload is guarded from
-    // the day it is added, and one dropped in this fold is a mismatch the same
-    // second. This must stand AFTER the store restore just above (the emitter
-    // — MacroStore.nextSpawnId, M-220 — rides the save and is applied THERE)
-    // and BEFORE settlementId is recomputed below — that line legitimately
-    // re-derives a field, and a witness must compare the fold, not the
-    // world's own thinking.
-    // РОД 2 ПЕРЕСНИМАЕТСЯ С ЖИВОГО СТОРА, И БЕЗ ЭТОГО СВИДЕТЕЛЬ СРАВНИВАЛ ЕГО
-    // САМ С СОБОЙ (M-439, перепись 2026-11-09). Здесь стояло `loadedMacro` —
-    // ТОТ ЖЕ вектор, что ушёл в отпечаток файла выше, — поэтому запись сквада
-    // (757.80 МиБ по капу, 70.2 % сейва) давала В ОБА отпечатка одни и те же
-    // байты, и ПОТЕРЯ ВНУТРИ `restore_macro_ecs` была зелёному свидетелю
-    // неподвластна по построению. Проза над вызовом обещала сторожить
-    // применение «AFTER the store restore just above» — обещание держалось
-    // только для полей `GameState` и эмитента, то есть для меньшей половины.
-    // Снимок — работа загрузки, не тика (AGENTS §7 п.2), и платится один раз.
-    //
-    // ЛЕС СВЕРЯЕТСЯ ПО-НАСТОЯЩЕМУ С ЛОМТЯ 3 СЕЙВ-ЭПИКА. Пока он жил вне
-    // состояния, в оба отпечатка шёл один и тот же вектор клеток из файла, и
-    // свидетель сравнивал лес сам с собой (долг стоял в ряду M-439). Теперь
-    // писатель берёт лес из состояния: отпечаток файла снят с черновика, а
-    // отпечаток мира — с живого `app.gs` ПОСЛЕ свёртки.
-    //
-    // ТАБЛИЦА «МУТАЦИЯ → ИСХОД», ОБЕ ПОЛЯРНОСТИ, снята на смоуке
-    // `save_game,open_load,load_game,wait_boot_done` (AGENTS §8 п.6; дерево
-    // после каждой мутации восстанавливалось `cp` и сверялось с HEAD):
-    //   БАЗА (целый код) ................................. PASS, checks=2 failed=0
-    //   M1b  `st.pools[h.slot].hp += 1` в restore_macro_ecs
-    //        · С ЭТОЙ ПЕРЕСЪЁМКОЙ ....................... FAIL «load fold lost state»
-    //        · С `loadedMacro` вместо `liveMacro` ....... PASS  ← ДЫРА, ЧИСЛОМ
-    //   M2   перестановка двух независимых присваиваний
-    //        (`character` ↔ `traits`), результат тождествен  PASS  ← детектор молчит
-    // Третья мутация записана отдельно, потому что она УЧИТ: снос
-    // `st.wellbeing[h.slot] = m.wellbeing` оставил смоук ЗЕЛЁНЫМ даже с
-    // пересъёмкой — поле в свежем мире уже дефолтное, то есть мутация НУЛЕВАЯ и
-    // детектора не судит вовсе (та же ловушка, что в §8 п.6: «эффект меньше
-    // порога наблюдения»). Красить обязана мутация с заведомо ненулевым
-    // эффектом, и M1b выбрана именно поэтому.
-    const std::vector<sm::MacroNpcRecord> liveMacro =
-        sm::snapshot_macro_ecs(*app.macroStore);
-    const std::uint32_t liveFingerprint = sm::save_payload_fingerprint(
-        app.gs, app.macroStore->nextSpawnId, liveMacro);
-    // A witness that answers "0" twice would agree with itself over a world it
-    // never weighed: 0 is what the fingerprint returns when the writer FAILED.
-    // Refuse that agreement out loud — a check that cannot fail is the defect
-    // this whole door was built against.
-    if (fileFingerprint == 0u || liveFingerprint == 0u) {
-        std::fprintf(stderr,
-                     "load: the fold witness could not weigh the world "
-                     "(file=%08x live=%08x) — the payload writer failed.\n",
-                     fileFingerprint, liveFingerprint);
-        std::fflush(stderr);
-        if (app.smoke.enabled) sm::app::smoke_fail(app, "fold witness mute");
-    } else if (liveFingerprint != fileFingerprint) {
-        std::fprintf(stderr,
-                     "load: THE FOLD LOST STATE — the file weighs %08x, the "
-                     "world it became weighs %08x. A field that rides the save "
-                     "is not being applied in boot_world_from_save.\n",
-                     fileFingerprint, liveFingerprint);
-        std::fflush(stderr);
-        if (app.smoke.enabled) sm::app::smoke_fail(app, "load fold lost state");
-    }
-    // Сшивка строк мест с их телами — по ординалу (M-37: пространство одно);
-    // строка без тела печатается ВСЛУХ внутри двери.
-    // Кэши игрока — из колонок СВЕЖЕГО store (5б): слоты при restore
-    // раздались по порядку записей, биты из прошлой жизни мертвы; истина
-    // «кто игрок» приехала колонкой playerFlag записей.
-    sm::resolve_player_handles_after_load(app.gs, *app.macroStore);
-
-    // Camera anchor moved BELOW ensure_: the restored flag holder is the
-    // anchor, and it exists only after the restore has been healed over.
-    // The restore above brought the player's squad AND the flag back verbatim
-    // (5б: колонка playerFlag — honest byte of the record — no
-    // re-derivation, no second store). ensure_ is a heal pass here, not a
-    // creator: genesis anchored nobody, so the squad the doors find is the
-    // restored one — the very defect SAVE-5 named was this call finding a
-    // load-path husk instead.
-    sm::ensure_macro_player_entity(app.gs, *app.macroStore);
+    // The restore brought the player's squad AND the flag back verbatim; this
+    // is a heal pass, not a creator: genesis anchored nobody, so the squad the
+    // doors find is the loaded one.
+    sm::ensure_macro_player_entity(app.gs, app.session, *app.macroStore);
     if (float px = 0.0f, py = 0.0f;
-        sm::player_flag_point(app.gs, *app.macroStore, px, py)) {
+        sm::player_flag_point(app.session, *app.macroStore, app.gs.mapW, px, py)) {
         app.camX = app.camTargetX = px + 0.5f;
         app.camY = app.camTargetY = py + 0.5f;
     }
     // Мир (пере)родился — глаза карты глайдить не от чего (M-244a).
     app.macroEyes.primed = false;
     app.subState.settlementId = settlement_at_player(
-        app.gs, *app.macroStore, app.npcAi.squadIndex);
+        app.gs, app.session, *app.macroStore, app.npcAi.squadIndex);
 
-    // boot_world() above derived every field from the SEED's virgin world; we
-    // then swapped in the LOADED truths — the living forest among them, it
-    // rode in with the state fold. Rebake every derived field from them in
-    // ONE pass (rebake_world, CANON S7). Before the one rebaker, a load
-    // re-baked only the glow — and even that from the virgin forest: zones,
-    // cost grid and glow-occlusion all described a world that no longer
-    // existed (canon-audit G2).
-    // (Накат блоков жил умер 2026-10-23, «жилы единые»: слой производный,
-    // rebake уже перестроил его из сида — сейв о нём не знает.)
-    // (Ре-штамп построенных сквадами фич УМЕР в v130: вектор `builtFeatures`
-    // был всегда пуст — писателей из геймплея ноль, — то есть этот цикл
-    // крутился по нулю элементов с самого v71. Слой фич остаётся ПРОИЗВОДНЫМ
-    // от сида, и это сегодня вся правда о нём.)
-    rebake_world(app);
-    // (Костыль «перештамп шахт после наката снимка» УМЕР 2026-10-23 тем же
-    // вердиктом: генезис пути загрузки рождает места ПЛАНОМ сида — фичи
-    // поселений и шахт встают в нём один раз, снимок кладёт сквады поверх,
-    // залежи приезжают сейвом рядом чисел фич при свёртке app.gs.)
-    app.macro.upload_tree_field(app.device, &app.gs.treeLayer);
-    app.uploadedTreeRev = app.gs.treeLayer.revision;
+    // ── 5. ПРОИЗВОДНЫЕ ПОЛЯ ПЕРЕПЕКАЮТСЯ ОТ ИСТИН ФАЙЛА, КАРТА — В GPU ──────
+    // boot_world() above derived every field from the SEED's virgin world; the
+    // loaded truths have replaced it — the living forest, the feature field
+    // with its ruins (M-456), the people. Rebake every derived field from them
+    // in ONE pass (rebake_world, CANON S7): zones, squad index, cost grid.
+    // Свет и текстуры карты выгружает полная дверь следом — она же объявляет
+    // протухшими зеркала счётчиков леса и знания.
+    rebake_world(app, /*uploadNow=*/false);
+    upload_macro_world(app);
     return true;
 }
 
@@ -2335,7 +2207,7 @@ void draw_subworld_danger_gem(const sm::sub::SubworldEngine& subworld, float sca
 // Presentation only, and this draw is also where a line's ttl burns down:
 // screen time is the only time a session word has (owner, 2026-08-28).
 void draw_session_feed(App& app) {
-    sm::SessionFeed& feed = app.gs.sessionFeed;
+    sm::SessionFeed& feed = app.session.feed;
     const ImGuiIO& io = ImGui::GetIO();
     ImDrawList* fg = ImGui::GetForegroundDrawList();
     const float lineH = ImGui::GetTextLineHeightWithSpacing();
@@ -2461,7 +2333,7 @@ bool cast_active_spell(App& app) {
         // требует `def->sustained`), то есть класс «баф». Дверь уровня
         // сквада пересчитает производные сама (M-301).
         sm::squad_cast_start(*app.macroStore,
-                             sm::player_flag_handle(app.gs), ord);
+                             sm::player_flag_handle(app.session), ord);
         return true;
     }
 
@@ -2476,7 +2348,7 @@ bool cast_active_spell(App& app) {
         app.macroStore.get(),
         // ЧЕЙ каст (M-301): сустейн ставит бонус на ЭТОТ сквад, и дверь
         // внутри пересчитает его производные.
-        sm::player_flag_handle(app.gs),
+        sm::player_flag_handle(app.session),
         player_book(app),
         player_pools(app),
         effCast.attributes,
@@ -2497,8 +2369,8 @@ bool cast_active_spell(App& app) {
         &subworld_spell_rng01,
         &app.subworld,
         &app.subworld.spell_rng(),
-        // Мир для законов о положении игрока (вселение, 1е кластер 5).
-        &app.gs);
+        // Сессия для законов о положении игрока (вселение двигает кэш флажка).
+        &app.session);
     // ANY cast that happened sounds (one door, one voice — a stance flip
     // included); the deferred «звук каста» of 443f0f5, delivered 2026-09-09.
     if (ok) app.audio.play_sfx(sm::SfxId::SpellCast);
@@ -2933,7 +2805,7 @@ void poll_movement(App& app, float dt) {
         // sheet, not a multiplier bolted on beside the formula, so a swift
         // ring and a swiftness spell are the same kind of fast.
         const sm::BonusTotals standing = player_standing_bonuses(app);
-        const sm::CharacterSheet* base = sm::player_sheet(app.gs, *app.macroStore);
+        const sm::CharacterSheet* base = sm::player_sheet(app.session, *app.macroStore);
         const sm::CharacterSheet eff = base
             ? sm::effective_sheet(*base, standing) : sm::CharacterSheet{};
         const float pace =
@@ -2984,14 +2856,14 @@ void poll_movement(App& app, float dt) {
     // марш зовётся, пока есть маршрут ИЛИ доля не дома: гейт только по пути
     // морил голодом доезд в центр, и финиш вечно стоял на краю входа.
     const bool subAtHome = [&] {
-        const sm::MacroHandle fh = sm::player_flag_handle(app.gs);
+        const sm::MacroHandle fh = sm::player_flag_handle(app.session);
         if (!app.macroStore->valid(fh)) return true;
         const sm::ecs::CellSub s = app.macroStore->runtime[fh.slot].sub;
         return s.x == 0 && s.y == 0;
     }();
     if ((!app.cursor.path.empty() || !subAtHome) && !paused) {
         const sm::BonusTotals standing = player_standing_bonuses(app);
-        const sm::CharacterSheet* base = sm::player_sheet(app.gs, *app.macroStore);
+        const sm::CharacterSheet* base = sm::player_sheet(app.session, *app.macroStore);
         const sm::CharacterSheet effSheet = base
             ? sm::effective_sheet(*base, standing) : sm::CharacterSheet{};
         const float pace =
@@ -3054,12 +2926,12 @@ void update_camera(App& app, float dt) {
     {
         // Камера ведёт ГЛАЗ (кэш представления, M-244a), а до первого
         // прогона глаз — заявленную точку мира.
-        const sm::MacroHandle fh = sm::player_flag_handle(app.gs);
+        const sm::MacroHandle fh = sm::player_flag_handle(app.session);
         if (app.macroStore->valid(fh) && app.macroEyes.primed) {
             app.camTargetX = app.macroEyes.x[fh.slot] + 0.5f + app.camPanX;
             app.camTargetY = app.macroEyes.y[fh.slot] + 0.5f + app.camPanY;
         } else if (float px = 0.0f, py = 0.0f;
-                   sm::player_flag_point(app.gs, *app.macroStore, px, py)) {
+                   sm::player_flag_point(app.session, *app.macroStore, app.gs.mapW, px, py)) {
             app.camTargetX = px + 0.5f + app.camPanX;
             app.camTargetY = py + 0.5f + app.camPanY;
         }
@@ -3096,8 +2968,8 @@ void apply_pending_event_effects(App& app) {
         // are emitted AFTER the span walk (emit grows the very vector the
         // span points into) — the while loop picks them up as the next batch.
         std::vector<sm::GameEvent> followups;
-        sm::apply_events(pending, app.gs,
-                         sm::player_spellbook(app.gs, *app.macroStore), &followups);
+        sm::apply_events(pending, app.session.feed,
+                         sm::player_spellbook(app.session, *app.macroStore), &followups);
         bool spireDied = false;
         for (const sm::GameEvent& ev : pending) {
             if (ev.tag == sm::EventTag::SpireDepleted) spireDied = true;
@@ -3130,13 +3002,18 @@ void apply_pending_event_effects(App& app) {
 // moment that SAYS it heals, so the pools fill to their new maxima.
 void apply_creation(App& app) {
     const sm::ui::CreationState& cs = app.creation;
-    if (cs.name[0] != '\0')
-        sm::ecs::set_squad_name(app.gs.player.name, cs.name);
     // The authored build lands in the OWNED component on his freshly-booted
     // squad (посадка Б): boot_world ran ensure_macro_player_entity a moment
     // ago, so the body — and the sheet slot on it — already exists.
-    sm::CharacterSheet* sheet = sm::player_sheet(app.gs, *app.macroStore);
+    sm::CharacterSheet* sheet = sm::player_sheet(app.session, *app.macroStore);
     if (!sheet) return;
+    // ИМЯ — В КОЛОНКУ АНКЕТЫ АКТИВНОГО СКВАДА (вердикт владельца 2026-11-10,
+    // В3): второго носителя имени у игрока нет, и пишет его та же дверь, что
+    // имя всякого сквада.
+    if (cs.name[0] != '\0') {
+        const sm::MacroHandle me = sm::player_flag_handle(app.session);
+        sm::ecs::set_squad_name(app.macroStore->name[me.slot], cs.name);
+    }
     *sheet = cs.sheet;
 
     // The nature bonus, exactly as the authored rows promise it ("Strong
@@ -3157,7 +3034,7 @@ void apply_creation(App& app) {
         // The sheet changed wholesale: ceilings follow through THE door, and
         // — a moment that SAYS it heals — every bar fills to its new maximum.
         sm::refresh_squad_body(*app.macroStore,
-                               sm::player_flag_handle(app.gs));
+                               sm::player_flag_handle(app.session));
         sm::ecs::Pools& pools = player_pools(app);
         pools.hp = pools.maxHp;
         pools.mp = pools.maxMp;
@@ -3199,7 +3076,7 @@ void apply_creation(App& app) {
         born += "unknown";
     }
     born += ".";
-    sm::session_feed_push(app.gs.sessionFeed, born.c_str());
+    sm::session_feed_push(app.session.feed, born.c_str());
 }
 
 void apply_pending_story_results(App& app) {
@@ -3411,7 +3288,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // world the player has not arrived in yet, and a map filling itself in
     // behind that scene is the immersion leak the owner caught in playtest 2.
     if (!app.revealMapOn && !app.sceneHoldsMap) {
-        if (const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.gs, *app.macroStore)) {
+        if (const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.session, *app.macroStore)) {
             sm::update_player_sight(app.gs.knowledge, app.sightRt,
                                     optical_world(app),
                                     float(sm::ecs::cell_x(*pc, app.gs.mapW)),
@@ -3469,7 +3346,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // изменение анкеты — оно снимает со сквада стоявший бонус, — и до этого
     // шага его свежесть держал сторож ниже, а не сама операция.
     sm::squad_spellbook_tick(*app.macroStore,
-                             sm::player_flag_handle(app.gs),
+                             sm::player_flag_handle(app.session),
                              /*steps=*/1u);
     // (No wind-up queue: a cast resolves at its own click — owner verdict
     // 2026-09-09 — and what it costs in time is the body's recovery gate,
@@ -3574,7 +3451,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // map. This recreates it after any subworld leave() (which tears down all
         // flagged records, from any of the ~7 leave call sites) and projects
         // the just-finalised player scalar onto its Position each macro tick.
-        sm::ensure_macro_player_entity(app.gs, *app.macroStore);
+        sm::ensure_macro_player_entity(app.gs, app.session, *app.macroStore);
         // ОСТАТОК ДЕЛЬТЫ ПОДЪЁМА: leave() не применяет сам (движок не
         // включает макро-дверь — канал узкий), несданные операции ложатся
         // первым же макро-кадром ДО тика — тот же порядок «дельта вверх →
@@ -3641,7 +3518,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // wearing. One body, one set of bars, one hour.
         const bool marching = !app.cursor.path.empty();
         if (stats.timeTick.minutesAdvanced > 0) {
-            const sm::MacroHandle flagH = sm::player_flag_handle(app.gs);
+            const sm::MacroHandle flagH = sm::player_flag_handle(app.session);
             if (app.macroStore->valid(flagH)) {
                 const sm::ecs::MacroNpcRuntime& prt =
                     app.macroStore->runtime[flagH.slot];
@@ -3674,7 +3551,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // в-клетке здесь гаснут заминка боя и рековери флажка — без этого
         // первый же удар внизу замуровал бы ноги игрока навсегда). A cell
         // crossing resets tickAccum in step_macro_walk.
-        if (const sm::MacroHandle fh = sm::player_flag_handle(app.gs);
+        if (const sm::MacroHandle fh = sm::player_flag_handle(app.session);
             app.macroStore->valid(fh)) {
             sm::advance_flag_clock(
                 app.macroStore->runtime[fh.slot],
@@ -3712,7 +3589,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // The player LEARNS this tick's facts — participation and his own cell
     // (macro/journal.h). Runs on both sides of the seam: underground the
     // engine files into the very macro cell he stands in.
-    sm::player_journal_capture(app.gs, *app.macroStore);
+    sm::player_journal_capture(app.gs, app.session, *app.macroStore);
     tick_subworld_hit_flash(app, dt);
     // ── СМЕРТЬ В КАРМАНЕ, КОТОРЫЙ САМ ГОВОРИТ, ЧТО ОНА ЗНАЧИТ ─────────────
     // Строка рода кармана несёт узел, который смерть здесь АКТИВИРУЕТ вместо
@@ -3746,7 +3623,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                 app.subworld.dungeon_kind()).deathNode;
             storyNode != nullptr) {
             const sm::ecs::Pools* rec =
-                app.macroStore ? sm::player_pools(app.gs, *app.macroStore)
+                app.macroStore ? sm::player_pools(app.session, *app.macroStore)
                                : nullptr;
             if (rec != nullptr && rec->hp <= 0) {
                 end_scene_by_death(app, storyNode);
@@ -3772,11 +3649,11 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // флажка. Забрать этот снос должен тот, кто пришёл сюда ногами, — новый
     // активный всё это время стоял там, где стоял, и приезжать ему сюда
     // незачем.
-    if (sm::macro_dead(*app.macroStore, sm::player_flag_handle(app.gs))
+    if (sm::macro_dead(*app.macroStore, sm::player_flag_handle(app.session))
         && app.subworld.active()) {
         app.subworld.leave(true);
     }
-    if (!sm::keep_active_squad(app.gs, *app.macroStore)) {
+    if (!sm::keep_active_squad(app.session, *app.macroStore)) {
         app.state = sm::ui::AppState::Dead;
     }
     return stats;
@@ -3964,7 +3841,7 @@ sm::ecs::BodyEquipment* console_player_equipment(App& app) {
     // читается по флажку (`player_bag` → `player_inventory`), поэтому гир
     // обязан читаться им же — иначе при вселении ячейка тела одного сквада
     // индексирует инвентарь другого.
-    const sm::MacroHandle pe = sm::player_flag_handle(app.gs);
+    const sm::MacroHandle pe = sm::player_flag_handle(app.session);
     if (!app.macroStore || !app.macroStore->valid(pe)) return nullptr;
     // ФЛИП 1в: гир — колонка store у КАЖДОГО сквада (вердикт 2026-09-25),
     // opt-in умер вместе с «16384 не платят».
@@ -4076,7 +3953,7 @@ void register_console_commands(App& app) {
                            app.subworld.player_x(), app.subworld.player_y(),
                            app.subworld.player_muzzle_z());
             else if (const sm::ecs::MacroCell* pc =
-                         sm::player_flag_cell(app.gs, *app.macroStore))
+                         sm::player_flag_cell(app.session, *app.macroStore))
                 c.printfln(Lvl::Ok, "macro cell = %d, %d",
                            sm::ecs::cell_x(*pc, app.gs.mapW),
                            sm::ecs::cell_y(*pc, app.gs.mapW));
@@ -4140,7 +4017,7 @@ void register_console_commands(App& app) {
             } else {
                 if (x < 0) x = 0; if (x > float(app.gs.mapW - 1)) x = float(app.gs.mapW - 1);
                 if (y < 0) y = 0; if (y > float(app.gs.mapH - 1)) y = float(app.gs.mapH - 1);
-                sm::player_jump_to_cell(app.gs, *app.macroStore, int(x), int(y));
+                sm::player_jump_to_cell(app.session, *app.macroStore, int(x), int(y), app.gs.mapW);
                 c.printfln(Lvl::Ok, "teleported (macro) to cell %d, %d",
                            int(x), int(y));
             }
@@ -4176,7 +4053,7 @@ void register_console_commands(App& app) {
             if (!st.valid(found)) { c.error("no settlement matching '" + a[0] + "'"); return true; }
             const int fx = sm::ecs::cell_x(st.cell[found.slot], app.gs.mapW);
             const int fy = sm::ecs::cell_y(st.cell[found.slot], app.gs.mapW);
-            sm::player_jump_to_cell(app.gs, st, fx, fy);
+            sm::player_jump_to_cell(app.session, st, fx, fy, app.gs.mapW);
             if (app.subworld.active())
                 c.warn("leave the subworld (Enter) for the macro teleport to take effect");
             c.printfln(Lvl::Ok, "teleported to %s (id %d) at %d, %d",
@@ -4259,7 +4136,7 @@ void register_console_commands(App& app) {
                 }
             }
             {
-                const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.gs, *app.macroStore);
+                const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.session, *app.macroStore);
                 spec.x = pc ? sm::ecs::cell_x(*pc, app.gs.mapW) : 0;
                 spec.y = pc ? sm::ecs::cell_y(*pc, app.gs.mapW) : 0;
             }
@@ -4503,7 +4380,7 @@ void register_console_commands(App& app) {
         [&app](Con& c, const std::vector<std::string>& a) {
             int amount = 0;
             if (!sm::dev::arg_int(a, 0, amount)) return false;
-            sm::CharacterSheet* sheet = sm::player_sheet(app.gs, *app.macroStore);
+            sm::CharacterSheet* sheet = sm::player_sheet(app.session, *app.macroStore);
             if (!sheet) { c.printfln(Lvl::Error, "no world"); return false; }
             // ЧЕРЕЗ ОДНУ ДВЕРЬ КЛАССА «ПРОКАЧКА» (M-301). Здесь звалась
             // `award_exp` над листом напрямую — то есть консоль выдавала опыт
@@ -4512,7 +4389,7 @@ void register_console_commands(App& app) {
             // владельца о единой двери роста), поэтому напечатанное «+N» —
             // это запрошенное, а `gained` — взятые уровни.
             const int gained = sm::squad_award_exp(
-                *app.macroStore, sm::player_flag_handle(app.gs), amount);
+                *app.macroStore, sm::player_flag_handle(app.session), amount);
             auto& ld = sheet->levelData;
             c.printfln(Lvl::Ok, "exp +%d -> level %d (%d gained), %d/%d to next",
                        amount, sm::level_of(ld), gained,
@@ -4525,7 +4402,7 @@ void register_console_commands(App& app) {
         [&app](Con& c, const std::vector<std::string>& a) {
             int n = 1; sm::dev::arg_int(a, 0, n);
             if (n < 1) n = 1;
-            sm::CharacterSheet* sheet = sm::player_sheet(app.gs, *app.macroStore);
+            sm::CharacterSheet* sheet = sm::player_sheet(app.session, *app.macroStore);
             if (!sheet) { c.printfln(Lvl::Error, "no world"); return false; }
             auto& ld = sheet->levelData;
             const int before = sm::level_of(ld);
@@ -4533,7 +4410,7 @@ void register_console_commands(App& app) {
             // порога и взять уровень» — правка не класса, а отладочная,
             // поэтому идёт ключом (M-301), а пересчёт стоит внутри него.
             sm::edit_squad_sheet(
-                *app.macroStore, sm::player_flag_handle(app.gs),
+                *app.macroStore, sm::player_flag_handle(app.session),
                 [n](sm::CharacterSheet& s) {
                     // Уровень НАСТУПАЕТ, а не берётся (M-383): отладочный ключ
                     // просто ставит опыт на нужную ступень лестницы.
@@ -4590,7 +4467,7 @@ void register_console_commands(App& app) {
     con.register_cmd("skills", "skills",
         "list every skill: key, base rank -> effective rank (source of truth)",
         [&app](Con& c, const std::vector<std::string>&) {
-            const sm::CharacterSheet* basePtr = sm::player_sheet(app.gs, *app.macroStore);
+            const sm::CharacterSheet* basePtr = sm::player_sheet(app.session, *app.macroStore);
             if (!basePtr) { c.printfln(Lvl::Error, "no world"); return false; }
             const sm::CharacterSheet& base = *basePtr;
             const sm::CharacterSheet eff = player_effective_sheet(app);
@@ -4610,7 +4487,7 @@ void register_console_commands(App& app) {
             const int want = std::clamp(rank, 0, sm::kMaxSkillRank);
             if (want != rank)
                 c.printfln(Lvl::Warn, "rank clamped to %d (the law's cap)", want);
-            if (!sm::player_sheet(app.gs, *app.macroStore)) {
+            if (!sm::player_sheet(app.session, *app.macroStore)) {
                 c.printfln(Lvl::Error, "no world"); return false;
             }
             const sm::SkillDef* one =
@@ -4622,7 +4499,7 @@ void register_console_commands(App& app) {
             // Ключом (M-301): пересчёт внутри двери, флажка `changed` и
             // звонка `console_recompute_maxima` больше нет.
             sm::edit_squad_sheet(
-                *app.macroStore, sm::player_flag_handle(app.gs),
+                *app.macroStore, sm::player_flag_handle(app.session),
                 [one, want](sm::CharacterSheet& s) {
                     if (!one) {
                         for (const auto& d : sm::kSkillDefs)
@@ -4644,7 +4521,7 @@ void register_console_commands(App& app) {
     con.register_cmd("attrs", "attrs",
         "list every attribute: key, base score -> effective score",
         [&app](Con& c, const std::vector<std::string>&) {
-            const sm::CharacterSheet* basePtr = sm::player_sheet(app.gs, *app.macroStore);
+            const sm::CharacterSheet* basePtr = sm::player_sheet(app.session, *app.macroStore);
             if (!basePtr) { c.printfln(Lvl::Error, "no world"); return false; }
             const sm::CharacterSheet& base = *basePtr;
             const sm::CharacterSheet eff = player_effective_sheet(app);
@@ -4668,7 +4545,7 @@ void register_console_commands(App& app) {
             const int want = std::clamp(score, 1, sm::kMaxAttributeScore);
             if (want != score)
                 c.printfln(Lvl::Warn, "score clamped to %d", want);
-            if (!sm::player_sheet(app.gs, *app.macroStore)) {
+            if (!sm::player_sheet(app.session, *app.macroStore)) {
                 c.printfln(Lvl::Error, "no world"); return false;
             }
             const sm::AttributeDef* one =
@@ -4678,7 +4555,7 @@ void register_console_commands(App& app) {
                 return true;
             }
             sm::edit_squad_sheet(
-                *app.macroStore, sm::player_flag_handle(app.gs),
+                *app.macroStore, sm::player_flag_handle(app.session),
                 [one, want](sm::CharacterSheet& s) {
                     if (!one) {
                         for (const auto& d : sm::kAttributeDefs)
@@ -4723,7 +4600,7 @@ void register_console_commands(App& app) {
                 c.error("unknown profile '" + a[0] + "' - type 'loots' for ids");
                 return true;
             }
-            const sm::CharacterSheet* sheet = sm::player_sheet(app.gs, *app.macroStore);
+            const sm::CharacterSheet* sheet = sm::player_sheet(app.session, *app.macroStore);
             const int level = sheet ? sm::level_of(sheet->levelData) : 1;
             int power = int(sm::affix_power(level));
             sm::dev::arg_int(a, 2, power);
@@ -4803,7 +4680,7 @@ void register_console_commands(App& app) {
             // Двери УРОВНЯ СКВАДА (M-301): пересчёт производных внутри них,
             // поэтому консольное переодевание больше не зависит от сторожа
             // главного цикла — он снесён этим же нарядом.
-            const sm::MacroHandle ph = sm::player_flag_handle(app.gs);
+            const sm::MacroHandle ph = sm::player_flag_handle(app.session);
             const int landed = hasCell
                 ? sm::squad_equip_at(*app.macroStore, ph, invSlot, cell)
                 : sm::squad_equip(*app.macroStore, ph, invSlot);
@@ -4830,7 +4707,7 @@ void register_console_commands(App& app) {
                 (cell >= 0 && cell < sm::kEquipCells)
                     ? eqc->gear.worn[std::size_t(cell)] : sm::kWornNothing;
             if (!sm::squad_unequip(*app.macroStore,
-                                   sm::player_flag_handle(app.gs), cell)) {
+                                   sm::player_flag_handle(app.session), cell)) {
                 c.printfln(Lvl::Warn, "nothing to take off in cell %d", cell);
                 return true;
             }
@@ -4847,7 +4724,7 @@ void register_console_commands(App& app) {
         "print the base and effective sheet, with TEMPOS through the "
         "recovery door (hand swing, spell recoveries)",
         [&app](Con& c, const std::vector<std::string>&) {
-            const sm::CharacterSheet* basePtr = sm::player_sheet(app.gs, *app.macroStore);
+            const sm::CharacterSheet* basePtr = sm::player_sheet(app.session, *app.macroStore);
             if (!basePtr) { c.printfln(Lvl::Error, "no world"); return false; }
             const sm::CharacterSheet& base = *basePtr;
             const sm::BonusTotals standing = player_standing_bonuses(app);
@@ -4888,7 +4765,7 @@ void register_console_commands(App& app) {
             const sm::ecs::BodyEquipment* eqc = nullptr;
             // СБРУЯ — АКТИВНОГО (ломоть 7б M-421): печатать темп руки по
             // сбруе ДОМА, стоя в теле лорда, значило показывать чужое число.
-            if (const sm::MacroHandle pe = sm::player_flag_handle(app.gs);
+            if (const sm::MacroHandle pe = sm::player_flag_handle(app.session);
                 app.macroStore->valid(pe))
                 eqc = &app.macroStore->gear[pe.slot];
             const sm::Inventory& bag = player_bag(app);
@@ -5320,14 +5197,14 @@ void draw_debug_panels(App& app) {
         ImGui::SetNextWindowSize(ImVec2(340, 440), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Game state", &app.panels.gameState)) {
             ImGui::SeparatorText("Player");
-            if (const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.gs, *app.macroStore)) {
+            if (const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.session, *app.macroStore)) {
                 ImGui::Text("cell    %d, %d",
                             sm::ecs::cell_x(*pc, app.gs.mapW),
                             sm::ecs::cell_y(*pc, app.gs.mapW));
             }
             ImGui::Text("value   %d", inventory_value(player_bag(app)));
             {
-                const sm::CharacterSheet* ps = sm::player_sheet(app.gs, *app.macroStore);
+                const sm::CharacterSheet* ps = sm::player_sheet(app.session, *app.macroStore);
                 const sm::LevelData ld = ps ? ps->levelData : sm::LevelData{};
                 ImGui::Text("level   %d   (exp %d / %d)",
                             sm::level_of(ld), sm::exp_in_level_of(ld),
@@ -5687,8 +5564,16 @@ void apply_world_shell_actions(App& app) {
         if (boot_world_from_save(app, path)) {
             app.state = sm::ui::AppState::Playing;
         } else {
-            std::fprintf(stderr, "load_game: no save at %s\n", path.c_str());
+            std::fprintf(stderr, "load_game: refused %s\n", path.c_str());
             refresh_save_summary(app);
+            // ВЕРДИКТ ЗАГРУЗКИ СТАРШЕ ОСМОТРА: осмотр слота дешёвый и суммы
+            // не считает (`inspect_save@src/macro/save.h`), поэтому слот с
+            // целым заголовком и порчей внутри он назвал бы готовым снова.
+            // Отказавший слот помечается нечитаемым тем, кто это узнал.
+            sm::SaveSummary& slot =
+                r.loadAutosave ? app.autosaveSummary : app.saveSummary;
+            if (slot.status == sm::SaveInspectStatus::Ready)
+                slot.status = sm::SaveInspectStatus::Unreadable;
         }
     }
     if (r.saveGame) {
@@ -5729,7 +5614,7 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
     // Обход живых слотов (1е, голый цикл); игрок — по слоту флага и
     // колонке ординала, как в свипе ИИ.
     const std::uint16_t flagSlot = [&]() -> std::uint16_t {
-        const sm::MacroHandle h = sm::player_flag_handle(app.gs);
+        const sm::MacroHandle h = sm::player_flag_handle(app.session);
         return st.valid(h) ? h.slot : sm::kMacroNoSlot;
     }();
     for (std::uint32_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
@@ -5969,7 +5854,7 @@ void frame(App& app, int simSteps) {
                         * kMacroZoomMax);
                 }
                 if (const sm::ecs::MacroCell* pc =
-                        sm::player_flag_cell(app.gs, *app.macroStore)) {
+                        sm::player_flag_cell(app.session, *app.macroStore)) {
                     app.mapScreen.camX =
                         float(sm::ecs::cell_x(*pc, app.gs.mapW)) + 0.5f;
                     app.mapScreen.camY =
@@ -6042,7 +5927,7 @@ void frame(App& app, int simSteps) {
         // Resolve a click → pathfind here so the overlay stays purely visual.
         if (app.cursor.requestPath) {
             app.cursor.requestPath = false;
-            const sm::ecs::MacroCell* origin = sm::player_flag_cell(app.gs, *app.macroStore);
+            const sm::ecs::MacroCell* origin = sm::player_flag_cell(app.session, *app.macroStore);
             int sx = origin ? sm::ecs::cell_x(*origin, app.gs.mapW) : 0;
             int sy = origin ? sm::ecs::cell_y(*origin, app.gs.mapW) : 0;
             if (sm::spellbook_rule_active(player_book(app),
@@ -6097,7 +5982,7 @@ void frame(App& app, int simSteps) {
         {
             const bool modalActive = modal_overlay_active(app);
             if (app.uiSettings.visible(sm::ui::UiElementId::PlayerHud))
-                sm::ui::draw_player_hud(app.gs, *app.macroStore, player_pools(app), app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
+                sm::ui::draw_player_hud(app.gs, app.session, *app.macroStore, player_pools(app), app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
             if (!modalActive)
             {
                 sm::ui::ToolbarResult tb{};
@@ -6160,7 +6045,7 @@ void frame(App& app, int simSteps) {
             draw_debug_panels(app);
             draw_session_feed(app);
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelCharacter))
-                sm::ui::draw_character_panel(app.gs, *app.macroStore, app.sceneObjects.get(), &app.ui.character, &app.ui.characterTab, app.uiSettings.scale(sm::ui::UiElementId::PanelCharacter));
+                sm::ui::draw_character_panel(app.gs, app.session, *app.macroStore, app.sceneObjects.get(), &app.ui.character, &app.ui.characterTab, app.uiSettings.scale(sm::ui::UiElementId::PanelCharacter));
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelSettlement)) {
                 // ОДНА панель субъекта: сквад или ландмарк — окно, пауза и
                 // вкладочная система одни. Attack докладывается сюда, и
@@ -6189,11 +6074,11 @@ void frame(App& app, int simSteps) {
                         s_boardDay = today;
                         s_boardView = {};
                         s_boardView.count = sm::task_offers_for(
-                            bst, app.gs, app.npcAi.squadIndex, app.features,
+                            bst, app.gs, app.session, app.npcAi.squadIndex,
                             app.subjectSquad, s_boardView.offers,
                             int(std::size(s_boardView.offers)));
                         const sm::MacroHandle pf =
-                            sm::player_flag_handle(app.gs);
+                            sm::player_flag_handle(app.session);
                         s_boardView.active =
                             sm::task_active_at(bst, app.gs, pf,
                                                app.subjectSquad);
@@ -6203,6 +6088,7 @@ void frame(App& app, int simSteps) {
                     boardPtr = &s_boardView;
                 }
                 sm::ui::draw_settlement(app.gs,
+                                        app.session,
                                         *app.macroStore,
                                         app.subjectSquad,
                                         &app.ui.settlementTab,
@@ -6212,7 +6098,7 @@ void frame(App& app, int simSteps) {
                                         &taskReq,
                                         app.uiSettings.scale(sm::ui::UiElementId::PanelSettlement));
                 if (boardPtr) {
-                    const sm::MacroHandle pf = sm::player_flag_handle(app.gs);
+                    const sm::MacroHandle pf = sm::player_flag_handle(app.session);
                     if (taskReq.take >= 0 && taskReq.take < s_boardView.count) {
                         sm::task_take(*app.macroStore, app.gs, pf,
                                       app.subjectSquad,
@@ -6234,9 +6120,10 @@ void frame(App& app, int simSteps) {
                             sm::body_state<sm::ecs::MacroCell>(ast,
                                                                attackReq)) {
                         sm::player_jump_to_cell(
-                            app.gs, *app.macroStore,
+                            app.session, *app.macroStore,
                             sm::ecs::cell_x(*cell, app.gs.mapW),
-                            sm::ecs::cell_y(*cell, app.gs.mapW));
+                            sm::ecs::cell_y(*cell, app.gs.mapW),
+                            app.gs.mapW);
                     }
                     app.subjectSquad = {};
                     app.preBattleNpc = attackReq;
@@ -6490,7 +6377,7 @@ void frame(App& app, int simSteps) {
                     app.ui.settlement = true;
                 }
             }
-            sm::ui::draw_show_dialog(app.gs, app.showDialogEvent, app.bus,
+            sm::ui::draw_show_dialog(app.session, app.showDialogEvent, app.bus,
                                      app.showDialogUi, &app.showDialogOpen);
             handle_dialog_node_activation(app);
             sm::ui::draw_story_overlay(app.storyOverlay, app.bus);
@@ -6498,11 +6385,12 @@ void frame(App& app, int simSteps) {
         }
         case sm::ui::AppState::Menu:
             if (app.uiSettings.visible(sm::ui::UiElementId::PlayerHud))
-                sm::ui::draw_player_hud(app.gs, *app.macroStore, player_pools(app), app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
+                sm::ui::draw_player_hud(app.gs, app.session, *app.macroStore, player_pools(app), app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
             shell = sm::ui::draw_game_menu();
             break;
         case sm::ui::AppState::Dead:
-            shell = sm::ui::draw_death_screen(app.gs);
+            shell = sm::ui::draw_death_screen(app.gs, app.session,
+                                              *app.macroStore);
             break;
     }
     merge_shell_result(shell, tick_smoke_script(app));

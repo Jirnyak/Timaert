@@ -200,7 +200,7 @@ void deliver_bag_home(MacroHandle self, const TickContext& ctx, int defIdx) {
 // standing offers no work — the crew is honestly not raised that day.
 bool find_home_field(const TickContext& ctx, float px, float py,
                      const XY& home, XY& out, FeatureType parcel = FT_Field) {
-    if (!ctx.mw.features) return false;
+    if (!ctx.mw.gs) return false;
     bool found = false;
     int bestStock = 0;
     float best = 1e30f;
@@ -212,7 +212,7 @@ bool find_home_field(const TickContext& ctx, float px, float py,
             const std::uint32_t n = cell_step(homeIdx, dx, dy, ctx.mapW);
             const int cx = cell_x(n, ctx.mapW);
             const int cy = cell_y(n, ctx.mapW);
-            if (ctx.mw.features->at(cx, cy) != std::uint8_t(parcel)) continue;
+            if (ctx.mw.gs->features.at(cx, cy) != std::uint8_t(parcel)) continue;
             const int stock =
                 resource_field_read(ctx.mw, ResourceFieldId::Wheat, cx, cy);
             if (stock <= 0) continue;   // eaten bare — nothing to reap here
@@ -587,9 +587,10 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
     g.playerCellX = wrap_axis(int(ctx.playerX), ctx.mapW);
     g.playerCellY = wrap_axis(int(ctx.playerY), ctx.mapH);
     // Центр аренды — ядру (изъятие ног, ломоть 2 M-419). Тернар обязателен:
-    // `ctx.mw.gs` нуллим по контракту (те же `if (ctx.mw.gs && …)` у судов
-    // автобоя ниже).
-    g.leaseCenter = ctx.mw.gs ? ctx.mw.gs->leasedWindow : kNoWindowLease;
+    // адрес сессии в конверте нуллим по контракту (фикстура без субмира), и
+    // нулевой адрес читается как «аренды нет».
+    g.leaseCenter =
+        ctx.mw.session ? ctx.mw.session->leasedWindow : kNoWindowLease;
     // Возврат марша (пройденные клетки) больше никому не нужен: темп
     // картинки меряет кадровый кэш глаз сам (M-425).
     (void)sm::try_move(p, rt, tx, ty, quanta, g);
@@ -864,7 +865,7 @@ const GathererDef* artel_goal_def(const ecs::SquadGoal& g) {
 // находит работы ни на одном сиде. Заглушки не ставим.
 bool find_home_pasture(const TickContext& ctx, float px, float py,
                        const XY& home, XY& out) {
-    if (!ctx.mw.features) return false;
+    if (!ctx.mw.gs) return false;
     bool found = false;
     int bestStock = 0;
     float best = 1e30f;
@@ -953,8 +954,8 @@ static_assert(kNavHandReach == kGathererReach,
 bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
                        const XY& home, XY& out) {
     (void)row;   // ряд один — жила; подпись держит форму вызова worksite
-    if (!ctx.mw.features || !ctx.mw.gs || ctx.mapW <= 0) return false;
-    const FeatureLayer& fl = *ctx.mw.features;
+    if (!ctx.mw.gs || ctx.mapW <= 0) return false;
+    const FeatureLayer& fl = ctx.mw.gs->features;
     const int hx = int(home.x), hy = int(home.y);
     NavWorld* nv = ctx.mw.nav;
     const bool navReady = nv && nav_ensure(ctx.mw, *nv);
@@ -1654,11 +1655,11 @@ public:
     // (вода может отказать), и `FT_None` значит «не встало ничего». Модуль,
     // которому ответ не нужен, его просто не читает.
     FeatureType reshape_feature(MacroHandle self, FeatureType want) {
-        if (!ctx_.mw.features || !ctx_.mw.terrain || !ctx_.mw.store)
+        if (!ctx_.mw.gs || !ctx_.mw.terrain || !ctx_.mw.store)
             return FT_None;
         const MacroStore& st = store_ctx(ctx_);
         if (!st.valid(self)) return FT_None;
-        return feature_put(*ctx_.mw.features, *ctx_.mw.terrain,
+        return feature_put(ctx_.mw.gs->features, *ctx_.mw.terrain,
                            st.cell[self.slot].idx, want);
     }
     MacroHandle spawn(AiSelf& s, SquadType bornType, int crewSouls) {
@@ -3271,8 +3272,8 @@ void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                 // встречи в аренде у субмира — значит её ведёт он, и решать
                 // этот бой наверху значило бы завести второго писателя.
                 // Встреча не пропадает: она ОТЛАГАЕТСЯ до конца аренды.
-                if (ctx.mw.gs
-                    && cell_is_leased(*ctx.mw.gs, st.cell[self.slot].idx)) return;
+                if (cell_is_leased(ctx.mw.session, st.cell[self.slot].idx,
+                                   ctx.mapW)) return;
                 const AutoBattleOutcome o = resolve_auto_battle(
                     auto_battle_side_of(st, self),
                     auto_battle_side_of(st, prey),
@@ -3411,8 +3412,8 @@ void ai_dragon(MacroHandle self, MacroPos& p,
                               float(ecs::cell_y(ecell, ctx.mapW))};
             if (int(p.x) == int(ep.x) && int(p.y) == int(ep.y)) {
                 if (prey.slot == ctx.playerFlagSlot) return;   // дом ушёл с `.home`
-                if (ctx.mw.gs
-                    && cell_is_leased(*ctx.mw.gs, st.cell[self.slot].idx)) return;
+                if (cell_is_leased(ctx.mw.session, st.cell[self.slot].idx,
+                                   ctx.mapW)) return;
                 const AutoBattleOutcome o = resolve_auto_battle(
                     auto_battle_side_of(st, self),
                     auto_battle_side_of(st, prey),
@@ -3502,11 +3503,10 @@ void ai_teleporter(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     // ведёт субмир — прыжок макро был бы вторым писателем (тело осталось бы
     // в сцене, запись уехала). Прыжок В окно законен: вошедший захватывается
     // следующим слепком. Форма гейта — та же, что у судов автобоя
-    // (`ctx.mw.gs && cell_is_leased(…)`); он стоит ПЕРВЫМ, чтобы отложенный
-    // прыжок не сжигал ролл.
-    const bool jumpLeased = ctx.mw.gs
-        && cell_is_leased(*ctx.mw.gs,
-                          cell_of(int(p.x), int(p.y), ctx.mapW));
+    // (`cell_is_leased` по адресу сессии: нулевой адрес — аренды нет); он
+    // стоит ПЕРВЫМ, чтобы отложенный прыжок не сжигал ролл.
+    const bool jumpLeased = cell_is_leased(
+        ctx.mw.session, cell_of(int(p.x), int(p.y), ctx.mapW), ctx.mapW);
     if (!jumpLeased && !squad_recovering(rt) && rand_f01(ctx) < 0.005f) {
         XY t = pick_random_nearby(p.x, p.y, 40, ctx);
         p.x = t.x; p.y = t.y;
@@ -3705,8 +3705,8 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
         // (ломоть 7б M-421) — брошенный сквад под контролем решает свои бои
         // так же, как всякий сквад мира.
         if (enemy.slot == ctx.playerFlagSlot) return true;
-        if (ctx.mw.gs
-            && cell_is_leased(*ctx.mw.gs, st.cell[self.slot].idx)) return false;
+        if (cell_is_leased(ctx.mw.session, st.cell[self.slot].idx,
+                           ctx.mapW)) return false;
         ecs::MacroNpcRuntime* ert = &st.runtime[enemy.slot];
         const bool ambush =
             rt.state == std::uint8_t(NS::Chasing) && ert
@@ -4683,9 +4683,9 @@ int squad_bags_hygiene_daily(MacroWorld& mw) {
     MacroStore& st = *mw.store;
     std::vector<SquadWalkEntry> order;
     collect_squads_by_ordinal(st, order, [](std::uint16_t) { return true; });
-    // Мешок носителя флажка решает ввод, не ИИ — слот из битов GameState
+    // Мешок носителя флажка решает ввод, не ИИ — слот из кэша сессии
     // (1е кластер 5), тег-чтение умерло.
-    const MacroHandle flagH = player_flag_handle(*mw.gs);
+    const MacroHandle flagH = player_flag_handle(mw.session);
     const std::uint16_t flagSlot =
         st.valid(flagH) ? flagH.slot : kMacroNoSlot;
     for (const SquadWalkEntry& sw : order) {
@@ -4750,21 +4750,21 @@ static TickContext make_tick_context(MacroWorld& mw,
     ctx.rng     = &runtime.jitter;
     // The player is a squad: WHERE he is = his flag holder's cell, the same
     // one-number truth every squad keeps (подпосадка 4).
-    if (mw.store) {
+    if (mw.store && mw.session) {
         if (const ecs::MacroCell* pc =
-                player_flag_cell(*mw.gs, *mw.store)) {
+                player_flag_cell(*mw.session, *mw.store)) {
             ctx.playerX = float(ecs::cell_x(*pc, ctx.mapW));
             ctx.playerY = float(ecs::cell_y(*pc, ctx.mapW));
         }
         // Store свипа — адресом в конверте (выставлен выше): поведения
         // читают колонки, не спрашивая ctx реестра на каждом think (1е).
-        // Слоты игрока — резолв ОДИН раз на свип из битов GameState
+        // Слоты игрока — резолв ОДИН раз на свип из кэша сессии
         // (1е кластер 5): распаковка двух полей, ноль сканов реестра.
         // Валидность спрашивается у store — фикстура без игрока несёт
         // сентинель, и оба слота честно остаются kMacroNoSlot.
         if (mw.gs && ctx.mw.store) {
             const MacroStore& st = *ctx.mw.store;
-            const MacroHandle flag = player_flag_handle(*mw.gs);
+            const MacroHandle flag = player_flag_handle(mw.session);
             if (st.valid(flag)) ctx.playerFlagSlot = flag.slot;
         }
     }
@@ -4827,7 +4827,7 @@ void settle_dead_squads(MacroWorld& mw) {
     ctx.mapH = gs.mapH;
     AiPult pult(ctx);
     SweptDeathRelay relay{&pult, &st};
-    destroy_dead_macro_squads(st, gs, &relay_swept_death_, &relay);
+    destroy_dead_macro_squads(st, gs, mw.session, &relay_swept_death_, &relay);
 }
 
 } // namespace
@@ -4932,7 +4932,8 @@ static void tick_macro_npc_ai_one(MacroWorld& mw, MacroNpcAiRuntime& runtime) {
         // тем же моментом, что земля часа строкой выше: вошедший в окно
         // СРЕДИ думки честно оплатил свой марш и станет захваченным только
         // со следующей.
-        const bool captured = cell_is_leased(gs, cell.idx);
+        const bool captured =
+            cell_is_leased(ctx.mw.session, cell.idx, gs.mapW);
         rt.marchFlags = 0;   // флаги марша живут одну думку
         if (gate == ThinkGate::Think)
             dispatch(h, p, rt, hp, ctx);

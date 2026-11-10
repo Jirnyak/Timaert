@@ -194,12 +194,15 @@ int main(int argc, char** argv) {
         // ── Raise THE world (same baker as the game boot) ────────────────
         std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
         sm::GameState& gs = *gsOwn;
+        // Сессия прибора: генезис ставит в ней кэш носителя флажка и объявляет
+        // событие состава; конверт несёт её адрес симуляции.
+        sm::Session session;
         sm::TerrainData terrain{};
         std::vector<sm::TreePoint> trees;
         sm::TreeLayer& treeLayer = gs.treeLayer;
         std::unique_ptr<sm::DepositLayer> depositsOwn{new sm::DepositLayer()};
         sm::DepositLayer& deposits = *depositsOwn;
-        sm::FeatureLayer features;
+        sm::FeatureLayer& features = gs.features;
         sm::ZoneLayer zones;
         sm::TreeGrid treeGrid;
         sm::PathCostData pathCost;
@@ -214,10 +217,10 @@ int main(int argc, char** argv) {
         gp.seed = seed;
         sm::WorldGenOut go{};
         go.gs = &gs;
+        go.session = &session;
         go.terrain = &terrain;
         go.trees = &trees;
         go.deposits = &deposits;
-        go.features = &features;
         go.zones = &zones;
         go.treeGrid = &treeGrid;
         go.squadIndex = &ai.squadIndex;
@@ -244,11 +247,11 @@ int main(int argc, char** argv) {
         sm::NavWorld nav;        // запечённая навигация (CANON S7), derived
         sm::MacroWorld mw{};
         mw.gs = &gs;
+        mw.session = &session;
         mw.nav = &nav;
         mw.store = macroStore.get();
         mw.terrain = &terrain;
         mw.deposits = &deposits;
-        mw.features = &features;
         mw.zones = &zones;
         mw.pathCost = &pathCost;
         mw.treeGrid = &treeGrid;
@@ -547,7 +550,8 @@ int main(int argc, char** argv) {
                     // чем доска способна показать.
                     sm::TaskOffer offers[4];
                     const int offerCount = sm::task_offers_for(
-                        *macroStore, gs, ai.squadIndex, features, lmH, offers,
+                        *macroStore, gs, session, ai.squadIndex, lmH,
+                        offers,
                         4);
                     // Глаголы считаются ОРДИНАЛОМ СТРОКИ kTaskVerbs, а не
                     // именем (ЗАКОН СЛОВАРЯ), а колонки названы поимённо —
@@ -633,8 +637,8 @@ int main(int argc, char** argv) {
                     soulsFree += souls;
             }
             long long pastures = 0, parcels = 0;
-            if (!features.data.empty()) {
-                for (const std::uint8_t f : features.data) {
+            if (features.cell_count() != 0u) {
+                for (const std::uint8_t f : features.cells()) {
                     if (f == sm::FT_Pasture) ++pastures;
                     else if (f == sm::FT_Field || f == sm::FT_FlaxField)
                         ++parcels;

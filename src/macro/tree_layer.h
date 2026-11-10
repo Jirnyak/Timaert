@@ -64,8 +64,8 @@ static_assert(kMaxTreesPerCell <= kMaxFieldUnitsPerCell,
 // двери ниже ПИШУТ В НЕЁ, а не возвращают её значением.
 struct TreeLayer {
     int width = 0, height = 0;
-    // Runtime dirty counter — bumped on every mutation so the renderer knows
-    // to refresh u_treeMap. Never serialized.
+    // Dirty counter — bumped on every mutation so the renderer knows to
+    // refresh u_treeMap. Не величина мира, но счётчик едет в файле вместе со слоем (сейв есть прямой дамп, M-439), поэтому кэш, сверяющий себя с ним, обязан быть назван протухшим той дверью, что заменяет слой целиком — загрузкой.
     std::uint32_t revision = 0;
     std::uint16_t data[kWorldCellCap] = {};
 
@@ -119,8 +119,8 @@ void set_tree_count(TreeLayer& layer, int x, int y, int count);
 
 // (Дверь наката клеток из сейва стояла здесь и умерла 2026-11-10, ломоть 3
 // сейв-эпика: единственный её звонящий — свёртка загрузки — получает лес
-// полем состояния, а ряд Trees провода читает клетки прямо в слой
-// (`write_world_fields@src/macro/world_fields.h` и её зеркало чтения).)
+// полем состояния. С M-439 провода рядов нет вовсе: слой едет в файле своими
+// байтами вместе с состоянием.)
 
 } // namespace sm
 
@@ -135,3 +135,10 @@ void set_tree_count(TreeLayer& layer, int x, int y, int count);
 // M-169). Новая структура в этом файле обязана появиться и в этом списке — за
 // полнотой списка следит `arch_guard_test` (файл стоит в его `kRowHeaders`).
 TIMAERT_ROW(sm::TreeLayer);
+
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::TreeLayer, &sm::TreeLayer::width, &sm::TreeLayer::height,
+    &sm::TreeLayer::revision, &sm::TreeLayer::data);

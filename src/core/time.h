@@ -235,3 +235,10 @@ static_assert(kTicksPerDay * 45 == 1440 * 256, "minute = (t*45)>>8 is not exact"
 static_assert(kTicksPerDay *  3 ==   24 * 1024, "hour = (t*3)>>10 is not exact");
 
 } // namespace sm
+
+#include "core/row_law.h"   // стена «без дыр» — включение в хвосте, содержимое файла не сдвигается
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::WorldTime, &sm::WorldTime::tick);

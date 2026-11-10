@@ -162,36 +162,28 @@ int main() {
         land.rgba.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH) * 4u,
                          sm::field_word_of(0.6f));
         land.seaLevel16 = sm::field_word_of(sm::kDefaultSeaLevel);
-        sm::FeatureLayer feat;
-        feat.width = gs.mapW;
-        feat.height = gs.mapH;
-        feat.data.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH),
-                         std::uint8_t(FT_None));
+        sm::FeatureLayer& feat = gs.features;
+        feat.resize(gs.mapW, gs.mapH);
 
         // Паства решает, как ярко горит место (сила очага = ЧИСЛО фичи):
         // души селятся дверью мира, а не колонкой записи.
         sm::settle_souls(
             gs, st,
-            sm::birth_squad(gs, st, SquadType::City, 10, 10, -1, nullptr,
-                            &feat, &land).slot, 5000);
+            sm::birth_squad(gs, nullptr, st, SquadType::City, 10, 10, -1, nullptr, &land).slot, 5000);
         sm::settle_souls(
             gs, st,
-            sm::birth_squad(gs, st, SquadType::City, 20, 20, -1, nullptr,
-                            &feat, &land).slot, 20);
+            sm::birth_squad(gs, nullptr, st, SquadType::City, 20, 20, -1, nullptr, &land).slot, 20);
 
         sm::settle_souls(
             gs, st,
-            sm::birth_squad(gs, st, SquadType::Village, 30, 30, -1, nullptr,
-                            &feat, &land).slot, 100);
+            sm::birth_squad(gs, nullptr, st, SquadType::Village, 30, 30, -1, nullptr, &land).slot, 100);
 
         // v120: a spire's charge is its cell's feature number (ordinal + 1);
         // drained = 0 — the spent spire's cell simply stays unwritten.
         feature_number_write(gs, 40, 40, 1);
 
-        sm::birth_squad(gs, st, SquadType::Spire, 40, 40, -1, nullptr,
-                        &feat, &land);
-        sm::birth_squad(gs, st, SquadType::Spire, 50, 50, -1, nullptr,
-                        &feat, &land);
+        sm::birth_squad(gs, nullptr, st, SquadType::Spire, 40, 40, -1, nullptr, &land);
+        sm::birth_squad(gs, nullptr, st, SquadType::Spire, 50, 50, -1, nullptr, &land);
         CHECK(feat.at(40, 40) == FT_Spire && feat.at(50, 50) == FT_Spire,
               "рождение поставило обеим клеткам шпиля их фичу — без неё "
               "вопрос «выкачан ли» не задаётся вовсе");
@@ -199,11 +191,10 @@ int main() {
         sm::MacroWorld mw{};
         mw.gs = &gs;
         mw.store = &st;
-        mw.features = &feat;
         mw.terrain = &land;
         // Граница ребейка (M-370): писатель фич наполняет ПОЛЕ, сбор читает
         // только его — ровно порядок bake_macro_light_field.
-        sm::refresh_feature_lights(gs, feat);
+        sm::refresh_feature_lights(gs);
         std::vector<MacroLight> lights = collect_macro_lights(mw);
         // 2 settlements + 1 village + 1 active spire; the depleted spire emits none.
         CHECK(lights.size() == 4u, "census: 4 emitters (depleted spire excluded)");
@@ -249,7 +240,8 @@ int main() {
     // ---- open feature layer degrades gracefully to radial falloff ----
     {
         const int W = 32, H = 32;
-        FeatureLayer feat;
+        const std::unique_ptr<FeatureLayer> featOwn{new FeatureLayer()};
+        FeatureLayer& feat = *featOwn;
         feat.resize(W, H);  // all FT_None
         MacroLight L{};
         L.nx = (12.0f + 0.5f) / W;
@@ -278,7 +270,8 @@ int main() {
         L.intensity = 1.0f;
         L.r = L.g = L.b = 1.0f;
 
-        FeatureLayer open;
+        const std::unique_ptr<FeatureLayer> openOwn{new FeatureLayer()};
+        FeatureLayer& open = *openOwn;
         open.resize(W, H);
         // Forests occlude through the CONTINUOUS tree-density input now
         // (macro/tree_layer.h counts / 16384), not a feature byte. A solid
@@ -311,7 +304,8 @@ int main() {
     // ---- roads carry light further than open ground ----
     {
         const int W = 32, H = 32;
-        FeatureLayer feat;
+        const std::unique_ptr<FeatureLayer> featOwn{new FeatureLayer()};
+        FeatureLayer& feat = *featOwn;
         feat.resize(W, H);
         // Суша под дверью фичи (стена ломтя 1: сырой set закрыт).
         TerrainData roadTd;
@@ -352,7 +346,8 @@ int main() {
         L.radius = 10.0f;
         L.intensity = 1.0f;
         L.r = L.g = L.b = 1.0f;
-        FeatureLayer open;
+        const std::unique_ptr<FeatureLayer> openOwn{new FeatureLayer()};
+        FeatureLayer& open = *openOwn;
         open.resize(W, H);  // all FT_None — only elevation differs below
 
         std::vector<float> flat(std::size_t(W) * H, 0.5f);

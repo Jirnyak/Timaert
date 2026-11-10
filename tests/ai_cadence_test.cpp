@@ -106,7 +106,7 @@ Fixture build_world() {
     f.store = sm::make_macro_store();
     sm::MacroStore& st = *f.store;
     const sm::MacroHandle home =
-        sm::birth_squad(f.gs, st, sm::SquadType::City, 50, 50, 0, "Cad");
+        sm::birth_squad(f.gs, nullptr, st, sm::SquadType::City, 50, 50, 0, "Cad");
     sm::settle_souls(f.gs, st, home.slot, 1000);
     const int homeId = int(st.spawnId[home.slot].index);
     // Фазы покрывают квант неравномерно и несовпадающе — схлопывание фаз

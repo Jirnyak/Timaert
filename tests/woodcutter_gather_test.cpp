@@ -128,7 +128,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store: склад
     // — его колонка, ординал выдаёт эмитент ВНУТРИ двери рождения.
     const sm::MacroHandle vil =
-        sm::birth_squad(gs, st, SquadType::Village, 10, 10);
+        sm::birth_squad(gs, nullptr, st, SquadType::Village, 10, 10);
     const int vilId = int(st.spawnId[vil.slot].index);
     // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в число фичи
     // фичи, головы в инвентарь ТЕЛА — тем же законом, что генезис.
@@ -222,7 +222,7 @@ void test_the_farmer_works_the_field() {
     gs.mapW = kMap;
     gs.mapH = kMap;
     // A field two cells east — where stamp_field_features would put one.
-    FeatureLayer features;
+    FeatureLayer& features = gs.features;
     features.resize(kMap, kMap);
     feature_put(features, all_land(), 12, 10, FT_Field);
 
@@ -244,7 +244,7 @@ void test_the_farmer_works_the_field() {
 
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
-        sm::birth_squad(gs, st, SquadType::Village, 10, 10);
+        sm::birth_squad(gs, nullptr, st, SquadType::Village, 10, 10);
     sm::MacroHandle h = sm::store_birth(st);
     sm::MacroHandle e = h;
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
@@ -275,8 +275,7 @@ void test_the_farmer_works_the_field() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 60u);
     for (int i = 0; i < 400; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &st, .terrain = &terrain,
-                      .features = &features};
+        MacroWorld mw{.gs = &gs, .store = &st, .terrain = &terrain};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
     const int foodUnits = st.inventory[vil.slot].inv.count("food");
@@ -311,7 +310,7 @@ void test_farmer_without_terrain_conjures_nothing() {
     GameState& gs = *gsOwn;
     gs.mapW = kMap;
     gs.mapH = kMap;
-    FeatureLayer features;
+    FeatureLayer& features = gs.features;
     features.resize(kMap, kMap);
     feature_put(features, all_land(), 12, 10, FT_Field);
 
@@ -320,7 +319,7 @@ void test_farmer_without_terrain_conjures_nothing() {
 
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
-        sm::birth_squad(gs, st, SquadType::Village, 10, 10);
+        sm::birth_squad(gs, nullptr, st, SquadType::Village, 10, 10);
     sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st.runtime[h.slot].sub = {};   // доля клетки: центр (M-244a)
@@ -349,7 +348,7 @@ void test_farmer_without_terrain_conjures_nothing() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 60u);
     for (int i = 0; i < 200; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &st, .features = &features};
+        MacroWorld mw{.gs = &gs, .store = &st};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
     CHECK(st.inventory[vil.slot].inv.count("food") == 0,
@@ -372,7 +371,7 @@ void test_no_layer_no_chop() {
     sm::MacroStore& st = *wStore_;
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
-        sm::birth_squad(gs, st, SquadType::Village, 10, 10);
+        sm::birth_squad(gs, nullptr, st, SquadType::Village, 10, 10);
     make_woodcutter(st, 10.0f, 10.0f,
                     int(st.spawnId[vil.slot].index));
     MacroNpcAiRuntime rt{};
@@ -406,7 +405,7 @@ void test_the_mine_runs_while_the_player_is_away() {
     // ЖИЛЫ ЕДИНЫЕ (2026-10-22): рабочее место шахтёра — ШАХТА (фича с
     // numberRow == Vein + залежь числом фичи), не голая геология. Свидетель
     // рожает своё предусловие сам: фича + число фичи, как их ставит генерация.
-    FeatureLayer features;
+    FeatureLayer& features = gs.features;
     features.resize(kMap, kMap);
     feature_put(features, all_land(), 14, 10, FT_IronMine);
     feature_number_write(gs, 14, 10, 20);
@@ -416,7 +415,7 @@ void test_the_mine_runs_while_the_player_is_away() {
 
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
-        sm::birth_squad(gs, st, SquadType::Village, 10, 10);
+        sm::birth_squad(gs, nullptr, st, SquadType::Village, 10, 10);
     sm::MacroHandle h = sm::store_birth(st);
     st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st.runtime[h.slot].sub = {};   // доля клетки: центр (M-244a)
@@ -445,7 +444,7 @@ void test_the_mine_runs_while_the_player_is_away() {
     MacroNpcAiRuntime art{};
     reset_macro_npc_ai_runtime(art, 70u);
     for (int i = 0; i < 400; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &st, .features = &features};
+        MacroWorld mw{.gs = &gs, .store = &st};
         tick_macro_npc_ai(mw, art, kAiTicks);
     }
 
@@ -488,7 +487,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     // сколько нужно: следующее рождение его не двигает (вектор строк, чьё
     // движение протухало ссылкой, умер).
     const sm::MacroHandle city =
-        sm::birth_squad(gs, st, SquadType::City, 10, 10);
+        sm::birth_squad(gs, nullptr, st, SquadType::City, 10, 10);
     const int cityId = int(st.spawnId[city.slot].index);
     {
         sm::Inventory& row = st.inventory[city.slot].inv;
@@ -502,7 +501,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
         row.add("coin_timaert_copper", 40000);
     }
     const sm::MacroHandle vil =
-        sm::birth_squad(gs, st, SquadType::Village, 16, 10);
+        sm::birth_squad(gs, nullptr, st, SquadType::Village, 16, 10);
     const int vilId = int(st.spawnId[vil.slot].index);
     {
         sm::Inventory& row = st.inventory[vil.slot].inv;
@@ -652,7 +651,7 @@ void test_the_miner_works_the_vein() {
     chronicle_init(gs.chronicle, kMap, kMap);
     // ЖИЛЫ ЕДИНЫЕ (2026-10-22): рабочее место — ШАХТА (фича + залежь числом
     // фичи); что добыто, решает СТРОКА фичи (железная шахта → iron).
-    FeatureLayer features;
+    FeatureLayer& features = gs.features;
     features.resize(kMap, kMap);
     feature_put(features, all_land(), 14, 10, FT_IronMine);
     feature_number_write(gs, 14, 10, 20);
@@ -662,7 +661,7 @@ void test_the_miner_works_the_vein() {
 
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
-        sm::birth_squad(gs, st, SquadType::Village, 10, 10);
+        sm::birth_squad(gs, nullptr, st, SquadType::Village, 10, 10);
     const int vilId = int(st.spawnId[vil.slot].index);
     sm::MacroHandle h = sm::store_birth(st);
     sm::MacroHandle e = h;
@@ -693,7 +692,7 @@ void test_the_miner_works_the_vein() {
     MacroNpcAiRuntime art{};
     reset_macro_npc_ai_runtime(art, 70u);
     for (int i = 0; i < 400; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &st, .features = &features};
+        MacroWorld mw{.gs = &gs, .store = &st};
         tick_macro_npc_ai(mw, art, kAiTicks);
     }
 
@@ -743,7 +742,7 @@ void test_the_miner_works_the_vein() {
     // (ломтик F), и одно тело на два мира невыразимо. Деревня рождается
     // здесь заново, своим эмитентом.
     const sm::MacroHandle vil2 =
-        sm::birth_squad(gs2, st2, SquadType::Village, 10, 10);
+        sm::birth_squad(gs2, nullptr, st2, SquadType::Village, 10, 10);
     sm::MacroHandle h2 = sm::store_birth(st2);
     st2.cell[h2.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
     st2.runtime[h2.slot].sub = {};   // доля клетки: центр (M-244a)
@@ -798,7 +797,7 @@ void test_the_catch_lands_as_creatures() {
     GameState& gs = *gsOwn;
     gs.mapW = kMap;
     gs.mapH = kMap;
-    FeatureLayer features;
+    FeatureLayer& features = gs.features;
     features.resize(kMap, kMap);
 
     // Fertile ground everywhere: the herd baseline is the wheat row's own
@@ -820,7 +819,7 @@ void test_the_catch_lands_as_creatures() {
 
     // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
     const sm::MacroHandle vil =
-        sm::birth_squad(gs, st, SquadType::Village, 10, 10);
+        sm::birth_squad(gs, nullptr, st, SquadType::Village, 10, 10);
     // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в число фичи
     // фичи, головы в инвентарь ТЕЛА — тем же законом, что генезис.
     sm::settle_souls(gs, st, vil.slot, 40);
@@ -858,8 +857,7 @@ void test_the_catch_lands_as_creatures() {
     // (`settle_souls` выше), и смысл ему задаёт её собственная фича.
     constexpr int kFoldX = 12, kFoldY = 10;
     feature_put(features, all_land(), kFoldX, kFoldY, sm::FT_Pasture);
-    MacroWorld seedWorld{.gs = &gs, .store = &st, .terrain = &terrain,
-                         .features = &features};
+    MacroWorld seedWorld{.gs = &gs, .store = &st, .terrain = &terrain};
     // Избыточная дельта: дверь ряда САМА зажимает в кап клетки, поэтому
     // число берётся из фертильности, а не из головы автора.
     sm::field_move(seedWorld, ResourceFieldId::Livestock,
@@ -873,8 +871,7 @@ void test_the_catch_lands_as_creatures() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 77u);
     for (int i = 0; i < 400; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &st, .terrain = &terrain,
-                      .features = &features};
+        MacroWorld mw{.gs = &gs, .store = &st, .terrain = &terrain};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 

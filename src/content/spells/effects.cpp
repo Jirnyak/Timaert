@@ -14,7 +14,7 @@
 
 #include "ecs/components.h"
 #include "sub/record.h"   // slot_macro_record — шовная слот-дверь записи
-#include "macro/state.h"   // GameState — поля игрока (вселение, 1е кл.5)
+#include "bus/session.h"   // Session — кэш носителя флажка (вселение)
 #include "bus/store.h"
 #include "sub/body.h"      // body_radius — the caster shell the muzzle clears
 #include "sub/possess.h"   // possess_entity — THE flag-move door
@@ -281,7 +281,7 @@ void spawn_possession(sub::SubObjects* objs, const SpellSpawnContext& c) {
     const int targetLevel = int(sub::slot_level(*objs, targetSlot));
     if (targetLevel >= int(c.casterLevel) + int(c.schoolRank)) return;
     sub::possess_body(*objs, c.store, targetSlot,
-                      c.gs ? &c.gs->playerFlagRef : nullptr);
+                      c.session ? &c.session->playerFlagRef : nullptr);
 }
 
 // ── The binding table ──────────────────────────────────────────────────────

@@ -185,12 +185,13 @@ void print_scene(const char* title, const Scene& sc, const sm::FaunaBand& band) 
 void census_seed(std::uint32_t seed) {
     std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
     sm::GameState& gs = *gsOwn;
+    sm::Session session;   // генезис якорит в ней игрока и объявляет событие состава
     sm::TerrainData terrain{};
     std::vector<sm::TreePoint> trees;
     sm::TreeLayer& treeLayer = gs.treeLayer;
     std::unique_ptr<sm::DepositLayer> depositsOwn{new sm::DepositLayer()};
     sm::DepositLayer& deposits = *depositsOwn;
-    sm::FeatureLayer features;
+    sm::FeatureLayer& features = gs.features;
     sm::ZoneLayer zones;
     sm::TreeGrid treeGrid;
     sm::PathCostData pathCost;
@@ -203,10 +204,10 @@ void census_seed(std::uint32_t seed) {
     gp.seed = seed;
     sm::WorldGenOut go{};
     go.gs = &gs;
+    go.session = &session;
     go.terrain = &terrain;
     go.trees = &trees;
     go.deposits = &deposits;
-    go.features = &features;
     go.zones = &zones;
     go.treeGrid = &treeGrid;
     go.squadIndex = &ai.squadIndex;
@@ -290,10 +291,10 @@ void census_seed(std::uint32_t seed) {
     // спрашивается ПУЛЬТОМ (`resource_field_read`), не гридом напрямую.
     sm::MacroWorld mw{};
     mw.gs = &gs;
+    mw.session = &session;
     mw.store = store.get();
     mw.terrain = &terrain;
     mw.deposits = &deposits;
-    mw.features = &features;
     mw.zones = &zones;
     mw.pathCost = &pathCost;
     mw.treeGrid = &treeGrid;

@@ -59,7 +59,8 @@ void create_factions(GameState& gs, std::uint32_t) {
 // Пишет В `out` НА МЕСТЕ: состояние игрока несёт журнал плоским массивом под
 // капом (32 МиБ) и значением не возвращается (M-180).
 void default_player(PlayerState& p) {
-    ecs::set_squad_name(p.name, "Traveller");
+    // (Имя здесь больше не ставится: оно — колонка анкеты сквада игрока и
+    // рождается вместе с его телом, `ensure_macro_player_entity`.)
     p.ageDays   = 1000;             // ~3 years; matches TS
     // (ЗДЕСЬ ОБЕЩАЛАСЬ СТАРТОВАЯ МОНЕТА и перечеканка её в монету родины
     //  «дверью интро» — обе половины обещания мертвы: кошелёк из воздуха снесён
@@ -95,7 +96,6 @@ void default_game_state(GameState& gs,
                         const LayerParameters& mapParams,
                         int cityCountTarget) {
     game_state_reset(gs);
-    gs.version      = kSaveVersion;
     gs.worldSeed    = seed;
     gs.mapW         = mapW;
     gs.mapH         = mapH;
@@ -133,11 +133,11 @@ void default_game_state(GameState& gs,
 // became bodies (ломтик F): there is no list of its own to clear — a second
 // call births a second world on top of the first, and the one caller
 // (genesis) runs it on a freshly born store.
-void populate_rooted_from_politik(GameState& gs, MacroStore& st,
+void populate_rooted_from_politik(GameState& gs, Session* ses,
+                                     MacroStore& st,
                                      const std::vector<City>& cities,
                                      const TerrainData& terrain,
-                                     DepositLayer& deposits,
-                                     FeatureLayer& features) {
+                                     DepositLayer& deposits) {
     if (!terrain.has_rgba_storage()) {
         return;
     }
@@ -186,10 +186,9 @@ void populate_rooted_from_politik(GameState& gs, MacroStore& st,
                                 : std::string("Outpost");
         // Место родится ТЕЛОМ одной дверью (ломтик F): ординал эмитит она
         // же, из того же единого эмитента, что сквадам (M-37).
-        const MacroHandle h = birth_squad(gs, st, SquadType::City,
+        const MacroHandle h = birth_squad(gs, ses, st, SquadType::City,
                                           c.x, c.y, c.factionIdx,
-                                          cityName.c_str(), &features,
-                                          &terrain);
+                                          cityName.c_str(), &terrain);
         if (!st.valid(h)) continue;      // отказ капа уже прозвучал вслух
         const std::uint16_t slot = h.slot;
         settle_souls(gs, st, slot, souls);
@@ -333,10 +332,9 @@ void populate_rooted_from_politik(GameState& gs, MacroStore& st,
             const std::string vilName =
                 s.factionIdx >= 0 ? generate_name(lang_of(s.factionIdx), rng)
                                   : std::string("Hamlet");
-            const MacroHandle vh = birth_squad(gs, st, SquadType::Village,
+            const MacroHandle vh = birth_squad(gs, ses, st, SquadType::Village,
                                                c.x, c.y, s.factionIdx,
-                                               vilName.c_str(), &features,
-                                               &terrain);
+                                               vilName.c_str(), &terrain);
             if (!st.valid(vh)) continue;   // отказ капа уже прозвучал вслух
             const std::uint16_t vslot = vh.slot;
             settle_souls(gs, st, vslot, vilSouls);

@@ -13,6 +13,9 @@
 
 namespace sm {
 
+struct Session;   // сессия: кэш носителя флажка (вселение)
+
+
 struct CastCheck {
     bool ok = false;
     std::string reason{};
@@ -59,9 +62,8 @@ int spellbook_start_cast(SpellBook& sb, ecs::Pools& combat,
 // diceRng — the stream the wound is ROLLED from at cast. nullptr = the
 // strike's exact expectation, no crit: what a harness with no stream gets,
 // deterministic by construction.
-// gs — мир для эффектов, чей закон спорит с положением игрока (вселение:
-// однохоповый запрет + перенос флажка; SpellSpawnContext, 1е кластер 5);
-// nullptr у конвертов без мира.
+// session — сессия для эффектов, чей закон спорит с положением игрока
+// (вселение: перенос флажка; SpellSpawnContext); nullptr у конвертов без неё.
 // objs/st — арена сцены и гладкая память макро-сквадов ЯВНО (ломоть E:
 // ctx-мосты умерли). Оба nullable: каст с макро-карты живёт без сцены,
 // фикстура без store — честный новичок (нулевой лист).
@@ -79,7 +81,7 @@ bool spellbook_cast(sub::SubObjects* objs, MacroStore* st,
                     SpellRngFn rng01 = nullptr,
                     void* rngUser = nullptr,
                     Rng* diceRng = nullptr,
-                    GameState* gs = nullptr);
+                    Session* session = nullptr);
 // Advance every timer the book owns by `steps` simulation steps (core/time.h).
 // It used to take a float dt of real seconds — the same wall-clock coupling the
 // tick ladder abolished everywhere else.

@@ -35,7 +35,7 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
     // умеет разойтись и не умеет ничего добавить.
     f.water = td.is_water(std::uint32_t(idx));
 
-    f.feature = w.features ? w.features->at(f.x, f.y) : FT_None;
+    f.feature = w.gs ? w.gs->features.at(f.x, f.y) : FT_None;
     f.treeCount = (w.gs && w.gs->treeLayer.has_complete_storage())
         ? int(w.gs->treeLayer.at(f.x, f.y)) : -1;
     f.zone = w.zones ? w.zones->at(f.x, f.y) : std::uint8_t(0);

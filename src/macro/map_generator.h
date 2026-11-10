@@ -312,3 +312,18 @@ void generate_river_data(TerrainData& td, const LayerParameters& params);
 void destroy_terrain(TerrainData& t);
 
 } // namespace sm
+
+#include "core/row_law.h"   // стена «без дыр» — включение в хвосте, содержимое файла не сдвигается
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::LayerParameters, &sm::LayerParameters::seed,
+    &sm::LayerParameters::seaLevel, &sm::LayerParameters::heightScale,
+    &sm::LayerParameters::moistureScale,
+    &sm::LayerParameters::temperatureVariation,
+    &sm::LayerParameters::continentScale,
+    &sm::LayerParameters::continentIntensity,
+    &sm::LayerParameters::ridgeIntensity, &sm::LayerParameters::domainWarp,
+    &sm::LayerParameters::heightOctaves,
+    &sm::LayerParameters::moistureOctaves);

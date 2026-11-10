@@ -79,7 +79,7 @@ struct World {
 std::uint16_t born_rooted(World& w, sm::SquadType kind, int x, int y,
                          int souls) {
     const sm::MacroHandle h =
-        sm::birth_squad(w.gs, *w.store, kind, x, y, 0, "Fixture");
+        sm::birth_squad(w.gs, nullptr, *w.store, kind, x, y, 0, "Fixture");
     sm::settle_souls(w.gs, *w.store, h.slot, souls);
     return h.slot;
 }

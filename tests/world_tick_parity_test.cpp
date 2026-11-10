@@ -148,16 +148,17 @@ void test_the_two_shares_are_independent() {
 void test_daily_processing_applies_player_upkeep_and_age() {
     std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
     sm::GameState& gs = *gsOwn;
+    sm::Session ses;
     // The purse rides his squad entity now; the daily tick is handed it.
     auto worldStore_ = sm::make_macro_store();
-    sm::ensure_macro_player_entity(gs, *worldStore_);
-    sm::player_inventory(gs, *worldStore_)->add("coin_empire_copper", 5);
+    sm::ensure_macro_player_entity(gs, ses, *worldStore_);
+    sm::player_inventory(ses, *worldStore_)->add("coin_empire_copper", 5);
     gs.player.ageDays = 1000;
-    sm::player_sheet(gs, *worldStore_)->attributes[sm::AttributeId::Cha] = 0;
+    sm::player_sheet(ses, *worldStore_)->attributes[sm::AttributeId::Cha] = 0;
     // The player's men live on his SQUAD ENTITY now (owner, 2026-08-27), so
     // the fixture raises one — the same shape a lord's warband has — and the
     // daily tick reads his wages from it through the envelope.
-    sm::Inventory* army = sm::player_inventory(gs, *worldStore_);
+    sm::Inventory* army = sm::player_inventory(ses, *worldStore_);
     sm::creatures_push(*army, sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 77u));
     // Вторая душа — не украшение фикстуры: закон v105 взыскивает ДОЛЮ
@@ -168,6 +169,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 79u));
     sm::MacroWorld mw{};
     mw.gs = &gs;
+    mw.session = &ses;
     mw.store = worldStore_.get();
 
     sm::WorldTickRuntime runtime{};
@@ -184,7 +186,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // The daily wage died 2026-09-17 («общее содержание — игрок == нпц»,
     // CANON S19.2): an ordinary day charges NOTHING — balances live on the
     // season boundary, through THE one squad window below.
-    CHECK(sm::inventory_value((*sm::player_inventory(gs, *worldStore_))) == 5,
+    CHECK(sm::inventory_value((*sm::player_inventory(ses, *worldStore_))) == 5,
           "an ordinary day charges no upkeep: balances are the boundary's");
     CHECK(gs.player.ageDays == 1001,
           "one daily tick ages the player exactly one day");
@@ -201,7 +203,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // A non-boundary day is a silent day — negative control.
     CHECK(sm::squad_season_window(gs, *worldStore_, 12) == 0,
           "no window off the boundary: nobody deserts");
-    CHECK(sm::inventory_value((*sm::player_inventory(gs, *worldStore_))) == 5,
+    CHECK(sm::inventory_value((*sm::player_inventory(ses, *worldStore_))) == 5,
           "no window off the boundary: nothing debited");
 
     // ── СЧЁТ, А НЕ КРОМКА (v105, CANON S10 «у всякого, кто кормит, есть
@@ -224,14 +226,14 @@ void test_daily_processing_applies_player_upkeep_and_age() {
           "первая граница выставляет счёт, а не взыскивает: долга не было");
     CHECK(sm::creature_count(*army) == armyBefore,
           "никто не ушёл — уходят за НЕОПЛАЧЕННОЕ, а счёт только что выписан");
-    CHECK(sm::inventory_value(*sm::player_inventory(gs, *worldStore_)) == 0,
+    CHECK(sm::inventory_value(*sm::player_inventory(ses, *worldStore_)) == 0,
           "частичная оплата ЗАКОННА: что было в кошельке, то и ушло в счёт");
     // НОСИТЕЛЬ ЭТОГО ЗАКОНА СМЕНИЛСЯ, А ЗАКОН ЦЕЛ (§5 п.6). Прежде здесь
     // стояло `gs.lootPoolValue == 5` — «уплаченная часть платы сгорает в пул
     // лута»; казна пула уничтожена 2026-10-11 (читателей ноль), и «сгорает»
     // осталось без числа. Но САМ ПЛАТЁЖ проверяем: пять монет кошелька ушли
     // в счёт, значит недоимка платы упала РОВНО на пять.
-    const sm::MacroHandle ph = sm::player_flag_handle(gs);
+    const sm::MacroHandle ph = sm::player_flag_handle(ses);
     CHECK(worldStore_->valid(ph), "фикстура: сквад игрока жив");
     CHECK(worldStore_->upkeep[ph.slot].wageDebt == wageSeason - 5,
           "плата УХОДИТ со склада и гасит счёт ровно на свою стоимость — "
@@ -272,7 +274,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     {
         sm::creatures_push(*army, sm::make_soldier(
             static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 91u));
-        sm::Inventory* p = sm::player_inventory(gs, *worldStore_);
+        sm::Inventory* p = sm::player_inventory(ses, *worldStore_);
         p->add("food", sm::kDaysPerSeason);          // харч — есть
         const int heads = sm::creature_count(*army);
         CHECK(heads == 1 && p->count("coin_empire_copper") == 0,
@@ -299,11 +301,11 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // целиком, и следующая граница не уводит никого.
     sm::creatures_push(*army, sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 78u));
-    sm::Inventory* purse = sm::player_inventory(gs, *worldStore_);
+    sm::Inventory* purse = sm::player_inventory(ses, *worldStore_);
     purse->add("food", sm::kDaysPerSeason);
     purse->add("coin_empire_copper", wageSeason);
     const std::int64_t coinsBefore =
-        sm::inventory_value(*sm::player_inventory(gs, *worldStore_));
+        sm::inventory_value(*sm::player_inventory(ses, *worldStore_));
     CHECK(sm::squad_season_window(gs, *worldStore_, 161) == 0,
           "покрытый сезон не уводит никого");
     CHECK(purse->count("food") == 0,
@@ -313,7 +315,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // читателей у неё не было). Негативный контроль прежнего числа: оно
     // росло, а это — убывает, то есть проверяется противоположный конец
     // той же операции.
-    CHECK(sm::inventory_value(*sm::player_inventory(gs, *worldStore_))
+    CHECK(sm::inventory_value(*sm::player_inventory(ses, *worldStore_))
               < coinsBefore,
           "уплаченная плата УХОДИТ со склада («жалование сгорает»)");
 }
@@ -438,7 +440,7 @@ void test_a_famine_is_recorded_once_when_it_begins() {
     // взыскание, и летопись обязана записать РОВНО этот день — не тридцать
     // два дня голодания вокруг него.
     const sm::MacroHandle town =
-        sm::birth_squad(gs, st, sm::SquadType::City, 8, 8, -1, "Hungry");
+        sm::birth_squad(gs, nullptr, st, sm::SquadType::City, 8, 8, -1, "Hungry");
     // Души селятся ДВЕРЬЮ МИРА (labour.h settle_souls): паства в число фичи
     // фичи, головы в инвентарь — тем же законом, что генезис.
     sm::settle_souls(gs, st, town.slot, 100);
@@ -526,7 +528,7 @@ void test_population_dies_honestly_to_zero() {
     gs.mapW = 64;
     gs.mapH = 64;
     const std::uint16_t v =
-        sm::birth_squad(gs, st, sm::SquadType::Village, 4, 4).slot;
+        sm::birth_squad(gs, nullptr, st, sm::SquadType::Village, 4, 4).slot;
     // Хутор с пустым амбаром: три души ДВЕРЬЮ МИРА (паства + головы).
     sm::settle_souls(gs, st, v, 3);
     sm::chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
@@ -628,7 +630,7 @@ void test_one_upkeep_door_judges_every_squad_once() {
     sm::chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
 
     const std::uint16_t a =
-        sm::birth_squad(gs, st, sm::SquadType::Artel, 12, 12).slot;
+        sm::birth_squad(gs, nullptr, st, sm::SquadType::Artel, 12, 12).slot;
     // Фикстура рождает своё предусловие сама (§8 п.11): восемь людских голов
     // в контейнере — дверью мира, не присваиванием колонки.
     CHECK(sm::raise_flock_into_container(st.inventory[a].inv, 8) == 8,

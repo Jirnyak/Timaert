@@ -229,10 +229,10 @@ void test_the_vein_field_is_inert_and_a_mine_does_not_regrow() {
     build_deposit_layer(deposits, td, gs.worldSeed);
     CHECK_OR_RETURN(deposits.cells().liveCells > 0,
                     "the fixture world holds veins");
-    FeatureLayer features;
+    FeatureLayer& features = gs.features;
     features.resize(kW, kH);
     MacroWorld w{.gs = &gs, .terrain = &td,
-                 .deposits = &deposits, .features = &features};
+                 .deposits = &deposits};
 
     // ДИКАЯ ЖИЛА ИНЕРТНА: выемка без шахты невыразима, календарь её не
     // трогает — поле тождественно рождённому.

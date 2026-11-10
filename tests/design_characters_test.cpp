@@ -22,7 +22,6 @@
 #include "core/rng.h"
 #include "macro/characters.h"
 #include "tables/faction.h"
-#include "macro/macro_snapshot.h"
 #include "macro/npc_ai.h"
 #include "macro/npc_spawn.h"
 #include "macro/birth_squad.h"  // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
@@ -73,7 +72,7 @@ TerrainData make_terrain() {
 sm::MacroHandle settle(GameState& gs, sm::MacroStore& st, SquadType kind,
                        int x, int y, std::int16_t factionIdx = -1) {
     const sm::MacroHandle h =
-        birth_squad(gs, st, kind, x, y, factionIdx);
+        birth_squad(gs, nullptr, st, kind, x, y, factionIdx);
     raise_flock_into_container(st.inventory[h.slot].inv, 100);
     return h;
 }
@@ -88,19 +87,6 @@ std::unique_ptr<GameState> make_world(sm::MacroStore& st) {
     settle(gs, st, SquadType::City, 10, 10);
     settle(gs, st, SquadType::Village, 20, 10);
     settle(gs, st, SquadType::Village, 40, 40);
-    return gsOwn;
-}
-
-// ПУТЬ ЗАГРУЗКИ ПРИВОЗИТ МЕСТА ЗАПИСЯМИ БЛОКА МАКРО-СКВАДОВ (ломтик F):
-// место есть неподвижный сквад, его тело едет тем же снапшотом, что и всякое
-// другое, и сшивать строку с телом больше нечего. Поэтому мир загрузки —
-// ПУСТОЙ: всё, что в нём стоит, приносит restore_macro_ecs (он же поднимает
-// эмитент выше всякого приехавшего ординала).
-std::unique_ptr<GameState> make_loaded_world() {
-    std::unique_ptr<GameState> gsOwn = make_game_state();
-    GameState& gs = *gsOwn;
-    gs.mapW = kW;
-    gs.mapH = kH;
     return gsOwn;
 }
 
@@ -206,7 +192,7 @@ void test_spawn_births_the_row() {
           "row for this body — the ladder step is real");
 }
 
-void test_snapshot_carries_the_ordinal() {
+void test_store_carries_the_ordinal() {
     auto wStore_ = sm::make_macro_store();
     std::unique_ptr<GameState> gsOwn = make_world(*wStore_);
     GameState& gs = *gsOwn;
@@ -224,28 +210,31 @@ void test_snapshot_carries_the_ordinal() {
                         spawn_squad(gs, *wStore_, terrain, plain)),
                     "the plain control squad spawned");
 
-    const std::vector<MacroNpcRecord> snap = snapshot_macro_ecs(*wStore_);
-    int designRecords = 0, plainRecords = 0;
-    for (const MacroNpcRecord& r : snap) {
-        if (r.designOrdinal >= 0) {
-            ++designRecords;
-            CHECK(r.designOrdinal == 0, "the record names the table row");
+    // АНКЕТА СТОЛА ЕДЕТ КОЛОНКОЙ СТОРА: сейв есть прямой дамп гладкой памяти
+    // (M-439), поэтому вопрос «несёт ли запись строку стола» задаётся самой
+    // колонке `designTag`, а «пережила ли она загрузку» — её байтам.
+    int designSlots = 0, plainSlots = 0;
+    for (std::size_t s = 0; s < kUnifiedCap; ++s) {
+        if (wStore_->alive[s] == 0) continue;
+        const int ord = wStore_->designTag[s].ordinal;
+        if (ord >= 0) {
+            ++designSlots;
+            CHECK(ord == 0, "the column names the table row");
         } else {
-            ++plainRecords;
+            ++plainSlots;
         }
     }
-    CHECK(designRecords == 1, "exactly one design record in the snapshot");
-    CHECK(plainRecords >= 1,
+    CHECK(designSlots == 1, "exactly one design tag in the store");
+    CHECK(plainSlots >= 1,
           "negative control: the plain squad rides with -1");
 
+    // Загрузка кладёт байты стора как они есть — ровно это копирование и
+    // делает дверь загрузки игры (`boot_world_from_save@src/app/main.cpp`).
     auto w2Store_ = sm::make_macro_store();
-    std::unique_ptr<GameState> gs2Own = make_loaded_world();
-    // Тела мест приехали теми же записями блока — ровно так же, как на
-    // загрузке игры (main.cpp): второй двери у них больше нет.
-    restore_macro_ecs(snap, *w2Store_, wStore_->nextSpawnId);
+    *w2Store_ = *wStore_;
     const sm::MacroHandle back = find_design(*w2Store_, 0);
     CHECK_OR_RETURN(w2Store_->valid(back),
-                    "restore re-stamped the design tag from the record");
+                    "the design tag rode the store's bytes");
     CHECK(sm::level_of(w2Store_->sheet[back.slot].levelData)
               == int(kDesignCharacterDefs[0].level),
           "...и уровень его листа вернулся С НИМ — колонка анкеты едет в "
@@ -466,7 +455,7 @@ void test_no_home_no_birth() {
 int main() {
     test_table_rows_resolve();
     test_spawn_births_the_row();
-    test_snapshot_carries_the_ordinal();
+    test_store_carries_the_ordinal();
     test_king_peasant_births_by_home_faction();
     test_king_needs_a_barbarian_city();
     test_dragons_nest_on_mountain_peaks();

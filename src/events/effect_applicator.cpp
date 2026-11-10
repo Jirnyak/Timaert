@@ -22,7 +22,7 @@ namespace sm {
 // Параметр `bag` умер с веткой PlayerGoldChange (M-410): он был её
 // единственным читателем, а у тега не было эмитента — колонка без
 // читателя не лежит тихо (DOD п.9).
-void apply_events(std::span<const GameEvent> events, GameState& gs,
+void apply_events(std::span<const GameEvent> events, SessionFeed& feed,
                   SpellBook* book,
                   std::vector<GameEvent>* followups) {
     for (auto& ev : events) {
@@ -39,7 +39,7 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
                         char msg[96];
                         std::snprintf(msg, sizeof(msg),
                                       "You have learned %s!", def.name);
-                        session_feed_push(gs.sessionFeed, msg);
+                        session_feed_push(feed, msg);
                         if (followups) {
                             GameEvent learned{EventTag::SpellLearned};
                             learned.s1 = def.id;
@@ -75,11 +75,11 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
     }
 }
 
-void apply_events(const std::vector<GameEvent>& events, GameState& gs,
+void apply_events(const std::vector<GameEvent>& events, SessionFeed& feed,
                   SpellBook* book,
                   std::vector<GameEvent>* followups) {
-    apply_events(std::span<const GameEvent>(events.data(), events.size()), gs,
-                 book, followups);
+    apply_events(std::span<const GameEvent>(events.data(), events.size()),
+                 feed, book, followups);
 }
 
 } // namespace sm

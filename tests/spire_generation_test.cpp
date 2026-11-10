@@ -120,7 +120,7 @@ MacroStore& places() {
 std::vector<std::uint32_t> feature_cells(const FeatureLayer& fl,
                                          FeatureType want) {
     std::vector<std::uint32_t> out;
-    for (std::size_t c = 0; c < fl.data.size(); ++c)
+    for (std::size_t c = 0; c < fl.cell_count(); ++c)
         if (FeatureLayer::decode(fl.data[c]) == want)
             out.push_back(std::uint32_t(c));
     return out;
@@ -193,15 +193,9 @@ int torus_cheb(int ax, int ay, int bx, int by) {
 }
 
 
-// Слой фич на один прогон генератора: фичу рода теперь ставит рождение
-// места (вердикт 2026-10-23), и генератору нужен носитель. Свидетели этого
-// файла судят МЕСТА (тела и их клетки) — слой им не предмет, поэтому каждая
-// генерация берёт свежий.
-sm::FeatureLayer fresh_features(int w, int h) {
-    sm::FeatureLayer fl;
-    fl.resize(w, h);
-    return fl;
-}
+// (ФАБРИКА «СВЕЖЕГО СЛОЯ ФИЧ» СТОЯЛА ЗДЕСЬ и умерла с M-456: поле фич есть
+// член состояния мира, и носитель у генератора один — `gs.features`. Каждый
+// прогон рождает свой мир (`world(seed)`), а значит и своё пустое поле.)
 
 void test_one_spire_per_spell_in_the_band() {
     std::unique_ptr<GameState> gsOwn = world(12345u);
@@ -209,8 +203,9 @@ void test_one_spire_per_spell_in_the_band() {
     const TerrainData terrain = banded_terrain();
     const ZoneLayer zones = banded_zones();
     store_reset(places());
-    sm::FeatureLayer flA = fresh_features(terrain.width, terrain.height);
-    generate_spires(gs, zones, terrain, flA);
+    sm::FeatureLayer& flA = gs.features;
+    flA.resize(terrain.width, terrain.height);
+    generate_spires(gs, zones, terrain);
 
     const std::vector<std::uint32_t> spires = feature_cells(flA, FT_Spire);
     CHECK_OR_RETURN(spires.size() == std::size_t(kSpellCount),
@@ -286,14 +281,17 @@ void test_placement_is_a_fact_of_the_seed() {
     GameState& b = *bOwn;
     GameState& c = *cOwn;
     // Слой на прогон СВОЙ: сид есть факт мира, и мир у каждого прогона свой.
-    sm::FeatureLayer flB = fresh_features(terrain.width, terrain.height);
-    generate_spires(a, zones, terrain, flB);
+    sm::FeatureLayer& flB = a.features;
+    flB.resize(terrain.width, terrain.height);
+    generate_spires(a, zones, terrain);
     const std::vector<std::uint32_t> sa = feature_cells(flB, FT_Spire);
-    sm::FeatureLayer flC = fresh_features(terrain.width, terrain.height);
-    generate_spires(b, zones, terrain, flC);
+    sm::FeatureLayer& flC = b.features;
+    flC.resize(terrain.width, terrain.height);
+    generate_spires(b, zones, terrain);
     const std::vector<std::uint32_t> sb = feature_cells(flC, FT_Spire);
-    sm::FeatureLayer flD = fresh_features(terrain.width, terrain.height);
-    generate_spires(c, zones, terrain, flD);
+    sm::FeatureLayer& flD = c.features;
+    flD.resize(terrain.width, terrain.height);
+    generate_spires(c, zones, terrain);
     const std::vector<std::uint32_t> sc = feature_cells(flD, FT_Spire);
 
     CHECK_OR_RETURN(sa.size() == sb.size()
@@ -316,8 +314,9 @@ void test_no_admissible_ground_places_nothing() {
         tame.width = kW;
         tame.height = kH;
         tame.data.assign(std::size_t(kW * kH), 0);
-        sm::FeatureLayer flE = fresh_features(terrain.width, terrain.height);
-        generate_spires(gs, tame, terrain, flE);
+        sm::FeatureLayer& flE = gs.features;
+        flE.resize(terrain.width, terrain.height);
+        generate_spires(gs, tame, terrain);
         CHECK(feature_cells(flE, FT_Spire).empty(),
               "no wild land = no spires");
     }
@@ -329,8 +328,9 @@ void test_no_admissible_ground_places_nothing() {
         ocean.width = kW;
         ocean.height = kH;
         ocean.rgba.assign(std::size_t(kW * kH) * 4u, 0);
-        sm::FeatureLayer flF = fresh_features(ocean.width, ocean.height);
-        generate_spires(gs, banded_zones(), ocean, flF);
+        sm::FeatureLayer& flF = gs.features;
+        flF.resize(ocean.width, ocean.height);
+        generate_spires(gs, banded_zones(), ocean);
         CHECK(feature_cells(flF, FT_Spire).empty(),
               "no land = no spires");
     }
@@ -355,8 +355,9 @@ void test_named_rooted_veto_their_cells() {
     {
         std::unique_ptr<GameState> gsOwn = world(12345u);
         GameState& gs = *gsOwn;
-        sm::FeatureLayer flG = fresh_features(terrain.width, terrain.height);
-        generate_spires(gs, pin, terrain, flG);
+        sm::FeatureLayer& flG = gs.features;
+        flG.resize(terrain.width, terrain.height);
+        generate_spires(gs, pin, terrain);
         const std::vector<std::uint32_t> spires = feature_cells(flG, FT_Spire);
         CHECK_OR_RETURN(spires.size() == std::size_t(kSpellCount),
                         "the wild block hosts every spire");
@@ -379,11 +380,12 @@ void test_named_rooted_veto_their_cells() {
         std::unique_ptr<GameState> gsOwn = world(12345u);
         GameState& gs = *gsOwn;
         store_reset(places());
-        sm::FeatureLayer flI = fresh_features(terrain.width, terrain.height);
+        sm::FeatureLayer& flI = gs.features;
+        flI.resize(terrain.width, terrain.height);
         for (int y = 32; y < 48; ++y)
             for (int x = 32; x < 48; ++x)
-                birth_squad(gs, places(), SquadType::Village, x, y, -1,
-                            nullptr, &flI, &terrain);
+                birth_squad(gs, nullptr, places(), SquadType::Village, x, y, -1,
+                            nullptr, &terrain);
         int vetoCells = 0;
         for (int y = 32; y < 48; ++y)
             for (int x = 32; x < 48; ++x)
@@ -391,7 +393,7 @@ void test_named_rooted_veto_their_cells() {
         CHECK_OR_RETURN(vetoCells == 16 * 16,
                         "фикстура заняла ВСЮ пригодную землю — иначе вето "
                         "нечем проверять, и пустой результат ничего не значит");
-        generate_spires(gs, pin, terrain, flI);
+        generate_spires(gs, pin, terrain);
         CHECK(feature_cells(flI, FT_Spire).empty(),
               "занятая клетка ветирует шпиль — вопрос задан БАЙТУ");
     }
@@ -478,15 +480,16 @@ void test_no_live_slot_stands_on_a_spell_cell() {
     std::unique_ptr<GameState> gsOwn = world(12345u);
     GameState& gs = *gsOwn;
     store_reset(places());
-    sm::FeatureLayer fl = fresh_features(terrain.width, terrain.height);
+    sm::FeatureLayer& fl = gs.features;
+    fl.resize(terrain.width, terrain.height);
 
     // Деревни — на ПОЛОВИНЕ клеток дикого блока, шахматным порядком.
     int born = 0;
     for (int y = 32; y < 48; ++y)
         for (int x = 32; x < 48; ++x) {
             if (((x + y) & 1) != 0) continue;
-            birth_squad(gs, places(), SquadType::Village, x, y, -1,
-                        nullptr, &fl, &terrain);
+            birth_squad(gs, nullptr, places(), SquadType::Village, x, y, -1,
+                        nullptr, &terrain);
             ++born;
         }
     CHECK_OR_RETURN(born > 0, "фикстура родила слоты — иначе скан пуст");
@@ -500,7 +503,7 @@ void test_no_live_slot_stands_on_a_spell_cell() {
                     "без байтов нагружала бы его вполовину");
 
     // ПОРЯДОК ТОТ ЖЕ, ЧТО В МИРЕ: поселения ПЕРВЫМИ, фичи ПОСЛЕ них.
-    generate_spires(gs, pin, terrain, fl);
+    generate_spires(gs, pin, terrain);
     const std::vector<std::uint32_t> spires = feature_cells(fl, FT_Spire);
     CHECK_OR_RETURN(!spires.empty(),
                     "мир несёт хотя бы один спелл — иначе «ни один слот на нём "
@@ -557,9 +560,10 @@ void test_genesis_places_ruins_and_spires_as_features() {
     std::unique_ptr<GameState> gsOwn = world(12345u);
     GameState& gs = *gsOwn;
     store_reset(places());
-    sm::FeatureLayer flH = fresh_features(terrain.width, terrain.height);
-    generate_spires(gs, zones, terrain, flH);
-    generate_ruins(gs, places(), zones, terrain, flH);
+    sm::FeatureLayer& flH = gs.features;
+    flH.resize(terrain.width, terrain.height);
+    generate_spires(gs, zones, terrain);
+    generate_ruins(gs, places(), zones, terrain);
 
     int ruinSquads = 0, spireSquads = 0;
     for_each_rooted(places(), [&](std::uint16_t slot) {
@@ -591,9 +595,10 @@ void test_genesis_places_ruins_and_spires_as_features() {
     std::unique_ptr<GameState> bOwn = world(12345u);
     GameState& b = *bOwn;
     store_reset(places());
-    sm::FeatureLayer flB2 = fresh_features(terrain.width, terrain.height);
-    generate_spires(b, zones, terrain, flB2);
-    generate_ruins(b, places(), zones, terrain, flB2);
+    sm::FeatureLayer& flB2 = b.features;
+    flB2.resize(terrain.width, terrain.height);
+    generate_spires(b, zones, terrain);
+    generate_ruins(b, places(), zones, terrain);
     CHECK(feature_cells(flB2, FT_Ruin) == ruinCells
               && feature_cells(flB2, FT_Spire)
                      == feature_cells(flH, FT_Spire),
@@ -638,18 +643,16 @@ void test_one_answer_to_the_drained_orb() {
     const ZoneLayer zones = banded_zones();
     store_reset(places());
     // СЛОЙ ФИЧ — ДО МЕСТ (2026-10-23): рождение ставит фичу рода само.
-    FeatureLayer feat;
-    feat.width = kW;
-    feat.height = kH;
-    feat.data.assign(std::size_t(kW) * std::size_t(kH), std::uint8_t(FT_None));
-    generate_spires(gs, zones, terrain, feat);
+    FeatureLayer& feat = gs.features;
+    feat.resize(kW, kH);
+    generate_spires(gs, zones, terrain);
 
     // ── НЕГАТИВНЫЙ КОНТРОЛЬ С ЗУБАМИ: свидетель рождает его САМ (§8 п.11).
     const int freefolk = faction_index("freefolk");
     CHECK_OR_RETURN(freefolk >= 0, "реестр фракций несёт строку freefolk");
-    const MacroHandle city = birth_squad(gs, places(), SquadType::City,
+    const MacroHandle city = birth_squad(gs, nullptr, places(), SquadType::City,
                                         40, 40, std::int16_t(freefolk),
-                                        nullptr, &feat, &terrain);
+                                        nullptr, &terrain);
     CHECK_OR_RETURN(places().valid(city), "фикстура родила себе город");
     // ЛОВУШКА ЖИВА, НО КОЛОНКОЙ ЕЁ БОЛЬШЕ НЕ НАЗВАТЬ (M-320 снёс `bornPop*`).
     // Она про ОДНО ПОЛЕ С ДВУМЯ СМЫСЛАМИ: число поля фич под клеткой — это
@@ -668,7 +671,6 @@ void test_one_answer_to_the_drained_orb() {
     MacroWorld mw{};
     mw.gs = &gs;
     mw.store = &places();
-    mw.features = &feat;
     mw.terrain = &terrain;
 
     // РИСК, КОТОРЫЙ ПРИНЁС КЛЮЧ-ФИЧА, И ОН ПИНИТСЯ ЗДЕСЬ. Байт фичи у

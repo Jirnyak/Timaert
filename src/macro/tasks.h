@@ -32,8 +32,8 @@ namespace sm {
 
 struct MacroStore;
 struct GameState;
+struct Session;
 struct SquadIndex;
-struct FeatureLayer;
 
 // Откуда глагол берёт ОБЪЕКТ. Пространства суть оси существующих таблиц:
 // новый глагол называет своё пространство строкой, конструктор не меняется.
@@ -118,7 +118,8 @@ inline constexpr std::uint16_t task_count(std::int32_t amount) {
 // Сборка офферов доски места: детерминирована от (worldSeed, день, место),
 // ничего не пишет и не хранит. Возвращает, сколько положила (≤ cap).
 int task_offers_for(const MacroStore& st, const GameState& gs,
-                    const SquadIndex& idx, const FeatureLayer& features,
+                    const Session& ses,
+                    const SquadIndex& idx,
                     MacroHandle place, TaskOffer* out, int cap);
 
 // Взятие: цель — игроку (та же колонка, что любому скваду), факт

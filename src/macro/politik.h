@@ -199,3 +199,10 @@ void finalize_politik(std::vector<City>& cities,
                       int mapW, int mapH, const TerrainData& td);
 
 } // namespace sm
+
+#include "core/row_law.h"   // стена «без дыр» — включение в хвосте, содержимое файла не сдвигается
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::CellOwnerField, &sm::CellOwnerField::data);

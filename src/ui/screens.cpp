@@ -498,7 +498,8 @@ ShellResult draw_game_menu() {
     return r;
 }
 
-ShellResult draw_death_screen(const GameState& gs) {
+ShellResult draw_death_screen(const GameState& gs, const Session& ses,
+                              const MacroStore& st) {
     ShellResult r{};
     draw_dim_background(0.85f);
     centred_window(ImVec2(420, 240));
@@ -510,9 +511,10 @@ ShellResult draw_death_screen(const GameState& gs) {
     ImGui::TextColored(ImVec4(0.9f, 0.2f, 0.2f, 1.0f), "YOU DIED");
     ImGui::SetWindowFontScale(1.0f);
     ImGui::Dummy(ImVec2(0, 12));
+    // Имя — колонка анкеты того, на ком стоит флажок (В3: один носитель).
+    const char* fallenName = squad_name(st, player_flag_handle(ses));
     ImGui::TextWrapped("%s fell on day %d at age %d.",
-        gs.player.name.text[0] == '\0' ? "The wanderer"
-                                       : gs.player.name.text,
+        fallenName ? fallenName : "The wanderer",
         gs.worldTime.day(), gs.player.ageDays);
     ImGui::Dummy(ImVec2(0, 12));
     const ImVec2 sz(360, 36);
@@ -522,7 +524,8 @@ ShellResult draw_death_screen(const GameState& gs) {
     return r;
 }
 
-void draw_player_hud(const GameState& gs, const MacroStore& st,
+void draw_player_hud(const GameState& gs, const Session& ses,
+                     const MacroStore& st,
                      const ecs::Pools& pools, float scale) {
     // Proto_c-style top status bar — single horizontal strip across the
     // full width of the window: Time / HP / MP / SP / Coords / name+level.
@@ -581,18 +584,21 @@ void draw_player_hud(const GameState& gs, const MacroStore& st,
     ImGui::TextDisabled("|");
     ImGui::SameLine();
     {
-        const ecs::MacroCell* pc = player_flag_cell(gs, st);
+        const ecs::MacroCell* pc = player_flag_cell(ses, st);
         ImGui::Text("Pos %4d, %4d", pc ? ecs::cell_x(*pc, gs.mapW) : 0,
                     pc ? ecs::cell_y(*pc, gs.mapW) : 0);
     }
 
     // Right-aligned: name + level. The base component through the one door
     // (посадка Б) — a world without a body reads as the blank build.
-    const CharacterSheet* hudSheet = player_sheet(gs, st);
+    const CharacterSheet* hudSheet = player_sheet(ses, st);
     const LevelData hudLevel = hudSheet ? hudSheet->levelData : LevelData{};
+    // Имя — колонка анкеты АКТИВНОГО сквада (вердикт владельца 2026-11-10,
+    // В3): под вселением HUD показывает имя носимого тела.
+    const char* hudName = squad_name(st, player_flag_handle(ses));
     char nameBuf[64];
     std::snprintf(nameBuf, sizeof(nameBuf), "%s  Lv %d   %d / %d EXP",
-        gs.player.name.text[0] == '\0' ? "Wanderer" : gs.player.name.text,
+        hudName ? hudName : "Wanderer",
         sm::level_of(hudLevel), sm::exp_in_level_of(hudLevel),
         sm::exp_to_next_of(hudLevel));
     const float nw = ImGui::CalcTextSize(nameBuf).x;

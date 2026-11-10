@@ -131,7 +131,7 @@ struct Fixture {
     // СЛОЙ ФИЧ — НЕ УКРАШЕНИЕ ФИКСТУРЫ: без него `birth_squad` фичу не
     // ставит вовсе (её постановка гейтится `fl && td`), и закон «умирающий
     // переписывает фичу под собой» проверять было бы НЕ НА ЧЁМ.
-    FeatureLayer features;
+    FeatureLayer& features = gs.features;
     std::unique_ptr<MacroStore> storeOwner = make_macro_store();
 
     Fixture() {
@@ -156,16 +156,15 @@ struct Fixture {
     MacroWorld world() {
         return MacroWorld{.gs = &gs, .store = storeOwner.get(),
                           .terrain = &terrain,
-                          .features = &features,
                           .pathCost = &pathCost};
     }
 
     // ПЛЕМЯ НАЗЫВАЕТСЯ ЯВНО: -1 глушит минтовый рецепт fail-closed.
     MacroHandle rooted(SquadType kind, int x, int y, int souls) {
         const MacroHandle h = birth_squad(
-            gs, st(), kind, x, y,
+            gs, nullptr, st(), kind, x, y,
             std::int16_t(faction_index("timaert")), /*name*/nullptr,
-            &features, &terrain);   // ФИЧА СТАВИТСЯ ДО ТЕЛА (ЗАКОН ГЕНЕРАЦИИ)
+            &terrain);   // ФИЧА СТАВИТСЯ ДО ТЕЛА (ЗАКОН ГЕНЕРАЦИИ)
         CHECK(st().valid(h), "фикстура родила место (дверь рождения дала "
                              "валидный хэндл)");
         // ДВЕРЬ ДУШ ВОЗВРАЩАЕТ ФАКТ, И ИГНОРИРОВАТЬ ЕГО НЕЛЬЗЯ: нулевая

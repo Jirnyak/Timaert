@@ -82,7 +82,7 @@ int main() {
     auto storeOwn = sm::make_macro_store();
     sm::MacroStore& st = *storeOwn;
     sm::TerrainData terrain = make_land();
-    sm::FeatureLayer features;
+    sm::FeatureLayer& features = gs.features;
     features.resize(kSide, kSide);
     sm::SquadIndex idx{};
 
@@ -90,7 +90,6 @@ int main() {
     mw.gs = &gs;
     mw.store = &st;
     mw.terrain = &terrain;
-    mw.features = &features;
     mw.squads = &idx;
 
     // ── ПРЕДУСЛОВИЕ, КОТОРОГО В ЖИВОМ МИРЕ НЕТ, И ПОТОМУ ОНО СТРОИТСЯ ЗДЕСЬ ─

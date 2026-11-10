@@ -7,6 +7,7 @@
 // tree-count field (macro/tree_layer.h) — a forested mountain is the
 // Mountain biome with a high tree count, no feature byte involved.
 #pragma once
+#include "core/caps.h"   // kWorldCellCap — кап клеток мира
 #include "core/table_guard.h"
 #include "core/torus.h"
 #include "tables/feature_type.h"
@@ -28,7 +29,9 @@
 #include "tables/squad_type.h"
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
+#include <span>
 #include <vector>
 
 namespace sm {
@@ -48,9 +51,22 @@ namespace sm {
 //  каталоги, а спрашивает их и субмир, которому `macro/` включать нельзя.
 //  Здесь остался СЛОЙ — изменяемое состояние мира.)
 
+// ПЛОСКИЙ МАССИВ ПОД КАПОМ КЛЕТОК МИРА, И ДОМ ЕГО — СОСТОЯНИЕ МИРА (M-456,
+// 2026-11-10; вердикт владельца о сейв-эпике: «все поля над тором, лежащие в
+// состоянии мира (Род 3), едут дампом единообразно»). Здесь стоял
+// `std::vector<std::uint8_t>`, а сам слой жил членом оболочки приложения и
+// приходил в симуляцию указателем конверта. Поле при этом ПИСАЛОСЬ В ЖИВОМ
+// МИРЕ — смерть города кладёт на клетку руину, смерть деревни снимает фичу
+// (`city_death@src/macro/npc_ai.cpp`, `village_death@src/macro/npc_ai.cpp`), —
+// а в сейв не ехало и на загрузке перевыводилось из сида: руина после загрузки
+// снова становилась городом. Теперь форма та же, что у леса
+// (`TreeLayer@src/macro/tree_layer.h`): heap-члена нет, слой жив, когда его
+// стороны называют мир в пределах капа; живые клетки — первые `cell_count()`,
+// хвост до капа стоит нулём. Структура весит 1 МиБ и на стеке не живёт — она
+// лежит полем `GameState::features@src/macro/state.h`.
 struct FeatureLayer {
     int width = 0, height = 0;
-    std::vector<std::uint8_t> data;
+    std::uint8_t data[kWorldCellCap] = {};
 
     // Validity comes from the ENUM, never a hand list (2026-08-31): the old
     // `<= FT_Bridge` whitelist would have sanitized the mine and wood-bridge
@@ -67,6 +83,9 @@ struct FeatureLayer {
     // оно читается как «просей байт этой решётки».
     static FeatureType decode(std::uint8_t value) { return feature_decode(value); }
 
+    // Сколько клеток у решётки w×h — БЕЗ суда о капе мира. Этой формой
+    // спрашивают слои, которые под кап не легли (зоны, рельеф генератора):
+    // им нужен только счёт без переполнения.
     static bool cell_count_for(int w, int h, std::size_t &out) {
         out = 0;
         if (w <= 0 || h <= 0)
@@ -85,20 +104,19 @@ struct FeatureLayer {
     // Имя остаётся: у 45 мест вызова оно читается как документация.
     static int wrap_coord(int value, int limit) { return wrap_axis(value, limit); }
 
+    // Живые клетки слоя — ровно мир, не кап. Мир вне капа (или с
+    // неположительной стороной) даёт ноль: слой молчит, fail-closed.
     std::size_t cell_count() const {
-        std::size_t n = 0;
-        return cell_count_for(width, height, n) ? n : 0u;
+        return world_cells_within_cap(width, height);
+    }
+    std::span<const std::uint8_t> cells() const {
+        return {data, cell_count()};
     }
 
-    bool has_complete_storage() const {
-        const std::size_t n = cell_count();
-        return n > 0u && data.size() >= n;
-    }
+    bool has_complete_storage() const { return cell_count() > 0u; }
 
     bool has_invalid_cell_bytes() const {
         const std::size_t n = cell_count();
-        if (n == 0u || data.size() < n)
-            return false;
         for (std::size_t i = 0; i < n; ++i) {
             if (!is_valid_byte(data[i]))
                 return true;
@@ -108,7 +126,7 @@ struct FeatureLayer {
 
     bool copy_sanitized_cells(std::vector<std::uint8_t> &out) const {
         const std::size_t n = cell_count();
-        if (n == 0u || data.size() < n) {
+        if (n == 0u) {
             out.clear();
             return false;
         }
@@ -120,7 +138,7 @@ struct FeatureLayer {
 
     const std::uint8_t *complete_cells_or_sanitized(std::vector<std::uint8_t> &out) const {
         const std::size_t n = cell_count();
-        if (n == 0u || data.size() < n) {
+        if (n == 0u) {
             out.clear();
             return nullptr;
         }
@@ -130,7 +148,7 @@ struct FeatureLayer {
             if (is_valid_byte(value))
                 continue;
             if (!copied) {
-                out.assign(data.data(), data.data() + n);
+                out.assign(data, data + n);
                 copied = true;
             }
             out[i] = std::uint8_t(FT_None);
@@ -138,25 +156,22 @@ struct FeatureLayer {
         if (copied)
             return out.data();
         out.clear();
-        return data.data();
+        return data;
     }
 
     bool covers(int w, int h) const {
-        std::size_t n = 0;
-        return width == w && height == h && cell_count_for(w, h, n) && data.size() >= n;
+        return width == w && height == h && cell_count() > 0u;
     }
 
+    // Родить ПУСТОЙ слой над миром w×h: стороны названы, ВЕСЬ кап обнулён —
+    // хвост за миром обязан стоять нулём, иначе байты слоя помнили бы прошлый
+    // мир. Мир вне капа рождает слой без сторон (fail-closed, `at()` отвечает
+    // `FT_None`).
     void resize(int w, int h) {
-        std::size_t n = 0;
-        if (!cell_count_for(w, h, n)) {
-            width = 0;
-            height = 0;
-            data.clear();
-            return;
-        }
-        width = w;
-        height = h;
-        data.assign(n, 0);
+        const bool fits = world_cells_within_cap(w, h) > 0u;
+        width = fits ? w : 0;
+        height = fits ? h : 0;
+        std::memset(data, 0, sizeof(data));
     }
     // Адрес — ЕДИНСТВЕННАЯ дверь мира (`core/torus.h`). Гейт включает
     // ИНВАРИАНТ (ЗАКОН АДРЕСА): мир квадратен и степень двойки, иначе
@@ -171,10 +186,10 @@ struct FeatureLayer {
     // `data[y*w+x] = FT_…` мимо двери, то есть девять раз заворот и проверка
     // рода держались на памяти автора, а не на типе.
     FeatureType at(std::uint32_t cell) const {
-        return cell < data.size() ? decode(data[cell]) : FT_None;
+        return cell < cell_count() ? decode(data[cell]) : FT_None;
     }
     FeatureType at(int x, int y) const {
-        if (!world_shape_ok(width, height) || data.empty()) return FT_None;
+        if (!world_shape_ok(width, height) || cell_count() == 0u) return FT_None;
         return at(cell_of(x, y, width));
     }
 
@@ -191,14 +206,16 @@ private:
     friend struct FeatureLayerProbe;
 
     void set(std::uint32_t cell, FeatureType t) {
-        if (cell >= data.size()) return;
+        if (cell >= cell_count()) return;
         data[cell] = std::uint8_t(decode(std::uint8_t(t)));
     }
     void set(int x, int y, FeatureType t) {
-        if (!world_shape_ok(width, height) || data.empty()) return;
+        if (!world_shape_ok(width, height) || cell_count() == 0u) return;
         set(cell_of(x, y, width), t);
     }
 };
+static_assert(sizeof(FeatureLayer) == 8u + kWorldCellCap,
+              "слой фич: 8 Б шапки + байт на клетку капа, без хвоста");
 
 // ── ДВЕРЬ №3 ПУЛЬТА: РОД ФИЧИ КЛЕТКИ (ломоть 1 M-72; бывш. stamp_feature) ──
 // Ставит и СНИМАЕТ одной дверью: `FT_None` — значение, а не отсутствие
@@ -227,3 +244,20 @@ inline FeatureType feature_put(FeatureLayer& fl, const TerrainData& td,
 }
 
 } // namespace sm
+
+// Включение стоит ЗДЕСЬ, а не наверху файла: заголовок пользуется контуром
+// только в блоке ниже, а вставленная наверху строка сдвинула бы всё содержимое
+// и сгноила бы ссылки документов в этот файл (§13 п.5).
+#include "core/row_law.h"
+// ── КОНТУР СТРОК ЭТОГО ФАЙЛА (M-456) ────────────────────────────────────────
+// Слой фич — член состояния мира и едет прямым дампом; структура, в которую
+// заложили вектор или строку, отсюда не соберётся (`core/row_law.h`). За
+// полнотой списка следит `arch_guard_test` (файл стоит в его `kRowHeaders`).
+TIMAERT_ROW(sm::FeatureLayer);
+
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::FeatureLayer, &sm::FeatureLayer::width,
+    &sm::FeatureLayer::height, &sm::FeatureLayer::data);

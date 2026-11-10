@@ -34,9 +34,9 @@ namespace {
 
 // The player's bag is an ordinary NpcInventory on his squad entity now; a
 // fixture raises that entity and reads the spoils from it.
-sm::Inventory& player_bag_of(const sm::GameState& gs, sm::MacroStore& st) {
+sm::Inventory& player_bag_of(const sm::Session& ses, sm::MacroStore& st) {
     static sm::Inventory scratch{};
-    sm::Inventory* bag = sm::player_inventory(gs, st);
+    sm::Inventory* bag = sm::player_inventory(ses, st);
     return bag ? *bag : scratch;
 }
 
@@ -93,13 +93,15 @@ AutoBattleOutcome wipe_of(sm::MacroStore& st, sm::MacroHandle loser,
 void test_every_death_is_reported_once() {
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
+    Session ses;
     gs.mapW = gs.mapH = 64;
     auto wStore_ = sm::make_macro_store();
     FactLog log{};
     MacroWorld mw{};
     mw.gs = &gs;
+    mw.session = &ses;
     mw.store = wStore_.get();
-    ensure_macro_player_entity(gs, *wStore_);
+    ensure_macro_player_entity(gs, ses, *wStore_);
     mw.facts = &collect;
     mw.factsUser = &log;
 
@@ -162,13 +164,15 @@ void test_kill_price_is_the_registry_column() {
     {
         std::unique_ptr<GameState> gsOwn = make_game_state();
         GameState& gs = *gsOwn;
+        Session ses;
         gs.mapW = gs.mapH = 64;
         auto wStore_ = sm::make_macro_store();
         MacroWorld mw{};
         mw.gs = &gs;
+        mw.session = &ses;
         mw.store = wStore_.get();
-        ensure_macro_player_entity(gs, *wStore_);
-        CHECK(sm::squad_faction_slot(*wStore_, sm::player_flag_handle(gs))
+        ensure_macro_player_entity(gs, ses, *wStore_);
+        CHECK(sm::squad_faction_slot(*wStore_, sm::player_flag_handle(ses))
                   == sm::kPlayerFactionSlot,
               "предусловие: запись, которой играют, носит знамя игрока — "
               "иначе проверка ниже спрашивала бы ЧУЖУЮ пару");
@@ -184,12 +188,15 @@ squad(*wStore_, NPCType::Guard, "empire", 2, 2, 5u);
     {
         std::unique_ptr<GameState> gsOwn = make_game_state();
         GameState& gs = *gsOwn;
+        Session ses;
         gs.mapW = gs.mapH = 64;
         auto wStore_ = sm::make_macro_store();
         MacroWorld mw{};
         mw.gs = &gs;
+        mw.session = &ses;
+        mw.session = &ses;
         mw.store = wStore_.get();
-        ensure_macro_player_entity(gs, *wStore_);
+        ensure_macro_player_entity(gs, ses, *wStore_);
         const sm::MacroHandle enemy =
 squad(*wStore_, NPCType::Bandit, "bandits", 2, 2, 6u);
         const int before = player_reputation(&gs, "bandits");
@@ -227,11 +234,13 @@ void test_the_auto_resolve_pays_with_the_participants_banner() {
 
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
+    Session ses;
     gs.mapW = gs.mapH = 64;
     sm::claim_registry_rows(gs.factions);
     auto wStore_ = sm::make_macro_store();
     MacroWorld mw{};
     mw.gs = &gs;
+    mw.session = &ses;
     mw.store = wStore_.get();
 
     // ОДЕРЖИМЫЙ: флажок «кем играют» на записи ЛОРДА ДЕРЖАВЫ. Поле GameState
@@ -239,8 +248,8 @@ void test_the_auto_resolve_pays_with_the_participants_banner() {
     // ставит ровно его — второго носителя у вопроса нет.
     const sm::MacroHandle worn =
 squad(*wStore_, NPCType::Guard, "empire", 5, 0, 21u);
-    gs.playerFlagRef = worn;
-    CHECK(sm::player_flag_handle(gs) == worn
+    ses.playerFlagRef = worn;
+    CHECK(sm::player_flag_handle(ses) == worn
               && sm::squad_faction_slot(*wStore_, worn) == kEmpire,
           "фикстура: играют записью под знаменем державы, а не своей");
 
@@ -274,13 +283,15 @@ squad(*wStore_, NPCType::Guard, "timaert", 2, 2, 22u);
 void test_spoils_are_rolled_not_scavenged() {
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
+    Session ses;
     gs.mapW = gs.mapH = 64;
     gs.worldSeed = 4242u;
     auto wStore_ = sm::make_macro_store();
     MacroWorld mw{};
     mw.gs = &gs;
+    mw.session = &ses;
     mw.store = wStore_.get();
-    ensure_macro_player_entity(gs, *wStore_);
+    ensure_macro_player_entity(gs, ses, *wStore_);
     // СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11): чтобы спросить «дошла ли
     // добыча», у павшего должна БЫТЬ добыча. Раньше её рождал бросок
     // хардкод-профиля роли — и вопрос стоял «роняет ли контейнерная запись то,
@@ -294,21 +305,21 @@ squad(*wStore_, NPCType::Merchant, "empire", 4, 3, 7u);
         einv.add("misc_gem", 3);
         einv.add("coin_empire_silver", 5);
     }
-    const int coinBefore = coin_census_value(player_bag_of(gs, *wStore_));
+    const int coinBefore = coin_census_value(player_bag_of(ses, *wStore_));
     settle_player_auto_battle(mw, enemy, wipe_of(*wStore_, enemy, true), true);
 
     // ПЕРЕНОС, А НЕ ПЕЧАТЬ: самоцветы и серебро павшего лежат у победителя, и
     // ровно в том счёте, в каком были у павшего — сверх этого не появляется
     // ничего (негативный контроль сноса выдачи, §8 п.6: вернись бросок
     // профиля или кошелёк — счёт перестанет совпадать).
-    CHECK(player_bag_of(gs, *wStore_).count("misc_gem") == 3,
+    CHECK(player_bag_of(ses, *wStore_).count("misc_gem") == 3,
           "добыча павшего ПЕРЕНОСИТСЯ победителю, ровно своим счётом");
-    CHECK(coin_census_value(player_bag_of(gs, *wStore_)) == coinBefore + 5 * 10,
+    CHECK(coin_census_value(player_bag_of(ses, *wStore_)) == coinBefore + 5 * 10,
           "монеты павшего переходят как товар, и НИ ОДНОЙ сверх — выдача "
           "монет из воздуха снесена (M-139)");
     {
         int goods = 0;
-        for (const ItemRef& sl : player_bag_of(gs, *wStore_).slots) {
+        for (const ItemRef& sl : player_bag_of(ses, *wStore_).slots) {
             if (!sl.empty() && world_row_is_item(sl.def)) ++goods;
         }
         CHECK(goods == 2,
@@ -319,13 +330,15 @@ squad(*wStore_, NPCType::Merchant, "empire", 4, 3, 7u);
     // The negative control: a DEFEAT pays nothing. Loot is the victor's.
     std::unique_ptr<GameState> gs2Own = make_game_state();
     GameState& gs2 = *gs2Own;
+    Session ses2;
     gs2.mapW = gs2.mapH = 64;
     gs2.worldSeed = 4242u;
     auto w2Store_ = sm::make_macro_store();
     MacroWorld mw2{};
     mw2.gs = &gs2;
+    mw2.session = &ses2;
     mw2.store = w2Store_.get();
-    ensure_macro_player_entity(gs2, *w2Store_);
+    ensure_macro_player_entity(gs2, ses2, *w2Store_);
     const sm::MacroHandle enemy2 =
 squad(*w2Store_, NPCType::Merchant, "empire", 4, 3, 8u);
     AutoBattleOutcome loss{};
@@ -333,7 +346,7 @@ squad(*w2Store_, NPCType::Merchant, "empire", 4, 3, 8u);
     loss.avatarFractionA = 0.0f;        // the player fell
     loss.avatarFractionB = 0.8f;
     settle_player_auto_battle(mw2, enemy2, loss, /*playerIsA*/true);
-    CHECK(coin_census_value(player_bag_of(gs, *w2Store_)) == 0,
+    CHECK(coin_census_value(player_bag_of(ses2, *w2Store_)) == 0,
           "a defeat pays the player nothing");
 }
 
@@ -345,21 +358,23 @@ squad(*w2Store_, NPCType::Merchant, "empire", 4, 3, 8u);
 void test_empty_handed_fallen_pays_nothing() {
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
+    Session ses;
     gs.mapW = gs.mapH = 64;
     gs.worldSeed = 99u;
     auto wStore_ = sm::make_macro_store();
     MacroWorld mw{};
     mw.gs = &gs;
+    mw.session = &ses;
     mw.store = wStore_.get();
-    ensure_macro_player_entity(gs, *wStore_);
+    ensure_macro_player_entity(gs, ses, *wStore_);
     const sm::MacroHandle pack =
 squad(*wStore_, NPCType::Wolf, "wildlife", 3, 0, 9u);
     settle_player_auto_battle(mw, pack, wipe_of(*wStore_, pack, true), true);
-    CHECK(coin_census_value(player_bag_of(gs, *wStore_)) == 0,
+    CHECK(coin_census_value(player_bag_of(ses, *wStore_)) == 0,
           "стая, не нёсшая ничего, не платит ни монеты — ни кошелька строки, "
           "ни броска профиля больше нет (M-139)");
     int goods = 0;
-    for (const ItemRef& sl : player_bag_of(gs, *wStore_).slots) {
+    for (const ItemRef& sl : player_bag_of(ses, *wStore_).slots) {
         if (!sl.empty() && world_row_is_item(sl.def)) ++goods;
     }
     CHECK(goods == 0,

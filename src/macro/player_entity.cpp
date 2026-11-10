@@ -41,7 +41,8 @@ static_assert(kPlayerDefaultFaceSeed == (0x7FFFFFFFu ^ 0x9E3779B9u),
               "kPlayerSquadOrdinal — иначе снос перерисовал персонажа");
 } // namespace
 
-void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
+void ensure_macro_player_entity(const GameState& gs, Session& ses,
+                                MacroStore& st) {
 
     // ── The player's squad: an ORDINARY macro squad ────────────────────────
     // Owner's ruling, 2026-08-27: «игрок = обычный сквад, просто с флажком
@@ -51,14 +52,14 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
     // side, its own casualty path and its own (absent) cap. Four
     // player-specific paths, which CANON S4 forbids by name.
     //
-    // «Кто оригинал» — хэндл GameState; протухший после загрузки или пустой
+    // «Кем я на карте» — хэндл сессии; протухший после загрузки или пустой
     // на буте хэндл резолвится КОЛОНКОЙ ОДИН раз (граница, не тик: валидный
     // хэндл — чтение без скана). Ревалидация спрашивает ту же колонку:
     // бит дома на том слоте, на который хэндл показывает.
     // «ЕСТЬ ЛИ Я УЖЕ В ЭТОМ МИРЕ» — ОДИН ВОПРОС, ОДИН НОСИТЕЛЬ (ломоть 7б
     // M-421): активный флажок, а если он протух (загрузка, снос слота) —
     // старейший под контролем. Прежде здесь стоял БИТ ДОМА и его скан.
-    MacroHandle home = player_flag_handle(gs);
+    MacroHandle home = player_flag_handle(ses);
     if (!st.valid(home)) home = eldest_controlled_squad(st);
     // РОЖДЕНИЕ ГАТИТСЯ ОТСУТСТВИЕМ СКВАДОВ ПОД КОНТРОЛЕМ, А НЕ БИТОМ ДОМА
     // (ломоть 7б M-421). Эта дверь зовётся КАЖДЫМ макро-тиком вне субмира
@@ -112,6 +113,11 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
         birth.skills     = default_skills();
         birth.levelData  = default_level_data();
         st.sheet[h.slot] = birth;
+        // ИМЯ — КОЛОНКА АНКЕТЫ ЭТОГО СКВАДА, как у всякого (вердикт владельца
+        // 2026-11-10, В3: «игрок ничем не особенный имена через анекты
+        // сквадо»). Умолчание экрана создания рождается здесь же, где его
+        // умолчательный лист; экран создания перепишет его той же дверью.
+        ecs::set_squad_name(st.name[h.slot], "Traveller");
         // Тело игрока — маска строки Adventurer (M-183).
         gear_init(st.gear[h.slot].gear, npc_def(NPCType::Adventurer).slots);
         const CharacterSheet& sheet = st.sheet[h.slot];
@@ -169,7 +175,7 @@ void ensure_macro_player_entity(GameState& gs, MacroStore& st) {
     // AvatarTag, a different question). Истина — колонка playerFlag анкеты
     // (5б); носитель, не переживший мир (невалидные биты), честно
     // складывается домой ДВЕРЬЮ переноса — мира без флага не бывает.
-    transfer_player_flag(st, gs.playerFlagRef, home);
+    transfer_player_flag(st, ses.playerFlagRef, home);
 
     // ЗДЕСЬ СТОЯЛ БЕЗУСЛОВНЫЙ ПЕРЕСЧЁТ ЛИСТА КАЖДЫЙ МАКРО-ТИК, И ОН СНЕСЁН
     // (M-301). Эта дверь зовётся из главного цикла каждым макро-тиком вне
@@ -212,19 +218,19 @@ MacroHandle eldest_controlled_squad(const MacroStore& st) {
     return eldest;
 }
 
-bool keep_active_squad(GameState& gs, MacroStore& st) {
-    const MacroHandle active = player_flag_handle(gs);
+bool keep_active_squad(Session& ses, MacroStore& st) {
+    const MacroHandle active = player_flag_handle(ses);
     // `macro_dead` отвечает «мёртв» и на протухший хэндл (fail-closed пара
     // store.h), то есть оба повода переключения — исчезнувший слот и байт
     // судьбы — спрашиваются ОДНИМ вопросом.
     if (!macro_dead(st, active)) return true;
     const MacroHandle next = eldest_controlled_squad(st);
     if (next.id == 0) return false;
-    transfer_player_flag(st, gs.playerFlagRef, next);
+    transfer_player_flag(st, ses.playerFlagRef, next);
     return true;
 }
 
-void resolve_player_handles_after_load(GameState& gs, MacroStore& st) {
+void resolve_player_handles_after_load(Session& ses, MacroStore& st) {
     // ОДИН СКАН КОЛОНКИ, ДВА БИТА (5б + M-255): истина ОБОИХ вопросов
     // приехала колонкой playerFlag записей снапшота, оба кэша GameState
     // пересобираются из неё. Дом искался здесь ВТОРЫМ проходом по store —
@@ -249,7 +255,7 @@ void resolve_player_handles_after_load(GameState& gs, MacroStore& st) {
         flag = eldest_controlled_squad(st);
         if (st.valid(flag)) st.playerFlag[flag.slot].on = 1;
     }
-    gs.playerFlagRef = flag;
+    ses.playerFlagRef = flag;
 }
 
 // ── ВСЁ НИЖЕ СПРАШИВАЕТ ФЛАЖОК, А НЕ ОРДИНАЛ (2026-09-14) ────────────────
@@ -273,51 +279,51 @@ void resolve_player_handles_after_load(GameState& gs, MacroStore& st) {
 namespace {
 // Один резолв на все колоночные двери: валидный слот носителя флажка или
 // kMacroNoSlot — «мира нет», и дверь честно отвечает nullptr.
-inline std::uint16_t flag_slot_or_none(const GameState& gs,
+inline std::uint16_t flag_slot_or_none(const Session& ses,
                                        const MacroStore& st) {
-    const MacroHandle h = player_flag_handle(gs);
+    const MacroHandle h = player_flag_handle(ses);
     return st.valid(h) ? h.slot : kMacroNoSlot;
 }
 } // namespace
 
-CharacterSheet* player_sheet(const GameState& gs, MacroStore& st) {
-    const std::uint16_t slot = flag_slot_or_none(gs, st);
+CharacterSheet* player_sheet(const Session& ses, MacroStore& st) {
+    const std::uint16_t slot = flag_slot_or_none(ses, st);
     return slot == kMacroNoSlot ? nullptr : &st.sheet[slot];
 }
-const CharacterSheet* player_sheet(const GameState& gs,
+const CharacterSheet* player_sheet(const Session& ses,
                                    const MacroStore& st) {
-    const std::uint16_t slot = flag_slot_or_none(gs, st);
+    const std::uint16_t slot = flag_slot_or_none(ses, st);
     return slot == kMacroNoSlot ? nullptr : &st.sheet[slot];
 }
 
-CharacterSheet player_effective_sheet(const GameState& gs,
+CharacterSheet player_effective_sheet(const Session& ses,
                                       const MacroStore& st) {
-    const MacroHandle h = player_flag_handle(gs);
+    const MacroHandle h = player_flag_handle(ses);
     if (!st.valid(h)) return CharacterSheet{};
     return effective_sheet_of(st, h);
 }
 
-Inventory* player_inventory(const GameState& gs, MacroStore& st) {
-    const std::uint16_t slot = flag_slot_or_none(gs, st);
+Inventory* player_inventory(const Session& ses, MacroStore& st) {
+    const std::uint16_t slot = flag_slot_or_none(ses, st);
     return slot == kMacroNoSlot ? nullptr : &st.inventory[slot].inv;
 }
-const Inventory* player_inventory(const GameState& gs,
+const Inventory* player_inventory(const Session& ses,
                                   const MacroStore& st) {
-    const std::uint16_t slot = flag_slot_or_none(gs, st);
+    const std::uint16_t slot = flag_slot_or_none(ses, st);
     return slot == kMacroNoSlot ? nullptr : &st.inventory[slot].inv;
 }
 
-float* player_sp_carry(const GameState& gs, MacroStore& st) {
-    const std::uint16_t slot = flag_slot_or_none(gs, st);
+float* player_sp_carry(const Session& ses, MacroStore& st) {
+    const std::uint16_t slot = flag_slot_or_none(ses, st);
     return slot == kMacroNoSlot ? nullptr : &st.pools[slot].spCarry;
 }
 
-ecs::Pools* player_pools(const GameState& gs, MacroStore& st) {
-    const std::uint16_t slot = flag_slot_or_none(gs, st);
+ecs::Pools* player_pools(const Session& ses, MacroStore& st) {
+    const std::uint16_t slot = flag_slot_or_none(ses, st);
     return slot == kMacroNoSlot ? nullptr : &st.pools[slot];
 }
-const ecs::Pools* player_pools(const GameState& gs, const MacroStore& st) {
-    const std::uint16_t slot = flag_slot_or_none(gs, st);
+const ecs::Pools* player_pools(const Session& ses, const MacroStore& st) {
+    const std::uint16_t slot = flag_slot_or_none(ses, st);
     return slot == kMacroNoSlot ? nullptr : &st.pools[slot];
 }
 
@@ -325,13 +331,13 @@ const ecs::Pools* player_pools(const GameState& gs, const MacroStore& st) {
 //  существа, которую она читала НЕЗАЩИЩЁННО (`NPCType(kind.type)`), спрашивается
 //  теперь дверью `squad_row_type@src/bus/store.h`.)
 
-SpellBook* player_spellbook(const GameState& gs, MacroStore& st) {
-    const std::uint16_t slot = flag_slot_or_none(gs, st);
+SpellBook* player_spellbook(const Session& ses, MacroStore& st) {
+    const std::uint16_t slot = flag_slot_or_none(ses, st);
     return slot == kMacroNoSlot ? nullptr : &st.spellBook[slot];
 }
-const SpellBook* player_spellbook(const GameState& gs,
+const SpellBook* player_spellbook(const Session& ses,
                                   const MacroStore& st) {
-    const std::uint16_t slot = flag_slot_or_none(gs, st);
+    const std::uint16_t slot = flag_slot_or_none(ses, st);
     return slot == kMacroNoSlot ? nullptr : &st.spellBook[slot];
 }
 

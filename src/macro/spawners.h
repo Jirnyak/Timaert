@@ -147,7 +147,9 @@ inline constexpr int kFieldsPerVillage = 4;
 // ДЫРА ОСТАЁТСЯ ОТКРЫТОЙ И НАЗВАННОЙ (§1 «временные костыли не нужны»):
 // пахотной стала всякая не-водная клетка, и различать богатую землю от тощей
 // будет новая экономика, наряд M-191. Заглушки на место планки НЕ ставить.
-void stamp_field_features(FeatureLayer& fl, const MacroWorld& world,
+// Поле фич берётся у состояния (`world.gs->features`, M-456) — у всех трёх
+// дверей ниже: параметр-слой рядом с конвертом был вторым адресом одного поля.
+void stamp_field_features(const MacroWorld& world,
                           const std::vector<FieldSite>& villages);
 
 // The RUNTIME half of the field stamp (owner 2026-08-31, CANON S10 «фичи
@@ -156,12 +158,11 @@ void stamp_field_features(FeatureLayer& fl, const MacroWorld& world,
 // through plough_cell_ok, so a runtime field and a genesis field can never
 // disagree. Returns false when the cell refuses the plough (feature there
 // already / water / rock / lean soil). Torus-wrapped.
-bool plough_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
-                    int x, int y, int& wheatOut);
+bool plough_cell_ok(const MacroWorld& world, int x, int y, int& wheatOut);
 // `parcel` — ЧЕМ засеяно (FT_Field хлебом, FT_FlaxField льном): земля и цена
 // у них одни, различается только строка цели, которая с парцеллы берёт.
-bool plough_field_cell(FeatureLayer& fl, const MacroWorld& world,
-                       int x, int y, FeatureType parcel = FT_Field);
+bool plough_field_cell(const MacroWorld& world, int x, int y,
+                       FeatureType parcel = FT_Field);
 
 // ── ГЕНЕРАЦИЯ ШАХТ (вердикт владельца 2026-10-23, дословно: «по этим
 // связным жилам ставятся поверх на самом высосокм значении локальной связной
@@ -177,7 +178,7 @@ bool plough_field_cell(FeatureLayer& fl, const MacroWorld& world,
 // кламп). Дикий кластер остаётся нетронутым — контент разведки.
 // Форма v1 предварительна по слову владельца («сделаем хоть так потом
 // придумаем лучше»).
-void stamp_mines(GameState& gs, FeatureLayer& fl, const TerrainData& td,
+void stamp_mines(GameState& gs, const TerrainData& td,
                  const DepositLayer& deposits, std::uint32_t seed);
 
 // (ДВЕ ДВЕРИ ЗАГОНА — `pasture_cell_ok` и `fence_pasture_cell` — СНЕСЕНЫ

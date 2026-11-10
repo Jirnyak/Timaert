@@ -40,8 +40,8 @@ bool cell_taken_(const FeatureLayer& fl, int x, int y) {
 } // namespace
 
 void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
-                    const TerrainData& terrain,
-                    FeatureLayer& features) {
+                    const TerrainData& terrain) {
+    FeatureLayer& features = gs.features;   // поле фич — член состояния (M-456)
     if (gs.mapW <= 0 || gs.mapH <= 0 || !terrain.has_rgba_storage()
         || !zones.has_complete_storage()) {
         return;

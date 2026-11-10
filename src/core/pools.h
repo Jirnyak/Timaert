@@ -51,10 +51,20 @@ struct Pools {
     float spCarry = 0.0f;   // SIGNED: a march spends through the same remainder
 };
 static_assert(sizeof(Pools) == 36,
-              "Pools grew — it rides the macro snapshot as raw bytes "
-              "(save.cpp w.pod), so its layout IS the save format: pay a "
-              "kSaveVersion bump. Its neighbours ItemRef/WorldFact/AgentMemory "
+              "Pools grew — it is a column of the smooth store, and the "
+              "store rides the save as a direct dump of its bytes, so the "
+              "layout IS the save: name the new size here. Its neighbours ItemRef/WorldFact/AgentMemory "
               "carry this same guard; this block went without one until the "
               "post-demo audit and grew silently.");
 
 } // namespace sm::ecs
+
+#include "core/row_law.h"   // стена «без дыр» — включение в хвосте, содержимое файла не сдвигается
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::ecs::Pools, &sm::ecs::Pools::hp, &sm::ecs::Pools::maxHp,
+    &sm::ecs::Pools::mp, &sm::ecs::Pools::maxMp, &sm::ecs::Pools::sp,
+    &sm::ecs::Pools::maxSp, &sm::ecs::Pools::hpCarry,
+    &sm::ecs::Pools::mpCarry, &sm::ecs::Pools::spCarry);

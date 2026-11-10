@@ -24,7 +24,7 @@ namespace {
 // души кладутся головами в инвентарь того же тела.
 sm::MacroHandle make_settlement(sm::GameState& gs, sm::MacroStore& st,
                                 int x, int y) {
-    const sm::MacroHandle h = sm::birth_squad(gs, st, sm::SquadType::City,
+    const sm::MacroHandle h = sm::birth_squad(gs, nullptr, st, sm::SquadType::City,
                                               x, y, 0, "Test Settlement");
     // Души — ГОЛОВАМИ в инвентарь тела (v122): фабрика мира не
     // видит, поэтому пасту (число фичи) ставит звонящий,

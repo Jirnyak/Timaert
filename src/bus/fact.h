@@ -102,3 +102,14 @@ static_assert(sizeof(WorldFact) == 32,
               "a fact is 32 bytes: it is scanned by the thousand and saved whole");
 
 } // namespace sm
+
+#include "core/row_law.h"   // стена «без дыр» — включение в хвосте, содержимое файла не сдвигается
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::WorldFact, &sm::WorldFact::day, &sm::WorldFact::seq,
+    &sm::WorldFact::nextInCell, &sm::WorldFact::kind,
+    &sm::WorldFact::subjectKind, &sm::WorldFact::objectKind,
+    &sm::WorldFact::subject, &sm::WorldFact::object, &sm::WorldFact::x,
+    &sm::WorldFact::y, &sm::WorldFact::amount);

@@ -1,4 +1,5 @@
 #include "check.h"
+#include <memory>
 
 #include "macro/features.h"
 #include "bus/anketa.h"
@@ -69,14 +70,15 @@ sm::TerrainData make_terrain() {
     return terrain;
 }
 
-sm::FeatureLayer make_features(const sm::TerrainData& td) {
-    sm::FeatureLayer features;
+std::unique_ptr<sm::FeatureLayer> make_features(const sm::TerrainData& td) {
+    std::unique_ptr<sm::FeatureLayer> featuresOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& features = *featuresOwn;
     features.resize(2, 2);
     // Дверью рода фичи (стена ломтя 1): вода решает колонкой строки — на
     // клетке 1,1 этой карты суша, дорога встаёт как спрошено.
     sm::feature_put(features, td, 0, 0, sm::FT_Road);
     sm::feature_put(features, td, 1, 1, sm::FT_DirtRoad);
-    return features;
+    return featuresOwn;
 }
 
 // THE cell cascade and THE weight it yields — asked of the two doors that
@@ -87,7 +89,8 @@ sm::FeatureLayer make_features(const sm::TerrainData& td) {
 void test_cell_costs_follow_the_weight_table() {
     bag.clear();
     const sm::TerrainData terrain = make_terrain();
-    const sm::FeatureLayer features = make_features(terrain);
+    const std::unique_ptr<sm::FeatureLayer> featuresOwn = make_features(terrain);
+    const sm::FeatureLayer& features = *featuresOwn;
     const auto weight_at = [&](int x, int y, const sm::FeatureLayer* f) {
         const int wx = sm::FeatureLayer::wrap_coord(x, terrain.width);
         const int wy = sm::FeatureLayer::wrap_coord(y, terrain.height);

@@ -28,6 +28,7 @@
 #include "macro/features.h"    // feature_put + feature_of_rooted_kind — фича ДО тела
 #include "macro/squad.h"       // refresh_body_from_sheet — тело той же дверью
 #include "macro/state.h"
+#include "bus/session.h"   // Session::navEpoch — событие состава
 #include "bus/store.h"
 
 namespace sm {
@@ -40,17 +41,26 @@ namespace sm {
 // делаются ОДИН РАЗ при генерации). Дверь рождения места ставит фичу рода
 // (`feature_of_rooted_kind@src/tables/feature_def.h` — обход строк ФИЧ по их
 // колонке `kind`; до варианта В M-235 здесь читалась колонка строки СКВАДА,
-// и порядок закона был вывернут) В МОМЕНТ ВЫБОРА КЛЕТКИ — до тела; слой фич
-// производен от сида и тел не читает никогда. nullptr-слой — фикстура без
-// фич, законно (fail-open как у всякого слоя конверта).
-inline MacroHandle birth_squad(GameState& gs, MacroStore& st, SquadType kind,
+// и порядок закона был вывернут) В МОМЕНТ ВЫБОРА КЛЕТКИ — до тела; поле фич
+// тел не читает никогда. Поле — член состояния мира (`GameState::features`,
+// M-456), поэтому отдельного параметра-слоя у двери больше нет: фича встаёт
+// туда же, где лежит всё остальное о клетке. `td == nullptr` — фикстура без
+// рельефа: воду спросить не у кого, и фича не ставится (fail-open, как
+// прежде у нулевого слоя).
+//
+// `ses` — адрес сессии, где живёт счётчик события состава (`navEpoch`,
+// вердикт владельца 2026-11-10, В1: счётчик — производное сессии, не величина
+// мира). Параметр ОБЯЗАТЕЛЕН и умолчания не имеет нарочно: звонящий, забывший
+// его, молча оставил бы запечённую навигацию стоять над изменившимся составом.
+// `nullptr` — сказанное вслух «никто не слушает»: фикстура без навигации.
+inline MacroHandle birth_squad(GameState& gs, Session* ses, MacroStore& st,
+                               SquadType kind,
                                int x, int y, std::int16_t factionIdx = -1,
                                const char* name = nullptr,
-                               FeatureLayer* fl = nullptr,
                                const TerrainData* td = nullptr) {
-    if (fl && td) {
+    if (td) {
         const FeatureType ft = feature_of_rooted_kind(kind);
-        if (ft != FT_None) feature_put(*fl, *td, x, y, ft);
+        if (ft != FT_None) feature_put(gs.features, *td, x, y, ft);
     }
     // ОСНОВАНИЕ ПОСЕЛЕНИЯ ПРОГОНЯЕТ ЗВЕРЬЁ (M-371): одна запись в ПОЛЕ
     // фауны через его дверь — событие мира при рождении, а не связь рода с
@@ -199,7 +209,7 @@ inline MacroHandle birth_squad(GameState& gs, MacroStore& st, SquadType kind,
     // ДОМ МЕСТА — ОНО САМО: self-ребро Parent одной записью (M-245), той же
     // дверью, что у всякого рождения.
     set_relation(st, id, id, Stance::Parent);
-    ++gs.navEpoch;                        // событие состава округи навигации
+    if (ses) ++ses->navEpoch;             // событие состава округи навигации
     return h;
 }
 

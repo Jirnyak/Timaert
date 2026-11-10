@@ -14,6 +14,7 @@
 #include <memory>
 
 #include "bus/local_frame.h"
+#include "bus/session.h"
 #include "core/torus.h"
 #include "macro/cell_facts.h"
 #include "macro/chronicle.h"
@@ -58,6 +59,7 @@ sm::MacroHandle birth_at(sm::MacroStore& st, int x, int y, int side) {
 int main() {
     std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
     sm::GameState& gs = *gsOwn;
+    sm::Session ses;
     gs.mapW = 128;
     gs.mapH = 128;
     gs.worldSeed = 777u;
@@ -85,6 +87,7 @@ int main() {
     }
     sm::MacroWorld mw{};
     mw.gs = &gs;
+    mw.session = &ses;
     mw.store = &st;
     mw.terrain = &terrain;
     // КАРКАС ОБЯЗАТЕЛЕН (шрам ломтя 6): без mw.squads сборщик честно падал
@@ -117,7 +120,7 @@ int main() {
     outFact.x = std::int16_t(ccx + 5);
     outFact.y = std::int16_t(ccy + 5);
     sm::chronicle_record(gs.chronicle, outFact);
-    sm::lease_window_at(gs, center);
+    sm::lease_window_at(ses, center);
 
     sm::LocalContext frame{};
     sm::fill_local_frame(mw, center, frame);

@@ -170,3 +170,10 @@ void scent_field_daily(ScentField& sf, int day);
 // M-169). Новая структура в этом файле обязана появиться и в этом списке — за
 // полнотой списка следит `arch_guard_test` (файл стоит в его `kRowHeaders`).
 TIMAERT_ROW(sm::ScentField);
+
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::ScentField, &sm::ScentField::w, &sm::ScentField::h,
+    &sm::ScentField::strength, &sm::ScentField::wealth);

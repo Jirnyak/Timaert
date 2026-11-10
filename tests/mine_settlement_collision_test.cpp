@@ -74,7 +74,7 @@ struct Fixture {
     std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
     sm::GameState& gs = *gsOwn;
     sm::TerrainData td;
-    sm::FeatureLayer fl;
+    sm::FeatureLayer& fl = gs.features;   // поле фич — член состояния (M-456)
     std::unique_ptr<sm::DepositLayer> depositsOwn{new sm::DepositLayer()};
     sm::DepositLayer& deposits = *depositsOwn;
 };
@@ -103,7 +103,7 @@ void build(Fixture& f, bool veinPeakUnderTown) {
 void test_mine_does_not_eat_the_village() {
     Fixture f;
     build(f, /*veinPeakUnderTown=*/true);
-    sm::stamp_mines(f.gs, f.fl, f.td, f.deposits, kSeed);
+    sm::stamp_mines(f.gs, f.td, f.deposits, kSeed);
 
     // ГЛАВНОЕ: байт деревни цел. Утверждается ОТНОШЕНИЕ («клетка осталась
     // местом»), а не конкретный байт шахты — какой род шахты выпал, решает
@@ -138,7 +138,7 @@ void test_mine_does_not_eat_the_village() {
 void test_free_peak_is_untouched() {
     Fixture f;
     build(f, /*veinPeakUnderTown=*/false);
-    sm::stamp_mines(f.gs, f.fl, f.td, f.deposits, kSeed);
+    sm::stamp_mines(f.gs, f.td, f.deposits, kSeed);
 
     CHECK(sm::feature_def(f.fl.at(kPeakX, kPeakY)).numberRow
               == sm::ResourceFieldId::Vein,

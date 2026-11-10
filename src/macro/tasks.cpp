@@ -120,8 +120,10 @@ std::uint32_t task_xp(std::uint8_t verb, std::uint16_t object,
 }  // namespace
 
 int task_offers_for(const MacroStore& st, const GameState& gs,
-                    const SquadIndex& idx, const FeatureLayer& features,
+                    const Session& ses,
+                    const SquadIndex& idx,
                     MacroHandle place, TaskOffer* out, int cap) {
+    const FeatureLayer& features = gs.features;
     if (!st.valid(place) || out == nullptr || cap <= 0) return 0;
     const std::uint16_t slot = place.slot;
     const std::uint32_t placeId = st.spawnId[slot].index;
@@ -178,7 +180,7 @@ int task_offers_for(const MacroStore& st, const GameState& gs,
     // ── УБЕЙ: сквад, враждебный месту, из округи — КАРКАСОМ (ЗАКОН
     // КЛЕТОЧНОГО КАРКАСА), враждебность — матрицей фракций.
     {
-        const MacroHandle flag = player_flag_handle(gs);
+        const MacroHandle flag = player_flag_handle(ses);
         const FactionSlot home = FactionSlot(st.kind[slot].factionIdx);
         struct Prey {
             std::uint32_t id;

@@ -104,7 +104,7 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
         && terrain->height == height && terrain->has_rgba_storage();
 
     const std::uint8_t *featureData =
-        features.covers(width, height) ? features.data.data() : nullptr;
+        features.covers(width, height) ? features.data : nullptr;
     auto feature_at = [&](std::size_t i) -> FeatureType {
         return featureData ? FeatureLayer::decode(featureData[i]) : FT_None;
     };

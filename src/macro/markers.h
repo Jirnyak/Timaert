@@ -186,3 +186,11 @@ inline bool remove_marker(MarkerList& m, MarkerStyle s, std::uint32_t cell) {
 // полнотой списка следит `arch_guard_test` (файл стоит в его `kRowHeaders`).
 TIMAERT_ROW(sm::Marker);
 TIMAERT_ROW(sm::MarkerList);
+
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::Marker, &sm::Marker::cell, &sm::Marker::style,
+    &sm::Marker::label);
+TIMAERT_PACKED(sm::MarkerList, &sm::MarkerList::count, &sm::MarkerList::rows);

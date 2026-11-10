@@ -20,10 +20,11 @@ constexpr int W = 64, H = 64;
 // particular horizon; the app derives its real budget elsewhere.
 constexpr float kBudget = 4.0f;
 
-sm::FeatureLayer open_ground() {
-    sm::FeatureLayer f;
+std::unique_ptr<sm::FeatureLayer> open_ground() {
+    std::unique_ptr<sm::FeatureLayer> fOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& f = *fOwn;
     f.resize(W, H);
-    return f;
+    return fOwn;
 }
 
 // Суша под дверью фичи: стена ломтя 1 закрыла сырой set — фикстура ставит
@@ -52,7 +53,8 @@ void test_open_sight_opens_a_disc_and_only_once() {
     sm::KnowledgeLayer& k = *kOwn;
     sm::knowledge_reset(k, W, H);
     sm::SightRuntime rt;
-    const sm::FeatureLayer feat = open_ground();
+    const std::unique_ptr<sm::FeatureLayer> featOwn = open_ground();
+    const sm::FeatureLayer& feat = *featOwn;
     sm::OpticalWorld world{&feat, nullptr, nullptr};
 
     const int cx = 32, cy = 32;
@@ -83,7 +85,8 @@ void test_open_sight_opens_a_disc_and_only_once() {
 }
 
 void test_canopy_shortens_reach() {
-    const sm::FeatureLayer feat = open_ground();
+    const std::unique_ptr<sm::FeatureLayer> featOwn = open_ground();
+    const sm::FeatureLayer& feat = *featOwn;
 
     std::unique_ptr<sm::KnowledgeLayer> openKOwn{new sm::KnowledgeLayer()};
     sm::KnowledgeLayer& openK = *openKOwn;
@@ -128,7 +131,8 @@ void test_road_carries_sight_farther() {
     CHECK(float(steps) >= kBudget && float(steps) * roadCost < kBudget,
           "fixture: the cost table must separate road from open at this range");
 
-    sm::FeatureLayer openFeat = open_ground();
+    const std::unique_ptr<sm::FeatureLayer> openFeatOwn = open_ground();
+    sm::FeatureLayer& openFeat = *openFeatOwn;
     std::unique_ptr<sm::KnowledgeLayer> openKOwn{new sm::KnowledgeLayer()};
     sm::KnowledgeLayer& openK = *openKOwn;
     sm::knowledge_reset(openK, W, H);
@@ -138,7 +142,8 @@ void test_road_carries_sight_farther() {
     CHECK(at(openK, 20 + steps, 20) == sm::kKnowledgeUnknown,
           "open ground cannot see that far (negative control)");
 
-    sm::FeatureLayer roadFeat = open_ground();
+    const std::unique_ptr<sm::FeatureLayer> roadFeatOwn = open_ground();
+    sm::FeatureLayer& roadFeat = *roadFeatOwn;
     const sm::TerrainData roadTd = all_land();
     for (int x = 20; x <= 20 + steps; ++x)
         sm::feature_put(roadFeat, roadTd, x, 20, sm::FT_Road);
@@ -153,7 +158,8 @@ void test_road_carries_sight_farther() {
 }
 
 void test_ridge_blocks_and_hilltop_overlooks() {
-    const sm::FeatureLayer feat = open_ground();
+    const std::unique_ptr<sm::FeatureLayer> featOwn = open_ground();
+    const sm::FeatureLayer& feat = *featOwn;
     // The probe sits strictly inside the open budget (the frontier prunes at
     // nd >= budget, so "exactly budget" is already outside) with the wall
     // column between it and the eye.
@@ -208,7 +214,8 @@ void test_move_decays_visible_to_explored() {
     sm::KnowledgeLayer& k = *kOwn;
     sm::knowledge_reset(k, W, H);
     sm::SightRuntime rt;
-    const sm::FeatureLayer feat = open_ground();
+    const std::unique_ptr<sm::FeatureLayer> featOwn = open_ground();
+    const sm::FeatureLayer& feat = *featOwn;
     sm::OpticalWorld world{&feat, nullptr, nullptr};
 
     sm::update_player_sight(k, rt, world, 10.5f, 10.5f, kBudget);
@@ -230,7 +237,8 @@ void test_reveal_area_marks_memory_never_sight() {
     sm::KnowledgeLayer& k = *kOwn;
     sm::knowledge_reset(k, W, H);
     sm::SightRuntime rt;
-    const sm::FeatureLayer feat = open_ground();
+    const std::unique_ptr<sm::FeatureLayer> featOwn = open_ground();
+    const sm::FeatureLayer& feat = *featOwn;
     sm::OpticalWorld world{&feat, nullptr, nullptr};
 
     sm::update_player_sight(k, rt, world, 10.5f, 10.5f, kBudget);
@@ -255,7 +263,8 @@ void test_torus_wrap_and_fail_closed_door() {
     sm::KnowledgeLayer& k = *kOwn;
     sm::knowledge_reset(k, W, H);
     sm::SightRuntime rt;
-    const sm::FeatureLayer feat = open_ground();
+    const std::unique_ptr<sm::FeatureLayer> featOwn = open_ground();
+    const sm::FeatureLayer& feat = *featOwn;
     sm::OpticalWorld world{&feat, nullptr, nullptr};
 
     sm::update_player_sight(k, rt, world, 0.5f, 0.5f, kBudget);

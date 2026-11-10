@@ -24,6 +24,10 @@ struct GameState;
 
 namespace sm { struct MacroStore; }
 
+namespace sm {
+struct Session;   // сессия: кэш носителя флажка (bus/session.h)
+}
+
 namespace sm::ui {
 
 class Keymap;
@@ -152,14 +156,16 @@ ShellResult draw_load_screen(const SaveSummary& save,
 ShellResult draw_game_menu();
 
 // Death overlay: brief epitaph + Return to Title / Quit.
-ShellResult draw_death_screen(const GameState& gs);
+ShellResult draw_death_screen(const GameState& gs, const Session& ses,
+                              const MacroStore& st);
 
 // Top-left player HUD: HP / MP / SP bars, gold, day/time, level, position.
 // `pools` — THE store of his bars (the ordinary ecs::Pools on his squad
 // entity, landing 4); `st` — where he STANDS is his flag holder's cell
 // (подпосадка 4): the HUD is a reader like any other, handed the stores
 // rather than scalar copies that no longer exist.
-void draw_player_hud(const GameState& gs, const MacroStore& st,
+void draw_player_hud(const GameState& gs, const Session& ses,
+                     const MacroStore& st,
                      const ecs::Pools& pools, float scale = 1.0f);
 
 // Proto_c-style bottom command toolbar — visual buttons that emit

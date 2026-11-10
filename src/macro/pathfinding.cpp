@@ -57,7 +57,7 @@ namespace sm
         out.water.assign(total, 0u);
         out.height16.assign(total, 0u);
         const std::uint8_t *featureData =
-            features && features->covers(td.width, td.height) ? features->data.data() : nullptr;
+            features && features->covers(td.width, td.height) ? features->data : nullptr;
 
         const bool haveTrees = treeLayer && treeLayer->has_complete_storage()
             && treeLayer->width == td.width && treeLayer->height == td.height;

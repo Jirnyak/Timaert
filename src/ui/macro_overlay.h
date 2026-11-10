@@ -13,6 +13,7 @@
 
 namespace sm {
 struct MacroWorld;   // конверт слоёв мира (macro/macro_world.h)
+struct Session;      // сессия: кэш носителя флажка (bus/session.h)
 struct TreeLayer;
 struct FeatureLayer;
 }
@@ -97,7 +98,8 @@ void draw_macro_overlay(const MacroWorld& mw,
 // squad's MacroCell whole cells at 1.0 budget each — a fractional macro
 // position is unrepresentable, the glide between cells is MacroVisual's.
 // Calls `onReached` once per entered path cell.
-std::size_t step_macro_walk(GameState& gs, MacroStore& st, MacroCursor& cursor,
+std::size_t step_macro_walk(GameState& gs, const Session& ses,
+                            MacroStore& st, MacroCursor& cursor,
                             float dt, float cellsPerSec,
                             MacroWalkReachedFn onReached = nullptr,
                             void* onReachedUser = nullptr);

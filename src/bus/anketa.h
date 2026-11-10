@@ -1168,6 +1168,12 @@ class Container {
         sum_ = InventorySummary{};
     }
 
+    // Для стены «без дыр» (`TIMAERT_PACKED@src/core/row_law.h`): члены
+    // частные, поэтому сумму их размеров называет сама структура.
+    static constexpr std::size_t member_bytes() noexcept {
+        return sizeof(a_) + sizeof(sum_);
+    }
+
   private:
     std::array<ItemRef, kMaxInventorySlots> a_{};
     InventorySummary                        sum_{};
@@ -2158,3 +2164,28 @@ TIMAERT_ROW(sm::csheet_detail::SheetRng);
 TIMAERT_ROW(sm::Gear);
 TIMAERT_ROW(sm::StrikeFields);
 TIMAERT_ROW(sm::ScrapReturn);
+
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::Attributes, &sm::Attributes::score);
+TIMAERT_PACKED(sm::Skills, &sm::Skills::rank);
+TIMAERT_PACKED(sm::LevelData, &sm::LevelData::exp);
+TIMAERT_PACKED(sm::InventorySummary, &sm::InventorySummary::massG,
+    &sm::InventorySummary::valueItems, &sm::InventorySummary::valueSouls,
+    &sm::InventorySummary::heads, &sm::InventorySummary::folkHeads,
+    &sm::InventorySummary::boardPerDay, &sm::InventorySummary::wagePerDay,
+    &sm::InventorySummary::haulG);
+static_assert(sizeof(sm::Container) == sm::Container::member_bytes()
+                  && sm::row_packed_v<sm::ItemRef>
+                  && sm::row_packed_v<sm::InventorySummary>,
+              "sm::Container: в раскладке ДЫРА ВЫРАВНИВАНИЯ — слоты и сводка "
+              "обязаны покрывать контейнер целиком (члены частные, поэтому "
+              "сумму называет сама структура, `member_bytes`)");
+template <>
+inline constexpr bool sm::row_packed_v<sm::Container> = true;
+TIMAERT_PACKED(sm::Inventory, &sm::Inventory::slots);
+TIMAERT_PACKED(sm::CharacterSheet, &sm::CharacterSheet::attributes,
+    &sm::CharacterSheet::skills, &sm::CharacterSheet::levelData);
+TIMAERT_PACKED(sm::Gear, &sm::Gear::has, &sm::Gear::worn);

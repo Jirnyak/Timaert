@@ -15,10 +15,10 @@
 namespace sm {
 
 struct GameState;
+struct Session;
 struct TerrainData;
 struct TreePoint;
 struct DepositLayer;
-struct FeatureLayer;
 struct ZoneLayer;
 struct TreeGrid;
 struct SquadIndex;
@@ -48,10 +48,12 @@ struct WorldGenParams {
 // Every pointer is required; genesis touches all of them.
 struct WorldGenOut {
     GameState*              gs = nullptr;
+    // Сессия (`Session@src/bus/session.h`): рождение осёдлых объявляет в ней
+    // событие состава, якорь игрока ставит в ней кэш носителя флажка.
+    Session*                session = nullptr;
     TerrainData*            terrain = nullptr;
     std::vector<TreePoint>* trees = nullptr;
     DepositLayer*           deposits = nullptr;
-    FeatureLayer*           features = nullptr;
     ZoneLayer*              zones = nullptr;
     TreeGrid*               treeGrid = nullptr;
     SquadIndex*             squadIndex = nullptr;  // каркас клеток по сквадам

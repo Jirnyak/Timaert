@@ -43,9 +43,10 @@ inline constexpr std::uint8_t kSpireMaxZone = 255;
 // поэтому дать ему стор значило бы обещать то, чего он не делает. Сквад,
 // стоящий на клетке шпиля, к шпилю не относится никак; его дела решает его
 // собственный модуль.
+// Фичи встают в поле состояния (`GameState::features`, M-456): отдельного
+// параметра-слоя нет — второй адрес одного поля позволял бы расхождение.
 void generate_spires(GameState& gs, const ZoneLayer& zones,
-                     const TerrainData& terrain,
-                    FeatureLayer& features);
+                     const TerrainData& terrain);
 
 // ── ЗАРЯД ШПИЛЯ — ОДИН ОТВЕТ НА ОДИН ВОПРОС МИРА (M-233 п.8) ─────────────
 //

@@ -154,8 +154,8 @@ struct NPCKind { std::uint16_t type; std::uint16_t factionIdx; };
 //  · `tintR/G/B` — сироты с НУЛЁМ читателей во всём `src/`; о том, что их
 //    никто не читает, прямым текстом говорила шапка `derive_face@src/sub/spawn.cpp`.
 // Явные пады ОСТАЮТСЯ: без них 5 значащих байт дали бы 3 байта НЕЯВНОГО
-// паддинга, а он не зануляется — байтовые свидетели снапшота читали бы мусор
-// (шрам `upkeepDebtPad@src/macro/macro_snapshot.h`).
+// паддинга, а он не зануляется — байты строки едут прямым дампом, и два
+// равных мира дали бы разные файлы (стена `TIMAERT_PACKED` внизу файла).
 struct NpcCharacter {
     // (КОЛОНКА `visualSeed` УНИЧТОЖЕНА 2026-11-08 по вердикту владельца,
     //  M-430. Её шапка обещала «drives procedural sprite variation» и
@@ -331,6 +331,10 @@ struct MacroNpcRuntime {
     // sight query runs per think, where a sheet re-derivation has no
     // business. Same one refresh door, so it cannot drift either.
     std::uint8_t  scoutRank = 0;
+    // Байт выравнивания, названный полем (сейв-эпик, вердикт В2): три ранга
+    // подряд оставляли дыру перед `moveMult`. Таких байтов в строке три — по
+    // одному на каждую тройку узких полей, — и все три стоят нулём.
+    std::uint8_t  pad0 = 0;
     float         moveMult = 1.0f;
     // What this avatar's back can hold (attributes.h get_carry_capacity), the
     // fifth scalar of the same sheet cache — and the SP surcharge his current
@@ -429,13 +433,13 @@ struct MacroNpcRuntime {
     //
     // «Runtime-only — the ECS is never serialized, so no save cost» СТОЯЛО
     // ЗДЕСЬ И БЫЛО ЛОЖЬЮ (поправлено 2026-10-12, M-253). Колонка едет в файл
-    // ЦЕЛИКОМ и POD-ом — `snapshot_macro_ecs@src/macro/macro_snapshot.cpp`
-    // копирует её байт в байт, `write_macro_npc@src/macro/save.cpp` пишет, и
+    // ЦЕЛИКОМ и POD-ом — тогда снимком сквадов, с M-439 прямым дампом стора:
     // фильтра по полям нет ни одного. Опровергал ту прозу трейлер ЭТОГО ЖЕ
     // файла («their LAYOUT is the format») и абзац про `renown` ниже, который
     // всё это время говорил правду.
     std::uint8_t  entryDir  = 0xFF;
     std::uint8_t  entryTicks = 0;
+    std::uint8_t  pad1 = 0;      // байт выравнивания, названный полем (В2)
     std::uint32_t tickAccum;     // WORLD ticks accumulated toward the next think
     // (Поле `xp` УМЕРЛО 2026-10-18 вместе со вторым законом роста, M-246а:
     //  опыт сквада есть `levelData.exp` его анкеты, и она едет в сейв той же
@@ -457,7 +461,7 @@ struct MacroNpcRuntime {
     // ONE number, not a counter plus a flag: "is it named" is DERIVED
     // (`renown >= kRenownToBeNamed`), so the two can never disagree about the
     // same band. Persistent — a figure stays a figure across a save, because
-    // the runtime rides the macro snapshot.
+    // the runtime is a column of the store and the store rides the save.
     //
     // UNSIGNED, and the reason is the value and not a habit: renown is a
     // COUNT of what a band has done, it is never negative, and it is not an
@@ -516,6 +520,7 @@ struct MacroNpcRuntime {
     // per-think, где лукап строки не нужен. Летящий марш не платит рельеф
     // и не требует корабля — воздух его дорога.
     std::uint8_t  flying = 0;
+    std::uint8_t  pad2 = 0;      // байт выравнивания, названный полем (В2)
     // ЛОГОВО — дом-КЛЕТКА для тех, чей дом не ландмарк (драконья гора,
     // стол анкет): модуль рода Dragon (ai_dragon@src/macro/npc_ai.cpp)
     // кружит вокруг неё и возвращается. Адрес — ОДНО число (ЗАКОН АДРЕСА
@@ -699,15 +704,14 @@ inline bool goal_spend(SquadGoal& g) {
 // Deterministic spawn ordinal for a persistent macro NPC (Inc 5e-2), assigned
 // in creation order (0,1,2,…) by the SOLE creation path (make_npc) — the one
 // identity that survives save/load. (Possession persists WITHOUT it: the
-// player flag rides the macro snapshot as the record's own playerFlag
-// column (5б) — no ordinal store, no re-derivation after load.)
+// player flag is the store's own playerFlag column (5б) and rides the save
+// with the store — no ordinal store, no re-derivation after load.)
 //
-// AND IT IS SAVE FORMAT. Since v23 the macro-ECS snapshot serializes every
-// persistent macro NPC whole (macro/macro_snapshot.h → save.cpp
-// write_macro_npc): this ordinal rides the blob, and the POD components
-// around it — MacroNpcRuntime included — are written verbatim, so their
-// LAYOUT is the format. A "runtime-only" field added to any of them is not
-// free: it changes the blob and pays a kSaveVersion bump like Skills does.
+// AND IT IS SAVE FORMAT. The save is a direct dump of the store (M-439): this
+// ordinal and the POD columns around it — MacroNpcRuntime included — land in
+// the file as they lie in memory, so their LAYOUT is the format. A
+// "runtime-only" field added to any of them is not free: it is in the file
+// the day it is a column.
 struct MacroSpawnId { std::uint32_t index = 0; };   // 0 = «никто»: эмитент
                                     // выдаёт с 1 (закон нуля-ординала, M-37)
 
@@ -772,3 +776,45 @@ TIMAERT_ROW(sm::ecs::SquadGoal);
 TIMAERT_ROW(sm::ecs::MacroSpawnId);
 TIMAERT_ROW(sm::ecs::SquadOrders);
 TIMAERT_ROW(sm::ecs::DesignCharacterTag);
+
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::ecs::MacroCell, &sm::ecs::MacroCell::idx);
+TIMAERT_PACKED(sm::ecs::CellSub, &sm::ecs::CellSub::x, &sm::ecs::CellSub::y);
+TIMAERT_PACKED(sm::ecs::NPCKind, &sm::ecs::NPCKind::type,
+    &sm::ecs::NPCKind::factionIdx);
+TIMAERT_PACKED(sm::ecs::NpcCharacter, &sm::ecs::NpcCharacter::bodyShape,
+    &sm::ecs::NpcCharacter::pad0, &sm::ecs::NpcCharacter::pad1,
+    &sm::ecs::NpcCharacter::pad2);
+TIMAERT_PACKED(sm::ecs::SquadName, &sm::ecs::SquadName::text);
+TIMAERT_PACKED(sm::ecs::NpcInventory, &sm::ecs::NpcInventory::inv);
+TIMAERT_PACKED(sm::ecs::BodyEquipment, &sm::ecs::BodyEquipment::gear);
+TIMAERT_PACKED(sm::ecs::NpcTraits, &sm::ecs::NpcTraits::count,
+    &sm::ecs::NpcTraits::traits);
+TIMAERT_PACKED(sm::ecs::MacroNpcRuntime,
+    &sm::ecs::MacroNpcRuntime::prevStationId,
+    &sm::ecs::MacroNpcRuntime::recoverySteps,
+    &sm::ecs::MacroNpcRuntime::travelRank,
+    &sm::ecs::MacroNpcRuntime::marathonRank,
+    &sm::ecs::MacroNpcRuntime::scoutRank, &sm::ecs::MacroNpcRuntime::pad0,
+    &sm::ecs::MacroNpcRuntime::moveMult,
+    &sm::ecs::MacroNpcRuntime::carryPerSoulG, &sm::ecs::MacroNpcRuntime::sub,
+    &sm::ecs::MacroNpcRuntime::marchFlags,
+    &sm::ecs::MacroNpcRuntime::fighting, &sm::ecs::MacroNpcRuntime::state,
+    &sm::ecs::MacroNpcRuntime::entryDir,
+    &sm::ecs::MacroNpcRuntime::entryTicks, &sm::ecs::MacroNpcRuntime::pad1,
+    &sm::ecs::MacroNpcRuntime::tickAccum, &sm::ecs::MacroNpcRuntime::renown,
+    &sm::ecs::MacroNpcRuntime::squadType,
+    &sm::ecs::MacroNpcRuntime::stateAfterPause,
+    &sm::ecs::MacroNpcRuntime::flying, &sm::ecs::MacroNpcRuntime::pad2,
+    &sm::ecs::MacroNpcRuntime::lairCell);
+TIMAERT_PACKED(sm::ecs::SquadGoal, &sm::ecs::SquadGoal::cell,
+    &sm::ecs::SquadGoal::what, &sm::ecs::SquadGoal::amount,
+    &sm::ecs::SquadGoal::onArrival, &sm::ecs::SquadGoal::pad);
+TIMAERT_PACKED(sm::ecs::MacroSpawnId, &sm::ecs::MacroSpawnId::index);
+TIMAERT_PACKED(sm::ecs::SquadOrders, &sm::ecs::SquadOrders::waypointCount,
+    &sm::ecs::SquadOrders::currentWaypoint, &sm::ecs::SquadOrders::waypoints);
+TIMAERT_PACKED(sm::ecs::DesignCharacterTag,
+    &sm::ecs::DesignCharacterTag::ordinal);

@@ -565,3 +565,11 @@ const char* loot_profile_id(std::size_t i) noexcept;
 TIMAERT_ROW(sm::ItemDef);
 TIMAERT_ROW(sm::ItemRef);
 TIMAERT_ROW(sm::ItemPart);
+
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::ItemRef, &sm::ItemRef::def, &sm::ItemRef::material,
+    &sm::ItemRef::level, &sm::ItemRef::count, &sm::ItemRef::seed,
+    &sm::ItemRef::entityId, &sm::ItemRef::affixRow, &sm::ItemRef::affixValue);

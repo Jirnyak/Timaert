@@ -185,10 +185,13 @@ void draw_macro_overlay(const MacroWorld& mw,
                         bool showQuestMarkers, float questMarkerScale) {
     // Конверт РАСПАКОВЫВАЕТСЯ один раз, тело ниже не правится: четыре
     // прежних аргумента были ровно этими четырьмя полями (M-233 п.8).
-    if (!mw.gs || !mw.store || !mw.terrain || !mw.features) return;
+    if (!mw.gs || !mw.store || !mw.terrain) return;
     GameState& gs = *mw.gs;
+    // Сессия — адресом конверта; нулевой адрес читается «сессии нет».
+    static const Session kNoSession{};
+    const Session& ses = mw.session ? *mw.session : kNoSession;
     const TerrainData& terrain = *mw.terrain;
-    const FeatureLayer& features = *mw.features;
+    const FeatureLayer& features = mw.gs->features;
     const TreeLayer* treeLayer = &gs.treeLayer;
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImGuiIO& io = ImGui::GetIO();
@@ -235,7 +238,7 @@ void draw_macro_overlay(const MacroWorld& mw,
     // новый путь — тоже». Спрайт ниже читает ЭТОТ ЖЕ глаз, и теперь на вопрос
     // один ответ (DOD п.6). Условие тоже исправлено: `size() > pathIdx + 1`
     // гасило линию целиком, когда оставалась одна клетка.
-    const MacroHandle lineFh = player_flag_handle(gs);
+    const MacroHandle lineFh = player_flag_handle(ses);
     if (showMarkers && cursor.pathIdx < cursor.path.size()
         && mw.store->valid(lineFh) && eyes.primed) {
         const ImU32 pathCol = IM_COL32(120, 220, 255, 200);
@@ -396,7 +399,7 @@ void draw_macro_overlay(const MacroWorld& mw,
         MacroStore& st = *mw.store;
         // Игрок — свой маркер, и под вселением тоже: слот флага + колонка.
         const std::uint16_t flagSlot = [&]() -> std::uint16_t {
-            const MacroHandle h = player_flag_handle(gs);
+            const MacroHandle h = player_flag_handle(ses);
             return st.valid(h) ? h.slot : kMacroNoSlot;
         }();
         // ДВА КАНАЛА — ЭТО ПОРЯДОК, А НЕ ВТОРОЙ ПРОХОД. Один проход по слотам
@@ -581,7 +584,7 @@ void draw_macro_overlay(const MacroWorld& mw,
     // (cell centre = X+0.5). Drawn at the flag holder's VISUAL — the same
     // glide every squad sprite rides (подпосадка 4); the cell is the truth,
     // the visual is what the eye may see between cells.
-    if (const MacroHandle fh = player_flag_handle(gs);
+    if (const MacroHandle fh = player_flag_handle(ses);
         mw.store->valid(fh) && eyes.primed) {
         ImVec2 p = world_to_screen(eyes.x[fh.slot] + 0.5f,
                                    eyes.y[fh.slot] + 0.5f,
@@ -592,13 +595,14 @@ void draw_macro_overlay(const MacroWorld& mw,
     }
 }
 
-std::size_t step_macro_walk(GameState& gs, MacroStore& stw, MacroCursor& cursor,
+std::size_t step_macro_walk(GameState& gs, const Session& ses,
+                            MacroStore& stw, MacroCursor& cursor,
                             float dt, float cellsPerSec,
                             MacroWalkReachedFn onReached,
                             void* onReachedUser) {
     // Input drives the FLAG HOLDER — «игрок это просто флажок для сквада,
     // что на него инпут» (owner, подпосадка 4). No flag standing = no legs.
-    const MacroHandle fh = player_flag_handle(gs);
+    const MacroHandle fh = player_flag_handle(ses);
     if (!stw.valid(fh)) return 0u;
     ecs::MacroCell* cell = &stw.cell[fh.slot];
     ecs::MacroNpcRuntime* rt = &stw.runtime[fh.slot];
@@ -625,7 +629,7 @@ std::size_t step_macro_walk(GameState& gs, MacroStore& stw, MacroCursor& cursor,
     // Центр аренды — честным значением (изъятие ног, ломоть 2 M-419): на
     // карте аренды нет по построению (ходок недостижим при активном
     // субмире, подъём её снимает), так что гейт спит ЗНАЧЕНИЕМ, не веткой.
-    g.leaseCenter = gs.leasedWindow;
+    g.leaseCenter = ses.leasedWindow;
     MacroPos p{float(ecs::cell_x(*cell, W)), float(ecs::cell_y(*cell, W))};
     const std::size_t idx0 = route.idx;
     const int cx0 = int(p.x), cy0 = int(p.y);
@@ -735,6 +739,9 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
     NpcProximityResult result{};
     if (!mw.gs || !mw.store) return result;
     GameState& gs = *mw.gs;
+    // Сессия — адресом конверта; нулевой адрес читается «сессии нет».
+    static const Session kNoSession{};
+    const Session& ses = mw.session ? *mw.session : kNoSession;
     const MacroStore& store = *mw.store;
     if (gs.mapW <= 0 || gs.mapH <= 0) return result;
 
@@ -754,7 +761,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
         // Обход живых слотов store (1е): игрок не сосед самому себе —
         // слот флага + колонка ординала, как у маркеров выше.
         const std::uint16_t flagSlot = [&]() -> std::uint16_t {
-            const MacroHandle h = player_flag_handle(gs);
+            const MacroHandle h = player_flag_handle(ses);
             return st.valid(h) ? h.slot : kMacroNoSlot;
         }();
 
@@ -773,7 +780,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
         std::size_t rowCount = 0;
         std::size_t totalRows = 0;
 
-        const ecs::MacroCell* pcell = player_flag_cell(gs, st);
+        const ecs::MacroCell* pcell = player_flag_cell(ses, st);
         const int px = pcell ? ecs::cell_x(*pcell, gs.mapW) : 0;
         const int py = pcell ? ecs::cell_y(*pcell, gs.mapW) : 0;
 

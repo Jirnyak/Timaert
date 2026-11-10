@@ -360,7 +360,8 @@ void test_road_bridges_one_cell_river()
 
     // The stamp law (build_feature_layer): the paid water cell IS a bridge,
     // its banks are stone road.
-    sm::FeatureLayer fl;
+    const std::unique_ptr<sm::FeatureLayer> flOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& fl = *flOwn;
     sm::build_feature_layer(fl, td, roads, nullptr);
     CHECK(fl.at(5, wetY) == sm::FT_Bridge,
           "a road cell on biome water must stamp FT_Bridge");
@@ -415,7 +416,8 @@ void test_dirt_lane_lays_a_stone_bridge()
     // Every bridge is stone (owner): a dirt lane forced over the one-cell
     // river lands FT_Bridge on the water cell, dirt on the banks.
     sm::TerrainData td = make_two_barrier_terrain();
-    sm::FeatureLayer features;
+    const std::unique_ptr<sm::FeatureLayer> featuresOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& features = *featuresOwn;
     features.resize(td.width, td.height);
 
     std::vector<sm::VillageRoadSite> villages(1);
@@ -485,7 +487,8 @@ void test_water_rule_lives_in_the_feature_row()
     CHECK(td.is_water(0u) && !td.is_water(1u),
           "фикстура: одна клетка мокрая, одна сухая");
 
-    sm::FeatureLayer fl;
+    const std::unique_ptr<sm::FeatureLayer> flOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& fl = *flOwn;
     fl.resize(2, 1);
 
     // (1) ПРЕВРАЩАЕТСЯ: дорога на воде есть мост — и это ДАННЫЕ строки, а не
@@ -691,7 +694,8 @@ void test_politik_malformed_terrain_fails_closed()
 void test_dirt_roads_lay_a_star_lanes()
 {
     sm::TerrainData td = make_terrain(16, 16, kPlainLand01);   // ЗАКОН АДРЕСА: квадрат, po2
-    sm::FeatureLayer features;
+    const std::unique_ptr<sm::FeatureLayer> featuresOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& features = *featuresOwn;
     features.resize(td.width, td.height);
     sm::feature_put(features, td, 12, 4,
                     sm::FT_Road);   // the city stands on stone already
@@ -725,7 +729,8 @@ void test_dirt_roads_refuse_unreachable_targets()
         for (int x = 0; x <= 5; ++x) set_cell(td, x, y, kPlainLand01);
         for (int x = 10; x <= 13; ++x) set_cell(td, x, y, kPlainLand01);
     }
-    sm::FeatureLayer features;
+    const std::unique_ptr<sm::FeatureLayer> featuresOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& features = *featuresOwn;
     features.resize(td.width, td.height);
 
     std::vector<sm::VillageRoadSite> villages(1);
@@ -761,14 +766,16 @@ void test_dirt_roads_reach_gates_rooted_lane()
     villages[0].hasCity = false; // orphan of a city; the place row alone
     const std::vector<sm::RoadSite> rootedSites{{10, 2}}; // torus distance 8
 
-    sm::FeatureLayer nearFeatures;
+    const std::unique_ptr<sm::FeatureLayer> nearFeaturesOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& nearFeatures = *nearFeaturesOwn;
     nearFeatures.resize(td.width, td.height);
     const int laidNear =
         sm::trace_dirt_roads(nearFeatures, td, villages, rootedSites, 9);
     CHECK(laidNear > 1 && nearFeatures.at(10, 2) == sm::FT_DirtRoad,
           "a place within reach must get a lane ending at the place");
 
-    sm::FeatureLayer farFeatures;
+    const std::unique_ptr<sm::FeatureLayer> farFeaturesOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& farFeatures = *farFeaturesOwn;
     farFeatures.resize(td.width, td.height);
     const int laidFar =
         sm::trace_dirt_roads(farFeatures, td, villages, rootedSites, 4);
@@ -790,7 +797,8 @@ void test_dirt_roads_fail_closed_on_malformed_inputs()
     shortTd.width = 4;
     shortTd.height = 4;
     shortTd.rgba.assign(3u, 255u);
-    sm::FeatureLayer features;
+    const std::unique_ptr<sm::FeatureLayer> featuresOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& features = *featuresOwn;
     features.resize(4, 4);
     CHECK(sm::trace_dirt_roads(features, shortTd, villages, {}, 4) == 0,
           "dirt-road tracing must fail closed on malformed terrain storage");
@@ -798,7 +806,8 @@ void test_dirt_roads_fail_closed_on_malformed_inputs()
     // Feature layer that does not cover the terrain. (8×8 против 4×4 —
     // ЗАКОН АДРЕСА: мир po2; носитель теста — НЕСОВПАДЕНИЕ размеров.)
     sm::TerrainData td = make_terrain(8, 8, kPlainLand01);
-    sm::FeatureLayer mismatched;
+    const std::unique_ptr<sm::FeatureLayer> mismatchedOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& mismatched = *mismatchedOwn;
     mismatched.resize(4, 4);
     CHECK(sm::trace_dirt_roads(mismatched, td, villages, {}, 4) == 0,
           "dirt-road tracing must fail closed on a non-covering feature layer");

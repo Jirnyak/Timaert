@@ -243,18 +243,14 @@ int field_harvest(MacroWorld& w, ResourceFieldId f, int x, int y, int want,
 // ординалы кэшированы у таблиц, в тике ходит число).
 int field_yield_ordinal(const MacroWorld& w, ResourceFieldId f, int x, int y);
 
-// ── field_set: АБСОЛЮТНАЯ УСТАНОВКА ПОЛЯ — ВНЕ ПУЛЬТА (вердикт 2026-10-22
-// п.5: «field_set вне пульта — генерация/загрузка, закрыт подписью»).
-// Геймплей полей НЕ СТАВИТ — он их двигает (field_move/field_harvest);
-// звонящие этой двери — рождение мира, провод сейва и фикстура свидетеля
-// (тот обязан рожать своё предусловие сам, §8 п.11). ПОДПИСЬ — ЭТО ИМЯ:
-// сырые ResourceGrid::write/allocate закрыты private, а новый геймплейный
-// вызов field_set виден грепом и не переживает ревью.
+// (`field_set` / `field_set_allocate` — абсолютная установка поля «вне пульта»
+//  — УМЕРЛИ с проводом сейва, M-439. Звонящих у пары было три рода: рождение
+//  мира, загрузка и фикстура; рождение давно ходит дверью
+//  `allocate_world_fields`, а загрузка перестала быть обходом рядов — поле
+//  едет в файле своими байтами. Геймплей полей по-прежнему НЕ СТАВИТ, а
+//  двигает (`field_move`/`field_harvest`), и сырые `write`/`allocate` закрыты
+//  списком друзей ниже.)
 struct ResourceGrid;
-void field_set(ResourceGrid& g, std::uint32_t idx, int value);
-void field_set_allocate(ResourceGrid& g, int w, int h);
-// (Тела — inline под структурой ниже: дверь живёт у самого поля, и всякий,
-// кто видит грид, видит и его единственную законную абсолютную установку.)
 
 // The raw scar of a cell (0 = unscarred) — what subworld generation
 // subtracts from its own embodied yield (CellContext.cropHarvested).
@@ -346,7 +342,7 @@ struct ResourceGrid {
     // second §52 waiting to happen.
     std::int32_t liveCells = 0;
     // Bumped on every write, for consumers that mirror the field (the map
-    // renderer's tree texture). Never serialized.
+    // renderer's tree texture). Едет в файле вместе с полем (прямой дамп).
     std::uint32_t revision = 0;
     FieldCell cells[kWorldCellCap] = {};
 
@@ -377,14 +373,12 @@ struct ResourceGrid {
 private:
     // ── СТЕНА ЛОМТЯ 1 M-72: СЫРЫЕ ВХОДЫ ЗАКРЫТЫ КОМПИЛЯТОРОМ ────────────
     // Пишут поле только НОСИТЕЛИ ДВЕРЕЙ — пульт (field_move, и только он в
-    // геймплее), рождение мира, провод сейва и двери носителей (числа фич,
+    // геймплее), рождение мира и двери носителей (числа фич,
     // жила). Пятая дверь не заводится одной строкой: ей нужна строка в этом
     // списке друзей, и компилятор молчать не будет. (12 сайтов write до
     // стены: 4 геймплейных ушли в двери, 1 генерация, 5 загрузка, 2 умерли
     // с consolidate_deposit_cluster — перепись 2026-10-23.)
     friend int  field_move(MacroWorld&, ResourceFieldId, int, int, int);
-    friend void field_set(ResourceGrid&, std::uint32_t, int);
-    friend void field_set_allocate(ResourceGrid&, int, int);
     friend void allocate_world_fields(GameState&, int, int);
     friend void feature_number_write(GameState&, int, int, int);
     friend void feature_number_add(GameState&, int, int, int);
@@ -486,13 +480,6 @@ static_assert(sizeof(ResourceGrid)
                   == 16u + sizeof(FieldCell) * kWorldCellCap,
               "поле ряда: 16 Б шапки + клетка на клетку капа, без хвоста");
 
-inline void field_set(ResourceGrid& g, std::uint32_t idx, int value) {
-    g.write(g.x_of(idx), g.y_of(idx), value);
-}
-inline void field_set_allocate(ResourceGrid& g, int w, int h) {
-    g.allocate(w, h);
-}
-
 // (Структура `ResourceFields` — «все поля рядов одним массивом» — снесена
 // 2026-11-10, M-180: экземпляров у неё не было ни одного, стоял только сторож
 // её размера. Поля рядов живут поимённо в `GameState`.)
@@ -509,3 +496,11 @@ inline void field_set_allocate(ResourceGrid& g, int w, int h) {
 // `arch_guard_test` (файл стоит в его `kRowHeaders`).
 TIMAERT_ROW(sm::ResourceFieldDef);
 TIMAERT_ROW(sm::ResourceGrid);
+
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::ResourceGrid, &sm::ResourceGrid::width,
+    &sm::ResourceGrid::height, &sm::ResourceGrid::liveCells,
+    &sm::ResourceGrid::revision, &sm::ResourceGrid::cells);

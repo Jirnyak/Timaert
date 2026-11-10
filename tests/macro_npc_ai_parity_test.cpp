@@ -38,7 +38,7 @@ namespace {
 // ОРДИНАЛ, потому что дом сквада называется именно им.
 int push_settlement(sm::GameState& gs, sm::MacroStore& st, int x, int y) {
     const sm::MacroHandle h =
-        sm::birth_squad(gs, st, sm::SquadType::City, x, y, 0, "Test");
+        sm::birth_squad(gs, nullptr, st, sm::SquadType::City, x, y, 0, "Test");
     sm::settle_souls(gs, st, h.slot, 1000);
     return int(st.spawnId[h.slot].index);
 }
@@ -88,11 +88,15 @@ sm::MacroHandle spawn_ai(sm::MacroStore& st,
     return h;
 }
 
+// `ses` — сессия фикстуры (кэш носителя флажка живёт в ней); nullptr — мир
+// без игрока.
 void tick_once(sm::GameState& gs,
+               sm::Session* ses,
                sm::MacroStore& st,
                sm::MacroNpcAiRuntime& runtime,
                const sm::TreeGrid* treeGrid = nullptr) {
-    sm::MacroWorld mw{.gs = &gs, .store = &st, .treeGrid = treeGrid};
+    sm::MacroWorld mw{.gs = &gs, .session = ses, .store = &st,
+                      .treeGrid = treeGrid};
     sm::tick_macro_npc_ai(mw, runtime, sm::kAiTicks);
 }
 
@@ -130,7 +134,7 @@ void test_home_wanderer_returns_when_far() {
     auto e = spawn_ai(st, sm::NPCType::Peasant, 80.0f, 50.0f, homeId);
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 10u);
-    tick_once(gs, st, runtime);
+    tick_once(gs, nullptr, st, runtime);
 
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     CHECK(in_state(rt, sm::NPCState::Returning),
@@ -163,7 +167,7 @@ void test_woodcutter_targets_nearest_tree() {
     }
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 20u);
-    tick_once(gs, st, runtime, &grid);
+    tick_once(gs, nullptr, st, runtime, &grid);
 
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     CHECK(in_state(rt, sm::NPCState::Traveling),
@@ -186,7 +190,7 @@ void test_trader_targets_other_settlement() {
     auto e = spawn_ai(st, sm::NPCType::Merchant, 10.0f, 10.0f, homeId);
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 30u);
-    tick_once(gs, st, runtime);
+    tick_once(gs, nullptr, st, runtime);
 
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     CHECK(in_state(rt, sm::NPCState::Traveling),
@@ -224,7 +228,7 @@ void test_nomad_excludes_current_target() {
 
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 40u);
-    tick_once(gs, st, runtime);
+    tick_once(gs, nullptr, st, runtime);
 
     CHECK(in_state(rt, sm::NPCState::Traveling),
           "a Nomad that arrived picks a new leg immediately");
@@ -237,6 +241,7 @@ void test_nomad_excludes_current_target() {
 void test_aggressive_chases_visible_player() {
     std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
     sm::GameState& gs = *gsOwn;
+    sm::Session ses;
     gs.mapW = 128;
     gs.mapH = 128;
 
@@ -248,8 +253,8 @@ void test_aggressive_chases_visible_player() {
     {
         const sm::MacroHandle hp2 = sm::store_birth(st);
         // Носитель флажка — дверью переноса (5б): колонка анкеты — истина,
-        // хэндл GameState — кэш; make_tick_context читает кэш.
-        sm::transfer_player_flag(st, gs.playerFlagRef, hp2);
+        // хэндл сессии — кэш; make_tick_context читает кэш.
+        sm::transfer_player_flag(st, ses.playerFlagRef, hp2);
         st.cell[hp2.slot] = sm::ecs::MacroCell{
             sm::ecs::cell_index(12, 10, gs.mapW)};
     }
@@ -272,7 +277,7 @@ void test_aggressive_chases_visible_player() {
     // который мир клал за ДОМ. Дом умирает; след кладёт активный, поэтому
     // фикстура обязана назвать игрока тем же носителем, каким его называет
     // мир. Закон свидетеля не тронут — тронута его посылка.
-    gs.playerFlagRef = player;
+    ses.playerFlagRef = player;
     // And pursuit is the one STRENGTH law (squad_threat_step): a fighter
     // closes only fights it wins with margin. The player is wounded to 10%
     // so the chase is the law's own verdict, not a leftover reflex.
@@ -298,7 +303,7 @@ void test_aggressive_chases_visible_player() {
     (*sm::body_state<sm::ecs::Pools>(st, e)).spCarry = 0.0f;
     const float spBefore =
         float((*sm::body_state<sm::ecs::Pools>(st, e)).sp);
-    for (int i = 0; i < thinksToClose; ++i) tick_once(gs, st, runtime);
+    for (int i = 0; i < thinksToClose; ++i) tick_once(gs, &ses, st, runtime);
 
     const auto& pcell = (*sm::body_state<sm::ecs::MacroCell>(st, e));
     (void)pcell;
@@ -354,6 +359,7 @@ void test_aggressive_chases_visible_player() {
 void test_aggressive_spares_a_friend() {
     std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
     sm::GameState& gs = *gsOwn;
+    sm::Session ses;
     gs.mapW = 128;
     gs.mapH = 128;
 
@@ -365,8 +371,8 @@ void test_aggressive_spares_a_friend() {
     {
         const sm::MacroHandle hp2 = sm::store_birth(st);
         // Носитель флажка — дверью переноса (5б): колонка анкеты — истина,
-        // хэндл GameState — кэш; make_tick_context читает кэш.
-        sm::transfer_player_flag(st, gs.playerFlagRef, hp2);
+        // хэндл сессии — кэш; make_tick_context читает кэш.
+        sm::transfer_player_flag(st, ses.playerFlagRef, hp2);
         st.cell[hp2.slot] = sm::ecs::MacroCell{
             sm::ecs::cell_index(12, 10, gs.mapW)};
     }
@@ -380,14 +386,14 @@ void test_aggressive_spares_a_friend() {
     auto player = spawn_ai(st, sm::NPCType::Adventurer, 12.0f, 10.0f, -1);
     (*sm::body_state<sm::ecs::NPCKind>(st, player)).factionIdx =
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
-    gs.playerFlagRef = player;
+    ses.playerFlagRef = player;
     (*sm::body_state<sm::ecs::Pools>(st, player)).hp = 5.0f;
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 50u);
     const float perThink =
         sm::kMacroWalkCellsPerHour * sm::kAiTickGameHours;
     const int thinks = int(std::ceil(2.0f / perThink));
-    for (int i = 0; i < thinks; ++i) tick_once(gs, st, runtime);
+    for (int i = 0; i < thinks; ++i) tick_once(gs, &ses, st, runtime);
 
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     CHECK(!in_state(rt, sm::NPCState::Chasing),
@@ -418,7 +424,7 @@ void test_recovery_gate_melts_by_think_quantum() {
 
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 70u);
-    tick_once(gs, st, runtime);
+    tick_once(gs, nullptr, st, runtime);
 
     CHECK(rt.recoverySteps == std::uint32_t(sm::kAiTicks),
           "гейт занятости тает в свипе ровно квантом думки: kAiTicks тиков "
@@ -444,7 +450,7 @@ void test_wanderer_enters_wandering_state() {
     auto e = spawn_ai(st, sm::NPCType::Sorceress, 30.0f, 30.0f, -1);
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 80u);
-    tick_once(gs, st, runtime);
+    tick_once(gs, nullptr, st, runtime);
 
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     CHECK(in_state(rt, sm::NPCState::Wandering),
@@ -515,7 +521,7 @@ void test_resting_recovery_prevents_permanent_stall() {
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     int thinks = 0;
     while (in_state(rt, sm::NPCState::Resting) && thinks < 128) {
-        tick_once(gs, st, runtime);
+        tick_once(gs, nullptr, st, runtime);
         ++thinks;
     }
     CHECK(in_state(rt, sm::NPCState::Idle),
@@ -607,7 +613,7 @@ void test_a_resting_lord_mends_at_the_players_rate() {
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 90u);
     constexpr int kThinks = 16;
-    for (int i = 0; i < kThinks; ++i) tick_once(gs, st, runtime);
+    for (int i = 0; i < kThinks; ++i) tick_once(gs, nullptr, st, runtime);
 
     CHECK(in_state((*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e)),
                    sm::NPCState::Resting),
@@ -668,7 +674,7 @@ void test_a_marching_body_does_not_mend() {
 
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 11u);
-    for (int i = 0; i < 16; ++i) tick_once(gs, st, runtime);
+    for (int i = 0; i < 16; ++i) tick_once(gs, nullptr, st, runtime);
 
     // Not a tolerance — a precondition. If the body never walked, the wound
     // check below would pass for the wrong reason, so it fails out loud.

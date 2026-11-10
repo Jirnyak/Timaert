@@ -27,7 +27,9 @@
 //     требование предъявлено справочнику: соврать нечем.
 //
 // ТАБЛИЦА «МУТАЦИЯ → ИСХОД» (M-271, 2026-10-19; обе полярности, §8 п.6 —
-// три свидетеля в прогоне: этот, `macro_store_test`, `macro_snapshot_test`):
+// три свидетеля в прогоне: этот, `macro_store_test` и свидетель снимка
+// сквадов, умерший со вторым сериализатором — его законы живой карты держит
+// теперь `save_roundtrip_test`):
 //  · рождение НЕ заводит строку справочника — КРАСНЫЙ втройне: 3 FAIL здесь,
 //    4 в сторе, 2 в снимке;
 //  · резолв НЕ проверяет найденное — КРАСНЫЙ, 3 FAIL здесь. И ЭТО ВТОРОЙ
@@ -97,7 +99,7 @@ void test_one_space_for_rooted_and_squads() {
     // Место — тем же жестом, что генезис (state.cpp/spires.cpp/ruins.cpp):
     // ординал эмитится ВНУТРИ двери, звонящий его не выбирает (ломтик F).
     const MacroHandle a =
-        birth_squad(gs, *store, SquadType::Village, 1, 2);
+        birth_squad(gs, nullptr, *store, SquadType::Village, 1, 2);
     CHECK(store->valid(a), "фикстура рождает своё место сама (§8 п.11)");
 
     // Сквад — единственной дверью рождения сквадов.
@@ -110,7 +112,7 @@ void test_one_space_for_rooted_and_squads() {
     const std::uint32_t squadOrdinal = store->spawnId[h.slot].index;
 
     // Второе место — после сквада.
-    const MacroHandle b = birth_squad(gs, *store, SquadType::City, 5, 6);
+    const MacroHandle b = birth_squad(gs, nullptr, *store, SquadType::City, 5, 6);
     CHECK(store->valid(b), "второе место родилось тем же жестом");
 
     const int rootedA = int(store->spawnId[a.slot].index);
@@ -144,9 +146,9 @@ void test_directory_cannot_lie() {
     gs.mapW = 64; gs.mapH = 64;
     auto store = make_macro_store();
     const MacroHandle lo =
-        birth_squad(gs, *store, SquadType::Ruin, 1, 1);
+        birth_squad(gs, nullptr, *store, SquadType::Ruin, 1, 1);
     const MacroHandle hi =
-        birth_squad(gs, *store, SquadType::Ruin, 2, 2);
+        birth_squad(gs, nullptr, *store, SquadType::Ruin, 2, 2);
     CHECK_OR_RETURN(store->valid(lo) && store->valid(hi),
                     "свидетель родил оба своих места сам (§8 п.11)");
     const std::uint32_t loOrd = store->spawnId[lo.slot].index;
@@ -178,11 +180,11 @@ void test_directory_cannot_lie() {
     // И ТА ЖЕ ПРОВЕРКА СНИМАЕТ УСТАРЕВШУЮ СТРОКУ: слот умер и переродился
     // под новым именем — старый ключ обязан отвечать «никого».
     store_reset(*store);
-    MacroHandle a = birth_squad(gs, *store, SquadType::Ruin, 3, 3);
+    MacroHandle a = birth_squad(gs, nullptr, *store, SquadType::Ruin, 3, 3);
     CHECK_OR_RETURN(store->valid(a), "свидетель родил своё место сам");
     const std::uint32_t aOrd = a.id;
     store_death(*store, a);
-    const MacroHandle b = birth_squad(gs, *store, SquadType::Ruin, 3, 3);
+    const MacroHandle b = birth_squad(gs, nullptr, *store, SquadType::Ruin, 3, 3);
     CHECK(store->valid(b) && b.slot == a.slot && b.id != aOrd,
           "freelist вернул тот же слот новому жильцу с новым именем");
     const MacroHandle ghost = macro_handle_by_spawn_id(*store, aOrd);

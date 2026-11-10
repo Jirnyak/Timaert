@@ -546,7 +546,7 @@ void spawn_player_squad(SubObjects& objs,
 // scene_sea_level). Dry footing is a question about THIS world's water, so the
 // plane is an argument: projecting onto a seabed because the datum was a
 // remembered 0.40 is exactly the bug the plane's inheritance retires.
-// `playerFlagRef` — хэндл {слот, ID} «кем я на карте» (GameState, 1е
+// `playerFlagRef` — хэндл {слот, ID} «кем я на карте» (кэш сессии, 1е
 // кластер 5, M-220): запись носителя флажка НЕ проецируется — его тело в
 // сцене АВАТАР, не проекция. Субмиру даётся ссылка, не мир; пустой хэндл
 // (id 0) у фикстуры без игрока честно не пропускает никого.

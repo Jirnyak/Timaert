@@ -109,7 +109,7 @@ namespace sm::ui
         //  контент не авторит effects, цена всегда была нулём; цена выбора
         //  вернётся строкой последствия диалога, не тегом шины — M-175.)
 
-        void log_dialog_choice(GameState &gs,
+        void log_dialog_choice(Session &ses,
                                const GameEvent &dialog,
                                const DialogChoicePayload &choice)
         {
@@ -117,7 +117,7 @@ namespace sm::ui
             line += dialog.s1.empty() ? "Event" : dialog.s1;
             line += " - ";
             line += choice.label.empty() ? "Continue" : choice.label;
-            session_feed_push(gs.sessionFeed, line.c_str());
+            session_feed_push(ses.feed, line.c_str());
         }
 
         // Closing the last slide IS the story's completion: the StoryResult it
@@ -292,7 +292,8 @@ namespace sm::ui
         // — сделка ЛОРДА. Здесь стоял ординал ДОМА, то есть у факта было два
         // хозяина: клетку он брал у флажка (строкой ниже), а субъекта — у
         // оригинала, и вселённая сделка числилась за оставленной оболочкой.
-        void record_subject_deal_fact(GameState &gs, MacroStore &st,
+        void record_subject_deal_fact(GameState &gs, const Session &ses,
+                                      MacroStore &st,
                                       std::uint32_t subjectOrdinal,
                                       int x, int y, int gave, int took)
         {
@@ -304,7 +305,7 @@ namespace sm::ui
             // торгуешь в теле лорда — сделка ЛОРДА. Здесь стоял ординал ДОМА,
             // и у факта было два хозяина: клетку он брал у флажка, а субъекта
             // у оригинала, и вселённая сделка числилась за оболочкой.
-            f.subject = player_flag_ordinal(gs, st);
+            f.subject = player_flag_ordinal(ses, st);
             f.objectKind = std::uint8_t(FactSubject::Squad);
             f.object = subjectOrdinal;
             f.x = std::int16_t(x);
@@ -425,11 +426,11 @@ namespace sm::ui
         // healed him.)
 
         // The panel's derived block after a spend — same door as its header.
-        DerivedBonuses calculate_derived_effective(const GameState &gs,
+        DerivedBonuses calculate_derived_effective(const Session &ses,
                                                    MacroStore &st)
         {
             const CharacterSheet eff =
-                player_effective_sheet(gs, st);
+                player_effective_sheet(ses, st);
             return calculate_derived(eff.attributes, eff.skills);
         }
 
@@ -469,7 +470,8 @@ namespace sm::ui
         }
     } // namespace
 
-    void draw_character_panel(GameState &gs, MacroStore &st,
+    void draw_character_panel(GameState &gs, const Session &ses,
+                              MacroStore &st,
                               sub::SubObjects *sceneObjs, bool *open,
                               CharacterPanelTab *tab, float scale)
     {
@@ -482,12 +484,12 @@ namespace sm::ui
         PlayerState &p = gs.player;
         // His bag and his men both live on his squad entity now; a world that
         // has none yet reads as an empty pack rather than a crash.
-        Inventory *bagPtr = player_inventory(gs, st);
+        Inventory *bagPtr = player_inventory(ses, st);
         Inventory bagFallback{};
         Inventory &playerBag = bagPtr ? *bagPtr : bagFallback;
         // His bars, through the one door (landing 4) — same fallback shape
         // as the bag: a world that has none yet shows zeros, not a crash.
-        ecs::Pools *poolsPtr = player_pools(gs, st);
+        ecs::Pools *poolsPtr = player_pools(ses, st);
         ecs::Pools poolsFallback{};
         ecs::Pools &pools = poolsPtr ? *poolsPtr : poolsFallback;
         const Inventory *army = bagPtr;   // армия = область существ (M-71)
@@ -495,7 +497,7 @@ namespace sm::ui
         // His BASE sheet, through the one door (посадка Б) — same fallback
         // shape as the bag and the bars: a world that has none yet shows a
         // blank build, not a crash. The spend buttons write THIS block.
-        CharacterSheet *sheetPtr = player_sheet(gs, st);
+        CharacterSheet *sheetPtr = player_sheet(ses, st);
         CharacterSheet sheetFallback{};
         CharacterSheet &sheet = sheetPtr ? *sheetPtr : sheetFallback;
         // The panel SHOWS the EFFECTIVE sheet (phase 4, owner: «финальное
@@ -511,11 +513,11 @@ namespace sm::ui
         // ДРУГОГО, а двери трат писали в третий. Флажок и есть «кем я на
         // карте сейчас» — им отвечают все остальные половины анкеты, и
         // теперь им же отвечает эта.
-        const MacroHandle panelSquadH = player_flag_handle(gs);
+        const MacroHandle panelSquadH = player_flag_handle(ses);
         const BonusTotals panelStanding = st.valid(panelSquadH)
             ? standing_bonuses_of(st, panelSquadH)
             : BonusTotals{};
-        CharacterSheet effPanel = player_effective_sheet(gs, st);
+        CharacterSheet effPanel = player_effective_sheet(ses, st);
         DerivedBonuses derived = calculate_derived(effPanel.attributes,
                                                    effPanel.skills,
                                                    panelStanding);
@@ -546,7 +548,8 @@ namespace sm::ui
         {
             ImGui::SetWindowFontScale(scale);
             ImGui::Text("%s  Level %d  Age %d days",
-                        p.name.text[0] == '\0' ? "Wanderer" : p.name.text,
+                        squad_name(st, panelSquadH) ? squad_name(st, panelSquadH)
+                                                    : "Wanderer",
                         level_of(sheet.levelData), p.ageDays);
             ImGui::SameLine();
             ImGui::TextDisabled("EXP %d / %d", exp_in_level_of(sheet.levelData),
@@ -613,8 +616,8 @@ namespace sm::ui
                             {
                                 if (squad_spend_attribute(st, panelSquadH, row.id))
                                 {
-                                    effPanel = player_effective_sheet(gs, st);
-                                    derived = calculate_derived_effective(gs, st);
+                                    effPanel = player_effective_sheet(ses, st);
+                                    derived = calculate_derived_effective(ses, st);
                                 }
                             }
                             ImGui::EndDisabled();
@@ -681,8 +684,8 @@ namespace sm::ui
                                 {
                                     if (squad_spend_learn(st, panelSquadH, row.id))
                                     {
-                                        effPanel = player_effective_sheet(gs, st);
-                                        derived = calculate_derived_effective(gs, st);
+                                        effPanel = player_effective_sheet(ses, st);
+                                        derived = calculate_derived_effective(ses, st);
                                     }
                                 }
                                 ImGui::EndDisabled();
@@ -700,8 +703,8 @@ namespace sm::ui
                                 {
                                     if (squad_spend_skill(st, panelSquadH, row.id))
                                     {
-                                        effPanel = player_effective_sheet(gs, st);
-                                        derived = calculate_derived_effective(gs, st);
+                                        effPanel = player_effective_sheet(ses, st);
+                                        derived = calculate_derived_effective(ses, st);
                                     }
                                 }
                                 ImGui::EndDisabled();
@@ -1341,7 +1344,7 @@ namespace sm::ui
                     // His book, through the one door (v89): the component on
                     // his squad — the panel is a reader like any other.
                     static SpellBook bookScratch{};
-                    SpellBook* bookPtr = player_spellbook(gs, st);
+                    SpellBook* bookPtr = player_spellbook(ses, st);
                     SpellBook& book = bookPtr ? *bookPtr : bookScratch;
                     ImGui::Text("MP %d / %d", pools.mp, pools.maxMp);
                     if (spell_ordinal_ok(book.activeSpell))
@@ -1611,6 +1614,7 @@ namespace sm::ui
     // один и тот же контейнер (`st.inventory[slot].inv`), значит и вкладки
     // одни: у артели есть ростер и груз ровно так же, как у города.
     void draw_settlement(GameState &gs,
+                         const Session &ses,
                          MacroStore &st,
                          MacroHandle subject,
                          SettlementPanelTab *tab,
@@ -1623,7 +1627,7 @@ namespace sm::ui
         if (!open || !*open)
             return;
         // The player's bag rides his squad entity (macro/player_entity.h).
-        Inventory *bagPtr = player_inventory(gs, st);
+        Inventory *bagPtr = player_inventory(ses, st);
         Inventory bagFallback{};
         Inventory &playerBag = bagPtr ? *bagPtr : bagFallback;
 
@@ -1649,7 +1653,7 @@ namespace sm::ui
         // собеседники, и панель о них законна.
         const bool alive = st.valid(subject)
             && !macro_dead(st, subject)
-            && !(subject == player_flag_handle(gs));
+            && !(subject == player_flag_handle(ses));
         if (!alive)
         {
             *open = false;
@@ -1832,7 +1836,7 @@ namespace sm::ui
                     // ONE wrapper (Инк 5): the haggler, the state and the
                     // body come from trade_widgets.h — this site keeps only
                     // its price law and its fact.
-                    const PlayerHaggler h = player_haggler(gs, st);
+                    const PlayerHaggler h = player_haggler(ses, st);
                     // ОБЕ ПОЛОВИНЫ (M-292): две цифры стоят рядом с «Their
                     // value», и смысл у них один — «сколько тут всего добра».
                     ImGui::Text("Player value: %d",
@@ -1904,15 +1908,14 @@ namespace sm::ui
                     const int folkBefore = count_human_souls(sInv);
                     // Сделка адресуется СЛОТАМИ (deal.h): сторона игрока —
                     // его сквад под флагом; мира без него прилавку нет.
-                    const MacroHandle pf = player_flag_handle(gs);
+                    const MacroHandle pf = player_flag_handle(ses);
                     if (st.valid(pf)) {
                         draw_barter_body(
                             "Subject stock", g_subjectTrade,
                             st, pf.slot, slot,
                             buyUnit, sellUnit, [&](int gave, int took) {
                                 flock_left_home(gs, st, slot, folkBefore);
-                                record_subject_deal_fact(
-                                    gs, st, st.spawnId[slot].index, sx, sy,
+                                record_subject_deal_fact(gs, ses, st, st.spawnId[slot].index, sx, sy,
                                     gave, took);
                             });
                     } else {
@@ -1980,7 +1983,7 @@ namespace sm::ui
                         shown.amount = a.amount;
                         shown.target =
                             ecs::goal_ordinal(st.goal[/*player*/
-                                player_flag_handle(gs).slot].what);
+                                player_flag_handle(ses).slot].what);
                         char line[96];
                         offerLine(shown, line, sizeof(line));
                         ImGui::Text("Contract: %s", line);
@@ -2128,7 +2131,7 @@ namespace sm::ui
                             // АИ модуля») — пара остаётся долгом ЭТОГО
                             // звонящего до модулей мест (ломти 4–5).
                             const int folkBefore = count_human_souls(sInv);
-                            const MacroHandle pf = player_flag_handle(gs);
+                            const MacroHandle pf = player_flag_handle(ses);
                             DealLine recruit[1];
                             recruit[0] = DealLine{};
                             recruit[0].want = 1;
@@ -2290,7 +2293,7 @@ namespace sm::ui
         ImGui::End();
     }
 
-    void draw_show_dialog(GameState &gs,
+    void draw_show_dialog(Session &ses,
                           const GameEvent &dialog,
                           EventBus &bus,
                           DialogOverlayState &state,
@@ -2353,7 +2356,7 @@ namespace sm::ui
                         //  PlayerGoldChange — M-410: цена всегда была
                         //  нулём, ветка не срабатывала ни разу.)
                         {
-                            log_dialog_choice(gs, dialog, choice);
+                            log_dialog_choice(ses, dialog, choice);
                             request_dialog_node_activation(state, choice.nodeId);
                             if (!choice.effects.empty())
                             {

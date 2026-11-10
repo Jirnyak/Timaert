@@ -22,7 +22,6 @@
 #include "bus/world_row.h"
 #include "macro/npc_ai.h"
 #include "macro/squad.h"
-#include "macro/macro_snapshot.h"
 #include "ecs/components.h"
 #include "bus/store.h"
 
@@ -64,13 +63,14 @@ sm::MacroHandle npc_squad(sm::MacroStore& st, float x, float y,
 void test_player_carries_everything_a_squad_carries() {
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
+    Session ses;
     gs.mapW = gs.mapH = 64;
     // (No position scalar to seed since подпосадка 4: the creation door
     // derives the spawn cell from the world — map centre in a bare fixture.)
     auto wStore_ = sm::make_macro_store();
-    ensure_macro_player_entity(gs, *wStore_);
+    ensure_macro_player_entity(gs, ses, *wStore_);
 
-    const MacroHandle mineH = player_flag_handle(gs);
+    const MacroHandle mineH = player_flag_handle(ses);
     CHECK(wStore_->valid(mineH), "the player's squad exists after the door");
     // 6.3: моста нет — сквад ЕСТЬ слот store, снапшот ходит по alive-слотам
     // и читает каждую колонку; «игрок в снапшоте» утверждается ниже по
@@ -85,17 +85,18 @@ void test_player_carries_everything_a_squad_carries() {
     const std::uint32_t mineOrd = wStore_->spawnId[mineH.slot].index;
     CHECK(mineOrd != 0u && mineOrd < wStore_->nextSpawnId,
           "его ординал выдан единым эмитентом, а не прибит литералом");
-    CHECK(player_flag_ordinal(gs, *wStore_) == mineOrd,
+    CHECK(player_flag_ordinal(ses, *wStore_) == mineOrd,
           "дверь ординала называет ту же запись, что бит колонки");
-    CHECK(player_inventory(gs, *wStore_) != nullptr, "his bag is reachable");
+    CHECK(player_inventory(ses, *wStore_) != nullptr, "his bag is reachable");
 
-    // And he is proved to be IN the snapshot, not merely shaped like it.
-    const std::vector<MacroNpcRecord> snap = snapshot_macro_ecs(*wStore_);
+    // And he is proved to be IN the store's own column, not merely shaped
+    // like it: сейв есть прямой дамп стора (M-439), значит что несёт колонка
+    // флажка, то и едет в файл — ровно один живой носитель.
     int mine = 0;
-    for (const MacroNpcRecord& r : snap) {
-        if (r.playerFlag != 0) ++mine;
+    for (std::size_t s = 0; s < kUnifiedCap; ++s) {
+        if (wStore_->alive[s] != 0 && wStore_->playerFlag[s].on != 0) ++mine;
     }
-    CHECK(mine == 1, "the snapshot carries the player's squad exactly once");
+    CHECK(mine == 1, "the store carries the player's flag exactly once");
 }
 
 // ── 2. Вселение двигает флажок, и дверь НЕ крадёт его обратно ───────────
@@ -109,12 +110,13 @@ void test_player_carries_everything_a_squad_carries() {
 void test_the_mark_survives_losing_the_flag() {
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
+    Session ses;
     gs.mapW = gs.mapH = 64;
     // (No position scalar to seed since подпосадка 4: the creation door
     // derives the spawn cell from the world — map centre in a bare fixture.)
     auto wStore_ = sm::make_macro_store();
-    ensure_macro_player_entity(gs, *wStore_);
-    const MacroHandle mine = player_flag_handle(gs);
+    ensure_macro_player_entity(gs, ses, *wStore_);
+    const MacroHandle mine = player_flag_handle(ses);
     CHECK(wStore_->valid(mine), "его сквад существует и держит флажок");
     CHECK(eldest_controlled_squad(*wStore_) == mine,
           "и он под контролем — это ФРАКЦИЯ, а не бит дома");
@@ -122,10 +124,10 @@ void test_the_mark_survives_losing_the_flag() {
     // Possession: the flag walks onto a lord. Walking the door again must NOT
     // hand it back — and must not un-mark the squad it left behind.
     const MacroHandle lordH = npc_squad(*wStore_, 30.0f, 30.0f, 7u, 2);
-    sm::transfer_player_flag(*wStore_, gs.playerFlagRef, lordH);
-    ensure_macro_player_entity(gs, *wStore_);
+    sm::transfer_player_flag(*wStore_, ses.playerFlagRef, lordH);
+    ensure_macro_player_entity(gs, ses, *wStore_);
 
-    CHECK(player_flag_handle(gs) == lordH,
+    CHECK(player_flag_handle(ses) == lordH,
           "носимый лорд держит флажок — дверь не украла его обратно");
     // «ЕГО СКВАД ВСЁ ЕЩЁ ЕГО» ОТВЕЧАЕТ ФРАКЦИЯ, А НЕ ВТОРОЙ БИТ: оставленный
     // сквад жив и под контролем, хотя флажка на нём нет.
@@ -150,26 +152,27 @@ void test_the_mark_survives_losing_the_flag() {
 void test_death_in_a_worn_body_wakes_him_at_home() {
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
+    Session ses;
     gs.mapW = gs.mapH = 64;
     auto wStore_ = sm::make_macro_store();
-    ensure_macro_player_entity(gs, *wStore_);
-    const MacroHandle mine = player_flag_handle(gs);
+    ensure_macro_player_entity(gs, ses, *wStore_);
+    const MacroHandle mine = player_flag_handle(ses);
 
     // (a) АКТИВНЫЙ ЦЕЛ. Дверь не делает НИЧЕГО — ни переезда, ни отказа.
-    CHECK(keep_active_squad(gs, *wStore_),
+    CHECK(keep_active_squad(ses, *wStore_),
           "живой активный — игра идёт, и спрашивать больше нечего");
-    CHECK(player_flag_handle(gs) == mine, "и флажок не блуждал");
+    CHECK(player_flag_handle(ses) == mine, "и флажок не блуждал");
 
     // (b) АКТИВНЫЙ ПАЛ, ПОД КОНТРОЛЕМ ЕСТЬ КТО. Флажок переезжает на
     //     старейшего под контролем — им и оказывается его собственный сквад,
     //     потому что лорд чужой фракции под контролем не считается.
     const MacroHandle lordH = npc_squad(*wStore_, 30.0f, 30.0f, 7u, 2);
-    sm::transfer_player_flag(*wStore_, gs.playerFlagRef, lordH);
-    CHECK(player_flag_handle(gs) == lordH, "вселение двигает флажок");
+    sm::transfer_player_flag(*wStore_, ses.playerFlagRef, lordH);
+    CHECK(player_flag_handle(ses) == lordH, "вселение двигает флажок");
     sm::macro_mark_dead(*wStore_, lordH);
-    CHECK(keep_active_squad(gs, *wStore_),
+    CHECK(keep_active_squad(ses, *wStore_),
           "носимый сквад умер — активным стал старейший под контролем");
-    CHECK(player_flag_handle(gs) == mine,
+    CHECK(player_flag_handle(ses) == mine,
           "ровно один флажок, и он на том, кем игрок был");
     CHECK(eldest_controlled_squad(*wStore_) == mine,
           "якорь: старейший под контролем — его собственный сквад, а не лорд");
@@ -177,7 +180,7 @@ void test_death_in_a_worn_body_wakes_him_at_home() {
     // (c) ПОД КОНТРОЛЕМ НИКОГО. Дверь отказывает, и ЭТО конец игры.
     //     Негативный контроль к (b): та же расстановка, отличается ОДИН байт.
     sm::macro_mark_dead(*wStore_, mine);
-    CHECK(!keep_active_squad(gs, *wStore_),
+    CHECK(!keep_active_squad(ses, *wStore_),
           "ноль живых сквадов фракции игрока — переключать некого, игра кончена");
     CHECK(eldest_controlled_squad(*wStore_).id == 0,
           "и дверь множества говорит то же самое: под контролем никого");
@@ -206,12 +209,13 @@ void test_death_in_a_worn_body_wakes_him_at_home() {
 void test_ai_leaves_the_player_squad_standing() {
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
+    Session ses;
     gs.mapW = gs.mapH = 64;
     // (No position scalar to seed since подпосадка 4: the creation door
     // derives the spawn cell from the world — map centre in a bare fixture.)
     auto wStore_ = sm::make_macro_store();
-    ensure_macro_player_entity(gs, *wStore_);
-    const MacroHandle mineH = player_flag_handle(gs);
+    ensure_macro_player_entity(gs, ses, *wStore_);
+    const MacroHandle mineH = player_flag_handle(ses);
     // Stand him on 20,20 the way any placement happens now: by writing the
     // squad's own cell (the jump door's core), not a scalar.
     wStore_->cell[mineH.slot].idx = ecs::cell_index(20, 20, 64);
@@ -219,12 +223,13 @@ void test_ai_leaves_the_player_squad_standing() {
     // Вселение: флажок УЕЗЖАЕТ со его сквада на лорда. Теперь изъят ЛОРД —
     // он активный, — а прежний сквад игрока стал обычным сквадом мира.
     const MacroHandle lord = npc_squad(*wStore_, 30.0f, 30.0f, 7u, 0);
-    sm::transfer_player_flag(*wStore_, gs.playerFlagRef, lord);
+    sm::transfer_player_flag(*wStore_, ses.playerFlagRef, lord);
 
     const auto beforeActive = wStore_->runtime[lord.slot];
     MacroNpcAiRuntime runtime;
     MacroWorld mw{};
     mw.gs = &gs;
+    mw.session = &ses;
     mw.store = wStore_.get();
     for (int i = 0; i < 8; ++i) tick_macro_npc_ai(mw, runtime, kAiTicks);
 
@@ -261,11 +266,12 @@ void test_ai_leaves_the_player_squad_standing() {
 void test_the_players_men_are_never_swept() {
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
+    Session ses;
     gs.mapW = gs.mapH = 64;
     auto wStore_ = sm::make_macro_store();
-    ensure_macro_player_entity(gs, *wStore_);
-    const MacroHandle mine = player_flag_handle(gs);
-    Inventory* creatures = player_inventory(gs, *wStore_);
+    ensure_macro_player_entity(gs, ses, *wStore_);
+    const MacroHandle mine = player_flag_handle(ses);
+    Inventory* creatures = player_inventory(ses, *wStore_);
     CHECK(creatures != nullptr, "his creatures is there to lose");
     for (int i = 0; i < 4; ++i) {
         creatures_push(*creatures,
@@ -297,7 +303,7 @@ void test_the_players_men_are_never_swept() {
     // 2026-10-11; закон «павшие гибнут» держит негативный контроль ниже —
     // контейнер павшего ОПУСТЕЛ, и души из него не всплыли нигде, потому что
     // всплывать больше некуда.)
-    CHECK(creatures_empty(*player_inventory(gs, *wStore_)),
+    CHECK(creatures_empty(*player_inventory(ses, *wStore_)),
           "его контейнер опустел ТОЙ ЖЕ дверью — изъятия по фамилии нет");
     CHECK(creatures_empty(wStore_->inventory[fallen.slot].inv),
           "контейнер чужого павшего опустел тем же звонком");
@@ -310,6 +316,7 @@ void test_the_players_men_are_never_swept() {
 void test_the_entity_numbers_are_not_stale() {
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
+    Session ses;
     gs.mapW = gs.mapH = 64;
     auto wStore_ = sm::make_macro_store();
     // The sheet is the OWNED component now (посадка Б): it exists only once
@@ -319,8 +326,8 @@ void test_the_entity_numbers_are_not_stale() {
     // есть охранял СТРАХОВКУ (безусловный пересчёт каждый макро-тик), а не
     // закон. Закон — «потолок следует за листом, рана хранит долю, долг
     // переживает перемасштабирование» — цел и проверяется ниже как прежде.
-    ensure_macro_player_entity(gs, *wStore_);
-    const MacroHandle e = player_flag_handle(gs);
+    ensure_macro_player_entity(gs, ses, *wStore_);
+    const MacroHandle e = player_flag_handle(ses);
     sm::edit_squad_sheet(*wStore_, e, [](sm::CharacterSheet& s) {
         s.attributes[sm::AttributeId::End] = 5;
         s.levelData.exp = sm::exp_at_level(1);
@@ -328,8 +335,8 @@ void test_the_entity_numbers_are_not_stale() {
 
     const int bornMaxSp = wStore_->pools[e.slot].maxSp;
     CHECK(bornMaxSp
-              == bar_ceilings(player_sheet(gs, *wStore_)->attributes,
-                              player_sheet(gs, *wStore_)->skills, 100, 100, 100).maxSp,
+              == bar_ceilings(player_sheet(ses, *wStore_)->attributes,
+                              player_sheet(ses, *wStore_)->skills, 100, 100, 100).maxSp,
           "his squad is born with his own stamina bar — the sheet's ceiling");
 
     // He is wounded, he grows tired, he trains END and he levels. The Pools
@@ -351,16 +358,16 @@ void test_the_entity_numbers_are_not_stale() {
         s.attributes[sm::AttributeId::End] = 12;
         s.levelData.exp = sm::exp_at_level(4);
     });
-    ensure_macro_player_entity(gs, *wStore_);
+    ensure_macro_player_entity(gs, ses, *wStore_);
 
     const auto& hp = wStore_->pools[e.slot];
-    CHECK(hp.maxHp == bar_ceilings(player_sheet(gs, *wStore_)->attributes,
-                                   player_sheet(gs, *wStore_)->skills, 100, 100, 100).maxHp,
+    CHECK(hp.maxHp == bar_ceilings(player_sheet(ses, *wStore_)->attributes,
+                                   player_sheet(ses, *wStore_)->skills, 100, 100, 100).maxHp,
           "the bigger bar the new END bought reached the entity");
     CHECK(hp.hp == int(float(hp.maxHp) * (17.0f / float(oldMaxHp))),
           "the wound rescaled by its FRACTION — no free heal, no theft");
-    CHECK(hp.maxSp == bar_ceilings(player_sheet(gs, *wStore_)->attributes,
-                                   player_sheet(gs, *wStore_)->skills, 100, 100, 100).maxSp,
+    CHECK(hp.maxSp == bar_ceilings(player_sheet(ses, *wStore_)->attributes,
+                                   player_sheet(ses, *wStore_)->skills, 100, 100, 100).maxSp,
           "the stamina ceiling followed the END he trained");
     CHECK(hp.maxSp > bornMaxSp,
           "negative control: that ceiling did MOVE — the check above is not "
@@ -397,15 +404,16 @@ void test_the_entity_numbers_are_not_stale() {
 void test_one_door_assembles_every_battle_side() {
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
+    Session ses;
     gs.mapW = gs.mapH = 64;
     auto wStore_ = sm::make_macro_store();
-    ensure_macro_player_entity(gs, *wStore_);
-    player_sheet(gs, *wStore_)->attributes[sm::AttributeId::Str] = 18;
-    player_sheet(gs, *wStore_)->attributes[sm::AttributeId::End] = 18;
-    player_sheet(gs, *wStore_)->levelData.exp = sm::exp_at_level(5);
+    ensure_macro_player_entity(gs, ses, *wStore_);
+    player_sheet(ses, *wStore_)->attributes[sm::AttributeId::Str] = 18;
+    player_sheet(ses, *wStore_)->attributes[sm::AttributeId::End] = 18;
+    player_sheet(ses, *wStore_)->levelData.exp = sm::exp_at_level(5);
     // The per-tick walk moves the ceilings after the build change.
-    ensure_macro_player_entity(gs, *wStore_);
-    const MacroHandle e = player_flag_handle(gs);
+    ensure_macro_player_entity(gs, ses, *wStore_);
+    const MacroHandle e = player_flag_handle(ses);
     {
         auto& pools = wStore_->pools[e.slot];
         pools.hp = pools.maxHp / 2;
@@ -463,7 +471,7 @@ void test_one_door_assembles_every_battle_side() {
           "honest");
     CHECK(mine.fatigue > 0.2f && mine.fatigue < 0.3f,
           "and so does his tiredness");
-    CHECK(mine.creatures == player_inventory(gs, *wStore_),
+    CHECK(mine.creatures == player_inventory(ses, *wStore_),
           "his men are his creatures — the same lookup, not a second one");
 }
 
@@ -475,17 +483,19 @@ void test_one_door_assembles_every_battle_side() {
 void test_the_players_wound_settles_through_the_one_door() {
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
+    Session ses;
     gs.mapW = gs.mapH = 64;
     auto wStore_ = sm::make_macro_store();
-    ensure_macro_player_entity(gs, *wStore_);
-    player_sheet(gs, *wStore_)->attributes[sm::AttributeId::End] = 10;
+    ensure_macro_player_entity(gs, ses, *wStore_);
+    player_sheet(ses, *wStore_)->attributes[sm::AttributeId::End] = 10;
     // The per-tick walk moves the ceilings after the build change.
-    ensure_macro_player_entity(gs, *wStore_);
-    const MacroHandle mine = player_flag_handle(gs);
+    ensure_macro_player_entity(gs, ses, *wStore_);
+    const MacroHandle mine = player_flag_handle(ses);
     const int maxHp = wStore_->pools[mine.slot].maxHp;
 
     MacroWorld mw{};
     mw.gs = &gs;
+    mw.session = &ses;
     mw.store = wStore_.get();
     const MacroHandle foe = npc_squad(*wStore_, 10.0f, 10.0f, 7u, 2);
 
@@ -518,14 +528,15 @@ void test_the_sheet_door_reads_what_is_standing() {
     auto wStore_ = sm::make_macro_store();
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
-    ensure_macro_player_entity(gs, *wStore_);
-    player_sheet(gs, *wStore_)->attributes[AttributeId::End] = 8;
+    Session ses;
+    ensure_macro_player_entity(gs, ses, *wStore_);
+    player_sheet(ses, *wStore_)->attributes[AttributeId::End] = 8;
 
-    const CharacterSheet bare = player_effective_sheet(gs, *wStore_);
+    const CharacterSheet bare = player_effective_sheet(ses, *wStore_);
     CHECK(bare.attributes.of(AttributeId::End) == 8,
           "nothing worn, nothing burning: the door answers the base sheet");
 
-    const MacroHandle squad = player_flag_handle(gs);
+    const MacroHandle squad = player_flag_handle(ses);
     CHECK_OR_RETURN(wStore_->valid(squad), "the player's squad exists");
     const std::uint16_t pslot = squad.slot;
     auto& eq = wStore_->gear[pslot];
@@ -542,7 +553,7 @@ void test_the_sheet_door_reads_what_is_standing() {
     CHECK(bag.put_at(free, plate), "...and the address door puts it there");
     eq.gear.worn[0] = std::uint16_t(free);
 
-    const CharacterSheet dressed = player_effective_sheet(gs, *wStore_);
+    const CharacterSheet dressed = player_effective_sheet(ses, *wStore_);
     CHECK(dressed.attributes.of(AttributeId::End) == 10,
           "a worn +2 END is IN the sheet the world asks about");
     // ...and the bar follows, because the bar is derived from the sheet —
@@ -550,12 +561,12 @@ void test_the_sheet_door_reads_what_is_standing() {
     CHECK(bar_ceilings(dressed.attributes, dressed.skills, 100, 100, 100).maxSp
               > bar_ceilings(bare.attributes, bare.skills, 100, 100, 100).maxSp,
           "a worn +END widens what a day of marching can hold");
-    CHECK(player_sheet(gs, *wStore_)->attributes.of(AttributeId::End) == 8,
+    CHECK(player_sheet(ses, *wStore_)->attributes.of(AttributeId::End) == 8,
           "the BASE sheet never moved — reads walk the door, writes never do");
 
     // Take it off: the door simply stops summing it.
     eq.gear.worn[0] = kWornNothing;
-    CHECK(player_effective_sheet(gs, *wStore_)
+    CHECK(player_effective_sheet(ses, *wStore_)
                   .attributes.of(AttributeId::End) == 8,
           "negative control: off the body, out of the answer — no residue");
 }

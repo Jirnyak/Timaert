@@ -105,9 +105,12 @@ float dist(sm::MacroStore& st, sm::MacroHandle a, sm::MacroHandle b) {
         float(kMap), float(kMap)));
 }
 
-void drive(GameState& gs, sm::MacroStore& st, MacroNpcAiRuntime& rt, int thinks) {
+// `ses` — сессия фикстуры (кэш носителя флажка и аренда окна живут в ней);
+// nullptr — мир без игрока и без аренды.
+void drive(GameState& gs, sm::Session* ses, sm::MacroStore& st,
+           MacroNpcAiRuntime& rt, int thinks) {
     for (int i = 0; i < thinks; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &st};
+        MacroWorld mw{.gs = &gs, .session = ses, .store = &st};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 }
@@ -129,7 +132,7 @@ void test_hostiles_on_one_cell_fight_and_the_ledger_pays() {
 
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 42u);
-    drive(gs, st, rt, 1);
+    drive(gs, nullptr, st, rt, 1);
 
     CHECK(container_count(st, gs, 2u) == 0,
           "the caravan's creatures died by name through the creature row");
@@ -183,7 +186,7 @@ void test_the_weak_flee_and_fighters_pursue() {
     // the first think, the opened distance on the first MOVING one.
     const int thinksPerCell = int(std::ceil(
         1.0f / (kMacroWalkCellsPerHour * kAiTickGameHours)));
-    drive(gs, st, rt, thinksPerCell);
+    drive(gs, nullptr, st, rt, thinksPerCell);
     CHECK((*sm::body_state<ecs::MacroNpcRuntime>(st, caravan)).state
               == std::uint8_t(NPCState::Fleeing),
           "a squad that cannot win runs - the strength law says so");
@@ -213,7 +216,7 @@ void test_the_weak_flee_and_fighters_pursue() {
     // Same derived budget: enough thinks for one cell of pursuit — far too
     // few to close the whole gap and RESOLVE the battle, which is a
     // different law's test.
-    drive(gs2, st2, rt2, thinksPerCell);
+    drive(gs2, nullptr, st2, rt2, thinksPerCell);
     CHECK((*sm::body_state<ecs::MacroNpcRuntime>(st2, hunter)).state
               == std::uint8_t(NPCState::Chasing),
           "a fighter row pursues prey the law says it beats");
@@ -235,7 +238,7 @@ void test_neutral_squads_ignore_each_other() {
                                  NPCType::Peasant, 1);
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 45u);
-    drive(gs, st, rt, 3);
+    drive(gs, nullptr, st, rt, 3);
     CHECK(!sm::macro_dead(st, a) && !sm::macro_dead(st, b),
           "no relation below the line, no war - hostility is data");
     CHECK(container_count(st, gs, 1u) == 2 && container_count(st, gs, 2u) == 1,
@@ -260,6 +263,7 @@ void test_a_meeting_in_the_leased_window_is_not_resolved_upstairs() {
     {
         std::unique_ptr<GameState> gsOwn = make_world(-80);
         GameState& gs = *gsOwn;
+        Session ses;
         auto wStore_ = sm::make_macro_store();
         sm::MacroStore& st = *wStore_;
         const auto a = make_squad_at(st, NPCType::Bandit, "bandits", 5,
@@ -277,11 +281,11 @@ void test_a_meeting_in_the_leased_window_is_not_resolved_upstairs() {
         // придирка: с центром на (10,10) мутация «рамки нет, только центр»
         // прошла бы ЗЕЛЁНОЙ (проверено прогоном). Пинится РАМКА, то есть
         // `cell_step` по румбам, а не совпадение с центром.
-        sm::lease_window_at(gs, sm::cell_of(11, 9, gs.mapW));
-        CHECK(sm::cell_is_leased(gs, sm::cell_of(10, 10, gs.mapW))
-                  && gs.leasedWindow != sm::cell_of(10, 10, gs.mapW),
+        sm::lease_window_at(ses, sm::cell_of(11, 9, gs.mapW));
+        CHECK(sm::cell_is_leased(&ses, sm::cell_of(10, 10, gs.mapW), gs.mapW)
+                  && ses.leasedWindow != sm::cell_of(10, 10, gs.mapW),
               "фикстура: клетка встречи в арендованной РАМКЕ, но не центр");
-        drive(gs, st, rt, 3);
+        drive(gs, &ses, st, rt, 3);
         CHECK(!sm::macro_dead(st, a)
                   && !sm::macro_dead(st, b)
                   && container_count(st, gs, 2u) == 1,
@@ -294,6 +298,7 @@ void test_a_meeting_in_the_leased_window_is_not_resolved_upstairs() {
     {
         std::unique_ptr<GameState> gsOwn = make_world(-80);
         GameState& gs = *gsOwn;
+        Session ses;
         auto wStore_ = sm::make_macro_store();
         sm::MacroStore& st = *wStore_;
         const auto a = make_squad_at(st, NPCType::Bandit, "bandits", 5,
@@ -305,10 +310,10 @@ void test_a_meeting_in_the_leased_window_is_not_resolved_upstairs() {
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, 46u);
         // Две клетки от места встречи — вне рамки 3×3 по построению.
-        sm::lease_window_at(gs, sm::cell_of(14, 14, gs.mapW));
-        CHECK(!sm::cell_is_leased(gs, sm::cell_of(10, 10, gs.mapW)),
+        sm::lease_window_at(ses, sm::cell_of(14, 14, gs.mapW));
+        CHECK(!sm::cell_is_leased(&ses, sm::cell_of(10, 10, gs.mapW), gs.mapW),
               "фикстура: клетка встречи вне арендованной рамки");
-        drive(gs, st, rt, 3);
+        drive(gs, &ses, st, rt, 3);
         CHECK(sm::macro_dead(st, b)
                   || container_count(st, gs, 2u) == 0,
               "за рамкой мир дерётся, пока игрок внизу: купец пал или его "
@@ -507,20 +512,21 @@ void test_wearing_alone_refreshes_the_derived_columns() {
 void test_player_auto_resolve_settles_through_the_same_doors() {
     std::unique_ptr<GameState> gsOwn = make_world(-80);
     GameState& gs = *gsOwn;
+    Session ses;
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
     // The player's men are a creatures on his own SQUAD ENTITY now — the same
     // shape the enemy lord below has, settled through the same doors.
-    ensure_macro_player_entity(gs, st);
-    Inventory* army = player_inventory(gs, *wStore_);
+    ensure_macro_player_entity(gs, ses, st);
+    Inventory* army = player_inventory(ses, *wStore_);
     creatures_push(*army, make_soldier(std::uint8_t(NPCType::Guard), 3, 501u));
     creatures_push(*army, make_soldier(std::uint8_t(NPCType::Guard), 3, 502u));
-    player_pools(gs, *wStore_)->maxHp = 100;
-    player_pools(gs, *wStore_)->hp = 100;
-    const int level0 = sm::level_of(sm::player_sheet(gs, *wStore_)->levelData);
+    player_pools(ses, *wStore_)->maxHp = 100;
+    player_pools(ses, *wStore_)->hp = 100;
+    const int level0 = sm::level_of(sm::player_sheet(ses, *wStore_)->levelData);
     // Кумулятив беззнаковый (M-383) — база снимается тем же типом, иначе
     // сравнение ниже уводит одну из сторон в другой знак.
-    const std::uint32_t exp0 = sm::player_sheet(gs, *wStore_)->levelData.exp;
+    const std::uint32_t exp0 = sm::player_sheet(ses, *wStore_)->levelData.exp;
     const auto enemy = make_squad_at(st, NPCType::Bandit, "bandits", 3,
                                      10.0f, 10.0f, 9u, {31u, 32u},
                                      NPCType::Bandit, 2);
@@ -539,20 +545,20 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     // world's own layers to price the spoils, and its facts leave through
     // the envelope's channel. A fixture that plugs in no channel is the
     // honest headless case.
-    MacroWorld mw{}; mw.gs = &gs; mw.store = &st;
+    MacroWorld mw{}; mw.gs = &gs; mw.session = &ses; mw.store = &st;
     const int xp = settle_player_auto_battle(mw, enemy, win,
                                              /*playerIsA*/true);
     CHECK(creature_count(*army) == 1
               && army->slots[std::size_t(army->creature_first())].entityId
                      == 502u,
           "the player's fallen soldier left the army by name");
-    CHECK(player_pools(gs, *wStore_)->hp == 60,
+    CHECK(player_pools(ses, *wStore_)->hp == 60,
           "the player's wound landed as the fraction, in THE store — his squad's Pools");
     CHECK(container_count(st, gs, 9u) == 0 && sm::macro_dead(st, enemy),
           "the enemy died through the ledger and the tracked-death shape");
-    CHECK(player_inventory(gs, *wStore_)->count("wood") == 4,
+    CHECK(player_inventory(ses, *wStore_)->count("wood") == 4,
           "the fallen owner's goods landed in the player's own bag");
-    const sm::CharacterSheet& after = *sm::player_sheet(gs, *wStore_);
+    const sm::CharacterSheet& after = *sm::player_sheet(ses, *wStore_);
     CHECK(xp > 0 && (after.levelData.exp > exp0
                      || sm::level_of(after.levelData) > level0),
           "victory paid the player experience through award_exp");
@@ -561,16 +567,17 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     // avatar rule holds for the player exactly as for any lord.
     std::unique_ptr<GameState> gs2Own = make_world(-80);
     GameState& gs2 = *gs2Own;
+    Session ses2;
     auto w2Store_ = sm::make_macro_store();
     sm::MacroStore& st2 = *w2Store_;
-    ensure_macro_player_entity(gs2, st2);
-    Inventory* army2 = player_inventory(gs2, *w2Store_);
+    ensure_macro_player_entity(gs2, ses2, st2);
+    Inventory* army2 = player_inventory(ses2, *w2Store_);
     creatures_push(*army2,
                    make_soldier(std::uint8_t(NPCType::Guard), 3, 601u));
     creatures_push(*army2,
                    make_soldier(std::uint8_t(NPCType::Guard), 3, 602u));
-    player_pools(gs2, *w2Store_)->maxHp = 100;
-    player_pools(gs2, *w2Store_)->hp = 100;
+    player_pools(ses2, *w2Store_)->maxHp = 100;
+    player_pools(ses2, *w2Store_)->hp = 100;
     const auto victor = make_squad_at(st2, NPCType::Bandit, "bandits", 6,
                                       10.0f, 10.0f, 9u, {41u},
                                       NPCType::Bandit, 5);
@@ -580,11 +587,11 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
         make_soldier(std::uint8_t(NPCType::Guard), 3, 601u)};
     loss.avatarFractionA = 0.15f;
     loss.avatarFractionB = 0.9f;
-    MacroWorld mw2{}; mw2.gs = &gs2; mw2.store = &st2;
+    MacroWorld mw2{}; mw2.gs = &gs2; mw2.session = &ses2; mw2.store = &st2;
     settle_player_auto_battle(mw2, victor, loss, /*playerIsA*/true);
     CHECK(creature_count(*army2) == 1,
           "defeat took the fallen and left the survivor");
-    CHECK(player_pools(gs2, *w2Store_)->hp >= 1,
+    CHECK(player_pools(ses2, *w2Store_)->hp >= 1,
           "while one of his men stands, defeat wounds the player - "
           "never kills him");
     CHECK(!sm::macro_dead(st2, victor),
@@ -636,7 +643,7 @@ void test_spawn_squad_is_one_spec_one_door() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 50u);
     const float x0 = float(ecs::cell_x(st.cell[avatar.slot], kMap));
-    drive(gs, st, rt, 3);
+    drive(gs, nullptr, st, rt, 3);
     const float p1x = float(ecs::cell_x(st.cell[avatar.slot], kMap));
     CHECK(p1x > x0,
           "waypoint orders MARCH the squad east toward its route - the "
@@ -651,7 +658,7 @@ void test_spawn_squad_is_one_spec_one_door() {
     std::uint8_t lastWp = st.orders[avatar.slot].currentWaypoint;
     int advances = 0;
     for (int i = 0; i < 20; ++i) {
-        drive(gs, st, rt, 1);
+        drive(gs, nullptr, st, rt, 1);
         const std::uint8_t wp = st.orders[avatar.slot].currentWaypoint;
         if (wp != lastWp) ++advances;
         lastWp = wp;
@@ -863,7 +870,7 @@ void test_a_victory_does_not_erase_a_table_born_sheet() {
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
 
-    const MacroHandle town = sm::birth_squad(gs, st, SquadType::City,
+    const MacroHandle town = sm::birth_squad(gs, nullptr, st, SquadType::City,
                                              12, 12, std::int16_t(0), "Kamen");
     CHECK_OR_RETURN(st.valid(town), "фикстура родила свой неподвижный сквад");
 

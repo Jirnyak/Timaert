@@ -83,10 +83,14 @@ sm::MacroHandle make_walker(sm::MacroStore& st, NPCType type, SquadType stype,
     return h;
 }
 
-void drive(GameState& gs, sm::MacroStore& st, MacroNpcAiRuntime& rt,
-           int thinks, const PathCostData* grid = nullptr) {
+// `ses` — сессия фикстуры (аренда окна живёт в ней, не в состоянии мира);
+// nullptr — мир без сессии, то есть без аренды.
+void drive(GameState& gs, sm::Session* ses, sm::MacroStore& st,
+           MacroNpcAiRuntime& rt, int thinks,
+           const PathCostData* grid = nullptr) {
     for (int i = 0; i < thinks; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &st, .pathCost = grid};
+        MacroWorld mw{.gs = &gs, .session = ses, .store = &st,
+                      .pathCost = grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 }
@@ -154,6 +158,7 @@ void test_step_into_lease_is_the_last_step() {
 void test_captured_walker_keeps_cell_share_and_goal() {
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
+    Session ses;
     gs.mapW = kMap;
     gs.mapH = kMap;
     auto wStore_ = sm::make_macro_store();
@@ -166,13 +171,13 @@ void test_captured_walker_keeps_cell_share_and_goal() {
 
     // Свидетель рождает предусловие сам (§8 п.11): аренда — дверью мира, и
     // центр на СОСЕДЕ, чтобы пинилась РАМКА, а не совпадение с центром.
-    sm::lease_window_at(gs, sm::cell_of(11, 9, gs.mapW));
-    CHECK(sm::cell_is_leased(gs, sm::cell_of(10, 10, gs.mapW))
-              && gs.leasedWindow != sm::cell_of(10, 10, gs.mapW),
+    sm::lease_window_at(ses, sm::cell_of(11, 9, gs.mapW));
+    CHECK(sm::cell_is_leased(&ses, sm::cell_of(10, 10, gs.mapW), gs.mapW)
+              && ses.leasedWindow != sm::cell_of(10, 10, gs.mapW),
           "фикстура: ходок в арендованной РАМКЕ, но не в центре");
 
     MacroNpcAiRuntime rt{};
-    drive(gs, st, rt, 4);
+    drive(gs, &ses, st, rt, 4);
     CHECK(st.cell[h.slot].idx == ecs::cell_index(10, 10, kMap),
           "ЗАХВАЧЕН: клетку ведёт субмир — макро не тронул");
     CHECK(st.runtime[h.slot].sub.x == 5 && st.runtime[h.slot].sub.y == -7,
@@ -183,8 +188,8 @@ void test_captured_walker_keeps_cell_share_and_goal() {
           "ЗАХВАЧЕН: kMarchRefused не вставал");
 
     // Конец аренды — ноги вернулись: тот же мир, та же цель.
-    sm::release_window(gs);
-    drive(gs, st, rt, 6);
+    sm::release_window(ses);
+    drive(gs, &ses, st, rt, 6);
     CHECK(st.cell[h.slot].idx != ecs::cell_index(10, 10, kMap),
           "КОНТРОЛЬ: аренда снята — марш к той же цели пошёл");
 }
@@ -197,6 +202,7 @@ void test_captured_walker_keeps_cell_share_and_goal() {
 void test_captured_teleporter_neither_jumps_nor_burns() {
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
+    Session ses;
     gs.mapW = kMap;
     gs.mapH = kMap;
     auto wStore_ = sm::make_macro_store();
@@ -211,14 +217,14 @@ void test_captured_teleporter_neither_jumps_nor_burns() {
     grid.costGrid.assign(std::size_t(kMap) * std::size_t(kMap), 8.0f);
     grid.water.assign(std::size_t(kMap) * std::size_t(kMap), 0u);
 
-    sm::lease_window_at(gs, sm::cell_of(9, 11, gs.mapW));
-    CHECK(sm::cell_is_leased(gs, sm::cell_of(10, 10, gs.mapW))
-              && gs.leasedWindow != sm::cell_of(10, 10, gs.mapW),
+    sm::lease_window_at(ses, sm::cell_of(9, 11, gs.mapW));
+    CHECK(sm::cell_is_leased(&ses, sm::cell_of(10, 10, gs.mapW), gs.mapW)
+              && ses.leasedWindow != sm::cell_of(10, 10, gs.mapW),
           "фикстура: ведьма в арендованной РАМКЕ, но не в центре");
 
     const int sp0 = int(st.pools[h.slot].sp);
     MacroNpcAiRuntime rt{};
-    drive(gs, st, rt, 2000, &grid);
+    drive(gs, &ses, st, rt, 2000, &grid);
     CHECK(st.cell[h.slot].idx == ecs::cell_index(10, 10, kMap),
           "ТЕЛЕПОРТЁР: 2000 думок в аренде — ни прыжка, ни шага");
     CHECK(st.runtime[h.slot].sub.x == 50 && st.runtime[h.slot].sub.y == -30,

@@ -41,9 +41,11 @@ void fill_local_frame(const MacroWorld& w, std::uint32_t centerCell,
     out.worldSeed = gs.worldSeed;
     out.side = side;
     out.seaLevel16 = w.terrain ? int(w.terrain->seaLevel16) : 0;
-    out.leasedWindow = gs.leasedWindow;
+    // Аренда и носитель флажка — из СЕССИИ (вердикт владельца 2026-11-10, В1):
+    // состояние мира их не хранит, а пакет несёт получателю по-прежнему.
+    out.leasedWindow = w.session ? w.session->leasedWindow : kNoWindowLease;
     out.centerCell = centerCell;
-    out.playerFlag = player_flag_handle(gs);
+    out.playerFlag = player_flag_handle(w.session);
 
     // ── РОДА 1 и 3 — клетки 5×5 и запас рядов полей на них ────────────────
     // Соседство — арифметика над индексом (cell_step, ЗАКОН АДРЕСА).

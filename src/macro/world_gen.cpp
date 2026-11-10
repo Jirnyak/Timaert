@@ -103,7 +103,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // СЛОЙ ФИЧ РОЖДАЕТСЯ ДО ВСЕХ МЕСТ (вердикт 2026-10-23: «сначала фичи,
     // сквады поверх»): двери рождения мест ставят фичи рода прямо сюда, а
     // дороги и пашни вливаются следом на пустые клетки.
-    out.features->resize(gs.mapW, gs.mapH);
+    gs.features.resize(gs.mapW, gs.mapH);
     // The world's OWN fields are born with it (CANON S5, v96): the scar grid
     // of every sparse row and the ONE featureNumber layer. Born here rather than on
     // first use for the same reason the deposit fields are — a field
@@ -136,8 +136,8 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
                          p.targetTotalCities, &siteCtx);
     snap_cities_to_land(cityPlan, *out.terrain);
     finalize_politik(cityPlan, gs.cellOwner, gs.mapW, gs.mapH, *out.terrain);
-    populate_rooted_from_politik(gs, *out.store, cityPlan, *out.terrain,
-                                    *out.deposits, *out.features);
+    populate_rooted_from_politik(gs, out.session, *out.store, cityPlan,
+                                    *out.terrain, *out.deposits);
     if (p.trace) {
         // The R2 report card: how many villages actually stand next to the
         // resources the score placed them by. The old roulette scored ~25%
@@ -238,7 +238,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // Stone first (kRoadClasses hierarchy): the feature layer carries only
     // the main roads here; dirt lanes land in it AFTER zones and spires, so
     // their A* can both target the spires and price the stone at its bed.
-    build_feature_layer(*out.features, *out.terrain, roads, nullptr);
+    build_feature_layer(gs.features, *out.terrain, roads, nullptr);
     build_tree_grid(*out.treeGrid, *out.trees, gs.mapW, gs.mapH);
 
     std::vector<ZoneSeed> zsCities, zsVills;
@@ -248,7 +248,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
             zsVills.push_back({rooted_x(slot), rooted_y(slot)});
     });
     *out.zones = generate_zones(gs.mapW, gs.mapH, gs.worldSeed,
-                                zsCities, zsVills, *out.features,
+                                zsCities, zsVills, gs.features,
                                 out.terrain, &gs.treeLayer);
 
     // Spires need the zone field (their placement law), so they are the one
@@ -258,13 +258,12 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // (boot_world_from_save), spires with everything else — one population,
     // one block, no creatures of its own (ломтик F).
     {
-        generate_spires(gs, *out.zones, *out.terrain, *out.features);
+        generate_spires(gs, *out.zones, *out.terrain);
         // Ruins follow the same zone-field law (§42 Инк 5): the row, the
         // subworld route and the surface generator stood ready for months —
         // this call is the ONE missing genesis pass that kept the kind
         // stillborn. After the settlement passes, whose cells it avoids.
-        generate_ruins(gs, *out.store, *out.zones, *out.terrain,
-                       *out.features);
+        generate_ruins(gs, *out.store, *out.zones, *out.terrain);
         // The place set is complete — stamp the settlement FEATURES
         // (вердикт 2026-09-30: город/деревня/шпиль/руина — байты слоя фич,
         // ставятся ПОСЛЕ дорог) and build the cell frame over squads —
@@ -337,7 +336,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         const int rootedReach = derive_city_spacing(
             out.terrain, gs.mapW, gs.mapH, int(cityPlan.size()));
         const int dirtStamped = trace_dirt_roads(
-            *out.features, *out.terrain, villageSites, rootedSites,
+            gs.features, *out.terrain, villageSites, rootedSites,
             rootedReach, &gs.treeLayer);
         if (p.trace) {
             std::size_t stoneCells = 0, dirtCells = 0, bridgeCells = 0;
@@ -346,12 +345,12 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
             // the two ends of its own crossing): the case where the subworld
             // has to put the fork on the bank, and the one worth looking at.
             int forkX = -1, forkY = -1;
-            for (std::size_t i = 0; i < out.features->data.size(); ++i) {
-                const std::uint8_t b = out.features->data[i];
+            for (std::size_t i = 0; i < gs.features.cell_count(); ++i) {
+                const std::uint8_t b = gs.features.data[i];
                 stoneCells += b == std::uint8_t(FT_Road) ? 1u : 0u;
                 dirtCells += b == std::uint8_t(FT_DirtRoad) ? 1u : 0u;
                 if (b == std::uint8_t(FT_Bridge)) {
-                    const int side = out.features->width;
+                    const int side = gs.features.width;
                     const int bx = cell_x(std::uint32_t(i), side);
                     const int by = cell_y(std::uint32_t(i), side);
                     if (bridgeCells == 0u) { bridgeX = bx; bridgeY = by; }
@@ -362,7 +361,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
                                 if (dx == 0 && dy == 0) continue;
                                 const std::uint32_t n = cell_step(
                                     std::uint32_t(i), dx, dy, side);
-                                const FeatureType f = out.features->at(
+                                const FeatureType f = gs.features.at(
                                     cell_x(n, side), cell_y(n, side));
                                 if (f == FT_Road || f == FT_DirtRoad
                                     || f == FT_Bridge) {
@@ -395,15 +394,15 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
                 fieldSites.push_back(FieldSite{rooted_x(slot),
                                                rooted_y(slot)});
         });
-        stamp_field_features(*out.features, siteCtx.w, fieldSites);
+        stamp_field_features(siteCtx.w, fieldSites);
     }
 
     // Шахты — ПОСЛЕ поселений и дорог (вердикт 2026-10-23: «ставятся шахты
     // толкьо если есть деревня рядом или город»): пик связного кластера жил,
     // род по весу 1/стоимость, залежь = кап кластера числом фичи.
-    stamp_mines(gs, *out.features, *out.terrain, *out.deposits, gs.worldSeed);
+    stamp_mines(gs, *out.terrain, *out.deposits, gs.worldSeed);
 
-    *out.pathCost = build_cost_grid(*out.terrain, out.features, &gs.treeLayer);
+    *out.pathCost = build_cost_grid(*out.terrain, &gs.features, &gs.treeLayer);
     gs.lastWorldRebakeDay = gs.worldTime.day();
 
     // A loaded world does NOT respawn its people from the seed — the macro
@@ -422,7 +421,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         // there is no player position scalar to seed since подпосадка 4.
         // The macro tick re-heals the invariant thereafter; doing it here
         // makes it hold immediately after genesis, before the first tick.
-        ensure_macro_player_entity(gs, *out.store);
+        ensure_macro_player_entity(gs, *out.session, *out.store);
     }
 
     // (ПЕРВАЯ ВЕДОМОСТЬ стояла здесь и уничтожена 2026-09-30, ломтик E

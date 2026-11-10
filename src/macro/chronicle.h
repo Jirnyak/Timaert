@@ -223,10 +223,11 @@ int chronicle_near(const Chronicle& c, int x, int y, int radiusCells,
 int chronicle_recent(const Chronicle& c, std::int32_t sinceDay, int limit,
                      FactVisitor visit, void* user);
 
-// Rebuild the per-cell chains from the facts already in the ring. Used by the
-// LOAD: the file carries the facts, not the links, because a link is derived
-// and a stored derivative is a second truth waiting to disagree.
-void chronicle_rebuild_links(Chronicle& c);
+// (`chronicle_rebuild_links` — пересборка цепочек по клетке из записей кольца —
+//  УМЕРЛА с проводом сейва, M-439. Она существовала для загрузки: файл вёз
+//  записи без ссылок, и цепочки собирались заново. Сейв теперь есть прямой
+//  дамп состояния, головы цепочек и ссылки едут в нём теми же байтами, какими
+//  лежат в памяти, — пересобирать нечего, и звонящих у двери не осталось.)
 
 // ── ASKING IN THE TABLE'S OWN WORDS ──────────────────────────────────────
 //
@@ -284,3 +285,12 @@ int fact_sentence(const WorldFact& f, const FactNaming& naming,
 // полнотой списка следит `arch_guard_test` (файл стоит в его `kRowHeaders`).
 TIMAERT_ROW(sm::Chronicle);
 TIMAERT_ROW(sm::FactNaming);
+
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::Chronicle, &sm::Chronicle::nextSeq, &sm::Chronicle::cols,
+    &sm::Chronicle::rows, &sm::Chronicle::countingDay,
+    &sm::Chronicle::factsToday, &sm::Chronicle::factsPeak,
+    &sm::Chronicle::cellHead, &sm::Chronicle::ring);

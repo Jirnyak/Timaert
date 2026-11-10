@@ -126,15 +126,15 @@ namespace sm::app {
 // more); a scripted placement is a JUMP through the one macro jump door —
 // the same one the escape teleport and the subworld exit walk through.
 static float smoke_player_x(App& app) {
-    const sm::ecs::MacroCell* c = sm::player_flag_cell(app.gs, *app.macroStore);
+    const sm::ecs::MacroCell* c = sm::player_flag_cell(app.session, *app.macroStore);
     return c ? float(sm::ecs::cell_x(*c, app.gs.mapW)) : 0.0f;
 }
 static float smoke_player_y(App& app) {
-    const sm::ecs::MacroCell* c = sm::player_flag_cell(app.gs, *app.macroStore);
+    const sm::ecs::MacroCell* c = sm::player_flag_cell(app.session, *app.macroStore);
     return c ? float(sm::ecs::cell_y(*c, app.gs.mapW)) : 0.0f;
 }
 static void smoke_teleport_player(App& app, int x, int y) {
-    sm::player_jump_to_cell(app.gs, *app.macroStore, x, y);
+    sm::player_jump_to_cell(app.session, *app.macroStore, x, y, app.gs.mapW);
 }
 
 // A body projected from SOMEONE ELSE'S record — «an overworld figure you can
@@ -242,7 +242,7 @@ static bool smoke_projects_foreign_record(App& app, int s) {
 static sm::SpellBook& smoke_player_book(App& app) {
     static sm::SpellBook scratch{};
     sm::SpellBook* book = app.macroStore
-        ? sm::player_spellbook(app.gs, *app.macroStore) : nullptr;
+        ? sm::player_spellbook(app.session, *app.macroStore) : nullptr;
     return book ? *book : scratch;
 }
 
@@ -312,7 +312,7 @@ static bool smoke_possess_via_spell(App& app, int targetSlot) {
         || !app.subworld.active()) return false;
     // Кастер заведомо выше порога: свидетели ПЕРЕНОСА меряют перенос, гейт
     // уровня меряет своя половина possess_gate.
-    if (auto* cs = sm::player_sheet(app.gs, *app.macroStore)) {
+    if (auto* cs = sm::player_sheet(app.session, *app.macroStore)) {
         // Уровень НАСТУПАЕТ от опыта (M-383): поднять его значит доложить опыт.
         if (sm::level_of(cs->levelData) < 50)
             cs->levelData.exp = sm::exp_at_level(50);
@@ -440,6 +440,8 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"fauna_kill_writeback", SmokeAction::FaunaKillWriteback},
     {"forest_fell_macro", SmokeAction::ForestFellMacro},
     {"forest_stays_felled", SmokeAction::ForestStaysFelled},
+    {"city_ruin_macro", SmokeAction::CityRuinMacro},
+    {"ruin_stays_ruin", SmokeAction::RuinStaysRuin},
     {"spawn_squad_at_player", SmokeAction::SpawnSquadAtPlayer},
     {"capture_course", SmokeAction::CaptureCourse},
     {"capture_exit", SmokeAction::CaptureExit},
@@ -1355,7 +1357,7 @@ bool run_subworld_clock_smoke(App& app) {
     // формулы — зеркало fold_captured_subs (для флажка полоса центральная,
     // формула байтово та же, что у прежнего fold_player_sub).
     {
-        const sm::MacroHandle fh = app.gs.playerFlagRef;
+        const sm::MacroHandle fh = app.session.playerFlagRef;
         bool folded = false;
         if (app.macroStore->valid(fh)) {
             const auto quant = [](float wpos) {
@@ -1654,7 +1656,7 @@ bool run_subworld_recovery_smoke(App& app) {
             const std::uint16_t slot = std::uint16_t(s32);
             if (stx.alive[slot] == 0 || stx.dead[slot] != 0) continue;
             // Игрок — БИТОМ КОЛОНКИ playerFlag.home (M-255), тег-exclude умер.
-            if (sm::handle_at(stx, slot) == sm::player_flag_handle(app.gs))
+            if (sm::handle_at(stx, slot) == sm::player_flag_handle(app.session))
                 continue;
             auto& c = stx.cell[slot];
             auto& pools = stx.pools[slot];
@@ -2155,7 +2157,7 @@ bool smoke_find_open_subworld_cell(const App& app, int& outX, int& outY) {
 
 bool smoke_find_tree_subworld_cell(const App& app, int& outX, int& outY) {
     if (!app.terrain.has_rgba_storage() || app.terrain.width <= 0
-        || app.terrain.height <= 0 || !app.features.has_complete_storage()) {
+        || app.terrain.height <= 0 || !app.gs.features.has_complete_storage()) {
         return false;
     }
     const int cx = app.gs.mapW / 2;
@@ -2453,7 +2455,7 @@ bool run_macro_glide_gap_smoke(App& app) {
     static int    legs = 0;
     static bool   sawDiagonal = false;
 
-    const sm::MacroHandle fh = sm::player_flag_handle(app.gs);
+    const sm::MacroHandle fh = sm::player_flag_handle(app.session);
     if (!app.macroStore->valid(fh)) {
         smoke_fail(app, "macro_glide_gap has no player flag squad");
         return false;
@@ -2585,7 +2587,7 @@ bool run_macro_recovery_smoke(App& app) {
     // бы это всё равно» — того безусловного пересчёта больше нет вовсе.
     // Потолки не пиновать: потолок есть дело листа, а пин 100 был бы молча
     // перемасштабирован той самой дверью, которую смоук и проверяет.
-    sm::edit_squad_sheet(*app.macroStore, sm::player_flag_handle(app.gs),
+    sm::edit_squad_sheet(*app.macroStore, sm::player_flag_handle(app.session),
                          [](sm::CharacterSheet& s) {
                              s.attributes[sm::AttributeId::End] = 1;
                              s.attributes[sm::AttributeId::Wil] = 1;
@@ -2811,7 +2813,7 @@ sm::MacroHandle smoke_find_macro_npc_trace_target(App& app) {
         // (маршрут = waypointCount > 0; анкета стола = ordinal >= 0;
         // игрок = бит playerFlag.home, M-255).
         if (stf.dead[slot] != 0) continue;
-        if (sm::handle_at(stf, slot) == sm::player_flag_handle(app.gs)) continue;
+        if (sm::handle_at(stf, slot) == sm::player_flag_handle(app.session)) continue;
         if (stf.orders[slot].waypointCount > 0) continue;
         if (stf.designTag[slot].ordinal >= 0) continue;
         const auto& hp = stf.pools[slot];
@@ -2911,7 +2913,8 @@ bool run_macro_npc_trace_smoke(App& app) {
     // makes that 4 game hours ≈ 43 thinks from empty for ANY bar. 64 = margin.
     // Deliberately PARTIAL envelope: the trace checks recovery mechanics on a
     // featureless world — no cost grid, no layers (each reads fail-closed).
-    sm::MacroWorld traceMw{.gs = &app.gs, .store = app.macroStore.get(),
+    sm::MacroWorld traceMw{.gs = &app.gs, .session = &app.session,
+                           .store = app.macroStore.get(),
                            .treeGrid = &app.treeGrid};
     // allowAutoBattle=false: the world keeps thinking, but no meeting
     // resolves during the trace — a battle death would let the corpse sweep
@@ -2957,7 +2960,8 @@ bool run_macro_npc_trace_smoke(App& app) {
     const float cellsPerThink =
         sm::kMacroWalkCellsPerHour * sm::kAiTickGameHours;
     const int marchThinks = int(std::ceil(3.0f / cellsPerThink)) + 2;
-    sm::MacroWorld traceMw2{.gs = &app.gs, .store = app.macroStore.get(),
+    sm::MacroWorld traceMw2{.gs = &app.gs, .session = &app.session,
+                           .store = app.macroStore.get(),
                             .treeGrid = &app.treeGrid};
     for (int i = 0; i < marchThinks; ++i) {
         sm::tick_macro_npc_ai(traceMw2, app.npcAi, sm::kAiTicks);
@@ -4661,7 +4665,7 @@ bool run_spire_climb_smoke(App& app) {
     const int mapW = app.gs.mapW, mapH = app.gs.mapH;
     for (int sy = 0; sy < mapH; ++sy) {
         for (int sx = 0; sx < mapW; ++sx) {
-            if (app.features.at(sx, sy) != sm::FT_Spire) continue;
+            if (app.gs.features.at(sx, sy) != sm::FT_Spire) continue;
             const int orb = sm::feature_number_read(app.gs, sx, sy);
             if (orb <= 0 || orb > sm::kSpellCount) continue;
             const int spell = orb - 1;
@@ -4872,7 +4876,7 @@ bool run_spire_climb_smoke(App& app) {
         for (const auto& s : app.subworld.mgr().structures()) {
             if (s.kind == sm::sub::Structure::SpireOrb) ++orbsAfter;
         }
-        for (const auto& line : app.gs.sessionFeed.lines) {
+        for (const auto& line : app.session.feed.lines) {
             if (std::strstr(line.text, "You have learned") != nullptr) {
                 logged = true;
             }
@@ -5804,7 +5808,7 @@ bool run_subworld_player_bow_smoke(App& app) {
             && !sm::slot_is_worn(eqc->gear, i)) { bowSlot = i; break; }
     }
     if (bowSlot < 0
-        || sm::squad_equip(*app.macroStore, sm::player_flag_handle(app.gs),
+        || sm::squad_equip(*app.macroStore, sm::player_flag_handle(app.session),
                            bowSlot) < 0) {
         smoke_fail(app, "subworld_player_bow equip refused");
         return false;
@@ -6731,7 +6735,7 @@ bool run_console_smoke(App& app) {
             float d = a - b; if (d < 0.0f) d = -d; return d <= 0.5f;
         };
         auto flag_live = [&]() {
-            return app.macroStore->valid(sm::player_flag_handle(app.gs));
+            return app.macroStore->valid(sm::player_flag_handle(app.session));
         };
         auto count_avatar_tags = [&]() {
             // Вопрос выродился в «жива ли ссылка сцены» ((ii-б)): сущность
@@ -6746,8 +6750,8 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "macro_player_entity: no live flag handle");
             return false;
         }
-        const sm::MacroHandle flagBefore = app.gs.playerFlagRef;
-        const auto* mcell = sm::player_flag_cell(app.gs, *app.macroStore);
+        const sm::MacroHandle flagBefore = app.session.playerFlagRef;
+        const auto* mcell = sm::player_flag_cell(app.session, *app.macroStore);
         if (!mcell
             || !near_half(float(sm::ecs::cell_x(*mcell, app.gs.mapW)), saveX)
             || !near_half(float(sm::ecs::cell_y(*mcell, app.gs.mapW)), saveY)) {
@@ -6767,7 +6771,7 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "macro_player_entity: subworld enter failed");
             return false;
         }
-        if (!flag_live() || !(app.gs.playerFlagRef == flagBefore)) {
+        if (!flag_live() || !(app.session.playerFlagRef == flagBefore)) {
             app.subworld.leave(true);
             smoke_fail(app,
                 "macro_player_entity: the flag handle moved on enter");
@@ -6790,7 +6794,7 @@ bool run_console_smoke(App& app) {
             return false;
         }
         tick_playing_runtime(app, false);
-        if (!flag_live() || !(app.gs.playerFlagRef == flagBefore)) {
+        if (!flag_live() || !(app.session.playerFlagRef == flagBefore)) {
             smoke_fail(app,
                 "macro_player_entity: flag handle lost/moved on return");
             return false;
@@ -6799,7 +6803,7 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "macro_player_entity: avatar outlived its scene");
             return false;
         }
-        const auto* rcell = sm::player_flag_cell(app.gs, *app.macroStore);
+        const auto* rcell = sm::player_flag_cell(app.session, *app.macroStore);
         if (!rcell
             || !near_half(float(sm::ecs::cell_x(*rcell, app.gs.mapW)),
                           smoke_player_x(app))
@@ -6812,7 +6816,7 @@ bool run_console_smoke(App& app) {
         std::fprintf(stderr,
                      "[smoke] macro_player_entity cycle flag_slot=%u(held) "
                      "avatar 0->1->0 pos=%d,%d\n",
-                     unsigned(sm::player_flag_handle(app.gs).slot),
+                     unsigned(sm::player_flag_handle(app.session).slot),
                      sm::ecs::cell_x(*rcell, app.gs.mapW),
                      sm::ecs::cell_y(*rcell, app.gs.mapW));
         std::fflush(stderr);
@@ -6821,7 +6825,7 @@ bool run_console_smoke(App& app) {
         // player to the exit cell), then re-sync the flag so the rest of this
         // console battery sees the original macro position.
                 smoke_teleport_player(app, int(saveX), int(saveY));
-        sm::ensure_macro_player_entity(app.gs, *app.macroStore);
+        sm::ensure_macro_player_entity(app.gs, app.session, *app.macroStore);
     }
 
     // Snapshot everything the commands below touch, so we can fully restore.
@@ -6829,7 +6833,7 @@ bool run_console_smoke(App& app) {
     // ledger the gold commands move.
     const int    oldGold         = sm::inventory_value(player_bag(app));
     const auto   oldInv          = player_bag(app);
-    const auto   oldLevel        = sm::player_sheet(app.gs, *app.macroStore)->levelData;
+    const auto   oldLevel        = sm::player_sheet(app.session, *app.macroStore)->levelData;
     const sm::ecs::Pools oldPools = player_pools(app);
     const auto   oldSpellBook    = smoke_player_book(app);
     const auto   oldTime         = app.gs.worldTime;
@@ -6845,7 +6849,7 @@ bool run_console_smoke(App& app) {
             app.subworld.leave(true);
         }
         player_bag(app)   = oldInv;   // the whole bag IS the wallet (№1)
-        sm::player_sheet(app.gs, *app.macroStore)->levelData   = oldLevel;
+        sm::player_sheet(app.session, *app.macroStore)->levelData   = oldLevel;
         player_pools(app)         = oldPools;
         smoke_player_book(app)   = oldSpellBook;
         app.gs.worldTime          = oldTime;
@@ -6907,9 +6911,9 @@ bool run_console_smoke(App& app) {
     if (player_bag(app).count("potion_hp") != potBefore + 2) {
         restore(); smoke_fail(app, "console take item"); return false;
     }
-    const int lvlBefore = sm::level_of(sm::player_sheet(app.gs, *app.macroStore)->levelData);
+    const int lvlBefore = sm::level_of(sm::player_sheet(app.session, *app.macroStore)->levelData);
     con.execute("addexp 100000");
-    if (sm::level_of(sm::player_sheet(app.gs, *app.macroStore)->levelData) <= lvlBefore) {
+    if (sm::level_of(sm::player_sheet(app.session, *app.macroStore)->levelData) <= lvlBefore) {
         restore(); smoke_fail(app, "console addexp did not level up"); return false;
     }
 
@@ -7267,7 +7271,7 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "console spawn wolf: kind did not resolve to wolf row");
             return false;
         }
-        const int expBefore = sm::player_sheet(app.gs, *app.macroStore)->levelData.exp;
+        const int expBefore = sm::player_sheet(app.session, *app.macroStore)->levelData.exp;
         // Убийца — ТЕЛО аватара (§41 корень 5): жнец резолвит лидера по
         // телу, и «ничей» чит-кил (attacker.id == 0) честно не платит никому.
         sm::sub::apply_lethal_damage(
@@ -7277,7 +7281,7 @@ bool run_console_smoke(App& app) {
                 .playerOwned = true},
             sm::sub::DamageKind::Dev);
         app.subworld.tick(0.016f);
-        if (sm::player_sheet(app.gs, *app.macroStore)->levelData.exp <= std::uint32_t(expBefore)) {
+        if (sm::player_sheet(app.session, *app.macroStore)->levelData.exp <= std::uint32_t(expBefore)) {
             restore(); smoke_fail(app, "console wolf kill granted no XP"); return false;
         }
     }
@@ -7286,13 +7290,13 @@ bool run_console_smoke(App& app) {
     // разгадка: команда всегда звалась ADDEXP, «exp» наврала инструкция
     // плейтеста): команда обязана существовать и платить в лист сквада.
     {
-        const int expBefore = sm::player_sheet(app.gs, *app.macroStore)->levelData.exp;
-        const int lvlBefore = sm::level_of(sm::player_sheet(app.gs, *app.macroStore)->levelData);
+        const int expBefore = sm::player_sheet(app.session, *app.macroStore)->levelData.exp;
+        const int lvlBefore = sm::level_of(sm::player_sheet(app.session, *app.macroStore)->levelData);
         if (!con.execute("addexp 500")) {
             restore(); smoke_fail(app, "console addexp command rejected");
             return false;
         }
-        const auto& ldNow = sm::player_sheet(app.gs, *app.macroStore)->levelData;
+        const auto& ldNow = sm::player_sheet(app.session, *app.macroStore)->levelData;
         if (ldNow.exp <= std::uint32_t(expBefore) && sm::level_of(ldNow) <= lvlBefore) {
             restore(); smoke_fail(app, "console addexp paid nothing");
             return false;
@@ -7408,16 +7412,16 @@ bool run_console_smoke(App& app) {
             restore(); smoke_fail(app, "possess: hero husk missing or not a hero body"); return false;
         }
         const sm::sub::ObjRef huskRef = sm::sub::ref_of(objs, huskSlot);
-        // Макро-флаг «до» — хэндл GameState (1е кластер 5, M-220).
-        const sm::MacroHandle macroFlagBefore = app.gs.playerFlagRef;
+        // Макро-флаг «до» — хэндл сессии (1е кластер 5, M-220).
+        const sm::MacroHandle macroFlagBefore = app.session.playerFlagRef;
 
         // ── ПОЛОВИНА 1: гейт уровня — ровня устояла, мана сгорела ────
         // Порог ТЕМИ ЖЕ дверями, какими его читает каст: уровень — лист
         // записи, ранг школы — эффективный лист.
         const int possessionOrd = sm::spell_ordinal("possession");
         const int casterLevel =
-            sm::player_sheet(app.gs, *app.macroStore) ? sm::level_of(sm::player_sheet(app.gs, *app.macroStore)->levelData) : 0;
-        const int voidRank = int(sm::player_effective_sheet(app.gs, *app.macroStore)
+            sm::player_sheet(app.session, *app.macroStore) ? sm::level_of(sm::player_sheet(app.session, *app.macroStore)->levelData) : 0;
+        const int voidRank = int(sm::player_effective_sheet(app.session, *app.macroStore)
                                      .skills.of(sm::SkillId::VoidMagic));
         const int threshold = casterLevel + voidRank;
         sm::sub::slot_set_level(objs, targetSlot, std::int16_t(threshold));
@@ -7430,7 +7434,7 @@ bool run_console_smoke(App& app) {
             int(player_pools(app).mp) ==
             mpBefore - sm::action_def(sm::action_of_spell(possessionOrd)).costMp;
         // Устоявшая цель меняет НИЧЕГО: сценовый флажок на хаске, макро дома.
-        const bool macroFlagHeld = app.gs.playerFlagRef == macroFlagBefore;
+        const bool macroFlagHeld = app.session.playerFlagRef == macroFlagBefore;
         std::fprintf(stderr,
                      "[smoke] possess_gate level_refused=%d mana_burned=%d "
                      "scene_flag_held=%d macro_flag_held=%d threshold=%d\n",
@@ -7460,7 +7464,7 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "possess: the spell did not take a derived body");
             return false;
         }
-        const bool macroFlagHome = app.gs.playerFlagRef == macroFlagBefore;
+        const bool macroFlagHome = app.session.playerFlagRef == macroFlagBefore;
         std::fprintf(stderr,
                      "[smoke] possess_gate derived_taken=%d husk_gone=%d "
                      "macro_flag_home=%d\n",
@@ -7557,7 +7561,7 @@ bool run_console_smoke(App& app) {
                         return body;
                     }
                 }
-                return sm::player_pools(app.gs, *app.macroStore);
+                return sm::player_pools(app.session, *app.macroStore);
             };
             const sm::ecs::Pools* pay = authoritative_pools();
             if (!pay) {
@@ -7601,7 +7605,7 @@ bool run_console_smoke(App& app) {
 
     // Capture reporting values before restoring the world.
     const int         rGold   = sm::inventory_value(player_bag(app));
-    const int         rLevel  = sm::level_of(sm::player_sheet(app.gs, *app.macroStore)->levelData);
+    const int         rLevel  = sm::level_of(sm::player_sheet(app.session, *app.macroStore)->levelData);
     const std::size_t rSpells =
         std::size_t(sm::spellbook_learned_count(smoke_player_book(app)));
     restore();
@@ -7681,9 +7685,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "save underground is forbidden (Persistence)");
                 break;
             }
-            if (!sm::save_game(app.gs, app.macroStore->nextSpawnId,
-                               stage_save_state(app),
-                               app.savePath)) {
+            stage_save_state(app);
+            if (!sm::save_game(app.gs, *app.macroStore, app.savePath)) {
                 smoke_fail(app, "save_game returned false");
                 break;
             }
@@ -7692,13 +7695,6 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "saved slot not inspectable");
                 break;
             }
-            // (ЗДЕСЬ СТОЯЛ ГЕЙТ `file_size_bytes(...) <= 0` — «saved slot
-            //  empty», — И УПАСТЬ ОН НЕ МОГ: четырьмя строками выше уже
-            //  проверен `status == Ready`, а эту готовность `inspect_save`
-            //  выдаёт лишь после размера, магии, версии, разбора шапки И
-            //  КОНТРОЛЬНОЙ СУММЫ. То есть сильный гейт стоял ПЕРЕД слабым, и
-            //  слабый был украшением. Снесён 2026-11-09 вместе с глазком
-            //  `file_size_bytes`, у которого других звонящих не было.)
             std::fprintf(stderr, "[smoke] saved path=%s\n",
                          app.savePath.c_str());
             std::fflush(stderr);
@@ -7758,10 +7754,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                         if (app.macroStore->playerFlag[slot].on != 0)
                             ++carriers;
                     }
-                    // Флаг и родной сквад — биты GameState (1е кластер 5):
+                    // Флаг — кэш сессии (1е кластер 5):
                     // «ровно один флаг» = валидный хэндл в store.
                     const int flags = app.macroStore->valid(
-                        sm::player_flag_handle(app.gs)) ? 1 : 0;
+                        sm::player_flag_handle(app.session)) ? 1 : 0;
                     const sm::MacroHandle door =
                         sm::eldest_controlled_squad(*app.macroStore);
                     const bool doorHonest =
@@ -8071,7 +8067,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             int entrySdx = 0, entrySdy = 0;
             if (const char* ed = std::getenv("TIMAERT_SMOKE_ENTRYDIR")) {
                 int edx = 0, edy = 0, eticks = 0;
-                const sm::MacroHandle fe = sm::player_flag_handle(app.gs);
+                const sm::MacroHandle fe = sm::player_flag_handle(app.session);
                 sm::ecs::MacroNpcRuntime* frt = app.macroStore->valid(fe)
                     ? &app.macroStore->runtime[fe.slot]
                     : nullptr;
@@ -8472,7 +8468,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // ПРОВЕРКОЙ: спрашивается флажок ДО взятия чужого тела, а не
             // `eldest_controlled_squad`, иначе ожидание фазы B считалось бы
             // той же функцией, которую она судит (§8 п.6).
-            const sm::MacroHandle own = sm::player_flag_handle(app.gs);
+            const sm::MacroHandle own = sm::player_flag_handle(app.session);
             const bool ownLive = app.macroStore->valid(own);
             sm::MacroHandle worn = take_a_projected_body();
             SMOKE_CHECK(app, worn.id != 0 && ownLive,
@@ -8492,7 +8488,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             let_the_reaper_run();
 
             const bool aliveA   = app.state == sm::ui::AppState::Playing;
-            const bool stayedOn = sm::player_flag_handle(app.gs) == worn;
+            const bool stayedOn = sm::player_flag_handle(app.session) == worn;
             const bool sceneUpA = app.subworld.active();
             const bool wornLive = app.macroStore->valid(worn)
                                && !sm::macro_dead(*app.macroStore, worn);
@@ -8529,7 +8525,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const bool aliveB     = app.state == sm::ui::AppState::Playing;
             const bool wornDead   = !app.macroStore->valid(worn)
                                  || sm::macro_dead(*app.macroStore, worn);
-            const bool backToOwn  = sm::player_flag_handle(app.gs) == own;
+            const bool backToOwn  = sm::player_flag_handle(app.session) == own;
             const bool sceneEnded = !app.subworld.active();
             const bool atOwnCell  = int(smoke_player_x(app)) == ownX
                                  && int(smoke_player_y(app)) == ownY;
@@ -8691,10 +8687,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 const bool sceneOnBody =
                     sm::sub::avatar_ref_live(*objs)
                     && objs->avatar == bodyRef;
-                // Макро-флаг — биты GameState (1е кластер 5): «на записи» =
+                // Макро-флаг — кэш сессии (1е кластер 5): «на записи» =
                 // хэндл флажка равен хэндлу записи взятого тела.
                 const bool macroOnRecord =
-                    sm::player_flag_handle(app.gs) == origin;
+                    sm::player_flag_handle(app.session) == origin;
                 std::fprintf(stderr,
                              "[smoke] subworld_exit_remap take scene_tags=%d "
                              "scene_on_body=%d macro_on_record=%d\n",
@@ -8728,18 +8724,18 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     break;
                 }
                 const bool poolsFollow =
-                    sm::player_pools(app.gs, *app.macroStore)
+                    sm::player_pools(app.session, *app.macroStore)
                         == &app.macroStore->pools[origin.slot]
-                    && sm::player_pools(app.gs, *app.macroStore)
+                    && sm::player_pools(app.session, *app.macroStore)
                            != &app.macroStore->pools[home.slot];
                 const bool bagFollows =
-                    sm::player_inventory(app.gs, *app.macroStore) != nullptr
-                    && sm::player_inventory(app.gs, *app.macroStore)
+                    sm::player_inventory(app.session, *app.macroStore) != nullptr
+                    && sm::player_inventory(app.session, *app.macroStore)
                            != &app.macroStore->inventory[home.slot].inv;
                 const bool bookFollows =
-                    sm::player_spellbook(app.gs, *app.macroStore)
+                    sm::player_spellbook(app.session, *app.macroStore)
                         == &app.macroStore->spellBook[origin.slot]
-                    && sm::player_spellbook(app.gs, *app.macroStore)
+                    && sm::player_spellbook(app.session, *app.macroStore)
                            != &app.macroStore->spellBook[home.slot];
                 std::fprintf(stderr,
                              "[smoke] subworld_exit_remap family pools=%d bag=%d "
@@ -8799,7 +8795,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // NPC, not a bare husk. The flag IS the whole record of control
                 // (v87): the macro snapshot writes it as the possessed record's
                 // own byte, so there is no scalar to check.
-                const sm::MacroHandle flagH = sm::player_flag_handle(app.gs);
+                const sm::MacroHandle flagH = sm::player_flag_handle(app.session);
                 const bool onMacroNpc = app.macroStore->valid(flagH);
                 const bool ridesOrigin = flagH == origin;
                 std::fprintf(stderr,
@@ -8821,7 +8817,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 enter_subworld(app);
                 const bool reentered = app.subworld.active();
                 const bool flagHeld2 =
-                    sm::player_flag_handle(app.gs) == origin;
+                    sm::player_flag_handle(app.session) == origin;
                 // НОВАЯ сцена — арена перебрана заново (leave() сбросил
                 // конверт; старый objs мёртв).
                 sm::sub::SubObjects* objs2 = &sceneArena;
@@ -8836,10 +8832,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // колонкой носителя флажка — сравнение с наличием
                 // entt-компоненты умерло вместе с ней.
                 const bool doorsAlive =
-                    sm::player_pools(app.gs, *app.macroStore) != nullptr
-                    && sm::player_pools(app.gs, *app.macroStore)
+                    sm::player_pools(app.session, *app.macroStore) != nullptr
+                    && sm::player_pools(app.session, *app.macroStore)
                            == &app.macroStore->pools[origin.slot]
-                    && sm::player_sheet(app.gs, *app.macroStore)
+                    && sm::player_sheet(app.session, *app.macroStore)
                            == &app.macroStore->sheet[origin.slot];
                 const bool bodyIsHis =
                     avSlot >= 0
@@ -8910,9 +8906,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // process: вернуть флажок домой (лорд снова автономный НПЦ) —
                 // дверью переноса (колонка + кэш, 5б), ensure подтверждает
                 // инварианты.
-                sm::transfer_player_flag(*app.macroStore, app.gs.playerFlagRef,
+                sm::transfer_player_flag(*app.macroStore, app.session.playerFlagRef,
                                          sm::eldest_controlled_squad(*app.macroStore));
-                sm::ensure_macro_player_entity(app.gs, *app.macroStore);
+                sm::ensure_macro_player_entity(app.gs, app.session, *app.macroStore);
             }
             ++app.smoke.cursor;
             break;
@@ -9095,7 +9091,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          beforeHostiles, afterHostiles,
                          app.subworld.status_line());
             std::fflush(stderr);
-            const sm::LevelData beforeDeathXp = sm::player_sheet(app.gs, *app.macroStore)->levelData;
+            const sm::LevelData beforeDeathXp = sm::player_sheet(app.session, *app.macroStore)->levelData;
             const int smokeHostile = findSmokeHostile();
             if (smokeHostile < 0) {
                 smoke_fail(app, "battle_start hostile not found for death flush");
@@ -9120,7 +9116,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     .playerOwned = true},
                 sm::sub::DamageKind::Dev);
             app.subworld.leave(true);
-            const sm::LevelData afterDeathXp = sm::player_sheet(app.gs, *app.macroStore)->levelData;
+            const sm::LevelData afterDeathXp = sm::player_sheet(app.session, *app.macroStore)->levelData;
             if (sm::level_of(afterDeathXp) <= sm::level_of(beforeDeathXp)
                 && afterDeathXp.exp <= beforeDeathXp.exp) {
                 smoke_fail(app, "battle_start leave did not flush death XP");
@@ -9612,7 +9608,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
                 const std::uint16_t slot = std::uint16_t(s32);
                 if (stv.alive[slot] == 0) continue;
-                if (sm::handle_at(stv, slot) == sm::player_flag_handle(app.gs)) continue;
+                if (sm::handle_at(stv, slot) == sm::player_flag_handle(app.session)) continue;
                 const auto& hp = stv.pools[slot];
                 if (hp.hp <= 0) continue;
                 const auto& pcell = stv.cell[slot];
@@ -9654,7 +9650,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
                 const std::uint16_t slot = std::uint16_t(s32);
                 if (stv.alive[slot] == 0) continue;
-                if (sm::handle_at(stv, slot) == sm::player_flag_handle(app.gs)) continue;
+                if (sm::handle_at(stv, slot) == sm::player_flag_handle(app.session)) continue;
                 const auto& hp = stv.pools[slot];
                 if (hp.hp <= 0) continue;
                 const auto& pcell = stv.cell[slot];
@@ -9736,7 +9732,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             for (std::size_t s32 = 0; s32 < sm::kUnifiedCap; ++s32) {
                 const std::uint16_t slot = std::uint16_t(s32);
                 if (stv.alive[slot] == 0) continue;
-                if (sm::handle_at(stv, slot) == sm::player_flag_handle(app.gs)) continue;
+                if (sm::handle_at(stv, slot) == sm::player_flag_handle(app.session)) continue;
                 const auto& hp = stv.pools[slot];
                 if (hp.hp <= 0) continue;
                 const auto& acell = stv.cell[slot];
@@ -9829,7 +9825,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "hostile squad did not force the encounter");
                 break;
             }
-            const sm::Inventory* pArmy = sm::player_inventory(app.gs, *app.macroStore);
+            const sm::Inventory* pArmy = sm::player_inventory(app.session, *app.macroStore);
             const int armyBefore = pArmy ? sm::creature_count(*pArmy) : 0;
             const int hpBefore = player_pools(app).hp;
             // ПОТОК RNG СВИПА ПРИНАДЛЕЖИТ ТОЛЬКО МИРУ (M-378). Авторезолв —
@@ -9881,8 +9877,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 && app.macroStore->pools[hostile.slot].hp
                        < app.macroStore->pools[hostile.slot].maxHp;
             const bool playerPaid =
-                (sm::player_inventory(app.gs, *app.macroStore)
-                     ? sm::creature_count(*sm::player_inventory(app.gs, *app.macroStore))
+                (sm::player_inventory(app.session, *app.macroStore)
+                     ? sm::creature_count(*sm::player_inventory(app.session, *app.macroStore))
                      : 0) < armyBefore
                 || player_pools(app).hp < hpBefore;
             if (!enemyGone && !enemyHurt && !playerPaid) {
@@ -10005,6 +10001,74 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          "optics_match=%d first_bad=%zu\n",
                          cell, int(forest[std::size_t(cell)]),
                          opticsMatch ? 1 : 0, firstBad);
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::CityRuinMacro: {
+            // ПОЛЕ ФИЧ — ПОЛЕ СОСТОЯНИЯ, И ОНО ЕДЕТ В СЕЙВ (M-456). Дефект,
+            // ради которого поле переехало: живой мир кладёт руину на клетку
+            // умершего города, а загрузка перевыводила поле из сида — руина
+            // снова становилась городом. Свидетель рожает предусловие сам
+            // (§8 п.11): находит клетку с фичей города и кладёт на неё руину
+            // ТОЙ ЖЕ дверью, которой пишет смерть города (`feature_put` —
+            // единственный писатель поля; её зовёт глагол `reshape_feature`).
+            // На девственном мире загруженное поле совпало бы с полем сида, и
+            // вторая половина зеленела бы на любой потере.
+            std::fprintf(stderr, "[smoke] action=city_ruin_macro\n");
+            if (!app.worldLoaded || app.subworld.active()) {
+                smoke_fail(app, "city_ruin_macro needs the macro map");
+                break;
+            }
+            const std::span<const std::uint8_t> feats =
+                app.gs.features.cells();
+            std::size_t city = feats.size();
+            for (std::size_t i = 0; i < feats.size(); ++i) {
+                if (feats[i] == std::uint8_t(sm::FT_City)) { city = i; break; }
+            }
+            if (city == feats.size()) {
+                // Наличие города на любом сиде — закон генерации (столица на
+                // фракцию), поэтому отказ назван так.
+                smoke_fail(app, "city_ruin_macro: мир обязан был породить "
+                                "хотя бы одну клетку города");
+                break;
+            }
+            const sm::FeatureType got = sm::feature_put(
+                app.gs.features, app.terrain, std::uint32_t(city),
+                sm::FT_Ruin);
+            SMOKE_CHECK(app, got == sm::FT_Ruin
+                                 && app.gs.features.at(std::uint32_t(city))
+                                        == sm::FT_Ruin,
+                        "дверь поля фич положила руину на клетку города");
+            app.smoke.ruinedCell = int(city);
+            std::fprintf(stderr, "[smoke] city_ruin_macro cell=%d,%d\n",
+                         sm::cell_x(std::uint32_t(city), app.gs.mapW),
+                         sm::cell_y(std::uint32_t(city), app.gs.mapW));
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::RuinStaysRuin: {
+            // ВТОРАЯ ПОЛОВИНА: после сохранения и загрузки клетка несёт РУИНУ
+            // — поле приехало дампом состояния, а не воскресло из сида, — и
+            // запечённая от него цена пути описывает загруженное поле: руина
+            // и город суть разные строки каталога, а сетку цен перепекает
+            // дверь загрузки от того, что в мире ЛЕЖИТ.
+            std::fprintf(stderr, "[smoke] action=ruin_stays_ruin\n");
+            const int cell = app.smoke.ruinedCell;
+            if (cell < 0
+                || std::size_t(cell) >= app.gs.features.cell_count()) {
+                smoke_fail(app, "ruin_stays_ruin without city_ruin_macro");
+                break;
+            }
+            const sm::FeatureType now =
+                app.gs.features.at(std::uint32_t(cell));
+            SMOKE_CHECK(app, now == sm::FT_Ruin,
+                        "руина, положенная до сохранения, осталась руиной "
+                        "после загрузки — поле фич не перевыведено из сида");
+            std::fprintf(stderr, "[smoke] ruin_stays_ruin cell=%d feature=%d "
+                                 "(ruin=%d city=%d)\n",
+                         cell, int(now), int(sm::FT_Ruin), int(sm::FT_City));
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -10407,13 +10471,13 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr,
                          "[smoke] stats open attrPts=%d skillPts=%d end=%d bodybuilding=%d hpMax=%d\n",
                          sm::attribute_points_left(
-                             sm::player_sheet(app.gs, *app.macroStore)->levelData,
-                             sm::player_sheet(app.gs, *app.macroStore)->attributes),
+                             sm::player_sheet(app.session, *app.macroStore)->levelData,
+                             sm::player_sheet(app.session, *app.macroStore)->attributes),
                          sm::skill_points_left(
-                             sm::player_sheet(app.gs, *app.macroStore)->levelData,
-                             sm::player_sheet(app.gs, *app.macroStore)->skills),
-                         sm::player_sheet(app.gs, *app.macroStore)->attributes.of(sm::AttributeId::End),
-                         sm::player_sheet(app.gs, *app.macroStore)->skills.of(sm::SkillId::Bodybuilding),
+                             sm::player_sheet(app.session, *app.macroStore)->levelData,
+                             sm::player_sheet(app.session, *app.macroStore)->skills),
+                         sm::player_sheet(app.session, *app.macroStore)->attributes.of(sm::AttributeId::End),
+                         sm::player_sheet(app.session, *app.macroStore)->skills.of(sm::SkillId::Bodybuilding),
                          player_pools(app).maxHp);
             std::fflush(stderr);
             ++app.smoke.cursor;
@@ -10495,13 +10559,13 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // доступное выводится, значит «дай очко» есть «подними ступень».
             {
                 sm::LevelData& ld =
-                    sm::player_sheet(app.gs, *app.macroStore)->levelData;
+                    sm::player_sheet(app.session, *app.macroStore)->levelData;
                 ld.exp = sm::exp_at_level(sm::level_of(ld) + 1);
             }
             const int beforePoints = sm::attribute_points_left(
-                             sm::player_sheet(app.gs, *app.macroStore)->levelData,
-                             sm::player_sheet(app.gs, *app.macroStore)->attributes);
-            const int beforeEnd = sm::player_sheet(app.gs, *app.macroStore)->attributes.of(sm::AttributeId::End);
+                             sm::player_sheet(app.session, *app.macroStore)->levelData,
+                             sm::player_sheet(app.session, *app.macroStore)->attributes);
+            const int beforeEnd = sm::player_sheet(app.session, *app.macroStore)->attributes.of(sm::AttributeId::End);
             const int beforeHp = player_pools(app).maxHp;
             // РАНИТЬ ДО ТРАТЫ, А НЕ ПОСЛЕ (M-301). Правило то же («доля у
             // всех», владелец 2026-09-10): потолок следует за листом, а полоса
@@ -10514,7 +10578,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             player_pools(app).hp = std::max(1, beforeHp / 2);
             const int curHpBefore = player_pools(app).hp;
             if (!sm::squad_spend_attribute(*app.macroStore,
-                                           sm::player_flag_handle(app.gs),
+                                           sm::player_flag_handle(app.session),
                                            sm::AttributeId::End)) {
                 smoke_fail(app, "spend_attribute_end rejected");
                 break;
@@ -10524,9 +10588,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const float fracAfter =
                 float(afterSpend.hp) / float(std::max(1, afterSpend.maxHp));
             if (sm::attribute_points_left(
-                             sm::player_sheet(app.gs, *app.macroStore)->levelData,
-                             sm::player_sheet(app.gs, *app.macroStore)->attributes) != beforePoints - 1
-                || sm::player_sheet(app.gs, *app.macroStore)->attributes.of(sm::AttributeId::End) != beforeEnd + 1
+                             sm::player_sheet(app.session, *app.macroStore)->levelData,
+                             sm::player_sheet(app.session, *app.macroStore)->attributes) != beforePoints - 1
+                || sm::player_sheet(app.session, *app.macroStore)->attributes.of(sm::AttributeId::End) != beforeEnd + 1
                 || afterSpend.maxHp <= beforeHp
                 || afterSpend.hp >= afterSpend.maxHp
                 || std::fabs(fracAfter - fracBefore)
@@ -10538,10 +10602,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          "[smoke] spend_attr_end points=%d->%d end=%d->%d hpMax=%d->%d\n",
                          beforePoints,
                          sm::attribute_points_left(
-                             sm::player_sheet(app.gs, *app.macroStore)->levelData,
-                             sm::player_sheet(app.gs, *app.macroStore)->attributes),
+                             sm::player_sheet(app.session, *app.macroStore)->levelData,
+                             sm::player_sheet(app.session, *app.macroStore)->attributes),
                          beforeEnd,
-                         sm::player_sheet(app.gs, *app.macroStore)->attributes.of(sm::AttributeId::End),
+                         sm::player_sheet(app.session, *app.macroStore)->attributes.of(sm::AttributeId::End),
                          beforeHp,
                          player_pools(app).maxHp);
             std::fflush(stderr);
@@ -10574,15 +10638,15 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // ноль» умер, а сценарий остаётся нейтральным по другой причине —
             // в руке этого тела щита нет, значит множить рангу нечего и ни одно
             // число сцены от забытого ранга не движется.
-            sm::player_sheet(app.gs, *app.macroStore)
+            sm::player_sheet(app.session, *app.macroStore)
                 ->skills.rank[std::size_t(sm::SkillId::Shield)] = 0;
             // (Прежде здесь же обнулялся счётчик очков ранга, потому что бонус
             //  пола банковал одно. Бонус умер этой же правкой, а очки ранга на
             //  первом уровне выводятся в НОЛЬ по построению — обнулять нечего.)
             const int beforePicks = sm::learn_picks_left(
-                             sm::player_sheet(app.gs, *app.macroStore)->levelData,
-                             sm::player_sheet(app.gs, *app.macroStore)->skills);
-            const int beforeRank = sm::player_sheet(app.gs, *app.macroStore)->skills.of(sm::SkillId::Bodybuilding);
+                             sm::player_sheet(app.session, *app.macroStore)->levelData,
+                             sm::player_sheet(app.session, *app.macroStore)->skills);
+            const int beforeRank = sm::player_sheet(app.session, *app.macroStore)->skills.of(sm::SkillId::Bodybuilding);
             const int beforeHp = player_pools(app).maxHp;
             if (beforeRank != 0) {
                 smoke_fail(app, "spend_skill_bodybuilding expected ignorance");
@@ -10594,26 +10658,26 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             player_pools(app).hp = std::max(1, beforeHp / 2);
             const int curHpBefore = player_pools(app).hp;
             if (!sm::squad_spend_learn(*app.macroStore,
-                                       sm::player_flag_handle(app.gs),
+                                       sm::player_flag_handle(app.session),
                                        sm::SkillId::Bodybuilding)) {
                 smoke_fail(app, "spend_skill_bodybuilding learn rejected");
                 break;
             }
             const bool spendRefused =
                 sm::skill_points_left(
-                             sm::player_sheet(app.gs, *app.macroStore)->levelData,
-                             sm::player_sheet(app.gs, *app.macroStore)->skills) <= 0
+                             sm::player_sheet(app.session, *app.macroStore)->levelData,
+                             sm::player_sheet(app.session, *app.macroStore)->skills) <= 0
                 && !sm::squad_spend_skill(*app.macroStore,
-                                          sm::player_flag_handle(app.gs),
+                                          sm::player_flag_handle(app.session),
                                           sm::SkillId::Bodybuilding);
             const sm::ecs::Pools& afterLearn = player_pools(app);
             const float fracBefore = float(curHpBefore) / float(beforeHp);
             const float fracAfter =
                 float(afterLearn.hp) / float(std::max(1, afterLearn.maxHp));
             if (sm::learn_picks_left(
-                             sm::player_sheet(app.gs, *app.macroStore)->levelData,
-                             sm::player_sheet(app.gs, *app.macroStore)->skills) != beforePicks - 1
-                || sm::player_sheet(app.gs, *app.macroStore)->skills.of(sm::SkillId::Bodybuilding) != 1
+                             sm::player_sheet(app.session, *app.macroStore)->levelData,
+                             sm::player_sheet(app.session, *app.macroStore)->skills) != beforePicks - 1
+                || sm::player_sheet(app.session, *app.macroStore)->skills.of(sm::SkillId::Bodybuilding) != 1
                 || afterLearn.maxHp <= beforeHp
                 || afterLearn.hp >= afterLearn.maxHp
                 || std::fabs(fracAfter - fracBefore)
@@ -10626,10 +10690,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          "[smoke] spend_skill_bodybuilding picks=%d->%d rank=%d->%d hpMax=%d->%d spend_refused=1\n",
                          beforePicks,
                          sm::learn_picks_left(
-                             sm::player_sheet(app.gs, *app.macroStore)->levelData,
-                             sm::player_sheet(app.gs, *app.macroStore)->skills),
+                             sm::player_sheet(app.session, *app.macroStore)->levelData,
+                             sm::player_sheet(app.session, *app.macroStore)->skills),
                          beforeRank,
-                         sm::player_sheet(app.gs, *app.macroStore)->skills.of(sm::SkillId::Bodybuilding),
+                         sm::player_sheet(app.session, *app.macroStore)->skills.of(sm::SkillId::Bodybuilding),
                          beforeHp,
                          player_pools(app).maxHp);
             std::fflush(stderr);
@@ -11291,8 +11355,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 float(sm::calculate_derived(hasted.attributes, hasted.skills)
                           .moveSpeedPct) / 100.0f;
             const float basePace =
-                float(sm::calculate_derived(sm::player_sheet(app.gs, *app.macroStore)->attributes,
-                                            sm::player_sheet(app.gs, *app.macroStore)->skills)
+                float(sm::calculate_derived(sm::player_sheet(app.session, *app.macroStore)->attributes,
+                                            sm::player_sheet(app.session, *app.macroStore)->skills)
                           .moveSpeedPct) / 100.0f;
             if (!active || afterMp >= beforeMp || !(hastePace > basePace)) {
                 smoke_fail(app, "haste sustained drain/speed invariant");

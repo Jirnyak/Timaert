@@ -35,7 +35,6 @@ inline constexpr std::uint8_t kRuinMaxZone = 229;
 // A world with no admissible land simply gets fewer ruins (logged).
 struct MacroStore;   // fwd — тело места рождается в store (M-90 шаг 5)
 void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
-                    const TerrainData& terrain,
-                    FeatureLayer& features);
+                    const TerrainData& terrain);
 
 } // namespace sm

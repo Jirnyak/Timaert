@@ -1,4 +1,5 @@
 #include "check.h"
+#include <memory>
 
 #include "tables/biomes.h"
 #include "macro/features.h"
@@ -115,7 +116,8 @@ int main()
     sm::TerrainData td = make_terrain(2, 2);
     CHECK(td.cell_count() == 4u && td.has_rgba_storage(),
                  "terrain storage helpers must accept valid RGBA backing data");
-    sm::FeatureLayer fullFeatures;
+    const std::unique_ptr<sm::FeatureLayer> fullFeaturesOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& fullFeatures = *fullFeaturesOwn;
     fullFeatures.resize(2, 2);
     sm::feature_put(fullFeatures, td, 0, 0, sm::FT_Road);
 
@@ -193,23 +195,22 @@ int main()
                      && maskFlipped.water[0] == 0u,
                  "маска солгала про воду — мир ответил по плоскости, землёй");
 
-    sm::FeatureLayer shortFeatures;
-    shortFeatures.width = 2;
-    shortFeatures.height = 2;
-    shortFeatures.data.assign(1u, std::uint8_t(sm::FT_Road));
+    // (ЗДЕСЬ СТОЯЛ СЛУЧАЙ «КОРОТКОЙ ПАМЯТИ» — слой, чей вектор короче его
+    //  сторон. С M-456 слой фич есть плоский массив под капом клеток, и память
+    //  короче сторон невыразима; форму «слой не покрывает рельеф» судит случай
+    //  несовпавших сторон ниже.)
     const sm::PathCostData noFeatures = sm::build_cost_grid(td, nullptr);
-    const sm::PathCostData shortFeatureCosts = sm::build_cost_grid(td, &shortFeatures);
-    CHECK(shortFeatureCosts.costGrid == noFeatures.costGrid,
-                 "short feature storage must be ignored by cost-grid builder");
 
-    sm::FeatureLayer mismatchedFeatures;
+    const std::unique_ptr<sm::FeatureLayer> mismatchedFeaturesOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& mismatchedFeatures = *mismatchedFeaturesOwn;
     mismatchedFeatures.resize(1, 2);
     sm::feature_put(mismatchedFeatures, td, 0, 0, sm::FT_Road);
     const sm::PathCostData mismatchCosts = sm::build_cost_grid(td, &mismatchedFeatures);
     CHECK(mismatchCosts.costGrid == noFeatures.costGrid,
                  "dimension-mismatched feature storage must be ignored");
 
-    sm::FeatureLayer invalidFeatures;
+    const std::unique_ptr<sm::FeatureLayer> invalidFeaturesOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& invalidFeatures = *invalidFeaturesOwn;
     invalidFeatures.resize(2, 2);
     invalidFeatures.data[0] = 255u;
     sm::feature_put(invalidFeatures, td, 1, 0, sm::FT_Road);
@@ -234,12 +235,17 @@ int main()
                      && malformedCosts.costGrid.empty(),
                  "malformed terrain storage must fail closed");
 
-    sm::FeatureLayer zoneFeatures;
+    const std::unique_ptr<sm::FeatureLayer> zoneFeaturesOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& zoneFeatures = *zoneFeaturesOwn;
     zoneFeatures.resize(4, 4);
-    sm::FeatureLayer shortZoneFeatures;
-    shortZoneFeatures.width = 4;
-    shortZoneFeatures.height = 4;
-    shortZoneFeatures.data.assign(1u, std::uint8_t(sm::FT_DirtRoad));
+    // Слой, НЕ покрывающий мир зон (стороны не те): генератор зон обязан его
+    // не читать. Прежде здесь стояла «короткая память» — вектор короче сторон;
+    // у плоского слоя под капом (M-456) такое невыразимо, а закон «чужой слой
+    // не читается» остался и судится несовпавшими сторонами.
+    const std::unique_ptr<sm::FeatureLayer> strangerZoneFeaturesOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& strangerZoneFeatures = *strangerZoneFeaturesOwn;
+    strangerZoneFeatures.resize(2, 2);
+    strangerZoneFeatures.data[0] = std::uint8_t(sm::FT_DirtRoad);
     const std::vector<sm::ZoneSeed> noSeeds;
     // The continuous zone value exists only DURING the bake (the stored float
     // twin was 4 MiB with no game reader — cut 2026-08-24); the test asks for
@@ -253,12 +259,13 @@ int main()
                  "generated zone layer must expose complete storage");
     std::vector<float> shortFeatCont;
     const sm::ZoneLayer shortFeatureZones =
-        sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, shortZoneFeatures,
+        sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, strangerZoneFeatures,
                            nullptr, nullptr, &shortFeatCont);
     CHECK(shortFeatureZones.data == baselineZones.data
                      && shortFeatCont == baselineCont,
-                 "short feature storage must be ignored by zone generator");
-    sm::FeatureLayer invalidZoneFeatures;
+                 "a feature layer of another shape must be ignored by zone generator");
+    const std::unique_ptr<sm::FeatureLayer> invalidZoneFeaturesOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& invalidZoneFeatures = *invalidZoneFeaturesOwn;
     invalidZoneFeatures.resize(4, 4);
     invalidZoneFeatures.data[0] = 255u;
     std::vector<float> invalidFeatCont;

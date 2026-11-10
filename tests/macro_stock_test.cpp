@@ -109,7 +109,7 @@ World make_world() {
     gs.mapH = 64;
     {
         const sm::MacroHandle h = sm::birth_squad(
-            gs, st, sm::SquadType::City, 10, 10, -1, "Testholm");
+            gs, nullptr, st, sm::SquadType::City, 10, 10, -1, "Testholm");
         wld.cityId = int(st.spawnId[h.slot].index);
         // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в число фичи
         // фичи, головы в инвентарь. Сток `population` читает и пишет ровно
@@ -118,7 +118,7 @@ World make_world() {
     }
     {
         const sm::MacroHandle h = sm::birth_squad(
-            gs, st, sm::SquadType::City, 30, 30, -1, "Neighbour");
+            gs, nullptr, st, sm::SquadType::City, 30, 30, -1, "Neighbour");
         wld.otherId = int(st.spawnId[h.slot].index);
         sm::settle_souls(gs, st, h.slot, 300);
     }
@@ -129,13 +129,13 @@ World make_world() {
     // bills the right place.
     {
         const sm::MacroHandle h = sm::birth_squad(
-            gs, st, sm::SquadType::Village, 40, 40, -1, "Twinvale");
+            gs, nullptr, st, sm::SquadType::Village, 40, 40, -1, "Twinvale");
         wld.twinId = int(st.spawnId[h.slot].index);
         sm::settle_souls(gs, st, h.slot, 80);
     }
     {
         const sm::MacroHandle h = sm::birth_squad(
-            gs, st, sm::SquadType::Village, 20, 20, -1, "Hamlet");
+            gs, nullptr, st, sm::SquadType::Village, 20, 20, -1, "Hamlet");
         wld.hamletId = int(st.spawnId[h.slot].index);
         sm::settle_souls(gs, st, h.slot, 40);
     }
@@ -537,6 +537,7 @@ void test_the_lease_holds_the_dead_record_against_the_sweep() {
     auto worldStore_ = sm::make_macro_store();
     auto gsp = std::make_unique<sm::GameState>();
     sm::GameState& gs = *gsp;
+    sm::Session ses;
     gs.mapW = gs.mapH = 64;
 
     // Два павших с ПУСТЫМ контейнером существ — то есть ровно те, кого свип
@@ -551,19 +552,19 @@ void test_the_lease_holds_the_dead_record_against_the_sweep() {
 
     // Рамка стоит на соседе клетки «внутри» — значит сама клетка в аренде
     // через `cell_step`, а не потому, что совпала с центром.
-    sm::lease_window_at(gs, cell_of(11, 10, gs.mapW));
-    CHECK(cell_is_leased(gs, st.cell[inside.slot].idx)
-              && !cell_is_leased(gs, st.cell[outside.slot].idx),
+    sm::lease_window_at(ses, cell_of(11, 10, gs.mapW));
+    CHECK(cell_is_leased(&ses, st.cell[inside.slot].idx, gs.mapW)
+              && !cell_is_leased(&ses, st.cell[outside.slot].idx, gs.mapW),
           "фикстура: одна запись в арендованной рамке, другая за ней");
 
-    CHECK(destroy_dead_macro_squads(st, gs) == 1,
+    CHECK(destroy_dead_macro_squads(st, gs, &ses) == 1,
           "свип взял РОВНО одну запись: арендованную он не трогает");
     CHECK(st.valid(inside) && !st.valid(outside),
           "труп в окне дожил до подбора, труп за рамкой сжат как всегда");
 
     // ── ВТОРАЯ ПОЛЯРНОСТЬ: КОНЕЦ АРЕНДЫ И ЕСТЬ МОМЕНТ ЖАТВЫ ─────────────
-    sm::release_window(gs);
-    CHECK(destroy_dead_macro_squads(st, gs) == 1 && !st.valid(inside),
+    sm::release_window(ses);
+    CHECK(destroy_dead_macro_squads(st, gs, &ses) == 1 && !st.valid(inside),
           "аренда снята — та же запись сжата тем же свипом, без второго "
           "закона жизни записи и без сезонного чистильщика");
 }
@@ -645,10 +646,10 @@ void test_vein_is_a_two_carrier_row() {
     sm::DepositLayer& deposits = *depositsOwn;
     allocate_deposit_fields(deposits, gs.mapW, gs.mapH);
     create_deposit(deposits, 9, 9, 1000);   // дикая жила
-    FeatureLayer features;
+    FeatureLayer& features = gs.features;
     features.resize(gs.mapW, gs.mapH);
     MacroWorld w{.gs = &gs, .store = wld.store.get(),
-                 .deposits = &deposits, .features = &features};
+                 .deposits = &deposits};
 
     CHECK(resource_field_read(w, ResourceFieldId::Vein, 9, 9) == 1000,
           "без шахты ряд читает дикую жилу — геологию видно");
@@ -711,7 +712,7 @@ void test_a_creature_deal_moves_the_flock_both_ways() {
 
     // Свидетель рождает своё предусловие сам (§8 п.11): место и его паства —
     // дверями мира, а не присвоением колонки.
-    const MacroHandle town = sm::birth_squad(gs, st, SquadType::City, 12, 9);
+    const MacroHandle town = sm::birth_squad(gs, nullptr, st, SquadType::City, 12, 9);
     const int kSouls = 40;
     CHECK(sm::settle_souls(gs, st, town.slot, kSouls) == kSouls,
           "паства встала дверью мира целиком");
@@ -829,7 +830,7 @@ void test_a_creature_death_writes_only_the_container() {
         reconcile_rooted_flock(gs, st, flockBuf.data());
     };
 
-    const MacroHandle town = sm::birth_squad(gs, st, SquadType::City, 12, 9);
+    const MacroHandle town = sm::birth_squad(gs, nullptr, st, SquadType::City, 12, 9);
     const int kAtHome = 40;
     // ДУШИ ДОМА СТАВЯТСЯ ПОЛОВИНОЙ-КОНТЕЙНЕРОМ НАМЕРЕННО, И ЭТО НЕ ОБХОД ДВЕРИ,
     // А УСЛОВИЕ ТОГО, ЧТОБЫ У ПРИБОРА БЫЛИ ЗУБЫ. `settle_souls` пишет ОБА

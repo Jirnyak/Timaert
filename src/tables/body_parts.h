@@ -214,3 +214,9 @@ static_assert(kHumanoidSlots.count() == 42,
 TIMAERT_ROW(sm::BodyPartDef);
 TIMAERT_ROW(sm::SlotMask);
 TIMAERT_ROW(sm::PartCount);
+
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::SlotMask, &sm::SlotMask::bits);

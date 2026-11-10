@@ -479,7 +479,8 @@ int main(int argc, char** argv) {
         SDL_Quit();
         return 3;
     }
-    sm::FeatureLayer features;
+    const std::unique_ptr<sm::FeatureLayer> featuresOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& features = *featuresOwn;
     features.resize(td.width, td.height);
     std::unique_ptr<sm::TreeLayer> treeLayerOwn{new sm::TreeLayer()};
     sm::TreeLayer& treeLayer = *treeLayerOwn;
@@ -561,7 +562,7 @@ int main(int argc, char** argv) {
             return (a + (b - a) * tx) * (1.f - ty) + (c + (d - c) * tx) * ty;
         };
         long trees = 0;
-        std::vector<std::uint8_t> forestMask(features.data.size(), 0);
+        std::vector<std::uint8_t> forestMask(features.cell_count(), 0);
         for (int y = 0; y < td.height; ++y) {
             for (int x = 0; x < td.width; ++x) {
                 const std::size_t i = std::size_t(y) * td.width + x;

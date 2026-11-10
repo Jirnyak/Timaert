@@ -1,21 +1,44 @@
-// Binary save/load. The terrain/politik layers are regenerated from
-// worldSeed + map parameters, then mutable runtime records are overlaid.
-// Снимков субмира не существует вовсе (M-262, 2026-10-19): клетка есть
-// проекция своей идентичности плюс числа макро-полей, которые лежат здесь, —
-// второй памяти рядом с ними нет.
+// СЕЙВ ЕСТЬ ПРЯМОЙ ДАМП ПАКЕТНОЙ ФОРМЫ — СВОЕГО ФОРМАТА У НЕГО НЕТ (CRAFT §10,
+// ЗАКОН КАНОНИЧЕСКОГО ФРЕЙМА; M-439, 2026-11-10).
 //
-// Save format is binary, version-gated by kSaveVersion. Per AGENTS.md
-// rule #2, we do NOT keep backward compatibility — bump kSaveVersion
-// for any layout change and old saves are silently rejected.
+// Файл — это заголовок и ДВА КУСКА ПАМЯТИ байт в байт, в том виде, в каком
+// они лежат в живом мире:
+//
+//     SaveHeader                 64 Б    магия, версия, размеры, сумма, метка
+//     GameState                  sizeof  состояние макромира (роды 3–6 и игрок)
+//     MacroStore                 sizeof  гладкая память сквадов (род 2)
+//
+// Сериализатора нет: ни обхода полей, ни тегов, ни счётчиков блоков, ни
+// разреженных пар. Запись есть `fwrite` двух кусков, чтение — `fread` в те же
+// два типа. Оба тривиально копируемы, плоски и БЕЗ ДЫР ВЫРАВНИВАНИЯ под
+// компилятором (`TIMAERT_PACKED@src/core/row_law.h`), поэтому один мир даёт
+// один файл: байта, не принадлежащего члену, в куске нет.
+//
+// ЧТО ИЗ ЭТОГО СЛЕДУЕТ, И ЭТО ЗАКОН, А НЕ УДОБСТВО:
+//   · новая величина мира едет в сейв В ТОТ ДЕНЬ, КОГДА СТАЛА ЧЛЕНОМ состояния
+//     или колонкой стора, — писать её в сейв нечем и незачем (§10 п.2);
+//   · забыть величину на записи или потерять её на чтении НЕВЫРАЗИМО: списка
+//     величин у сейва нет, свёртку загрузки заменили два копирования;
+//   · размер файла — КОНСТАНТА СБОРКИ (`save_file_bytes`), один у пустого мира
+//     и у забитого (ЗАКОН ГЛАДКОЙ ПАМЯТИ): «потолка payload» больше не
+//     существует, потому что payload ровно один;
+//   · смена раскладки меняет `sizeof` — и файл прежней раскладки отказывается
+//     заголовком сам. `kSaveVersion@src/macro/state.h` остаётся для того, чего
+//     `sizeof` не видит: смены СМЫСЛА при тех же байтах (перенумерованный
+//     ординал). Совместимости со старыми файлами нет и не будет (AGENTS,
+//     «ФОРМАТ СЕЙВА НЕ ЯВЛЯЕТСЯ ОГРАНИЧЕНИЕМ»).
+//
+// ЧЕГО В ФАЙЛЕ НЕТ: клеток рода 1 (рельеф, биомы, жилы) — они перевыводятся из
+// сида, как и раньше; сессии (`Session@src/bus/session.h`) — она не мир;
+// субмира — сохраняться можно только на макро-слое (§10 п.1).
 #pragma once
 #include <cstdint>
 #include <string>
-#include <vector>
 
 namespace sm {
 
 struct GameState;
-struct MacroNpcRecord;
+struct MacroStore;
 
 enum class SaveInspectStatus : std::uint8_t {
     Missing,
@@ -35,60 +58,51 @@ struct SaveSummary {
     int minute = 0;
 };
 
-// Returns true on success. Failures return false; no exceptions are used.
-// `macroNpcs` is the flattened macro-ECS (macro/macro_snapshot.h) — a
-// REQUIRED parameter on purpose: a call site that could omit it would write
-// a world with no lords in it and nobody would notice until a load.
-// (Живые клетки леса были здесь ВТОРЫМ обязательным параметром, пока лес жил
-// вне состояния мира. С ломтя 3 сейв-эпика лес есть поле `GameState`, и
-// провод берёт его оттуда: забыть его у звонящего больше нечем.)
-// («Кем я на карте» едет колонкой playerFlag записи снапшота — 5б: провод
-// получает флаг даром вместе с анкетой; кэши GameState пересобирает
-// resolve_player_handles_after_load строго ПОСЛЕ restore_macro_ecs.)
-// `storeNextSpawnId` — эмитент идентичностей стора (MacroStore.nextSpawnId,
-// M-220): едет скаляром префикса, потому что max-over-living его НЕ выводит —
-// ординалы мертвецов живут в летописи и интересах, и отставший эмитент выдал
-// бы новое рождение под именем мертвеца (19.24).
-bool save_game(const GameState& s, std::uint32_t storeNextSpawnId,
-               const std::vector<MacroNpcRecord>& macroNpcs,
+// ЗАПИСЬ. Возвращает true на успехе; исключений нет. Пишет во временный файл
+// рядом, ПЕРЕЧИТЫВАЕТ его и сверяет сумму, и только потом подменяет слот
+// (прежний уезжает в `.bak`): неудавшаяся запись оставляет прежний слот целым.
+// Мир не трогается и не копируется — сумма считается прямо по живой памяти.
+bool save_game(const GameState& gs, const MacroStore& st,
                const std::string& path);
-bool load_game(GameState& s, std::uint32_t& storeNextSpawnId,
-               std::vector<MacroNpcRecord>& macroNpcs,
-               const std::string& path);
+
+// ЧТЕНИЕ — ПРЯМО В `gs` И `st`. Звонящий обязан дать ЧЕРНОВИКИ, а не живой
+// мир: файл с верным заголовком и неверной суммой отказывается ПОСЛЕ того,
+// как его байты уже легли по адресу (сумма считается по прочитанной памяти —
+// второй копии гигабайта дверь не держит). При false содержимое обоих
+// черновиков не определено и читать его нельзя.
+bool load_game(GameState& gs, MacroStore& st, const std::string& path);
+
+// ОСМОТР СЛОТА ДЛЯ ЭКРАНА ЗАГРУЗКИ — ДЕШЁВЫЙ ПО ПОСТРОЕНИЮ: заголовок, длина
+// файла и два числа состояния (сид и время), прочитанные по их смещению в
+// куске. Сумму он НЕ считает: слот весит гигабайт, а осмотр зовётся для двух
+// слотов на каждое открытие экрана и после каждой записи. Значит `Ready`
+// значит «файл этой сборки и целой длины», а порчу байтов внутри судит сама
+// загрузка — и отказывает.
 SaveSummary inspect_save(const std::string& path);
 
-// ПОТОЛОК PAYLOAD, ВЫВЕДЕННЫЙ ИЗ СУММЫ КАПОВ БЛОКОВ (save.cpp). Вопрос, а не
-// константа заголовка: слагаемые тянут капы половины мира, и тело в
-// заголовке платил бы каждый включивший (AGENTS §5 п.13) — здесь же цена
-// O(1). Спрашивает его свидетель: сейв реального мира обязан быть строго
-// НИЖЕ суммы, иначе потолок охраняет случай, а не закон.
-std::uint64_t save_max_payload_bytes();
+// Сколько весит слот на диске — константа сборки: заголовок и два куска.
+std::uint64_t save_file_bytes();
 
-// ── THE witness on the load's fold ────────────────────────────────────────
+// ── КОНТРОЛЬНАЯ СУММА КУСКА ПАМЯТИ — СЛОВАМИ ПО 64 БИТА ──────────────────────
+// Вердикт владельца 2026-11-10 (вопрос В4 сейв-эпика): побайтная FNV-1a стоила
+// 1.66 с на гигабайт и считалась на записи дважды. Здесь та же свёртка
+// «исключающее ИЛИ, затем умножение на простое», но над СЛОВАМИ по 8 Б и
+// четырьмя независимыми дорожками: слово i идёт в дорожку i mod 4, дорожки
+// сливаются в конце вместе со счётом слов. Четыре дорожки — не украшение:
+// цепочка умножений одной дорожки ждёт сама себя, а четыре считаются
+// процессором одновременно.
 //
-// What a world WOULD weigh on disk: the same write_payload every save runs,
-// with the timestamp held fixed (it is the one field that differs between two
-// saves of one state), checksummed. Not a save — nothing is written anywhere.
-//
-// It exists because the load applies a file to a LIVING world, and that apply
-// was a hand-written list of assignments. A hand-written fold drops fields
-// silently: five of them rode the file and died on the way in (SAVE-1 —
-// resource scars, the loot pool, the ships, the scent fields, the place
-// issuer), and nothing could see it, because the round-trip test proves
-// file→GameState, which is the half that worked.
-//
-// So the door proves ITSELF instead: fingerprint the state parsed from the
-// file, fingerprint the living world right after the fold, and demand they
-// agree. The ENUMERATION of fields is the writer's, not a human's — a field
-// added to write_payload is watched from the day it is added, and a field
-// dropped on the way in is a mismatch the same second.
-//
-// Two conditions this rests on, both now true: the byte stream is
-// deterministic for one state (every sparse block sorts — deposits, scars,
-// and since SAVE-3 the ships), and the macro snapshot rides sorted by
-// ordinal (macro_snapshot.cpp:47).
-std::uint32_t save_payload_fingerprint(
-    const GameState& s, std::uint32_t storeNextSpawnId,
-    const std::vector<MacroNpcRecord>& macroNpcs);
+// Сумму можно кормить КУСКАМИ (запись считает по живой памяти, самопроверка —
+// по файлу, читаемому порциями): результат зависит только от
+// последовательности слов, не от нарезки. Длина каждой порции обязана быть
+// кратной 8 — оба куска мира кратны по построению (стена в `save.cpp`).
+struct SaveChecksum {
+    std::uint64_t lane[4];
+    std::uint64_t words = 0;
+
+    SaveChecksum();
+    void feed(const void* data, std::size_t bytes);
+    std::uint64_t finish() const;
+};
 
 } // namespace sm

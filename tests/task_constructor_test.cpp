@@ -130,9 +130,10 @@ MacroHandle make_walker(MacroStore& st, int x, int y, const char* factionId,
 struct Rig {
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
+    Session ses{};
     std::unique_ptr<MacroStore> store = make_macro_store();
     SquadIndex idx{};
-    FeatureLayer features{};
+    FeatureLayer& features = gs.features;   // поле фич — член состояния (M-456)
     MacroHandle place{};
     MacroHandle player{};
     MacroHandle prey{};
@@ -146,14 +147,12 @@ void build_rig(Rig& r) {
     r.gs.worldSeed = 777u;
     chronicle_init(r.gs.chronicle, kMap, kMap);
     create_factions(r.gs, 777u);
-    r.features.width = kMap;
-    r.features.height = kMap;
-    r.features.data.assign(std::size_t(kMap) * std::size_t(kMap), 0u);
+    r.features.resize(kMap, kMap);
 
     MacroStore& st = *r.store;
     // Фракция города названа явно: дефолт −1 значит «без народа», а вражда
     // спрашивается у фракции МЕСТА — безнародный город ни с кем не воюет.
-    r.place = birth_squad(r.gs, st, SquadType::City, 10, 10,
+    r.place = birth_squad(r.gs, nullptr, st, SquadType::City, 10, 10,
                           std::int16_t(faction_index("timaert")));
     r.placeId = int(st.spawnId[r.place.slot].index);
     settle_souls(r.gs, st, r.place.slot, 50);
@@ -198,8 +197,8 @@ int main() {
     // ── 1) ДОСКА ДЕТЕРМИНИРОВАНА И НЕ ПУСТА ─────────────────────────────
     TaskOffer a[4];
     TaskOffer b[4];
-    const int na = task_offers_for(st, gs, r.idx, r.features, r.place, a, 4);
-    const int nb = task_offers_for(st, gs, r.idx, r.features, r.place, b, 4);
+    const int na = task_offers_for(st, gs, r.ses, r.idx, r.place, a, 4);
+    const int nb = task_offers_for(st, gs, r.ses, r.idx, r.place, b, 4);
     CHECK(na > 0, "голодный город с врагом и руиной под боком даёт работу");
     CHECK(na == nb, "та же доска в тот же день: счёт офферов совпал");
     bool identical = na == nb;

@@ -51,7 +51,7 @@ World make_world() {
     gs.worldSeed = 7u;
     {
         const MacroHandle h =
-            birth_squad(gs, st, SquadType::City, 10, 10);
+            birth_squad(gs, nullptr, st, SquadType::City, 10, 10);
         w.cityId = int(st.spawnId[h.slot].index);
         // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в число фичи
         // фичи, головы в инвентарь — тем же законом, что генезис.
@@ -59,7 +59,7 @@ World make_world() {
     }
     {
         const MacroHandle h =
-            birth_squad(gs, st, SquadType::Village, 40, 10);
+            birth_squad(gs, nullptr, st, SquadType::Village, 40, 10);
         w.vilId = int(st.spawnId[h.slot].index);
         sm::settle_souls(gs, st, h.slot, 100);
     }
@@ -78,7 +78,9 @@ NavWorld make_nav(const World& w, bool withPortal) {
     nv.bakedSeed = gs.worldSeed;
     // Свежесть — ПО СОБЫТИЮ (CANON S9): рукоделие объявляет себя запечённым
     // на текущем составе мест, и боевой nav_ensure его не перепекает.
-    nv.bakedNavEpoch = gs.navEpoch;
+    // Фикстура живёт БЕЗ сессии (конверт несёт нулевой адрес), и счётчик
+    // события состава читается у неё нулём — тем же, что стоит здесь.
+    nv.bakedNavEpoch = 0u;
     const std::size_t cells = std::size_t(kMap) * std::size_t(kMap);
     nv.regionOf.assign(cells, 0);
     for (int y = 0; y < kMap; ++y)

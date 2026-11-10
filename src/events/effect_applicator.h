@@ -2,7 +2,8 @@
 #pragma once
 #include <span>
 #include "events/event_bus.h"
-#include "macro/state.h"
+#include "bus/session.h"            // SessionFeed — лента HUD (сессия, не мир)
+#include "bus/spell_book_state.h"   // SpellBook — книга тела
 
 namespace sm {
 
@@ -18,12 +19,14 @@ namespace sm {
 //
 // `pools`/`sheet` (ApplyEffect arm, M-116) and `bag` (PlayerGoldChange arm,
 // M-410) used to ride here; each parameter left with its only reader rather
-// than staying as furniture (DOD п.9). GameState остаётся: журнал ленты
-// сессии пишет сюда.
-void apply_events(std::span<const GameEvent> events, GameState& gs,
+// than staying as furniture (DOD п.9). `GameState` стоял здесь последним, и
+// ушёл с переездом ленты в сессию (вердикт владельца 2026-11-10, В1): из него
+// читалась одна лента HUD, а она миром не является — аппликатор получает её
+// саму.
+void apply_events(std::span<const GameEvent> events, SessionFeed& feed,
                   SpellBook* book,
                   std::vector<GameEvent>* followups = nullptr);
-void apply_events(const std::vector<GameEvent>& events, GameState& gs,
+void apply_events(const std::vector<GameEvent>& events, SessionFeed& feed,
                   SpellBook* book,
                   std::vector<GameEvent>* followups = nullptr);
 

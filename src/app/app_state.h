@@ -32,6 +32,7 @@
 #include "events/node_registry.h"
 #include "bus/local_frame.h" // локальный фрейм пяти пакетов (M-171, ломоть 4)
 #include "macro/state.h"
+#include "bus/session.h"   // Session — сессия: лента, кэш флажка, аренда (В1)
 #include "bus/store.h"     // гладкая память макро-сквадов (M-106)
 #include "macro/knowledge.h"
 #include "ui/map_screen.h"
@@ -51,7 +52,6 @@
 #include "bus/entry_context.h"
 #include "tables/faction.h"
 #include "macro/npc_spawn.h"
-#include "macro/macro_snapshot.h"
 #include "macro/currency.h"
 #include "macro/squad.h"
 #include "macro/player_entity.h"
@@ -154,6 +154,12 @@ struct App {
     bool zoneFieldDirty = false;
 
     sm::GameState        gs;
+    // СЕССИЯ (`Session@src/bus/session.h`, вердикт владельца 2026-11-10, В1):
+    // лента HUD, кэш носителя флажка игрока, счётчик события состава и аренда
+    // окна. Жили членами `GameState` и уехали сюда: состояние мира снимается
+    // прямым дампом, а эти четыре миром не являются. Симуляция видит сессию
+    // адресом в конверте слоёв (`macro_world`), в сейв она не едет.
+    sm::Session          session;
     // ЛОКАЛЬНЫЙ ФРЕЙМ пяти пакетов (ЗАКОН КАНОНИЧЕСКОГО ФРЕЙМА, ломоть 4):
     // один экземпляр на приложение, субмир держит на него const-указатель.
     // Заполняется ТОЛЬКО app-ом (fill_local_frame) в плановых точках: вход в
@@ -162,7 +168,9 @@ struct App {
     // сквозной записи (вселение).
     sm::LocalContext     frame;
     sm::TerrainData      terrain{};
-    sm::FeatureLayer     features;
+    // (Поле фич жило здесь членом оболочки и уехало в состояние мира —
+    // `GameState::features@src/macro/state.h`, M-456: живой мир его пишет,
+    // значит ему место там, откуда снимается сейв.)
     sm::ZoneLayer        zones;
     // (Живое поле леса жило здесь членом оболочки и уехало в состояние мира
     // — `GameState::treeLayer@src/macro/state.h`, ломоть 3 сейв-эпика.)
@@ -482,7 +490,7 @@ sm::ecs::Pools& player_pools(App& app);
 sm::CharacterSheet player_effective_sheet(const App& app);
 void sync_audio_music(App& app);
 void refresh_save_summary(App& app);
-std::vector<sm::MacroNpcRecord> stage_save_state(App& app);
+void stage_save_state(App& app);
 void enter_subworld(App& app);
 std::uint8_t pause_reasons(const App& app);
 bool world_paused(const App& app);

@@ -31,23 +31,27 @@ static_assert(kSpellCount <= kSpellBookCapacity,
               "the spell registry outgrew the owner's 256-spell envelope: "
               "widen kSpellBookCapacity (32 B per row per body)");
 
+// РАСКЛАДКА БЕЗ ДЫР (сейв-эпик, вердикт владельца В2, 2026-11-10): оба плана
+// по 8 Б идут первыми, две четырёхбайтовые величины — следом и вместе. Ординал
+// активного спелла стоял МЕЖДУ планами, и второй план, выравниваясь на 8,
+// оставлял 4 Б дыры после него плюс 4 Б хвоста — 8 байт на книгу, которые не
+// принадлежали ни одной величине и которых прямой дамп не вправе везти.
 struct SpellBook {
     std::uint64_t learned[kSpellBookCapacity / 64] = {};    // bit per row
-    std::int32_t  activeSpell = -1;                         // ordinal; -1 = none
     // No per-spell timers (owner verdict 2026-09-09, v83): a cast charges the
     // BODY's one recovery gate (ecs::Combat::recoverySteps) — the same field
     // a sword swing charges — so «occupied» is one fact with one home, and a
     // book row never counts fight time on its own.
     std::uint64_t sustained[kSpellBookCapacity / 64] = {};  // bit per drain
+    std::int32_t  activeSpell = -1;                         // ordinal; -1 = none
     // Fractional mana owed by sustained spells, carried between steps: a drain
     // of 3 mana/second is 3/64 per step and the pool is an integer.
     float sustainedDrainCarry = 0.0f;
 };
-// РАЗМЕР ЗАКРЕПЛЁН (AGENTS п.10): комментарий выше обещал 72 Б — правда 80,
-// потому что `sustained` выравнивается на 8 и добавляет 4 Б дырки после
-// `activeSpell` плюс 4 Б хвоста. Разница молчала, пока её не посчитали.
-static_assert(sizeof(SpellBook) == 80,
-              "книга: 2 плана по 32 Б + ординал + перенос = 80 Б");
+// РАЗМЕР ЗАКРЕПЛЁН (AGENTS п.10): два плана по 32 Б + ординал 4 + перенос 4 =
+// 72 Б ровно. Здесь стояло 80 — те самые 8 Б дыр, снятые перестановкой.
+static_assert(sizeof(SpellBook) == 72,
+              "книга: 2 плана по 32 Б + ординал + перенос = 72 Б");
 
 // The two bit planes speak ONLY through these (no consumer indexes a raw
 // array): one bit-math site, and the planes cannot be confused.
@@ -123,3 +127,12 @@ inline bool spellbook_toggle_sustained(SpellBook& book, int ord) {
 }
 
 } // namespace sm
+
+#include "core/row_law.h"   // стена «без дыр» — включение в хвосте, содержимое файла не сдвигается
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::SpellBook, &sm::SpellBook::learned,
+    &sm::SpellBook::sustained, &sm::SpellBook::activeSpell,
+    &sm::SpellBook::sustainedDrainCarry);

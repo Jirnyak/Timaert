@@ -88,7 +88,7 @@ struct DialogOverlayState {
 // PlayerState; `sceneObjs` (nullable — no scene on the macro map) carries the
 // avatar's Combat gate for the Use-potion ability charge. The UI sits above
 // every layer and may read from them; it still owns no game logic.
-void draw_character_panel(GameState& gs, MacroStore& st,
+void draw_character_panel(GameState& gs, const Session& ses, MacroStore& st,
                           sub::SubObjects* sceneObjs, bool* open,
                           CharacterPanelTab* tab, float scale = 1.0f);
 // THE subject panel (меню-сессия, фидбек владельца 2026-09-11: «сделай
@@ -119,6 +119,7 @@ struct TaskBoardRequest {
     bool turnIn = false;  // панель просит сдать активный контракт
 };
 void draw_settlement(GameState& gs,
+                     const Session& ses,
                      MacroStore& st,
                      MacroHandle subject,
                      SettlementPanelTab* tab,
@@ -132,7 +133,7 @@ void draw_codex(GameState& gs, bool* open, float scale = 1.0f);
 // (Параметр bag умер с гейтом цены выбора — M-410: тег PlayerGoldChange
 //  снесён, контент effects не авторит; цена выбора вернётся строкой
 //  последствия диалога — M-175.)
-void draw_show_dialog(GameState& gs,
+void draw_show_dialog(Session& ses,
                       const GameEvent& dialog,
                       EventBus& bus,
                       DialogOverlayState& state,

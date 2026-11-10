@@ -236,8 +236,8 @@ void trees_apply(MacroWorld& w, int x, int y, int delta) {
 // геология, геймплеем не мутируется), залежь шахты — число фичи в `featureNumber`
 // (кап связного кластера, свёрнутый генерацией шахт — вердикт 2026-10-23).
 bool vein_mine_cell_(const MacroWorld& w, int x, int y) {
-    return w.gs && w.features
-        && feature_def(w.features->at(x, y)).numberRow
+    return w.gs
+        && feature_def(w.gs->features.at(x, y)).numberRow
                == ResourceFieldId::Vein;
 }
 
@@ -373,8 +373,8 @@ int grass_feeds_head(const MacroWorld& w, int x, int y) {
 // и «что значит это число» есть вопрос о фиче (ЗАКОН ПОЛЯ п.3, ЗАКОН СТРОКИ
 // КАТАЛОГА). Без слоя фич стада нет вовсе — fail-closed, ничего не выдумываем.
 bool livestock_cell_(const MacroWorld& w, int x, int y) {
-    return w.gs && w.features
-        && feature_def(w.features->at(x, y)).numberRow
+    return w.gs
+        && feature_def(w.gs->features.at(x, y)).numberRow
                == ResourceFieldId::Livestock;
 }
 
@@ -470,7 +470,7 @@ static_assert(kResourceFields[std::size_t(ResourceFieldId::Vein)].reachCells
 // носителя (`carrierRead == nullptr`); поле под него в мире одно —
 // `GameState::wheatScars`. Второй такой ряд молча лёг бы в ТО ЖЕ поле и
 // смешал два ресурса в одной клетке — поэтому он красит сборку здесь и
-// требует сперва дать ему собственное поле (и ряд в world_fields.cpp).
+// требует сперва дать ему собственное поле в состоянии мира.
 constexpr bool row_keeps_scar(std::size_t f) {
     return kResourceFields[f].carrierRead == nullptr;
 }
@@ -542,7 +542,7 @@ static bool parcel_ground_ok_(const FeatureLayer& fl, const MacroWorld& world,
                               int x, int y) {
     std::size_t total = 0;
     if (!FeatureLayer::cell_count_for(fl.width, fl.height, total)
-        || fl.data.size() < total || !world.terrain)
+        || fl.cell_count() < total || !world.terrain)
         return false;
     // ЗАКОН АДРЕСА: адрес клетки — одно число, и считает его одна дверь.
     // Здесь стоял ручной `wy*width+wx` с двумя пред-заворотами — тот же
@@ -575,9 +575,10 @@ static bool parcel_ground_ok_(const FeatureLayer& fl, const MacroWorld& world,
     return true;
 }
 
-bool plough_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
-                    int x, int y, int& wheatOut)
+bool plough_cell_ok(const MacroWorld& world, int x, int y, int& wheatOut)
 {
+    if (!world.gs) return false;   // нет мира — нет и поля фич
+    const FeatureLayer& fl = world.gs->features;
     if (!parcel_ground_ok_(fl, world, x, y)) return false;
     // The ONE fertility door: potential minus what play has taken. ВОЗВРАЩАЕТСЯ
     // ЧИСЛО, А НЕ ВЕРДИКТ: планка `wheatOut >= field_wheat_min()` снесена
@@ -590,14 +591,15 @@ bool plough_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
     return true;
 }
 
-bool plough_field_cell(FeatureLayer& fl, const MacroWorld& world,
-                       int x, int y, FeatureType parcel)
+bool plough_field_cell(const MacroWorld& world, int x, int y,
+                       FeatureType parcel)
 {
     // ЧЕМ ЗАСЕЯНО — КОЛОНКА ФИЧИ, А НЕ ВТОРАЯ ДВЕРЬ (2026-09-20): земля,
     // проверка и цена у хлебной и льняной парцеллы одни и те же, поэтому
     // вспашка одна, а вид парцеллы — её аргумент.
     int wheat = 0;
-    if (!plough_cell_ok(fl, world, x, y, wheat)) return false;
+    if (!plough_cell_ok(world, x, y, wheat)) return false;
+    FeatureLayer& fl = world.gs->features;
     // ОДНА ДВЕРЬ ШТАМПА (M-212): воду она спрашивает сама, колонкой строки.
     // Гейт воды в `plough_cell_ok` остаётся — он отвечает на ДРУГОЙ вопрос
     // («стоит ли вообще тратить день»), и без него работа была бы оплачена
@@ -702,8 +704,8 @@ int feature_yield_ordinal(FeatureType t) {
 } // namespace
 
 int field_yield_ordinal(const MacroWorld& w, ResourceFieldId f, int x, int y) {
-    if (w.features) {
-        const int fid = feature_yield_ordinal(w.features->at(x, y));
+    if (w.gs) {
+        const int fid = feature_yield_ordinal(w.gs->features.at(x, y));
         if (fid >= 0) return fid;   // предмет фичи старше умолчания ряда
     }
     const ResourceFieldDef& row = resource_field_def(f);

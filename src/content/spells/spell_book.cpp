@@ -207,7 +207,7 @@ bool spellbook_cast(sub::SubObjects* objs, MacroStore* st,
                     SpellRngFn rng01,
                     void* rngUser,
                     Rng* diceRng,
-                    GameState* gs) {
+                    Session* session) {
     // THE body gate (owner verdict 2026-09-09, «одно рекавери на всё»): the
     // caster's own ecs::Combat, found by the same REFERENCE that will own the
     // bolt (iii-б: кастер — ссылка сцены, разыменование — ref_slot) — the
@@ -283,7 +283,7 @@ bool spellbook_cast(sub::SubObjects* objs, MacroStore* st,
     };
     ctx.dmgType = std::uint8_t(spell_damage_type(*d));
     ctx.critical = strike.critical;
-    ctx.gs = gs;   // мир для законов о положении игрока (вселение, 1е кл.5)
+    ctx.session = session;   // кэш носителя флажка (вселение)
     ctx.store = st; // запись тела — шовной слот-дверью (вселение, ломоть E)
     // Who casts, for person-arguing effects (possession's level gate): the
     // trained rank in this spell's own school from the same effective skills

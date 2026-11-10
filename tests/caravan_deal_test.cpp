@@ -43,7 +43,7 @@ long long commodity_total(const sm::Inventory& a, const sm::Inventory& b,
 // этом нужен только store, мир — затем, чтобы тело знало свою клетку.
 std::uint16_t fixture_rooted(sm::MacroStore& st, sm::GameState& gs,
                             sm::SquadType type) {
-    return sm::birth_squad(gs, st, type, 0, 0).slot;
+    return sm::birth_squad(gs, nullptr, st, type, 0, 0).slot;
 }
 
 // Счёт содержания места — колонка контейнера его тела (creatures.h): одна
@@ -189,7 +189,7 @@ int main() {
     // Дом идёт ТОЙ ЖЕ дверью, что рынки: ломтиком F второй двери рождения
     // места не существует вовсе.
     const sm::MacroHandle home =
-        sm::birth_squad(hgs, mstore, sm::SquadType::Village, 0, 0);
+        sm::birth_squad(hgs, nullptr, mstore, sm::SquadType::Village, 0, 0);
     sm::raise_flock_into_container(shelf(mstore, home.slot), 50);
     CHECK(shelf(mstore, home.slot).add("food", 5000), "fixture: home food");
 

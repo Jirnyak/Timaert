@@ -26,13 +26,14 @@
 
 namespace sm {
 
-inline void player_journal_capture(GameState& gs, const MacroStore& st) {
+inline void player_journal_capture(GameState& gs, const Session& ses,
+                                   const MacroStore& st) {
     const Chronicle& c = gs.chronicle;
     if (!c.ready() || gs.mapW <= 0 || gs.mapH <= 0) return;
     PlayerState& p = gs.player;
     // WHERE he stands = the flag holder's cell (подпосадка 4) — locality is
     // asked of the world, like possession above.
-    const ecs::MacroCell* pcell = player_flag_cell(gs, st);
+    const ecs::MacroCell* pcell = player_flag_cell(ses, st);
     const int px = pcell ? ecs::cell_x(*pcell, gs.mapW) : -1;
     const int py = pcell ? ecs::cell_y(*pcell, gs.mapW) : -1;
     // Participation is by the ordinal his deeds FILE UNDER — and while he wears
@@ -51,7 +52,7 @@ inline void player_journal_capture(GameState& gs, const MacroStore& st) {
     // Рода «дом» больше нет, а «вся семья» (2026-09-14) говорит, что дела
     // подшиваются под того, кем ты есть; два ответа свелись в один.
     // Распаковка кэша ОДИН раз перед циклом, ноль сканов на факт.
-    const std::uint32_t meOrd = player_flag_ordinal(gs, st);
+    const std::uint32_t meOrd = player_flag_ordinal(ses, st);
     const auto isHis = [meOrd](std::uint8_t kind, std::uint32_t ordinal) {
         if (fact_subject_kind(kind) != std::uint8_t(FactSubject::Squad))
             return false;

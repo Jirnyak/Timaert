@@ -77,11 +77,13 @@ void push_feature_number(sm::DeltaBuffer& d, int x, int y, int amount, int side)
 int main() {
     std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
     sm::GameState& gs = *gsOwn;
+    sm::Session ses;
     gs.mapW = 128;
     gs.mapH = 128;
     auto storeOwn = sm::make_macro_store();
     sm::MacroWorld mw{};
     mw.gs = &gs;
+    mw.session = &ses;
     mw.store = storeOwn.get();
     sm::chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
 
@@ -174,8 +176,8 @@ int main() {
         // рождения, одна под флажком. Ординалы выдаёт эмитент, не фикстура.
         const sm::MacroHandle hFlag = sm::store_birth(*storeOwn);
         const sm::MacroHandle hOther = sm::store_birth(*storeOwn);
-        gs.playerFlagRef = hFlag;
-        const std::uint32_t flagOrd = sm::player_flag_ordinal(gs, *storeOwn);
+        ses.playerFlagRef = hFlag;
+        const std::uint32_t flagOrd = sm::player_flag_ordinal(ses, *storeOwn);
         const std::uint32_t otherOrd = hOther.id;
         CHECK(flagOrd != 0u && otherOrd != 0u && flagOrd != otherOrd,
               "предусловие: флажок назван записью, и деятель — ДРУГАЯ "

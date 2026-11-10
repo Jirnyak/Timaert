@@ -84,7 +84,7 @@ struct NavPortal {
 struct NavWorld {
     int mapW = 0, mapH = 0;
     // СВЕЖЕСТЬ — ПО СОБЫТИЮ, А НЕ ПО ОПРОСУ (CANON S9, владелец 2026-09-20).
-    // `bakedNavEpoch` — значение GameState::navEpoch на момент запекания;
+    // `bakedNavEpoch` — значение счётчика сессии `navEpoch` на момент запекания;
     // счётчик растёт в дверях рождения и смерти укоренённого сквада
     // (`birth_squad@src/macro/birth_squad.h` и свип павших) и на мостовом
     // штампе. Прежде здесь стояли `add_landmark`/`kill_place` — обе

@@ -46,10 +46,10 @@ using BattleFactSink = void (*)(void* user, const BattleFact& fact);
 //  `src/macro/econ_day.h`. Факт мира есть род 5, `WorldFact@src/bus/fact.h`.)
 
 struct GameState;
+struct Session;
 struct MacroStore;
 struct DepositLayer;
 struct TerrainData;
-struct FeatureLayer;
 struct ZoneLayer;
 struct PathCostData;
 struct TreeGrid;
@@ -62,6 +62,12 @@ struct MacroWorld {
     //  сейв-эпика: лес переехал в состояние мира, и второй адрес того же поля
     //  в конверте позволял фикстуре поставить лес, не совпадающий с лесом
     //  состояния. Читатель леса спрашивает `gs`.)
+    // СЕССИЯ (`Session@src/bus/session.h`, вердикт владельца 2026-11-10, В1):
+    // кэш носителя флажка игрока, аренда окна и счётчик события состава. Миром
+    // она не является и в состоянии не лежит; экземпляр держит оболочка
+    // (`App`), симуляция видит его этим адресом. Нулевой адрес — «сессии нет»:
+    // фикстура без игрока и без субмира, нулевой вклад (аренды нет, флажка нет).
+    Session*    session = nullptr;
     MacroStore* store = nullptr;   // гладкая память макро-сквадов (M-106):
                                    //   состояние — колонками по слоту;
                                    //   реестра сцены в конверте НЕТ (ломоть A
@@ -71,11 +77,10 @@ struct MacroWorld {
     const TerrainData* terrain = nullptr;   // the fauna row derives its
                                             //   baseline from the cell's biome
     DepositLayer* deposits = nullptr;       // the Clay/Iron/Stone carrier
-    // Roads / dirt roads / fields. Non-const since 2026-08-31 (CANON S10
-    // «фичи создаются сквадами»): the plough writes ONE cell through
-    // plough_field_cell — the same carrier-layer precedent trees and
-    // deposits set. Every other reader still only reads.
-    FeatureLayer* features = nullptr;
+    // (УКАЗАТЕЛЬ НА ПОЛЕ ФИЧ СТОЯЛ ЗДЕСЬ и умер 2026-11-10, M-456: поле фич
+    //  переехало в состояние мира (`GameState::features@src/macro/state.h`),
+    //  и второй адрес того же поля в конверте позволял фикстуре поставить
+    //  фичи, не совпадающие с фичами состояния. Читатель спрашивает `gs`.)
     const ZoneLayer*    zones    = nullptr; // danger byte 0..255 (zones.h)
     const PathCostData* pathCost = nullptr; // baked SP-weight grid + water flag
     const TreeGrid*     treeGrid = nullptr; // tree-point buckets (npc_ai.h) —

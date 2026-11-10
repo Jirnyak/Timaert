@@ -12,8 +12,8 @@
 //
 // ЧТО СУДИТ ПРИБОР. Полную компиляторную стену «ничего вне шести родов» может
 // поставить только сам фрейм (фаза 4: M-171/M-172 — разные пути включения).
-// До неё — эта перепись: поля четырёх больших носителей (GameState,
-// PlayerState, MacroStore, App) сверяются с поимённой таблицей
+// До неё — эта перепись: поля пяти носителей (GameState, PlayerState,
+// Session, MacroStore, App) сверяются с поимённой таблицей
 // {поле → род/класс}. Новое поле без строки = красный тест в тот же день;
 // строка без поля = тоже красный (список честный в обе стороны — мёртвая
 // строка переписи есть ложь дока, §5 п.1).
@@ -372,9 +372,6 @@ Tally compare(const char* carrier, const std::vector<std::string>& parsed,
 
 // GameState@src/macro/state.h — сам агрегат мира: пять родов + оболочка.
 constexpr Row kGameStateRows[] = {
-    {"version", Rod::Session,
-     "метаданные провода сейва (вердикт 2026-09-30); "
-     "свой формат сейва запрещён (§10) — умирает с фреймом M-171"},
     {"worldSeed", Rod::WorldVars, "сид мира"},
     {"mapW", Rod::WorldVars, "форма мира"},
     {"mapH", Rod::WorldVars, "форма мира"},
@@ -393,7 +390,6 @@ constexpr Row kGameStateRows[] = {
     {"scent", Rod::Fields,
      "поля следов фракций: два канала, план на строку рода 6 под потолком "
      "фракций, клетка на клетку капа мира — плоско в теле (ломоть 4)"},
-    {"sessionFeed", Rod::Session, "HUD-лента, умирает с моментом"},
     {"factions", Rod::Factions,
      "строки фракций (macro/factions.h, v121): id, цвет, отношения колонкой "
      "строки, феодальные рёбра дани отрезками общего пула"},
@@ -406,11 +402,13 @@ constexpr Row kGameStateRows[] = {
     {"treeLayer", Rod::Fields,
      "живое поле леса, носитель ряда Trees (едет в сейве целиком); до ломтя 3 "
      "сейв-эпика жило членом оболочки приложения, вне состояния мира"},
+    {"features", Rod::Fields,
+     "поле фич клетки: род фичи, байт на клетку капа (M-456). Жило членом "
+     "оболочки приложения и в сейв не ехало, хотя живой мир его пишет — "
+     "смерть города кладёт руину, смерть деревни снимает фичу"},
     {"player", Rod::Nested, "переписан своей таблицей ниже"},
-    {"playerFlagRef", Rod::Cache, "кэш носителя колонки playerFlag (M-220: хэндл напрямую, биты умерли)"},
     {"worldTime", Rod::WorldVars, "время — частный случай мировой переменной"},
     {"lastWorldRebakeDay", Rod::WorldVars, "фаза перепёка/автосейва"},
-    {"navEpoch", Rod::Cache, "счётчик события состава; в сейв не едет"},
     {"worldTickRt", Rod::WorldVars, "очередь дневного тика + RNG"},
     {"macroAiRhythm", Rod::WorldVars,
      "RNG макро-ИИ (после M-379 — один джиттер); сейв-образ живой половины "
@@ -420,12 +418,6 @@ constexpr Row kGameStateRows[] = {
      "в меню сдвигал эволюцию мира. Род 4, потому что актор — сама сессия, а "
      "не клетка и не сквад; едет в сейв рядом с macroAiRhythm, иначе загрузка "
      "проигрывала бы ту же «случайность» заново (§10)"},
-    {"leasedWindow", Rod::Session,
-     "АРЕНДА ОКНА (M-226): клетка-центр девяти, которые ведёт субмир; "
-     "сентинел kNoWindowLease = аренды нет. Читатели — суд встречи и свип "
-     "мёртвых записей (закрытый список из двух систем, AGENTS ЗАКОН ШВА). "
-     "В сейв НЕ едет по построению: сохраняться можно только на макро-слое, "
-     "то есть в файле аренда пуста всегда"},
     {"wheatScars", Rod::Fields, "шрам пашни — единственный ряд-шрам реестра"},
     {"featureNumber", Rod::Fields, "число фичи клетки: одно плоское поле"},
     {"faunaField", Rod::Fields,
@@ -437,13 +429,26 @@ constexpr Row kGameStateRows[] = {
      "читает сбор эмиттеров; в сейв не едет — восстановимо рефрешем"},
 };
 
+// Session@src/bus/session.h — то, что живёт от запуска до выхода и миром не
+// является (вердикт владельца 2026-11-10, вопрос В1 сейв-эпика): четыре члена
+// уехали сюда из `GameState`, экземпляр — член `App`. В сейв не едет ни один.
+constexpr Row kSessionRows[] = {
+    {"feed", Rod::Session, "HUD-лента, умирает с моментом"},
+    {"playerFlagRef", Rod::Cache,
+     "кэш носителя колонки playerFlag стора (M-220: хэндл напрямую); после "
+     "загрузки пересобирается сканом колонки"},
+    {"navEpoch", Rod::Cache,
+     "счётчик события состава осёдлых: растёт в двери рождения и в двери "
+     "загрузки, по нему поднимается запечённая навигация"},
+    {"leasedWindow", Rod::Session,
+     "АРЕНДА ОКНА (M-226): клетка-центр девяти, которые ведёт субмир; "
+     "сентинел kNoWindowLease = аренды нет. На макро-слое аренды нет по "
+     "построению; во фрейм едет колонкой рода 4 (ЗАКОН ШВА)"},
+};
+
 // PlayerState@src/macro/state.h — остаток блока игрока: знание и оболочка
 // анкеты (сама анкета давно на его скваде, v85-v91).
 constexpr Row kPlayerStateRows[] = {
-    {"name", Rod::Squads,
-     "имя игрока: плоская ячейка ширины имени анкеты (SquadName, ломоть 4 "
-     "сейв-эпика). Колонка имени есть и у его сквада в сторе — два носителя "
-     "одного рода, вопрос о слиянии назван в ряду M-439"},
     {"ageDays", Rod::Squads, "анкета"},
     {"codexUnlockedBits", Rod::Squads, "знание игрока — колонка его анкеты"},
     {"journalCount", Rod::Facts, "счёт живых записей журнала"},
@@ -452,6 +457,9 @@ constexpr Row kPlayerStateRows[] = {
      "своим капом (ломоть 4); умирает в цепочку по субъекту с M-423"},
     {"journalSeenSeq", Rod::Facts, "курсор той же системы"},
     {"journalFull", Rod::Facts, "громкий кап той же системы"},
+    {"pad", Rod::Facts,
+     "три байта выравнивания перед журналом, названные полем (вердикт В2 "
+     "сейв-эпика): стоят нулём, читателей не имеют"},
 };
 
 // MacroStore@src/bus/store.h — гладкая память рода 2 целиком: колонки
@@ -505,6 +513,10 @@ constexpr Row kMacroStoreRows[] = {
     {"deadRows", Rod::Squads, "ведомость павших: слоты (M-376)"},
     {"deadListed", Rod::Squads, "ведомость павших: флаг строки (M-376)"},
     {"deadRowCount", Rod::Squads, "ведомость павших: счёт строк"},
+    {"pad", Rod::Squads,
+     "хвостовая дыра выравнивания, названная полем (вердикт В2 сейв-эпика): "
+     "хранилище едет прямым дампом, и каждый его байт принадлежит члену; "
+     "стоит нулём, читателей не имеет"},
 };
 
 // App@src/app/app_state.h — агрегат программы: оболочка, представление и
@@ -531,12 +543,14 @@ constexpr Row kAppRows[] = {
     {"subworldWasActive", Rod::Session, "ребро перехода макро↔микро"},
     {"zoneFieldDirty", Rod::Session, "GPU-флаш"},
     {"gs", Rod::Nested, "агрегат мира — переписан своей таблицей"},
+    {"session", Rod::Nested,
+     "сессия (bus/session.h) — переписана своей таблицей; из состояния мира "
+     "уехала вердиктом владельца 2026-11-10 (В1)"},
     // Локальный фрейм пяти пакетов (M-171, ломоть 4): СНИМОК родов 1-5 для
     // субмира, пересобирается fill_local_frame в плановых точках — копия,
     // не носитель истины, в сейв не едет (истина всегда в макромире).
     {"frame", Rod::Cache, "локальный фрейм пяти пакетов (M-171)"},
     {"terrain", Rod::Fields, "слой клеток: высота/биом"},
-    {"features", Rod::Fields, "слой фич"},
     {"zones", Rod::Fields, "слой опасности"},
     {"uploadedTreeRev", Rod::Session, "ревизия GPU-текстуры"},
     {"uploadedKnowledgeRev", Rod::Session, "ревизия GPU-текстуры"},
@@ -734,11 +748,11 @@ struct Carrier {
     std::size_t rowCount;
 };
 
-// ГРАНИЦА ПРИБОРА, ЧИСЛАМИ. Перепись судит ЧЕТЫРЕ названных носителя, а не
+// ГРАНИЦА ПРИБОРА, ЧИСЛАМИ. Перепись судит ПЯТЬ названных носителей, а не
 // дерево: закон «ничего вне шести родов» целиком поставит только сам фрейм
 // (фаза 4, M-171/M-172 — разные пути включения). Пока стены нет, эти числа
 // обязаны ехать в вердикте, иначе зелёный читается как «седьмого рода в игре
-// нет», тогда как верно «у четырёх носителей седьмого рода нет».
+// нет», тогда как верно «у пяти носителей седьмого рода нет».
 struct Boundary {
     int carriers = 0;    // носителей под переписью
     int fields = 0;      // их полей названо
@@ -752,7 +766,10 @@ Boundary census() {
         read_file(fs::path(kRoot) / "src/bus/store.h");
     const std::string appSrc =
         read_file(fs::path(kRoot) / "src/app/app_state.h");
-    CHECK(!stateSrc.empty() && !storeSrc.empty() && !appSrc.empty(),
+    const std::string sessionSrc =
+        read_file(fs::path(kRoot) / "src/bus/session.h");
+    CHECK(!stateSrc.empty() && !storeSrc.empty() && !appSrc.empty()
+              && !sessionSrc.empty(),
           "заголовки носителей читаются");
 
     int totalFields = 0, totalMissing = 0, totalDead = 0, totalDivergence = 0;
@@ -784,6 +801,10 @@ Boundary census() {
     add(compare("MacroStore", storeFields, kMacroStoreRows,
                 std::size(kMacroStoreRows)));
 
+    // Session — src/bus/session.h.
+    add(compare("Session", parse_fields(sessionSrc, "Session"), kSessionRows,
+                std::size(kSessionRows)));
+
     // App — src/app/app_state.h.
     add(compare("App", parse_fields(appSrc, "App"), kAppRows,
                 std::size(kAppRows)));
@@ -805,10 +826,11 @@ Boundary census() {
     checkNotes(kGameStateRows, std::size(kGameStateRows), "GameState");
     checkNotes(kPlayerStateRows, std::size(kPlayerStateRows), "PlayerState");
     checkNotes(kMacroStoreRows, std::size(kMacroStoreRows), "MacroStore");
+    checkNotes(kSessionRows, std::size(kSessionRows), "Session");
     checkNotes(kAppRows, std::size(kAppRows), "App");
 
     CHECK(totalFields > 100,
-          "перепись видит носители: у четырёх структур больше сотни полей — "
+          "перепись видит носители: у пяти структур больше сотни полей — "
           "меньше значит парсер ослеп, зелёный ничего бы не значил");
     CHECK(totalMissing == 0,
           "у каждого поля носителя есть строка с родом фрейма (M-189)");

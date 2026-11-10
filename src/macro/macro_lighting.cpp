@@ -110,7 +110,8 @@ void accumulate_occluded(const MacroLight& L, int width, int height,
 
 } // namespace
 
-void refresh_feature_lights(GameState& gs, const FeatureLayer& features) {
+void refresh_feature_lights(GameState& gs) {
+    const FeatureLayer& features = gs.features;
     if (features.width <= 0 || features.height <= 0) return;
     for (int y = 0; y < features.height; ++y) {
         for (int x = 0; x < features.width; ++x) {

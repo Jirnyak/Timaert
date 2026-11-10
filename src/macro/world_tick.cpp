@@ -426,7 +426,9 @@ WorldTickResult tick_world_subworld_steps(GameState& gs,
     // one tick of world time. The leftover steps stay in the runtime as a whole
     // number, so pausing, saving or walking out mid-divisor loses nothing.
     const std::uint64_t total = runtime.subworldStepRemainder + steps;
-    runtime.subworldStepRemainder = total % kSubworldTickDivisor;
+    // Остаток строго меньше делителя — в u32 ложится целиком (ЗАКОН ТИПА).
+    runtime.subworldStepRemainder =
+        std::uint32_t(total % kSubworldTickDivisor);
     return tick_world_time_only(gs, runtime, total / kSubworldTickDivisor);
 }
 

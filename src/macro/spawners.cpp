@@ -609,7 +609,7 @@ namespace sm
             return;
 
         if (!fl.covers(td.width, td.height)) fl.resize(td.width, td.height);
-        if (fl.data.empty())
+        if (fl.cell_count() == 0u)
             return;
 
         if (td.rgba.size() < total * 4u)
@@ -662,12 +662,14 @@ namespace sm
     // and its test targets link the land's doors, not the worldgen — the
     // same link seam that keeps world_tick's tests off this file.
 
-    void stamp_field_features(FeatureLayer& fl, const MacroWorld& world,
+    void stamp_field_features(const MacroWorld& world,
                               const std::vector<FieldSite>& villages)
     {
+        if (!world.gs) return;
+        FeatureLayer& fl = world.gs->features;
         std::size_t total = 0;
         if (!FeatureLayer::cell_count_for(fl.width, fl.height, total)
-            || fl.data.size() < total)
+            || fl.cell_count() < total)
             return;
         if (!world.terrain) return;
         const TerrainData& td = *world.terrain;
@@ -677,7 +679,7 @@ namespace sm
 
         const int w = fl.width;
         auto cell_ok = [&](int x, int y, int& wheatOut) {
-            return plough_cell_ok(fl, world, x, y, wheatOut);
+            return plough_cell_ok(world, x, y, wheatOut);
         };
 
         for (const FieldSite& v : villages) {
@@ -719,14 +721,15 @@ namespace sm
                 // «как рождается пашня» в мире было два ответа. Гейты те же
                 // самые: шортлист набран `plough_cell_ok`, и дверь спросит
                 // его повторно — на клетках шортлиста он даёт то же «да».
-                plough_field_cell(fl, world, best[k].x, best[k].y, FT_Field);
+                plough_field_cell(world, best[k].x, best[k].y, FT_Field);
             }
         }
     }
 
     // ── ГЕНЕРАЦИЯ ШАХТ (вердикт 2026-10-23; контракт — spawners.h) ────────
-    void stamp_mines(GameState& gs, FeatureLayer& fl, const TerrainData& td,
+    void stamp_mines(GameState& gs, const TerrainData& td,
                      const DepositLayer& deposits, std::uint32_t seed) {
+        FeatureLayer& fl = gs.features;   // поле фич — член состояния (M-456)
         if (!deposits.cells().live() || !world_shape_ok(fl.width, fl.height))
             return;
         const int W = deposits.width;

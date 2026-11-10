@@ -48,10 +48,10 @@ namespace sm::sub {
 // re-mirrors the position scalars from the new body afterwards (the engine
 // tick does it via pull_player_entity_to_scalars).
 //
-// `playerFlagRef` — адрес ОДНОГО хэндла `GameState::playerFlagRef` (1е
+// `playerFlagRef` — адрес ОДНОГО хэндла `Session::playerFlagRef` (1е
 // кластер 5, M-220): КЭШ макро-флажка; истина — колонка playerFlag анкеты
 // (5б), оба носителя пишет одна дверь переноса (transfer_player_flag).
-// Субмиру не даётся GameState — только эта ссылка (закон двух миров: канал
+// Субмиру не даётся ни состояние, ни сессия — только эта ссылка (закон двух миров: канал
 // узкий и названный); звонящий без мира (фикстура) законно передаёт
 // nullptr — тогда двигается только сценический флаг (AvatarTag),
 // макро-мира у фикстуры нет.
@@ -77,7 +77,7 @@ inline bool possess_body(SubObjects& objs, MacroStore* st, int targetSlot,
     //     STAYS HOME. The scene flag alone rides it, and the exit reset
     //     («одержим генерик — при выходе сброс») is not written anywhere: the
     //     body dies with the scene while your macro flag never left you.
-    // Запись — хэндлом: с 1е кластера 5 макро-флаг ЕСТЬ биты GameState,
+    // Запись — хэндлом: с 1е кластера 5 макро-флаг ЕСТЬ кэш сессии,
     // entt-носитель записи флажку больше не нужен вовсе. Шовная слот-дверь:
     // стора у фикстуры может не быть (st == nullptr) — тот же честный
     // «записи нет» (ломоть E: store — явный параметр, ctx-мост умер).
@@ -109,7 +109,7 @@ inline bool possess_body(SubObjects& objs, MacroStore* st, int targetSlot,
     // which IS the exit reset.
     //
     // Exactly-one holds by the door itself (5б): истина — колонка playerFlag
-    // анкеты, хэндл GameState — кэш; дверь переноса пишет оба носителя одним
+    // анкеты, хэндл сессии — кэш; дверь переноса пишет оба носителя одним
     // движением (запись нового = срыв старого через кэш). Store у сцены уже
     // есть — тот же шов, которым macro_record_of ответил хэндлом.
     if (recH.id != 0 && playerFlagRef) {

@@ -1,5 +1,6 @@
 #include "sub/engine.h"
 #include "bus/local_frame.h"   // ЛОКАЛЬНЫЙ ФРЕЙМ — вход по сводке (ломоть 4)
+#include "bus/session.h"       // сессия: кэш флажка и аренда окна (В1)
 #include "sub/ability.h"   // THE ability door — every act pays the one gate
 // Нитка `macro/macro_stock.h` СНЯТА (ломоть 3 эпика пакетов v1): этот файл
 // держал её ОДНИМ фолбэком `macro_stock_read` в `fauna_stock_at` — вторым
@@ -193,38 +194,43 @@ constexpr std::uint32_t kNpcMissileSpellId = 0x4E50434Du; // "NPCM"
 // reaches it through the same door the macro layer does; a scene without a
 // macro world (a bare harness) gets a scratch pack rather than a null.
 // ── КОЛОНКИ ЗАПИСИ ПОД ФЛАЖКОМ — КАНОНИЧЕСКОЙ ДВЕРЬЮ body_state ─────────
-// Хэндл берётся из кэша gs->playerFlagRef, а НЕ из frame_->playerFlag:
+// Хэндл берётся из кэша СЕССИИ (`Session::playerFlagRef`), а НЕ из
+// frame_->playerFlag:
 // кэш правится вселением НЕМЕДЛЕННО (transfer_player_flag), хэндл фрейма
 // обновляется только границей тика — читать его здесь значило бы смотреть
 // на старое тело весь первый тик посессии. Нитка macro/player_entity.h
 // этим снята (ломоть 5 M-171): двери player_* больше не нужны субмиру.
-ecs::Pools* flag_pools(GameState* gs, MacroStore* st) {
-    return (gs && st) ? body_state<ecs::Pools>(*st, gs->playerFlagRef)
-                      : nullptr;
+// Сам хэндл: нулевой адрес сессии — «никого» (сцена без макромира).
+MacroHandle flag_ref(const Session* ses) {
+    return ses ? ses->playerFlagRef : MacroHandle{};
 }
-CharacterSheet* flag_sheet(GameState* gs, MacroStore* st) {
-    return (gs && st) ? body_state<CharacterSheet>(*st, gs->playerFlagRef)
-                      : nullptr;
+ecs::Pools* flag_pools(const Session* ses, MacroStore* st) {
+    return (ses && st) ? body_state<ecs::Pools>(*st, ses->playerFlagRef)
+                       : nullptr;
 }
-SpellBook* flag_book(GameState* gs, MacroStore* st) {
-    return (gs && st) ? body_state<SpellBook>(*st, gs->playerFlagRef)
-                      : nullptr;
+CharacterSheet* flag_sheet(const Session* ses, MacroStore* st) {
+    return (ses && st) ? body_state<CharacterSheet>(*st, ses->playerFlagRef)
+                       : nullptr;
 }
-Inventory* flag_inventory(const GameState* gs, MacroStore* st) {
-    ecs::NpcInventory* w = (gs && st)
-        ? body_state<ecs::NpcInventory>(*st, gs->playerFlagRef) : nullptr;
+SpellBook* flag_book(const Session* ses, MacroStore* st) {
+    return (ses && st) ? body_state<SpellBook>(*st, ses->playerFlagRef)
+                       : nullptr;
+}
+Inventory* flag_inventory(const Session* ses, MacroStore* st) {
+    ecs::NpcInventory* w = (ses && st)
+        ? body_state<ecs::NpcInventory>(*st, ses->playerFlagRef) : nullptr;
     return w ? &w->inv : nullptr;
 }
-std::uint32_t flag_ordinal(const GameState* gs, const MacroStore* st) {
-    const ecs::MacroSpawnId* id = (gs && st)
-        ? body_state<ecs::MacroSpawnId>(*st, gs->playerFlagRef) : nullptr;
+std::uint32_t flag_ordinal(const Session* ses, const MacroStore* st) {
+    const ecs::MacroSpawnId* id = (ses && st)
+        ? body_state<ecs::MacroSpawnId>(*st, ses->playerFlagRef) : nullptr;
     return id ? id->index : 0u;
 }
 
-Inventory& player_bag_of(const GameState* gs, MacroStore* st) {
+Inventory& player_bag_of(const Session* ses, MacroStore* st) {
     static Inventory scratch{};
-    Inventory* bag = (gs && st)
-        ? flag_inventory(gs, st) : nullptr;
+    Inventory* bag = (ses && st)
+        ? flag_inventory(ses, st) : nullptr;
     return bag ? *bag : scratch;
 }
 
@@ -747,7 +753,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // A fresh session starts with no known threat: the exit gate can be asked
     // before the first combat tick runs.
     playerThreatD2_ = kNoThreatDistance2;
-    if (!mw.gs || !mw.terrain || !mw.features || !mw.store || !frame
+    if (!mw.gs || !mw.terrain || !mw.store || !frame
         || !mw.terrain->has_rgba_storage()) {
         mw_ = {};
         gs_ = nullptr;
@@ -769,7 +775,6 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     gs_ = mw_.gs; terrain_ = mw_.terrain;
     frame_ = frame;
     objects_ = &scene;
-    GameState& gs = *gs_;
     // The scene raises around the FLAG HOLDER's cell — «кем я на карте» is
     // where "here" is (подпосадка 4). The entry-side context reads the same
     // holder's runtime below. Хэндл флага — скаляр рода 2 фрейма (app
@@ -933,8 +938,8 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
         }
     }
     spawn_player_squad((*objects_),
-                       flag_inventory(&gs, mw_.store)
-                           ? *flag_inventory(&gs, mw_.store)
+                       flag_inventory(mw_.session, mw_.store)
+                           ? *flag_inventory(mw_.session, mw_.store)
                            : Inventory{},
                        mgr_, playerX_, playerY_,
         cell_seed(frame_->worldSeed, cx, cy) ^ kSquadSpawnSalt,
@@ -976,7 +981,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     if (gs_) {
         {
         const SpellBook* book = (objects_ && gs_)
-            ? flag_book(gs_, mw_.store) : nullptr;
+            ? flag_book(mw_.session, mw_.store) : nullptr;
         set_flying(book
                    && spellbook_rule_active(*book, SpellRuleId::Flight));
     }
@@ -1022,9 +1027,9 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
 // «смещение клетки рамки это смена аренды»). Центр берётся у менеджера шва —
 // он единственный, кто знает, где рамка стоит сейчас.
 void SubworldEngine::lease_window_here_() {
-    if (!gs_) return;
-    lease_window_at(*gs_, cell_of(mgr_.center_cx(), mgr_.center_cy(),
-                                  frame_->side));
+    if (!mw_.session) return;
+    lease_window_at(*mw_.session, cell_of(mgr_.center_cx(), mgr_.center_cy(),
+                                          frame_->side));
 }
 
 // Клетка-якорь фрейма — куда app центрирует fill_local_frame: центр окна 3×3
@@ -1121,8 +1126,8 @@ void SubworldEngine::fold_captured_subs() {
                         // Сид румба лежит в наружной полосе своей оси,
                         // значит шаг пересекает рамку по построению;
                         // страж области определения — не поведение.
-                        if (!cell_is_leased(*gs_,
-                                ecs::cell_index(ncx, ncy, side))) {
+                        if (!cell_is_leased(mw_.session,
+                                ecs::cell_index(ncx, ncy, side), side)) {
                             squad_fold_pos(
                                 st, h, ncx, ncy, side,
                                 ecs::cell_sub_after_step(
@@ -1219,7 +1224,7 @@ void SubworldEngine::sync_macro_player_to_center() {
     // so the next enter() falls back to the centre until the player actually
     // crosses a macro cell boundary again.
     if (objects_)
-        squad_jump_to_cell((*mw_.store), gs_->playerFlagRef, nx, ny,
+        squad_jump_to_cell((*mw_.store), flag_ref(mw_.session), nx, ny,
                            gs_->mapW);
 }
 
@@ -1292,7 +1297,7 @@ void SubworldEngine::spawn_player_entity() {
     // переживёт причину и начнёт читаться законом. Невалидный флажок ниже
     // честно даёт тушку БЕЗ бэклинка — это и есть отказ вслух.
     MacroStore& pst = (*mw_.store);
-    const MacroHandle flagRec = gs_ ? gs_->playerFlagRef : MacroHandle{};
+    const MacroHandle flagRec = flag_ref(mw_.session);
     // Слот единого массива объектов (M-150 1а; ЧЕСТНЫЙ ОТКАЗ — ломоть 5):
     // тело игрока — обычный жилец арены. Позиция — колонка арены, и тушка
     // без слота была бы телом БЕЗ КООРДИНАТ (фантом угла окна). На входе в
@@ -1339,7 +1344,7 @@ void SubworldEngine::spawn_player_entity() {
         // property, and the seam pulls/pushes this same block each tick.
         ecs::Pools pools{};
         if (const ecs::Pools* squadPools = gs_
-                ? flag_pools(gs_, mw_.store) : nullptr) {
+                ? flag_pools(mw_.session, mw_.store) : nullptr) {
             pools = *squadPools;
         }
         pools.maxHp = std::max(1, pools.maxHp);
@@ -1365,7 +1370,7 @@ void SubworldEngine::spawn_player_entity() {
     const BonusTotals standing = (gs_ && pst.valid(flagRec))
         ? standing_bonuses_of(pst, flagRec) : BonusTotals{};
     const CharacterSheet* baseSheet =
-        gs_ ? flag_sheet(gs_, mw_.store) : nullptr;
+        gs_ ? flag_sheet(mw_.session, mw_.store) : nullptr;
     const CharacterSheet effBody = baseSheet
         ? effective_sheet(*baseSheet, standing) : CharacterSheet{};
     const Inventory* flagBag = gs_ ? squad_container(pst, flagRec) : nullptr;
@@ -1557,7 +1562,7 @@ void SubworldEngine::sync_player_entity_position() {
                     ? standing_bonuses_of((*mw_.store), rec)
                     : BonusTotals{};
                 const CharacterSheet* base = gs_
-                    ? flag_sheet(gs_, mw_.store) : nullptr;
+                    ? flag_sheet(mw_.session, mw_.store) : nullptr;
                 const CharacterSheet eff = base
                     ? effective_sheet(*base, st) : CharacterSheet{};
                 const DerivedBonuses d = calculate_derived(
@@ -2245,7 +2250,7 @@ void SubworldEngine::tick_zones() {
         // флажок. Мира под сессией может не быть вовсе (голая фикстура) —
         // тогда честный ответ 0, «никто».
         record_world_fact(z.kind, z.cellX, z.cellY, z.amount,
-                          objects_ ? flag_ordinal(gs_, mw_.store)
+                          objects_ ? flag_ordinal(mw_.session, mw_.store)
                                    : 0u);
     }
 }
@@ -2514,7 +2519,7 @@ int SubworldEngine::player_display_hp() const {
             }
         }
         if (const ecs::Pools* squadPools = gs_
-                ? flag_pools(gs_, mw_.store) : nullptr) {
+                ? flag_pools(mw_.session, mw_.store) : nullptr) {
             return squadPools->hp;
         }
     }
@@ -2828,7 +2833,7 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
         // Композит гонится с регенерацией (тот же fail-closed, что был у
         // fell): кредит откатывается стак в стак — лут только что положен
         // плоскими строками (affixPower 0), remove_of снимает их же.
-        Inventory& bag = player_bag_of(gs_, mw_.store);
+        Inventory& bag = player_bag_of(mw_.session, mw_.store);
         for (const ItemRef& s : added) bag.remove_of(int(s.def), s.count);
         return false;
     }
@@ -2920,7 +2925,7 @@ bool SubworldEngine::grant_prop_loot(const Structure& prop,
     // world's props carry no worn things to load dice for, and 0 keeps the
     // deterministic-per-place contract above exactly as cheap as it reads.
     const CharacterSheet* lootSheet =
-        gs_ ? flag_sheet(gs_, mw_.store) : nullptr;
+        gs_ ? flag_sheet(mw_.session, mw_.store) : nullptr;
     auto stacks = roll_loot_profile(lootId,
                                     lootSheet ? level_of(lootSheet->levelData) : 1,
                                     &loot_rng_f01, /*affixPower*/ 0);
@@ -2938,7 +2943,7 @@ bool SubworldEngine::grant_prop_loot(const Structure& prop,
     // на втором оставлял первый в сумке, а остальное исчезало. Теперь уже
     // вставшие стаки откатываются (лут плоский, affixPower 0 — remove_of
     // снимает ровно их род), и звонящий видит целое «нет».
-    Inventory& bag = player_bag_of(gs_, mw_.store);
+    Inventory& bag = player_bag_of(mw_.session, mw_.store);
     for (ItemRef& s : stacks) {
         s.count = std::max(1, int(std::lround(float(s.count) * sizeScale)));
         const ItemDef* def = item_def_at(int(s.def));
@@ -4518,7 +4523,7 @@ void SubworldEngine::leave(bool force) {
     // Снимается ДО обнуления `gs_`: после него двери некого спросить. С
     // этого числа мир снова ведёт те девять клеток сам — решает за них бой
     // и жнёт их мёртвые записи.
-    if (gs_) release_window(*gs_);
+    if (mw_.session) release_window(*mw_.session);
     active_ = false;
     pendingUpload3d_ = {};
     sceneKind_ = SceneKind::Overworld;
@@ -4786,7 +4791,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // штатно, как велел владелец («данж частный случай когда арендованой
     // клетки нет всё должно работать нормально»). Снимается ТОЙ ЖЕ дверью,
     // что на подъёме: у «аренды нет» одно значение, а не два.
-    if (gs_) release_window(*gs_);
+    if (mw_.session) release_window(*mw_.session);
 
     // The player materialises on the threshold they came in by. A shaft
     // arrival lands where the MODULE says that shaft tops/bottoms out
@@ -4963,7 +4968,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     if (gs_) {
         {
         const SpellBook* book = (objects_ && gs_)
-            ? flag_book(gs_, mw_.store) : nullptr;
+            ? flag_book(mw_.session, mw_.store) : nullptr;
         set_flying(book
                    && spellbook_rule_active(*book, SpellRuleId::Flight));
     }
@@ -5059,7 +5064,7 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     record_world_fact(FactKind::Drained, cx, cy, /*amount: заряд = ординал
                       спелла + 1 — слив дельты вернёт его прикладному слою*/
                       charge,
-                      objects_ ? flag_ordinal(gs_, mw_.store) : 0u,
+                      objects_ ? flag_ordinal(mw_.session, mw_.store) : 0u,
                       spireOrdinal);
     set_status("The orb's light passes into you.");
     return true;
@@ -5342,7 +5347,7 @@ bool SubworldEngine::try_exit_dungeon() {
     // at the very spot the door was opened from — or, through the hatch, ON
     // the tower's crown: the cylinder's centre, one tower height above the
     // ground the honest support physics already carries bodies on.
-    squad_jump_to_cell((*mw_.store), gs.playerFlagRef, ses.doorCx,
+    squad_jump_to_cell((*mw_.store), flag_ref(mw_.session), ses.doorCx,
                        ses.doorCy, gs.mapW);
     // Out through the crown: you come up ON THE HATCH you climbed to, not on
     // the tower's axis — the axis is where the orb's plinth stands, and a body
@@ -6174,7 +6179,7 @@ void SubworldEngine::record_main(VkCommandBuffer cmd, VkExtent2D ext,
                                  std::uint32_t frameIndex) {
     if (!active_ || !gs_) return;
     const SpellBook* hasteBook =
-        objects_ ? flag_book(gs_, mw_.store) : nullptr;
+        objects_ ? flag_book(mw_.session, mw_.store) : nullptr;
     const bool hasteAura =
         (hasteBook
          && spellbook_has_sustained(*hasteBook, spell_ordinal("haste")));

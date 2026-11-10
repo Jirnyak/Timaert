@@ -47,15 +47,14 @@ struct World {
     GameState& gs = *gsOwn;
     TerrainData td;
     TreeLayer& trees = gs.treeLayer;
-    FeatureLayer features;
+    FeatureLayer& features = gs.features;
     MacroHandle village{};
     MacroHandle artel{};
 
     MacroWorld mw() {
         return MacroWorld{.gs = &gs,
                           .store = store.get(),
-                          .terrain = &td,
-                          .features = &features};
+                          .terrain = &td};
     }
 };
 
@@ -79,7 +78,7 @@ World make_world() {
     w.features.resize(kMap, kMap);
     allocate_world_fields(w.gs, kMap, kMap);
 
-    w.village = birth_squad(w.gs, *w.store, SquadType::Village, 10, 10, -1,
+    w.village = birth_squad(w.gs, nullptr, *w.store, SquadType::Village, 10, 10, -1,
                             "Doorholm");
     settle_souls(w.gs, *w.store, w.village.slot, 40);
 

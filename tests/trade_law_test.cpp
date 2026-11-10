@@ -57,7 +57,7 @@ int main() {
         // СЛОВАРЯ п.6) — ровно тем номером, которым дверь отвечает «станции
         // нет». Теперь выдача честная, с единицы.
         const MacroHandle home =
-            birth_squad(gs, st, SquadType::City, 60, 32);  // near east seam
+            birth_squad(gs, nullptr, st, SquadType::City, 60, 32);  // near east seam
         const int kHomeId = int(st.spawnId[home.slot].index);
         st.inventory[home.slot].inv.add("food", 2048);
         // Души — дверью мира (v122): паства в число фичи, головы в инвентарь.
@@ -66,12 +66,12 @@ int main() {
         // 30 cells west, same side — far enough that the comparable-distance
         // coin flip stays out.
         const MacroHandle sameSide =
-            birth_squad(gs, st, SquadType::City, 30, 32);
+            birth_squad(gs, nullptr, st, SquadType::City, 30, 32);
         settle_souls(gs, st, sameSide.slot, 50);
 
         // 6 cells east THROUGH the seam: 60 -> 63|0 -> 2.
         const MacroHandle acrossSeam =
-            birth_squad(gs, st, SquadType::City, 2, 32);
+            birth_squad(gs, nullptr, st, SquadType::City, 2, 32);
         const int kAcrossSeamId = int(st.spawnId[acrossSeam.slot].index);
         settle_souls(gs, st, acrossSeam.slot, 50);
 

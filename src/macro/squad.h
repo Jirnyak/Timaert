@@ -171,7 +171,7 @@ inline std::uint16_t actions_of(const MacroStore& st, MacroHandle h) {
 //  смены рода неподвижного сквада имела НОЛЬ прод-вызовов, и её шапка
 //  это признавала сама. Закон «переход рода поднимает событие состава»
 //  остался без пути, а не без носителя: событие поднимает рождение
-//  (`birth_squad@src/macro/birth_squad.h`, ++gs.navEpoch), и свидетель
+//  (`birth_squad@src/macro/birth_squad.h`, счётчик `navEpoch` сессии), и свидетель
 //  навигации судит его там. Понадобится переход — придёт вместе со
 //  своим звонящим, как всякая дверь.)
 
@@ -362,8 +362,8 @@ inline void reconcile_rooted_flock(GameState& gs, MacroStore& st,
 // «Убили всех — сквада на карте нет». A tracked death marks the avatar
 // entity Dead (the subworld reaper, the auto-resolve, the exhaustion bite)
 // and the drain above moves his men to the deserter pool — but nothing ever
-// DESTROYED the entity: the corpse-row lived in the ECS and rode every save
-// (macro_snapshot dead=1) forever. The squad's identity and deeds are already
+// DESTROYED the entity: the corpse-row lived in the store and rode every save
+// with its fate byte set, forever. The squad's identity and deeds are already
 // the chronicle's, by save-stable ordinal, so the entity itself has nothing
 // left to carry.
 //
@@ -397,7 +397,7 @@ inline void reconcile_rooted_flock(GameState& gs, MacroStore& st,
 // когда неподобранное сворачивается в казну стоимостью.
 //
 // ИЗЪЯТИЕ АДРЕСУЕТСЯ КЛЕТКАМИ, НИКОГДА РОДОМ СЦЕНЫ: `cell_is_leased` читает
-// ОДНО число мира, а рамку строит `cell_step` по восьми румбам (ЗАКОН
+// ОДНО число сессии, а рамку строит `cell_step` по восьми румбам (ЗАКОН
 // АДРЕСА). Флага «игрок внизу» у свипа нет и быть не должно.
 // ПОСЛЕДНЕЕ СЛОВО УМИРАЮЩЕГО — ЧУЖОЙ ОТВЕТ, И СВИП ЕГО НЕ ЗНАЕТ. Свип
 // умеет ровно одно: он ЕДИНСТВЕННЫЙ, кто знает момент «эта строка уходит
@@ -423,6 +423,7 @@ using SquadSweptFn = void (*)(MacroHandle, void* user);
 // ОДНОЙ дверью вместе со своим расходным концом, а не указателем в подписи
 // свипа. Наряд — **M-225**/**M-17**; дыра названа в **M-346**.
 inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
+                                     const Session* ses,
                                      SquadSweptFn onSwept = nullptr,
                                      void* sweptUser = nullptr) {
     // Снос по ординалу (squad_walk.h) — снимок и так был обязателен
@@ -430,10 +431,10 @@ inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
     // бесплатно. Население — ВЕДОМОСТЬ ПАВШИХ (M-376): скан капа умер,
     // снимок строится за O(павших). Игрок исключается КОЛОНКАМИ (1е кластер
     // 5): родной сквад — зарезервированным ординалом, носитель флажка —
-    // битами GameState; тег-exclude умер вместе с резолвом тегом. Прежний
+    // кэшем сессии; тег-exclude умер вместе с резолвом тегом. Прежний
     // exclude<SubworldTag> был рудиментом (сам тег умер ломтём 6 M-150):
     // жильство сцены носили только тела, макро-сквад — никогда.
-    const MacroHandle flag = player_flag_handle(gs);
+    const MacroHandle flag = player_flag_handle(ses);
     const bool flagLive = st.valid(flag);
     std::vector<SquadWalkEntry> snapshot;
     for (std::uint32_t i = 0; i < st.deadRowCount; ++i) {
@@ -445,7 +446,7 @@ inline int destroy_dead_macro_squads(MacroStore& st, GameState& gs,
         // ЭТИМ ЖЕ кадром, а дверь переключения активного (`keep_active_squad`)
         // снимет флажок с мертвеца раньше, чем он тут понадобится.
         if (flagLive && slot == flag.slot) continue;
-        if (cell_is_leased(gs, st.cell[slot].idx)) continue;
+        if (cell_is_leased(ses, st.cell[slot].idx, gs.mapW)) continue;
         snapshot.push_back({st.spawnId[slot].index, slot});
     }
     std::sort(snapshot.begin(), snapshot.end(),
@@ -511,7 +512,7 @@ inline bool order_squad_route(MacroStore& st, std::uint32_t ordinal,
 //
 // A NAMED character (npc.h kNamedKinds) OWNS his sheet: the CharacterSheet
 // component born with him in make_npc — «он как игрок»: it levels in place
-// and rides the save inside his MacroNpcRecord. A transient crew (rotation
+// and rides the save as a column of his store slot. A transient crew (rotation
 // professions, caravans) derives its GENERIC sheet from its row + level on
 // the spot — «они уничтожаются своим ландмарком», there is nothing of
 // theirs to store. One door, an honest ontology split — never «игрок/НПЦ».
@@ -1219,12 +1220,13 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     const float enemyFraction =
         playerIsA ? o.avatarFractionB : o.avatarFractionA;
     const bool playerWon = (o.winner == 0) == playerIsA;
-    // «Игрок» — запись ФЛАЖКА (A3): его хэндл — биты GameState (1е кл.5).
-    const MacroHandle playerH = player_flag_handle(gs);
+    // «Игрок» — запись ФЛАЖКА (A3): его хэндл — кэш сессии из конверта.
+    const MacroHandle playerH = player_flag_handle(mw.session);
     // The player's spoils land in HIS bag — the ordinary NpcInventory on his
     // squad record (macro/player_entity.h), the same container an enemy
     // lord's goods came out of.
-    Inventory* playerBag = player_inventory(gs, st);
+    Inventory* playerBag =
+        st.valid(playerH) ? &st.inventory[playerH.slot].inv : nullptr;
     Inventory scratch{};
     if (!playerBag) playerBag = &scratch;   // headless fixture: nowhere to put
 

@@ -5,10 +5,11 @@
 //   1  Explored  memory — grey relief and roads, faded places, markers.
 //   2  Visible   in sight right now — the full living picture.
 //
-// Only the EXPLORED bit is persistent (the save clamps 2 → 1 on write, v40):
-// "what I see now" is a projection of where the player stands, recomputed by
-// update_player_sight whenever their cell changes — and therefore after every
-// load, from the restored position.
+// Only the EXPLORED bit outlives a session: "what I see now" is a projection of
+// where the player stands, recomputed by update_player_sight whenever their
+// cell changes. The layer rides the save as it lies (a direct dump, M-439), so
+// the load door dims Visible back to Explored (`knowledge_dim_sight` below) and
+// the first sweep from the restored position re-opens its own.
 //
 // SIGHT IS LIGHT. The sweep is the same bounded terrain-optical Dijkstra the
 // night-glow bake runs (macro/optics.h optical_sweep): open land carries the
@@ -23,8 +24,8 @@
 // and events open the map through the same door (reveal_area), so "the elder
 // marks your map" and "you walked there" are indistinguishable afterwards.
 //
-// L1 macro layer, TreeLayer's shape: grid + revision (renderer refresh gate,
-// never serialized). GameState owns one; the renderer samples it as R8
+// L1 macro layer, TreeLayer's shape: grid + revision (renderer refresh gate).
+// GameState owns one; the renderer samples it as R8
 // (binding 5) once Increment 2 lands.
 #pragma once
 #include <cstdint>
@@ -51,8 +52,8 @@ enum : std::uint8_t {
 // его чистит `knowledge_reset`. Байты слоя снимаются одним куском.
 struct KnowledgeLayer {
     int width = 0, height = 0;
-    // Runtime dirty counter — bumped on every mutation so the renderer knows
-    // to refresh its field texture. Never serialized.
+    // Dirty counter — bumped on every mutation so the renderer knows to
+    // refresh its field texture. Не величина мира, но счётчик едет в файле вместе со слоем (сейв есть прямой дамп, M-439), поэтому кэш, сверяющий себя с ним, обязан быть назван протухшим той дверью, что заменяет слой целиком — загрузкой.
     std::uint32_t revision = 0;
     std::uint8_t data[kWorldCellCap] = {};
 
@@ -88,15 +89,28 @@ struct SightRuntime {
 // All-Unknown grid of the given dims — a new world starts dark.
 // Чистится ВЕСЬ кап, а не только клетки нового мира: хвост за миром обязан
 // стоять нулём, иначе байты слоя помнили бы прошлый мир (M-180). Мир вне капа
-// рождает слой без сторон — fail-closed. Тело в заголовке: дверь зовёт и
-// провод сейва (`knowledge_read@src/macro/world_fields.cpp`), а он линкуется
-// в приборы, которым оптика этого слоя не нужна.
+// рождает слой без сторон — fail-closed. Тело в заголовке: дверь зовут
+// приборы, которым оптика этого слоя (и её .cpp) не нужна.
 inline void knowledge_reset(KnowledgeLayer& k, int width, int height) {
     static_assert(kKnowledgeUnknown == 0, "нулевой байт слоя — Unknown");
     const bool fits = world_cells_within_cap(width, height) > 0u;
     k.width = fits ? width : 0;
     k.height = fits ? height : 0;
     std::memset(k.data, 0, sizeof(k.data));
+    ++k.revision;
+}
+
+// ПОГАСИТЬ «ВИДНО СЕЙЧАС» В «РАЗВЕДАНО» ПО ВСЕМУ СЛОЮ — ДВЕРЬ ЗАГРУЗКИ. Что
+// видно сейчас, есть проекция места, где стоит игрок, а список этих клеток
+// живёт в сессии (`SightRuntime` ниже) и с миром не сохраняется. Слой же едет
+// прямым дампом как есть — с клетками, видимыми на момент записи. После
+// загрузки список пуст, и гасить их при уходе игрока было бы нечем: они
+// остались бы «видимыми» навсегда. Дверь возвращает слою то, что в нём
+// переживает сессию по праву, — память о разведанном; первый же обзор от
+// загруженного места откроет своё заново. Счётчик правок двигается.
+inline void knowledge_dim_sight(KnowledgeLayer& k) {
+    for (std::uint8_t& c : k.cells())
+        if (c == kKnowledgeVisible) c = kKnowledgeExplored;
     ++k.revision;
 }
 
@@ -118,3 +132,12 @@ void reveal_area(KnowledgeLayer& k, const OpticalWorld& world,
                  float budgetCells);
 
 } // namespace sm
+
+#include "core/row_law.h"   // стена «без дыр» — включение в хвосте, содержимое файла не сдвигается
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::KnowledgeLayer, &sm::KnowledgeLayer::width,
+    &sm::KnowledgeLayer::height, &sm::KnowledgeLayer::revision,
+    &sm::KnowledgeLayer::data);

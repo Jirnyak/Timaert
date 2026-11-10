@@ -9,9 +9,8 @@
 #include <vector>
 #include "core/rng.h"
 #include "core/time.h"
-#include "core/torus.h"   // cell_step — рамка 3x3 аренды есть восемь соседей
+#include "core/torus.h"   // cell_of / world_shape_ok — адрес клетки мира
 #include "bus/anketa.h"
-#include "bus/squad_row.h"   // SquadName — ячейка имени игрока (M-180)
 #include "ecs/components.h"   // MacroHandle — кэши игрока {слот, ID} (M-220)
 #include "tables/commodity.h"   // kCommodityCount — дань по позициям (v73)
 #include "bus/memory.h"   // WorldMemory — память мира с горизонтом сезона
@@ -25,6 +24,7 @@
 #include "macro/factions.h"
 #include "macro/knowledge.h"
 #include "macro/tree_layer.h"   // TreeLayer — живое поле леса, род 3 (M-180)
+#include "macro/features.h"     // FeatureLayer — поле фич клетки, род 3 (M-456)
 #include "macro/chronicle.h"
 #include "macro/scent_field.h"
 #include "macro/markers.h"
@@ -482,7 +482,19 @@ namespace sm {
 // строковый ключ и пара float-координат умерли); шапка блока следов потеряла
 // число планов (оно — константа сборки `kFactionCount`), а индекс клетки
 // следа на проводе стал адресом внутри канала под капом клеток.
-constexpr int kSaveVersion = 159;
+// 160 — СЕЙВ ЕСТЬ ПРЯМОЙ ДАМП (M-439 / M-456, 2026-11-10): у файла больше нет
+// провода. Он — заголовок и два куска памяти мира байт в байт: это состояние
+// (`GameState`) и гладкая память сквадов (`MacroStore@src/bus/store.h`);
+// порядок и ширина величин в файле суть раскладка этих двух типов, и ничего
+// кроме неё (`save_game@src/macro/save.h`). С этого числа запись «что поехало
+// в сейв» вести незачем: поехало ВСЁ, что стало членом состояния или
+// колонкой стора, в тот же день. ВЕРСИЯ ОСТАЁТСЯ ДЛЯ ОДНОГО: смены СМЫСЛА при
+// тех же байтах (перенумерованный ординал, другой закон той же колонки) —
+// смену раскладки заголовок файла ловит сам, сравнением `sizeof`.
+// Этим же шагом: поле фич клетки легло в состояние (руина переживает
+// загрузку), сессионные члены уехали на оболочку, ячейка имени игрока и член
+// `version` снесены, дыры выравнивания убраны под стену компилятора.
+constexpr int kSaveVersion = 160;
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -539,24 +551,9 @@ constexpr int kSaveVersion = 159;
 // map became the flat matrix, а матрица 2026-09-30 умерла в СТРОКИ фракций
 // (macro/factions.h, род 6): отношения — колонка строки, феод — рёбра пула.)
 
-// ── THE SESSION FEED: words that die with the moment ─────────────────────
-// (owner, 2026-08-28: «это вообще не нужно хранить даже в сессии — пишется
-// в UI как в Might & Magic и сразу забывается»). The old EventLogRing kept
-// 8192 std::strings in the SAVE; but a session message ("Game saved.",
-// "You have learned Fireball!") is not a fact of the world and not the
-// player's journal — it is presentation. So the channel is a tiny POD ring
-// the HUD fades out, NEVER serialized. What the world remembers is the
-// chronicle; what the player learned is his journal; this is neither.
-struct SessionFeed {
-    static constexpr int kLines = 8;     // more than fits on screen anyway
-    static constexpr int kTextCap = 112; // one HUD line, NUL included
-    struct Line {
-        char  text[kTextCap];
-        float ttl = 0.0f;                // seconds of screen life left
-    };
-    Line lines[kLines]{};
-    std::uint8_t head = 0;               // where the NEXT line goes
-};
+// (`SessionFeed` и её дверь `session_feed_push` ЗДЕСЬ БОЛЬШЕ НЕ ЖИВУТ — вердикт
+// владельца 2026-11-10, вопрос В1 сейв-эпика: лента HUD не есть состояние мира.
+// Она переехала в сессию (`Session@src/bus/session.h`), экземпляр — член `App`.)
 
 // A settled quest OFFER's provenance — the POD triple that names an offer
 // uniquely (events/quests/quest_types.h Quest: each generator fires at most
@@ -568,20 +565,21 @@ struct SessionFeed {
 //  рода 2 — ломоть 6.)
 
 struct PlayerState {
-    // ИМЯ — ПЛОСКАЯ ЯЧЕЙКА ШИРИНЫ ИМЕНИ АНКЕТЫ (ломоть 4 сейв-эпика, M-180,
-    // 2026-11-10): та же форма, что у колонки имени каждого сквада
-    // (`SquadName@src/bus/squad_row.h`), пишется той же дверью
-    // (`set_squad_name@src/bus/squad_row.h`). Здесь стояла `std::string` —
-    // последняя строка состояния мира на проводе сейва. Ввод экрана создания
-    // (24 знака) в ячейку ложится целиком.
-    ecs::SquadName name{};
+    // (ЯЧЕЙКА ИМЕНИ `name` УНИЧТОЖЕНА — вердикт владельца 2026-11-10, вопрос В3
+    // сейв-эпика, дословно: «игрок ничем не особенный имена через анекты
+    // сквадо … также имена могут менятьс имя игрока частныйц случац». Имя
+    // живёт в ОДНОМ месте — колонке `name` анкеты сквада в сторе
+    // (`SquadName@src/bus/squad_row.h`), у игрока это колонка АКТИВНОГО сквада,
+    // и читает её та же дверь, что имя всякого (`squad_name@src/bus/store.h`).
+    // Здесь стояла вторая ячейка той же ширины — второй носитель одного рода:
+    // при вселении панели показывали имя оставленной оболочки. Экран создания
+    // пишет имя прямо в колонку сквада той же дверью `set_squad_name`.)
     // (Колонка `sexIdx` УНИЧТОЖЕНА в v130, перепись сирот 2026-10-11: она
     // была КОПИЕЙ экранного поля `CreationState::sexIdx` и не имела ни одного
     // прод-читателя. Очко атрибута за «female» считается ТАМ, где стоит
     // авторская таблица выбора — `apply_creation@src/app/main.cpp` читает
     // `cs.sexIdx`, то есть экран, а не мир. Колонка состояния мира, которую
     // пишут и не читают, есть колонка-сирота, DOD п.9.)
-    int ageDays = 1000;
     // (No `x`/`y` since v88. WHERE he stands is the ordinary ecs::MacroCell
     // on his squad entity — подпосадка 4: the input walker steps it, the one
     // glide integrator moves the eye, the snapshot restores it. The scalars
@@ -622,6 +620,10 @@ struct PlayerState {
     // CodexArticleId; the static_assert there is the loud cap). Replaced a
     // vector of id STRINGS (v63) — a string was doing an ordinal's job.
     std::uint64_t codexUnlockedBits = 0;
+    // Возраст стоит ПОСЛЕ кодекса, а не перед ним (сейв-эпик, вердикт В2):
+    // восьмибайтовое слово первым — и четыре четырёхбайтовых следом ложатся
+    // без единой дыры выравнивания.
+    int ageDays = 1000;
     // The player's log — a RING, not a vector that shifts. It was capped by
     // `erase(begin())`, which memmoves up to eight thousand std::strings on
     // every entry past the cap: the same defect the settlement history and the
@@ -629,7 +631,7 @@ struct PlayerState {
     // no caller can forget it and nothing shifts to enforce it.
     //
     // (No event log. Session messages die with the moment — GameState's
-    // sessionFeed below; what the player LEARNED is the journal right here;
+    // the session feed (bus/session.h); what the player LEARNED is the journal here;
     // what the world remembers is the chronicle. Three questions, three
     // answers, no fourth store.)
     // Loud cap of the journal below (owner, 2026-08-28: «на века, не
@@ -668,6 +670,7 @@ struct PlayerState {
     std::uint32_t            journalCount = 0;    // живых записей в `journal`
     std::uint32_t            journalSeenSeq = 0;  // last chronicle seq scanned
     std::uint8_t             journalFull = 0;     // the loud cap flag
+    std::uint8_t             pad[3] = {};         // выравнивание, названное полем (В2)
     WorldFact                journal[kJournalFactsCap] = {};
     // (No spellBook since v89. A body's knowledge is the SpellBook COMPONENT
     // on its macro entity — §41 root 3: the one-copy field here was literally
@@ -707,17 +710,6 @@ struct PlayerState {
     // was already going through the entity.)
 };
 
-// The ONE door into the session feed (drawn and faded by the HUD, never
-// saved). Overlong lines are cut at the HUD's own width — a feed line is a
-// glance, not a document.
-inline void session_feed_push(SessionFeed& f, const char* text) {
-    if (!text || text[0] == '\0') return;
-    SessionFeed::Line& l = f.lines[f.head % SessionFeed::kLines];
-    std::snprintf(l.text, sizeof l.text, "%s", text);
-    l.ttl = 6.0f;   // seconds on screen — M&M's own unhurried fade
-    f.head = std::uint8_t((f.head + 1) % SessionFeed::kLines);
-}
-
 // World-tick runtime (moved here from world_tick.h in v24, because it is
 // STATE): the budgeted daily-simulation queue, the subworld step remainder
 // and the jitter stream the daily economy rolls. All integers on purpose —
@@ -729,7 +721,11 @@ struct WorldTickRuntime {
     // Subworld only: the clock there advances one tick per
     // kSubworldTickDivisor simulation steps; this counts the steps not yet
     // spent.
-    std::uint64_t subworldStepRemainder = 0;
+    // ШИРИНА — ПО ДОСТИЖИМОМУ ДИАПАЗОНУ (ЗАКОН ТИПА): остаток всегда строго
+    // меньше `kSubworldTickDivisor@src/core/time.h` (64) — его кладёт туда
+    // взятие по модулю. Здесь стояло u64, и вместе с четырёхбайтовым потоком
+    // ниже оно оставляло структуре 4 Б хвостовой дыры (вердикт В2).
+    std::uint32_t subworldStepRemainder = 0;
     Rng jitter{0xC0FFEEu};
 };
 
@@ -745,13 +741,13 @@ struct MacroAiRhythm {
     Rng           jitter{0xA1F0u};
 };
 
-// «АРЕНДЫ НЕТ» — последнее значение типа (ЗАКОН УЗКОГО ИНДЕКСА): клетка 0
-// законна, и нулём тут сказать нечего. Стоит перед GameState, потому что
-// умолчание его поля `leasedWindow` ссылается на неё.
-inline constexpr std::uint32_t kNoWindowLease = 0xFFFFFFFFu;
-
 struct GameState {
-    int version = kSaveVersion;
+    // (ЧЛЕН `version` УНИЧТОЖЕН — сейв-эпик, 2026-11-10. Он нёс копию
+    // `kSaveVersion`, ставился рождением состояния и читался НИКЕМ: версию
+    // формата судит заголовок файла (`SaveHeader@src/macro/save.cpp`), а мир
+    // о формате своего дампа знать не обязан. Колонка без читателя (DOD п.9),
+    // и заодно — те 4 Б, из-за которых у состояния оставалась хвостовая дыра
+    // выравнивания.)
     // (`saveName` и `savedAt` УНИЧТОЖЕНЫ в v157 — M-180: у обеих строк
     // прод-писателей не было. Метка времени слота живёт в файле и в
     // `SaveSummary::savedAt@src/macro/save.h`, мир её не носит.)
@@ -759,6 +755,13 @@ struct GameState {
     int mapW = 1024, mapH = 1024;
     LayerParameters mapParams{};
     int cityCountTarget = 0;
+    // The day the slow world last re-baked (path-cost grid) and autosaved —
+    // once a season, together (Session 21). Lives HERE, not on App, so a load
+    // keeps the phase instead of pushing the next autosave a season away (v22).
+    int lastWorldRebakeDay = 0;
+    // (Стоит здесь, среди скаляров головы, а не рядом с часами мира: шесть
+    // четырёхбайтовых слов головы с этим седьмым дают границу, кратную 8, и
+    // восьмибайтовые члены ниже ложатся без дыр — вердикт В2 сейв-эпика.)
 
     // МЕТКИ ИГРОКА НА КАРТЕ — и только они. Здесь стояла шапка «THE place
     // list … every placed place of every kind, one vector», описывавшая
@@ -771,7 +774,8 @@ struct GameState {
     MarkerList markers;
     // The player's map knowledge (v40): Unknown / Explored / Visible per cell.
     // Explored persists; Visible is re-derived from the player's position
-    // (update_player_sight) — save.cpp clamps it away on write.
+    // (update_player_sight) — the load door dims it back to Explored
+    // (`knowledge_dim_sight@src/macro/knowledge.h`).
     KnowledgeLayer knowledge;
     // WHAT HAPPENED (macro/chronicle.h, CANON S20.1). The world's own memory,
     // in ONE tier: a ring the world is ASKED (indexed by cell — this is what
@@ -785,8 +789,6 @@ struct GameState {
     // (души + груз). Едут в сейве целиком (вердикт владельца: движение не
     // фактируется, реплеить след не из чего).
     ScentField scent;
-    // The session feed (see SessionFeed above): presentation, NEVER saved.
-    SessionFeed sessionFeed;
     // РОД 6 ФРЕЙМА — гладкий массив строк фракций (macro/factions.h): id
     // плоскими чарами, цвет, отношения КОЛОНКОЙ строки, феодальные рёбра
     // дани отрезками общего пула. Пришёл 2026-09-30 (ход 2 ломтик C) на
@@ -821,50 +823,37 @@ struct GameState {
     // поля `field_move`). Второго адреса у леса нет: конверт `MacroWorld`
     // своего указателя на лес больше не несёт.
     TreeLayer treeLayer;
+    // ── ПОЛЕ ФИЧ КЛЕТКИ — РОД ФИЧИ НА КЛЕТКЕ, БАЙТ НА КЛЕТКУ (род 3; M-456,
+    // 2026-11-10) ────────────────────────────────────────────────────────
+    // «Что построено на этой клетке»: дорога, пашня, шахта, город, руина.
+    // Поле жило членом оболочки приложения и приходило в симуляцию указателем
+    // конверта, хотя живой мир его ПИШЕТ — смерть города кладёт на клетку
+    // руину, смерть деревни снимает фичу (глагол пульта `reshape_feature`). В
+    // сейв оно не ехало и на загрузке перевыводилось из сида, то есть руина
+    // после загрузки снова становилась городом. Теперь поле лежит здесь, рядом
+    // с лесом и полем чисел фич, и едет с состоянием целиком. Писатель клетки
+    // один — `feature_put@src/macro/features.h`; число под фичей — соседнее
+    // поле `featureNumber` ниже. Второго адреса у поля нет: конверт
+    // `MacroWorld` своего указателя на него больше не несёт.
+    FeatureLayer features;
     PlayerState player;
-    // ИГРОК — ДВА КЭША ДВУХ КОЛОНОК АНКЕТ (вердикт владельца 2026-09-29,
-    // кластер 5б: «У НАС СИСТЕМА ИГРЫ ЧТО ЕСТЬ СКВАДЫ С АНКЕТАМИ И ЭТО ВСЁ
-    // и поэтому смена сквада это просто смена флажка что этот сквад (с этой
-    // анкетой) игрок»). ИСТИНА — анкета: playerFlagRef кэширует носителя
-    // колонки playerFlag == 1 («кем я на карте»; двигают вселение
-    // possess_entity и переключение активного keep_active_squad — ОДНОЙ
-    // дверью transfer_player_flag, пишущей колонку и кэш вместе);
-    // (Рядом жил `playerSquadRef` — кэш носителя БИТА `playerFlag.home`,
-    // «кто оригинал». И бит, и кэш, и его дверь снесены ломтём 7б M-421:
-    // рода «дом» в замысле нет, «под контролем» есть ФРАКЦИЯ, а активный
-    // ровно один. До M-255 дом был и вовсе ординалом-литералом, то есть у
-    // вопроса «кто я» успели побывать ТРИ носителя подряд.)
-    // Форма — MacroHandle {слот, ID} НАПРЯМУЮ (M-220: упаковка в биты
-    // умерла вместе с колонкой generation; «никого» — id == 0, закон
-    // нуля-ординала). В сейв НЕ едет: флаг едет колонкой записи снапшота,
-    // загрузка пересобирает кэш сканом колонки
-    // (resolve_player_handles_after_load).
-    //
-    // (Рядом жил `playerSquadRef` — кэш «кто оригинал». Снесён ломтём 7б
-    //  M-421 вместе с битом `playerFlag.home`: кэшей вопроса «кто я» стало
-    //  столько же, сколько самих вопросов, — один.)
-    MacroHandle playerFlagRef{};
+    // (КЭШ НОСИТЕЛЯ ФЛАЖКА `playerFlagRef` ЗДЕСЬ БОЛЬШЕ НЕ ЖИВЁТ — вердикт
+    // владельца 2026-11-10, вопрос В1 сейв-эпика. Истина «кто игрок» — колонка
+    // `playerFlag` анкеты в сторе (род 2); кэш её носителя есть сессия
+    // (`Session::playerFlagRef@src/bus/session.h`), и после загрузки его
+    // пересобирает скан колонки. Рядом когда-то жил и второй кэш — «кто
+    // оригинал», снесённый ломтём 7б M-421 вместе с битом `playerFlag.home`.)
     WorldTime   worldTime = world_time_at(0, 6, 0);
-    // The day the slow world last re-baked (path-cost grid) and autosaved —
-    // once a season, together (Session 21). Lives HERE, not on App, so a load
-    // keeps the phase instead of pushing the next autosave a season away (v22).
-    int lastWorldRebakeDay = 0;
     // (ЕДИНЫЙ эмитент ординалов макро-субъектов — M-37 — ПЕРЕЕХАЛ в
     // MacroStore.nextSpawnId с M-220: идентичность выдаёт сама дверь
     // рождения store_birth, и валидность ссылки {слот, ID} судит она же.
     // Здесь он при новой игре стартовал бы с 1 и оживлял хэндлы прошлого
     // мира; у стора он монотонен через перерождение мира, как nextId арены
     // субмира. В сейве едет по-прежнему — полем стора.)
-    // СМЕНА СОСТАВА МЕСТ — СОБЫТИЕ, А НЕ СОСТОЯНИЕ (CANON S9, владелец
-    // 2026-09-20: «рождение-смерть ландмарка это конкретные события, и
-    // должна быть единая система-дверь, никаких проверщиков»). Счётчик
-    // растёт в дверях рождения и смерти места и в тех немногих событиях,
-    // что меняют проходимость мира (мост). Всё, что запечено ОТ СОСТАВА
-    // (навигация S7), сравнивает одно число вместо прохода по контейнеру.
-    //
-    // Производное состояние сессии, В СЕЙВ НЕ ЕДЕТ: загрузка поднимает
-    // места через ту же дверь и тем самым честно взводит счётчик заново.
-    std::uint32_t navEpoch = 0;
+    // (СЧЁТЧИК СОБЫТИЯ СОСТАВА `navEpoch` ЗДЕСЬ БОЛЬШЕ НЕ ЖИВЁТ — вердикт
+    // владельца 2026-11-10, В1: это производное сессии, а не величина мира.
+    // Носитель — `Session::navEpoch@src/bus/session.h`; двигают его дверь
+    // рождения осёдлого сквада и дверь загрузки.)
     // (Эмитент квестовых ординалов nextQuestOrdinal умер с квест-машиной —
     //  ломоть 3 M-72: цель игрока — род 2, своей идентичности ей не нужно.)
     // The world's runtime rhythms (v24). worldTickRt is the LIVE runtime —
@@ -901,37 +890,19 @@ struct GameState {
     // ЛУТА как система (M-17); когда их построят, приёмники заведут заново,
     // и заведут ТАМ, где их читают. Времянки на освободившееся место не
     // поставлено — дыра названа нарядом M-206, AGENTS §1.)
-    // ── АРЕНДА ОКНА — ОДНО ЧИСЛО МИРА (AGENTS ЗАКОН ШВА, вердикты владельца
-    // 2026-10-06: «да состояние мира»; «смещение клетки рамки это смена
-    // аренды а арендована может быть всегда одна клетка (ну и рамка вокруг
-    // неё 3х3)») ─────────────────────────────────────────────────────────
-    // Пока игрок внизу, девять клеток ведёт СУБМИР ОДИН, и макро их не
-    // ведёт: не решает за них бой и не жнёт их записи. Хранится ОДНА
-    // клетка-центр; арендованное множество есть она плюс восемь соседей
-    // через `cell_step` (ЗАКОН АДРЕСА: соседство есть арифметика над
-    // индексом, а не пара координат). Второго числа нет и флага «игрок
-    // внизу» нет — вопрос «кто ведёт эту запись» СТАЛ вопросом О КЛЕТКЕ, и
-    // ровно этим умер глобальный `allowAutoBattle`, гасивший автобой во
-    // ВСЁМ мире («это плохо нельзя отклюячать автобой во всём мире толкьо в
-    // этих 3х3 клетках»).
-    //
-    // «АРЕНДЫ НЕТ» — ПОСЛЕДНЕЕ ЗНАЧЕНИЕ ТИПА, а не 0: клетка 0 законна, и
-    // нулём тут сказать нечего (ЗАКОН УЗКОГО ИНДЕКСА — ноль служебен у
-    // ординала-ИДЕНТИЧНОСТИ, не у индекса в мир).
-    //
-    // Производное состояние СЕССИИ, В СЕЙВ НЕ ЕДЕТ ПО ПОСТРОЕНИЮ:
-    // сохраняться можно только на макро-слое (AGENTS §10), то есть в файле
-    // аренда пуста всегда — писать её значило бы хранить невозможное.
-    // Тот же закон, что у `navEpoch` выше.
-    std::uint32_t leasedWindow = kNoWindowLease;
+    // (АРЕНДА ОКНА `leasedWindow` ЗДЕСЬ БОЛЬШЕ НЕ ЖИВЁТ — вердикт владельца
+    // 2026-11-10, В1. На макро-слое аренды нет по построению, а сохраняться
+    // можно только на нём, то есть состоянию мира о ней сказать нечего.
+    // Носитель — `Session::leasedWindow@src/bus/session.h`, двери сдачи и
+    // снятия там же; во фрейм она по-прежнему едет колонкой рода 4.)
     // (The abstract TradeRoute system is GONE (v29): trade is caravan
     // AGENTS carrying real cargo between real inventories — macro/npc_ai.cpp
     // ai_caravan.)
 
     // (treeOverrides and depositOverrides are GONE (v36/v37): forests and
-    // deposits are carrier rows of the resource-field registry, and the save
-    // carries their live state whole — save.cpp takes the carriers alongside
-    // the state.)
+    // deposits are carrier rows of the resource-field registry; the forest
+    // lives in this state and rides the save with it, the vein field is a
+    // pure function of terrain and seed and is not saved at all.)
 
     // ── THE TWO LAYERS OF S5, AND NEITHER IS A HASH (v96) ────────────────
     // «Разрежённого хранения больше нет» (CANON S5, поправка владельца
@@ -993,9 +964,11 @@ struct GameState {
     // клетки светящих фич, чужие огни не трогает), впредь сквады/объекты/
     // события той же дверью. Читатель один — сбор эмиттеров бейка
     // (`collect_macro_lights`); живой мир свечением не управляется (свет —
-    // представление, ЗАКОН ТУПИКА РЕНДЕРА держит направление). В сейв НЕ
-    // едет: восстанавливается рефрешем при загрузочном ребейке, а гашение
-    // выкачанного шпиля несёт его же ЧИСЛО (0 = орб пуст) в блоке чисел фич.
+    // представление, ЗАКОН ТУПИКА РЕНДЕРА держит направление). В СЕЙВ ЕДЕТ,
+    // как всякое поле состояния (вердикт владельца 2026-11-10: «все поля над
+    // тором, лежащие в состоянии мира (Род 3), едут дампом единообразно и
+    // агностично»); загрузочный ребейк всё равно переписывает клетки светящих
+    // фич от их же чисел, так что файл и рефреш сойтись обязаны.
     ResourceGrid lightEmission;
 
     // (Вектор `builtFeatures` и структура `BuiltFeature` УНИЧТОЖЕНЫ в v130,
@@ -1023,47 +996,6 @@ static_assert(std::is_trivially_copyable_v<GameState>,
 static_assert(std::is_standard_layout_v<GameState>,
               "состояние мира — плоская раскладка: без виртуальности и без "
               "смешанного доступа, адрес члена выводится из типа");
-
-// ── ДВЕРИ АРЕНДЫ ОКНА — ОДНА НА СДАЧУ, ОДНА НА СНЯТИЕ ────────────────────
-// КОНЦОВ АРЕНДЫ ДВА, И ОНИ РАВНОПРАВНЫ (вердикт владельца 2026-10-06):
-// подъём наверх и РЕ-ЦЕНТР рамки на другую клетку. Для мира это одно и то же
-// событие «аренда сменилась», поэтому ре-центр идёт ТОЙ ЖЕ дверью сдачи с
-// новой клеткой, а не своим путём.
-//
-// ДАНЖ — ЧАСТНЫЙ СЛУЧАЙ «АРЕНДЫ НЕТ», И ЭТО ЗНАЧЕНИЕ, А НЕ ВЕТКА (вердикт
-// того же дня: «данж частный случай когда арендованой клетки нет всё должно
-// работать нормально — но при выходе из данжа сразу арендуется клетка куда
-// вышли … не хардкодить а те же двери как вход в субмир»): спуск в данж
-// СНИМАЕТ аренду, выход из него СДАЁТ клетку выхода — обе эти двери.
-inline void lease_window_at(GameState& gs, std::uint32_t cell) {
-    gs.leasedWindow = cell;
-}
-inline void release_window(GameState& gs) {
-    gs.leasedWindow = kNoWindowLease;
-}
-
-// ЭТА КЛЕТКА В РАМКЕ 3×3 ОТ ЦЕНТРА АРЕНДЫ? Голая геометрия БЕЗ GameState:
-// её же спрашивает ядро марша через `MarchGround::leaseCenter` (изъятие ног,
-// ломоть 2 M-419), которому мир по подписи не положен. Центр плюс восемь
-// румбов — `cell_step` по ЗАКОНУ АДРЕСА, то есть без ручной свёртки и без
-// пары координат. Девять сравнений целых, ни одного деления: вопрос задаётся
-// в свипе, в суде встречи и в цикле марша — на горячем пути.
-inline bool cell_in_lease_frame(std::uint32_t center, std::uint32_t cell,
-                                int side) noexcept {
-    if (center == kNoWindowLease) return false;
-    for (int dy = -1; dy <= 1; ++dy) {
-        for (int dx = -1; dx <= 1; ++dx) {
-            if (cell_step(center, dx, dy, side) == cell) return true;
-        }
-    }
-    return false;
-}
-
-// ЭТА КЛЕТКА В АРЕНДЕ? Обёртка над геометрией для читателей с миром на
-// руках (суды автобоя/встречи, свип мёртвых записей).
-inline bool cell_is_leased(const GameState& gs, std::uint32_t cell) noexcept {
-    return cell_in_lease_frame(gs.leasedWindow, cell, gs.mapW);
-}
 
 // (landmark_index_by_id / landmark_by_id / add_landmark / set_landmark_type
 // УНИЧТОЖЕНЫ ломтиком F вместе со строкой и штабелем мест: резолв ординала —
@@ -1274,11 +1206,12 @@ void       default_game_state(GameState& out,
 struct TerrainData;  // fwd
 struct DepositLayer;
 struct MacroStore;   // fwd — тела мест рождаются в store (M-90 шаг 5)
-void populate_rooted_from_politik(GameState& gs, MacroStore& st,
+struct Session;      // fwd — рождение осёдлых объявляет событие состава
+void populate_rooted_from_politik(GameState& gs, Session* ses,
+                                     MacroStore& st,
                                      const std::vector<City>& cities,
                                      const TerrainData& terrain,
-                                     DepositLayer& deposits,
-                                     FeatureLayer& features);
+                                     DepositLayer& deposits);
 
 } // namespace sm
 
@@ -1292,8 +1225,33 @@ void populate_rooted_from_politik(GameState& gs, MacroStore& st,
 // НЕ СОБЕРЁТСЯ, и сообщение назовёт тип поимённо (`core/row_law.h`, наряд
 // M-169). Новая структура в этом файле обязана появиться и в этом списке — за
 // полнотой списка следит `arch_guard_test` (файл стоит в его `kRowHeaders`).
-TIMAERT_ROW(sm::SessionFeed);
 TIMAERT_ROW(sm::PlayerState);
 TIMAERT_ROW(sm::WorldTickRuntime);
 TIMAERT_ROW(sm::MacroAiRhythm);
 TIMAERT_ROW(sm::GameState);
+
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::PlayerState, &sm::PlayerState::codexUnlockedBits,
+    &sm::PlayerState::ageDays, &sm::PlayerState::journalCount,
+    &sm::PlayerState::journalSeenSeq, &sm::PlayerState::journalFull,
+    &sm::PlayerState::pad, &sm::PlayerState::journal);
+TIMAERT_PACKED(sm::WorldTickRuntime, &sm::WorldTickRuntime::pendingDailyTicks,
+    &sm::WorldTickRuntime::nextDailyTickDay,
+    &sm::WorldTickRuntime::subworldStepRemainder,
+    &sm::WorldTickRuntime::jitter);
+TIMAERT_PACKED(sm::MacroAiRhythm, &sm::MacroAiRhythm::jitter);
+TIMAERT_PACKED(sm::GameState, &sm::GameState::worldSeed, &sm::GameState::mapW,
+    &sm::GameState::mapH, &sm::GameState::mapParams,
+    &sm::GameState::cityCountTarget, &sm::GameState::lastWorldRebakeDay,
+    &sm::GameState::markers, &sm::GameState::knowledge,
+    &sm::GameState::chronicle, &sm::GameState::scent,
+    &sm::GameState::factions, &sm::GameState::cellOwner,
+    &sm::GameState::treeLayer, &sm::GameState::features,
+    &sm::GameState::player, &sm::GameState::worldTime,
+    &sm::GameState::worldTickRt, &sm::GameState::macroAiRhythm,
+    &sm::GameState::playerRoll, &sm::GameState::wheatScars,
+    &sm::GameState::featureNumber, &sm::GameState::faunaField,
+    &sm::GameState::lightEmission);

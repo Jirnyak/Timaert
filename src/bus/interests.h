@@ -284,3 +284,13 @@ inline int interests_tick_day(Interests& r) {
 }
 
 }   // namespace sm
+
+#include "core/row_law.h"   // стена «без дыр» — включение в хвосте, содержимое файла не сдвигается
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::Interest, &sm::Interest::object, &sm::Interest::term,
+    &sm::Interest::stance, &sm::Interest::value, &sm::Interest::owedValue,
+    &sm::Interest::avgValue);
+TIMAERT_PACKED(sm::Interests, &sm::Interests::slots);

@@ -106,12 +106,15 @@ prepare_spell_auras
 trigger_count_only_dialog
 trigger_story_overlay
 
-# Save and load, with the fold witness on the door (problems.md §38).
+# Save and load: the slot is a direct dump of the world's memory (M-439).
 save_game,open_load,load_game,wait_boot_done
 subworld_enter,fauna_kill_writeback,subworld_exit_remap,save_game,open_load,load_game,wait_boot_done
 # Лес — поле состояния: вырубленная до сохранения клетка обязана остаться
 # вырубленной после загрузки, а кэш оптики — описывать загруженный лес.
 forest_fell_macro,save_game,open_load,load_game,wait_boot_done,forest_stays_felled
+# Поле фич — поле состояния (M-456): руина, положенная на клетку города до
+# сохранения, обязана остаться руиной после загрузки, а не воскреснуть городом.
+city_ruin_macro,save_game,open_load,load_game,wait_boot_done,ruin_stays_ruin
 
 return_title
 console

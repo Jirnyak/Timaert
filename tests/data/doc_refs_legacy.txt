@@ -387,7 +387,6 @@ SKELETON.md	vk_macro_renderer.cpp:89
 SKELETON.md	vk_renderer_3d.cpp:2305-2321
 SKELETON.md	vk_renderer_3d.cpp:2742
 SKELETON.md	vk_renderer_3d.cpp:2986-2990
-SKELETON.md	world_fields.cpp:79
 SKELETON.md	world_gen.cpp:193-199
 SKELETON.md	world_gen.cpp:207
 SKELETON.md	world_gen.cpp:213

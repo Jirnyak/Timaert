@@ -25,6 +25,7 @@
 //   · зоны: слово высоты рядом с горной линией обязано дрогнуть НА линии и не
 //     дрогнуть под ней — иначе прибор не видит, где стоит порог.
 #include <algorithm>
+#include <memory>
 #include <cstdio>
 #include <vector>
 
@@ -265,7 +266,8 @@ void test_zones_ask_the_one_cascade() {
     // у двух карт одинаков, потому что зависит от координаты и сида, не от
     // высоты. Значит различие непрерывной величины В ОДНОЙ КЛЕТКЕ = надбавка.
     const std::vector<ZoneSeed> none;
-    FeatureLayer features;
+    const std::unique_ptr<FeatureLayer> featuresOwn{new FeatureLayer()};
+    FeatureLayer& features = *featuresOwn;
 
     auto danger_at = [&](std::uint16_t heightWord) {
         TerrainData td = flat_world(kSide, field_word_of(150.0f / 255.0f));

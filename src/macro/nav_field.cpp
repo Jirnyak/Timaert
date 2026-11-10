@@ -12,6 +12,7 @@
 #include "macro/rooted_iter.h"   // for_each_rooted — места по слотам
 #include "macro/pathfinding.h"
 #include "macro/state.h"
+#include "bus/session.h"   // Session::navEpoch — событие состава
 
 namespace sm {
 
@@ -431,7 +432,7 @@ void nav_bake(const MacroWorld& mw, NavWorld& nv) {
     run_tables(adjDry, nv.routeDist.data(), nv.routeNext.data());
 
     nv.bakedSeed = gs.worldSeed;
-    nv.bakedNavEpoch = gs.navEpoch;
+    nv.bakedNavEpoch = mw.session ? mw.session->navEpoch : 0u;
 
     // Сводка запекания — вслух, как учит статья: «рисуйте промежуточные
     // данные»; запекание редкое, строка дешёвая.
@@ -508,10 +509,11 @@ bool nav_ensure(const MacroWorld& mw, NavWorld& nv) {
     if (!mw.gs) return false;
     const GameState& gs = *mw.gs;
     // Четыре сравнения целых — и ни одного прохода по миру. Состав мест и
-    // мосты объявляют себя СОБЫТИЕМ (gs.navEpoch); сид и размеры ловят
+    // мосты объявляют себя СОБЫТИЕМ (счётчик сессии `navEpoch`); сид и размеры ловят
     // подмену мира под живым NavWorld.
     const bool stale = !nv.baked() || nv.bakedSeed != gs.worldSeed
-                    || nv.bakedNavEpoch != gs.navEpoch
+                    || nv.bakedNavEpoch
+                           != (mw.session ? mw.session->navEpoch : 0u)
                     || nv.mapW != gs.mapW || nv.mapH != gs.mapH;
     if (stale) nav_bake(mw, nv);
     return nv.baked();

@@ -53,9 +53,13 @@ struct FactionRow {
     // симметрия — ЗАКОН: пишет только set_relation, обе строки разом.
     std::int8_t rel[kMaxFactions] = {};
     std::uint8_t used = 0;
+    // Три байта хвоста, названные полем (сейв-эпик, вердикт В2): строку
+    // выравнивает цвет (4 Б), и за клеймом оставалась дыра.
+    std::uint8_t pad[3] = {};
 };
 static_assert(sizeof(FactionRow) == 96,
-              "24 id + 4 цвет + 64 отношений + 1 клеймо + 3 паддинга");
+              "24 id + 4 цвет + 64 отношений + 1 клеймо + 3 названных байта "
+              "выравнивания");
 
 struct FactionState {
     FactionRow rows[kMaxFactions] = {};
@@ -186,3 +190,12 @@ inline void add_faction_standing(FactionState& f, FactionSlot actor,
 // полнотой списка следит `arch_guard_test` (файл стоит в его `kRowHeaders`).
 TIMAERT_ROW(sm::FactionRow);
 TIMAERT_ROW(sm::FactionState);
+
+// ── СТЕНА «БЕЗ ДЫР» (`TIMAERT_PACKED@src/core/row_law.h`, сейв-эпик, В2) ─────
+// Каждый байт этих строк принадлежит названному члену: они лежат в кусках
+// памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
+// списка; дыра выравнивания или забытый член не собираются.
+TIMAERT_PACKED(sm::FactionRow, &sm::FactionRow::id, &sm::FactionRow::color,
+    &sm::FactionRow::rel, &sm::FactionRow::used, &sm::FactionRow::pad);
+TIMAERT_PACKED(sm::FactionState, &sm::FactionState::rows,
+    &sm::FactionState::titheSeasonAssessed);

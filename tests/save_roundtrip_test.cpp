@@ -1,1538 +1,685 @@
-#include "macro/save.h"
-#include "bus/world_row.h"
-#include "macro/state.h"
-#include "macro/macro_snapshot.h"
-#include "macro/deposit_layer.h"
-#include "tables/codex.h"
-#include "macro/currency.h"
-#include "tables/npc.h"
-#include "bus/entry_context.h"
-#include "events/event_bus.h"
+// СЕЙВ ЕСТЬ ПРЯМОЙ ДАМП ПАКЕТНОЙ ФОРМЫ — СВИДЕТЕЛЬ (M-439, CRAFT §10).
+//
+// Файл — заголовок и ДВА КУСКА ПАМЯТИ байт в байт: состояние макромира
+// (`GameState`) и гладкая память сквадов (`MacroStore`). Сериализатора нет,
+// поэтому и свидетель судит не «каждое поле доехало» (списка полей у сейва не
+// существует), а ЗАКОНЫ, на которых дамп стоит:
+//
+//   1. КРУГ: записанный и прочитанный мир равен исходному ПОБАЙТНО — оба куска
+//      целиком, включая последний байт последнего массива каждого.
+//   2. ОДИН МИР — ОДНИ БАЙТЫ: два мира, рождённых одними дверями в разной
+//      памяти, равны побайтно и дают одну сумму. На этом стоит всё остальное:
+//      байт вне названного члена (дыра выравнивания) или член без рождения
+//      дали бы шум. Стену держит компилятор (`TIMAERT_PACKED`), свидетель
+//      судит её следствие в рантайме.
+//   3. ЖИВАЯ КАРТА ПЕРЕЖИВАЕТ СЕЙВ ДВЕРЯМИ, А НЕ ТОЛЬКО БАЙТАМИ: убитый лорд
+//      остаётся мёртвым, ординал мертвеца не переиздаётся, флажок игрока
+//      возвращается на того же лорда, справочник ординалов отвечает, руина
+//      остаётся руиной (M-456). Эти законы стояли у снимка сквадов, умершего
+//      вместе со вторым сериализатором; носитель сменился, законы — нет.
+//   4. ОТКАЗ В ТОЧКЕ ВХОДА: чужая магия, версия, раскладка, обрезанный файл и
+//      порча ЛЮБОГО байта мира — начала, середины, самого конца — не
+//      загружаются.
+//   5. НЕУДАВШАЯСЯ ЗАПИСЬ НЕ ТРОГАЕТ ПРЕЖНИЙ СЛОТ; удавшаяся оставляет его в
+//      `.bak`.
+//   6. СУММА (вердикт владельца В4): слова по 8 Б, четыре дорожки — не зависит
+//      от нарезки на порции и видит перестановку слов, порчу бита и лишнее
+//      слово.
+//
+// ТАБЛИЦА «МУТАЦИЯ → ИСХОД», ОБЕ ПОЛЯРНОСТИ (AGENTS §8 п.6; мутации ставились
+// в `src/macro/save.cpp`, файл после каждой возвращался `cp` и сверялся
+// `cmp`, прогон 2026-11-10):
+//   БАЗА (целый код) ........................................ OK, 45 проверок
+//   M1  запись стора короче на слово ........................ FAIL (запись
+//       отказала самопроверкой — длина файла не та)
+//   M2  загрузка не сверяет сумму ........................... FAIL (порча
+//       байта мира загрузилась)
+//   M3  сумма не кормится стором (запись, сверка, чтение) ... FAIL ×2 (порча
+//       первого и последнего байта стора загрузилась; сумма заголовка не
+//       равна сумме мира)
+//   M4  загрузка не судит версию заголовка .................. FAIL
+//       · ДО правки свидетеля эта мутация проходила ЗЕЛЁНОЙ: чужую версию
+//         нёс только обрезанный файл, а он отказывается уже длиной. Дыра
+//         закрыта подделкой ПОЛНОЙ длины — ровно один байт настоящего слота.
+//   M4б загрузка не судит магию ............................. FAIL
+//   M4в загрузка не судит размеры кусков .................... FAIL
+//   M5  порция самопроверки 4 МиБ вместо 1 (обязана МОЛЧАТЬ)  OK — детектор
+//       не краснеет на правку, не меняющую закона.
+#include "check.h"
 
-#include <algorithm>
+#include "bus/session.h"
+#include "bus/store.h"
+#include "bus/world_row.h"
+#include "macro/birth_squad.h"
+#include "macro/chronicle.h"
+#include "macro/features.h"
+#include "macro/knowledge.h"
+#include "macro/labour.h"
+#include "macro/markers.h"
+#include "macro/npc_spawn.h"
+#include "macro/player_entity.h"
+#include "macro/save.h"
+#include "macro/scent_field.h"
+#include "macro/squad.h"
+#include "macro/state.h"
+#include "macro/tree_layer.h"
+#include "tables/codex.h"
+#include "tables/faction.h"
+#include "tables/npc.h"
+
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
-#include "check.h"
-#include "macro/labour.h"        // settle_souls / souls_flock — двери душ
-#include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
-#include "macro/squad.h"         // set_suzerain / tithe_edge_of
-#include "bus/store.h"
-
-// ДУШИ ФИКСТУРЫ — ОДНО ЧИСЛО НА ПОСЕВ И НА ПРОВЕРКУ (иначе ожидание станет
-// пересказанным литералом, §8 п.4). Души селятся крестьянами, поэтому
-// счёт крестьян после круга сейва = они плюс тот один, что фикстура
-// досыпала отрядом.
-constexpr int kFixtureCitySouls = 777;
-constexpr int kFixtureVillageSouls = 111;
-
-// ЭМИТЕНТ ОРДИНАЛОВ — СКАЛЯР МИРА, И ОН ЖЕ НАЗЫВАЕТ МЕСТА (ломтик F: место
-// родится ТЕЛОМ и тянет ординал изнутри двери рождения, рукописного `id`
-// больше нет). Отсюда три числа, и все три ВЫВЕДЕНЫ, а не набраны: база,
-// которую фикстура ставит счётчику, ординалы её трёх мест в порядке
-// рождения и значение счётчика ПОСЛЕ них — то самое, что обязано вернуться
-// из файла. База нарочно высокая: рукописные ординалы записей снапшота
-// лежат ниже, и одно пространство ординалов (M-37) столкновений не терпит.
-constexpr std::uint32_t kFixtureIssuerBase = 341u;
-constexpr int kFixtureCityId    = int(kFixtureIssuerBase);
-constexpr int kFixtureVillageId = kFixtureCityId + 1;
-constexpr int kFixtureSpireId   = kFixtureVillageId + 1;
-constexpr std::uint32_t kFixtureIssuerAfter =
-    std::uint32_t(kFixtureSpireId) + 1u;
-
-// ОРДИНАЛ ИГРОКА В ФИКСТУРЕ — ОБЫЧНЫЙ, И ИМЕННО ЭТО ОН ДОКАЗЫВАЕТ (M-255).
-// До сноса здесь стоял зарезервированный литерал `kPlayerSquadOrdinal`
-// (0x7FFFFFFF), то есть игрок был единственной записью мира, чью личность
-// называло магическое число. Теперь он лежит в том же пространстве, что
-// записи 200 и 9 выше, и ниже эмитента 341 — как любой сквад; узнаётся он
-// БИТОМ `playerFlag`, тем же, каким его узнаёт загрузка (бит `playerHome`
-// снесён ломтём 7б M-421 вместе с родом «дом»).
-constexpr std::uint32_t kFixturePlayerOrdinal = 150u;
-static_assert(kFixturePlayerOrdinal < kFixtureIssuerBase,
-              "рукописный ординал записи обязан лежать НИЖЕ эмитента: одно "
-              "пространство ординалов (M-37) столкновений не терпит");
-
 #include <cstdlib>
-#include <cmath>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
-#include <cstring>
-
-// ЧИСЛО ПОЛЯ ФИЧ ПОД КЛЕТКОЙ СЛОТА — помощник ЭТОГО свидетеля, не дверь мира.
-// M-320 снёс `souls_flock`: она брала слот и тем утверждала, будто популяция
-// есть атрибут сквада. Имя здесь говорит, ЧТО функция делает (читает число
-// поля по клетке), а не чем это число для кого-то значит.
-static int cell_number_at(const sm::GameState& gs, const sm::MacroStore& st,
-                          std::uint16_t slot) {
-    const auto& c = st.cell[slot];
-    return sm::feature_number_read(gs, sm::ecs::cell_x(c, gs.mapW),
-                           sm::ecs::cell_y(c, gs.mapW));
-}
 
 namespace {
 
-// The charged `int fail()` is dead (Testing law #1: tests/check.h is the
-// only way to fail). A gate that trips records into the ONE counter nothing
-// can invert, then bails exactly as the old flow did.
-//
-// THE PROMISE THIS HEADER USED TO MAKE AND THE CODE DID NOT KEEP (ревизия
-// 2026-11-08): it said «reaching the end of run_roundtrip() records the
-// single positive check», and there was NO such check — 112 FAIL_BAIL gates
-// and ZERO `CHECK` in the whole function, so gutting its body left the suite
-// GREEN. The promise is now a TYPE: the function RETURNS a NUMBER — how many
-// save-door round trips it actually took to judgement — and `main` asserts
-// that number is non-zero. Не тавтология (§8 п.2 запрещает `CHECK(true, …)`):
-// ранний обрыв даёт 0. И не только «дошёл до конца»: тело, выпотрошенное до
-// одного `return`, тоже даёт 0, потому что вердикт есть ЗАМЕР, а не факт
-// достижения последней строки (§8 п.3 — «цикл, который меряет, обязан
-// утверждать, что ПОМЕРИЛ»).
-//
-// МУТАЦИЯ → ИСХОД (замерено 2026-11-08, обе полярности, §8 п.6):
-//   М1 `return 0` первой строкой тела (ранний обрыв) → **КРАСНЫЙ**,
-//      «FAIL save_roundtrip_test: 1 of 22 checks failed»;
-//   М2 тело ДО правки (112 FAIL_BAIL, ни одного CHECK) → выпотрошенное тело
-//      читалось ЗЕЛЁНЫМ — ровно тот дефект, которым куплена эта форма;
-//   М3 снят ОДИН `++trips` из четырёх → **МОЛЧИТ**, «OK (22 checks)», и это
-//      верно: вердикт есть «померил хоть раз», а не пин на число прогонов
-//      (пин ломался бы на каждой новой проверке двери — §8 п.4).
-#define FAIL_BAIL(msg)                                              \
-    do {                                                            \
-        ::sm::test::check(false, (msg), __FILE__, __LINE__);        \
-        return 0;                                                   \
-    } while (0)
+using namespace sm;
 
-std::string join_path(const std::string& dir, const char* name) {
-    if (dir.empty()) return name;
-    const char last = dir[dir.size() - 1u];
-    if (last == '/' || last == '\\') return dir + name;
-#if defined(_WIN32)
-    return dir + "\\" + name;
-#else
-    return dir + "/" + name;
-#endif
-}
-
-std::string temp_save_path(const char* name) {
+std::string temp_path(const char* name) {
     const char* dir = std::getenv("TEMP");
     if (!dir || dir[0] == '\0') dir = std::getenv("TMP");
     if (!dir || dir[0] == '\0') dir = ".";
-    return join_path(dir, name);
+    std::string p(dir);
+    const char last = p.empty() ? '\0' : p[p.size() - 1u];
+    if (last != '/' && last != '\\') p += '/';
+    return p + name;
 }
 
-bool read_all(const std::string& path, std::vector<std::uint8_t>& out) {
-    FILE* f = std::fopen(path.c_str(), "rb");
-    if (!f) return false;
-    if (std::fseek(f, 0, SEEK_END) != 0) {
-        std::fclose(f);
-        return false;
-    }
-    const long n = std::ftell(f);
-    if (n < 0 || std::fseek(f, 0, SEEK_SET) != 0) {
-        std::fclose(f);
-        return false;
-    }
-    out.resize(static_cast<std::size_t>(n));
-    if (!out.empty()) {
-        const std::size_t got = std::fread(out.data(), 1, out.size(), f);
-        if (got != out.size()) {
-            std::fclose(f);
-            return false;
-        }
-    }
-    const bool closeOk = std::fclose(f) == 0;
-    return closeOk;
-}
-
-void add_soldiers(sm::Inventory& inv, sm::NPCType kind, int count,
-                  std::uint32_t idBase) {
-    for (int i = 0; i < count; ++i) {
-        sm::creatures_push(inv, sm::make_soldier(
-            static_cast<std::uint8_t>(kind), sm::npc_def(kind).baseLevel,
-            idBase + static_cast<std::uint32_t>(i)));
-    }
-}
-
-bool write_all(const std::string& path, const std::vector<std::uint8_t>& bytes,
-               std::size_t limit) {
-    FILE* f = std::fopen(path.c_str(), "wb");
-    if (!f) return false;
-    const std::size_t n = limit < bytes.size() ? limit : bytes.size();
-    const std::size_t wrote = n ? std::fwrite(bytes.data(), 1, n, f) : 0;
-    const int closeRc = std::fclose(f);
-    return wrote == n && closeRc == 0;
-}
-
-bool nearf(float a, float b) {
-    return std::fabs(a - b) < 0.0001f;
-}
-
-bool valid_saved_at(const std::string& s) {
-    return s.size() == 24
-        && s[4] == '-' && s[7] == '-'
-        && s[10] == 'T' && s[13] == ':' && s[16] == ':'
-        && s[19] == '.' && s[23] == 'Z';
-}
-
-void remove_slot_files(const std::string& path) {
+void remove_slot(const std::string& path) {
     std::remove(path.c_str());
-    std::remove((path + ".tmp").c_str());
     std::remove((path + ".bak").c_str());
+    std::remove((path + ".tmp").c_str());
 }
 
-// The macro-ECS snapshot fixture (v23): two records, every field non-default —
-// one living avatar with debt, orders and a creatures; one dead one, because the
-// whole point of the snapshot is that a killed lord STAYS dead across a load.
-std::vector<sm::MacroNpcRecord> make_macro_records() {
-    std::vector<sm::MacroNpcRecord> out;
+long file_bytes(const std::string& path) {
+    std::FILE* f = std::fopen(path.c_str(), "rb");
+    if (!f) return -1;
+    std::fseek(f, 0, SEEK_END);
+    const long n = std::ftell(f);
+    std::fclose(f);
+    return n;
+}
 
-    sm::MacroNpcRecord a{};
-    // ОДНО ПРОСТРАНСТВО ОРДИНАЛОВ (M-37), и с флипа M-90 шаг 5 это видно:
-    // тела мест едут записями ЭТОГО ЖЕ блока, а место фикстуры носит
-    // ординал 7. Прежний `a.spawnId.index = 7` был столкновением, которое
-    // раньше нечему было заметить, — запись переехала на свободный 200
-    // (ниже эмитента 341, как и все остальные).
-    a.spawnId.index = 200;
-    a.cell = {sm::ecs::cell_index(33, 44, 512)};
-    a.kind = {std::uint16_t(sm::NPCType::Bandit), 3};
-    a.pools = {17, 42};
-    // СТУПЕНЬ И ПРОГРЕСС ВНУТРИ НЕЁ — ОДНО ЧИСЛО (M-383), ПОЭТОМУ ФИКСТУРА
-    // НАЗЫВАЕТ ИХ ВРОЗЬ. Прежде `level = 5` и `exp = 555` были двумя полями и
-    // могли приехать по отдельности; теперь приезжает кумулятив, а врозь
-    // судятся два ВЫВОДА из него — иначе подмена ступени прогрессом (и
-    // наоборот) прошла бы незаметно.
-    a.sheet.levelData.exp = sm::exp_at_level(5) + 555u;
-    // ЦЕЛЬ — КОЛОНКА РОДА 2 (M-1, ломоть 3 M-72): все четыре колонки
-    // ставятся НЕНУЛЕВЫМИ и судятся на том берегу — потеря любой из них
-    // в проводе сейва обязана красить.
-    sm::ecs::goal_set(a.goal, sm::ecs::cell_index(100, 200, 512),
-                      sm::ecs::goal_what(sm::ecs::GoalKind::Rooted, 4u),
-                      7, std::uint8_t(sm::NPCState::Working));
-    a.runtime.lairCell = sm::ecs::cell_index(45, 46, 512);
-    a.runtime.recoverySteps = 11;
-    a.pools.sp = -25;                 // exhaustion DEBT must survive a load
-    a.pools.maxSp = 130;
-    a.runtime.travelRank = 2;
-    a.runtime.marathonRank = 4;
-    a.runtime.moveMult = 1.25f;
-    a.pools.spCarry = 0.5f;
-    a.runtime.sub = {17, -9};   // сквадная доля едет сейвом (в рантайме, 2026-11-02)
-    a.runtime.marchFlags = 3;
-    a.runtime.state = 2;
-    a.runtime.entryDir = 0x12;
-    a.runtime.entryTicks = 9;
-    a.runtime.tickAccum = 77;
-    // (Кампании аватара поставлены ВЫШЕ, одним числом: опыт и ступень больше
-    //  не два поля, и второй записи здесь быть не может — M-383.)
-    a.traits.count = 2;
-    a.traits.traits[0] = 1;
-    a.traits.traits[1] = 4;
-    a.character.bodyShape = 2;
-    a.hasOrders = 1;
-    a.orders.waypointCount = 2;
-    a.orders.currentWaypoint = 1;
-    a.orders.waypoints[0] = 5;
-    a.orders.waypoints[1] = 6;
-    a.orders.waypoints[2] = 7;
-    a.orders.waypoints[3] = 8;
-    // A REAL catalog row: the runtime carries ordinals now, so a fabricated
-    // id is refused at the door instead of riding to disk and surfacing as
-    // "Unknown item" in a panel three systems later.
-    a.inventory.add("food", 3);
-    // Существа — в ТОМ ЖЕ контейнере (M-71), областью сверху.
-    sm::creatures_push(a.inventory, sm::make_soldier(
-        std::uint16_t(sm::NPCType::Guard), 4, 900u));
-    sm::creatures_push(a.inventory, sm::make_soldier(
-        std::uint16_t(sm::NPCType::Peasant), 2, 901u));
-    // v42: a BEAST in the creatures. A squad is a squad whatever it is made of
-    // (CANON.md S4/S16), and while `kind` was a byte the monster half of the id
-    // space (0x100 | catalog row) could not be written down at all — the record
-    // was silently dropped by the validity gate on the way out.
-    sm::creatures_push(a.inventory, sm::make_soldier(
-        std::uint16_t(sm::NPCType::Wolf), 3, 902u));
-    out.push_back(std::move(a));
-
-    sm::MacroNpcRecord d{};
-    d.spawnId.index = 9;
-    d.cell = {sm::ecs::cell_index(1, 2, 512)};
-    d.kind = {std::uint16_t(sm::NPCType::Guard), 1};
-    d.pools = {0, 55};
-    d.sheet.levelData.exp = sm::exp_at_level(3);   // уровень — анкета (M-383)
-    d.dead = 1;
-    out.push_back(std::move(d));
-    // THE PLAYER's own squad — an ordinary record of the same snapshot, told
-    // apart only by the HOME BIT of its playerFlag column (owner, 2026-08-27:
-    // «игрок = обычный сквад просто с флажком»). His men used to be a field of
-    // PlayerState; that they now ride here, by the same law as any lord's
-    // warband, is exactly what this record proves.
-    //
-    // ЕГО ОРДИНАЛ — ОБЫЧНЫЙ (M-255): здесь стоял зарезервированный литерал
-    // 0x7FFFFFFF, и фикстура находила его запись сравнением с ним. Теперь
-    // ординал ничем не выделен, а ищется он тем же битом, каким его ищет
-    // загрузка, — то есть свидетель проверяет НАСТОЯЩЕГО носителя.
-    sm::MacroNpcRecord player{};
-    player.spawnId.index = kFixturePlayerOrdinal;
-    player.playerFlag = 1;
-    player.cell = {sm::ecs::cell_index(12, 13, 512)};
-    player.kind = {std::uint16_t(sm::NPCType::Adventurer),
-                   std::uint16_t(sm::faction_index(sm::kPlayerFactionId))};
-    player.pools = {40, 40};
-    // (Здесь стояло `levelData.level = 3`, и оно было МЁРТВОЙ ЗАПИСЬЮ: строкой
-    //  ниже тот же блок переписывался шестой ступенью. Пока уровень был своим
-    //  полем, это читалось как «ещё одна колонка фикстуры»; с одним числом
-    //  вторая запись видна как то, чем была всегда.)
-    // ...and WHO HE BUILT (посадка Б, v91): his sheet rides the record's
-    // record's sheet column like every squad's (M-246а: опт-ина нет) — the exact values
-    // the dead gs.player.sheet block used to drive.
-    player.sheet.attributes[sm::AttributeId::Str] = 7;
-    player.sheet.attributes[sm::AttributeId::End] = 9;
-    player.sheet.attributes[sm::AttributeId::Wil] = 10;
-    player.sheet.attributes[sm::AttributeId::Intl] = 11;
-    player.sheet.attributes[sm::AttributeId::Wis] = 12;
-    player.sheet.attributes[sm::AttributeId::Lck] = 13;
-    player.sheet.attributes[sm::AttributeId::Cha] = 14;
-    player.sheet.attributes[sm::AttributeId::Spd] = 15;
-    player.sheet.skills[sm::SkillId::Bodybuilding] = 1;
-    player.sheet.skills[sm::SkillId::Meditation] = 2;
-    player.sheet.skills[sm::SkillId::Travel] = 3;
-    player.sheet.skills[sm::SkillId::Armsmaster] = 4;
-    player.sheet.skills[sm::SkillId::Marathon] = 5;
-    player.sheet.skills[sm::SkillId::Spellcraft] = 6;
-    player.sheet.skills[sm::SkillId::Weightlifting] = 7;
-    // ШЕСТАЯ СТУПЕНЬ И 321 СВЕРХ НЕЁ — ОДНИМ ЧИСЛОМ (M-383).
-    //
-    // ЗДЕСЬ СТОЯЛИ ЧЕТЫРЕ ПОЛЯ БЛОКА УРОВНЯ, И ДВА ИЗ НИХ ВРАЛИ О САМОМ ЛИСТЕ:
-    // фикстура просила «4 атрибутных очка и 5 ранговых доступны», тогда как
-    // ранги строками выше тратят 21 очко, а атрибуты — 83. Счётчик, не
-    // согласованный с листом, который он считает, и был тем дефектом, из-за
-    // которого M-383 их снёс; выразить его заново теперь невозможно — доступное
-    // считается ОТ ЛИСТА.
-    //
-    // ЛИСТ ФИКСТУРЫ ОСТАЁТСЯ НЕОПЛАТНЫМ ДЛЯ СВОЕЙ СТУПЕНИ, И ЭТО НАМЕРЕННО:
-    // круг сейва судит БАЙТЫ, а не законность персонажа, и семь непустых рангов
-    // вразброс по конверту — именно то, что доказывает проезд всего массива.
-    // Законность рождённых листов судит `sheet_registry_test` по столу M-383.
-    player.sheet.levelData.exp = sm::exp_at_level(6) + 321u;
-    // ...and what he KNOWS (v89): learned + active + a burning sustained —
-    // the exact states the old PlayerState block used to carry.
-    sm::spellbook_learn(player.book, sm::spell_ordinal("fireball"));
-    sm::spellbook_set_active(player.book, sm::spell_ordinal("fireball"));
-    sm::spellbook_learn(player.book, sm::spell_ordinal("haste"));
-    sm::spellbook_toggle_sustained(player.book, sm::spell_ordinal("haste"));
-    // ...and what he WEARS. Equipment is opt-in on the entity, so the record
-    // must carry the shape AND the occupied cells: a saved coat that comes
-    // back on a naked body is the same class of loss as a saved bag that comes
-    // back empty.
-    {
-        // M-183: истина одна — плащ кладётся В ИНВЕНТАРЬ, ячейка указывает.
-        sm::gear_init(player.gear, sm::npc_def(sm::NPCType::Adventurer).slots);
-        sm::ItemRef coat{};
-        coat.def = std::uint16_t(sm::item_index("arm_leather"));
-        coat.count = 1;
-        coat.set_affix(0, {std::uint8_t(sm::BonusId::End), 4});
-        if (!player.inventory.add_ref(coat)) {
-            std::fprintf(stderr, "fixture: the coat did not fit the bag\n");
-        }
-        int coatSlot = -1;
-        for (int i = 0; i < sm::kMaxInventorySlots; ++i) {
-            if (!player.inventory.slots[std::size_t(i)].empty()
-                && player.inventory.slots[std::size_t(i)].def == coat.def) {
-                coatSlot = i;
-                break;
-            }
-        }
-        if (coatSlot < 0
-            || sm::equip(player.gear, player.inventory, coatSlot) < 0) {
-            std::fprintf(stderr, "fixture: the coat did not go on\n");
-        }
+// Переписать один байт файла на месте; вернуть прежний (или -1 при отказе).
+int poke_file_byte(const std::string& path, long offset, unsigned char value) {
+    std::FILE* f = std::fopen(path.c_str(), "r+b");
+    if (!f) return -1;
+    int old = -1;
+    if (std::fseek(f, offset, SEEK_SET) == 0) {
+        old = std::fgetc(f);
+        if (old >= 0 && std::fseek(f, offset, SEEK_SET) == 0)
+            std::fputc(value, f);
     }
-    player.inventory.add("coin_empire_copper", 999);
-    player.inventory.add("misc_gem", 3);
-    player.inventory.add("food", 11);
-    add_soldiers(player.inventory, sm::NPCType::Peasant, 4, 1000u);
-    add_soldiers(player.inventory, sm::NPCType::Peasant, 3, 1100u);
-    add_soldiers(player.inventory, sm::NPCType::Guard, 2, 1200u);
-    sm::creatures_push(player.inventory, sm::SoldierRecord{
-        9999u, static_cast<std::uint8_t>(sm::NPCType::Guard), -12});
-    out.push_back(player);
+    std::fclose(f);
+    return old;
+}
+
+// Первые `n` байт файла — заголовок и начало состояния, для малых подделок.
+std::vector<unsigned char> file_head(const std::string& path, std::size_t n) {
+    std::vector<unsigned char> out(n);
+    std::FILE* f = std::fopen(path.c_str(), "rb");
+    if (!f) return {};
+    const std::size_t got = std::fread(out.data(), 1, n, f);
+    std::fclose(f);
+    out.resize(got);
     return out;
 }
 
-// Место есть неподвижный сквад (M-90 шаг 5): его плечо — колонки тела в
-// MacroStore, и в сейв оно едет ЗАПИСЬЮ ТЕЛА, а не строкой места. Фикстура
-// поэтому принимает store: без него у места нет ни склада, ни благополучия,
-// ни интересов, то есть нечего и сохранять.
-std::unique_ptr<sm::GameState> make_state(sm::MacroStore& st) {
-    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
-    sm::GameState& gs = *gsOwn;
-    gs.version = sm::kSaveVersion;
+bool write_bytes(const std::string& path, const std::vector<unsigned char>& b) {
+    std::FILE* f = std::fopen(path.c_str(), "wb");
+    if (!f) return false;
+    const bool ok = std::fwrite(b.data(), 1, b.size(), f) == b.size();
+    return std::fclose(f) == 0 && ok;
+}
+
+// ── МИР ФИКСТУРЫ — РОЖДЁН ДВЕРЯМИ ИГРЫ, И ТРОГАЕТ КРАЯ ──────────────────────
+// Сторона мира — КАП (1024): ловушка ломтя 4 сейв-эпика говорит, что у
+// штабеля под капом свидетель обязан трогать КРАЙ, а не начало. Здесь тронут
+// последний байт последнего члена КАЖДОГО из двух кусков: последняя клетка
+// поля света (хвост состояния) и названное хвостовое слово стора рядом с
+// последним занятым слотом (хвост хранилища) — обрезанный на слово круг их
+// бы потерял.
+constexpr int kSide = int(kWorldSideCap);
+constexpr int kLast = kSide - 1;
+
+struct World {
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
+    std::unique_ptr<MacroStore> stOwn = make_macro_store();
+    MacroStore& st = *stOwn;
+    Session ses{};
+    std::uint32_t lordOrd = 0;     // живой лорд под флажком игрока
+    std::uint32_t deadOrd = 0;     // убитый отряд — обязан остаться мёртвым
+    std::uint32_t cityOrd = 0;     // осёдлый: город с душами
+    std::uint32_t ruinCell = 0;    // клетка города, ставшего руиной (M-456)
+    std::uint16_t lastSlot = 0;    // последний слот хранилища
+};
+
+TerrainData dry_land() {
+    TerrainData td;
+    td.width = kSide;
+    td.height = kSide;
+    td.rgba.assign(std::size_t(kSide) * std::size_t(kSide) * 4u,
+                   field_word_of(0.6f));
+    td.seaLevel16 = field_word_of(kDefaultSeaLevel);
+    return td;
+}
+
+void build_world(World& w, const TerrainData& land) {
+    GameState& gs = w.gs;
+    MacroStore& st = w.st;
     gs.worldSeed = 0x12345678u;
-    // ЗАКОН АДРЕСА (владелец, 2026-09-23): мир ВСЕГДА степень двойки и
-    // ВСЕГДА квадрат. Здесь стояло 512×256 — мир, которого не бывает.
-    // Фикстура переписана ПОД НОВЫЙ ЗАКОН, а не подогнана ожиданием: поля
-    // мира теперь адресуются маской, и незаконный мир они честно отвергают
-    // (`ResourceGrid::live`), отчего прежняя фикстура молча глотала записи.
-    gs.mapW = 512;
-    gs.mapH = 512;
-    gs.mapParams.seed = float(gs.worldSeed % 100000u);
+    gs.mapW = kSide;
+    gs.mapH = kSide;
+    gs.mapParams.seed = gs.worldSeed % 100000u;
     gs.mapParams.seaLevel = 0.55f;
-    gs.mapParams.heightScale = 1.25f;
-    gs.mapParams.moistureScale = 0.75f;
     gs.cityCountTarget = 77;
-
-    // THE WORLD'S OWN MEMORY (CANON S20.1). Both tiers get something to lose:
-    // a nameless killing that only the RING should keep, and a lord taking a
-    // city that the ANNALS must remember for good. A chronicle that came back
-    // empty would cost the witcher his trail and the legends mode its legend.
-    sm::chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
-    {
-        sm::WorldFact anonymous{};
-        anonymous.day = 11;
-        anonymous.kind = std::uint16_t(sm::FactKind::Killed);
-        anonymous.subjectKind = std::uint8_t(sm::FactSubject::Cell);
-        anonymous.x = 40; anonymous.y = 40;
-        anonymous.amount = 3;
-        sm::chronicle_record(gs.chronicle, anonymous);
-
-        sm::WorldFact conquest{};
-        conquest.day = 12;
-        // (Род `OwnerChanged` снесён как сирота 2026-11-03 — фикстуре нужен
-        //  ВТОРОЙ живой род рядом с `Killed`, чтобы кольцо вернуло два
-        //  РАЗНЫХ факта; имя локала оставлено, оно про роль в фикстуре.)
-        conquest.kind = std::uint16_t(sm::FactKind::Taxed);
-        // (Бит «именован» снят вместе с анналами — M-184: род участника
-        //  теперь всё, что несёт ссылка.)
-        conquest.subjectKind = sm::fact_subject(sm::FactSubject::Squad);
-        conquest.subject = 4242u;
-        conquest.objectKind = sm::fact_subject(sm::FactSubject::Rooted);
-        conquest.object = 9u;
-        conquest.x = 41; conquest.y = 41;
-        sm::chronicle_record(gs.chronicle, conquest);
-    }
-    // The knowledge grid (v40): a real world always covers the map (the
-    // reader rejects any other non-zero size). Explored cells prove the
-    // memory persists; the Visible one proves the write-side clamp — sight
-    // is a projection of where the player stands, never save cargo.
-    sm::knowledge_reset(gs.knowledge, gs.mapW, gs.mapH);
-    gs.knowledge.data[0] = sm::kKnowledgeExplored;
-    gs.knowledge.data[777] = sm::kKnowledgeExplored;
-    gs.knowledge.data[1234] = sm::kKnowledgeVisible;
-    // Deliberately NOT on a minute boundary: the clock is one integer now, so
-    // a save states the instant to the tick, not to the nearest minute.
-    gs.worldTime = sm::world_time_at(12, 13, 14);
-    gs.worldTime.tick += 3;
-    // Autosave/re-bake phase (v22) — non-default so a dropped field reddens.
+    gs.worldTime = world_time_at(12, 13, 14);
+    gs.worldTime.tick += 3;   // не на границе минуты: миг назван до тика
     gs.lastWorldRebakeDay = 9;
-    // Identity issuer (v23): must sit above every fixture ordinal.
-    // Эмитент обязан стоять ВЫШЕ всякого рукописного ординала записей
-    // снапшота: загрузка самолечит отставший счётчик (M-37, тот же закон,
-    // что у macro_snapshot), и фикстура-лжец с эмитентом 41 при живом
-    // субъекте 70 проваливала не закон, а собственную несогласованность
-    // (§8 п.11). Ломтиком F из этого счётчика берут ординал и ТРИ места
-    // ниже — он дойдёт до kFixtureIssuerAfter, и ровно это число обязано
-    // вернуться из файла. С M-220 эмитент — поле СТОРА (nextSpawnId),
-    // рождение выдаёт ординал само.
-    st.nextSpawnId = kFixtureIssuerBase;
-    // World rhythms (v24) — every field non-default.
     gs.worldTickRt.pendingDailyTicks = 3;
     gs.worldTickRt.nextDailyTickDay = 13;
     gs.worldTickRt.subworldStepRemainder = 11;
     gs.worldTickRt.jitter.state = 0xDEADBEEFu;
     gs.macroAiRhythm.jitter.state = 0xFEEDF00Du;
-    // Поток бросков игрока (v153, M-378) — своё число, отличное от обоих
-    // соседей: равные состояния не отличили бы «уцелел» от «перепутан».
     gs.playerRoll.state = 0x5A1700D5u;
-    // (Фикстура прогресса сюжета — два списка logic-узлов — умерла в v157
-    //  вместе с блоком сейва: ломоть 1 сейв-эпика.)
+    // Строки рода 6 — дверью реестра (сама `create_factions` живёт в
+    // `state.cpp` и тянет за собой генезис; свидетелю нужны строки, а не он).
+    claim_registry_rows(gs.factions);
+    set_relation(gs.factions, faction_index("timaert"),
+                 faction_index("lake_duchy"), -5);
 
-    sm::ecs::set_squad_name(gs.player.name, "Tester");
+    // Игрок: кодекс и журнал — два выученных факта.
     gs.player.ageDays = 1234;
-    // (No position scalars since v88: WHERE he stands is his squad record's
-    // MacroCell — set in make_macro_records and proven with every other
-    // record field. His coin and goods ride the same record, because his bag
-    // is an ordinary NpcInventory on his squad entity.)
-    // (Голова лидера `AgentMemory` была колонкой каждой макро-записи и
-    // проверялась здесь; колонка уничтожена 2026-10-11 — читателей у памяти
-    // не было ни одного.)
-    // (No sheet here since v91 — посадка Б: his build is the owned
-    // CharacterSheet column riding his RECORD unconditionally, driven
-    // and asserted with the player record in make_macro_records.)
-    // (No bars here since v85: the player's three pools ride the macro-ECS
-    // snapshot inside his squad's MacroNpcRecord — the POD block the
-    // static_assert in core/pools.h guards — not the player scalar block this
-    // test drives. player_is_a_squad_test pins that path.)
-    gs.player.codexUnlockedBits = sm::codex_bit(sm::CodexArticleId::Witches)
-                                | sm::codex_bit(sm::CodexArticleId::Market);
-    {   // the JOURNAL (v58): two learned facts ride the save entry-for-entry
-        sm::WorldFact jf{};
-        jf.day = 12;
-        jf.kind = std::uint16_t(sm::FactKind::Killed);
-        jf.subjectKind = sm::fact_subject(sm::FactSubject::Squad);
-        jf.subject = kFixturePlayerOrdinal;
-        jf.x = 3; jf.y = 4; jf.amount = 2;
-        gs.player.journal[0] = jf;
-        jf.kind = std::uint16_t(sm::FactKind::Traded);
-        jf.amount = 55;
-        gs.player.journal[1] = jf;
-        gs.player.journalCount = 2u;
-        gs.player.journalSeenSeq = 77u;
-    }
-    // The book speaks ORDINALS of the real registry now (v59) — a fixture
-    // can no longer invent a spell the table does not hold, which is the law
-    // working, not a test limitation.
-    // (The BOOK is authored on his squad's RECORD below since v89 — a body's
-    // knowledge is a component and rides the snapshot like the pools do.)
-    // (Офферы и счётчики квестов умерли с квест-машиной — ломоть 3 M-72.)
-    // (No entry-side bytes since v88: the entry context is his squad's own
-    // MacroNpcRuntime — record `a` above plants runtime.entryDir = 0x12 and
-    // the record comparison proves the bytes ride.)
-    // (The player's MEN are not a field of PlayerState any more: his squad is
-    // an ordinary squad entity, so his creatures rides the macro snapshot with
-    // every other squad's — see the player record in make_macro_records.)
-    // (Две души фикстуры стояли в `gs.deserterPool`, уничтоженном
-    // 2026-10-11. Контейнер, который едет в файл, теперь только один рода —
-    // инвентарь записи сквада, и он проверяется сравнением записей ниже,
-    // поэтому отдельной посадки душ в состояние мира больше нет.)
+    gs.player.codexUnlockedBits = codex_bit(CodexArticleId::Witches)
+                                | codex_bit(CodexArticleId::Market);
 
+    // Память мира: два факта в кольце и головы цепочек по клетке.
+    chronicle_init(gs.chronicle, kSide, kSide);
     {
-        const sm::MacroHandle row = sm::birth_squad(
-            gs, st, sm::SquadType::City, 40, 80, 2, "Round City");
-        sm::Inventory& store = st.inventory[row.slot].inv;
-        store.add("wood", 19);
-        add_soldiers(store, sm::NPCType::Guard, 5, 2000u);
-        add_soldiers(store, sm::NPCType::Peasant, 1, 2100u);
-        // Honest-day readouts (v29) — every field non-default; носитель с
-        // v127 — колонка wellbeing ТЕЛА.
-        sm::Wellbeing& wb = st.wellbeing[row.slot];
-        wb.popGrowthCarry = 0.375f;
-        // Паства едет в сейв СЛОЕМ чисел фич (v122), а не колонкой
-        // записи: фикстура селит души дверью мира, и круг сейва обязан
-        // вернуть ИХ.
-        sm::settle_souls(gs, st, row.slot, kFixtureCitySouls);
+        WorldFact f{};
+        f.day = 11;
+        f.kind = std::uint16_t(FactKind::Killed);
+        f.subjectKind = std::uint8_t(FactSubject::Cell);
+        f.x = 40; f.y = 40; f.amount = 3;
+        chronicle_record(gs.chronicle, f);
+        f.day = 12;
+        f.kind = std::uint16_t(FactKind::Taxed);
+        f.x = std::int16_t(kLast); f.y = std::int16_t(kLast);
+        chronicle_record(gs.chronicle, f);
     }
 
-    {
-        const sm::MacroHandle row = sm::birth_squad(
-            gs, st, sm::SquadType::Village, 45, 85, 2, "Round Hamlet");
-        st.inventory[row.slot].inv.add("food_meat", 4);
-        sm::Wellbeing& wb = st.wellbeing[row.slot];
-        wb.popGrowthCarry = -0.25f;
-        sm::settle_souls(gs, st, row.slot, kFixtureVillageSouls);
-        // Феод — запись реестра интересов, и ставится он дверью на оба
-        // конца: сейв обязан привезти обратно ИМЕННО пару, а не половину.
-        // M-245: долг и память дани живут НА РЕБРЕ Suzerain самого вассала
-        // (пул рода 6 умер) — долг пишем на ребро и ждём его назад записью
-        // ТЕЛА (интересы — колонка слота с v127).
-        sm::set_relation(st, /*subjectId*/kFixtureVillageId,
-                         /*otherId*/kFixtureCityId, sm::Stance::Suzerain,
-                         /*value*/80, /*term*/0);
-        sm::tithe_of(st, row.slot)->owedValue = 123;
-    }
+    // Поля над тором — каждое своей дверью, и каждое в ПОСЛЕДНЕЙ клетке мира.
+    knowledge_reset(gs.knowledge, kSide, kSide);
+    gs.knowledge.data[0] = kKnowledgeExplored;
+    gs.knowledge.data[kWorldCellCap - 1u] = kKnowledgeExplored;
+    tree_layer_reset(gs.treeLayer, kSide, kSide);
+    set_tree_count(gs.treeLayer, 17, 0, 12000);
+    set_tree_count(gs.treeLayer, kLast, kLast, 600);
+    gs.features.resize(kSide, kSide);
+    feature_put(gs.features, land, kLast, kLast, FT_Road);
+    feature_number_write(gs, 9, 4, 2);
+    fauna_field_write(gs, kLast, 0, 31);
+    // Поле света — ПОСЛЕДНИЙ член состояния, и это его последняя клетка: байт,
+    // которым кончается первый кусок файла. Прежний провод поле света не вёз
+    // вовсе; дамп везёт все поля состояния единообразно.
+    light_emission_write(gs, kLast, kLast, 777);
+    gs.cellOwner.data[kWorldCellCap - 1u] = 3u;
+    scent_ensure(gs.scent, kSide, kSide);
+    scent_deposit(gs.scent, 1, 100, 100, 400u, 4000u);
+    scent_deposit(gs.scent, kFactionCount - 1, kLast, kLast, 800u, 80u);
+    add_marker(gs.markers, MarkerStyle::Danger, cell_of(15, 16, kSide),
+               "Round Danger");
+    add_marker(gs.markers, MarkerStyle::Waypoint, cell_of(3, 4, kSide), "gone");
+    remove_marker(gs.markers, MarkerStyle::Waypoint, cell_of(3, 4, kSide));
 
-    sm::birth_squad(gs, st, sm::SquadType::Spire, 12, 34);
-    // v120: the spire's spell rides the featureNumber layer (ordinal + 1), which
-    // the save carries as a world-field block — the roundtrip must bring
-    // back the NUMBER at the cell, not columns.
-    sm::feature_number_write(gs, 12, 34, 7);
+    // ── Род 2: осёдлый город с душами, деревня-вассал, ходячие отряды ────────
+    const int tim = faction_index("timaert");
+    const MacroHandle city = birth_squad(gs, &w.ses, st, SquadType::City, 40,
+                                         80, std::int16_t(tim), "Round City",
+                                         &land);
+    w.cityOrd = city.id;
+    settle_souls(gs, st, city.slot, 777);
+    st.inventory[city.slot].inv.add("wood", 19);
+    st.wellbeing[city.slot].popGrowthCarry = 0.375f;
+    const MacroHandle village = birth_squad(gs, &w.ses, st, SquadType::Village,
+                                            45, 85, std::int16_t(tim),
+                                            "Round Hamlet", &land);
+    settle_souls(gs, st, village.slot, 111);
+    set_relation(st, int(village.id), int(city.id), Stance::Suzerain, 80, 0);
+    tithe_of(st, village.slot)->owedValue = 123;
 
-    // Метка встаёт ДВЕРЬЮ списка (`add_marker`), а не сырой записью: список
-    // плоский под капом, идентичность метки — пара (стиль, клетка).
-    if (!sm::add_marker(gs.markers, sm::MarkerStyle::Danger,
-                        sm::cell_of(15, 16, gs.mapW), "Round Danger")) {
-        std::fprintf(stderr, "фикстура: метка не встала\n");
-        std::abort();
-    }
-    // Вторая — пин игрока, который затем СНИМАЕТСЯ: снятая запись обязана
-    // не доехать до файла и не оставить следа в хвосте списка.
-    sm::add_marker(gs.markers, sm::MarkerStyle::Waypoint,
-                   sm::cell_of(3, 4, gs.mapW), "gone");
-    sm::remove_marker(gs.markers, sm::MarkerStyle::Waypoint,
-                      sm::cell_of(3, 4, gs.mapW));
+    // Второй город УМЕР И ОСТАВИЛ РУИНУ (M-456): та же дверь поля фич, которой
+    // пишет строка смерти города. Рождение положило на клетку фичу города,
+    // живой мир переписал её — и ровно это обязан привезти сейв.
+    const MacroHandle fallen = birth_squad(gs, &w.ses, st, SquadType::City,
+                                           200, 300, std::int16_t(tim),
+                                           "Fallen", &land);
+    w.ruinCell = st.cell[fallen.slot].idx;
+    feature_put(gs.features, land, w.ruinCell, FT_Ruin);
 
-    // v121: рантайм-имена хвоста уничтожены вердиктом (род 6) — фикстура
-    // двигает отношение ДВУХ РЕЕСТРОВЫХ строк с нейтрального нуля и ждёт
-    // его назад из строк фракций.
-    const sm::FactionSlot tim = sm::faction_index("timaert");
-    const sm::FactionSlot lake = sm::faction_index("lake_duchy");
-    sm::set_relation(gs.factions, tim, lake, -5);
-    // Standing is a pair in the same rows, not a player-side map: this adds
-    // the player pair and must not disturb the one above.
-    sm::add_player_reputation(gs, "magika", 42);
+    TerrainData absent{};
+    SquadSpec lord{};
+    lord.avatarType = NPCType::Bandit;
+    lord.avatarLevel = 5;
+    lord.x = 20; lord.y = 20;
+    lord.factionIndex = faction_index("bandits");
+    lord.members.push(make_soldier(std::uint8_t(NPCType::Guard), 3, 1001u));
+    lord.members.push(make_soldier(std::uint8_t(NPCType::Guard), 2, 1002u));
+    lord.waypointCount = 2;
+    lord.waypoints[0] = 24; lord.waypoints[1] = 20;
+    lord.waypoints[2] = 24; lord.waypoints[3] = 24;
+    const MacroHandle a = spawn_squad(gs, st, absent, lord);
+    w.lordOrd = a.id;
+    st.sheet[a.slot].levelData.exp = exp_at_level(5) + 777u;
+    st.sheet[a.slot].attributes[AttributeId::End] = 13;
+    st.pools[a.slot].sp = -15;
+    st.cell[a.slot].idx = ecs::cell_index(25, 21, kSide);
+    ecs::set_squad_name(st.name[a.slot], "Chornyy Voron");
+    // Игрок ВСЕЛЁН в лорда: истина — колонка флажка, кэш — сессия.
+    transfer_player_flag(st, w.ses.playerFlagRef, a);
 
+    SquadSpec crew{};
+    crew.avatarType = NPCType::Peasant;
+    crew.avatarLevel = 2;
+    crew.x = 40; crew.y = 40;
+    crew.factionIndex = tim;
+    const MacroHandle b = spawn_squad(gs, st, absent, crew);
+    w.deadOrd = b.id;
+    st.pools[b.slot].hp = 0;
+    macro_mark_dead(st, b);
 
+    // ── Край хранилища: занять слоты ДО ПОСЛЕДНЕГО, потом проредить ─────────
+    // Рождение выдаёт слоты по возрастанию; последний слот капа занимается
+    // только заполнением хранилища. Половина заполнителей затем умирает —
+    // стопка свободных слотов и справочник ординалов получают живое
+    // содержимое, а не девственный порядок рождения.
+    std::vector<MacroHandle> filler;
+    while (st.freeCount > 0) filler.push_back(store_birth(st));
+    w.lastSlot = filler.back().slot;
+    ecs::set_squad_name(st.name[w.lastSlot], "Last Slot");
+    st.inventory[w.lastSlot].inv.add("wood", 1);
+    for (std::size_t i = 0; i + 1u < filler.size(); i += 2u)
+        store_death(st, filler[i]);
 
-    // v96: the scars are FIELDS over the world (the hash died with S5's
-    // amendment), so the fixture sizes them the way the world does and
-    // writes cells by coordinate. A zero scar is the field's legal zero —
-    // there is no "key with value 0" to round-trip any more.
-    // v157: поле шрамов ОДНО — пашня; ряды-носители своего шрама не держат и
-    // на проводе блока не имеют.
-    sm::field_set_allocate(gs.wheatScars, gs.mapW, gs.mapH);
-    // Фикстура кладёт шрам той же дверью, какой его кладёт провод сейва
-    // (field_set — абсолютная установка; стена ломтя 1 закрыла сырой write).
-    sm::field_set(gs.wheatScars, sm::cell_of(5, 23, gs.mapW), 12);
-    // v96: THE featureNumber layer — hulls moored at a harbour, the number under
-    // the feature (CANON S5/S10). The layer's first tenant is its witness.
-    sm::feature_number_write(gs, 9, 4, 2);
-
-    return gsOwn;
+    // Журнал игрока — копии записей, которые он узнал.
+    gs.player.journal[0] = gs.chronicle.ring[0];
+    gs.player.journal[1] = gs.chronicle.ring[1];
+    gs.player.journalCount = 2u;
+    gs.player.journalSeenSeq = 2u;
 }
 
-// v36: the living tree grid rides the save WHOLE (the forest is the
-// registry's carrier row). С ломтя 3 сейв-эпика лес есть поле состояния мира
-// (`GameState::treeLayer`), поэтому фикстура рожает его НАД МИРОМ состояния
-// дверью слоя, а не подаёт проводу сторонний вектор произвольной длины:
-// блок леса теперь обязан покрывать мир ровно, как блок знания.
-void plant_fixture_forest(sm::GameState& gs) {
-    sm::tree_layer_reset(gs.treeLayer, gs.mapW, gs.mapH);
-    std::ranges::fill(gs.treeLayer.cells(), std::uint16_t(600u));
-    gs.treeLayer.data[17] = 12000u;   // a thickened cell
-    gs.treeLayer.data[7]  = 0u;       // a clear-cut cell - must NOT resurrect
+std::uint64_t world_sum(const World& w) {
+    SaveChecksum s;
+    s.feed(&w.gs, sizeof(GameState));
+    s.feed(&w.st, sizeof(MacroStore));
+    return s.finish();
 }
 
-// (Фикстура жил УМЕРЛА 2026-10-23, «жилы единые»: природное поле жил —
-// производная терраина и сида, сейв его не возит; залежи шахт едут рядом
-// FeatureNumber, и его круговорот держит свидетель чисел фич ниже.)
-
-// (Фикстура квестов умерла с квест-машиной — ломоть 3 M-72, вариант А:
-//  батарея полей GameEvent жила на onAccept; конверт событий больше в
-//  сейв не ездит — его блок умер вместе с write_event.)
-
-int run_roundtrip() {
-    int trips = 0;   // прогонов двери сейва, реально доведённых до суда
-    // (Здесь стоял рассказ о пине ординала `GameSubStateKind` и о свидетеле
-    //  «каждый живой род режима оболочки переживает круг». Оба умерли в v157
-    //  вместе с блоком: режим оболочки в сейв не едет — M-190.)
-
-    const std::string path = temp_save_path("timaert_save_roundtrip_v8.bin");
-    const std::string truncatedPath = temp_save_path("timaert_save_roundtrip_v8_truncated.bin");
-    const std::string corruptPath = temp_save_path("timaert_save_roundtrip_v8_corrupt.bin");
-    const std::string badVersionPath = temp_save_path("timaert_save_roundtrip_v8_bad_version.bin");
-
-    remove_slot_files(path);
-    remove_slot_files(truncatedPath);
-    remove_slot_files(corruptPath);
-    remove_slot_files(badVersionPath);
-
-    auto storeOwn = sm::make_macro_store();
-    sm::MacroStore& store = *storeOwn;
-    std::unique_ptr<sm::GameState> gsOwn = make_state(store);
-    sm::GameState& gs = *gsOwn;
-    plant_fixture_forest(gs);
-    // v75: поля следов едут в сейве (CANON S10 «хищник-жертва») — след,
-    // положенный до сохранения, обязан пахнуть и после загрузки.
-    sm::scent_ensure(gs.scent, gs.mapW, gs.mapH);
-    sm::scent_deposit(gs.scent, 1, 100, 100, 400u, 4000u);
-    // И след в ПОСЛЕДНЕМ плане реестра: план шагает КАПОМ клеток, а мир
-    // фикстуры меньше капа — писатель, шагающий площадью мира, до этого плана
-    // не дотянулся бы (на первых планах такая ошибка невидима: их адреса
-    // попадают в его обход случайно).
-    sm::scent_deposit(gs.scent, sm::kFactionCount - 1, 7, 9, 800u, 80u);
-
-    // СНИМОК = РУЧНЫЕ ЗАПИСИ ПЛЮС ТЕЛА МЕСТ (v127, флип M-90 шаг 5): плечо
-    // места больше не едет строкой места, оно едет записью его тела в этом
-    // самом блоке. Снимок store даёт ровно три тела фикстуры.
-    std::vector<sm::MacroNpcRecord> macroFixture = make_macro_records();
-    {
-        const std::vector<sm::MacroNpcRecord> rootedRecs =
-            sm::snapshot_macro_ecs(store);
-        if (rootedRecs.size() != 3u) {
-            FAIL_BAIL("фикстура: у трёх мест обязано быть три тела");
-        }
-        macroFixture.insert(macroFixture.end(), rootedRecs.begin(), rootedRecs.end());
-    }
-    if (!sm::save_game(gs, store.nextSpawnId, macroFixture, path)) {
-        FAIL_BAIL("save_game returned false");
-    }
-
-    std::vector<std::uint8_t> bytes;
-    if (!read_all(path, bytes)) FAIL_BAIL("save file unreadable");
-    if (bytes.empty()) FAIL_BAIL("save file is empty");
-
-    const sm::SaveSummary summary = sm::inspect_save(path);
-    if (summary.status != sm::SaveInspectStatus::Ready) FAIL_BAIL("inspect not ready");
-    if (summary.version != sm::kSaveVersion) FAIL_BAIL("version mismatch");
-    if (summary.worldSeed != gs.worldSeed) FAIL_BAIL("summary seed mismatch");
-    if (summary.day != gs.worldTime.day()) FAIL_BAIL("summary day mismatch");
-    if (!valid_saved_at(summary.savedAt)) FAIL_BAIL("summary savedAt invalid");
-
-    auto loadedOwn = std::make_unique<sm::GameState>();
-    sm::GameState& loaded = *loadedOwn;
-    std::uint32_t loadedNextSpawnId = 0;
-    std::vector<sm::MacroNpcRecord> loadedMacro;
-    if (!sm::load_game(loaded, loadedNextSpawnId, loadedMacro, path)) {
-        FAIL_BAIL("load_game failed");
-    }
-    ++trips;
-    if (loaded.version != sm::kSaveVersion) FAIL_BAIL("loaded version mismatch");
-    if (loaded.worldSeed != gs.worldSeed) FAIL_BAIL("world seed lost");
-    if (loaded.mapW != 512 || loaded.mapH != 512) FAIL_BAIL("map size lost");
-    if (loaded.cityCountTarget != 77) FAIL_BAIL("city target lost");
-    if (!nearf(loaded.mapParams.seaLevel, 0.55f)
-        || !nearf(loaded.mapParams.heightScale, 1.25f)
-        || !nearf(loaded.mapParams.moistureScale, 0.75f)) {
-        FAIL_BAIL("map params lost");
-    }
-    if (loaded.worldTime.day() != 12 || loaded.worldTime.hour() != 13
-        || loaded.worldTime.minute() != 14) {
-        FAIL_BAIL("world time lost");
-    }
-    if (!loaded.scent.sized_for(loaded.mapW, loaded.mapH)
-        || sm::scent_strength_at(loaded.scent, 1, 100, 100)
-               != (400u >> sm::kScentQuantShift)
-        || sm::scent_wealth_at(loaded.scent, 1, 100, 100)
-               != (4000u >> sm::kScentQuantShift)) {
-        FAIL_BAIL("scent field lost (v75)");
-    }
-    if (sm::scent_strength_at(loaded.scent, sm::kFactionCount - 1, 7, 9)
-               != (800u >> sm::kScentQuantShift)
-        || sm::scent_wealth_at(loaded.scent, sm::kFactionCount - 1, 7, 9)
-               != (80u >> sm::kScentQuantShift)) {
-        FAIL_BAIL("след последнего плана реестра не пережил круг");
-    }
-    if (loaded.lastWorldRebakeDay != 9) {
-        FAIL_BAIL("lastWorldRebakeDay (autosave phase) lost");
-    }
-    if (loadedNextSpawnId != kFixtureIssuerAfter) {
-        FAIL_BAIL("nextSpawnId (identity issuer, M-220) lost");
-    }
-    if (loaded.worldTickRt.pendingDailyTicks != 3
-        || loaded.worldTickRt.nextDailyTickDay != 13
-        || loaded.worldTickRt.subworldStepRemainder != 11
-        || loaded.worldTickRt.jitter.state != 0xDEADBEEFu) {
-        FAIL_BAIL("world-tick runtime (queue/remainder/jitter) lost");
-    }
-    if (loaded.macroAiRhythm.jitter.state != 0xFEEDF00Du) {
-        FAIL_BAIL("macro-AI rhythm lost");
-    }
-    if (loaded.playerRoll.state != 0x5A1700D5u) {
-        FAIL_BAIL("player roll stream lost");
-    }
-
-    // ── The knowledge grid (v40) ──────────────────────────────────────────
-    if (loaded.knowledge.width != loaded.mapW
-        || loaded.knowledge.height != loaded.mapH
-        || !loaded.knowledge.has_complete_storage()) {
-        FAIL_BAIL("knowledge grid does not cover the loaded map");
-    }
-    if (loaded.knowledge.data[0] != sm::kKnowledgeExplored
-        || loaded.knowledge.data[777] != sm::kKnowledgeExplored) {
-        FAIL_BAIL("explored cells (the player's memory) lost");
-    }
-    if (loaded.knowledge.data[1234] != sm::kKnowledgeExplored) {
-        FAIL_BAIL("Visible must decay to Explored across a save - sight is a "
-                  "projection, not cargo");
-    }
-    if (loaded.knowledge.data[42] != sm::kKnowledgeUnknown) {
-        FAIL_BAIL("an unvisited cell invented knowledge across the save");
-    }
-
-    // ── The world's own memory comes back — ONE tier (анналы снесены,
-    //    M-184: их блока в файле больше нет вовсе) ─────────────────────
-    {
-        const sm::Chronicle& ch = loaded.chronicle;
-        if (ch.nextSeq != gs.chronicle.nextSeq) {
-            FAIL_BAIL("the chronicle's sequence lost — every fact's identity "
-                      "and every chain link is that number");
-        }
-        // The RING must come back ASKABLE, not merely present: the chains are
-        // derived on load, and a chronicle whose links did not rebuild would
-        // answer nothing while looking perfectly full.
-        struct Seen { int n = 0; bool anonymous = false; bool conquest = false; };
-        Seen seen;
-        sm::chronicle_near(ch, 40, 40, /*radiusCells*/1, /*sinceDay*/0,
-                           [](void* u, const sm::WorldFact& f) {
-                               Seen& s2 = *static_cast<Seen*>(u);
-                               ++s2.n;
-                               if (f.kind == std::uint16_t(sm::FactKind::Killed))
-                                   s2.anonymous = true;
-                               if (f.kind == std::uint16_t(sm::FactKind::Taxed))
-                                   s2.conquest = true;
-                           }, &seen);
-        if (!seen.anonymous) {
-            FAIL_BAIL("the ring came back unaskable: the witcher lost the "
-                      "trail across a save");
-        }
-        if (!seen.conquest || seen.n != 2) {
-            FAIL_BAIL("the rebuilt chains did not return every nearby fact");
-        }
-    }
-
-    // ── The macro-ECS snapshot (v23) round-trips record-for-record ────────
-    if (loadedMacro.size() != macroFixture.size()) {
-        FAIL_BAIL("macro snapshot record count lost");
-    }
-    // What the PLAYER wears comes back on him. Equipment is opt-in on the
-    // entity and its cells are a flat array with holes, so the file carries
-    // cell indices — and a saved coat that returned on a naked body would be
-    // the same class of loss as a saved bag that returned empty.
-    {
-        const sm::MacroNpcRecord* worn = nullptr;
-        for (const sm::MacroNpcRecord& r : loadedMacro) {
-            if (r.playerFlag != 0) worn = &r;
-        }
-        if (!worn) FAIL_BAIL("the player's own record did not come back");
-        if (sm::worn_cells(worn->gear) != 1) FAIL_BAIL("worn gear lost");
-        int cell = -1;
-        for (int i = 0; i < sm::kEquipCells; ++i) {
-            if (worn->gear.worn[std::size_t(i)] < sm::kWornBlocked) cell = i;
-        }
-        if (cell < 0 || sm::equip_cell_part(cell) != sm::BodyPartId::Torso) {
-            FAIL_BAIL("the coat came back on the wrong part of him");
-        }
-        // Ячейка — индекс; сама вещь едет инвентарём (истина одна, M-183).
-        const std::uint16_t coatSlot = worn->gear.worn[std::size_t(cell)];
-        const sm::ItemRef& coat = worn->inventory.slots[std::size_t(coatSlot)];
-        if (coat.def != std::uint16_t(sm::item_index("arm_leather"))
-            || coat.count != 1) {
-            FAIL_BAIL("the coat came back as another item");
-        }
-        // The rolled affix rides with it: a procedural item that lost its
-        // roll would be a different item wearing the same name.
-        if (coat.affix_at(0).row != std::uint8_t(sm::BonusId::End)
-            || coat.affix_at(0).value != 4) {
-            FAIL_BAIL("the coat's rolled affix lost");
-        }
-        // Untrained (a bare Skills{}) is the law's ×1 — what this witness
-        // asks is that the ROW came back, not what a rank does to it.
-        if (sm::worn_defense(worn->gear, worn->inventory, sm::Skills{},
-                             sm::DamageType::Blunt)
-                .armor
-            <= 0) {
-            FAIL_BAIL("and it stops nothing, so the row did not come back");
-        }
-    }
-    {
-        const sm::MacroNpcRecord& a = loadedMacro[0];
-        const sm::MacroNpcRecord& want = macroFixture[0];
-        if (a.spawnId.index != want.spawnId.index) FAIL_BAIL("macro ordinal lost");
-        if (a.cell.idx != want.cell.idx) {
-            FAIL_BAIL("macro cell lost");
-        }
-        if (a.kind.type != want.kind.type
-            || a.kind.factionIdx != want.kind.factionIdx) {
-            FAIL_BAIL("macro kind/faction lost");
-        }
-        if (a.pools.hp != want.pools.hp || a.pools.maxHp != want.pools.maxHp) {
-            FAIL_BAIL("macro wounds lost");
-        }
-        // НОСИТЕЛЬ ОДИН, ВОПРОСОВ ДВА (M-383): ступень и прогресс внутри неё.
-        //
-        // СТУПЕНЬ ПИНИТСЯ ЧИСЛОМ, А НЕ СВЕРКОЙ С ФИКСТУРОЙ, И ЭТО НЕ
-        // ПРИДИРКА — ЭТО ЗАМЕР. Сверка `loaded == want` ловит ТОЛЬКО потерю в
-        // проводе: оба её конца растут из одной фикстуры, поэтому мутация
-        // «убрать оплату ступени» (кумулятив = 555, ступень схлопывается в
-        // первую) прошла ЗЕЛЁНОЙ 20 из 20 — ровно «тождество одной формулы»
-        // из §8 п.6. Якорем служит авторское число фикстуры: с ним та же
-        // мутация краснеет.
-        if (sm::level_of(a.sheet.levelData) != 5
-            || sm::level_of(a.sheet.levelData)
-                   != sm::level_of(want.sheet.levelData))
-            FAIL_BAIL("macro level lost");
-        if (a.pools.sp != -25) FAIL_BAIL("macro SP debt lost");
-        if (sm::exp_in_level_of(a.sheet.levelData) != 555
-            || a.sheet.levelData.exp != want.sheet.levelData.exp)
-            FAIL_BAIL("macro avatar xp lost");
-        // ВЕСЬ РАНТАЙМ, КОТОРЫЙ ФИКСТУРА СТАВИТ, ЗДЕСЬ И СУДИТСЯ (M-254,
-        // 2026-10-12). До этой правки фикстура ставила ТРИНАДЦАТЬ полей
-        // `MacroNpcRuntime`, а вердикт спрашивал ЧЕТЫРЕ — остальные девять
-        // переживали круг без свидетеля, и сюита была бы зелена при их
-        // потере. Это ровно §8 п.3 на колонках: ставить и не спрашивать
-        // значит мерить и не утверждать, что померил.
-        if (a.runtime.state != want.runtime.state
-            || a.runtime.entryDir != want.runtime.entryDir
-            || a.runtime.entryTicks != want.runtime.entryTicks
-            || a.runtime.tickAccum != want.runtime.tickAccum
-            || a.runtime.sub.x != want.runtime.sub.x
-            || a.runtime.sub.y != want.runtime.sub.y
-            || a.runtime.marchFlags != want.runtime.marchFlags) {
-            FAIL_BAIL("macro runtime state lost");
-        }
-        // ЦЕЛЬ РОДА 2 ПЕРЕЖИВАЕТ СЕЙВ ВСЕМИ ЧЕТЫРЬМЯ КОЛОНКАМИ (M-1):
-        // фикстура ставит ненулевые cell/what/amount/onArrival и логово —
-        // снятая из провода `w.pod(m.goal)` эта проверка обязана краснеть.
-        if (a.goal.cell != want.goal.cell
-            || a.goal.what != want.goal.what
-            || a.goal.amount != want.goal.amount
-            || a.goal.onArrival != want.goal.onArrival) {
-            FAIL_BAIL("squad goal lost");
-        }
-        if (a.runtime.lairCell != want.runtime.lairCell) {
-            FAIL_BAIL("lair cell lost");
-        }
-        if (a.runtime.recoverySteps != want.runtime.recoverySteps) {
-            FAIL_BAIL("macro runtime clock lost");
-        }
-        // Кэши листа, которые марш читает per-think: до M-254 ни у одного из
-        // шести не было ассерта НИ В ОДНОМ тесте дерева — их только ставили.
-        if (a.runtime.travelRank != want.runtime.travelRank
-            || a.runtime.marathonRank != want.runtime.marathonRank
-            || a.runtime.moveMult != want.runtime.moveMult) {
-            FAIL_BAIL("macro sheet cache lost");
-        }
-        if (a.traits.count != 2 || a.traits.traits[1] != 4) {
-            FAIL_BAIL("macro traits lost");
-        }
-        // ЛИЦО ЦЕЛИКОМ (M-246б, M-430): колонка 12 → 8 → 4 Б, и её
-        // единственная значащая величина утверждается. Прежде здесь стоял
-        // `nameIdx` — ВХОД ГЕНЕРАТОРА, который и не должен был ехать в
-        // сейв, — а `bodyShape` не утверждался НИ ОДНИМ тестом дерева, хотя
-        // рост тела субмира выводится ровно из него. `visualSeed` снесён
-        // вердиктом владельца: шапка обещала вариацию спрайта, которой нет.
-        if (a.character.bodyShape != 2) {
-            FAIL_BAIL("macro character identity lost");
-        }
-        if (a.hasOrders != 1 || a.orders.waypointCount != 2
-            || a.orders.currentWaypoint != 1
-            || a.orders.waypoints[3] != 8) {
-            FAIL_BAIL("macro squad orders lost");
-        }
-        if (a.dead != 0) FAIL_BAIL("living macro NPC loaded dead");
-        // Единый контейнер (M-71): 1 предметный стак + 3 души.
-        if (a.inventory.used_slots() != 4
-            || a.inventory.count("food") != 3) {
-            FAIL_BAIL("macro inventory lost");
-        }
-        std::vector<sm::CreatureRef> heads;
-        for (const sm::CreatureRef h :
-             sm::creatures_range(a.inventory)) {
-            heads.push_back(h);
-        }
-        // Порядок области — старый порядок контейнера (старейший первым).
-        if (heads.size() != 3
-            || heads[0].kind != std::uint16_t(sm::NPCType::Guard)
-            || heads[0].level != 4
-            || heads[1].entityId != 901u) {
-            FAIL_BAIL("macro creatures lost");
-        }
-        // The beast came back a beast — not truncated to its low byte, not
-        // dropped, not turned into whatever humanoid that byte would name.
-        if (heads[2].kind != std::uint16_t(sm::NPCType::Wolf)
-            || heads[2].level != 3
-            || heads[2].entityId != 902u
-            || sm::is_folk_kind(heads[2].kind)) {
-            FAIL_BAIL("a beast member did not survive the save");
-        }
-    }
-    if (loadedMacro[1].dead != 1 || loadedMacro[1].pools.hp != 0.0f) {
-        FAIL_BAIL("the killed lord did not stay dead across the save");
-    }
-    // ПОСТАВЛЕНО — ЗНАЧИТ СПРОШЕНО (§8 п.3, тот же довод, что у M-254 выше):
-    // третья ступень этой записи ехала кругом без свидетеля, и потеря блока
-    // уровня У МЁРТВОГО не покраснела бы ничем.
-    if (sm::level_of(loadedMacro[1].sheet.levelData) != 3) {
-        FAIL_BAIL("the dead lord's level block did not survive the save");
-    }
-    if (loaded.worldTime.tick != gs.worldTime.tick) {
-        FAIL_BAIL("world time not exact to the tick");
-    }
-
-    const sm::PlayerState& p = loaded.player;
-    {
-        // Ячейка имени едет ЦЕЛИКОМ: и текст, и нули за ним.
-        sm::ecs::SquadName want{};
-        sm::ecs::set_squad_name(want, "Tester");
-        if (std::memcmp(&p.name, &want, sizeof(want)) != 0)
-            FAIL_BAIL("player name lost");
-    }
-    if (p.ageDays != 1234) {
-        FAIL_BAIL("player age lost");
-    }
-
-    {
-        // His SHEET rides his squad's record now (посадка Б, v91) — find it
-        // by the HOME BIT (M-255) and demand the build came back verbatim.
-        const sm::MacroNpcRecord* prec = nullptr;
-        for (const sm::MacroNpcRecord& r : loadedMacro) {
-            if (r.playerFlag != 0) prec = &r;
-        }
-        if (!prec) FAIL_BAIL("the player's squad record vanished");
-        const sm::CharacterSheet& sh = prec->sheet;
-        if (sh.attributes.of(sm::AttributeId::Str) != 7
-            || sh.attributes.of(sm::AttributeId::Intl) != 11
-            || sh.attributes.of(sm::AttributeId::Spd) != 15) {
-            FAIL_BAIL("player attributes lost");
-        }
-        if (sh.skills.of(sm::SkillId::Bodybuilding) != 1
-            || sh.skills.of(sm::SkillId::Spellcraft) != 6
-            || sh.skills.of(sm::SkillId::Weightlifting) != 7) {
-            FAIL_BAIL("player skills lost");
-        }
-        // ВЕСЬ БЛОК УРОВНЯ — ЭТО ТЕПЕРЬ ОДНО ЧИСЛО, И ОНО СУДИТСЯ ЦЕЛИКОМ:
-        // кумулятив побайтово, плюс оба его смысла (ступень и прогресс) врозь.
-        // Четыре счётчика очков из прежней проверки ушли не из свидетеля, а из
-        // МИРА — они стали выводом от ступени и самого листа (M-383), значит
-        // сторожить их отдельно больше нечего: разъехаться с опытом невыразимо.
-        if (sh.levelData.exp != sm::exp_at_level(6) + 321u
-            || sm::level_of(sh.levelData) != 6
-            || sm::exp_in_level_of(sh.levelData) != 321) {
-            FAIL_BAIL("player level data lost");
-        }
-    }
-    if (sm::player_reputation(&loaded, "magika") != 42) {
-        FAIL_BAIL("player standing lost (his faction row's column)");
-    }
-    if (sm::faction_relation(&loaded, "magika", sm::kPlayerFactionId) != 42) {
-        FAIL_BAIL("player standing is not symmetric after a save round-trip");
-    }
-    // (Entry-side context rides the macro records — asserted there.)
-
-
-    if (p.journalCount != 2u
-        || p.journal[0].kind != std::uint16_t(sm::FactKind::Killed)
-        || p.journal[1].amount != 55
-        || p.journalSeenSeq != 77u) {
-        FAIL_BAIL("the player's journal did not round-trip entry-for-entry");
-    }
-    {
-        // His BOOK rides his squad's record (v89) — find it by the HOME BIT
-        // (M-255) and demand the knowledge came back bit-for-bit.
-        const sm::MacroNpcRecord* prec = nullptr;
-        for (const sm::MacroNpcRecord& r : loadedMacro) {
-            if (r.playerFlag != 0) prec = &r;
-        }
-        if (!prec) FAIL_BAIL("the player's squad record vanished");
-        if (!sm::spellbook_has_learned(prec->book,
-                                       sm::spell_ordinal("fireball"))
-            || !sm::spellbook_has_learned(prec->book,
-                                          sm::spell_ordinal("haste"))) {
-            FAIL_BAIL("spell learned state lost");
-        }
-        if (prec->book.activeSpell != sm::spell_ordinal("fireball")) {
-            FAIL_BAIL("active spell lost");
-        }
-        if (!sm::spellbook_has_sustained(prec->book,
-                                         sm::spell_ordinal("haste"))) {
-            FAIL_BAIL("sustained spell state lost");
-        }
-    }
-    // МЕСТА ПРИЕХАЛИ ЗАПИСЯМИ БЛОКА МАКРО-СКВАДОВ (ломтик F): место ЕСТЬ
-    // неподвижный сквад, его тело возвращает restore, и сшивать с ним
-    // больше нечего — строки места не существует. СТОИТ ПОСЛЕ скалярных
-    // проверок: restore САМОЛЕЧИТ эмитент ординалов (M-37), а свидетель
-    // выше спрашивает ровно то число, что лежит в файле.
-    auto loadedStoreOwn = sm::make_macro_store();
-    sm::MacroStore& loadedStore = *loadedStoreOwn;
-    sm::restore_macro_ecs(loadedMacro, loadedStore, loadedNextSpawnId);
-
-    const sm::MacroHandle cityLm = sm::rooted_handle_by_ordinal(
-        loadedStore, std::uint32_t(kFixtureCityId));
-    // ПАСТВА — слой чисел фич (v122), и круг сейва обязан вернуть её
-    // ровно. Домашние головы здесь НЕ равны пастве: фикстура досыпала в тот
-    // же контейнер отряд (add_soldiers), и это законно — «в поле» и «дома»
-    // считаются врозь.
-    if (!loadedStore.valid(cityLm)
-        || sm::SquadType(loadedStore.runtime[cityLm.slot].squadType)
-               != sm::SquadType::City
-        || cell_number_at(loaded, loadedStore, cityLm.slot)
-               != kFixtureCitySouls
-        || sm::souls_home(loadedStore, cityLm.slot) < kFixtureCitySouls) {
-        FAIL_BAIL("settlement lost");
-    }
-    const sm::Inventory& cityStore = loadedStore.inventory[cityLm.slot].inv;
-    if (std::strcmp(loadedStore.name[cityLm.slot].text, "Round City") != 0
-        || cityStore.count("wood") != 19
-        || sm::creature_count_of(cityStore, sm::NPCType::Peasant)
-               != kFixtureCitySouls + 1
-        || sm::creature_count_of(cityStore, sm::NPCType::Guard) != 5) {
-        FAIL_BAIL("settlement details lost");
-    }
-    {
-        const sm::Wellbeing& wb = loadedStore.wellbeing[cityLm.slot];
-        if (!nearf(wb.popGrowthCarry, 0.375f)) {
-            FAIL_BAIL("settlement honest-day readouts (v29) lost");
-        }
-    }
-    const sm::MacroHandle vilLm = sm::rooted_handle_by_ordinal(
-        loadedStore, std::uint32_t(kFixtureVillageId));
-    if (loadedStore.valid(vilLm)) {
-        // M-245: долг дани едет НА РЕБРЕ Suzerain вассала — записью его же
-        // ТЕЛА (род 2); ребро обязано вернуться с тем же числом.
-        const sm::Interest* fe = sm::tithe_of(loadedStore, vilLm.slot);
-        if (!fe || fe->owedValue != 123) {
-            FAIL_BAIL("tithe edge (ребро Suzerain тела) lost");
-        }
-        if (sm::suzerain_of(loadedStore, vilLm.slot) != kFixtureCityId) {
-            FAIL_BAIL("феодальное ребро (интересы тела) lost");
-        }
-    }
-    if (!loadedStore.valid(vilLm)
-        || sm::SquadType(loadedStore.runtime[vilLm.slot].squadType)
-               != sm::SquadType::Village) {
-        FAIL_BAIL("village lost");
-    }
-    {
-        const sm::Wellbeing& wb = loadedStore.wellbeing[vilLm.slot];
-        if (!nearf(wb.popGrowthCarry, -0.25f)) {
-            FAIL_BAIL("village honest-day readouts (v29) lost");
-        }
-    }
-    const sm::MacroHandle spireLm = sm::rooted_handle_by_ordinal(
-        loadedStore, std::uint32_t(kFixtureSpireId));
-    if (!loadedStore.valid(spireLm)
-        || sm::SquadType(loadedStore.runtime[spireLm.slot].squadType)
-               != sm::SquadType::Spire) {
-        FAIL_BAIL("spire lost");
-    }
-    // v120: the spell survives as the feature number at the spire's cell.
-    if (sm::feature_number_read(loaded, 12, 34) != 7) {
-        FAIL_BAIL("spire spell (featureNumber layer) lost");
-    }
-    if (loaded.markers.count != 1u
-        || sm::marker_label(loaded.markers.rows[0]) != "Round Danger"
-        || loaded.markers.rows[0].style != sm::MarkerStyle::Danger
-        || loaded.markers.rows[0].cell != sm::cell_of(15, 16, loaded.mapW)) {
-        FAIL_BAIL("marker lost");
-    }
-    // Снятый до сохранения пин не доехал: ни записью, ни следом в хвосте.
-    {
-        const sm::Marker zero{};
-        if (sm::has_marker(loaded.markers, sm::MarkerStyle::Waypoint,
-                           sm::cell_of(3, 4, loaded.mapW))
-            || std::memcmp(&loaded.markers.rows[1], &zero, sizeof(zero)) != 0) {
-            FAIL_BAIL("a lifted pin survived the save");
-        }
-    }
-    // МЕТКА ВНЕ МИРА — ПОРЧА, И ОТКАЗЫВАЕТ ЕЙ ПИСАТЕЛЬ, А НЕ ТОЛЬКО ЧИТАТЕЛЬ:
-    // дверь списка клетку не судит (сторон мира не знает), поэтому суд стоит
-    // на проводе с ОБЕИХ сторон одним условием. Иначе игра напечатала бы
-    // «сохранено» и положила слот, который сама же откажется прочесть.
-    {
-        const std::string strayPath =
-            temp_save_path("timaert_save_stray_marker.bin");
-        remove_slot_files(strayPath);
-        const std::uint32_t outside =
-            std::uint32_t(gs.mapW) * std::uint32_t(gs.mapH);
-        if (!sm::add_marker(gs.markers, sm::MarkerStyle::POI, outside))
-            FAIL_BAIL("фикстура: метка за миром не встала в список");
-        const bool strayRefused =
-            !sm::save_game(gs, store.nextSpawnId, macroFixture, strayPath);
-        sm::remove_marker(gs.markers, sm::MarkerStyle::POI, outside);
-        const bool cleanAccepted =
-            sm::save_game(gs, store.nextSpawnId, macroFixture, strayPath);
-        remove_slot_files(strayPath);
-        if (!strayRefused)
-            FAIL_BAIL("сейв принял метку на клетке вне мира");
-        if (!cleanAccepted)
-            FAIL_BAIL("негативный контроль: без метки за миром тот же мир "
-                      "сохраняется");
-    }
-    const sm::FactionSlot loadedTim =
-        sm::faction_slot(loaded.factions, "timaert");
-    const sm::FactionSlot loadedLake =
-        sm::faction_slot(loaded.factions, "lake_duchy");
-    if (loadedTim == sm::kNoFactionSlot || loadedLake == sm::kNoFactionSlot) {
-        FAIL_BAIL("registry faction lost its row");
-    }
-    if (sm::relation_of(loaded.factions, loadedTim, loadedLake) != -5) {
-        FAIL_BAIL("faction relation lost");
-    }
-    // (Сверка блоков жил умерла с самими блоками: поле производно от сида,
-    // и файлу нечего о нём помнить. Залежи шахт сверяет число фичи ниже.)
-    if (loaded.treeLayer.width != gs.mapW
-        || loaded.treeLayer.height != gs.mapH
-        || !std::ranges::equal(loaded.treeLayer.cells(),
-                               gs.treeLayer.cells())) {
-        FAIL_BAIL("tree grid lost");
-    }
-    if (loaded.treeLayer.at(7, 0) != 0u || loaded.treeLayer.at(17, 0) != 12000u
-        || loaded.treeLayer.at(18, 0) != 600u) {
-        FAIL_BAIL("felled/thickened tree cells did not round-trip");
-    }
-    {   // v96: the scar FIELDS and the featureNumber layer
-        const sm::ResourceGrid& wheat = loaded.wheatScars;
-        if (!wheat.live() || wheat.liveCells != 1 || wheat.at(5, 23) != 12) {
-            FAIL_BAIL("the reaped cell's scar did not round-trip");
-        }
-        // (Отрицательный контроль «ряд-носитель не вырастил поле шрамов» умер
-        //  в v157: у носителя поля шрамов больше НЕТ — нарушение невыразимо.)
-        // liveCells = 4, и перепись жильцов слоя — ЕГО польза: корпуса
-        // гавани (9,4), спелл шпиля (12,34) — v120 сделал его квартирантом —
-        // и ПАСТВА двух поселений фикстуры (40,80) и (45,85), третий род
-        // жильца, пришедший с v122. Число фичи у каждого своё, а слой один.
-        if (sm::feature_number_read(loaded, 9, 4) != 2
-            || sm::feature_number_read(loaded, 40, 80) != kFixtureCitySouls
-            || sm::feature_number_read(loaded, 45, 85) != kFixtureVillageSouls
-            || loaded.featureNumber.liveCells != 4) {
-            FAIL_BAIL("the featureNumber layer's number did not round-trip");
-        }
-    }
-    // (Ассерты активного квеста умерли с его блоком — ломоть 3 M-72.)
-
-    if (!write_all(truncatedPath, bytes, bytes.size() / 2u)) {
-        FAIL_BAIL("could not write truncated file");
-    }
-    auto sentinelOwn = std::make_unique<sm::GameState>();
-    sm::GameState& sentinel = *sentinelOwn;
-    sentinel.mapW = 11;
-    std::uint32_t sentinelNextSpawnId = 0;
-    std::vector<sm::MacroNpcRecord> sentinelMacro;
-    // Метка в поле леса: отказанная загрузка не смеет тронуть и его.
-    sentinel.treeLayer.data[3] = 42u;
-    if (sm::load_game(sentinel, sentinelNextSpawnId,
-                      sentinelMacro, truncatedPath)) {
-        FAIL_BAIL("truncated payload accepted");
-    }
-    ++trips;
-    if (sentinel.mapW != 11 || sentinel.treeLayer.data[3] != 42u
-        || sentinel.treeLayer.width != 0) {
-        FAIL_BAIL("failed truncated load mutated state");
-    }
-
-    std::vector<std::uint8_t> corrupt = bytes;
-    if (corrupt.size() <= 20u) FAIL_BAIL("header too small");
-    corrupt[corrupt.size() - 1u] ^= 0x5au;
-    if (!write_all(corruptPath, corrupt, corrupt.size())) {
-        FAIL_BAIL("could not write corrupt file");
-    }
-    sentinel.mapW = 22;
-    if (sm::load_game(sentinel, sentinelNextSpawnId,
-                      sentinelMacro, corruptPath)) {
-        FAIL_BAIL("corrupt payload accepted");
-    }
-    ++trips;
-    if (sentinel.mapW != 22 || sentinel.treeLayer.data[3] != 42u) {
-        FAIL_BAIL("failed corrupt load mutated state");
-    }
-
-    std::vector<std::uint8_t> badVersion = bytes;
-    if (badVersion.size() < 8u) FAIL_BAIL("header too small for version");
-    badVersion[4] = 0x0f;
-    badVersion[5] = 0x27;
-    badVersion[6] = 0x00;
-    badVersion[7] = 0x00;
-    if (!write_all(badVersionPath, badVersion, badVersion.size())) {
-        FAIL_BAIL("could not write bad version file");
-    }
-    auto badStateOwn = std::make_unique<sm::GameState>();
-    sm::GameState& badState = *badStateOwn;
-    std::uint32_t badNextSpawnId = 0;
-    std::vector<sm::MacroNpcRecord> badMacro;
-    if (sm::load_game(badState, badNextSpawnId, badMacro,
-                      badVersionPath)) {
-        FAIL_BAIL("bad version accepted");
-    }
-    ++trips;
-    const sm::SaveSummary badSummary = sm::inspect_save(badVersionPath);
-    if (badSummary.status != sm::SaveInspectStatus::VersionMismatch) {
-        FAIL_BAIL("bad version inspect status wrong");
-    }
-
-    // A slot naming a row the world does not know must REFUSE the save.
-    // Дверь существ такую порчу уже не пускает (creatures_push отказывает
-    // невалидному роду — проверено ниже), поэтому порча сажается В СЛОТ
-    // НАПРЯМУЮ: предмет свидетеля — fail-closed ПИСАТЕЛЯ.
-    // НОСИТЕЛЬ ПОРЧИ СМЕНИЛСЯ, ПРЕДМЕТ СВИДЕТЕЛЯ — НЕТ. Порча сидела в
-    // `gs.deserterPool`, уничтоженном 2026-10-11; теперь она сажается в
-    // ЕДИНСТВЕННЫЙ контейнер, который едет в файл — инвентарь записи сквада.
-    // Судится по-прежнему fail-closed ПИСАТЕЛЯ, а не дверь существ.
-    auto invalidSquadStateOwn = std::make_unique<sm::GameState>(gs);
-    sm::GameState& invalidSquadState = *invalidSquadStateOwn;
-    std::vector<sm::MacroNpcRecord> invalidMacro = macroFixture;
-    if (invalidMacro.empty()) {
-        FAIL_BAIL("фикстура снапшота пуста — порчу некуда посадить");
-    }
-    if (sm::creatures_push(invalidMacro[0].inventory, sm::SoldierRecord{
-            10001u, std::uint16_t(sm::NPCType::Count), 1})) {
-        FAIL_BAIL("the creature door accepted a kind the tables do not know");
-    }
-    {
-        sm::ItemRef rot{};
-        rot.def = sm::world_row_count();   // строка ЗА концом пространства
-        rot.count = 1;
-        // Дверь адреса (M-296): запись в слот снаружи больше не собирается,
-        // а порченую строку свидетелю всё равно надо поставить — `put_at`
-        // кладёт её ровно туда же, и это тот же обход закона стакования,
-        // которым пользуется читатель сейва. АДРЕС ПОРЧИ СВИДЕТЕЛЮ БЕЗРАЗЛИЧЕН
-        // — судится fail-closed ПИСАТЕЛЯ, — а верхний слот у фикстуры занят:
-        // там начинается область существ, и освободить его не выйдет, потому
-        // что ремонт плотности тут же переселит туда новейшую голову. Значит
-        // порча садится в первый свободный, и посадка судится ВСЛУХ:
-        // молчаливый отказ оставил бы свидетеля беззубым, но зелёным.
-        sm::Inventory& rotBag = invalidMacro[0].inventory;
-        int rotSlot = -1;
-        for (int i = 0; i < sm::kMaxInventorySlots; ++i) {
-            if (rotBag.slots[std::size_t(i)].empty()) { rotSlot = i; break; }
-        }
-        if (rotSlot < 0 || !rotBag.put_at(rotSlot, rot)) {
-            FAIL_BAIL("порча не села в слот — свидетель судил бы пустоту");
-        }
-    }
-    if (sm::save_game(invalidSquadState, store.nextSpawnId,
-                      invalidMacro,
-                      temp_save_path("timaert_invalid_squad_save.bin"))) {
-        FAIL_BAIL("invalid squad kind saved");
-    }
-
-    // A macro record with a garbage NPC type must refuse to save — the same
-    // fail-closed rule the soldier rows live under.
-    {
-        std::vector<sm::MacroNpcRecord> invalidMacro = make_macro_records();
-        invalidMacro[0].kind.type = std::uint16_t(sm::NPCType::Count);
-        if (sm::save_game(gs, store.nextSpawnId, invalidMacro,
-                          temp_save_path("timaert_invalid_macro_save.bin"))) {
-            FAIL_BAIL("invalid macro npc kind saved");
-        }
-    }
-
-    // (The event-log ring died in v58: session words are a fading HUD feed
-    // that never touches the save; the player's past is his journal of
-    // chronicle records, round-tripped above.)
-
-    std::printf("OK save_roundtrip_test path=%s bytes=%zu map=%dx%d\n",
-                path.c_str(), bytes.size(), loaded.mapW, loaded.mapH);
-
-    // КАЖДОЕ ПРИЕХАВШЕЕ МЕСТО НАХОДИТСЯ ПО СВОЕМУ ОРДИНАЛУ, и отказ честен.
-    // Предмет сузился вместе с носителем (ломтик F): «ординал И ЕСТЬ адрес»
-    // был законом ВЕКТОРА мест (`places[id-1]`), а вектора больше нет —
-    // резолв идёт колонкой spawnId живого тела плюс гейт оси рода. Остаётся
-    // то, что от этого закона не зависело ни тогда: дверь обязана найти
-    // ВСЯКОЕ место круга и не отвечать за небывалый ординал и за «никто».
-    int rootedOfTheRound = 0, unresolvable = 0;
-    for (std::uint32_t slot = 0; slot < sm::kUnifiedCap; ++slot) {
-        if (loadedStore.alive[slot] == 0 || loadedStore.dead[slot] != 0)
-            continue;
-        if (sm::squad_archetype(
-                sm::SquadType(loadedStore.runtime[slot].squadType))
-            != sm::SquadArchetype::Rooted)
-            continue;
-        ++rootedOfTheRound;
-        const sm::MacroHandle back = sm::rooted_handle_by_ordinal(
-            loadedStore, loadedStore.spawnId[slot].index);
-        if (!loadedStore.valid(back)
-            || back.slot != std::uint16_t(slot)) ++unresolvable;
-    }
-    // Цикл утверждает, что ПОМЕРИЛ (§8 п.3): пустой круг зеленел бы нулём
-    // расхождений, а мест в этой фикстуре ровно три.
-    if (rootedOfTheRound != 3 || unresolvable != 0) {
-        FAIL_BAIL("by-ordinal find missed a place of the round");
-    }
-    if (loadedStore.valid(sm::rooted_handle_by_ordinal(loadedStore, 4242u))
-        || loadedStore.valid(sm::rooted_handle_by_ordinal(loadedStore, 0u))
-        || loadedStore.valid(
-               sm::rooted_handle_by_ordinal(loadedStore, 0xFFFFFFFFu))) {
-        FAIL_BAIL("by-ordinal find answered for an id no place holds");
-    }
-
-    remove_slot_files(truncatedPath);
-    remove_slot_files(corruptPath);
-    remove_slot_files(badVersionPath);
-    remove_slot_files(path);
-    return trips;  // сколько прогонов двери сейва ПОМЕРЕНО; 0 красен
+std::uint64_t header_checksum(const std::string& path) {
+    // Заголовок: магия 4, версия 4, размеры 8 + 8, сумма 8 — сумма на 24-м Б.
+    const std::vector<unsigned char> h = file_head(path, 32);
+    std::uint64_t sum = 0;
+    if (h.size() == 32) std::memcpy(&sum, h.data() + 24, sizeof(sum));
+    return sum;
 }
 
-// (Свидетель `run_every_sub_state_kind_survives` умер в v157 вместе с блоком
-// режима оболочки: в сейв он не едет, и переживать кругу нечего — M-190.)
-
-// ── ПОТОЛОК PAYLOAD ЕСТЬ ФАКТ О РАСКЛАДКЕ, А НЕ ЧИСЛО (M-119) ────────────
-//
-// Свидетель закрывает ровно тот дефект, которым куплена правка: литерал
-// 64 МиБ был МЕНЬШЕ суммы капов блоков, которые сейв обязан вместить, — и
-// легальный мир `save_game` отвергал МОЛЧА, возвращая false.
-//
-// Мир фикстуры выбран не по вкусу, а по переписи: ПАМЯТЬ ИГРОКА стоит на
-// СВОЁМ капе (`PlayerState::kJournalFactsCap`), а мест в нём столько, сколько их
-// насчитала перепись штабелей в ЗАМЕРЕННОМ мире (macro/stacks.h: «~76 МиБ в
-// замеренном мире (~1 880 мест)»). Это законный мир, а не патология.
-//
-// НЕГАТИВНЫЙ КОНТРОЛЬ ВСТРОЕН, И ОН НЕ ЧЕРЕЗ `git checkout`: payload такого
-// мира обязан быть БОЛЬШЕ прежнего литерала. На старом коде свидетель
-// красный не оттого, что поменяли ожидание, а оттого, что сейв этого мира не
-// записывался вовсе.
-bool run_payload_cap_is_a_fact() {
-    constexpr std::uint64_t kOldLiteralCap = 64ull * 1024ull * 1024ull;
-    constexpr std::uint32_t kHeaderBytes = 4u + 4u + 8u + 4u;
-    constexpr int kCensusRooted = 1880;   // macro/stacks.h, замеренный мир
-
-    const std::string path = temp_save_path("timaert_save_payload_cap.bin");
-    const std::string overPath = temp_save_path("timaert_save_payload_over.bin");
-    remove_slot_files(path);
-    remove_slot_files(overPath);
-
-    auto storeOwn = sm::make_macro_store();
-    sm::MacroStore& store = *storeOwn;
-    std::unique_ptr<sm::GameState> gsOwn = make_state(store);
-    sm::GameState& gs = *gsOwn;
-
-    // (ЗДЕСЬ ФИКСТУРА НАБИВАЛА АННАЛЫ ДО КАПА — ярус снесён M-184, и 32 МиБ
-    //  потолка ушли из суммы блоков вместе с ним. Негативный контроль ниже
-    //  от этого НЕ ослаб: его несёт журнал игрока, который сам по себе
-    //  больше прежнего литерала 64 МиБ.)
-
-    // Журнал игрока — его целая игра, тоже на капе (v57).
-    for (std::uint32_t i = 0; i < sm::PlayerState::kJournalFactsCap; ++i) {
-        sm::WorldFact f{};
-        f.day = 2;
-        f.seq = i + 1u;
-        f.kind = std::uint16_t(sm::FactKind::Killed);
-        gs.player.journal[i] = f;
+// ── 6. СУММА ────────────────────────────────────────────────────────────────
+void test_checksum_laws() {
+    std::vector<std::uint64_t> words(1024);
+    std::uint64_t x = 0x9E3779B97F4A7C15ull;
+    for (std::uint64_t& w : words) {
+        x ^= x << 13; x ^= x >> 7; x ^= x << 17;   // xorshift64 — заполнитель
+        w = x;
     }
-    gs.player.journalCount = sm::PlayerState::kJournalFactsCap;
+    const std::size_t bytes = words.size() * sizeof(std::uint64_t);
+    const auto whole = [&](const std::vector<std::uint64_t>& v) {
+        SaveChecksum s;
+        s.feed(v.data(), v.size() * sizeof(std::uint64_t));
+        return s.finish();
+    };
+    const std::uint64_t base = whole(words);
 
-    // Места — с ПОЛНЫМИ складами, и это не утяжеление ради числа: единый
-    // контейнер 32×32 входит в кап места целиком (DOD п.2 — «пустота у
-    // деревни оплачена сознательно»), значит худший легальный вес мест
-    // считается именно так. Стаки различаются сидом — набитый склад из
-    // неслипающихся экземпляров мир рождает сам (аффиксный лут не стакается).
-    const int woodDef = sm::item_index("wood");
-    if (woodDef < 0) FAIL_BAIL("fixture item row 'wood' missing from catalog");
-    // ХУДШИЙ ВЕС МЕСТ ПЕРЕЕХАЛ ВМЕСТЕ С ПЛЕЧОМ (v127, флип M-90 шаг 5):
-    // единый контейнер 32×32 входит в кап места целиком (DOD п.2), но
-    // лежит он теперь колонкой ТЕЛА, значит и в файл едет записью тела —
-    // блоком макро-сквадов, а не блоком мест. Предмет свидетеля не
-    // изменился: это по-прежнему худший легальный вес ЭТИХ мест.
-    // Ординалы этих мест выдаёт тот же эмитент, что назвал места make_state
-    // (ломтик F): одно пространство ординалов (M-37), и выдача монотонна —
-    // столкновений в нём не бывает по построению.
-    for (int i = 0; i < kCensusRooted; ++i) {
-        // Душ здесь нет намеренно: предмет этой фикстуры — ХУДШИЙ ВЕС
-        // мест, и все слоты забиты неслипающимися стаками. Паства живёт в
-        // слое чисел фич (v122), её вес считает блок полей, а не запись места.
-        const sm::MacroHandle row = sm::birth_squad(
-            gs, store, sm::SquadType::Village,
-            i % gs.mapW, (i / gs.mapW) % gs.mapH);
-        sm::Inventory& bag = store.inventory[row.slot].inv;
-        for (int s = 0; s < sm::kMaxInventorySlots; ++s) {
-            sm::ItemRef ref{};
-            ref.def = std::uint16_t(woodDef);
-            ref.count = 1;
-            ref.seed = std::uint32_t(i * sm::kMaxInventorySlots + s) + 1u;
-            bag.put_at(s, ref);
+    // Нарезка на порции любой кратной слову длины итога не меняет — в том
+    // числе порции, рвущие четвёрку дорожек посередине.
+    int cuts = 0, cutMismatch = 0;
+    for (const std::size_t step : {std::size_t(8), std::size_t(24),
+                                   std::size_t(40), std::size_t(4096),
+                                   std::size_t(1000 * 8)}) {
+        SaveChecksum s;
+        const auto* p = reinterpret_cast<const unsigned char*>(words.data());
+        for (std::size_t at = 0; at < bytes; at += step)
+            s.feed(p + at, at + step <= bytes ? step : bytes - at);
+        ++cuts;
+        if (s.finish() != base) ++cutMismatch;
+    }
+    CHECK(cuts == 5 && cutMismatch == 0,
+          "сумма зависит от последовательности слов, а не от нарезки на "
+          "порции");
+
+    // НЕГАТИВНЫЕ КОНТРОЛИ: каждая из порч обязана сдвинуть сумму.
+    int probes = 0, blind = 0;
+    for (const std::size_t at : {std::size_t(0), std::size_t(1),
+                                 std::size_t(2), std::size_t(3),
+                                 std::size_t(511), words.size() - 1u}) {
+        std::vector<std::uint64_t> v = words;
+        v[at] ^= std::uint64_t(1) << (at % 64u);   // один бит
+        ++probes;
+        if (whole(v) == base) ++blind;
+    }
+    {
+        std::vector<std::uint64_t> v = words;   // соседние слова — разные дорожки
+        std::swap(v[8], v[9]);
+        ++probes;
+        if (whole(v) == base) ++blind;
+    }
+    {
+        std::vector<std::uint64_t> v = words;   // слова ОДНОЙ дорожки
+        std::swap(v[8], v[12]);
+        ++probes;
+        if (whole(v) == base) ++blind;
+    }
+    {
+        std::vector<std::uint64_t> v = words;   // лишнее нулевое слово в хвосте
+        v.push_back(0u);
+        ++probes;
+        if (whole(v) == base) ++blind;
+    }
+    {
+        // Целые дорожки, обменявшиеся содержимым: слияние порядковое.
+        std::vector<std::uint64_t> v = words;
+        for (std::size_t i = 0; i + 3u < v.size(); i += 4u)
+            std::swap(v[i + 1u], v[i + 2u]);
+        ++probes;
+        if (whole(v) == base) ++blind;
+    }
+    CHECK(probes == 10 && blind == 0,
+          "сумма видит порчу бита в каждой дорожке и в последнем слове, "
+          "перестановку слов между дорожками и внутри одной, обмен дорожек и "
+          "лишнее слово");
+}
+
+// ── 1–5. КРУГ, ЖИВАЯ КАРТА, ОТКАЗЫ ──────────────────────────────────────────
+void test_dump_roundtrip() {
+    const TerrainData land = dry_land();
+    const std::string path = temp_path("timaert_save_dump.bin");
+    const std::string forged = temp_path("timaert_save_dump_forged.bin");
+    remove_slot(path);
+    remove_slot(forged);
+
+    World w;
+    build_world(w, land);
+
+    // ── 2. ОДИН МИР — ОДНИ БАЙТЫ ────────────────────────────────────────────
+    {
+        World twin;
+        build_world(twin, land);
+        CHECK(std::memcmp(&w.gs, &twin.gs, sizeof(GameState)) == 0,
+              "два состояния, рождённых одними дверями в разной памяти, "
+              "равны побайтно — ни дыр выравнивания, ни членов без рождения");
+        CHECK(std::memcmp(&w.st, &twin.st, sizeof(MacroStore)) == 0,
+              "две гладкие памяти сквадов, рождённые одними дверями, равны "
+              "побайтно");
+        CHECK(world_sum(w) == world_sum(twin),
+              "равные миры дают одну сумму");
+        // Негативный контроль: детектор обязан видеть дельту в одном байте
+        // ПОСЛЕДНЕГО члена — иначе равенство выше не значило бы ничего.
+        twin.st.pad ^= 1u;
+        CHECK(std::memcmp(&w.st, &twin.st, sizeof(MacroStore)) != 0
+                  && world_sum(w) != world_sum(twin),
+              "побайтное сравнение и сумма видят один бит в хвостовом слове "
+              "хранилища (негативный контроль)");
+    }
+
+    // ── 1. КРУГ ─────────────────────────────────────────────────────────────
+    const auto t0 = std::chrono::steady_clock::now();
+    const std::uint64_t sumBefore = world_sum(w);
+    const auto t1 = std::chrono::steady_clock::now();
+    CHECK_OR_RETURN(save_game(w.gs, w.st, path), "мир записан");
+    const auto t2 = std::chrono::steady_clock::now();
+    CHECK(std::uint64_t(file_bytes(path)) == save_file_bytes(),
+          "слот весит ровно заголовок и два куска — константа сборки");
+    CHECK(world_sum(w) == sumBefore,
+          "запись не тронула мир: сумма живой памяти та же");
+    CHECK(header_checksum(path) == sumBefore,
+          "в заголовке стоит сумма живой памяти");
+
+    World back;
+    const auto t3 = std::chrono::steady_clock::now();
+    CHECK_OR_RETURN(load_game(back.gs, back.st, path), "мир прочитан");
+    const auto t4 = std::chrono::steady_clock::now();
+    CHECK(std::memcmp(&w.gs, &back.gs, sizeof(GameState)) == 0,
+          "состояние макромира вернулось побайтно");
+    CHECK(std::memcmp(&w.st, &back.st, sizeof(MacroStore)) == 0,
+          "гладкая память сквадов вернулась побайтно");
+    const auto ms = [](auto a, auto b) {
+        return double(std::chrono::duration_cast<std::chrono::microseconds>(
+                          b - a).count()) / 1000.0;
+    };
+    std::printf("save_dump: слот %.2f МиБ · сумма %.1f мс · запись с "
+                "самопроверкой %.1f мс · чтение с суммой %.1f мс\n",
+                double(save_file_bytes()) / (1024.0 * 1024.0), ms(t0, t1),
+                ms(t1, t2), ms(t3, t4));
+
+    // ── Осмотр слота ────────────────────────────────────────────────────────
+    {
+        const SaveSummary s = inspect_save(path);
+        CHECK(s.status == SaveInspectStatus::Ready
+                  && s.version == kSaveVersion
+                  && s.worldSeed == w.gs.worldSeed
+                  && s.day == w.gs.worldTime.day()
+                  && s.hour == w.gs.worldTime.hour()
+                  && s.minute == w.gs.worldTime.minute()
+                  && s.savedAt.size() == 24u && s.savedAt.back() == 'Z',
+              "осмотр читает сид и время ИЗ КУСКА состояния по их смещению, "
+              "метку — из заголовка");
+        CHECK(inspect_save(forged).status == SaveInspectStatus::Missing,
+              "слота нет — осмотр так и говорит");
+    }
+
+    // ── 3. ЖИВАЯ КАРТА — ДВЕРЯМИ ЗАГРУЖЕННОГО МИРА ──────────────────────────
+    MacroStore& st2 = back.st;
+    GameState& gs2 = back.gs;
+    resolve_player_handles_after_load(back.ses, st2);
+    const MacroHandle lord = macro_handle_by_spawn_id(st2, w.lordOrd);
+    CHECK_OR_RETURN(st2.valid(lord),
+                    "справочник ординалов загруженного стора отвечает: лорд "
+                    "найден по своему ординалу");
+    CHECK(player_flag_handle(back.ses) == lord,
+          "флажок игрока после загрузки стоит на ТОМ ЖЕ лорде — кэш сессии "
+          "пересобран из колонки");
+    {
+        int flagged = 0;
+        for (std::size_t s = 0; s < kUnifiedCap; ++s)
+            if (st2.alive[s] != 0 && st2.playerFlag[s].on != 0) ++flagged;
+        CHECK(flagged == 1, "носитель флажка ровно один — не каждый слот");
+    }
+    CHECK(exp_in_level_of(st2.sheet[lord.slot].levelData) == 777
+              && squad_level(st2, lord.slot) == 5
+              && st2.sheet[lord.slot].attributes.of(AttributeId::End) == 13,
+          "кампании лорда — опыт, ступень, расхождение листа с рождением");
+    CHECK(st2.pools[lord.slot].sp == -15
+              && ecs::cell_x(st2.cell[lord.slot], kSide) == 25
+              && ecs::cell_y(st2.cell[lord.slot], kSide) == 21,
+          "долг усталости и клетка марша — те, что были на записи");
+    CHECK(std::strcmp(st2.name[lord.slot].text, "Chornyy Voron") == 0
+              && creature_count(st2.inventory[lord.slot].inv) == 2
+              && st2.orders[lord.slot].waypointCount == 2,
+          "имя анкеты, головы ростера и маршрут приказа");
+    const MacroHandle dead = macro_handle_by_spawn_id(st2, w.deadOrd);
+    CHECK(st2.valid(dead) && macro_dead(st2, dead)
+              && st2.pools[dead.slot].hp == 0
+              && st2.deadRowCount == w.st.deadRowCount
+              && st2.deadRowCount > 0,
+          "УБИТЫЙ остаётся мёртвым, и ведомость павших его помнит — свип "
+          "загруженного мира не слеп к трупам из файла");
+    const MacroHandle city = macro_handle_by_spawn_id(st2, w.cityOrd);
+    CHECK_OR_RETURN(st2.valid(city), "город найден по своему ординалу");
+    {
+        // Ожидание выводится из ИСХОДНОГО мира, а не из литерала (§8 п.4):
+        // что двери поселили до записи, то и стоит после чтения.
+        const int cx = ecs::cell_x(st2.cell[city.slot], kSide);
+        const int cy = ecs::cell_y(st2.cell[city.slot], kSide);
+        const int flock0 = feature_number_read(w.gs, cx, cy);
+        const int home0 = souls_home(w.st, city.slot);
+        CHECK(flock0 > 0 && home0 > 0
+                  && feature_number_read(gs2, cx, cy) == flock0
+                  && souls_home(st2, city.slot) == home0
+                  && st2.inventory[city.slot].inv.count("wood") == 19
+                  && gs2.features.at(st2.cell[city.slot].idx) == FT_City,
+              "осёдлый город: число фичи под ним, души дома, склад и ФИЧА "
+              "города на клетке");
+    }
+    CHECK(gs2.features.at(w.ruinCell) == FT_Ruin,
+          "РУИНА ОСТАЁТСЯ РУИНОЙ (M-456): поле фич приехало из файла, а не "
+          "перевыведено из сида");
+    CHECK(gs2.features.at(kLast, kLast) == FT_Road
+              && gs2.treeLayer.at(kLast, kLast) == 600
+              && gs2.knowledge.data[kWorldCellCap - 1u] == kKnowledgeExplored
+              && gs2.cellOwner.data[kWorldCellCap - 1u] == 3u
+              && gs2.lightEmission.at(kLast, kLast) == 777
+              // След квантуется самим полем — ожидание берётся у исходного
+              // мира, а не пересказывается литералом (§8 п.4).
+              && scent_strength_at(gs2.scent, kFactionCount - 1, kLast, kLast)
+                     == scent_strength_at(w.gs.scent, kFactionCount - 1,
+                                          kLast, kLast)
+              && scent_strength_at(gs2.scent, kFactionCount - 1, kLast, kLast)
+                     > 0u,
+          "последняя клетка каждого поля над тором доехала — включая поле "
+          "света и владение землёй, которых прежний провод не вёз");
+    CHECK(std::strcmp(st2.name[w.lastSlot].text, "Last Slot") == 0
+              && st2.inventory[w.lastSlot].inv.count("wood") == 1
+              && st2.freeCount == w.st.freeCount && st2.freeCount > 0,
+          "последний слот хранилища и стопка свободных слотов доехали");
+    {
+        // ОРДИНАЛ МЕРТВЕЦА НЕ ПЕРЕИЗДАЁТСЯ (19.24): снести носителя старшего
+        // из двух ординалов и родить нового — эмитент приехал с хранилищем.
+        const std::uint32_t issuer = st2.nextSpawnId;
+        CHECK(issuer == w.st.nextSpawnId && issuer > w.lordOrd,
+              "эмитент ординалов приехал своим значением");
+        store_death(st2, dead);
+        const MacroHandle born = store_birth(st2);
+        CHECK(st2.valid(born) && born.id >= issuer && born.id > w.deadOrd,
+              "рождение после загрузки не берёт ординал мертвеца");
+    }
+
+    // ── 4. ОТКАЗЫ ───────────────────────────────────────────────────────────
+    const std::vector<unsigned char> head = file_head(path, 4096);
+    CHECK_OR_RETURN(head.size() == 4096, "голова слота прочитана");
+    World scratch;   // черновики: при отказе их содержимое не определено
+    int refusals = 0, wronglyLoaded = 0;
+    const auto refuse = [&](std::vector<unsigned char> bytes,
+                            SaveInspectStatus want, const char* why) {
+        write_bytes(forged, bytes);
+        ++refusals;
+        if (load_game(scratch.gs, scratch.st, forged)) ++wronglyLoaded;
+        CHECK(inspect_save(forged).status == want, why);
+    };
+    {
+        std::vector<unsigned char> b = head;
+        b[0] ^= 0xFFu;
+        refuse(b, SaveInspectStatus::Unreadable, "чужая магия — не наш файл");
+    }
+    {
+        std::vector<unsigned char> b = head;
+        b[4] = static_cast<unsigned char>(b[4] + 1u);
+        refuse(b, SaveInspectStatus::VersionMismatch,
+               "чужая версия названа вслух, а не слита с порчей");
+    }
+    refuse(head, SaveInspectStatus::Unreadable,
+           "обрезанный файл с целым заголовком — нечитаем");
+    refuse(std::vector<unsigned char>(head.begin(), head.begin() + 6),
+           SaveInspectStatus::Unreadable, "файл короче заголовка — нечитаем");
+    CHECK(refusals == 4 && wronglyLoaded == 0,
+          "ни одна подделка заголовка не загрузилась");
+    CHECK(!load_game(scratch.gs, scratch.st, temp_path("timaert_no_such.bin")),
+          "слота нет — загрузка отказывает");
+
+    // ЦЕЛЫЙ ПО ДЛИНЕ ФАЙЛ С ЧУЖОЙ МАГИЕЙ И С ЧУЖОЙ ВЕРСИЕЙ. Малые подделки
+    // выше отказываются уже длиной — суд самих полей заголовка они не судят
+    // (мутация «загрузка не смотрит версию» проходила мимо них зелёной).
+    // Здесь меняется ровно один байт настоящего слота, а длина и мир целы.
+    {
+        const int oldMagic = poke_file_byte(path, 0, 0x00);
+        CHECK(oldMagic > 0 && !load_game(scratch.gs, scratch.st, path)
+                  && inspect_save(path).status == SaveInspectStatus::Unreadable,
+              "слот полной длины с чужой магией не загружается");
+        poke_file_byte(path, 0, static_cast<unsigned char>(oldMagic));
+        const int oldVer = poke_file_byte(path, 4, 0x00);
+        poke_file_byte(path, 4, static_cast<unsigned char>(oldVer + 1));
+        CHECK(oldVer >= 0 && !load_game(scratch.gs, scratch.st, path)
+                  && inspect_save(path).status
+                         == SaveInspectStatus::VersionMismatch,
+              "слот полной длины с чужой версией не загружается, и осмотр "
+              "называет причину");
+        poke_file_byte(path, 4, static_cast<unsigned char>(oldVer));
+    }
+    // Раскладка другой сборки: размер куска в заголовке не тот.
+    {
+        const int old = poke_file_byte(path, 8, 0x55);
+        CHECK(old >= 0 && !load_game(scratch.gs, scratch.st, path)
+                  && inspect_save(path).status == SaveInspectStatus::Unreadable,
+              "заголовок с чужим размером состояния отказывается до первого "
+              "байта мира");
+        poke_file_byte(path, 8, static_cast<unsigned char>(old));
+    }
+    // ПОРЧА ОДНОГО БАЙТА МИРА — В НАЧАЛЕ, В СЕРЕДИНЕ И В САМОМ КОНЦЕ ФАЙЛА.
+    {
+        const long total = long(save_file_bytes());
+        const long spots[] = {64, 64 + long(sizeof(GameState)) / 2,
+                              64 + long(sizeof(GameState)),   // 1-й Б стора
+                              total - 1};
+        int corrupted = 0, slipped = 0;
+        for (const long at : spots) {
+            const int old = poke_file_byte(path, at, 0);
+            const unsigned char bad =
+                static_cast<unsigned char>(old == 0xA5 ? 0x5A : 0xA5);
+            poke_file_byte(path, at, bad);
+            ++corrupted;
+            if (load_game(scratch.gs, scratch.st, path)) ++slipped;
+            poke_file_byte(path, at, static_cast<unsigned char>(old));
         }
+        CHECK(corrupted == 4 && slipped == 0,
+              "порча одного байта в любом месте мира — начало состояния, его "
+              "середина, первый и последний байт стора — не загружается");
+        CHECK(load_game(scratch.gs, scratch.st, path)
+                  && std::memcmp(&w.gs, &scratch.gs, sizeof(GameState)) == 0
+                  && std::memcmp(&w.st, &scratch.st, sizeof(MacroStore)) == 0,
+              "возвращённые байты снова дают тот же мир — отказывала порча, "
+              "а не сама дверь (негативный контроль отказов)");
     }
 
-    const std::vector<sm::MacroNpcRecord> rootedBodies =
-        sm::snapshot_macro_ecs(store);
-    if (!sm::save_game(gs, store.nextSpawnId, rootedBodies, path)) {
-        FAIL_BAIL("save_game refused a legal world at the census caps");
+    // ── 5. НЕУДАВШАЯСЯ ЗАПИСЬ И `.bak` ──────────────────────────────────────
+    {
+        const std::string nowhere =
+            temp_path("timaert_no_such_dir/deeper/slot.bin");
+        CHECK(!save_game(w.gs, w.st, nowhere),
+              "запись в несуществующий каталог отказывает вслух");
+        const std::uint64_t first = header_checksum(path);
+        w.gs.worldTime.tick += 64;   // мир шагнул — второй слот другой
+        CHECK(save_game(w.gs, w.st, path), "вторая запись в тот же слот");
+        CHECK(header_checksum(path) != first
+                  && header_checksum(path + ".bak") == first
+                  && std::uint64_t(file_bytes(path + ".bak"))
+                         == save_file_bytes(),
+              "прежний слот уехал в `.bak` целым, новый несёт новый мир");
+        CHECK(file_bytes(path + ".tmp") < 0,
+              "временного файла после удавшейся записи не осталось");
     }
 
-    std::vector<std::uint8_t> bytes;
-    if (!read_all(path, bytes)) FAIL_BAIL("cap fixture save unreadable");
-    if (bytes.size() <= kHeaderBytes) FAIL_BAIL("cap fixture save too small");
-    const std::uint64_t payloadBytes =
-        std::uint64_t(bytes.size()) - kHeaderBytes;
-    const std::uint64_t cap = sm::save_max_payload_bytes();
-
-    std::printf("  payload: сейв %.2f МиБ, выведенный потолок %.2f МиБ, "
-                "прежний литерал %.2f МиБ\n",
-                double(payloadBytes) / 1048576.0, double(cap) / 1048576.0,
-                double(kOldLiteralCap) / 1048576.0);
-
-    CHECK(payloadBytes > kOldLiteralCap,
-          "негативный контроль: мир на капах переписи обязан перевешивать "
-          "прежний литерал 64 МиБ — иначе свидетель зелен и на дефекте");
-    CHECK(payloadBytes < cap,
-          "выведенная сумма капов обязана быть БОЛЬШЕ реально записанного "
-          "сейва — иначе потолок охраняет случай, а не раскладку");
-
-    // Сторож заголовка: заявка выше потолка отвергается ДО чтения payload.
-    std::vector<std::uint8_t> over(kHeaderBytes + 1u, 0u);
-    std::memcpy(over.data(), bytes.data(), kHeaderBytes);
-    const std::uint64_t tooBig = cap + 1ull;
-    std::memcpy(over.data() + 8u, &tooBig, sizeof(tooBig));
-    if (!write_all(overPath, over, over.size())) {
-        FAIL_BAIL("could not write over-cap header file");
-    }
-    auto overStateOwn = std::make_unique<sm::GameState>();
-    sm::GameState& overState = *overStateOwn;
-    std::uint32_t overNextSpawnId = 0;
-    std::vector<sm::MacroNpcRecord> overMacro;
-    CHECK(!sm::load_game(overState, overNextSpawnId, overMacro, overPath),
-          "заголовок с payloadSize выше потолка обязан быть отвергнут");
-    CHECK(sm::inspect_save(overPath).status
-              == sm::SaveInspectStatus::Unreadable,
-          "inspect_save обязан назвать заголовок выше потолка нечитаемым");
-
-    remove_slot_files(path);
-    remove_slot_files(overPath);
-    return true;   // как и у round trip: дошли до конца — значит гейты держали
+    remove_slot(path);
+    remove_slot(forged);
 }
 
 } // namespace
 
-// ── СПИСОК МЕТОК — ПЛОСКИЙ, ПОД КАПОМ, ДВЕРЯМИ (ломти 3–4 сейв-эпика) ────
-// Список меток — массив фиксированной длины в теле состояния, а идентичность
-// метки — пара (стиль, клетка): строкового ключа у записи нет. Отсюда законы,
-// которые проверяются парой (положительное + отрицательное): вторая метка
-// ТОГО ЖЕ стиля на ТОЙ ЖЕ клетке отказана, а другого стиля — встаёт; полный
-// список отказывает ВСЛУХ ответом двери; снятие сохраняет порядок остальных;
-// хвост за счётом стоит нулём (байты списка не помнят снятого). Последнее —
-// условие прямого дампа: два списка с одним живым содержимым обязаны быть
-// побайтно равны, какой бы ни была их история.
-void run_marker_list_contract() {
-    using sm::MarkerStyle;
-    const std::unique_ptr<sm::MarkerList> listOwn{new sm::MarkerList()};
-    sm::MarkerList& list = *listOwn;
-
-    CHECK(sm::add_marker(list, MarkerStyle::Quest, 10u, "A")
-              && sm::add_marker(list, MarkerStyle::POI, 20u)
-              && sm::add_marker(list, MarkerStyle::Waypoint, 30u),
-          "три метки на разных клетках встают");
-    CHECK(!sm::add_marker(list, MarkerStyle::POI, 20u, "second")
-              && list.count == 3u && sm::marker_label(list.rows[1]).empty(),
-          "вторая метка того же стиля на той же клетке отказана, и стоящая "
-          "не тронута");
-    CHECK(sm::add_marker(list, MarkerStyle::Danger, 20u)
-              && list.count == 4u
-              && sm::has_marker(list, MarkerStyle::POI, 20u)
-              && sm::has_marker(list, MarkerStyle::Danger, 20u)
-              && !sm::has_marker(list, MarkerStyle::Quest, 20u),
-          "метка ДРУГОГО стиля на той же клетке встаёт: идентичность — пара, "
-          "а не одна клетка");
-    // Подпись — текст для глаз: длинная усекается до ячейки и кончается нулём.
-    const std::string longLabel(200u, 'L');
-    sm::set_marker_label(list.rows[0], longLabel);
-    CHECK(sm::marker_label(list.rows[0]).size() == sm::kMarkerLabelBytes - 1u
-              && list.rows[0].label[sm::kMarkerLabelBytes - 1u] == '\0',
-          "подпись длиннее ячейки усечена до ячейки с завершающим нулём");
-    sm::set_marker_label(list.rows[0], "A");
-
-    // Снятие из середины: порядок остальных цел, хвост занулён.
-    CHECK(sm::remove_marker(list, MarkerStyle::POI, 20u) && list.count == 3u
-              && list.rows[0].cell == 10u
-              && list.rows[1].cell == 30u
-              && list.rows[2].cell == 20u
-              && list.rows[2].style == MarkerStyle::Danger,
-          "снятие из середины сохраняет порядок постановки остальных");
-    CHECK(!sm::remove_marker(list, MarkerStyle::POI, 20u),
-          "снятие отсутствующей метки отвечает «не было» — на этом ответе "
-          "страница карты переключает пин");
-    const sm::Marker zero{};
-    CHECK(std::memcmp(&list.rows[3], &zero, sizeof(sm::Marker)) == 0,
-          "освободившаяся хвостовая запись занулена целиком");
-
-    // ДВА СПИСКА С ОДНИМ ЖИВЫМ СОДЕРЖИМЫМ ПОБАЙТНО РАВНЫ при разной истории.
-    const std::unique_ptr<sm::MarkerList> twinOwn{new sm::MarkerList()};
-    sm::MarkerList& twin = *twinOwn;
-    sm::add_marker(twin, MarkerStyle::Quest, 10u, "A");
-    sm::add_marker(twin, MarkerStyle::Waypoint, 30u);
-    sm::add_marker(twin, MarkerStyle::Danger, 20u);
-    CHECK(std::memcmp(&list, &twin, sizeof(sm::MarkerList)) == 0,
-          "байты списка не помнят снятой метки: история не видна в памяти");
-
-    // КАП: список наполняется до края, следующая постановка отказана, и
-    // после снятия одной место снова есть.
-    sm::MarkerList& full = twin;
-    for (std::uint32_t cell = 1000u; !full.full(); ++cell)
-        sm::add_marker(full, MarkerStyle::Waypoint, cell);
-    CHECK(full.count == sm::kMaxMarkers && full.full(),
-          "список наполняется ровно до капа");
-    CHECK(!sm::add_marker(full, MarkerStyle::Waypoint, 999u)
-              && full.count == sm::kMaxMarkers,
-          "полный список отказывает постановке, счёт за кап не выходит");
-    sm::remove_marker_at(full, sm::kMaxMarkers - 1u);
-    CHECK(!full.full()
-              && sm::add_marker(full, MarkerStyle::Waypoint, 999u),
-          "после снятия последней записи место снова есть");
-}
-
 int main() {
-    run_marker_list_contract();
-    CHECK(run_roundtrip() > 0,
-          "дверь сейва померена хотя бы одним прогоном и ни один гейт не "
-          "оборвал тело — выпотрошенное тело и ранний обрыв оба дают 0");
-    CHECK(run_payload_cap_is_a_fact(),
-          "потолок payload проверен до конца — ранний обрыв по FAIL_BAIL "
-          "больше не может прочитаться зелёным");
+    test_checksum_laws();
+    test_dump_roundtrip();
     return sm::test::report("save_roundtrip_test");
 }

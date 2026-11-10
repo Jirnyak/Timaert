@@ -152,7 +152,7 @@ void build_rig(Rig& r, int foodLots, int silverLots, long long owed) {
     chronicle_init(r.gs.chronicle, kMap, kMap);
     MacroStore& st = *r.store;
 
-    r.home = birth_squad(r.gs, st, SquadType::City, 10, 10);
+    r.home = birth_squad(r.gs, nullptr, st, SquadType::City, 10, 10);
     r.homeId = int(st.spawnId[r.home.slot].index);
     settle_souls(r.gs, st, r.home.slot, 50);
     // ДОМ ГОЛОДЕН СЧЁТОМ (CANON S10): «нет хлеба» есть непогашенный сезонный
@@ -161,7 +161,7 @@ void build_rig(Rig& r, int foodLots, int silverLots, long long owed) {
     st.upkeep[r.home.slot].needDebt[commodity_index("food")] =
         std::int32_t(50 * kDaysPerSeason);
 
-    r.vassal = birth_squad(r.gs, st, SquadType::Village, 16, 10);
+    r.vassal = birth_squad(r.gs, nullptr, st, SquadType::Village, 16, 10);
     r.vassalId = int(st.spawnId[r.vassal.slot].index);
     settle_souls(r.gs, st, r.vassal.slot, 30);
     {

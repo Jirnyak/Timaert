@@ -35,8 +35,8 @@ bool cell_taken(const FeatureLayer& fl, int x, int y) {
 } // namespace
 
 void generate_spires(GameState& gs, const ZoneLayer& zones,
-                     const TerrainData& terrain,
-                    FeatureLayer& features) {
+                     const TerrainData& terrain) {
+    FeatureLayer& features = gs.features;   // поле фич — член состояния (M-456)
     if (gs.mapW <= 0 || gs.mapH <= 0 || !terrain.has_rgba_storage()
         || !zones.has_complete_storage()) {
         return;
@@ -136,11 +136,11 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
 SpireOrb spire_orb(const MacroWorld& w, int x, int y) {
     SpireOrb o{};
     // Нулевой вклад отсутствующего слоя (S6) — не ветка, а данные.
-    if (!w.gs || !w.features) return o;
+    if (!w.gs) return o;
     const GameState& gs = *w.gs;
     const int cx = wrap_axis(x, gs.mapW);
     const int cy = wrap_axis(y, gs.mapH);
-    if (w.features->at(cx, cy) != FT_Spire) return o;
+    if (w.gs->features.at(cx, cy) != FT_Spire) return o;
     o.spell = feature_number_read(gs, cx, cy);
     // Выкачанный шпиль ЗАБЫЛ свой спелл, как выработанная жила — свою руду,
     // поэтому тир у него честно ноль, а не последний запомненный.

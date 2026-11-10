@@ -122,6 +122,9 @@ constexpr std::string_view kRowHeaders[] = {
     "src/macro/scent_field.h",     "src/macro/chronicle.h",
     "src/macro/factions.h",        "src/macro/tree_layer.h",
     "src/macro/resource_field.h",
+    // M-456: поле фич клетки стало членом состояния мира и едет дампом —
+    // его заголовок вошёл под стену тем же днём.
+    "src/macro/features.h",
     // (`src/macro/place_registry.h` УНИЧТОЖЕН 2026-11-02 вместе с `PlaceDef` —
     //  арк ломтя 5б M-235: колонки разъехались адресатам, таблица дожила до
     //  голого ключа. Строка списка УМЕРЛА С ФАЙЛОМ, а не растоплена: судить
@@ -768,15 +771,18 @@ constexpr std::string_view kWorldLayerTypes[] = {
     // состояние игрока с журналом (32 МиБ) — последние члены состояния мира,
     // бывшие заголовками векторов, легли в его тело.
     "ScentField", "Chronicle", "PlayerState",
+    // M-456: поле фич клетки (1 МиБ) легло плоским массивом в тело состояния.
+    "FeatureLayer",
 };
 struct LayerOwner { std::string_view file; std::string_view line; };
 constexpr LayerOwner kWorldLayerOwners[] = {
     // Приложение — единственный экземпляр, сам рождается в куче (`main`).
     {"src/app/app_state.h", "sm::GameState gs;"},
     {"src/app/app_state.h", "sm::DepositLayer deposits;"},
-    // Одиннадцать плоских членов в теле состояния мира.
+    // Двенадцать плоских членов в теле состояния мира.
     {"src/macro/state.h", "KnowledgeLayer knowledge;"},
     {"src/macro/state.h", "TreeLayer treeLayer;"},
+    {"src/macro/state.h", "FeatureLayer features;"},
     {"src/macro/state.h", "CellOwnerField cellOwner;"},
     {"src/macro/state.h", "MarkerList markers;"},
     {"src/macro/state.h", "ResourceGrid wheatScars;"},

@@ -89,7 +89,7 @@ Fixture build_world() {
     f.store = sm::make_macro_store();
     sm::MacroStore& st = *f.store;
     const sm::MacroHandle home =
-        sm::birth_squad(f.gs, st, sm::SquadType::City, 50, 50, 0, "Fgt");
+        sm::birth_squad(f.gs, nullptr, st, sm::SquadType::City, 50, 50, 0, "Fgt");
     sm::settle_souls(f.gs, st, home.slot, 1000);
     f.homeOrdinal = int(st.spawnId[home.slot].index);
     sm::reset_macro_npc_ai_runtime(f.ai, 42u);
