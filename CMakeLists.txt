@@ -2577,6 +2577,22 @@ timaert_test(field_doors_test
         src/tables/fauna.cpp
         src/macro/tree_layer.cpp)
 
+# ПЕРЕПИСЬ ФОРМ МИРА ПО ДВУМ ОСЯМ (M-441, первый ломоть эпика инварианта):
+# добыча есть переход формы — залежь убывает ровно на прирост локального, оси
+# стоимости и душ не смешиваются, душа считается раз. Сама перепись живёт в
+# tests/world_forms_census.h и печатается прибором `balance_run`.
+timaert_test(world_forms_census_test
+    PIN "OK world_forms_census_test .45 checks."
+    SOURCES
+        src/bus/anketa.cpp
+        src/tables/items.cpp
+        src/macro/macro_stock.cpp
+        src/macro/chronicle.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/tables/fauna.cpp
+        src/macro/tree_layer.cpp)
+
 timaert_test(macro_stock_test
     SOURCES
         # M-71: контейнер сам различает области предметов и существ —

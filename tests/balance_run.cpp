@@ -9,6 +9,9 @@
 //
 //   <out>/world_<seed>.tsv     one row per day: totals + per-commodity flows
 //   <out>/rooted_<seed>.tsv one row per place per day: pop/wellbeing/stocks
+//   <out>/forms_<seed>.tsv  one row per day (row 0 = genesis, before the
+//                            first tick): the world's forms on both axes —
+//                            value and souls, deposits and local (M-441)
 //
 // Usage: balance_run [seedsCsv] [days] [outDir]
 //        defaults:    12345      256    balance_out
@@ -49,6 +52,7 @@
 #include "macro/world_gen.h"
 #include "macro/world_tick.h"
 #include "macro/zones.h"
+#include "world_forms_census.h"     // перепись форм мира по двум осям (M-441)
 
 // ЧИСЛО ПОЛЯ ФИЧ ПОД КЛЕТКОЙ СЛОТА — помощник ЭТОГО свидетеля, не дверь мира.
 // M-320 снёс `souls_flock`: она брала слот и тем утверждала, будто популяция
@@ -138,6 +142,54 @@ SlotCensus slot_census(const sm::MacroStore& st) {
     sm::for_each_rooted(st, [&](std::uint16_t) { ++c.rooted; });
     return c;
 }
+
+// ── ПЕРЕПИСЬ ФОРМ МИРА: ЗАГОЛОВОК И СТРОКА `forms_<seed>.tsv` (M-441) ─────
+//
+// Колонки рядов залежей строятся ИЗ РЕЕСТРА ПОЛЕЙ, а не перечислены руками:
+// новый ряд реестра получает свои три колонки сам, и прибор не может молча
+// его не посчитать. На ряд их четыре, и каждая отвечает на свой вопрос:
+//   <id>_V    — кванты стоимости (выход ряда на клетке — предмет);
+//   <id>_S    — головы (выход — существо);
+//   <id>_bare — единицы, у которых выхода нет (в суммы не входят);
+//   <id>_byFeature — сколько единиц ряда оценено строкой ФИЧИ клетки, а не
+//               умолчанием ряда (подмножество, не слагаемое; ряд M-460).
+// Дальше суммы форм, у которых есть носитель, и безразмерная доля локального
+// в стоимости — «мера развития мира» канона (S10 п.6), выводимая из тех же
+// сумм. `elapsed` — сколько дней прожито прогоном (0 = мир только рождён),
+// `day` — календарь мира; читать колонки положено ПО ИМЕНИ (§5 п.7).
+void forms_header(FILE* f) {
+    std::fprintf(f, "elapsed\tday");
+    for (std::size_t r = 0; r < sm::kFormRows; ++r) {
+        const char* id = sm::resource_field_def(sm::ResourceFieldId(r)).id;
+        std::fprintf(f, "\t%s_V\t%s_S\t%s_bare\t%s_byFeature", id, id, id,
+                     id);
+    }
+    std::fprintf(f, "\tvDeposits\tvLocal\tvCarried\tvLocalShare"
+                    "\tsDeposits\tsFolk\tsBeasts\tsAvatars\tsLocal"
+                    "\tsCarried\tflockNumber\tfolkRooted\n");
+}
+
+void forms_row(FILE* f, int elapsed, int day, const sm::WorldForms& w) {
+    std::fprintf(f, "%d\t%d", elapsed, day);
+    for (std::size_t r = 0; r < sm::kFormRows; ++r) {
+        std::fprintf(f, "\t%lld\t%lld\t%lld\t%lld", w.depositValue[r],
+                     w.depositHeads[r], w.depositBare[r],
+                     w.depositByFeature[r]);
+    }
+    const long long vc = w.value_carried();
+    std::fprintf(f, "\t%lld\t%lld\t%lld\t%.6f", w.value_deposits(),
+                 w.localValue, vc,
+                 vc > 0 ? double(w.localValue) / double(vc) : 0.0);
+    std::fprintf(f, "\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\n",
+                 w.souls_deposits(), w.localFolk, w.localBeasts,
+                 w.localAvatars, w.souls_local(), w.souls_carried(),
+                 w.flockNumber, w.folkRooted);
+}
+
+// Горизонты наряда M-441 — дни, на которых перепись печатается ещё и в
+// сводку прогона, чтобы ответ читался без TSV. «Число без ГОРИЗОНТА — не
+// число» (§5 п.4): день 0 лжёт о дне 512, поэтому их четыре.
+constexpr int kFormHorizons[] = {0, 32, 128, 512};
 
 }  // namespace
 
@@ -265,7 +317,10 @@ int main(int argc, char** argv) {
         std::snprintf(path, sizeof path, "%s/rooted_%u.tsv",
                       outDir.c_str(), seed);
         FILE* fl = std::fopen(path, "w");
-        if (!fw || !fl) {
+        std::snprintf(path, sizeof path, "%s/forms_%u.tsv", outDir.c_str(),
+                      seed);
+        FILE* ff = std::fopen(path, "w");
+        if (!fw || !fl || !ff) {
             std::fprintf(stderr, "balance_run: cannot open outputs in %s\n",
                          outDir.c_str());
             return 1;
@@ -420,6 +475,29 @@ int main(int argc, char** argv) {
             if (sm::commodity_is_comfort(c)) comfortOrd[comfortOrdCount++] = c;
         }
         std::uint32_t logCursor = gs.chronicle.nextSeq;
+
+        // ── ПЕРЕПИСЬ ФОРМ: СТРОКА РОЖДЕНИЯ (M-441) ───────────────────────
+        // Снимается ДО первого тика: это сумма, с которой генерация отдала
+        // мир живой симуляции — та самая, которую канон велит запомнить
+        // числом мира (S10 п.8). Снимки горизонтов держатся до сводки.
+        forms_header(ff);
+        sm::WorldForms formsAt[std::size(kFormHorizons)];
+        bool formsSeen[std::size(kFormHorizons)] = {};
+        double formsSecs = 0.0;
+        const auto take_forms = [&](int elapsed) {
+            const auto c0 = std::chrono::steady_clock::now();
+            const sm::WorldForms wf = sm::census_world_forms(mw);
+            formsSecs += std::chrono::duration<double>(
+                             std::chrono::steady_clock::now() - c0).count();
+            forms_row(ff, elapsed, gs.worldTime.day(), wf);
+            for (std::size_t i = 0; i < std::size(kFormHorizons); ++i) {
+                if (kFormHorizons[i] == elapsed) {
+                    formsAt[i] = wf;
+                    formsSeen[i] = true;
+                }
+            }
+        };
+        take_forms(0);
 
         // ── The days: the live loop's cadence without its frames ─────────
         // One game day = kTicksPerDay/kAiTicks = 256 iterations of
@@ -738,6 +816,7 @@ int main(int argc, char** argv) {
             lastCensus = sc;
             lastAiMs = aiSecs * 1000.0;
             std::fprintf(fw, "\n");
+            take_forms(d + 1);
         }
 
         {
@@ -838,8 +917,27 @@ int main(int argc, char** argv) {
                          "расхождения %d)\n",
                          slotLawFirstBadDay);
         }
+        // Сводка переписи форм по горизонтам наряда. Закона на этих числах
+        // прибор НЕ судит: тождество `V = залежи + локальное + резерв`
+        // нечем проверить, пока у резерва нет носителя (ряд M-442), а
+        // порог «сколько дрейфа допустимо» никто не выводил — это замер.
+        for (std::size_t i = 0; i < std::size(kFormHorizons); ++i) {
+            if (!formsSeen[i]) continue;
+            const sm::WorldForms& wf = formsAt[i];
+            std::fprintf(stderr,
+                         "[forms] seed=%u elapsed=%d vDeposits=%lld "
+                         "vLocal=%lld vCarried=%lld sDeposits=%lld "
+                         "sLocal=%lld sCarried=%lld flockNumber=%lld\n",
+                         seed, kFormHorizons[i], wf.value_deposits(),
+                         wf.localValue, wf.value_carried(),
+                         wf.souls_deposits(), wf.souls_local(),
+                         wf.souls_carried(), wf.flockNumber);
+        }
+        std::fprintf(stderr, "[forms] seed=%u censusSecs=%.2f (время прибора)\n",
+                     seed, formsSecs);
         std::fclose(fw);
         std::fclose(fl);
+        std::fclose(ff);
     }
 
     return lawsHold ? 0 : 1;
