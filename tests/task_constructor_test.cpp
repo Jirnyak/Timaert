@@ -91,7 +91,9 @@ int facts_at(const GameState& gs, int x, int y, FactKind kind) {
         std::int16_t x, y;
         int n = 0;
     } ctx{kind, std::int16_t(x), std::int16_t(y), 0};
-    chronicle_near(gs.chronicle, x, y, 1, 0,
+    // Индекс летописи выводной (M-423): свежий, собранный из лога на лету.
+    const std::unique_ptr<ChronicleLinks> links = make_chronicle_links();
+    chronicle_near(gs.chronicle, *links, x, y, 1, 0,
                    [](void* user, const WorldFact& f) {
                        auto& c = *static_cast<Ctx*>(user);
                        if (f.kind == std::uint16_t(c.kind) && f.x == c.x
@@ -132,6 +134,9 @@ struct Rig {
     GameState& gs = *gsOwn;
     Session ses{};
     std::unique_ptr<MacroStore> store = make_macro_store();
+    // Индекс летописи (M-423): задачи читают цепочку сквада по субъекту.
+    std::unique_ptr<ChronicleLinks> linksOwn = make_chronicle_links();
+    ChronicleLinks& links = *linksOwn;
     SquadIndex idx{};
     FeatureLayer& features = gs.features;   // поле фич — член состояния (M-456)
     MacroHandle place{};
@@ -259,7 +264,7 @@ int main() {
               "цель игрока названа родом Rooted и ординалом места");
         CHECK(g.amount == 5, "amount цели — колонка, не флаг");
     }
-    TaskActive act = task_active_at(st, gs, r.player, r.place);
+    TaskActive act = task_active_at(st, gs, r.links, r.player, r.place);
     CHECK(act.valid && !act.expired, "контракт активен: QuestTaken найден");
     CHECK(act.verb == 0 && act.object == std::uint16_t(foodItem)
               && act.amount == 5,
@@ -267,12 +272,12 @@ int main() {
     CHECK(act.takenDay == gs.worldTime.day(), "день взятия — день факта");
 
     // ── 4) СУД ПО ХОДУ: fetch ────────────────────────────────────────────
-    CHECK(!task_judged_done(st, gs, r.player, act),
+    CHECK(!task_judged_done(st, gs, r.links, r.player, act),
           "пустая сумка — «не выполнено»");
-    CHECK(!task_turn_in(st, gs, r.player, r.place),
+    CHECK(!task_turn_in(st, gs, r.links, r.player, r.place),
           "сдача без товара отказывает и мира не трогает");
     st.inventory[r.player.slot].inv.add("food", 5);
-    CHECK(task_judged_done(st, gs, r.player, act),
+    CHECK(task_judged_done(st, gs, r.links, r.player, act),
           "товар в сумке — суд говорит «да» (инвентарь, не счётчик)");
 
     const int placeFoodBefore =
@@ -282,7 +287,7 @@ int main() {
     const std::uint32_t renownBefore = st.runtime[r.player.slot].renown;
     const std::uint32_t expBefore = st.sheet[r.player.slot].levelData.exp;
     const int lvlBefore = sm::level_of(st.sheet[r.player.slot].levelData);
-    CHECK(task_turn_in(st, gs, r.player, r.place), "сдача проходит");
+    CHECK(task_turn_in(st, gs, r.links, r.player, r.place), "сдача проходит");
     {
         // ЗАКОН СОХРАНЕНИЯ ПРИХОДА: дверь deal гасит долг нужд приходом
         // (econ_pay_debt, CANON S10) — голодный город СЪЕДАЕТ привезённое в
@@ -316,7 +321,7 @@ int main() {
     }
     CHECK(st.goal[r.player.slot].cell == ecs::kNoCell,
           "цель погашена сдачей — задача есть одна цель");
-    act = task_active_at(st, gs, r.player, r.place);
+    act = task_active_at(st, gs, r.links, r.player, r.place);
     CHECK(!act.valid, "QuestDone новее QuestTaken — активного контракта нет");
 
     // ── 5) СРОК: просроченный контракт не судится и не сдаётся ──────────
@@ -324,11 +329,11 @@ int main() {
     CHECK(task_take(st, gs, r.player, r.place, fetch), "второй контракт взят");
     gs.worldTime.tick +=
         kTicksPerDay * std::uint64_t(kTaskVerbs[0].deadlineDays + 1);
-    act = task_active_at(st, gs, r.player, r.place);
+    act = task_active_at(st, gs, r.links, r.player, r.place);
     CHECK(act.valid && act.expired, "срок строки вышел — контракт просрочен");
-    CHECK(!task_judged_done(st, gs, r.player, act),
+    CHECK(!task_judged_done(st, gs, r.links, r.player, act),
           "просроченный не судится выполненным даже с товаром в сумке");
-    CHECK(!task_turn_in(st, gs, r.player, r.place),
+    CHECK(!task_turn_in(st, gs, r.links, r.player, r.place),
           "сдача просроченного отказывает");
 
     // ── 6) УБЕЙ: суд летописью ──────────────────────────────────────────
@@ -337,11 +342,30 @@ int main() {
     kill.target = r.preyId;
     kill.cell = st.cell[r.prey.slot].idx;
     kill.amount = 1;
+    {
+        // СТАРОЕ ДЕЛО НЕ ЗАКРЫВАЕТ НОВЫЙ КОНТРАКТ. Игрок убил эту же добычу
+        // ВЧЕРА, до всякого контракта, — летопись это помнит вечно (лог не
+        // забывает, M-423), и суд обязан считать только с ДНЯ ВЗЯТИЯ. Без
+        // этого горизонта контракт на однажды битого врага сдавался бы в
+        // момент взятия.
+        WorldFact old{};
+        old.day = gs.worldTime.day();
+        old.kind = std::uint16_t(FactKind::Killed);
+        old.objectKind = std::uint8_t(FactSubject::Squad);
+        old.object = r.preyId;
+        old.x = std::int16_t(12);
+        old.y = std::int16_t(10);
+        old.amount = 1;
+        CHECK(record_deed(st, gs, old, r.player) != 0u,
+              "предусловие: вчерашнее убийство записано той же дверью");
+        gs.worldTime.tick += kTicksPerDay;   // наступил следующий день
+    }
     CHECK(task_take(st, gs, r.player, r.place, kill), "контракт на добычу взят");
-    act = task_active_at(st, gs, r.player, r.place);
+    act = task_active_at(st, gs, r.links, r.player, r.place);
     CHECK(act.valid && act.verb == 1, "новейший QuestTaken вытеснил старый");
-    CHECK(!task_judged_done(st, gs, r.player, act),
-          "летопись не помнит убийства — «не выполнено»");
+    CHECK(!task_judged_done(st, gs, r.links, r.player, act),
+          "убийство ДО дня взятия не в счёт: с дня взятия летопись убийства "
+          "не помнит — «не выполнено»");
     {
         // Мир записывает убийство ТОЙ ЖЕ дверью, какой его пишет автобой и
         // обратный поток субмира (raise_macro_fact): свидетель рожает своё
@@ -356,9 +380,9 @@ int main() {
         wf.amount = 1;
         record_deed(st, gs, wf, r.player);
     }
-    CHECK(task_judged_done(st, gs, r.player, act),
+    CHECK(task_judged_done(st, gs, r.links, r.player, act),
           "летопись помнит — суд говорит «да» без своего счётчика");
-    CHECK(task_turn_in(st, gs, r.player, r.place), "сдача добычи проходит");
+    CHECK(task_turn_in(st, gs, r.links, r.player, r.place), "сдача добычи проходит");
 
     // ── 7) ПОСЕТИ: писатель визита + дедуп памятью мира ─────────────────
     TaskOffer visit{};
@@ -367,23 +391,23 @@ int main() {
     visit.cell = cell_of(14, 10, kMap);
     visit.amount = 1;
     CHECK(task_take(st, gs, r.player, r.place, visit), "контракт визита взят");
-    act = task_active_at(st, gs, r.player, r.place);
+    act = task_active_at(st, gs, r.links, r.player, r.place);
     CHECK(act.valid && act.verb == 2, "контракт визита активен");
-    task_note_player_arrival(st, gs, r.player, 20, 20);
-    CHECK(!task_judged_done(st, gs, r.player, act),
+    task_note_player_arrival(st, gs, r.links, r.player, 20, 20);
+    CHECK(!task_judged_done(st, gs, r.links, r.player, act),
           "чужая клетка визита НЕ пишет — гейт по адресу цели");
     CHECK(facts_at(gs, 20, 20, FactKind::Explored) == 0,
           "и в самой чужой клетке факта не появилось");
-    task_note_player_arrival(st, gs, r.player, 14, 10);
-    CHECK(task_judged_done(st, gs, r.player, act),
+    task_note_player_arrival(st, gs, r.links, r.player, 14, 10);
+    CHECK(task_judged_done(st, gs, r.links, r.player, act),
           "пришёл в клетку цели — мир запомнил (Explored), суд говорит «да»");
     CHECK(facts_at(gs, 14, 10, FactKind::Explored) == 1,
           "визит записан ровно одним фактом");
-    task_note_player_arrival(st, gs, r.player, 14, 10);
+    task_note_player_arrival(st, gs, r.links, r.player, 14, 10);
     CHECK(facts_at(gs, 14, 10, FactKind::Explored) == 1,
           "повторный приход дедупится ПАМЯТЬЮ МИРА, не своим флагом");
-    CHECK(task_turn_in(st, gs, r.player, r.place), "сдача визита проходит");
-    act = task_active_at(st, gs, r.player, r.place);
+    CHECK(task_turn_in(st, gs, r.links, r.player, r.place), "сдача визита проходит");
+    act = task_active_at(st, gs, r.links, r.player, r.place);
     CHECK(!act.valid, "после сдачи визита активного контракта нет");
 
     return sm::test::report("task_constructor_test");

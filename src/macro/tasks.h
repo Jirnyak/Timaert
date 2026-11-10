@@ -32,6 +32,7 @@ namespace sm {
 
 struct MacroStore;
 struct GameState;
+struct ChronicleLinks;
 struct Session;
 struct SquadIndex;
 
@@ -139,26 +140,34 @@ struct TaskActive {
     std::uint16_t amount = 0;
     std::int32_t takenDay = 0;
 };
+//
+// ЧИТАЕТСЯ ЦЕПОЧКА ПО СУБЪЕКТУ (M-423): все четыре вопроса этого файла суть
+// «что сделал ЭТОТ сквад», и длина их обхода — его собственная история, а не
+// история места или всего мира. Индекс летописи (`ChronicleLinks`) приходит
+// параметром: он выводной, в состоянии мира не лежит и догоняет лог сам.
 TaskActive task_active_at(const MacroStore& st, const GameState& gs,
+                          ChronicleLinks& links,
                           MacroHandle player, MacroHandle place);
 
 // Суд «выполнено?» — ПО ХОДУ, в момент вопроса (вердикт №3): fetch —
 // инвентарь игрока, kill/visit — летопись с дня взятия. Мир сам помнит;
 // своего счётчика прогресса у задачи нет.
 bool task_judged_done(const MacroStore& st, const GameState& gs,
+                      ChronicleLinks& links,
                       MacroHandle player, const TaskActive& t);
 
 // Сдача: судит; fetch переносит товар дверью deal (перенос = сделка с
 // пустым встречным лотом); пишет QuestDone — славу платит сама дверь
 // летописи (base 5 + десятина славы заказчика); опыт — squad_award_exp
 // (единственный вход в прокачку); цель гасится.
-bool task_turn_in(MacroStore& st, GameState& gs, MacroHandle player,
-                  MacroHandle place);
+bool task_turn_in(MacroStore& st, GameState& gs, ChronicleLinks& links,
+                  MacroHandle player, MacroHandle place);
 
 // Писатель визита: игрок пришёл в клетку своей цели-ФИЧИ — мир запоминает
 // (Explored). Зовётся с шага игрока (слот MacroWalkReachedFn); дедуп —
 // памятью мира, не своим флагом (прецедент SubZone).
 void task_note_player_arrival(MacroStore& st, GameState& gs,
+                              ChronicleLinks& links,
                               MacroHandle player, int x, int y);
 
 }  // namespace sm

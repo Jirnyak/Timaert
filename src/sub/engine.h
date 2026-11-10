@@ -884,14 +884,17 @@ private:
         // somebody stood here; a separate "visited" flag would be a second
         // truth about the same past, and it would have to be saved.
         //
-        // What that buys is therefore the CHRONICLE's promise, and it has two
-        // honest edges the name cannot carry: the lookback is the fact row's
-        // own `interestDays` window (64 days at the longest), and the ring can
-        // evict an older fact before that window runs out. So a circle walked
-        // into, forgotten by the world and walked into again files a second
-        // time. That is the intended behaviour — the owner's ruling is that
-        // renown/memory is not to be touched — and this comment used to claim
-        // «ONCE PER WORLD», which promised something the mechanism never did.
+        // What that buys is therefore the facts WINDOW's promise, and it has
+        // two honest edges the name cannot carry: the lookback is the fact
+        // row's own `interestDays` window (64 days at the longest), and the
+        // window holds `kFrameFactsCap` facts, newest first. So a circle
+        // walked into and walked into again after the window let it go files
+        // a second time. That is the intended behaviour — the owner's ruling
+        // is that renown/memory is not to be touched — and this comment used
+        // to claim «ONCE PER WORLD», which promised something the mechanism
+        // never did. (The second edge used to be the chronicle's forgetting
+        // ring; the chronicle is an append-only log since M-423 and forgets
+        // nothing — the edge that remains is the window's, not the world's.)
         bool onceEver = true;
     };
     static constexpr int kMaxSubZones = 32;
@@ -906,7 +909,7 @@ private:
     // Пакет const: своё знание модуль держит у себя (ФРЕЙМ п.5); чистится
     // квитанцией frame_resynced — свежее окно эти факты уже несёт.
     // Кап: за один тик могли бы прозвучать все зоны сцены + орб; ближайшая
-    // степень двойки сверху — 64 (32 Б строка ⇒ 2 КиБ, цена названа).
+    // степень двойки сверху — 64 (28 Б строка ⇒ 1.75 КиБ, цена названа).
     static constexpr int kFactsSinceFillCap = 64;
     static_assert(kFactsSinceFillCap >= kMaxSubZones + 1,
                   "карман обязан вмещать все зоны сцены плюс орб за один тик");

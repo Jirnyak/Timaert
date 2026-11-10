@@ -55,6 +55,7 @@ struct PathCostData;
 struct TreeGrid;
 struct SquadIndex;
 struct NavWorld;
+struct ChronicleLinks;
 
 struct MacroWorld {
     GameState*  gs    = nullptr;
@@ -93,6 +94,12 @@ struct MacroWorld {
                                //   граф (macro/nav_field.h, CANON S7); null =
                                //   походка падает в жадный шаг — нулевой
                                //   вклад отсутствующего слоя
+    // ИНДЕКС ЛЕТОПИСИ (`ChronicleLinks@src/macro/chronicle.h`, M-423): три
+    // цепочки по клетке, субъекту и объекту. Выводной — в состоянии мира не
+    // лежит и в сейв не едет, экземпляр держит оболочка, как каркас сквадов и
+    // навигацию. Не const: индекс догоняет лог в момент вопроса. Нулевой
+    // адрес — «индекса нет»: читатель окрестности получает пустой ответ.
+    ChronicleLinks* links = nullptr;
 
     // ── The way OUT: facts the macro layer produces ───────────────────────
     // The macro layer must not see the event bus (that is L3; econ_day

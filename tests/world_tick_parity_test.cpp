@@ -454,7 +454,9 @@ void test_a_famine_is_recorded_once_when_it_begins() {
 
     struct Count { int famines = 0; int total = 0; long long taken = 0; };
     Count c;
-    sm::chronicle_near(gs.chronicle, 8, 8, /*radiusCells*/1, /*sinceDay*/0,
+    // Индекс летописи выводной (M-423): свежий, собранный из лога на лету.
+    const std::unique_ptr<sm::ChronicleLinks> links = sm::make_chronicle_links();
+    sm::chronicle_near(gs.chronicle, *links, 8, 8, /*radiusCells*/1, /*sinceDay*/0,
                        [](void* u, const sm::WorldFact& f) {
                            Count& n = *static_cast<Count*>(u);
                            ++n.total;
@@ -540,9 +542,11 @@ void test_population_dies_honestly_to_zero() {
     // теперь строка летописи в точке суда. ЗАКОН, который судит этот
     // свидетель, не изменился ни на слово: пол населения мёртв, спад идёт до
     // нуля, ноль поглощающий, переход в смерть срабатывает РОВНО один раз.
+    // Индекс летописи выводной (M-423) и догоняет лог сам, в момент вопроса.
+    const std::unique_ptr<sm::ChronicleLinks> links = sm::make_chronicle_links();
     const auto died_facts = [&]() {
         int n = 0;
-        sm::chronicle_near(gs.chronicle, 4, 4, /*radiusCells*/1, /*sinceDay*/0,
+        sm::chronicle_near(gs.chronicle, *links, 4, 4, /*radiusCells*/1, /*sinceDay*/0,
                            [](void* u, const sm::WorldFact& f) {
                                if (f.kind == std::uint16_t(sm::FactKind::Died))
                                    ++*static_cast<int*>(u);

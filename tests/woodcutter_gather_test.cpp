@@ -65,7 +65,9 @@ struct FactTally {
 };
 FactTally tally_facts(const Chronicle& c, FactKind kind, int x, int y) {
     struct Ctx { FactKind kind; FactTally out; } ctx{kind, {}};
-    chronicle_near(c, x, y, /*radiusCells*/1, /*sinceDay*/0,
+    // Индекс летописи выводной (M-423): свежий, собранный из лога на лету.
+    const std::unique_ptr<ChronicleLinks> links = make_chronicle_links();
+    chronicle_near(c, *links, x, y, /*radiusCells*/1, /*sinceDay*/0,
                    [](void* u, const WorldFact& f) {
                        Ctx& t = *static_cast<Ctx*>(u);
                        if (f.kind != std::uint16_t(t.kind)) return;

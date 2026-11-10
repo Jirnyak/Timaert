@@ -1,5 +1,5 @@
 // ФАКТ — род 5 канонического фрейма (M-171, ломоть 3): кто, что, где,
-// сколько — POD из ординалов, 32 байта. Формы FactSubject/FactKind/WorldFact
+// сколько — POD из ординалов, 28 байт. Формы FactSubject/FactKind/WorldFact
 // переехали сюда из macro/chronicle.h: строка пакета живёт ниже обоих миров
 // (вниз — окно фактов клеток фрейма, вверх — строки-операции дельты).
 // ТАБЛИЦА деяний (интерес, слава) и сама летопись — macro/chronicle.h.
@@ -82,14 +82,22 @@ enum class FactKind : std::uint16_t {
 
 // ── The record ───────────────────────────────────────────────────────────
 //
-// 32 bytes exactly, and every field a number. `day` rather than a tick: a
+// 28 bytes exactly, and every field a number. `day` rather than a tick: a
 // chronicle is asked in DAYS ("the last thirty"), and `seq` already orders
 // two facts inside one day, so a second time column would be a second answer
 // to one question.
+//
+// ССЫЛКИ ЦЕПОЧЕК В ЗАПИСИ НЕТ (M-423, 2026-11-10). Здесь стояло третье поле —
+// ссылка на следующий факт той же индексной клетки, 4 Б, — и запись была 32 Б.
+// Ссылка есть ИНДЕКС летописи, а не часть факта: она выводится из записей и
+// живёт в `ChronicleLinks@src/macro/chronicle.h`, вне состояния мира. Пока она
+// лежала в записи, у вопроса «едет ли выводная ссылка за границу» в дереве
+// было три ответа (копия журнала её занулляла, провод сейва отказывался
+// писать, окно фактов фрейма увозило вниз целиком) — теперь ответ один:
+// у записи её нет, и увезти нечего.
 struct WorldFact {
     std::int32_t  day = 0;        // world day this happened on
-    std::uint32_t seq = 0;        // global fact number; also the ring's proof
-    std::uint32_t nextInCell = 0; // intrusive chain, newest→oldest, per index cell
+    std::uint32_t seq = 0;        // global fact number = место в логе + 1
     std::uint16_t kind = 0;       // FactKind
     std::uint8_t  subjectKind = 0;// FactSubject
     std::uint8_t  objectKind = 0; // FactSubject
@@ -98,8 +106,8 @@ struct WorldFact {
     std::int16_t  x = 0, y = 0;   // the macro cell it happened on
     std::int32_t  amount = 0;     // what the kind's row says it means
 };
-static_assert(sizeof(WorldFact) == 32,
-              "a fact is 32 bytes: it is scanned by the thousand and saved whole");
+static_assert(sizeof(WorldFact) == 28,
+              "a fact is 28 bytes: it is scanned by the thousand and saved whole");
 
 } // namespace sm
 
@@ -109,7 +117,7 @@ static_assert(sizeof(WorldFact) == 32,
 // памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
 // списка; дыра выравнивания или забытый член не собираются.
 TIMAERT_PACKED(sm::WorldFact, &sm::WorldFact::day, &sm::WorldFact::seq,
-    &sm::WorldFact::nextInCell, &sm::WorldFact::kind,
+    &sm::WorldFact::kind,
     &sm::WorldFact::subjectKind, &sm::WorldFact::objectKind,
     &sm::WorldFact::subject, &sm::WorldFact::object, &sm::WorldFact::x,
     &sm::WorldFact::y, &sm::WorldFact::amount);

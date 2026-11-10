@@ -135,7 +135,6 @@ recovery	src/app/smoke.cpp	if (auto* c = sm::sub::slot_combat(objs, av)) c->reco
 # от знаковой текстовая мера не умеет по построению (это сказано в шапке
 # правила про сам `-=`). Дыра названа вслух и оставлена открытой
 # СОЗНАТЕЛЬНО: молчаливый обрез охвата читался бы как «покрыто всё».
-decr	src/macro/chronicle.cpp	for (std::uint32_t seq = c.nextSeq; seq-- > oldest && offered < limit; ) {
 decr	src/macro/chronicle.cpp	while (n-- > 0 && len < cap - 1) out[len++] = tmp[n];
 minus	src/macro/currency.h	left -= take * d.value;	#2
 decr	src/macro/deal.cpp	if (r == 0) --i;

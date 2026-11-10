@@ -6413,12 +6413,12 @@ bool run_subworld_tree_anchor_smoke(App& app) {
 // window is never opened headlessly), so it guards the whole feature against
 // regressions. All player/world mutations are captured up front and restored
 // before returning, leaving the world exactly as found.
-// The ring's size is a formula with one unmeasured term — the world's facts
-// per day (chronicle.h, kChronicleFacts: "retune it from the counter, not
-// from feel"). This smoke IS that counter's instrument: a full game day of
-// the LIVE loop (world_tick's daily step, the AI's caravans and gatherers,
-// auto-battles — every writer there is), measured by the one number the
-// contract ships, and printed so the cap can be tuned from evidence.
+// ПРИБОР ТЕМПА ЛЕТОПИСИ: целый игровой день ЖИВОГО цикла (дневной шаг мира,
+// караваны и добытчики ИИ, автобои — все писатели, какие есть), и сколько
+// фактов мир за него записал, по родам. Печатает объём как ИНФОРМАЦИЮ — «на
+// сколько дней хватит эпохи при таком темпе», — а вердикт выносит по событию,
+// которое устроил сам. (Здесь он калибровал размер забывающего кольца по пику
+// дня; кольца нет, M-423: кап лога назначен проектом, а не выведен из замера.)
 bool run_chronicle_rate_smoke(App& app) {
     if (!smoke_boot_invariants_hold(app)) {
         smoke_print_counts(app, "chronicle_rate_boot_failed");
@@ -6478,31 +6478,21 @@ bool run_chronicle_rate_smoke(App& app) {
         int(sm::ticks_to_advance_minutes(app.gs.worldTime.tick, 24 * 60)),
         false);
     const std::uint32_t factsInDay = app.gs.chronicle.nextSeq - seqBefore;
-    // `factsPeak` — ВЕЛИЧИНА ФОРМУЛЫ (chronicle.h kChronicleFacts: «самый
-    // длинный interestDays × факты мира за день»), и печатается она здесь
-    // потому, что читатель этой колонки — ЧЕЛОВЕК, калибрующий кап кольца
-    // (M-254). `factsToday` рядом оставлен нарочно: он отвечает на другой
-    // вопрос — «сколько набежало в тот день, в который посмотрели», — и
-    // путать их и значило бы калибровать не тем числом.
-    // (Поле `annals=` из этой строки убрано вместе с ярусом — M-184: мерить
-    //  стало нечего, а печатать ноль значило бы врать о носителе.)
+    // Сколько лог уже несёт и сколько в нём места: при замеренном темпе дня
+    // это и есть ответ «сколько дней осталось эпохе». Информация, не вердикт:
+    // норму «фактов в день» замысел отрицает (дни неоднородны).
     std::printf("[smoke] chronicle_rate day=%d->%d factsInDay=%u "
-                "factsToday=%u factsPeak=%u needRing=%u "
-                "ringCap=%u\n",
+                "logCount=%u logCap=%u refused=%u\n",
                 dayBefore, app.gs.worldTime.day(), unsigned(factsInDay),
-                unsigned(app.gs.chronicle.factsToday),
-                unsigned(app.gs.chronicle.factsPeak),
-                unsigned(app.gs.chronicle.factsPeak
-                         * sm::kChronicleLongestInterestDays),
-                unsigned(sm::kChronicleFacts));
-    // The tuning information itself: WHICH kinds carry the volume. Walk the
-    // ring for the window's records (they are the newest; eviction cannot
-    // have touched them unless the day overflowed the whole ring).
+                unsigned(app.gs.chronicle.count()),
+                unsigned(sm::kChronicleFactsCap),
+                unsigned(app.gs.chronicle.refused));
+    // WHICH kinds carry the volume: the window's records are the log's tail.
     {
         std::array<unsigned, std::size_t(sm::FactKind::Count)> byKind{};
-        for (const sm::WorldFact& f : app.gs.chronicle.ring) {
-            if (f.seq < seqBefore || f.seq >= app.gs.chronicle.nextSeq)
-                continue;
+        for (std::uint32_t seq = seqBefore; seq < app.gs.chronicle.nextSeq;
+             ++seq) {
+            const sm::WorldFact& f = app.gs.chronicle.facts[seq - 1u];
             if (f.kind < std::uint16_t(sm::FactKind::Count)) ++byKind[f.kind];
         }
         std::printf("[smoke] chronicle_rate kinds:");
@@ -9896,7 +9886,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 int(smoke_player_x(app)), int(smoke_player_y(app)),
                 app.gs.mapW);
             sm::chronicle_near(
-                app.gs.chronicle,
+                app.gs.chronicle, *app.chronicleLinks,
                 sm::cell_x(playerChronicleCell, app.gs.mapW),
                 sm::cell_y(playerChronicleCell, app.gs.mapW),
                 /*radiusCells*/1, /*sinceDay*/0,
@@ -9908,10 +9898,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 }, &traces);
             std::printf("[smoke] force_encounter resolved enemyGone=%d "
                         "enemyHurt=%d playerPaid=%d traces=%d bodies=%d "
-                        "chronicle_today=%u\n",
+                        "chronicle_count=%u\n",
                         int(enemyGone), int(enemyHurt), int(playerPaid),
                         traces.n, traces.bodies,
-                        unsigned(app.gs.chronicle.factsToday));
+                        unsigned(app.gs.chronicle.count()));
             std::fflush(stdout);
             // A battle that killed somebody MUST have left a trace. If nothing
             // died, there is nothing to remember, and demanding a trace would

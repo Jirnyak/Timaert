@@ -1,248 +1,332 @@
-// The player's journal — his KNOWLEDGE of the chronicle (macro/journal.h).
-// Owner rulings pinned here (2026-08-28):
-//   · he learns what he TOOK PART in (subject or object) wherever it happened;
-//   · he learns what happened ON HIS CELL while he stood there — locality;
-//   · everything else the world remembers WITHOUT him: not in the journal;
-//   · the journal never forgets (his whole game) — append-only, LOUD cap;
-//   · the capture is idempotent: re-asking the chronicle re-learns nothing;
-//   · while he wears a possessed lord, the lord's deeds are HIS participation;
+// THE PLAYER'S JOURNAL IS HIS SQUAD'S CHAIN IN THE WORLD'S CHRONICLE
+// (macro/chronicle.h; CANON S20.1 «ХРАНИЛИЩЕ ОДНО, А ПАМЯТЬ СКВАДА ЕСТЬ ИНДЕКС
+// В НЁМ»; наряд M-423).
+//
+// Здесь стоял свидетель ЖУРНАЛА КОПИЙ: двери захвата, которая раз в тик
+// переписывала в состояние игрока факты, где он участвовал или на чьей клетке
+// стоял, под своим курсором и своим громким капом. Копии были платой за
+// забывающее кольцо летописи; лог не забывает, и хранить стало нечего. Законы,
+// которые судятся теперь:
+//   · история сквада = «что он сделал» (цепочка по СУБЪЕКТУ) + «что сделали с
+//     ним» (цепочка по ОБЪЕКТУ), слитые новейшими вперёд;
+//   · всё остальное мир помнит БЕЗ него: вопрос задаётся по участнику, не по
+//     месту;
+//   · у игрока нет своей истории — он читает цепочку того сквада, которым
+//     играет СЕЙЧАС; сменил тело — читает историю нового тела;
+//   · умер — и доступ стёрся, а история цела: новый жилец слота не наследует
+//     чужую цепочку, записи остаются в логе мира;
+//   · цепочки ВЫВОДНЫЕ: индекс, впервые увидевший готовый лог (загрузка),
+//     отвечает ровно как тот, что жил с логом;
 //   · a writer pays renown WITH the fact — the one deed door (macro/squad.h
 //     record_deed) makes the two halves one action, and the raw chronicle
 //     door pays nothing (the negative control).
 #include "check.h"
 #include <memory>
 
-#include "macro/journal.h"
+#include "macro/chronicle.h"
 #include "macro/birth_squad.h"  // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
+#include "macro/player_entity.h"
 #include "macro/squad.h"
+#include "macro/state.h"
+#include "bus/session.h"
 #include "bus/store.h"
 
 #include <cstdint>
+#include <limits>
+#include <vector>
 
 namespace {
 
 using namespace sm;
 
-WorldFact fact(int day, FactKind kind, std::uint8_t subjKind,
-               std::uint32_t subj, int x, int y) {
+constexpr std::int32_t kAllDays = std::numeric_limits<std::int32_t>::min();
+constexpr int kNoLimit = std::numeric_limits<int>::max();
+
+struct Collected {
+    std::vector<WorldFact> facts;
+};
+void collect(void* user, const WorldFact& f) {
+    static_cast<Collected*>(user)->facts.push_back(f);
+}
+
+// A deed: `subj` did `kind` (to `obj`, if any) on a cell.
+WorldFact deed(int day, FactKind kind, std::uint32_t subj, std::uint32_t obj,
+               int x, int y) {
     WorldFact f{};
     f.day = day;
     f.kind = std::uint16_t(kind);
-    f.subjectKind = subjKind;
+    f.subjectKind = fact_subject(FactSubject::Squad);
     f.subject = subj;
+    if (obj != 0u) {
+        f.objectKind = fact_subject(FactSubject::Squad);
+        f.object = obj;
+    }
     f.x = std::int16_t(x);
     f.y = std::int16_t(y);
     f.amount = 1;
     return f;
 }
 
-// Locality is the flag holder's CELL now (подпосадка 4): "standing at" is
-// a flagged entity with a MacroCell, moved by writing that cell — exactly
-// what the walker and the jump door do in the game.
-// The player standing somewhere — and standing there AS HIMSELF, which since
-// 2026-09-14 means the fixture must raise an honest ORIGINAL: «кто оригинал» is
-// the HOME BIT of the playerFlag column (M-255 — it used to be a reserved
-// ordinal-literal), and «ношу ли я чужое тело» is the flag and the original
-// being different entities (player_entity.h). A stand-in with only PlayerTag
-// used to be enough because the question was then asked by comparing the FLAG's
-// own ordinal to the constant — one entity, one read. It is not enough now, and
-// that is the fixture's debt, not the law's: a world without an original is a
-// world that cannot exist.
-//
-// СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ САМ (§8 п.11) и ходит ТЕМИ ЖЕ ДВЕРЬМИ,
-// что игра: ординал — от эмитента, активный — дверь переноса флажка
-// переноса. Прибей он ординал литералом, как раньше, — и свидетель проверял бы
-// форму, которой в игре больше нет.
-void stand_at(sm::Session& ses, sm::MacroStore& st, int x, int y) {
-    if (!st.valid(sm::player_flag_handle(ses))) {
-        const sm::MacroHandle h = sm::store_birth(st);
-        // Ординал выдала дверь рождения (M-220). Оба носителя — СВОЕЙ
-        // дверью (5б + M-255): колонка playerFlag — истина, хэндл сессии
-        // — кэш, и каждая дверь пишет их вместе.
-        sm::transfer_player_flag(st, ses.playerFlagRef, h);
-        sm::transfer_player_flag(st, ses.playerFlagRef, h);
+// Свидетель рождает сквады ТОЙ ЖЕ дверью, что игра: ординал выдаёт эмитент
+// стора, а не литерал фикстуры (§8 п.11).
+struct Band {
+    MacroHandle h{};
+    std::uint32_t ordinal = 0;
+};
+Band birth(MacroStore& st, int x, int y) {
+    Band b;
+    b.h = store_birth(st);
+    b.ordinal = st.spawnId[b.h.slot].index;
+    st.cell[b.h.slot] = ecs::MacroCell{ecs::cell_index(x, y, 64)};
+    return b;
+}
+
+struct World {
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    std::unique_ptr<MacroStore> stOwn = make_macro_store();
+    std::unique_ptr<ChronicleLinks> linksOwn = make_chronicle_links();
+    GameState& gs = *gsOwn;
+    MacroStore& st = *stOwn;
+    ChronicleLinks& links = *linksOwn;
+    Session ses;
+    World() {
+        gs.mapW = 64;
+        gs.mapH = 64;
+        chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
     }
-    // Клетка пишется НОСИТЕЛЮ ФЛАЖКА — локальность журнал мерит по нему.
-    const sm::MacroHandle f = sm::player_flag_handle(ses);
-    st.cell[f.slot] = ecs::MacroCell{ecs::cell_index(x, y, 64)};
+};
+
+// ── What I did, what was done to me, and the world that went on without me ─
+void test_a_squads_history_is_its_two_chains() {
+    World w;
+    const Band me = birth(w.st, 10, 10);
+    const Band foe = birth(w.st, 30, 30);
+    const Band other = birth(w.st, 10, 10);   // stands on MY cell
+    CHECK_OR_RETURN(me.ordinal != 0u && foe.ordinal != 0u
+                        && other.ordinal != 0u,
+                    "the door of birth gave every band an identity");
+
+    Chronicle& c = w.gs.chronicle;
+    // day 1: I kill somebody far from home.
+    chronicle_record(c, deed(1, FactKind::Killed, me.ordinal, other.ordinal, 50, 50));
+    // day 2: somebody else's deed ON MY OWN CELL — I am not named in it.
+    chronicle_record(c, deed(2, FactKind::Killed, other.ordinal, foe.ordinal, 10, 10));
+    // day 3: the foe kills ME — my side of a done-to.
+    chronicle_record(c, deed(3, FactKind::Killed, foe.ordinal, me.ordinal, 30, 30));
+    // day 4: the world goes on far away, without me.
+    chronicle_record(c, deed(4, FactKind::Starved, foe.ordinal, 0u, 40, 40));
+    // day 5: I explore.
+    chronicle_record(c, deed(5, FactKind::Explored, me.ordinal, 0u, 12, 12));
+
+    Collected did, doneTo, mine;
+    const int nDid = chronicle_by_subject(c, w.links, w.st, me.h, kAllDays,
+                                          kNoLimit, collect, &did);
+    chronicle_by_object(c, w.links, w.st, me.h, kAllDays, kNoLimit, collect,
+                        &doneTo);
+    chronicle_about(c, w.links, w.st, me.h, kAllDays, kNoLimit, collect, &mine);
+
+    CHECK(nDid == 2 && did.facts.size() == 2u
+              && did.facts[0].day == 5 && did.facts[1].day == 1,
+          "'what I did' is every fact that names me as SUBJECT, newest first");
+    CHECK(doneTo.facts.size() == 1u && doneTo.facts[0].day == 3
+              && doneTo.facts[0].subject == foe.ordinal,
+          "'what was done to me' is every fact that names me as OBJECT");
+    CHECK(mine.facts.size() == 3u && mine.facts[0].day == 5
+              && mine.facts[1].day == 3 && mine.facts[2].day == 1,
+          "my history is both chains merged by time, newest first");
+    bool foreign = false;
+    for (const WorldFact& f : mine.facts) {
+        if (f.day == 2 || f.day == 4) foreign = true;
+    }
+    CHECK(!foreign,
+          "negative control: deeds that do not name me are not my history — "
+          "neither the far one nor the one on my own cell; the question is "
+          "asked BY PARTICIPANT, not by place");
+
+    // The window and the limit are read, not ignored.
+    Collected recent, capped;
+    chronicle_about(c, w.links, w.st, me.h, /*sinceDay*/3, kNoLimit, collect,
+                    &recent);
+    chronicle_about(c, w.links, w.st, me.h, kAllDays, /*limit*/1, collect,
+                    &capped);
+    CHECK(recent.facts.size() == 2u && recent.facts.back().day == 3,
+          "the walk stops at the first fact older than the window");
+    CHECK(capped.facts.size() == 1u && capped.facts[0].day == 5,
+          "a limit keeps the NEWEST, not the first met");
+
+    // The foe has a history of its own in the same one log.
+    Collected foes;
+    chronicle_about(c, w.links, w.st, foe.h, kAllDays, kNoLimit, collect, &foes);
+    CHECK(foes.facts.size() == 3u,
+          "one storage, many memories: the foe's chain runs through the same "
+          "records (killed me, starved, was killed by another)");
+
+    // A deed done to oneself is ONE fact, told once.
+    chronicle_record(c, deed(6, FactKind::Starved, me.ordinal, me.ordinal, 10, 10));
+    Collected withSelf;
+    chronicle_about(c, w.links, w.st, me.h, kAllDays, kNoLimit, collect,
+                    &withSelf);
+    CHECK(withSelf.facts.size() == 4u && withSelf.facts[0].day == 6
+              && withSelf.facts[1].day == 5,
+          "a fact that names me as both subject and object is in my history "
+          "once, not twice");
+
+    // Nobody has no history, and a fact about nobody belongs to no chain.
+    Collected nobody;
+    CHECK(chronicle_about(c, w.links, w.st, MacroHandle{}, kAllDays, kNoLimit,
+                          collect, &nobody) == 0,
+          "a handle that names nobody has no history");
 }
 
-void test_participation_locality_and_silence() {
-    std::unique_ptr<GameState> gsOwn = make_game_state();
-    GameState& gs = *gsOwn;
-    Session ses;
-    gs.mapW = 64;
-    gs.mapH = 64;
-    chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
-    auto wStore_ = sm::make_macro_store();   // the flag holder is nobody's LORD → he wears nobody
-    stand_at(ses, *wStore_, 10, 10);
+// ── The player is nothing special: he reads the chain of whom he plays ────
+void test_the_players_history_follows_the_flag() {
+    World w;
+    const Band home = birth(w.st, 5, 5);
+    const Band lord = birth(w.st, 50, 50);
+    transfer_player_flag(w.st, w.ses.playerFlagRef, home.h);
+    Chronicle& c = w.gs.chronicle;
 
-    // (a) The player's own deed, far away — learned by PARTICIPATION.
-    chronicle_record(gs.chronicle,
-                     fact(1, FactKind::Killed,
-                          fact_subject(FactSubject::Squad),
-                          sm::player_flag_ordinal(ses, *wStore_),
-                          50, 50));
-    // (b) Somebody else's deed on the player's cell — learned by LOCALITY.
-    chronicle_record(gs.chronicle,
-                     fact(1, FactKind::Killed,
-                          fact_subject(FactSubject::Squad),
-                          777u, 10, 10));
-    // (c) Somebody else's deed far away — the world knows, the player DOES
-    // NOT: this is S11 applied to history, and the whole point of a journal.
-    chronicle_record(gs.chronicle,
-                     fact(1, FactKind::Starved,
-                          std::uint8_t(FactSubject::Rooted), 3u, 40, 40));
+    // The lord has a past of his own from before anyone wore him.
+    chronicle_record(c, deed(1, FactKind::Killed, lord.ordinal, 0u, 50, 50));
+    // The player, as himself, does a deed.
+    chronicle_record(c, deed(2, FactKind::Explored, home.ordinal, 0u, 5, 5));
 
-    player_journal_capture(gs, ses, *wStore_);
-    CHECK(gs.player.journalCount == 2u,
-          "participation and locality are learned; the far world is not");
-    CHECK(gs.player.journal[0].subject
-                  == sm::player_flag_ordinal(ses, *wStore_)
-              && gs.player.journal[1].subject == 777u,
-          "the journal keeps the very records, in the order they happened");
+    Collected asHimself;
+    chronicle_about(c, w.links, w.st, player_flag_handle(w.ses), kAllDays,
+                    kNoLimit, collect, &asHimself);
+    CHECK(asHimself.facts.size() == 1u
+              && asHimself.facts[0].subject == home.ordinal,
+          "as himself he reads his own squad's chain; an unworn lord's deed "
+          "far away is somebody else's");
 
-    // Idempotence: the reader's cursor moved, so nothing is learned twice.
-    player_journal_capture(gs, ses, *wStore_);
-    CHECK(gs.player.journalCount == 2u,
-          "re-asking the chronicle re-learns nothing");
-
-    // The player as the OBJECT of another's deed — his side of a done-to.
-    WorldFact hit = fact(2, FactKind::Killed,
-                         fact_subject(FactSubject::Squad), 778u,
-                         30, 30);
-    hit.objectKind = fact_subject(FactSubject::Squad);
-    hit.object = sm::player_flag_ordinal(ses, *wStore_);
-    chronicle_record(gs.chronicle, hit);
-    player_journal_capture(gs, ses, *wStore_);
-    CHECK(gs.player.journalCount == 3u
-              && gs.player.journal[2].object
-                     == sm::player_flag_ordinal(ses, *wStore_),
-          "being done-to is participation too");
-
-    // Walking away changes what "here" means: the same foreign cell that was
-    // silent above becomes his the tick he stands on it.
-    stand_at(ses, *wStore_, 40, 40);
-    chronicle_record(gs.chronicle,
-                     fact(3, FactKind::Killed,
-                          fact_subject(FactSubject::Squad),
-                          779u, 40, 40));
-    player_journal_capture(gs, ses, *wStore_);
-    CHECK(gs.player.journalCount == 4u,
-          "locality follows the player, not a fixed home cell");
+    // Possession MOVES the one flag — and with it, whose history is read.
+    transfer_player_flag(w.st, w.ses.playerFlagRef, lord.h);
+    chronicle_record(c, deed(3, FactKind::Killed, lord.ordinal, 0u, 51, 50));
+    Collected asLord;
+    chronicle_about(c, w.links, w.st, player_flag_handle(w.ses), kAllDays,
+                    kNoLimit, collect, &asLord);
+    CHECK(asLord.facts.size() == 2u && asLord.facts[0].day == 3
+              && asLord.facts[1].day == 1,
+          "wearing the lord he reads the LORD's history — the whole of it, "
+          "the deed done before he came included: the memory is the squad's, "
+          "not the player's");
+    bool leaked = false;
+    for (const WorldFact& f : asLord.facts) {
+        if (f.subject == home.ordinal) leaked = true;
+    }
+    CHECK(!leaked,
+          "negative control: the body he left keeps its own history; it does "
+          "not follow him into the new one");
+    Collected stillThere;
+    chronicle_about(c, w.links, w.st, home.h, kAllDays, kNoLimit, collect,
+                    &stillThere);
+    CHECK(stillThere.facts.size() == 1u,
+          "and nothing was lost: the home squad's chain is asked by its own "
+          "handle, the same door any squad uses");
 }
 
-void test_the_journal_never_forgets_and_the_cap_is_loud() {
-    std::unique_ptr<GameState> gsOwn = make_game_state();
-    GameState& gs = *gsOwn;
-    Session ses;
-    gs.mapW = 64;
-    gs.mapH = 64;
-    chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
-    auto wStore_ = sm::make_macro_store();
-    stand_at(ses, *wStore_, 5, 5);
+// ── «Умер — и всё, что у него было, стирается»: ДОСТУП, не ИСТОРИЯ ───────
+void test_death_erases_the_access_and_keeps_the_history() {
+    World w;
+    const Band witness = birth(w.st, 1, 1);
+    const Band doomed = birth(w.st, 20, 20);
+    Chronicle& c = w.gs.chronicle;
+    chronicle_record(c, deed(1, FactKind::Killed, doomed.ordinal, 0u, 20, 20));
+    chronicle_record(c, deed(2, FactKind::Killed, witness.ordinal,
+                             doomed.ordinal, 20, 20));
 
-    // Fill to the cap in slices small enough that the ring never evicts
-    // between captures (the live game captures every tick, so eviction
-    // between looks is not a state it can reach).
-    const std::uint32_t cap = PlayerState::kJournalFactsCap;
-    std::uint32_t filed = 0;
-    while (filed < cap) {
-        const std::uint32_t slice = std::min<std::uint32_t>(16384u,
-                                                            cap - filed);
-        for (std::uint32_t i = 0; i < slice; ++i) {
-            chronicle_record(gs.chronicle,
-                             fact(int(filed + i) / 256 + 1, FactKind::Killed,
-                                  fact_subject(FactSubject::Squad),
-                                  1000u + filed + i, 5, 5));
+    Collected alive;
+    chronicle_about(c, w.links, w.st, doomed.h, kAllDays, kNoLimit, collect,
+                    &alive);
+    CHECK_OR_RETURN(alive.facts.size() == 2u,
+                    "while it lives the squad has its history");
+
+    // It dies, and the very same slot is born again as somebody else.
+    store_death(w.st, doomed.h);
+    const Band heir = birth(w.st, 20, 20);
+    CHECK_OR_RETURN(heir.h.slot == doomed.h.slot
+                        && heir.ordinal != doomed.ordinal,
+                    "precondition: the slot is REUSED by a new identity — "
+                    "otherwise nothing below is being tested");
+
+    Collected stale, inherited;
+    CHECK(chronicle_about(c, w.links, w.st, doomed.h, kAllDays, kNoLimit,
+                          collect, &stale) == 0,
+          "the dead squad's handle reaches nothing: access died with it");
+    CHECK(chronicle_about(c, w.links, w.st, heir.h, kAllDays, kNoLimit,
+                          collect, &inherited) == 0,
+          "and the new tenant of the slot does NOT inherit the dead one's "
+          "chain — a born squad has no past");
+
+    // The new tenant starts a chain of its own, and it does not run on into
+    // the dead one's records.
+    chronicle_record(c, deed(3, FactKind::Explored, heir.ordinal, 0u, 20, 20));
+    chronicle_record(c, deed(4, FactKind::Killed, witness.ordinal,
+                             heir.ordinal, 20, 20));
+    Collected own;
+    chronicle_about(c, w.links, w.st, heir.h, kAllDays, kNoLimit, collect, &own);
+    CHECK(own.facts.size() == 2u && own.facts[0].day == 4
+              && own.facts[1].day == 3,
+          "its history is exactly its own two facts — the chain ends where "
+          "its identity began");
+
+    // HISTORY is not erased: the chronicle is the WORLD's, not the squad's.
+    struct Count { std::uint32_t who; int n; };
+    Count dead{doomed.ordinal, 0};
+    chronicle_recent(c, 0, kNoLimit,
+                     [](void* u, const WorldFact& f) {
+                         Count& k = *static_cast<Count*>(u);
+                         if (f.subject == k.who || f.object == k.who) ++k.n;
+                     }, &dead);
+    CHECK(dead.n == 2,
+          "negative control: both facts about the dead squad are still in "
+          "the world's log — what died is the door to them, not the past");
+    Collected witnessed;
+    chronicle_by_subject(c, w.links, w.st, witness.h, kAllDays, kNoLimit,
+                         collect, &witnessed);
+    CHECK(witnessed.facts.size() == 2u
+              && witnessed.facts[1].object == doomed.ordinal,
+          "and the one who killed it still remembers doing so");
+}
+
+// ── The chains are DERIVED: a loaded world rebuilds them from the log ─────
+void test_a_fresh_index_answers_like_the_one_that_lived() {
+    World w;
+    const Band a = birth(w.st, 3, 3);
+    const Band b = birth(w.st, 9, 9);
+    Chronicle& c = w.gs.chronicle;
+    Collected sink;
+    for (int d = 1; d <= 20; ++d) {
+        chronicle_record(c, deed(d, FactKind::Killed, d % 3 ? a.ordinal : b.ordinal,
+                                 d % 2 ? b.ordinal : 0u, d, d));
+        // Asked between writes: the lived index is built a fact at a time.
+        chronicle_about(c, w.links, w.st, a.h, kAllDays, kNoLimit, collect,
+                        &sink);
+    }
+    const std::unique_ptr<ChronicleLinks> fresh = make_chronicle_links();
+    for (const Band& who : {a, b}) {
+        Collected lived, rebuilt;
+        chronicle_about(c, w.links, w.st, who.h, kAllDays, kNoLimit, collect,
+                        &lived);
+        chronicle_about(c, *fresh, w.st, who.h, kAllDays, kNoLimit, collect,
+                        &rebuilt);
+        bool same = lived.facts.size() == rebuilt.facts.size();
+        for (std::size_t i = 0; same && i < lived.facts.size(); ++i) {
+            same = lived.facts[i].seq == rebuilt.facts[i].seq;
         }
-        filed += slice;
-        player_journal_capture(gs, ses, *wStore_);
+        CHECK(!lived.facts.empty() && same,
+              "an index that first meets the finished log — a save being "
+              "loaded — answers exactly as the one that lived with it");
     }
-    CHECK(gs.player.journalCount == cap
-              && gs.player.journalFull == 0,
-          "a whole-game log fills to the cap without forgetting anything");
-
-    // One past the cap: the flag goes up LOUDLY, nothing already learned is
-    // dropped (append-only is the owner's law: this is his whole game).
-    chronicle_record(gs.chronicle,
-                     fact(300, FactKind::Killed,
-                          fact_subject(FactSubject::Squad),
-                          999999u, 5, 5));
-    player_journal_capture(gs, ses, *wStore_);
-    CHECK(gs.player.journalCount == cap
-              && gs.player.journalFull == 1,
-          "the cap is loud, never a silent drop of his past");
-}
-
-// While the player WEARS a possessed lord, his deeds file under the LORD's
-// ordinal — and participation is learned wherever it happened, exactly as with
-// his own squad.
-void test_a_possessed_lords_deeds_are_his_participation() {
-    std::unique_ptr<GameState> gsOwn = make_game_state();
-    GameState& gs = *gsOwn;
-    Session ses;
-    gs.mapW = 64;
-    gs.mapH = 64;
-    chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
-    auto wStore_ = sm::make_macro_store();
-    stand_at(ses, *wStore_, 5, 5);
-
-    // Not possessing: the lord's far-away deed is somebody else's.
-    chronicle_record(gs.chronicle,
-                     fact(1, FactKind::Killed,
-                          fact_subject(FactSubject::Squad),
-                          42u, 50, 50));
-    player_journal_capture(gs, ses, *wStore_);
-    CHECK(gs.player.journalCount == 0u,
-          "an unpossessed lord's deed far away is not the player's");
-
-    // Possessing him: the same deed, wherever it happened, is HIS. «Whom do
-    // I wear» is the flag on the lord himself (v87) — the world is asked, no
-    // out-of-snapshot field.
-    sm::MacroStore& stL = *wStore_;
-    sm::MacroHandle hL = sm::store_birth(stL);
-    sm::store_rename_ordinal(stL, hL, 42u);   // пин ординала фикстуры
-    hL = sm::handle_at(stL, hL.slot);                // хэндл — за колонкой
-    // Possession MOVES the one flag — дверью переноса (5б): колонка
-    // анкеты + кэш-хэндл, запись нового = срыв старого.
-    sm::transfer_player_flag(stL, ses.playerFlagRef, hL);
-    chronicle_record(gs.chronicle,
-                     fact(2, FactKind::Killed,
-                          fact_subject(FactSubject::Squad),
-                          42u, 50, 50));
-    player_journal_capture(gs, ses, *wStore_);
-    CHECK(gs.player.journalCount == 1u
-              && gs.player.journal[0].subject == 42u,
-          "while possessed, the lord's ordinal is the player's participation");
-}
-
-// The journal holds COPIES of immutable records — and the ring's intrusive
-// chain link is the INDEX's wiring, not the fact's: a captured copy must not
-// carry a dead link into the save (write_fact refuses to store the derived
-// link for the same reason).
-void test_a_captured_copy_carries_no_ring_link() {
-    std::unique_ptr<GameState> gsOwn = make_game_state();
-    GameState& gs = *gsOwn;
-    Session ses;
-    gs.mapW = 64;
-    gs.mapH = 64;
-    chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
-    auto wStore_ = sm::make_macro_store();
-    stand_at(ses, *wStore_, 5, 5);
-
-    // Two facts on one cell: the second's ring slot LINKS to the first.
-    chronicle_record(gs.chronicle,
-                     fact(1, FactKind::Killed,
-                          fact_subject(FactSubject::Squad), 7u, 5, 5));
-    chronicle_record(gs.chronicle,
-                     fact(1, FactKind::Killed,
-                          fact_subject(FactSubject::Squad), 8u, 5, 5));
-    player_journal_capture(gs, ses, *wStore_);
-    CHECK(gs.player.journalCount == 2u
-              && gs.player.journal[0].nextInCell == 0u
-              && gs.player.journal[1].nextInCell == 0u,
-          "a journal copy is the record, never the ring's chain link");
+    // And the door of forgetting brings the lived one back to the same answer.
+    Collected before, after;
+    chronicle_about(c, w.links, w.st, b.h, kAllDays, kNoLimit, collect, &before);
+    chronicle_rebuild_links(w.links);
+    chronicle_about(c, w.links, w.st, b.h, kAllDays, kNoLimit, collect, &after);
+    CHECK(before.facts.size() == after.facts.size() && !after.facts.empty()
+              && before.facts.front().seq == after.facts.front().seq
+              && before.facts.back().seq == after.facts.back().seq,
+          "forgetting what was derived loses nothing: it is derived again");
 }
 
 // ── THE deed door: a writer pays renown WITH the fact (CANON S20.1) ───────
@@ -289,8 +373,9 @@ void test_the_deed_door_files_and_pays_as_one_action() {
     CHECK(seq != 0u, "the door filed the fact");
     CHECK(rt.renown == worth,
           "…and paid the doer exactly renown_for_deed — one action");
-    const WorldFact& filed =
-        gs.chronicle.ring[std::size_t((seq - 1u) % kChronicleFacts)];
+    const WorldFact* filedAt = chronicle_fact(gs.chronicle, seq);
+    CHECK_OR_RETURN(filedAt != nullptr, "the filed fact is in the log");
+    const WorldFact& filed = *filedAt;
     CHECK(filed.seq == seq && filed.subject == 7u
               && fact_subject_kind(filed.subjectKind)
                      == std::uint8_t(FactSubject::Squad),
@@ -316,10 +401,10 @@ void test_the_deed_door_files_and_pays_as_one_action() {
 } // namespace
 
 int main() {
-    test_participation_locality_and_silence();
-    test_the_journal_never_forgets_and_the_cap_is_loud();
-    test_a_possessed_lords_deeds_are_his_participation();
-    test_a_captured_copy_carries_no_ring_link();
+    test_a_squads_history_is_its_two_chains();
+    test_the_players_history_follows_the_flag();
+    test_death_erases_the_access_and_keeps_the_history();
+    test_a_fresh_index_answers_like_the_one_that_lived();
     test_the_deed_door_files_and_pays_as_one_action();
     return sm::test::report("journal_test");
 }

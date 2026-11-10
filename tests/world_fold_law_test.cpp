@@ -583,7 +583,7 @@ void test_new_detectors_see_each_spelling() {
     const std::string innocent =
         "float f = wrapf(v, float(period));\n"
         "const int day = tick % kTicksPerDay;\n"
-        "const int slot = i % kChronicleFacts;\n"
+        "const int slot = i % kFeedLines;\n"
         "const std::size_t s = std::size_t(y) * b.cols + x;\n"
         "const int area = W * H + 1;\n"
         "const double d2 = double(mapW) * double(mapW) + 1.0;\n"

@@ -48,8 +48,9 @@ WorldFact killing(int day, int x, int y, std::uint32_t who, int bodies) {
 
 // ── The record is what it claims to be ───────────────────────────────────
 void test_the_record_is_flat_and_the_rows_are_rows() {
-    CHECK(sizeof(WorldFact) == 32,
-          "a fact is 32 bytes of numbers: it is scanned by the thousand");
+    CHECK(sizeof(WorldFact) == 28,
+          "a fact is 28 bytes of numbers: it is scanned by the thousand, and "
+          "it carries no index link — the chains live outside the record");
     for (int i = 0; i < int(FactKind::Count); ++i) {
         const FactKindDef& d = fact_kind_def(FactKind(i));
         CHECK(int(d.id) == i, "every kind row stands at its own ordinal");
@@ -66,6 +67,8 @@ void test_the_record_is_flat_and_the_rows_are_rows() {
 void test_a_witcher_finds_the_monster_by_its_traces() {
     const std::unique_ptr<Chronicle> cOwn{new Chronicle()};
     Chronicle& c = *cOwn;
+    const std::unique_ptr<ChronicleLinks> lOwn = make_chronicle_links();
+    ChronicleLinks& l = *lOwn;
     chronicle_init(c, 256, 256);
 
     // A monster squad has been killing peasants outside one village for a
@@ -80,7 +83,7 @@ void test_a_witcher_finds_the_monster_by_its_traces() {
     // The witcher stands at the village and asks about the last thirty days.
     Collected got;
     const int offered =
-        chronicle_near(c, 100, 100, /*radiusCells*/1, /*sinceDay*/25 - 30 + 1,
+        chronicle_near(c, l, 100, 100, /*radiusCells*/1, /*sinceDay*/25 - 30 + 1,
                        collect, &got);
     CHECK(offered == int(got.facts.size()), "the count is what it handed over");
 
@@ -104,7 +107,7 @@ void test_a_witcher_finds_the_monster_by_its_traces() {
     // ...and the same question with a tighter window drops it, which is what
     // proves the window is read rather than ignored.
     Collected tight;
-    chronicle_near(c, 100, 100, 1, /*sinceDay*/20, collect, &tight);
+    chronicle_near(c, l, 100, 100, 1, /*sinceDay*/20, collect, &tight);
     bool ancientInTight = false;
     for (const WorldFact& f : tight.facts) {
         if (f.subject == 55u) ancientInTight = true;
@@ -114,42 +117,151 @@ void test_a_witcher_finds_the_monster_by_its_traces() {
           "the question is asked BY TIME too");
 }
 
-// ── The ring forgets, and the chains end where it forgot ─────────────────
-void test_the_chains_truncate_themselves() {
+// ── THE LOG NEVER WRAPS: ITS END IS A LOUD STOP (CANON S20.1) ────────────
+// «Конец лога есть громкий стоп, и никогда заворот» — инвариант. Заворот
+// терял прошлое молча и по одной записи; стоп теряет только НОВОЕ и теряет
+// громко. Свидетель доводит лог до капа настоящей дверью записи и судит обе
+// половины: прошлое цело до первой записи, а отказ сосчитан в состоянии.
+void test_the_log_never_wraps_and_its_end_is_loud() {
     const std::unique_ptr<Chronicle> cOwn{new Chronicle()};
     Chronicle& c = *cOwn;
+    const std::unique_ptr<ChronicleLinks> lOwn = make_chronicle_links();
+    ChronicleLinks& l = *lOwn;
     chronicle_init(c, 128, 128);
 
-    // Fill the ring past its capacity from ONE place, so every fact lands on
-    // one chain and the oldest are certainly evicted.
-    const std::uint32_t over = kChronicleFacts + 100u;
-    for (std::uint32_t i = 0; i < over; ++i) {
-        chronicle_record(c, killing(50, 64, 64, i, 1));
+    // Fill the log to its cap from ONE place, so every fact lands on one
+    // chain. The subject is the fact's own number, so identity is checkable.
+    bool everyRecordFiled = true;
+    for (std::uint32_t i = 1; i <= kChronicleFactsCap; ++i) {
+        if (chronicle_record(c, killing(50, 64, 64, i, 1)) != i)
+            everyRecordFiled = false;
     }
+    CHECK(everyRecordFiled,
+          "every fact up to the cap is filed under its own number");
+    CHECK(c.count() == kChronicleFactsCap && c.epoch_over() && c.refused == 0u,
+          "a log filled exactly to its cap has ended its epoch and has "
+          "refused nothing yet");
 
-    Collected got;
-    chronicle_near(c, 64, 64, 0, /*sinceDay*/0, collect, &got);
-    CHECK(int(got.facts.size()) <= int(kChronicleFacts),
-          "a walk cannot return more than the ring holds");
-    CHECK(!got.facts.empty(), "and it returns what the ring still has");
-
-    // Newest first, and nothing evicted comes back: the chain stopped where
-    // the ring forgot, with no unlinking anywhere.
-    CHECK(got.facts.front().subject == over - 1u,
-          "the newest fact is first");
-    for (const WorldFact& f : got.facts) {
-        CHECK(f.subject >= over - kChronicleFacts,
-              "no evicted fact is ever handed back");
+    // The epoch is over: a hundred more deeds are REFUSED, counted, and not
+    // one of them lands on top of the past.
+    bool everyRefusalSaidSo = true;
+    for (std::uint32_t i = 0; i < 100u; ++i) {
+        if (chronicle_record(c, killing(51, 64, 64, 0xDEAD0000u + i, 1)) != 0u)
+            everyRefusalSaidSo = false;
     }
-    // ...and the walk TERMINATES, which is the thing a self-truncating chain
-    // could most easily get wrong: a link pointing at a slot reused by a
-    // NEWER fact would be a loop.
-    CHECK(int(got.facts.size()) < int(over),
-          "negative control: the ring really did forget some — otherwise the "
-          "termination above proves nothing");
+    CHECK(everyRefusalSaidSo, "past the cap the door answers 'not written'");
+    CHECK(c.refused == 100u,
+          "the stop is LOUD in the world's own state: every refused fact is "
+          "counted");
+    CHECK(c.count() == kChronicleFactsCap,
+          "and the log did not grow or move");
+    CHECK(c.facts[0].seq == 1u && c.facts[0].subject == 1u && c.facts[0].day == 50,
+          "the OLDEST record is exactly what was first written — a wrap would "
+          "have overwritten it with the 4 194 305th");
+    CHECK(c.facts[kChronicleFactsCap - 1u].subject == kChronicleFactsCap,
+          "and the newest is the last one that fit, not a refused one");
+
+    // The whole epoch is still askable, newest first, and the walk ends.
+    struct Walk { std::uint32_t n = 0, first = 0, last = 0; bool ordered = true; };
+    Walk w;
+    chronicle_near(c, l, 64, 64, 0, /*sinceDay*/0,
+                   [](void* u, const WorldFact& f) {
+                       Walk& s = *static_cast<Walk*>(u);
+                       if (s.n == 0u) s.first = f.subject;
+                       else if (f.subject + 1u != s.last) s.ordered = false;
+                       s.last = f.subject;
+                       ++s.n;
+                   }, &w);
+    CHECK(w.n == kChronicleFactsCap,
+          "the place remembers its WHOLE epoch — nothing was evicted");
+    CHECK(w.first == kChronicleFactsCap && w.last == 1u && w.ordered,
+          "newest first, in unbroken order, down to the very first fact");
+
+    // A new world has no past, and its epoch has not ended.
+    chronicle_init(c, 128, 128);
+    CHECK(c.count() == 0u && !c.epoch_over() && c.refused == 0u
+              && c.facts[0].seq == 0u
+              && c.facts[kChronicleFactsCap - 1u].seq == 0u,
+          "a resized chronicle forgets: another world's past is not this "
+          "world's");
+    CHECK(chronicle_record(c, killing(1, 64, 64, 9u, 1)) == 1u,
+          "negative control: the new epoch writes again from number one");
+    Walk fresh;
+    chronicle_near(c, l, 64, 64, 0, 0,
+                   [](void* u, const WorldFact& f) {
+                       Walk& s = *static_cast<Walk*>(u);
+                       s.first = f.subject;
+                       ++s.n;
+                   }, &fresh);
+    CHECK(fresh.n == 1u && fresh.first == 9u,
+          "and the index noticed the log was replaced by a shorter one: it "
+          "answers about the new world only");
 }
 
-// ── The journal's view: the whole past, newest first ─────────────────────
+// ── THE CHAINS ARE DERIVED: FORGET THEM AND THEY COME BACK ───────────────
+// Ссылки цепочек не лежат ни в записи, ни в состоянии мира — они выводятся из
+// лога и пересобираются на лету. Свидетель судит именно вывод: тот же вопрос
+// даёт тот же ответ (а) на индексе, который жил с логом с рождения, (б) на
+// свежем индексе, впервые увидевшем готовый лог, — это загрузка сейва, — и
+// (в) после двери «забыть выведенное».
+void test_the_chains_are_derived_from_the_log() {
+    const std::unique_ptr<Chronicle> cOwn{new Chronicle()};
+    Chronicle& c = *cOwn;
+    const std::unique_ptr<ChronicleLinks> livedOwn = make_chronicle_links();
+    ChronicleLinks& lived = *livedOwn;
+    chronicle_init(c, 256, 256);
+
+    // The index is asked BETWEEN writes, so it is built incrementally…
+    Collected early;
+    for (int d = 1; d <= 6; ++d) {
+        chronicle_record(c, killing(d, 100, 100, std::uint32_t(d), d));
+        chronicle_record(c, killing(d, 200, 30, 100u + std::uint32_t(d), 1));
+        early.facts.clear();
+        chronicle_near(c, lived, 100, 100, 0, 0, collect, &early);
+        CHECK(int(early.facts.size()) == d,
+              "a question asked right after a write already sees it — the "
+              "index catches up at the moment of the question");
+    }
+
+    // …and a fresh one meets the finished log, which is a save being loaded.
+    const std::unique_ptr<ChronicleLinks> freshOwn = make_chronicle_links();
+    Collected a, b;
+    chronicle_near(c, lived, 100, 100, 0, 0, collect, &a);
+    chronicle_near(c, *freshOwn, 100, 100, 0, 0, collect, &b);
+    bool same = a.facts.size() == b.facts.size();
+    for (std::size_t i = 0; same && i < a.facts.size(); ++i) {
+        same = a.facts[i].seq == b.facts[i].seq;
+    }
+    CHECK(a.facts.size() == 6u && same,
+          "an index rebuilt from the log alone answers exactly as the one "
+          "that lived with it: the chains carry nothing the log does not");
+    CHECK(a.facts.front().subject == 6u && a.facts.back().subject == 1u,
+          "newest first");
+
+    // THE LOAD CASE THE INDEX CANNOT NOTICE BY ITSELF: the log is replaced by
+    // another one of the SAME length. Without the door the old chains answer
+    // about the new world.
+    chronicle_init(c, 256, 256);
+    for (int d = 1; d <= 6; ++d) {
+        chronicle_record(c, killing(d, 200, 30, 500u + std::uint32_t(d), 1));
+        chronicle_record(c, killing(d, 200, 30, 600u + std::uint32_t(d), 1));
+    }
+    Collected stale;
+    chronicle_near(c, lived, 100, 100, 0, 0, collect, &stale);
+    CHECK(!stale.facts.empty(),
+          "negative control: chains of the previous log DO answer wrongly "
+          "about a replaced log of equal length — which is why the door "
+          "below exists and why loading calls it");
+    chronicle_rebuild_links(lived);
+    Collected healed, there;
+    chronicle_near(c, lived, 100, 100, 0, 0, collect, &healed);
+    chronicle_near(c, lived, 200, 30, 0, 0, collect, &there);
+    CHECK(healed.facts.empty() && there.facts.size() == 12u,
+          "after 'forget what was derived' the same index answers about the "
+          "log it is shown, rebuilt on the fly");
+}
+
+// ── Legends' view: the whole past, newest first ─────────────────────
 void test_recent_walks_time_without_an_index() {
     const std::unique_ptr<Chronicle> cOwn{new Chronicle()};
     Chronicle& c = *cOwn;
@@ -199,35 +311,13 @@ void test_the_chronicle_refuses_what_it_cannot_record() {
           "so that zero can mean 'no fact'");
 }
 
-// ── The instrument ───────────────────────────────────────────────────────
-// kChronicleFacts is honestly provisional, so the thing that makes it
-// measurable is part of the contract rather than a debug afterthought.
-void test_the_world_counts_its_own_facts() {
-    const std::unique_ptr<Chronicle> cOwn{new Chronicle()};
-    Chronicle& c = *cOwn;
-    chronicle_init(c, 64, 64);
-    for (int i = 0; i < 5; ++i) chronicle_record(c, killing(7, 1, 1, 1u, 1));
-    CHECK(c.factsToday == 5u && c.countingDay == 7,
-          "the world counts what it produced today");
-    chronicle_record(c, killing(8, 1, 1, 1u, 1));
-    CHECK(c.factsToday == 1u && c.countingDay == 8,
-          "and starts again on the next day — so the ring's size can be tuned "
-          "from evidence instead of from feel");
-
-    // ПИК — ТО, ЧЕМ ФОРМУЛА СЧИТАЕТСЯ, И ОН НЕ ТОТ ЖЕ, ЧТО СЧЁТ ДНЯ (M-254).
-    // `factsToday` обнулился на смене суток; величина формулы — максимум по
-    // ВСЕМ дням, иначе кап кольца калибровать нечем.
-    CHECK(c.factsPeak == 5u,
-          "the peak remembers the fattest day (5), not the current one (1)");
-    for (int i = 0; i < 9; ++i) chronicle_record(c, killing(8, 1, 1, 1u, 1));
-    CHECK(c.factsToday == 10u && c.factsPeak == 10u,
-          "a fatter day raises the peak");
-    chronicle_record(c, killing(9, 1, 1, 1u, 1));
-    CHECK(c.factsToday == 1u && c.factsPeak == 10u,
-          "негативный контроль: ТОЩИЙ день пик НЕ опускает — иначе прибор "
-          "мерил бы последний день, а формуле нужен самый плодовитый");
-
-    // И ГОРИЗОНТ ФОРМУЛЫ ВЫВЕДЕН ИЗ ТАБЛИЦЫ, А НЕ НАЗВАН ЧИСЛОМ: правка
+// ── The window of interest ───────────────────────────────────────────────
+// (Здесь же судились три счётчика темпа дня — «сегодня», «день счёта» и «пик».
+//  Они калибровали размер забывающего кольца и другого читателя не имели;
+//  сняты вместе с кольцом, M-423. Кап лога назначен проектом, а не выведен
+//  из замера темпа — мерить им нечего.)
+void test_the_longest_interest_is_the_tables_own() {
+    // ГОРИЗОНТ ОКНА ФАКТОВ ВЫВЕДЕН ИЗ ТАБЛИЦЫ, А НЕ НАЗВАН ЧИСЛОМ: правка
     // строки рода обязана двигать его сама (ЗАКОН СЛОВАРЯ п.3).
     std::uint16_t longest = 0;
     for (std::size_t k = 0; k < std::size_t(FactKind::Count); ++k) {
@@ -235,7 +325,7 @@ void test_the_world_counts_its_own_facts() {
         if (d > longest) longest = d;
     }
     CHECK(kChronicleLongestInterestDays == longest && longest > 0,
-          "the formula's horizon IS the table's longest interestDays");
+          "the window's horizon IS the table's longest interestDays");
 }
 
 // ── ЗДЕСЬ СТОЯЛИ ТРИ ЗАКОНА АННАЛОВ, И ОНИ СНЕСЕНЫ ВМЕСТЕ С ЯРУСОМ (M-184).
@@ -405,6 +495,8 @@ void test_a_fact_says_itself() {
 void test_the_kind_owns_its_own_window() {
     const std::unique_ptr<Chronicle> cOwn{new Chronicle()};
     Chronicle& c = *cOwn;
+    const std::unique_ptr<ChronicleLinks> lOwn = make_chronicle_links();
+    ChronicleLinks& l = *lOwn;
     chronicle_init(c, 64, 64);
 
     // A sale and a killing on the same day, in the same place.
@@ -423,8 +515,8 @@ void test_the_kind_owns_its_own_window() {
     // is still news (its row says 32).
     Collected trades, kills;
     const std::int32_t today = 11;
-    chronicle_near_kind(c, 8, 8, 1, FactKind::Traded, today, collect, &trades);
-    chronicle_near_kind(c, 8, 8, 1, FactKind::Killed, today, collect, &kills);
+    chronicle_near_kind(c, l, 8, 8, 1, FactKind::Traded, today, collect, &trades);
+    chronicle_near_kind(c, l, 8, 8, 1, FactKind::Killed, today, collect, &kills);
 
     CHECK(trades.facts.empty(),
           "a sale is stale in a week, because ITS ROW says so");
@@ -438,10 +530,11 @@ void test_the_kind_owns_its_own_window() {
 int main() {
     test_the_record_is_flat_and_the_rows_are_rows();
     test_a_witcher_finds_the_monster_by_its_traces();
-    test_the_chains_truncate_themselves();
+    test_the_log_never_wraps_and_its_end_is_loud();
+    test_the_chains_are_derived_from_the_log();
     test_recent_walks_time_without_an_index();
     test_the_chronicle_refuses_what_it_cannot_record();
-    test_the_world_counts_its_own_facts();
+    test_the_longest_interest_is_the_tables_own();
     test_a_band_becomes_a_figure_by_its_deeds();
     test_a_fact_says_itself();
     test_the_kind_owns_its_own_window();

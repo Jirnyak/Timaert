@@ -2218,8 +2218,10 @@ timaert_test(task_constructor_test
         src/macro/econ_day.cpp
     LINK_SDL
     # Пин по замеру чистого дерева (идиома M-308): выпавшая проверка краснит
-    # ctest, не разбираясь, которая.
-    PIN "OK task_constructor_test .52 checks")
+    # ctest, не разбираясь, которая. 52 → 53 (M-423, 2026-11-10): свидетель
+    # «убийство ДО дня взятия контракт не закрывает» рождает своё предусловие
+    # настоящей дверью деяния, и запись этого предусловия — проверка.
+    PIN "OK task_constructor_test .53 checks")
 
 # МИР ПРОИЗВОДИТ (И3, ломоть 5а M-72): закон «из мира вышла вещь» не держал
 # НИ ОДИН из 134 приборов — `bricks_produced` ушёл 169 578 → 0 при зелёной
@@ -2655,9 +2657,9 @@ timaert_test(chronicle_test
     SOURCES
         src/macro/chronicle.cpp)
 
-# The player's journal is his KNOWLEDGE of the chronicle: capture is a pure
-# reader over the ring (macro/journal.h), so the world's memory is the only
-# TU it needs.
+# The player's journal is the chain of his squad in the world's chronicle
+# (macro/chronicle.h, M-423): what it did and what was done to it. The world's
+# memory is the only storage, so its TU is the one this needs.
 timaert_test(journal_test
     SOURCES
         src/macro/chronicle.cpp

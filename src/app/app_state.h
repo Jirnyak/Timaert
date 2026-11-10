@@ -55,7 +55,7 @@
 #include "macro/currency.h"
 #include "macro/squad.h"
 #include "macro/player_entity.h"
-#include "macro/journal.h"
+#include "macro/chronicle.h"   // ChronicleLinks — выводной индекс летописи
 #include "macro/pathfinding.h"
 #include "bus/anketa.h"
 #include "macro/recovery.h"
@@ -232,6 +232,11 @@ struct App {
     // макро-сквадов. Родится один раз на старте приложения — преаллокация
     // мира (1460 МиБ по капу, вердикт владельца 2026-09-25).
     std::unique_ptr<sm::MacroStore> macroStore;
+    // ИНДЕКС ЛЕТОПИСИ (M-423): три цепочки по клетке, субъекту и объекту —
+    // выводное от лога фактов состояния мира, поэтому живёт здесь, а не в
+    // `gs`, и в сейв не едет. Родится один раз на старте рядом со store
+    // (48 МиБ по капу лога); догоняет лог сам, в момент вопроса.
+    std::unique_ptr<sm::ChronicleLinks> chronicleLinks;
     // ЕДИНЫЙ МАССИВ ОБЪЕКТОВ СЦЕНЫ (sub/objects.h, M-150): постоянный
     // носитель слотов тел/трупов/снарядов окна; транзиент сессии — в сейв
     // не едет (сейв — только макро-слой, §10). Родится на старте рядом со

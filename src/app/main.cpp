@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <span>
 #include <string>
@@ -61,7 +62,6 @@
 #include "macro/tasks.h"   // доска контрактов: конструктор задач (6б M-72)
 #include "tables/map_actions.h"
 #include "macro/player_entity.h"
-#include "macro/journal.h"
 #include "macro/pathfinding.h"
 #include "bus/anketa.h"
 #include "macro/recovery.h"
@@ -359,6 +359,7 @@ sm::MacroWorld macro_world(App& app) {
     mw.treeGrid = &app.treeGrid;
     mw.squads   = &app.npcAi.squadIndex;
     mw.nav      = &app.navWorld;
+    mw.links    = app.chronicleLinks.get();
     return mw;
 }
 
@@ -1032,6 +1033,7 @@ void step_macro_walk_and_emit(App& app, float dt, float cellsPerSec) {
             [](void* user, int x, int y) {
                 auto& a = *static_cast<App*>(user);
                 sm::task_note_player_arrival(*a.macroStore, a.gs,
+                                             *a.chronicleLinks,
                                              sm::player_flag_handle(a.session),
                                              x, y);
             },
@@ -1284,6 +1286,9 @@ void destroy_world(App& app) {
     // умирает вместе с миром (загрузка/новая игра), иначе строки старого
     // мира легли бы в чужие клетки первым же кадром нового.
     app.subworld.delta_buffer() = sm::DeltaBuffer{};
+    // Индекс летописи выведен из лога умирающего мира (M-423): забыть его
+    // здесь, иначе цепочки прежнего мира ответили бы о новом.
+    if (app.chronicleLinks) sm::chronicle_rebuild_links(*app.chronicleLinks);
     app.bus.reset();
     app.logic.reset();
 #ifndef NDEBUG
@@ -1313,6 +1318,10 @@ void destroy_world(App& app) {
     // invalid anchor is what forces the first sweep of a fresh boot or load).
     app.sightRt = sm::SightRuntime{};
     app.optical = App::OpticalCache{};
+    // (е) Индекс летописи: три цепочки выведены из лога фактов, а лог заменён
+    //     целиком. Выведенное забывается здесь и пересобирается на лету — тем
+    //     же догоном с курсора, каким индекс живёт в игре, от первой записи.
+    sm::chronicle_rebuild_links(*app.chronicleLinks);
     app.revealMapOn = false;   // full vision dies with the world it revealed
     if (!app.worldLoaded) return;
     sm::destroy_terrain(app.terrain);
@@ -3586,10 +3595,9 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
             app.uploadedTreeRev = app.gs.treeLayer.revision;
         }
     }
-    // The player LEARNS this tick's facts — participation and his own cell
-    // (macro/journal.h). Runs on both sides of the seam: underground the
-    // engine files into the very macro cell he stands in.
-    sm::player_journal_capture(app.gs, app.session, *app.macroStore);
+    // (Здесь игрок раз в тик «узнавал» факты тика — дверь захвата в журнал
+    //  копий. Журнала нет, M-423: история игрока есть цепочка его сквада в
+    //  летописи и читается в момент вопроса, захватывать нечего.)
     tick_subworld_hit_flash(app, dt);
     // ── СМЕРТЬ В КАРМАНЕ, КОТОРЫЙ САМ ГОВОРИТ, ЧТО ОНА ЗНАЧИТ ─────────────
     // Строка рода кармана несёт узел, который смерть здесь АКТИВИРУЕТ вместо
@@ -5245,35 +5253,42 @@ void draw_debug_panels(App& app) {
     }
 
     // ── Journal: a VIEW on the chronicle (CANON S20.1) ─────────
-    // What the player LEARNED — copies captured by macro/journal.h — said in
-    // words derived at this very moment (fact_sentence + the app's naming
-    // resolvers). No sentence is stored anywhere; change the tables and the
-    // same past says itself differently.
+    // История того сквада, которым играют СЕЙЧАС: что он сделал и что сделали
+    // с ним — две цепочки летописи, слитые новейшими вперёд
+    // (`chronicle_about@src/macro/chronicle.h`). Ничего не хранится: ни копий
+    // фактов, ни предложений — слова выводятся в этот самый момент
+    // (fact_sentence + резолверы имён приложения); смени таблицы, и то же
+    // прошлое скажет себя иначе. Сменил тело — читаешь историю нового тела.
     if (app.panels.journal) {
         ImGui::SetNextWindowSize(ImVec2(440, 300), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Journal", &app.panels.journal)) {
-            const sm::WorldFact* j = app.gs.player.journal;
-            const std::size_t jn = app.gs.player.journalCount;
-            ImGui::Text("%zu facts learned (showing last 200)", jn);
-            if (app.gs.player.journalFull) {
+            constexpr int kShown = 200;
+            ImGui::Text("the deeds of your band (newest first, up to %d)",
+                        kShown);
+            // КОНЕЦ ЭПОХИ ВИДЕН ИГРОКУ: лог летописи исчерпан, новое не
+            // пишется. Число — сколько фактов мир с тех пор не записал.
+            if (app.gs.chronicle.epoch_over()) {
                 ImGui::SameLine();
                 ImGui::TextColored(ImVec4(1.f, 0.4f, 0.3f, 1.f),
-                                   "[journal full]");
+                                   "[the epoch has ended: %u unwritten]",
+                                   unsigned(app.gs.chronicle.refused));
             }
-            // (Здесь стоял громкий колпак АННАЛОВ — «[world annals full]».
-            //  Ярус снесён M-184: у мира второго яруса памяти нет, значит и
-            //  переполниться ему нечем. Колпак журнала игрока выше ЖИВ — это
-            //  другой носитель и другой вопрос.)
             ImGui::Separator();
             if (ImGui::BeginChild("jlog")) {
-                const sm::FactNaming naming = app_fact_naming(app);
-                const std::size_t start = jn > 200 ? jn - 200 : 0;
-                char line[192];
-                for (std::size_t i = start; i < jn; ++i) {
-                    sm::fact_sentence(j[i], naming, line, int(sizeof line));
-                    ImGui::TextWrapped("[day %d] %s", j[i].day, line);
-                }
-                if (jn == 0) ImGui::TextDisabled("(nothing learned yet)");
+                struct Said { sm::FactNaming naming; };
+                Said said{app_fact_naming(app)};
+                const int n = sm::chronicle_about(
+                    app.gs.chronicle, *app.chronicleLinks, *app.macroStore,
+                    sm::player_flag_handle(app.session),
+                    std::numeric_limits<std::int32_t>::min(), kShown,
+                    [](void* u, const sm::WorldFact& f) {
+                        char line[192];
+                        sm::fact_sentence(f, static_cast<Said*>(u)->naming,
+                                          line, int(sizeof line));
+                        ImGui::TextWrapped("[day %d] %s", f.day, line);
+                    },
+                    &said);
+                if (n == 0) ImGui::TextDisabled("(nothing yet)");
             }
             ImGui::EndChild();
         }
@@ -6080,10 +6095,12 @@ void frame(App& app, int simSteps) {
                         const sm::MacroHandle pf =
                             sm::player_flag_handle(app.session);
                         s_boardView.active =
-                            sm::task_active_at(bst, app.gs, pf,
+                            sm::task_active_at(bst, app.gs,
+                                               *app.chronicleLinks, pf,
                                                app.subjectSquad);
                         s_boardView.judgedDone = sm::task_judged_done(
-                            bst, app.gs, pf, s_boardView.active);
+                            bst, app.gs, *app.chronicleLinks, pf,
+                            s_boardView.active);
                     }
                     boardPtr = &s_boardView;
                 }
@@ -6106,7 +6123,8 @@ void frame(App& app, int simSteps) {
                         s_boardDay = -1;   // активный контракт сменился
                     }
                     if (taskReq.turnIn) {
-                        sm::task_turn_in(*app.macroStore, app.gs, pf,
+                        sm::task_turn_in(*app.macroStore, app.gs,
+                                         *app.chronicleLinks, pf,
                                          app.subjectSquad);
                         s_boardDay = -1;   // контракт сдан — доска заново
                     }
@@ -6448,6 +6466,8 @@ int main(int /*argc*/, char* /*argv*/[]) {
     // аллокация на сборке, не в тике) — 1460 МиБ по капу, преаллокация
     // оплачена вердиктом владельца 2026-09-25 (M-106).
     app.macroStore = sm::make_macro_store();
+    // Индекс летописи (M-423) — той же дисциплиной: один раз на старте.
+    app.chronicleLinks = sm::make_chronicle_links();
     // Единый массив объектов сцены (M-150) — та же дисциплина: родился один
     // раз; ходит явными параметрами (ломоть E: ctx-мосты умерли с реестром).
     app.sceneObjects = std::make_unique<sm::sub::SubObjects>();

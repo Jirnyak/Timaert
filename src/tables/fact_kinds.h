@@ -2,7 +2,7 @@
 //
 // Переехала из macro/chronicle.h ломтём 5 M-171: каталог — `constexpr`-строки
 // по обе стороны границы (AGENTS §11, ФРЕЙМ п.8), и субмир читает его law-
-// фully (`fact_kind_def` — горизонт дедупа зон), а ЛЕТОПИСЬ (кольцо, двери
+// фully (`fact_kind_def` — горизонт дедупа зон), а ЛЕТОПИСЬ (лог, двери
 // записи и чтения) осталась макро-слоем в macro/chronicle.h: она состояние
 // мира, не каталог. Выведенные из таблицы законы славы едут ВМЕСТЕ с ней —
 // число в прозе рядом с таблицей есть второй словарь (ЗАКОН СЛОВАРЯ п.3).
@@ -40,9 +40,9 @@ struct FactKindDef {
     FactKind    id;
     const char* key;      // authoring id; runtime addresses by ordinal
     const char* label;    // what a human reads
-    // How long this kind stays INTERESTING, in days. Not a lifetime — the ring
-    // evicts by age regardless — but what a reader means by "recent" when it
-    // asks about this kind. A monster's kill is news for a season; a trade is
+    // How long this kind stays INTERESTING, in days. Not a lifetime — the
+    // chronicle keeps every fact for the whole epoch — but what a reader means
+    // by "recent" when it asks about this kind. A monster's kill is news for a season; a trade is
     // stale in a week.
     std::uint16_t interestDays;
     // WHAT DOING THIS IS WORTH BY ITSELF — the deed's BASE, for a deed done
@@ -112,13 +112,13 @@ inline constexpr const FactKindDef& fact_kind_def(FactKind k) {
 }
 
 // САМЫЙ ДЛИННЫЙ ГОРИЗОНТ ИНТЕРЕСА — ВЫВЕДЕН ИЗ ТАБЛИЦЫ, А НЕ НАЗВАН В ПРОЗЕ
-// (M-254, 2026-10-12). Это первый член формулы размера кольца (см.
-// `kChronicleFacts` в macro/chronicle.h: «самый длинный interestDays × факты
-// мира за день»), и до этой правки он жил ЧИСЛОМ В КОММЕНТАРИИ — «64 дня
+// (M-254, 2026-10-12). Читатель — окно фактов фрейма
+// (`fill_local_frame@src/macro/frame_fill.cpp`): горизонт окна есть самый
+// длинный интерес таблицы. До той правки он жил ЧИСЛОМ В КОММЕНТАРИИ — «64 дня
 // (строки Built/Explored)». Число в прозе рядом с таблицей, из которой оно
 // выводится, есть второй словарь (ЗАКОН СЛОВАРЯ п.3): правка строки таблицы
-// молча расходилась бы с формулой, и никто бы не узнал. Теперь формулу можно
-// ПОСЧИТАТЬ, и смоук `chronicle_rate` её печатает.
+// молча расходилась бы с ним. (Заведён он был первым членом формулы размера
+// забывающего кольца летописи; кольца нет с M-423, читатель окна остался.)
 inline constexpr std::uint16_t chronicle_longest_interest_days() {
     std::uint16_t longest = 0;
     for (const FactKindDef& d : kFactKinds) {

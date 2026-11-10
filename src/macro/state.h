@@ -448,6 +448,9 @@ namespace sm {
 // было нельзя. Замер сразу дал число: пик 211 фактов в день × горизонт 64 дня
 // (теперь ВЫВЕДЕННЫЙ из таблицы, `kChronicleLongestInterestDays`) = 13 504
 // против капа 65 536 — кольцо с запасом 4.9×, и это теперь ЗАМЕР.
+// (Кольцо, его кап и все три счётчика темпа дня сняты M-423, 2026-11-10:
+// летопись стала дописываемым логом под капом эпохи. Версию это не двигало —
+// сменилась РАСКЛАДКА, её ловит заголовок файла сам.)
 // 137 — ПОЛЕ ЛОШАДЕЙ СНЕСЕНО (M-258, 2026-10-12, вердикт владельца «сноси
 // поле лошадей это бред»). Файл стал КОРОЧЕ, и это тот же род причины: ряд
 // `Horses` → `Livestock` перестал быть шрамовым и стал НОСИТЕЛЕМ на поле
@@ -624,54 +627,24 @@ struct PlayerState {
     // восьмибайтовое слово первым — и четыре четырёхбайтовых следом ложатся
     // без единой дыры выравнивания.
     int ageDays = 1000;
-    // The player's log — a RING, not a vector that shifts. It was capped by
-    // `erase(begin())`, which memmoves up to eight thousand std::strings on
-    // every entry past the cap: the same defect the settlement history and the
-    // event bus both had, and the same fix. The cap lives in the container, so
-    // no caller can forget it and nothing shifts to enforce it.
+    // (ЖУРНАЛА ИГРОКА ЗДЕСЬ БОЛЬШЕ НЕТ — M-423, 2026-11-10. Здесь стояли 2^20
+    // копий записей летописи (32 МиБ в теле состояния), счёт, курсор по
+    // номеру факта и флаг громкого капа: «что игрок узнал». Копии были платой
+    // за забывающее кольцо — ссылка на вытесненную запись повисала бы. Летопись
+    // стала дописываемым логом, который не забывает, и хранить стало нечего:
+    // ИСТОРИЯ ИГРОКА ЕСТЬ ЦЕПОЧКА ТОГО СКВАДА, КОТОРЫМ ОН ИГРАЕТ, —
+    // `chronicle_about@src/macro/chronicle.h`, тот же вопрос, что задаёт о себе
+    // любой сквад мира. Своего хранилища, своего капа и своей двери захвата у
+    // игрока нет: он ничем не особенный.
     //
-    // (No event log. Session messages die with the moment — GameState's
-    // the session feed (bus/session.h); what the player LEARNED is the journal here;
-    // what the world remembers is the chronicle. Three questions, three
-    // answers, no fourth store.)
-    // Loud cap of the journal below (owner, 2026-08-28: «на века, не
-    // жалко»). Прежде это число СРАВНИВАЛОСЬ с капом анналов («не меньше,
-    // чем вечная память мира»); ярус снесён M-184, и сравнивать больше не с
-    // чем — своё число у журнала осталось тем же. 2^20 copies × 32 B = 32 MB,
-    // paid whole in the body of the state (size is no argument either way,
-    // CANON S26); at even 100 learned facts a day that is 80+ game years.
-    // Hitting it flips journalFull, never a silent drop.
-    static constexpr std::uint32_t kJournalFactsCap = 1u << 20;
-    // The player's JOURNAL: his KNOWLEDGE of the world's facts (?27 half-
-    // ruling, owner 2026-08-28). The chronicle is the world's one memory; the
-    // journal is what of it the player LEARNED — by taking part, by standing
-    // on the cell where it happened, and (later, through the same door) by
-    // buying rumours. Two owner laws shape the container:
-    //   · the journal NEVER forgets — it is the log of his whole game — so it
-    //     is append-only with a LOUD cap, not a ring;
-    //   · the world's ring DOES forget, so the journal holds COPIES of the
-    //     32-byte records, not seq references that would dangle. A fact is
-    //     immutable from the moment it is filed, so a copy of it is not a
-    //     second truth — there is nothing for the two to disagree about.
-    // Words are still derived at display time (fact_sentence): the journal
-    // stays a VIEW on the chronicle; what it stores is WHOSE the knowledge is.
-    //
-    // ПЛОСКИЙ МАССИВ ПОД СВОИМ КАПОМ В ТЕЛЕ СОСТОЯНИЯ (ломоть 4 сейв-эпика,
-    // M-180, 2026-11-10). Здесь стоял `std::vector<WorldFact>`, чей резерв на
-    // весь кап брала первая же поимка факта — то есть 32 МиБ и так платились
-    // целиком, только В ТИКЕ и мимо `sizeof`. Теперь живые записи — первые
-    // `journalCount`, хвост стоит нулём, а дописывает одна дверь —
-    // `player_journal_capture@src/macro/journal.h`.
-    //
-    // ЭТО НЕ КОНЕЧНАЯ ФОРМА ПАМЯТИ ИГРОКА, И ЭТО СКАЗАНО ВСЛУХ: копии
-    // оправданы только забывающим кольцом. Когда летопись станет дописываемым
-    // логом (ряд M-423 реестра), журнал умрёт в цепочку по субъекту — здесь
-    // нечего будет хранить. До того дня его форма — эта.
-    std::uint32_t            journalCount = 0;    // живых записей в `journal`
-    std::uint32_t            journalSeenSeq = 0;  // last chronicle seq scanned
-    std::uint8_t             journalFull = 0;     // the loud cap flag
-    std::uint8_t             pad[3] = {};         // выравнивание, названное полем (В2)
-    WorldFact                journal[kJournalFactsCap] = {};
+    // ЧТО ПРИ ЭТОМ ПЕРЕСТАЛО БЫТЬ ВЫРАЗИМО, СКАЗАНО ВСЛУХ: половина «случилось
+    // ЗДЕСЬ, пока он стоял на клетке» — чужой факт, в котором сквад игрока не
+    // назван ни субъектом, ни объектом. Траектории сквадов лог не хранит, и
+    // цепочкой участника «был свидетелем» не спросить. Её носитель назначен
+    // рядом M-423 реестра (ломоть 4): род факта «оказался рядом».)
+    // Четыре названных байта выравнивания (сейв-эпик, вердикт В2): состояние
+    // игрока выровнено по восьмибайтовому слову кодекса.
+    std::uint8_t             pad[4] = {};
     // (No spellBook since v89. A body's knowledge is the SpellBook COMPONENT
     // on its macro entity — §41 root 3: the one-copy field here was literally
     // the class combatStats was before landing 4, and it is why only the
@@ -1235,9 +1208,7 @@ TIMAERT_ROW(sm::GameState);
 // памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
 // списка; дыра выравнивания или забытый член не собираются.
 TIMAERT_PACKED(sm::PlayerState, &sm::PlayerState::codexUnlockedBits,
-    &sm::PlayerState::ageDays, &sm::PlayerState::journalCount,
-    &sm::PlayerState::journalSeenSeq, &sm::PlayerState::journalFull,
-    &sm::PlayerState::pad, &sm::PlayerState::journal);
+    &sm::PlayerState::ageDays, &sm::PlayerState::pad);
 TIMAERT_PACKED(sm::WorldTickRuntime, &sm::WorldTickRuntime::pendingDailyTicks,
     &sm::WorldTickRuntime::nextDailyTickDay,
     &sm::WorldTickRuntime::subworldStepRemainder,

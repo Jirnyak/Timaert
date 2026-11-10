@@ -194,12 +194,12 @@ void build_world(World& w, const TerrainData& land) {
     set_relation(gs.factions, faction_index("timaert"),
                  faction_index("lake_duchy"), -5);
 
-    // Игрок: кодекс и журнал — два выученных факта.
+    // Игрок: возраст и кодекс.
     gs.player.ageDays = 1234;
     gs.player.codexUnlockedBits = codex_bit(CodexArticleId::Witches)
                                 | codex_bit(CodexArticleId::Market);
 
-    // Память мира: два факта в кольце и головы цепочек по клетке.
+    // Память мира: два факта в логе летописи (цепочки выводные, в файл не едут).
     chronicle_init(gs.chronicle, kSide, kSide);
     {
         WorldFact f{};
@@ -307,11 +307,9 @@ void build_world(World& w, const TerrainData& land) {
     for (std::size_t i = 0; i + 1u < filler.size(); i += 2u)
         store_death(st, filler[i]);
 
-    // Журнал игрока — копии записей, которые он узнал.
-    gs.player.journal[0] = gs.chronicle.ring[0];
-    gs.player.journal[1] = gs.chronicle.ring[1];
-    gs.player.journalCount = 2u;
-    gs.player.journalSeenSeq = 2u;
+    // (Журнал игрока — копии записей летописи — заполнялся здесь и снесён
+    //  M-423: история игрока есть цепочка его сквада в логе летописи, а лог
+    //  заполнен выше и едет в файле целиком.)
 }
 
 std::uint64_t world_sum(const World& w) {
@@ -457,6 +455,26 @@ void test_dump_roundtrip() {
           "состояние макромира вернулось побайтно");
     CHECK(std::memcmp(&w.st, &back.st, sizeof(MacroStore)) == 0,
           "гладкая память сквадов вернулась побайтно");
+    // ПАМЯТЬ МИРА СПРАШИВАЕТСЯ ПОСЛЕ ЗАГРУЗКИ (M-423). В файле едет только лог
+    // фактов; цепочки-индексы выводные и в файле их нет ни байта. Индекс,
+    // впервые увидевший загруженный лог, обязан ответить на вопрос ведьмака.
+    {
+        const std::unique_ptr<ChronicleLinks> links = make_chronicle_links();
+        struct Found { int here = 0, far = 0; } found;
+        const FactVisitor see = [](void* u, const WorldFact& f) {
+            Found& k = *static_cast<Found*>(u);
+            if (f.day == 11 && f.amount == 3 && f.x == 40 && f.y == 40) ++k.here;
+            if (f.day == 12) ++k.far;
+        };
+        chronicle_near(back.gs.chronicle, *links, 40, 40, 0, 0, see, &found);
+        CHECK(found.here == 1,
+              "загруженный мир помнит, что случилось у клетки: цепочка по "
+              "клетке пересобрана из лога файла на лету");
+        CHECK(found.far == 0,
+              "негативный контроль: факт с другого края мира в этой "
+              "окрестности не отвечает — цепочка собрана, а не лог выдан "
+              "целиком");
+    }
     const auto ms = [](auto a, auto b) {
         return double(std::chrono::duration_cast<std::chrono::microseconds>(
                           b - a).count()) / 1000.0;

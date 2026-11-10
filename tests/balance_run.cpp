@@ -356,7 +356,7 @@ int main(int argc, char** argv) {
         // ЭТИМИ ЖЕ колонками, а не новым зондом.
         std::fprintf(fw, "\tslotsAlive\tslotsDead\tslotsRooted\taiMsDay");
         // ТЕМП ЛЕТОПИСИ ЗА ДЕНЬ (ряд M-423, 2026-11-08). Прибор ходит по
-        // кольцу курсором ниже и уже держит `ringCursor` и `nextSeq`, так
+        // логу курсором ниже и уже держит `logCursor` и `nextSeq`, так
         // что «фактов за день» есть ОДНО вычитание — своего прохода колонка
         // не стоит. Зачем: до неё темп был известен только однодневным
         // зондом `chronicle_rate` (173 факта на дне 1), а день 0 лжёт о дне
@@ -419,7 +419,7 @@ int main(int argc, char** argv) {
         for (int c = 0; c < sm::kCommodityCount; ++c) {
             if (sm::commodity_is_comfort(c)) comfortOrd[comfortOrdCount++] = c;
         }
-        std::uint32_t ringCursor = gs.chronicle.nextSeq;
+        std::uint32_t logCursor = gs.chronicle.nextSeq;
 
         // ── The days: the live loop's cadence without its frames ─────────
         // One game day = kTicksPerDay/kAiTicks = 256 iterations of
@@ -660,12 +660,14 @@ int main(int argc, char** argv) {
                 else
                     ++crewsOther;
             }
-            // The day's DEALS, read off the chronicle ring by sequence — the
+            // The day's DEALS, read off the chronicle log by sequence — the
             // same shop window the witcher asks (S20.1): every Traded fact
-            // since yesterday's cursor.
+            // since yesterday's cursor. Запись `seq` лежит в `facts[seq - 1]`,
+            // так что день стоит ровно своих фактов, а не прохода по капу.
             long long trades = 0, tradedValue = 0;
-            for (const sm::WorldFact& f : gs.chronicle.ring) {
-                if (f.seq < ringCursor || f.seq == 0) continue;
+            for (std::uint32_t seq = logCursor; seq < gs.chronicle.nextSeq;
+                 ++seq) {
+                const sm::WorldFact& f = gs.chronicle.facts[seq - 1u];
                 if (f.kind != std::uint16_t(sm::FactKind::Traded)) continue;
                 trades += 1;
                 tradedValue += f.amount;
@@ -673,8 +675,8 @@ int main(int argc, char** argv) {
             // Темп летописи за день — ДО сдвига курсора, иначе разность
             // тождественно ноль (колонка `facts`, шапка у заголовка TSV).
             const long long factsDay =
-                (long long)(gs.chronicle.nextSeq - ringCursor);
-            ringCursor = gs.chronicle.nextSeq;
+                (long long)(gs.chronicle.nextSeq - logCursor);
+            logCursor = gs.chronicle.nextSeq;
 
             std::fprintf(fw,
                          "%d\t%lld\t%lld\t%lld\t%lld"

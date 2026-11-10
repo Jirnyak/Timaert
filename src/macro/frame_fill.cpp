@@ -106,15 +106,17 @@ void fill_local_frame(const MacroWorld& w, std::uint32_t centerCell,
     }
 
     // ── РОД 5 — окно фактов клеток фрейма ──────────────────────────────────
-    // Кольцо индексировано крупными клетками (kChronicleCellSize = 8), так
+    // Лог индексирован крупными клетками (kChronicleCellSize = 8), так
     // что радиус 1 индексной клетки покрывает 5×5 карты с запасом; точный
     // отбор — по клетке факта. Горизонт — самый длинный интерес таблицы.
+    // Без индекса летописи в конверте окно фактов пусто: нулевой вклад
+    // отсутствующего слоя, как у навигации.
     struct Sink {
         LocalContext* out;
         int ccx, ccy, side;
     } sink{&out, cell_x(centerCell, side), cell_y(centerCell, side), side};
-    chronicle_near(
-        gs.chronicle, sink.ccx, sink.ccy, /*radiusCells=*/1,
+    if (w.links) chronicle_near(
+        gs.chronicle, *w.links, sink.ccx, sink.ccy, /*radiusCells=*/1,
         out.worldDay - int(kChronicleLongestInterestDays) + 1,
         [](void* u, const WorldFact& f) {
             Sink& s = *static_cast<Sink*>(u);

@@ -86,6 +86,8 @@ int main() {
     mw.session = &ses;
     mw.store = storeOwn.get();
     sm::chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
+    // Индекс летописи выводной (M-423) и догоняет лог сам, в момент вопроса.
+    const std::unique_ptr<sm::ChronicleLinks> links = sm::make_chronicle_links();
 
     const int cx = 40, cy = 50;
 
@@ -144,14 +146,14 @@ int main() {
         f.amount = 1;
         d.factOps[d.factCount++] = f;
         int before = 0;
-        sm::chronicle_near_kind(gs.chronicle, cx, cy, 0, sm::FactKind::Explored,
+        sm::chronicle_near_kind(gs.chronicle, *links, cx, cy, 0, sm::FactKind::Explored,
                                 gs.worldTime.day(),
                                 [](void* u, const sm::WorldFact&) {
                                     ++*static_cast<int*>(u);
                                 }, &before);
         sm::apply_local_delta(mw, d);
         int after = 0;
-        sm::chronicle_near_kind(gs.chronicle, cx, cy, 0, sm::FactKind::Explored,
+        sm::chronicle_near_kind(gs.chronicle, *links, cx, cy, 0, sm::FactKind::Explored,
                                 gs.worldTime.day(),
                                 [](void* u, const sm::WorldFact&) {
                                     ++*static_cast<int*>(u);
@@ -199,7 +201,7 @@ int main() {
         // бы и у факта, подшитого под чужим именем.
         struct Seen { int n = 0; std::uint32_t subject = 0; std::uint8_t kind = 0; };
         Seen seen{};
-        sm::chronicle_near_kind(gs.chronicle, fx, fy, 0, sm::FactKind::Explored,
+        sm::chronicle_near_kind(gs.chronicle, *links, fx, fy, 0, sm::FactKind::Explored,
                                 gs.worldTime.day(),
                                 [](void* u, const sm::WorldFact& got) {
                                     Seen& s = *static_cast<Seen*>(u);

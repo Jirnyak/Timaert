@@ -95,6 +95,9 @@ int main() {
     // не исполнялся ни разу; мутация трункационного деления прошла зелёной.
     sm::SquadIndex idx{};
     mw.squads = &idx;
+    // Индекс летописи (M-423): без него окно фактов рода 5 пусто.
+    const std::unique_ptr<sm::ChronicleLinks> links = sm::make_chronicle_links();
+    mw.links = links.get();
 
     const int ccx = 64, ccy = 64;
     const std::uint32_t center = sm::cell_of(ccx, ccy, gs.mapW);

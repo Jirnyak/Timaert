@@ -27,24 +27,24 @@ void threat_field_daily(const MacroWorld& mw, int day) {
 
     // РЕПЛЕЙ: загрузка и перепёк графа приходят сюда одинаково — поле не
     // того размера (или летопись моложе курсора: другой мир). Сбросить и
-    // прочитать кольцо с самого старого живого факта; поправка на возраст
-    // ниже доигрывает распад, который поле пережило бы вживую.
+    // прочитать лог заново; поправка на возраст ниже доигрывает распад,
+    // который поле пережило бы вживую, а факт старше горизонта распада вклада
+    // не даёт. (Здесь реплей начинался «с самого старого ЖИВОГО факта кольца»;
+    // лог не забывает, и начало у него одно — первая запись.)
     if (nv->threat.size() != R || nv->threatSeenSeq >= c.nextSeq) {
         nv->threat.assign(R, 0u);
-        nv->threatSeenSeq = c.oldest_seq() - 1u;
+        nv->threatSeenSeq = 0u;
     }
 
-    // ИСТОЧНИК: новые Died-факты кольца. Один писатель поля — этот читатель
+    // ИСТОЧНИК: новые Died-факты лога. Один писатель поля — этот читатель
     // летописи; сами факты пишут прежние двери (record_battle_facts,
     // record_rooted_fact), так что игрок-мясник поднимает поле наравне с
     // любым лордом, а бездомные банды не поднимают его по построению.
     if (c.ready()) {
         const std::uint32_t price = std::uint32_t(threat_soul_price());
-        const std::uint32_t from =
-            std::max(nv->threatSeenSeq + 1u, c.oldest_seq());
-        for (std::uint32_t seq = from; seq < c.nextSeq; ++seq) {
-            const WorldFact& f = c.ring[(seq - 1u) % kChronicleFacts];
-            if (f.seq != seq) continue;   // слот уже перезаписан кольцом
+        for (std::uint32_t seq = nv->threatSeenSeq + 1u; seq < c.nextSeq;
+             ++seq) {
+            const WorldFact& f = c.facts[seq - 1u];
             if (f.kind != std::uint16_t(FactKind::Died)) continue;
             if (f.amount <= 0) continue;
             const std::uint16_t r = nav_region_at(*nv, int(f.x), int(f.y));

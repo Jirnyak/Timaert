@@ -4,6 +4,7 @@
 #include "macro/tasks.h"
 
 #include <cstring>
+#include <limits>
 #include <span>
 
 #include "core/rng.h"
@@ -37,6 +38,11 @@ constexpr int kOffersPerVerb[] = {2, 1, 1};
 static_assert(std::size(kOffersPerVerb) == std::size(kTaskVerbs),
               "каждому глаголу — его счёт на доске");
 
+// Обход цепочки сквада целиком: без горизонта по дням и без предела по числу.
+// Предел обхода — сама цепочка, а она не длиннее лога.
+constexpr std::int32_t kAllDays = std::numeric_limits<std::int32_t>::min();
+constexpr int kWholeChain = std::numeric_limits<int>::max();
+
 struct ContractScan {
     std::uint32_t playerId = 0;
     std::uint32_t placeId = 0;
@@ -50,7 +56,7 @@ struct ContractScan {
 };
 
 // Новейший QuestTaken против новейшего QuestDone этой пары (игрок, место).
-// chronicle_near ходит НОВЕЙШИМИ ВПЕРЁД, поэтому первый встреченный род —
+// Цепочка по субъекту ходит НОВЕЙШИМИ ВПЕРЁД, поэтому первый встреченный род —
 // его новейший экземпляр.
 void scan_contract(void* user, const WorldFact& f) {
     auto& s = *static_cast<ContractScan*>(user);
@@ -290,6 +296,7 @@ bool task_take(MacroStore& st, GameState& gs, MacroHandle player,
 }
 
 TaskActive task_active_at(const MacroStore& st, const GameState& gs,
+                          ChronicleLinks& links,
                           MacroHandle player, MacroHandle place) {
     TaskActive t{};
     if (!st.valid(player) || !st.valid(place)) return t;
@@ -297,10 +304,11 @@ TaskActive task_active_at(const MacroStore& st, const GameState& gs,
     s.playerId = st.spawnId[player.slot].index;
     s.placeId = st.spawnId[place.slot].index;
     if (s.playerId == 0u || s.placeId == 0u) return t;
-    const int W = gs.mapW;
-    chronicle_near(gs.chronicle, ecs::cell_x(st.cell[place.slot], W),
-                   ecs::cell_y(st.cell[place.slot], W), 1, 0, scan_contract,
-                   &s);
+    // Здесь спрашивали окрестность места без горизонта: длину обхода держал
+    // только кап забывающего кольца. Контракты берёт СКВАД — спрашивается его
+    // цепочка, и обход равен его истории.
+    chronicle_by_subject(gs.chronicle, links, st, player, kAllDays,
+                         kWholeChain, scan_contract, &s);
     if (s.takenSeq == 0u) return t;            // контрактов не брали
     if (s.doneSeq > s.takenSeq) return t;      // новейший уже сдан
     t.verb = task_verb(s.packed);
@@ -331,6 +339,7 @@ TaskActive task_active_at(const MacroStore& st, const GameState& gs,
 }
 
 bool task_judged_done(const MacroStore& st, const GameState& gs,
+                      ChronicleLinks& links,
                       MacroHandle player, const TaskActive& t) {
     if (!t.valid || t.expired || !st.valid(player)) return false;
     const TaskVerbDef& v = kTaskVerbs[t.verb];
@@ -344,8 +353,11 @@ bool task_judged_done(const MacroStore& st, const GameState& gs,
             s.playerId = playerId;
             s.targetId = ecs::goal_ordinal(st.goal[player.slot].what);
             if (s.targetId == 0u) return false;
-            chronicle_recent(gs.chronicle, t.takenDay, 1 << 16, scan_kills,
-                             &s);
+            // (Здесь шёл проход по ВСЕМУ миру с дня взятия под литералом
+            //  `1 << 16`, побитово равным капу кольца, но имени его не
+            //  называвшим. «Кого убил этот сквад» есть его цепочка.)
+            chronicle_by_subject(gs.chronicle, links, st, player, t.takenDay,
+                                 kWholeChain, scan_kills, &s);
             return s.count >= int(t.amount);
         }
         case TaskObjectSpace::Feature: {
@@ -354,18 +366,18 @@ bool task_judged_done(const MacroStore& st, const GameState& gs,
             s.playerId = playerId;
             s.x = std::int16_t(cell_x(g.cell, gs.mapW));
             s.y = std::int16_t(cell_y(g.cell, gs.mapW));
-            chronicle_near(gs.chronicle, int(s.x), int(s.y), 1, t.takenDay,
-                           scan_visits, &s);
+            chronicle_by_subject(gs.chronicle, links, st, player, t.takenDay,
+                                 kWholeChain, scan_visits, &s);
             return s.seen;
         }
     }
     return false;
 }
 
-bool task_turn_in(MacroStore& st, GameState& gs, MacroHandle player,
-                  MacroHandle place) {
-    const TaskActive t = task_active_at(st, gs, player, place);
-    if (!task_judged_done(st, gs, player, t)) return false;
+bool task_turn_in(MacroStore& st, GameState& gs, ChronicleLinks& links,
+                  MacroHandle player, MacroHandle place) {
+    const TaskActive t = task_active_at(st, gs, links, player, place);
+    if (!task_judged_done(st, gs, links, player, t)) return false;
     const TaskVerbDef& v = kTaskVerbs[t.verb];
 
     if (v.object == TaskObjectSpace::Need) {
@@ -399,6 +411,7 @@ bool task_turn_in(MacroStore& st, GameState& gs, MacroHandle player,
 }
 
 void task_note_player_arrival(MacroStore& st, GameState& gs,
+                              ChronicleLinks& links,
                               MacroHandle player, int x, int y) {
     if (!st.valid(player)) return;
     const ecs::SquadGoal& g = st.goal[player.slot];
@@ -412,7 +425,8 @@ void task_note_player_arrival(MacroStore& st, GameState& gs,
     s.playerId = st.spawnId[player.slot].index;
     s.x = std::int16_t(x);
     s.y = std::int16_t(y);
-    chronicle_near(gs.chronicle, x, y, 1, 0, scan_visits, &s);
+    chronicle_by_subject(gs.chronicle, links, st, player, kAllDays,
+                         kWholeChain, scan_visits, &s);
     if (s.seen) return;
     WorldFact f{};
     f.day = gs.worldTime.day();
