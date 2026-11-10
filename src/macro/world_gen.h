@@ -17,7 +17,6 @@ namespace sm {
 struct GameState;
 struct TerrainData;
 struct TreePoint;
-struct TreeLayer;
 struct DepositLayer;
 struct FeatureLayer;
 struct ZoneLayer;
@@ -51,7 +50,6 @@ struct WorldGenOut {
     GameState*              gs = nullptr;
     TerrainData*            terrain = nullptr;
     std::vector<TreePoint>* trees = nullptr;
-    TreeLayer*              treeLayer = nullptr;
     DepositLayer*           deposits = nullptr;
     FeatureLayer*           features = nullptr;
     ZoneLayer*              zones = nullptr;

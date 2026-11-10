@@ -46,15 +46,13 @@ struct World {
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
     TerrainData td;
-    std::unique_ptr<TreeLayer> treesOwn{new TreeLayer()};
-    TreeLayer& trees = *treesOwn;
+    TreeLayer& trees = gs.treeLayer;
     FeatureLayer features;
     MacroHandle village{};
     MacroHandle artel{};
 
     MacroWorld mw() {
         return MacroWorld{.gs = &gs,
-                          .trees = &trees,
                           .store = store.get(),
                           .terrain = &td,
                           .features = &features};

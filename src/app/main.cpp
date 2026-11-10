@@ -351,7 +351,6 @@ sm::MacroWorld macro_world(App& app) {
     mw.facts     = &raise_macro_fact;
     mw.factsUser = &app;
     mw.gs       = &app.gs;
-    mw.trees    = &app.treeLayer;
     mw.store    = app.macroStore.get();
     mw.terrain  = &app.terrain;
     mw.deposits = &app.deposits;
@@ -1379,8 +1378,7 @@ bool save_game_checked(App& app, bool autosave = false) {
     }
     const std::string& path = autosave ? app.autosavePath : app.savePath;
     const bool ok = sm::save_game(app.gs, app.macroStore->nextSpawnId,
-                                  stage_save_state(app),
-                                  app.treeLayer.cells(), path);
+                                  stage_save_state(app), path);
     refresh_save_summary(app);
     if (!ok)
         std::fprintf(stderr, "save_game FAILED: %s\n", path.c_str());
@@ -1406,10 +1404,10 @@ void open_load_screen(App& app) {
 sm::OpticalWorld optical_world(App& app) {
     auto& oc = app.optical;
     if (oc.w != app.gs.mapW || oc.h != app.gs.mapH
-        || oc.treeRev != app.treeLayer.revision) {
+        || oc.treeRev != app.gs.treeLayer.revision) {
         oc.w = app.gs.mapW;
         oc.h = app.gs.mapH;
-        oc.treeRev = app.treeLayer.revision;
+        oc.treeRev = app.gs.treeLayer.revision;
         const std::size_t cells =
             std::size_t(app.gs.mapW) * std::size_t(app.gs.mapH);
         oc.heights.clear();
@@ -1421,12 +1419,12 @@ sm::OpticalWorld optical_world(App& app) {
                 oc.heights[i] = sm::field01_of(app.terrain.rgba[i * 4u]);
         }
         oc.treeDensity.clear();
-        if (app.treeLayer.has_complete_storage()
-            && app.treeLayer.width == app.gs.mapW
-            && app.treeLayer.height == app.gs.mapH) {
+        if (app.gs.treeLayer.has_complete_storage()
+            && app.gs.treeLayer.width == app.gs.mapW
+            && app.gs.treeLayer.height == app.gs.mapH) {
             oc.treeDensity.resize(cells);
             for (std::size_t i = 0; i < cells; ++i)
-                oc.treeDensity[i] = float(app.treeLayer.data[i])
+                oc.treeDensity[i] = float(app.gs.treeLayer.data[i])
                                   / float(sm::kMaxTreesPerCell);
         }
     }
@@ -1526,14 +1524,14 @@ void rebake_world(App& app, bool uploadNow) {
     });
     app.zones = sm::generate_zones(app.gs.mapW, app.gs.mapH, app.gs.worldSeed,
                                    zsCities, zsVills, app.features,
-                                   &app.terrain, &app.treeLayer);
+                                   &app.terrain, &app.gs.treeLayer);
     // (Перештамп фич из тел УМЕР 2026-10-23: «фичи делают 1 раз ПРИ
     // ГЕНЕРАЦИИ МИРА никаких загрузок ничего» — слой производен от сида,
     // фичи рода ставит дверь рождения места в генезисе.)
     sm::build_squad_index(app.npcAi.squadIndex, *app.macroStore,
                           app.gs.mapW, app.gs.mapH);
     app.pathCost = sm::build_cost_grid(app.terrain, &app.features,
-                                       &app.treeLayer);
+                                       &app.gs.treeLayer);
     app.gs.lastWorldRebakeDay = app.gs.worldTime.day();
     if (uploadNow) {
         rebake_macro_lights(app);
@@ -1725,7 +1723,6 @@ void boot_world(App& app, std::uint32_t seed,
     go.gs           = &app.gs;
     go.terrain      = &app.terrain;
     go.trees        = &app.trees;
-    go.treeLayer    = &app.treeLayer;
     go.deposits     = &app.deposits;
     go.features     = &app.features;
     go.zones        = &app.zones;
@@ -1758,8 +1755,8 @@ void boot_world(App& app, std::uint32_t seed,
     app.macro.upload(app.device, app.terrain, app.features, app.zones,
                      macroLightField.empty() ? nullptr : macroLightField.data(),
                      std::uint32_t(app.gs.mapW), std::uint32_t(app.gs.mapH),
-                     &app.treeLayer, &app.gs.knowledge);
-    app.uploadedTreeRev = app.treeLayer.revision;
+                     &app.gs.treeLayer, &app.gs.knowledge);
+    app.uploadedTreeRev = app.gs.treeLayer.revision;
     app.uploadedKnowledgeRev = app.gs.knowledge.revision;
     boot_trace("world data uploaded");
     app.cursor = sm::ui::MacroCursor{};
@@ -1815,16 +1812,25 @@ bool boot_world_from_save(App& app, const std::string& path) {
     sm::GameState& fresh = *freshOwn;
     std::uint32_t loadedNextSpawnId = 1;
     std::vector<sm::MacroNpcRecord> loadedMacro;
-    std::vector<std::uint16_t> loadedTrees;
-    if (!sm::load_game(fresh, loadedNextSpawnId, loadedMacro,
-                       loadedTrees, path)) {
+    if (!sm::load_game(fresh, loadedNextSpawnId, loadedMacro, path)) {
         return false;
+    }
+    // Лес приезжает полем состояния (ломоть 3 сейв-эпика) и ложится в мир
+    // свёрткой ниже, как всякое поле файла. Файл без блока леса игра не пишет
+    // (генезис рождает слой всегда); если такой пришёл — мир встанет без леса,
+    // и это сказано вслух, а не залечено девственным лесом сида.
+    if (!fresh.treeLayer.has_complete_storage()) {
+        std::fprintf(stderr,
+                     "load_game: the file carries NO forest field for a "
+                     "%dx%d world — the loaded world stands treeless.\n",
+                     fresh.mapW, fresh.mapH);
+        std::fflush(stderr);
     }
     // What the FILE says the world is, weighed before a single field of it is
     // applied. Compared against the living world at the bottom of this
     // function — see the fold witness there.
     const std::uint32_t fileFingerprint = sm::save_payload_fingerprint(
-        fresh, loadedNextSpawnId, loadedMacro, loadedTrees);
+        fresh, loadedNextSpawnId, loadedMacro);
     // registerIntroStory=TRUE even on load (v25): node definitions are code
     // and must all exist before the saved story progress is replayed below.
     // The old `false` here was the 3-nodes -> 1 bug: a loaded game lost the
@@ -1860,9 +1866,17 @@ bool boot_world_from_save(App& app, const std::string& path) {
     //                 scratch and no longer outlives it — M-90.)
     //   sessionFeed — presentation, never saved by design (state.h:684). The
     //                 live one (just cleared by destroy_world) stays.
-    fresh.cellOwner   = std::move(app.gs.cellOwner);
+    fresh.cellOwner   = app.gs.cellOwner;   // плоское поле — копия байтов
     fresh.sessionFeed = std::move(app.gs.sessionFeed);
     app.gs = std::move(fresh);
+    // ЛЕС ПРИЕХАЛ ЭТОЙ ЖЕ СВЁРТКОЙ, И КЭШ ОПТИКИ ОБЯЗАН УМЕРЕТЬ ЗДЕСЬ. Он
+    // сверяет себя со счётчиком правок леса (`optical_world` выше), а счётчик
+    // слоя из файла и счётчик девственного слоя генезиса суть два независимых
+    // числа: они вправе совпасть при РАЗНЫХ клетках, и тогда плотность крон
+    // осталась бы от леса сида. Пока лес накатывался отдельной дверью, она
+    // сама двигала счётчик живого слоя; свёртка заменяет слой целиком, так что
+    // протухание называется прямо, а не выводится из сравнения двух чисел.
+    app.optical = App::OpticalCache{};
     // `fresh` is a husk from here on — every read below goes to app.gs.
     //
     // The bus's chronicle door is unaffected: it points at the MEMBER
@@ -1922,10 +1936,11 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // только для полей `GameState` и эмитента, то есть для меньшей половины.
     // Снимок — работа загрузки, не тика (AGENTS §7 п.2), и платится один раз.
     //
-    // ЛЕС ОСТАЁТСЯ СРАВНЁННЫМ С СОБОЙ, И ЭТО НАЗВАНО, А НЕ ЗАБЫТО: его
-    // `restore_tree_counts` стоит НИЖЕ (строка 1977), а свидетель обязан стоять
-    // ВЫШЕ пересчёта `settlementId` — переснять живой лес здесь значило бы
-    // сверять ещё не восстановленное и краснеть законно. Долг — в ряду M-439.
+    // ЛЕС СВЕРЯЕТСЯ ПО-НАСТОЯЩЕМУ С ЛОМТЯ 3 СЕЙВ-ЭПИКА. Пока он жил вне
+    // состояния, в оба отпечатка шёл один и тот же вектор клеток из файла, и
+    // свидетель сравнивал лес сам с собой (долг стоял в ряду M-439). Теперь
+    // писатель берёт лес из состояния: отпечаток файла снят с черновика, а
+    // отпечаток мира — с живого `app.gs` ПОСЛЕ свёртки.
     //
     // ТАБЛИЦА «МУТАЦИЯ → ИСХОД», ОБЕ ПОЛЯРНОСТИ, снята на смоуке
     // `save_game,open_load,load_game,wait_boot_done` (AGENTS §8 п.6; дерево
@@ -1945,7 +1960,7 @@ bool boot_world_from_save(App& app, const std::string& path) {
     const std::vector<sm::MacroNpcRecord> liveMacro =
         sm::snapshot_macro_ecs(*app.macroStore);
     const std::uint32_t liveFingerprint = sm::save_payload_fingerprint(
-        app.gs, app.macroStore->nextSpawnId, liveMacro, loadedTrees);
+        app.gs, app.macroStore->nextSpawnId, liveMacro);
     // A witness that answers "0" twice would agree with itself over a world it
     // never weighed: 0 is what the fingerprint returns when the writer FAILED.
     // Refuse that agreement out loud — a check that cannot fail is the defect
@@ -1993,18 +2008,12 @@ bool boot_world_from_save(App& app, const std::string& path) {
         app.gs, *app.macroStore, app.npcAi.squadIndex);
 
     // boot_world() above derived every field from the SEED's virgin world; we
-    // then swapped in the LOADED truths. Restore the remaining truths FIRST —
-    // the living tree grid (v36) and the mineral deposits (v37) — then rebake
-    // every derived field from them in ONE pass (rebake_world, CANON S7).
-    // Before the one rebaker, a load re-baked only the glow — and even that
-    // from the virgin forest: zones, cost grid and glow-occlusion all
-    // described a world that no longer existed (canon-audit G2).
-    if (!sm::restore_tree_counts(app.treeLayer, loadedTrees)) {
-        std::fprintf(stderr,
-                     "load_game: tree grid size %zu != map cells %zu — "
-                     "keeping virgin forest\n",
-                     loadedTrees.size(), app.treeLayer.cell_count());
-    }
+    // then swapped in the LOADED truths — the living forest among them, it
+    // rode in with the state fold. Rebake every derived field from them in
+    // ONE pass (rebake_world, CANON S7). Before the one rebaker, a load
+    // re-baked only the glow — and even that from the virgin forest: zones,
+    // cost grid and glow-occlusion all described a world that no longer
+    // existed (canon-audit G2).
     // (Накат блоков жил умер 2026-10-23, «жилы единые»: слой производный,
     // rebake уже перестроил его из сида — сейв о нём не знает.)
     // (Ре-штамп построенных сквадами фич УМЕР в v130: вектор `builtFeatures`
@@ -2016,8 +2025,8 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // вердиктом: генезис пути загрузки рождает места ПЛАНОМ сида — фичи
     // поселений и шахт встают в нём один раз, снимок кладёт сквады поверх,
     // залежи приезжают сейвом рядом чисел фич при свёртке app.gs.)
-    app.macro.upload_tree_field(app.device, &app.treeLayer);
-    app.uploadedTreeRev = app.treeLayer.revision;
+    app.macro.upload_tree_field(app.device, &app.gs.treeLayer);
+    app.uploadedTreeRev = app.gs.treeLayer.revision;
     return true;
 }
 
@@ -3694,9 +3703,9 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // bumped TreeLayer.revision (usually while inside the subworld);
         // refresh the map-sprite density once, on the macro path, only when a
         // count actually changed — never per frame.
-        if (app.treeLayer.revision != app.uploadedTreeRev && app.macro.ready()) {
-            app.macro.upload_tree_field(app.device, &app.treeLayer);
-            app.uploadedTreeRev = app.treeLayer.revision;
+        if (app.gs.treeLayer.revision != app.uploadedTreeRev && app.macro.ready()) {
+            app.macro.upload_tree_field(app.device, &app.gs.treeLayer);
+            app.uploadedTreeRev = app.gs.treeLayer.revision;
         }
     }
     // The player LEARNS this tick's facts — participation and his own cell
@@ -5087,7 +5096,7 @@ void register_console_commands(App& app) {
             if (app.subworld.harvest_prop_near_player(float(r), &cx, &cy, &prev,
                                                       &kTreeOnly))
                 c.printfln(Lvl::Ok, "chop: cell %d,%d trees %d -> %d",
-                           cx, cy, prev, int(app.treeLayer.at(cx, cy)));
+                           cx, cy, prev, int(app.gs.treeLayer.at(cx, cy)));
             else
                 c.warn("no tree in reach");
             return true;

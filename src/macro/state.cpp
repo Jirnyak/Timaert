@@ -136,7 +136,6 @@ void default_game_state(GameState& gs,
 void populate_rooted_from_politik(GameState& gs, MacroStore& st,
                                      const std::vector<City>& cities,
                                      const TerrainData& terrain,
-                                     TreeLayer& trees,
                                      DepositLayer& deposits,
                                      FeatureLayer& features) {
     if (!terrain.has_rgba_storage()) {
@@ -232,7 +231,6 @@ void populate_rooted_from_politik(GameState& gs, MacroStore& st,
     // owner's SCALE (kVillageBornBase + a seed roll), never the score.
     SettlementSiteContext site{};
     site.w.gs      = &gs;
-    site.w.trees   = &trees;
     site.w.terrain = &terrain;
     site.w.deposits = &deposits;
     // The deposit-reach field: the score sees what the crews mine (v71).

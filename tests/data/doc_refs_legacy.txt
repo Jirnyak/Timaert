@@ -384,7 +384,6 @@ SKELETON.md	threat_field.cpp:92-94
 SKELETON.md	threat_field.h:55
 SKELETON.md	tree_layer.cpp:34
 SKELETON.md	tree_layer.cpp:5
-SKELETON.md	ui/map_screen.cpp:335
 SKELETON.md	ui/overlays.cpp:1653-1660
 SKELETON.md	ui/overlays.cpp:2764-2765
 SKELETON.md	ui/screens.cpp:387-392

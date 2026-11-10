@@ -149,13 +149,12 @@ TerrainData make_world() {
 
 struct World {
     TerrainData  td;
-    std::unique_ptr<TreeLayer> treesOwn{new TreeLayer()};
-    TreeLayer& trees = *treesOwn;
     std::unique_ptr<DepositLayer> depositsOwn{new DepositLayer()};
     DepositLayer& deposits = *depositsOwn;
     FeatureLayer features;   // фичи рода встают при рождении мест (2026-10-23)
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
+    TreeLayer& trees = gs.treeLayer;   // лес — поле состояния мира
     // ПЛАН ГОРОДОВ — буфер генезиса (M-90), а не слой мира: он больше не
     // живёт в `GameState`, поэтому фикстура держит его сама, ровно как это
     // делает `generate_macro_world` своим локалом.
@@ -195,7 +194,7 @@ void make_settled_world(World& w) {
     w.cityPlan.push_back(a);
     w.cityPlan.push_back(b);
 
-    populate_rooted_from_politik(w.gs, places(), w.cityPlan, w.td, w.trees,
+    populate_rooted_from_politik(w.gs, places(), w.cityPlan, w.td,
                                     w.deposits, w.features);
 }
 
@@ -240,7 +239,6 @@ std::vector<RootedRow> cities_of(const GameState& gs) {
 SettlementSiteContext site_ctx(World& w) {
     SettlementSiteContext ctx{};
     ctx.w.gs       = &w.gs;
-    ctx.w.trees    = &w.trees;
     ctx.w.terrain  = &w.td;
     ctx.w.deposits = &w.deposits;
     if (w.depositReach.empty())

@@ -196,8 +196,7 @@ int main(int argc, char** argv) {
         sm::GameState& gs = *gsOwn;
         sm::TerrainData terrain{};
         std::vector<sm::TreePoint> trees;
-        std::unique_ptr<sm::TreeLayer> treeLayerOwn{new sm::TreeLayer()};
-        sm::TreeLayer& treeLayer = *treeLayerOwn;
+        sm::TreeLayer& treeLayer = gs.treeLayer;
         std::unique_ptr<sm::DepositLayer> depositsOwn{new sm::DepositLayer()};
         sm::DepositLayer& deposits = *depositsOwn;
         sm::FeatureLayer features;
@@ -217,7 +216,6 @@ int main(int argc, char** argv) {
         go.gs = &gs;
         go.terrain = &terrain;
         go.trees = &trees;
-        go.treeLayer = &treeLayer;
         go.deposits = &deposits;
         go.features = &features;
         go.zones = &zones;
@@ -247,7 +245,6 @@ int main(int argc, char** argv) {
         sm::MacroWorld mw{};
         mw.gs = &gs;
         mw.nav = &nav;
-        mw.trees = &treeLayer;
         mw.store = macroStore.get();
         mw.terrain = &terrain;
         mw.deposits = &deposits;

@@ -50,20 +50,4 @@ void set_tree_count(TreeLayer& layer, int x, int y, int count) {
     ++layer.revision;
 }
 
-bool restore_tree_counts(TreeLayer& layer,
-                         std::span<const std::uint16_t> counts) {
-    if (!layer.has_complete_storage()
-        || counts.size() != layer.cell_count()) {
-        return false;
-    }
-    bool changed = false;
-    for (std::size_t i = 0; i < counts.size(); ++i) {
-        const std::uint16_t v = counts[i] > kMaxTreesPerCell
-            ? std::uint16_t(kMaxTreesPerCell) : counts[i];
-        if (layer.data[i] != v) { layer.data[i] = v; changed = true; }
-    }
-    if (changed) ++layer.revision;
-    return true;
-}
-
 } // namespace sm

@@ -222,12 +222,12 @@ void fauna_apply(MacroWorld& w, int x, int y, int delta) {
 // read/apply go to the grid, and set_tree_count keeps clamp + revision at
 // the layer's own door.
 int trees_read(const MacroWorld& w, int x, int y) {
-    return w.trees ? int(w.trees->at(x, y)) : 0;
+    return w.gs ? int(w.gs->treeLayer.at(x, y)) : 0;
 }
 void trees_apply(MacroWorld& w, int x, int y, int delta) {
-    if (!w.trees || delta == 0) return;
-    const int now = int(w.trees->at(x, y));
-    set_tree_count(*w.trees, x, y, now + delta);
+    if (!w.gs || delta == 0) return;
+    const int now = int(w.gs->treeLayer.at(x, y));
+    set_tree_count(w.gs->treeLayer, x, y, now + delta);
 }
 
 // ЖИЛА: НА КАКОЙ КЛЕТКЕ ЧИСЛО ЕСТЬ ЗАЛЕЖЬ ШАХТЫ — колонкой строки фичи
@@ -332,7 +332,7 @@ int fauna_growth_at(const MacroWorld& w, int x, int y) {
 // tropics (≥1024) grow at full rate, meadow at ~0.6, desert (40) almost
 // never, water not at all.
 int trees_growth_at(const MacroWorld& w, int x, int y) {
-    if (!w.trees || !w.gs || !w.terrain || !w.terrain->has_rgba_storage()
+    if (!w.gs || !w.terrain || !w.terrain->has_rgba_storage()
         || !world_shape_ok(w.terrain->width, w.terrain->height))
         return 0;
     const int side = w.terrain->width;
@@ -341,7 +341,7 @@ int trees_growth_at(const MacroWorld& w, int x, int y) {
     for (int dy = -1; dy <= 1; ++dy)
         for (int dx = -1; dx <= 1; ++dx) {
             const std::uint32_t n = cell_step(at, dx, dy, side);
-            sum += int(w.trees->at(cell_x(n, side), cell_y(n, side)));
+            sum += int(w.gs->treeLayer.at(cell_x(n, side), cell_y(n, side)));
         }
     int growth = sum * kGrowthEpochDays / (9 * 1024);
     if (growth <= 0) return 0;
@@ -773,9 +773,9 @@ void resource_fields_daily_growth(MacroWorld& w, int day) {
             // ЛЕС. Клеток/32 плотного носителя за день: клетка навещается раз
             // в эпоху и получает эпоху роста — плавная долгая динамика без
             // полнокарточного дня и без работы в тике.
-            if (!w.trees || !w.trees->has_complete_storage()) break;
-            const int W = w.trees->width;
-            const std::size_t n = w.trees->cell_count();
+            if (!w.gs || !w.gs->treeLayer.has_complete_storage()) break;
+            const int W = w.gs->treeLayer.width;
+            const std::size_t n = w.gs->treeLayer.cell_count();
             for (std::size_t idx = std::size_t(day % kGrowthEpochDays);
                  idx < n; idx += std::size_t(kGrowthEpochDays)) {
                 const int x = cell_x(std::uint32_t(idx), W);

@@ -234,8 +234,16 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
                 char pinId[32];
                 std::snprintf(pinId, sizeof pinId, "user_%d_%d", cx, cy);
                 if (!remove_marker(gs.markers, pinId)) {
-                    add_marker(gs.markers, pinId, MarkerStyle::Waypoint,
-                               float(cx), float(cy));
+                    // Список меток под капом: полный список отказывает пину
+                    // ВСЛУХ, а не молча (прежде лишний пин вставал, а отказывал
+                    // потом сейв — целиком).
+                    if (gs.markers.full()) {
+                        session_feed_push(gs.sessionFeed,
+                                          "The chart holds no more pins.");
+                    } else {
+                        add_marker(gs.markers, pinId, MarkerStyle::Waypoint,
+                                   float(cx), float(cy));
+                    }
                 }
             }
         }
@@ -344,7 +352,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
 
     // ── Marker ink (kMarkerSurface & Map): waypoints and any world signal
     // that also prints on the chart. Drawn at the cell, primitive shapes.
-    for (const Marker& m : gs.markers) {
+    for (const Marker& m : gs.markers.live()) {
         const std::size_t si = std::size_t(m.style) & 3u;
         if (!(kMarkerSurface[si] & kMarkerOnMap)) continue;
         if (gs.knowledge.at(int(std::floor(m.x)), int(std::floor(m.y)))
@@ -391,7 +399,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
     //  заново. Счёт уехал В ПРОХОД МЕТОК выше — он обязан считать ровно то,
     //  что нарисовано, и отдельный обход этого не гарантировал ничем.)
     bool styleSeen[4] = {};
-    for (const Marker& m : gs.markers) {
+    for (const Marker& m : gs.markers.live()) {
         if ((kMarkerSurface[std::size_t(m.style) & 3u] & kMarkerOnMap)
             && gs.knowledge.at(int(std::floor(m.x)), int(std::floor(m.y)))
                    != kKnowledgeUnknown)
@@ -445,11 +453,11 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
         // The player's own pins: rename in place, jump the camera, or lift.
         bool anyPin = false;
         int pinRow = 0;
-        for (auto it = gs.markers.begin(); it != gs.markers.end();) {
-            Marker& m = *it;
+        for (std::size_t i = 0; i < gs.markers.count;) {
+            Marker& m = gs.markers.rows[i];
             if (m.style != MarkerStyle::Waypoint
-                || m.id.rfind("user_", 0) != 0) {
-                ++it;
+                || !marker_id(m).starts_with("user_")) {
+                ++i;
                 continue;
             }
             if (!anyPin) {
@@ -462,17 +470,20 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
                 st.camY = m.y + 0.5f;
             }
             ImGui::SameLine();
-            char buf[64];
-            std::snprintf(buf, sizeof buf, "%s", m.label.c_str());
+            // Буфер ввода шириной в ячейку подписи: набранное ложится в
+            // запись без усечения.
+            char buf[kMarkerLabelBytes];
+            std::snprintf(buf, sizeof buf, "%s", m.label);
             ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
             char hint[32];
             std::snprintf(hint, sizeof hint, "%d, %d", int(m.x), int(m.y));
             if (ImGui::InputTextWithHint("##pin", hint, buf, sizeof buf))
-                m.label = buf;
+                set_marker_label(m, buf);
             ImGui::SameLine();
             const bool lift = ImGui::SmallButton("x");
             ImGui::PopID();
-            it = lift ? gs.markers.erase(it) : it + 1;
+            if (lift) remove_marker_at(gs.markers, i);
+            else ++i;
         }
 
         ImGui::Separator();

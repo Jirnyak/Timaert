@@ -30,7 +30,9 @@ constexpr std::uint32_t kChecksumSeed = 2166136261u;
 constexpr std::uint32_t kChecksumPrime = 16777619u;
 constexpr std::uint32_t kMaxInventoryStacks =
     std::uint32_t(kMaxInventorySlots);
-constexpr std::uint32_t kMaxMarkers = 16384u;
+// (Кап меток жил здесь литералом 16384 и уехал к самому списку —
+//  `kMaxMarkers@src/macro/markers.h`: кап у списка один, и провод читает его
+//  оттуда же, откуда дверь постановки.)
 // (Капы квестов kMaxQuests/kMaxQuestParts 4096×4096 УМЕРЛИ 2026-10-23,
 //  ломоть 3 M-72 вариант А: блок квестов — 1.45 ГиБ потолка мимо шести
 //  родов (§10) — снесён вместе с машиной; цель игрока едет родом 2.)
@@ -66,18 +68,18 @@ constexpr std::uint32_t kHeaderBytes = 4u + 4u + 8u + 4u;
 // ЧЕГО В СУММЕ НЕТ, И ЭТО НАЗВАНО ВСЛУХ: ТЕЛА СТРОК. У строки нет «байтов
 // записи» — она переменной длины, и единственный её потолок это
 // `savefmt::kMaxStringBytes` (1 МиБ на штуку, сам взят с потолка). Строковых
-// слотов по капам 32 770 — сумма с ними дала бы ≈32.0 ГиБ, то есть сторож,
-// который не сторож (ПЕРЕСЧЁТ 2026-11-10, v157: было 49 155 и ≈48.0 ГиБ —
-// ушли слот имени сейва и 8192×2 у двух списков logic-узлов; ВЫВОД абзаца
-// счёт не меняет. Слагаемые капов: по одному слоту у метки времени и имени
-// игрока, плюс 16384×2 у маркеров). Поэтому сумма ограничивает ПЛОСКУЮ раскладку (её
-// пробить нельзя по построению), а разбежавшиеся строки ловит тот же сторож
-// в рантайме, в `save_game`.
+// слотов по капам ДВА — метка времени слота и имя игрока; сумма с ними дала
+// бы +2 МиБ (ПЕРЕСЧЁТ 2026-11-10, v158: было 32 770 слотов и ≈32.0 ГиБ, то
+// есть сторож, который не сторож, — 16384×2 слота держали ключ и подпись
+// метки карты. Метка стала плоской записью с размером, и её блок вошёл в
+// сумму ЦЕЛИКОМ, телами). Поэтому сумма ограничивает ПЛОСКУЮ раскладку (её
+// пробить нельзя по построению), а два оставшихся тела строк ловит тот же
+// сторож в рантайме, в `save_game`.
 //
-// Дыра открыта и НАЗВАНА, своего наряда не заводит: её чинят M-115 (эпик
-// строк — `Marker` в `char[N]` и ординалы) и M-180 (шестнадцать строк мира с heap-контейнером членом). В
-// тот день, когда строка состояния станет плоской, у записи появится
-// РАЗМЕР, `kMaxStringBytes` умрёт, а у этой суммы не останется оговорки.
+// Дыра открыта и НАЗВАНА, своего наряда не заводит: её остаток чинит M-180
+// (имя игрока — последняя строка состояния на проводе; метка времени слота
+// состоянием мира не является). В тот день, когда и оно станет плоским,
+// `kMaxStringBytes` умрёт, а у этой суммы не останется оговорки.
 constexpr std::uint64_t kCountBytes = sizeof(std::uint32_t);   // Writer::count
 constexpr std::uint64_t kStrBytes = sizeof(std::uint32_t);     // только префикс
 
@@ -117,10 +119,10 @@ constexpr std::uint64_t kPlayerBytes =               // write_player
 // (Блок строк мест УМЕР в v128, ломтик F: место целиком — запись его ТЕЛА в
 // блоке макро-сквадов, второго штабеля сущностей в сейве больше нет.)
 
-constexpr std::uint64_t kMarkersBlockBytes =         // write_marker
-    kCountBytes + std::uint64_t(kMaxMarkers)
-    * (kStrBytes + sizeof(std::uint8_t) + sizeof(Marker::x)
-       + sizeof(Marker::y) + kStrBytes);
+// Метка — плоская запись без дыр (`static_assert` у `Marker`), поэтому байты
+// записи на проводе и есть её `sizeof`: блок едет счётом и записями целиком.
+constexpr std::uint64_t kMarkersBlockBytes =         // write_markers
+    kCountBytes + std::uint64_t(kMaxMarkers) * sizeof(Marker);
 
 // РОД 6 целиком одним pod: строки фракций + пул феодальных рёбер + счёт
 // (v121; рантайм-имена хвоста уничтожены вердиктом — строк в блоке ноль).
@@ -230,9 +232,10 @@ static_assert(kMaxPayloadBytes >= 64ull * 1024ull * 1024ull,
               "выведенный потолок payload ниже прежних 64 МиБ");
 // Заворот u64 на сложении сделал бы сумму МЕНЬШЕ своего крупнейшего
 // слагаемого. `SaveHeader::payloadSize` — u64, так что расти потолку есть
-// куда: сегодняшняя сумма стоит ~3049 МиБ ниже границы u32 (ПЕРЕСЧЁТ
-// 2026-11-10, v157: ~1046.80 МиБ после сноса ломтя 1; до него ~1078.88, а
-// в эпоху мёртвых штабелей квестов и мест — 4072.27 МиБ и зазор «~25 МБ»).
+// куда: сегодняшняя сумма стоит ~3048 МиБ ниже границы u32 (ПЕРЕСЧЁТ
+// 2026-11-10, v158: ~1048.16 МиБ — блок меток вошёл телами записей, +1.36
+// МиБ; v157: ~1046.80 МиБ после сноса ломтя 1; до него ~1078.88, а в эпоху
+// мёртвых штабелей квестов и мест — 4072.27 МиБ и зазор «~25 МБ»).
 // Запас больше не на один поднятый кап, но вывод цел: граница u32 здесь не
 // закон, потому что поле длины шире её.
 static_assert(kMaxPayloadBytes > kMacroNpcsBlockBytes,
@@ -860,20 +863,38 @@ void read_player(Reader& r, PlayerState& p) {
     r.pod(p.journalFull);
 }
 
-void write_marker(Writer& w, const Marker& m) {
-    w.str(m.id);
-    write_enum8(w, m.style);
-    w.pod(m.x);
-    w.pod(m.y);
-    w.str(m.label);
+// МЕТКИ КАРТЫ — СЧЁТ И ЗАПИСИ ЦЕЛИКОМ (v158). Запись плоская и без дыр, так
+// что на провод идут её байты как есть — та же форма, что у рода 6 ниже.
+// Хвост списка за счётом не едет: он нулевой по построению дверей.
+void write_markers(Writer& w, const MarkerList& list) {
+    if (!w.count(list.count, std::uint32_t(kMaxMarkers))) return;
+    for (const Marker& m : list.live()) w.pod(m);
 }
 
-void read_marker(Reader& r, Marker& m) {
-    r.str(m.id);
-    read_enum8(r, m.style, static_cast<std::uint8_t>(MarkerStyle::Waypoint));
-    r.pod(m.x);
-    r.pod(m.y);
-    r.str(m.label);
+// Чтение судит каждую запись: стиль обязан быть строкой перечисления, а ключ
+// и подпись — кончаться нулём ВНУТРИ своей ячейки (двери списка читают их как
+// строки). Запись, не прошедшая суд, — порча файла: загрузка отказывает
+// целиком, а не чинит её.
+void read_markers(Reader& r, MarkerList& list) {
+    std::uint32_t n = 0;
+    if (!read_count(r, n, std::uint32_t(kMaxMarkers))) return;
+    // На месте, не временным значением: список весит 1.6 МиБ.
+    list.count = 0;
+    std::memset(list.rows, 0, sizeof(list.rows));
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        Marker m{};
+        r.pod(m);
+        if (!r.ok) break;
+        if (std::uint8_t(m.style) > std::uint8_t(MarkerStyle::Waypoint)
+            || m.id[0] == '\0'
+            || m.id[kMarkerIdBytes - 1u] != '\0'
+            || m.label[kMarkerLabelBytes - 1u] != '\0') {
+            r.ok = false;
+            break;
+        }
+        list.rows[i] = m;
+        list.count = i + 1u;
+    }
 }
 
 // РОД 6 — строки фракций, byte for byte (macro/factions.h). It used to be a
@@ -902,8 +923,7 @@ void read_factions(Reader& r, FactionState& f) {
 void write_payload(Writer& w, const GameState& s,
                    const std::string& savedAt,
                    std::uint32_t storeNextSpawnId,
-                   const std::vector<MacroNpcRecord>& macroNpcs,
-                   std::span<const std::uint16_t> treeCounts) {
+                   const std::vector<MacroNpcRecord>& macroNpcs) {
     w.pod(s.worldSeed);
     w.pod(s.mapW);
     w.pod(s.mapH);
@@ -923,9 +943,7 @@ void write_payload(Writer& w, const GameState& s,
     // was sorting.)
     write_player(w, s.player);
 
-    if (w.count(s.markers.size(), kMaxMarkers)) {
-        for (const auto& marker : s.markers) write_marker(w, marker);
-    }
+    write_markers(w, s.markers);
 
     write_factions(w, s.factions);
 
@@ -934,7 +952,7 @@ void write_payload(Writer& w, const GameState& s,
     // trees, knowledge, deposits, scars — each row writes its own bytes, in
     // row order, byte-identical to the four hand blocks that lived here.
     // Adding a per-cell world truth is one row THERE, no code here.
-    write_world_fields(w, WorldFieldStores{&s, treeCounts});
+    write_world_fields(w, s);
 
     // v23: the macro-ECS snapshot — the lords, squads, bandits and beasts of
     // the living map, one record each (macro/macro_snapshot.h).
@@ -967,8 +985,7 @@ void write_payload(Writer& w, const GameState& s,
 }
 
 void read_payload(Reader& r, GameState& s, std::uint32_t& storeNextSpawnId,
-                  std::vector<MacroNpcRecord>& macroNpcs,
-                  std::vector<std::uint16_t>& treeCounts) {
+                  std::vector<MacroNpcRecord>& macroNpcs) {
     s.version = kSaveVersion;
     r.pod(s.worldSeed);
     r.pod(s.mapW);
@@ -987,22 +1004,16 @@ void read_payload(Reader& r, GameState& s, std::uint32_t& storeNextSpawnId,
 
     // (Блок строк мест умер в v128: тела мест едут записями блока
     // макро-сквадов ниже, самолечение эмитента — там же, macro_snapshot.h.)
+    read_markers(r, s.markers);
+    if (!r.ok) return;
     std::uint32_t n = 0;
-    if (!read_count(r, n, kMaxMarkers)) return;
-    s.markers.clear();
-    s.markers.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        Marker marker{};
-        read_marker(r, marker);
-        s.markers.push_back(std::move(marker));
-    }
 
     read_factions(r, s.factions);
 
     // The saved world FIELDS, by registry row (macro/world_fields.h) — the
-    // mirror of the write side; the caller validates trees against the
-    // loaded map dims (restore_tree_counts).
-    if (!read_world_fields(r, WorldFieldStoresMut{&s, &treeCounts})) {
+    // mirror of the write side. The forest lands in the state like every
+    // other row; a non-empty block must cover the loaded map exactly.
+    if (!read_world_fields(r, s)) {
         return;
     }
 
@@ -1033,8 +1044,7 @@ void read_payload(Reader& r, GameState& s, std::uint32_t& storeNextSpawnId,
 
 bool load_payload_from_file(const std::string& path, GameState& s,
                             std::uint32_t& storeNextSpawnId,
-                            std::vector<MacroNpcRecord>& macroNpcs,
-                            std::vector<std::uint16_t>& treeCounts) {
+                            std::vector<MacroNpcRecord>& macroNpcs) {
     std::vector<std::uint8_t> file;
     if (!read_file(path, file)) return false;
 
@@ -1050,15 +1060,13 @@ bool load_payload_from_file(const std::string& path, GameState& s,
     GameState& loaded = *loadedOwn;
     std::uint32_t loadedNextSpawnId = 1;
     std::vector<MacroNpcRecord> loadedMacro;
-    std::vector<std::uint16_t> loadedTrees;
     Reader r{file.data() + kHeaderBytes, static_cast<std::size_t>(h.payloadSize)};
-    read_payload(r, loaded, loadedNextSpawnId, loadedMacro, loadedTrees);
+    read_payload(r, loaded, loadedNextSpawnId, loadedMacro);
     if (!r.ok || r.pos != r.size) return false;
 
     s = std::move(loaded);
     storeNextSpawnId = loadedNextSpawnId;
     macroNpcs = std::move(loadedMacro);
-    treeCounts = std::move(loadedTrees);
     return true;
 }
 
@@ -1066,14 +1074,12 @@ bool load_payload_from_file(const std::string& path, GameState& s,
 
 bool save_game(const GameState& s, std::uint32_t storeNextSpawnId,
                const std::vector<MacroNpcRecord>& macroNpcs,
-               std::span<const std::uint16_t> treeCounts,
                const std::string& path) {
     Writer payload;
     payload.bytes.reserve(64u * 1024u);
     const std::string savedAt = current_timestamp_utc();
     if (savedAt.empty()) return false;
-    write_payload(payload, s, savedAt, storeNextSpawnId, macroNpcs,
-                  treeCounts);
+    write_payload(payload, s, savedAt, storeNextSpawnId, macroNpcs);
     if (!payload.ok || payload.bytes.size() > kMaxPayloadBytes) return false;
 
     SaveHeader h;
@@ -1089,25 +1095,21 @@ std::uint64_t save_max_payload_bytes() { return kMaxPayloadBytes; }
 
 std::uint32_t save_payload_fingerprint(
     const GameState& s, std::uint32_t storeNextSpawnId,
-    const std::vector<MacroNpcRecord>& macroNpcs,
-    std::span<const std::uint16_t> treeCounts) {
+    const std::vector<MacroNpcRecord>& macroNpcs) {
     Writer payload;
     payload.bytes.reserve(64u * 1024u);
     // The stamp is held FIXED, and it is the only field that has to be: two
     // honest saves of one state differ in savedAt by construction (a fresh
     // UTC stamp per save, save.cpp:1272), and that is not state.
-    write_payload(payload, s, std::string(), storeNextSpawnId,
-                  macroNpcs, treeCounts);
+    write_payload(payload, s, std::string(), storeNextSpawnId, macroNpcs);
     if (!payload.ok) return 0u;   // 0 = "no answer", never a real fingerprint
     return checksum32(payload.bytes.data(), payload.bytes.size());
 }
 
 bool load_game(GameState& s, std::uint32_t& storeNextSpawnId,
                std::vector<MacroNpcRecord>& macroNpcs,
-               std::vector<std::uint16_t>& treeCounts,
                const std::string& path) {
-    return load_payload_from_file(path, s, storeNextSpawnId,
-                                  macroNpcs, treeCounts);
+    return load_payload_from_file(path, s, storeNextSpawnId, macroNpcs);
 }
 
 SaveSummary inspect_save(const std::string& path) {

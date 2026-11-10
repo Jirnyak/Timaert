@@ -438,6 +438,8 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"attack_first_npc", SmokeAction::AttackFirstNpc},
     {"macro_kill_writeback", SmokeAction::MacroKillWriteback},
     {"fauna_kill_writeback", SmokeAction::FaunaKillWriteback},
+    {"forest_fell_macro", SmokeAction::ForestFellMacro},
+    {"forest_stays_felled", SmokeAction::ForestStaysFelled},
     {"spawn_squad_at_player", SmokeAction::SpawnSquadAtPlayer},
     {"capture_course", SmokeAction::CaptureCourse},
     {"capture_exit", SmokeAction::CaptureExit},
@@ -2176,7 +2178,7 @@ bool smoke_find_tree_subworld_cell(const App& app, int& outX, int& outY) {
                     || y >= app.gs.mapH - 64) {
                     continue;
                 }
-                if (!sm::is_forest_cell(int(app.treeLayer.at(x, y)))) continue;
+                if (!sm::is_forest_cell(int(app.gs.treeLayer.at(x, y)))) continue;
                 const float h = sm::field01_of(app.terrain.height_at(x, y));
                 if (h < minH) continue;
                 outX = x;
@@ -4440,11 +4442,11 @@ bool run_prologue_road_smoke(App& app) {
     // cell, precisely because the wrong cell is the one nobody would look at.
     auto forest_sum = [&]() {
         std::uint64_t s = 0;
-        for (const std::uint16_t v : app.treeLayer.cells()) s += v;
+        for (const std::uint16_t v : app.gs.treeLayer.cells()) s += v;
         return s;
     };
     const std::uint64_t forestBefore = forest_sum();
-    const std::uint32_t forestRevBefore = app.treeLayer.revision;
+    const std::uint32_t forestRevBefore = app.gs.treeLayer.revision;
     const int bagWoodBefore = player_bag(app).count("wood");
     // The prologue module grows its own wood by its own constant (every
     // variant is scattered at kTreeCount, sub/dgn/prologue_road.cpp), so a
@@ -4553,7 +4555,7 @@ bool run_prologue_road_smoke(App& app) {
                  pocketFelled ? 1 : 0, bagWoodBefore, bagWoodAfter,
                  static_cast<unsigned long long>(forestBefore),
                  static_cast<unsigned long long>(forestAfter),
-                 forestRevBefore, app.treeLayer.revision);
+                 forestRevBefore, app.gs.treeLayer.revision);
     std::fflush(stderr);
 
     // Sixteen facts about four systems — the pocket's ground, the ambush's
@@ -4605,7 +4607,7 @@ bool run_prologue_road_smoke(App& app) {
     SMOKE_CHECK(app, bagWoodAfter > bagWoodBefore,
                 "felling in a pocket still pays the PLAYER his wood");
     SMOKE_CHECK(app, forestAfter == forestBefore
-                     && app.treeLayer.revision == forestRevBefore,
+                     && app.gs.treeLayer.revision == forestRevBefore,
                 "...and pays the MAP nothing: a doorless pocket owes no cell, "
                 "so not one count of the world's forest moves (it used to "
                 "debit the far side of the torus, silently)");
@@ -7491,7 +7493,7 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "chop: subworld enter failed");
             return false;
         }
-        const std::uint32_t revBefore = app.treeLayer.revision;
+        const std::uint32_t revBefore = app.gs.treeLayer.revision;
         const int woodBefore = player_bag(app).count("wood");
         int cx = 0, cy = 0, prev = 0;
         // The whole 3×3 composite is in reach: any tree in the window works.
@@ -7506,13 +7508,13 @@ bool run_console_smoke(App& app) {
         }
         // Срубленное — строка дельты; счётчик клетки падает на ГРАНИЦЕ тика.
         smoke_advance_to_macro_tick(app);
-        const int after = int(app.treeLayer.at(cx, cy));
+        const int after = int(app.gs.treeLayer.at(cx, cy));
         const int expected = prev > 0 ? prev - 1 : 0;
         // prev == 0 is legal (a tree on a zero-count cell's dry water margin):
         // the count clamps at 0 and the revision does not move.
         const bool changed = prev > 0;
         if (after != expected
-            || (changed && app.treeLayer.revision == revBefore)) {
+            || (changed && app.gs.treeLayer.revision == revBefore)) {
             if (!wasActive) app.subworld.leave(true);
             smoke_fail(app, "chop: macro count/revision did not track the felled tree");
             return false;
@@ -7681,7 +7683,6 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             if (!sm::save_game(app.gs, app.macroStore->nextSpawnId,
                                stage_save_state(app),
-                               app.treeLayer.cells(),
                                app.savePath)) {
                 smoke_fail(app, "save_game returned false");
                 break;
@@ -9925,6 +9926,86 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                                 "witcher would find no trail");
                 break;
             }
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::ForestFellMacro: {
+            // ЛЕС — ПОЛЕ СОСТОЯНИЯ, И СВЁРТКА ЗАГРУЗКИ НЕСЁТ ЕГО САМА (ломоть 3
+            // сейв-эпика). Чтобы сохранение и загрузка судили НЕ девственный
+            // лес сида, клетка вырубается до сохранения — дверью поля, той же,
+            // которой рубит мир. Берётся самая густая клетка: эффект обязан
+            // быть заведомо ненулевым (§8 п.6), а на девственном мире
+            // загруженный лес совпал бы с лесом генезиса, и свидетель ниже
+            // зеленел бы на любой потере.
+            std::fprintf(stderr, "[smoke] action=forest_fell_macro\n");
+            if (!app.worldLoaded || app.subworld.active()) {
+                smoke_fail(app, "forest_fell_macro needs the macro map");
+                break;
+            }
+            const std::span<const std::uint16_t> forest =
+                app.gs.treeLayer.cells();
+            std::size_t densest = 0;
+            for (std::size_t i = 1; i < forest.size(); ++i)
+                if (forest[i] > forest[densest]) densest = i;
+            if (forest.empty() || forest[densest] == 0u) {
+                smoke_fail(app, "forest_fell_macro: the world has no forest");
+                break;
+            }
+            const int trees0 = int(forest[densest]);
+            const int fx = sm::cell_x(std::uint32_t(densest), app.gs.mapW);
+            const int fy = sm::cell_y(std::uint32_t(densest), app.gs.mapW);
+            sm::MacroWorld fellMw = macro_world(app);
+            const int moved = sm::field_move(
+                fellMw, sm::ResourceFieldId::Trees, fx, fy, -trees0);
+            SMOKE_CHECK(app, moved == -trees0
+                                 && app.gs.treeLayer.at(fx, fy) == 0u,
+                        "дверь поля вырубила клетку леса состояния дочиста");
+            app.smoke.forestFelledCell = int(densest);
+            std::fprintf(stderr,
+                         "[smoke] forest_fell_macro cell=%d,%d trees=%d->%d\n",
+                         fx, fy, trees0, int(app.gs.treeLayer.at(fx, fy)));
+            std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::ForestStaysFelled: {
+            // ВТОРАЯ ПОЛОВИНА: после сохранения и загрузки (1) вырубленная
+            // клетка осталась вырубленной — лес приехал свёрткой состояния, а
+            // не воскрес из сида, и (2) КЭШ ОПТИКИ ОПИСЫВАЕТ ЗАГРУЖЕННЫЙ ЛЕС.
+            // Второе — свидетель конкретной ловушки: кэш сверяет себя со
+            // счётчиком правок леса, а счётчик слоя из файла и счётчик слоя
+            // генезиса вправе совпасть при разных клетках; свёртка обязана
+            // сбросить кэш сама (`boot_world_from_save`).
+            std::fprintf(stderr, "[smoke] action=forest_stays_felled\n");
+            const int cell = app.smoke.forestFelledCell;
+            const std::span<const std::uint16_t> forest =
+                app.gs.treeLayer.cells();
+            if (cell < 0 || std::size_t(cell) >= forest.size()) {
+                smoke_fail(app, "forest_stays_felled without forest_fell_macro");
+                break;
+            }
+            SMOKE_CHECK(app, forest[std::size_t(cell)] == 0u,
+                        "вырубленная до сохранения клетка леса не воскресла "
+                        "после загрузки");
+            const sm::OpticalWorld ow = optical_world(app);
+            bool opticsMatch = ow.treeDensity != nullptr
+                && ow.treeDensity->size() == forest.size();
+            std::size_t firstBad = forest.size();
+            for (std::size_t i = 0; opticsMatch && i < forest.size(); ++i) {
+                if ((*ow.treeDensity)[i]
+                    != float(forest[i]) / float(sm::kMaxTreesPerCell)) {
+                    opticsMatch = false;
+                    firstBad = i;
+                }
+            }
+            SMOKE_CHECK(app, opticsMatch,
+                        "кэш оптики описывает ЗАГРУЖЕННЫЙ лес, а не лес сида");
+            std::fprintf(stderr,
+                         "[smoke] forest_stays_felled cell=%d trees=%d "
+                         "optics_match=%d first_bad=%zu\n",
+                         cell, int(forest[std::size_t(cell)]),
+                         opticsMatch ? 1 : 0, firstBad);
+            std::fflush(stderr);
             ++app.smoke.cursor;
             break;
         }

@@ -61,6 +61,8 @@ enum class SmokeAction : std::uint8_t {
     AttackFirstNpc,
     MacroKillWriteback,
     FaunaKillWriteback,
+    ForestFellMacro,
+    ForestStaysFelled,
     SpawnSquadAtPlayer,
     CaptureCourse,
     CaptureExit,
@@ -206,6 +208,9 @@ struct SmokeScript {
     int trackedCellX = 0;
     int trackedCellY = 0;
     int trackedCount0 = 0;
+    // forest_fell_macro → forest_stays_felled: индекс клетки, вырубленной
+    // дверью поля до сохранения; -1 = ничего не рубили.
+    int forestFelledCell = -1;
 };
 
 // Defined in app/smoke.cpp. This is the WHOLE surface main.cpp drives the

@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include "core/caps.h"    // kWorldCellCap — кап клеток мира, один на слои
 #include "core/torus.h"
 #include "macro/language.h"
 #include "tables/faction.h"
@@ -90,25 +91,52 @@ struct City {
 //     `gs.mapW`/`gs.mapH` (DOD п.9). Умерли с обёрткой; размер поля теперь
 //     передаётся дверям параметром и судится одной стороной мира.
 
+// ── ПОЛЕ ВЛАДЕНИЯ ЗЕМЛЁЙ — ПЛОСКИЙ МАССИВ ПОД КАПОМ КЛЕТОК МИРА (ломоть 3
+// сейв-эпика, M-180, 2026-11-10) ─────────────────────────────────────────
+// Байт на клетку тора, heap-члена нет. Здесь стоял `std::vector<std::uint8_t>`,
+// и вопрос «построено ли поле» отвечала ДЛИНА ВЕКТОРА: пустой или не той
+// длины вектор читался как «земля ничья». У плоского массива длины-ответа
+// нет, поэтому «ничья» сказано самим БАЙТОМ:
+//   0        — дикая земля (вольный народ);
+//   k ≥ 1    — земля фракции со строкой реестра k − 1.
+// Нулём стоит и только что рождённая память, и хвост за миром — то есть поле,
+// которого генезис ещё не касался, отвечает «ничья» по построению, без
+// отдельной заливки. Прежняя кодировка (ординал как есть, 0xff — ничья) этого
+// свойства не имела: нулевой байт в ней называл фракцию со строкой 0.
+// Сторон у поля НЕТ, и это решение, а не пропуск: копия размера мира рядом с
+// `GameState::mapW/mapH` умерла вместе с обёрткой `Politik` (см. выше), сторону
+// двери получают параметром. Живые клетки — первые `mapW × mapH`.
+inline constexpr std::uint8_t kWildLand = 0u;
+static_assert(kMaxFactions < 255,
+              "ординал фракции + 1 обязан помещаться в байт поля владения");
+struct CellOwnerField {
+    std::uint8_t data[kWorldCellCap] = {};
+};
+static_assert(sizeof(CellOwnerField) == kWorldCellCap,
+              "поле владения: байт на клетку капа, без шапки и хвоста");
+
 // Who owns the cell at (cx,cy)? The world's per-cell ownership FIELD (род 3)
 // answers for the whole map, so a body that appears with no owner of its own —
 // a scripted encounter, a console spawn, whatever system comes next — can
 // still be placed honestly: it belongs to the faction whose land it is
 // standing on, and to the FREE FOLK out in the unclaimed wilds. Coordinates
-// wrap (the map is a torus); a world with no ownership map yet degrades to the
-// free folk like any unowned ground.
+// wrap (the map is a torus); a world outside the cell cap, a world that is
+// not a legal torus, or one genesis has not flooded yet, degrades to the free
+// folk like any unowned ground.
+// Адрес клетки — одна дверь мира (`cell_of`, ЗАКОН АДРЕСА), та же форма, что
+// у слоя знания. Здесь стоял рукописный индекс `wy * mapW + wx` над двумя
+// независимо завёрнутыми осями — он допускал неквадратный «мир», которого
+// закон не знает; теперь такая сторона отвечает ничьей землёй.
 inline std::uint16_t faction_index_for_cell(
-        const std::vector<std::uint8_t>& cellOwner,
+        const CellOwnerField& cellOwner,
         int mapW, int mapH, int cx, int cy) {
-    if (mapW <= 0 || mapH <= 0
-        || cellOwner.size() != std::size_t(mapW) * std::size_t(mapH)) {
+    if (!world_shape_ok(mapW, mapH)
+        || world_cells_within_cap(mapW, mapH) == 0u) {
         return faction_or_freefolk(-1);
     }
-    const int wx = wrap_axis(cx, mapW);
-    const int wy = wrap_axis(cy, mapH);
-    const std::uint8_t owner =
-        cellOwner[std::size_t(wy) * std::size_t(mapW) + std::size_t(wx)];
-    return faction_or_freefolk(owner == 0xffu ? -1 : int(owner));
+    const std::uint8_t owner = cellOwner.data[cell_of(cx, cy, mapW)];
+    // kWildLand (0) → −1 → вольный народ; байт вне реестра — туда же.
+    return faction_or_freefolk(int(owner) - 1);
 }
 
 // THE distance law of the settled world, in one door: the minimum
@@ -160,14 +188,14 @@ void snap_cities_to_land(std::vector<City>& cities, const TerrainData& td,
 // Mirrors politik.ts buildCellOwnership(). Optionally also lake-snaps any
 // realm whose seed def has `capital_requires_lake` (currently Lake Duchy).
 //
-// THE FIELD IS SIZED HERE AND ONLY HERE (one writer, one size): `mapW×mapH`
-// bytes of 0xff before anything else, so a malformed or mismatched terrain
-// leaves an HONEST unowned world rather than a stale one. It used to be
-// allocated twice — once at the top of `generate_politik`, once at the bottom
-// of this pass — and the naive Voronoi flood that filled it in between was
-// dead work: this BFS overwrote every byte of it, always.
+// THE FIELD IS WRITTEN HERE AND ONLY HERE (one writer): the whole cell cap
+// is zeroed (wild land) before anything else, so a malformed or mismatched
+// terrain leaves an HONEST unowned world rather than a stale one. It used to
+// be allocated twice — once at the top of `generate_politik`, once at the
+// bottom of this pass — and the naive Voronoi flood that filled it in between
+// was dead work: this BFS overwrote every byte of it, always.
 void finalize_politik(std::vector<City>& cities,
-                      std::vector<std::uint8_t>& cellOwner,
+                      CellOwnerField& cellOwner,
                       int mapW, int mapH, const TerrainData& td);
 
 } // namespace sm

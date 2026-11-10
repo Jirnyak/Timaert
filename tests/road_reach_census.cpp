@@ -92,8 +92,6 @@ void census_seed(std::uint32_t seed) {
     sm::GameState& gs = *gsOwn;
     sm::TerrainData terrain{};
     std::vector<sm::TreePoint> trees;
-    std::unique_ptr<sm::TreeLayer> treeLayerOwn{new sm::TreeLayer()};
-    sm::TreeLayer& treeLayer = *treeLayerOwn;
     std::unique_ptr<sm::DepositLayer> depositsOwn{new sm::DepositLayer()};
     sm::DepositLayer& deposits = *depositsOwn;
     sm::FeatureLayer features;
@@ -111,7 +109,6 @@ void census_seed(std::uint32_t seed) {
     go.gs = &gs;
     go.terrain = &terrain;
     go.trees = &trees;
-    go.treeLayer = &treeLayer;
     go.deposits = &deposits;
     go.features = &features;
     go.zones = &zones;

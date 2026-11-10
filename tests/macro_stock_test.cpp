@@ -200,11 +200,10 @@ void test_borrow_and_return_are_symmetric() {
     using namespace sm;
     World wld = make_world();
     sm::GameState& gs = wld.gs;
-    std::unique_ptr<sm::TreeLayer> treesOwn{new sm::TreeLayer()};
-    sm::TreeLayer& trees = *treesOwn;
+    sm::TreeLayer& trees = gs.treeLayer;
     tree_layer_reset(trees, gs.mapW, gs.mapH);
     std::ranges::fill(trees.cells(), std::uint16_t(500));
-    MacroWorld w{.gs = &gs, .trees = &trees, .store = wld.store.get()};
+    MacroWorld w{.gs = &gs, .store = wld.store.get()};
 
     const MacroStockKey town = peasant_key(wld.cityId, 10, 10);
     const MacroStockKey cell{-1, 3, 4};
@@ -268,11 +267,10 @@ void test_stocks_are_bounded() {
     using namespace sm;
     World wld = make_world();
     sm::GameState& gs = wld.gs;
-    std::unique_ptr<sm::TreeLayer> treesOwn{new sm::TreeLayer()};
-    sm::TreeLayer& trees = *treesOwn;
+    sm::TreeLayer& trees = gs.treeLayer;
     tree_layer_reset(trees, gs.mapW, gs.mapH);
     std::ranges::fill(trees.cells(), std::uint16_t(10));
-    MacroWorld w{.gs = &gs, .trees = &trees, .store = wld.store.get()};
+    MacroWorld w{.gs = &gs, .store = wld.store.get()};
 
     macro_stock_apply(w, MacroStock::Creatures,
                       peasant_key(wld.cityId, 10, 10), -100000);
@@ -580,8 +578,7 @@ void test_trees_are_a_carrier_row() {
     using namespace sm;
     World wld = make_world();
     sm::GameState& gs = wld.gs;
-    std::unique_ptr<sm::TreeLayer> treesOwn{new sm::TreeLayer()};
-    sm::TreeLayer& trees = *treesOwn;
+    sm::TreeLayer& trees = gs.treeLayer;
     tree_layer_reset(trees, gs.mapW, gs.mapH);
     std::ranges::fill(trees.cells(), std::uint16_t(500));
     // Real terrain (dry land, meadow climate), so the growth walk below
@@ -603,7 +600,7 @@ void test_trees_are_a_carrier_row() {
     // читает поле, а не каскад, поэтому карта без выпечки — карта
     // НЕДОРОЖДЁННАЯ, и её биом честно отвечает водой.
     sm::bake_biomes(td);
-    MacroWorld w{.gs = &gs, .trees = &trees, .store = wld.store.get(),
+    MacroWorld w{.gs = &gs, .store = wld.store.get(),
                  .terrain = &td};
 
     const std::uint32_t rev0 = trees.revision;

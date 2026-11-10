@@ -126,8 +126,7 @@ struct Fixture {
     std::unique_ptr<GameState> gsOwn = make_game_state();
     GameState& gs = *gsOwn;
     TerrainData terrain = all_land();
-    std::unique_ptr<TreeLayer> treesOwn{new TreeLayer()};
-    TreeLayer& trees = *treesOwn;
+    TreeLayer& trees = gs.treeLayer;
     PathCostData pathCost;
     // СЛОЙ ФИЧ — НЕ УКРАШЕНИЕ ФИКСТУРЫ: без него `birth_squad` фичу не
     // ставит вовсе (её постановка гейтится `fl && td`), и закон «умирающий
@@ -155,7 +154,7 @@ struct Fixture {
     MacroStore& st() { return *storeOwner; }
 
     MacroWorld world() {
-        return MacroWorld{.gs = &gs, .trees = &trees, .store = storeOwner.get(),
+        return MacroWorld{.gs = &gs, .store = storeOwner.get(),
                           .terrain = &terrain,
                           .features = &features,
                           .pathCost = &pathCost};

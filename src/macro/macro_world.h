@@ -47,7 +47,6 @@ using BattleFactSink = void (*)(void* user, const BattleFact& fact);
 
 struct GameState;
 struct MacroStore;
-struct TreeLayer;
 struct DepositLayer;
 struct TerrainData;
 struct FeatureLayer;
@@ -59,7 +58,10 @@ struct NavWorld;
 
 struct MacroWorld {
     GameState*  gs    = nullptr;
-    TreeLayer*  trees = nullptr;
+    // (УКАЗАТЕЛЬ НА ЛЕС СТОЯЛ ЗДЕСЬ ОТДЕЛЬНЫМ ПОЛЕМ и умер 2026-11-10, ломоть 3
+    //  сейв-эпика: лес переехал в состояние мира, и второй адрес того же поля
+    //  в конверте позволял фикстуре поставить лес, не совпадающий с лесом
+    //  состояния. Читатель леса спрашивает `gs`.)
     MacroStore* store = nullptr;   // гладкая память макро-сквадов (M-106):
                                    //   состояние — колонками по слоту;
                                    //   реестра сцены в конверте НЕТ (ломоть A

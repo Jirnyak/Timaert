@@ -115,8 +115,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     // A little forest cell four cells east of the village — small enough to
     // be felled to BARE within the run, so the chronicle negative control
     // below is a real condition and not a vacuous one.
-    std::unique_ptr<TreeLayer> layerOwn{new TreeLayer()};
-    TreeLayer& layer = *layerOwn;
+    TreeLayer& layer = gs.treeLayer;
     tree_layer_reset(layer, kMap, kMap);
     layer.data[10 * kMap + 14] = 16;
     const std::vector<TreePoint> trees{{14, 10}};
@@ -141,7 +140,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
 
     // Live a while: idle -> travel -> WORK (the chop) -> return (the haul).
     for (int i = 0; i < 400; ++i) {
-        MacroWorld mw{.gs = &gs, .trees = &layer, .store = &st,
+        MacroWorld mw{.gs = &gs, .store = &st,
                       .treeGrid = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }

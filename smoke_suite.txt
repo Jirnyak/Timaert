@@ -109,6 +109,9 @@ trigger_story_overlay
 # Save and load, with the fold witness on the door (problems.md §38).
 save_game,open_load,load_game,wait_boot_done
 subworld_enter,fauna_kill_writeback,subworld_exit_remap,save_game,open_load,load_game,wait_boot_done
+# Лес — поле состояния: вырубленная до сохранения клетка обязана остаться
+# вырубленной после загрузки, а кэш оптики — описывать загруженный лес.
+forest_fell_macro,save_game,open_load,load_game,wait_boot_done,forest_stays_felled
 
 return_title
 console

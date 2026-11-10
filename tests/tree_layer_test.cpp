@@ -9,10 +9,9 @@
 //      climate), torus-wrapped forest neighbourhoods, fail-closed on bad
 //      storage.
 //   3. The grid's poke door: set_tree_count clamps to [0, 16384] and bumps
-//      `revision` (the u_treeMap refresh driver); restore_tree_counts
-//      reproduces a mutated layer on a freshly derived one (the v36 load
-//      path — the save carries the living grid whole) and refuses a
-//      size-mismatched grid without touching the layer.
+//      `revision` (the u_treeMap refresh driver). (Накат клеток из сейва
+//      здесь больше не проверяется: его дверь умерла, лес приезжает полем
+//      состояния — сквозной свидетель в save_roundtrip_test.)
 //   4. Scatter calibration: scatter_universal_trees is COUNT-driven — over a
 //      flat full cell the number of PLACED trees tracks the requested count
 //      through kTreeScatterYield (the guard that keeps macro counts honest
@@ -186,27 +185,11 @@ void test_build_and_mutation() {
     CHECK(layer.revision == revStable,
           "writing the same value does not churn the revision");
 
-    // Load path (v36): a fresh derived layer + the saved grid == the mutated
-    // layer. This is the "felled forest must not resurrect" negative control
-    // at the unit level — the save_roundtrip test holds it end to end.
-    std::unique_ptr<TreeLayer> reloadedOwn{new TreeLayer()};
-    TreeLayer& reloaded = *reloadedOwn;
-    build_tree_layer(reloaded, td, forestMask.data(), forestMask.size());
-    CHECK(reloaded.at(4, 4) == kMaxTreesPerCell,
-          "the fresh derivation is virgin before the restore");
-    CHECK_OR_RETURN(restore_tree_counts(reloaded, layer.cells()),
-                    "restoring a matching grid succeeds");
-    CHECK(reloaded.at(4, 4) == layer.at(4, 4),
-          "the restored layer carries the felled cell, not the virgin one");
-    CHECK(reloaded.at(4, 6) == 77, "the restored layer carries every mutation");
-    // A size-mismatched grid (corrupt file past the version gate): refused,
-    // layer untouched.
-    const std::uint16_t before = reloaded.at(4, 4);
-    std::vector<std::uint16_t> wrongSize(7, 3);
-    CHECK(!restore_tree_counts(reloaded, wrongSize),
-          "a size-mismatched grid is refused");
-    CHECK(reloaded.at(4, 4) == before,
-          "a refused restore leaves the layer untouched");
+    // (Юнит-проверка наката клеток из сейва стояла здесь и умерла вместе с
+    // дверью наката — ломоть 3 сейв-эпика: лес есть поле состояния мира, и
+    // «срубленный лес не воскресает» держит сквозной свидетель провода,
+    // `tests/save_roundtrip_test.cpp`, — он кладёт срубленную клетку в поле
+    // состояния и читает её из загруженного.)
 }
 
 // ── M-180: СЛОЙ ЕСТЬ ПЛОСКИЙ МАССИВ ПОД КАПОМ КЛЕТОК МИРА ────────────────

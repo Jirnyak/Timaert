@@ -189,7 +189,7 @@ void draw_macro_overlay(const MacroWorld& mw,
     GameState& gs = *mw.gs;
     const TerrainData& terrain = *mw.terrain;
     const FeatureLayer& features = *mw.features;
-    const TreeLayer* treeLayer = mw.trees;
+    const TreeLayer* treeLayer = &gs.treeLayer;
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImGuiIO& io = ImGui::GetIO();
     const ImU32 figureTint = figure_tint_for_time(gs.worldTime);
@@ -510,7 +510,7 @@ void draw_macro_overlay(const MacroWorld& mw,
         const float glyphPx = std::clamp(zoom * 1.8f, 18.0f, 46.0f)
                             * std::clamp(questMarkerScale, 0.4f, 3.0f);
         const float r = glyphPx * 0.72f;                       // pin disc radius
-        for (const auto& m : gs.markers) {
+        for (const Marker& m : gs.markers.live()) {
             // Surface law (markers.h kMarkerSurface): the map is an IMAGE of
             // the world — a waypoint is ink on the chart and never floats in
             // the world; quest/POI/danger signal on both.
@@ -565,13 +565,13 @@ void draw_macro_overlay(const MacroWorld& mw,
                 dl->AddText(font, glyphPx, tp, col, glyph);
             }
             // Label beneath the pin once zoomed in enough to read it.
-            if (zoom >= 6.0f && !m.label.empty()) {
-                const ImVec2 ls = ImGui::CalcTextSize(m.label.c_str());
+            if (zoom >= 6.0f && m.label[0] != '\0') {
+                const ImVec2 ls = ImGui::CalcTextSize(m.label);
                 const ImVec2 lp(c.x - ls.x * 0.5f, c.y + r + 2.0f);
                 dl->AddRectFilled(ImVec2(lp.x - 3.0f, lp.y - 1.0f),
                                   ImVec2(lp.x + ls.x + 3.0f, lp.y + ls.y + 1.0f),
                                   IM_COL32(0, 0, 0, 140), 2.0f);
-                dl->AddText(lp, col, m.label.c_str());
+                dl->AddText(lp, col, m.label);
             }
         }
     }

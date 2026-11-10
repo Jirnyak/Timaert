@@ -31,25 +31,43 @@ static_assert(kMaxFieldCells == (1u << 20),
 constexpr std::uint64_t kBlockCountBytes = sizeof(std::uint32_t);
 
 // ── Trees: the dense u16 carrier, whole (since v36) ─────────────────────
-void trees_write(savefmt::Writer& w, const WorldFieldStores& st) {
-    if (w.count(st.treeCounts.size(), kMaxFieldCells)) {
+// Лес лежит в состоянии мира (`GameState::treeLayer`, ломоть 3 сейв-эпика):
+// ряд берёт его клетки там же, где остальные ряды берут свои. Байты блока те
+// же, что были, когда клетки леса приезжали сюда отдельным параметром провода.
+void trees_write(savefmt::Writer& w, const GameState& gs) {
+    // Клетки МИРА, не кап: неродившийся слой отдаёт пустой вид и счёт 0.
+    const std::span<const std::uint16_t> cells = gs.treeLayer.cells();
+    if (w.count(cells.size(), kMaxFieldCells)) {
         // ONE insert of the whole contiguous u16 run — byte-for-byte the
         // stream the old per-element pod() loop produced (pod() is a plain
         // memcpy of the value), minus a million vector inserts per save.
         if (!w.ok) return;
         const auto* bytes =
-            reinterpret_cast<const std::uint8_t*>(st.treeCounts.data());
+            reinterpret_cast<const std::uint8_t*>(cells.data());
         w.bytes.insert(w.bytes.end(), bytes,
-                       bytes + st.treeCounts.size() * sizeof(std::uint16_t));
+                       bytes + cells.size() * sizeof(std::uint16_t));
     }
 }
-bool trees_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
+// Форма знания: счёт 0 значит «слой не рождался» (частичное состояние
+// фикстуры) — лес остаётся без сторон и отвечает нулём; ненулевой счёт обязан
+// покрыть загруженный мир ровно. Клетка выше потолка — порча файла, а не
+// лес: она срезается к потолку той же границей, что держит писатель клетки.
+bool trees_read(savefmt::Reader& r, GameState& gs) {
     std::uint32_t n = 0;
     if (!savefmt::read_count(r, n, kMaxFieldCells)) return false;
-    if (!st.treeCounts) { r.ok = false; return false; }
-    st.treeCounts->clear();
-    st.treeCounts->resize(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) r.pod((*st.treeCounts)[i]);
+    if (n == 0) return true;
+    const std::size_t expected = world_cells_within_cap(gs.mapW, gs.mapH);
+    if (expected == 0u || std::size_t(n) != expected) {
+        r.ok = false;
+        return false;
+    }
+    tree_layer_reset(gs.treeLayer, gs.mapW, gs.mapH);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        std::uint16_t v = 0;
+        r.pod(v);
+        gs.treeLayer.data[i] =
+            v > kMaxTreesPerCell ? std::uint16_t(kMaxTreesPerCell) : v;
+    }
     return r.ok;
 }
 constexpr std::uint64_t kTreesMaxBytes =
@@ -61,22 +79,20 @@ constexpr std::uint64_t kTreesMaxBytes =
 // position. Zero cells means the layer was never built (a partial state some
 // tests save): the world simply stays dark, because an absent grid answers
 // Unknown (fail closed). A non-zero count must cover the loaded map exactly.
-void knowledge_write(savefmt::Writer& w, const WorldFieldStores& st) {
-    if (!st.gs) { w.count(0, kMaxFieldCells); return; }
+void knowledge_write(savefmt::Writer& w, const GameState& gs) {
     // Клетки МИРА, не кап: неродившийся слой отдаёт пустой вид и счёт 0.
-    const std::span<const std::uint8_t> data = st.gs->knowledge.cells();
+    const std::span<const std::uint8_t> data = gs.knowledge.cells();
     if (w.count(data.size(), kMaxFieldCells)) {
         for (const std::uint8_t v : data)
             w.pod(std::uint8_t(v >= kKnowledgeExplored ? kKnowledgeExplored
                                                        : kKnowledgeUnknown));
     }
 }
-bool knowledge_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
+bool knowledge_read(savefmt::Reader& r, GameState& gs) {
     std::uint32_t n = 0;
     if (!savefmt::read_count(r, n, kMaxFieldCells)) return false;
     if (n == 0) return true;
-    if (!st.gs) { r.ok = false; return false; }
-    GameState& s = *st.gs;
+    GameState& s = gs;
     const std::size_t expected = world_cells_within_cap(s.mapW, s.mapH);
     if (expected == 0u || std::size_t(n) != expected) {
         r.ok = false;
@@ -109,9 +125,8 @@ constexpr std::uint64_t kSparseCellBytes =
 // v157: блок ОДИН, а не по одному на ряд реестра. Четыре ряда-носителя
 // (Fauna/Trees/Livestock/Vein) шрама не держат, и их блоки ехали вечно
 // пустыми — по 4 Б счёта в каждом файле и по 8 388 612 Б в потолке.
-void scars_write(savefmt::Writer& w, const WorldFieldStores& st) {
-    if (!st.gs) { w.count(0, kMaxFieldCells); return; }
-    const ResourceGrid& scars = st.gs->wheatScars;
+void scars_write(savefmt::Writer& w, const GameState& gs) {
+    const ResourceGrid& scars = gs.wheatScars;
     if (!w.count(std::size_t(scars.liveCells), kMaxFieldCells)) return;
     scars.for_each_live([&](std::uint32_t idx, std::int32_t scar) {
         w.pod(idx);
@@ -128,12 +143,11 @@ bool size_for_world(const GameState& gs, ResourceGrid& g) {
     return g.live();
 }
 
-bool scars_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
+bool scars_read(savefmt::Reader& r, GameState& gs) {
     std::uint32_t n = 0;
     if (!savefmt::read_count(r, n, kMaxFieldCells)) return false;
-    if (!st.gs) { r.ok = false; return false; }
-    ResourceGrid& scars = st.gs->wheatScars;
-    if (n > 0 && !size_for_world(*st.gs, scars)) { r.ok = false; return false; }
+    ResourceGrid& scars = gs.wheatScars;
+    if (n > 0 && !size_for_world(gs, scars)) { r.ok = false; return false; }
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
         std::uint32_t idx = 0;
         std::int32_t scar = 0;
@@ -151,21 +165,19 @@ constexpr std::uint64_t kScarsMaxBytes =               // один ряд-шра
 // ── FeatureNumber: THE one layer of S5, sparse on the wire (v96) ────────
 // The number under a feature — hulls moored at a harbour today. One block,
 // because there is one layer: «1 шахта в клетке — одно поле в клетке».
-void feature_number_write_block(savefmt::Writer& w, const WorldFieldStores& st) {
-    if (!st.gs) { w.count(0, kMaxFieldCells); return; }
-    const ResourceGrid& g = st.gs->featureNumber;
+void feature_number_write_block(savefmt::Writer& w, const GameState& gs) {
+    const ResourceGrid& g = gs.featureNumber;
     if (!w.count(std::size_t(g.liveCells), kMaxFieldCells)) return;
     g.for_each_live([&](std::uint32_t idx, std::int32_t value) {
         w.pod(idx);
         w.pod(value);
     });
 }
-bool feature_number_read_block(savefmt::Reader& r, const WorldFieldStoresMut& st) {
+bool feature_number_read_block(savefmt::Reader& r, GameState& gs) {
     std::uint32_t n = 0;
     if (!savefmt::read_count(r, n, kMaxFieldCells)) return false;
-    if (!st.gs) { r.ok = false; return false; }
-    ResourceGrid& g = st.gs->featureNumber;
-    if (n > 0 && !size_for_world(*st.gs, g)) { r.ok = false; return false; }
+    ResourceGrid& g = gs.featureNumber;
+    if (n > 0 && !size_for_world(gs, g)) { r.ok = false; return false; }
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
         std::uint32_t idx = 0;
         std::int32_t value = 0;
@@ -181,21 +193,19 @@ constexpr std::uint64_t kFeatureNumberMaxBytes =
 // ── FaunaField: живое поголовье дикой природы (M-371, v149) ─────────────
 // Носитель ряда Fauna — та же разреженная пара {индекс, значение}, что у
 // поля чисел фич: данные генератора рождения, из ничего не выводятся.
-void fauna_field_write_block(savefmt::Writer& w, const WorldFieldStores& st) {
-    if (!st.gs) { w.count(0, kMaxFieldCells); return; }
-    const ResourceGrid& g = st.gs->faunaField;
+void fauna_field_write_block(savefmt::Writer& w, const GameState& gs) {
+    const ResourceGrid& g = gs.faunaField;
     if (!w.count(std::size_t(g.liveCells), kMaxFieldCells)) return;
     g.for_each_live([&](std::uint32_t idx, std::int32_t value) {
         w.pod(idx);
         w.pod(value);
     });
 }
-bool fauna_field_read_block(savefmt::Reader& r, const WorldFieldStoresMut& st) {
+bool fauna_field_read_block(savefmt::Reader& r, GameState& gs) {
     std::uint32_t n = 0;
     if (!savefmt::read_count(r, n, kMaxFieldCells)) return false;
-    if (!st.gs) { r.ok = false; return false; }
-    ResourceGrid& g = st.gs->faunaField;
-    if (n > 0 && !size_for_world(*st.gs, g)) { r.ok = false; return false; }
+    ResourceGrid& g = gs.faunaField;
+    if (n > 0 && !size_for_world(gs, g)) { r.ok = false; return false; }
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
         std::uint32_t idx = 0;
         std::int32_t value = 0;
@@ -215,8 +225,8 @@ constexpr std::uint64_t kFaunaFieldMaxBytes =
 struct WorldFieldRow {
     WorldField id;
     const char* name;
-    void (*write)(savefmt::Writer&, const WorldFieldStores&);
-    bool (*read)(savefmt::Reader&, const WorldFieldStoresMut&);
+    void (*write)(savefmt::Writer&, const GameState&);
+    bool (*read)(savefmt::Reader&, GameState&);
     // Худший ЛЕГАЛЬНЫЙ вес блока — колонка стоит здесь, рядом со своим
     // писателем, а не в save.cpp: кап ряда знает только ряд.
     std::uint64_t maxBytes;
@@ -255,13 +265,13 @@ static_assert(world_fields_max_bytes_sum() == kWorldFieldsMaxBytes,
 
 } // namespace
 
-void write_world_fields(savefmt::Writer& w, const WorldFieldStores& st) {
-    for (const WorldFieldRow& row : kWorldFields) row.write(w, st);
+void write_world_fields(savefmt::Writer& w, const GameState& gs) {
+    for (const WorldFieldRow& row : kWorldFields) row.write(w, gs);
 }
 
-bool read_world_fields(savefmt::Reader& r, const WorldFieldStoresMut& st) {
+bool read_world_fields(savefmt::Reader& r, GameState& gs) {
     for (const WorldFieldRow& row : kWorldFields) {
-        if (!row.read(r, st)) return false;
+        if (!row.read(r, gs)) return false;
     }
     return r.ok;
 }

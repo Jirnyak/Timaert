@@ -732,7 +732,8 @@ void collect_recovery_writers(std::vector<Site>& out) {
 
 // ── R8: СЛОЙ МИРА НЕ ЖИВЁТ ЗНАЧЕНИЕМ ВНЕ СВОЕГО ХОЗЯИНА (M-180) ──────────
 // Слои мира — плоские массивы под капом клеток (`kWorldCellCap`): слой знания
-// 1 МиБ, лес и поле ряда по 2 МиБ, слой жил 4 МиБ, `GameState` 9 МиБ. Локаль
+// 1 МиБ, лес и поле ряда по 2 МиБ, слой жил 4 МиБ, `GameState` 13.6 МиБ (с
+// ломтя 3 сейв-эпика в нём ещё лес, поле владения и список меток). Локаль
 // такого типа, член фикстуры или возврат значением кладут мегабайты на стек,
 // и ломается это не сборкой, а падением в рантайме (главный поток 8 МиБ,
 // рабочий 512 КиБ).
@@ -750,15 +751,20 @@ void collect_recovery_writers(std::vector<Site>& out) {
 // Параметр значением (`void f(GameState gs)`) обход не видит; его ловит флаг.
 constexpr std::string_view kWorldLayerTypes[] = {
     "GameState", "TreeLayer", "DepositLayer", "KnowledgeLayer", "ResourceGrid",
+    // Ломоть 3 сейв-эпика: поле владения землёй (1 МиБ) и список меток карты
+    // (1.8 МиБ) легли плоскими массивами в тело состояния.
+    "CellOwnerField", "MarkerList",
 };
 struct LayerOwner { std::string_view file; std::string_view line; };
 constexpr LayerOwner kWorldLayerOwners[] = {
     // Приложение — единственный экземпляр, сам рождается в куче (`main`).
     {"src/app/app_state.h", "sm::GameState gs;"},
-    {"src/app/app_state.h", "sm::TreeLayer treeLayer;"},
     {"src/app/app_state.h", "sm::DepositLayer deposits;"},
-    // Пять слоёв в теле состояния мира.
+    // Восемь плоских членов в теле состояния мира.
     {"src/macro/state.h", "KnowledgeLayer knowledge;"},
+    {"src/macro/state.h", "TreeLayer treeLayer;"},
+    {"src/macro/state.h", "CellOwnerField cellOwner;"},
+    {"src/macro/state.h", "MarkerList markers;"},
     {"src/macro/state.h", "ResourceGrid wheatScars;"},
     {"src/macro/state.h", "ResourceGrid featureNumber;"},
     {"src/macro/state.h", "ResourceGrid faunaField;"},

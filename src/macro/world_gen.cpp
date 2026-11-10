@@ -93,7 +93,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
             const std::size_t i = cell_of(t.x, t.y, gs.mapW);
             if (i < forestMask.size()) forestMask[i] = 1;
         }
-        build_tree_layer(*out.treeLayer, *out.terrain, forestMask.data(),
+        build_tree_layer(gs.treeLayer, *out.terrain, forestMask.data(),
                          forestMask.size());
     }
     build_deposit_layer(*out.deposits, *out.terrain, gs.worldSeed);
@@ -113,7 +113,6 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     {
         MacroWorld fw{};
         fw.gs      = &gs;
-        fw.trees   = out.treeLayer;
         fw.terrain = out.terrain;
         generate_fauna_field(fw);
     }
@@ -122,7 +121,6 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // and whose, the ground decides where and how large.
     SettlementSiteContext siteCtx{};
     siteCtx.w.gs       = &gs;
-    siteCtx.w.trees    = out.treeLayer;
     siteCtx.w.terrain  = out.terrain;
     siteCtx.w.deposits = out.deposits;
     // ПЛАН ГОРОДОВ — ЛОКАЛЬНЫЙ БУФЕР ГЕНЕЗИСА (M-90, ЗАКОН ГЕНЕРАЦИИ). Он
@@ -136,8 +134,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     snap_cities_to_land(cityPlan, *out.terrain);
     finalize_politik(cityPlan, gs.cellOwner, gs.mapW, gs.mapH, *out.terrain);
     populate_rooted_from_politik(gs, *out.store, cityPlan, *out.terrain,
-                                    *out.treeLayer, *out.deposits,
-                                    *out.features);
+                                    *out.deposits, *out.features);
     if (p.trace) {
         // The R2 report card: how many villages actually stand next to the
         // resources the score placed them by. The old roulette scored ~25%
@@ -207,7 +204,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
 
     RoadTraceStats roadStats;
     auto roads = trace_roads(*out.terrain, cityPlan, &roadStats,
-                             out.treeLayer);
+                             &gs.treeLayer);
     if (p.trace) {
         std::fprintf(stderr,
                      "[roads] cities=%d attempted=%d kept=%d pruned=%d "
@@ -249,7 +246,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     });
     *out.zones = generate_zones(gs.mapW, gs.mapH, gs.worldSeed,
                                 zsCities, zsVills, *out.features,
-                                out.terrain, out.treeLayer);
+                                out.terrain, &gs.treeLayer);
 
     // Spires need the zone field (their placement law), so they are the one
     // place born after generate_zones rather than in
@@ -338,7 +335,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
             out.terrain, gs.mapW, gs.mapH, int(cityPlan.size()));
         const int dirtStamped = trace_dirt_roads(
             *out.features, *out.terrain, villageSites, rootedSites,
-            rootedReach, out.treeLayer);
+            rootedReach, &gs.treeLayer);
         if (p.trace) {
             std::size_t stoneCells = 0, dirtCells = 0, bridgeCells = 0;
             int bridgeX = -1, bridgeY = -1; // first span, for MACROPOS repros
@@ -403,7 +400,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // род по весу 1/стоимость, залежь = кап кластера числом фичи.
     stamp_mines(gs, *out.features, *out.terrain, *out.deposits, gs.worldSeed);
 
-    *out.pathCost = build_cost_grid(*out.terrain, out.features, out.treeLayer);
+    *out.pathCost = build_cost_grid(*out.terrain, out.features, &gs.treeLayer);
     gs.lastWorldRebakeDay = gs.worldTime.day();
 
     // A loaded world does NOT respawn its people from the seed — the macro

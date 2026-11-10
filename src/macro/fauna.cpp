@@ -8,7 +8,7 @@
 #include "macro/fauna.h"
 #include "macro/macro_world.h"
 #include "macro/map_generator.h"
-#include "macro/tree_layer.h"
+#include "macro/state.h"        // GameState::treeLayer — лес есть поле состояния
 #include "tables/forest.h"   // is_forest_cell — класс леса по счёту деревьев
 #include "core/torus.h"      // wrap_axis — ось клетки мира (ЗАКОН АДРЕСА)
 #include <algorithm>
@@ -142,8 +142,8 @@ int fauna_cell_capacity_at(const MacroWorld& w, int x, int y) {
     // classify by float threshold while the subworld read the mask — the same
     // coastal cell fed a wolf and refused a boot (canon-audit C5).
     const Biome biome = biome_at_cell(*terrain, wx, wy);
-    const int treeCount = (w.trees && w.trees->has_complete_storage())
-        ? int(w.trees->at(wx, wy)) : 0;
+    const int treeCount = (w.gs && w.gs->treeLayer.has_complete_storage())
+        ? int(w.gs->treeLayer.at(wx, wy)) : 0;
     // ЗДЕСЬ ЖИЛ СКАН СКВАДОВ (`settlement_at`) — второй носитель рода против
     // байта фичи у ролла, и он умер с род-развилками (M-371): природная
     // ёмкость спрашивает только ЗЕМЛЮ. Подавление у поселения — вычистка его

@@ -22,6 +22,7 @@
 #include "macro/politik.h"
 #include "macro/factions.h"
 #include "macro/knowledge.h"
+#include "macro/tree_layer.h"   // TreeLayer — живое поле леса, род 3 (M-180)
 #include "macro/chronicle.h"
 #include "macro/scent_field.h"
 #include "macro/markers.h"
@@ -467,7 +468,13 @@ namespace sm {
 // пустых ряда шрамов (Fauna/Trees/Livestock/Vein — ряды-носители, шрама не
 // держат). Метка времени `savedAt` на проводе ОСТАЛАСЬ — её читает экран
 // загрузки; умер только её член в `GameState`.
-constexpr int kSaveVersion = 157;
+// 158 — ЛОМОТЬ 3 СЕЙВ-ЭПИКА (M-439 / M-180, 2026-11-10): сменился ЖИЛЕЦ блока
+// меток карты. Было: на метку два префикса длины с телами строк (ключ и
+// подпись), байт стиля и две координаты. Стало: плоская запись
+// `Marker@src/macro/markers.h` целиком, 104 Б, без дыр. Блок леса байтами
+// НЕ изменился — сменился только его источник: клетки берутся из поля
+// состояния `GameState::treeLayer`, а не из параметра провода.
+constexpr int kSaveVersion = 158;
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -731,7 +738,10 @@ struct GameState {
     // ВЕКТОР МЕСТ; он умер 2026-10-04 (неподвижный сквад — слот `MacroStore`),
     // а проза осталась и читалась как документация к меткам. Ровно тот род
     // лжи шапки, из-за которого §0 п.2 запрещает ей верить.
-    std::vector<Marker>     markers;
+    // Плоский список под именованным капом (`MarkerList@src/macro/markers.h`,
+    // ломоть 3 сейв-эпика): счёт + записи фиксированной длины в теле
+    // состояния, heap-члена нет. Двери — `add_marker` / `remove_marker`.
+    MarkerList markers;
     // The player's map knowledge (v40): Unknown / Explored / Visible per cell.
     // Explored persists; Visible is re-derived from the player's position
     // (update_player_sight) — save.cpp clamps it away on write.
@@ -756,9 +766,11 @@ struct GameState {
     // место RelationMatrix; рантайм-имена хвоста уничтожены вердиктом.
     FactionState factions{};
 
-    // ПОЛЕ ВЛАДЕНИЯ ЗЕМЛЁЙ (род 3, M-90): байт на клетку тора — индекс строки
-    // фракции, которой земля принадлежит, 0xff = дикие земли. Одна дверь
-    // чтения (`faction_index_for_cell@src/macro/politik.h`), один писатель
+    // ПОЛЕ ВЛАДЕНИЯ ЗЕМЛЁЙ (род 3, M-90): байт на клетку тора — 0 = дикие
+    // земли, k ≥ 1 = земля фракции со строкой реестра k − 1. Плоский массив
+    // под капом клеток (`CellOwnerField@src/macro/politik.h`, ломоть 3
+    // сейв-эпика): нулевая память и есть «ничья земля». Одна дверь чтения
+    // (`faction_index_for_cell@src/macro/politik.h`), один писатель
     // (`finalize_politik` на генезисе), размер — сторона мира.
     //
     // Поле жило внутри `struct Politik` вместе со списком городов и со своей
@@ -767,7 +779,21 @@ struct GameState {
     // локальным буфером генезиса, копия размера умерла как второй ответ на
     // «какого размера мир» (DOD п.9), а поле встало здесь, где у поля мира
     // единая форма — рядом со `knowledge` и `scent`.
-    std::vector<std::uint8_t> cellOwner;
+    CellOwnerField cellOwner;
+    // ── ЛЕС — ЖИВОЕ ПОЛЕ НАД ТОРОМ (род 3), И ЕГО ДОМ ЗДЕСЬ (ломоть 3 сейв-
+    // эпика, M-180 / M-439, 2026-11-10) ─────────────────────────────────
+    // Лес жил отдельным членом оболочки приложения, пока остальные поля мира
+    // лежали в этом агрегате. Расщепление было историческим, и платил за него
+    // провод сейва: живые клетки леса ехали в `save_game` ОТДЕЛЬНЫМ параметром
+    // рядом с состоянием, чтение возвращало их отдельным вектором, а свёртка
+    // загрузки накатывала их своей дверью позже всех — поэтому свидетель
+    // свёртки сравнивал лес сам с собой. Теперь поле лежит рядом со `knowledge`
+    // и полями ряда, провод берёт его из состояния, а свёртка несёт его даром.
+    // Носитель ряда Trees реестра полей; писатель клетки один —
+    // `set_tree_count@src/macro/tree_layer.h` (игра ходит к нему через дверь
+    // поля `field_move`). Второго адреса у леса нет: конверт `MacroWorld`
+    // своего указателя на лес больше не несёт.
+    TreeLayer treeLayer;
     PlayerState player;
     // ИГРОК — ДВА КЭША ДВУХ КОЛОНОК АНКЕТ (вердикт владельца 2026-09-29,
     // кластер 5б: «У НАС СИСТЕМА ИГРЫ ЧТО ЕСТЬ СКВАДЫ С АНКЕТАМИ И ЭТО ВСЁ
@@ -1203,13 +1229,11 @@ void       default_game_state(GameState& out,
 // generator's scratch, the caller owns it for the length of genesis, and the
 // living world has no city list of its own to disagree with the creatures.
 struct TerrainData;  // fwd
-struct TreeLayer;
 struct DepositLayer;
 struct MacroStore;   // fwd — тела мест рождаются в store (M-90 шаг 5)
 void populate_rooted_from_politik(GameState& gs, MacroStore& st,
                                      const std::vector<City>& cities,
                                      const TerrainData& terrain,
-                                     TreeLayer& trees,
                                      DepositLayer& deposits,
                                      FeatureLayer& features);
 

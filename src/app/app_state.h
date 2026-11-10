@@ -164,11 +164,10 @@ struct App {
     sm::TerrainData      terrain{};
     sm::FeatureLayer     features;
     sm::ZoneLayer        zones;
-    // Derived per-cell tree counts (macro/tree_layer.h) — the LIVING grid of
-    // the registry's Trees row; the save carries it whole (v36).
-    // uploadedTreeRev mirrors treeLayer.revision so the u_treeMap texture
+    // (Живое поле леса жило здесь членом оболочки и уехало в состояние мира
+    // — `GameState::treeLayer@src/macro/state.h`, ломоть 3 сейв-эпика.)
+    // uploadedTreeRev mirrors gs.treeLayer.revision so the u_treeMap texture
     // refreshes only when a count actually changed.
-    sm::TreeLayer        treeLayer;
     std::uint32_t        uploadedTreeRev = 0;
     // Mirrors gs.knowledge.revision so the u_knowledgeMap texture refreshes
     // only when sight actually moved (a cell crossing / a quest reveal).
@@ -469,6 +468,9 @@ struct RuntimeFrameStats {
 // honest visibility, no second path.
 sm::Inventory& player_bag(App& app);
 sm::MacroWorld macro_world(App& app);
+// Оптический вид мира из кэша приложения (высоты + плотность крон). Объявлен
+// здесь ради смоука `forest_stays_felled`: он сверяет кэш с живым лесом.
+sm::OpticalWorld optical_world(App& app);
 // (`file_size_bytes` СНЕСЕНА 2026-11-09: её единственный звонящий — гейт
 //  смоука `save_game`, который не мог упасть, потому что стоял ПОСЛЕ проверки
 //  `status == Ready`, а та включает контрольную сумму файла.)

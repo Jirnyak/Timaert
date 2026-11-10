@@ -328,7 +328,7 @@ inline const FactionDef* faction_def_by_index(std::uint16_t idx) {
 
 // THE ownerless-ground law (owner 2026-09-11: «королевств нет, только
 // фракции — одна система»): a stored faction index that names nobody — a
-// place's -1, a cellOwner 0xff, a stale byte — resolves to the FREE FOLK,
+// place's -1, a wild-land byte of the ownership field, a stale byte — resolves to the FREE FOLK,
 // the registry row for everyone who answers to no crown. It used to be the
 // tail of faction_index_for_kingdom; the kingdom is gone, the law stays.
 inline std::uint16_t faction_or_freefolk(int idx) {

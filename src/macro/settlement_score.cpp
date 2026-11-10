@@ -97,15 +97,16 @@ int water_term(const SettlementSiteContext& ctx, std::uint32_t at) {
 // ждёт двери пакетной шины (M-171): «давай тогда после двери чтобы не писать
 // вхолостую». Пока её нет — правила на род ресурса сюда НЕ ДОБАВЛЯТЬ.
 int forest_term(const SettlementSiteContext& ctx, std::uint32_t at) {
-    if (!ctx.w.trees) return 0;
+    if (!ctx.w.gs) return 0;
+    const TreeLayer& trees = ctx.w.gs->treeLayer;
     int best = 0;
     const int side = ctx.w.terrain->width;
     for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy)
         for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
             const std::uint32_t n = cell_step(at, dx, dy, side);
             best = std::max(best,
-                            int(ctx.w.trees->at(cell_x(n, side),
-                                                cell_y(n, side))));
+                            int(trees.at(cell_x(n, side),
+                                         cell_y(n, side))));
         }
     // kMaxTreesPerCell = 16384 → /1024 lands in 0..16.
     return std::min(kTermMax, best / 1024);

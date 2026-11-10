@@ -2,6 +2,8 @@
 
 #include "macro/spawners.h"
 
+#include <cstring>
+#include <memory>
 #include <cstdint>
 #include <cstddef>
 #include <vector>
@@ -640,32 +642,44 @@ void test_politik_malformed_terrain_fails_closed()
     // переразмеряло слой. Утверждается ПАРА: на несовпадении дверь отдаёт
     // сторону МИРА и НИ ОДНОГО владельца, на совпадении — владельца отдаёт.
     // Одиночная половина зеленела бы на двери, которая не работает вовсе.
-    std::vector<std::uint8_t> owner(7u, 0u);   // мусор прошлой жизни в поле
+    // Поле — плоский массив под капом клеток (ломоть 3 сейв-эпика): длины у
+    // него нет, «ничья земля» есть НУЛЕВОЙ БАЙТ, и дверь обязана вычистить
+    // ВЕСЬ кап, включая хвост за миром. Мусор прошлой жизни кладётся по всему
+    // капу — и в клетки мира, и в хвост.
+    const auto count_owned = [](const sm::CellOwnerField& f) {
+        std::size_t n = 0;
+        for (const std::uint8_t b : f.data) n += (b != sm::kWildLand) ? 1u : 0u;
+        return n;
+    };
+    const std::unique_ptr<sm::CellOwnerField> ownerOwn{new sm::CellOwnerField()};
+    sm::CellOwnerField& owner = *ownerOwn;
+    std::memset(owner.data, 5, sizeof(owner.data));   // мусор прошлой жизни
     sm::snap_cities_to_land(cityPlan, td, 8);
     sm::finalize_politik(cityPlan, owner, 8, 8, td);
-    CHECK(owner.size() == 64u,
-          "поле владения размеряется стороной МИРА, а не битого терраина");
-    std::size_t owned = 0;
-    for (std::uint8_t b : owner) owned += (b != 0xffu) ? 1u : 0u;
-    CHECK(owned == 0u,
-          "битый терраин обязан оставить мир НИЧЕЙНЫМ, а не прошлой жизнью");
+    CHECK(count_owned(owner) == 0u,
+          "битый терраин обязан оставить мир НИЧЕЙНЫМ, а не прошлой жизнью — "
+          "по всему капу, включая хвост за миром");
 
     sm::TerrainData whole = make_terrain(8, 8, kPlainLand01);
     std::vector<sm::City> onePlan;
     onePlan.push_back(make_city(1, 1, -1));
-    std::vector<std::uint8_t> wholeOwner;
-    sm::finalize_politik(onePlan, wholeOwner, 8, 8, whole);
-    CHECK(wholeOwner.size() == 64u, "целый мир получает поле своей стороны");
+    std::memset(owner.data, 5, sizeof(owner.data));
+    sm::finalize_politik(onePlan, owner, 8, 8, whole);
     std::size_t claimed = 0;
-    for (std::uint8_t b : wholeOwner) claimed += (b == 0u) ? 1u : 0u;
+    for (std::size_t i = 0; i < 64u; ++i)
+        claimed += (owner.data[i] == 1u) ? 1u : 0u;   // строка 0 реестра + 1
     CHECK(claimed == 64u,
           "единственный город целого сухого мира обязан занять его весь");
+    CHECK(count_owned(owner) == 64u,
+          "за клетками мира поле стоит нулём: хвост капа не помнит мусора");
+    CHECK(sm::faction_index_for_cell(owner, 8, 8, 3, 3) == 0u,
+          "дверь чтения отвечает строкой реестра, а не байтом поля");
 
-    // Сторона мира не степень двойки/не задана — план пуст, поле пусто.
+    // Сторона мира не задана — план пуст, поле целиком ничейное.
     std::vector<sm::City> invalidMap = sm::generate_politik(123u, 0, 8, &td, 12);
-    std::vector<std::uint8_t> invalidOwner(9u, 0u);
-    sm::finalize_politik(invalidMap, invalidOwner, 0, 8, td);
-    CHECK(invalidMap.empty() && invalidOwner.empty(),
+    std::memset(owner.data, 5, sizeof(owner.data));
+    sm::finalize_politik(invalidMap, owner, 0, 8, td);
+    CHECK(invalidMap.empty() && count_owned(owner) == 0u,
           "invalid Politik map dimensions must fail closed");
 }
 

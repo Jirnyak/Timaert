@@ -173,7 +173,7 @@ public:
     // — and it never grew `deposits`, so the deposit rows refused silently
     // under every subworld (canon-audit C4). Required layers: gs, terrain,
     // features, world; everything else is an optional contribution and reads
-    // fail-closed. `mw.trees` feeds CellContext.treeCount so generation is
+    // fail-closed. The forest field of `mw.gs` feeds CellContext.treeCount so generation is
     // count-driven, and felling a tree pays the owning cell's count back
     // (micro → macro writeback via the Trees row).
     // `posOverride` (optional, window tile coords {x, y}): land the player at

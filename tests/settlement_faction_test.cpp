@@ -20,6 +20,7 @@
 //
 // Pure ECS + data assertions: no Vulkan, no window, no GameState needed beyond a
 // hand-built ownership field. Manager construction mirrors subworld_spawn_parity_test.
+#include <memory>
 #include "check.h"
 #include "scene_objects_fixture.h"  // арена сцены фикстурам (кусок 1)
 #include "ecs/components.h"
@@ -84,44 +85,62 @@ void run_resolver_contract() {
 void run_ground_owner_contract() {
     const std::uint16_t freefolk = std::uint16_t(sm::faction_index("freefolk"));
 
-    // The byte IS the faction registry index now (kingdoms cut 2026-09-11).
-    // ПОЛЕ, А НЕ ОБЁРТКА (M-90): дверь берёт сам массив и сторону мира —
+    // БАЙТ ПОЛЯ — ОРДИНАЛ ФРАКЦИИ + 1, НОЛЬ — ДИКАЯ ЗЕМЛЯ (ломоть 3
+    // сейв-эпика): поле стало плоским массивом под капом клеток мира, и
+    // «ничья» говорит сам байт, а не длина контейнера. Поле весит 1 МиБ и
+    // рождается в куче — на стеке слои мира не живут.
+    // ПОЛЕ, А НЕ ОБЁРТКА (M-90): дверь берёт само поле и сторону мира —
     // своей копии размера у поля нет, её держит мир.
-    std::vector<std::uint8_t> cellOwner(8, 0xffu);
-    cellOwner[0] = std::uint8_t(sm::faction_index("old_magica"));   // (0,0)
-    cellOwner[5] = std::uint8_t(sm::faction_index("timaert"));      // (1,1)
+    const std::unique_ptr<sm::CellOwnerField> fieldOwn{new sm::CellOwnerField()};
+    sm::CellOwnerField& cellOwner = *fieldOwn;
+    cellOwner.data[0] = std::uint8_t(sm::faction_index("old_magica") + 1);  // (0,0)
+    cellOwner.data[5] = std::uint8_t(sm::faction_index("timaert") + 1);     // (1,1)
 
-    CHECK(sm::faction_index_for_cell(cellOwner, 4, 2, 0, 0)
+    // Мир фикстуры — 4×4: законный тор (сторона — степень двойки, квадрат).
+    CHECK(sm::faction_index_for_cell(cellOwner, 4, 4, 0, 0)
               == std::uint16_t(sm::faction_index("old_magica")),
           "a claimed cell answers with the realm that holds it");
-    CHECK(sm::faction_index_for_cell(cellOwner, 4, 2, 1, 1)
+    CHECK(sm::faction_index_for_cell(cellOwner, 4, 4, 1, 1)
               == std::uint16_t(sm::faction_index("timaert")),
           "a second claimed cell answers with ITS realm, not the first's");
-    CHECK(sm::faction_index_for_cell(cellOwner, 4, 2, 2, 0) == freefolk,
+    CHECK(sm::faction_index_for_cell(cellOwner, 4, 4, 2, 0) == freefolk,
           "the unclaimed wilds belong to the free folk");
     // ЗАКОН АДРЕСА: the map is a torus — coordinates WRAP, they never read
     // out of bounds, and the far side of the seam is the same cell.
-    CHECK(sm::faction_index_for_cell(cellOwner, 4, 2, 4, 2)
+    CHECK(sm::faction_index_for_cell(cellOwner, 4, 4, 4, 4)
               == std::uint16_t(sm::faction_index("old_magica")),
           "a coordinate past the far edge wraps to the same cell");
-    CHECK(sm::faction_index_for_cell(cellOwner, 4, 2, -4, -2)
+    CHECK(sm::faction_index_for_cell(cellOwner, 4, 4, -4, -4)
               == std::uint16_t(sm::faction_index("old_magica")),
           "a negative coordinate wraps the same way — the torus has no edge");
+    CHECK(sm::faction_index_for_cell(cellOwner, 4, 4, 5, -3)
+              == std::uint16_t(sm::faction_index("timaert")),
+          "обе оси заворачиваются независимо: (5,-3) есть клетка (1,1)");
 
-    // No ownership map at all (a world mid-generation, a bare test fixture):
-    // unclaimed, not a garbage index off the end of the vector.
-    const std::vector<std::uint8_t> empty;
-    CHECK(sm::faction_index_for_cell(empty, 4, 2, 0, 0) == freefolk,
-          "a world with no ownership map yet answers UNCLAIMED, not garbage");
-    // A truncated map is rejected the same way rather than indexed into.
-    std::vector<std::uint8_t> torn = cellOwner;
-    torn.resize(3);
-    CHECK(sm::faction_index_for_cell(torn, 4, 2, 0, 0) == freefolk,
-          "a truncated map degrades to unclaimed instead of being indexed into");
-    // И НАОБОРОТ — сторона, которой поле не соответствует, тоже отказ: это
-    // ровно тот дубль размера, что умер с обёрткой, и теперь он проверяем.
-    CHECK(sm::faction_index_for_cell(cellOwner, 8, 2, 0, 0) == freefolk,
-          "поле, не совпавшее со стороной мира, отвечает НИЧЕЙНЫМ");
+    // ПОЛЕ, КОТОРОГО ГЕНЕЗИС ЕЩЁ НЕ КАСАЛСЯ (мир посреди генерации, голая
+    // фикстура), есть нулевая память — и она отвечает НИЧЕЙНОЙ землёй по
+    // построению. Прежде это держала пустая длина вектора; нулевой байт в
+    // прежней кодировке назвал бы фракцию со строкой 0.
+    const std::unique_ptr<sm::CellOwnerField> bornOwn{new sm::CellOwnerField()};
+    CHECK(sm::faction_index_for_cell(*bornOwn, 4, 4, 0, 0) == freefolk,
+          "a world with no ownership flood yet answers UNCLAIMED, not row 0");
+    // Байт, не называющий строки реестра (порча), — тоже ничья земля, а не
+    // чтение за концом таблицы фракций.
+    bornOwn->data[0] = 0xffu;
+    CHECK(sm::faction_index_for_cell(*bornOwn, 4, 4, 0, 0) == freefolk,
+          "a byte naming no registry row degrades to unclaimed");
+    // Мир без сторон и мир ВНЕ капа клеток поле не адресуют вовсе: ответ —
+    // ничья земля, а не индекс мимо массива.
+    CHECK(sm::faction_index_for_cell(cellOwner, 0, 4, 0, 0) == freefolk,
+          "мир без стороны отвечает НИЧЕЙНЫМ");
+    CHECK(sm::faction_index_for_cell(cellOwner, 4, 2, 0, 0) == freefolk
+              && sm::faction_index_for_cell(cellOwner, 6, 6, 0, 0) == freefolk,
+          "неквадратный мир и сторона не степенью двойки — не тор: НИЧЬЯ");
+    CHECK(sm::faction_index_for_cell(cellOwner, 2048, 2048, 0, 0) == freefolk,
+          "мир вне капа клеток отвечает НИЧЕЙНЫМ, а не читает мимо поля");
+    // (Проверки «обрезанный вектор» и «длина не совпала со стороной» умерли
+    // вместе с вектором: у плоского поля своей длины нет, и разойтись со
+    // стороной мира ему нечем.)
 }
 
 // ── 2. The shipping spawn path, with the negative control ───────────────────

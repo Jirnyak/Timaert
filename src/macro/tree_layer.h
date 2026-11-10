@@ -59,7 +59,8 @@ static_assert(kMaxTreesPerCell <= kMaxFieldUnitsPerCell,
 // `width/height`. Теперь носитель один: слой жив, когда его стороны называют
 // мир в пределах капа. Живые клетки — первые `cell_count()`; хвост до капа
 // стоит нулём, его чистит `tree_layer_reset`. Структура весит 2 МиБ и на
-// стеке не живёт — она рождается на месте (у `App`, в куче фикстуры), и
+// стеке не живёт — она лежит полем состояния мира
+// (`GameState::treeLayer@src/macro/state.h`), а состояние рождается в куче;
 // двери ниже ПИШУТ В НЕЁ, а не возвращают её значением.
 struct TreeLayer {
     int width = 0, height = 0;
@@ -116,10 +117,9 @@ void build_tree_layer(TreeLayer& out, const TerrainData& terrain,
 // row), so the ledger and the renderer can never see different forests.
 void set_tree_count(TreeLayer& layer, int x, int y, int count);
 
-// Load path: overwrite the grid with the save's counts (the save carries the
-// living field whole). Refuses a size mismatch — the version gate makes that
-// unreachable short of a corrupt file; virgin derivation then stands.
-bool restore_tree_counts(TreeLayer& layer,
-                         std::span<const std::uint16_t> counts);
+// (Дверь наката клеток из сейва стояла здесь и умерла 2026-11-10, ломоть 3
+// сейв-эпика: единственный её звонящий — свёртка загрузки — получает лес
+// полем состояния, а ряд Trees провода читает клетки прямо в слой
+// (`write_world_fields@src/macro/world_fields.h` и её зеркало чтения).)
 
 } // namespace sm

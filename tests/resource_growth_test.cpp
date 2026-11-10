@@ -88,12 +88,11 @@ void paint_desert_stripe(TerrainData& t) {
     bake_biomes(t);
 }
 
-std::unique_ptr<TreeLayer> flat_trees(std::uint16_t count) {
-    std::unique_ptr<TreeLayer> treesOwn{new TreeLayer()};
-    TreeLayer& trees = *treesOwn;
+// Лес фикстуры — поле её состояния (`GameState::treeLayer`): родить слой над
+// миром теста и залить ровной плотностью.
+void flat_trees(TreeLayer& trees, std::uint16_t count) {
     tree_layer_reset(trees, kW, kH);
     std::ranges::fill(trees.cells(), count);
-    return treesOwn;
 }
 
 // Run the daily walker over `days` consecutive game days (1-based).
@@ -111,8 +110,8 @@ void test_forest_plants_the_forest() {
     const TerrainData td = make_terrain();
 
     // A living massif block with one clear-cut cell inside it.
-    std::unique_ptr<TreeLayer> treesOwn = flat_trees(0);
-    TreeLayer& trees = *treesOwn;
+    TreeLayer& trees = gs.treeLayer;
+    flat_trees(trees, 0);
     for (int y = 4; y <= 8; ++y)
         for (int x = 4; x <= 8; ++x)
             set_tree_count(trees, x, y, kMaxTreesPerCell);
@@ -120,7 +119,7 @@ void test_forest_plants_the_forest() {
     // An isolated brush cell far from any forest: below the seeding
     // threshold, surrounded by bare ground.
     set_tree_count(trees, 20, 6, 100);
-    MacroWorld w{.gs = &gs, .trees = &trees, .terrain = &td};
+    MacroWorld w{.gs = &gs, .terrain = &td};
 
     // The owner's invariant: a clear-cut inside a living massif returns to
     // forest class in ~4 game years. Allow the loose window [2, 6] years —
@@ -154,8 +153,8 @@ void test_biome_gate_starves_the_desert() {
     paint_desert_stripe(td);
 
     // Two identical forest blocks: one on the desert stripe, one on meadow.
-    std::unique_ptr<TreeLayer> treesOwn = flat_trees(0);
-    TreeLayer& trees = *treesOwn;
+    TreeLayer& trees = gs.treeLayer;
+    flat_trees(trees, 0);
     for (int y = 4; y <= 6; ++y) {
         for (int x = 2; x <= 4; ++x)
             set_tree_count(trees, x, y, 12000);         // desert block
@@ -164,7 +163,7 @@ void test_biome_gate_starves_the_desert() {
     }
     const int desertBefore = int(trees.at(3, 5));
     const int meadowBefore = int(trees.at(21, 5));
-    MacroWorld w{.gs = &gs, .trees = &trees, .terrain = &td};
+    MacroWorld w{.gs = &gs, .terrain = &td};
     run_days(w, 512);
 
     const int desertGrown = int(trees.at(3, 5)) - desertBefore;

@@ -9,6 +9,7 @@
 #include "bus/entry_context.h"
 #include "events/event_bus.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include "check.h"
@@ -532,13 +533,18 @@ std::unique_ptr<sm::GameState> make_state(sm::MacroStore& st) {
     // back the NUMBER at the cell, not columns.
     sm::feature_number_write(gs, 12, 34, 7);
 
-    sm::Marker marker{};
-    marker.id = "marker.round";
-    marker.style = sm::MarkerStyle::Danger;
-    marker.x = 15.5f;
-    marker.y = 16.25f;
-    marker.label = "Round Danger";
-    gs.markers.push_back(marker);
+    // Метка встаёт ДВЕРЬЮ списка (`add_marker`), а не сырой записью: список
+    // стал плоским под капом, и ключ с подписью ложатся в ячейки записи.
+    if (!sm::add_marker(gs.markers, "marker.round", sm::MarkerStyle::Danger,
+                        15.5f, 16.25f, "Round Danger")) {
+        std::fprintf(stderr, "фикстура: метка не встала\n");
+        std::abort();
+    }
+    // Вторая — пин игрока, который затем СНИМАЕТСЯ: снятая запись обязана
+    // не доехать до файла и не оставить следа в хвосте списка.
+    sm::add_marker(gs.markers, "user_3_4", sm::MarkerStyle::Waypoint,
+                   3.0f, 4.0f, "gone");
+    sm::remove_marker(gs.markers, "user_3_4");
 
     // v121: рантайм-имена хвоста уничтожены вердиктом (род 6) — фикстура
     // двигает отношение ДВУХ РЕЕСТРОВЫХ строк с нейтрального нуля и ждёт
@@ -570,13 +576,15 @@ std::unique_ptr<sm::GameState> make_state(sm::MacroStore& st) {
 }
 
 // v36: the living tree grid rides the save WHOLE (the forest is the
-// registry's carrier row) — a small distinctive grid stands in for the
-// world's; the save layer does not couple its size to mapW.
-std::vector<std::uint16_t> make_tree_counts() {
-    std::vector<std::uint16_t> treeCounts(64, 600u);
-    treeCounts[17] = 12000u;   // a thickened cell
-    treeCounts[7]  = 0u;       // a clear-cut cell - must NOT resurrect
-    return treeCounts;
+// registry's carrier row). С ломтя 3 сейв-эпика лес есть поле состояния мира
+// (`GameState::treeLayer`), поэтому фикстура рожает его НАД МИРОМ состояния
+// дверью слоя, а не подаёт проводу сторонний вектор произвольной длины:
+// блок леса теперь обязан покрывать мир ровно, как блок знания.
+void plant_fixture_forest(sm::GameState& gs) {
+    sm::tree_layer_reset(gs.treeLayer, gs.mapW, gs.mapH);
+    std::ranges::fill(gs.treeLayer.cells(), std::uint16_t(600u));
+    gs.treeLayer.data[17] = 12000u;   // a thickened cell
+    gs.treeLayer.data[7]  = 0u;       // a clear-cut cell - must NOT resurrect
 }
 
 // (Фикстура жил УМЕРЛА 2026-10-23, «жилы единые»: природное поле жил —
@@ -607,7 +615,7 @@ int run_roundtrip() {
     sm::MacroStore& store = *storeOwn;
     std::unique_ptr<sm::GameState> gsOwn = make_state(store);
     sm::GameState& gs = *gsOwn;
-    const std::vector<std::uint16_t> treeCounts = make_tree_counts();
+    plant_fixture_forest(gs);
     // v75: поля следов едут в сейве (CANON S10 «хищник-жертва») — след,
     // положенный до сохранения, обязан пахнуть и после загрузки.
     sm::scent_ensure(gs.scent, gs.mapW, gs.mapH);
@@ -625,8 +633,7 @@ int run_roundtrip() {
         }
         macroFixture.insert(macroFixture.end(), rootedRecs.begin(), rootedRecs.end());
     }
-    if (!sm::save_game(gs, store.nextSpawnId, macroFixture,
-                       treeCounts, path)) {
+    if (!sm::save_game(gs, store.nextSpawnId, macroFixture, path)) {
         FAIL_BAIL("save_game returned false");
     }
 
@@ -645,9 +652,7 @@ int run_roundtrip() {
     sm::GameState& loaded = *loadedOwn;
     std::uint32_t loadedNextSpawnId = 0;
     std::vector<sm::MacroNpcRecord> loadedMacro;
-    std::vector<std::uint16_t> loadedTrees;
-    if (!sm::load_game(loaded, loadedNextSpawnId, loadedMacro,
-                       loadedTrees, path)) {
+    if (!sm::load_game(loaded, loadedNextSpawnId, loadedMacro, path)) {
         FAIL_BAIL("load_game failed");
     }
     ++trips;
@@ -1053,9 +1058,19 @@ int run_roundtrip() {
     if (sm::feature_number_read(loaded, 12, 34) != 7) {
         FAIL_BAIL("spire spell (featureNumber layer) lost");
     }
-    if (loaded.markers.empty() || loaded.markers[0].id != "marker.round"
-        || loaded.markers[0].style != sm::MarkerStyle::Danger) {
+    if (loaded.markers.count != 1u
+        || sm::marker_id(loaded.markers.rows[0]) != "marker.round"
+        || sm::marker_label(loaded.markers.rows[0]) != "Round Danger"
+        || loaded.markers.rows[0].style != sm::MarkerStyle::Danger
+        || loaded.markers.rows[0].x != 15.5f
+        || loaded.markers.rows[0].y != 16.25f) {
         FAIL_BAIL("marker lost");
+    }
+    // Снятый до сохранения пин не доехал: ни записью, ни следом в хвосте.
+    if (sm::has_marker(loaded.markers, "user_3_4")
+        || loaded.markers.rows[1].id[0] != '\0'
+        || loaded.markers.rows[1].label[0] != '\0') {
+        FAIL_BAIL("a lifted pin survived the save");
     }
     const sm::FactionSlot loadedTim =
         sm::faction_slot(loaded.factions, "timaert");
@@ -1069,8 +1084,14 @@ int run_roundtrip() {
     }
     // (Сверка блоков жил умерла с самими блоками: поле производно от сида,
     // и файлу нечего о нём помнить. Залежи шахт сверяет число фичи ниже.)
-    if (loadedTrees != treeCounts) FAIL_BAIL("tree grid lost");
-    if (loadedTrees.at(7) != 0u || loadedTrees.at(17) != 12000u) {
+    if (loaded.treeLayer.width != gs.mapW
+        || loaded.treeLayer.height != gs.mapH
+        || !std::ranges::equal(loaded.treeLayer.cells(),
+                               gs.treeLayer.cells())) {
+        FAIL_BAIL("tree grid lost");
+    }
+    if (loaded.treeLayer.at(7, 0) != 0u || loaded.treeLayer.at(17, 0) != 12000u
+        || loaded.treeLayer.at(18, 0) != 600u) {
         FAIL_BAIL("felled/thickened tree cells did not round-trip");
     }
     {   // v96: the scar FIELDS and the featureNumber layer
@@ -1101,13 +1122,15 @@ int run_roundtrip() {
     sentinel.mapW = 11;
     std::uint32_t sentinelNextSpawnId = 0;
     std::vector<sm::MacroNpcRecord> sentinelMacro;
-    std::vector<std::uint16_t> sentinelTrees(3, 42u);
+    // Метка в поле леса: отказанная загрузка не смеет тронуть и его.
+    sentinel.treeLayer.data[3] = 42u;
     if (sm::load_game(sentinel, sentinelNextSpawnId,
-                      sentinelMacro, sentinelTrees, truncatedPath)) {
+                      sentinelMacro, truncatedPath)) {
         FAIL_BAIL("truncated payload accepted");
     }
     ++trips;
-    if (sentinel.mapW != 11 || sentinelTrees.size() != 3) {
+    if (sentinel.mapW != 11 || sentinel.treeLayer.data[3] != 42u
+        || sentinel.treeLayer.width != 0) {
         FAIL_BAIL("failed truncated load mutated state");
     }
 
@@ -1119,11 +1142,11 @@ int run_roundtrip() {
     }
     sentinel.mapW = 22;
     if (sm::load_game(sentinel, sentinelNextSpawnId,
-                      sentinelMacro, sentinelTrees, corruptPath)) {
+                      sentinelMacro, corruptPath)) {
         FAIL_BAIL("corrupt payload accepted");
     }
     ++trips;
-    if (sentinel.mapW != 22) {
+    if (sentinel.mapW != 22 || sentinel.treeLayer.data[3] != 42u) {
         FAIL_BAIL("failed corrupt load mutated state");
     }
 
@@ -1140,8 +1163,7 @@ int run_roundtrip() {
     sm::GameState& badState = *badStateOwn;
     std::uint32_t badNextSpawnId = 0;
     std::vector<sm::MacroNpcRecord> badMacro;
-    std::vector<std::uint16_t> badTrees;
-    if (sm::load_game(badState, badNextSpawnId, badMacro, badTrees,
+    if (sm::load_game(badState, badNextSpawnId, badMacro,
                       badVersionPath)) {
         FAIL_BAIL("bad version accepted");
     }
@@ -1192,7 +1214,7 @@ int run_roundtrip() {
         }
     }
     if (sm::save_game(invalidSquadState, store.nextSpawnId,
-                      invalidMacro, treeCounts,
+                      invalidMacro,
                       temp_save_path("timaert_invalid_squad_save.bin"))) {
         FAIL_BAIL("invalid squad kind saved");
     }
@@ -1203,7 +1225,6 @@ int run_roundtrip() {
         std::vector<sm::MacroNpcRecord> invalidMacro = make_macro_records();
         invalidMacro[0].kind.type = std::uint16_t(sm::NPCType::Count);
         if (sm::save_game(gs, store.nextSpawnId, invalidMacro,
-                          treeCounts,
                           temp_save_path("timaert_invalid_macro_save.bin"))) {
             FAIL_BAIL("invalid macro npc kind saved");
         }
@@ -1338,9 +1359,7 @@ bool run_payload_cap_is_a_fact() {
 
     const std::vector<sm::MacroNpcRecord> rootedBodies =
         sm::snapshot_macro_ecs(store);
-    const std::vector<std::uint16_t> noTrees;
-    if (!sm::save_game(gs, store.nextSpawnId, rootedBodies,
-                       noTrees, path)) {
+    if (!sm::save_game(gs, store.nextSpawnId, rootedBodies, path)) {
         FAIL_BAIL("save_game refused a legal world at the census caps");
     }
 
@@ -1375,9 +1394,7 @@ bool run_payload_cap_is_a_fact() {
     sm::GameState& overState = *overStateOwn;
     std::uint32_t overNextSpawnId = 0;
     std::vector<sm::MacroNpcRecord> overMacro;
-    std::vector<std::uint16_t> overTrees;
-    CHECK(!sm::load_game(overState, overNextSpawnId, overMacro,
-                         overTrees, overPath),
+    CHECK(!sm::load_game(overState, overNextSpawnId, overMacro, overPath),
           "заголовок с payloadSize выше потолка обязан быть отвергнут");
     CHECK(sm::inspect_save(overPath).status
               == sm::SaveInspectStatus::Unreadable,
@@ -1390,7 +1407,89 @@ bool run_payload_cap_is_a_fact() {
 
 } // namespace
 
+// ── СПИСОК МЕТОК — ПЛОСКИЙ, ПОД КАПОМ, ДВЕРЯМИ (ломоть 3 сейв-эпика) ─────
+// Список меток стал массивом фиксированной длины в теле состояния. Отсюда
+// четыре закона, которых у вектора не было и которые проверяются парой
+// (положительное + отрицательное): ключ длиннее ячейки ОТКАЗЫВАЕТСЯ, а не
+// усекается; полный список отказывает ВСЛУХ ответом двери; снятие сохраняет
+// порядок остальных; хвост за счётом стоит нулём (байты списка не помнят
+// снятого). Последнее — условие прямого дампа: два списка с одним живым
+// содержимым обязаны быть побайтно равны, какой бы ни была их история.
+void run_marker_list_contract() {
+    const std::unique_ptr<sm::MarkerList> listOwn{new sm::MarkerList()};
+    sm::MarkerList& list = *listOwn;
+
+    CHECK(sm::add_marker(list, "a", sm::MarkerStyle::Quest, 1.0f, 2.0f, "A")
+              && sm::add_marker(list, "b", sm::MarkerStyle::POI, 3.0f, 4.0f)
+              && sm::add_marker(list, "c", sm::MarkerStyle::Waypoint, 5.0f, 6.0f),
+          "три метки с разными ключами встают");
+    CHECK(!sm::add_marker(list, "b", sm::MarkerStyle::Danger, 9.0f, 9.0f)
+              && list.count == 3u && list.rows[1].style == sm::MarkerStyle::POI,
+          "повторный ключ отказан, и стоящая метка не тронута");
+    // Ключ в 30 знаков помещается (31 Б с нулём), в 31 знак — нет.
+    const std::string fits(sm::kMarkerIdBytes - 1u, 'k');
+    const std::string tooLong(sm::kMarkerIdBytes, 'k');
+    CHECK(sm::add_marker(list, fits, sm::MarkerStyle::Quest, 0.0f, 0.0f)
+              && sm::marker_id(list.rows[3]) == fits,
+          "ключ во всю ячейку встаёт целиком");
+    CHECK(!sm::add_marker(list, tooLong, sm::MarkerStyle::Quest, 0.0f, 0.0f)
+              && !sm::add_marker(list, "", sm::MarkerStyle::Quest, 0.0f, 0.0f)
+              && list.count == 4u,
+          "ключ длиннее ячейки и пустой ключ ОТКАЗАНЫ, а не усечены: "
+          "усечённый ключ совпал бы с чужим");
+    // Подпись — текст для глаз: длинная усекается до ячейки и кончается нулём.
+    const std::string longLabel(200u, 'L');
+    sm::set_marker_label(list.rows[0], longLabel);
+    CHECK(sm::marker_label(list.rows[0]).size() == sm::kMarkerLabelBytes - 1u
+              && list.rows[0].label[sm::kMarkerLabelBytes - 1u] == '\0',
+          "подпись длиннее ячейки усечена до 63 знаков с завершающим нулём");
+    sm::set_marker_label(list.rows[0], "A");
+
+    // Снятие из середины: порядок остальных цел, хвост занулён.
+    CHECK(sm::remove_marker(list, "b") && list.count == 3u
+              && sm::marker_id(list.rows[0]) == "a"
+              && sm::marker_id(list.rows[1]) == "c"
+              && sm::marker_id(list.rows[2]) == fits,
+          "снятие из середины сохраняет порядок постановки остальных");
+    CHECK(!sm::remove_marker(list, "b"),
+          "снятие отсутствующего ключа отвечает «не было» — на этом ответе "
+          "страница карты переключает пин");
+    const sm::Marker zero{};
+    CHECK(std::memcmp(&list.rows[3], &zero, sizeof(sm::Marker)) == 0,
+          "освободившаяся хвостовая запись занулена целиком");
+
+    // ДВА СПИСКА С ОДНИМ ЖИВЫМ СОДЕРЖИМЫМ ПОБАЙТНО РАВНЫ при разной истории.
+    const std::unique_ptr<sm::MarkerList> twinOwn{new sm::MarkerList()};
+    sm::MarkerList& twin = *twinOwn;
+    sm::add_marker(twin, "a", sm::MarkerStyle::Quest, 1.0f, 2.0f, "A");
+    sm::add_marker(twin, "c", sm::MarkerStyle::Waypoint, 5.0f, 6.0f);
+    sm::add_marker(twin, fits, sm::MarkerStyle::Quest, 0.0f, 0.0f);
+    CHECK(std::memcmp(&list, &twin, sizeof(sm::MarkerList)) == 0,
+          "байты списка не помнят снятой метки: история не видна в памяти");
+
+    // КАП: список наполняется до края, следующая постановка отказана, и
+    // после снятия одной место снова есть.
+    sm::MarkerList& full = twin;
+    char key[32];
+    for (std::size_t i = full.count; i < sm::kMaxMarkers; ++i) {
+        std::snprintf(key, sizeof key, "user_%zu_0", i);
+        sm::add_marker(full, key, sm::MarkerStyle::Waypoint, float(i), 0.0f);
+    }
+    CHECK(full.count == sm::kMaxMarkers && full.full(),
+          "список наполняется ровно до капа");
+    CHECK(!sm::add_marker(full, "one_too_many", sm::MarkerStyle::Waypoint,
+                          0.0f, 0.0f)
+              && full.count == sm::kMaxMarkers,
+          "полный список отказывает постановке, счёт за кап не выходит");
+    sm::remove_marker_at(full, sm::kMaxMarkers - 1u);
+    CHECK(!full.full()
+              && sm::add_marker(full, "one_too_many",
+                                sm::MarkerStyle::Waypoint, 0.0f, 0.0f),
+          "после снятия последней записи место снова есть");
+}
+
 int main() {
+    run_marker_list_contract();
     CHECK(run_roundtrip() > 0,
           "дверь сейва померена хотя бы одним прогоном и ни один гейт не "
           "оборвал тело — выпотрошенное тело и ранний обрыв оба дают 0");

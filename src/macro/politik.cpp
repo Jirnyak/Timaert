@@ -6,6 +6,7 @@
 #include "core/torus.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
 
 namespace sm {
@@ -443,16 +444,15 @@ void snap_cities_to_land(std::vector<City>& cities, const TerrainData& td,
 // ── Multi-source BFS Voronoi over land cells (TS buildCellOwnership). ──
 // Plus lake-snap for any realm whose seed def has capital_requires_lake.
 void finalize_politik(std::vector<City>& cities,
-                      std::vector<std::uint8_t>& cellOwner,
+                      CellOwnerField& cellOwner,
                       int mapW, int mapH, const TerrainData& td) {
-    // ОДИН ПИСАТЕЛЬ, ОДИН РАЗМЕР: поле владения встаёт ровно стороной мира и
-    // ровно здесь, ДО любого отказа. Отказ оставляет мир честно НИЧЕЙНЫМ
-    // (0xff — дикая земля), а не чужого размера и не с прошлой жизнью в нём:
-    // `faction_index_for_cell` судит размер и на несовпадении отвечает вольным
-    // народом, поэтому размер обязан быть правдой, а не надеждой.
-    std::size_t cells = 0;
-    if (!TerrainData::cell_count_for(mapW, mapH, cells)) cells = 0;
-    cellOwner.assign(cells, 0xff);
+    // ОДИН ПИСАТЕЛЬ: поле владения чистится ровно здесь, ДО любого отказа, и
+    // чистится ВЕСЬ кап, а не клетки нового мира — хвост за миром обязан
+    // стоять нулём, иначе байты поля помнили бы прошлый мир. Отказ оставляет
+    // мир честно НИЧЕЙНЫМ (`kWildLand`), а не с прошлой жизнью в нём.
+    static_assert(kWildLand == 0, "нулевой байт поля владения — дикая земля");
+    std::memset(cellOwner.data, 0, sizeof(cellOwner.data));
+    const std::size_t cells = world_cells_within_cap(mapW, mapH);
     if (cells == 0u || !td.has_rgba_storage()) return;
     // Терраин обязан быть ТОЙ ЖЕ карты: BFS ниже ходит по клеткам `td` и
     // пишет по индексу в поле мира, так что разные стороны означали бы запись
@@ -508,8 +508,12 @@ void finalize_politik(std::vector<City>& cities,
 
     // Multi-source BFS — each city is a seed. owner = factionIdx + 1,
     // 0 = unowned (kMaxFactions is 64, so +1 rides a byte with room).
-    const std::size_t n = std::size_t(W) * H;
-    std::vector<std::uint8_t> owner(n, 0);
+    // Заливка идёт ПРЯМО В ПОЛЕ МИРА: её рабочая кодировка и есть кодировка
+    // поля (`CellOwnerField`). Здесь стояли временный вектор на весь мир и
+    // перевод «с единицы → с нуля, 0xff = ничья» после заливки — оба умерли
+    // вместе с прежней кодировкой байта.
+    const std::size_t n = cells;
+    std::uint8_t* const owner = cellOwner.data;
     std::vector<int> queue;
     queue.reserve(n);
     for (const City& c : cities) {
@@ -537,10 +541,6 @@ void finalize_politik(std::vector<City>& cities,
             queue.push_back(int(ni));
         }
     }
-
-    // Translate owner (1-based, 0=unowned) → cellOwner (0-based, 0xff=unowned).
-    for (std::size_t i = 0; i < n; ++i)
-        if (owner[i]) cellOwner[i] = std::uint8_t(owner[i] - 1);
 }
 
 } // namespace sm

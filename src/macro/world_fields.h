@@ -24,8 +24,6 @@
 #include "macro/save_stream.h"
 
 #include <cstdint>
-#include <span>
-#include <vector>
 
 namespace sm {
 
@@ -75,25 +73,16 @@ enum class WorldField : std::uint8_t {
 // 2^20 клеток × 8 Б пары)); блок шрамов теперь один — пашня.
 inline constexpr std::uint64_t kWorldFieldsMaxBytes = 28'311'572ull;
 
-// The owning stores of the saved rows. Not a second world envelope: load
-// runs BEFORE the app's layers exist (it fills these, and the boot moves
-// them into place), so the rows name the stores directly.
-struct WorldFieldStores {
-    const GameState* gs = nullptr;
-    // Живые клетки леса (`TreeLayer::cells()`): вид на плоский массив слоя,
-    // а не свой контейнер. Пустой вид = «леса нет» и пишет счёт 0.
-    std::span<const std::uint16_t> treeCounts{};
-};
-struct WorldFieldStoresMut {
-    GameState* gs = nullptr;
-    std::vector<std::uint16_t>* treeCounts = nullptr;
-};
+// (Пара конвертов «хранилища рядов» стояла здесь и умерла 2026-11-10, ломоть 3
+// сейв-эпика. Она существовала по одной причине: лес жил ВНЕ состояния мира,
+// и ряду Trees его клетки надо было подать отдельно — видом на запись и
+// вектором на чтение. Лес переехал в `GameState`, у каждого ряда хранилище
+// стало одно и то же, и конверт из одного указателя нести нечего.)
 
-// Walk the table in row order. The byte stream is exactly what the four
-// hand-written blocks in save.cpp produced before the registry — the cut
-// changed who OWNS the bytes, not the bytes.
-void write_world_fields(savefmt::Writer& w, const WorldFieldStores& st);
-bool read_world_fields(savefmt::Reader& r, const WorldFieldStoresMut& st);
+// Walk the table in row order: every row reads and writes its own field of
+// the world state. Row order IS the byte order.
+void write_world_fields(savefmt::Writer& w, const GameState& gs);
+bool read_world_fields(savefmt::Reader& r, GameState& gs);
 
 // (`world_field_id` СНЕСЕНА 2026-11-08, M-436. Её шапка обещала «for logs and
 //  for tests that walk the table», и ОБЕ половины были ложны: ни одного

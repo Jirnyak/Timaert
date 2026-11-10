@@ -9,7 +9,6 @@
 // for any layout change and old saves are silently rejected.
 #pragma once
 #include <cstdint>
-#include <span>
 #include <string>
 #include <vector>
 
@@ -40,9 +39,9 @@ struct SaveSummary {
 // `macroNpcs` is the flattened macro-ECS (macro/macro_snapshot.h) — a
 // REQUIRED parameter on purpose: a call site that could omit it would write
 // a world with no lords in it and nobody would notice until a load.
-// `treeCounts` (the living tree grid, v36) and (до 2026-10-23) `deposits` (the living
-// deposit cells, v37) are required for the same reason: omit either and a
-// felled forest or a drained vein silently regrows on load.
+// (Живые клетки леса были здесь ВТОРЫМ обязательным параметром, пока лес жил
+// вне состояния мира. С ломтя 3 сейв-эпика лес есть поле `GameState`, и
+// провод берёт его оттуда: забыть его у звонящего больше нечем.)
 // («Кем я на карте» едет колонкой playerFlag записи снапшота — 5б: провод
 // получает флаг даром вместе с анкетой; кэши GameState пересобирает
 // resolve_player_handles_after_load строго ПОСЛЕ restore_macro_ecs.)
@@ -52,11 +51,9 @@ struct SaveSummary {
 // бы новое рождение под именем мертвеца (19.24).
 bool save_game(const GameState& s, std::uint32_t storeNextSpawnId,
                const std::vector<MacroNpcRecord>& macroNpcs,
-               std::span<const std::uint16_t> treeCounts,
                const std::string& path);
 bool load_game(GameState& s, std::uint32_t& storeNextSpawnId,
                std::vector<MacroNpcRecord>& macroNpcs,
-               std::vector<std::uint16_t>& treeCounts,
                const std::string& path);
 SaveSummary inspect_save(const std::string& path);
 
@@ -92,7 +89,6 @@ std::uint64_t save_max_payload_bytes();
 // ordinal (macro_snapshot.cpp:47).
 std::uint32_t save_payload_fingerprint(
     const GameState& s, std::uint32_t storeNextSpawnId,
-    const std::vector<MacroNpcRecord>& macroNpcs,
-    std::span<const std::uint16_t> treeCounts);
+    const std::vector<MacroNpcRecord>& macroNpcs);
 
 } // namespace sm
