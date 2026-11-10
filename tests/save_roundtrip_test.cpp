@@ -363,7 +363,6 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
 sm::GameState make_state(sm::MacroStore& st) {
     sm::GameState gs{};
     gs.version = sm::kSaveVersion;
-    gs.saveName = "roundtrip";
     gs.worldSeed = 0x12345678u;
     // ЗАКОН АДРЕСА (владелец, 2026-09-23): мир ВСЕГДА степень двойки и
     // ВСЕГДА квадрат. Здесь стояло 512×256 — мир, которого не бывает.
@@ -440,15 +439,8 @@ sm::GameState make_state(sm::MacroStore& st) {
     // Поток бросков игрока (v153, M-378) — своё число, отличное от обоих
     // соседей: равные состояния не отличили бы «уцелел» от «перепутан».
     gs.playerRoll.state = 0x5A1700D5u;
-    // Story progress (v25): the prologue is consumed, the arrival node is live.
-    // УЗЛЫ НАЗВАНЫ ЖИВЫЕ (M-390): здесь стоял `plot_chapter_1` — узел-заглушка,
-    // снесённый вместе со своим файлом, — и фикстура осталась бы ЕДИНСТВЕННЫМ
-    // местом в дереве, где мёртвое имя выглядит живым. Прибор судит перенос
-    // СПИСКА СТРОК через сейв, и для этого ему нужны две строки и одна активная;
-    // пусть они будут настоящими (`intro_main@src/content/plot/intro.cpp`,
-    // `sys_settlement@src/events/node_registry.cpp`).
-    gs.logicNodesRegistered = {"intro_main", "sys_settlement"};
-    gs.logicNodesActive = {"intro_main"};
+    // (Фикстура прогресса сюжета — два списка logic-узлов — умерла в v157
+    //  вместе с блоком сейва: ломоть 1 сейв-эпика.)
 
     gs.player.name = "Tester";
     gs.player.ageDays = 1234;
@@ -486,8 +478,6 @@ sm::GameState make_state(sm::MacroStore& st) {
     // working, not a test limitation.
     // (The BOOK is authored on his squad's RECORD below since v89 — a body's
     // knowledge is a component and rides the snapshot like the pools do.)
-    gs.player.factionPeaceUntilDay[
-        std::size_t(sm::faction_index("magika"))] = 55;
     // (Офферы и счётчики квестов умерли с квест-машиной — ломоть 3 M-72.)
     // (No entry-side bytes since v88: the entry context is his squad's own
     // MacroNpcRuntime — record `a` above plants runtime.entryDir = 0x12 and
@@ -559,29 +549,18 @@ sm::GameState make_state(sm::MacroStore& st) {
     // the player pair and must not disturb the one above.
     sm::add_player_reputation(gs, "magika", 42);
 
-    gs.subState.kind = sm::GameSubStateKind::Trading;
-    gs.subState.settlementId = kFixtureCityId;
-
 
 
     // v96: the scars are FIELDS over the world (the hash died with S5's
     // amendment), so the fixture sizes them the way the world does and
     // writes cells by coordinate. A zero scar is the field's legal zero —
     // there is no "key with value 0" to round-trip any more.
-    // Sized the way a scar block sizes itself on load: over THIS world, and
-    // only for the rows that actually hold something (a carrier row grows no
-    // scar field — asserted below as the negative control).
-    for (const sm::ResourceFieldId row : {sm::ResourceFieldId::Fauna,
-                                          sm::ResourceFieldId::Wheat}) {
-        sm::field_set_allocate(gs.resourceScarCells[std::size_t(row)],
-                               gs.mapW, gs.mapH, 0);
-    }
-    // Фикстура кладёт шрамы той же дверью, какой их кладёт провод сейва
+    // v157: поле шрамов ОДНО — пашня; ряды-носители своего шрама не держат и
+    // на проводе блока не имеют.
+    sm::field_set_allocate(gs.wheatScars, gs.mapW, gs.mapH, 0);
+    // Фикстура кладёт шрам той же дверью, какой его кладёт провод сейва
     // (field_set — абсолютная установка; стена ломтя 1 закрыла сырой write).
-    sm::field_set(gs.resourceScarCells[std::size_t(sm::ResourceFieldId::Fauna)],
-                  sm::cell_of(17, 42, gs.mapW), 3);
-    sm::field_set(gs.resourceScarCells[std::size_t(sm::ResourceFieldId::Wheat)],
-                  sm::cell_of(5, 23, gs.mapW), 12);
+    sm::field_set(gs.wheatScars, sm::cell_of(5, 23, gs.mapW), 12);
     // v96: THE featureNumber layer — hulls moored at a harbour, the number under
     // the feature (CANON S5/S10). The layer's first tenant is its witness.
     sm::feature_number_write(gs, 9, 4, 2);
@@ -609,19 +588,9 @@ std::vector<std::uint16_t> make_tree_counts() {
 
 int run_roundtrip() {
     int trips = 0;   // прогонов двери сейва, реально доведённых до суда
-    // A pin reading `GameSubStateKind::Event != 4` stood here. It guarded the
-    // ORDINAL a sub-state kind occupies in the file — that is, it made the
-    // save LAYOUT a law, which the laws forbid outright: the format is broken
-    // freely and silently, and nothing may be weighed against it. Worse, it
-    // guarded the wrong thing so well that it hid a real defect: `Event` sat
-    // one rung below `PreBattle`, the reader's refusal bound named `Event`,
-    // and so a save holding PreBattle was refused outright while state.h
-    // promised it would load and reset on the first frame. The pin was green
-    // through all of it.
-    //
-    // What the reader OWES is asserted below instead, as behaviour: every
-    // live kind survives the round trip. That is a law of the save; the
-    // number four never was.
+    // (Здесь стоял рассказ о пине ординала `GameSubStateKind` и о свидетеле
+    //  «каждый живой род режима оболочки переживает круг». Оба умерли в v157
+    //  вместе с блоком: режим оболочки в сейв не едет — M-190.)
 
     const std::string path = temp_save_path("timaert_save_roundtrip_v8.bin");
     const std::string truncatedPath = temp_save_path("timaert_save_roundtrip_v8_truncated.bin");
@@ -669,7 +638,6 @@ int run_roundtrip() {
     if (summary.version != sm::kSaveVersion) FAIL_BAIL("version mismatch");
     if (summary.worldSeed != gs.worldSeed) FAIL_BAIL("summary seed mismatch");
     if (summary.day != gs.worldTime.day()) FAIL_BAIL("summary day mismatch");
-    if (summary.saveName != "roundtrip") FAIL_BAIL("summary save name mismatch");
     if (!valid_saved_at(summary.savedAt)) FAIL_BAIL("summary savedAt invalid");
 
     auto loadedOwn = std::make_unique<sm::GameState>();
@@ -683,8 +651,6 @@ int run_roundtrip() {
     }
     ++trips;
     if (loaded.version != sm::kSaveVersion) FAIL_BAIL("loaded version mismatch");
-    if (loaded.saveName != "roundtrip") FAIL_BAIL("save name lost");
-    if (loaded.savedAt != summary.savedAt) FAIL_BAIL("savedAt lost");
     if (loaded.worldSeed != gs.worldSeed) FAIL_BAIL("world seed lost");
     if (loaded.mapW != 512 || loaded.mapH != 512) FAIL_BAIL("map size lost");
     if (loaded.cityCountTarget != 77) FAIL_BAIL("city target lost");
@@ -721,12 +687,6 @@ int run_roundtrip() {
     }
     if (loaded.playerRoll.state != 0x5A1700D5u) {
         FAIL_BAIL("player roll stream lost");
-    }
-    if (loaded.logicNodesRegistered.size() != 2
-        || loaded.logicNodesRegistered[0] != "intro_main"
-        || loaded.logicNodesActive.size() != 1
-        || loaded.logicNodesActive[0] != "intro_main") {
-        FAIL_BAIL("story progress (logic nodes) lost");
     }
 
     // ── The knowledge grid (v40) ──────────────────────────────────────────
@@ -1106,14 +1066,6 @@ int run_roundtrip() {
     if (sm::relation_of(loaded.factions, loadedTim, loadedLake) != -5) {
         FAIL_BAIL("faction relation lost");
     }
-    if (loaded.player.factionPeaceUntilDay[
-            std::size_t(sm::faction_index("magika"))] != 55) {
-        FAIL_BAIL("truce clock lost");
-    }
-    if (loaded.subState.kind != sm::GameSubStateKind::Trading
-        || loaded.subState.settlementId != kFixtureCityId) {
-        FAIL_BAIL("sub-state lost");
-    }
     // (Сверка блоков жил умерла с самими блоками: поле производно от сида,
     // и файлу нечего о нём помнить. Залежи шахт сверяет число фичи ниже.)
     if (loadedTrees != treeCounts) FAIL_BAIL("tree grid lost");
@@ -1121,22 +1073,12 @@ int run_roundtrip() {
         FAIL_BAIL("felled/thickened tree cells did not round-trip");
     }
     {   // v96: the scar FIELDS and the featureNumber layer
-        const sm::ResourceGrid& fauna =
-            loaded.resourceScarCells[std::size_t(sm::ResourceFieldId::Fauna)];
-        const sm::ResourceGrid& wheat =
-            loaded.resourceScarCells[std::size_t(sm::ResourceFieldId::Wheat)];
-        if (!fauna.live() || fauna.liveCells != 1 || fauna.at(17, 42) != 3) {
-            FAIL_BAIL("the hunted cell's scar did not round-trip");
-        }
+        const sm::ResourceGrid& wheat = loaded.wheatScars;
         if (!wheat.live() || wheat.liveCells != 1 || wheat.at(5, 23) != 12) {
             FAIL_BAIL("the reaped cell's scar did not round-trip");
         }
-        // A carrier row pays for no scar field of its own (its live state is
-        // its carrier) — the negative control on the registry's own rule.
-        if (loaded.resourceScarCells[std::size_t(sm::ResourceFieldId::Trees)]
-                .live()) {
-            FAIL_BAIL("a carrier row grew a scar field it must not have");
-        }
+        // (Отрицательный контроль «ряд-носитель не вырастил поле шрамов» умер
+        //  в v157: у носителя поля шрамов больше НЕТ — нарушение невыразимо.)
         // liveCells = 4, и перепись жильцов слоя — ЕГО польза: корпуса
         // гавани (9,4), спелл шпиля (12,34) — v120 сделал его квартирантом —
         // и ПАСТВА двух поселений фикстуры (40,80) и (45,85), третий род
@@ -1312,53 +1254,8 @@ int run_roundtrip() {
     return trips;  // сколько прогонов двери сейва ПОМЕРЕНО; 0 красен
 }
 
-// EVERY LIVE SUB-STATE KIND SURVIVES THE ROUND TRIP.
-//
-// This replaces a pin on the enum's ordinal (see the note at the top of
-// run_roundtrip). The reader refuses anything above its highest live kind —
-// a deliberate loud refusal, CANON S21 — so the bound and the enum must agree
-// or a legal state becomes an unloadable save. They did NOT agree: the bound
-// named `Event` while `PreBattle` sat above it, and the ordinal pin was green
-// the whole time because it asked about the file, not about the door.
-void run_every_sub_state_kind_survives() {
-    const sm::GameSubStateKind kinds[] = {
-        sm::GameSubStateKind::Exploring, sm::GameSubStateKind::Paused,
-        sm::GameSubStateKind::Trading,   sm::GameSubStateKind::ViewingMap,
-        sm::GameSubStateKind::PreBattle,
-    };
-    const std::string path = temp_save_path("timaert_save_substate_kinds.bin");
-    int survived = 0;
-    for (const sm::GameSubStateKind kind : kinds) {
-        remove_slot_files(path);
-        auto gsOwn = std::make_unique<sm::GameState>();
-        sm::GameState& gs = *gsOwn;
-        gs.mapW = 16;
-        gs.mapH = 16;
-        gs.saveName = "substate";
-        gs.subState.kind = kind;
-        const std::vector<sm::MacroNpcRecord> macro;
-        const std::vector<std::uint16_t> trees(std::size_t(gs.mapW * gs.mapH), 0u);
-        CHECK_OR_RETURN(sm::save_game(gs, /*storeNextSpawnId*/ 1u,
-                                      macro, trees, path),
-                        "a state in any live sub-state kind can be SAVED");
-
-        auto loadedOwn = std::make_unique<sm::GameState>();
-        sm::GameState& loaded = *loadedOwn;
-        std::uint32_t loadedNextSpawnId = 0;
-        std::vector<sm::MacroNpcRecord> loadedMacro;
-        std::vector<std::uint16_t> loadedTrees;
-        CHECK_OR_RETURN(sm::load_game(loaded, loadedNextSpawnId,
-                                      loadedMacro, loadedTrees, path),
-                        "...and LOADED — the reader's refusal bound is not "
-                        "below the enum's highest live kind");
-        CHECK(loaded.subState.kind == kind,
-              "...and comes back as the same kind it went in as");
-        ++survived;
-    }
-    CHECK(survived == int(std::size(kinds)),
-          "every live sub-state kind was actually exercised, not skipped");
-    remove_slot_files(path);
-}
+// (Свидетель `run_every_sub_state_kind_survives` умер в v157 вместе с блоком
+// режима оболочки: в сейв он не едет, и переживать кругу нечего — M-190.)
 
 // ── ПОТОЛОК PAYLOAD ЕСТЬ ФАКТ О РАСКЛАДКЕ, А НЕ ЧИСЛО (M-119) ────────────
 //
@@ -1496,7 +1393,6 @@ int main() {
     CHECK(run_roundtrip() > 0,
           "дверь сейва померена хотя бы одним прогоном и ни один гейт не "
           "оборвал тело — выпотрошенное тело и ранний обрыв оба дают 0");
-    run_every_sub_state_kind_survives();
     CHECK(run_payload_cap_is_a_fact(),
           "потолок payload проверен до конца — ранний обрыв по FAIL_BAIL "
           "больше не может прочитаться зелёным");

@@ -76,8 +76,8 @@ void test_untouched_cell_reads_capacity() {
           "an untouched cell reads its own table capacity");
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(1, 1)) == cap,
           "reading is not spending");
-    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Fauna)].liveCells == 0,
-          "the derived baseline writes NOTHING - overrides are scars only");
+    CHECK(gs.wheatScars.liveCells == 0,
+          "the derived baseline writes NOTHING - not even into the one scar field");
 }
 
 void test_hunt_thins_and_return_does_not_resurrect() {
@@ -123,16 +123,16 @@ void test_regrow_self_cleans_at_baseline() {
     // охранял форму шрама, умершую с вердиктом «звери это просто поле».
     CHECK(fauna_field_read(gs, 0, 3) == cap - 2,
           "the hunt hits the carrier field on exactly the hunted cell");
-    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Fauna)].liveCells == 0,
-          "a carrier row never grows a scar");
+    CHECK(gs.wheatScars.liveCells == 0,
+          "a carrier row never writes a scar - the one scar field stays clean");
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(0, 3), +1);
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(0, 3)) == cap - 1,
           "one head regrown");
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(0, 3), +999);
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(0, 3)) == cap,
           "regrowth caps at the cell's own baseline - never beyond");
-    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Fauna)].liveCells == 0,
-          "the scar row of a carrier stays dead through hunt and regrowth");
+    CHECK(gs.wheatScars.liveCells == 0,
+          "the one scar field stays clean through a carrier's hunt and regrowth");
 }
 
 void test_regrow_runs_on_game_days() {
@@ -183,7 +183,7 @@ void test_no_context_fails_closed() {
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(1, 1)) == 0,
           "no terrain wired = nothing stands here");
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(1, 1), -3);
-    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Fauna)].liveCells == 0, "and nothing moves");
+    CHECK(gs.wheatScars.liveCells == 0, "and nothing moves");
     CHECK(fauna_cell_capacity_at(MacroWorld{}, 0, 0) == 0,
           "null context capacity is zero, not a crash");
 }

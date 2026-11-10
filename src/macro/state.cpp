@@ -104,7 +104,6 @@ GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
     gs.mapParams.seed = seed % 100000u;
     gs.cityCountTarget = cityCountTarget;
     gs.worldTime    = world_time_at(1, 8, 0);   // day 1, 08:00
-    gs.subState     = GameSubState{};       // Exploring
     gs.player       = default_player();
     // ПОТОК БРОСКОВ ИГРОКА — ЗДЕСЬ, А НЕ У ЗВОНЯЩЕГО (M-378). Соль выведена
     // в state.h рядом с полем; сеять его в `boot_world` было бы ПОТЕРЕЙ —

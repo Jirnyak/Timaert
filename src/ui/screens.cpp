@@ -269,7 +269,6 @@ static bool draw_save_slot(const char* label, const char* fallbackFile,
                 save.path.empty() ? fallbackFile : save.path.c_str());
     ImGui::Text("Status: %s", save_status_label(save.status));
     if (save.status == SaveInspectStatus::Ready) {
-        ImGui::Text("Name: %s", save.saveName.empty() ? "(unnamed)" : save.saveName.c_str());
         ImGui::Text("Saved: %s", save.savedAt.empty() ? "(unknown)" : save.savedAt.c_str());
         ImGui::Text("Version: %d", save.version);
         ImGui::Text("Seed: 0x%08X", save.worldSeed);

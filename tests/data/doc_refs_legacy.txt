@@ -350,7 +350,6 @@ SKELETON.md	state.cpp:277-307
 SKELETON.md	state.cpp:88
 SKELETON.md	state.h:510
 SKELETON.md	state.h:617
-SKELETON.md	state.h:623-626
 SKELETON.md	store.h:65
 SKELETON.md	sub/ai.cpp:28
 SKELETON.md	sub/base_generator.cpp:373-374

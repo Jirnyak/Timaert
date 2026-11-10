@@ -61,8 +61,8 @@ struct Toggles {
     //  `App::subjectSquad`, — и держала их пара ветвей внутри самой панели:
     //  клик по ряду обязан был выбрать ветвь. Ветвей нет, носитель один,
     //  хэндл. «В каком поселении игрок СТОИТ» — другой вопрос и другое поле,
-    //  `GameState::subState.settlementId`: это состояние мира, а не выбор
-    //  окна, и оно живо.)
+    //  `App::subState.settlementId`: это место игрока, а не выбор окна, и
+    //  оно живо.)
     CharacterPanelTab characterTab = CharacterPanelTab::Stats;
     SettlementPanelTab settlementTab = SettlementPanelTab::Info;
 };

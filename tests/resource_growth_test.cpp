@@ -137,7 +137,7 @@ void test_forest_plants_the_forest() {
     // The massif SPREADS: its outer neighbours started at 0 and now stand.
     CHECK(int(trees.at(3, 6)) > 0,
           "the forest edge seeds the bare neighbour cell (diffusion)");
-    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Trees)].liveCells == 0,
+    CHECK(gs.wheatScars.liveCells == 0,
           "years of growth left no scars - the grid is the only state");
 }
 

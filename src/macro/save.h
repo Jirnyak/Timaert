@@ -27,7 +27,6 @@ enum class SaveInspectStatus : std::uint8_t {
 struct SaveSummary {
     SaveInspectStatus status = SaveInspectStatus::Missing;
     std::string path;
-    std::string saveName;
     std::string savedAt;
     std::int32_t version = 0;
     std::uint32_t worldSeed = 0;

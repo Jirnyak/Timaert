@@ -732,8 +732,8 @@ void smoke_clear_modal_overlays(App& app) {
     app.pendingPresentationSeen = 0;
     // Встреча — модалка МИРА, и гасится она своей дверью состояния: игрок
     // возвращается к исследованию, цель встречи забывается.
-    if (app.gs.subState.kind == sm::GameSubStateKind::PreBattle) {
-        app.gs.subState.kind = sm::GameSubStateKind::Exploring;
+    if (app.subState.kind == sm::GameSubStateKind::PreBattle) {
+        app.subState.kind = sm::GameSubStateKind::Exploring;
         app.preBattleNpc = {};
         app.encounterTalkLine.clear();
     }
@@ -1389,7 +1389,7 @@ bool run_subworld_time_smoke(App& app) {
     int safeCellY = 0;
     if (smoke_find_open_subworld_cell(app, safeCellX, safeCellY)) {
                 smoke_teleport_player(app, int(float(safeCellX)), int(float(safeCellY)));
-        app.gs.subState.settlementId = 0;
+        app.subState.settlementId = 0;
         app.subjectSquad = {};
     }
 
@@ -1610,7 +1610,7 @@ bool run_subworld_recovery_smoke(App& app) {
     int safeCellY = 0;
     if (smoke_find_open_subworld_cell(app, safeCellX, safeCellY)) {
                 smoke_teleport_player(app, int(float(safeCellX)), int(float(safeCellY)));
-        app.gs.subState.settlementId = 0;
+        app.subState.settlementId = 0;
         app.subjectSquad = {};
     }
 
@@ -3127,17 +3127,17 @@ bool run_subworld_exit_gate_smoke(App& app) {
 
     const float oldX = smoke_player_x(app);
     const float oldY = smoke_player_y(app);
-    const auto oldSubState = app.gs.subState;
+    const auto oldSubState = app.subState;
     const sm::MacroHandle oldSubject = app.subjectSquad;
     auto restore = [&]() {
         if (app.subworld.active()) app.subworld.leave(true);
                 smoke_teleport_player(app, int(oldX), int(oldY));
-        app.gs.subState = oldSubState;
+        app.subState = oldSubState;
         app.subjectSquad = oldSubject;
     };
 
         smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
-    app.gs.subState.settlementId = 0;
+    app.subState.settlementId = 0;
     app.subjectSquad = {};
     enter_subworld(app);
     if (!app.subworld.active()) {
@@ -3235,12 +3235,12 @@ bool run_dungeon_house_smoke(App& app) {
 
     const float oldX = smoke_player_x(app);
     const float oldY = smoke_player_y(app);
-    const auto oldSubState = app.gs.subState;
+    const auto oldSubState = app.subState;
     const sm::MacroHandle oldSubject = app.subjectSquad;
     auto restore = [&]() {
         if (app.subworld.active()) app.subworld.leave(true);
                 smoke_teleport_player(app, int(oldX), int(oldY));
-        app.gs.subState = oldSubState;
+        app.subState = oldSubState;
         app.subjectSquad = oldSubject;
     };
 
@@ -3254,7 +3254,7 @@ bool run_dungeon_house_smoke(App& app) {
     // города на улице), и красил его любой сдвиг рельефа, переселявший
     // первый город (Л3: ce8d57ca пересеял dungeon_scene_seed клеткой двери).
     app.gs.worldTime = sm::world_time_at(app.gs.worldTime.day(), 0, 0);
-    app.gs.subState.settlementId = 0;
+    app.subState.settlementId = 0;
     app.subjectSquad = {};
     enter_subworld(app);
     if (!app.subworld.active()) {
@@ -3992,11 +3992,11 @@ bool run_dungeon_cave_smoke(App& app) {
     }
     const float oldX = smoke_player_x(app);
     const float oldY = smoke_player_y(app);
-    const auto oldSubState = app.gs.subState;
+    const auto oldSubState = app.subState;
     auto restore = [&]() {
         if (app.subworld.active()) app.subworld.leave(true);
                 smoke_teleport_player(app, int(oldX), int(oldY));
-        app.gs.subState = oldSubState;
+        app.subState = oldSubState;
     };
 
     // Mountain cells are where rock is, and rock is where a mouth can open.
@@ -4022,7 +4022,7 @@ bool run_dungeon_cave_smoke(App& app) {
             ++tried;
             if (tried > 24) break;                             // bounded hunt
                         smoke_teleport_player(app, int(float(cx)), int(float(cy)));
-            app.gs.subState.settlementId = 0;
+            app.subState.settlementId = 0;
             enter_subworld(app);
             if (!app.subworld.active()) continue;
             app.subworld.tick(0.016f);
@@ -4215,11 +4215,11 @@ bool run_prologue_road_smoke(App& app) {
     }
     const float oldX = smoke_player_x(app);
     const float oldY = smoke_player_y(app);
-    const auto oldSubState = app.gs.subState;
+    const auto oldSubState = app.subState;
     auto restore = [&]() {
         if (app.subworld.active()) app.subworld.leave(true);
                 smoke_teleport_player(app, int(oldX), int(oldY));
-        app.gs.subState = oldSubState;
+        app.subState = oldSubState;
     };
 
     // THE opening door itself (the boot skips it for the headless player):
@@ -4634,11 +4634,11 @@ bool run_spire_climb_smoke(App& app) {
     }
     const float oldX = smoke_player_x(app);
     const float oldY = smoke_player_y(app);
-    const auto oldSubState = app.gs.subState;
+    const auto oldSubState = app.subState;
     auto restore = [&]() {
         if (app.subworld.active()) app.subworld.leave(true);
                 smoke_teleport_player(app, int(oldX), int(oldY));
-        app.gs.subState = oldSubState;
+        app.subState = oldSubState;
     };
 
     // The TALLEST spire whose spell is still unlearned (the starter spell
@@ -4683,7 +4683,7 @@ bool run_spire_climb_smoke(App& app) {
 
     // Stand on the spire's cell and enter its open-air scene.
         smoke_teleport_player(app, targetX, targetY);
-    app.gs.subState.settlementId = 0;
+    app.subState.settlementId = 0;
     enter_subworld(app);
     if (!app.subworld.active()) {
         restore();
@@ -5022,7 +5022,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
         if (smoke_find_open_subworld_cell(app, cellX, cellY)
             || smoke_find_danger_land_cell(app, cellX, cellY)) {
                         smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
-            app.gs.subState.settlementId = 0;
+            app.subState.settlementId = 0;
             app.subjectSquad = {};
         }
         enter_subworld(app);
@@ -5141,7 +5141,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
         if (smoke_find_open_subworld_cell(app, cellX, cellY)
             || smoke_find_danger_land_cell(app, cellX, cellY)) {
                         smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
-            app.gs.subState.settlementId = 0;
+            app.subState.settlementId = 0;
             app.subjectSquad = {};
         }
         enter_subworld(app);
@@ -5268,7 +5268,7 @@ bool run_subworld_self_fireball_smoke(App& app) {
         if (smoke_find_open_subworld_cell(app, cellX, cellY)
             || smoke_find_danger_land_cell(app, cellX, cellY)) {
                         smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
-            app.gs.subState.settlementId = 0;
+            app.subState.settlementId = 0;
             app.subjectSquad = {};
         }
         enter_subworld(app);
@@ -5375,7 +5375,7 @@ bool run_turn_based_cycle_smoke(App& app) {
         if (smoke_find_open_subworld_cell(app, cellX, cellY)
             || smoke_find_danger_land_cell(app, cellX, cellY)) {
             smoke_teleport_player(app, cellX, cellY);
-            app.gs.subState.settlementId = 0;
+            app.subState.settlementId = 0;
             app.subjectSquad = {};
         }
         enter_subworld(app);
@@ -5579,7 +5579,7 @@ bool run_subworld_player_melee_smoke(App& app) {
         if (smoke_find_open_subworld_cell(app, cellX, cellY)
             || smoke_find_danger_land_cell(app, cellX, cellY)) {
                         smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
-            app.gs.subState.settlementId = 0;
+            app.subState.settlementId = 0;
             app.subjectSquad = {};
         }
         enter_subworld(app);
@@ -5990,7 +5990,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         if (smoke_find_open_subworld_cell(app, cellX, cellY)
             || smoke_find_danger_land_cell(app, cellX, cellY)) {
                         smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
-            app.gs.subState.settlementId = 0;
+            app.subState.settlementId = 0;
             app.subjectSquad = {};
         }
         enter_subworld(app);
@@ -6224,7 +6224,7 @@ bool run_subworld_mouse_release_smoke(App& app) {
         int cellY = 0;
         if (smoke_find_open_subworld_cell(app, cellX, cellY)) {
                         smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
-            app.gs.subState.settlementId = 0;
+            app.subState.settlementId = 0;
             app.subjectSquad = {};
         }
         enter_subworld(app);
@@ -6303,7 +6303,7 @@ bool run_subworld_tree_anchor_smoke(App& app) {
     if (smoke_find_tree_subworld_cell(app, cellX, cellY)
         || smoke_find_open_subworld_cell(app, cellX, cellY)) {
                 smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
-        app.gs.subState.settlementId = 0;
+        app.subState.settlementId = 0;
         app.subjectSquad = {};
     }
     enter_subworld(app);
@@ -6453,12 +6453,12 @@ bool run_chronicle_rate_smoke(App& app) {
         // Кадр, как в игре (ломоть 6): свежий враг входит в каркас клеток
         // пересборкой на драйве ИИ — см. force_encounter.
         advance_sim_steps(app, 1, /*allowInput*/false);
-        if (app.gs.subState.kind != sm::GameSubStateKind::PreBattle) {
+        if (app.subState.kind != sm::GameSubStateKind::PreBattle) {
             smoke_fail(app, "chronicle_rate: встреча не форсировалась");
             return false;
         }
         perform_encounter_auto(app, hostile, sm::Ambush::None);
-        if (app.gs.subState.kind != sm::GameSubStateKind::Exploring) {
+        if (app.subState.kind != sm::GameSubStateKind::Exploring) {
             smoke_fail(app, "chronicle_rate: авторезолв не отдал карту");
             return false;
         }
@@ -6834,7 +6834,7 @@ bool run_console_smoke(App& app) {
     const float  oldSimSpeed     = app.simSpeed;
     const float  oldX            = smoke_player_x(app);
     const float  oldY            = smoke_player_y(app);
-    const auto   oldSubState     = app.gs.subState;
+    const auto   oldSubState     = app.subState;
     const sm::MacroHandle oldSubject = app.subjectSquad;
     auto restore = [&]() {
         if (app.subworld.active()) {
@@ -6849,7 +6849,7 @@ bool run_console_smoke(App& app) {
         app.gs.worldTime          = oldTime;
         app.simSpeed              = oldSimSpeed;
                 smoke_teleport_player(app, int(oldX), int(oldY));
-        app.gs.subState           = oldSubState;
+        app.subState           = oldSubState;
         app.subjectSquad          = oldSubject;
     };
 
@@ -8051,7 +8051,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 }
                 if (bestX >= 0) {
                                         smoke_teleport_player(app, int(float(bestX)), int(float(bestY)));
-                    app.gs.subState.settlementId = 0;
+                    app.subState.settlementId = 0;
                     app.subjectSquad = {};
                     std::fprintf(stderr, "[smoke] near_npc relocate -> %d,%d\n",
                                  bestX, bestY);
@@ -8397,7 +8397,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                         app, sm::NPCType::Peasant, /*factionIndex*/-1))) {
                     return false;
                 }
-                app.gs.subState.settlementId = 0;
+                app.subState.settlementId = 0;
                 app.subjectSquad = {};
                 enter_subworld(app);
                 return app.subworld.active();
@@ -8615,7 +8615,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             SMOKE_CHECK(app, app.macroStore->valid(bornForRemap),
                         "сценарий рождает себе тело, которое можно взять");
             if (!app.macroStore->valid(bornForRemap)) break;
-            app.gs.subState.settlementId = 0;
+            app.subState.settlementId = 0;
             app.subjectSquad = {};
             enter_subworld(app);
             if (!app.subworld.active()) {
@@ -9228,7 +9228,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                             sm::ecs::cell_y(app.macroStore->cell[s], app.gs.mapW));
             app.cursor.path.clear();
             app.cursor.pathIdx = 0;
-            app.gs.subState.settlementId = sOrdinal;
+            app.subState.settlementId = sOrdinal;
             app.subjectSquad = firstCity;
             app.ui.settlement = false;
             enter_subworld(app);
@@ -9823,7 +9823,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // Прямой вызов detect_forced_encounter тем же кадром спрашивал
             // РАНЬШЕ пересборки и с ломтя 6 не видел свежего врага.
             advance_sim_steps(app, 1, /*allowInput*/false);
-            if (app.gs.subState.kind != sm::GameSubStateKind::PreBattle
+            if (app.subState.kind != sm::GameSubStateKind::PreBattle
                 || app.preBattleNpc != hostile) {
                 smoke_fail(app, "hostile squad did not force the encounter");
                 break;
@@ -9869,7 +9869,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          worldRollBefore, app.npcAi.jitter.state,
                          playerRollBefore, app.gs.playerRoll.state);
             std::fflush(stderr);
-            if (app.gs.subState.kind != sm::GameSubStateKind::Exploring) {
+            if (app.subState.kind != sm::GameSubStateKind::Exploring) {
                 smoke_fail(app, "auto-resolve did not hand the map back");
                 break;
             }
@@ -11477,7 +11477,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     // detect_forced_encounter (см. force_encounter).
                     advance_sim_steps(app, 1, /*allowInput*/false);
                     SMOKE_CHECK(app,
-                                app.gs.subState.kind
+                                app.subState.kind
                                     == sm::GameSubStateKind::PreBattle,
                                 "встреча ОТКРЫТА — чужая модалка построена, "
                                 "значит дальше судится именно её сброс");

@@ -59,16 +59,8 @@ public:
     bool has(const std::string& id) const { return nodes_.find(id) != nodes_.end(); }
     bool is_active(const std::string& id) const;
     bool is_consistent() const;
-    // Save-snapshot views (Session 17): node DEFINITIONS are code and are
-    // re-registered on every boot; what persists is which of them still
-    // EXIST (a consumed one-shot stays consumed) and which are ACTIVE.
-    const std::vector<std::string>& active_ids() const { return active_; }
-    std::vector<std::string> node_ids() const {
-        std::vector<std::string> out;
-        out.reserve(nodes_.size());
-        for (const auto& [id, n] : nodes_) out.push_back(id);
-        return out;
-    }
+    // (Виды для сейва `active_ids` / `node_ids` умерли в v157 вместе с
+    // единственным звонящим: прогресс узлов в сейв не едет.)
 
     // Run BEFORE game logic each tick; consumes lastTickEvents.
     void tick(EventBus& bus, PlayerState& player);

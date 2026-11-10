@@ -452,7 +452,7 @@ sm::MacroHandle settlement_by_id(const sm::MacroStore& st, int id) {
 
 // НОЛЬ ЕСТЬ «НИКОГО», И ЭТО ЗАКОН СЛОВАРЯ п.6 (правка 2026-11-08). Дверь
 // ВОЗВРАЩАЛА `−1` в поле, которое само объявляет «0 = без места»
-// (`GameSubState::settlementId@src/macro/state.h`), и это число ехало в сейв;
+// (`GameSubState::settlementId@src/app/app_state.h`), и это число ехало в сейв;
 // читатели разошлись на три прочтения «никого» (`< 0`, `> 0`, `<= 0`) в
 // девятнадцати строках. Эмитент ординалов выдаёт С ЕДИНИЦЫ
 // (`nextSpawnId = 1@src/bus/store.h`), значит ноль свободен навсегда, а `−1`
@@ -488,11 +488,11 @@ int settlement_at_player(const sm::GameState& gs, const sm::MacroStore& st,
 void refresh_player_settlement(App& app) {
     const int id = settlement_at_player(app.gs, *app.macroStore,
                                         app.npcAi.squadIndex);
-    const int previousId = app.gs.subState.settlementId;
+    const int previousId = app.subState.settlementId;
     if (id == previousId) return;
     // (Эмит PlayerLeaveSettlement стоял здесь и умер с тегом — M-410:
     //  читателей не было ни одного; вход в поселение жив ниже.)
-    app.gs.subState.settlementId = id;
+    app.subState.settlementId = id;
     // Открытая панель следует за игроком ТЕМ ЖЕ носителем, что всякий другой
     // субъект, — хэндлом (M-290). Ординал жил здесь вторым носителем.
     if (app.ui.settlement)
@@ -516,8 +516,8 @@ sm::MacroHandle settlement_under_hand(App& app) {
     refresh_player_settlement(app);
     if (app.cursor.hoverSettlementId >= 0)
         return settlement_by_id(*app.macroStore, app.cursor.hoverSettlementId);
-    if (app.gs.subState.settlementId > 0)
-        return settlement_by_id(*app.macroStore, app.gs.subState.settlementId);
+    if (app.subState.settlementId > 0)
+        return settlement_by_id(*app.macroStore, app.subState.settlementId);
     return {};
 }
 
@@ -660,8 +660,8 @@ void close_pre_battle(App& app, bool grace) {
     if (grace) app.encounterGraceNpc = app.preBattleNpc;
     app.preBattleNpc = {};
     app.encounterTalkLine.clear();
-    if (app.gs.subState.kind == sm::GameSubStateKind::PreBattle) {
-        app.gs.subState.kind = sm::GameSubStateKind::Exploring;
+    if (app.subState.kind == sm::GameSubStateKind::PreBattle) {
+        app.subState.kind = sm::GameSubStateKind::Exploring;
     }
 }
 
@@ -861,7 +861,7 @@ const PreBattleAction kPreBattleActions[] = {
 // stops the world (modal_overlay_active pauses everything, march included).
 void detect_forced_encounter(App& app) {
     if (!app.worldLoaded || app.subworld.active()) return;
-    if (app.gs.subState.kind != sm::GameSubStateKind::Exploring) return;
+    if (app.subState.kind != sm::GameSubStateKind::Exploring) return;
     if (modal_overlay_active(app)) return;
     const sm::ecs::MacroCell* pcell = sm::player_flag_cell(app.gs, *app.macroStore);
     if (!pcell) return;
@@ -925,7 +925,7 @@ void detect_forced_encounter(App& app) {
     if (found.id != 0) {
         app.preBattleNpc = found;
         app.encounterTalkLine.clear();
-        app.gs.subState.kind = sm::GameSubStateKind::PreBattle;
+        app.subState.kind = sm::GameSubStateKind::PreBattle;
         app.cursor.path.clear();
         app.cursor.pathIdx = 0;
     }
@@ -935,7 +935,7 @@ void detect_forced_encounter(App& app) {
 // the squad's own data: the avatar's name and rank from his row and face,
 // the creatures summarised by kind, the odds read through squad_power.
 void draw_pre_battle_modal(App& app) {
-    if (app.gs.subState.kind != sm::GameSubStateKind::PreBattle) return;
+    if (app.subState.kind != sm::GameSubStateKind::PreBattle) return;
     // Хэндл — носитель ссылки (1г); весь тракт (route/auto/flee) на нём же,
     // entt-тело здесь больше не резолвится.
     const sm::MacroStore& st = (*app.macroStore);
@@ -1361,13 +1361,9 @@ std::vector<sm::MacroNpcRecord> stage_save_state(App& app) {
     // (Колонки долга sweepAccum/pendingSweeps/sweepCursor умерли с M-379:
     //  ритм единого драйвера живёт пер-сквадно в rt.tickAccum, который едет
     //  в сейв строкой сквада; общего состояния у ритма не осталось.)
-    // Story progress (v25) — sorted: the engine's node map iterates in
-    // unspecified order and the payload is checksummed.
-    app.gs.logicNodesRegistered = app.logic.node_ids();
-    std::sort(app.gs.logicNodesRegistered.begin(),
-              app.gs.logicNodesRegistered.end());
-    app.gs.logicNodesActive = app.logic.active_ids();
-    std::sort(app.gs.logicNodesActive.begin(), app.gs.logicNodesActive.end());
+    // (Прогресс сюжета v25 — списки logic-узлов — в сейв больше не едет,
+    //  v157: «существующие» узлы всегда равны реестру кода, а активный набор
+    //  поднимает регистрация на буте.)
     return sm::snapshot_macro_ecs(*app.macroStore);
 }
 
@@ -1738,6 +1734,11 @@ void boot_world(App& app, std::uint32_t seed,
     go.pathCost     = &app.pathCost;
     go.store        = app.macroStore.get();
     sm::generate_macro_world(go, gp);
+    // Режим оболочки рождается заново с миром. Пока поле жило в GameState,
+    // это делала сама дверь рождения состояния (`gs.subState = {}` в
+    // state.cpp); на App его сбрасывает эта строка — и новая игра, и
+    // загрузка идут через неё (M-190, v157).
+    app.subState = sm::GameSubState{};
     boot_trace("macro world generated");
 
     if (!app.macro.init(app.device, app.renderer.renderPass)) {
@@ -1789,10 +1790,10 @@ void boot_world(App& app, std::uint32_t seed,
         bag->add("food", 5);
     }
     boot_trace("starter kit dealt");
-    if (app.gs.subState.kind == sm::GameSubStateKind::Exploring
-        && app.gs.subState.settlementId == 0) {
+    if (app.subState.kind == sm::GameSubStateKind::Exploring
+        && app.subState.settlementId == 0) {
         boot_trace("settlement lookup start");
-        app.gs.subState.settlementId = settlement_at_player(
+        app.subState.settlementId = settlement_at_player(
             app.gs, *app.macroStore, app.npcAi.squadIndex);
         boot_trace("settlement lookup done");
     }
@@ -1873,25 +1874,10 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // (Колонки долга и метры сохранения умерли с M-379; thinksDone — метр-
     //  свидетель текущего запуска, его загрузка не трогает: фазы думок едут
     //  пер-сквадно в rt.tickAccum строками сквадов.)
-    // Story progress (v25): every content node was just registered as on a
-    // new game; replay the saved progress — a consumed one-shot stays
-    // consumed, and the active set is restored exactly.
-    {
-        const auto has = [](const std::vector<std::string>& v,
-                            const std::string& id) {
-            return std::find(v.begin(), v.end(), id) != v.end();
-        };
-        for (const std::string& id : app.logic.node_ids()) {
-            if (!has(app.gs.logicNodesRegistered, id)) app.logic.remove(id);
-        }
-        const std::vector<std::string> nowActive = app.logic.active_ids();
-        for (const std::string& id : nowActive) {
-            if (!has(app.gs.logicNodesActive, id)) app.logic.deactivate(id);
-        }
-        for (const std::string& id : app.gs.logicNodesActive) {
-            app.logic.activate(id);
-        }
-    }
+    // (Реплей прогресса сюжета v25 умер в v157 вместе с обоими списками
+    //  logic-узлов: движок стоит так, как его поставила регистрация на буте
+    //  — активен системный `sys_settlement`, сюжетные узлы ждут своих
+    //  активаций.)
     // (The explored map rode in with the state above — v40. Visible cells were
     // clamped away on write; the first sight sweep after this load re-opens
     // them from the restored position, since destroy_world invalidated the
@@ -2000,7 +1986,7 @@ bool boot_world_from_save(App& app, const std::string& path) {
     }
     // Мир (пере)родился — глаза карты глайдить не от чего (M-244a).
     app.macroEyes.primed = false;
-    app.gs.subState.settlementId = settlement_at_player(
+    app.subState.settlementId = settlement_at_player(
         app.gs, *app.macroStore, app.npcAi.squadIndex);
 
     // boot_world() above derived every field from the SEED's virgin world; we
@@ -2567,7 +2553,7 @@ int apply_rest_promotion(App& app, int ticks) {
     // pace again and time flows at its honest rate. (Marching legs regain no
     // SP, so without this line a rest+march would fast-forward travel.)
     const bool cancelled = app.subworld.active() || app.playerPaused
-        || app.gs.subState.kind != sm::GameSubStateKind::Exploring
+        || app.subState.kind != sm::GameSubStateKind::Exploring
         || !app.cursor.path.empty()
         || cs.sp >= cs.maxSp
         // (Здесь стояла отмена «грунт обернулся против него посреди отдыха» —
@@ -3243,7 +3229,7 @@ void apply_pending_story_results(App& app) {
 bool modal_overlay_active(const App& app) {
     return app.showDialogOpen ||
            sm::ui::story_overlay_active(app.storyOverlay) ||
-           app.gs.subState.kind == sm::GameSubStateKind::PreBattle;
+           app.subState.kind == sm::GameSubStateKind::PreBattle;
 }
 
 bool macro_overlay_blocks_npc_proximity(const App& app) {
@@ -6240,7 +6226,7 @@ void frame(App& app, int simSteps) {
                     app.subjectSquad = {};
                     app.preBattleNpc = attackReq;
                     app.encounterTalkLine.clear();
-                    app.gs.subState.kind = sm::GameSubStateKind::PreBattle;
+                    app.subState.kind = sm::GameSubStateKind::PreBattle;
                     app.cursor.path.clear();
                     app.cursor.pathIdx = 0;
                 }

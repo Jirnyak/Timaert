@@ -28,7 +28,6 @@ constexpr std::uint32_t kChecksumSeed = 2166136261u;
 constexpr std::uint32_t kChecksumPrime = 16777619u;
 constexpr std::uint32_t kMaxInventoryStacks =
     std::uint32_t(kMaxInventorySlots);
-constexpr std::uint32_t kMaxSmallVector = 8192u;
 constexpr std::uint32_t kMaxMarkers = 16384u;
 // (Капы квестов kMaxQuests/kMaxQuestParts 4096×4096 УМЕРЛИ 2026-10-23,
 //  ломоть 3 M-72 вариант А: блок квестов — 1.45 ГиБ потолка мимо шести
@@ -65,18 +64,16 @@ constexpr std::uint32_t kHeaderBytes = 4u + 4u + 8u + 4u;
 // ЧЕГО В СУММЕ НЕТ, И ЭТО НАЗВАНО ВСЛУХ: ТЕЛА СТРОК. У строки нет «байтов
 // записи» — она переменной длины, и единственный её потолок это
 // `savefmt::kMaxStringBytes` (1 МиБ на штуку, сам взят с потолка). Строковых
-// слотов по капам 49 155 — сумма с ними дала бы ≈48.0 ГиБ, то есть сторож,
-// который не сторож (ПЕРЕСЧЁТ 2026-11-09, M-439: стояло «67.2 млн» и «~70 ТБ»
-// — числа эпохи квестов и мест, протухшие в ~1500 раз; ВЫВОД абзаца они не
-// меняли и не меняют, поэтому правится только счёт. Слагаемые капов: по одному
-// слоту у имени сейва, метки времени и имени игрока, плюс 16384×2 у маркеров и
-// 8192×2 у двух списков logic-узлов). Поэтому сумма ограничивает ПЛОСКУЮ раскладку (её
+// слотов по капам 32 770 — сумма с ними дала бы ≈32.0 ГиБ, то есть сторож,
+// который не сторож (ПЕРЕСЧЁТ 2026-11-10, v157: было 49 155 и ≈48.0 ГиБ —
+// ушли слот имени сейва и 8192×2 у двух списков logic-узлов; ВЫВОД абзаца
+// счёт не меняет. Слагаемые капов: по одному слоту у метки времени и имени
+// игрока, плюс 16384×2 у маркеров). Поэтому сумма ограничивает ПЛОСКУЮ раскладку (её
 // пробить нельзя по построению), а разбежавшиеся строки ловит тот же сторож
 // в рантайме, в `save_game`.
 //
 // Дыра открыта и НАЗВАНА, своего наряда не заводит: её чинят M-115 (эпик
-// строк — `Landmark::name`, `Marker`, `Quest`, `logicNodes*` в `char[N]` и
-// ординалы) и M-180 (шестнадцать строк мира с heap-контейнером членом). В
+// строк — `Marker` в `char[N]` и ординалы) и M-180 (шестнадцать строк мира с heap-контейнером членом). В
 // тот день, когда строка состояния станет плоской, у записи появится
 // РАЗМЕР, `kMaxStringBytes` умрёт, а у этой суммы не останется оговорки.
 constexpr std::uint64_t kCountBytes = sizeof(std::uint32_t);   // Writer::count
@@ -104,14 +101,13 @@ constexpr std::uint64_t kPrefixBytes =
     + sizeof(GameState::cityCountTarget) + sizeof(GameState::worldTime)
     + sizeof(GameState::lastWorldRebakeDay)
     + sizeof(std::uint32_t)   // nextSpawnId стора — эмитент едет с миром (M-220)
-    + kStrBytes + kStrBytes;
+    + kStrBytes;              // метка времени слота (имя сейва умерло в v157)
     // (Скаляр v116 «ординал носителя флажка» умер в v117 — флаг едет
     // колонкой playerFlag записи снапшота, kMacroNpcBytes считает его там.)
 
 constexpr std::uint64_t kPlayerBytes =               // write_player
     kStrBytes + sizeof(PlayerState::ageDays)
     + sizeof(PlayerState::codexUnlockedBits)
-    + sizeof(PlayerState::factionPeaceUntilDay)
     + kCountBytes
       + std::uint64_t(PlayerState::kJournalFactsCap) * sizeof(WorldFact)
     + sizeof(PlayerState::journalSeenSeq) + sizeof(PlayerState::journalFull);
@@ -129,8 +125,8 @@ constexpr std::uint64_t kMarkersBlockBytes =         // write_marker
 constexpr std::uint64_t kFactionsBlockBytes =        // write_factions
     sizeof(FactionState);
 
-constexpr std::uint64_t kSubStateBytes =             // write_sub_state
-    sizeof(std::uint8_t) + sizeof(GameSubState::settlementId);
+// (Слагаемое `kSubStateBytes` умерло в v157 вместе с блоком: режим оболочки
+// не есть мир и в сейв не едет — M-190.)
 
 // Сквады — гладкий массив макро-энтити (ЗАКОН ГЛАДКОЙ ПАМЯТИ). Кап — тот же
 // единый `kUnifiedCap`, что и у колонок мира.
@@ -196,8 +192,8 @@ constexpr std::uint64_t kScentBlockBytes =           // write_scent
               + std::uint64_t(kFactionCount) * std::uint64_t(kWorldCells)
                 * (sizeof(std::uint32_t) + sizeof(std::uint16_t)));
 
-constexpr std::uint64_t kLogicNodesBlockBytes =      // write_string_vector ×2
-    2ull * (kCountBytes + std::uint64_t(kMaxSmallVector) * kStrBytes);
+// (Слагаемое `kLogicNodesBlockBytes` умерло в v157 вместе с обоими списками
+// logic-узлов — ломоть 1 сейв-эпика.)
 
 // (Слагаемые kObjectiveBytes/kRewardBytes/kEventBytes/kQuestBytes/
 // kQuestsBlockBytes умерли с блоком квестов — ломоть 3 M-72, вариант А.)
@@ -220,13 +216,11 @@ constexpr std::uint64_t kMaxPayloadBytes =
     + kPlayerBytes
     + kMarkersBlockBytes
     + kFactionsBlockBytes
-    + kSubStateBytes
     + kWorldFieldsMaxBytes       // macro/world_fields.h, столбец таблицы рядов
     + kMacroNpcsBlockBytes
     + kRhythmBytes
     + kChronicleBlockBytes
-    + kScentBlockBytes
-    + kLogicNodesBlockBytes;
+    + kScentBlockBytes;
 
 // Вывод не смеет опустить порог ниже прежнего литерала — иначе правка была
 // бы регрессом, а не выводом.
@@ -234,9 +228,9 @@ static_assert(kMaxPayloadBytes >= 64ull * 1024ull * 1024ull,
               "выведенный потолок payload ниже прежних 64 МиБ");
 // Заворот u64 на сложении сделал бы сумму МЕНЬШЕ своего крупнейшего
 // слагаемого. `SaveHeader::payloadSize` — u64, так что расти потолку есть
-// куда: сегодняшняя сумма стоит ~3017 МиБ ниже границы u32 (ПЕРЕСЧЁТ
-// 2026-11-09, M-439: стояло «~25 МБ», и это число эпохи, когда сумму держали
-// мёртвые штабели квестов и мест — 4072.27 МиБ против нынешних ~1078.88).
+// куда: сегодняшняя сумма стоит ~3049 МиБ ниже границы u32 (ПЕРЕСЧЁТ
+// 2026-11-10, v157: ~1046.80 МиБ после сноса ломтя 1; до него ~1078.88, а
+// в эпоху мёртвых штабелей квестов и мест — 4072.27 МиБ и зазор «~25 МБ»).
 // Запас больше не на один поднятый кап, но вывод цел: граница u32 здесь не
 // закон, потому что поле длины шире её.
 static_assert(kMaxPayloadBytes > kMacroNpcsBlockBytes,
@@ -292,11 +286,6 @@ std::string current_timestamp_utc() {
     return std::string(buf, static_cast<std::size_t>(n));
 }
 
-std::string save_timestamp_for(const GameState& s) {
-    std::string stamp = current_timestamp_utc();
-    if (!stamp.empty()) return stamp;
-    return s.savedAt;
-}
 
 template <class Enum>
 void write_enum8(Writer& w, Enum v) {
@@ -431,25 +420,6 @@ bool atomic_replace(const std::string& path, const SaveHeader& h,
         return false;
     }
     return true;
-}
-
-void write_string_vector(Writer& w, const std::vector<std::string>& v,
-                         std::uint32_t cap = kMaxSmallVector) {
-    if (!w.count(v.size(), cap)) return;
-    for (const auto& s : v) w.str(s);
-}
-
-void read_string_vector(Reader& r, std::vector<std::string>& v,
-                        std::uint32_t cap = kMaxSmallVector) {
-    std::uint32_t n = 0;
-    if (!read_count(r, n, cap)) return;
-    v.clear();
-    v.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        std::string s;
-        r.str(s);
-        v.push_back(std::move(s));
-    }
 }
 
 // The spellbook's cooldowns are STEPS now (core/time.h), so the map they ride
@@ -857,7 +827,6 @@ void write_player(Writer& w, const PlayerState& p) {
     // the player's past rides below as his journal of chronicle records.)
     // (No spellbook block since v89: his book is the SpellBook component on
     // his squad entity, riding its MacroNpcRecord like every body's.)
-    w.pod(p.factionPeaceUntilDay);
     // (Офферы и счётчики квестов умерли 2026-10-23 — ломоть 3 M-72.)
     // (No possessedMacroSpawnId since v87: "who is controlled" is the honest
     // playerFlag byte on the possessed record itself — one store, the world's.)
@@ -876,7 +845,6 @@ void read_player(Reader& r, PlayerState& p) {
     r.str(p.name);
     r.pod(p.ageDays);
     r.pod(p.codexUnlockedBits);   // v63
-    r.pod(p.factionPeaceUntilDay);
     std::uint32_t jn = 0;             // v57: the journal rides whole
     if (!read_count(r, jn, PlayerState::kJournalFactsCap)) return;
     p.journal.clear();
@@ -924,32 +892,7 @@ void read_factions(Reader& r, FactionState& f) {
     // «разобъявить» фракцию, с которой игра собрана.
     claim_registry_rows(f);
 }
-void write_sub_state(Writer& w, const GameSubState& s) {
-    write_enum8(w, s.kind);
-    w.pod(s.settlementId);
-}
-
-void read_sub_state(Reader& r, GameSubState& s) {
-    std::uint8_t raw = 0;
-    // The refusal bound is the HIGHEST live kind. It used to name `Event`,
-    // which sat one rung BELOW PreBattle — so a save holding PreBattle was
-    // refused outright, while state.h promised it would load and reset to
-    // Exploring on the first frame. The two disagreed and nobody could see it,
-    // because `Event` was unreachable state: removing the dead kind is what
-    // exposed the bound as wrong. It names the real top rung now.
-    constexpr std::uint8_t kMaxLiveSubState =
-        static_cast<std::uint8_t>(GameSubStateKind::PreBattle);
-    r.pod(raw);
-    if (!r.ok) return;
-    // An unknown kind is a loud refusal, not a silent remap: an old save is
-    // worth nothing (CANON S21).
-    if (raw > kMaxLiveSubState) {
-        r.ok = false;
-        return;
-    }
-    s.kind = static_cast<GameSubStateKind>(raw);
-    r.pod(s.settlementId);
-}
+// (write/read_sub_state умерли в v157 с блоком режима оболочки — M-190.)
 
 // (write/read_event, write/read_objective, write/read_reward,
 // write/read_quest умерли с блоком квестов — ломоть 3 M-72, вариант А.)
@@ -967,8 +910,7 @@ void write_payload(Writer& w, const GameState& s,
     w.pod(s.worldTime);
     w.pod(s.lastWorldRebakeDay);   // v22: autosave/re-bake phase survives a load
     w.pod(storeNextSpawnId);        // v118/M-220: эмитент ординалов — у стора
-    w.str(s.saveName);
-    w.str(savedAt);
+    w.str(savedAt);                 // метка слота — читает inspect_save
     // v67: the world's loot pool — the victorless dead's worth, ONE number
     // (CANON S5, the deserter pool's sibling for things).
     // («Кем я на карте» с 5б едет КОЛОНКОЙ playerFlag записи снапшота —
@@ -984,8 +926,6 @@ void write_payload(Writer& w, const GameState& s,
     }
 
     write_factions(w, s.factions);
-
-    write_sub_state(w, s.subState);
 
 
     // The saved world FIELDS ride as registry rows (macro/world_fields.h):
@@ -1020,10 +960,7 @@ void write_payload(Writer& w, const GameState& s,
 
     // v75: поля следов фракций — рядом с летописью, обе — память мира.
     write_scent(w, s.scent);
-
-    // v25: story progress — which logic nodes still exist / are active.
-    write_string_vector(w, s.logicNodesRegistered);
-    write_string_vector(w, s.logicNodesActive);
+    // (Блок прогресса сюжета v25 — два списка logic-узлов — умер в v157.)
     // (Блок activeQuests умер 2026-10-23: цель игрока — род 2, ломоть 3.)
 }
 
@@ -1039,8 +976,11 @@ void read_payload(Reader& r, GameState& s, std::uint32_t& storeNextSpawnId,
     r.pod(s.worldTime);
     r.pod(s.lastWorldRebakeDay);   // v22
     r.pod(storeNextSpawnId);        // v118/M-220: эмитент — у стора
-    r.str(s.saveName);
-    r.str(s.savedAt);
+    // Метка времени слота: её читатель — inspect_save (экран загрузки). Мир
+    // её не носит, поэтому здесь она только проходится, чтобы встать на блок
+    // игрока.
+    std::string savedAtOnWire;
+    r.str(savedAtOnWire);
     read_player(r, s.player);
 
     // (Блок строк мест умер в v128: тела мест едут записями блока
@@ -1056,8 +996,6 @@ void read_payload(Reader& r, GameState& s, std::uint32_t& storeNextSpawnId,
     }
 
     read_factions(r, s.factions);
-
-    read_sub_state(r, s.subState);
 
     // The saved world FIELDS, by registry row (macro/world_fields.h) — the
     // mirror of the write side; the caller validates trees against the
@@ -1089,9 +1027,6 @@ void read_payload(Reader& r, GameState& s, std::uint32_t& storeNextSpawnId,
     read_chronicle(r, s.chronicle);
 
     read_scent(r, s.scent, s.mapW, s.mapH);   // v75
-
-    read_string_vector(r, s.logicNodesRegistered);   // v25
-    read_string_vector(r, s.logicNodesActive);
 }
 
 bool load_payload_from_file(const std::string& path, GameState& s,
@@ -1129,7 +1064,7 @@ bool save_game(const GameState& s, std::uint32_t storeNextSpawnId,
                const std::string& path) {
     Writer payload;
     payload.bytes.reserve(64u * 1024u);
-    const std::string savedAt = save_timestamp_for(s);
+    const std::string savedAt = current_timestamp_utc();
     if (savedAt.empty()) return false;
     write_payload(payload, s, savedAt, storeNextSpawnId, macroNpcs,
                   treeCounts);
@@ -1220,7 +1155,6 @@ SaveSummary inspect_save(const std::string& path) {
     r.pod(lastWorldRebakeDay);
     std::uint32_t nextMacroSpawnOrdinal = 0;   // v118 — same
     r.pod(nextMacroSpawnOrdinal);
-    r.str(out.saveName);
     r.str(out.savedAt);
     if (!r.ok) {
         out.status = SaveInspectStatus::Unreadable;

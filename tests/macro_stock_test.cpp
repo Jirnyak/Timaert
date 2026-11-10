@@ -611,8 +611,8 @@ void test_trees_are_a_carrier_row() {
           "the registry reads the same grid back");
     CHECK(trees.revision == rev0 + 1,
           "a registry write moves the grid revision (u_treeMap refresh)");
-    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Trees)].liveCells == 0,
-          "the Trees scar slot stays EMPTY - the grid is the only state");
+    CHECK(gs.wheatScars.liveCells == 0,
+          "the one scar field stays EMPTY - the tree grid is the only state");
     CHECK(resource_field_scar(gs, ResourceFieldId::Trees, 6u * 64u + 5u) == 0,
           "a carrier row reports no scar");
 
@@ -626,7 +626,7 @@ void test_trees_are_a_carrier_row() {
     resource_fields_daily_growth(w, dueDay);
     CHECK(int(trees.at(5, 6)) > before,
           "a due visit among live forest births trees into the grid");
-    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Trees)].liveCells == 0,
+    CHECK(gs.wheatScars.liveCells == 0,
           "growth writes the carrier, never a scar");
 }
 
@@ -678,9 +678,9 @@ void test_vein_is_a_two_carrier_row() {
               && feature_number_read(gs, 9, 9) == 0,
           "взять больше, чем лежит, невыразимо: факт — остаток");
 
-    CHECK(!gs.resourceScarCells[std::size_t(ResourceFieldId::Vein)].live(),
-          "a vein row pays for NO scar field - its carriers are "
-          "the only state (the registry's own rule)");
+    CHECK(gs.wheatScars.liveCells == 0,
+          "a vein row writes NO scar - its carriers are the only state "
+          "(the registry's own rule), and the one scar field stays clean");
 }
 
 // ── СДЕЛКА С СУЩЕСТВОМ ПРОХОДИТ ДВЕРЬ ПАСТВЫ, И В ОБЕ СТОРОНЫ (M-292,

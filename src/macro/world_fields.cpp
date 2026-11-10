@@ -102,26 +102,25 @@ constexpr std::uint64_t kKnowledgeMaxBytes =
 constexpr std::uint64_t kSparseCellBytes =
     sizeof(std::uint32_t) + sizeof(std::int32_t);
 
-// ── Scars: one block per resource row — a FIELD, sparse on the wire ─────
-// v96: the row's scars are a ResourceGrid over the world, so the stream is
+// ── Scars: ONE block — the wheat row's FIELD, sparse on the wire ────────
+// v96: the scars are a ResourceGrid over the world, so the stream is
 // deterministic by construction (a field walks itself in index order) and
 // the sort the hash needed died with the hash. Same wire shape as deposits.
+// v157: блок ОДИН, а не по одному на ряд реестра. Четыре ряда-носителя
+// (Fauna/Trees/Livestock/Vein) шрама не держат, и их блоки ехали вечно
+// пустыми — по 4 Б счёта в каждом файле и по 8 388 612 Б в потолке.
 void scars_write(savefmt::Writer& w, const WorldFieldStores& st) {
-    for (std::size_t f = 0; f < std::size_t(ResourceFieldId::Count); ++f) {
-        if (!st.gs) { w.count(0, kMaxFieldCells); continue; }
-        const ResourceGrid& scars = st.gs->resourceScarCells[f];
-        if (!w.count(std::size_t(scars.liveCells), kMaxFieldCells)) continue;
-        scars.for_each_live([&](std::uint32_t idx, std::int32_t scar) {
-            w.pod(idx);
-            w.pod(scar);
-        });
-    }
+    if (!st.gs) { w.count(0, kMaxFieldCells); return; }
+    const ResourceGrid& scars = st.gs->wheatScars;
+    if (!w.count(std::size_t(scars.liveCells), kMaxFieldCells)) return;
+    scars.for_each_live([&](std::uint32_t idx, std::int32_t scar) {
+        w.pod(idx);
+        w.pod(scar);
+    });
 }
 // A FIELD needs a world to be a field over (the deposits' own lesson): the
 // reader has already filled the dimensions, so a block sizes the grid it is
-// about to fill. Only the rows the FILE carries cells for get sized, which is
-// exactly the registry's rule — a carrier row writes no cells, so it grows no
-// scar field here either, and the load path needs no access to the table.
+// about to fill — and only when the FILE carries cells for it.
 bool size_for_world(const GameState& gs, ResourceGrid& g) {
     if (g.live()) return true;
     if (gs.mapW <= 0 || gs.mapH <= 0) return false;
@@ -130,27 +129,24 @@ bool size_for_world(const GameState& gs, ResourceGrid& g) {
 }
 
 bool scars_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
-    for (std::size_t f = 0; f < std::size_t(ResourceFieldId::Count); ++f) {
-        std::uint32_t n = 0;
-        if (!savefmt::read_count(r, n, kMaxFieldCells)) return false;
-        if (!st.gs) { r.ok = false; return false; }
-        ResourceGrid& scars = st.gs->resourceScarCells[f];
-        if (n > 0 && !size_for_world(*st.gs, scars)) { r.ok = false; return false; }
-        for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-            std::uint32_t idx = 0;
-            std::int32_t scar = 0;
-            r.pod(idx);
-            r.pod(scar);
-            if (r.ok && scars.live()) {
-                field_set(scars, idx, scar);
-            }
+    std::uint32_t n = 0;
+    if (!savefmt::read_count(r, n, kMaxFieldCells)) return false;
+    if (!st.gs) { r.ok = false; return false; }
+    ResourceGrid& scars = st.gs->wheatScars;
+    if (n > 0 && !size_for_world(*st.gs, scars)) { r.ok = false; return false; }
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        std::uint32_t idx = 0;
+        std::int32_t scar = 0;
+        r.pod(idx);
+        r.pod(scar);
+        if (r.ok && scars.live()) {
+            field_set(scars, idx, scar);
         }
     }
     return r.ok;
 }
-constexpr std::uint64_t kScarsMaxBytes =
-    std::uint64_t(ResourceFieldId::Count)
-    * (kBlockCountBytes + std::uint64_t(kMaxFieldCells) * kSparseCellBytes);
+constexpr std::uint64_t kScarsMaxBytes =               // один ряд-шрам
+    kBlockCountBytes + std::uint64_t(kMaxFieldCells) * kSparseCellBytes;
 
 // ── FeatureNumber: THE one layer of S5, sparse on the wire (v96) ────────
 // The number under a feature — hulls moored at a harbour today. One block,

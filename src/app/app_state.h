@@ -88,6 +88,29 @@
 #include <vulkan/vulkan.h>
 #include "app/smoke.h"
 
+namespace sm {
+
+// РЕЖИМ ОБОЛОЧКИ — НЕ СОСТОЯНИЕ МИРА (M-190). Тип и поле жили в
+// `GameState@src/macro/state.h` и ехали в сейве; с kSaveVersion 157 они здесь,
+// на `App`, и в файл не едут: загрузка всегда встаёт в Exploring, а
+// `settlementId` пересчитывается от места игрока
+// (`settlement_at_player`). ОСТАТОК M-190 НЕ ИСПОЛНЕН: режим всё ещё ХРАНИТСЯ,
+// а не выводится из открытых панелей по образцу паузы; значения Paused,
+// Trading и ViewingMap прод-писателей не имеют.
+enum class GameSubStateKind : std::uint8_t {
+    Exploring, Paused, Trading, ViewingMap,
+    // Forced pre-battle encounter (Session 15): a hostile squad on the map
+    // stopped the player — the M&B screen is up and the world is paused. The
+    // target squad is runtime App state (`App::preBattleNpc`).
+    PreBattle,
+};
+struct GameSubState {
+    GameSubStateKind kind = GameSubStateKind::Exploring;
+    int settlementId = 0;   // 0 = без места (закон нуля-ординала)
+};
+
+} // namespace sm
+
 namespace sm::app {
 
 constexpr const char* kSaveFileName = "save.bin";
@@ -356,11 +379,14 @@ struct App {
     // the backtick key in the Playing state. Commands are registered in
     // `register_console_commands` and capture `App&`.
     sm::dev::Console console;
+    // Режим оболочки и «в каком поселении игрок стоит» — рантайм сессии, в
+    // сейв не едет (M-190, v157; тип — в шапке этого файла).
+    sm::GameSubState subState{};
     // Forced encounter (Session 15 Inc 6). The squad the pre-battle screen is
     // about, and the one squad the player just parleyed with / paid off — it
     // does not re-force the encounter while the two still share a cell;
     // separation clears the grace. Runtime-only: entt handles are not save
-    // material, and a loaded PreBattle kind with no live target fails closed.
+    // material.
     sm::MacroHandle preBattleNpc{};        // шаг 1г: {slot,gen} вместо
     sm::MacroHandle encounterGraceNpc{};   //   entt-энтити; протухание
                                            //   мертвит поколение

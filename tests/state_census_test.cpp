@@ -373,10 +373,8 @@ Tally compare(const char* carrier, const std::vector<std::string>& parsed,
 // GameState@src/macro/state.h — сам агрегат мира: пять родов + оболочка.
 constexpr Row kGameStateRows[] = {
     {"version", Rod::Session,
-     "метаданные провода сейва, как saveName/savedAt (вердикт 2026-09-30); "
+     "метаданные провода сейва (вердикт 2026-09-30); "
      "свой формат сейва запрещён (§10) — умирает с фреймом M-171"},
-    {"saveName", Rod::Session, "метаданные слота для UI; std::string — M-180"},
-    {"savedAt", Rod::Session, "метаданные слота для UI; std::string — M-180"},
     {"worldSeed", Rod::WorldVars, "сид мира"},
     {"mapW", Rod::WorldVars, "форма мира"},
     {"mapH", Rod::WorldVars, "форма мира"},
@@ -412,20 +410,13 @@ constexpr Row kGameStateRows[] = {
      "в меню сдвигал эволюцию мира. Род 4, потому что актор — сама сессия, а "
      "не клетка и не сквад; едет в сейв рядом с macroAiRhythm, иначе загрузка "
      "проигрывала бы ту же «случайность» заново (§10)"},
-    {"logicNodesRegistered", Rod::Facts,
-     "прогресс сюжета; форма vector<string> — M-180"},
-    {"logicNodesActive", Rod::Facts,
-     "прогресс сюжета; форма vector<string> — M-180"},
-    {"subState", Rod::Session,
-     "сцена оболочки (Trading/ViewingMap/PreBattle + settlementId); сегодня "
-     "едет в сейве; чистая судьба не решена — вопрос у владельца (2026-09-30)"},
     {"leasedWindow", Rod::Session,
      "АРЕНДА ОКНА (M-226): клетка-центр девяти, которые ведёт субмир; "
      "сентинел kNoWindowLease = аренды нет. Читатели — суд встречи и свип "
      "мёртвых записей (закрытый список из двух систем, AGENTS ЗАКОН ШВА). "
      "В сейв НЕ едет по построению: сохраняться можно только на макро-слое, "
      "то есть в файле аренда пуста всегда"},
-    {"resourceScarCells", Rod::Fields, "шрамы природных строк по реестру"},
+    {"wheatScars", Rod::Fields, "шрам пашни — единственный ряд-шрам реестра"},
     {"featureNumber", Rod::Fields, "число фичи клетки: одно плоское поле"},
     {"faunaField", Rod::Fields,
      "живое поголовье дикой природы: носитель ряда Fauna, пишет генератор "
@@ -447,7 +438,6 @@ constexpr Row kPlayerStateRows[] = {
     {"journal", Rod::Facts, "знание игрока о фактах — копии записей летописи"},
     {"journalSeenSeq", Rod::Facts, "курсор той же системы"},
     {"journalFull", Rod::Facts, "громкий кап той же системы"},
-    {"factionPeaceUntilDay", Rod::Factions, "перемирия по слотам фракций"},
 };
 
 // MacroStore@src/bus/store.h — гладкая память рода 2 целиком: колонки
@@ -567,7 +557,7 @@ constexpr Row kAppRows[] = {
      "единый массив объектов сцены (M-150) — транзиент окна, в сейв не едет"},
     {"bus", Rod::Session, "шина событий кадра"},
     {"logic", Rod::Facts,
-     "живая половина прогресса узлов; сейв-образ gs.logicNodes*"},
+     "прогресс узлов; в сейв не едет (v157) — регистрация на буте"},
     // (Квест-машина снесена целиком 2026-10-23 — ломоть 3 M-72, вариант А:
     //  quests/activeQuests/questMarkerSig/доска офферов умерли; задание
     //  игрока вернётся конструктором задач на форме цели рода 2.)
@@ -635,6 +625,9 @@ constexpr Row kAppRows[] = {
     {"pendingWorldShell", Rod::Session, ""},
     {"smoke", Rod::Session, "прибор смоука"},
     {"console", Rod::Session, "прибор консоли"},
+    {"subState", Rod::Session,
+     "режим оболочки + settlementId; в сейв не едет (v157). Остаток M-190: "
+     "режим хранится, а не выводится из открытых панелей"},
     {"preBattleNpc", Rod::Session, "хэндл сессии; протухание мертвит поколение"},
     {"encounterGraceNpc", Rod::Session, ""},
     {"subjectSquad", Rod::Session, ""},

@@ -458,7 +458,15 @@ namespace sm {
 // 150 — M-379: долг свипов умер вместе с бюджетным драйвером — блок ритма
 // макро-ИИ усох до одного джиттера (sweepAccum/pendingSweeps/sweepCursor
 // покинули провод): ритм живёт пер-сквадно в rt.tickAccum строк сквадов.
-constexpr int kSaveVersion = 156;
+// 157 — ЛОМОТЬ 1 СЕЙВ-ЭПИКА (M-439 / M-180 / M-190, 2026-11-10): файл стал
+// КОРОЧЕ на семь мёртвых блоков. Ушли: строка `saveName` (прод-писателей не
+// было ни одного), блок `subState` (режим оболочки — не мир; он переехал на
+// `App` и загрузкой всегда встаёт в Exploring), оба списка logic-узлов,
+// `factionPeaceUntilDay` (256 Б без единого прод-читателя) и четыре вечно
+// пустых ряда шрамов (Fauna/Trees/Livestock/Vein — ряды-носители, шрама не
+// держат). Метка времени `savedAt` на проводе ОСТАЛАСЬ — её читает экран
+// загрузки; умер только её член в `GameState`.
+constexpr int kSaveVersion = 157;
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -496,21 +504,9 @@ constexpr int kSaveVersion = 156;
 // резолв по ординалу — macro_handle_by_spawn_id@src/macro/squad.h, обход —
 // for_each_rooted@src/macro/rooted_iter.h.)
 
-enum class GameSubStateKind : std::uint8_t {
-    Exploring, Paused, Trading, ViewingMap,
-    // Forced pre-battle encounter (Session 15): a hostile squad on the map
-    // stopped the player — the M&B screen is up and the world is paused.
-    // Appended LAST and the highest live kind, which read_sub_state uses as
-    // its refusal bound. The target
-    // squad is runtime App state (an entt handle is not save material); a
-    // loaded save that says PreBattle with no live target resets to
-    // Exploring on the first frame — fail closed, no version bump.
-    PreBattle,
-};
-struct GameSubState {
-    GameSubStateKind kind = GameSubStateKind::Exploring;
-    int settlementId = 0;   // 0 = без места (закон нуля-ординала)
-};
+// (`GameSubStateKind` / `GameSubState` ЗДЕСЬ БОЛЬШЕ НЕ ЖИВУТ — M-190,
+// kSaveVersion 157: режим оболочки не есть состояние мира. Тип и поле
+// переехали в `src/app/app_state.h` (`App::subState`), в сейв не едут.)
 // (Four columns are gone with the random-encounter table: the `Event` sub-state
 // kind, `eventId`, `enemyId` and `pendingEncounterIdx`. NOTHING in the project
 // ever set that kind or wrote that index — the only writers were the modal's
@@ -643,12 +639,9 @@ struct PlayerState {
     // the class combatStats was before landing 4, and it is why only the
     // player could cast, drain or be taught. His book rides his squad's
     // MacroNpcRecord like every lord's.)
-    // Truce clocks, one per faction SLOT (macro/factions.h): the day a
-    // cease-fire with that faction runs out. It was the last string-keyed
-    // faction map in the game — and it has no gameplay reader yet, so the
-    // concept is kept (S24 politics will want truces) in the shape everything
-    // else about factions now has: a flat array indexed by ordinal.
-    std::array<std::int32_t, kMaxFactions> factionPeaceUntilDay{};
+    // (`factionPeaceUntilDay` УНИЧТОЖЕНА в v157 — ломоть 1 сейв-эпика: 256 Б
+    // в каждом сейве, прод-читателей и прод-писателей ноль. Перемирия S24
+    // придут рядом рода 6 в `FactionState`, а не колонкой игрока.)
     // Quest OFFERS the player has settled (completed or failed) — the POD
     // provenance triples the quest engine's is_known compares against, so a
     // settlement does not re-offer what was already done TODAY. An offer's
@@ -724,8 +717,9 @@ inline constexpr std::uint32_t kNoWindowLease = 0xFFFFFFFFu;
 
 struct GameState {
     int version = kSaveVersion;
-    std::string saveName;
-    std::string savedAt;
+    // (`saveName` и `savedAt` УНИЧТОЖЕНЫ в v157 — M-180: у обеих строк
+    // прод-писателей не было. Метка времени слота живёт в файле и в
+    // `SaveSummary::savedAt@src/macro/save.h`, мир её не носит.)
     std::uint32_t worldSeed = 0;
     int mapW = 1024, mapH = 1024;
     LayerParameters mapParams{};
@@ -837,13 +831,11 @@ struct GameState {
     // иначе два потока пошли бы одной последовательностью от одного сида.
     // 0x50A1 («player») этому удовлетворяет и ни с чем в дереве не совпадает.
     Rng              playerRoll{0x50A1u};
-    // Story progress (v25): the ids of logic nodes that still EXIST (a
-    // consumed one-shot stays consumed) and of those ACTIVE. Definitions are
-    // code, re-registered on every boot; these two lists replay the
-    // progress. Staged/applied at the same two doors as macroAiRhythm.
-    std::vector<std::string> logicNodesRegistered;
-    std::vector<std::string> logicNodesActive;
-    GameSubState subState;
+    // (`logicNodesRegistered` / `logicNodesActive` и `subState` УНИЧТОЖЕНЫ в
+    // v157 — ломоть 1 сейв-эпика. Список «существующих» узлов был равен
+    // реестру кода ВСЕГДА (прод-звонящих `LogicNodeEngine::remove` ноль);
+    // активный набор восстанавливается регистрацией на буте. Режим оболочки
+    // живёт на `App::subState` — M-190.)
     // (ПУЛ ДЕЗЕРТИРОВ `deserterPool` и КАЗНА ПУЛА ЛУТА `lootPoolValue`
     // УНИЧТОЖЕНЫ в v131 — перепись сирот 2026-10-11, вердикт владельца
     // «снести». Обе были ПОЛОВИНОЙ КОНТУРА: писатель живой (уход за
@@ -896,14 +888,16 @@ struct GameState {
     // hashes and the last thing that could only answer «сколько здесь» by
     // scanning to answer «есть ли рядом» (problems.md §52).
     //
-    // NATURE's own rows, as scars: cell → units play has taken and regrowth
-    // has not yet returned, one grid per sparse-dialect row (wheat, fauna;
-    // the baseline is derived from terrain/climate, the scar is the only
-    // storage, a healed cell zeroes itself). Carrier rows (trees, the vein
-    // kinds, and since v137 the LIVESTOCK — its carrier is the
-    // featureNumber layer below) keep their grid EMPTY: their live state
-    // is their own carrier.
-    ResourceGrid resourceScarCells[std::size_t(ResourceFieldId::Count)];
+    // NATURE's own row, as a scar: cell → units play has taken and regrowth
+    // has not yet returned (the baseline is derived from terrain/climate, the
+    // scar is the only storage, a healed cell zeroes itself). ОДНО поле, а не
+    // массив по рядам реестра: шрам держит ровно один ряд — пашня (Wheat).
+    // Остальные четыре — НОСИТЕЛИ (лес, жила, стадо, зверь): их живое
+    // состояние лежит в их собственном носителе, и четыре заголовка, что
+    // стояли здесь вечно пустыми (`resourceScarCells[Count]`), снесены в v157
+    // вместе с их блоками на проводе. Что ряд-шрам один, прибито
+    // `static_assert` у таблицы `kResourceFields@src/macro/macro_stock.cpp`.
+    ResourceGrid wheatScars;
     // THE FEATURE-NUMBER LAYER — ONE field for the whole world («1 шахта в
     // клетке — одно поле в клетке! в том и замысел!»): a number in it
     // means whatever the FEATURE standing on that cell says it means,

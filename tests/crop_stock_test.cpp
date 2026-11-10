@@ -68,7 +68,7 @@ void test_untouched_cell_reads_fertility_estimate() {
     CHECK(est > 0, "a fertile cell carries standing wheat - the estimate is real");
     CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(1, 1)) == est,
           "reading is not spending");
-    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Wheat)].liveCells
+    CHECK(gs.wheatScars.liveCells
               == 0,
           "the derived estimate writes NOTHING - the field holds only scars");
 }
@@ -111,7 +111,7 @@ void test_harvest_thins_and_return_does_not_resurrect() {
     CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(1, 1)) ==
               neighbourBefore,
           "the scar is per cell - the neighbour still stands whole");
-    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Wheat)].liveCells
+    CHECK(gs.wheatScars.liveCells
               == 1,
           "one scarred cell = one live cell of the scar field");
 
@@ -119,7 +119,7 @@ void test_harvest_thins_and_return_does_not_resurrect() {
     macro_stock_apply(w, MacroStock::CropCount, cell_key(2, 2), -1000000);
     CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(2, 2)) == 0,
           "a cell can be emptied but never owes wheat");
-    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Wheat)].at(2, 2)
+    CHECK(gs.wheatScars.at(2, 2)
               <= 4096,
           "the scar is capped - no millennium of regrowth from one writer");
 }
@@ -135,7 +135,7 @@ void test_regrow_self_cleans_when_whole() {
     const int full = macro_stock_read(w, MacroStock::CropCount, cell_key(3, 1));
     CHECK(full > 4, "fixture: the parcel holds a measurable potential");
     macro_stock_apply(w, MacroStock::CropCount, cell_key(3, 1), -full);
-    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Wheat)].liveCells
+    CHECK(gs.wheatScars.liveCells
               == 1, "the cut leaves a scar");
 
     // The ONE growth law visits a cell once per epoch, on the cell's own
@@ -158,10 +158,10 @@ void test_regrow_self_cleans_when_whole() {
     }
     CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(3, 1)) == full,
           "a year of seasons turns the bare parcel back over whole");
-    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Wheat)].liveCells == 0,
+    CHECK(gs.wheatScars.liveCells == 0,
           "a cell healed back to whole erases its own override");
     resource_fields_daily_growth(w, dueDay + 6 * kGrowthEpochDays);
-    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Wheat)].liveCells == 0,
+    CHECK(gs.wheatScars.liveCells == 0,
           "growing an unscarred wheat field is a no-op, not a creation engine");
 }
 
@@ -171,7 +171,7 @@ void test_no_terrain_fails_closed() {
     CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(1, 1)) == 0,
           "no terrain wired: nothing stands here");
     macro_stock_apply(w, MacroStock::CropCount, cell_key(1, 1), -3);
-    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Wheat)].liveCells == 0,
+    CHECK(gs.wheatScars.liveCells == 0,
           "no terrain wired: nothing moves, no scar appears");
 }
 

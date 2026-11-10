@@ -295,8 +295,7 @@ void test_the_farmer_works_the_field() {
     // half is new and it is not bookkeeping: the farmer can now be caught
     // mid-trip with the haul on his back, where the old single-take cycle always
     // ended at the door.
-    const sm::ResourceGrid& wheatScars =
-        gs.resourceScarCells[std::size_t(sm::ResourceFieldId::Wheat)];
+    const sm::ResourceGrid& wheatScars = gs.wheatScars;
     CHECK(wheatScars.at(12, 10) == foodUnits + inBag,
           "food gained by store AND bag == stands the field lost");
     CHECK(wheatScars.liveCells == 1,
@@ -353,7 +352,7 @@ void test_farmer_without_terrain_conjures_nothing() {
     }
     CHECK(st.inventory[vil.slot].inv.count("food") == 0,
           "no terrain wired: nothing to reap against, nothing conjured");
-    CHECK(gs.resourceScarCells[std::size_t(sm::ResourceFieldId::Wheat)].liveCells == 0,
+    CHECK(gs.wheatScars.liveCells == 0,
           "no terrain wired: no scar appears either");
 }
 
@@ -879,9 +878,9 @@ void test_the_catch_lands_as_creatures() {
     const int lost = herdAtFence
         - sm::resource_field_read(seedWorld, ResourceFieldId::Livestock,
                                   kFoldX, kFoldY);
-    CHECK(!gs.resourceScarCells[std::size_t(ResourceFieldId::Livestock)].live(),
-          "у ряда-НОСИТЕЛЯ своего поля шрамов нет: массив над миром снесён "
-          "(M-258), и аллокатор полей его пропускает");
+    CHECK(gs.wheatScars.liveCells == 0,
+          "у ряда-НОСИТЕЛЯ своего поля шрамов нет (M-258; заголовок снесён в "
+          "v157), и в единственное поле шрамов — пашни — выемка стада не пишет");
 
     const int athome =
         creature_count_of(st.inventory[vil.slot].inv, NPCType::Horse);

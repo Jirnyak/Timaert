@@ -466,9 +466,38 @@ static_assert(kResourceFields[std::size_t(ResourceFieldId::Vein)].reachCells
               "deposit_layer.cpp sizes the vein field with kGathererReach; "
               "give the vein row its own reach and teach it that first");
 
-ResourceGrid& scars_of(GameState& gs, ResourceFieldId f) {
-    return gs.resourceScarCells[std::size_t(f)];
+// РЯД-ШРАМ РОВНО ОДИН, И ЭТО СТЕНА, А НЕ НАБЛЮДЕНИЕ. Шрам держит ряд без
+// носителя (`carrierRead == nullptr`); поле под него в мире одно —
+// `GameState::wheatScars`. Второй такой ряд молча лёг бы в ТО ЖЕ поле и
+// смешал два ресурса в одной клетке — поэтому он красит сборку здесь и
+// требует сперва дать ему собственное поле (и ряд в world_fields.cpp).
+constexpr bool row_keeps_scar(std::size_t f) {
+    return kResourceFields[f].carrierRead == nullptr;
 }
+constexpr std::size_t scar_row_count() {
+    std::size_t n = 0;
+    for (std::size_t f = 0; f < std::size_t(ResourceFieldId::Count); ++f) {
+        if (row_keeps_scar(f)) ++n;
+    }
+    return n;
+}
+// И вторая половина той же стены: `field_move` уводит ряд к носителю по
+// `carrierApply`, а чтение — по `carrierRead`. Ряд с ОДНОЙ дверью из двух
+// провалился бы записью в шрам пашни, поэтому двери обязаны стоять парой.
+constexpr bool carrier_doors_are_paired() {
+    for (std::size_t f = 0; f < std::size_t(ResourceFieldId::Count); ++f) {
+        if ((kResourceFields[f].carrierRead == nullptr)
+            != (kResourceFields[f].carrierApply == nullptr)) return false;
+    }
+    return true;
+}
+static_assert(carrier_doors_are_paired(),
+              "у ряда-носителя обе двери (carrierRead и carrierApply) или ни "
+              "одной: с одной из двух его запись легла бы в wheatScars");
+static_assert(scar_row_count() == 1u
+                  && row_keeps_scar(std::size_t(ResourceFieldId::Wheat)),
+              "шрам держит ровно один ряд — пашня; новый ряд без носителя "
+              "обязан получить своё поле шрамов, а не делить wheatScars");
 
 } // namespace
 
@@ -485,13 +514,11 @@ void generate_fauna_field(MacroWorld& w) {
 
 void allocate_world_fields(GameState& gs, int width, int height) {
     if (width <= 0 || height <= 0) return;
-    for (std::size_t f = 0; f < std::size_t(ResourceFieldId::Count); ++f) {
-        ResourceGrid& g = gs.resourceScarCells[f];
-        // A CARRIER row keeps no scar of its own — its live state IS its
-        // carrier (the tree grid, the vein grids), so it pays for no field
-        // here. The registry says which, so nobody has to remember.
-        if (kResourceFields[f].carrierRead) continue;
-        if (g.width == width && g.height == height && g.live()) continue;
+    // The ONE scar field (the wheat row's — see the wall above the table's
+    // tail). A CARRIER row keeps no scar of its own: its live state IS its
+    // carrier (the tree grid, the vein grids), so it has no field here.
+    if (ResourceGrid& g = gs.wheatScars;
+        !(g.width == width && g.height == height && g.live())) {
         // Reach 0: the scar answers «сколько здесь», and no gate asks the
         // neighbourhood question of a scar (the vein rows, which do get
         // asked, own their reach inside the deposit layer).
@@ -600,7 +627,7 @@ int resource_field_read(const MacroWorld& w, ResourceFieldId f, int x, int y) {
     const ResourceFieldDef& def = resource_field_def(f);
     if (def.carrierRead) return def.carrierRead(w, x, y);
     if (!w.gs || !w.terrain || w.terrain->width <= 0) return 0;
-    const int scar = int(w.gs->resourceScarCells[std::size_t(f)].at(x, y));
+    const int scar = int(w.gs->wheatScars.at(x, y));
     return std::max(0, def.baseline(w, x, y) - scar);
 }
 
@@ -620,7 +647,7 @@ int field_move(MacroWorld& w, ResourceFieldId f, int x, int y, int delta) {
         return after - before;
     }
     if (!w.gs || !w.terrain || w.terrain->width <= 0) return 0;
-    ResourceGrid& scars = scars_of(*w.gs, f);
+    ResourceGrid& scars = w.gs->wheatScars;
     // THE write sizes the field over THIS world if nobody did yet — the same
     // fail-open the featureNumber layer's door keeps. A caller that has to remember
     // to allocate is a caller that will forget, and a lost scar is invisible:
@@ -729,7 +756,9 @@ int field_harvest(MacroWorld& w, ResourceFieldId f, int x, int y, int want,
 
 int resource_field_scar(const GameState& gs, ResourceFieldId f,
                         std::uint32_t cellIdx) {
-    const ResourceGrid& scars = gs.resourceScarCells[std::size_t(f)];
+    // Ряд-носитель шрама не держит — у него ответ всегда ноль.
+    if (resource_field_def(f).carrierRead) return 0;
+    const ResourceGrid& scars = gs.wheatScars;
     if (!scars.live() || cellIdx >= scars.cells.size()) return 0;
     return int(scars.cells[cellIdx]);
 }

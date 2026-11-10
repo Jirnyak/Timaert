@@ -38,7 +38,7 @@ enum class WorldField : std::uint8_t {
     // (Ряд `Deposits` УНИЧТОЖЕН 2026-10-23, «жилы единые»: природное поле
     //   жил — ЧИСТАЯ ФУНКЦИЯ терраина и сида, геймплеем не мутируется и
     //   потому не хранится; залежи шахт едут рядом FeatureNumber числами фич.)
-    Scars,       // sparse u16 per resource row — harvest/hunt debts (v35)
+    Scars,       // sparse — the wheat row's harvest debts (v35; ONE row, v157)
     // (Ряд `Built` УНИЧТОЖЕН в v130, перепись сирот 2026-10-11: вектор
     //   `GameState::builtFeatures` не имел НИ ОДНОГО писателя из геймплея —
     //   `push_back` в дереве ноль, наполняло его только чтение этого ряда,
@@ -69,7 +69,10 @@ enum class WorldField : std::uint8_t {
 // снесён (4 Б счёта + 2^20 клеток × 9 Б записи `{i32 x, i32 y, u8 ft}`).
 // 2026-11-02, v149 (M-371): 53'477'408 → 61'866'020, +8'388'612 Б — ряд
 // `FaunaField` (4 Б счёта + 2^20 клеток × 8 Б разреженной пары {u32, i32}).
-inline constexpr std::uint64_t kWorldFieldsMaxBytes = 61'866'020ull;
+// 2026-11-10, v157 (ломоть 1 сейв-эпика, M-439): 61'866'020 → 28'311'572,
+// −33'554'448 Б — четыре вечно пустых ряда шрамов снесены (4 × (4 Б счёта +
+// 2^20 клеток × 8 Б пары)); блок шрамов теперь один — пашня.
+inline constexpr std::uint64_t kWorldFieldsMaxBytes = 28'311'572ull;
 
 // The owning stores of the saved rows. Not a second world envelope: load
 // runs BEFORE the app's layers exist (it fills these, and the boot moves
