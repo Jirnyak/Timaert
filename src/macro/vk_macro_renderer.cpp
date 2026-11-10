@@ -478,6 +478,47 @@ void MacroRendererVk::upload_knowledge_field(const gpu::VulkanDevice& dev,
     vkUpdateDescriptorSets(dev.device, 1, &write, 0, nullptr);
 }
 
+void MacroRendererVk::upload_feature_field(const gpu::VulkanDevice& dev,
+                                           const FeatureLayer& features) {
+    // Nothing to patch before the first full upload(): the descriptor set is
+    // not bound yet, and upload() carries the whole layer anyway.
+    if (!uploaded_) return;
+    // The SAME sanitizer the full upload feeds the texture through, so the
+    // surgical door and the full one can never show two different bytes for
+    // one cell.
+    const std::uint8_t* fd = features.complete_cells_or_sanitized(scratch_);
+    if (!fd) return;   // layer without a world: the full upload owns that case
+
+    // The common case: the world is the one the texture was created over, so
+    // rewrite the texels IN PLACE (queue-ordered behind the frame in flight,
+    // own transfer fence — no realloc, no descriptor rewrite, no device drain).
+    if (feature_.width == std::uint32_t(features.width)
+        && feature_.height == std::uint32_t(features.height)) {
+        feature_.update_region(dev, 0, 0, std::uint32_t(features.width),
+                               std::uint32_t(features.height), fd);
+        return;
+    }
+
+    // Dimension change — the rare path, same discipline as upload_zone_field:
+    // idle, recreate, rewrite binding 1.
+    vkDeviceWaitIdle(dev.device);
+    feature_.destroy(dev);
+    feature_.create_r8(dev, std::uint32_t(features.width),
+                       std::uint32_t(features.height), fd, false, true);
+    VkDescriptorImageInfo dii{};
+    dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    dii.imageView = feature_.view;
+    dii.sampler = feature_.sampler;
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = set_;
+    write.dstBinding = 1;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &dii;
+    vkUpdateDescriptorSets(dev.device, 1, &write, 0, nullptr);
+}
+
 void MacroRendererVk::upload_tree_field(const gpu::VulkanDevice& dev,
                                         const TreeLayer* treeLayer) {
     // Same discipline as upload_light_field: nothing to patch before the

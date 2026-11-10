@@ -115,6 +115,10 @@ forest_fell_macro,save_game,open_load,load_game,wait_boot_done,forest_stays_fell
 # Поле фич — поле состояния (M-456): руина, положенная на клетку города до
 # сохранения, обязана остаться руиной после загрузки, а не воскреснуть городом.
 city_ruin_macro,save_game,open_load,load_game,wait_boot_done,ruin_stays_ruin
+# Структура, поставленная в живой игре, видна на карте в том же сеансе (M-248 /
+# M-457 п.7): клетка рядом с игроком называется дверью подбора, байт кладётся
+# дверью поля, текстура догоняет счётчик правок за кадр, и кадр карты меняется.
+feature_live_map
 
 return_title
 console

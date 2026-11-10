@@ -6,11 +6,12 @@
 //   · A BUILDING is an oriented box. `add_house_obb` is the one door for
 //     raising one: it stamps the rotated footprint, levels that footprint by
 //     cut-and-fill, emits the solid, and hangs the door that names it. The
-//     ORDINAL law lives here — a door carries the count of houses this cell
-//     had raised before it, and the engine finds the interior behind a door by
-//     counting the same way (engine.cpp enter_dungeon_by_door). Two places
-//     counting, one rule: `house_count` is that rule, and it is public so
-//     nobody re-implements it.
+//     The door carries the ORDINAL OF THE DUNGEON behind it — the cell-wide
+//     number handed out by `dungeon_ordinal_next@src/sub/map_data.h`, one count
+//     for every kind of interior (M-248) — and the building carries the same
+//     number, which is how the engine finds the building a door belongs to
+//     (`door_building@src/sub/map_data.h`). The per-kind «count of houses»
+//     that stood here was true only while houses were the cell's only doors.
 //
 //   · A FIELD is a rectangle of ploughed ground, and what grows on it is not
 //     the field's business but the CELL's: `scatter_field_crops` sows every
@@ -27,10 +28,6 @@
 #include "core/rng.h"
 
 namespace sm::sub::kit {
-
-// How many houses this cell has raised so far — i.e. the ordinal the next one
-// gets. THE counting rule; the engine's door→interior resolver replays it.
-std::uint16_t house_count(const SubworldMapData& out);
 
 // Raise one oriented building and hang its door. `requireClear` refuses the
 // spot if the footprint (plus a one-tile ring) touches ground some other

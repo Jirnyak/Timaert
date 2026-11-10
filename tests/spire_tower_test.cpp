@@ -1,5 +1,5 @@
 // Locks the SPIRE TOWER dungeon generator (sub/dgn/spire_tower.cpp routed via
-// sub/dgn/dispatch.cpp). The tower is the spire spell's climb: ordinal = the
+// sub/dgn/dispatch.cpp). The tower is the spire spell's climb: param = the
 // spell's tier = the storey count, levels 0..tier-1, W shaft up / E shaft
 // down, a roof hatch on the top storey. Nothing below pins layout literals —
 // every geometric claim reads the same dispatch rules the engine reads.
@@ -24,7 +24,7 @@
 //      crowns — the openings cut in it are joinery and are checked in 3.
 //   7. Shaft arrival mapping — a tower's up-shaft tops out on the target
 //      storey's DOWN pad (and vice versa), and that pad exists there.
-//   8. The floors clamp holds for foreign ordinals (0 ⇒ 1, 99 ⇒ 5).
+//   8. The floors clamp holds for foreign tier numbers (0 ⇒ 1, 99 ⇒ 5).
 //   9. NEGATIVE CONTROL for the flood fill — a rock row severing the hall
 //      must yield unreachable walkable tiles.
 #include "check.h"
@@ -46,6 +46,8 @@ std::size_t cell_index(int x, int y) {
     return std::size_t(y) * kCellSize + std::size_t(x);
 }
 
+constexpr std::uint16_t kTowerOrdinal = 9;
+
 CellContext make_ctx(int tier, int level) {
     CellContext ctx{};
     ctx.cx = 5;
@@ -59,7 +61,11 @@ CellContext make_ctx(int tier, int level) {
     ctx.worldSeed = 0xC0FFEE11u;
     ctx.dungeon.kind = DungeonRef::SpireTower;
     ctx.dungeon.level = std::int8_t(level);
-    ctx.dungeon.ordinal = std::uint16_t(tier);
+    ctx.dungeon.param = std::uint8_t(tier);
+    // Ординал — НОМЕР БАШНИ В КЛЕТКЕ, и он намеренно не равен ни одному тиру
+    // 1..5: свидетель ниже отличает «ворота вынесли наружу адрес» от «ворота
+    // вынесли тир» (M-248 развёл их по двум носителям).
+    ctx.dungeon.ordinal = kTowerOrdinal;
     return ctx;
 }
 
@@ -228,8 +234,12 @@ void test_every_storey_of_every_tier() {
             CHECK((gate != nullptr) == wantGate,
                   "the ground gate stands only on the storey it opens onto");
             if (gate) {
-                CHECK(int(gate->tag) == tier,
-                      "the gate's tag carries the tier back out");
+                CHECK(int(gate->param) == tier,
+                      "the gate carries the tier back out as its structure "
+                      "number");
+                CHECK(gate->tag == kTowerOrdinal,
+                      "…and the tower's ordinal as its tag — the address, "
+                      "not the tier");
                 assert_pad(map, ex, ey, "the threshold's 3x3 is walkable");
             }
 
@@ -343,10 +353,10 @@ void test_shaft_arrival_lands_on_the_partner_pad() {
 void test_floors_clamp() {
     DungeonRef weird{};
     weird.kind = DungeonRef::SpireTower;
-    weird.ordinal = 0;
+    weird.param = 0;
     CHECK(dungeon_spire_tower_floors(weird) == 1,
-          "a foreign ordinal degrades to a legal tower, floor 1");
-    weird.ordinal = 99;
+          "a foreign tier number degrades to a legal tower, floor 1");
+    weird.param = 99;
     CHECK(dungeon_spire_tower_floors(weird) == 5,
           "the ceiling of the clamp is the spell tier domain");
 }

@@ -293,8 +293,6 @@ SKELETON.md	resource_field.h:12-14
 SKELETON.md	resource_field.h:213-217
 SKELETON.md	resource_field.h:268
 SKELETON.md	resource_field.h:336-341
-SKELETON.md	ruins.cpp:44
-SKELETON.md	ruins.cpp:73
 SKELETON.md	scent_field.cpp:15
 SKELETON.md	scent_field.cpp:20-41
 SKELETON.md	scent_field.cpp:59-62
@@ -331,8 +329,6 @@ SKELETON.md	spell_effects.cpp:111
 SKELETON.md	spell_effects.cpp:151
 SKELETON.md	spell_effects.cpp:409
 SKELETON.md	spell_effects.cpp:48-70
-SKELETON.md	spires.cpp:45
-SKELETON.md	spires.cpp:81
 SKELETON.md	squad.h:190
 SKELETON.md	squad.h:261
 SKELETON.md	squad.h:378

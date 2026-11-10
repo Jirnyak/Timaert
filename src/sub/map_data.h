@@ -348,9 +348,24 @@ inline const std::array<float, std::size_t(TILE_COUNT)> kTileMovementSpeed = [] 
 // not that cell's open air. The subworld engine synthesises these contexts
 // for its dungeon session (the dungeon is a projection OF the subworld, the
 // same way the subworld is a projection of the macro map); the macro
-// resolver never sets one. Identity is {cell, ordinal, level}: ordinal is
-// the building's deterministic index within its cell's generation order, so
-// the same seed always opens the same interior behind the same door.
+// resolver never sets one.
+//
+// АДРЕС ДАНЖА — ПАРА (КЛЕТКА, ОРДИНАЛ), И НИЧЕГО КРОМЕ НЕЁ (M-248; вердикт
+// владельца 2026-11-10: «несколько входов из одной клетки в разные данжи —
+// ЗАМЫСЕЛ … адрес — пара (cell, ordinal)»). Клетку держит сессия (клетка
+// двери), ординал — этот носитель. `level` называет ЯРУС внутри того же данжа,
+// а не другой данж.
+//
+// ОРДИНАЛ ЕСТЬ НОМЕР ДАНЖА В СВОЕЙ КЛЕТКЕ, ОДИН СЧЁТ НА ВСЕ РОДЫ. Его выдаёт
+// одна дверь — `dungeon_ordinal_next` ниже — в порядке генерации клетки, и
+// поэтому тот же сид открывает тот же интерьер за той же дверью. Прежде счёт
+// был СВОЙ У КАЖДОГО РОДА (дом — номер дома среди домов, устье — номер устья
+// среди устьев), а у башни шпиля в этом слоте ехал ТИР, то есть не номер
+// вовсе. Пока в клетке стоял один род, это не было видно; два рода в одной
+// клетке давали дом №0 и пещеру №0 с ОДНИМ потоком сида
+// (`dungeon_scene_seed@src/sub/dgn/dispatch.cpp` род не мешает), а башня тира
+// 1 делила поток с домом №1. Две двери ОДНОГО данжа (ворота шпиля и люк на
+// его короне) несут ОДИН ординал — вход не данж, входов у данжа сколько угодно.
 struct DungeonRef {
     enum Kind : std::uint8_t {
         None = 0,
@@ -368,12 +383,19 @@ struct DungeonRef {
     // Storey, SIGNED: 0 = the level the door opens onto, +1 up, -1 a cellar.
     // Stairs re-enter the same identity at level ± 1 (sub/dgn/dispatch.h).
     std::int8_t   level = 0;
-    std::uint16_t ordinal = 0;  // building index within its owning cell
+    std::uint16_t ordinal = 0;  // номер данжа в клетке двери (один счёт на все роды)
     // Exterior footprint half-extents (tiles) of the entered building — the
     // interior keeps the building's real proportions and scales them up
     // (M&M scale, owner ruling 2026-08-12: inside is roomier than outside).
     float footHx = 0.0f;
     float footHy = 0.0f;
+    // ЧИСЛО СТРУКТУРЫ — что модуль поверхности сообщает модулю интерьера об
+    // ЭТОМ экземпляре, помимо его формы; приезжает с пропа двери
+    // (`Structure::param`). Смысл называет род: у башни шпиля это тир спелла =
+    // число ярусов (`dungeon_spire_tower_floors@src/sub/dgn/spire_tower.cpp`),
+    // у остальных родов сегодня ноль. Здесь оно и стоит, чтобы НЕ ехать в
+    // ординале: ординал есть адрес, а адрес не несёт содержания.
+    std::uint8_t param = 0;
 };
 
 // The place standing on a cell — ONE payload, not a field per fact
@@ -624,6 +646,12 @@ struct Structure {
                                Chest, CaveMouth, Well, Sign, SpireGate,
                                SpireOrb, Kerb, Ladder, SpireHatch,
                                Palisade, Wattle } kind;
+    // ЧИСЛО ЭКЗЕМПЛЯРА ДЛЯ ТОГО, ЧТО ЗА ДВЕРЬЮ (M-248): проп двери везёт его в
+    // `DungeonRef::param`. У ворот и люка шпиля — тир спелла; у всякого пропа
+    // без двери — ноль и никем не читается. Стоит СРАЗУ ЗА `kind`, в трёх
+    // байтах, которые выравнивание `float x` и так держало пустыми: запись не
+    // выросла ни на байт (ассерт размера под структурой).
+    std::uint8_t param = 0;
     static constexpr int kKindCount = int(Wattle) + 1;
     // Footprint silhouette. Box is the default; Cylinder renders (and collides)
     // as a round prism — wall towers, gate jambs, the spire. One byte, not a
@@ -654,11 +682,17 @@ struct Structure {
     // nothing under it is consulted at all.
     bool zWorld = false;
     // Per-INSTANCE payload for the prop's interaction (the kind decides the
-    // verb, this decides which one of them this is): a door carries its
-    // building's ordinal, a stair carries its direction. Meaningless — and
-    // ignored — for a kind with no interaction.
+    // verb, this decides which one of them this is): a door carries the
+    // ORDINAL OF THE DUNGEON it opens — the cell-wide number handed out by
+    // `dungeon_ordinal_next` below — and the BUILDING a street door belongs to
+    // carries the same ordinal, which is how the door finds its building
+    // (`door_building` below). A stair carries its direction. Meaningless —
+    // and ignored — for any other kind.
     std::uint16_t tag = 0;
 };
+static_assert(sizeof(Structure) == 40,
+              "проп: число экземпляра обязано лежать в выравнивании за kind — "
+              "запись, которых в сцене тысячи, не растёт");
 
 // ── Structure geometry — the ONE contract shared by the 3D renderer and the
 // collision index (sub/collide.h). Both derive a structure's oriented footprint
@@ -1103,6 +1137,52 @@ struct SubworldMapData {
 };
 
 inline std::size_t tile_index(int x, int y) { return std::size_t(y) * kFullSize + x; }
+
+// ── ОРДИНАЛ ДАНЖА В КЛЕТКЕ — ОДНА ДВЕРЬ ВЫДАЧИ НА ВСЕ РОДЫ (M-248) ──────────
+// Следующий свободный номер данжа в клетке, которую сейчас пишет генератор:
+// на единицу больше наибольшего, уже стоящего на пропах-дверях этой клетки
+// (ноль, если дверей ещё нет). Зовёт её КАЖДЫЙ модуль поверхности, ставящий
+// вход, — дом, устье пещеры, ворота шпиля, — и потому два данжа одной клетки
+// не получают одного номера, какого бы рода они ни были и в каком бы порядке
+// модуль их ни ставил.
+//
+// СЧЁТ ВЫВОДИТСЯ ИЗ САМИХ ПРОПОВ, А НЕ ХРАНИТСЯ РЯДОМ С НИМИ: отдельный
+// счётчик в данных клетки был бы вторым носителем того, что пропы уже говорят,
+// и разошёлся бы с ними в день, когда кто-то поставит дверь мимо него.
+//
+// Две двери ОДНОГО данжа (ворота шпиля и люк на короне) берут номер ОДИН РАЗ
+// и ставят его на обе — дверь выдачи зовётся на данж, не на проп.
+inline std::uint16_t dungeon_ordinal_next(const SubworldMapData& out) {
+    int next = 0;
+    for (const Structure& s : out.structures) {
+        if (structure_opens(s.kind) == DungeonRef::None) continue;
+        next = std::max(next, int(s.tag) + 1);
+    }
+    return std::uint16_t(next);
+}
+
+// ЗДАНИЕ, КОТОРОМУ ПРИНАДЛЕЖИТ ДВЕРЬ: дом клетки с тем же ординалом, что и
+// дверь (`add_house_obb@src/sub/gens/kit/plots.cpp` ставит один номер на обоих).
+// Клетка задана своим углом в координатах списка — у одиночной клетки это
+// (0, 0), у окна 3×3 угол клетки окна. `nullptr` — здания с таким номером в
+// клетке нет.
+//
+// ЗДЕСЬ СТОЯЛ СЧЁТ «N-й ДОМ СРЕДИ ДОМОВ КЛЕТКИ», и он был верен, только пока
+// двери в клетке ставят одни дома: ординал был номером дома, а не номером
+// данжа. С единым счётом на все роды N-й дом и дверь №N — разные вещи, и
+// связь держит само число, а не порядок в списке.
+inline const Structure* door_building(const std::vector<Structure>& structures,
+                                      float originX, float originY,
+                                      std::uint16_t ordinal) {
+    const float x1 = originX + float(kCellSize);
+    const float y1 = originY + float(kCellSize);
+    for (const Structure& s : structures) {
+        if (s.kind != Structure::House || s.tag != ordinal) continue;
+        if (s.x < originX || s.x >= x1 || s.y < originY || s.y >= y1) continue;
+        return &s;
+    }
+    return nullptr;
+}
 
 // ── Geometry helpers (port of subworld/map-data.ts) ──────────────────
 

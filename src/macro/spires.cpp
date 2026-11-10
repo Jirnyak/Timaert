@@ -1,5 +1,6 @@
 #include "macro/spires.h"
 #include "macro/features.h"      // feature_put — фича просто ЕСТЬ в мире
+#include "macro/site_pick.h"     // pick_site — одна дверь подбора клетки (M-248)
 #include "macro/macro_world.h"   // конверт слоёв: закон его собственной шапки
 #include "macro/map_generator.h"
 #include "bus/anketa.h"
@@ -21,16 +22,6 @@ namespace {
 // band only when the band is genuinely rare — and a rare band is handled by
 // relaxing the gate one zone, not by drawing harder.
 constexpr int kSpireCandidateTries = 64;
-
-// ЗАНЯТА ЛИ КЛЕТКА — ВОПРОС К ФИЧЕ, А НЕ К СКВАДУ (вердикт владельца
-// 2026-10-26: «ФИЧИ ПРОСТО ЕСТЬ В МИРЕ»). Клетка разрабатывается РОВНО ОДНИМ
-// способом (ЗАКОН ПОЛЯ п.3), и отвечает об этом БАЙТ — та же дверь и тот же
-// носитель, которыми этот же вопрос задаёт постановка шахт (M-321). Прежде
-// здесь сканировался стор сквадов, и после сноса сквадов шпиля скан отвечал
-// бы «свободно» про клетку, на которой фича шпиля уже стоит.
-bool cell_taken(const FeatureLayer& fl, int x, int y) {
-    return rooted_kind_of_feature(fl.at(x, y)) != SquadType::None;
-}
 
 } // namespace
 
@@ -65,33 +56,28 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         const int tier = std::clamp(kSpellDefs[ord].tier, 1, 5);
         const int tierStep = (int(kSpireMaxZone) - int(kSpireMinZone)) / 4;
         const int relaxStep = std::max(1, 256 / kZoneCount);
-        int bestX = -1, bestY = -1, bestScore = -1;
+        std::uint32_t site = kNoSite;
         int gate = std::min<int>(kSpireMaxZone,
                                  int(kSpireMinZone) + (tier - 1) * tierStep);
         for (; gate >= int(kSpireMinZone); gate -= relaxStep) {
-            // Best-candidate (Mitchell) pick: among admissible draws take the
-            // one farthest from every spire already placed — even spread over
-            // the wild band without a tuned separation constant.
-            for (int t = 0; t < kSpireCandidateTries; ++t) {
-                const int x = int(rng.next_u32() % std::uint32_t(gs.mapW));
-                const int y = int(rng.next_u32() % std::uint32_t(gs.mapH));
-                if (terrain.is_water(x, y)) continue;
-                if (int(zones.at(x, y)) < gate) continue;
-                if (cell_taken(features, x, y)) continue;
-                int score = gs.mapW + gs.mapH;   // no spires yet: any site wins
-                for (const std::uint32_t c : placedCells)
-                    score = std::min(score, torus_cheb_cells(
-                        x, y, cell_x(c, gs.mapW), cell_y(c, gs.mapW),
-                        gs.mapW));
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestX = x;
-                    bestY = y;
-                }
-            }
-            if (bestScore >= 0) break;
+            // Клетку называет ОБЩАЯ ДВЕРЬ ПОДБОРА
+            // (`pick_site@src/macro/site_pick.h`, M-248): лучшая из N по всему
+            // миру, дальше всех от уже поставленных шпилей — ровный разброс по
+            // дикой полосе без подобранной константы разноса. Здесь стоял
+            // частный цикл, близнец цикла руин; поток розыгрышей не сдвинут ни
+            // на бит. От шпиля в отборе осталось его собственное: порог
+            // опасности этого шага.
+            site = pick_site(
+                rng, gs.mapW, site_area_world(gs.mapW), kSpireCandidateTries,
+                placedCells, [&](std::uint32_t cell) {
+                    if (!site_open_for_structure(features, terrain, cell))
+                        return false;
+                    return int(zones.at(cell_x(cell, gs.mapW),
+                                        cell_y(cell, gs.mapW))) >= gate;
+                });
+            if (site != kNoSite) break;
         }
-        if (bestScore < 0) {
+        if (site == kNoSite) {
             // A world can genuinely lack admissible land (all-ocean or fully
             // civilized test maps). The spell is then not offered — say so.
             std::fprintf(stderr,
@@ -118,14 +104,14 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         // п.3), поэтому спелл пишется ТОЛЬКО после того, как байт реально
         // встал: иначе отказ двери оставил бы в мире осиротевшее число под
         // чужой клеткой. Прежде `feature_number_write` стоял ПЕРЕД постановкой.
-        if (feature_put(features, terrain, bestX, bestY, FT_Spire)
-                != FT_Spire)
+        if (feature_put(features, terrain, site, FT_Spire) != FT_Spire)
             continue;
         // The spell is the spire's FEATURE NUMBER («у поля урожай, у шахты
         // залежи, у порта корабли — у шпиля спелл»): kSpellDefs ordinal + 1
         // under FT_Spire, 0 = drained (закон нуля-ординала).
-        feature_number_write(gs, bestX, bestY, ord + 1);
-        placedCells.push_back(cell_of(bestX, bestY, gs.mapW));
+        feature_number_write(gs, cell_x(site, gs.mapW), cell_y(site, gs.mapW),
+                             ord + 1);
+        placedCells.push_back(site);
     }
 }
 

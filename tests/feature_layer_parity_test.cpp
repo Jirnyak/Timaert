@@ -591,6 +591,53 @@ void test_feature_write_goes_through_one_door()
           "ручной y*w+x на шве уезжает с клетки — дверь заворачивает адрес");
 }
 
+// ── СЧЁТЧИК ПРАВОК СЛЕДИТ ЗА РЕАЛЬНОЙ ПРАВКОЙ, И ТОЛЬКО ЗА НЕЙ (M-248 /
+// M-457 п.7). По нему текстура карты догоняет поле в живой игре, поэтому оба
+// промаха дороги: пропущенная правка оставляет на карте город там, где мир
+// держит руину; лишняя — перезаливает мегабайт за правку, которой не было.
+void test_revision_tracks_real_changes_only()
+{
+    constexpr int kSide = 16;
+    const std::unique_ptr<sm::FeatureLayer> flOwn{new sm::FeatureLayer()};
+    sm::FeatureLayer& fl = *flOwn;
+    const std::uint32_t born0 = fl.revision;
+    fl.resize(kSide, kSide);
+    CHECK(fl.revision == born0 + 1u,
+          "рождение слоя заново двигает счётчик: картина по нему протухла");
+
+    sm::TerrainData td = make_terrain(kSide, kSide, 0.7f);   // суша
+    set_height(td, 5, 5, 0.1f);                              // одна клетка воды
+    const std::uint32_t land = sm::cell_of(3, 3, kSide);
+    const std::uint32_t sea = sm::cell_of(5, 5, kSide);
+
+    std::uint32_t rev = fl.revision;
+    CHECK(sm::feature_put(fl, td, land, sm::FT_City) == sm::FT_City
+              && fl.revision == rev + 1u,
+          "постановка фичи двигает счётчик на единицу");
+    rev = fl.revision;
+    CHECK(sm::feature_put(fl, td, land, sm::FT_City) == sm::FT_City
+              && fl.revision == rev,
+          "тот же байт поверх себя счётчик НЕ двигает");
+    CHECK(sm::feature_put(fl, td, land, sm::FT_Ruin) == sm::FT_Ruin
+              && fl.revision == rev + 1u,
+          "город стал руиной — счётчик сдвинулся (строка смерти города)");
+    rev = fl.revision;
+    CHECK(sm::feature_put(fl, td, sea, sm::FT_City) == sm::FT_None
+              && fl.revision == rev,
+          "вода отказала — в поле ничего не встало, счётчик стоит");
+    CHECK(sm::feature_put(fl, td, land, sm::FT_None) == sm::FT_None
+              && fl.revision == rev + 1u,
+          "снятие фичи двигает счётчик (строка смерти деревни)");
+    rev = fl.revision;
+    CHECK(sm::feature_put(fl, td, land, sm::FT_None) == sm::FT_None
+              && fl.revision == rev,
+          "снятие с пустой клетки счётчик не двигает");
+    // Запись мимо мира — не правка.
+    sm::FeatureLayerProbe::set(fl, std::uint32_t(kSide * kSide), sm::FT_Road);
+    CHECK(fl.revision == rev, "запись за пределами мира — не правка");
+    CHECK(fl.pad == 0u, "названный хвост выравнивания шапки стоит нулём");
+}
+
 } // namespace
 
 int main()
@@ -602,5 +649,6 @@ int main()
     test_feature_water_filter_uses_map_sea_level();
     test_settlement_feature_survives_road_pass();
     test_feature_write_goes_through_one_door();
+    test_revision_tracks_real_changes_only();
     return sm::test::report("feature_layer_parity_test");
 }

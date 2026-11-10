@@ -116,6 +116,7 @@ static void smoke_give_visual(sm::sub::SubObjects& objs, int s,
 #include "bus/store.h"
 #include "bus/world_row.h"   // creatures_push_stack — предусловие ростера (Б8)
 #include "macro/delta_apply.h"   // дверь границы тика — её же зовёт прибор капа
+#include "macro/site_pick.h"     // pick_site — подбор клетки под структуру (M-248)
 #include <bit>
 #include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
@@ -442,6 +443,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"forest_stays_felled", SmokeAction::ForestStaysFelled},
     {"city_ruin_macro", SmokeAction::CityRuinMacro},
     {"ruin_stays_ruin", SmokeAction::RuinStaysRuin},
+    {"feature_live_map", SmokeAction::FeatureLiveMap},
     {"spawn_squad_at_player", SmokeAction::SpawnSquadAtPlayer},
     {"capture_course", SmokeAction::CaptureCourse},
     {"capture_exit", SmokeAction::CaptureExit},
@@ -4714,7 +4716,9 @@ bool run_spire_climb_smoke(App& app) {
         smoke_fail(app, "spire_climb tower furniture missing");
         return false;
     }
-    const int gateTier = int(gate->tag);
+    // Тир едет ЧИСЛОМ СТРУКТУРЫ на пропе ворот (`Structure::param`), а не в
+    // его ординале: ординал — номер башни в клетке, адрес данжа (M-248).
+    const int gateTier = int(gate->param);
 
     // Opt-in photo stops (TIMAERT_SMOKE_SPIRE_STAY=ground|hall|roof): halt at
     // a viewpoint so a following capture_frame photographs the scene — the
@@ -4811,7 +4815,7 @@ bool run_spire_climb_smoke(App& app) {
         sm::sub::DungeonRef ref{};
         ref.kind = sm::sub::DungeonRef::SpireTower;
         ref.level = std::int8_t(topLevel);
-        ref.ordinal = std::uint16_t(tier);
+        ref.param = std::uint8_t(tier);
         sm::sub::dungeon_roof_hatch_point(ref, hx, hy);
         const float wx = float(sm::sub::kCellSize) + hx;
         const float wy = float(sm::sub::kCellSize) + hy + 2.0f;
@@ -10060,6 +10064,220 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                                  "(ruin=%d city=%d)\n",
                          cell, int(now), int(sm::FT_Ruin), int(sm::FT_City));
             std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::FeatureLiveMap: {
+            // СТРУКТУРА, ПОСТАВЛЕННАЯ В ЖИВОЙ ИГРЕ, ВИДНА НА КАРТЕ В ТОМ ЖЕ
+            // СЕАНСЕ (M-248 / M-457 п.7). До счётчика правок поля фич текстура
+            // карты узнавала о новом байте только полной выгрузкой — после
+            // загрузки. Свидетель идёт путём требования владельца дословно:
+            // клетка называется дверью подбора РЯДОМ С игроком
+            // (`pick_site`), структура кладётся по индексу клетки дверью поля
+            // (`feature_put`), и дальше судятся ДВА факта:
+            //   1. зеркало текстуры догнало счётчик правок слоя — перезалив
+            //      прошёл настоящей дверью рендера на настоящем устройстве;
+            //   2. КАДР карты изменился ТАМ, ГДЕ ВСТАЛА СТРУКТУРА: судится
+            //      прямоугольник этой клетки на экране, и изменился он
+            //      сильнее, чем тот же прямоугольник меняется между двумя
+            //      кадрами без единой правки. Шум картины мерится тут же,
+            //      парой кадров ДО постановки, а не предполагается: карта
+            //      живая (время суток, сквады), и по всему кадру два соседних
+            //      снимка расходятся десятками тысяч пикселей — замер первой
+            //      версии этого свидетеля, сид 12345: 67 015 против 17 544
+            //      после правки, то есть весь кадр не прибор.
+            // Фазы разнесены кадрами: читаемые пиксели — это кадр, показанный
+            // ПОСЛЕ взвода (закон отсрочки на кадр, тот же, что у wait_visible).
+            if (!app.worldLoaded || app.subworld.active()) {
+                smoke_fail(app, "feature_live_map needs the macro map");
+                break;
+            }
+            // Камера обязана стоять: прямоугольник клетки считается от неё,
+            // и снимки сравнимы только при одной и той же проекции. После
+            // загрузки мира она ещё доезжает до игрока — ждём, пока встанет.
+            if (app.smoke.trackedPhase == 0
+                && (std::fabs(app.camX - app.camTargetX) > 1e-3f
+                    || std::fabs(app.camY - app.camTargetY) > 1e-3f)) {
+                if (++app.smoke.liveMapWaitFrames > 600) {
+                    smoke_fail(app, "feature_live_map: камера карты не встала "
+                                    "за 600 кадров");
+                }
+                break;
+            }
+            // Сколько пикселей прямоугольника клетки `cell` различимо
+            // отличаются в двух кадрах; -1 — мерить нечем (кадры разного
+            // размера либо клетка вне экрана). Порог 12 из 765 по сумме
+            // каналов гасит дизеринг, а не картину. Экран клетки: центр кадра
+            // есть камера, клетка — квадрат `zoom` пикселей (`app.zoom` и есть
+            // пиксели drawable на клетку).
+            const int pixW = app.smoke.probePixW;
+            const int pixH = app.smoke.probePixH;
+            const auto cell_diff = [&](const std::vector<std::uint8_t>& a,
+                                       const std::vector<std::uint8_t>& b,
+                                       std::uint32_t cell, int& area) {
+                area = 0;
+                const std::size_t need =
+                    std::size_t(pixW) * std::size_t(pixH) * 4u;
+                if (pixW <= 0 || pixH <= 0 || a.size() < need
+                    || b.size() < need) {
+                    return -1;
+                }
+                const float side = float(app.gs.mapW);
+                const float dx = sm::torus_delta(
+                    float(sm::cell_x(cell, app.gs.mapW)) - app.camX, side);
+                const float dy = sm::torus_delta(
+                    float(sm::cell_y(cell, app.gs.mapW)) - app.camY, side);
+                const int x0 = int(float(pixW) * 0.5f + dx * app.zoom) + 1;
+                const int y0 = int(float(pixH) * 0.5f + dy * app.zoom) + 1;
+                const int x1 = x0 + int(app.zoom) - 2;
+                const int y1 = y0 + int(app.zoom) - 2;
+                if (x0 < 0 || y0 < 0 || x1 > pixW || y1 > pixH || x1 <= x0
+                    || y1 <= y0) {
+                    return -1;
+                }
+                int n = 0;
+                for (int y = y0; y < y1; ++y) {
+                    for (int x = x0; x < x1; ++x) {
+                        const std::size_t i =
+                            (std::size_t(y) * std::size_t(pixW)
+                             + std::size_t(x)) * 4u;
+                        const int d = std::abs(int(a[i]) - int(b[i]))
+                                    + std::abs(int(a[i + 1]) - int(b[i + 1]))
+                                    + std::abs(int(a[i + 2]) - int(b[i + 2]));
+                        if (d > 12) ++n;
+                        ++area;
+                    }
+                }
+                return n;
+            };
+            // Общий шаг фаз 0, 1 и 3: взвести съёмку и держать курсор, пока
+            // кадр не приедет.
+            if (app.smoke.trackedPhase != 2 && app.smoke.probePixels.empty()) {
+                if (!app.smoke.pixelProbeArmed) {
+                    app.smoke.pixelProbeArmed = true;
+                    app.smoke.capturePending = true;
+                    app.smoke.captureActionIndex = app.smoke.cursor;
+                }
+                break;
+            }
+            if (app.smoke.trackedPhase == 0) {
+                std::fprintf(stderr, "[smoke] action=feature_live_map\n");
+                app.smoke.liveMapFrameA = std::move(app.smoke.probePixels);
+                app.smoke.probePixels.clear();
+                app.smoke.liveMapWaitFrames = 0;
+                app.smoke.trackedPhase = 1;
+                break;
+            }
+            if (app.smoke.trackedPhase == 1) {
+                app.smoke.liveMapFrameB = std::move(app.smoke.probePixels);
+                app.smoke.probePixels.clear();
+                SMOKE_CHECK(app,
+                            app.uploadedFeatureRev == app.gs.features.revision,
+                            "до постановки текстура поля фич свежа: зеркало "
+                            "равно счётчику правок слоя");
+                // Клетка РЯДОМ С ИГРОКОМ: суша без фичи, которую он сейчас
+                // ВИДИТ (туман войны закрасил бы правку чёрным, и кадр не
+                // изменился бы при исправном перезаливе).
+                const sm::MacroHandle fh = sm::player_flag_handle(app.session);
+                if (!app.macroStore->valid(fh)) {
+                    smoke_fail(app, "feature_live_map: у игрока нет сквада");
+                    break;
+                }
+                const std::uint32_t anchor = app.macroStore->cell[fh.slot].idx;
+                const int side = app.gs.mapW;
+                sm::Rng rng(app.gs.worldSeed ^ 0x11FE3A9Du);
+                const std::uint32_t site = sm::pick_site(
+                    rng, side, sm::site_area_near(anchor, 2, side), 64, {},
+                    [&](std::uint32_t cell) {
+                        return cell != anchor
+                            && sm::site_open_for_structure(app.gs.features,
+                                                           app.terrain, cell)
+                            && app.gs.features.at(cell) == sm::FT_None
+                            && app.gs.knowledge.at(sm::cell_x(cell, side),
+                                                   sm::cell_y(cell, side))
+                                   == sm::kKnowledgeVisible;
+                    });
+                if (site == sm::kNoSite) {
+                    smoke_fail(app, "feature_live_map: в двух клетках от "
+                                    "игрока нет видимой свободной суши");
+                    break;
+                }
+                // Шум картины В ЭТОЙ КЛЕТКЕ — два кадра до правки.
+                int noiseArea = 0;
+                app.smoke.liveMapNoise = cell_diff(app.smoke.liveMapFrameA,
+                                                   app.smoke.liveMapFrameB,
+                                                   site, noiseArea);
+                if (app.smoke.liveMapNoise < 0) {
+                    smoke_fail(app, "feature_live_map: клетка вне кадра или "
+                                    "кадры разного размера — мерить шум нечем");
+                    break;
+                }
+                const std::uint32_t revBefore = app.gs.features.revision;
+                const sm::FeatureType got = sm::feature_put(
+                    app.gs.features, app.terrain, site, sm::FT_Ruin);
+                SMOKE_CHECK(app, got == sm::FT_Ruin
+                                     && app.gs.features.at(site) == sm::FT_Ruin
+                                     && app.gs.features.revision
+                                            == revBefore + 1u,
+                            "структура встала по индексу клетки рядом с "
+                            "игроком, счётчик правок сдвинулся на единицу");
+                SMOKE_CHECK(app,
+                            app.uploadedFeatureRev != app.gs.features.revision,
+                            "текстура о правке ещё не знает — зеркало отстало "
+                            "от счётчика (иначе догонять нечего)");
+                app.smoke.liveMapCell = int(site);
+                app.smoke.liveMapWaitFrames = 0;
+                app.smoke.trackedPhase = 2;
+                break;
+            }
+            if (app.smoke.trackedPhase == 2) {
+                // Кадр оболочки обязан догнать поле САМ, своей сверкой
+                // счётчика. Три кадра — потолок с запасом: сверка стоит выше
+                // гейта паузы и исполняется каждый кадр.
+                if (app.uploadedFeatureRev != app.gs.features.revision) {
+                    if (++app.smoke.liveMapWaitFrames > 3) {
+                        smoke_fail(app, "feature_live_map: за три кадра "
+                                        "текстура поля фич не догнала счётчик "
+                                        "правок — карта показывает старый мир");
+                    }
+                    break;
+                }
+                app.smoke.trackedPhase = 3;
+                break;   // съёмку взводит общий шаг следующего кадра
+            }
+            // Фаза 3: кадр ПОСЛЕ перезалива.
+            const std::vector<std::uint8_t> frameC =
+                std::move(app.smoke.probePixels);
+            app.smoke.probePixels.clear();
+            const int cell = app.smoke.liveMapCell;
+            int area = 0;
+            const int changed = cell_diff(app.smoke.liveMapFrameB, frameC,
+                                          std::uint32_t(cell), area);
+            // Больше половины клетки и больше удвоенного шума: заливка
+            // структуры красит клетку целиком, а не задевает её край. Порог
+            // «половина» стоит на замере (сид 12345, клетка 30×30 = 900 px):
+            // с перезаливом текстуры меняется 650 px, а при ЗАГЛУШЁННОМ
+            // перезаливе — 255: значок фичи рисует оверлей прямо по полю, мимо
+            // текстуры. То есть сам факт «кадр изменился» перезалива НЕ
+            // доказывает; доказывает перекраска земли клетки.
+            SMOKE_CHECK(app, area > 0 && changed * 2 > area
+                                 && changed > 2 * app.smoke.liveMapNoise,
+                        "клетка на кадре карты перекрасилась после постановки "
+                        "структуры — больше чем наполовину и вдвое сильнее "
+                        "собственного шума картины в этой клетке");
+            std::fprintf(stderr,
+                         "[smoke] feature_live_map cell=%d,%d rev=%u "
+                         "cell_px=%d noise_px=%d changed_px=%d\n",
+                         sm::cell_x(std::uint32_t(cell), app.gs.mapW),
+                         sm::cell_y(std::uint32_t(cell), app.gs.mapW),
+                         app.gs.features.revision, area,
+                         app.smoke.liveMapNoise, changed);
+            std::fflush(stderr);
+            app.smoke.liveMapFrameA.clear();
+            app.smoke.liveMapFrameA.shrink_to_fit();
+            app.smoke.liveMapFrameB.clear();
+            app.smoke.liveMapFrameB.shrink_to_fit();
+            app.smoke.trackedPhase = 0;
             ++app.smoke.cursor;
             break;
         }

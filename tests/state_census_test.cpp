@@ -550,6 +550,7 @@ constexpr Row kAppRows[] = {
     {"zones", Rod::Fields, "слой опасности"},
     {"uploadedTreeRev", Rod::Session, "ревизия GPU-текстуры"},
     {"uploadedKnowledgeRev", Rod::Session, "ревизия GPU-текстуры"},
+    {"uploadedFeatureRev", Rod::Session, "ревизия GPU-текстуры"},
     // ОТЛАДОЧНЫЙ ВИД ПОЛЕЙ НАВИГАЦИИ (M-239) — весь блок СЕССИОННЫЙ, и это
     // не отговорка: вид выбирает игрок клавишей, а четыре соседних числа
     // помнят, ЧТО уже лежит в GPU-текстуре. Ни одно не состояние мира —

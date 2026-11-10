@@ -10,18 +10,6 @@
 
 namespace sm::sub::kit {
 
-// How many houses this cell has raised so far — the ordinal the next one
-// gets. The interior behind a door is found by counting Houses in the door's
-// window cell (engine.cpp enter_dungeon_by_door), so the number a door is
-// stamped with must be produced by the same counting rule.
-std::uint16_t house_count(const SubworldMapData& out) {
-    std::uint16_t n = 0;
-    for (const Structure& s : out.structures) {
-        if (s.kind == Structure::House) ++n;
-    }
-    return n;
-}
-
 // Oriented house: the universal placement primitive. Stamps the ROTATED
 // footprint (every tile whose centre falls inside the yawed box, slightly
 // fattened so the tile stamp fully covers the solid), flattens exactly those
@@ -91,10 +79,15 @@ bool add_house_obb(SubworldMapData& out, float cx, float cy,
     s.yaw = yaw;
     s.hx = hx;
     s.hy = hy;
-    // Every house is built with its ordinal already known — it is simply how
-    // many houses this cell has raised so far, which is exactly the number
-    // the composite will count back when a door is opened.
-    const std::uint16_t ordinal = house_count(out);
+    // ОРДИНАЛ ДАНЖА ЗА ЭТОЙ ДВЕРЬЮ — следующий свободный номер В КЛЕТКЕ, один
+    // счёт на все роды (`dungeon_ordinal_next@src/sub/map_data.h`, M-248).
+    // Его несут ОБА: дом и его дверь, — и дверь находит свой дом по этому
+    // числу (`door_building@src/sub/map_data.h`). Здесь стоял «счёт домов
+    // клетки», верный только пока двери в клетке ставят одни дома; в клетке
+    // одних домов новый счёт даёт ТЕ ЖЕ числа, поэтому интерьеры городов сидов
+    // не сдвинулись.
+    const std::uint16_t ordinal = dungeon_ordinal_next(out);
+    s.tag = ordinal;
     out.structures.push_back(s);
 
     // ...and the door it is entered by. A building without a visible way in

@@ -4559,32 +4559,28 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     if (opens == DungeonRef::None) return false;
     const int winCellX = std::clamp(int(door.x) / kCellSize, 0, 2);
     const int winCellY = std::clamp(int(door.y) / kCellSize, 0, 2);
+    // АДРЕС ДАНЖА — (КЛЕТКА ДВЕРИ, ОРДИНАЛ): номер данжа в клетке едет на
+    // пропе двери, один счёт на все роды (`DungeonRef@src/sub/map_data.h`).
     const std::uint16_t ordinal = door.tag;
-    // A house door names its building by ordinal within its window cell — the
-    // count the generator stamped it with, over the SAME per-cell order the
-    // composite preserves (rebuild_composite_structures appends cell by cell)
-    // — because the interior is built to that building's footprint. A cave
-    // mouth needs no such lookup: the hill behind it is its own shape, so the
-    // mouth's own footprint is what the cavern is cut to.
+    // ФОРМА ИНТЕРЬЕРА — ФОРМА ТОГО, К ЧЕМУ ДВЕРЬ ПРИВЕШЕНА. У двери на стене
+    // здания это само здание: оно несёт тот же ординал, что и дверь, и
+    // находится по нему (`door_building@src/sub/map_data.h`). У двери без
+    // здания (устье в скале, ворота башни) форма — её собственный проём: холм
+    // за устьем сам себе форма.
+    //
+    // ВОПРОС ЗАДАЁТСЯ СПИСКУ, А НЕ РОДУ: здесь стояла ветка «если род — дом»,
+    // искавшая N-й дом среди домов клетки. Счёт домов был верен, только пока
+    // двери в клетке ставят одни дома (M-248).
     const Structure* shape = &door;
-    if (opens == DungeonRef::House) {
-        const auto& structs = mgr_.structures();
-        const Structure* house = nullptr;
-        std::uint16_t seen = 0;
-        for (const Structure& s : structs) {
-            if (s.kind != Structure::House) continue;
-            if (std::clamp(int(s.x) / kCellSize, 0, 2) != winCellX) continue;
-            if (std::clamp(int(s.y) / kCellSize, 0, 2) != winCellY) continue;
-            if (seen == ordinal) { house = &s; break; }
-            ++seen;
-        }
-        if (!house) {
-            // A door whose building is gone is a bug in whoever placed it,
-            // not a silent no-op: say so rather than swallow the keypress.
-            set_status("This door leads nowhere.");
-            return false;
-        }
-        shape = house;
+    if (const Structure* building = door_building(
+            mgr_.structures(), float(winCellX * kCellSize),
+            float(winCellY * kCellSize), ordinal)) {
+        shape = building;
+    } else if (opens == DungeonRef::House) {
+        // A door whose building is gone is a bug in whoever placed it,
+        // not a silent no-op: say so rather than swallow the keypress.
+        set_status("This door leads nowhere.");
+        return false;
     }
     const int mapW = terrain_->width;
     const int mapH = terrain_->height;
@@ -4598,6 +4594,7 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     ses.ref.kind = std::uint8_t(opens);
     ses.ref.level = 0;
     ses.ref.ordinal = ordinal;
+    ses.ref.param = door.param;   // число структуры: смысл называет род
     // WHICH END of the interior this door opens is the prop's own column, not
     // a literal here: a street leaf opens the ground floor, a tower's crown
     // hatch opens the storey you climbed to. The top storey is the kind's

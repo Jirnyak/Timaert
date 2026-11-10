@@ -246,8 +246,9 @@ void test_city_props(const SubworldMapData& city) {
           "every house is given exactly one door — the promise the entry "
           "path relies on");
 
-    // Tag census: the door's tag names its house by the ordinal the engine
-    // counts back. The set must be exactly {0..houses-1} — a duplicate opens
+    // Tag census: the door's tag is the ordinal of the dungeon behind it — the
+    // cell-wide number its house carries too. In a cell whose only doors are
+    // houses the set must be exactly {0..houses-1} — a duplicate opens
     // one interior from two doors, a gap leaves a house unenterable.
     std::vector<int> tagged(std::size_t(houses), 0);
     int doorsSeen = 0, outOfRange = 0;
@@ -268,21 +269,17 @@ void test_city_props(const SubworldMapData& city) {
     CHECK(ordinals == houses && gaps == 0 && duplicates == 0,
           "the door tags are exactly {0..houses-1} — no gap, no duplicate");
 
-    // Each door hangs ON its own house: resolve the house by COUNTING Houses
-    // in generation order, the same rule enter_dungeon_by_door uses, then
-    // measure to that house's surface (never to its centre — a wide hall would
-    // be unreachable from its own doorstep).
+    // Each door hangs ON its own house: resolve the house through the SAME
+    // door enter_dungeon_by_door uses (`door_building@src/sub/map_data.h` — the
+    // building carrying the door's ordinal, M-248), then measure to that
+    // house's surface (never to its centre — a wide hall would be unreachable
+    // from its own doorstep).
     int measured = 0, adrift = 0;
     float worstD2 = 0.0f;
     for (const Structure& d : city.structures) {
         if (d.kind != Structure::Door) continue;
-        const Structure* house = nullptr;
-        std::uint16_t seen = 0;
-        for (const Structure& s : city.structures) {
-            if (s.kind != Structure::House) continue;
-            if (seen == d.tag) { house = &s; break; }
-            ++seen;
-        }
+        const Structure* house =
+            door_building(city.structures, 0.0f, 0.0f, d.tag);
         if (!house) { ++adrift; continue; }
         ++measured;
         const float d2 = structure_surface_dist2(*house, d.x, d.y);

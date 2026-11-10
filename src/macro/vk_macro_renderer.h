@@ -90,6 +90,16 @@ public:
     void upload_zone_field(const gpu::VulkanDevice& dev,
                            const ZoneLayer& zones);
 
+    // Refresh ONLY the feature field (binding 1, u_feature) — the byte per
+    // cell that says what stands there. Called when FeatureLayer.revision
+    // moves (a city died into a ruin, a village's byte was lifted, a structure
+    // was put on a cell mid-game), never per frame. Same in-place discipline
+    // as the knowledge door below: the world's dimensions do not change
+    // between two full upload()s, so the R8 texels are rewritten where they
+    // lie; a dimension mismatch falls back to recreate + rewrite binding 1.
+    void upload_feature_field(const gpu::VulkanDevice& dev,
+                              const FeatureLayer& features);
+
     // Refresh ONLY the knowledge field (binding 5). Unlike the doors above
     // this one runs OFTEN — every player cell crossing bumps the revision —
     // so when the grid dims are unchanged it rewrites the R8 image IN PLACE

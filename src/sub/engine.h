@@ -72,9 +72,11 @@ enum class SceneKind : std::uint8_t { Overworld, Dungeon };
 enum class DungeonArrival : std::uint8_t { Door, ShaftUp, ShaftDown, Roof };
 
 // Live dungeon session bookkeeping. The dungeon is a projection OF the
-// subworld: identity is {door cell, ordinal, level} (see map_data.h
-// DungeonRef), and everything here is derivable again from that identity —
-// nothing is saved (macro-only persistence law).
+// subworld: its ADDRESS is the pair (door cell, ordinal) — `doorCx/doorCy`
+// here and `ref.ordinal` (see map_data.h DungeonRef; one cell holds as many
+// dungeons as it has ordinals, M-248) — `ref.level` names the storey inside
+// it, and everything here is derivable again from that address — nothing is
+// saved (macro-only persistence law).
 struct DungeonSession {
     DungeonRef ref{};
     DungeonArrival arrival = DungeonArrival::Door;
@@ -99,7 +101,7 @@ struct DungeonSession {
     // ним префикс чужих долей) уже недоступен, поэтому партиция визита
     // замирает снимком на пороге и едет в сессии, как прежде ехал счёт
     // дверей. offset −1 = отрезка нет (дикое здание, город без голов).
-    // Потолок ярусов — домен тиров шпиля (spire_tower.cpp: clamp(ordinal,
+    // Потолок ярусов — домен тиров шпиля (spire_tower.cpp: clamp(param,
     // 1, 5)); у очага ярусов два (пол + верх), в тот же массив.
     static constexpr int kMaxInteriorStoreys = 5;
     std::int32_t segOffset[kMaxInteriorStoreys] = {-1, -1, -1, -1, -1};
@@ -1073,9 +1075,10 @@ private:
     // сравнивать его теперь не с кем (род цели один), но величина остаётся
     // мерой выбора МЕЖДУ ПРОПАМИ, а не служебным остатком снятого трупа.
     const Structure* aimed_prop(float reach) const;
-    // Step through a door prop: resolves the building it belongs to (its
-    // `tag` is that house's ordinal within the window cell) and raises the
-    // interior. False if the building cannot be resolved.
+    // Step through a door prop: its `tag` is the ordinal of the dungeon
+    // behind it within the door's cell (one count for every kind); a door
+    // hung on a building takes the interior's shape from the building that
+    // carries the same ordinal. False if a house door's building is gone.
     bool enter_dungeon_by_door(const Structure& door);
     void spawn_player_entity();
     void clear_player_entity();

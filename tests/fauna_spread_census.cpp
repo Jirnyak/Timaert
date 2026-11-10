@@ -335,12 +335,12 @@ void census_seed(std::uint32_t seed) {
             ++spireCells;
             ctx.band = spireBand;
             visit_scene(spireStreet, ctx, budget, cellSalt ^ 0xFAEAu);
-            // ЯРУСЫ БАШНИ: их столько, каков ТИР шпиля (`ordinal` люка несёт
+            // ЯРУСЫ БАШНИ: их столько, каков ТИР шпиля (`param` люка несёт
             // тир — `gen_spire`, `dungeon_spire_tower_floors`), и каждый ярус
             // есть отдельный визит норы со своим семенем сцены.
             sm::sub::DungeonRef ref{};
             ref.kind = sm::sub::DungeonRef::SpireTower;
-            ref.ordinal = std::uint16_t(std::clamp(
+            ref.param = std::uint8_t(std::clamp(
                 int(sm::spire_orb(mw, x, y).tier), 1, 5));
             const int storeys = sm::sub::dungeon_spire_tower_floors(ref);
             sm::SpawnContext tctx = ctx;

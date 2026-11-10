@@ -1,5 +1,6 @@
 #include "macro/ruins.h"
 #include "macro/features.h"     // feature_put — фича просто ЕСТЬ в мире
+#include "macro/site_pick.h"     // pick_site — одна дверь подбора клетки (M-248)
 #include "macro/rooted_iter.h"   // for_each_rooted — сквады по слотам (счёт городов)
 #include "macro/state.h"
 #include "macro/zones.h"
@@ -23,19 +24,6 @@ constexpr int kRuinCandidateTries = 64;
 // density follows civilization's own scale instead of a map-size constant
 // (a bigger politik raises more cities AND leaves more dead ones behind).
 constexpr int kRuinBaseCount = 4;
-
-// ЗАНЯТА ЛИ КЛЕТКА — ВОПРОС К ФИЧЕ, А НЕ К СКВАДУ (вердикт владельца
-// 2026-10-26: «МЕСТ НЕТ! СКВАДЫ ЭТО СКВАДЫ ФИЧИ АГНОСТИЧНЫЙ НЕЗАВИСИМЫЙ
-// СКВАД МОДУЛЬ РЕШАЕТ ЧТО ТАМ ПРОИСХОДИТ С НИМ И МИРОМ ФИЧИ ПРОСТО ЕСТЬ В
-// МИРЕ»). Клетка разрабатывается РОВНО ОДНИМ способом (ЗАКОН ПОЛЯ п.3), и
-// отвечает об этом БАЙТ — та же дверь и тот же носитель, которыми этот же
-// вопрос задаёт постановка шахт (`stamp_mines@src/macro/spawners.cpp`,
-// M-321). Прежде здесь сканировался стор сквадов, и после сноса сквадов
-// руины и шпиля скан отвечал бы «свободно» про клетку, на которой фича
-// уже стоит: руина села бы поверх руины и поверх шпиля МОЛЧА.
-bool cell_taken_(const FeatureLayer& fl, int x, int y) {
-    return rooted_kind_of_feature(fl.at(x, y)) != SquadType::None;
-}
 
 } // namespace
 
@@ -71,29 +59,22 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
 
     int placed = 0;
     for (int n = 0; n < target; ++n) {
-        // Best-candidate (Mitchell) pick over the row's own zone band: among
-        // admissible draws take the one farthest from every ruin already
-        // placed — even spread over the dangerous middle of the world.
-        int bestX = -1, bestY = -1, bestScore = -1;
-        for (int t = 0; t < kRuinCandidateTries; ++t) {
-            const int x = int(rng.next_u32() % std::uint32_t(gs.mapW));
-            const int y = int(rng.next_u32() % std::uint32_t(gs.mapH));
-            if (terrain.is_water(x, y)) continue;
-            const int z = int(zones.at(x, y));
-            if (z < int(kRuinMinZone) || z > int(kRuinMaxZone)) continue;
-            if (cell_taken_(features, x, y)) continue;
-            int score = gs.mapW + gs.mapH;   // no ruins yet: any site wins
-            for (const std::uint32_t c : placedCells)
-                score = std::min(score, torus_cheb_cells(
-                    x, y, cell_x(c, gs.mapW), cell_y(c, gs.mapW),
-                    gs.mapW));
-            if (score > bestScore) {
-                bestScore = score;
-                bestX = x;
-                bestY = y;
-            }
-        }
-        if (bestScore < 0) {
+        // Клетку называет ОБЩАЯ ДВЕРЬ ПОДБОРА (`pick_site@src/macro/site_pick.h`,
+        // M-248): лучшая из N по всему миру, дальше всех от уже поставленных
+        // руин — ровный разброс по опасной середине мира. Здесь стоял частный
+        // цикл розыгрыша и счёта, близнец цикла шпилей; поток розыгрышей при
+        // переезде не сдвинут ни на бит. От руины в отборе осталось только её
+        // собственное: полоса опасности.
+        const std::uint32_t site = pick_site(
+            rng, gs.mapW, site_area_world(gs.mapW), kRuinCandidateTries,
+            placedCells, [&](std::uint32_t cell) {
+                if (!site_open_for_structure(features, terrain, cell))
+                    return false;
+                const int z = int(zones.at(cell_x(cell, gs.mapW),
+                                           cell_y(cell, gs.mapW)));
+                return z >= int(kRuinMinZone) && z <= int(kRuinMaxZone);
+            });
+        if (site == kNoSite) {
             // A world can genuinely lack admissible land — fewer ruins then,
             // and the shortfall is said, never silent (CANON S28).
             std::fprintf(stderr,
@@ -126,9 +107,9 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
         // ВОЗВРАТ ЧИТАЕТСЯ КАК ФАКТ, А НЕ КАК НАМЕРЕНИЕ (контракт двери):
         // вода отказать не может — её отбор отверг выше, — но врать о
         // поставленном мы не вправе, и счёт ведётся по тому, что ВСТАЛО.
-        if (feature_put(features, terrain, bestX, bestY, FT_Ruin) != FT_Ruin)
+        if (feature_put(features, terrain, site, FT_Ruin) != FT_Ruin)
             continue;
-        placedCells.push_back(cell_of(bestX, bestY, gs.mapW));
+        placedCells.push_back(site);
         ++placed;
     }
     std::printf("[worldgen] ruins: %d of %d placed (%d cities)\n",

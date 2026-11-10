@@ -175,10 +175,18 @@ void gen_spire(const GenInput& in, SubworldMapData& out) {
             out.structures.push_back(seg);
         }
     }
+    // ОДНА БАШНЯ — ОДИН ДАНЖ — ОДИН ОРДИНАЛ, ДВЕ ДВЕРИ (M-248). Номер берётся
+    // у общей двери выдачи ОДИН РАЗ, до обеих дверей, и встаёт и на люк, и на
+    // ворота: вход не данж. Тир едет своим числом (`Structure::param`), а не в
+    // ординале, где он стоял прежде, — там он не был номером и совпал бы с
+    // номером чужого данжа той же клетки.
+    const std::uint16_t towerOrdinal = dungeon_ordinal_next(out);
+    const std::uint8_t towerTier =
+        std::uint8_t(std::clamp(ctx.rooted.tier, 1, 5));
     // The way back in: the lid the top storey's ladder climbs to, from above.
     // Without it the crown was a one-way trip — take the orb, then jump 128 m
-    // (owner, 2026-09-09). Its tag carries the tier, exactly as the gate at
-    // the foot does, because both open the same tower.
+    // (owner, 2026-09-09). It carries the same ordinal and the same tier as
+    // the gate at the foot does, because both open the same tower.
     {
         float hxT = 0.0f, hyT = 0.0f;
         spire_crown_hatch_point(hxT, hyT);
@@ -192,14 +200,15 @@ void gen_spire(const GenInput& in, SubworldMapData& out) {
         hatch.zWorld = true;
         hatch.zBase = crownM;
         hatch.height = structure_min_height(Structure::SpireHatch);
-        hatch.tag = std::uint16_t(std::clamp(ctx.rooted.tier, 1, 5));
+        hatch.tag = towerOrdinal;
+        hatch.param = towerTier;
         out.structures.push_back(hatch);
     }
     // The gate on the south face — the CaveMouth pattern: a Door-verb prop
-    // whose row opens the tower's own interior. tag carries the spell's
-    // tier (its OWN context field since §42 — `size` is population for
-    // every kind), which the dungeon reads as its storey count
-    // (DungeonRef::ordinal).
+    // whose row opens the tower's own interior. It carries the tower's
+    // ordinal in the cell (tag) and the spell's tier (param — its OWN context
+    // field since §42, `size` is population for every kind), which the
+    // dungeon reads as its storey count (DungeonRef::param).
     {
         Structure gate{};
         gate.kind = Structure::SpireGate;
@@ -209,7 +218,8 @@ void gen_spire(const GenInput& in, SubworldMapData& out) {
         gate.hy = structure_min_half_xy(Structure::SpireGate);
         gate.radius = std::max(gate.hx, gate.hy);
         gate.height = structure_min_height(Structure::SpireGate);
-        gate.tag = std::uint16_t(std::clamp(ctx.rooted.tier, 1, 5));
+        gate.tag = towerOrdinal;
+        gate.param = towerTier;
         out.structures.push_back(gate);
     }
     // The prize on the crown: the orb, seated on the tower top (zBase = the

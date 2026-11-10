@@ -65,6 +65,7 @@ enum class SmokeAction : std::uint8_t {
     ForestStaysFelled,
     CityRuinMacro,
     RuinStaysRuin,
+    FeatureLiveMap,
     SpawnSquadAtPlayer,
     CaptureCourse,
     CaptureExit,
@@ -216,6 +217,13 @@ struct SmokeScript {
     // city_ruin_macro → ruin_stays_ruin: клетка города, на которую дверь
     // поля фич положила руину до сохранения; -1 = ничего не рушили.
     int ruinedCell = -1;
+    // feature_live_map: два кадра карты ДО постановки структуры (второй —
+    // мера собственного шума картины) и счёт кадров ожидания перезалива.
+    std::vector<std::uint8_t> liveMapFrameA;
+    std::vector<std::uint8_t> liveMapFrameB;
+    int liveMapNoise = 0;
+    int liveMapWaitFrames = 0;
+    int liveMapCell = -1;
 };
 
 // Defined in app/smoke.cpp. This is the WHOLE surface main.cpp drives the

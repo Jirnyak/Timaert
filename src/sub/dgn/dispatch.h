@@ -75,8 +75,8 @@ static_assert(kInteriorFightSpanTiles
 // (0↔+1), NE descends (0↔-1). Fixed corners make the shafts a shared rule
 // (generator stamps the pads, engine reads E on them, tests assert both)
 // instead of plumbed data.
-// A SPIRE TOWER climbs 0..tier-1 (ordinal = the spell's tier = the storey
-// count): its W pad is the shaft to the storey ABOVE, its E pad the shaft
+// A SPIRE TOWER climbs 0..tier-1 (DungeonRef::param = the spell's tier = the
+// storey count): its W pad is the shaft to the storey ABOVE, its E pad the shaft
 // to the storey BELOW — every storey between has both, so the climb is a
 // ladder of shafts, not one vertical line.
 bool dungeon_has_upper(const DungeonRef& ref);
@@ -229,7 +229,7 @@ DungeonRoom dungeon_spire_tower_room(const DungeonRef& ref);
 inline constexpr float kSpireTowerHallRadiusTiles = 48.0f;
 static_assert(kSpireTowerHallRadiusTiles >= kInteriorFightSpanTiles,
               "a tower storey must seat a fight, not a clinch");
-// Storey count of the tower (= clamped ordinal = the spell's tier).
+// Storey count of the tower (= clamped DungeonRef::param = the spell's tier).
 int dungeon_spire_tower_floors(const DungeonRef& ref);
 
 // Storey count of ANY interior — the garrison partition's denominator (a

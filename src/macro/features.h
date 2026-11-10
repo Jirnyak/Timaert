@@ -66,6 +66,24 @@ namespace sm {
 // лежит полем `GameState::features@src/macro/state.h`.
 struct FeatureLayer {
     int width = 0, height = 0;
+    // СЧЁТЧИК ПРАВОК (M-248 / M-457 п.7) — та же форма, что у леса и знания
+    // (`TreeLayer@src/macro/tree_layer.h`, `KnowledgeLayer@src/macro/knowledge.h`):
+    // растёт, когда байт клетки РЕАЛЬНО сменился, и когда слой рождён заново.
+    // Читает его картина: текстура карты сверяет своё зеркало с этим числом и
+    // перезаливает поле фич, поэтому структура, поставленная на клетку в живой
+    // игре (город стал руиной, встал шпиль), видна на карте в том же кадре, а
+    // не после загрузки. Величиной мира он не является, но едет в файле вместе
+    // со слоем (сейв есть прямой дамп), поэтому дверь, заменяющая слой целиком,
+    // обязана назвать зеркало протухшим сама (`upload_macro_world@src/app/main.cpp`).
+    // Запись того же байта поверх себя счётчик НЕ двигает: перезалив мегабайта
+    // за правку, которой не было, платил бы каждый дневной тик.
+    std::uint32_t revision = 0;
+    // НАЗВАННЫЙ ХВОСТ ВЫРАВНИВАНИЯ, всегда ноль. Счётчик правок сделал шапку
+    // 12-байтной, и состояние мира (выравнивание 8) получило бы безымянную
+    // дыру в 4 Б перед следующим членом — а безымянных байтов в прямом дампе
+    // нет (`TIMAERT_PACKED@src/core/row_law.h`). Величиной не является и
+    // читателя не имеет; первый же осмысленный u32 шапки занимает это место.
+    std::uint32_t pad = 0;
     std::uint8_t data[kWorldCellCap] = {};
 
     // Validity comes from the ENUM, never a hand list (2026-08-31): the old
@@ -172,6 +190,7 @@ struct FeatureLayer {
         width = fits ? w : 0;
         height = fits ? h : 0;
         std::memset(data, 0, sizeof(data));
+        ++revision;   // слой рождён заново — картина по нему протухла
     }
     // Адрес — ЕДИНСТВЕННАЯ дверь мира (`core/torus.h`). Гейт включает
     // ИНВАРИАНТ (ЗАКОН АДРЕСА): мир квадратен и степень двойки, иначе
@@ -207,15 +226,18 @@ private:
 
     void set(std::uint32_t cell, FeatureType t) {
         if (cell >= cell_count()) return;
-        data[cell] = std::uint8_t(decode(std::uint8_t(t)));
+        const std::uint8_t byte = std::uint8_t(decode(std::uint8_t(t)));
+        if (data[cell] == byte) return;   // правки не было — счётчик стоит
+        data[cell] = byte;
+        ++revision;
     }
     void set(int x, int y, FeatureType t) {
         if (!world_shape_ok(width, height) || cell_count() == 0u) return;
         set(cell_of(x, y, width), t);
     }
 };
-static_assert(sizeof(FeatureLayer) == 8u + kWorldCellCap,
-              "слой фич: 8 Б шапки + байт на клетку капа, без хвоста");
+static_assert(sizeof(FeatureLayer) == 16u + kWorldCellCap,
+              "слой фич: 16 Б шапки + байт на клетку капа, без хвоста");
 
 // ── ДВЕРЬ №3 ПУЛЬТА: РОД ФИЧИ КЛЕТКИ (ломоть 1 M-72; бывш. stamp_feature) ──
 // Ставит и СНИМАЕТ одной дверью: `FT_None` — значение, а не отсутствие
@@ -260,4 +282,5 @@ TIMAERT_ROW(sm::FeatureLayer);
 // памяти, которые снимает прямой дамп (CRAFT §10). Новый член — новая строка
 // списка; дыра выравнивания или забытый член не собираются.
 TIMAERT_PACKED(sm::FeatureLayer, &sm::FeatureLayer::width,
-    &sm::FeatureLayer::height, &sm::FeatureLayer::data);
+    &sm::FeatureLayer::height, &sm::FeatureLayer::revision,
+    &sm::FeatureLayer::pad, &sm::FeatureLayer::data);

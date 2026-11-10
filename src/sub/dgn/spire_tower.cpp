@@ -3,7 +3,7 @@
 // raises is the SAME tower (gens/dispatch gen_spire stamps one law's
 // cylinder), so unlike a house the interior ignores the door's footprint —
 // what varies between spires is the storey count, and that is the spell's
-// tier riding DungeonRef::ordinal. Nothing persisted: same identity, same
+// tier riding DungeonRef::param. Nothing persisted: same identity, same
 // hall, byte for byte.
 #include "sub/dgn/dispatch.h"
 
@@ -33,10 +33,12 @@ inline std::size_t cell_at(int x, int y) {
 } // namespace
 
 int dungeon_spire_tower_floors(const DungeonRef& ref) {
-    // ordinal = the spell's tier (1..5). Clamp because a foreign ordinal
-    // must degrade to a legal tower, not to UB — the clamp bounds are the
-    // spell tier domain (macro/spells.h: tier 1..5).
-    return std::clamp(int(ref.ordinal), 1, 5);
+    // param = the spell's tier (1..5) — число структуры, приехавшее с пропа
+    // двери (`DungeonRef::param`; M-248: прежде тир ехал в ординале, который
+    // есть АДРЕС данжа в клетке и содержания не несёт). Clamp because a
+    // foreign number must degrade to a legal tower, not to UB — the clamp
+    // bounds are the spell tier domain (macro/spells.h: tier 1..5).
+    return std::clamp(int(ref.param), 1, 5);
 }
 
 DungeonRoom dungeon_spire_tower_room(const DungeonRef&) {
@@ -159,6 +161,7 @@ void gen_dungeon_spire_tower(const CellContext& ctx, SubworldMapData& out) {
         gate.radius = std::max(gate.hx, gate.hy);
         gate.height = structure_min_height(Structure::SpireGate);
         gate.tag = ctx.dungeon.ordinal;
+        gate.param = ctx.dungeon.param;
         out.structures.push_back(gate);
     }
     // The ladder of shafts: W climbs, E descends (dungeon_stair_point). Each

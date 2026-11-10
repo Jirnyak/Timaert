@@ -908,6 +908,7 @@ void walk_interior_shares(const std::vector<Structure>& structures,
         DungeonRef ref{};
         ref.kind = opens;
         ref.ordinal = s.tag;
+        ref.param = s.param;
         ref.footHx = structure_half_x(s);
         ref.footHy = structure_half_y(s);
         if (row.householdAbove) {

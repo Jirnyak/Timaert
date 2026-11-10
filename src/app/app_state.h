@@ -180,6 +180,10 @@ struct App {
     // Mirrors gs.knowledge.revision so the u_knowledgeMap texture refreshes
     // only when sight actually moved (a cell crossing / a quest reveal).
     std::uint32_t        uploadedKnowledgeRev = 0;
+    // Зеркало `gs.features.revision` (M-248 / M-457 п.7): текстура поля фич
+    // перезаливается только когда байт какой-то клетки реально сменился —
+    // город умер в руину, деревня сняла фичу, структура встала на клетку.
+    std::uint32_t        uploadedFeatureRev = 0;
     // The full-screen map page's own camera + chrome state (ui/map_screen.h).
     // Session-only; survives page closes so the player returns to their view.
     sm::ui::MapScreenState mapScreen;

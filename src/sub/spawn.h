@@ -286,7 +286,7 @@ void spawn_cell_npcs(SubObjects& objs,
 // interior spawn takes `min(stock now, this share)`, and the street
 // spawner SUBTRACTS the same shares before it fills the square — the two
 // can never disagree about who lives behind a door. Deterministic from
-// (worldSeed, door cell, building ordinal, storey).
+// (worldSeed, door cell, the dungeon's ordinal in that cell, storey).
 int interior_household_share(std::uint32_t worldSeed, int cellX, int cellY,
                              std::uint16_t ordinal, int level,
                              int rootedPop, int doorsInCell,

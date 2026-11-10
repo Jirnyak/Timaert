@@ -57,7 +57,10 @@ static void scatter_cave_mouths(SubworldMapData& out, const CellContext& ctx) {
         m.radius = m.hx;
         m.height = structure_min_height(Structure::CaveMouth);
         m.yaw = r.next_f01() * kPi;
-        m.tag = std::uint16_t(placed);
+        // Номер данжа в клетке — у общей двери выдачи, а не свой счёт устьев
+        // (`dungeon_ordinal_next@src/sub/map_data.h`, M-248): устье, вставшее
+        // в клетке, где двери уже есть, не получит номер чужого данжа.
+        m.tag = dungeon_ordinal_next(out);
         out.structures.push_back(m);
         ++placed;
     }

@@ -1691,8 +1691,22 @@ void upload_macro_world(App& app) {
                      &app.gs.treeLayer, &app.gs.knowledge);
     app.uploadedTreeRev = app.gs.treeLayer.revision;
     app.uploadedKnowledgeRev = app.gs.knowledge.revision;
+    app.uploadedFeatureRev = app.gs.features.revision;
     app.macroLightsDirty = false;
     app.zoneFieldDirty = false;
+}
+
+// ── КАРТИНА ДОГОНЯЕТ ПОЛЕ ФИЧ (M-248 / M-457 п.7) ──────────────────────────
+// Одна сверка двух чисел за кадр; перезалив — только когда счётчик правок
+// слоя ушёл от зеркала. Зеркало сдвигается ТОЛЬКО при готовом рендере: кадр
+// без карты не вправе объявить текстуру свежей, не залив её. Свидетель —
+// смоук `feature_live_map`: зеркало догоняет счётчик за кадр, и сам кадр
+// карты меняется.
+void sync_feature_texture(App& app) {
+    if (app.gs.features.revision == app.uploadedFeatureRev) return;
+    if (!app.macro.ready()) return;
+    app.macro.upload_feature_field(app.device, app.gs.features);
+    app.uploadedFeatureRev = app.gs.features.revision;
 }
 
 void boot_world(App& app, std::uint32_t seed,
@@ -3314,6 +3328,15 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         app.macro.upload_knowledge_field(app.device, &app.gs.knowledge);
         app.uploadedKnowledgeRev = app.gs.knowledge.revision;
     }
+    // И ПОЛЕ ФИЧ — тем же законом и в том же месте (binding 1; M-248 / M-457
+    // п.7). Байт клетки пишет живой мир: смерть города кладёт руину, смерть
+    // деревни снимает фичу (`city_death@src/macro/npc_ai.cpp`,
+    // `village_death@src/macro/npc_ai.cpp`), и любая структура, поставленная на
+    // клетку дверью `feature_put@src/macro/features.h`. До этой строки текстура
+    // узнавала о правке только полной выгрузкой, то есть после загрузки: карта
+    // показывала город там, где мир уже держал руину. Стоит ВЫШЕ гейта паузы,
+    // как знание: структуру вправе поставить и событие, сыгранное на паузе.
+    sync_feature_texture(app);
 
     // Refresh u_navMap (binding 7) when the отладочный вид или САМО ЗАПЕЧЕНИЕ
     // сдвинулось. Четыре сравнения за кадр, перезалив — только на

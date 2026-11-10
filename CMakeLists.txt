@@ -1368,6 +1368,12 @@ timaert_test(feature_caption_test
         src/macro/deposit_layer.cpp
     LINK_SDL)
 
+# M-248: одна дверь подбора клетки под структуру (весь мир и «рядом с X») —
+# сверка переезда руин и шпилей бит в бит и сквозной путь «назвать клетку →
+# положить байт». Дверь шаблонная и в заголовке: своих TU у прибора нет.
+timaert_test(site_pick_test
+    PIN "OK site_pick_test .39 checks.")
+
 timaert_test(feature_layer_parity_test
     SOURCES
         src/macro/spawners.cpp
@@ -1544,6 +1550,21 @@ timaert_test(spire_tower_test
 # stair blocks, and the law M-262 left where the snapshot merge stood — a
 # revisited cell is REGENERATED from its identity, remembering only the
 # macro tree count.
+# M-248: адрес данжа есть пара (клетка, ординал) — один счёт номеров на все
+# роды входов клетки. Тот же стек генераторов, что у prop_interaction_test:
+# клетки рождает производственная дверь dispatch_generate.
+timaert_test(dungeon_address_test
+    PIN "OK dungeon_address_test .98 checks."
+    SOURCES
+        src/sub/base_generator.cpp
+        ${TIMAERT_GENS_SOURCES}
+        src/sub/dgn/dispatch.cpp
+        src/sub/dgn/house.cpp
+        src/sub/dgn/cave.cpp
+        src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp
+    LINK_SDL)
+
 timaert_test(prop_interaction_test
     SOURCES
         src/sub/base_generator.cpp
