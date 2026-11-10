@@ -20,6 +20,8 @@
 #include "bus/anketa.h"        // Inventory + Gear — ровно их носят колонки ниже
 #include <array>
 #include <cstdint>
+#include <cstring>
+#include <string_view>
 
 namespace sm::ecs {
 
@@ -199,6 +201,16 @@ struct SquadName {
 };
 static_assert(sizeof(SquadName) == 32,
               "имя анкеты: 32 Б × единый кап 16384 = 0.5 МиБ");
+
+// Записать имя в ячейку: текст длиннее ячейки усекается (это слово для глаз,
+// не адрес), ячейка всегда кончается нулём, а байты за текстом стоят нулём —
+// две ячейки с одним именем равны побайтно.
+inline void set_squad_name(SquadName& n, std::string_view text) {
+    const std::size_t room = sizeof(n.text) - 1u;
+    const std::size_t len = text.size() < room ? text.size() : room;
+    std::memset(n.text, 0, sizeof(n.text));
+    std::memcpy(n.text, text.data(), len);
+}
 
 // (`NpcLevel` УМЕРЛА 2026-10-18, M-246а — ВТОРОЙ ОТВЕТ НА ОДИН ВОПРОС О
 //  МИРЕ. Уровень сквада есть `levelData.level` его анкеты, и приговор

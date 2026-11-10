@@ -36,10 +36,18 @@ inline const WorldFact* slot_of(const Chronicle& c, std::uint32_t seq) {
 } // namespace
 
 void chronicle_init(Chronicle& c, int mapW, int mapH) {
-    c.cols = std::max(1, (mapW + kChronicleCellSize - 1) / kChronicleCellSize);
-    c.rows = std::max(1, (mapH + kChronicleCellSize - 1) / kChronicleCellSize);
-    c.ring.assign(kChronicleFacts, WorldFact{});
-    c.cellHead.assign(std::size_t(c.cols) * std::size_t(c.rows), 0u);
+    // Мир вне капа клеток невыразим (fail-closed): сетка индекса не названа,
+    // `ready()` отвечает «нет». Внутри капа округление вверх не выводит сетку
+    // за `kChronicleIndexCells` — сторона капа кратна стороне индексной клетки.
+    const bool legal = world_cells_within_cap(mapW, mapH) > 0u;
+    c.cols = legal
+        ? std::max(1, (mapW + kChronicleCellSize - 1) / kChronicleCellSize) : 0;
+    c.rows = legal
+        ? std::max(1, (mapH + kChronicleCellSize - 1) / kChronicleCellSize) : 0;
+    // Оба массива чистятся ПО ВСЕМУ КАПУ: байты летописи не помнят прежнего
+    // мира.
+    std::fill_n(c.ring, std::size_t(kChronicleFacts), WorldFact{});
+    std::fill_n(c.cellHead, kChronicleIndexCells, 0u);
     c.nextSeq = 1u;
     c.countingDay = -1;
     c.factsToday = 0u;
@@ -80,7 +88,7 @@ std::uint32_t chronicle_record(Chronicle& c, const WorldFact& fact) {
 
 void chronicle_rebuild_links(Chronicle& c) {
     if (!c.ready()) return;
-    std::fill(c.cellHead.begin(), c.cellHead.end(), 0u);
+    std::fill_n(c.cellHead, kChronicleIndexCells, 0u);
     // Oldest to newest, linking each at the head — which is exactly the order
     // and the operation `chronicle_record` performed, so the chains come back
     // identical rather than merely equivalent.

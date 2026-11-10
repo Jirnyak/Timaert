@@ -3130,7 +3130,8 @@ void apply_pending_event_effects(App& app) {
 // moment that SAYS it heals, so the pools fill to their new maxima.
 void apply_creation(App& app) {
     const sm::ui::CreationState& cs = app.creation;
-    if (cs.name[0] != '\0') app.gs.player.name = cs.name;
+    if (cs.name[0] != '\0')
+        sm::ecs::set_squad_name(app.gs.player.name, cs.name);
     // The authored build lands in the OWNED component on his freshly-booted
     // squad (посадка Б): boot_world ran ensure_macro_player_entity a moment
     // ago, so the body — and the sheet slot on it — already exists.
@@ -5374,8 +5375,9 @@ void draw_debug_panels(App& app) {
     if (app.panels.journal) {
         ImGui::SetNextWindowSize(ImVec2(440, 300), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Journal", &app.panels.journal)) {
-            const auto& j = app.gs.player.journal;
-            ImGui::Text("%zu facts learned (showing last 200)", j.size());
+            const sm::WorldFact* j = app.gs.player.journal;
+            const std::size_t jn = app.gs.player.journalCount;
+            ImGui::Text("%zu facts learned (showing last 200)", jn);
             if (app.gs.player.journalFull) {
                 ImGui::SameLine();
                 ImGui::TextColored(ImVec4(1.f, 0.4f, 0.3f, 1.f),
@@ -5388,13 +5390,13 @@ void draw_debug_panels(App& app) {
             ImGui::Separator();
             if (ImGui::BeginChild("jlog")) {
                 const sm::FactNaming naming = app_fact_naming(app);
-                const std::size_t start = j.size() > 200 ? j.size() - 200 : 0;
+                const std::size_t start = jn > 200 ? jn - 200 : 0;
                 char line[192];
-                for (std::size_t i = start; i < j.size(); ++i) {
+                for (std::size_t i = start; i < jn; ++i) {
                     sm::fact_sentence(j[i], naming, line, int(sizeof line));
                     ImGui::TextWrapped("[day %d] %s", j[i].day, line);
                 }
-                if (j.empty()) ImGui::TextDisabled("(nothing learned yet)");
+                if (jn == 0) ImGui::TextDisabled("(nothing learned yet)");
             }
             ImGui::EndChild();
         }

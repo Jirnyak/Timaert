@@ -56,9 +56,10 @@ void create_factions(GameState& gs, std::uint32_t) {
 }
 
 // ── defaultPlayer (state.ts) ───────────────────────────────────
-PlayerState default_player() {
-    PlayerState p;
-    p.name      = "Traveller";
+// Пишет В `out` НА МЕСТЕ: состояние игрока несёт журнал плоским массивом под
+// капом (32 МиБ) и значением не возвращается (M-180).
+void default_player(PlayerState& p) {
+    ecs::set_squad_name(p.name, "Traveller");
     p.ageDays   = 1000;             // ~3 years; matches TS
     // (ЗДЕСЬ ОБЕЩАЛАСЬ СТАРТОВАЯ МОНЕТА и перечеканка её в монету родины
     //  «дверью интро» — обе половины обещания мертвы: кошелёк из воздуха снесён
@@ -86,7 +87,6 @@ PlayerState default_player() {
     // No reputation seeding here any more: the player's standing IS his row in
     // the relation matrix, so it is seeded where that matrix is built
     // (create_factions) rather than on a map of his own.
-    return p;
 }
 
 // ── createGameState (state.ts) ─────────────────────────────────
@@ -105,7 +105,7 @@ void default_game_state(GameState& gs,
     gs.mapParams.seed = seed % 100000u;
     gs.cityCountTarget = cityCountTarget;
     gs.worldTime    = world_time_at(1, 8, 0);   // day 1, 08:00
-    gs.player       = default_player();
+    default_player(gs.player);
     // ПОТОК БРОСКОВ ИГРОКА — ЗДЕСЬ, А НЕ У ЗВОНЯЩЕГО (M-378). Соль выведена
     // в state.h рядом с полем; сеять его в `boot_world` было бы ПОТЕРЕЙ —
     // `generate_macro_world@src/macro/world_gen.cpp` строит весь GameState

@@ -137,7 +137,6 @@ SKELETON.md	:76
 SKELETON.md	:8016
 SKELETON.md	:8070
 SKELETON.md	:88
-SKELETON.md	:94-104
 SKELETON.md	:9512
 SKELETON.md	:96
 SKELETON.md	:99-100
@@ -212,7 +211,6 @@ SKELETON.md	items.h:194
 SKELETON.md	items.h:217
 SKELETON.md	items.h:285
 SKELETON.md	items.h:301-449
-SKELETON.md	journal.h:39-41
 SKELETON.md	knowledge.cpp:22
 SKELETON.md	knowledge.cpp:36
 SKELETON.md	knowledge.h:45
@@ -299,12 +297,9 @@ SKELETON.md	ruins.cpp:44
 SKELETON.md	ruins.cpp:73
 SKELETON.md	scent_field.cpp:15
 SKELETON.md	scent_field.cpp:20-41
-SKELETON.md	scent_field.cpp:21-32
 SKELETON.md	scent_field.cpp:59-62
 SKELETON.md	scent_field.cpp:6
 SKELETON.md	scent_field.h:118-119
-SKELETON.md	scent_field.h:58
-SKELETON.md	scent_field.h:88-92
 SKELETON.md	seamless_manager.cpp:283
 SKELETON.md	seamless_manager.cpp:320
 SKELETON.md	seamless_manager.cpp:915

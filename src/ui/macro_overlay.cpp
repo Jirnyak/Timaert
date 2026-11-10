@@ -520,10 +520,10 @@ void draw_macro_overlay(const MacroWorld& mw,
             // Pins live on the map the player HAS: an uncharted cell shows
             // nothing — a quest that wants to point into the dark reveals its
             // target area first (reveal_area).
-            if (gs.knowledge.at(int(std::floor(m.x)), int(std::floor(m.y)))
-                == kKnowledgeUnknown)
-                continue;
-            ImVec2 p = world_to_screen(m.x + 0.5f, m.y + 0.5f,
+            const int mx = cell_x(m.cell, mapW);
+            const int my = cell_y(m.cell, mapW);
+            if (gs.knowledge.at(mx, my) == kKnowledgeUnknown) continue;
+            ImVec2 p = world_to_screen(float(mx) + 0.5f, float(my) + 0.5f,
                                        camX, camY, zoom, viewW, viewH, mapW, mapH);
             if (!on_screen(p, viewW, viewH, 96.0f)) continue;
             const ImU32 col   = marker_imcol(kMarkerColor[si]);

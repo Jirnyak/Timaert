@@ -69,6 +69,9 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // A new world has no past. Sized here, beside the knowledge layer, because
     // both are per-cell memories of the same map (macro/chronicle.h).
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
+    // Поле следов кроится тут же, при рождении мира: сверка `scent_ensure` в
+    // тике находит его готовым и пересбором в цикле не платит.
+    scent_reset(gs.scent, gs.mapW, gs.mapH);
     reset_world_tick_runtime(gs.worldTickRt, p.seed);
 
     *out.terrain = generate_terrain(gs.mapW, gs.mapH, lp);

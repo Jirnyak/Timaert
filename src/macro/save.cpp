@@ -65,21 +65,15 @@ constexpr std::uint32_t kHeaderBytes = 4u + 4u + 8u + 4u;
 // ЛЕГАЛЬНЫЙ мир, а не типичный, и разреженность остаётся решением ФОРМАТА
 // ФАЙЛА (DOD п.7), а не следствием потолка.
 //
-// ЧЕГО В СУММЕ НЕТ, И ЭТО НАЗВАНО ВСЛУХ: ТЕЛА СТРОК. У строки нет «байтов
-// записи» — она переменной длины, и единственный её потолок это
-// `savefmt::kMaxStringBytes` (1 МиБ на штуку, сам взят с потолка). Строковых
-// слотов по капам ДВА — метка времени слота и имя игрока; сумма с ними дала
-// бы +2 МиБ (ПЕРЕСЧЁТ 2026-11-10, v158: было 32 770 слотов и ≈32.0 ГиБ, то
-// есть сторож, который не сторож, — 16384×2 слота держали ключ и подпись
-// метки карты. Метка стала плоской записью с размером, и её блок вошёл в
-// сумму ЦЕЛИКОМ, телами). Поэтому сумма ограничивает ПЛОСКУЮ раскладку (её
-// пробить нельзя по построению), а два оставшихся тела строк ловит тот же
-// сторож в рантайме, в `save_game`.
-//
-// Дыра открыта и НАЗВАНА, своего наряда не заводит: её остаток чинит M-180
-// (имя игрока — последняя строка состояния на проводе; метка времени слота
-// состоянием мира не является). В тот день, когда и оно станет плоским,
-// `kMaxStringBytes` умрёт, а у этой суммы не останется оговорки.
+// ЧЕГО В СУММЕ НЕТ, И ЭТО НАЗВАНО ВСЛУХ: ТЕЛО ОДНОЙ СТРОКИ. У строки нет
+// «байтов записи» — она переменной длины, и единственный её потолок это
+// `savefmt::kMaxStringBytes` (1 МиБ на штуку, сам взят с потолка). Строковый
+// слот на проводе остался ОДИН — метка времени слота, и состоянием мира она
+// не является (ПЕРЕСЧЁТ 2026-11-10, v159: имя игрока стало плоской ячейкой и
+// вошло в сумму телом; v158: слотов было два, до него 32 770 и ≈32.0 ГиБ — то
+// есть сторож, который не сторож). СТРОК СОСТОЯНИЯ МИРА НА ПРОВОДЕ НОЛЬ.
+// Сумма ограничивает ПЛОСКУЮ раскладку (её пробить нельзя по построению), а
+// тело метки времени ловит тот же сторож в рантайме, в `save_game`.
 constexpr std::uint64_t kCountBytes = sizeof(std::uint32_t);   // Writer::count
 constexpr std::uint64_t kStrBytes = sizeof(std::uint32_t);     // только префикс
 
@@ -110,7 +104,7 @@ constexpr std::uint64_t kPrefixBytes =
     // колонкой playerFlag записи снапшота, kMacroNpcBytes считает его там.)
 
 constexpr std::uint64_t kPlayerBytes =               // write_player
-    kStrBytes + sizeof(PlayerState::ageDays)
+    sizeof(PlayerState::name) + sizeof(PlayerState::ageDays)
     + sizeof(PlayerState::codexUnlockedBits)
     + kCountBytes
       + std::uint64_t(PlayerState::kJournalFactsCap) * sizeof(WorldFact)
@@ -186,12 +180,11 @@ constexpr std::uint64_t kChronicleBlockBytes =       // write_chronicle
     // блок (`kCountBytes + kChronicleAnnals × kFactBytes` = 32 МиБ потолка).
     + kCountBytes + std::uint64_t(kChronicleFacts) * kFactBytes;
 
-// Следы: ПЛАН НА ФРАКЦИЮ (scent_field.h — `[f*w*h + y*w + x]`), два канала,
-// клетка на проводе = {индекс, значение}. Плотный кап, хотя пишется
-// разреженно: см. шапку выше про формат файла.
+// Следы: ПЛАН НА ФРАКЦИЮ (scent_field.h — `[f × кап клеток + клетка]`), два
+// канала, клетка на проводе = {индекс, значение}. Плотный кап планов строк
+// реестра, хотя пишется разреженно: см. шапку выше про формат файла.
 constexpr std::uint64_t kScentBlockBytes =           // write_scent
     sizeof(ScentField::w) + sizeof(ScentField::h)
-    + sizeof(ScentField::factions)
     + 2ull * (kCountBytes
               + std::uint64_t(kFactionCount) * std::uint64_t(kWorldCells)
                 * (sizeof(std::uint32_t) + sizeof(std::uint16_t)));
@@ -233,7 +226,8 @@ static_assert(kMaxPayloadBytes >= 64ull * 1024ull * 1024ull,
 // Заворот u64 на сложении сделал бы сумму МЕНЬШЕ своего крупнейшего
 // слагаемого. `SaveHeader::payloadSize` — u64, так что расти потолку есть
 // куда: сегодняшняя сумма стоит ~3048 МиБ ниже границы u32 (ПЕРЕСЧЁТ
-// 2026-11-10, v158: ~1048.16 МиБ — блок меток вошёл телами записей, +1.36
+// 2026-11-10, v159: ~1047.60 МиБ — запись метки 104 → 68 Б, имя игрока вошло
+// ячейкой; v158: ~1048.16 МиБ — блок меток вошёл телами записей, +1.36
 // МиБ; v157: ~1046.80 МиБ после сноса ломтя 1; до него ~1078.88, а в эпоху
 // мёртвых штабелей квестов и мест — 4072.27 МиБ и зазор «~25 МБ»).
 // Запас больше не на один поднятый кап, но вывод цел: граница u32 здесь не
@@ -729,27 +723,51 @@ void write_chronicle(Writer& w, const Chronicle& c) {
 // ложным и перевёрнутым: литерал-потолок диктовал форму данных, чего закон
 // не разрешает. Потолок теперь ВЫВЕДЕН и берёт этот блок ПЛОТНЫМ капом, так
 // что пробить его разреженная запись не может по построению.
-void write_scent_channel(Writer& w, const std::vector<std::uint16_t>& cells) {
+// Канал обходится по планам строк реестра и по клеткам МИРА: хвост за миром
+// и планы выше реестра нулевые по построению поля. Индекс на проводе — адрес
+// клетки внутри канала (`scent_idx`), тот же, что в памяти.
+void write_scent_channel(Writer& w, const ScentField& sf,
+                         const std::uint16_t* cells) {
+    const std::size_t plane = world_cells_within_cap(sf.w, sf.h);
+    const std::uint32_t cap =
+        std::uint32_t(std::size_t(kFactionCount) * plane);
     std::size_t live = 0;
-    for (const std::uint16_t v : cells)
-        if (v != 0u) ++live;
-    if (!w.count(live, std::uint32_t(cells.size()))) return;
-    for (std::size_t i = 0; i < cells.size(); ++i) {
-        if (cells[i] == 0u) continue;
-        w.pod(std::uint32_t(i));
-        w.pod(cells[i]);
+    for (int f = 0; f < kFactionCount; ++f) {
+        const std::uint16_t* p = cells + std::size_t(f) * kScentPlaneCells;
+        for (std::size_t i = 0; i < plane; ++i)
+            if (p[i] != 0u) ++live;
+    }
+    if (!w.count(live, cap)) return;
+    for (int f = 0; f < kFactionCount; ++f) {
+        const std::size_t base = std::size_t(f) * kScentPlaneCells;
+        for (std::size_t i = 0; i < plane; ++i) {
+            if (cells[base + i] == 0u) continue;
+            w.pod(std::uint32_t(base + i));
+            w.pod(cells[base + i]);
+        }
     }
 }
 
-bool read_scent_channel(Reader& r, std::vector<std::uint16_t>& cells) {
+bool read_scent_channel(Reader& r, const ScentField& sf,
+                        std::uint16_t* cells) {
+    const std::size_t plane = world_cells_within_cap(sf.w, sf.h);
+    const std::uint32_t cap =
+        std::uint32_t(std::size_t(kFactionCount) * plane);
     std::uint32_t live = 0;
-    if (!read_count(r, live, std::uint32_t(cells.size()))) return false;
+    if (!read_count(r, live, cap)) return false;
     for (std::uint32_t i = 0; i < live && r.ok; ++i) {
         std::uint32_t idx = 0;
         std::uint16_t v = 0;
         r.pod(idx);
         r.pod(v);
-        if (!r.ok || idx >= cells.size()) { r.ok = false; return false; }
+        // Адрес обязан называть клетку МИРА в плане строки РЕЕСТРА — иначе
+        // файл положил бы след туда, где его не видит ни одна дверь поля.
+        if (!r.ok || std::size_t(idx) / kScentPlaneCells
+                         >= std::size_t(kFactionCount)
+            || std::size_t(idx) % kScentPlaneCells >= plane) {
+            r.ok = false;
+            return false;
+        }
         cells[idx] = v;
     }
     return r.ok;
@@ -758,33 +776,32 @@ bool read_scent_channel(Reader& r, std::vector<std::uint16_t>& cells) {
 void write_scent(Writer& w, const ScentField& sf) {
     w.pod(sf.w);
     w.pod(sf.h);
-    w.pod(sf.factions);
-    write_scent_channel(w, sf.strength);
-    write_scent_channel(w, sf.wealth);
+    write_scent_channel(w, sf, sf.strength);
+    write_scent_channel(w, sf, sf.wealth);
 }
 
 void read_scent(Reader& r, ScentField& sf, int mapW, int mapH) {
-    std::int32_t w = 0, h = 0, factions = 0;
+    std::int32_t w = 0, h = 0;
     r.pod(w);
     r.pod(h);
-    r.pod(factions);
-    // Мир, сохранённый до первого think-свипа, несёт ХОЛОДНОЕ поле —
-    // легальный ноль (S6): scent_ensure скроит его на первом тике.
-    if (r.ok && w == 0 && h == 0 && factions == 0) {
-        sf = ScentField{};
+    // Мир, сохранённый с ХОЛОДНЫМ полем (фикстура, не знавшая генезиса), —
+    // легальный ноль (S6): `scent_ensure` скроит его на первом тике.
+    if (r.ok && w == 0 && h == 0) {
+        scent_reset(sf, 0, 0);
         std::uint32_t none = 0;
         if (read_count(r, none, 0u)) read_count(r, none, 0u);
         return;
     }
-    // Версия гейтит формат, реестр фракций меняется только с бампом (правило
-    // репо №2) — несовпадение измерений здесь значит битый файл, не миграцию.
-    if (!r.ok || w != mapW || h != mapH || factions != kFactionCount) {
+    // Версия гейтит формат — несовпадение измерений здесь значит битый файл,
+    // не миграцию.
+    if (!r.ok || w != mapW || h != mapH) {
         r.ok = false;
         return;
     }
     scent_reset(sf, mapW, mapH);
-    if (!read_scent_channel(r, sf.strength)) return;
-    read_scent_channel(r, sf.wealth);
+    if (!sf.sized_for(mapW, mapH)) { r.ok = false; return; }
+    if (!read_scent_channel(r, sf, sf.strength)) return;
+    read_scent_channel(r, sf, sf.wealth);
 }
 
 void read_chronicle(Reader& r, Chronicle& c) {
@@ -808,7 +825,7 @@ void read_chronicle(Reader& r, Chronicle& c) {
 }
 
 void write_player(Writer& w, const PlayerState& p) {
-    w.str(p.name);
+    w.pod(p.name);   // v159: плоская ячейка имени, целиком
     w.pod(p.ageDays);
     // (No position block since v88: WHERE he stands is his squad's MacroCell
     // inside its MacroNpcRecord — подпосадка 4 killed the scalar double,
@@ -839,43 +856,57 @@ void write_player(Writer& w, const PlayerState& p) {
     // squad's MacroNpcRuntime, which rides the record verbatim.)
     // v57: the player's journal — copies of the chronicle records he learned
     // (his whole game, never forgotten), plus the reader's own cursor.
-    if (w.count(p.journal.size(), PlayerState::kJournalFactsCap)) {
-        for (const WorldFact& f : p.journal) w.pod(f);
+    // Хвост журнала за счётом не едет: он нулевой по построению двери поимки.
+    if (w.count(p.journalCount, PlayerState::kJournalFactsCap)) {
+        for (std::uint32_t i = 0; i < p.journalCount; ++i) w.pod(p.journal[i]);
     }
     w.pod(p.journalSeenSeq);
     w.pod(p.journalFull);
 }
 
+// Пишет в состояние, РОЖДЁННОЕ НУЛЁМ (черновик загрузки): хвост журнала за
+// прочитанным счётом уже нулевой, чистить его здесь нечем и незачем.
 void read_player(Reader& r, PlayerState& p) {
-    r.str(p.name);
+    r.pod(p.name);
+    // Ячейка имени обязана кончаться нулём внутри себя — её читают строкой.
+    if (!r.ok || p.name.text[sizeof(p.name.text) - 1u] != '\0') {
+        r.ok = false;
+        return;
+    }
     r.pod(p.ageDays);
     r.pod(p.codexUnlockedBits);   // v63
     std::uint32_t jn = 0;             // v57: the journal rides whole
     if (!read_count(r, jn, PlayerState::kJournalFactsCap)) return;
-    p.journal.clear();
-    p.journal.reserve(jn);
+    p.journalCount = 0;
     for (std::uint32_t i = 0; i < jn && r.ok; ++i) {
-        WorldFact f{};
-        r.pod(f);
-        if (r.ok) p.journal.push_back(f);
+        r.pod(p.journal[i]);
+        if (r.ok) p.journalCount = i + 1u;
     }
     r.pod(p.journalSeenSeq);
     r.pod(p.journalFull);
 }
 
-// МЕТКИ КАРТЫ — СЧЁТ И ЗАПИСИ ЦЕЛИКОМ (v158). Запись плоская и без дыр, так
+// МЕТКИ КАРТЫ — СЧЁТ И ЗАПИСИ ЦЕЛИКОМ (v158; с v159 запись — клетка, стиль,
+// подпись: строкового ключа и float-координат в ней больше нет). Запись плоская и без дыр, так
 // что на провод идут её байты как есть — та же форма, что у рода 6 ниже.
 // Хвост списка за счётом не едет: он нулевой по построению дверей.
-void write_markers(Writer& w, const MarkerList& list) {
+// Писатель судит клетку ТЕМ ЖЕ условием, что читатель: метка вне мира — порча
+// состояния, и файл отказывается сейчас, а не кладёт слот, который игра сама
+// же не прочтёт.
+void write_markers(Writer& w, const MarkerList& list, std::size_t worldCells) {
     if (!w.count(list.count, std::uint32_t(kMaxMarkers))) return;
-    for (const Marker& m : list.live()) w.pod(m);
+    for (const Marker& m : list.live()) {
+        if (std::size_t(m.cell) >= worldCells) { w.ok = false; return; }
+        w.pod(m);
+    }
 }
 
-// Чтение судит каждую запись: стиль обязан быть строкой перечисления, а ключ
-// и подпись — кончаться нулём ВНУТРИ своей ячейки (двери списка читают их как
-// строки). Запись, не прошедшая суд, — порча файла: загрузка отказывает
-// целиком, а не чинит её.
-void read_markers(Reader& r, MarkerList& list) {
+// Чтение судит каждую запись: стиль обязан быть строкой перечисления, клетка —
+// клеткой ЭТОГО мира, подпись — кончаться нулём внутри своей ячейки, а пара
+// (стиль, клетка) — встречаться один раз (её судит сама дверь постановки).
+// Запись, не прошедшая суд, — порча файла: загрузка отказывает целиком, а не
+// чинит её.
+void read_markers(Reader& r, MarkerList& list, std::size_t worldCells) {
     std::uint32_t n = 0;
     if (!read_count(r, n, std::uint32_t(kMaxMarkers))) return;
     // На месте, не временным значением: список весит 1.6 МиБ.
@@ -886,14 +917,12 @@ void read_markers(Reader& r, MarkerList& list) {
         r.pod(m);
         if (!r.ok) break;
         if (std::uint8_t(m.style) > std::uint8_t(MarkerStyle::Waypoint)
-            || m.id[0] == '\0'
-            || m.id[kMarkerIdBytes - 1u] != '\0'
-            || m.label[kMarkerLabelBytes - 1u] != '\0') {
+            || std::size_t(m.cell) >= worldCells
+            || m.label[kMarkerLabelBytes - 1u] != '\0'
+            || !add_marker(list, m.style, m.cell, marker_label(m))) {
             r.ok = false;
             break;
         }
-        list.rows[i] = m;
-        list.count = i + 1u;
     }
 }
 
@@ -943,7 +972,7 @@ void write_payload(Writer& w, const GameState& s,
     // was sorting.)
     write_player(w, s.player);
 
-    write_markers(w, s.markers);
+    write_markers(w, s.markers, world_cells_within_cap(s.mapW, s.mapH));
 
     write_factions(w, s.factions);
 
@@ -1004,7 +1033,7 @@ void read_payload(Reader& r, GameState& s, std::uint32_t& storeNextSpawnId,
 
     // (Блок строк мест умер в v128: тела мест едут записями блока
     // макро-сквадов ниже, самолечение эмитента — там же, macro_snapshot.h.)
-    read_markers(r, s.markers);
+    read_markers(r, s.markers, world_cells_within_cap(s.mapW, s.mapH));
     if (!r.ok) return;
     std::uint32_t n = 0;
 

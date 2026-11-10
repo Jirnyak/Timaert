@@ -94,7 +94,7 @@ void test_participation_locality_and_silence() {
                           std::uint8_t(FactSubject::Rooted), 3u, 40, 40));
 
     player_journal_capture(gs, *wStore_);
-    CHECK(gs.player.journal.size() == 2,
+    CHECK(gs.player.journalCount == 2u,
           "participation and locality are learned; the far world is not");
     CHECK(gs.player.journal[0].subject
                   == sm::player_flag_ordinal(gs, *wStore_)
@@ -103,7 +103,7 @@ void test_participation_locality_and_silence() {
 
     // Idempotence: the reader's cursor moved, so nothing is learned twice.
     player_journal_capture(gs, *wStore_);
-    CHECK(gs.player.journal.size() == 2,
+    CHECK(gs.player.journalCount == 2u,
           "re-asking the chronicle re-learns nothing");
 
     // The player as the OBJECT of another's deed — his side of a done-to.
@@ -114,7 +114,7 @@ void test_participation_locality_and_silence() {
     hit.object = sm::player_flag_ordinal(gs, *wStore_);
     chronicle_record(gs.chronicle, hit);
     player_journal_capture(gs, *wStore_);
-    CHECK(gs.player.journal.size() == 3
+    CHECK(gs.player.journalCount == 3u
               && gs.player.journal[2].object
                      == sm::player_flag_ordinal(gs, *wStore_),
           "being done-to is participation too");
@@ -127,7 +127,7 @@ void test_participation_locality_and_silence() {
                           fact_subject(FactSubject::Squad),
                           779u, 40, 40));
     player_journal_capture(gs, *wStore_);
-    CHECK(gs.player.journal.size() == 4,
+    CHECK(gs.player.journalCount == 4u,
           "locality follows the player, not a fixed home cell");
 }
 
@@ -157,7 +157,7 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
         filed += slice;
         player_journal_capture(gs, *wStore_);
     }
-    CHECK(gs.player.journal.size() == std::size_t(cap)
+    CHECK(gs.player.journalCount == cap
               && gs.player.journalFull == 0,
           "a whole-game log fills to the cap without forgetting anything");
 
@@ -168,7 +168,7 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
                           fact_subject(FactSubject::Squad),
                           999999u, 5, 5));
     player_journal_capture(gs, *wStore_);
-    CHECK(gs.player.journal.size() == std::size_t(cap)
+    CHECK(gs.player.journalCount == cap
               && gs.player.journalFull == 1,
           "the cap is loud, never a silent drop of his past");
 }
@@ -191,7 +191,7 @@ void test_a_possessed_lords_deeds_are_his_participation() {
                           fact_subject(FactSubject::Squad),
                           42u, 50, 50));
     player_journal_capture(gs, *wStore_);
-    CHECK(gs.player.journal.empty(),
+    CHECK(gs.player.journalCount == 0u,
           "an unpossessed lord's deed far away is not the player's");
 
     // Possessing him: the same deed, wherever it happened, is HIS. «Whom do
@@ -209,7 +209,7 @@ void test_a_possessed_lords_deeds_are_his_participation() {
                           fact_subject(FactSubject::Squad),
                           42u, 50, 50));
     player_journal_capture(gs, *wStore_);
-    CHECK(gs.player.journal.size() == 1
+    CHECK(gs.player.journalCount == 1u
               && gs.player.journal[0].subject == 42u,
           "while possessed, the lord's ordinal is the player's participation");
 }
@@ -235,7 +235,7 @@ void test_a_captured_copy_carries_no_ring_link() {
                      fact(1, FactKind::Killed,
                           fact_subject(FactSubject::Squad), 8u, 5, 5));
     player_journal_capture(gs, *wStore_);
-    CHECK(gs.player.journal.size() == 2
+    CHECK(gs.player.journalCount == 2u
               && gs.player.journal[0].nextInCell == 0u
               && gs.player.journal[1].nextInCell == 0u,
           "a journal copy is the record, never the ring's chain link");

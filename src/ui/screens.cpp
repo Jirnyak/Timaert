@@ -511,7 +511,8 @@ ShellResult draw_death_screen(const GameState& gs) {
     ImGui::SetWindowFontScale(1.0f);
     ImGui::Dummy(ImVec2(0, 12));
     ImGui::TextWrapped("%s fell on day %d at age %d.",
-        gs.player.name.empty() ? "The wanderer" : gs.player.name.c_str(),
+        gs.player.name.text[0] == '\0' ? "The wanderer"
+                                       : gs.player.name.text,
         gs.worldTime.day(), gs.player.ageDays);
     ImGui::Dummy(ImVec2(0, 12));
     const ImVec2 sz(360, 36);
@@ -591,7 +592,7 @@ void draw_player_hud(const GameState& gs, const MacroStore& st,
     const LevelData hudLevel = hudSheet ? hudSheet->levelData : LevelData{};
     char nameBuf[64];
     std::snprintf(nameBuf, sizeof(nameBuf), "%s  Lv %d   %d / %d EXP",
-        gs.player.name.empty() ? "Wanderer" : gs.player.name.c_str(),
+        gs.player.name.text[0] == '\0' ? "Wanderer" : gs.player.name.text,
         sm::level_of(hudLevel), sm::exp_in_level_of(hudLevel),
         sm::exp_to_next_of(hudLevel));
     const float nw = ImGui::CalcTextSize(nameBuf).x;

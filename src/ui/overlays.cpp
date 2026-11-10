@@ -546,7 +546,7 @@ namespace sm::ui
         {
             ImGui::SetWindowFontScale(scale);
             ImGui::Text("%s  Level %d  Age %d days",
-                        p.name.empty() ? "Wanderer" : p.name.c_str(),
+                        p.name.text[0] == '\0' ? "Wanderer" : p.name.text,
                         level_of(sheet.levelData), p.ageDays);
             ImGui::SameLine();
             ImGui::TextDisabled("EXP %d / %d", exp_in_level_of(sheet.levelData),

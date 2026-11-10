@@ -112,6 +112,16 @@ constexpr std::string_view kRowHeaders[] = {
     "src/tables/spells.h",         "src/tables/sprite_rows.h",
     "src/tables/commodity.h",      "src/tables/faction.h",
     "src/tables/celestial.h",      "src/tables/seasons.h",
+    // СОСТОЯНИЕ МИРА (M-180, ломоть 4 сейв-эпика, 2026-11-10): последние
+    // heap-члены состояния, едущего в сейв, умерли, и заголовки его структур
+    // вошли под стену — как и обещал наряд («каждая починенная строка = одна
+    // новая строка этого списка»). Не вошли и названы в ряду M-180:
+    // `macro/knowledge.h` (рядом со слоем живёт сессионный скрэтч зрения с
+    // вектором) и `macro/politik.h` (план городов генератора со строкой имени).
+    "src/macro/state.h",           "src/macro/markers.h",
+    "src/macro/scent_field.h",     "src/macro/chronicle.h",
+    "src/macro/factions.h",        "src/macro/tree_layer.h",
+    "src/macro/resource_field.h",
     // (`src/macro/place_registry.h` УНИЧТОЖЕН 2026-11-02 вместе с `PlaceDef` —
     //  арк ломтя 5б M-235: колонки разъехались адресатам, таблица дожила до
     //  голого ключа. Строка списка УМЕРЛА С ФАЙЛОМ, а не растоплена: судить
@@ -754,13 +764,17 @@ constexpr std::string_view kWorldLayerTypes[] = {
     // Ломоть 3 сейв-эпика: поле владения землёй (1 МиБ) и список меток карты
     // (1.8 МиБ) легли плоскими массивами в тело состояния.
     "CellOwnerField", "MarkerList",
+    // Ломоть 4 сейв-эпика: поле следов (256 МиБ), летопись (2 МиБ) и
+    // состояние игрока с журналом (32 МиБ) — последние члены состояния мира,
+    // бывшие заголовками векторов, легли в его тело.
+    "ScentField", "Chronicle", "PlayerState",
 };
 struct LayerOwner { std::string_view file; std::string_view line; };
 constexpr LayerOwner kWorldLayerOwners[] = {
     // Приложение — единственный экземпляр, сам рождается в куче (`main`).
     {"src/app/app_state.h", "sm::GameState gs;"},
     {"src/app/app_state.h", "sm::DepositLayer deposits;"},
-    // Восемь плоских членов в теле состояния мира.
+    // Одиннадцать плоских членов в теле состояния мира.
     {"src/macro/state.h", "KnowledgeLayer knowledge;"},
     {"src/macro/state.h", "TreeLayer treeLayer;"},
     {"src/macro/state.h", "CellOwnerField cellOwner;"},
@@ -769,6 +783,9 @@ constexpr LayerOwner kWorldLayerOwners[] = {
     {"src/macro/state.h", "ResourceGrid featureNumber;"},
     {"src/macro/state.h", "ResourceGrid faunaField;"},
     {"src/macro/state.h", "ResourceGrid lightEmission;"},
+    {"src/macro/state.h", "Chronicle chronicle;"},
+    {"src/macro/state.h", "ScentField scent;"},
+    {"src/macro/state.h", "PlayerState player;"},
     // Поле жил в теле слоя жил.
     {"src/macro/deposit_layer.h", "ResourceGrid cells_;"},
 };

@@ -47,8 +47,6 @@ src/macro/politik.cpp	mod	{(x + 1) % W, y}, {(x + W - 1) % W, y},
 src/macro/politik.cpp	mod	{x, (y + 1) % H}, {x, (y + H - 1) % H},
 src/macro/ruins.cpp	mod	const int x = int(rng.next_u32() % std::uint32_t(gs.mapW));
 src/macro/ruins.cpp	mod	const int y = int(rng.next_u32() % std::uint32_t(gs.mapH));
-src/macro/scent_field.h	index	* std::size_t(sf.w)
-src/macro/scent_field.h	index	return (std::size_t(f) * std::size_t(sf.h) + std::size_t(y))
 src/macro/spawners.cpp	index	const int ac = landComponent[std::size_t(ay) * W + ax];
 src/macro/spawners.cpp	index	const int aComponent = landComponent[std::size_t(ay) * W + ax];
 src/macro/spawners.cpp	index	const int bc = landComponent[std::size_t(by) * W + bx];

@@ -231,9 +231,11 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
 
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)
                 && know != kKnowledgeUnknown) {
-                char pinId[32];
-                std::snprintf(pinId, sizeof pinId, "user_%d_%d", cx, cy);
-                if (!remove_marker(gs.markers, pinId)) {
+                // Пин игрока — метка стиля «путевая точка» на этой клетке:
+                // идентичность метки есть пара (стиль, клетка).
+                const std::uint32_t pinCell = cell_of(cx, cy, mapW);
+                if (!remove_marker(gs.markers, MarkerStyle::Waypoint,
+                                   pinCell)) {
                     // Список меток под капом: полный список отказывает пину
                     // ВСЛУХ, а не молча (прежде лишний пин вставал, а отказывал
                     // потом сейв — целиком).
@@ -241,8 +243,8 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
                         session_feed_push(gs.sessionFeed,
                                           "The chart holds no more pins.");
                     } else {
-                        add_marker(gs.markers, pinId, MarkerStyle::Waypoint,
-                                   float(cx), float(cy));
+                        add_marker(gs.markers, MarkerStyle::Waypoint,
+                                   pinCell);
                     }
                 }
             }
@@ -355,11 +357,11 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
     for (const Marker& m : gs.markers.live()) {
         const std::size_t si = std::size_t(m.style) & 3u;
         if (!(kMarkerSurface[si] & kMarkerOnMap)) continue;
-        if (gs.knowledge.at(int(std::floor(m.x)), int(std::floor(m.y)))
-            == kKnowledgeUnknown)
-            continue;
-        const ImVec2 p = to_screen(m.x + 0.5f, m.y + 0.5f, st, zoomLogical,
-                                   viewW, viewH, mapW, mapH);
+        const int mx = cell_x(m.cell, mapW);
+        const int my = cell_y(m.cell, mapW);
+        if (gs.knowledge.at(mx, my) == kKnowledgeUnknown) continue;
+        const ImVec2 p = to_screen(float(mx) + 0.5f, float(my) + 0.5f, st,
+                                   zoomLogical, viewW, viewH, mapW, mapH);
         if (p.x < -32 || p.x > viewW + 32 || p.y < -32 || p.y > viewH + 32)
             continue;
         const float r = std::max(4.0f, zoomLogical * 0.4f);
@@ -401,7 +403,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
     bool styleSeen[4] = {};
     for (const Marker& m : gs.markers.live()) {
         if ((kMarkerSurface[std::size_t(m.style) & 3u] & kMarkerOnMap)
-            && gs.knowledge.at(int(std::floor(m.x)), int(std::floor(m.y)))
+            && gs.knowledge.at(cell_x(m.cell, mapW), cell_y(m.cell, mapW))
                    != kKnowledgeUnknown)
             styleSeen[std::size_t(m.style) & 3u] = true;
     }
@@ -455,19 +457,22 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
         int pinRow = 0;
         for (std::size_t i = 0; i < gs.markers.count;) {
             Marker& m = gs.markers.rows[i];
-            if (m.style != MarkerStyle::Waypoint
-                || !marker_id(m).starts_with("user_")) {
+            // Путевая точка и есть пин игрока (`kMarkerSurface`: чернила на
+            // чарте) — отдельного признака «чья метка» у записи нет.
+            if (m.style != MarkerStyle::Waypoint) {
                 ++i;
                 continue;
             }
+            const int mx = cell_x(m.cell, mapW);
+            const int my = cell_y(m.cell, mapW);
             if (!anyPin) {
                 ImGui::Separator();
                 anyPin = true;
             }
             ImGui::PushID(++pinRow);
             if (ImGui::SmallButton("go")) {
-                st.camX = m.x + 0.5f;
-                st.camY = m.y + 0.5f;
+                st.camX = float(mx) + 0.5f;
+                st.camY = float(my) + 0.5f;
             }
             ImGui::SameLine();
             // Буфер ввода шириной в ячейку подписи: набранное ложится в
@@ -476,7 +481,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
             std::snprintf(buf, sizeof buf, "%s", m.label);
             ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
             char hint[32];
-            std::snprintf(hint, sizeof hint, "%d, %d", int(m.x), int(m.y));
+            std::snprintf(hint, sizeof hint, "%d, %d", mx, my);
             if (ImGui::InputTextWithHint("##pin", hint, buf, sizeof buf))
                 set_marker_label(m, buf);
             ImGui::SameLine();

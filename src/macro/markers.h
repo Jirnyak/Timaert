@@ -12,36 +12,37 @@ namespace sm {
 
 enum class MarkerStyle : std::uint8_t { Quest = 0, POI, Danger, Waypoint };
 
-// ── МЕТКА — ПЛОСКАЯ ЗАПИСЬ ФИКСИРОВАННОЙ ДЛИНЫ (ломоть 3 сейв-эпика, M-180 /
-// M-439, 2026-11-10) ─────────────────────────────────────────────────────
-// Здесь стояли два `std::string` (`id`, `label`), а список меток был
-// `std::vector<Marker>`: три heap-объявления в состоянии, которое едет в сейв,
-// и запись без размера — её нельзя было ни снять одним куском, ни ограничить
-// потолком payload иначе как «префикс длины, тело неизвестно». Теперь у записи
-// есть РАЗМЕР, и дыр выравнивания в ней нет (байт стиля стоит в первой
-// 32-байтной ячейке вместе с ключом), поэтому она едет в сейв целиком.
+// ── МЕТКА — ПЛОСКАЯ ЗАПИСЬ: КЛЕТКА, СТИЛЬ, ПОДПИСЬ (ломти 3–4 сейв-эпика,
+// M-180 / M-439, 2026-11-10) ─────────────────────────────────────────────
+// Ломоть 3 сделал запись плоской (стояли два `std::string` и вектор), но
+// оставил в ней строковый КЛЮЧ и пару float-координат. Ломоть 4 снял оба по
+// вердикту владельца («выбери наиболее чистое системное решение»):
 //
-// ШИРИНЫ ВЫВЕДЕНЫ, А НЕ ВЗЯТЫ С ПОТОЛКА:
-//   · ключ — 31 байт с завершающим нулём: вместе с байтом стиля это ячейка в
-//     32 байта, ширина имени сквада (`SquadName@src/bus/squad_row.h`).
-//     Единственный живой производитель ключа — пин игрока `user_X_Y`, при
-//     стороне мира до 1024 это не длиннее 14 знаков;
-//   · подпись — 64 байта с завершающим нулём: ровно буфер, в который игрок её
-//     и раньше набирал на странице карты (`draw_map_screen`), то есть 63
-//     знака были потолком ввода всегда — теперь это и потолок хранения.
-inline constexpr std::size_t kMarkerIdBytes    = 31u;
-inline constexpr std::size_t kMarkerLabelBytes = 64u;
+//   · КЛЮЧА НЕТ. Единственный живой производитель — пин игрока — писал в ключ
+//     координаты клетки (`user_X_Y`), то есть второй раз называл то, что уже
+//     стояло в записи, а страница карты узнавала «пин игрока» по префиксу
+//     ключа, хотя это и есть стиль `Waypoint` (строка `kMarkerSurface` ниже:
+//     путевая точка — чернила игрока на чарте). ИДЕНТИЧНОСТЬ МЕТКИ — ПАРА
+//     (стиль, клетка): на одной клетке стоит не больше одной метки стиля.
+//     Строкового адреса у метки больше нет вовсе (ЗАКОН СЛОВАРЯ);
+//   · МЕСТО — ОДНО ЧИСЛО, адрес клетки мира (ЗАКОН АДРЕСА п.2), а не пара
+//     float: оба рисовальщика и раньше читали метку как клетку (`floor` и
+//     «+0.5» до центра), дробной части не писал никто.
+//
+// ЗАПИСЬ БЕЗ ДЫР: клетка 4 Б, затем байт стиля и подпись — вместе ячейка в
+// 64 Б. Подпись — 63 байта с завершающим нулём; буфер ввода страницы карты
+// (`draw_map_screen`) берёт ширину из этой же константы, так что набранное
+// ложится в запись целиком.
+inline constexpr std::size_t kMarkerLabelBytes = 63u;
 struct Marker {
+    std::uint32_t cell;
     MarkerStyle style;
-    char id[kMarkerIdBytes];
     char label[kMarkerLabelBytes];
-    float x, y;
 };
-static_assert(sizeof(Marker) == 1u + kMarkerIdBytes + kMarkerLabelBytes
-                                    + 2u * sizeof(float),
-              "метка: стиль + ключ + подпись + две координаты, без дыр — "
-              "запись едет в сейв одним куском");
-static_assert(sizeof(Marker) == 104u, "метка весит 104 Б");
+static_assert(sizeof(Marker) == sizeof(std::uint32_t) + 1u + kMarkerLabelBytes,
+              "метка: клетка + стиль + подпись, без дыр — запись едет в сейв "
+              "одним куском");
+static_assert(sizeof(Marker) == 68u, "метка весит 68 Б");
 
 // КАП СПИСКА МЕТОК. Число не новое: провод сейва и раньше отказывал списку
 // длиннее 16 384 — только отказывал он ПОЗДНО, на записи файла, и игра с
@@ -50,13 +51,13 @@ static_assert(sizeof(Marker) == 104u, "метка весит 104 Б");
 // макромира — вывод, а не совпадение: метка-сигнал мира (задание, место,
 // опасность) указывает на субъект, а субъектов в мире не больше
 // `kUnifiedCap`; пины игрока делят тот же список. Упёрлось — поднимается
-// одним числом (ЗАКОН КАПА): запись 104 Б, список на капе 1.6 МиБ.
+// одним числом (ЗАКОН КАПА): запись 68 Б, список на капе 1.06 МиБ.
 inline constexpr std::size_t kMaxMarkers = kUnifiedCap;
 
 // Список меток мира: счёт живых и плоский массив под капом в теле структуры.
 // Живые — первые `count`; хвост стоит нулём (его держат двери ниже — снятая
 // запись зануляется), так что байты списка не помнят снятых меток. Весит
-// 1.6 МиБ и на стеке не живёт — лежит полем состояния мира.
+// 1.06 МиБ и на стеке не живёт — лежит полем состояния мира.
 struct MarkerList {
     std::uint32_t count = 0;
     Marker rows[kMaxMarkers] = {};
@@ -104,10 +105,8 @@ inline constexpr std::uint8_t kMarkerSurface[4] = {
 };
 
 // ── ДВЕРИ СПИСКА ─────────────────────────────────────────────────────────
-// Ключ и подпись входят видом на байты и ложатся в запись с завершающим
-// нулём. Ключ длиннее ячейки — ОТКАЗ, а не усечение: усечённый ключ совпал бы
-// с чужим. Подпись длиннее ячейки усекается — это текст для глаз, не адрес.
-inline std::string_view marker_id(const Marker& m) { return {m.id}; }
+// Подпись входит видом на байты и ложится в запись с завершающим нулём;
+// длиннее ячейки — усекается (это текст для глаз, не адрес).
 inline std::string_view marker_label(const Marker& m) { return {m.label}; }
 
 inline void set_marker_label(Marker& m, std::string_view label) {
@@ -117,24 +116,28 @@ inline void set_marker_label(Marker& m, std::string_view label) {
     std::memcpy(m.label, label.data(), n);
 }
 
-inline bool has_marker(const MarkerList& m, std::string_view id) {
-    for (const Marker& mk : m.live()) if (marker_id(mk) == id) return true;
-    return false;
+// Место метки (стиль, клетка) в списке; `count` — такой метки нет.
+inline std::size_t find_marker(const MarkerList& m, MarkerStyle s,
+                               std::uint32_t cell) {
+    for (std::size_t i = 0; i < m.count; ++i)
+        if (m.rows[i].cell == cell && m.rows[i].style == s) return i;
+    return m.count;
+}
+inline bool has_marker(const MarkerList& m, MarkerStyle s,
+                       std::uint32_t cell) {
+    return find_marker(m, s, cell) < m.count;
 }
 
-// Поставить метку. Отвечает, ВСТАЛА ли она: нет — если такой ключ уже стоит
-// (TS dedups by id), если ключ пуст или не помещается в ячейку, или если
-// список полон (`MarkerList::full` — звонящий говорит об этом игроку).
-inline bool add_marker(MarkerList& m, std::string_view id, MarkerStyle s,
-                       float x, float y, std::string_view label = {}) {
-    if (id.empty() || id.size() > kMarkerIdBytes - 1u) return false;
-    if (m.full() || has_marker(m, id)) return false;
+// Поставить метку. Отвечает, ВСТАЛА ли она: нет — если метка этого стиля на
+// этой клетке уже стоит или если список полон (`MarkerList::full` — звонящий
+// говорит об этом игроку). Клетку судит звонящий: список сторон мира не знает.
+inline bool add_marker(MarkerList& m, MarkerStyle s, std::uint32_t cell,
+                       std::string_view label = {}) {
+    if (m.full() || has_marker(m, s, cell)) return false;
     Marker& row = m.rows[m.count];
     row = Marker{};
+    row.cell = cell;
     row.style = s;
-    std::memcpy(row.id, id.data(), id.size());
-    row.x = x;
-    row.y = y;
     set_marker_label(row, label);
     ++m.count;
     return true;
@@ -156,24 +159,30 @@ inline void remove_marker_at(MarkerList& m, std::size_t index) {
     std::memset(&m.rows[last], 0, sizeof(Marker));
 }
 
-// Remove ONE marker by exact id. Returns whether it existed — the map page's
-// double-click uses the answer as its toggle (absent → place, present → lift).
-inline bool remove_marker(MarkerList& m, std::string_view id) {
-    for (std::size_t i = 0; i < m.count; ++i) {
-        if (marker_id(m.rows[i]) == id) {
-            remove_marker_at(m, i);
-            return true;
-        }
-    }
-    return false;
+// Снять метку (стиль, клетка). Отвечает, СТОЯЛА ли она — двойной клик страницы
+// карты читает ответ как переключатель (не стояла → поставить, стояла → снять).
+inline bool remove_marker(MarkerList& m, MarkerStyle s, std::uint32_t cell) {
+    const std::size_t i = find_marker(m, s, cell);
+    if (i >= m.count) return false;
+    remove_marker_at(m, i);
+    return true;
 }
 
-// (`remove_markers_by_prefix` снесена 2026-10-27, M-324: НОЛЬ вызовов в
-//  `src/` и в `tests/`, подтверждено компилятором. Снятие метки в игре — одно
-//  место и одна дверь, `remove_marker` по ТОЧНОМУ id: двойной клик карты
-//  (`map_screen.cpp`) ею же и переключает. Групповое снятие по ПРЕФИКСУ
-//  требовало читать id как структурированный ключ — второй, строковый способ
-//  адресовать метки рядом с единственным законным, — и ни один звонящий его
-//  так и не попросил.)
+// (`remove_markers_by_prefix` снесена 2026-10-27, M-324: ноль вызовов. Со
+//  сносом строкового ключа ломтём 4 сейв-эпика группового адреса по префиксу
+//  у меток не осталось и в выразимом виде.)
 
 } // namespace sm
+
+// Включение стоит ЗДЕСЬ, а не наверху файла: заголовок пользуется контуром
+// только в блоке ниже, а вставленная наверху строка сдвинула бы всё содержимое
+// и сгноила бы ссылки документов в этот файл (§13 п.5).
+#include "core/row_law.h"
+// ── КОНТУР СТРОК ЭТОГО ФАЙЛА (M-180, ломоть 4 сейв-эпика) ───────────────────
+// Судит КОМПИЛЯТОР, а не ревью: структура состояния мира, в которую заложили
+// вектор, строку, карту, умный указатель, функтор или виртуальный метод, отсюда
+// НЕ СОБЕРЁТСЯ, и сообщение назовёт тип поимённо (`core/row_law.h`, наряд
+// M-169). Новая структура в этом файле обязана появиться и в этом списке — за
+// полнотой списка следит `arch_guard_test` (файл стоит в его `kRowHeaders`).
+TIMAERT_ROW(sm::Marker);
+TIMAERT_ROW(sm::MarkerList);

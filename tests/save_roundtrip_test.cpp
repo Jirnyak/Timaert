@@ -444,7 +444,7 @@ std::unique_ptr<sm::GameState> make_state(sm::MacroStore& st) {
     // (Фикстура прогресса сюжета — два списка logic-узлов — умерла в v157
     //  вместе с блоком сейва: ломоть 1 сейв-эпика.)
 
-    gs.player.name = "Tester";
+    sm::ecs::set_squad_name(gs.player.name, "Tester");
     gs.player.ageDays = 1234;
     // (No position scalars since v88: WHERE he stands is his squad record's
     // MacroCell — set in make_macro_records and proven with every other
@@ -469,10 +469,11 @@ std::unique_ptr<sm::GameState> make_state(sm::MacroStore& st) {
         jf.subjectKind = sm::fact_subject(sm::FactSubject::Squad);
         jf.subject = kFixturePlayerOrdinal;
         jf.x = 3; jf.y = 4; jf.amount = 2;
-        gs.player.journal.push_back(jf);
+        gs.player.journal[0] = jf;
         jf.kind = std::uint16_t(sm::FactKind::Traded);
         jf.amount = 55;
-        gs.player.journal.push_back(jf);
+        gs.player.journal[1] = jf;
+        gs.player.journalCount = 2u;
         gs.player.journalSeenSeq = 77u;
     }
     // The book speaks ORDINALS of the real registry now (v59) — a fixture
@@ -534,17 +535,18 @@ std::unique_ptr<sm::GameState> make_state(sm::MacroStore& st) {
     sm::feature_number_write(gs, 12, 34, 7);
 
     // Метка встаёт ДВЕРЬЮ списка (`add_marker`), а не сырой записью: список
-    // стал плоским под капом, и ключ с подписью ложатся в ячейки записи.
-    if (!sm::add_marker(gs.markers, "marker.round", sm::MarkerStyle::Danger,
-                        15.5f, 16.25f, "Round Danger")) {
+    // плоский под капом, идентичность метки — пара (стиль, клетка).
+    if (!sm::add_marker(gs.markers, sm::MarkerStyle::Danger,
+                        sm::cell_of(15, 16, gs.mapW), "Round Danger")) {
         std::fprintf(stderr, "фикстура: метка не встала\n");
         std::abort();
     }
     // Вторая — пин игрока, который затем СНИМАЕТСЯ: снятая запись обязана
     // не доехать до файла и не оставить следа в хвосте списка.
-    sm::add_marker(gs.markers, "user_3_4", sm::MarkerStyle::Waypoint,
-                   3.0f, 4.0f, "gone");
-    sm::remove_marker(gs.markers, "user_3_4");
+    sm::add_marker(gs.markers, sm::MarkerStyle::Waypoint,
+                   sm::cell_of(3, 4, gs.mapW), "gone");
+    sm::remove_marker(gs.markers, sm::MarkerStyle::Waypoint,
+                      sm::cell_of(3, 4, gs.mapW));
 
     // v121: рантайм-имена хвоста уничтожены вердиктом (род 6) — фикстура
     // двигает отношение ДВУХ РЕЕСТРОВЫХ строк с нейтрального нуля и ждёт
@@ -620,6 +622,11 @@ int run_roundtrip() {
     // положенный до сохранения, обязан пахнуть и после загрузки.
     sm::scent_ensure(gs.scent, gs.mapW, gs.mapH);
     sm::scent_deposit(gs.scent, 1, 100, 100, 400u, 4000u);
+    // И след в ПОСЛЕДНЕМ плане реестра: план шагает КАПОМ клеток, а мир
+    // фикстуры меньше капа — писатель, шагающий площадью мира, до этого плана
+    // не дотянулся бы (на первых планах такая ошибка невидима: их адреса
+    // попадают в его обход случайно).
+    sm::scent_deposit(gs.scent, sm::kFactionCount - 1, 7, 9, 800u, 80u);
 
     // СНИМОК = РУЧНЫЕ ЗАПИСИ ПЛЮС ТЕЛА МЕСТ (v127, флип M-90 шаг 5): плечо
     // места больше не едет строкой места, оно едет записью его тела в этом
@@ -675,6 +682,12 @@ int run_roundtrip() {
         || sm::scent_wealth_at(loaded.scent, 1, 100, 100)
                != (4000u >> sm::kScentQuantShift)) {
         FAIL_BAIL("scent field lost (v75)");
+    }
+    if (sm::scent_strength_at(loaded.scent, sm::kFactionCount - 1, 7, 9)
+               != (800u >> sm::kScentQuantShift)
+        || sm::scent_wealth_at(loaded.scent, sm::kFactionCount - 1, 7, 9)
+               != (80u >> sm::kScentQuantShift)) {
+        FAIL_BAIL("след последнего плана реестра не пережил круг");
     }
     if (loaded.lastWorldRebakeDay != 9) {
         FAIL_BAIL("lastWorldRebakeDay (autosave phase) lost");
@@ -914,7 +927,13 @@ int run_roundtrip() {
     }
 
     const sm::PlayerState& p = loaded.player;
-    if (p.name != "Tester") FAIL_BAIL("player name lost");
+    {
+        // Ячейка имени едет ЦЕЛИКОМ: и текст, и нули за ним.
+        sm::ecs::SquadName want{};
+        sm::ecs::set_squad_name(want, "Tester");
+        if (std::memcmp(&p.name, &want, sizeof(want)) != 0)
+            FAIL_BAIL("player name lost");
+    }
     if (p.ageDays != 1234) {
         FAIL_BAIL("player age lost");
     }
@@ -958,7 +977,7 @@ int run_roundtrip() {
     // (Entry-side context rides the macro records — asserted there.)
 
 
-    if (p.journal.size() != 2
+    if (p.journalCount != 2u
         || p.journal[0].kind != std::uint16_t(sm::FactKind::Killed)
         || p.journal[1].amount != 55
         || p.journalSeenSeq != 77u) {
@@ -1059,18 +1078,43 @@ int run_roundtrip() {
         FAIL_BAIL("spire spell (featureNumber layer) lost");
     }
     if (loaded.markers.count != 1u
-        || sm::marker_id(loaded.markers.rows[0]) != "marker.round"
         || sm::marker_label(loaded.markers.rows[0]) != "Round Danger"
         || loaded.markers.rows[0].style != sm::MarkerStyle::Danger
-        || loaded.markers.rows[0].x != 15.5f
-        || loaded.markers.rows[0].y != 16.25f) {
+        || loaded.markers.rows[0].cell != sm::cell_of(15, 16, loaded.mapW)) {
         FAIL_BAIL("marker lost");
     }
     // Снятый до сохранения пин не доехал: ни записью, ни следом в хвосте.
-    if (sm::has_marker(loaded.markers, "user_3_4")
-        || loaded.markers.rows[1].id[0] != '\0'
-        || loaded.markers.rows[1].label[0] != '\0') {
-        FAIL_BAIL("a lifted pin survived the save");
+    {
+        const sm::Marker zero{};
+        if (sm::has_marker(loaded.markers, sm::MarkerStyle::Waypoint,
+                           sm::cell_of(3, 4, loaded.mapW))
+            || std::memcmp(&loaded.markers.rows[1], &zero, sizeof(zero)) != 0) {
+            FAIL_BAIL("a lifted pin survived the save");
+        }
+    }
+    // МЕТКА ВНЕ МИРА — ПОРЧА, И ОТКАЗЫВАЕТ ЕЙ ПИСАТЕЛЬ, А НЕ ТОЛЬКО ЧИТАТЕЛЬ:
+    // дверь списка клетку не судит (сторон мира не знает), поэтому суд стоит
+    // на проводе с ОБЕИХ сторон одним условием. Иначе игра напечатала бы
+    // «сохранено» и положила слот, который сама же откажется прочесть.
+    {
+        const std::string strayPath =
+            temp_save_path("timaert_save_stray_marker.bin");
+        remove_slot_files(strayPath);
+        const std::uint32_t outside =
+            std::uint32_t(gs.mapW) * std::uint32_t(gs.mapH);
+        if (!sm::add_marker(gs.markers, sm::MarkerStyle::POI, outside))
+            FAIL_BAIL("фикстура: метка за миром не встала в список");
+        const bool strayRefused =
+            !sm::save_game(gs, store.nextSpawnId, macroFixture, strayPath);
+        sm::remove_marker(gs.markers, sm::MarkerStyle::POI, outside);
+        const bool cleanAccepted =
+            sm::save_game(gs, store.nextSpawnId, macroFixture, strayPath);
+        remove_slot_files(strayPath);
+        if (!strayRefused)
+            FAIL_BAIL("сейв принял метку на клетке вне мира");
+        if (!cleanAccepted)
+            FAIL_BAIL("негативный контроль: без метки за миром тот же мир "
+                      "сохраняется");
     }
     const sm::FactionSlot loadedTim =
         sm::faction_slot(loaded.factions, "timaert");
@@ -1315,15 +1359,14 @@ bool run_payload_cap_is_a_fact() {
     //  больше прежнего литерала 64 МиБ.)
 
     // Журнал игрока — его целая игра, тоже на капе (v57).
-    gs.player.journal.clear();
-    gs.player.journal.reserve(sm::PlayerState::kJournalFactsCap);
     for (std::uint32_t i = 0; i < sm::PlayerState::kJournalFactsCap; ++i) {
         sm::WorldFact f{};
         f.day = 2;
         f.seq = i + 1u;
         f.kind = std::uint16_t(sm::FactKind::Killed);
-        gs.player.journal.push_back(f);
+        gs.player.journal[i] = f;
     }
+    gs.player.journalCount = sm::PlayerState::kJournalFactsCap;
 
     // Места — с ПОЛНЫМИ складами, и это не утяжеление ради числа: единый
     // контейнер 32×32 входит в кап места целиком (DOD п.2 — «пустота у
@@ -1407,52 +1450,52 @@ bool run_payload_cap_is_a_fact() {
 
 } // namespace
 
-// ── СПИСОК МЕТОК — ПЛОСКИЙ, ПОД КАПОМ, ДВЕРЯМИ (ломоть 3 сейв-эпика) ─────
-// Список меток стал массивом фиксированной длины в теле состояния. Отсюда
-// четыре закона, которых у вектора не было и которые проверяются парой
-// (положительное + отрицательное): ключ длиннее ячейки ОТКАЗЫВАЕТСЯ, а не
-// усекается; полный список отказывает ВСЛУХ ответом двери; снятие сохраняет
-// порядок остальных; хвост за счётом стоит нулём (байты списка не помнят
-// снятого). Последнее — условие прямого дампа: два списка с одним живым
-// содержимым обязаны быть побайтно равны, какой бы ни была их история.
+// ── СПИСОК МЕТОК — ПЛОСКИЙ, ПОД КАПОМ, ДВЕРЯМИ (ломти 3–4 сейв-эпика) ────
+// Список меток — массив фиксированной длины в теле состояния, а идентичность
+// метки — пара (стиль, клетка): строкового ключа у записи нет. Отсюда законы,
+// которые проверяются парой (положительное + отрицательное): вторая метка
+// ТОГО ЖЕ стиля на ТОЙ ЖЕ клетке отказана, а другого стиля — встаёт; полный
+// список отказывает ВСЛУХ ответом двери; снятие сохраняет порядок остальных;
+// хвост за счётом стоит нулём (байты списка не помнят снятого). Последнее —
+// условие прямого дампа: два списка с одним живым содержимым обязаны быть
+// побайтно равны, какой бы ни была их история.
 void run_marker_list_contract() {
+    using sm::MarkerStyle;
     const std::unique_ptr<sm::MarkerList> listOwn{new sm::MarkerList()};
     sm::MarkerList& list = *listOwn;
 
-    CHECK(sm::add_marker(list, "a", sm::MarkerStyle::Quest, 1.0f, 2.0f, "A")
-              && sm::add_marker(list, "b", sm::MarkerStyle::POI, 3.0f, 4.0f)
-              && sm::add_marker(list, "c", sm::MarkerStyle::Waypoint, 5.0f, 6.0f),
-          "три метки с разными ключами встают");
-    CHECK(!sm::add_marker(list, "b", sm::MarkerStyle::Danger, 9.0f, 9.0f)
-              && list.count == 3u && list.rows[1].style == sm::MarkerStyle::POI,
-          "повторный ключ отказан, и стоящая метка не тронута");
-    // Ключ в 30 знаков помещается (31 Б с нулём), в 31 знак — нет.
-    const std::string fits(sm::kMarkerIdBytes - 1u, 'k');
-    const std::string tooLong(sm::kMarkerIdBytes, 'k');
-    CHECK(sm::add_marker(list, fits, sm::MarkerStyle::Quest, 0.0f, 0.0f)
-              && sm::marker_id(list.rows[3]) == fits,
-          "ключ во всю ячейку встаёт целиком");
-    CHECK(!sm::add_marker(list, tooLong, sm::MarkerStyle::Quest, 0.0f, 0.0f)
-              && !sm::add_marker(list, "", sm::MarkerStyle::Quest, 0.0f, 0.0f)
-              && list.count == 4u,
-          "ключ длиннее ячейки и пустой ключ ОТКАЗАНЫ, а не усечены: "
-          "усечённый ключ совпал бы с чужим");
+    CHECK(sm::add_marker(list, MarkerStyle::Quest, 10u, "A")
+              && sm::add_marker(list, MarkerStyle::POI, 20u)
+              && sm::add_marker(list, MarkerStyle::Waypoint, 30u),
+          "три метки на разных клетках встают");
+    CHECK(!sm::add_marker(list, MarkerStyle::POI, 20u, "second")
+              && list.count == 3u && sm::marker_label(list.rows[1]).empty(),
+          "вторая метка того же стиля на той же клетке отказана, и стоящая "
+          "не тронута");
+    CHECK(sm::add_marker(list, MarkerStyle::Danger, 20u)
+              && list.count == 4u
+              && sm::has_marker(list, MarkerStyle::POI, 20u)
+              && sm::has_marker(list, MarkerStyle::Danger, 20u)
+              && !sm::has_marker(list, MarkerStyle::Quest, 20u),
+          "метка ДРУГОГО стиля на той же клетке встаёт: идентичность — пара, "
+          "а не одна клетка");
     // Подпись — текст для глаз: длинная усекается до ячейки и кончается нулём.
     const std::string longLabel(200u, 'L');
     sm::set_marker_label(list.rows[0], longLabel);
     CHECK(sm::marker_label(list.rows[0]).size() == sm::kMarkerLabelBytes - 1u
               && list.rows[0].label[sm::kMarkerLabelBytes - 1u] == '\0',
-          "подпись длиннее ячейки усечена до 63 знаков с завершающим нулём");
+          "подпись длиннее ячейки усечена до ячейки с завершающим нулём");
     sm::set_marker_label(list.rows[0], "A");
 
     // Снятие из середины: порядок остальных цел, хвост занулён.
-    CHECK(sm::remove_marker(list, "b") && list.count == 3u
-              && sm::marker_id(list.rows[0]) == "a"
-              && sm::marker_id(list.rows[1]) == "c"
-              && sm::marker_id(list.rows[2]) == fits,
+    CHECK(sm::remove_marker(list, MarkerStyle::POI, 20u) && list.count == 3u
+              && list.rows[0].cell == 10u
+              && list.rows[1].cell == 30u
+              && list.rows[2].cell == 20u
+              && list.rows[2].style == MarkerStyle::Danger,
           "снятие из середины сохраняет порядок постановки остальных");
-    CHECK(!sm::remove_marker(list, "b"),
-          "снятие отсутствующего ключа отвечает «не было» — на этом ответе "
+    CHECK(!sm::remove_marker(list, MarkerStyle::POI, 20u),
+          "снятие отсутствующей метки отвечает «не было» — на этом ответе "
           "страница карты переключает пин");
     const sm::Marker zero{};
     CHECK(std::memcmp(&list.rows[3], &zero, sizeof(sm::Marker)) == 0,
@@ -1461,30 +1504,25 @@ void run_marker_list_contract() {
     // ДВА СПИСКА С ОДНИМ ЖИВЫМ СОДЕРЖИМЫМ ПОБАЙТНО РАВНЫ при разной истории.
     const std::unique_ptr<sm::MarkerList> twinOwn{new sm::MarkerList()};
     sm::MarkerList& twin = *twinOwn;
-    sm::add_marker(twin, "a", sm::MarkerStyle::Quest, 1.0f, 2.0f, "A");
-    sm::add_marker(twin, "c", sm::MarkerStyle::Waypoint, 5.0f, 6.0f);
-    sm::add_marker(twin, fits, sm::MarkerStyle::Quest, 0.0f, 0.0f);
+    sm::add_marker(twin, MarkerStyle::Quest, 10u, "A");
+    sm::add_marker(twin, MarkerStyle::Waypoint, 30u);
+    sm::add_marker(twin, MarkerStyle::Danger, 20u);
     CHECK(std::memcmp(&list, &twin, sizeof(sm::MarkerList)) == 0,
           "байты списка не помнят снятой метки: история не видна в памяти");
 
     // КАП: список наполняется до края, следующая постановка отказана, и
     // после снятия одной место снова есть.
     sm::MarkerList& full = twin;
-    char key[32];
-    for (std::size_t i = full.count; i < sm::kMaxMarkers; ++i) {
-        std::snprintf(key, sizeof key, "user_%zu_0", i);
-        sm::add_marker(full, key, sm::MarkerStyle::Waypoint, float(i), 0.0f);
-    }
+    for (std::uint32_t cell = 1000u; !full.full(); ++cell)
+        sm::add_marker(full, MarkerStyle::Waypoint, cell);
     CHECK(full.count == sm::kMaxMarkers && full.full(),
           "список наполняется ровно до капа");
-    CHECK(!sm::add_marker(full, "one_too_many", sm::MarkerStyle::Waypoint,
-                          0.0f, 0.0f)
+    CHECK(!sm::add_marker(full, MarkerStyle::Waypoint, 999u)
               && full.count == sm::kMaxMarkers,
           "полный список отказывает постановке, счёт за кап не выходит");
     sm::remove_marker_at(full, sm::kMaxMarkers - 1u);
     CHECK(!full.full()
-              && sm::add_marker(full, "one_too_many",
-                                sm::MarkerStyle::Waypoint, 0.0f, 0.0f),
+              && sm::add_marker(full, MarkerStyle::Waypoint, 999u),
           "после снятия последней записи место снова есть");
 }
 

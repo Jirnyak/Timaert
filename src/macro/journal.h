@@ -30,15 +30,6 @@ inline void player_journal_capture(GameState& gs, const MacroStore& st) {
     const Chronicle& c = gs.chronicle;
     if (!c.ready() || gs.mapW <= 0 || gs.mapH <= 0) return;
     PlayerState& p = gs.player;
-    // DOD discipline (owner): the WHOLE cap is reserved once, here at the
-    // first capture of a session — 32 MB flat POD by the house's own "size
-    // is no argument" — so the game loop never allocates for the journal
-    // again and the array stays one contiguous block for the save to write
-    // byte-in-byte. (Not in a constructor: a fixture GameState that never
-    // captures pays nothing.)
-    if (p.journal.capacity() < std::size_t(PlayerState::kJournalFactsCap)) {
-        p.journal.reserve(std::size_t(PlayerState::kJournalFactsCap));
-    }
     // WHERE he stands = the flag holder's cell (подпосадка 4) — locality is
     // asked of the world, like possession above.
     const ecs::MacroCell* pcell = player_flag_cell(gs, st);
@@ -76,7 +67,7 @@ inline void player_journal_capture(GameState& gs, const MacroStore& st) {
                            || isHis(f.objectKind, f.object);
         const bool happenedHere = int(f.x) == px && int(f.y) == py;
         if (!tookPart && !happenedHere) continue;
-        if (p.journal.size() >= std::size_t(PlayerState::kJournalFactsCap)) {
+        if (p.journalCount >= PlayerState::kJournalFactsCap) {
             p.journalFull = 1;   // loud, never a silent drop of his past
             break;
         }
@@ -86,7 +77,8 @@ inline void player_journal_capture(GameState& gs, const MacroStore& st) {
         // store the derived link for the same reason (a stored derivative is
         // a second truth). A live link here rode into the save as garbage.
         learned.nextInCell = 0u;
-        p.journal.push_back(learned);
+        p.journal[p.journalCount] = learned;
+        ++p.journalCount;
     }
     p.journalSeenSeq = c.nextSeq - 1u;
 }

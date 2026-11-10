@@ -25,14 +25,15 @@
 // экономическая (цена) для стратегического ИИ потом.
 //
 // ЕДЕТ В СЕЙВЕ (вердикт владельца; движение не фактируется — реплеить след
-// не из чего, threat-реплей здесь не работает). Ёмкость = реестр фракций по
-// построению (kFactionCount ≤ kMaxFactions=64 — существующий кап uint64
-// враг-маски субмира, возведённый в единую константу мира).
+// не из чего, threat-реплей здесь не работает).
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
-#include <vector>
+#include <cstring>
 
+#include "core/caps.h"    // kWorldCellCap — шаг плана и кап клеток
+#include "core/torus.h"   // cell_of — адрес клетки внутри плана
 #include "tables/faction.h"
 
 namespace sm {
@@ -50,56 +51,88 @@ inline constexpr int kScentDiffusionShift = 3;
 // след», честный потолок, не баг).
 inline constexpr int kScentQuantShift = 2;
 
+// ── ПОЛЕ СЛЕДОВ — ДВА ПЛОСКИХ КАНАЛА ПОД КАПОМ (ломоть 4 сейв-эпика, M-180,
+// 2026-11-10) ────────────────────────────────────────────────────────────
+// Здесь стояли два `std::vector<std::uint16_t>` длиной «фракций реестра ×
+// клеток мира» и член `factions` — копия числа `kFactionCount`, известного на
+// сборке. Теперь у поля есть РАЗМЕР: план на КАЖДУЮ строку рода 6 под его
+// единственным потолком (`kMaxFactions@src/tables/faction.h`, 64), в плане —
+// клетка на клетку капа мира (`kWorldCellCap@src/core/caps.h`). Память одна у
+// мира 8×8 фикстуры и у мира 1024×1024 с полным реестром (ЗАКОН ГЛАДКОЙ
+// ПАМЯТИ), и снимается она одним куском.
+//
+// АДРЕС: `[f × kWorldCellCap + cell_of(x, y, сторона)]`. Шаг плана — КАП, а не
+// площадь мира: план фракции лежит на одном месте при любой стороне мира, и
+// шаг не делит и не умножает на рантайм-число.
+//
+// ЦЕНА НАЗВАНА: 64 × 2^20 × 2 Б = 128 МиБ на канал, 256 МиБ на поле. Планы
+// выше `kFactionCount` (строк реестра сегодня меньше потолка) стоят нулём:
+// писать в них некому — индекса такой фракции не существует, — а физика дня
+// обходит только планы живых строк реестра, то есть пустота оплачена
+// памятью, но не тактами.
+inline constexpr std::size_t kScentPlaneCells = kWorldCellCap;
+inline constexpr std::size_t kScentChannelCells =
+    std::size_t(kMaxFactions) * kScentPlaneCells;
 struct ScentField {
     std::int32_t w = 0, h = 0;
-    std::int32_t factions = 0;   // планов в векторах; == kFactionCount мира
-    // [f*w*h + y*w + x] — план на фракцию, плотно; пустые планы почти
-    // бесплатны (диффузия перешагивает нули).
-    std::vector<std::uint16_t> strength;
-    std::vector<std::uint16_t> wealth;
+    std::uint16_t strength[kScentChannelCells] = {};
+    std::uint16_t wealth[kScentChannelCells] = {};
 
+    // «Скроено ли поле под этот мир». Мир вне капа клеток или не законный
+    // тор (сторона — степень двойки, квадрат) поля не получает вовсе: оно
+    // остаётся холодным, и все двери ниже на нём молчат (fail-closed).
     bool sized_for(int mapW, int mapH) const {
-        const std::size_t n =
-            std::size_t(factions) * std::size_t(w) * std::size_t(h);
-        return w == mapW && h == mapH && factions == kFactionCount
-               && strength.size() == n && wealth.size() == n;
+        return w == mapW && h == mapH && w > 0;
     }
 };
+static_assert(sizeof(ScentField)
+                  == 2u * sizeof(std::int32_t)
+                         + 2u * kScentChannelCells * sizeof(std::uint16_t),
+              "поле следов: шапка 8 Б + два канала по u16 на клетку капа "
+              "каждого плана, без хвоста");
 
-// Пересбор под мир (генезис, загрузка чужого размера, рост реестра фракций):
-// оба канала в ноль — холодный старт, мир протаптывает следы сам.
+// Пересбор под мир (генезис, загрузка): оба канала в ноль ПО ВСЕМУ КАПУ —
+// холодный старт, мир протаптывает следы сам, а хвост за миром и планы выше
+// реестра стоят нулём. Мир, которому поле не положено (не тор или больше
+// капа), оставляет поле холодным с нулевой шапкой.
 inline void scent_reset(ScentField& sf, int mapW, int mapH) {
-    sf.w = mapW;
-    sf.h = mapH;
-    sf.factions = kFactionCount;
-    const std::size_t n =
-        std::size_t(kFactionCount) * std::size_t(mapW) * std::size_t(mapH);
-    sf.strength.assign(n, 0u);
-    sf.wealth.assign(n, 0u);
+    const bool legal = world_shape_ok(mapW, mapH)
+                       && world_cells_within_cap(mapW, mapH) > 0u;
+    sf.w = legal ? mapW : 0;
+    sf.h = legal ? mapH : 0;
+    std::memset(sf.strength, 0, sizeof(sf.strength));
+    std::memset(sf.wealth, 0, sizeof(sf.wealth));
 }
 
-// Свежесть поля — как nav_ensure: несовпадение размеров (генезис, чужой
-// сейв, рост реестра) = холодный пересбор. Зовут оба владельца ритма —
-// think-свип (перед вкладами) и world_tick (перед физикой дня).
+// Свежесть поля — как nav_ensure: несовпадение размеров = холодный пересбор.
+// Поле кроит рождение мира (`generate_macro_world@src/macro/world_gen.cpp`) и
+// загрузка; оба владельца ритма — think-свип (перед вкладами) и world_tick
+// (перед физикой дня) — зовут эту дверь как сверку, и на скроенном поле она
+// не делает ничего. Мир без права на поле (см. `scent_reset`) держит его
+// холодным и пересбором каждый тик не платит.
 inline void scent_ensure(ScentField& sf, int mapW, int mapH) {
-    if (!sf.sized_for(mapW, mapH)) scent_reset(sf, mapW, mapH);
+    if (sf.sized_for(mapW, mapH)) return;
+    const bool legal = world_shape_ok(mapW, mapH)
+                       && world_cells_within_cap(mapW, mapH) > 0u;
+    if (!legal && sf.w == 0 && sf.h == 0) return;
+    scent_reset(sf, mapW, mapH);
 }
 
+// Адрес клетки канала. Зовётся только на скроенном поле и с индексом плана
+// внутри реестра — оба условия держат двери ниже.
 inline std::size_t scent_idx(const ScentField& sf, int f, int x, int y) {
-    return (std::size_t(f) * std::size_t(sf.h) + std::size_t(y))
-               * std::size_t(sf.w)
-           + std::size_t(x);
+    return std::size_t(f) * kScentPlaneCells + std::size_t(cell_of(x, y, sf.w));
 }
 
 inline std::uint16_t scent_strength_at(const ScentField& sf, int f,
                                        int x, int y) {
-    if (f < 0 || f >= sf.factions) return 0u;
+    if (f < 0 || f >= kFactionCount || sf.w <= 0) return 0u;
     return sf.strength[scent_idx(sf, f, x, y)];
 }
 
 inline std::uint16_t scent_wealth_at(const ScentField& sf, int f,
                                      int x, int y) {
-    if (f < 0 || f >= sf.factions) return 0u;
+    if (f < 0 || f >= kFactionCount || sf.w <= 0) return 0u;
     return sf.wealth[scent_idx(sf, f, x, y)];
 }
 
@@ -108,7 +141,7 @@ inline std::uint16_t scent_wealth_at(const ScentField& sf, int f,
 // само поле, чтобы ни один писатель не изобрёл свой сдвиг.
 inline void scent_deposit(ScentField& sf, int f, int x, int y,
                           std::uint32_t power, std::uint32_t worth) {
-    if (f < 0 || f >= sf.factions) return;
+    if (f < 0 || f >= kFactionCount) return;
     if (x < 0 || x >= sf.w || y < 0 || y >= sf.h) return;
     const std::size_t i = scent_idx(sf, f, x, y);
     const std::uint32_t s =
@@ -125,3 +158,15 @@ inline void scent_deposit(ScentField& sf, int f, int x, int y,
 void scent_field_daily(ScentField& sf, int day);
 
 } // namespace sm
+
+// Включение стоит ЗДЕСЬ, а не наверху файла: заголовок пользуется контуром
+// только в блоке ниже, а вставленная наверху строка сдвинула бы всё содержимое
+// и сгноила бы ссылки документов в этот файл (§13 п.5).
+#include "core/row_law.h"
+// ── КОНТУР СТРОК ЭТОГО ФАЙЛА (M-180, ломоть 4 сейв-эпика) ───────────────────
+// Судит КОМПИЛЯТОР, а не ревью: структура состояния мира, в которую заложили
+// вектор, строку, карту, умный указатель, функтор или виртуальный метод, отсюда
+// НЕ СОБЕРЁТСЯ, и сообщение назовёт тип поимённо (`core/row_law.h`, наряд
+// M-169). Новая структура в этом файле обязана появиться и в этом списке — за
+// полнотой списка следит `arch_guard_test` (файл стоит в его `kRowHeaders`).
+TIMAERT_ROW(sm::ScentField);

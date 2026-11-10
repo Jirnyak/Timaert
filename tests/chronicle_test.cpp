@@ -14,6 +14,7 @@
 
 #include "macro/chronicle.h"
 
+#include <memory>
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -63,7 +64,8 @@ void test_the_record_is_flat_and_the_rows_are_rows() {
 
 // ── THE question ─────────────────────────────────────────────────────────
 void test_a_witcher_finds_the_monster_by_its_traces() {
-    Chronicle c;
+    const std::unique_ptr<Chronicle> cOwn{new Chronicle()};
+    Chronicle& c = *cOwn;
     chronicle_init(c, 256, 256);
 
     // A monster squad has been killing peasants outside one village for a
@@ -114,7 +116,8 @@ void test_a_witcher_finds_the_monster_by_its_traces() {
 
 // ── The ring forgets, and the chains end where it forgot ─────────────────
 void test_the_chains_truncate_themselves() {
-    Chronicle c;
+    const std::unique_ptr<Chronicle> cOwn{new Chronicle()};
+    Chronicle& c = *cOwn;
     chronicle_init(c, 128, 128);
 
     // Fill the ring past its capacity from ONE place, so every fact lands on
@@ -148,7 +151,8 @@ void test_the_chains_truncate_themselves() {
 
 // ── The journal's view: the whole past, newest first ─────────────────────
 void test_recent_walks_time_without_an_index() {
-    Chronicle c;
+    const std::unique_ptr<Chronicle> cOwn{new Chronicle()};
+    Chronicle& c = *cOwn;
     chronicle_init(c, 64, 64);
     for (int d = 1; d <= 10; ++d) {
         chronicle_record(c, killing(d, d, d, std::uint32_t(d), d));
@@ -169,10 +173,18 @@ void test_recent_walks_time_without_an_index() {
 
 // ── Refusals ─────────────────────────────────────────────────────────────
 void test_the_chronicle_refuses_what_it_cannot_record() {
-    Chronicle c;
+    const std::unique_ptr<Chronicle> cOwn{new Chronicle()};
+    Chronicle& c = *cOwn;
     WorldFact f = killing(1, 0, 0, 1u, 1);
     CHECK(chronicle_record(c, f) == 0u,
           "a chronicle with no world records nothing");
+    // Мир вне капа клеток летописи не получает (fail-closed): головы цепочек
+    // лежат плоским массивом под капом индексных клеток, и сетка шире капа
+    // писала бы за него.
+    chronicle_init(c, 2048, 2048);
+    CHECK(!c.ready() && chronicle_record(c, f) == 0u,
+          "a world beyond the cell cap gets no chronicle, and says so by "
+          "recording nothing");
 
     chronicle_init(c, 64, 64);
     WorldFact none = f;
@@ -191,7 +203,8 @@ void test_the_chronicle_refuses_what_it_cannot_record() {
 // kChronicleFacts is honestly provisional, so the thing that makes it
 // measurable is part of the contract rather than a debug afterthought.
 void test_the_world_counts_its_own_facts() {
-    Chronicle c;
+    const std::unique_ptr<Chronicle> cOwn{new Chronicle()};
+    Chronicle& c = *cOwn;
     chronicle_init(c, 64, 64);
     for (int i = 0; i < 5; ++i) chronicle_record(c, killing(7, 1, 1, 1u, 1));
     CHECK(c.factsToday == 5u && c.countingDay == 7,
@@ -390,7 +403,8 @@ void test_a_fact_says_itself() {
 
 // ── "RECENT" IS THE ROW'S WORD, NOT THE READER'S ─────────────────────────
 void test_the_kind_owns_its_own_window() {
-    Chronicle c;
+    const std::unique_ptr<Chronicle> cOwn{new Chronicle()};
+    Chronicle& c = *cOwn;
     chronicle_init(c, 64, 64);
 
     // A sale and a killing on the same day, in the same place.

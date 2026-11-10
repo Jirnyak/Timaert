@@ -5,11 +5,13 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 #include "core/rng.h"
 #include "core/time.h"
 #include "core/torus.h"   // cell_step — рамка 3x3 аренды есть восемь соседей
 #include "bus/anketa.h"
+#include "bus/squad_row.h"   // SquadName — ячейка имени игрока (M-180)
 #include "ecs/components.h"   // MacroHandle — кэши игрока {слот, ID} (M-220)
 #include "tables/commodity.h"   // kCommodityCount — дань по позициям (v73)
 #include "bus/memory.h"   // WorldMemory — память мира с горизонтом сезона
@@ -474,7 +476,13 @@ namespace sm {
 // `Marker@src/macro/markers.h` целиком, 104 Б, без дыр. Блок леса байтами
 // НЕ изменился — сменился только его источник: клетки берутся из поля
 // состояния `GameState::treeLayer`, а не из параметра провода.
-constexpr int kSaveVersion = 158;
+// 159 — ЛОМОТЬ 4 СЕЙВ-ЭПИКА (M-180 / M-439, 2026-11-10): строк состояния мира
+// на проводе не осталось. Имя игрока едет плоской ячейкой 32 Б вместо
+// префикса длины с телом; запись метки карты — клетка, стиль, подпись (68 Б;
+// строковый ключ и пара float-координат умерли); шапка блока следов потеряла
+// число планов (оно — константа сборки `kFactionCount`), а индекс клетки
+// следа на проводе стал адресом внутри канала под капом клеток.
+constexpr int kSaveVersion = 159;
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -560,7 +568,13 @@ struct SessionFeed {
 //  рода 2 — ломоть 6.)
 
 struct PlayerState {
-    std::string name;
+    // ИМЯ — ПЛОСКАЯ ЯЧЕЙКА ШИРИНЫ ИМЕНИ АНКЕТЫ (ломоть 4 сейв-эпика, M-180,
+    // 2026-11-10): та же форма, что у колонки имени каждого сквада
+    // (`SquadName@src/bus/squad_row.h`), пишется той же дверью
+    // (`set_squad_name@src/bus/squad_row.h`). Здесь стояла `std::string` —
+    // последняя строка состояния мира на проводе сейва. Ввод экрана создания
+    // (24 знака) в ячейку ложится целиком.
+    ecs::SquadName name{};
     // (Колонка `sexIdx` УНИЧТОЖЕНА в v130, перепись сирот 2026-10-11: она
     // была КОПИЕЙ экранного поля `CreationState::sexIdx` и не имела ни одного
     // прод-читателя. Очко атрибута за «female» считается ТАМ, где стоит
@@ -621,10 +635,10 @@ struct PlayerState {
     // Loud cap of the journal below (owner, 2026-08-28: «на века, не
     // жалко»). Прежде это число СРАВНИВАЛОСЬ с капом анналов («не меньше,
     // чем вечная память мира»); ярус снесён M-184, и сравнивать больше не с
-    // чем — своё число у журнала осталось тем же. 2^20 copies × 32 B = 32 MB
-    // at the END of a long life (the vector grows as it fills — size is no
-    // argument either way, CANON S26); at even 100 learned facts a day that
-    // is 80+ game years. Hitting it flips journalFull, never a silent drop.
+    // чем — своё число у журнала осталось тем же. 2^20 copies × 32 B = 32 MB,
+    // paid whole in the body of the state (size is no argument either way,
+    // CANON S26); at even 100 learned facts a day that is 80+ game years.
+    // Hitting it flips journalFull, never a silent drop.
     static constexpr std::uint32_t kJournalFactsCap = 1u << 20;
     // The player's JOURNAL: his KNOWLEDGE of the world's facts (?27 half-
     // ruling, owner 2026-08-28). The chronicle is the world's one memory; the
@@ -639,9 +653,22 @@ struct PlayerState {
     //     second truth — there is nothing for the two to disagree about.
     // Words are still derived at display time (fact_sentence): the journal
     // stays a VIEW on the chronicle; what it stores is WHOSE the knowledge is.
-    std::vector<WorldFact>   journal;
+    //
+    // ПЛОСКИЙ МАССИВ ПОД СВОИМ КАПОМ В ТЕЛЕ СОСТОЯНИЯ (ломоть 4 сейв-эпика,
+    // M-180, 2026-11-10). Здесь стоял `std::vector<WorldFact>`, чей резерв на
+    // весь кап брала первая же поимка факта — то есть 32 МиБ и так платились
+    // целиком, только В ТИКЕ и мимо `sizeof`. Теперь живые записи — первые
+    // `journalCount`, хвост стоит нулём, а дописывает одна дверь —
+    // `player_journal_capture@src/macro/journal.h`.
+    //
+    // ЭТО НЕ КОНЕЧНАЯ ФОРМА ПАМЯТИ ИГРОКА, И ЭТО СКАЗАНО ВСЛУХ: копии
+    // оправданы только забывающим кольцом. Когда летопись станет дописываемым
+    // логом (ряд M-423 реестра), журнал умрёт в цепочку по субъекту — здесь
+    // нечего будет хранить. До того дня его форма — эта.
+    std::uint32_t            journalCount = 0;    // живых записей в `journal`
     std::uint32_t            journalSeenSeq = 0;  // last chronicle seq scanned
     std::uint8_t             journalFull = 0;     // the loud cap flag
+    WorldFact                journal[kJournalFactsCap] = {};
     // (No spellBook since v89. A body's knowledge is the SpellBook COMPONENT
     // on its macro entity — §41 root 3: the one-copy field here was literally
     // the class combatStats was before landing 4, and it is why only the
@@ -981,6 +1008,22 @@ struct GameState {
     // пришвартованных стоит числом ФИЧИ в слое разработки `featureNumber` выше.)
 };
 
+// ── СТЕНА: СОСТОЯНИЕ МИРА ТРИВИАЛЬНО КОПИРУЕМО (ломоть 4 сейв-эпика, M-180,
+// 2026-11-10) ────────────────────────────────────────────────────────────
+// Последние heap-члены состояния умерли: имя игрока и его журнал, оба канала
+// поля следов, кольцо летописи и её головы цепочек лежат в теле структуры.
+// С этой строки состояние мира есть ОДИН кусок памяти известного размера —
+// ровно то, чего требует от пакета ЗАКОН КАНОНИЧЕСКОГО ФРЕЙМА п.7 и без чего
+// сейв не может быть прямым дампом (CRAFT §10). Контейнер, строка, ссылка или
+// владеющий указатель членом состояния (на любой глубине) больше НЕ
+// СОБИРАЮТСЯ: запрет стоит под компилятором, а не под переписью.
+static_assert(std::is_trivially_copyable_v<GameState>,
+              "состояние мира обязано быть тривиально копируемым: heap-член "
+              "на любой глубине ломает дамп байт-в-байт (M-180 / M-439)");
+static_assert(std::is_standard_layout_v<GameState>,
+              "состояние мира — плоская раскладка: без виртуальности и без "
+              "смешанного доступа, адрес члена выводится из типа");
+
 // ── ДВЕРИ АРЕНДЫ ОКНА — ОДНА НА СДАЧУ, ОДНА НА СНЯТИЕ ────────────────────
 // КОНЦОВ АРЕНДЫ ДВА, И ОНИ РАВНОПРАВНЫ (вердикт владельца 2026-10-06):
 // подъём наверх и РЕ-ЦЕНТР рамки на другую клетку. Для мира это одно и то же
@@ -1191,7 +1234,7 @@ inline void add_player_reputation(GameState& gs, const char* factionId,
 // Mirror `defaultPlayer` / `createGameState` / `createRandomGameState`
 // from state.ts. Faction relations are sampled deterministically from
 // `seed` using the band system in state.ts.
-PlayerState default_player();
+void       default_player(PlayerState& out);
 void       create_factions(GameState& gs, std::uint32_t seed);
 // ── РОЖДЕНИЕ И СБРОС СОСТОЯНИЯ — НА МЕСТЕ, НЕ ЗНАЧЕНИЕМ (M-180) ─────────
 // `GameState` несёт слои мира плоскими массивами под капом клеток
@@ -1238,3 +1281,19 @@ void populate_rooted_from_politik(GameState& gs, MacroStore& st,
                                      FeatureLayer& features);
 
 } // namespace sm
+
+// Включение стоит ЗДЕСЬ, а не наверху файла: заголовок пользуется контуром
+// только в блоке ниже, а вставленная наверху строка сдвинула бы всё содержимое
+// и сгноила бы ссылки документов в этот файл (§13 п.5).
+#include "core/row_law.h"
+// ── КОНТУР СТРОК ЭТОГО ФАЙЛА (M-180, ломоть 4 сейв-эпика) ───────────────────
+// Судит КОМПИЛЯТОР, а не ревью: структура состояния мира, в которую заложили
+// вектор, строку, карту, умный указатель, функтор или виртуальный метод, отсюда
+// НЕ СОБЕРЁТСЯ, и сообщение назовёт тип поимённо (`core/row_law.h`, наряд
+// M-169). Новая структура в этом файле обязана появиться и в этом списке — за
+// полнотой списка следит `arch_guard_test` (файл стоит в его `kRowHeaders`).
+TIMAERT_ROW(sm::SessionFeed);
+TIMAERT_ROW(sm::PlayerState);
+TIMAERT_ROW(sm::WorldTickRuntime);
+TIMAERT_ROW(sm::MacroAiRhythm);
+TIMAERT_ROW(sm::GameState);

@@ -1,11 +1,15 @@
 // Дневная физика полей следов (контракт в scent_field.h).
 #include "macro/scent_field.h"
 
+#include <vector>
+
 namespace sm {
 
 void scent_field_daily(ScentField& sf, int day) {
-    if (sf.w <= 0 || sf.h <= 0 || sf.factions <= 0) return;
+    if (sf.w <= 0 || sf.h <= 0) return;
     const int W = sf.w, H = sf.h;
+    // Живые клетки плана — ровно мир; сам план шагает капом клеток
+    // (`kScentPlaneCells`), хвост за миром физика не трогает.
     const std::size_t plane = std::size_t(W) * std::size_t(H);
 
     // ДИФФУЗИЯ: 1/8 клетки в день, поровну восьми соседям тора. Дельты
@@ -50,15 +54,23 @@ void scent_field_daily(ScentField& sf, int day) {
                                   : std::uint16_t(v);
         }
     };
-    for (int f = 0; f < sf.factions; ++f) {
-        diffuse_plane(sf.strength.data() + std::size_t(f) * plane);
-        diffuse_plane(sf.wealth.data() + std::size_t(f) * plane);
+    // Обходятся планы СТРОК РЕЕСТРА: выше `kFactionCount` писать некому, и
+    // такой план стоит нулём по построению.
+    for (int f = 0; f < kFactionCount; ++f) {
+        diffuse_plane(sf.strength + std::size_t(f) * kScentPlaneCells);
+        diffuse_plane(sf.wealth + std::size_t(f) * kScentPlaneCells);
     }
 
     // РАСПАД: по календарю мира, не по фазе загрузки.
     if (kScentDecayDays > 0 && day > 0 && day % kScentDecayDays == 0) {
-        for (std::uint16_t& c : sf.strength) c >>= 1;
-        for (std::uint16_t& c : sf.wealth) c >>= 1;
+        for (int f = 0; f < kFactionCount; ++f) {
+            std::uint16_t* s = sf.strength + std::size_t(f) * kScentPlaneCells;
+            std::uint16_t* v = sf.wealth + std::size_t(f) * kScentPlaneCells;
+            for (std::size_t i = 0; i < plane; ++i) {
+                s[i] >>= 1;
+                v[i] >>= 1;
+            }
+        }
     }
 }
 

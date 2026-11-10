@@ -3798,7 +3798,7 @@ void scent_squad_deposit(MacroHandle self, const MacroPos& p,
     if (!ctx.mw.gs || !ctx.mw.store) return;
     ScentField& sf = ctx.mw.gs->scent;
     const int f = int(kind.factionIdx);
-    if (f < 0 || f >= sf.factions) return;   // kNoFaction не следит
+    if (f < 0 || f >= kFactionCount) return;   // kNoFaction не следит
     const MacroStore& st = store_ctx(ctx);
     const float power = squad_power(auto_battle_side_of(st, self));
     // ОБЕ ПОЛОВИНЫ КОНТЕЙНЕРА ОДНОЙ ДВЕРЬЮ (M-292): души и имущество суть
@@ -3842,8 +3842,7 @@ bool scent_hunt_step(MacroHandle self, MacroPos& p,
     if (!ctx.mw.gs || !ctx.mw.store) return false;
     if (!combatant_behaviour(kNpcTypeDefs[kind.type].ai)) return false;
     const ScentField& sf = ctx.mw.gs->scent;
-    if (sf.factions <= 0 || sf.w != ctx.mapW || sf.h != ctx.mapH)
-        return false;
+    if (!sf.sized_for(ctx.mapW, ctx.mapH)) return false;
     const int f = int(kind.factionIdx);
     if (f < 0 || f >= kFactionCount) return false;
     // ЖИВАЯ МАТРИЦА, И ЗАПЕЧЁННОЙ МАСКИ БОЛЬШЕ НЕТ (M-268, вердикт владельца
@@ -3867,7 +3866,7 @@ bool scent_hunt_step(MacroHandle self, MacroPos& p,
     // цикла, снятый с ЖИВОЙ матрицы внутри одной думки; устареть ему негде,
     // потому что матрица внутри думки не меняется по построению.
     std::uint64_t hostile = 0;
-    for (int b = 0; b < sf.factions; ++b)
+    for (int b = 0; b < kFactionCount; ++b)
         if (factions_hostile(fx, f, b)) hostile |= 1ull << b;
     // «Есть ли у меня враги вообще» — ранний выход ДО `squad_power`, и он
     // здесь не роскошь: сила сквада суммирует весь ростер. Семантику он не
@@ -3887,7 +3886,7 @@ bool scent_hunt_step(MacroHandle self, MacroPos& p,
                            std::uint32_t& outWea) {
         outStr = 0;
         outWea = 0;
-        for (int b = 0; b < sf.factions; ++b) {
+        for (int b = 0; b < kFactionCount; ++b) {
             if (!(hostile & (1ull << b))) continue;
             outStr += scent_strength_at(sf, b, x, y);
             outWea += scent_wealth_at(sf, b, x, y);

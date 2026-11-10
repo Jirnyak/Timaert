@@ -29,9 +29,24 @@ using namespace sm;
 // ── Физика поля ──────────────────────────────────────────────────────────
 
 void test_deposit_quant_and_saturation() {
-    ScentField sf{};
+    const std::unique_ptr<ScentField> sfOwn{new ScentField()};
+    ScentField& sf = *sfOwn;
     scent_reset(sf, 8, 8);
-    CHECK(sf.sized_for(8, 8), "reset кроит поле под мир и реестр");
+    CHECK(sf.sized_for(8, 8), "reset кроит поле под мир");
+    // Мир, которому поле не положено (не тор / больше капа клеток), оставляет
+    // его холодным: шапка нулевая, двери молчат — и сверка каждый тик не
+    // платит пересбором.
+    {
+        const std::unique_ptr<ScentField> coldOwn{new ScentField()};
+        ScentField& cold = *coldOwn;
+        scent_ensure(cold, 12, 12);
+        scent_deposit(cold, 0, 3, 3, 400u, 400u);
+        CHECK(!cold.sized_for(12, 12) && cold.w == 0
+                  && scent_strength_at(cold, 0, 3, 3) == 0u,
+              "мир со стороной не степенью двойки поля не получает");
+        scent_ensure(cold, 2048, 2048);
+        CHECK(cold.w == 0, "мир больше капа клеток поля не получает");
+    }
 
     scent_deposit(sf, 0, 3, 3, /*power*/40u, /*worth*/400u);
     CHECK(scent_strength_at(sf, 0, 3, 3) == (40u >> kScentQuantShift),
@@ -49,10 +64,17 @@ void test_deposit_quant_and_saturation() {
     scent_deposit(sf, -1, 3, 3, 100u, 100u);
     CHECK(scent_strength_at(sf, 1, 3, 3) == 0u,
           "чужой/бесфракционный индекс не пишет никуда (fail closed)");
+    // План выше реестра существует в памяти (кап — потолок рода 6), но писать
+    // в него некому: память за последней строкой реестра осталась нулём.
+    CHECK(kFactionCount < kMaxFactions
+              && sf.strength[std::size_t(kFactionCount + 5) * kScentPlaneCells
+                             + std::size_t(cell_of(3, 3, 8))] == 0u,
+          "вклад несуществующей фракции не лёг в план под капом");
 }
 
 void test_diffusion_isotropic_on_torus() {
-    ScentField sf{};
+    const std::unique_ptr<ScentField> sfOwn{new ScentField()};
+    ScentField& sf = *sfOwn;
     scent_reset(sf, 8, 8);
     // Угол тора: все восемь соседей (0,0) — через wrap, изотропия обязана
     // пережить шов. 6400 → доля 1/8 = 800, поровну 100 на соседа.
@@ -76,7 +98,8 @@ void test_diffusion_isotropic_on_torus() {
 }
 
 void test_decay_by_world_calendar() {
-    ScentField sf{};
+    const std::unique_ptr<ScentField> sfOwn{new ScentField()};
+    ScentField& sf = *sfOwn;
     scent_reset(sf, 8, 8);
     scent_deposit(sf, 0, 4, 4, 0u, 4000u << kScentQuantShift);
     const std::uint16_t before = scent_wealth_at(sf, 0, 4, 4);
@@ -97,7 +120,8 @@ void test_decay_by_world_calendar() {
 }
 
 void test_ensure_resets_only_on_mismatch() {
-    ScentField sf{};
+    const std::unique_ptr<ScentField> sfOwn{new ScentField()};
+    ScentField& sf = *sfOwn;
     scent_ensure(sf, 8, 8);
     scent_deposit(sf, 0, 1, 1, 400u, 400u);
     scent_ensure(sf, 8, 8);
@@ -106,6 +130,14 @@ void test_ensure_resets_only_on_mismatch() {
     scent_ensure(sf, 16, 16);
     CHECK(sf.sized_for(16, 16) && scent_wealth_at(sf, 0, 1, 1) == 0u,
           "чужой размер = холодный пересбор");
+    // Пересбор чистит ВЕСЬ кап, а не клетки нового мира: байты поля не
+    // помнят прежнего мира (поле снимается одним куском).
+    scent_deposit(sf, 2, 15, 15, 400u, 400u);
+    scent_reset(sf, 8, 8);
+    bool tailClean = true;
+    for (std::size_t i = 0; i < kScentChannelCells; ++i)
+        if (sf.strength[i] != 0u || sf.wealth[i] != 0u) { tailClean = false; break; }
+    CHECK(tailClean, "после пересбора оба канала нулевые по всему капу");
 }
 
 // ── Писатель и охота ─────────────────────────────────────────────────────

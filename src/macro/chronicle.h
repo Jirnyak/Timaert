@@ -37,8 +37,10 @@
 #include "core/time.h"
 #include "tables/fact_kinds.h"
 
+#include "core/caps.h"   // kWorldCellCap — кап индексных клеток выведен из него
+
+#include <cstddef>
 #include <cstdint>
-#include <vector>
 
 namespace sm {
 
@@ -96,6 +98,15 @@ inline constexpr std::uint32_t kChronicleFacts = 1u << 16;
 // happened near here" is a neighbourhood question, so a fact belongs to an
 // index cell rather than to a map cell, and a query touches 3×3 of them.
 inline constexpr int kChronicleCellSize = 8;
+// Кап индексных клеток — ВЫВОД, а не число: мир не больше капа клеток
+// (`kWorldCellCap@src/core/caps.h`), индексная клетка — квадрат 8×8, значит
+// индексных клеток не больше капа, делённого на площадь квадрата (16 384).
+inline constexpr std::size_t kChronicleIndexCells =
+    kWorldCellCap / (std::size_t(kChronicleCellSize)
+                     * std::size_t(kChronicleCellSize));
+static_assert(kWorldSideCap % std::size_t(kChronicleCellSize) == 0u,
+              "сторона капа мира кратна стороне индексной клетки — иначе "
+              "округление сетки вверх вышло бы за кап индексных клеток");
 
 // A participant reference is a KIND, and nothing else.
 //
@@ -124,9 +135,16 @@ inline constexpr std::uint8_t fact_subject(FactSubject kind) {
     return std::uint8_t(kind);
 }
 
+// ── ЛЕТОПИСЬ — ПЛОСКАЯ, В ТЕЛЕ СОСТОЯНИЯ МИРА (ломоть 4 сейв-эпика, M-180,
+// 2026-11-10) ────────────────────────────────────────────────────────────
+// Здесь стояли два `std::vector` — кольцо и головы цепочек, оба и так
+// выделялись целиком под свой кап дверью `chronicle_init`. Теперь это массивы
+// в теле структуры: у летописи есть `sizeof`, heap-члена нет, байты снимаются
+// одним куском. ЗАКОН ПАМЯТИ ЛЕТОПИСИ ЭТИМ ШАГОМ НЕ ТРОНУТ — это по-прежнему
+// кольцо на `kChronicleFacts` записей, которое забывает; дописываемый лог с
+// громким стопом и цепочки по субъекту — предмет ряда M-423 реестра, и он
+// сменит эту раскладку, а не ляжет рядом с ней.
 struct Chronicle {
-    std::vector<WorldFact>     ring;      // kChronicleFacts, written round
-    std::vector<std::uint32_t> cellHead;  // newest fact of each index cell
     std::uint32_t nextSeq = 1;            // 0 is "no fact", so counting starts at 1
     int cols = 0, rows = 0;
     // Facts written on the current day, and the day it is counting — the
@@ -147,8 +165,13 @@ struct Chronicle {
     // `kChronicleFacts`. Персистентна — пик за ОДИН прогон отвечает на
     // вопрос слабее, чем пик за жизнь мира, а длинные прогоны и есть мера.
     std::uint32_t factsPeak = 0;
+    // Newest fact of each index cell; живые — первые cols × rows, хвост нулём.
+    std::uint32_t cellHead[kChronicleIndexCells] = {};
+    WorldFact     ring[kChronicleFacts] = {};   // written round
 
-    bool ready() const { return cols > 0 && rows > 0 && !ring.empty(); }
+    // Скроена ли летопись под мир: сетка индексных клеток названа. Кольцо и
+    // головы лежат в теле — «пустого кольца» больше не бывает.
+    bool ready() const { return cols > 0 && rows > 0; }
     // The oldest sequence still in the ring. Everything below it has been
     // overwritten, which is exactly how a chain knows where to stop.
     std::uint32_t oldest_seq() const {
@@ -156,24 +179,21 @@ struct Chronicle {
     }
 };
 
-// СТОРОЖ РАЗМЕРА (AGENTS DOD п.10). Строка факта уже под ассертом выше (32 Б),
-// а это — сторож САМОГО КОНТЕЙНЕРА: 96 Б есть три заголовка вектора по 24 плюс
-// восемь чисел шапки по выравниванию (96 → 104 — 2026-10-12, M-254: прибор
-// дня получил ПИК, без которого не отвечал на свой же вопрос). Он не сторожит
-// вес летописи — её несут кольцо (2 МиБ) и анналы (32 МиБ), и обе стоят
-// своими строками в переписи штабелей (`macro/stacks.h`); он сторожит, что
-// четвёртый ярус памяти мира не вырастет здесь молча, без строки переписи.
-// 2026-10-30, M-184: 104 → 72. Вывод, а не замер «как вышло»: с ярусом
-// анналов ушёл заголовок вектора (24 Б) и флаг `annalsFull` (1 Б, но
-// занимал 4 с выравниванием) — ровно 32 Б. Остаток считается по форме:
-// два заголовка вектора по 24 = 48, плюс шесть чисел по 4 (`nextSeq`,
-// `cols`, `rows`, `countingDay`, `factsToday`, `factsPeak`) = 24, итого 72
-// при выравнивании 8.
-static_assert(sizeof(Chronicle) == 72,
-              "летопись: новый ярус = новая строка переписи штабелей");
+// СТОРОЖ РАЗМЕРА (AGENTS DOD п.10). Вывод, а не замер: шесть чисел шапки по
+// 4 Б (`nextSeq`, `cols`, `rows`, `countingDay`, `factsToday`, `factsPeak`),
+// головы цепочек по 4 Б на индексную клетку капа и кольцо записей; выравнивание
+// 4, хвоста нет. (До ломтя 4 сейв-эпика здесь стояло 72 Б — два заголовка
+// вектора и та же шапка, а память летописи жила в куче мимо `sizeof`.) Новый
+// ярус памяти мира двинет это число и потребует строки переписи штабелей.
+static_assert(sizeof(Chronicle)
+                  == 6u * 4u + kChronicleIndexCells * sizeof(std::uint32_t)
+                         + std::size_t(kChronicleFacts) * sizeof(WorldFact),
+              "летопись: шапка + головы цепочек + кольцо, без хвоста; новый "
+              "ярус = новая строка переписи штабелей");
 
 // Size it for a map. Safe to call again; a resize forgets, which is correct —
-// a chronicle of another world is not this world's past.
+// a chronicle of another world is not this world's past. Мир вне капа клеток
+// летописи не получает: она остаётся не скроенной, и двери ниже молчат.
 void chronicle_init(Chronicle& c, int mapW, int mapH);
 
 // Write one fact. Returns its sequence number (0 if the chronicle has no
@@ -251,3 +271,16 @@ int fact_sentence(const WorldFact& f, const FactNaming& naming,
                   char* out, int cap);
 
 } // namespace sm
+
+// Включение стоит ЗДЕСЬ, а не наверху файла: заголовок пользуется контуром
+// только в блоке ниже, а вставленная наверху строка сдвинула бы всё содержимое
+// и сгноила бы ссылки документов в этот файл (§13 п.5).
+#include "core/row_law.h"
+// ── КОНТУР СТРОК ЭТОГО ФАЙЛА (M-180, ломоть 4 сейв-эпика) ───────────────────
+// Судит КОМПИЛЯТОР, а не ревью: структура состояния мира, в которую заложили
+// вектор, строку, карту, умный указатель, функтор или виртуальный метод, отсюда
+// НЕ СОБЕРЁТСЯ, и сообщение назовёт тип поимённо (`core/row_law.h`, наряд
+// M-169). Новая структура в этом файле обязана появиться и в этом списке — за
+// полнотой списка следит `arch_guard_test` (файл стоит в его `kRowHeaders`).
+TIMAERT_ROW(sm::Chronicle);
+TIMAERT_ROW(sm::FactNaming);
