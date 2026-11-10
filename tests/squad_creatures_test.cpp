@@ -8,6 +8,7 @@
 // non-macro entity would be a second squad representation growing beside the
 // real one.
 #include "check.h"
+#include <memory>
 
 #include "ecs/components.h"
 #include "macro/npc_spawn.h"
@@ -41,7 +42,8 @@ sm::TerrainData absent_terrain() {
 }
 
 void test_every_macro_npc_is_a_squad_of_one() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.mapW = 16;
     gs.mapH = 16;
 

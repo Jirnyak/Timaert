@@ -16,6 +16,7 @@
 //      MACRO_SHOT_RESW / MACRO_SHOT_RESH (pixels, default 1600x1000).
 
 #include "gpu/vk_device.h"
+#include <memory>
 #include "tables/biomes.h"
 #include "macro/features.h"
 #include "macro/map_generator.h"
@@ -480,7 +481,8 @@ int main(int argc, char** argv) {
     }
     sm::FeatureLayer features;
     features.resize(td.width, td.height);
-    sm::TreeLayer treeLayer;
+    std::unique_ptr<sm::TreeLayer> treeLayerOwn{new sm::TreeLayer()};
+    sm::TreeLayer& treeLayer = *treeLayerOwn;
     {
         // Mountains are the elevation-classified Mountain biome now: the shader
         // derives them straight from the height master, NOT from the feature
@@ -607,7 +609,7 @@ int main(int argc, char** argv) {
         road(rX - 44, rY - 6, rX + 44, rY + 10, sm::FT_Road);       // cobbled, crossing a river
         road(rX - 10, rY - 40, rX + 14, rY + 40, sm::FT_DirtRoad);  // dirt, along the valley
         std::fprintf(stderr, "[macro_shot] synth %ld forest cells + 4 roads\n", trees);
-        treeLayer = sm::build_tree_layer(td, forestMask.data(), forestMask.size());
+        sm::build_tree_layer(treeLayer, td, forestMask.data(), forestMask.size());
     }
 
     sm::MacroRendererVk mr;

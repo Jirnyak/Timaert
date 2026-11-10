@@ -64,7 +64,8 @@ bool is_river(int x, int y) {
 }
 
 struct Fixture {
-    sm::GameState gs;
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     sm::PathCostData pc;
     sm::NavWorld nav;
     sm::MacroWorld mw{};

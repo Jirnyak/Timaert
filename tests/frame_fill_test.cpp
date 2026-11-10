@@ -11,6 +11,7 @@
 // и паритет строк это наследует. Свидетель рожает себе предусловия САМ
 // (§8 п.11): сквады ставятся на клетки руками, факты подшиваются дверью.
 #include "check.h"
+#include <memory>
 
 #include "bus/local_frame.h"
 #include "core/torus.h"
@@ -55,7 +56,8 @@ sm::MacroHandle birth_at(sm::MacroStore& st, int x, int y, int side) {
 } // namespace
 
 int main() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.mapW = 128;
     gs.mapH = 128;
     gs.worldSeed = 777u;

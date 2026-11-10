@@ -9,6 +9,7 @@
 //   · CONSERVATION — wood gained by the store == wood lost by the layer,
 //     and the bag is empty after delivery: nothing minted, nothing dropped.
 #include "check.h"
+#include <memory>
 #include "macro/labour.h"   // settle_souls — двери душ
 #include "macro/upkeep_window.h"   // upkeep_bill — счёт по таблице
 
@@ -105,7 +106,8 @@ sm::MacroHandle make_woodcutter(sm::MacroStore& st, float x, float y,
 }
 
 void test_the_chop_is_real_and_the_haul_comes_home() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = kMap;
     gs.mapH = kMap;
     chronicle_init(gs.chronicle, kMap, kMap);
@@ -113,10 +115,9 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     // A little forest cell four cells east of the village — small enough to
     // be felled to BARE within the run, so the chronicle negative control
     // below is a real condition and not a vacuous one.
-    TreeLayer layer;
-    layer.width = kMap;
-    layer.height = kMap;
-    layer.data.assign(std::size_t(kMap) * kMap, 0);
+    std::unique_ptr<TreeLayer> layerOwn{new TreeLayer()};
+    TreeLayer& layer = *layerOwn;
+    tree_layer_reset(layer, kMap, kMap);
     layer.data[10 * kMap + 14] = 16;
     const std::vector<TreePoint> trees{{14, 10}};
     TreeGrid grid;
@@ -217,7 +218,8 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
 }
 
 void test_the_farmer_works_the_field() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = kMap;
     gs.mapH = kMap;
     // A field two cells east — where stamp_field_features would put one.
@@ -306,7 +308,8 @@ void test_farmer_without_terrain_conjures_nothing() {
     // The fail-closed half of the same law (mirrors no-layer-no-chop): an
     // unwired terrain means no ledger to settle against, so NOTHING is
     // gathered — food from thin air died with Field Inc F4.
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = kMap;
     gs.mapH = kMap;
     FeatureLayer features;
@@ -359,7 +362,8 @@ void test_farmer_without_terrain_conjures_nothing() {
 void test_no_layer_no_chop() {
     // Without a live tree layer the behaviour must not invent wood — the
     // old walk-to-forest-and-back pantomime, unchanged.
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = kMap;
     gs.mapH = kMap;
     const std::vector<TreePoint> trees{{14, 10}};
@@ -396,7 +400,8 @@ void test_no_layer_no_chop() {
 void test_the_mine_runs_while_the_player_is_away() {
     using namespace sm;
     constexpr int kMap = 32;
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = kMap;
     gs.mapH = kMap;
     // ЖИЛЫ ЕДИНЫЕ (2026-10-22): рабочее место шахтёра — ШАХТА (фича с
@@ -470,7 +475,8 @@ void test_the_mine_runs_while_the_player_is_away() {
 // своему единственному читателю (`src/content/quests/procedural.cpp`).
 
 void test_the_vendor_sells_at_the_nearest_city() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = kMap;
     gs.mapH = kMap;
     chronicle_init(gs.chronicle, kMap, kMap);
@@ -640,7 +646,8 @@ void test_the_vendor_sells_at_the_nearest_city() {
 // a dry world gives the miner nothing further; no deposit layer wired = no
 // ore conjured (the shared fail-closed rule).
 void test_the_miner_works_the_vein() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = kMap;
     gs.mapH = kMap;
     chronicle_init(gs.chronicle, kMap, kMap);
@@ -727,7 +734,8 @@ void test_the_miner_works_the_vein() {
           "the fact says WHAT ran dry: the resource registry row, +1");
 
     // No deposit layer wired = no ore conjured (the shared fail-closed rule).
-    GameState gs2{};
+    std::unique_ptr<GameState> gs2Own = make_game_state();
+    GameState& gs2 = *gs2Own;
     gs2.mapW = kMap;
     gs2.mapH = kMap;
     auto w2Store_ = sm::make_macro_store();
@@ -787,7 +795,8 @@ void test_the_miner_works_the_vein() {
 // Проверка «у дома ноль голов» и есть негативный контроль сноса: вернись
 // двухтактный обоз — она краснеет первой.
 void test_the_catch_lands_as_creatures() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = kMap;
     gs.mapH = kMap;
     FeatureLayer features;

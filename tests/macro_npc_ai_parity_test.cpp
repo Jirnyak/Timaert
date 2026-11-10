@@ -8,6 +8,7 @@
 // were split: one promise per check, so a red line names the promise it broke
 // instead of the seven it was bundled with.
 #include "check.h"
+#include <memory>
 #include "macro/labour.h"   // souls_flock — паства места
 
 #include "macro/npc_ai.h"
@@ -117,7 +118,8 @@ bool in_state(const sm::ecs::MacroNpcRuntime& rt, sm::NPCState s) {
 }
 
 void test_home_wanderer_returns_when_far() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.mapW = 128;
     gs.mapH = 128;
 
@@ -138,7 +140,8 @@ void test_home_wanderer_returns_when_far() {
 }
 
 void test_woodcutter_targets_nearest_tree() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.mapW = 128;
     gs.mapH = 128;
     // STORE — ДО ПЕРВОГО МЕСТА (M-90 шаг 5): плечо места живёт его колонками.
@@ -170,7 +173,8 @@ void test_woodcutter_targets_nearest_tree() {
 }
 
 void test_trader_targets_other_settlement() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.mapW = 128;
     gs.mapH = 128;
 
@@ -194,7 +198,8 @@ void test_trader_targets_other_settlement() {
 }
 
 void test_nomad_excludes_current_target() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.mapW = 128;
     gs.mapH = 128;
 
@@ -230,7 +235,8 @@ void test_nomad_excludes_current_target() {
 }
 
 void test_aggressive_chases_visible_player() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.mapW = 128;
     gs.mapH = 128;
 
@@ -346,7 +352,8 @@ void test_aggressive_chases_visible_player() {
 // band used to follow the player forever while the forced-encounter door,
 // reading the real rule, kept vetoing the meeting).
 void test_aggressive_spares_a_friend() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.mapW = 128;
     gs.mapH = 128;
 
@@ -398,7 +405,8 @@ void test_aggressive_spares_a_friend() {
 // счётчика того же субъекта; его смерть и проверяется тем, что заряженный
 // дверью долг тает центральным сливом, а не чьей-то веткой.
 void test_recovery_gate_melts_by_think_quantum() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.mapW = 128;
     gs.mapH = 128;
 
@@ -426,7 +434,8 @@ void test_recovery_gate_melts_by_think_quantum() {
 }
 
 void test_wanderer_enters_wandering_state() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.mapW = 128;
     gs.mapH = 128;
 
@@ -484,7 +493,8 @@ void test_the_camp_is_a_pause_not_amnesia() {
 }
 
 void test_resting_recovery_prevents_permanent_stall() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.mapW = 128;
     gs.mapH = 128;
 
@@ -576,7 +586,8 @@ void test_macro_visual_smoothing_and_snap() {
 // player's 90 minutes. Nothing here restates the rate — both sides are asked
 // for their own answer and the answers must be the same number.
 void test_a_resting_lord_mends_at_the_players_rate() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.mapW = 128;
     gs.mapH = 128;
 
@@ -639,7 +650,8 @@ void test_a_resting_lord_mends_at_the_players_rate() {
 // gate are `stopped && !moved`. A marching body that mends would heal the
 // world's every wound for free, and no other check in this file would notice.
 void test_a_marching_body_does_not_mend() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.mapW = 128;
     gs.mapH = 128;
 

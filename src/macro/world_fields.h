@@ -24,6 +24,7 @@
 #include "macro/save_stream.h"
 
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace sm {
@@ -79,7 +80,9 @@ inline constexpr std::uint64_t kWorldFieldsMaxBytes = 28'311'572ull;
 // them into place), so the rows name the stores directly.
 struct WorldFieldStores {
     const GameState* gs = nullptr;
-    const std::vector<std::uint16_t>* treeCounts = nullptr;
+    // Живые клетки леса (`TreeLayer::cells()`): вид на плоский массив слоя,
+    // а не свой контейнер. Пустой вид = «леса нет» и пишет счёт 0.
+    std::span<const std::uint16_t> treeCounts{};
 };
 struct WorldFieldStoresMut {
     GameState* gs = nullptr;

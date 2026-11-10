@@ -10,6 +10,7 @@
 //     record_deed) makes the two halves one action, and the raw chronicle
 //     door pays nothing (the negative control).
 #include "check.h"
+#include <memory>
 
 #include "macro/journal.h"
 #include "macro/birth_squad.h"  // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
@@ -67,7 +68,8 @@ void stand_at(sm::GameState& gs, sm::MacroStore& st, int x, int y) {
 }
 
 void test_participation_locality_and_silence() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = 64;
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
@@ -130,7 +132,8 @@ void test_participation_locality_and_silence() {
 }
 
 void test_the_journal_never_forgets_and_the_cap_is_loud() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = 64;
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
@@ -174,7 +177,8 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
 // ordinal — and participation is learned wherever it happened, exactly as with
 // his own squad.
 void test_a_possessed_lords_deeds_are_his_participation() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = 64;
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
@@ -215,7 +219,8 @@ void test_a_possessed_lords_deeds_are_his_participation() {
 // carry a dead link into the save (write_fact refuses to store the derived
 // link for the same reason).
 void test_a_captured_copy_carries_no_ring_link() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = 64;
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
@@ -242,7 +247,8 @@ void test_a_captured_copy_carries_no_ring_link() {
 // the negative control that proves paying is the DOOR's work, not the
 // chronicle's.
 void test_the_deed_door_files_and_pays_as_one_action() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = 64;
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);

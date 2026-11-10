@@ -14,6 +14,7 @@
 //        defaults:    12345      256    balance_out
 // Exit 1 = a world LAW broke (printed as [law] ... FAIL); 0 otherwise.
 #include <algorithm>
+#include <memory>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -191,11 +192,14 @@ int main(int argc, char** argv) {
         const auto t0 = std::chrono::steady_clock::now();
 
         // ── Raise THE world (same baker as the game boot) ────────────────
-        sm::GameState gs;
+        std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+        sm::GameState& gs = *gsOwn;
         sm::TerrainData terrain{};
         std::vector<sm::TreePoint> trees;
-        sm::TreeLayer treeLayer;
-        sm::DepositLayer deposits;
+        std::unique_ptr<sm::TreeLayer> treeLayerOwn{new sm::TreeLayer()};
+        sm::TreeLayer& treeLayer = *treeLayerOwn;
+        std::unique_ptr<sm::DepositLayer> depositsOwn{new sm::DepositLayer()};
+        sm::DepositLayer& deposits = *depositsOwn;
         sm::FeatureLayer features;
         sm::ZoneLayer zones;
         sm::TreeGrid treeGrid;

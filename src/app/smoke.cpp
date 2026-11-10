@@ -4440,7 +4440,7 @@ bool run_prologue_road_smoke(App& app) {
     // cell, precisely because the wrong cell is the one nobody would look at.
     auto forest_sum = [&]() {
         std::uint64_t s = 0;
-        for (const std::uint16_t v : app.treeLayer.data) s += v;
+        for (const std::uint16_t v : app.treeLayer.cells()) s += v;
         return s;
     };
     const std::uint64_t forestBefore = forest_sum();
@@ -7681,7 +7681,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             if (!sm::save_game(app.gs, app.macroStore->nextSpawnId,
                                stage_save_state(app),
-                               app.treeLayer.data,
+                               app.treeLayer.cells(),
                                app.savePath)) {
                 smoke_fail(app, "save_game returned false");
                 break;

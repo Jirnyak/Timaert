@@ -5,6 +5,7 @@
 // spends less, a ridge must block because climbing pays per rise, and the
 // same eye must see DOWN the same slope for free.
 #include "check.h"
+#include <memory>
 
 #include "macro/knowledge.h"
 
@@ -40,14 +41,15 @@ sm::TerrainData all_land() {
 
 int count_state(const sm::KnowledgeLayer& k, std::uint8_t s) {
     int n = 0;
-    for (std::uint8_t v : k.data) n += (v == s) ? 1 : 0;
+    for (std::uint8_t v : k.cells()) n += (v == s) ? 1 : 0;
     return n;
 }
 
 std::uint8_t at(const sm::KnowledgeLayer& k, int x, int y) { return k.at(x, y); }
 
 void test_open_sight_opens_a_disc_and_only_once() {
-    sm::KnowledgeLayer k;
+    std::unique_ptr<sm::KnowledgeLayer> kOwn{new sm::KnowledgeLayer()};
+    sm::KnowledgeLayer& k = *kOwn;
     sm::knowledge_reset(k, W, H);
     sm::SightRuntime rt;
     const sm::FeatureLayer feat = open_ground();
@@ -83,7 +85,8 @@ void test_open_sight_opens_a_disc_and_only_once() {
 void test_canopy_shortens_reach() {
     const sm::FeatureLayer feat = open_ground();
 
-    sm::KnowledgeLayer openK;
+    std::unique_ptr<sm::KnowledgeLayer> openKOwn{new sm::KnowledgeLayer()};
+    sm::KnowledgeLayer& openK = *openKOwn;
     sm::knowledge_reset(openK, W, H);
     sm::SightRuntime openRt;
     sm::OpticalWorld openWorld{&feat, nullptr, nullptr};
@@ -92,7 +95,8 @@ void test_canopy_shortens_reach() {
     // Full canopy everywhere: every step now costs the open baseline PLUS
     // kCanopyOpticalCost — reach must shrink, by construction of the law.
     const std::vector<float> canopy(std::size_t(W) * H, 1.0f);
-    sm::KnowledgeLayer forestK;
+    std::unique_ptr<sm::KnowledgeLayer> forestKOwn{new sm::KnowledgeLayer()};
+    sm::KnowledgeLayer& forestK = *forestKOwn;
     sm::knowledge_reset(forestK, W, H);
     sm::SightRuntime forestRt;
     sm::OpticalWorld forestWorld{&feat, nullptr, &canopy};
@@ -125,7 +129,8 @@ void test_road_carries_sight_farther() {
           "fixture: the cost table must separate road from open at this range");
 
     sm::FeatureLayer openFeat = open_ground();
-    sm::KnowledgeLayer openK;
+    std::unique_ptr<sm::KnowledgeLayer> openKOwn{new sm::KnowledgeLayer()};
+    sm::KnowledgeLayer& openK = *openKOwn;
     sm::knowledge_reset(openK, W, H);
     sm::SightRuntime openRt;
     sm::OpticalWorld openWorld{&openFeat, nullptr, nullptr};
@@ -137,7 +142,8 @@ void test_road_carries_sight_farther() {
     const sm::TerrainData roadTd = all_land();
     for (int x = 20; x <= 20 + steps; ++x)
         sm::feature_put(roadFeat, roadTd, x, 20, sm::FT_Road);
-    sm::KnowledgeLayer roadK;
+    std::unique_ptr<sm::KnowledgeLayer> roadKOwn{new sm::KnowledgeLayer()};
+    sm::KnowledgeLayer& roadK = *roadKOwn;
     sm::knowledge_reset(roadK, W, H);
     sm::SightRuntime roadRt;
     sm::OpticalWorld roadWorld{&roadFeat, nullptr, nullptr};
@@ -160,7 +166,8 @@ void test_ridge_blocks_and_hilltop_overlooks() {
         ridge[std::size_t(y) * W + std::size_t(wallX)] = rise;
 
     // Negative control first, and asserted: on FLAT ground the probe is seen.
-    sm::KnowledgeLayer flatK;
+    std::unique_ptr<sm::KnowledgeLayer> flatKOwn{new sm::KnowledgeLayer()};
+    sm::KnowledgeLayer& flatK = *flatKOwn;
     sm::knowledge_reset(flatK, W, H);
     sm::SightRuntime flatRt;
     const std::vector<float> flat(std::size_t(W) * H, 0.0f);
@@ -172,7 +179,8 @@ void test_ridge_blocks_and_hilltop_overlooks() {
 
     // The ridge wall: the valley eye cannot climb it, so the far side —
     // and the crest itself — stay Unknown.
-    sm::KnowledgeLayer valleyK;
+    std::unique_ptr<sm::KnowledgeLayer> valleyKOwn{new sm::KnowledgeLayer()};
+    sm::KnowledgeLayer& valleyK = *valleyKOwn;
     sm::knowledge_reset(valleyK, W, H);
     sm::SightRuntime valleyRt;
     sm::OpticalWorld ridgeWorld{&feat, &ridge, nullptr};
@@ -185,7 +193,8 @@ void test_ridge_blocks_and_hilltop_overlooks() {
 
     // The same wall from ON TOP: descent is free, so the hilltop eye sees
     // the valley cell the valley eye could not answer with.
-    sm::KnowledgeLayer crestK;
+    std::unique_ptr<sm::KnowledgeLayer> crestKOwn{new sm::KnowledgeLayer()};
+    sm::KnowledgeLayer& crestK = *crestKOwn;
     sm::knowledge_reset(crestK, W, H);
     sm::SightRuntime crestRt;
     sm::update_player_sight(crestK, crestRt, ridgeWorld, float(wallX) + 0.5f,
@@ -195,7 +204,8 @@ void test_ridge_blocks_and_hilltop_overlooks() {
 }
 
 void test_move_decays_visible_to_explored() {
-    sm::KnowledgeLayer k;
+    std::unique_ptr<sm::KnowledgeLayer> kOwn{new sm::KnowledgeLayer()};
+    sm::KnowledgeLayer& k = *kOwn;
     sm::knowledge_reset(k, W, H);
     sm::SightRuntime rt;
     const sm::FeatureLayer feat = open_ground();
@@ -216,7 +226,8 @@ void test_move_decays_visible_to_explored() {
 }
 
 void test_reveal_area_marks_memory_never_sight() {
-    sm::KnowledgeLayer k;
+    std::unique_ptr<sm::KnowledgeLayer> kOwn{new sm::KnowledgeLayer()};
+    sm::KnowledgeLayer& k = *kOwn;
     sm::knowledge_reset(k, W, H);
     sm::SightRuntime rt;
     const sm::FeatureLayer feat = open_ground();
@@ -240,7 +251,8 @@ void test_reveal_area_marks_memory_never_sight() {
 }
 
 void test_torus_wrap_and_fail_closed_door() {
-    sm::KnowledgeLayer k;
+    std::unique_ptr<sm::KnowledgeLayer> kOwn{new sm::KnowledgeLayer()};
+    sm::KnowledgeLayer& k = *kOwn;
     sm::knowledge_reset(k, W, H);
     sm::SightRuntime rt;
     const sm::FeatureLayer feat = open_ground();
@@ -250,7 +262,8 @@ void test_torus_wrap_and_fail_closed_door() {
     CHECK(at(k, W - 1, H - 1) == sm::kKnowledgeVisible,
           "sight wraps the torus like every other layer");
 
-    const sm::KnowledgeLayer empty;
+    std::unique_ptr<sm::KnowledgeLayer> emptyOwn{new sm::KnowledgeLayer()};
+    const sm::KnowledgeLayer& empty = *emptyOwn;
     CHECK(empty.at(5, 5) == sm::kKnowledgeUnknown,
           "an absent grid answers Unknown - fail closed, nothing shows");
 }

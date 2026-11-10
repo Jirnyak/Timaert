@@ -2,18 +2,16 @@
 
 namespace sm {
 
-TreeLayer build_tree_layer(const TerrainData& terrain,
-                           const std::uint8_t* forestMask,
-                           std::size_t forestMaskCount) {
-    TreeLayer layer;
-    std::size_t n = 0;
-    if (!FeatureLayer::cell_count_for(terrain.width, terrain.height, n)
-        || terrain.rgba.size() < n * 4u) {
-        return layer; // fail closed: empty layer, at() returns 0
+void build_tree_layer(TreeLayer& layer, const TerrainData& terrain,
+                      const std::uint8_t* forestMask,
+                      std::size_t forestMaskCount) {
+    const std::size_t n =
+        world_cells_within_cap(terrain.width, terrain.height);
+    if (n == 0u || terrain.rgba.size() < n * 4u) {
+        tree_layer_reset(layer, 0, 0);
+        return; // fail closed: empty layer, at() returns 0
     }
-    layer.width = terrain.width;
-    layer.height = terrain.height;
-    layer.data.assign(n, 0);
+    tree_layer_reset(layer, terrain.width, terrain.height);
 
     const int W = terrain.width, H = terrain.height;
     const bool haveMask = forestMask != nullptr && forestMaskCount >= n;
@@ -37,7 +35,6 @@ TreeLayer build_tree_layer(const TerrainData& terrain,
             layer.data[i] = derived_tree_count(biome, float(forest) / 9.0f);
         }
     }
-    return layer;
 }
 
 void set_tree_count(TreeLayer& layer, int x, int y, int count) {
@@ -45,7 +42,7 @@ void set_tree_count(TreeLayer& layer, int x, int y, int count) {
     const int wx = FeatureLayer::wrap_coord(x, layer.width);
     const int wy = FeatureLayer::wrap_coord(y, layer.height);
     const std::size_t i = std::size_t(wy) * std::size_t(layer.width) + std::size_t(wx);
-    if (i >= layer.data.size()) return;
+    if (i >= layer.cell_count()) return;
     if (count < 0) count = 0;
     if (count > kMaxTreesPerCell) count = kMaxTreesPerCell;
     if (layer.data[i] == std::uint16_t(count)) return;
@@ -54,7 +51,7 @@ void set_tree_count(TreeLayer& layer, int x, int y, int count) {
 }
 
 bool restore_tree_counts(TreeLayer& layer,
-                         const std::vector<std::uint16_t>& counts) {
+                         std::span<const std::uint16_t> counts) {
     if (!layer.has_complete_storage()
         || counts.size() != layer.cell_count()) {
         return false;

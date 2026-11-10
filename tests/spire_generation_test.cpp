@@ -166,12 +166,13 @@ ZoneLayer banded_zones() {
     return z;
 }
 
-GameState world(std::uint32_t seed) {
-    GameState gs;
+std::unique_ptr<GameState> world(std::uint32_t seed) {
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.worldSeed = seed;
     gs.mapW = kW;
     gs.mapH = kH;
-    return gs;
+    return gsOwn;
 }
 
 // The registry ordinal of the highest-tier spell — derived from the SAME
@@ -203,7 +204,8 @@ sm::FeatureLayer fresh_features(int w, int h) {
 }
 
 void test_one_spire_per_spell_in_the_band() {
-    GameState gs = world(12345u);
+    std::unique_ptr<GameState> gsOwn = world(12345u);
+    GameState& gs = *gsOwn;
     const TerrainData terrain = banded_terrain();
     const ZoneLayer zones = banded_zones();
     store_reset(places());
@@ -278,7 +280,11 @@ void test_one_spire_per_spell_in_the_band() {
 void test_placement_is_a_fact_of_the_seed() {
     const TerrainData terrain = banded_terrain();
     const ZoneLayer zones = banded_zones();
-    GameState a = world(12345u), b = world(12345u), c = world(777u);
+    std::unique_ptr<GameState> aOwn = world(12345u), bOwn = world(12345u),
+                               cOwn = world(777u);
+    GameState& a = *aOwn;
+    GameState& b = *bOwn;
+    GameState& c = *cOwn;
     // Слой на прогон СВОЙ: сид есть факт мира, и мир у каждого прогона свой.
     sm::FeatureLayer flB = fresh_features(terrain.width, terrain.height);
     generate_spires(a, zones, terrain, flB);
@@ -304,7 +310,8 @@ void test_no_admissible_ground_places_nothing() {
     const TerrainData terrain = banded_terrain();
     // Negative control 1: a fully tame world (all zones 0) offers no site.
     {
-        GameState gs = world(12345u);
+        std::unique_ptr<GameState> gsOwn = world(12345u);
+        GameState& gs = *gsOwn;
         ZoneLayer tame;
         tame.width = kW;
         tame.height = kH;
@@ -316,7 +323,8 @@ void test_no_admissible_ground_places_nothing() {
     }
     // Negative control 2: an all-ocean world offers no site either.
     {
-        GameState gs = world(12345u);
+        std::unique_ptr<GameState> gsOwn = world(12345u);
+        GameState& gs = *gsOwn;
         TerrainData ocean;
         ocean.width = kW;
         ocean.height = kH;
@@ -345,7 +353,8 @@ void test_named_rooted_veto_their_cells() {
             pin.data[std::size_t(y) * kW + std::size_t(x)] = 255;
 
     {
-        GameState gs = world(12345u);
+        std::unique_ptr<GameState> gsOwn = world(12345u);
+        GameState& gs = *gsOwn;
         sm::FeatureLayer flG = fresh_features(terrain.width, terrain.height);
         generate_spires(gs, pin, terrain, flG);
         const std::vector<std::uint32_t> spires = feature_cells(flG, FT_Spire);
@@ -367,7 +376,8 @@ void test_named_rooted_veto_their_cells() {
         // стор и этого не замечал; новый спрашивает БАЙТ, и половинная
         // фикстура покраснела бы честно. Деревня здесь — носитель вето, а не
         // украшение, значит рождается она со всем, чем является.
-        GameState gs = world(12345u);
+        std::unique_ptr<GameState> gsOwn = world(12345u);
+        GameState& gs = *gsOwn;
         store_reset(places());
         sm::FeatureLayer flI = fresh_features(terrain.width, terrain.height);
         for (int y = 32; y < 48; ++y)
@@ -465,7 +475,8 @@ void test_no_live_slot_stands_on_a_spell_cell() {
         for (int x = 32; x < 48; ++x)
             pin.data[std::size_t(y) * kW + std::size_t(x)] = 255;
 
-    GameState gs = world(12345u);
+    std::unique_ptr<GameState> gsOwn = world(12345u);
+    GameState& gs = *gsOwn;
     store_reset(places());
     sm::FeatureLayer fl = fresh_features(terrain.width, terrain.height);
 
@@ -543,7 +554,8 @@ void test_no_live_slot_stands_on_a_spell_cell() {
 void test_genesis_places_ruins_and_spires_as_features() {
     const TerrainData terrain = banded_terrain();
     const ZoneLayer zones = banded_zones();
-    GameState gs = world(12345u);
+    std::unique_ptr<GameState> gsOwn = world(12345u);
+    GameState& gs = *gsOwn;
     store_reset(places());
     sm::FeatureLayer flH = fresh_features(terrain.width, terrain.height);
     generate_spires(gs, zones, terrain, flH);
@@ -576,7 +588,8 @@ void test_genesis_places_ruins_and_spires_as_features() {
           "шпили прохода руин не потеряли: байт шпиля руина не затирает");
 
     // Determinism: the same seed stamps the same cells.
-    GameState b = world(12345u);
+    std::unique_ptr<GameState> bOwn = world(12345u);
+    GameState& b = *bOwn;
     store_reset(places());
     sm::FeatureLayer flB2 = fresh_features(terrain.width, terrain.height);
     generate_spires(b, zones, terrain, flB2);
@@ -619,7 +632,8 @@ void test_genesis_places_ruins_and_spires_as_features() {
 // а то, что он читает ту же дверь, судит стена ниже — текстом дерева, без
 // прогона.
 void test_one_answer_to_the_drained_orb() {
-    GameState gs = world(12345u);
+    std::unique_ptr<GameState> gsOwn = world(12345u);
+    GameState& gs = *gsOwn;
     const TerrainData terrain = banded_terrain();
     const ZoneLayer zones = banded_zones();
     store_reset(places());

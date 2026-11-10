@@ -1,5 +1,6 @@
 #include "macro/world_fields.h"
 
+#include "core/caps.h"
 #include "core/table_guard.h"
 #include "macro/deposit_layer.h"
 #include "macro/features.h"
@@ -17,7 +18,10 @@ namespace {
 // block (one entry per mutated cell, which the same map bounds) — anything
 // beyond it is a corrupt count, fail closed. These moved here with the rows
 // they guard (save.cpp owned them until 2026-08-24).
-constexpr std::uint32_t kMaxFieldCells = 1u << 20;
+constexpr std::uint32_t kMaxFieldCells = std::uint32_t(kWorldCellCap);
+static_assert(kMaxFieldCells == (1u << 20),
+              "кап блока поля на проводе есть кап клеток мира; сдвиг капа "
+              "двигает потолок payload — пересчитать kWorldFieldsMaxBytes");
 
 // Каждый блок открывается СЧЁТОМ (savefmt::Writer::count — u32), поэтому он
 // входит в вес ряда наравне с его клетками. Вес ряда — слагаемое потолка
@@ -28,16 +32,15 @@ constexpr std::uint64_t kBlockCountBytes = sizeof(std::uint32_t);
 
 // ── Trees: the dense u16 carrier, whole (since v36) ─────────────────────
 void trees_write(savefmt::Writer& w, const WorldFieldStores& st) {
-    if (!st.treeCounts) { w.count(0, kMaxFieldCells); return; }
-    if (w.count(st.treeCounts->size(), kMaxFieldCells)) {
+    if (w.count(st.treeCounts.size(), kMaxFieldCells)) {
         // ONE insert of the whole contiguous u16 run — byte-for-byte the
         // stream the old per-element pod() loop produced (pod() is a plain
         // memcpy of the value), minus a million vector inserts per save.
         if (!w.ok) return;
         const auto* bytes =
-            reinterpret_cast<const std::uint8_t*>(st.treeCounts->data());
+            reinterpret_cast<const std::uint8_t*>(st.treeCounts.data());
         w.bytes.insert(w.bytes.end(), bytes,
-                       bytes + st.treeCounts->size() * sizeof(std::uint16_t));
+                       bytes + st.treeCounts.size() * sizeof(std::uint16_t));
     }
 }
 bool trees_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
@@ -60,7 +63,8 @@ constexpr std::uint64_t kTreesMaxBytes =
 // Unknown (fail closed). A non-zero count must cover the loaded map exactly.
 void knowledge_write(savefmt::Writer& w, const WorldFieldStores& st) {
     if (!st.gs) { w.count(0, kMaxFieldCells); return; }
-    const auto& data = st.gs->knowledge.data;
+    // Клетки МИРА, не кап: неродившийся слой отдаёт пустой вид и счёт 0.
+    const std::span<const std::uint8_t> data = st.gs->knowledge.cells();
     if (w.count(data.size(), kMaxFieldCells)) {
         for (const std::uint8_t v : data)
             w.pod(std::uint8_t(v >= kKnowledgeExplored ? kKnowledgeExplored
@@ -73,22 +77,18 @@ bool knowledge_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
     if (n == 0) return true;
     if (!st.gs) { r.ok = false; return false; }
     GameState& s = *st.gs;
-    std::size_t expected = 0;
-    if (!FeatureLayer::cell_count_for(s.mapW, s.mapH, expected)
-        || std::size_t(n) != expected) {
+    const std::size_t expected = world_cells_within_cap(s.mapW, s.mapH);
+    if (expected == 0u || std::size_t(n) != expected) {
         r.ok = false;
         return false;
     }
-    s.knowledge.width = s.mapW;
-    s.knowledge.height = s.mapH;
-    s.knowledge.data.assign(expected, kKnowledgeUnknown);
+    knowledge_reset(s.knowledge, s.mapW, s.mapH);
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
         std::uint8_t v = 0;
         r.pod(v);
         s.knowledge.data[i] = v >= kKnowledgeExplored ? kKnowledgeExplored
                                                       : kKnowledgeUnknown;
     }
-    ++s.knowledge.revision;
     return r.ok;
 }
 constexpr std::uint64_t kKnowledgeMaxBytes =
@@ -124,7 +124,7 @@ void scars_write(savefmt::Writer& w, const WorldFieldStores& st) {
 bool size_for_world(const GameState& gs, ResourceGrid& g) {
     if (g.live()) return true;
     if (gs.mapW <= 0 || gs.mapH <= 0) return false;
-    field_set_allocate(g, gs.mapW, gs.mapH, 0);
+    field_set_allocate(g, gs.mapW, gs.mapH);
     return g.live();
 }
 

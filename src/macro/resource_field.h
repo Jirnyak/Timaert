@@ -37,9 +37,11 @@
 
 #include "tables/seasons.h"
 #include "tables/resource_field_id.h"   // словарь РЯДОВ — имена, чьи строки ниже
+#include "core/caps.h"    // kWorldCellCap — кап клеток мира, один на слои
 #include "core/torus.h"   // cell_of — адрес клетки мира, одна дверь
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 namespace sm {
@@ -250,7 +252,7 @@ int field_yield_ordinal(const MacroWorld& w, ResourceFieldId f, int x, int y);
 // вызов field_set виден грепом и не переживает ревью.
 struct ResourceGrid;
 void field_set(ResourceGrid& g, std::uint32_t idx, int value);
-void field_set_allocate(ResourceGrid& g, int w, int h, int reach);
+void field_set_allocate(ResourceGrid& g, int w, int h);
 // (Тела — inline под структурой ниже: дверь живёт у самого поля, и всякий,
 // кто видит грид, видит и его единственную законную абсолютную установку.)
 
@@ -324,36 +326,43 @@ inline constexpr int kMaxFieldUnitsPerCell = 65535;
 static_assert(kMaxWheatStandsPerCell <= kMaxFieldUnitsPerCell,
               "шкала пашни переросла клетку поля");
 
+// ── ПЛОСКИЙ МАССИВ ПОД КАПОМ КЛЕТОК МИРА (M-180, 2026-11-10) ─────────────
+// Heap-члена у поля нет: клетки лежат в теле структуры, длиной в кап
+// (`kWorldCellCap@src/core/caps.h`), и байты поля снимаются одним куском.
+// Здесь стояли ДВА вектора. `cells` — и «родилось ли поле» отвечала его
+// длина, второй носитель размера мира рядом с `width/height`; теперь носитель
+// один — стороны. `reach` (счёт живых клеток ряда в радиусе) — производное,
+// которое было непустым у ОДНОГО экземпляра из всех (дикая жила) и вечно
+// пустым заголовком у остальных; оно уехало к своему единственному хозяину,
+// `DepositLayer@src/macro/deposit_layer.h`, вместе со штампом диска и
+// радиусом. У поля осталось то, что есть у КАЖДОГО поля: клетки и их счёт.
+//
+// Поле весит 2 МиБ и на стеке не живёт; мир меньше капа занимает первые
+// side² клеток, хвост стоит нулём (его чистит `allocate`).
 struct ResourceGrid {
     int width = 0, height = 0;
-    std::vector<FieldCell> cells;
-    // How far this row reaches, copied from its registry column at build. The
-    // grid keeps its OWN derived field in step (see write below), so no door
-    // can forget to — which is the whole reason the radius lives here and not
-    // at the call site that stamps.
-    int reachCells = 0;
     // Live cells, maintained by write(). Never counted: a row is asked "how
     // many veins are left" often enough that an O(cells) answer would be a
     // second §52 waiting to happen.
     std::int32_t liveCells = 0;
-    // DERIVED, never saved: how many live cells of this row lie within
-    // `reachCells` of each cell. Counts rather than flags because the discs
-    // overlap — a cell reached by three veins must survive two running dry.
-    // Empty for a row that declares no reach.
-    std::vector<std::uint16_t> reach;
     // Bumped on every write, for consumers that mirror the field (the map
     // renderer's tree texture). Never serialized.
     std::uint32_t revision = 0;
+    FieldCell cells[kWorldCellCap] = {};
 
+    // Клеток у ЭТОГО мира (0 — поле не родилось или мир вне капа).
+    std::size_t cell_count() const {
+        return world_cells_within_cap(width, height);
+    }
     // ЖИВОСТЬ ВКЛЮЧАЕТ ИНВАРИАНТ МИРА (ЗАКОН АДРЕСА, AGENTS.md): сторона —
     // степень двойки, мир КВАДРАТЕН. Проверка стоит ЗДЕСЬ, а не комментарием
     // у `index`, потому что адрес считается маской: поле, родившееся не по
     // инварианту, отвечало бы не «медленно», а НЕВЕРНО и молча. Fail-closed —
-    // ровно так же, как уже поступает неаллоцированное поле.
+    // ровно так же, как уже поступает неродившееся поле (стороны 0).
     bool live() const {
         return width > 0 && width == height
             && std::has_single_bit(std::uint32_t(width))
-            && cells.size() == std::size_t(width) * std::size_t(height);
+            && cell_count() != 0u;
     }
     // Адрес клетки — ЕДИНСТВЕННАЯ дверь мира (`core/torus.h cell_of`).
     // Здесь стоял собственный спеллинг через `wrapi`, то есть аппаратное
@@ -363,13 +372,6 @@ struct ResourceGrid {
     }
     int at(int x, int y) const {
         return live() ? int(cells[index(x, y)]) : 0;
-    }
-    // "Is a live cell of this row within the row's reach of here?" — the
-    // O(1) answer the scan used to compute. Fail-closed on a row with no
-    // reach field: "nothing near" grants nothing.
-    bool near(int x, int y) const {
-        if (!live() || reach.size() != cells.size()) return false;
-        return reach[index(x, y)] != 0u;
     }
 
 private:
@@ -382,22 +384,24 @@ private:
     // с consolidate_deposit_cluster — перепись 2026-10-23.)
     friend int  field_move(MacroWorld&, ResourceFieldId, int, int, int);
     friend void field_set(ResourceGrid&, std::uint32_t, int);
-    friend void field_set_allocate(ResourceGrid&, int, int, int);
+    friend void field_set_allocate(ResourceGrid&, int, int);
     friend void allocate_world_fields(GameState&, int, int);
     friend void feature_number_write(GameState&, int, int, int);
     friend void feature_number_add(GameState&, int, int, int);
     friend void fauna_field_write(GameState&, int, int, int);
     friend void light_emission_write(GameState&, int, int, int);
+    // Жила: ОДНА дверь записи на весь слой (`deposit_set`), потому что
+    // запись клетки жилы обязана двигать и диск досягаемости — а он живёт у
+    // слоя, не у поля. Рождение и генезис идут через неё же.
     friend void allocate_deposit_fields(struct DepositLayer&, int, int);
-    friend DepositLayer build_deposit_layer(const TerrainData&, std::uint32_t);
-    friend void create_deposit(struct DepositLayer&, int, int, std::int32_t);
+    friend void deposit_set(struct DepositLayer&, int, int, std::int32_t);
 
-    // THE ONE WRITE. Everything a cell's value implies — the live count, the
-    // reach discs, the revision — moves with it, here, because a derived field
-    // kept in step by its CALLERS is a field that drifts the first time
-    // somebody adds a fifth caller. (It had four, and a hand-run negative
-    // control found that removing the stamp from any one of them left the
-    // world silently wrong: ore gone, trade still granted.)
+    // THE ONE WRITE. Everything a cell's value implies — the live count and
+    // the revision — moves with it, here, because a derived number kept in
+    // step by its CALLERS is one that drifts the first time somebody adds a
+    // fifth caller. (Диск досягаемости жилы держится тем же законом, но у
+    // своего хозяина: `deposit_set@src/macro/deposit_layer.cpp` — единственный
+    // писатель клеток жилы, и штамп стоит в нём.)
     // Значение ЗАЖИМАЕТСЯ в ширину ряда прямо здесь, у единственной двери:
     // иначе перелив был бы невидимым — клетка молча заворачивалась бы в малое
     // число, и мир беднел бы без единого следа. Сторож ширины (ниже по файлу)
@@ -412,8 +416,8 @@ private:
         const FieldCell was = cells[i];
         if (was == v) return;
         cells[i] = v;
-        if (was == 0 && v != 0) { ++liveCells; stamp(x, y, +1); }
-        else if (was != 0 && v == 0) { --liveCells; stamp(x, y, -1); }
+        if (was == 0 && v != 0) ++liveCells;
+        else if (was != 0 && v == 0) --liveCells;
         ++revision;
     }
 
@@ -425,7 +429,8 @@ public:
     template <class F>
     void for_each_live(F&& f) const {
         if (!live()) return;
-        for (std::size_t i = 0; i < cells.size(); ++i) {
+        const std::size_t n = cell_count();
+        for (std::size_t i = 0; i < n; ++i) {
             if (cells[i] != 0) f(std::uint32_t(i), cells[i]);
         }
     }
@@ -435,7 +440,8 @@ public:
     static constexpr std::uint32_t kNoCell = ~0u;
     std::uint32_t first_live() const {
         if (!live()) return kNoCell;
-        for (std::size_t i = 0; i < cells.size(); ++i) {
+        const std::size_t n = cell_count();
+        for (std::size_t i = 0; i < n; ++i) {
             if (cells[i] != 0) return std::uint32_t(i);
         }
         return kNoCell;
@@ -448,85 +454,47 @@ public:
     int x_of(std::uint32_t i) const { return cell_x(i, width); }
     int y_of(std::uint32_t i) const { return cell_y(i, width); }
     int at_index(std::uint32_t i) const {
-        return i < cells.size() ? int(cells[i]) : 0;
+        return i < cell_count() ? int(cells[i]) : 0;
     }
 
     // Two fields are the same field when they cover the same world and hold
-    // the same values. `reach` is derived from `cells`, so it cannot disagree
-    // while they agree — comparing it would test the stamp, not the state.
+    // the same values. Сравниваются клетки МИРА, не кап: хвост за миром не
+    // клетки (и по закону рождения он нулевой у обоих).
     bool operator==(const ResourceGrid& o) const {
-        return width == o.width && height == o.height && cells == o.cells;
+        return width == o.width && height == o.height
+            && std::memcmp(cells, o.cells,
+                           cell_count() * sizeof(FieldCell)) == 0;
     }
 
 private:
-    // Size the field to a world, zeroed, with its reach field iff it reaches.
+    // Родить поле над миром: стороны названы, ВЕСЬ кап обнулён (хвост за
+    // миром обязан стоять нулём — иначе байты поля помнили бы прошлый мир).
+    // Мир вне капа рождает поле без сторон — fail-closed, `live()` ложно.
     // За стеной вместе с write: поле рождается у носителей мира, не у
     // звонящего (ленивое взятие — признак нарушения, ЗАКОН СТАБИЛЬНОСТИ).
-    void allocate(int w, int h, int reachRadiusCells) {
-        width = w;
-        height = h;
-        reachCells = reachRadiusCells;
+    void allocate(int w, int h) {
+        const bool fits = world_cells_within_cap(w, h) != 0u;
+        width = fits ? w : 0;
+        height = fits ? h : 0;
         liveCells = 0;
         revision = 0;
-        cells.assign(std::size_t(w) * std::size_t(h), 0);
-        if (reachRadiusCells > 0) {
-            reach.assign(cells.size(), std::uint16_t(0));
-        } else {
-            reach.clear();
-        }
+        std::memset(cells, 0, sizeof(cells));
     }
 
-private:
-    // One cell's contribution to the reach field: the disc of cells from which
-    // this row could be worked here.
-    //
-    // THE DISC IS THE QUESTION'S OWN SHAPE. The gate this replaces measured
-    // `torus_dist_sq <= r²` — a circle — so the stamp walks a circle, its rows'
-    // half-widths taken from the same inequality. A square would have been
-    // separable and faster and would grant the corner cells something they
-    // cannot reach: a stamp is an implementation of a question, never a
-    // licence to answer a different one.
-    void stamp(int x, int y, int delta) {
-        if (reachCells <= 0 || reach.size() != cells.size()) return;
-        // Клетки диска — шаги ИНДЕКСА через cell_step (ЗАКОН АДРЕСА): центр
-        // адресуется один раз, сосед есть арифметика, а не вторая свёртка.
-        const std::uint32_t at = index(x, y);
-        const int R = reachCells;
-        for (int dy = -R; dy <= R; ++dy) {
-            const int span = int(std::sqrt(double(R * R - dy * dy)));
-            for (int dx = -span; dx <= span; ++dx) {
-                std::uint16_t& c = reach[cell_step(at, dx, dy, width)];
-                // A count can only be walked down by a cell that walked it up,
-                // so the floor is a statement about write() rather than a
-                // clamp. Guarded anyway: an underflow grants forever.
-                if (delta > 0) ++c;
-                else if (c > 0u) --c;
-            }
-        }
-    }
 };
+static_assert(sizeof(ResourceGrid)
+                  == 16u + sizeof(FieldCell) * kWorldCellCap,
+              "поле ряда: 16 Б шапки + клетка на клетку капа, без хвоста");
 
 inline void field_set(ResourceGrid& g, std::uint32_t idx, int value) {
     g.write(g.x_of(idx), g.y_of(idx), value);
 }
-inline void field_set_allocate(ResourceGrid& g, int w, int h, int reach) {
-    g.allocate(w, h, reach);
+inline void field_set_allocate(ResourceGrid& g, int w, int h) {
+    g.allocate(w, h);
 }
 
-// All seven fields, one place. Adding a resource — gold, coal, anything — is a
-// row of the registry, and its field appears with it; there is no new code and
-// no new container to remember.
-struct ResourceFields {
-    ResourceGrid rows[std::size_t(ResourceFieldId::Count)];
-
-    ResourceGrid& operator[](ResourceFieldId f) {
-        return rows[std::size_t(f) < std::size_t(ResourceFieldId::Count)
-                        ? std::size_t(f) : 0];
-    }
-    const ResourceGrid& operator[](ResourceFieldId f) const {
-        return rows[std::size_t(f) < std::size_t(ResourceFieldId::Count)
-                        ? std::size_t(f) : 0];
-    }
-};
+// (Структура `ResourceFields` — «все поля рядов одним массивом» — снесена
+// 2026-11-10, M-180: экземпляров у неё не было ни одного, стоял только сторож
+// её размера. Поля рядов живут поимённо в `GameState`.)
 
 } // namespace sm

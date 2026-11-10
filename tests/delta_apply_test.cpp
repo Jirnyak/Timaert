@@ -48,6 +48,7 @@
 //    ПРИОРИТЕТА СТРУКТУРЫ) → ЗЕЛЁНЫЙ 14/14 без правки прибора: ожидание
 //    читает КОЛОНКУ строки, значит закон судит форму, а не калибровку.
 #include "check.h"
+#include <memory>
 
 #include "bus/delta.h"
 #include "core/torus.h"
@@ -74,7 +75,8 @@ void push_feature_number(sm::DeltaBuffer& d, int x, int y, int amount, int side)
 } // namespace
 
 int main() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.mapW = 128;
     gs.mapH = 128;
     auto storeOwn = sm::make_macro_store();

@@ -33,7 +33,8 @@ constexpr int kMap = 64;
 // GameState и переживает его ровно столько же.
 struct World {
     std::unique_ptr<MacroStore> store;
-    GameState gs;
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     // ОРДИНАЛ ВЫДАЁТ ЭМИТЕНТ, А НЕ ФИКСТУРА (ломтик F): рукописный `id`
     // умер со строкой места, поэтому мир запоминает, кем родились его двое.
     int cityId = 0;
@@ -41,7 +42,8 @@ struct World {
 };
 
 World make_world() {
-    World w{make_macro_store(), GameState{}};
+    World w;
+    w.store = make_macro_store();
     GameState& gs = w.gs;
     MacroStore& st = *w.store;
     gs.mapW = kMap;

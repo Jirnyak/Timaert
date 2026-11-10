@@ -1330,7 +1330,7 @@ void destroy_world(App& app) {
     if (!app.worldLoaded) return;
     sm::destroy_terrain(app.terrain);
     app.terrain = {};
-    app.gs = sm::GameState{};
+    sm::game_state_reset(app.gs);
     // Арена сцены умирает вместе с миром (ломоть D; реестр умер ломтём E —
     // смерть мира и есть SubObjects::clear()).
     if (app.sceneObjects) app.sceneObjects->clear();
@@ -1380,7 +1380,7 @@ bool save_game_checked(App& app, bool autosave = false) {
     const std::string& path = autosave ? app.autosavePath : app.savePath;
     const bool ok = sm::save_game(app.gs, app.macroStore->nextSpawnId,
                                   stage_save_state(app),
-                                  app.treeLayer.data, path);
+                                  app.treeLayer.cells(), path);
     refresh_save_summary(app);
     if (!ok)
         std::fprintf(stderr, "save_game FAILED: %s\n", path.c_str());
@@ -1809,7 +1809,10 @@ void boot_world(App& app, std::uint32_t seed,
 }
 
 bool boot_world_from_save(App& app, const std::string& path) {
-    sm::GameState fresh;
+    // В куче: состояние несёт слои мира плоскими массивами под капом клеток
+    // (M-180) и на стеке не живёт.
+    const std::unique_ptr<sm::GameState> freshOwn = sm::make_game_state();
+    sm::GameState& fresh = *freshOwn;
     std::uint32_t loadedNextSpawnId = 1;
     std::vector<sm::MacroNpcRecord> loadedMacro;
     std::vector<std::uint16_t> loadedTrees;
@@ -4095,14 +4098,15 @@ void register_console_commands(App& app) {
                 // No un-reveal path exists, because the system needs none:
                 // vision is a projection, memory is what it leaves behind.
                 app.sightRt.visibleCells.clear();
-                app.sightRt.visibleCells.reserve(k.data.size());
-                for (std::size_t i = 0; i < k.data.size(); ++i) {
+                const std::size_t cellCount = k.cell_count();
+                app.sightRt.visibleCells.reserve(cellCount);
+                for (std::size_t i = 0; i < cellCount; ++i) {
                     k.data[i] = sm::kKnowledgeVisible;
                     app.sightRt.visibleCells.push_back(std::uint32_t(i));
                 }
                 ++k.revision;
                 c.printfln(Lvl::Ok, "full vision ON (%zu cells)",
-                           k.data.size());
+                           cellCount);
             } else {
                 // Wake the ordinary law: an invalid sight anchor forces the
                 // next tick's sweep — the pinned set decays to Explored, the
@@ -6536,7 +6540,11 @@ int main(int /*argc*/, char* /*argv*/[]) {
 #if defined(_WIN32)
     SetUnhandledExceptionFilter(crash_filter);
 #endif
-    App app;
+    // `App` — В КУЧЕ (M-180): он держит `GameState`, лес и жилы значением, а
+    // те несут слои мира плоскими массивами под капом клеток — десятки
+    // мегабайт, которым на стеке `main` не место.
+    const std::unique_ptr<App> appOwn(new App());
+    App& app = *appOwn;
     // Гладкая память макромира рождается ВМЕСТЕ с приложением (DOD п.4:
     // аллокация на сборке, не в тике) — 1460 МиБ по капу, преаллокация
     // оплачена вердиктом владельца 2026-09-25 (M-106).

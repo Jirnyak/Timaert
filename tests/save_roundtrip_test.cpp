@@ -360,8 +360,9 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
 // MacroStore, и в сейв оно едет ЗАПИСЬЮ ТЕЛА, а не строкой места. Фикстура
 // поэтому принимает store: без него у места нет ни склада, ни благополучия,
 // ни интересов, то есть нечего и сохранять.
-sm::GameState make_state(sm::MacroStore& st) {
-    sm::GameState gs{};
+std::unique_ptr<sm::GameState> make_state(sm::MacroStore& st) {
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.version = sm::kSaveVersion;
     gs.worldSeed = 0x12345678u;
     // ЗАКОН АДРЕСА (владелец, 2026-09-23): мир ВСЕГДА степень двойки и
@@ -557,7 +558,7 @@ sm::GameState make_state(sm::MacroStore& st) {
     // there is no "key with value 0" to round-trip any more.
     // v157: поле шрамов ОДНО — пашня; ряды-носители своего шрама не держат и
     // на проводе блока не имеют.
-    sm::field_set_allocate(gs.wheatScars, gs.mapW, gs.mapH, 0);
+    sm::field_set_allocate(gs.wheatScars, gs.mapW, gs.mapH);
     // Фикстура кладёт шрам той же дверью, какой его кладёт провод сейва
     // (field_set — абсолютная установка; стена ломтя 1 закрыла сырой write).
     sm::field_set(gs.wheatScars, sm::cell_of(5, 23, gs.mapW), 12);
@@ -565,7 +566,7 @@ sm::GameState make_state(sm::MacroStore& st) {
     // the feature (CANON S5/S10). The layer's first tenant is its witness.
     sm::feature_number_write(gs, 9, 4, 2);
 
-    return gs;
+    return gsOwn;
 }
 
 // v36: the living tree grid rides the save WHOLE (the forest is the
@@ -604,7 +605,7 @@ int run_roundtrip() {
 
     auto storeOwn = sm::make_macro_store();
     sm::MacroStore& store = *storeOwn;
-    auto gsOwn = std::make_unique<sm::GameState>(make_state(store));
+    std::unique_ptr<sm::GameState> gsOwn = make_state(store);
     sm::GameState& gs = *gsOwn;
     const std::vector<std::uint16_t> treeCounts = make_tree_counts();
     // v75: поля следов едут в сейве (CANON S10 «хищник-жертва») — след,
@@ -1284,7 +1285,7 @@ bool run_payload_cap_is_a_fact() {
 
     auto storeOwn = sm::make_macro_store();
     sm::MacroStore& store = *storeOwn;
-    auto gsOwn = std::make_unique<sm::GameState>(make_state(store));
+    std::unique_ptr<sm::GameState> gsOwn = make_state(store);
     sm::GameState& gs = *gsOwn;
 
     // (ЗДЕСЬ ФИКСТУРА НАБИВАЛА АННАЛЫ ДО КАПА — ярус снесён M-184, и 32 МиБ

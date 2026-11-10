@@ -19,6 +19,8 @@
 //      against what the subworld actually grows), count 0 grows nothing, and
 //      half the count grows roughly half the trees.
 #include <cstdio>
+#include <algorithm>
+#include <memory>
 #include <vector>
 
 #include "check.h"
@@ -135,7 +137,9 @@ void test_build_and_mutation() {
     const TerrainData td = make_terrain();
     const std::vector<std::uint8_t> forestMask = make_forest_mask();
 
-    TreeLayer layer = build_tree_layer(td, forestMask.data(), forestMask.size());
+    std::unique_ptr<TreeLayer> layerOwn{new TreeLayer()};
+    TreeLayer& layer = *layerOwn;
+    build_tree_layer(layer, td, forestMask.data(), forestMask.size());
     CHECK_OR_RETURN(layer.has_complete_storage(),
                     "the derived layer has full storage");
     CHECK(layer.at(2, 0) == 0, "the water row carries nothing");
@@ -153,7 +157,9 @@ void test_build_and_mutation() {
     TerrainData bad;
     bad.width = 8; bad.height = 8;
     bad.rgba.assign(7, 0);
-    TreeLayer badLayer = build_tree_layer(bad, forestMask.data(), forestMask.size());
+    std::unique_ptr<TreeLayer> badLayerOwn{new TreeLayer()};
+    TreeLayer& badLayer = *badLayerOwn;
+    build_tree_layer(badLayer, bad, forestMask.data(), forestMask.size());
     CHECK(!badLayer.has_complete_storage(),
           "truncated terrain fails closed to an empty layer");
     CHECK(badLayer.at(3, 3) == 0, "an empty layer reads 0 everywhere");
@@ -183,10 +189,12 @@ void test_build_and_mutation() {
     // Load path (v36): a fresh derived layer + the saved grid == the mutated
     // layer. This is the "felled forest must not resurrect" negative control
     // at the unit level — the save_roundtrip test holds it end to end.
-    TreeLayer reloaded = build_tree_layer(td, forestMask.data(), forestMask.size());
+    std::unique_ptr<TreeLayer> reloadedOwn{new TreeLayer()};
+    TreeLayer& reloaded = *reloadedOwn;
+    build_tree_layer(reloaded, td, forestMask.data(), forestMask.size());
     CHECK(reloaded.at(4, 4) == kMaxTreesPerCell,
           "the fresh derivation is virgin before the restore");
-    CHECK_OR_RETURN(restore_tree_counts(reloaded, layer.data),
+    CHECK_OR_RETURN(restore_tree_counts(reloaded, layer.cells()),
                     "restoring a matching grid succeeds");
     CHECK(reloaded.at(4, 4) == layer.at(4, 4),
           "the restored layer carries the felled cell, not the virgin one");
@@ -199,6 +207,42 @@ void test_build_and_mutation() {
           "a size-mismatched grid is refused");
     CHECK(reloaded.at(4, 4) == before,
           "a refused restore leaves the layer untouched");
+}
+
+// ── M-180: СЛОЙ ЕСТЬ ПЛОСКИЙ МАССИВ ПОД КАПОМ КЛЕТОК МИРА ────────────────
+// Три утверждения формы, каждое со своим предусловием (§8 п.11): живые клетки
+// — ровно мир, а не кап; перерождение над меньшим миром не оставляет в хвосте
+// клеток прежнего; мир вне капа невыразим — слой отвечает fail-closed.
+void test_layer_is_flat_under_world_cell_cap() {
+    std::unique_ptr<TreeLayer> layerOwn{new TreeLayer()};
+    TreeLayer& layer = *layerOwn;
+    CHECK(!layer.has_complete_storage() && layer.cells().empty(),
+          "a never-born layer has no cells and answers 0");
+
+    tree_layer_reset(layer, 16, 16);
+    CHECK(layer.cells().size() == 256u,
+          "live cells are the world's, not the cap's");
+    std::ranges::fill(layer.cells(), std::uint16_t(900));
+    CHECK(layer.at(15, 15) == 900 && layer.data[255] == 900,
+          "precondition: the big world is written to its last cell");
+
+    // The same storage reborn over a SMALLER world: nothing of the old world
+    // may survive past the new one, or the layer's bytes would remember it.
+    tree_layer_reset(layer, 8, 8);
+    CHECK(layer.cells().size() == 64u, "the reborn layer is the small world");
+    std::size_t stale = 0;
+    for (std::size_t i = 0; i < sm::kWorldCellCap; ++i)
+        if (layer.data[i] != 0) ++stale;
+    CHECK(stale == 0, "rebirth zeroes the WHOLE cap, tail included");
+
+    // The cap itself is a legal world; one step past it is not.
+    tree_layer_reset(layer, int(sm::kWorldSideCap), int(sm::kWorldSideCap));
+    CHECK(layer.cells().size() == sm::kWorldCellCap,
+          "a world of exactly the cap is live");
+    tree_layer_reset(layer, int(sm::kWorldSideCap) * 2,
+                     int(sm::kWorldSideCap) * 2);
+    CHECK(!layer.has_complete_storage() && layer.at(0, 0) == 0,
+          "a world past the cap is refused: no sides, no cells");
 }
 
 void test_scatter_calibration() {
@@ -231,6 +275,7 @@ void test_scatter_calibration() {
 int main() {
     test_derivation_formula();
     test_build_and_mutation();
+    test_layer_is_flat_under_world_cell_cap();
     test_scatter_calibration();
     return sm::test::report("tree_layer_test");
 }

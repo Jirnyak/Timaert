@@ -128,7 +128,8 @@ MacroHandle make_walker(MacroStore& st, int x, int y, const char* factionId,
 }
 
 struct Rig {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     std::unique_ptr<MacroStore> store = make_macro_store();
     SquadIndex idx{};
     FeatureLayer features{};

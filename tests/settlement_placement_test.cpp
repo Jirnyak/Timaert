@@ -149,10 +149,13 @@ TerrainData make_world() {
 
 struct World {
     TerrainData  td;
-    TreeLayer    trees;
-    DepositLayer deposits;
+    std::unique_ptr<TreeLayer> treesOwn{new TreeLayer()};
+    TreeLayer& trees = *treesOwn;
+    std::unique_ptr<DepositLayer> depositsOwn{new DepositLayer()};
+    DepositLayer& deposits = *depositsOwn;
     FeatureLayer features;   // фичи рода встают при рождении мест (2026-10-23)
-    GameState    gs;
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     // ПЛАН ГОРОДОВ — буфер генезиса (M-90), а не слой мира: он больше не
     // живёт в `GameState`, поэтому фикстура держит его сама, ровно как это
     // делает `generate_macro_world` своим локалом.
@@ -173,8 +176,8 @@ void make_settled_world(World& w) {
     for (int y = 14; y < 20; ++y)
         for (int x = 52; x < 58; ++x)
             mask[std::size_t(y) * kW + x] = 1;
-    w.trees = build_tree_layer(w.td, mask.data(), mask.size());
-    w.deposits = build_deposit_layer(w.td, 777u);
+    build_tree_layer(w.trees, w.td, mask.data(), mask.size());
+    build_deposit_layer(w.deposits, w.td, 777u);
     // СЛОЙ ФИЧ — ДО МЕСТ (вердикт 2026-10-23): двери рождения ставят фичи
     // рода сюда в момент выбора клетки.
     w.features.resize(kW, kH);
@@ -352,8 +355,8 @@ void test_only_water_vetoes() {
         for (int y = o.y; y < o.y + 6; ++y)
             for (int x = o.x; x < o.x + 6; ++x)
                 mask[std::size_t(y) * kW + x] = 1;
-        w.trees = build_tree_layer(w.td, mask.data(), mask.size());
-        w.deposits = build_deposit_layer(w.td, 777u);
+        build_tree_layer(w.trees, w.td, mask.data(), mask.size());
+        build_deposit_layer(w.deposits, w.td, 777u);
         w.gs.worldSeed = 777u;
         w.gs.mapW = kW;
         w.gs.mapH = kH;
@@ -587,8 +590,8 @@ void test_cities_read_the_ground() {
     World w;
     w.td = make_world();
     std::vector<std::uint8_t> mask(std::size_t(kW) * kH, 0);
-    w.trees = build_tree_layer(w.td, mask.data(), mask.size());
-    w.deposits = build_deposit_layer(w.td, 777u);
+    build_tree_layer(w.trees, w.td, mask.data(), mask.size());
+    build_deposit_layer(w.deposits, w.td, 777u);
     w.gs.worldSeed = 777u;
     w.gs.mapW = kW;
     w.gs.mapH = kH;

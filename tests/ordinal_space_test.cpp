@@ -45,6 +45,7 @@
 //    цена другая) — МОЛЧИТ во всех трёх. Детектор судит ОТВЕТЫ, а не
 //    реализацию: краснеющий на всё детектором не является.
 #include "check.h"
+#include <memory>
 
 #include <utility>
 #include <vector>
@@ -87,7 +88,8 @@ TerrainData make_terrain(int w, int h) {
 }
 
 void test_one_space_for_rooted_and_squads() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = 64; gs.mapH = 64;
     const TerrainData terrain = make_terrain(gs.mapW, gs.mapH);
     auto store = make_macro_store();
@@ -137,7 +139,8 @@ void test_directory_cannot_lie() {
     // руками (строка указывает на чужой слот), не смеет подсунуть этот слот
     // звонящему — попадание проверяется колонкой `spawnId`. Корректность не
     // висит на инварианте, которого не держит static_assert.
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = 64; gs.mapH = 64;
     auto store = make_macro_store();
     const MacroHandle lo =

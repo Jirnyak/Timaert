@@ -16,6 +16,7 @@
 // стола катается броском; колонка получит свидетеля с первой авторской
 // анкетой. Testing law 7 — говорим это вслух.)
 #include "check.h"
+#include <memory>
 #include "bus/world_row.h"   // raise_flock_into_container — души головами
 
 #include "core/rng.h"
@@ -79,14 +80,15 @@ sm::MacroHandle settle(GameState& gs, sm::MacroStore& st, SquadType kind,
 
 // Мир пробы: город и ДВЕ деревни — ближняя и дальняя, чтобы «ближайшая»
 // была утверждением, а не совпадением единственности.
-GameState make_world(sm::MacroStore& st) {
-    GameState gs{};
+std::unique_ptr<GameState> make_world(sm::MacroStore& st) {
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = kW;
     gs.mapH = kH;
     settle(gs, st, SquadType::City, 10, 10);
     settle(gs, st, SquadType::Village, 20, 10);
     settle(gs, st, SquadType::Village, 40, 40);
-    return gs;
+    return gsOwn;
 }
 
 // ПУТЬ ЗАГРУЗКИ ПРИВОЗИТ МЕСТА ЗАПИСЯМИ БЛОКА МАКРО-СКВАДОВ (ломтик F):
@@ -94,11 +96,12 @@ GameState make_world(sm::MacroStore& st) {
 // другое, и сшивать строку с телом больше нечего. Поэтому мир загрузки —
 // ПУСТОЙ: всё, что в нём стоит, приносит restore_macro_ecs (он же поднимает
 // эмитент выше всякого приехавшего ординала).
-GameState make_loaded_world() {
-    GameState gs{};
+std::unique_ptr<GameState> make_loaded_world() {
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = kW;
     gs.mapH = kH;
-    return gs;
+    return gsOwn;
 }
 
 sm::MacroHandle find_design(sm::MacroStore& st, std::int16_t ord) {
@@ -130,7 +133,8 @@ void test_table_rows_resolve() {
 
 void test_spawn_births_the_row() {
     auto wStore_ = sm::make_macro_store();
-    GameState gs = make_world(*wStore_);
+    std::unique_ptr<GameState> gsOwn = make_world(*wStore_);
+    GameState& gs = *gsOwn;
     const TerrainData terrain = make_terrain();
     Rng rng(1234u);
     spawn_design_characters(gs, *wStore_, terrain, rng);
@@ -204,7 +208,8 @@ void test_spawn_births_the_row() {
 
 void test_snapshot_carries_the_ordinal() {
     auto wStore_ = sm::make_macro_store();
-    GameState gs = make_world(*wStore_);
+    std::unique_ptr<GameState> gsOwn = make_world(*wStore_);
+    GameState& gs = *gsOwn;
     const TerrainData terrain = make_terrain();
     Rng rng(777u);
     spawn_design_characters(gs, *wStore_, terrain, rng);
@@ -234,7 +239,7 @@ void test_snapshot_carries_the_ordinal() {
           "negative control: the plain squad rides with -1");
 
     auto w2Store_ = sm::make_macro_store();
-    GameState gs2 = make_loaded_world();
+    std::unique_ptr<GameState> gs2Own = make_loaded_world();
     // Тела мест приехали теми же записями блока — ровно так же, как на
     // загрузке игры (main.cpp): второй двери у них больше нет.
     restore_macro_ecs(snap, *w2Store_, wStore_->nextSpawnId);
@@ -254,7 +259,8 @@ void test_king_peasant_births_by_home_faction() {
     // единственностью.
     const TerrainData terrain = make_terrain();
     auto wStore_ = sm::make_macro_store();
-    GameState gs = make_world(*wStore_);  // freefolk-города хватает Варнаве
+    std::unique_ptr<GameState> gsOwn = make_world(*wStore_);  // freefolk-города хватает Варнаве
+    GameState& gs = *gsOwn;
     const sm::MacroHandle barb =
         settle(gs, *wStore_, SquadType::City, 50, 20,
                std::int16_t(faction_index("barbarian_north")));
@@ -292,7 +298,8 @@ void test_king_needs_a_barbarian_city() {
     // честно не рождается, проповедник рождается — фильтр режет ровно
     // одну строку, не весь стол.
     auto wStore_ = sm::make_macro_store();
-    GameState gs = make_world(*wStore_);
+    std::unique_ptr<GameState> gsOwn = make_world(*wStore_);
+    GameState& gs = *gsOwn;
     const TerrainData terrain = make_terrain();
     Rng rng(556u);
     spawn_design_characters(gs, *wStore_, terrain, rng);
@@ -310,7 +317,8 @@ void test_dragons_nest_on_mountain_peaks() {
     constexpr float kPeak01 = 250.0f / 255.0f;
     constexpr float kMassif01 = 230.0f / 255.0f;
     auto wStore_ = sm::make_macro_store();
-    GameState gs = make_world(*wStore_);
+    std::unique_ptr<GameState> gsOwn = make_world(*wStore_);
+    GameState& gs = *gsOwn;
     TerrainData terrain = make_terrain();
     for (int y = 44; y <= 52; ++y) {
         for (int x = 44; x <= 52; ++x) {
@@ -376,7 +384,8 @@ void test_dragon_eats_peasants_emergently() {
     constexpr float kMassif01 = 230.0f / 255.0f;
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
-    GameState gs = make_world(st);
+    std::unique_ptr<GameState> gsOwn = make_world(st);
+    GameState& gs = *gsOwn;
     TerrainData terrain = make_terrain();
     for (int y = 44; y <= 52; ++y)
         for (int x = 44; x <= 52; ++x)
@@ -414,7 +423,8 @@ void test_dragon_eats_peasants_emergently() {
     // рождает, и та же добыча те же думки живёт.
     auto flatStore_ = sm::make_macro_store();
     sm::MacroStore& fst = *flatStore_;
-    GameState fgs = make_world(fst);
+    std::unique_ptr<GameState> fgsOwn = make_world(fst);
+    GameState& fgs = *fgsOwn;
     const TerrainData flat = make_terrain();
     Rng frng(999u);
     spawn_design_characters(fgs, fst, flat, frng);
@@ -435,7 +445,8 @@ void test_dragon_eats_peasants_emergently() {
 }
 
 void test_no_home_no_birth() {
-    GameState gs{};   // мир вовсе без ландмарков
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = kW;
     gs.mapH = kH;
     const TerrainData terrain = make_terrain();

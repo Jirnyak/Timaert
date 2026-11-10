@@ -13,6 +13,7 @@
 //   5. NEGATIVE CONTROL — a coinless market can buy nothing, and nothing is
 //      confiscated from it either.
 #include "macro/characters.h"   // squad_birth — руки рода
+#include <memory>
 #include "check.h"
 #include "macro/labour.h"           // souls_home — рты места
 #include "macro/upkeep_window.h"   // upkeep_bill — счёт по таблице
@@ -62,7 +63,8 @@ int main() {
     // мир — только затем, чтобы тело знало свою клетку.
     auto storePtr = sm::make_macro_store();
     sm::MacroStore& mstore = *storePtr;
-    sm::GameState gsFix{};
+    std::unique_ptr<sm::GameState> gsFixOwn = sm::make_game_state();
+    sm::GameState& gsFix = *gsFixOwn;
     gsFix.mapW = 64;
     gsFix.mapH = 64;
 
@@ -180,7 +182,8 @@ int main() {
     // ДОМ — САМО МЕСТО: зерна навалом, инструментов нет. Ведомость-кэш
     // уничтожена 2026-09-30 (ломтик E шаг 2), и сделка читает дом теми же
     // двумя дверьми, которыми ведомость и выписывалась.
-    sm::GameState hgs{};
+    std::unique_ptr<sm::GameState> hgsOwn = sm::make_game_state();
+    sm::GameState& hgs = *hgsOwn;
     hgs.mapW = 64;
     hgs.mapH = 64;
     // Дом идёт ТОЙ ЖЕ дверью, что рынки: ломтиком F второй двери рождения

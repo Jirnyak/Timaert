@@ -14,6 +14,7 @@
 //   * a debt names its subject, so one town's dead never bill its neighbour;
 //   * a malformed receipt changes nothing (fail closed).
 #include "check.h"
+#include <algorithm>
 #include <memory>
 #include <vector>
 #include "macro/labour.h"   // settle_souls / souls_flock — двери душ
@@ -88,7 +89,8 @@ inline void settle_like_the_delta(sm::MacroWorld& w,
 // MacroStore, поэтому store приезжает вместе с GameState.
 struct World {
     std::unique_ptr<sm::MacroStore> store;
-    sm::GameState gs;
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     // ОРДИНАЛ НАЗЫВАЕТ ЭМИТЕНТ, А НЕ ФИКСТУРА (ломтик F): рукописный
     // `Landmark::id` умер со строкой места, поэтому мир держит у себя
     // ординалы своих четырёх — расписка (MacroStockKey) приходит с ними.
@@ -99,7 +101,8 @@ struct World {
 };
 
 World make_world() {
-    World wld{sm::make_macro_store(), sm::GameState{}};
+    World wld;
+    wld.store = sm::make_macro_store();
     sm::GameState& gs = wld.gs;
     sm::MacroStore& st = *wld.store;
     gs.mapW = 64;
@@ -197,10 +200,10 @@ void test_borrow_and_return_are_symmetric() {
     using namespace sm;
     World wld = make_world();
     sm::GameState& gs = wld.gs;
-    sm::TreeLayer trees;
-    trees.width = gs.mapW;
-    trees.height = gs.mapH;
-    trees.data.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH), 500);
+    std::unique_ptr<sm::TreeLayer> treesOwn{new sm::TreeLayer()};
+    sm::TreeLayer& trees = *treesOwn;
+    tree_layer_reset(trees, gs.mapW, gs.mapH);
+    std::ranges::fill(trees.cells(), std::uint16_t(500));
     MacroWorld w{.gs = &gs, .trees = &trees, .store = wld.store.get()};
 
     const MacroStockKey town = peasant_key(wld.cityId, 10, 10);
@@ -265,10 +268,10 @@ void test_stocks_are_bounded() {
     using namespace sm;
     World wld = make_world();
     sm::GameState& gs = wld.gs;
-    sm::TreeLayer trees;
-    trees.width = gs.mapW;
-    trees.height = gs.mapH;
-    trees.data.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH), 10);
+    std::unique_ptr<sm::TreeLayer> treesOwn{new sm::TreeLayer()};
+    sm::TreeLayer& trees = *treesOwn;
+    tree_layer_reset(trees, gs.mapW, gs.mapH);
+    std::ranges::fill(trees.cells(), std::uint16_t(10));
     MacroWorld w{.gs = &gs, .trees = &trees, .store = wld.store.get()};
 
     macro_stock_apply(w, MacroStock::Creatures,
@@ -577,10 +580,10 @@ void test_trees_are_a_carrier_row() {
     using namespace sm;
     World wld = make_world();
     sm::GameState& gs = wld.gs;
-    sm::TreeLayer trees;
-    trees.width = gs.mapW;
-    trees.height = gs.mapH;
-    trees.data.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH), 500);
+    std::unique_ptr<sm::TreeLayer> treesOwn{new sm::TreeLayer()};
+    sm::TreeLayer& trees = *treesOwn;
+    tree_layer_reset(trees, gs.mapW, gs.mapH);
+    std::ranges::fill(trees.cells(), std::uint16_t(500));
     // Real terrain (dry land, meadow climate), so the growth walk below
     // actually RUNS (it is fail-closed without terrain, and a walk that
     // never ran proves nothing).
@@ -641,7 +644,8 @@ void test_vein_is_a_two_carrier_row() {
     using namespace sm;
     World wld = make_world();
     sm::GameState& gs = wld.gs;
-    sm::DepositLayer deposits;
+    std::unique_ptr<sm::DepositLayer> depositsOwn{new sm::DepositLayer()};
+    sm::DepositLayer& deposits = *depositsOwn;
     allocate_deposit_fields(deposits, gs.mapW, gs.mapH);
     create_deposit(deposits, 9, 9, 1000);   // дикая жила
     FeatureLayer features;

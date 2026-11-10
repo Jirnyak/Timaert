@@ -4,21 +4,6 @@
 
 namespace sm {
 
-void knowledge_reset(KnowledgeLayer& k, int width, int height) {
-    std::size_t n = 0;
-    if (!FeatureLayer::cell_count_for(width, height, n)) {
-        k.width = 0;
-        k.height = 0;
-        k.data.clear();
-        ++k.revision;
-        return;
-    }
-    k.width = width;
-    k.height = height;
-    k.data.assign(n, kKnowledgeUnknown);
-    ++k.revision;
-}
-
 bool update_player_sight(KnowledgeLayer& k, SightRuntime& rt,
                          const OpticalWorld& world,
                          float playerX, float playerY, float budgetCells) {
@@ -32,7 +17,7 @@ bool update_player_sight(KnowledgeLayer& k, SightRuntime& rt,
     // Yesterday's sight becomes memory. Guarded per cell so a stale list from
     // another world (or an already-decayed cell) can never invent knowledge.
     for (const std::uint32_t i : rt.visibleCells) {
-        if (i < k.data.size() && k.data[i] == kKnowledgeVisible)
+        if (i < k.cell_count() && k.data[i] == kKnowledgeVisible)
             k.data[i] = kKnowledgeExplored;
     }
     rt.visibleCells.clear();

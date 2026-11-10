@@ -25,6 +25,7 @@
 // у двери ноль прод-звонящих и она НЕ сирота.
 
 #include "check.h"
+#include <memory>
 #include "macro/npc_spawn.h"
 #include "tables/npc.h"
 #include "tables/faction.h"
@@ -46,7 +47,8 @@ int count_npcs(const sm::MacroStore& st) {
 // The whole scenario lives in a VOID function so CHECK_OR_RETURN can bail
 // out of a broken fixture without inventing a verdict: `main` only reports.
 void run_spawn_contract() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.mapW = 64;
     gs.mapH = 64;
     gs.worldSeed = 777u;

@@ -210,7 +210,7 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
                 const float d = mtnDepth[i] >= kInf ? 0.0f : mtnDepth[i];
                 z += MOUNTAIN_BASE_BOOST + std::min(mtnCap, d * MOUNTAIN_DEPTH_SCALE);
             } else if (treeLayer && treeLayer->has_complete_storage()
-                       && i < treeLayer->data.size()) {
+                       && i < treeLayer->cell_count()) {
                 // Forest danger scales with the actual tree count: a deep
                 // massif carries the full old FT_Tree boost, thin ambience
                 // almost none.

@@ -90,10 +90,11 @@ PlayerState default_player() {
 }
 
 // ── createGameState (state.ts) ─────────────────────────────────
-GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
-                             const LayerParameters& mapParams,
-                             int cityCountTarget) {
-    GameState gs;
+void default_game_state(GameState& gs,
+                        std::uint32_t seed, int mapW, int mapH,
+                        const LayerParameters& mapParams,
+                        int cityCountTarget) {
+    game_state_reset(gs);
     gs.version      = kSaveVersion;
     gs.worldSeed    = seed;
     gs.mapW         = mapW;
@@ -112,7 +113,6 @@ GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
     // (зонд: 0x6098 на входе → 0x50a1 по выходу из генерации).
     gs.playerRoll   = Rng{seed ^ 0x50A1u};
     create_factions(gs, seed);
-    return gs;
 }
 
 // ── Politik → place bridge ────────────────────────────────

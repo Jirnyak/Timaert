@@ -19,6 +19,7 @@
 //     a defeat pays the player nothing.
 
 #include "check.h"
+#include <memory>
 #include "macro/squad.h"
 #include "bus/world_row.h"
 #include "macro/player_entity.h"
@@ -90,7 +91,8 @@ AutoBattleOutcome wipe_of(sm::MacroStore& st, sm::MacroHandle loser,
 }
 
 void test_every_death_is_reported_once() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = gs.mapH = 64;
     auto wStore_ = sm::make_macro_store();
     FactLog log{};
@@ -129,7 +131,8 @@ squad(*wStore_, NPCType::Bandit, "bandits", 2, 3, 2u);
 }
 
 void test_no_facts_when_nobody_listens() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = gs.mapH = 64;
     auto wStore_ = sm::make_macro_store();
     MacroWorld mw{};       // no sink: a headless fixture
@@ -157,7 +160,8 @@ squad(*wStore_, NPCType::Bandit, "bandits", 2, 2, 2u);
 void test_kill_price_is_the_registry_column() {
     // A lawful realm: every body costs kKillRepPenalty.
     {
-        GameState gs{};
+        std::unique_ptr<GameState> gsOwn = make_game_state();
+        GameState& gs = *gsOwn;
         gs.mapW = gs.mapH = 64;
         auto wStore_ = sm::make_macro_store();
         MacroWorld mw{};
@@ -178,7 +182,8 @@ squad(*wStore_, NPCType::Guard, "empire", 2, 2, 5u);
     }
     // An outlaw clan: killIsNoCrime, so nothing is charged at all.
     {
-        GameState gs{};
+        std::unique_ptr<GameState> gsOwn = make_game_state();
+        GameState& gs = *gsOwn;
         gs.mapW = gs.mapH = 64;
         auto wStore_ = sm::make_macro_store();
         MacroWorld mw{};
@@ -220,7 +225,8 @@ void test_the_auto_resolve_pays_with_the_participants_banner() {
         return int(f.rows[std::size_t(a)].rel[std::size_t(b)]);
     };
 
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = gs.mapH = 64;
     sm::claim_registry_rows(gs.factions);
     auto wStore_ = sm::make_macro_store();
@@ -266,7 +272,8 @@ squad(*wStore_, NPCType::Guard, "timaert", 2, 2, 22u);
 }
 
 void test_spoils_are_rolled_not_scavenged() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = gs.mapH = 64;
     gs.worldSeed = 4242u;
     auto wStore_ = sm::make_macro_store();
@@ -310,7 +317,8 @@ squad(*wStore_, NPCType::Merchant, "empire", 4, 3, 7u);
     }
 
     // The negative control: a DEFEAT pays nothing. Loot is the victor's.
-    GameState gs2{};
+    std::unique_ptr<GameState> gs2Own = make_game_state();
+    GameState& gs2 = *gs2Own;
     gs2.mapW = gs2.mapH = 64;
     gs2.worldSeed = 4242u;
     auto w2Store_ = sm::make_macro_store();
@@ -335,7 +343,8 @@ squad(*w2Store_, NPCType::Merchant, "empire", 4, 3, 8u);
 // охраняет уже перенос, а не кошелёк — волчья стая ничего не несёт, значит
 // победителю не достаётся ни монеты, ни строки.
 void test_empty_handed_fallen_pays_nothing() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = gs.mapH = 64;
     gs.worldSeed = 99u;
     auto wStore_ = sm::make_macro_store();

@@ -17,6 +17,7 @@
 // real village and moves real stacks.)
 
 #include "check.h"
+#include <memory>
 #include "macro/labour.h"   // settle_souls — двери душ
 #include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
 #include "tables/faction.h"
@@ -41,7 +42,8 @@ int main() {
     // (owner 2026-08-30: caravans walk city to city; the next station is the
     // nearest OTHER city — and "nearest" is torus-metric like everything.)
     {
-        GameState gs{};
+        std::unique_ptr<GameState> gsOwn = make_game_state();
+        GameState& gs = *gsOwn;
         gs.mapW = 64;
         gs.mapH = 64;
         // МЕСТО ЕСТЬ НЕПОДВИЖНЫЙ СКВАД (M-90 шаг 5): строка рождается ТОЛЬКО

@@ -23,6 +23,7 @@
 //     сторожить новый, иначе он остаток).
 
 #include "check.h"
+#include <memory>
 #include "macro/state.h"
 #include "tables/faction.h"   // registry + kHostileThreshold — THE hostility line lives with the relations
 #include "macro/factions.h"   // ординальная дверь враждебности + relation_of
@@ -111,7 +112,8 @@ void test_the_no_faction_sentinel_degrades_to_neutral() {
 // тогда сюда придут её свидетели.
 void check_one_seed(std::uint32_t seed) {
     using namespace sm;
-    GameState gs;
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     create_factions(gs, seed);
 
     // Every registry faction holds its own slot — including "magika", the id
@@ -235,7 +237,8 @@ void check_one_seed(std::uint32_t seed) {
 // (ничейный сквад в бакете каркаса), а заметить их нечем.
 void test_hostility_by_ordinal_matches_the_raw_matrix() {
     using namespace sm;
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     create_factions(gs, 12345u);
 
     // Сентинел и слоты за реестром проверяются ВМЕСТЕ с живыми: домен шире

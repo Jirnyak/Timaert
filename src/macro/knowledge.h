@@ -28,8 +28,11 @@
 // (binding 5) once Increment 2 lands.
 #pragma once
 #include <cstdint>
+#include <cstring>
+#include <span>
 #include <vector>
 
+#include "core/caps.h"     // kWorldCellCap — кап клеток мира, один на слои
 #include "macro/optics.h"
 
 namespace sm {
@@ -40,31 +43,38 @@ enum : std::uint8_t {
     kKnowledgeVisible  = 2,
 };
 
+// ПЛОСКИЙ МАССИВ ПОД КАПОМ КЛЕТОК МИРА (M-180, 2026-11-10): heap-члена у слоя
+// нет. Здесь стоял `std::vector<std::uint8_t>`, и «построен ли слой» отвечала
+// ДЛИНА ВЕКТОРА — второй носитель размера мира рядом с `width/height`. Теперь
+// носитель один: слой жив, когда его стороны называют мир в пределах капа.
+// Живые клетки — первые `cell_count()`; хвост до капа стоит нулём (Unknown),
+// его чистит `knowledge_reset`. Байты слоя снимаются одним куском.
 struct KnowledgeLayer {
     int width = 0, height = 0;
-    std::vector<std::uint8_t> data;
     // Runtime dirty counter — bumped on every mutation so the renderer knows
     // to refresh its field texture. Never serialized.
     std::uint32_t revision = 0;
+    std::uint8_t data[kWorldCellCap] = {};
 
     std::size_t cell_count() const {
-        std::size_t n = 0;
-        return FeatureLayer::cell_count_for(width, height, n) ? n : 0u;
+        return world_cells_within_cap(width, height);
     }
-    bool has_complete_storage() const {
-        const std::size_t n = cell_count();
-        return n > 0u && data.size() >= n;
-    }
+    bool has_complete_storage() const { return cell_count() > 0u; }
+    // Живые клетки слоя — ровно мир, не кап. Обход «по всем клеткам» идёт
+    // отсюда: хвост за миром не клетки, и читать его как клетки нельзя.
+    std::span<const std::uint8_t> cells() const { return {data, cell_count()}; }
+    std::span<std::uint8_t> cells() { return {data, cell_count()}; }
     // THE door every consumer asks — overlays, NPC draw filters, the map
     // screen. Torus-wrapped; an absent grid answers Unknown (fail closed:
     // a world with no knowledge layer shows nothing, not everything).
     std::uint8_t at(int x, int y) const {
-        if (!world_shape_ok(width, height) || data.empty())
+        if (!world_shape_ok(width, height) || cell_count() == 0u)
             return kKnowledgeUnknown;
-        const std::size_t i = cell_of(x, y, width);
-        return i < data.size() ? data[i] : std::uint8_t(kKnowledgeUnknown);
+        return data[cell_of(x, y, width)];
     }
 };
+static_assert(sizeof(KnowledgeLayer) == 12u + kWorldCellCap,
+              "слой знания: 12 Б шапки + байт на клетку капа, без хвоста");
 
 // Session half of the player's sight: which cells are Visible right now (so
 // a move can decay exactly those to Explored), the Dijkstra scratch, and the
@@ -76,7 +86,19 @@ struct SightRuntime {
 };
 
 // All-Unknown grid of the given dims — a new world starts dark.
-void knowledge_reset(KnowledgeLayer& k, int width, int height);
+// Чистится ВЕСЬ кап, а не только клетки нового мира: хвост за миром обязан
+// стоять нулём, иначе байты слоя помнили бы прошлый мир (M-180). Мир вне капа
+// рождает слой без сторон — fail-closed. Тело в заголовке: дверь зовёт и
+// провод сейва (`knowledge_read@src/macro/world_fields.cpp`), а он линкуется
+// в приборы, которым оптика этого слоя не нужна.
+inline void knowledge_reset(KnowledgeLayer& k, int width, int height) {
+    static_assert(kKnowledgeUnknown == 0, "нулевой байт слоя — Unknown");
+    const bool fits = world_cells_within_cap(width, height) > 0u;
+    k.width = fits ? width : 0;
+    k.height = fits ? height : 0;
+    std::memset(k.data, 0, sizeof(k.data));
+    ++k.revision;
+}
 
 // Recompute the player's sight if their cell changed since the last call:
 // previous Visible cells decay to Explored, then the optical sweep from the

@@ -12,6 +12,7 @@
 // answer for coordinates far outside the map on both sides, and it must fail
 // closed on a degenerate world instead of dividing by zero.
 #include "check.h"
+#include <memory>
 
 #include "core/torus.h"
 #include "macro/features.h"
@@ -60,7 +61,8 @@ int main() {
     // `FeatureLayer::wrap_coord` and `DepositLayer::wrap_index` read as
     // documentation at their call sites, so they survive as names — but they
     // must not survive as second implementations.
-    DepositLayer dep;
+    std::unique_ptr<DepositLayer> depOwn{new DepositLayer()};
+    DepositLayer& dep = *depOwn;
     dep.width = kW;
     dep.height = kW;
     for (int v = -2048; v <= 2048; v += 13) {

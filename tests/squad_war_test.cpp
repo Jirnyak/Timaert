@@ -15,6 +15,7 @@
 // rows must behave exactly as the world always did (the parity test guards
 // that side).
 #include "check.h"
+#include <memory>
 
 #include "macro/npc_ai.h"
 #include "bus/world_row.h"
@@ -39,8 +40,9 @@ constexpr int kMap = 64;
 // Both avatars wear real registry factions; the fixture then writes the
 // relation it wants between them — through the same ensure_faction_row door
 // the game uses — so hostility is data here exactly as it is in the world.
-GameState make_world(int relation) {
-    GameState gs{};
+std::unique_ptr<GameState> make_world(int relation) {
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = kMap;
     gs.mapH = kMap;
     // One symmetric write through THE door: the two-line form could set one
@@ -48,7 +50,7 @@ GameState make_world(int relation) {
     // set_relation makes impossible.
     set_relation(gs.factions, faction_index("bandits"),
                  faction_index("timaert"), relation);
-    return gs;
+    return gsOwn;
 }
 
 sm::MacroHandle make_squad_at(sm::MacroStore& st, NPCType type,
@@ -112,7 +114,8 @@ void drive(GameState& gs, sm::MacroStore& st, MacroNpcAiRuntime& rt, int thinks)
 
 // A geometric meeting of hostiles IS a battle, settled through the ledger.
 void test_hostiles_on_one_cell_fight_and_the_ledger_pays() {
-    GameState gs = make_world(-80);
+    std::unique_ptr<GameState> gsOwn = make_world(-80);
+    GameState& gs = *gsOwn;
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
     // A strong bandit warband and a weak caravan, standing on the same cell.
@@ -154,7 +157,8 @@ void test_hostiles_on_one_cell_fight_and_the_ledger_pays() {
 
 // The weak run from strength they can see; fighters close in on prey.
 void test_the_weak_flee_and_fighters_pursue() {
-    GameState gs = make_world(-80);
+    std::unique_ptr<GameState> gsOwn = make_world(-80);
+    GameState& gs = *gsOwn;
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
     const auto bandit = make_squad_at(st, NPCType::Bandit, "bandits", 6,
@@ -188,7 +192,8 @@ void test_the_weak_flee_and_fighters_pursue() {
 
     // Now the mirror: freeze the caravan, wake the bandits - the fighter row
     // pursues the prey the same law says it beats.
-    GameState gs2 = make_world(-80);
+    std::unique_ptr<GameState> gs2Own = make_world(-80);
+    GameState& gs2 = *gs2Own;
     auto w2Store_ = sm::make_macro_store();
     sm::MacroStore& st2 = *w2Store_;
     const auto hunter = make_squad_at(st2, NPCType::Bandit, "bandits", 6,
@@ -218,7 +223,8 @@ void test_the_weak_flee_and_fighters_pursue() {
 
 // Neutral squads pass each other exactly as they always did.
 void test_neutral_squads_ignore_each_other() {
-    GameState gs = make_world(0);
+    std::unique_ptr<GameState> gsOwn = make_world(0);
+    GameState& gs = *gsOwn;
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
     const auto a = make_squad_at(st, NPCType::Bandit, "bandits", 5,
@@ -252,7 +258,8 @@ void test_neutral_squads_ignore_each_other() {
 void test_a_meeting_in_the_leased_window_is_not_resolved_upstairs() {
     // ── ПОЛЯРНОСТЬ 1: встреча НА арендованной клетке ────────────────────
     {
-        GameState gs = make_world(-80);
+        std::unique_ptr<GameState> gsOwn = make_world(-80);
+        GameState& gs = *gsOwn;
         auto wStore_ = sm::make_macro_store();
         sm::MacroStore& st = *wStore_;
         const auto a = make_squad_at(st, NPCType::Bandit, "bandits", 5,
@@ -285,7 +292,8 @@ void test_a_meeting_in_the_leased_window_is_not_resolved_upstairs() {
     // Это и есть выигрыш правки: мир за девятью клетками дерётся, пока
     // игрок внизу. До M-226 здесь не дрался никто.
     {
-        GameState gs = make_world(-80);
+        std::unique_ptr<GameState> gsOwn = make_world(-80);
+        GameState& gs = *gsOwn;
         auto wStore_ = sm::make_macro_store();
         sm::MacroStore& st = *wStore_;
         const auto a = make_squad_at(st, NPCType::Bandit, "bandits", 5,
@@ -315,7 +323,7 @@ void test_a_meeting_in_the_leased_window_is_not_resolved_upstairs() {
 // turns into a level and a bigger macro ceiling, wounds preserved as the
 // fraction they always travel in.
 void test_a_victorious_avatar_levels() {
-    GameState gs = make_world(-80);
+    std::unique_ptr<GameState> gsOwn = make_world(-80);
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
     const auto tsar = make_squad_at(st, NPCType::Peasant, "timaert", 1,
@@ -497,7 +505,8 @@ void test_wearing_alone_refreshes_the_derived_columns() {
 // by award_exp. Outcomes are CRAFTED here: this pins the settling law, not
 // the resolver's dice (those have their own tests).
 void test_player_auto_resolve_settles_through_the_same_doors() {
-    GameState gs = make_world(-80);
+    std::unique_ptr<GameState> gsOwn = make_world(-80);
+    GameState& gs = *gsOwn;
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
     // The player's men are a creatures on his own SQUAD ENTITY now — the same
@@ -550,7 +559,8 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
 
     // The player LOSES with a man still standing: wounded, never dead — the
     // avatar rule holds for the player exactly as for any lord.
-    GameState gs2 = make_world(-80);
+    std::unique_ptr<GameState> gs2Own = make_world(-80);
+    GameState& gs2 = *gs2Own;
     auto w2Store_ = sm::make_macro_store();
     sm::MacroStore& st2 = *w2Store_;
     ensure_macro_player_entity(gs2, st2);
@@ -587,7 +597,8 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
 // (owner's ruling: one knob), which is what makes a player patrol a data
 // row and not a code path.
 void test_spawn_squad_is_one_spec_one_door() {
-    GameState gs = make_world(0);
+    std::unique_ptr<GameState> gsOwn = make_world(0);
+    GameState& gs = *gsOwn;
     gs.worldSeed = 777u;
     TerrainData absent{};
     absent.width = 0;
@@ -737,7 +748,8 @@ void test_the_avatars_training_reads_at_the_new_doors() {
     //     `kNpcUpkeepNone` ест наравне с людьми. До этой правки он в поле не
     //     ел вовсе, хотя у места ел — то самое расхождение двух копий.
     {
-        GameState gs = make_world(0);
+        std::unique_ptr<GameState> gsOwn = make_world(0);
+        GameState& gs = *gsOwn;
         auto wStore_ = sm::make_macro_store();
         sm::MacroStore& st = *wStore_;
         // СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ САМ (§8 п.11), и это сильнее
@@ -846,7 +858,8 @@ void test_the_avatars_training_reads_at_the_new_doors() {
 //     поля нет вовсе, значит соврать им невозможно — но закон остался
 //     законом, и спрашивается он здесь ровно так же.
 void test_a_victory_does_not_erase_a_table_born_sheet() {
-    GameState gs = make_world(-80);
+    std::unique_ptr<GameState> gsOwn = make_world(-80);
+    GameState& gs = *gsOwn;
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
 

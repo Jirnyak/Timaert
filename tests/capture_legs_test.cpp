@@ -34,6 +34,7 @@
 //  - ДОЛЖНА МОЛЧАТЬ: перестановка брейков аренды и клетки игрока в цикле →
 //    ЗЕЛЁНЫЙ, 20/20: закон судит СЕМАНТИКУ, не расстановку строк.
 #include "check.h"
+#include <memory>
 
 #include "macro/npc_ai.h"
 #include "macro/npc_spawn.h"
@@ -151,7 +152,8 @@ void test_step_into_lease_is_the_last_step() {
 
 // ── ДУМКА: У ЗАХВАЧЕННОГО ЖИВУТ ЦЕЛЬ, ДОЛЯ И ПЛАНКА ─────────────────────
 void test_captured_walker_keeps_cell_share_and_goal() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = kMap;
     gs.mapH = kMap;
     auto wStore_ = sm::make_macro_store();
@@ -193,7 +195,8 @@ void test_captured_walker_keeps_cell_share_and_goal() {
 // отказан, доезд доли не бежит, жжения нет (земля нарочно дорогая — на ней
 // мутация «captured не передан ритму» прожигает планку видимо).
 void test_captured_teleporter_neither_jumps_nor_burns() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = kMap;
     gs.mapH = kMap;
     auto wStore_ = sm::make_macro_store();

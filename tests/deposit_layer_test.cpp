@@ -16,6 +16,7 @@
 // природное поле геймплеем не мутируется и в сейв не едет; залежь шахты —
 // число фичи, её транзакции держит field_doors_test.)
 #include "check.h"
+#include <memory>
 
 #include "macro/deposit_layer.h"
 
@@ -67,9 +68,11 @@ bool river_adjacent(const TerrainData& td, int x, int y) {
 
 void test_the_field_obeys_the_world() {
     const TerrainData td = make_world();
-    const DepositLayer layer = build_deposit_layer(td, 777u);
+    std::unique_ptr<DepositLayer> layerOwn{new DepositLayer()};
+    build_deposit_layer(*layerOwn, td, 777u);
+    const DepositLayer& layer = *layerOwn;
 
-    CHECK_OR_RETURN(layer.cells.liveCells > 0, "the little world holds veins");
+    CHECK_OR_RETURN(layer.cells().liveCells > 0, "the little world holds veins");
     CHECK(layer.virginUnits > 0, "the fingerprint counts what was born");
 
     long long landHeightSum = 0, landCells = 0;
@@ -83,9 +86,9 @@ void test_the_field_obeys_the_world() {
 
     bool affinityHolds = true;
     bool nested = false;
-    layer.cells.for_each_live([&](std::uint32_t idx, std::int32_t remaining) {
-        const int x = layer.cells.x_of(idx);
-        const int y = layer.cells.y_of(idx);
+    layer.cells().for_each_live([&](std::uint32_t idx, std::int32_t remaining) {
+        const int x = layer.cells().x_of(idx);
+        const int y = layer.cells().y_of(idx);
         // Вода не несёт ничего; всякая жила — высоко ЛИБО у воды. На этой
         // фикстуре вне реки влажность не перелезает порог глины, поэтому
         // дизъюнкция полна: сломай вес — и жила встанет на ровной сухой
@@ -96,7 +99,7 @@ void test_the_field_obeys_the_world() {
             for (int dy = -1; dy <= 1 && !nested; ++dy)
                 for (int dx = -1; dx <= 1 && !nested; ++dx) {
                     if (dx == 0 && dy == 0) continue;
-                    if (layer.cells.at(x + dx, y + dy) != 0) nested = true;
+                    if (layer.cells().at(x + dx, y + dy) != 0) nested = true;
                 }
         }
     });
@@ -120,21 +123,26 @@ void test_the_field_obeys_the_world() {
           "vein_virgin_at IS the built grid — one function births and answers");
 
     // One seed, one geology; a different seed shuffles the sites.
-    const DepositLayer again = build_deposit_layer(td, 777u);
-    CHECK(again.cells == layer.cells,
+    std::unique_ptr<DepositLayer> againOwn{new DepositLayer()};
+    build_deposit_layer(*againOwn, td, 777u);
+    const DepositLayer& again = *againOwn;
+    CHECK(again.cells() == layer.cells(),
           "the same seed derives the same geology");
-    const DepositLayer other = build_deposit_layer(td, 778u);
-    CHECK(!(other.cells == layer.cells),
+    std::unique_ptr<DepositLayer> otherOwn{new DepositLayer()};
+    build_deposit_layer(*otherOwn, td, 778u);
+    const DepositLayer& other = *otherOwn;
+    CHECK(!(other.cells() == layer.cells()),
           "a different seed is a different geology");
 }
 
 void test_the_genesis_door() {
-    DepositLayer layer;
+    std::unique_ptr<DepositLayer> layerOwn{new DepositLayer()};
+    DepositLayer& layer = *layerOwn;
     allocate_deposit_fields(layer, 64, 64);
     const std::uint32_t rev0 = layer.revision;
     create_deposit(layer, 10, 10, 1234);
     CHECK(layer.vein_at(10, 10) == 1234, "genesis writes the cell");
-    CHECK(layer.cells.liveCells == 1, "the live count rides the write");
+    CHECK(layer.cells().liveCells == 1, "the live count rides the write");
     CHECK(layer.revision > rev0, "the mutation moved the revision");
     create_deposit(layer, 11, 10, 0);
     CHECK(layer.vein_at(11, 10) == 0,

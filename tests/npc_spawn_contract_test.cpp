@@ -1,4 +1,5 @@
 #include "check.h"
+#include <memory>
 #include "bus/world_row.h"   // raise_flock_into_container — души головами
 #include "macro/npc_spawn.h"
 #include "macro/birth_squad.h" // место рождается СО СВОИМ ТЕЛОМ (M-90 шаг 5)
@@ -75,7 +76,8 @@ bool positions_inside_map(const sm::MacroStore& st, int mapW, int mapH) {
 } // namespace
 
 int main() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.mapW = 16;
     gs.mapH = 16;
 
@@ -112,7 +114,8 @@ int main() {
     mismatchedTerrain.height = 8;
     mismatchedTerrain.rgba.assign(std::size_t(8 * 8 * 4), 0u);
 
-    sm::GameState gsMismatch{};
+    std::unique_ptr<sm::GameState> gsMismatchOwn = sm::make_game_state();
+    sm::GameState& gsMismatch = *gsMismatchOwn;
     gsMismatch.mapW = 16;
     gsMismatch.mapH = 16;
 
@@ -126,7 +129,8 @@ int main() {
     CHECK(positions_inside_map(*mismatchWorldStore_, gsMismatch.mapW, gsMismatch.mapH),
           "...and its fallback positions stay inside the map too");
 
-    sm::GameState invalidMap;
+    std::unique_ptr<sm::GameState> invalidMapOwn = sm::make_game_state();
+    sm::GameState& invalidMap = *invalidMapOwn;
     invalidMap.mapW = 0;
     invalidMap.mapH = 0;
 

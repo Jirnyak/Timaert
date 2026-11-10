@@ -50,4 +50,27 @@ inline constexpr std::size_t kUnifiedCap = 16384u;
 static_assert(kUnifiedCap != 0 && (kUnifiedCap & (kUnifiedCap - 1)) == 0,
               "степень двойки: маска вместо деления, один кап на симуляцию и рендер");
 
+// ── КАП КЛЕТОК МИРА: ОДНО ЧИСЛО НА ВСЕ СЛОИ НАД ТОРОМ (M-180, 2026-11-10) ──
+// ЗАКОН АДРЕСА называет дефолт мира 1024×1024, ФРЕЙМ называет глобальный
+// фрейм «на 1024×1024» — это и есть потолок стороны. Всякий слой мира
+// (знание, лес, поле ряда, досягаемость жилы) есть ПЛОСКИЙ МАССИВ ЭТОЙ ДЛИНЫ
+// прямо в теле структуры: heap-члена у слоя нет, его байты снимаются одним
+// куском, а профиль памяти один у мира 32×32 фикстуры и у мира 1024×1024
+// (ЗАКОН ГЛАДКОЙ ПАМЯТИ: «пустота не страшно»). Мир меньше капа занимает
+// первые side² клеток, хвост стоит нулём — его чистит дверь рождения слоя.
+// Мир БОЛЬШЕ капа невыразим: двери рождения отказывают (fail-closed).
+inline constexpr std::size_t kWorldSideCap = 1024u;
+inline constexpr std::size_t kWorldCellCap = kWorldSideCap * kWorldSideCap;
+static_assert((kWorldSideCap & (kWorldSideCap - 1)) == 0,
+              "сторона мира — степень двойки (ЗАКОН АДРЕСА)");
+
+// Сколько клеток у мира w×h, если он ложится в кап; иначе 0 (fail-closed).
+// Одна дверь на все слои: «живой ли слой» отвечает она, а не длина вектора.
+constexpr std::size_t world_cells_within_cap(int w, int h) {
+    if (w <= 0 || h <= 0) return 0u;
+    if (std::size_t(w) > kWorldSideCap || std::size_t(h) > kWorldSideCap)
+        return 0u;
+    return std::size_t(w) * std::size_t(h);
+}
+
 }  // namespace sm

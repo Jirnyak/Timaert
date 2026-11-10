@@ -74,7 +74,8 @@ WorldShot snapshot(const sm::MacroStore& st, const sm::MacroNpcAiRuntime& ai) {
 // сквадов с РАЗНЫМИ фазами думки — без разных фаз пер-вызовный приток
 // неотличим от честного, и детектор слеп к собственному предмету.
 struct Fixture {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     std::unique_ptr<sm::MacroStore> store;
     sm::MacroNpcAiRuntime ai;
 };

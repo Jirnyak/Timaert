@@ -61,7 +61,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // (S26); the decimation stays so on-screen seeds keep naming the same
     // worlds they always did.
     lp.seed = p.seed % 100000u;
-    gs = default_game_state(p.seed, p.mapW, p.mapH, lp, p.targetTotalCities);
+    default_game_state(gs, p.seed, p.mapW, p.mapH, lp, p.targetTotalCities);
     // A new world starts DARK (v40): all-Unknown knowledge. The spawn's
     // surroundings open by the ordinary sight law — the first frame's sweep
     // from the player's cell — not by a special starting reveal.
@@ -93,10 +93,10 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
             const std::size_t i = cell_of(t.x, t.y, gs.mapW);
             if (i < forestMask.size()) forestMask[i] = 1;
         }
-        *out.treeLayer = build_tree_layer(*out.terrain, forestMask.data(),
-                                          forestMask.size());
+        build_tree_layer(*out.treeLayer, *out.terrain, forestMask.data(),
+                         forestMask.size());
     }
-    *out.deposits = build_deposit_layer(*out.terrain, gs.worldSeed);
+    build_deposit_layer(*out.deposits, *out.terrain, gs.worldSeed);
     // СЛОЙ ФИЧ РОЖДАЕТСЯ ДО ВСЕХ МЕСТ (вердикт 2026-10-23: «сначала фичи,
     // сквады поверх»): двери рождения мест ставят фичи рода прямо сюда, а
     // дороги и пашни вливаются следом на пустые клетки.

@@ -28,13 +28,12 @@
 
 namespace sm {
 
+// ДВА ПЛОСКИХ ПОЛЯ ПОД КАПОМ КЛЕТОК МИРА, HEAP-ЧЛЕНОВ НЕТ (M-180,
+// 2026-11-10). Слой весит 4 МиБ и на стеке не живёт: рождается на месте (у
+// `App`, в куче фикстуры), `build_deposit_layer` ПИШЕТ в него.
 struct DepositLayer {
     int width = 0;
     int height = 0;
-    // ОДНО поле жил: units per cell, 0 = жилы здесь нет. Плоский массив над
-    // тором — связность мира и О(1)-вопрос досягаемости (reach-поле внутри
-    // грида, радиус kGathererReach — досягаемость добытчика).
-    ResourceGrid cells;
     // Сколько мир родил всего — отпечаток геологии и якорь калибровки.
     // Производное, в сейв не едет: build_deposit_layer — чистая функция.
     std::int64_t virginUnits = 0;
@@ -43,6 +42,14 @@ struct DepositLayer {
     // Runtime dirty counter for future consumers; never serialized.
     std::uint32_t revision = 0;
 
+    // ОДНО поле жил: units per cell, 0 = жилы здесь нет. ЧИТАТЬ — кому
+    // угодно; ПИСАТЬ — только дверью `deposit_set` ниже, и это стена, а не
+    // просьба: поле закрыто `private`, наружу отдаётся константой. Причина в
+    // диске досягаемости — он производное от клеток, и запись мимо двери
+    // оставила бы его врать («руда кончилась, торг ещё выдаётся» — ровно
+    // тот дефект, который ловил ручной негативный контроль штампа).
+    const ResourceGrid& cells() const { return cells_; }
+
     // Packs a WRAPPED cell into a flat index. The wrap itself is the one in
     // core/torus.h; it used to be written out twice inline right here.
     std::uint32_t wrap_index(int x, int y) const {
@@ -50,13 +57,41 @@ struct DepositLayer {
     }
     // Дикая жила клетки; 0 = здесь геологии нет.
     std::int32_t vein_at(int x, int y) const {
-        return cells.at(x, y);
+        return cells_.at(x, y);
     }
-    // «Есть ли живая жила в досягаемости добытчика» — O(1) по reach-полю.
+    // «Есть ли живая жила в досягаемости добытчика» — O(1) по полю
+    // досягаемости. Fail-closed: неродившийся слой никого не достаёт.
     bool vein_near(int x, int y) const {
-        return cells.near(x, y);
+        return cells_.live() && reach_[cells_.index(x, y)] != 0u;
     }
+
+private:
+    friend void allocate_deposit_fields(DepositLayer&, int, int);
+    friend void deposit_set(DepositLayer&, int, int, std::int32_t);
+
+    ResourceGrid cells_;
+    // ПРОИЗВОДНОЕ, в сейв не едет: сколько живых клеток жилы лежит в радиусе
+    // `kGathererReach` от каждой клетки. Счёт, а не флаг, потому что диски
+    // перекрываются — клетка, до которой достают три жилы, обязана пережить
+    // истощение двух. Жило вектором внутри КАЖДОГО `ResourceGrid` и было
+    // непустым только здесь; теперь оно у своего единственного хозяина.
+    std::uint16_t reach_[kWorldCellCap] = {};
+
+    // Вклад одной клетки в поле досягаемости: диск клеток, с которых эту
+    // жилу можно разрабатывать.
+    //
+    // THE DISC IS THE QUESTION'S OWN SHAPE. The gate this replaces measured
+    // `torus_dist_sq <= r²` — a circle — so the stamp walks a circle, its rows'
+    // half-widths taken from the same inequality. A square would have been
+    // separable and faster and would grant the corner cells something they
+    // cannot reach: a stamp is an implementation of a question, never a
+    // licence to answer a different one.
+    void stamp_(int x, int y, int delta);
 };
+static_assert(sizeof(DepositLayer)
+                  == 24u + sizeof(ResourceGrid)
+                         + sizeof(std::uint16_t) * kWorldCellCap,
+              "слой жил: 24 Б шапки + поле жил + поле досягаемости");
 
 // Size the field to a world, zeroed, carrying the gatherer's reach. Worldgen
 // calls it; so must any fixture that hand-places veins, because a field that
@@ -69,8 +104,16 @@ void allocate_deposit_fields(DepositLayer& layer, int width, int height);
 std::int32_t vein_virgin_at(const TerrainData& terrain, std::uint32_t seed,
                             int x, int y);
 
-DepositLayer build_deposit_layer(const TerrainData& terrain,
-                                 std::uint32_t seed);
+// Пишет в `out` на месте: слой весит 4 МиБ, возврат значением клал бы его на
+// стек звонящего.
+void build_deposit_layer(DepositLayer& out, const TerrainData& terrain,
+                         std::uint32_t seed);
+
+// ЕДИНСТВЕННАЯ ЗАПИСЬ КЛЕТКИ ЖИЛЫ — абсолютная установка (0 = жила иссякла).
+// Двигает клетку, счёт живых и ДИСК ДОСЯГАЕМОСТИ одним шагом. Вне пульта, как
+// и `field_set`: звонят рождение мира, генезис и фикстура свидетеля; геймплей
+// дикую жилу не мутирует («метал не убывает как и фертильность»).
+void deposit_set(DepositLayer& layer, int x, int y, std::int32_t value);
 
 // The GENESIS door: the world creates geology — a fixture's hand-placed vein,
 // a future discovery law. Inserts (or refills) the cell, bumps the revision.

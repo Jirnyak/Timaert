@@ -9,6 +9,7 @@
 // for any layout change and old saves are silently rejected.
 #pragma once
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -51,7 +52,7 @@ struct SaveSummary {
 // бы новое рождение под именем мертвеца (19.24).
 bool save_game(const GameState& s, std::uint32_t storeNextSpawnId,
                const std::vector<MacroNpcRecord>& macroNpcs,
-               const std::vector<std::uint16_t>& treeCounts,
+               std::span<const std::uint16_t> treeCounts,
                const std::string& path);
 bool load_game(GameState& s, std::uint32_t& storeNextSpawnId,
                std::vector<MacroNpcRecord>& macroNpcs,
@@ -92,6 +93,6 @@ std::uint64_t save_max_payload_bytes();
 std::uint32_t save_payload_fingerprint(
     const GameState& s, std::uint32_t storeNextSpawnId,
     const std::vector<MacroNpcRecord>& macroNpcs,
-    const std::vector<std::uint16_t>& treeCounts);
+    std::span<const std::uint16_t> treeCounts);
 
 } // namespace sm

@@ -59,6 +59,7 @@
 //      (M-308). Третий закон и его СВОЯ таблица мутаций стоят у самого
 //      теста ниже — там же, где подобран расклад, который его обнажает.
 #include "check.h"
+#include <memory>
 
 #include "macro/npc_ai.h"
 #include "macro/birth_squad.h"   // birth_squad — место родится ТЕЛОМ
@@ -132,7 +133,8 @@ MacroHandle make_collector(MacroStore& st, int x, int y,
 
 // Мир фикстуры: столица-дом, деревня-должник, сборщик между ними.
 struct Rig {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     std::unique_ptr<MacroStore> store = make_macro_store();
     MacroHandle home{};
     MacroHandle vassal{};

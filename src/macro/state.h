@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 #include "core/rng.h"
@@ -1020,7 +1021,7 @@ inline int feature_number_read(const GameState& gs, int x, int y) {
 inline void feature_number_write(GameState& gs, int x, int y, int value) {
     if (!gs.featureNumber.live()) {
         if (gs.mapW <= 0 || gs.mapH <= 0) return;   // no world, no field
-        gs.featureNumber.allocate(gs.mapW, gs.mapH, 0);
+        gs.featureNumber.allocate(gs.mapW, gs.mapH);
     }
     gs.featureNumber.write(x, y, std::int32_t(value < 0 ? 0 : value));
 }
@@ -1039,7 +1040,7 @@ inline int fauna_field_read(const GameState& gs, int x, int y) {
 inline void fauna_field_write(GameState& gs, int x, int y, int value) {
     if (!gs.faunaField.live()) {
         if (gs.mapW <= 0 || gs.mapH <= 0) return;   // no world, no field
-        gs.faunaField.allocate(gs.mapW, gs.mapH, 0);
+        gs.faunaField.allocate(gs.mapW, gs.mapH);
     }
     gs.faunaField.write(x, y, std::int32_t(value < 0 ? 0 : value));
 }
@@ -1052,7 +1053,7 @@ inline void fauna_field_write(GameState& gs, int x, int y, int value) {
 inline void light_emission_write(GameState& gs, int x, int y, int value) {
     if (!gs.lightEmission.live()) {
         if (gs.mapW <= 0 || gs.mapH <= 0) return;   // no world, no field
-        gs.lightEmission.allocate(gs.mapW, gs.mapH, 0);
+        gs.lightEmission.allocate(gs.mapW, gs.mapH);
     }
     gs.lightEmission.write(x, y, std::int32_t(value < 0 ? 0 : value));
 }
@@ -1166,7 +1167,27 @@ inline void add_player_reputation(GameState& gs, const char* factionId,
 // `seed` using the band system in state.ts.
 PlayerState default_player();
 void       create_factions(GameState& gs, std::uint32_t seed);
-GameState  default_game_state(std::uint32_t seed, int mapW, int mapH,
+// ── РОЖДЕНИЕ И СБРОС СОСТОЯНИЯ — НА МЕСТЕ, НЕ ЗНАЧЕНИЕМ (M-180) ─────────
+// `GameState` несёт слои мира плоскими массивами под капом клеток
+// (`kWorldCellCap@src/core/caps.h`) и весит мегабайты: на стеке он не живёт
+// НИГДЕ, включая временные. Отсюда три двери вместо прежних «вернуть
+// значением» и `gs = GameState{}` (обе клали состояние на стек звонящего):
+//   · `make_game_state` — состояние рождается в куче, как `MacroStore`;
+//   · `game_state_reset` — возврат к рождённому на том же адресе;
+//   · `default_game_state` — сброс плюс поля новой игры, в `out`.
+// Стена — обход `test_world_layers_never_by_value` в
+// `tests/arch_guard_test.cpp` (объявление значением законно только у
+// поимённых хозяев); вторая сеть — флаг `-Wframe-larger-than` в
+// `timaert_build_flags`, называющий функцию с раздутым кадром.
+inline std::unique_ptr<GameState> make_game_state() {
+    return std::unique_ptr<GameState>(new GameState());
+}
+inline void game_state_reset(GameState& gs) {
+    std::destroy_at(&gs);
+    std::construct_at(&gs);
+}
+void       default_game_state(GameState& out,
+                              std::uint32_t seed, int mapW, int mapH,
                               const LayerParameters& mapParams = LayerParameters{},
                               int cityCountTarget = 0);
 

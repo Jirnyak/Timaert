@@ -378,7 +378,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
     if (st.censusRev != gs.knowledge.revision
         && gs.knowledge.has_complete_storage()) {
         unsigned long long n = 0;
-        for (const std::uint8_t v : gs.knowledge.data)
+        for (const std::uint8_t v : gs.knowledge.cells())
             n += (v >= kKnowledgeExplored) ? 1u : 0u;
         st.exploredCells = n;
         st.censusRev = gs.knowledge.revision;

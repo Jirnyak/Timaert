@@ -15,6 +15,8 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <memory>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -901,7 +903,7 @@ void write_payload(Writer& w, const GameState& s,
                    const std::string& savedAt,
                    std::uint32_t storeNextSpawnId,
                    const std::vector<MacroNpcRecord>& macroNpcs,
-                   const std::vector<std::uint16_t>& treeCounts) {
+                   std::span<const std::uint16_t> treeCounts) {
     w.pod(s.worldSeed);
     w.pod(s.mapW);
     w.pod(s.mapH);
@@ -932,7 +934,7 @@ void write_payload(Writer& w, const GameState& s,
     // trees, knowledge, deposits, scars — each row writes its own bytes, in
     // row order, byte-identical to the four hand blocks that lived here.
     // Adding a per-cell world truth is one row THERE, no code here.
-    write_world_fields(w, WorldFieldStores{&s, &treeCounts});
+    write_world_fields(w, WorldFieldStores{&s, treeCounts});
 
     // v23: the macro-ECS snapshot — the lords, squads, bandits and beasts of
     // the living map, one record each (macro/macro_snapshot.h).
@@ -1041,7 +1043,11 @@ bool load_payload_from_file(const std::string& path, GameState& s,
     if (h.magic != kMagic || h.version != kSaveVersion) return false;
     if (!checksum_matches(file, h)) return false;
 
-    GameState loaded;
+    // Черновик состояния — В КУЧЕ: `GameState` несёт слои мира плоскими
+    // массивами под капом клеток (M-180) и на стеке не живёт. Он остаётся
+    // черновиком по прежней причине — битый файл не должен тронуть `s`.
+    const std::unique_ptr<GameState> loadedOwn = make_game_state();
+    GameState& loaded = *loadedOwn;
     std::uint32_t loadedNextSpawnId = 1;
     std::vector<MacroNpcRecord> loadedMacro;
     std::vector<std::uint16_t> loadedTrees;
@@ -1060,7 +1066,7 @@ bool load_payload_from_file(const std::string& path, GameState& s,
 
 bool save_game(const GameState& s, std::uint32_t storeNextSpawnId,
                const std::vector<MacroNpcRecord>& macroNpcs,
-               const std::vector<std::uint16_t>& treeCounts,
+               std::span<const std::uint16_t> treeCounts,
                const std::string& path) {
     Writer payload;
     payload.bytes.reserve(64u * 1024u);
@@ -1084,7 +1090,7 @@ std::uint64_t save_max_payload_bytes() { return kMaxPayloadBytes; }
 std::uint32_t save_payload_fingerprint(
     const GameState& s, std::uint32_t storeNextSpawnId,
     const std::vector<MacroNpcRecord>& macroNpcs,
-    const std::vector<std::uint16_t>& treeCounts) {
+    std::span<const std::uint16_t> treeCounts) {
     Writer payload;
     payload.bytes.reserve(64u * 1024u);
     // The stamp is held FIXED, and it is the only field that has to be: two

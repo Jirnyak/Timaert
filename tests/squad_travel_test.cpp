@@ -20,6 +20,7 @@
 //     lasts the camp margin over its ground's burn rate, and a full bar keeps
 //     a body afloat the better part of a day — one law, two walkers.
 #include "check.h"
+#include <memory>
 #include <vector>
 
 #include "macro/npc_ai.h"
@@ -221,7 +222,8 @@ float load_until_the_legs_pay(sm::MacroStore& st, sm::MacroHandle h,
 // comparison is the negative control, and it is immune to any recalibration
 // of the knob (AGENTS §8 п.4, п.6).
 void test_greedy_walks_around_a_wet_cell() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = 32;
     gs.mapH = 32;
 
@@ -277,7 +279,8 @@ void test_greedy_walks_around_a_wet_cell() {
 // cells of every measured world outside all navigation. A bridge does not stop
 // being worth building: it stops being the ONLY way across.
 void test_river_is_forded_and_a_bridge_is_cheaper() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = 32;
     gs.mapH = 32;
 
@@ -339,7 +342,8 @@ void test_river_is_forded_and_a_bridge_is_cheaper() {
 // be is the owner's verdict, not this file's: asserting EITHER polarity here
 // would freeze an answer nobody has given.
 void test_ocean_crossing_is_paid_in_blood() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = 64;
     gs.mapH = 64;
     auto wStore_ = sm::make_macro_store();
@@ -463,7 +467,8 @@ void test_ocean_crossing_is_paid_in_blood() {
 // The old shape had the bite belong to water alone, so a squad could march
 // itself into the ground on dry meadow for free while the player bled.
 void test_land_exhaustion_makes_camp_without_blood() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = 64;
     gs.mapH = 64;
     auto wStore_ = sm::make_macro_store();
@@ -538,7 +543,8 @@ void test_land_exhaustion_makes_camp_without_blood() {
 // an ordinary long haul. A hundred caravans, a season of thinks, ordinary
 // ground: they may bleed, they must not die.
 void test_a_map_of_marchers_survives_the_new_law() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = 128;
     gs.mapH = 128;
     auto wStore_ = sm::make_macro_store();
@@ -619,7 +625,8 @@ void test_a_map_of_marchers_survives_the_new_law() {
 // pace says. The design literals stay below, on the ladder rather than on the
 // road.
 void test_road_bar_lasts_a_days_march() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     // ЗАКОН АДРЕСА: мир ВСЕГДА квадрат и степень двойки (было 1024x8).
     // Полуширина тора не изменилась (512 > 300 целевых клеток), а
     // адресация только пришла в согласие с собой: ecs::cell_index и так
@@ -728,7 +735,8 @@ void test_road_bar_lasts_a_days_march() {
 // itself and no squad would ever run out of legs — which is exactly what the
 // first cut of this law did. Pinned here with its negative control.
 void test_banking_a_part_cell_is_not_resting() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     // Wide enough that the target is far inside the torus half-width: at 512
     // the greedy straight step found the SEAM a shorter way and walked west,
     // which is correct behaviour and a useless fixture.
@@ -809,7 +817,8 @@ void test_banking_a_part_cell_is_not_resting() {
 // here with the control that makes it a claim: the SAME body, the SAME road,
 // the SAME distance, one of them laden.
 void test_a_laden_squad_pays_for_its_load() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = 256;
     gs.mapH = 256;   // ЗАКОН АДРЕСА: квадрат, po2
     auto wStore_ = sm::make_macro_store();
@@ -930,7 +939,8 @@ void test_a_laden_squad_pays_for_its_load() {
 //        (ОБЯЗАНА МОЛЧАТЬ: форма иная, смысл тот же)         → ЗЕЛЁНЫЙ, как и
 //                                                              должно
 void test_an_engine_cap_load_is_priced_whole() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = 256;
     gs.mapH = 256;
     auto wStore_ = sm::make_macro_store();
@@ -1027,7 +1037,8 @@ void test_an_engine_cap_load_is_priced_whole() {
 // утверждение было бы пустым (§8 п.3), а без шага в воду сравнивать было бы
 // нечего.
 void test_the_hour_is_priced_by_the_cell_the_think_began_in() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = 32;
     gs.mapH = 32;
     auto wStore_ = sm::make_macro_store();

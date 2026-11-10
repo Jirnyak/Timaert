@@ -25,6 +25,7 @@
 // «как у сквада» нельзя: у вопроса один ответ, и его даёт строка рода
 // (test_no_second_address_form ниже утверждает именно это).
 #include "check.h"
+#include <memory>
 #include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
 #include "ecs/components.h"   // MacroSpawnId — ординал слота store
@@ -43,7 +44,8 @@ namespace {
 // колонка оси, ординал ВЫДАЁТ ЭМИТЕНТ. Фикстура запоминает, кем родились её
 // трое, и спрашивает двери ровно этими ординалами.
 struct Fixture {
-    sm::GameState gs;
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     int cityId = 0;
     int vilId = 0;
     int spireId = 0;

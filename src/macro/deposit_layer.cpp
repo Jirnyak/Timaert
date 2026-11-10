@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 #include "core/field_noise.h"   // the ONE noise stack of the world's fields
@@ -138,7 +139,40 @@ void allocate_deposit_fields(DepositLayer& layer, int width, int height) {
     // lazily is one whose first reader pays for everyone. The reach radius is
     // READ FROM THE ROW's home (kGathererReach lives beside the resource
     // rows): every vein reaches exactly as far as a gatherer walks.
-    layer.cells.allocate(width, height, kGathererReach);
+    layer.cells_.allocate(width, height);
+    // Весь кап, не только клетки мира: хвост обязан стоять нулём (M-180).
+    std::memset(layer.reach_, 0, sizeof(layer.reach_));
+}
+
+void DepositLayer::stamp_(int x, int y, int delta) {
+    if (!cells_.live()) return;
+    // Клетки диска — шаги ИНДЕКСА через cell_step (ЗАКОН АДРЕСА): центр
+    // адресуется один раз, сосед есть арифметика, а не вторая свёртка.
+    const std::uint32_t at = cells_.index(x, y);
+    const int R = kGathererReach;
+    for (int dy = -R; dy <= R; ++dy) {
+        const int span = int(std::sqrt(double(R * R - dy * dy)));
+        for (int dx = -span; dx <= span; ++dx) {
+            std::uint16_t& c = reach_[cell_step(at, dx, dy, cells_.width)];
+            // A count can only be walked down by a cell that walked it up,
+            // so the floor is a statement about deposit_set rather than a
+            // clamp. Guarded anyway: an underflow grants forever.
+            if (delta > 0) ++c;
+            else if (c > 0u) --c;
+        }
+    }
+}
+
+void deposit_set(DepositLayer& layer, int x, int y, std::int32_t value) {
+    if (!layer.cells_.live()) return;
+    // Переход «пусто ↔ живо» читается у самого поля ДО и ПОСЛЕ записи: кламп
+    // ширины клетки стоит в `write`, и судить о переходе по намерению, а не
+    // по факту, значило бы повторить его вторым экземпляром.
+    const bool was = layer.cells_.at(x, y) != 0;
+    layer.cells_.write(x, y, value);
+    const bool now = layer.cells_.at(x, y) != 0;
+    if (!was && now) layer.stamp_(x, y, +1);
+    else if (was && !now) layer.stamp_(x, y, -1);
 }
 
 // ЁМКОСТЬ КЛЕТКИ — ЧИСТАЯ ФУНКЦИЯ ТЕРРАИНА И СИДА, как фертильность
@@ -164,33 +198,33 @@ std::int32_t vein_virgin_at(const TerrainData& terrain, std::uint32_t seed,
     return std::int32_t(std::min<std::int64_t>(sum, kMaxFieldUnitsPerCell));
 }
 
-DepositLayer build_deposit_layer(const TerrainData& terrain,
-                                 std::uint32_t seed) {
-    DepositLayer layer;
+void build_deposit_layer(DepositLayer& layer, const TerrainData& terrain,
+                         std::uint32_t seed) {
     layer.birthSeed = seed;
+    layer.virginUnits = 0;
+    layer.revision = 0;
     allocate_deposit_fields(layer, terrain.width, terrain.height);
     if (terrain.width <= 0 || terrain.height <= 0
         || !terrain.has_rgba_storage()) {
-        return layer;
+        return;
     }
     for (int y = 0; y < terrain.height; ++y) {
         for (int x = 0; x < terrain.width; ++x) {
             const std::int32_t amount = vein_virgin_at(terrain, seed, x, y);
             if (amount <= 0) continue;
-            layer.cells.write(x, y, amount);
+            deposit_set(layer, x, y, amount);
             layer.virginUnits += amount;
         }
     }
     // The geology fingerprint — the calibration eye of the field law.
     std::fprintf(stderr, "[deposits] vein=%lld/%d  (units/cells)\n",
-                 (long long)layer.virginUnits, int(layer.cells.liveCells));
-    return layer;
+                 (long long)layer.virginUnits, int(layer.cells().liveCells));
 }
 
 std::int32_t vein_cluster_cap(const DepositLayer& layer, int x, int y) {
-    if (!layer.cells.live()) return 0;
+    if (!layer.cells().live()) return 0;
     const std::uint32_t root = layer.wrap_index(x, y);
-    if (layer.cells.at_index(root) == 0) return 0;
+    if (layer.cells().at_index(root) == 0) return 0;
     // Однократные буферы вопроса (ЗАКОН ГЕНЕРАЦИИ п.3 — и у сезонного
     // визита цена та же: кластеры суть гнёзда в десятки клеток).
     std::vector<std::uint32_t> frontier{root};
@@ -199,12 +233,12 @@ std::int32_t vein_cluster_cap(const DepositLayer& layer, int x, int y) {
     while (!frontier.empty()) {
         const std::uint32_t c = frontier.back();
         frontier.pop_back();
-        sum += layer.cells.at_index(c);
+        sum += layer.cells().at_index(c);
         for (int dy = -1; dy <= 1; ++dy) {
             for (int dx = -1; dx <= 1; ++dx) {
                 if (dx == 0 && dy == 0) continue;
                 const std::uint32_t n = cell_step(c, dx, dy, layer.width);
-                if (layer.cells.at_index(n) == 0) continue;
+                if (layer.cells().at_index(n) == 0) continue;
                 if (std::find(seen.begin(), seen.end(), n) != seen.end())
                     continue;
                 seen.push_back(n);
@@ -218,7 +252,7 @@ std::int32_t vein_cluster_cap(const DepositLayer& layer, int x, int y) {
 void create_deposit(DepositLayer& layer, int x, int y, std::int32_t amount) {
     if (layer.width <= 0 || layer.height <= 0) return;
     if (amount <= 0) return;
-    layer.cells.write(x, y, amount);
+    deposit_set(layer, x, y, amount);
     ++layer.revision;
 }
 

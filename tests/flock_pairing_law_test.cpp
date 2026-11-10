@@ -58,7 +58,8 @@ namespace {
 // Ни одно утверждение ниже не надеется, что генератор на каком-то сиде даст
 // нужное место: мир здесь пуст, и всё, что судится, поставлено руками.
 struct World {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     std::unique_ptr<sm::MacroStore> store = sm::make_macro_store();
 
     World() {

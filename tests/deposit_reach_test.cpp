@@ -22,6 +22,7 @@
 // поле геймплеем не мутируется и в сейв не едет; рождение/долив остались
 // одной дверью генезиса create_deposit.)
 #include "check.h"
+#include <memory>
 
 #include "core/torus.h"
 #include "macro/deposit_layer.h"
@@ -37,11 +38,11 @@ using namespace sm;
 // reach of this cell? This is the code the field replaced.
 bool vein_within_reach(const DepositLayer& layer, int x, int y) {
     bool found = false;
-    layer.cells.for_each_live([&](std::uint32_t idx, std::int32_t remaining) {
+    layer.cells().for_each_live([&](std::uint32_t idx, std::int32_t remaining) {
         (void)remaining;                       // every live cell holds units
         if (found) return;
-        const int vx = layer.cells.x_of(idx);
-        const int vy = layer.cells.y_of(idx);
+        const int vx = layer.cells().x_of(idx);
+        const int vy = layer.cells().y_of(idx);
         const float d2 = torus_dist_sq(float(vx), float(vy),
                                        float(x), float(y),
                                        float(layer.width),
@@ -104,13 +105,15 @@ TerrainData make_world() {
 int main() {
     using namespace sm::test;
 
-    DepositLayer layer = build_deposit_layer(make_world(), 0x51A2B3C4u);
+    std::unique_ptr<DepositLayer> layerOwn{new DepositLayer()};
+    DepositLayer& layer = *layerOwn;
+    build_deposit_layer(layer, make_world(), 0x51A2B3C4u);
 
     // ── 0. THE FIXTURE HAS GEOLOGY, AND THE SWEEP CAN SEE BOTH ANSWERS ────
     // Without this the whole file could pass on an empty world by agreeing
     // that nothing is near anything (AGENTS testing law 2/3).
     {
-        CHECK(layer.cells.liveCells > 0, "the fixture world has veins at all");
+        CHECK(layer.cells().liveCells > 0, "the fixture world has veins at all");
         int near = 0, far = 0;
         for (int y = 0; y < layer.height; ++y)
             for (int x = 0; x < layer.width; ++x) {
@@ -140,11 +143,12 @@ int main() {
         CHECK(disagreements(layer, examined) == 0,
               "a discovered vein brings its reach with it");
         create_deposit(layer, 20, 52, 900);   // refill, not a second birth
-        // Смерть клетки — дверью абсолютной установки (стена ломтя 1 закрыла
-        // сырой write; в живом мире природное поле не умирает вовсе, но
-        // структура ResourceGrid обязана держать счёт дисков и на нуле —
-        // этим же write живут шрамы и числа фич).
-        field_set(layer.cells, layer.wrap_index(20, 52), 0);
+        // Смерть клетки — единственной дверью записи жилы `deposit_set`
+        // (в живом мире природное поле не умирает вовсе, но слой обязан
+        // держать счёт дисков и на нуле). С M-180 диск досягаемости живёт у
+        // слоя жил, а не у поля: сырой `field_set` по клеткам жилы теперь
+        // НЕ СОБИРАЕТСЯ — поле закрыто, наружу отдаётся константой.
+        deposit_set(layer, 20, 52, 0);
         CHECK(disagreements(layer, examined) == 0,
               "a refill is not a second birth — one death still ends it");
     }

@@ -727,7 +727,7 @@ namespace sm
     // ── ГЕНЕРАЦИЯ ШАХТ (вердикт 2026-10-23; контракт — spawners.h) ────────
     void stamp_mines(GameState& gs, FeatureLayer& fl, const TerrainData& td,
                      const DepositLayer& deposits, std::uint32_t seed) {
-        if (!deposits.cells.live() || !world_shape_ok(fl.width, fl.height))
+        if (!deposits.cells().live() || !world_shape_ok(fl.width, fl.height))
             return;
         const int W = deposits.width;
         const int H = deposits.height;
@@ -774,7 +774,7 @@ namespace sm
         std::vector<std::uint32_t> frontier;
         int stamped[std::size_t(FT_Count)] = {};
         int clustersTotal = 0, clustersNear = 0, clustersBuried = 0;
-        deposits.cells.for_each_live([&](std::uint32_t root, std::int32_t) {
+        deposits.cells().for_each_live([&](std::uint32_t root, std::int32_t) {
             if (seen[root]) return;
             seen[root] = 1;
             ++clustersTotal;
@@ -797,7 +797,7 @@ namespace sm
             while (!frontier.empty()) {
                 const std::uint32_t c = frontier.back();
                 frontier.pop_back();
-                const std::int32_t units = deposits.cells.at_index(c);
+                const std::int32_t units = deposits.cells().at_index(c);
                 // Занятость судится КОЛОНКОЙ строки места, а не списком имён
                 // байтов: обратная дверь `rooted_kind_of_feature` отвечает
                 // «чьё это место, если на клетке такой байт», и `None` у неё
@@ -820,7 +820,7 @@ namespace sm
                     for (int dx = -1; dx <= 1; ++dx) {
                         if (dx == 0 && dy == 0) continue;
                         const std::uint32_t n = cell_step(c, dx, dy, W);
-                        if (seen[n] || deposits.cells.at_index(n) == 0)
+                        if (seen[n] || deposits.cells().at_index(n) == 0)
                             continue;
                         seen[n] = 1;
                         frontier.push_back(n);

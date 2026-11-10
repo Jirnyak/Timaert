@@ -16,6 +16,7 @@
 // ordinary NPC in the very same state, which MUST be picked up by the loop
 // that skips the player.
 #include "check.h"
+#include <memory>
 
 #include "macro/player_entity.h"
 #include "bus/world_row.h"
@@ -61,7 +62,8 @@ sm::MacroHandle npc_squad(sm::MacroStore& st, float x, float y,
 
 // ── 1. He is a whole squad, not a husk ───────────────────────────────────
 void test_player_carries_everything_a_squad_carries() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = gs.mapH = 64;
     // (No position scalar to seed since подпосадка 4: the creation door
     // derives the spawn cell from the world — map centre in a bare fixture.)
@@ -105,7 +107,8 @@ void test_player_carries_everything_a_squad_carries() {
 // возвращает флажок с носимого лорда, — и к ней добавлен носитель, который
 // теперь отвечает «его сквад всё ещё его»: ФРАКЦИЯ.
 void test_the_mark_survives_losing_the_flag() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = gs.mapH = 64;
     // (No position scalar to seed since подпосадка 4: the creation door
     // derives the spawn cell from the world — map centre in a bare fixture.)
@@ -145,7 +148,8 @@ void test_the_mark_survives_losing_the_flag() {
 // конкретный сквад (дом)», новая — «есть ли под контролем ХОТЬ КТО-ТО», и
 // третий случай стал тем самым единственным агностичным условием конца игры.
 void test_death_in_a_worn_body_wakes_him_at_home() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = gs.mapH = 64;
     auto wStore_ = sm::make_macro_store();
     ensure_macro_player_entity(gs, *wStore_);
@@ -200,7 +204,8 @@ void test_death_in_a_worn_body_wakes_him_at_home() {
 // Цена названа вслух: пока ты носишь лорда, твоя оставленная партия живёт
 // своей целью, а не стоит колом.
 void test_ai_leaves_the_player_squad_standing() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = gs.mapH = 64;
     // (No position scalar to seed since подпосадка 4: the creation door
     // derives the spawn cell from the world — map centre in a bare fixture.)
@@ -254,7 +259,8 @@ void test_ai_leaves_the_player_squad_standing() {
 // (оба павших контейнера пусты, счёт сложился из обоих) и держит негативный
 // контроль ЖИВЫМ сквадом — свип судит БАЙТ СУДЬБЫ, а не чью-то фамилию.
 void test_the_players_men_are_never_swept() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = gs.mapH = 64;
     auto wStore_ = sm::make_macro_store();
     ensure_macro_player_entity(gs, *wStore_);
@@ -302,7 +308,8 @@ void test_the_players_men_are_never_swept() {
 
 // ── 5. Его числа на сущности не врут ─────────────────────────────────────
 void test_the_entity_numbers_are_not_stale() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = gs.mapH = 64;
     auto wStore_ = sm::make_macro_store();
     // The sheet is the OWNED component now (посадка Б): it exists only once
@@ -388,7 +395,8 @@ void test_the_entity_numbers_are_not_stale() {
 // generic adventurer's — read off the OWNED sheet component on his entity
 // (посадка Б: the storedSheet parameter died, no caller can forget it).
 void test_one_door_assembles_every_battle_side() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = gs.mapH = 64;
     auto wStore_ = sm::make_macro_store();
     ensure_macro_player_entity(gs, *wStore_);
@@ -465,7 +473,8 @@ void test_one_door_assembles_every_battle_side() {
 // PlayerState's ceiling while `settle_avatar_fraction` read the entity's — two
 // copies of one sum, free to round differently about one man.
 void test_the_players_wound_settles_through_the_one_door() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = gs.mapH = 64;
     auto wStore_ = sm::make_macro_store();
     ensure_macro_player_entity(gs, *wStore_);
@@ -507,7 +516,8 @@ void test_the_players_wound_settles_through_the_one_door() {
 // the BASE sheet never moves, and taking the item off leaves no residue.
 void test_the_sheet_door_reads_what_is_standing() {
     auto wStore_ = sm::make_macro_store();
-    GameState gs;
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     ensure_macro_player_entity(gs, *wStore_);
     player_sheet(gs, *wStore_)->attributes[AttributeId::End] = 8;
 

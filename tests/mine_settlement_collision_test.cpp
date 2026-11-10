@@ -28,6 +28,7 @@
 // свидетель краснел бы от невезения мира, а не от нарушения закона.
 
 #include "check.h"
+#include <memory>
 
 #include "core/torus.h"
 #include "macro/deposit_layer.h"
@@ -70,10 +71,12 @@ sm::TerrainData make_land(int side) {
 // Мир фикстуры: деревня на своей клетке с паствой числом фичи, и связный
 // кластер жил, чей МАКСИМУМ лежит на клетке деревни.
 struct Fixture {
-    sm::GameState gs;
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     sm::TerrainData td;
     sm::FeatureLayer fl;
-    sm::DepositLayer deposits;
+    std::unique_ptr<sm::DepositLayer> depositsOwn{new sm::DepositLayer()};
+    sm::DepositLayer& deposits = *depositsOwn;
 };
 
 void build(Fixture& f, bool veinPeakUnderTown) {

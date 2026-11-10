@@ -184,7 +184,8 @@ void test_the_player_door_is_the_general_door() {
           "ординал игрока, снятый НА СБОРКЕ, равен снятому в рантайме: один "
           "словарь, два этапа");
 
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.factions = born_matrix();
     FactionState mirror = born_matrix();
 

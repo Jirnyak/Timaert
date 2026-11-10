@@ -45,7 +45,8 @@ std::uint64_t one_minute(const sm::GameState& gs) {
 }
 
 void test_hour_rollover() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.worldTime = sm::world_time_at(7, 6, 59);
 
     sm::WorldTickRuntime runtime{};
@@ -65,7 +66,8 @@ void test_hour_rollover() {
 }
 
 void test_day_rollover_queues_budgeted_daily_tick() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.worldTime = sm::world_time_at(7, 23, 59);
     gs.player.ageDays = 1000;
 
@@ -144,7 +146,8 @@ void test_the_two_shares_are_independent() {
 }
 
 void test_daily_processing_applies_player_upkeep_and_age() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     // The purse rides his squad entity now; the daily tick is handed it.
     auto worldStore_ = sm::make_macro_store();
     sm::ensure_macro_player_entity(gs, *worldStore_);
@@ -344,8 +347,10 @@ void test_daily_processing_applies_player_upkeep_and_age() {
 void test_many_small_advances_equal_one_big_one() {
     constexpr std::uint64_t kTotal = 10000;   // ~2.5 hours of world time
 
-    sm::GameState slow{};
-    sm::GameState fast{};
+    std::unique_ptr<sm::GameState> slowOwn = sm::make_game_state();
+    sm::GameState& slow = *slowOwn;
+    std::unique_ptr<sm::GameState> fastOwn = sm::make_game_state();
+    sm::GameState& fast = *fastOwn;
     slow.worldTime = sm::world_time_at(3, 8, 17);
     fast.worldTime = slow.worldTime;
 
@@ -383,8 +388,10 @@ void test_many_small_advances_equal_one_big_one() {
 // The subworld divisor keeps its remainder in the runtime, so a walk broken
 // into pieces buys exactly as much daylight as one long one.
 void test_subworld_steps_lose_nothing_when_split() {
-    sm::GameState whole{};
-    sm::GameState split{};
+    std::unique_ptr<sm::GameState> wholeOwn = sm::make_game_state();
+    sm::GameState& whole = *wholeOwn;
+    std::unique_ptr<sm::GameState> splitOwn = sm::make_game_state();
+    sm::GameState& split = *splitOwn;
     whole.worldTime = sm::world_time_at(2, 12, 0);
     split.worldTime = whole.worldTime;
 
@@ -415,7 +422,8 @@ void test_subworld_steps_lose_nothing_when_split() {
 // the state every day would bury the day it started under the days it
 // continued.
 void test_a_famine_is_recorded_once_when_it_begins() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.mapW = 64;
     gs.mapH = 64;
     // Плечо места — колонки ТЕЛА (M-90 шаг 5): store стоит до первого места.

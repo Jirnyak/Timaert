@@ -10,6 +10,7 @@
 //   · no context (unwired terrain) = nothing stands here and nothing moves —
 //     fail closed, like every malformed receipt.
 #include "check.h"
+#include <memory>
 
 #include "macro/fauna.h"
 #include "macro/macro_stock.h"
@@ -62,7 +63,8 @@ MacroStockKey cell_key(int x, int y) {
 }
 
 void test_untouched_cell_reads_capacity() {
-    GameState gs;
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     const TerrainData terrain = meadow_terrain();
     MacroWorld w{.gs = &gs, .terrain = &terrain};
     // Носитель ряда Fauna — хранимое поле (M-371): свидетель рожает своё
@@ -81,7 +83,8 @@ void test_untouched_cell_reads_capacity() {
 }
 
 void test_hunt_thins_and_return_does_not_resurrect() {
-    GameState gs;
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     const TerrainData terrain = meadow_terrain();
     MacroWorld w{.gs = &gs, .terrain = &terrain};
     // Носитель ряда Fauna — хранимое поле (M-371): свидетель рожает своё
@@ -109,7 +112,8 @@ void test_hunt_thins_and_return_does_not_resurrect() {
 }
 
 void test_regrow_self_cleans_at_baseline() {
-    GameState gs;
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     const TerrainData terrain = meadow_terrain();
     MacroWorld w{.gs = &gs, .terrain = &terrain};
     // Носитель ряда Fauna — хранимое поле (M-371): свидетель рожает своё
@@ -136,7 +140,8 @@ void test_regrow_self_cleans_at_baseline() {
 }
 
 void test_regrow_runs_on_game_days() {
-    GameState gs;
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     const TerrainData terrain = meadow_terrain();
     MacroWorld w{.gs = &gs, .terrain = &terrain};
     // Носитель ряда Fauna — хранимое поле (M-371): свидетель рожает своё
@@ -178,7 +183,8 @@ void test_regrow_runs_on_game_days() {
 }
 
 void test_no_context_fails_closed() {
-    GameState gs;
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     MacroWorld w{.gs = &gs};
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(1, 1)) == 0,
           "no terrain wired = nothing stands here");

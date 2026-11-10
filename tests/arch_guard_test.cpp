@@ -730,6 +730,136 @@ void collect_recovery_writers(std::vector<Site>& out) {
     }
 }
 
+// ── R8: СЛОЙ МИРА НЕ ЖИВЁТ ЗНАЧЕНИЕМ ВНЕ СВОЕГО ХОЗЯИНА (M-180) ──────────
+// Слои мира — плоские массивы под капом клеток (`kWorldCellCap`): слой знания
+// 1 МиБ, лес и поле ряда по 2 МиБ, слой жил 4 МиБ, `GameState` 9 МиБ. Локаль
+// такого типа, член фикстуры или возврат значением кладут мегабайты на стек,
+// и ломается это не сборкой, а падением в рантайме (главный поток 8 МиБ,
+// рабочий 512 КиБ).
+//
+// ПОЧЕМУ ПРИБОР, А НЕ ТОЛЬКО ФЛАГ КОМПИЛЯТОРА. `-Wframe-larger-than` стоит в
+// `timaert_build_flags`, но релизная сборка идёт с ThinLTO: кадр стека
+// считается на ЛИНКОВКЕ, и превышение печатается ПРЕДУПРЕЖДЕНИЕМ линковщика,
+// которое `-Werror` не поднимает (замер 2026-11-10: `-Wl,-fatal_warnings` его
+// тоже не поднимает). Флаг остаётся — он называет функцию, — а стену держит
+// этот обход: объявление типа слоя ЗНАЧЕНИЕМ законно только в поимённом списке
+// хозяев ниже. Всё остальное рождается в куче (`make_game_state`,
+// `std::unique_ptr<T>{new T()}`) или пишется в `out` на месте.
+//
+// ГРАНИЦА: ловится объявление `Тип имя…` — локаль, член, возврат значением.
+// Параметр значением (`void f(GameState gs)`) обход не видит; его ловит флаг.
+constexpr std::string_view kWorldLayerTypes[] = {
+    "GameState", "TreeLayer", "DepositLayer", "KnowledgeLayer", "ResourceGrid",
+};
+struct LayerOwner { std::string_view file; std::string_view line; };
+constexpr LayerOwner kWorldLayerOwners[] = {
+    // Приложение — единственный экземпляр, сам рождается в куче (`main`).
+    {"src/app/app_state.h", "sm::GameState gs;"},
+    {"src/app/app_state.h", "sm::TreeLayer treeLayer;"},
+    {"src/app/app_state.h", "sm::DepositLayer deposits;"},
+    // Пять слоёв в теле состояния мира.
+    {"src/macro/state.h", "KnowledgeLayer knowledge;"},
+    {"src/macro/state.h", "ResourceGrid wheatScars;"},
+    {"src/macro/state.h", "ResourceGrid featureNumber;"},
+    {"src/macro/state.h", "ResourceGrid faunaField;"},
+    {"src/macro/state.h", "ResourceGrid lightEmission;"},
+    // Поле жил в теле слоя жил.
+    {"src/macro/deposit_layer.h", "ResourceGrid cells_;"},
+};
+
+// «Тип имя…» в начале строки (после `const`/`static`/`inline` и `sm::`).
+// Ссылка, указатель, шаблонный аргумент и опережающее объявление сюда не
+// попадают: после имени типа у них стоит не пробел с идентификатором.
+bool line_declares_layer_by_value(std::string_view line) {
+    std::string_view t = line;
+    const auto eat = [&](std::string_view w) {
+        if (t.rfind(w, 0) == 0) { t.remove_prefix(w.size()); return true; }
+        return false;
+    };
+    while (!t.empty() && (t.front() == ' ' || t.front() == '\t'))
+        t.remove_prefix(1);
+    while (eat("const ") || eat("static ") || eat("inline ")) {}
+    eat("sm::");
+    for (std::string_view type : kWorldLayerTypes) {
+        if (t.rfind(type, 0) != 0) continue;
+        std::string_view rest = t.substr(type.size());
+        if (rest.empty() || rest.front() != ' ') continue;
+        while (!rest.empty() && rest.front() == ' ') rest.remove_prefix(1);
+        if (rest.empty()) continue;
+        const char c = rest.front();
+        const bool ident = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                           || c == '_';
+        if (ident) return true;
+    }
+    return false;
+}
+
+void test_world_layers_never_by_value() {
+    int files = 0, owners = 0, strays = 0;
+    for (std::string_view top : {std::string_view("src"),
+                                 std::string_view("tests")}) {
+        const fs::path dir = fs::path(kRoot) / fs::path(top);
+        CHECK_OR_RETURN(fs::is_directory(dir), "каталог обхода на месте");
+        for (const auto& e : fs::recursive_directory_iterator(dir)) {
+            if (!e.is_regular_file()) continue;
+            const std::string ext = e.path().extension().string();
+            if (ext != ".cpp" && ext != ".h") continue;
+            const std::string rel =
+                fs::relative(e.path(), fs::path(kRoot)).generic_string();
+            // Сам прибор несёт эти строки образцами негативного контроля.
+            if (rel == "tests/arch_guard_test.cpp") continue;
+            ++files;
+            const std::vector<std::string> lines =
+                split_lines(read_file(e.path()));
+            for (std::size_t n = 0; n < lines.size(); ++n) {
+                // Комментарий — не объявление.
+                std::string code = lines[n];
+                if (const std::size_t c = code.find("//");
+                    c != std::string::npos)
+                    code.erase(c);
+                if (!line_declares_layer_by_value(code)) continue;
+                const std::string t = collapse(code);
+                bool owned = false;
+                for (const LayerOwner& o : kWorldLayerOwners)
+                    if (rel == o.file && t == o.line) owned = true;
+                if (owned) { ++owners; continue; }
+                ++strays;
+                std::fprintf(stderr,
+                             "  СЛОЙ МИРА ЗНАЧЕНИЕМ: %s:%d  %s  — мегабайты "
+                             "на стеке; рождать в куче или писать в `out` "
+                             "(M-180)\n",
+                             rel.c_str(), int(n) + 1, t.c_str());
+            }
+        }
+    }
+    CHECK(files > 200,
+          "файлы src и tests прочитаны — иначе ноль нарушений означал бы "
+          "сломанный обход");
+    CHECK(owners == int(std::size(kWorldLayerOwners)),
+          "каждый поимённый хозяин слоя найден в дереве ровно своей строкой "
+          "— иначе список хозяев протух и прикрывает то, чего нет");
+    CHECK(strays == 0,
+          "слой мира нигде не объявлен значением вне списка хозяев: ни "
+          "локалью, ни членом фикстуры, ни возвратом функции");
+
+    // НЕГАТИВНЫЙ КОНТРОЛЬ ДЕТЕКТОРА: то, что он обязан видеть и не видеть.
+    CHECK(line_declares_layer_by_value("    sm::GameState gs;"),
+          "локаль состояния видна");
+    CHECK(line_declares_layer_by_value("TreeLayer flat_trees(int n) {"),
+          "возврат слоя значением виден");
+    CHECK(line_declares_layer_by_value("    const DepositLayer born = f();"),
+          "константная локаль видна");
+    CHECK(!line_declares_layer_by_value("    sm::GameState& gs = *gsOwn;"),
+          "ссылка — не значение");
+    CHECK(!line_declares_layer_by_value("struct TreeLayer;"),
+          "опережающее объявление — не значение");
+    CHECK(!line_declares_layer_by_value(
+              "    std::unique_ptr<GameState> gsOwn = make_game_state();"),
+          "владение кучей — не значение");
+    CHECK(!line_declares_layer_by_value("    const TreeLayer* trees = w.trees;"),
+          "указатель — не значение");
+}
+
 // ── R5: КАРКАС КАТАЛОГОВ ЗАКРЫТ ───────────────────────────────────────────
 // Чистая сверка двух множеств — на неё стоит негативный контроль ниже.
 struct DirDiff {
@@ -1225,6 +1355,7 @@ int main() {
     test_direction_is_one_way();
     const Boundary b = test_melting_rules();
     test_closed_top_dirs();
+    test_world_layers_never_by_value();
     test_detectors_actually_see();
     test_legacy_list_mechanism();
 

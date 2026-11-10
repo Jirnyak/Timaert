@@ -25,6 +25,7 @@
 // котором два ответа РАЗНЫЕ, и спрашивает, чей победил.
 
 #include "check.h"
+#include <memory>
 
 #include "core/torus.h"
 #include "ecs/components.h"
@@ -73,7 +74,8 @@ sm::MacroHandle birth_squad_at(sm::MacroStore& st, int x, int y,
 } // namespace
 
 int main() {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     gs.mapW = kSide;
     gs.mapH = kSide;
     gs.worldSeed = 4242u;

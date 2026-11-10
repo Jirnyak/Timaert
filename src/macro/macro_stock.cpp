@@ -522,11 +522,11 @@ void allocate_world_fields(GameState& gs, int width, int height) {
         // Reach 0: the scar answers «сколько здесь», and no gate asks the
         // neighbourhood question of a scar (the vein rows, which do get
         // asked, own their reach inside the deposit layer).
-        g.allocate(width, height, 0);
+        g.allocate(width, height);
     }
     if (!(gs.featureNumber.width == width && gs.featureNumber.height == height
           && gs.featureNumber.live())) {
-        gs.featureNumber.allocate(width, height, 0);
+        gs.featureNumber.allocate(width, height);
     }
 }
 
@@ -654,7 +654,7 @@ int field_move(MacroWorld& w, ResourceFieldId f, int x, int y, int delta) {
     // the read simply answers "whole" (the fold-up lesson, applied to the one
     // door instead of to every fixture).
     if (!scars.live()) {
-        scars.allocate(w.terrain->width, w.terrain->height, 0);
+        scars.allocate(w.terrain->width, w.terrain->height);
         if (!scars.live()) return 0;
     }
     // Spending (−delta) deepens the scar, returning (+delta, regrowth)
@@ -759,7 +759,7 @@ int resource_field_scar(const GameState& gs, ResourceFieldId f,
     // Ряд-носитель шрама не держит — у него ответ всегда ноль.
     if (resource_field_def(f).carrierRead) return 0;
     const ResourceGrid& scars = gs.wheatScars;
-    if (!scars.live() || cellIdx >= scars.cells.size()) return 0;
+    if (!scars.live() || cellIdx >= scars.cell_count()) return 0;
     return int(scars.cells[cellIdx]);
 }
 

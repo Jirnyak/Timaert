@@ -11,6 +11,7 @@
 //     save, load, spawn anew — the dead man's ordinal is never reissued
 //     (with the old max-over-living scan that exact sequence reissued it).
 #include "check.h"
+#include <memory>
 
 #include "macro/macro_snapshot.h"
 #include "bus/world_row.h"
@@ -49,7 +50,8 @@ MacroHandle find_by_ordinal(sm::MacroStore& st, std::uint32_t ordinal) {
 }
 
 void test_snapshot_round_trips_the_living_map() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = 64;
     gs.mapH = 64;
     gs.worldSeed = 777u;
@@ -144,7 +146,8 @@ void test_snapshot_round_trips_the_living_map() {
                               snapshot_macro_ecs(*wStore_), noTrees, path),
                     "the snapshot saved");
 
-    GameState gs2{};
+    std::unique_ptr<GameState> gs2Own = make_game_state();
+    GameState& gs2 = *gs2Own;
     std::uint32_t nextSpawnId2 = 0;
     std::vector<MacroNpcRecord> records2;
     std::vector<std::uint16_t> trees2;
@@ -230,7 +233,8 @@ void test_snapshot_round_trips_the_living_map() {
 void test_resnapshot_is_byte_identical() {
     static_assert(std::is_trivially_copyable_v<MacroNpcRecord>,
                   "запись снапшота обязана сниматься байтами (DOD)");
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = 64;
     gs.mapH = 64;
     gs.worldSeed = 777u;

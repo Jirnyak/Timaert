@@ -17,6 +17,8 @@
 //     a stone host WITHOUT deleting it, and the strike is a pure function
 //     of the calendar (same seed+day = same vein).
 #include "check.h"
+#include <algorithm>
+#include <memory>
 
 #include "macro/deposit_layer.h"
 #include "macro/macro_stock.h"
@@ -86,12 +88,12 @@ void paint_desert_stripe(TerrainData& t) {
     bake_biomes(t);
 }
 
-TreeLayer flat_trees(std::uint16_t count) {
-    TreeLayer trees;
-    trees.width = kW;
-    trees.height = kH;
-    trees.data.assign(std::size_t(kW) * kH, count);
-    return trees;
+std::unique_ptr<TreeLayer> flat_trees(std::uint16_t count) {
+    std::unique_ptr<TreeLayer> treesOwn{new TreeLayer()};
+    TreeLayer& trees = *treesOwn;
+    tree_layer_reset(trees, kW, kH);
+    std::ranges::fill(trees.cells(), count);
+    return treesOwn;
 }
 
 // Run the daily walker over `days` consecutive game days (1-based).
@@ -102,13 +104,15 @@ void run_days(MacroWorld& w, int days) {
 }
 
 void test_forest_plants_the_forest() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = kW;
     gs.mapH = kH;
     const TerrainData td = make_terrain();
 
     // A living massif block with one clear-cut cell inside it.
-    TreeLayer trees = flat_trees(0);
+    std::unique_ptr<TreeLayer> treesOwn = flat_trees(0);
+    TreeLayer& trees = *treesOwn;
     for (int y = 4; y <= 8; ++y)
         for (int x = 4; x <= 8; ++x)
             set_tree_count(trees, x, y, kMaxTreesPerCell);
@@ -142,14 +146,16 @@ void test_forest_plants_the_forest() {
 }
 
 void test_biome_gate_starves_the_desert() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = kW;
     gs.mapH = kH;
     TerrainData td = make_terrain();
     paint_desert_stripe(td);
 
     // Two identical forest blocks: one on the desert stripe, one on meadow.
-    TreeLayer trees = flat_trees(0);
+    std::unique_ptr<TreeLayer> treesOwn = flat_trees(0);
+    TreeLayer& trees = *treesOwn;
     for (int y = 4; y <= 6; ++y) {
         for (int x = 2; x <= 4; ++x)
             set_tree_count(trees, x, y, 12000);         // desert block
@@ -169,7 +175,8 @@ void test_biome_gate_starves_the_desert() {
 }
 
 void test_beasts_breed_where_beasts_are() {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = kW;
     gs.mapH = kH;
     const TerrainData td = make_terrain();
@@ -212,13 +219,16 @@ void test_the_vein_field_is_inert_and_a_mine_does_not_regrow() {
     // вердиктами: природное поле не убывает вовсе, ему нечего заживлять, а
     // восстановление залежи шахты владелец не продиктовал. Свидетель
     // ПЕРЕПИСАН под новый закон, а не подогнан ожиданием под новый ответ.)
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     gs.mapW = kW;
     gs.mapH = kH;
     gs.worldSeed = 12345u;
     const TerrainData td = make_terrain();
-    DepositLayer deposits = build_deposit_layer(td, gs.worldSeed);
-    CHECK_OR_RETURN(deposits.cells.liveCells > 0,
+    std::unique_ptr<DepositLayer> depositsOwn{new DepositLayer()};
+    DepositLayer& deposits = *depositsOwn;
+    build_deposit_layer(deposits, td, gs.worldSeed);
+    CHECK_OR_RETURN(deposits.cells().liveCells > 0,
                     "the fixture world holds veins");
     FeatureLayer features;
     features.resize(kW, kH);
@@ -227,17 +237,19 @@ void test_the_vein_field_is_inert_and_a_mine_does_not_regrow() {
 
     // ДИКАЯ ЖИЛА ИНЕРТНА: выемка без шахты невыразима, календарь её не
     // трогает — поле тождественно рождённому.
-    const std::uint32_t firstIdx = deposits.cells.first_live();
-    const int vx = deposits.cells.x_of(firstIdx);
-    const int vy = deposits.cells.y_of(firstIdx);
-    const int wild = int(deposits.cells.at_index(firstIdx));
+    const std::uint32_t firstIdx = deposits.cells().first_live();
+    const int vx = deposits.cells().x_of(firstIdx);
+    const int vy = deposits.cells().y_of(firstIdx);
+    const int wild = int(deposits.cells().at_index(firstIdx));
     CHECK(field_move(w, ResourceFieldId::Vein, vx, vy, -5) == 0,
           "добыча существует по шахтам: дикую жилу выемка не берёт");
-    CHECK(int(deposits.cells.at_index(firstIdx)) == wild,
+    CHECK(int(deposits.cells().at_index(firstIdx)) == wild,
           "и клетка дикой жилы не шелохнулась");
-    const DepositLayer born = build_deposit_layer(td, gs.worldSeed);
+    std::unique_ptr<DepositLayer> bornOwn{new DepositLayer()};
+    build_deposit_layer(*bornOwn, td, gs.worldSeed);
+    const DepositLayer& born = *bornOwn;
     run_days(w, 256);
-    CHECK(deposits.cells == born.cells,
+    CHECK(deposits.cells() == born.cells(),
           "256 дней календаря не сдвинули природное поле ни на юнит");
 
     // ЗАЛЕЖЬ ШАХТЫ: кап — СВЯЗНОСТЬ кластера (фундамент), текущее дорастает
@@ -259,7 +271,8 @@ void test_the_vein_field_is_inert_and_a_mine_does_not_regrow() {
     // EXTINCTION is the honest end of the breeding law: a world whose
     // fauna is gone EVERYWHERE has nobody left to breed, anywhere, ever.
     {
-        GameState gsx{};
+        std::unique_ptr<GameState> gsxOwn = make_game_state();
+        GameState& gsx = *gsxOwn;
         gsx.mapW = kW;
         gsx.mapH = kH;
         MacroWorld wx{.gs = &gsx, .terrain = &td};

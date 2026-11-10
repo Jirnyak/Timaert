@@ -119,7 +119,8 @@ int faction_idx(const char* id) {
 }
 
 struct HuntRig {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     std::unique_ptr<sm::MacroStore> wStore_ = sm::make_macro_store();
     TerrainData absent{};
     Rng rng{123u};

@@ -14,6 +14,7 @@
 //   · no context (unwired terrain) = nothing stands here and nothing moves —
 //     fail closed, like every malformed receipt.
 #include "check.h"
+#include <memory>
 
 #include "macro/macro_stock.h"
 #include "macro/map_generator.h"
@@ -60,7 +61,8 @@ MacroStockKey cell_key(int x, int y) {
 }
 
 void test_untouched_cell_reads_fertility_estimate() {
-    GameState gs;
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     const TerrainData terrain = flat_terrain(160.0f / 255.0f);
     MacroWorld w{.gs = &gs, .terrain = &terrain};
 
@@ -74,7 +76,8 @@ void test_untouched_cell_reads_fertility_estimate() {
 }
 
 void test_estimate_follows_fertility() {
-    GameState gs;
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     TerrainData terrain = flat_terrain(128.0f / 255.0f);
     // Cell (1,1) is wetter than cell (2,2) — the wetter one must read more.
     terrain.rgba[(std::size_t(1) * 4 + 1) * 4 + 1] =
@@ -91,7 +94,8 @@ void test_estimate_follows_fertility() {
 }
 
 void test_harvest_thins_and_return_does_not_resurrect() {
-    GameState gs;
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     const TerrainData terrain = flat_terrain(160.0f / 255.0f);
     MacroWorld w{.gs = &gs, .terrain = &terrain};
     const int est = macro_stock_read(w, MacroStock::CropCount, cell_key(2, 2));
@@ -125,7 +129,8 @@ void test_harvest_thins_and_return_does_not_resurrect() {
 }
 
 void test_regrow_self_cleans_when_whole() {
-    GameState gs;
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     const TerrainData terrain = flat_terrain(160.0f / 255.0f);
     MacroWorld w{.gs = &gs, .terrain = &terrain};
 
@@ -166,7 +171,8 @@ void test_regrow_self_cleans_when_whole() {
 }
 
 void test_no_terrain_fails_closed() {
-    GameState gs;
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     MacroWorld w{.gs = &gs};
     CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(1, 1)) == 0,
           "no terrain wired: nothing stands here");

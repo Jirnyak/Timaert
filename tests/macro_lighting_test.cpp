@@ -11,6 +11,7 @@
 // (terrain-occluded propagation: open land carries light far, forest attenuates,
 // mountain blocks) this file gains the occlusion cases.
 #include "check.h"
+#include <memory>
 #include "macro/labour.h"   // settle_souls / souls_flock — двери душ
 
 #include "macro/macro_lighting.h"
@@ -140,7 +141,8 @@ int main() {
 
     // ---- collect_macro_lights: census, opt-out, tint, population scaling ----
     {
-        GameState gs;
+        std::unique_ptr<GameState> gsOwn = make_game_state();
+        GameState& gs = *gsOwn;
         gs.mapW = 256;
         gs.mapH = 256;
         // Место есть неподвижный сквад (M-90 шаг 5): его склад и его паства —

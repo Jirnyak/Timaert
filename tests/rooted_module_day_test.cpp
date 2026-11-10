@@ -44,6 +44,7 @@
 //   · `birth_squad` С ЯВНОЙ ФРАКЦИЕЙ — при -1 минтовый рецепт глохнет
 //     fail-closed (`faction_mint_rows(-1)` = `{-1,-1,-1}`).
 #include "check.h"
+#include <memory>
 
 #include "macro/npc_ai.h"
 #include "macro/pathfinding.h"   // PathCostData — вес земли под стоящим
@@ -122,9 +123,11 @@ TerrainData all_land() {
 constexpr float kFixtureCellWeight = 5.0f;
 
 struct Fixture {
-    GameState gs{};
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     TerrainData terrain = all_land();
-    TreeLayer trees;
+    std::unique_ptr<TreeLayer> treesOwn{new TreeLayer()};
+    TreeLayer& trees = *treesOwn;
     PathCostData pathCost;
     // СЛОЙ ФИЧ — НЕ УКРАШЕНИЕ ФИКСТУРЫ: без него `birth_squad` фичу не
     // ставит вовсе (её постановка гейтится `fl && td`), и закон «умирающий
@@ -136,9 +139,7 @@ struct Fixture {
         gs.mapW = kMap;
         gs.mapH = kMap;
         chronicle_init(gs.chronicle, kMap, kMap);
-        trees.width = kMap;
-        trees.height = kMap;
-        trees.data.assign(std::size_t(kMap) * kMap, 0);
+        tree_layer_reset(trees, kMap, kMap);
         // Сетка весов — плоская и НЕ водная: предмет проверки есть цена
         // ДОРОГИ у стоящего, и подмешивать сюда воду значило бы мерить две
         // величины одной проверкой. Высоты НЕ печём нарочно: `climb`

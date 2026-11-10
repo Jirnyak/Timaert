@@ -262,6 +262,25 @@ else()
         # ровно тому, кто МОЛЧИТ. Мак (AppleClang) получает ту же строку
         # компиляции, что и до правки: проверено сверкой команды сборки.
         $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wreorder-init-list>
+        # СОСТОЯНИЕ МИРА НА СТЕКЕ НЕ ЖИВЁТ — СТЕНОЙ, А НЕ ПАМЯТКОЙ (M-180,
+        # 2026-11-10). Слои мира стали плоскими массивами под капом клеток
+        # (`kWorldCellCap@src/core/caps.h`): слой знания 1 МиБ, лес и поле
+        # ряда по 2 МиБ, `GameState` — мегабайты. Локаль такого типа, возврат
+        # его значением или временный `GameState{}` кладут это на стек, и
+        # ломается оно не сборкой, а падением в рантайме — на главном потоке
+        # за 8 МиБ, на рабочем за 512 КиБ. Порог в 1 МиБ ниже самого малого
+        # слоя, поэтому ЛЮБОЙ слой мира в кадре стека называется поимённо, с
+        # функцией. Чинится не подъёмом порога, а рождением в куче
+        # (`make_game_state@src/macro/state.h`) или записью в `out` на месте.
+        #
+        # ГРАНИЦА ФЛАГА, НАЗВАННАЯ ЗАМЕРОМ: сборка без LTO (Debug, asan)
+        # получает ОШИБКУ компилятора; релизная идёт с ThinLTO, кадр там
+        # считается на линковке и печатается ПРЕДУПРЕЖДЕНИЕМ линковщика
+        # («stack frame size (N) exceeds limit»), которое не поднимают ни
+        # `-Werror`, ни `-Wl,-fatal_warnings`. Поэтому стену в `check` держит
+        # не флаг, а обход `test_world_layers_never_by_value` в
+        # `tests/arch_guard_test.cpp`; флаг — вторая сеть и имя функции.
+        -Wframe-larger-than=1048576
         -fno-rtti -fno-exceptions
         # -fno-finite-math-only keeps NaN/Inf checks working under fast-math.
         -ffast-math -fno-finite-math-only)
@@ -2895,7 +2914,7 @@ target_compile_definitions(world_fold_law_test
 # правки. Пинится то, чего не предъявляет никто: счёт проверок и само наличие
 # границы в вердикте.
 timaert_test(arch_guard_test
-    PIN "OK arch_guard_test .64 checks. .долг канала [0-9]+ · безадресных вердиктов [0-9]+ · файлов entt [0-9]+ — рост запрещён, чистота НЕ утверждается")
+    PIN "OK arch_guard_test .76 checks. .долг канала [0-9]+ · безадресных вердиктов [0-9]+ · файлов entt [0-9]+ — рост запрещён, чистота НЕ утверждается")
 target_compile_definitions(arch_guard_test
     PRIVATE TIMAERT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 

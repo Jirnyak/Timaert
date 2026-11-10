@@ -43,9 +43,11 @@ constexpr int kMap = 64;
 // предусловия сам (§8 п.11) — ни одна клетка не надеется на генератор.
 struct World {
     std::unique_ptr<MacroStore> store;
-    GameState gs;
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
     TerrainData td;
-    TreeLayer trees;
+    std::unique_ptr<TreeLayer> treesOwn{new TreeLayer()};
+    TreeLayer& trees = *treesOwn;
     FeatureLayer features;
     MacroHandle village{};
     MacroHandle artel{};
@@ -60,8 +62,8 @@ struct World {
 };
 
 World make_world() {
-    World w{make_macro_store(), GameState{}, TerrainData{}, TreeLayer{},
-            FeatureLayer{}, {}, {}};
+    World w;
+    w.store = make_macro_store();
     w.gs.mapW = kMap;
     w.gs.mapH = kMap;
     w.td.width = kMap;
@@ -75,9 +77,7 @@ World make_world() {
         w.td.rgba[s + 2] = field_word_of(128.0f / 255.0f);
         w.td.rgba[s + 3] = std::uint16_t(kFieldWordMax);
     }
-    w.trees.width = kMap;
-    w.trees.height = kMap;
-    w.trees.data.assign(std::size_t(kMap) * kMap, 0);
+    tree_layer_reset(w.trees, kMap, kMap);
     w.features.resize(kMap, kMap);
     allocate_world_fields(w.gs, kMap, kMap);
 

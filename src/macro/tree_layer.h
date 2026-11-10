@@ -28,8 +28,10 @@
 //     through the registry (field_move → this grid).
 #pragma once
 #include "macro/resource_field.h"   // FieldCell — общая ширина клетки поля
+#include "core/caps.h"              // kWorldCellCap — кап клеток мира
 #include <cstdint>
-#include <vector>
+#include <cstring>
+#include <span>
 // THE TABLE HALF OF THE FOREST LIVES IN THE NEUTRAL LAYER (§11, 2026-10-03).
 // The ceiling, the class line, the biome ambient and the derivation formula
 // have no world in them, and a census found NINE files under src/sub/ holding
@@ -51,36 +53,62 @@ namespace sm {
 static_assert(kMaxTreesPerCell <= kMaxFieldUnitsPerCell,
               "потолок леса переросл клетку поля");
 
+// ПЛОСКИЙ МАССИВ ПОД КАПОМ КЛЕТОК МИРА (M-180, 2026-11-10): heap-члена у слоя
+// нет. Здесь стоял `std::vector<std::uint16_t>`, и «построен ли слой»
+// отвечала ДЛИНА ВЕКТОРА — второй носитель размера мира рядом с
+// `width/height`. Теперь носитель один: слой жив, когда его стороны называют
+// мир в пределах капа. Живые клетки — первые `cell_count()`; хвост до капа
+// стоит нулём, его чистит `tree_layer_reset`. Структура весит 2 МиБ и на
+// стеке не живёт — она рождается на месте (у `App`, в куче фикстуры), и
+// двери ниже ПИШУТ В НЕЁ, а не возвращают её значением.
 struct TreeLayer {
     int width = 0, height = 0;
-    std::vector<std::uint16_t> data;
     // Runtime dirty counter — bumped on every mutation so the renderer knows
     // to refresh u_treeMap. Never serialized.
     std::uint32_t revision = 0;
+    std::uint16_t data[kWorldCellCap] = {};
 
     std::size_t cell_count() const {
-        std::size_t n = 0;
-        return FeatureLayer::cell_count_for(width, height, n) ? n : 0u;
+        return world_cells_within_cap(width, height);
     }
-    bool has_complete_storage() const {
-        const std::size_t n = cell_count();
-        return n > 0u && data.size() >= n;
+    bool has_complete_storage() const { return cell_count() > 0u; }
+    // Живые клетки слоя — ровно мир, не кап (их и везёт сейв).
+    std::span<const std::uint16_t> cells() const {
+        return {data, cell_count()};
     }
+    std::span<std::uint16_t> cells() { return {data, cell_count()}; }
     std::uint16_t at(int x, int y) const {
-        if (!world_shape_ok(width, height) || data.empty()) return 0;
-        const std::size_t i = cell_of(x, y, width);
-        return i < data.size() ? data[i] : std::uint16_t(0);
+        if (!world_shape_ok(width, height) || cell_count() == 0u) return 0;
+        return data[cell_of(x, y, width)];
     }
 };
+static_assert(sizeof(TreeLayer) == 12u + 2u * kWorldCellCap,
+              "слой леса: 12 Б шапки + u16 на клетку капа, без хвоста");
+
+// Родить ПУСТОЙ слой над миром w×h: стороны названы, весь кап обнулён.
+// Мир вне капа (или с неположительной стороной) рождает слой без сторон —
+// fail-closed, `at()` отвечает 0. Единственная дверь рождения: фикстура,
+// которой нужен лес нужной плотности, зовёт её и пишет клетки через
+// `cells()`.
+// Чистится ВЕСЬ кап: хвост за миром обязан стоять нулём, иначе байты слоя
+// помнили бы прошлый мир.
+inline void tree_layer_reset(TreeLayer& layer, int width, int height) {
+    const bool fits = world_cells_within_cap(width, height) > 0u;
+    layer.width = fits ? width : 0;
+    layer.height = fits ? height : 0;
+    std::memset(layer.data, 0, sizeof(layer.data));
+    ++layer.revision;
+}
 
 // Build the derived layer from terrain (biome classification: water mask,
 // mountain elevation, climate matrix — same cascade as resolve_context) and
 // the forest-massif mask (`forestMask`: width×height bytes, nonzero = the
 // cell belongs to a spawn_trees massif; null/short = no massifs, ambience
-// only). Deterministic; torus-wrapped.
-TreeLayer build_tree_layer(const TerrainData& terrain,
-                           const std::uint8_t* forestMask,
-                           std::size_t forestMaskCount);
+// only). Deterministic; torus-wrapped. Пишет в `out` на месте: слой весит
+// 2 МиБ, и возврат значением клал бы его на стек звонящего.
+void build_tree_layer(TreeLayer& out, const TerrainData& terrain,
+                      const std::uint8_t* forestMask,
+                      std::size_t forestMaskCount);
 
 // Set one cell's count: clamps to [0, kMaxTreesPerCell], writes the grid and
 // bumps `revision`. This is the GRID's one poke door — gameplay never calls
@@ -92,6 +120,6 @@ void set_tree_count(TreeLayer& layer, int x, int y, int count);
 // living field whole). Refuses a size mismatch — the version gate makes that
 // unreachable short of a corrupt file; virgin derivation then stands.
 bool restore_tree_counts(TreeLayer& layer,
-                         const std::vector<std::uint16_t>& counts);
+                         std::span<const std::uint16_t> counts);
 
 } // namespace sm

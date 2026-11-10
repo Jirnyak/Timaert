@@ -59,6 +59,7 @@
 // ЗАПУСК: `./build/fauna_spread_census [сид ...]` (по умолчанию три сида).
 
 #include "core/caps.h"
+#include <memory>
 #include "core/torus.h"
 #include "macro/features.h"
 #include "macro/map_generator.h"
@@ -182,11 +183,14 @@ void print_scene(const char* title, const Scene& sc, const sm::FaunaBand& band) 
 }
 
 void census_seed(std::uint32_t seed) {
-    sm::GameState gs;
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     sm::TerrainData terrain{};
     std::vector<sm::TreePoint> trees;
-    sm::TreeLayer treeLayer;
-    sm::DepositLayer deposits;
+    std::unique_ptr<sm::TreeLayer> treeLayerOwn{new sm::TreeLayer()};
+    sm::TreeLayer& treeLayer = *treeLayerOwn;
+    std::unique_ptr<sm::DepositLayer> depositsOwn{new sm::DepositLayer()};
+    sm::DepositLayer& deposits = *depositsOwn;
     sm::FeatureLayer features;
     sm::ZoneLayer zones;
     sm::TreeGrid treeGrid;
@@ -223,7 +227,7 @@ void census_seed(std::uint32_t seed) {
         const std::uint8_t danger =
             c < zones.data.size() ? zones.data[c] : std::uint8_t(0);
         const int treeCount =
-            c < treeLayer.data.size() ? int(treeLayer.data[c]) : 0;
+            c < treeLayer.cell_count() ? int(treeLayer.data[c]) : 0;
 
         sm::SpawnContext ctx{};
         ctx.biome = sm::biome_at_cell(terrain, std::uint32_t(c));
@@ -314,7 +318,7 @@ void census_seed(std::uint32_t seed) {
             const std::size_t c =
                 std::size_t(y) * std::size_t(side) + std::size_t(x);
             const int treeCount =
-                c < treeLayer.data.size() ? int(treeLayer.data[c]) : 0;
+                c < treeLayer.cell_count() ? int(treeLayer.data[c]) : 0;
             const int budget =
                 sm::resource_field_read(mw, sm::ResourceFieldId::Fauna, x, y);
             sm::SpawnContext ctx{};

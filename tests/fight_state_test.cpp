@@ -54,7 +54,8 @@
 namespace {
 
 struct Fixture {
-    sm::GameState gs{};
+    std::unique_ptr<sm::GameState> gsOwn = sm::make_game_state();
+    sm::GameState& gs = *gsOwn;
     std::unique_ptr<sm::MacroStore> store;
     sm::MacroNpcAiRuntime ai;
     int homeOrdinal = 0;   // ординал дома берётся У САМОГО РОЖДЕНИЯ

@@ -213,7 +213,7 @@ std::vector<std::uint16_t> build_deposit_reach_field(const DepositLayer& dl,
     // знать не может — род ресурса решит фича шахты, которую генерация
     // поставит ПОСЛЕ поселений.
     constexpr int kVeinSiteWorth = 16;
-    dl.cells.for_each_live(
+    dl.cells().for_each_live(
             [&](std::uint32_t idx, std::int32_t remaining) {
         (void)remaining;   // presence is what settles people
         for (int dy = -kGathererReach; dy <= kGathererReach; ++dy) {
