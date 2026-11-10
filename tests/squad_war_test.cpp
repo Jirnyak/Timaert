@@ -225,6 +225,83 @@ void test_the_weak_flee_and_fighters_pursue() {
 }
 
 // Neutral squads pass each other exactly as they always did.
+// ВСТАТЬ — ЗНАЧИТ ОТКАЗАТЬСЯ ОТ АДРЕСА (M-2). Ноги свипа везут всякого, у
+// кого цель в пути, и состояния не читают: рефлекс, который хочет, чтобы
+// сквад СТОЯЛ (победитель после боя; беглец, которому больше не от кого
+// бежать), обязан бросить адрес — записать `Idle` для этого уже мало.
+// Обе половины с позицией-якорем: без отказа сквад уходит по старой цели.
+void test_a_reflex_that_stops_a_squad_drops_its_address() {
+    // ── победитель после боя стоит свою паузу ───────────────────────────
+    {
+        std::unique_ptr<GameState> gsOwn = make_world(-80);
+        GameState& gs = *gsOwn;
+        auto wStore_ = sm::make_macro_store();
+        sm::MacroStore& st = *wStore_;
+        const auto bandit = make_squad_at(st, NPCType::Bandit, "bandits", 5,
+                                          10.0f, 10.0f, 1u,
+                                          {11u, 12u, 13u, 14u},
+                                          NPCType::Bandit, 4);
+        make_squad_at(st, NPCType::Merchant, "timaert", 1, 10.0f, 10.0f, 2u,
+                      {21u}, NPCType::Peasant, 1);
+        // Банда шла по своим делам — далеко на восток.
+        ecs::goal_set(st.goal[bandit.slot], ecs::cell_index(40, 10, kMap),
+                      0, 0, std::uint8_t(NPCState::Idle));
+        st.runtime[bandit.slot].state = std::uint8_t(NPCState::Wandering);
+        MacroNpcAiRuntime rt{};
+        reset_macro_npc_ai_runtime(rt, 42u);
+        drive(gs, nullptr, st, rt, 1);
+        CHECK(ecs::squad_recovering(st.runtime[bandit.slot])
+                  && st.runtime[bandit.slot].state
+                         == std::uint8_t(NPCState::Idle),
+              "фикстура: бой случился первой думкой, победитель на паузе");
+        CHECK(st.goal[bandit.slot].cell == ecs::kNoCell
+                  && st.goal[bandit.slot].underway == 0,
+              "ПОСЛЕ БОЯ адрес брошен: победителю некуда идти");
+        // Пауза после боя — не меньше трёх думок; две из них стоим.
+        drive(gs, nullptr, st, rt, 2);
+        CHECK(st.cell[bandit.slot].idx == ecs::cell_index(10, 10, kMap),
+              "и он СТОИТ свою паузу, а не уходит по прежней цели");
+    }
+    // ── беглец, которому больше не от кого бежать, встаёт ───────────────
+    {
+        std::unique_ptr<GameState> gsOwn = make_world(-80);
+        GameState& gs = *gsOwn;
+        auto wStore_ = sm::make_macro_store();
+        sm::MacroStore& st = *wStore_;
+        const auto bandit = make_squad_at(st, NPCType::Bandit, "bandits", 6,
+                                          10.0f, 10.0f, 1u,
+                                          {11u, 12u, 13u, 14u},
+                                          NPCType::Bandit, 5);
+        const auto caravan = make_squad_at(st, NPCType::Merchant, "timaert",
+                                           1, 14.0f, 10.0f, 2u, {},
+                                           NPCType::Peasant, 1);
+        (*sm::body_state<ecs::Pools>(st, bandit)).sp = 0;
+        (*sm::body_state<ecs::MacroNpcRuntime>(st, bandit)).state =
+            std::uint8_t(NPCState::Resting);
+        MacroNpcAiRuntime rt{};
+        reset_macro_npc_ai_runtime(rt, 43u);
+        drive(gs, nullptr, st, rt, 1);
+        CHECK(st.runtime[caravan.slot].state
+                  == std::uint8_t(NPCState::Fleeing)
+                  && st.goal[caravan.slot].underway == 1,
+              "фикстура: слабый бежит, и адрес бегства в пути");
+        // Угроза исчезла из мира: банду уносит далеко за радиус зрения.
+        st.cell[bandit.slot].idx = ecs::cell_index(40, 40, kMap);
+        drive(gs, nullptr, st, rt, 1);
+        CHECK(st.runtime[caravan.slot].state == std::uint8_t(NPCState::Idle),
+              "фикстура: бежать больше не от кого — успокоился");
+        CHECK(st.goal[caravan.slot].cell == ecs::kNoCell
+                  && st.goal[caravan.slot].underway == 0,
+              "БЕГСТВО КОНЧИЛОСЬ — адрес бегства брошен");
+        const std::uint32_t stoodAt = st.cell[caravan.slot].idx;
+        drive(gs, nullptr, st, rt, 3);
+        CHECK(st.cell[caravan.slot].idx == stoodAt
+                  && (st.runtime[caravan.slot].marchFlags
+                      & ecs::kMarchAdvanced) == 0,
+              "и он СТОИТ, а не добегает до точки, куда бежал");
+    }
+}
+
 void test_neutral_squads_ignore_each_other() {
     std::unique_ptr<GameState> gsOwn = make_world(0);
     GameState& gs = *gsOwn;
@@ -920,6 +997,7 @@ int main() {
     test_a_victory_does_not_erase_a_table_born_sheet();
     test_the_avatars_training_reads_at_the_new_doors();
     test_the_weak_flee_and_fighters_pursue();
+    test_a_reflex_that_stops_a_squad_drops_its_address();
     test_neutral_squads_ignore_each_other();
     test_a_meeting_in_the_leased_window_is_not_resolved_upstairs();
     test_a_victorious_avatar_levels();

@@ -170,8 +170,17 @@ void test_woodcutter_targets_nearest_tree() {
     tick_once(gs, nullptr, st, runtime, &grid);
 
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
-    CHECK(in_state(rt, sm::NPCState::Traveling),
-          "a Woodcutter with a tree in range travels to it");
+    // ВЫЕХАЛ ТОЙ ЖЕ ДУМКОЙ, ЧТО РЕШИЛ (M-2): модуль пишет цель, ноги свипа
+    // везут сразу после него. Дерево в двух клетках, поэтому за одну думку
+    // артель либо ещё в пути, либо уже у дерева — и тогда прибытие сделало
+    // её Working само (цель несла «чем стать»). Здесь стояло строгое
+    // «Traveling»: оно утверждало не закон выбора, а прежний порядок «думка
+    // решила — ноги пойдут со следующей».
+    CHECK(in_state(rt, sm::NPCState::Traveling)
+              || in_state(rt, sm::NPCState::Working),
+          "a Woodcutter with a tree in range sets off to it");
+    CHECK((rt.marchFlags & sm::ecs::kMarchAdvanced) != 0,
+          "и ноги повезли в ТУ ЖЕ думку — шагнул не модуль, а свип");
     CHECK(targets(st, e, 23.0f, 20.0f),
           "a Woodcutter picks the NEAREST tree, not the far one");
 }

@@ -243,11 +243,30 @@ void test_hunter_climbs_wealth_gradient() {
     auto& rt = (*sm::body_state<ecs::MacroNpcRuntime>(*rig.wStore_, e));
     CHECK(scent_hunt_step(e, p, (*sm::body_state<ecs::NPCKind>(*rig.wStore_, e)), rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx),
           "запах добычи съедает think — охота пошла");
-    // Один think копит бюджет ног (0.75 клетки), второй шагает — та же
-    // честная походка, что у любого марша.
-    scent_hunt_step(e, p, (*sm::body_state<ecs::NPCKind>(*rig.wStore_, e)), rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx);
-    CHECK(int(p.x) == 11 && int(p.y) == 10,
-          "шаг строго вверх по градиенту цены");
+    // РЕФЛЕКС РЕШАЕТ, НОГ У НЕГО НЕТ (M-2). Здесь стоял второй вызов
+    // рефлекса и проверка «позиция стала 11,10»: охота шагала сама, голым
+    // звонком ног. Теперь она пишет ЦЕЛЬ — две клетки по румбу лучшего
+    // соседа (соседняя клетка для закона посадки уже «на месте»), — а везёт
+    // общая дверь свипа.
+    CHECK(int(p.x) == 10 && int(p.y) == 10,
+          "сам рефлекс с места не сдвинул: шагнуть ему нечем");
+    const ecs::SquadGoal& g = rig.wStore_->goal[e.slot];
+    CHECK(g.cell == ecs::cell_index(12, 10, rig.ctx.mapW) && g.underway == 1,
+          "цель названа ВВЕРХ по градиенту цены — две клетки на восток, и "
+          "сквад к ней в пути");
+
+    // …А ВЕЗЁТ СВИП: первая же смена клетки — строго в клетку следа.
+    sm::MacroNpcAiRuntime runtime;
+    sm::reset_macro_npc_ai_runtime(runtime, 5u);
+    const std::uint32_t start = ecs::cell_index(10, 10, rig.ctx.mapW);
+    int thinks = 0;
+    for (; thinks < 8 && pc.idx == start; ++thinks) {
+        // След держим свежим: охотник сам следит, и поле живёт днём.
+        sm::tick_macro_npc_ai(rig.mw, runtime, kAiTicks);
+    }
+    CHECK(pc.idx == ecs::cell_index(11, 10, rig.ctx.mapW),
+          "шаг строго вверх по градиенту цены — ноги свипа привезли в "
+          "клетку следа");
 }
 
 void test_fear_filter_and_scent_floor() {
@@ -327,9 +346,9 @@ void test_local_maximum_ends_the_hunt_and_keeps_role_memory() {
     // соседний порог угрозы. Старое утверждение охраняло не закон, а
     // отсутствие записи; новое охраняет саму запись.
     CHECK(rig.wStore_->goal[e.slot].cell
-              == ecs::cell_index(11, 10, rig.ctx.mapW),
-          "охота ЗАПИСАЛА курс в колонку цели — клетка подъёма по запаху, "
-          "а не прежние 50,50 и не безымянный аргумент try_move");
+              == ecs::cell_index(12, 10, rig.ctx.mapW),
+          "охота ЗАПИСАЛА курс в колонку цели — две клетки по румбу подъёма "
+          "по запаху, а не прежние 50,50 и не безымянный аргумент ног");
     CHECK(rt.state == std::uint8_t(NPCState::Chasing),
           "и состояние назвало плечо: по запаху сквад ГОНИТ, а не бредёт");
 }

@@ -1926,6 +1926,35 @@ timaert_test(capture_legs_test
         src/macro/deposit_layer.cpp
     LINK_SDL)
 
+# ДВИЖЕНИЕ — НЕ СИСТЕМА, А СОГЛАШЕНИЕ (M-2 / M-307): модуль пишет цель, везут
+# ноги свипа — одна дверь, не читающая ни рода, ни состояния; прибытие у цели
+# одно; погоня есть цель рода Squad, адрес которой пересчитывают ноги.
+# Замыкание — как у capture_legs_test: дверь ног живёт в npc_ai.cpp.
+timaert_test(march_goal_test
+    PIN "OK march_goal_test .35 checks."
+    SOURCES
+        src/macro/npc_spawn.cpp
+        src/macro/npc_ai.cpp
+        src/macro/squad_index.cpp
+        src/macro/deal.cpp
+        src/macro/recovery.cpp
+        src/macro/nav_field.cpp
+        src/macro/economy.cpp
+        src/macro/macro_stock.cpp
+        src/macro/fauna.cpp
+        src/tables/fauna.cpp
+        src/macro/tree_layer.cpp
+        src/bus/anketa.cpp
+        src/tables/items.cpp
+        src/macro/econ_day.cpp
+        src/macro/world_tick.cpp
+        src/macro/spires.cpp
+        src/macro/threat_field.cpp
+        src/macro/scent_field.cpp
+        src/macro/chronicle.cpp
+        src/macro/deposit_layer.cpp
+    LINK_SDL)
+
 # FOLD ЗАХВАТА (ломоть 1 M-419): клетка+доля одной дверью squad_fold_pos,
 # румб честный, прыжка нет. Дверь header-only в bus/store.h — замыкание то
 # же, что у avatar_standing_test: контейнер и каталог нужны самой анкете.
@@ -2300,6 +2329,10 @@ timaert_test(threat_field_test
 timaert_test(scent_field_test
     SOURCES
         src/macro/npc_ai.cpp
+        # Охотника по следу теперь ВЕЗЁТ СВИП (M-2: у рефлекса ног нет), и
+        # свидетель «шаг вверх по градиенту» гонит настоящий драйвер думок —
+        # ему нужен индекс сквадов.
+        src/macro/squad_index.cpp
         src/macro/deal.cpp
         # effective_sheet_of (squad.h, посадка Б) sums worn gear via
         # anatomy.cpp worn_bonuses — the daily bread law walks it now.

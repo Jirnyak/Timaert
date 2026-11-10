@@ -265,6 +265,13 @@ bool at_goal(const MacroPos& p, const ecs::SquadGoal& g,
     // к её точке тем же порогом, что и прежде (< 2 клеток) — сменился
     // НОСИТЕЛЬ адреса, закон посадки не менялся. Цели нет — прибытия нет.
     if (g.cell == ecs::kNoCell) return false;
+    // ДВИЖУЩАЯСЯ ЦЕЛЬ ДОСТИГНУТА В ЕЁ КЛЕТКЕ, А НЕ У ЕЁ ПОРОГА (M-307): род
+    // `Squad` есть погоня, и её конец — встреча, которую мир судит равенством
+    // клеток. С порогом посадки погоня «прибывала» бы за клетку до добычи и
+    // не смыкалась никогда.
+    if (ecs::goal_kind(g.what) == ecs::GoalKind::Squad) {
+        return cell_of(int(p.x), int(p.y), ctx.mapW) == g.cell;
+    }
     return torus_dist_sq(p.x, p.y, float(cell_x(g.cell, ctx.mapW)),
                          float(cell_y(g.cell, ctx.mapW)),
                          float(ctx.mapW), float(ctx.mapH)) < 4.0f;
@@ -563,41 +570,80 @@ float edge_weight(const PathCostData* pc, int fx, int fy, int tx, int ty) {
     return w;
 }
 
-// ТОНКИЙ ЗВОНЯЩИЙ ДУМКИ (M-412а/б): ядро закона марша экспортировано
-// (`try_move@src/macro/npc_ai.h`) и зовётся обоими ходоками — думкой НПЦ
-// отсюда и маршем игрока из `step_macro_walk@src/ui/macro_overlay.cpp`.
-// Здесь остался только состав БЮДЖЕТА этого звонящего: клетки за думку —
-// the SAME march the player walks (kMacroWalkCellsPerHour per game hour),
-// paced by the avatar's own sheet (moveMult: spd × athletics) and by the
-// ground underfoot (terrain_speed_mult of the CURRENT cell — one sample
-// per think). Base numbers: 3 cells per think on a road, ~1 in open water.
-// ЛЕТУН (v93): воздух — его стихия; рельеф не платится (вес — единица),
-// внутри ядра любая клетка держит — ОДИН цикл марша, меняется стихия.
-void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
-              float tx, float ty, const TickContext& ctx) {
-    const bool flying = rt.flying != 0;
-    const float perThink = march_cells_per_think(
-        rt, flying ? 1.0f : cell_weight(ctx.mw.pathCost, int(p.x), int(p.y)));
-    const std::uint32_t quanta = std::uint32_t(
-        std::lround(perThink * float(2 * ecs::kCellSubEdge)));
-    MarchGround g;
-    g.pathCost = ctx.mw.pathCost;
-    g.nav = ctx.mw.nav;
-    g.side = ctx.mapW;
-    g.playerCellX = wrap_axis(int(ctx.playerX), ctx.mapW);
-    g.playerCellY = wrap_axis(int(ctx.playerY), ctx.mapH);
-    // Центр аренды — ядру (изъятие ног, ломоть 2 M-419). Тернар обязателен:
-    // адрес сессии в конверте нуллим по контракту (фикстура без субмира), и
-    // нулевой адрес читается как «аренды нет».
-    g.leaseCenter =
-        ctx.mw.session ? ctx.mw.session->leasedWindow : kNoWindowLease;
-    // Возврат марша (пройденные клетки) больше никому не нужен: темп
-    // картинки меряет кадровый кэш глаз сам (M-425).
-    (void)sm::try_move(p, rt, tx, ty, quanta, g);
+// ── НОГИ СВИПА — ОДНА ДВЕРЬ ДВИЖЕНИЯ ВСЕХ СКВАДОВ (M-2 / M-307) ──────────
+// «ДВИЖЕНИЕ — НЕ СИСТЕМА, А СОГЛАШЕНИЕ». Модуль пишет ЦЕЛЬ в свою строку и
+// больше ничего; везёт к ней эта дверь, и зовёт её ОДИН звонящий — свип,
+// сразу после думки, для всякого сквада одинаково. Она не знает ни рода, ни
+// состояния, ни модуля: единственный её вопрос — в пути ли сквад к своей
+// цели (`SquadGoal::underway`). Здесь же живёт ПРИБЫТИЕ
+// (`goal_arrive@src/bus/squad_row.h` — стать тем, что несла цель). Третьей
+// части наряда — застревания — нет: у него в мире нет предмета (некролог у
+// `kMarchArrived@src/bus/squad_row.h`).
+//
+// ЧТО ЗДЕСЬ СТОЯЛО. Тонкий звонящий думки с подписью (поза, рантайм, точка,
+// контекст), и звали его 17 мест: каждая машина состояний несла ноги сама и
+// сама спрашивала «дошёл ли». Сборщик однажды собрался без строки ног и
+// СТОЯЛ, числясь «в пути» (Traveling 799 563 при Working ноль, 2026-09-22);
+// охота по запаху и дракон шагали мимо закона посадки. Теперь шагнуть из
+// модуля нечем.
+//
+// РОД `Squad` В ДУМКЕ ЧИТАЮТ НОГИ И ИХ ПРЕДИКАТ ПРИБЫТИЯ — И НИКТО БОЛЬШЕ
+// (M-307, вердикт владельца 2026-10-24: «сама механика преследования когда сквад уже
+// преследует должна быть единая да агностичная»). Погоня есть цель,
+// названная ОРДИНАЛОМ: адрес — кэш предиката, и для движущегося рода он
+// пересчитывается каждую думку. Добыча умерла или ушла из мира — ординал не
+// резолвится, адрес остаётся последним известным: сквад дойдёт туда, где
+// видел её в последний раз, и прибудет. Отдельной ветки «цель пропала» нет.
+//
+// СОСТАВ БЮДЖЕТА — закон этого звонящего (M-412а/б; ядро марша
+// экспортировано, `try_move@src/macro/npc_ai.h`, и его же зовёт марш игрока
+// из `step_macro_walk@src/ui/macro_overlay.cpp`): клетки за думку — the
+// SAME march the player walks (kMacroWalkCellsPerHour per game hour), paced
+// by the avatar's own sheet (moveMult: spd × athletics) and by the ground
+// underfoot (terrain_speed_mult of the CURRENT cell — one sample per think).
+// Base numbers: 3 cells per think on a road, ~1 in open water. ЛЕТУН (v93):
+// воздух — его стихия; рельеф не платится (вес — единица), внутри ядра любая
+// клетка держит — ОДИН цикл марша, меняется стихия.
+//
+// Exhaustion is settled by the sweep right after (it owns the entity +
+// Health this function never sees): rest on land, the debt's bite on water.
+void march_goal(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
+                const TickContext& ctx) {
+    MacroStore& st = store_ctx(ctx);
+    ecs::SquadGoal& g = st.goal[e.slot];
+    if (g.underway == 0) return;
 
-    // Exhaustion is settled by the DISPATCHER after the think (it owns the
-    // entity + Health this function never sees): rest on land, the debt's
-    // bite on water — one door for every behaviour that marched.
+    if (ecs::goal_kind(g.what) == ecs::GoalKind::Squad) {
+        const MacroHandle prey =
+            macro_handle_by_spawn_id(st, ecs::goal_ordinal(g.what));
+        if (st.valid(prey) && st.dead[prey.slot] == 0)
+            g.cell = st.cell[prey.slot].idx;
+    }
+
+    if (!at_goal(p, g, ctx)) {
+        const bool flying = rt.flying != 0;
+        const float perThink = march_cells_per_think(
+            rt,
+            flying ? 1.0f : cell_weight(ctx.mw.pathCost, int(p.x), int(p.y)));
+        const std::uint32_t quanta = std::uint32_t(
+            std::lround(perThink * float(2 * ecs::kCellSubEdge)));
+        MarchGround ground;
+        ground.pathCost = ctx.mw.pathCost;
+        ground.nav = ctx.mw.nav;
+        ground.side = ctx.mapW;
+        ground.playerCellX = wrap_axis(int(ctx.playerX), ctx.mapW);
+        ground.playerCellY = wrap_axis(int(ctx.playerY), ctx.mapH);
+        // Центр аренды — ядру (изъятие ног, ломоть 2 M-419). Тернар
+        // обязателен: адрес сессии в конверте нуллим по контракту (фикстура
+        // без субмира), и нулевой адрес читается как «аренды нет».
+        ground.leaseCenter =
+            ctx.mw.session ? ctx.mw.session->leasedWindow : kNoWindowLease;
+        const XY t = goal_xy(g, ctx);
+        // Возврат марша (пройденные клетки) никому не нужен: темп картинки
+        // меряет кадровый кэш глаз сам (M-425).
+        (void)sm::try_move(p, rt, t.x, t.y, quanta, ground);
+    }
+    if (at_goal(p, g, ctx)) ecs::goal_arrive(g, rt);
 }
 
 bool find_nearest_tree_grid(const TreeGrid& g, float px, float py,
@@ -647,6 +693,11 @@ void ai_home_wanderer(MacroHandle self, MacroPos& p,
     ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
 
     if (rt.state == std::uint8_t(NS::Idle)) {
+        // Дошёл — постоял: пауза после прогулки, прибытие назвали ноги.
+        if (ecs::march_arrived(rt)) {
+            charge_squad_recovery(rt,
+                std::uint32_t((10 + rand_int(ctx, 20)) * kAiTicks));
+        }
         if (!squad_recovering(rt)) {
             float dsq = torus_dist_sq(p.x, p.y, home.x, home.y,
                                       float(ctx.mapW), float(ctx.mapH));
@@ -663,17 +714,8 @@ void ai_home_wanderer(MacroHandle self, MacroPos& p,
         }
         return;
     }
-    if (rt.state == std::uint8_t(NS::Wandering)
-        || rt.state == std::uint8_t(NS::Returning)) {
-        if (at_goal(p, g, ctx)) {
-            ecs::goal_arrive(g, rt);
-            charge_squad_recovery(rt,
-                std::uint32_t((10 + rand_int(ctx, 20)) * kAiTicks));
-            return;
-        }
-        const XY t = goal_xy(g, ctx);
-        try_move(p, rt, t.x, t.y, ctx);
-    }
+    // В пути (Wandering/Returning) модулю решать нечего: к цели везут ноги
+    // свипа, они же сделают его Idle по прибытии.
 }
 
 // ── The ONE gatherer loop — a GOAL is a ROW, never a branch ───────────────
@@ -1055,14 +1097,8 @@ bool find_worksite(const GathererDef& def, const TickContext& ctx,
     return false;
 }
 
-// Defined with the trade behaviours below; the crews share both laws.
-bool march_is_stuck_(const MacroPos& p, float oldX, float oldY,
-                     const ecs::MacroNpcRuntime& rt,
-                     const ecs::Pools& pools);
-
-// ТОЖЕ ОПРЕДЕЛЕНЫ НИЖЕ, А СПРАШИВАЮТСЯ ЗДЕСЬ — ВИДОМ И ПУЛЬТОМ рейса (та же
-// идиома, что у `march_is_stuck_` строкой выше): законы дороги и погрузки
-// живут рядом со своей торговой секцией, а дверь к ним обязана стоять ДО
+// ОПРЕДЕЛЕНЫ НИЖЕ, А СПРАШИВАЮТСЯ ЗДЕСЬ — ВИДОМ И ПУЛЬТОМ рейса: законы
+// дороги и погрузки живут рядом со своей торговой секцией, а дверь к ним обязана стоять ДО
 // классов, которые её проносят модулю. Переносить определения вверх значило
 // бы разорвать секцию с её шрамами.
 float march_days_(const TickContext& ctx, int ax, int ay, int bx, int by,
@@ -1139,10 +1175,6 @@ public:
     int field_read(ResourceFieldId row, int x, int y) const {
         return resource_field_read(ctx_.mw, row, x, y);
     }
-    bool at(const MacroPos& p, const ecs::SquadGoal& g) const {
-        return at_goal(p, g, ctx_);
-    }
-    XY goal_pos(const ecs::SquadGoal& g) const { return goal_xy(g, ctx_); }
     float home_dist_sq(const MacroPos& p, const XY& home) const {
         return torus_dist_sq(p.x, p.y, home.x, home.y,
                              float(ctx_.mapW), float(ctx_.mapH));
@@ -1349,10 +1381,9 @@ public:
     void deliver_home(MacroHandle self, int defIdx) {
         deliver_bag_home(self, ctx_, defIdx);
     }
-    // Ноги: шаг к точке — march читает цену земли, пишет только себя.
-    void march(MacroPos& p, ecs::MacroNpcRuntime& rt, float x, float y) {
-        try_move(p, rt, x, y, ctx_);
-    }
+    // (ГЛАГОЛА НОГ ЗДЕСЬ БОЛЬШЕ НЕТ — M-2. Стоял `march(p, rt, x, y)`, и им
+    //  каждый модуль вёз себя сам. Модуль пишет ЦЕЛЬ в свою строку, везут к
+    //  ней ноги свипа: шагнуть из тела модуля теперь нечем — подписью.)
     int rand(int n) { return rand_int(ctx_, n); }
     // БРОСОК В [0,1), А «КИДАТЬ НЕЧЕМ» — ЗНАЧЕНИЕ 1.0, НЕ ВЕТКА: рулетка без
     // кости честно ОТКАЗЫВАЕТ дальней заявке (roll × total < bid неверно при
@@ -1735,6 +1766,27 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
     };
 
     if (s.rt.state == std::uint8_t(NS::Idle)) {
+        // ПРИШЁЛ (ноги назвали прибытие прошлой думкой и сделали сквад Idle).
+        // ДОМА — сдать добычу: everything gathered lands in the HOME store —
+        // the same universal inventory the market sells from. Дом принимает
+        // ВСЯКИЙ добычный выход, не только выход текущего решения: решение
+        // могло смениться между рейсами, а груз в спине — факт, не
+        // намерение. Пойманное СУЩЕСТВО остаётся в инвентаре артели (M-230):
+        // у него нет товарной колонки. «Дома» судит тот же предикат посадки,
+        // которым его судит рейс сбыта: прогулка, кончившаяся у крыльца, с
+        // грузом в спине сдаёт его так же.
+        if (ecs::march_arrived(s.rt)) {
+            if (view.home_dist_sq(s.pos, home) < 4.0f) {
+                for (int r = 0; r < kGathererGoalCount; ++r) {
+                    const int m = gatherer_item_index(r);
+                    if (m >= 0) pult.deliver_home(s.h, m);
+                }
+                for (const int m : vein_yield_ordinals())
+                    pult.deliver_home(s.h, m);
+            }
+            charge_squad_recovery(s.rt,
+                std::uint32_t((6 + pult.rand(12)) * kAiTicks));
+        }
         if (!squad_recovering(s.rt)) {
             // ПОЛНАЯ СПИНА ИДЁТ ДОМОЙ (S10 «возвращается, кладёт на склад»):
             // отдых посреди дорогого маршрута будит артель в Idle, а Idle
@@ -1821,22 +1873,15 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
         return;
     }
     if (s.rt.state == std::uint8_t(NS::Traveling)) {
-        if (view.at(s.pos, g)) {
-            // АКТ МГНОВЕНЕН (ЗАКОН СПОСОБНОСТИ п.1): прежний счётчик «8 +
-            // rand(8) думок ДО цикла» был castTime-манерой, убитой ещё у
-            // спеллов, — первый цикл случится первой же свободной думкой,
-            // а длительность работы повиснет ПОСЛЕ него базой СТРОКИ.
-            ecs::goal_arrive(g, s.rt);  // → Working: цель несла «чем стать»
-            return;
-        }
-        const float ox = s.pos.x, oy = s.pos.y;
-        const XY t = view.goal_pos(g);
-        pult.march(s.pos, s.rt, t.x, t.y);
-        // A leg that cannot advance gives the run up (the vendor's own
-        // law): the reach wave keeps this rare, but a concave shore can
-        // still wedge a greedy march — better home tonight than frozen at
-        // the bank forever (measured 2026-08-31).
-        if (march_is_stuck_(s.pos, ox, oy, s.rt, s.pools)) go_home();
+        // К жиле везут ноги свипа; прибытие сделает сквад Working само —
+        // цель несла «чем стать». АКТ МГНОВЕНЕН (ЗАКОН СПОСОБНОСТИ п.1):
+        // прежний счётчик «8 + rand(8) думок ДО цикла» был castTime-манерой,
+        // убитой ещё у спеллов, — первый цикл случится первой же думкой
+        // после прибытия, а длительность работы повиснет ПОСЛЕ него базой
+        // СТРОКИ.
+        // (Здесь стоял выход «застрял → домой», замеренный 2026-08-31 на
+        //  вогнутом берегу. Стены умерли 2026-10-06, и с ними его повод:
+        //  ветка не исполнялась с того дня ни разу — снесена, M-2.)
         return;
     }
     if (s.rt.state == std::uint8_t(NS::Working)) {
@@ -1914,31 +1959,8 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
         }
         return;
     }
-    if (s.rt.state == std::uint8_t(NS::Wandering)
-        || s.rt.state == std::uint8_t(NS::Returning)) {
-        if (view.at(s.pos, g)) {
-            // Home with the haul: everything gathered lands in the HOME
-            // store — the same universal inventory the market sells from.
-            // Дом принимает ВСЯКИЙ добычный выход, не только выход текущего
-            // решения: решение могло смениться между рейсами, а груз в
-            // спине — факт, не намерение. Пойманное СУЩЕСТВО остаётся в
-            // инвентаре артели (M-230): у него нет товарной колонки.
-            if (s.rt.state == std::uint8_t(NS::Returning)) {
-                for (int r = 0; r < kGathererGoalCount; ++r) {
-                    const int m = gatherer_item_index(r);
-                    if (m >= 0) pult.deliver_home(s.h, m);
-                }
-                for (const int m : vein_yield_ordinals())
-                    pult.deliver_home(s.h, m);
-            }
-            ecs::goal_arrive(g, s.rt);   // → Idle
-            charge_squad_recovery(s.rt,
-                std::uint32_t((6 + pult.rand(12)) * kAiTicks));
-            return;
-        }
-        const XY t = view.goal_pos(g);
-        pult.march(s.pos, s.rt, t.x, t.y);
-    }
+    // Wandering/Returning: в пути решать нечего — везут ноги свипа, сдачу
+    // дома разбирает ступень Idle по прибытии.
 }
 
 // Переходник пятёрки — умрёт флипом подписи kAiModuleRows, когда мигрирует
@@ -2005,18 +2027,10 @@ void ai_artel(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
 // died 2026-09-02 with the per-position tithe: the fattest-first draw paid
 // the debt in grain while the silver stayed home, and no caller remains.)
 
-// A leg that cannot advance (every candidate step refused — the target is
-// beyond water with no bridge) reads as: position pinned while the march
-// itself said REFUSED and the bar is fresh. The rider gives the run up
-// instead of pacing the surf forever. (The whole-budget check died with the
-// float bank: refusal is the march's own flag now.)
-bool march_is_stuck_(const MacroPos& p, float oldX, float oldY,
-                     const ecs::MacroNpcRuntime& rt,
-                     const ecs::Pools& pools) {
-    return p.x == oldX && p.y == oldY
-           && (rt.marchFlags & ecs::kMarchRefused) != 0
-           && int(pools.sp) > int(pools.maxSp) / 2;
-}
+// (Здесь жил предикат застревания рейса — «позиция не сменилась, марш сказал
+// REFUSED, планка свежа», — и спрашивали его артель и корован, каждый у себя.
+// СНЕСЁН M-2 КАК СПЯЩИЙ: флаг REFUSED ставит одна ветка ядра марша, и она
+// недостижима с 2026-10-06 — некролог у `kMarchArrived@src/bus/squad_row.h`.)
 
 }   // namespace — дверь станции живёт СНАРУЖИ: у закона тора обязан
     // быть прямой свидетель (npc_ai.h), а не свидетель через чей-то ИИ.
@@ -2467,6 +2481,17 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
     auto& rt = s.rt;
 
     if (rt.state == std::uint8_t(NS::Idle)) {
+        // ПРИШЁЛ (ноги назвали прибытие и сделали сквад Idle). Дома —
+        // purchases and earnings land on the home store; the rotation
+        // dissolves the crew at dawn. Вылив сумки — ОДНА сделка лотом по
+        // всему словарю (ломоть 2 M-72), остаток стоимости — той же дверью
+        // цены. «Дома» — тот же предикат посадки, что у погрузки ниже.
+        if (ecs::march_arrived(rt)) {
+            if (view.home_dist_sq(s.pos, home) < 4.0f)
+                pult.dump_bag_home(s, homeSlot);
+            charge_squad_recovery(rt,
+                std::uint32_t((10 + pult.rand(15)) * kAiTicks));
+        }
         if (squad_recovering(rt)) return;
         // ПОГРУЗКА — ТОЛЬКО ДОМА («ничего не телепортируется», S5): Idle
         // вне дома — это пробуждение после привала в пути (Resting будит в
@@ -2530,20 +2555,10 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
         return;
     }
     if (rt.state == std::uint8_t(NS::Traveling)) {
-        if (view.at(s.pos, g)) {
-            // АКТ МГНОВЕНЕН: сделка случится первой же свободной думкой,
-            // её длительность повиснет ПОСЛЕ как долг (инверсия castTime).
-            ecs::goal_arrive(g, rt);   // → Working
-            return;
-        }
-        const float ox = s.pos.x, oy = s.pos.y;
-        const XY t = view.goal_pos(g);
-        pult.march(s.pos, rt, t.x, t.y);
-        if (march_is_stuck_(s.pos, ox, oy, rt, s.pools)) {
-            ecs::goal_set(g, cell_of(int(home.x), int(home.y), view.map_w()),
-                          0, 0, std::uint8_t(NS::Idle));
-            rt.state = std::uint8_t(NS::Returning);
-        }
+        // К рынку везут ноги свипа; прибытие сделает сквад Working само.
+        // АКТ МГНОВЕНЕН: сделка случится первой же свободной думкой, её
+        // длительность повиснет ПОСЛЕ как долг (инверсия castTime).
+        // (Выход «застрял → домой» снесён вместе с артельным — M-2.)
         return;
     }
     if (rt.state == std::uint8_t(NS::Working)) {
@@ -2665,24 +2680,8 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
         rt.state = std::uint8_t(NS::Returning);
         return;
     }
-    if (rt.state == std::uint8_t(NS::Wandering)
-        || rt.state == std::uint8_t(NS::Returning)) {
-        if (view.at(s.pos, g)) {
-            if (rt.state == std::uint8_t(NS::Returning)) {
-                // Home: purchases and earnings land on the home store; the
-                // rotation dissolves the crew at dawn. Вылив сумки — ОДНА
-                // сделка лотом по всему словарю (ломоть 2 M-72), остаток
-                // стоимости — той же дверью цены.
-                pult.dump_bag_home(s, homeSlot);
-            }
-            ecs::goal_arrive(g, rt);   // → Idle
-            charge_squad_recovery(rt,
-                std::uint32_t((10 + pult.rand(15)) * kAiTicks));
-            return;
-        }
-        const XY t = view.goal_pos(g);
-        pult.march(s.pos, rt, t.x, t.y);
-    }
+    // Wandering/Returning: в пути решать нечего — везут ноги свипа, вылив
+    // дома разбирает ступень Idle по прибытии.
 }
 
 // Переходник пятёрки — тот же, что у образца: собирает СВОЮ СТРОКУ, ВИД и
@@ -2770,17 +2769,22 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
     // честный ответ — ДОМ. Вписать туда должника значило бы заставить
     // колонку врать ради удобства гейта. Какое плечо идёт, знает `state`, и
     // спрашивать надо его.
-    if (rt.state == std::uint8_t(NS::Returning)) {
-        if (view.at(s.pos, g)) {
-            // Вылив дани домой — ОДНА сделка (ломоть 2 M-72).
+    //
+    // С M-2 СТУПЕНЬ СТАЛА КОРОЧЕ, А ЕЁ МЕСТО — ТЕМ ЖЕ: домой везут ноги свипа,
+    // и они же делают сборщика Idle по прибытии, поэтому здесь остались две
+    // строки — «в пути домой решать нечего» и «пришёл — вылил». Обе стоят
+    // ВЫШЕ гейта должника по той же причине, что и прежде.
+    if (rt.state == std::uint8_t(NS::Returning)) return;
+    if (rt.state == std::uint8_t(NS::Idle) && ecs::march_arrived(rt)) {
+        // Вылив дани домой — ОДНА сделка (ломоть 2 M-72). ТОЛЬКО ДОМА: тем
+        // же предикатом посадки, которым «дома» судит рейс сбыта. Прежняя
+        // ветка блуждания выливала сумку и по прибытии в точку прогулки — до
+        // двенадцати клеток от склада, мимо закона «ничего не
+        // телепортируется» (S5).
+        if (view.home_dist_sq(s.pos, home) < 4.0f)
             pult.dump_bag_home(s, homeSlot);
-            ecs::goal_arrive(g, rt);   // → Idle
-            charge_squad_recovery(rt,
-                std::uint32_t((10 + pult.rand(15)) * kAiTicks));
-            return;
-        }
-        const XY t = view.goal_pos(g);
-        pult.march(s.pos, rt, t.x, t.y);
+        charge_squad_recovery(rt,
+            std::uint32_t((10 + pult.rand(15)) * kAiTicks));
         return;
     }
 
@@ -2796,6 +2800,13 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
     // ФОРМА ЦЕЛИ — ТА ЖЕ, ЧТО У ДВУХ ВЕТОК Idle НИЖЕ (род Rooted, ординал
     // вассала, `onArrival = Working`): второго способа назвать должника не
     // заводится, иначе у одной величины станет два носителя (DOD п.6).
+    //
+    // ЗДЕСЬ ДОЛЖНИК ТОЛЬКО НАЗЫВАЕТСЯ, В ЦЕЛЬ ЕГО ПИШЕТ ВЫЕЗД (M-2). Прежде
+    // эта ступень писала цель сразу — и это было «назвать», а не «идти»,
+    // пока ноги спрашивали состояние. Названный адрес теперь значит «везти»
+    // (`goal_set@src/bus/squad_row.h`), и запись на этой ступени погнала бы
+    // к вассалу сборщика, который ещё отдыхает дома. Обе ветки Idle ниже
+    // пишут ту же цель в момент выезда — второго носителя не появилось.
     std::uint16_t vassal = view.goal_rooted(g);
     if (vassal == kMacroNoSlot || vassal == homeSlot) {
         const std::uint16_t owing = view.owing_vassal(homeSlot);
@@ -2804,10 +2815,6 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
             pult.home_wander(s);
             return;
         }
-        ecs::goal_set(g, view.rooted_cell(owing),
-                      ecs::goal_what(ecs::GoalKind::Rooted,
-                                     view.rooted_id(owing)),
-                      0, std::uint8_t(NS::Working));
         vassal = owing;
     }
 
@@ -2837,18 +2844,13 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
         return;
     }
     if (rt.state == std::uint8_t(NS::Traveling)) {
-        if (view.at(s.pos, g)) {
-            // АКТ МГНОВЕНЕН: взыскание случится первой же свободной думкой,
-            // его длительность повиснет ПОСЛЕ как долг (инверсия castTime).
-            ecs::goal_arrive(g, rt);   // → Working
-            return;
-        }
-        // НОГИ. Без этой строки машина СТОИТ, вечно числясь «в пути»:
-        // ровно так и было при первой сборке 2026-09-22 — гистограмма
-        // состояний показала Traveling 799 563 при Working РОВНО НОЛЬ, и
-        // канал дани был пуст, хотя заявки и рождение работали.
-        const XY t = view.goal_pos(g);
-        pult.march(s.pos, rt, t.x, t.y);
+        // К вассалу везут ноги свипа; прибытие сделает сборщика Working
+        // само. АКТ МГНОВЕНЕН: взыскание случится первой же свободной
+        // думкой, его длительность повиснет ПОСЛЕ как долг (инверсия
+        // castTime).
+        // (Здесь стояла строка ног с шрамом 2026-09-22: без неё машина
+        //  СТОЯЛА, вечно числясь «в пути» — Traveling 799 563 при Working
+        //  РОВНО НОЛЬ. Забыть ноги модулю больше нечем: их у него нет.)
         return;
     }
     if (rt.state == std::uint8_t(NS::Working)) {
@@ -2863,21 +2865,12 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
         rt.state = std::uint8_t(NS::Returning);
         return;
     }
-    // Блуждание с живым должником: та же пара «дошёл — вылил», что у плеча
-    // домой выше. `Returning` здесь больше не упоминается — он разобран ДО
-    // гейта должника, иначе до него не доходит ход.
-    if (rt.state == std::uint8_t(NS::Wandering)) {
-        if (view.at(s.pos, g)) {
-            pult.dump_bag_home(s, homeSlot);
-            ecs::goal_arrive(g, rt);   // → Idle
-            charge_squad_recovery(rt,
-                std::uint32_t((10 + pult.rand(15)) * kAiTicks));
-            return;
-        }
-        const XY t = view.goal_pos(g);
-        pult.march(s.pos, rt, t.x, t.y);
-        return;
-    }
+    // Блуждание с живым должником: в пути решать нечего — прогулку довезут
+    // ноги, прибытие разобрано выше гейта должника.
+    if (rt.state == std::uint8_t(NS::Wandering)) return;
+    // Состояние, которого этот модуль не ведёт (его оставил рефлекс):
+    // встать и перерешить. Встать — значит отказаться от адреса.
+    ecs::goal_drop(g);
     rt.state = std::uint8_t(NS::Idle);
     charge_squad_recovery(rt, std::uint32_t(4 * kAiTicks));
 }
@@ -3031,7 +3024,8 @@ void ai_city(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
     city_think(self, view, pult);
 }
 
-void ai_trader(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
+void ai_trader(MacroHandle self, [[maybe_unused]] MacroPos& p,
+               ecs::MacroNpcRuntime& rt,
                [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
     XY home;
     if (!home_pos(self, ctx, home)) return;
@@ -3040,6 +3034,11 @@ void ai_trader(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     const int myHomeId = parent_of(st, self.slot);
 
     if (rt.state == std::uint8_t(NS::Idle)) {
+        // Вернулся домой — постоял (прибытие назвали ноги).
+        if (ecs::march_arrived(rt)) {
+            charge_squad_recovery(rt,
+                std::uint32_t((20 + rand_int(ctx, 30)) * kAiTicks));
+        }
         if (!squad_recovering(rt)) {
             // Pick another city (id != home).
             int candidates = 0;
@@ -3069,18 +3068,12 @@ void ai_trader(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
         }
         return;
     }
-    if (rt.state == std::uint8_t(NS::Traveling)) {
-        if (at_goal(p, g, ctx)) {
-            ecs::goal_arrive(g, rt);   // → Working
+    if (rt.state == std::uint8_t(NS::Working)) {
+        // Дошёл до чужого города (ноги сделали его Working) — стоянка.
+        if (ecs::march_arrived(rt)) {
             charge_squad_recovery(rt,
                 std::uint32_t((15 + rand_int(ctx, 20)) * kAiTicks));
-            return;
         }
-        const XY t = goal_xy(g, ctx);
-        try_move(p, rt, t.x, t.y, ctx);
-        return;
-    }
-    if (rt.state == std::uint8_t(NS::Working)) {
         if (!squad_recovering(rt)) {
             ecs::goal_set(g, cell_of(int(home.x), int(home.y), ctx.mapW),
                           0, 0, std::uint8_t(NS::Idle));
@@ -3088,19 +3081,11 @@ void ai_trader(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
         }
         return;
     }
-    if (rt.state == std::uint8_t(NS::Returning)) {
-        if (at_goal(p, g, ctx)) {
-            ecs::goal_arrive(g, rt);   // → Idle
-            charge_squad_recovery(rt,
-                std::uint32_t((20 + rand_int(ctx, 30)) * kAiTicks));
-            return;
-        }
-        const XY t = goal_xy(g, ctx);
-        try_move(p, rt, t.x, t.y, ctx);
-    }
+    // Traveling/Returning: в пути решать нечего — везут ноги свипа.
 }
 
-void ai_nomad(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
+void ai_nomad(MacroHandle self, [[maybe_unused]] MacroPos& p,
+              ecs::MacroNpcRuntime& rt,
               [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
     const MacroStore& st = store_ctx(ctx);
     ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
@@ -3109,6 +3094,11 @@ void ai_nomad(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                               ? int(ecs::goal_ordinal(g.what))
                               : 0;
     if (rt.state == std::uint8_t(NS::Idle)) {
+        // Дошёл до города — постоял (прибытие назвали ноги).
+        if (ecs::march_arrived(rt)) {
+            charge_squad_recovery(rt,
+                std::uint32_t((10 + rand_int(ctx, 15)) * kAiTicks));
+        }
         if (!squad_recovering(rt)) {
             int candidates = 0;
             for_each_rooted(st, [&](std::uint16_t slot) {
@@ -3135,16 +3125,7 @@ void ai_nomad(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
         }
         return;
     }
-    if (rt.state == std::uint8_t(NS::Traveling)) {
-        if (at_goal(p, g, ctx)) {
-            ecs::goal_arrive(g, rt);   // → Idle
-            charge_squad_recovery(rt,
-                std::uint32_t((10 + rand_int(ctx, 15)) * kAiTicks));
-            return;
-        }
-        const XY t = goal_xy(g, ctx);
-        try_move(p, rt, t.x, t.y, ctx);
-    }
+    // Traveling: в пути решать нечего — везут ноги свипа.
 }
 
 void ai_aggressive(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
@@ -3156,14 +3137,21 @@ void ai_aggressive(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     // see the player chases him through the one law it chases anyone by.
     // The old channel saw the player at 10 cells against everyone else's 6.
     // What is left below is the row's untroubled day: wander.
+    ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
     if (rt.state == std::uint8_t(NS::Chasing)) {
+        // Добычи больше нет — встать: погоню бросает отказ от её адреса.
+        ecs::goal_drop(g);
         rt.state = std::uint8_t(NS::Idle);
         charge_squad_recovery(rt,
             std::uint32_t((5 + rand_int(ctx, 10)) * kAiTicks));
         return;
     }
-    ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
     if (rt.state == std::uint8_t(NS::Idle)) {
+        // Дошёл — постоял (прибытие назвали ноги).
+        if (ecs::march_arrived(rt)) {
+            charge_squad_recovery(rt,
+                std::uint32_t((8 + rand_int(ctx, 15)) * kAiTicks));
+        }
         if (!squad_recovering(rt)) {
             XY t = pick_random_nearby(p.x, p.y, 20, ctx);
             ecs::goal_set(g, cell_of(int(t.x), int(t.y), ctx.mapW),
@@ -3172,16 +3160,7 @@ void ai_aggressive(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
         }
         return;
     }
-    if (rt.state == std::uint8_t(NS::Wandering)) {
-        if (at_goal(p, g, ctx)) {
-            ecs::goal_arrive(g, rt);   // → Idle
-            charge_squad_recovery(rt,
-                std::uint32_t((8 + rand_int(ctx, 15)) * kAiTicks));
-            return;
-        }
-        const XY t = goal_xy(g, ctx);
-        try_move(p, rt, t.x, t.y, ctx);
-    }
+    // Wandering: в пути решать нечего — везут ноги свипа.
 }
 
 // ── Царь-крестьянин: роамер-охотник на магов (стол анкет) ────────────────
@@ -3280,21 +3259,24 @@ void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                     Ambush::None, *ctx.rng);
                 settle_auto_battle(ctx.mw, self, prey, o);
                 if (!macro_dead(st, self)) {
+                    // После боя — стоять: адрес погони брошен.
+                    ecs::goal_drop(st.goal[self.slot]);
                     rt.state = std::uint8_t(NS::Idle);
                     charge_squad_recovery(rt,
                         std::uint32_t((3 + rand_int(ctx, 5)) * kAiTicks));
                 }
                 return;
             }
-            // Добыча ДВИЖЕТСЯ — род цели «сквад», адрес пересчитывается
-            // каждую думку (кэш предиката, случай четвёртый).
+            // Добыча ДВИЖЕТСЯ — род цели «сквад»: модуль называет, ЗА КЕМ,
+            // а адрес каждую думку пересчитывают ноги свипа (кэш предиката,
+            // случай четвёртый) — модуль рода не читает. Настигнув,
+            // сквад остаётся Chasing: встречу решит следующая думка.
             ecs::goal_set(store_ctx(ctx).goal[self.slot],
                           st.cell[prey.slot].idx,
                           ecs::goal_what(ecs::GoalKind::Squad,
                                          st.spawnId[prey.slot].index),
-                          0, std::uint8_t(NS::Idle));
+                          0, std::uint8_t(NS::Chasing));
             rt.state = std::uint8_t(NS::Chasing);
-            try_move(p, rt, ep.x, ep.y, ctx);
             return;
         }
     }
@@ -3302,10 +3284,16 @@ void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     // Некого бить — чистый роам: дальняя случайная цель по ВСЕЙ карте, не
     // прогулка по околице. Поводка нет — слово владельца.
     if (rt.state == std::uint8_t(NS::Chasing)) {
+        ecs::goal_drop(g);   // добыча пропала — погоня брошена
         rt.state = std::uint8_t(NS::Idle);
         return;
     }
     if (rt.state == std::uint8_t(NS::Idle)) {
+        // Дошёл — постоял (прибытие назвали ноги).
+        if (ecs::march_arrived(rt)) {
+            charge_squad_recovery(rt,
+                std::uint32_t((8 + rand_int(ctx, 15)) * kAiTicks));
+        }
         if (!squad_recovering(rt)) {
             ecs::goal_set(g,
                           cell_of(rand_int(ctx, ctx.mapW),
@@ -3315,16 +3303,7 @@ void ai_mage_hunt(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
         }
         return;
     }
-    if (rt.state == std::uint8_t(NS::Wandering)) {
-        if (at_goal(p, g, ctx)) {
-            ecs::goal_arrive(g, rt);   // → Idle
-            charge_squad_recovery(rt,
-                std::uint32_t((8 + rand_int(ctx, 15)) * kAiTicks));
-            return;
-        }
-        const XY t = goal_xy(g, ctx);
-        try_move(p, rt, t.x, t.y, ctx);
-    }
+    // Wandering: в пути решать нечего — везут ноги свипа.
 }
 
 // ── МОДУЛЬ РОДА Dragon — вылеты из логова (ломоть 6 M-72) ────────────────
@@ -3420,36 +3399,52 @@ void ai_dragon(MacroHandle self, MacroPos& p,
                     Ambush::SideA, *ctx.rng);
                 settle_auto_battle(ctx.mw, self, prey, o);
                 if (!macro_dead(st, self)) {
+                    // После боя — стоять: адрес погони брошен.
+                    ecs::goal_drop(st.goal[self.slot]);
                     rt.state = std::uint8_t(NS::Idle);
                     charge_squad_recovery(rt,
                         std::uint32_t((5 + rand_int(ctx, 8)) * kAiTicks));
                 }
                 return;
             }
-            // Добыча ДВИЖЕТСЯ — род цели «сквад», пересчёт каждую думку.
+            // Добыча ДВИЖЕТСЯ — род цели «сквад»: адрес каждую думку
+            // пересчитывают ноги свипа. Настигнув, остаётся Chasing.
             ecs::goal_set(store_ctx(ctx).goal[self.slot],
                           st.cell[prey.slot].idx,
                           ecs::goal_what(ecs::GoalKind::Squad,
                                          st.spawnId[prey.slot].index),
-                          0, std::uint8_t(NS::Idle));
+                          0, std::uint8_t(NS::Chasing));
             rt.state = std::uint8_t(NS::Chasing);
-            try_move(p, rt, ep.x, ep.y, ctx);
             return;
         }
     }
 
     ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
     // Улетел за радиус или добычи нет и стоит не дома — домой.
+    // «ДОМА» — ПРЕДИКАТ ПОСАДКИ, А НЕ РАВЕНСТВО КЛЕТКЕ (M-2). Здесь стояло
+    // `int(p) != int(lair)`, и пока дракон вёз себя сам мимо прибытия, он
+    // долетал до самой клетки. Ноги свипа сажают по общему закону (< 2
+    // клеток), и точное равенство объявляло бы севшего «не дома» каждую
+    // думку — ровно дефект, которым рейс сбыта уже платил («челнок не
+    // завершался никогда», `caravan_think`).
+    const bool atLair = fromLair < 2.0f;
     if (fromLair >= radius
-        || (rt.state != std::uint8_t(NS::Wandering)
-            && (int(p.x) != int(lairX) || int(p.y) != int(lairY)))) {
+        || (rt.state != std::uint8_t(NS::Wandering) && !atLair)) {
         ecs::goal_set(g, rt.lairCell, 0, 0, std::uint8_t(NS::Idle));
         rt.state = std::uint8_t(NS::Returning);
-        try_move(p, rt, lairX, lairY, ctx);
         return;
     }
     // Дома и сыт: кружи по округе логова.
     if (rt.state == std::uint8_t(NS::Idle)) {
+        // Сел (прибытие назвали ноги) — постоял. Какое плечо кончилось,
+        // говорит сама цель: её адрес прибытием не гасится. Домой — короткая
+        // передышка, с круга — долгая (числа прежние, обе авторские).
+        if (ecs::march_arrived(rt)) {
+            charge_squad_recovery(rt,
+                g.cell == rt.lairCell
+                    ? std::uint32_t((3 + rand_int(ctx, 5)) * kAiTicks)
+                    : std::uint32_t((10 + rand_int(ctx, 20)) * kAiTicks));
+        }
         if (!squad_recovering(rt)) {
             XY t = pick_random_nearby(lairX, lairY, int(radius), ctx);
             ecs::goal_set(g, cell_of(int(t.x), int(t.y), ctx.mapW),
@@ -3458,17 +3453,10 @@ void ai_dragon(MacroHandle self, MacroPos& p,
         }
         return;
     }
-    if (rt.state == std::uint8_t(NS::Wandering)) {
-        if (at_goal(p, g, ctx)) {
-            ecs::goal_arrive(g, rt);   // → Idle
-            charge_squad_recovery(rt,
-                std::uint32_t((10 + rand_int(ctx, 20)) * kAiTicks));
-            return;
-        }
-        const XY t = goal_xy(g, ctx);
-        try_move(p, rt, t.x, t.y, ctx);
-        return;
-    }
+    if (rt.state == std::uint8_t(NS::Wandering)) return;   // везут ноги
+    // Состояние, которого дракон не ведёт (Chasing без добычи, Fleeing):
+    // встать и перерешить. Встать — значит отказаться от адреса.
+    ecs::goal_drop(g);
     rt.state = std::uint8_t(NS::Idle);
     charge_squad_recovery(rt,
         std::uint32_t((3 + rand_int(ctx, 5)) * kAiTicks));
@@ -3515,10 +3503,17 @@ void ai_teleporter(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
         rt.entryDir = kEntryDirNone;
         rt.entryTicks = 0;
         charge_squad_recovery(rt, std::uint32_t(50 * kAiTicks));
+        // Прыгнул — стоит: прежняя прогулка осталась там, откуда прыгал.
+        ecs::goal_drop(g);
         rt.state = std::uint8_t(NS::Idle);
         return;
     }
     if (rt.state == std::uint8_t(NS::Idle)) {
+        // Дошёл — постоял (прибытие назвали ноги).
+        if (ecs::march_arrived(rt)) {
+            charge_squad_recovery(rt,
+                std::uint32_t((12 + rand_int(ctx, 20)) * kAiTicks));
+        }
         if (!squad_recovering(rt)) {
             XY t = pick_random_nearby(p.x, p.y, 15, ctx);
             ecs::goal_set(g, cell_of(int(t.x), int(t.y), ctx.mapW),
@@ -3527,22 +3522,18 @@ void ai_teleporter(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
         }
         return;
     }
-    if (rt.state == std::uint8_t(NS::Wandering)) {
-        if (at_goal(p, g, ctx)) {
-            ecs::goal_arrive(g, rt);   // → Idle
-            charge_squad_recovery(rt,
-                std::uint32_t((12 + rand_int(ctx, 20)) * kAiTicks));
-            return;
-        }
-        const XY t = goal_xy(g, ctx);
-        try_move(p, rt, t.x, t.y, ctx);
-    }
+    // Wandering: в пути решать нечего — везут ноги свипа.
 }
 
 void ai_wanderer(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
                  [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
     ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
     if (rt.state == std::uint8_t(NS::Idle)) {
+        // Дошёл — постоял (прибытие назвали ноги).
+        if (ecs::march_arrived(rt)) {
+            charge_squad_recovery(rt,
+                std::uint32_t((10 + rand_int(ctx, 15)) * kAiTicks));
+        }
         if (!squad_recovering(rt)) {
             XY t = pick_random_nearby(p.x, p.y, 25, ctx);
             ecs::goal_set(g, cell_of(int(t.x), int(t.y), ctx.mapW),
@@ -3551,16 +3542,7 @@ void ai_wanderer(MacroHandle self, MacroPos& p, ecs::MacroNpcRuntime& rt,
         }
         return;
     }
-    if (rt.state == std::uint8_t(NS::Wandering)) {
-        if (at_goal(p, g, ctx)) {
-            ecs::goal_arrive(g, rt);   // → Idle
-            charge_squad_recovery(rt,
-                std::uint32_t((10 + rand_int(ctx, 15)) * kAiTicks));
-            return;
-        }
-        const XY t = goal_xy(g, ctx);
-        try_move(p, rt, t.x, t.y, ctx);
-    }
+    // Wandering: в пути решать нечего — везут ноги свипа.
 }
 
 // ── Squad↔squad perception and war (Session 15) ───────────────────────────
@@ -3682,7 +3664,9 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
     MacroStore& st = store_ctx(ctx);
     if (!st.valid(enemy)) {
         // Threat gone: a fleeing squad calms down and resumes its life.
+        // Бежать больше некуда и незачем — адрес бегства брошен.
         if (rt.state == std::uint8_t(NS::Fleeing)) {
+            ecs::goal_drop(st.goal[self.slot]);
             rt.state = std::uint8_t(NS::Idle);
         }
         return false;
@@ -3718,6 +3702,9 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
             ambush ? Ambush::SideA : Ambush::None, *ctx.rng);
         settle_auto_battle(ctx.mw, self, enemy, o);
         if (!macro_dead(st, self)) {
+            // После боя — стоять: прежний адрес брошен, предикат цел
+            // (`goal_drop@src/bus/squad_row.h`), роль перерешит по нему.
+            ecs::goal_drop(st.goal[self.slot]);
             rt.state = std::uint8_t(NS::Idle);
             charge_squad_recovery(rt,
                 std::uint32_t((3 + rand_int(ctx, 5)) * kAiTicks));
@@ -3741,15 +3728,15 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
         const float len = std::max(1.0f, std::sqrt(dx * dx + dy * dy));
         // Рефлекс пишет ТУ ЖЕ колонку цели, что и роль, — бегство и есть
         // перерешение цели (кэш предиката), второго носителя «куда» нет.
-        // Свёртку даёт МАСКА cell_of (ЗАКОН АДРЕСА п.3), марш берёт точку
-        // из самой цели — рукописного wrapf здесь больше нет.
+        // Свёртку даёт МАСКА cell_of (ЗАКОН АДРЕСА п.3), ноги свипа берут
+        // точку из самой цели — рукописного wrapf здесь больше нет, как нет
+        // и своего шага: рефлекс РЕШАЕТ, куда бежать, везут его общие ноги
+        // той же думкой.
         ecs::goal_set(st.goal[self.slot],
                       cell_of(int(p.x + dx / len * 8.0f),
                               int(p.y + dy / len * 8.0f), ctx.mapW),
                       0, 0, std::uint8_t(NS::Idle));
         rt.state = std::uint8_t(NS::Fleeing);
-        const XY t = goal_xy(st.goal[self.slot], ctx);
-        try_move(p, rt, t.x, t.y, ctx);
         return true;
     }
 
@@ -3757,16 +3744,20 @@ bool squad_threat_step(MacroHandle self, MacroPos& p,
     // that decides subworld combat stance decides who is a fighter at all.
     const bool fighter = combatant_behaviour(kNpcTypeDefs[kind.type].ai);
     if (fighter && myPower > theirPower * kPursueMargin) {
+        // ПОГОНЯ ЕСТЬ ЦЕЛЬ РОДА `Squad`, И БОЛЬШЕ НИЧЕГО (M-307): рефлекс
+        // называет, ЗА КЕМ; адрес каждую думку пересчитывают ноги свипа —
+        // модуль рода не читает. Настигнув, сквад остаётся Chasing:
+        // засаду выше судит именно это состояние в думку встречи.
         rt.state = std::uint8_t(NS::Chasing);
         ecs::goal_set(st.goal[self.slot], st.cell[enemy.slot].idx,
                       ecs::goal_what(ecs::GoalKind::Squad,
                                      st.spawnId[enemy.slot].index),
-                      0, std::uint8_t(NS::Idle));
-        try_move(p, rt, ep.x, ep.y, ctx);
+                      0, std::uint8_t(NS::Chasing));
         return true;
     }
 
     if (rt.state == std::uint8_t(NS::Fleeing)) {
+        ecs::goal_drop(st.goal[self.slot]);
         rt.state = std::uint8_t(NS::Idle);
     }
     return false;
@@ -3904,7 +3895,7 @@ bool scent_hunt_step(MacroHandle self, MacroPos& p,
     // и есть конец погони: либо жертва в радиусе зрения — рефлекс выше уже
     // перехватил, — либо след остыл и артель возвращается к делу).
     std::uint32_t best = std::max(hereWea, kHuntScentFloor - 1u);
-    int bx = -1, by = -1;
+    int bdx = 0, bdy = 0;   // румб лучшего соседа; (0, 0) = следа нет
     // Сосед по запаху — шаг ИНДЕКСА над полем мира (cell_step, ЗАКОН АДРЕСА).
     const std::uint32_t at0 = cell_of(x0, y0, sf.w);
     for (int oy = -1; oy <= 1; ++oy) {
@@ -3919,11 +3910,11 @@ bool scent_hunt_step(MacroHandle self, MacroPos& p,
             if (s > fearCap) continue;   // туда мне страшно — пусть решает
                                          //   визуальный рефлекс, не запах
             best = v;
-            bx = x;
-            by = y;
+            bdx = ox;
+            bdy = oy;
         }
     }
-    if (bx < 0) return false;
+    if (bdx == 0 && bdy == 0) return false;
     // КУДА Я ИДУ — ЭТО КОЛОНКА ЦЕЛИ, И У ОХОТЫ ТОЖЕ (хвост ломтя 3 M-72).
     // Здесь стоял голый `try_move`: сквад ШЁЛ, а «куда» жило только в
     // аргументе функции и умирало с кадром стека. Это второй, безымянный
@@ -3944,11 +3935,17 @@ bool scent_hunt_step(MacroHandle self, MacroPos& p,
     // её уже затирало бегство, — артель после погони РЕШАЕТ ЗАНОВО, и
     // остаток циклов `amount` обнуляется. Это та же цена, что платит
     // визуальный рефлекс; второй набор правил для запаха не заводится.
+    //
+    // АДРЕС — ДВЕ КЛЕТКИ ПО РУМБУ ЛУЧШЕГО СОСЕДА, А НЕ САМ СОСЕД (M-2). Пока
+    // охота шагала сама, она шла в соседнюю клетку мимо закона посадки.
+    // Теперь её везут общие ноги, а для них цель ближе двух клеток УЖЕ
+    // достигнута (`at_goal`): соседняя клетка адресом была бы «я на месте»,
+    // и охотник не сдвинулся бы никогда. След есть НАПРАВЛЕНИЕ — его и
+    // называет адрес; градиент перечитывается следующей же думкой.
     ecs::goal_set(store_ctx(ctx).goal[self.slot],
-                  cell_of(bx, by, ctx.mapW), 0, 0,
+                  cell_step(at0, 2 * bdx, 2 * bdy, sf.w), 0, 0,
                   std::uint8_t(NS::Idle));
     rt.state = std::uint8_t(NS::Chasing);
-    try_move(p, rt, float(bx), float(by), ctx);
     return true;
 }
 
@@ -3968,23 +3965,23 @@ void ai_waypoints(MacroHandle e, MacroPos& p, ecs::MacroNpcRuntime& rt,
     }
     const int i = orders->currentWaypoint % orders->waypointCount;
     ecs::SquadGoal& g = store_ctx(ctx).goal[e.slot];
-    ecs::goal_set(g,
-                  cell_of(int(orders->waypoints[std::size_t(i * 2)]),
-                          int(orders->waypoints[std::size_t(i * 2 + 1)]),
-                          ctx.mapW),
-                  0, 0, std::uint8_t(NS::Idle));
-    if (at_goal(p, g, ctx)) {
+    const std::uint32_t wp =
+        cell_of(int(orders->waypoints[std::size_t(i * 2)]),
+                int(orders->waypoints[std::size_t(i * 2 + 1)]), ctx.mapW);
+    // ДОШЁЛ ДО ТОЧКИ МАРШРУТА (прибытие назвали ноги, и адрес цели — она):
+    // взять следующую, постоять. Чужое прибытие — конец бегства — маршрут не
+    // двигает: какое плечо кончилось, говорит адрес самой цели.
+    if (ecs::march_arrived(rt) && g.cell == wp) {
         orders->currentWaypoint =
             std::uint8_t((i + 1) % orders->waypointCount);
-        ecs::goal_arrive(g, rt);   // → Idle
         charge_squad_recovery(rt,
             std::uint32_t((2 + rand_int(ctx, 4)) * kAiTicks));
         return;
     }
+    // Стоянка на точке: цели не пишем — названный адрес значит «везти».
     if (rt.state == std::uint8_t(NS::Idle) && squad_recovering(rt)) return;
+    ecs::goal_set(g, wp, 0, 0, std::uint8_t(NS::Idle));
     rt.state = std::uint8_t(NS::Traveling);
-    const XY t = goal_xy(g, ctx);
-    try_move(p, rt, t.x, t.y, ctx);
 }
 
 } // namespace
@@ -4934,9 +4931,24 @@ static void tick_macro_npc_ai_one(MacroWorld& mw, MacroNpcAiRuntime& runtime) {
         // со следующей.
         const bool captured =
             cell_is_leased(ctx.mw.session, cell.idx, gs.mapW);
-        rt.marchFlags = 0;   // флаги марша живут одну думку
-        if (gate == ThinkGate::Think)
+        // ДУМКА, ЗАТЕМ НОГИ — ОБЕ У ДИСПЕТЧЕРА (M-2). Модуль читает, чем
+        // ноги кончили ПРОШЛУЮ думку (прибыл ли), и решает: пишет
+        // цель либо отказывается от адреса. Затем флаги марша гаснут — они
+        // живут одну думку, — и ноги везут к цели, какой бы род её ни
+        // написал: строка без модуля (`nullptr`) с целью в пути пойдёт так
+        // же, гейта по подвижности нет ни здесь, ни в ядре марша.
+        // В ЛАГЕРЕ ногам идти некуда и думки нет: гаснут только флаги хода,
+        // а исход прошлого марша ЖДЁТ — его прочтёт первая думка после
+        // подъёма (иначе артель, уснувшая у крыльца, проснулась бы без
+        // своего «я пришёл» и не сдала бы груз).
+        if (gate == ThinkGate::Think) {
             dispatch(h, p, rt, hp, ctx);
+            rt.marchFlags = 0;
+            // Бой внутри думки мог убить сквад — труп ноги не везут.
+            if (st.dead[slot] == 0) march_goal(h, p, rt, ctx);
+        } else {
+            rt.marchFlags &= ecs::kMarchArrived;
+        }
         // «moved» включает внутриклеточный ход: доля проехала — тело шло,
         // даже если клетка (позиция мира) не сменилась.
         settle_march_rhythm(h, p, rt, hp,
@@ -5009,10 +5021,9 @@ float try_move(MacroPos& p, ecs::MacroNpcRuntime& rt,
     // ИЗЪЯТИЕ НОГ ПО АРЕНДЕ (ЗАХВАТ, ломоть 2 M-419): в девяти клетках окна
     // позицию ведёт СУБМИР, fold сворачивает её на границе тика — макро-ноги
     // здесь отказывают ЦЕЛИКОМ: ни клетки, ни доли (доля тоже fold'а).
-    // БЕЗ ФЛАГОВ: kMarchRefused был бы ложью «мир не пускает» —
-    // march_is_stuck_ перезаписал бы живую цель на дом, а цели захваченных
-    // ЖИВУТ (думка идёт, M-313). Ритму «тело стоит» скажет параметр
-    // captured свипа, не флаг.
+    // БЕЗ ФЛАГОВ: kMarchRefused был бы ложью «мир не пускает», а цели
+    // захваченных ЖИВУТ (думка идёт, M-313). Ритму «тело стоит» скажет
+    // параметр captured свипа, не флаг.
     if (cell_in_lease_frame(g.leaseCenter, cell_of(ix, iy, g.side), g.side))
         return 0.0f;
 
