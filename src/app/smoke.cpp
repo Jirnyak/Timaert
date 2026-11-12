@@ -9816,6 +9816,57 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "hostile squad did not force the encounter");
                 break;
             }
+            // ── УДАЧНЫЙ ПОБЕГ ЕСТЬ МИЛОСТЬ, А НЕ ПРЫЖОК (M-464) ──────────────
+            // Вердикт владельца 2026-11-12: «без отскока вовсе». Побег не
+            // двигает сквад: клетка та же, враг помилован, карта отдана назад,
+            // а уходить игроку своими ногами. Харнесс подбирает бросок (кости
+            // — его забота, закон под проверкой — исход), жмёт ТУ ЖЕ дверь,
+            // что строка таблицы действий.
+            //
+            // МУТАЦИЯ → ИСХОД (сид 12345) — таблица в теле коммита шага.
+            {
+                const std::uint32_t cellBefore =
+                    sm::player_flag_cell(app.session, *app.macroStore)->idx;
+                const float chance = encounter_flee_chance(app, hostile);
+                bool rollFound = false;
+                for (int burn = 0; burn < 256 && !rollFound; ++burn) {
+                    sm::Rng peek = app.gs.playerRoll;
+                    if (peek.next_f01() < chance) rollFound = true;
+                    else (void)app.gs.playerRoll.next_f01();
+                }
+                SMOKE_CHECK(app, rollFound,
+                            "фикстура: удачный бросок побега подобран");
+                if (!rollFound) break;
+                const bool consumed = perform_encounter_flee(app, hostile);
+                SMOKE_CHECK(app, consumed
+                                && app.subState.kind
+                                       == sm::GameSubStateKind::Exploring,
+                            "удачный побег закрывает экран встречи");
+                SMOKE_CHECK(app, app.encounterGraceNpc == hostile,
+                            "и враг помилован");
+                SMOKE_CHECK(app,
+                            sm::player_flag_cell(app.session, *app.macroStore)
+                                    ->idx == cellBefore,
+                            "ПОБЕГ НЕ ДВИГАЕТ СКВАД: клетка игрока прежняя");
+                // Пока двое в одной клетке, милость держит: кадр игры встречу
+                // заново не открывает.
+                advance_sim_steps(app, 1, /*allowInput*/false);
+                SMOKE_CHECK(app, app.subState.kind
+                                     == sm::GameSubStateKind::Exploring
+                                && app.encounterGraceNpc == hostile,
+                            "милость держит, пока не разошлись по клеткам");
+                // КОНТРОЛЬ ОБРАТНОЙ ПОЛЯРНОСТИ, и он же возвращает сцену
+                // остальному сценарию: без милости тот же кадр встречу
+                // открывает — значит строка выше судит милость, а не спящую
+                // дверь встречи.
+                app.encounterGraceNpc = {};
+                advance_sim_steps(app, 1, /*allowInput*/false);
+                SMOKE_CHECK(app, app.subState.kind
+                                     == sm::GameSubStateKind::PreBattle
+                                && app.preBattleNpc == hostile,
+                            "контроль: без милости встреча открывается снова");
+                if (app.subState.kind != sm::GameSubStateKind::PreBattle) break;
+            }
             const sm::Inventory* pArmy = sm::player_inventory(app.session, *app.macroStore);
             const int armyBefore = pArmy ? sm::creature_count(*pArmy) : 0;
             const int hpBefore = player_pools(app).hp;
@@ -11615,11 +11666,54 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                               app.gs.mapW);
             const int gx = sm::cell_x(goal, app.gs.mapW);
             const int gy = sm::cell_y(goal, app.gs.mapW);
-            const auto path = build_flight_path(sx, sy, gx, gy,
-                                                app.gs.mapW, app.gs.mapH);
+            const auto path = build_flight_path(sx, sy, gx, gy, app.gs.mapW);
             if (path.size() < 2 || path.front().x != sx || path.front().y != sy
                 || path.back().x != gx || path.back().y != gy) {
                 smoke_fail(app, "flight path invariant");
+                break;
+            }
+            // ЗАКОН МАРШРУТА ПОЛЁТА (M-462): прямая есть цепочка СОСЕДНИХ
+            // клеток, и по паре цен шага она стоит ровно путь между концами —
+            // короче пути в мире нет, длиннее прямая быть не вправе. Судится
+            // дважды: рядом и ЧЕРЕЗ ШОВ тора (цель по ту сторону края мира —
+            // короткая сторона обязана идти через него, а не вокруг света).
+            const auto flight_is_shortest = [&](int ax, int ay, int bx,
+                                                int by) {
+                const int side = app.gs.mapW;
+                const auto line = build_flight_path(ax, ay, bx, by, side);
+                const std::uint32_t a = sm::cell_of(ax, ay, side);
+                const std::uint32_t b = sm::cell_of(bx, by, side);
+                if (line.empty()
+                    || sm::cell_of(line.front().x, line.front().y, side) != a
+                    || sm::cell_of(line.back().x, line.back().y, side) != b)
+                    return false;
+                int price = 0;
+                for (std::size_t k = 1; k < line.size(); ++k) {
+                    const sm::CellDelta st = sm::cell_delta(
+                        sm::cell_of(line[k - 1].x, line[k - 1].y, side),
+                        sm::cell_of(line[k].x, line[k].y, side), side);
+                    const int mx = std::abs(st.dx), my = std::abs(st.dy);
+                    if (mx > 1 || my > 1 || (mx == 0 && my == 0)) return false;
+                    price += (mx != 0 && my != 0) ? sm::kStepDiagonal
+                                                  : sm::kStepStraight;
+                }
+                if (price != sm::cell_dist(a, b, side)) return false;
+                // ПРЯМАЯ, А НЕ «СНАЧАЛА ДИАГОНАЛЬ, ПОТОМ ПРЯМО»: у обоих
+                // маршрутов цена одна, различает их середина — у прямой она
+                // лежит посередине смещения (не дальше клетки по каждой оси).
+                const sm::CellDelta whole = sm::cell_delta(a, b, side);
+                const sm::PathPoint mid = line[line.size() / 2];
+                const sm::CellDelta half =
+                    sm::cell_delta(a, sm::cell_of(mid.x, mid.y, side), side);
+                return std::abs(2 * half.dx - whole.dx) <= 2
+                    && std::abs(2 * half.dy - whole.dy) <= 2;
+            };
+            const int seamX = app.gs.mapW - 3;   // три клетки до края мира
+            if (!flight_is_shortest(sx, sy, gx, gy)
+                || !flight_is_shortest(seamX, 5, 4, app.gs.mapW - 2)
+                || !flight_is_shortest(4, app.gs.mapW - 2, seamX, 5)
+                || !flight_is_shortest(sx, sy, sx, sy)) {
+                smoke_fail(app, "flight path is not the shortest line");
                 break;
             }
             RuntimeFrameStats frameStats =

@@ -684,6 +684,35 @@ void perform_encounter_auto(App& app, sm::MacroHandle npc, sm::Ambush ambush) {
     close_pre_battle(app, /*grace*/!enemyGone);
 }
 
+// ПОПЫТКА ПОБЕГА ИЗ ПРЕДБОЯ — именованной дверью, как авторезолв выше: строка
+// таблицы действий зовёт её, и её же жмёт смоук (свидетелю нужна та самая
+// дверь, которой играет игрок, а не её пересказ). Шансы — закон силы; провал
+// значит, что они настигли, и бой идёт на земле.
+bool perform_encounter_flee(App& app, sm::MacroHandle npc) {
+    if (app.gs.playerRoll.next_f01() < encounter_flee_chance(app, npc)) {
+        // УДАЧНЫЙ ПОБЕГ ЕСТЬ МИЛОСТЬ, И БОЛЬШЕ НИЧЕГО (вердикт владельца
+        // 2026-11-12 на вариант «без отскока вовсе»; его же слова о прежней
+        // форме: «мне кажется это костыль»). Враг не трогает, пока двое не
+        // разойдутся по клеткам (`encounterGraceNpc`), а уходит игрок своими
+        // ногами и платит веса земли, как всякий сквад, — вода в том числе:
+        // она вес, а не стена.
+        //
+        // ЧТО ЗДЕСЬ СТОЯЛО: бесплатный прыжок на две клетки «прямо прочь от
+        // них» с обходом воды — телепорт мимо системы движения, рождённый
+        // вместе с экраном предбоя (2026-08-06), когда позиции были дробными.
+        // С тех пор как встреча судится одной клеткой, «прочь» было считать
+        // не из чего: смещение врага ко мне равно нулю всегда, срабатывала
+        // запасная ветка, и прыжок молча вёл на восток.
+        push_combat_log(app, "Slipped away from a hostile band.");
+        close_pre_battle(app, /*grace*/true);
+        return true;
+    }
+    push_combat_log(app, "They caught you as you turned to run!");
+    close_pre_battle(app, /*grace*/false);
+    (void)route_macro_npc_attack(app, npc);
+    return true;
+}
+
 // One action row of the pre-battle screen.
 struct PreBattleAction {
     void (*label)(App&, sm::MacroHandle, char*, std::size_t);
@@ -768,56 +797,7 @@ const PreBattleAction kPreBattleActions[] = {
      },
      [](App&, sm::MacroHandle) { return true; },
      [](App& app, sm::MacroHandle npc) {
-         if (app.gs.playerRoll.next_f01() < encounter_flee_chance(app, npc)) {
-             // Slip two cells straight away from them, dodging water; a
-             // failed search leaves you where you stand — graced, but they
-             // may catch you again.
-             const auto& ec = (*app.macroStore).cell[npc.slot];
-             const sm::ecs::MacroCell* pcell =
-                 sm::player_flag_cell(app.session, *app.macroStore);
-             if (!pcell) return true;
-             const int pcx = sm::ecs::cell_x(*pcell, app.gs.mapW);
-             const int pcy = sm::ecs::cell_y(*pcell, app.gs.mapW);
-             // КУДА ОТ НИХ — канонической дверью тора (наряд M-161). Здесь
-             // стояла рукописная свёртка кратчайшей разницы («если больше
-             // половины мира — отнять мир»), которая правит РОВНО ОДИН период,
-             // и ручная нормировка рядом с ней. `torus_bearing` — та же
-             // арифметика одним телом на весь проект, и она же отвечает
-             // «направления нет», когда оба стоят в одной клетке.
-             float ux = 1.0f, uy = 0.0f;
-             sm::torus_bearing(sm::ecs::cell_x(ec, app.gs.mapW),
-                               sm::ecs::cell_y(ec, app.gs.mapW), pcx, pcy,
-                               app.gs.mapW, app.gs.mapH, ux, uy);
-             if (ux == 0.0f && uy == 0.0f) ux = 1.0f;   // стоят вплотную
-             for (float away = 2.0f; away >= 1.0f; away -= 1.0f) {
-                 // АДРЕС — ОДНО ЧИСЛО, и дверей к нему ровно ЧЕТЫРЕ (AGENTS
-                 // ЗАКОН АДРЕСА п.2). Здесь стояла пятая — `wrap_axis`: та же
-                 // маска, но отдающая КООРДИНАТУ, а координату дальше
-                 // индексируют рукой. Адрес рукой не проиндексируешь, потому
-                 // дверь и одна.
-                 const std::uint32_t c = sm::cell_of(
-                     int(std::floor(float(pcx) + ux * away)),
-                     int(std::floor(float(pcy) + uy * away)), app.gs.mapW);
-                 const int tx = sm::cell_x(c, app.gs.mapW);
-                 const int ty = sm::cell_y(c, app.gs.mapW);
-                 // «Вода ли клетка» — ОДИН ответ на всю игру: байт высоты
-                 // против байта плоскости. Здесь спрашивали МАСКУ `A` мастера,
-                 // а она лишь производное того же порога — третий спеллинг
-                 // одного вопроса, и единственный её читатель во всём дереве.
-                 if (app.terrain.is_water(tx, ty)) continue;
-                 sm::player_jump_to_cell(app.session, *app.macroStore, tx, ty, app.gs.mapW);
-                 app.cursor.path.clear();
-                 app.cursor.pathIdx = 0;
-                 break;
-             }
-             push_combat_log(app, "Slipped away from a hostile band.");
-             close_pre_battle(app, /*grace*/true);
-             return true;
-         }
-         push_combat_log(app, "They caught you as you turned to run!");
-         close_pre_battle(app, /*grace*/false);
-         (void)route_macro_npc_attack(app, npc);
-         return true;
+         return perform_encounter_flee(app, npc);
      },
      "Odds follow the strength law. Fail, and they are on you."},
     // Fight: the subworld battle against exactly the people the creatures
@@ -2101,31 +2081,35 @@ void sync_relative_mouse_mode(App& app) {
 }
 
 std::vector<sm::PathPoint> build_flight_path(int sx, int sy, int gx, int gy,
-                                             int mapW, int mapH) {
-    // THE fold, not a hand-written one: `torus_delta` (core/torus.h) folds ANY
-    // difference into (−period/2, +period/2], however many worlds apart the two
-    // numbers drifted. The four conditional subtractions that lived here
-    // corrected exactly ONE period — the very defect torus.h documents, and the
-    // flight path was the last copy of it in the tree.
-    const int dx = int(std::lround(sm::torus_delta(float(gx - sx), float(mapW))));
-    const int dy = int(std::lround(sm::torus_delta(float(gy - sy), float(mapH))));
-    const int steps = std::max(std::abs(dx), std::abs(dy));
+                                             int mapW) {
+    // ПРЯМАЯ МЕЖДУ ДВУМЯ КЛЕТКАМИ — ЦЕЛЫМ РАСТРОМ НАД ИНДЕКСОМ (M-462).
+    // Смещение короткой стороной тора даёт дверь `cell_delta`; шагов у прямой
+    // столько, сколько клеток по длинной оси, и на шаге `i` короткая ось
+    // уходит на `|d|·i / steps`, округлённое до ближайшего целого, — та же
+    // линия, какой её рисует глаз. Длинная ось при этом идёт ровно по клетке
+    // за шаг, значит соседние точки всегда различны, диагональных шагов
+    // `min(|dx|,|dy|)`, прямых — остаток: по паре цен шага маршрут стоит
+    // ровно `cell_dist`, короче его в мире нет.
+    //
+    // ЧТО ЗДЕСЬ СТОЯЛО: складка разницы через `torus_delta` над флоатами,
+    // параметр `t = i / steps` флоатом и `lround` на каждой оси — клетку
+    // везли дробной точкой и тут же резали обратно. Вторая сторона мира
+    // (`mapH`) умерла вместе с ней: мир квадратен, сторона одна.
+    const std::uint32_t from = sm::cell_of(sx, sy, mapW);
+    const sm::CellDelta d =
+        sm::cell_delta(from, sm::cell_of(gx, gy, mapW), mapW);
+    const int ax = std::abs(d.dx);
+    const int ay = std::abs(d.dy);
+    const int steps = std::max(ax, ay);
     std::vector<sm::PathPoint> path;
-    path.reserve(std::size_t(std::max(1, steps) + 1));
+    path.reserve(std::size_t(steps) + 1u);
     for (int i = 0; i <= steps; ++i) {
-        const float t = steps > 0 ? float(i) / float(steps) : 0.0f;
-        // Свернуть КЛЕТКУ МИРА через `wrapi` названо дефектом дословно: он
-        // заворачивает `std::int64_t %` по РАНТАЙМ-делителю, тогда как сторона
-        // мира есть степень двойки и заворот есть одна маска. Дверь адреса —
-        // `cell_of`; пара обратно нужна потому, что марш есть ГЕОМЕТРИЯ.
-        const std::uint32_t c = sm::cell_of(sx + int(std::lround(float(dx) * t)),
-                                            sy + int(std::lround(float(dy) * t)),
-                                            mapW);
-        const int x = sm::cell_x(c, mapW);
-        const int y = sm::cell_y(c, mapW);
-        if (path.empty() || path.back().x != x || path.back().y != y) {
-            path.push_back({x, y});
-        }
+        // Округление к ближайшему целой арифметикой: (2·a·i + steps) / 2·steps.
+        const int ox = steps > 0 ? (2 * ax * i + steps) / (2 * steps) : 0;
+        const int oy = steps > 0 ? (2 * ay * i + steps) / (2 * steps) : 0;
+        const std::uint32_t c = sm::cell_step(from, d.dx < 0 ? -ox : ox,
+                                              d.dy < 0 ? -oy : oy, mapW);
+        path.push_back({sm::cell_x(c, mapW), sm::cell_y(c, mapW)});
     }
     return path;
 }
@@ -3319,9 +3303,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     if (!app.revealMapOn && !app.sceneHoldsMap) {
         if (const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.session, *app.macroStore)) {
             sm::update_player_sight(app.gs.knowledge, app.sightRt,
-                                    optical_world(app),
-                                    float(sm::ecs::cell_x(*pc, app.gs.mapW)),
-                                    float(sm::ecs::cell_y(*pc, app.gs.mapW)),
+                                    optical_world(app), pc->idx,
                                     player_sight_budget_cells());
         }
     }
@@ -4035,8 +4017,7 @@ void register_console_commands(App& app) {
                 // Wake the ordinary law: an invalid sight anchor forces the
                 // next tick's sweep — the pinned set decays to Explored, the
                 // real disc re-sweeps from the player's cell.
-                app.sightRt.lastCellX = INT32_MIN;
-                app.sightRt.lastCellY = INT32_MIN;
+                app.sightRt.lastCell = sm::ecs::kNoCell;
                 c.printfln(Lvl::Ok,
                            "full vision OFF — the map stays charted");
             }
@@ -5977,8 +5958,7 @@ void frame(App& app, int simSteps) {
             if (sm::spellbook_rule_active(player_book(app),
                                           sm::SpellRuleId::Flight)) {
                 app.cursor.path = build_flight_path(sx, sy,
-                    app.cursor.requestX, app.cursor.requestY,
-                    app.gs.mapW, app.gs.mapH);
+                    app.cursor.requestX, app.cursor.requestY, app.gs.mapW);
                 app.cursor.pathIdx = 1; // skip current cell
             } else {
                 sm::PathResult r = sm::find_path(app.pathCost, sx, sy,

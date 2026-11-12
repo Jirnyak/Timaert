@@ -20,9 +20,12 @@
 //
 // The sight BUDGET (in cells of open ground) is the caller's: the app derives
 // it from the standing eye's horizon and will later scale it by attributes
-// and skills — this layer only spends whatever budget it is handed. Quests
-// and events open the map through the same door (reveal_area), so "the elder
-// marks your map" and "you walked there" are indistinguishable afterwards.
+// and skills — this layer only spends whatever budget it is handed.
+//
+// (Здесь жила вторая дверь, `reveal_area` — «открыть карту событием», с нулём
+// звонящих в игре за всю свою жизнь. Снесена вердиктом владельца 2026-11-12:
+// дверь будущей системы без читателя есть спящий закон. Первое событие,
+// открывающее карту, придёт своей строкой и назовёт клетку индексом.)
 //
 // L1 macro layer, TreeLayer's shape: grid + revision (renderer refresh gate).
 // GameState owns one; the renderer samples it as R8
@@ -33,6 +36,7 @@
 #include <span>
 #include <vector>
 
+#include "bus/squad_row.h"  // ecs::kNoCell — «нет клетки», одно имя на игру
 #include "core/caps.h"     // kWorldCellCap — кап клеток мира, один на слои
 #include "macro/optics.h"
 
@@ -83,7 +87,9 @@ static_assert(sizeof(KnowledgeLayer) == 12u + kWorldCellCap,
 struct SightRuntime {
     OpticalScratch scratch;
     std::vector<std::uint32_t> visibleCells;
-    int lastCellX = INT32_MIN, lastCellY = INT32_MIN;
+    // Клетка, с которой смотрел прошлый обзор, — ОДНИМ числом (ЗАКОН АДРЕСА
+    // п.2); `ecs::kNoCell` = обзора ещё не было, и первый же вопрос его даст.
+    std::uint32_t lastCell = ecs::kNoCell;
 };
 
 // All-Unknown grid of the given dims — a new world starts dark.
@@ -120,16 +126,14 @@ inline void knowledge_dim_sight(KnowledgeLayer& k) {
 // Returns true when the layer changed (revision bumped) — the renderer's cue
 // to refresh. One integer compare when the cell is unchanged, so calling it
 // every frame costs nothing between crossings.
+//
+// ГЛАЗ СТОИТ В КЛЕТКЕ, И ВХОД — ЕЁ ИНДЕКС (M-462). Здесь стояла пара флоатов:
+// звонящий разворачивал индекс клетки флажка в `float x, y`, а дверь тут же
+// резала их `floor` обратно — круг через дробную точку, которой у мира нет
+// (позиция мира есть клетка, внутри неё у мира позиции нет вовсе).
 bool update_player_sight(KnowledgeLayer& k, SightRuntime& rt,
                          const OpticalWorld& world,
-                         float playerX, float playerY, float budgetCells);
-
-// The quest/event door: mark Explored (never Visible) everything an eye at
-// (cx, cy) with this budget would see — same physics as the player's own
-// sight, so a revealed area looks exactly like a remembered one.
-void reveal_area(KnowledgeLayer& k, const OpticalWorld& world,
-                 OpticalScratch& scratch, float cx, float cy,
-                 float budgetCells);
+                         std::uint32_t playerCell, float budgetCells);
 
 } // namespace sm
 

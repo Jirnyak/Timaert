@@ -54,7 +54,3 @@ src/macro/tree_layer.cpp	index	const std::size_t i = std::size_t(wy) * std::size
 src/macro/tree_layer.cpp	index	const std::size_t i = std::size_t(y) * std::size_t(W) + std::size_t(x);
 src/macro/zones.cpp	index	const std::size_t i = std::size_t(y) * std::size_t(width) + std::size_t(x);
 src/macro/zones.cpp	mod	pull_from(int(i % std::size_t(width)),
-src/ui/macro_overlay.cpp	mod	cx = ((cx % mapW) + mapW) % mapW;
-src/ui/macro_overlay.cpp	mod	cy = ((cy % mapH) + mapH) % mapH;
-src/ui/map_screen.cpp	mod	const int cx = ((int(std::floor(wx)) % mapW) + mapW) % mapW;
-src/ui/map_screen.cpp	mod	const int cy = ((int(std::floor(wy)) % mapH) + mapH) % mapH;

@@ -212,10 +212,11 @@ void draw_macro_overlay(const MacroWorld& mw,
             float wx = camX + (m.x - viewW * 0.5f) / zoom;
             // Y flip: ImGui +Y is down, world +Y is up.
             float wy = camY - (m.y - viewH * 0.5f) / zoom;
-            int cx = int(std::floor(wx));
-            int cy = int(std::floor(wy));
-            cx = ((cx % mapW) + mapW) % mapW;
-            cy = ((cy % mapH) + mapH) % mapH;
+            // Заворот клетки под курсором — МАСКОЙ (ЗАКОН АДРЕСА п.3): сторона
+            // мира есть степень двойки, и здесь стояло двойное деление `%` по
+            // рантайм-делителю на каждой оси.
+            const int cx = wrap_axis(int(std::floor(wx)), mapW);
+            const int cy = wrap_axis(int(std::floor(wy)), mapH);
             cursor.hoverValid = true;
             cursor.hoverX = cx;
             cursor.hoverY = cy;
@@ -521,8 +522,7 @@ void draw_macro_overlay(const MacroWorld& mw,
             if (!(kMarkerSurface[si] & kMarkerOnWorld))
                 continue;
             // Pins live on the map the player HAS: an uncharted cell shows
-            // nothing — a quest that wants to point into the dark reveals its
-            // target area first (reveal_area).
+            // nothing — a pin never points into the dark.
             const int mx = cell_x(m.cell, mapW);
             const int my = cell_y(m.cell, mapW);
             if (gs.knowledge.at(mx, my) == kKnowledgeUnknown) continue;

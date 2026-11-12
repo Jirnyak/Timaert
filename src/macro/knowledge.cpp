@@ -1,18 +1,13 @@
 #include "macro/knowledge.h"
 
-#include <cmath>
-
 namespace sm {
 
 bool update_player_sight(KnowledgeLayer& k, SightRuntime& rt,
                          const OpticalWorld& world,
-                         float playerX, float playerY, float budgetCells) {
+                         std::uint32_t playerCell, float budgetCells) {
     if (!k.has_complete_storage()) return false;
-    const int cx = FeatureLayer::wrap_coord(int(std::floor(playerX)), k.width);
-    const int cy = FeatureLayer::wrap_coord(int(std::floor(playerY)), k.height);
-    if (cx == rt.lastCellX && cy == rt.lastCellY) return false;
-    rt.lastCellX = cx;
-    rt.lastCellY = cy;
+    if (playerCell == rt.lastCell) return false;
+    rt.lastCell = playerCell;
 
     // Yesterday's sight becomes memory. Guarded per cell so a stale list from
     // another world (or an already-decayed cell) can never invent knowledge.
@@ -22,7 +17,11 @@ bool update_player_sight(KnowledgeLayer& k, SightRuntime& rt,
     }
     rt.visibleCells.clear();
 
-    optical_sweep(k.width, k.height, cx, cy, budgetCells, world, rt.scratch,
+    // Оптика берёт клетку парой осей — её дверь переедет на индекс вместе с
+    // остальными дверями мира (ломоть 4 M-462); пара здесь не хранится и не
+    // считается, она только называет ту же клетку чужой подписи.
+    optical_sweep(k.width, k.height, cell_x(playerCell, k.width),
+                  cell_y(playerCell, k.width), budgetCells, world, rt.scratch,
                   [&](std::size_t ci, float) {
         k.data[ci] = kKnowledgeVisible;
         rt.visibleCells.push_back(std::uint32_t(ci));
@@ -32,23 +31,6 @@ bool update_player_sight(KnowledgeLayer& k, SightRuntime& rt,
     // crossing, never per frame.
     ++k.revision;
     return true;
-}
-
-void reveal_area(KnowledgeLayer& k, const OpticalWorld& world,
-                 OpticalScratch& scratch, float cx, float cy,
-                 float budgetCells) {
-    if (!k.has_complete_storage()) return;
-    const int sx = int(std::floor(cx));
-    const int sy = int(std::floor(cy));
-    bool changed = false;
-    optical_sweep(k.width, k.height, sx, sy, budgetCells, world, scratch,
-                  [&](std::size_t ci, float) {
-        if (k.data[ci] == kKnowledgeUnknown) {
-            k.data[ci] = kKnowledgeExplored;
-            changed = true;
-        }
-    });
-    if (changed) ++k.revision;
 }
 
 } // namespace sm

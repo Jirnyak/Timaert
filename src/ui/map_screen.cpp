@@ -180,8 +180,10 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
             && mp.y < float(viewH)) {
             const float wx = st.camX + (mp.x - viewW * 0.5f) / zoomLogical;
             const float wy = st.camY - (mp.y - viewH * 0.5f) / zoomLogical;
-            const int cx = ((int(std::floor(wx)) % mapW) + mapW) % mapW;
-            const int cy = ((int(std::floor(wy)) % mapH) + mapH) % mapH;
+            // Заворот клетки под курсором — маской, не делением (ЗАКОН АДРЕСА
+            // п.3; та же строка, что у курсора карты мира).
+            const int cx = wrap_axis(int(std::floor(wx)), mapW);
+            const int cy = wrap_axis(int(std::floor(wy)), mapH);
             const std::uint8_t know = gs.knowledge.at(cx, cy);
 
             // Hover rect (cell top = wy+1 after the Y flip).

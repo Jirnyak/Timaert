@@ -48,6 +48,10 @@ int count_state(const sm::KnowledgeLayer& k, std::uint8_t s) {
 
 std::uint8_t at(const sm::KnowledgeLayer& k, int x, int y) { return k.at(x, y); }
 
+// Клетка глаза — ИНДЕКСОМ: дверь зрения берёт адрес клетки, а не точку в ней
+// (M-462: внутри клетки у мира позиции нет).
+std::uint32_t eye(int x, int y) { return sm::cell_of(x, y, W); }
+
 void test_open_sight_opens_a_disc_and_only_once() {
     std::unique_ptr<sm::KnowledgeLayer> kOwn{new sm::KnowledgeLayer()};
     sm::KnowledgeLayer& k = *kOwn;
@@ -58,8 +62,7 @@ void test_open_sight_opens_a_disc_and_only_once() {
     sm::OpticalWorld world{&feat, nullptr, nullptr};
 
     const int cx = 32, cy = 32;
-    CHECK(sm::update_player_sight(k, rt, world, float(cx) + 0.5f,
-                                  float(cy) + 0.5f, kBudget),
+    CHECK(sm::update_player_sight(k, rt, world, eye(cx, cy), kBudget),
           "the first sweep of a fresh world reports a change");
     CHECK(at(k, cx, cy) == sm::kKnowledgeVisible,
           "the player's own cell is Visible");
@@ -77,11 +80,20 @@ void test_open_sight_opens_a_disc_and_only_once() {
           "a player who never moved has no memory distinct from sight");
 
     // Same cell again: one integer compare, no change, no revision bump.
+    // (Здесь проверялось «шевеление внутри клетки» дробной точкой — у этого
+    // кейса больше нет предмета: дверь спрашивают клеткой, и точки внутри неё
+    // для мира не существует. Закон остался: тот же адрес — обзора нет.)
     const std::uint32_t rev = k.revision;
-    CHECK(!sm::update_player_sight(k, rt, world, float(cx) + 0.7f,
-                                   float(cy) + 0.2f, kBudget),
-          "a within-cell wiggle is not a crossing");
+    CHECK(!sm::update_player_sight(k, rt, world, eye(cx, cy), kBudget),
+          "the same cell asked twice is not a crossing");
     CHECK(k.revision == rev, "no crossing, no revision bump");
+    // Сосед — уже другой адрес: обзор обязан пройти заново. И адрес, свёрнутый
+    // через шов тора, называет ТУ ЖЕ клетку, что и несвёрнутый.
+    CHECK(sm::update_player_sight(k, rt, world, eye(cx + 1, cy), kBudget),
+          "a step into the neighbour cell IS a crossing");
+    CHECK(!sm::update_player_sight(k, rt, world, eye(cx + 1 + W, cy - H),
+                                   kBudget),
+          "the same cell named across the torus seam is not a crossing");
 }
 
 void test_canopy_shortens_reach() {
@@ -93,7 +105,7 @@ void test_canopy_shortens_reach() {
     sm::knowledge_reset(openK, W, H);
     sm::SightRuntime openRt;
     sm::OpticalWorld openWorld{&feat, nullptr, nullptr};
-    sm::update_player_sight(openK, openRt, openWorld, 32.5f, 32.5f, kBudget);
+    sm::update_player_sight(openK, openRt, openWorld, eye(32, 32), kBudget);
 
     // Full canopy everywhere: every step now costs the open baseline PLUS
     // kCanopyOpticalCost — reach must shrink, by construction of the law.
@@ -103,7 +115,7 @@ void test_canopy_shortens_reach() {
     sm::knowledge_reset(forestK, W, H);
     sm::SightRuntime forestRt;
     sm::OpticalWorld forestWorld{&feat, nullptr, &canopy};
-    sm::update_player_sight(forestK, forestRt, forestWorld, 32.5f, 32.5f,
+    sm::update_player_sight(forestK, forestRt, forestWorld, eye(32, 32),
                             kBudget);
 
     const int openSeen = count_state(openK, sm::kKnowledgeVisible);
@@ -138,7 +150,7 @@ void test_road_carries_sight_farther() {
     sm::knowledge_reset(openK, W, H);
     sm::SightRuntime openRt;
     sm::OpticalWorld openWorld{&openFeat, nullptr, nullptr};
-    sm::update_player_sight(openK, openRt, openWorld, 20.5f, 20.5f, kBudget);
+    sm::update_player_sight(openK, openRt, openWorld, eye(20, 20), kBudget);
     CHECK(at(openK, 20 + steps, 20) == sm::kKnowledgeUnknown,
           "open ground cannot see that far (negative control)");
 
@@ -152,7 +164,7 @@ void test_road_carries_sight_farther() {
     sm::knowledge_reset(roadK, W, H);
     sm::SightRuntime roadRt;
     sm::OpticalWorld roadWorld{&roadFeat, nullptr, nullptr};
-    sm::update_player_sight(roadK, roadRt, roadWorld, 20.5f, 20.5f, kBudget);
+    sm::update_player_sight(roadK, roadRt, roadWorld, eye(20, 20), kBudget);
     CHECK(at(roadK, 20 + steps, 20) == sm::kKnowledgeVisible,
           "the same eye sees farther along a road (it spends less budget)");
 }
@@ -178,8 +190,7 @@ void test_ridge_blocks_and_hilltop_overlooks() {
     sm::SightRuntime flatRt;
     const std::vector<float> flat(std::size_t(W) * H, 0.0f);
     sm::OpticalWorld flatWorld{&feat, &flat, nullptr};
-    sm::update_player_sight(flatK, flatRt, flatWorld, float(cx) + 0.5f,
-                            float(cy) + 0.5f, kBudget);
+    sm::update_player_sight(flatK, flatRt, flatWorld, eye(cx, cy), kBudget);
     CHECK(at(flatK, probeX, cy) == sm::kKnowledgeVisible,
           "flat ground: the probe cell is inside the open budget");
 
@@ -190,8 +201,8 @@ void test_ridge_blocks_and_hilltop_overlooks() {
     sm::knowledge_reset(valleyK, W, H);
     sm::SightRuntime valleyRt;
     sm::OpticalWorld ridgeWorld{&feat, &ridge, nullptr};
-    sm::update_player_sight(valleyK, valleyRt, ridgeWorld, float(cx) + 0.5f,
-                            float(cy) + 0.5f, kBudget);
+    sm::update_player_sight(valleyK, valleyRt, ridgeWorld, eye(cx, cy),
+                            kBudget);
     CHECK(at(valleyK, probeX, cy) == sm::kKnowledgeUnknown,
           "a ridge walls sight off the valley floor");
     CHECK(at(valleyK, wallX, cy) == sm::kKnowledgeUnknown,
@@ -203,8 +214,8 @@ void test_ridge_blocks_and_hilltop_overlooks() {
     sm::KnowledgeLayer& crestK = *crestKOwn;
     sm::knowledge_reset(crestK, W, H);
     sm::SightRuntime crestRt;
-    sm::update_player_sight(crestK, crestRt, ridgeWorld, float(wallX) + 0.5f,
-                            float(cy) + 0.5f, kBudget);
+    sm::update_player_sight(crestK, crestRt, ridgeWorld, eye(wallX, cy),
+                            kBudget);
     CHECK(at(crestK, cx, cy) == sm::kKnowledgeVisible,
           "the hilltop overlooks the valley (downhill spends nothing extra)");
 }
@@ -218,9 +229,9 @@ void test_move_decays_visible_to_explored() {
     const sm::FeatureLayer& feat = *featOwn;
     sm::OpticalWorld world{&feat, nullptr, nullptr};
 
-    sm::update_player_sight(k, rt, world, 10.5f, 10.5f, kBudget);
+    sm::update_player_sight(k, rt, world, eye(10, 10), kBudget);
     const std::uint32_t revAfterFirst = k.revision;
-    CHECK(sm::update_player_sight(k, rt, world, 40.5f, 10.5f, kBudget),
+    CHECK(sm::update_player_sight(k, rt, world, eye(40, 10), kBudget),
           "a crossing reports a change");
     CHECK(k.revision > revAfterFirst, "a crossing bumps the revision");
     CHECK(at(k, 10, 10) == sm::kKnowledgeExplored,
@@ -232,32 +243,6 @@ void test_move_decays_visible_to_explored() {
           "both states coexist after a move (it MEASURED)");
 }
 
-void test_reveal_area_marks_memory_never_sight() {
-    std::unique_ptr<sm::KnowledgeLayer> kOwn{new sm::KnowledgeLayer()};
-    sm::KnowledgeLayer& k = *kOwn;
-    sm::knowledge_reset(k, W, H);
-    sm::SightRuntime rt;
-    const std::unique_ptr<sm::FeatureLayer> featOwn = open_ground();
-    const sm::FeatureLayer& feat = *featOwn;
-    sm::OpticalWorld world{&feat, nullptr, nullptr};
-
-    sm::update_player_sight(k, rt, world, 10.5f, 10.5f, kBudget);
-    const int visibleBefore = count_state(k, sm::kKnowledgeVisible);
-
-    sm::OpticalScratch scratch;
-    sm::reveal_area(k, world, scratch, 50.5f, 50.5f, kBudget);
-    CHECK(at(k, 50, 50) == sm::kKnowledgeExplored,
-          "a revealed area reads as memory");
-    CHECK(count_state(k, sm::kKnowledgeExplored) > 0, "the reveal MEASURED");
-    CHECK(count_state(k, sm::kKnowledgeVisible) == visibleBefore,
-          "a reveal never fabricates sight");
-
-    // Revealing over the player's live sight must not downgrade it.
-    sm::reveal_area(k, world, scratch, 10.5f, 10.5f, kBudget);
-    CHECK(at(k, 10, 10) == sm::kKnowledgeVisible,
-          "revealing what is already in sight leaves it in sight");
-}
-
 void test_torus_wrap_and_fail_closed_door() {
     std::unique_ptr<sm::KnowledgeLayer> kOwn{new sm::KnowledgeLayer()};
     sm::KnowledgeLayer& k = *kOwn;
@@ -267,7 +252,7 @@ void test_torus_wrap_and_fail_closed_door() {
     const sm::FeatureLayer& feat = *featOwn;
     sm::OpticalWorld world{&feat, nullptr, nullptr};
 
-    sm::update_player_sight(k, rt, world, 0.5f, 0.5f, kBudget);
+    sm::update_player_sight(k, rt, world, eye(0, 0), kBudget);
     CHECK(at(k, W - 1, H - 1) == sm::kKnowledgeVisible,
           "sight wraps the torus like every other layer");
 
@@ -293,7 +278,7 @@ void test_sight_prices_a_diagonal_by_the_game_pair() {
     const sm::FeatureLayer& feat = *featOwn;
     sm::OpticalWorld world{&feat, nullptr, nullptr};
     const float budget = 5.0f * sm::kDiagonalStepLen - 0.1f;
-    sm::update_player_sight(k, rt, world, 32.5f, 32.5f, budget);
+    sm::update_player_sight(k, rt, world, eye(32, 32), budget);
     CHECK(at(k, 32 + 7, 32) == sm::kKnowledgeVisible,
           "семь клеток прямо — внутри бюджета");
     CHECK(at(k, 32 + 4, 32 + 4) == sm::kKnowledgeVisible,
@@ -309,7 +294,6 @@ int main() {
     test_road_carries_sight_farther();
     test_ridge_blocks_and_hilltop_overlooks();
     test_move_decays_visible_to_explored();
-    test_reveal_area_marks_memory_never_sight();
     test_torus_wrap_and_fail_closed_door();
     return sm::test::report("knowledge_test");
 }

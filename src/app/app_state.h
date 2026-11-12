@@ -493,6 +493,8 @@ sm::OpticalWorld optical_world(App& app);
 //  `status == Ready`, а та включает контрольную сумму файла.)
 bool route_macro_npc_attack(App& app, sm::MacroHandle npc);
 void perform_encounter_auto(App& app, sm::MacroHandle npc, sm::Ambush ambush);
+bool perform_encounter_flee(App& app, sm::MacroHandle npc);
+float encounter_flee_chance(App& app, sm::MacroHandle npc);
 void detect_forced_encounter(App& app);
 float& player_sp_carry(App& app);
 sm::ecs::Pools& player_pools(App& app);
@@ -505,7 +507,7 @@ std::uint8_t pause_reasons(const App& app);
 bool world_paused(const App& app);
 void sync_relative_mouse_mode(App& app);
 std::vector<sm::PathPoint> build_flight_path(int sx, int sy, int gx, int gy,
-                                             int mapW, int mapH);
+                                             int mapW);
 // (count_tick_events/latest_tick_event умерли с тегом SpellCast — M-410.)
 // HIS march caches — the two columns every squad carries (travelRank,
 // marathonRank, carryPerSoulG), on the FLAG. The hourly burn reads them, and so

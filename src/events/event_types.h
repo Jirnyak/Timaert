@@ -76,7 +76,8 @@ namespace sm
         // обе сироты (сценная и макро) снесены вердиктами 2026-10-10,
         // системная форма идентичности придёт эпиком событий/фрейма.
         std::uint32_t a = 0, b = 0; // packed handle / entity / ordinal ids
-        float fx = 0, fy = 0;
+        // (Пара флоатов `fx`/`fy` стояла здесь без единого писателя и
+        //  читателя — дробная точка, которой у мира нет; снята M-462.)
         int ix = 0, iy = 0;
         std::string s1{}, s2{}; // ids, text payloads
         std::shared_ptr<std::vector<DialogChoicePayload>> dialogChoices = nullptr;
