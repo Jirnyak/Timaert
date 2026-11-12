@@ -37,12 +37,6 @@ using namespace sm;
 
 constexpr int kMap = 32;
 
-// Стартовая полка города названа ЧИСЛОМ С ИМЕНЕМ, потому что её читают
-// ДВОЕ: фикстура, которая её кладёт, и проверка прироста, которая без неё
-// не могла бы упасть вовсе (§8 п.2). Литерал в двух местах разъехался бы
-// молча, и проверка снова стала бы тавтологией.
-constexpr int kCityStartFood = 2000;
-
 
 // Суша под дверью фичи: стена ломтя 1 закрыла сырой set — фикстура ставит
 // фичу той же дверью, что мир (feature_put; воду та спрашивает у карты).
@@ -532,244 +526,14 @@ void test_the_mine_runs_while_the_player_is_away() {
 // ней. Из прежнего жильца уцелела одна функция — `stock_class` переехала к
 // своему единственному читателю (`src/content/quests/procedural.cpp`).
 
-void test_the_vendor_sells_at_the_nearest_city() {
-    std::unique_ptr<GameState> gsOwn = make_game_state();
-    GameState& gs = *gsOwn;
-    gs.mapW = kMap;
-    gs.mapH = kMap;
-    chronicle_init(gs.chronicle, kMap, kMap);
-
-    auto wStore_ = sm::make_macro_store();
-    sm::MacroStore& st = *wStore_;
-
-    // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store: склад
-    // И счёт нужд — его колонки, ординал выдаёт эмитент. Хэндл слота живёт
-    // сколько нужно: следующее рождение его не двигает (вектор строк, чьё
-    // движение протухало ссылкой, умер).
-    const sm::MacroHandle city =
-        sm::birth_squad(gs, nullptr, st, SquadType::City, 10, 10);
-    const int cityId = int(st.spawnId[city.slot].index);
-    {
-        sm::Inventory& row = st.inventory[city.slot].inv;
-        row.add("food", kCityStartFood);   // plenty: the export
-        // The deal PAYS now (owner 2026-08-30): a coinless fixture is the
-        // deadlock the payment law exists to refuse. The purse covers the
-        // food lot at the SEASONAL famine price (corridor died 2026-09-18) —
-        // a thin purse would pay the vendor in its own goods by value
-        // density, and the return leg would waddle home under a tonne of
-        // payment.
-        row.add("coin_timaert_copper", 40000);
-    }
-    // ГОРОД ЖИЛОЙ — души дверью мира. Рейс называет рынком только место, под
-    // которым лежит ненулевое число фичи (`pick_next_station_`): пустое
-    // место рынком не является, и пока рынок ставила рука фикстуры, этот
-    // вопрос здесь не задавался вовсе.
-    sm::settle_souls(gs, st, city.slot, 10);
-    const sm::MacroHandle vil =
-        sm::birth_squad(gs, nullptr, st, SquadType::Village, 16, 10);
-    const int vilId = int(st.spawnId[vil.slot].index);
-    {
-        sm::Inventory& row = st.inventory[vil.slot].inv;
-        // A GENUINE surplus: the loading law keeps the seasonal larder home
-        // (S19.2 + verdict 2026-09-18 «дома дешевле базы» decides the load),
-        // and 50 souls EAT 50 food a day — 1600 a season. Only what
-        // stands ABOVE that rides to market.
-        row.add("food", 4000);
-        row.add("coin_timaert_copper", 50 * 2);
-        // ДОМ ГОЛОДЕН СЧЁТОМ (CANON S10): «дома нет хлеба» = непогашенный
-        // сезонный счёт — из него и читается нужда, которую вендор едет
-        // закрывать покупкой.
-        // СЧЁТ ЕДЫ — ПО ТАБЛИЦЕ (v122): сезонная нужда есть `upkeep_bill` по
-        // головам этого места, а не «душа × сезон» литералом.
-        sm::settle_souls(gs, st, vil.slot, 50);
-        st.upkeep[vil.slot].needDebt[commodity_index("food")] =
-            sm::upkeep_bill(row).board;
-    }
-    // (ЗДЕСЬ ФИКСТУРА ПУБЛИКОВАЛА ВЕДОМОСТИ — уничтожены 2026-09-30,
-    // ломтик E шаг 2: что везти домой, судит сам дом, читаемый живьём в
-    // точке сделки, а цена чужого рынка есть абсолютная стоимость строки.
-    // Руками поднимать больше нечего.)
-
-    sm::MacroHandle h = sm::store_birth(st);
-    sm::MacroHandle e = h;
-    st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(16, 10, kMap)};
-    st.runtime[h.slot].sub = {};   // доля клетки: центр (M-244a)
-    st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
-                                   std::uint16_t(faction_index("timaert"))};
-    ecs::MacroNpcRuntime crt{};
-    // Дом (деревня) — ребро Parent, ставится после пина ординала (M-245).
-    crt.squadType = std::uint8_t(SquadType::Caravan);
-    crt.state = std::uint8_t(NPCState::Idle);
-    crt.recoverySteps = 0;
-    ecs::Pools pools{};
-    refresh_body_from_sheet(
-        pools, &crt, make_character_sheet(NPCType::Peasant, 3, avatar_sheet_seed(13u)),
-        NPCType::Peasant);
-    pools.sp = pools.maxSp;
-    st.runtime[h.slot] = crt;
-    // РЫНОК ФИКСТУРА НЕ НАЗЫВАЕТ — ЕГО НАЗЫВАЕТ САМ РЕЙС (`caravan_think`:
-    // сосед по мембране от дома). Здесь стояла запись цели РУКОЙ «в той же
-    // форме, какой её назовёт рейс», и она проверяла путь, которого в игре
-    // не было: в живом мире цель новорождённому коровану не писал никто, и
-    // он не торговал ни разу (замер 2 сида × 64 дня: ноль фактов сделки) —
-    // а этот свидетель был зелёным. Теперь сквад рождается БЕЗ цели, как в
-    // мире, и всё ниже утверждается о нём.
-    sm::store_rename_ordinal(st, h, 13u);
-    h = sm::handle_at(st, h.slot);
-    sm::set_relation(st, int(h.id), vilId, sm::Stance::Parent);
-    e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
-    // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
-    st.sheet[h.slot] = make_character_sheet(
-        NPCType::Peasant, 3, avatar_sheet_seed(st.spawnId[h.slot].index));
-    pools.hp = pools.maxHp = 25;
-    st.pools[h.slot] = pools;
-
-    MacroNpcAiRuntime rt{};
-    reset_macro_npc_ai_runtime(rt, 70u);
-    for (int i = 0; i < 600; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &st};
-        tick_macro_npc_ai(mw, rt, kAiTicks);
-    }
-
-    const auto& bag = (*sm::body_state<ecs::NpcInventory>(st, e)).inv;
-    const int cityFood = st.inventory[city.slot].inv.count("food");
-    const int vilFood = st.inventory[vil.slot].inv.count("food");
-    // ПРОВЕРКА, КОТОРАЯ НЕ МОГЛА УПАСТЬ, ЗАМЕНЕНА НА ПРОВЕРКУ (§8 п.2).
-    // Здесь стояло `CHECK(cityFood > 0)` — и оно было ЗЕЛЁНЫМ ПО
-    // ПОСТРОЕНИЮ: фикстура сама кладёт городу 2000 еды строкой выше, так
-    // что ноль был недостижим даже при вендоре, вырезанном целиком. Закон
-    // же утверждался другой — «вендор ПРИВЁЗ сюда деревенский излишек», —
-    // и его видно только ПРИРОСТОМ над тем, что лежало.
-    CHECK(cityFood > kCityStartFood,
-          "the vendor sold the village surplus at the nearest city: the "
-          "city shelf GREW above the 2000 it started with");
-    // ПОД ДОЛГОМ (CANON S10) «купил домой хлеб» видно СЧЁТОМ: привезённое
-    // гасит его в дверях прихода и съедается — полка держит только излишек.
-    const int vilFoodDebtPaid = 50 * kDaysPerSeason
-        - st.upkeep[vil.slot].needDebt[commodity_index("food")];
-    CHECK(vilFoodDebtPaid > 0,
-          "the earnings FED the home's lack — the food bill fell");
-    // КОНСЕРВАЦИЯ ОДНОЙ ПИЩЕЙ (2026-09-20, снос хлеба): до этого дня в мире
-    // было ДВЕ съедобные строки — зерно и хлеб, — и сумма считалась по каждой
-    // отдельно. Теперь поток один: всё, что не лежит на полках и не едет в
-    // спине, ОПЛАТИЛО СЧЁТ и съедено в дверях прихода (CANON S10).
-    const int foodOnShelves = st.inventory[city.slot].inv.count("food")
-                              + st.inventory[vil.slot].inv.count("food")
-                              + bag.count("food");
-    CHECK(foodOnShelves + vilFoodDebtPaid == 2000 + 4000,
-          "CONSERVATION: cargo moves or pays the bill — never dropped");
-    (void)vilFood;
-    // ...and the deal's other half obeys the same law: coin travels between
-    // the three purses (city, village, hold) and is never minted or burned.
-    const int coinTotal =
-        st.inventory[city.slot].inv.count("coin_timaert_copper")
-        + st.inventory[vil.slot].inv.count("coin_timaert_copper")
-        + bag.count("coin_timaert_copper");
-    CHECK(coinTotal == 40000 + 50 * 2,
-          "CONSERVATION: coin moves through the deal, never minted");
-    // КОШЕЛЁК ДЕРЕВНИ — ЭТО ПОЛКА ПЛЮС ТРЮМ ЕЁ СОБСТВЕННОЙ КРЮ. С
-    // 2026-09-22 крю грузит в рейс ВСЁ, включая КАЗНУ (владелец: «всё в
-    // инвентаре — товар»), и у сезонного резерва дома нет товарной строки
-    // для монеты — стак уезжает целиком. Поэтому «монета на полке» в
-    // произвольный тик читает ФАЗУ РЕЙСА, а не заработок: на 600-м думе
-    // вся казна деревни законно едет в обозе, и прежняя редакция этой
-    // проверки падала на мире, который работает правильно.
-    const int vilPurse =
-        st.inventory[vil.slot].inv.count("coin_timaert_copper")
-        + bag.count("coin_timaert_copper");
-    CHECK(vilPurse > 50 * 2,
-          "the village EARNED coin for its raw — the payment is real "
-          "(purse = shelf + its own crew's hold: a run is not a loss)");
-
-    // The DEAL is a fact of the world (S20.1): filed at the village the
-    // moment the exchange happened — a transition by nature, so every visit
-    // may file one — naming both parties and what the goods were worth on
-    // the ONE price table.
-    const FactTally traded = tally_facts(gs.chronicle, FactKind::Traded,
-                                         16, 10);
-    CHECK(traded.n >= 1, "a completed exchange left a Traded fact");
-    CHECK(traded.last.subject == std::uint32_t(vilId)
-              && traded.last.subjectKind
-                     == std::uint8_t(FactSubject::Rooted),
-          "the fact's subject is the home village whose vendor dealt");
-    CHECK(traded.last.object == std::uint32_t(cityId)
-              && traded.last.objectKind
-                     == std::uint8_t(FactSubject::Rooted),
-          "the fact's object is the city it traded AT");
-    CHECK(traded.last.amount > 0,
-          "the deal's worth is real: table value of what changed hands");
-}
-
-// КОРОВАНУ НЕКУДА ЕХАТЬ — ОН ЖДЁТ ДОМА, ПУСТОЙ. Вторая полярность закона
-// «рынок называет сам рейс»: соседа по мембране нет (в мире одно жилое место —
-// его же дом), значит выезда нет, погрузки нет и чужого поведения тоже нет —
-// ожидание есть долг восстановления (ЗАКОН СПОСОБНОСТИ: «двигаться можно
-// всегда», но ехать некуда). Прежде здесь корован уходил в `home_wander`.
-void test_the_caravan_with_no_market_waits_at_home() {
-    std::unique_ptr<GameState> gsOwn = make_game_state();
-    GameState& gs = *gsOwn;
-    gs.mapW = kMap;
-    gs.mapH = kMap;
-    chronicle_init(gs.chronicle, kMap, kMap);
-    auto wStore_ = sm::make_macro_store();
-    sm::MacroStore& st = *wStore_;
-
-    const sm::MacroHandle vil =
-        sm::birth_squad(gs, nullptr, st, SquadType::Village, 16, 10);
-    const int vilId = int(st.spawnId[vil.slot].index);
-    constexpr int kSurplus = 4000;
-    st.inventory[vil.slot].inv.add("food", kSurplus);
-    sm::settle_souls(gs, st, vil.slot, 50);
-    const std::uint32_t homeCell = st.cell[vil.slot].idx;
-
-    sm::MacroHandle h = sm::store_birth(st);
-    st.cell[h.slot] = ecs::MacroCell{homeCell};
-    st.runtime[h.slot].sub = {};
-    st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
-                                   std::uint16_t(faction_index("timaert"))};
-    ecs::MacroNpcRuntime crt{};
-    crt.squadType = std::uint8_t(SquadType::Caravan);
-    crt.state = std::uint8_t(NPCState::Idle);
-    ecs::Pools pools{};
-    refresh_body_from_sheet(
-        pools, &crt,
-        make_character_sheet(NPCType::Peasant, 3, avatar_sheet_seed(14u)),
-        NPCType::Peasant);
-    pools.sp = pools.maxSp;
-    st.runtime[h.slot] = crt;
-    sm::store_rename_ordinal(st, h, 14u);
-    h = sm::handle_at(st, h.slot);
-    sm::set_relation(st, int(h.id), vilId, sm::Stance::Parent);
-    st.sheet[h.slot] = make_character_sheet(
-        NPCType::Peasant, 3, avatar_sheet_seed(st.spawnId[h.slot].index));
-    pools.hp = pools.maxHp = 25;
-    st.pools[h.slot] = pools;
-
-    MacroNpcAiRuntime rt{};
-    reset_macro_npc_ai_runtime(rt, 71u);
-    int samples = 0, awayFromHome = 0, loaded = 0, waiting = 0;
-    for (int i = 0; i < 600; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &st};
-        tick_macro_npc_ai(mw, rt, kAiTicks);
-        ++samples;
-        if (st.cell[h.slot].idx != homeCell) ++awayFromHome;
-        if (sm::inventory_mass_g(st.inventory[h.slot].inv) > 0) ++loaded;
-        if (ecs::squad_recovering(st.runtime[h.slot])) ++waiting;
-    }
-    CHECK(samples == 600 && st.valid(h),
-          "the fixture ran: 600 thinks over a living caravan");
-    CHECK(awayFromHome == 0,
-          "no neighbour across a membrane — the caravan never leaves the "
-          "home cell (it used to wander off on a foreign behaviour)");
-    CHECK(loaded == 0,
-          "nowhere to go — nothing is loaded: the hold stays empty");
-    CHECK(st.inventory[vil.slot].inv.count("food") == kSurplus,
-          "the home shelf is untouched: no market, no cargo taken");
-    CHECK(waiting > 0,
-          "the wait is a recovery debt of the squad's own row");
-    CHECK(tally_facts(gs.chronicle, FactKind::Traded, 16, 10).n == 0,
-          "no deal happened — there was nobody to deal with");
-}
+// ЗДЕСЬ СТОЯЛИ ДВА СВИДЕТЕЛЯ РЕЙСА К РЫНКУ — «крю деревни продаёт в ближайшем
+// городе» и «корован без рынка ждёт дома». Оба переехали 2026-11-12 (M-478)
+// в `tests/rooted_module_day_test.cpp` и там же сменили предмет: рейс больше
+// не «рейс сбыта деревни», который грузит себя сам и покупает то, чего не
+// хватает дому, а корован города по замыслу владельца — город рождает и
+// грузит, рейс растит стоимость своего трюма и возвращает наторгованное
+// домой. Фикстура с рейсом, собранным РУКОЙ и приписанным деревне, описывала
+// бы путь, которого в игре нет.
 
 // The miner: the SAME gatherer row-loop as the chop above, pointed at a
 // deposit (CANON S10 (бывший resources.md) — a profession per resource, a row not a branch).
@@ -1201,8 +965,6 @@ int main() {
     test_farmer_without_terrain_conjures_nothing();
     test_the_miner_works_the_vein();
     test_the_mine_runs_while_the_player_is_away();
-    test_the_vendor_sells_at_the_nearest_city();
-    test_the_caravan_with_no_market_waits_at_home();
     test_the_catch_lands_as_creatures();
     return sm::test::report("woodcutter_gather_test");
 }

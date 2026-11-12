@@ -1094,7 +1094,8 @@ std::uint32_t find_worksite(const GathererDef& def, const TickContext& ctx,
 // бы разорвать секцию с её шрамами.
 float march_days_(const TickContext& ctx, std::uint32_t a, std::uint32_t b,
                   float moveMult);
-float route_fear_(const TickContext& ctx, std::uint32_t a, std::uint32_t b);
+std::uint32_t route_fear_(const TickContext& ctx, std::uint32_t a,
+                          std::uint32_t b);
 long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
                           std::uint16_t traderSlot, const Skills& site,
                           std::int64_t capG);
@@ -1348,15 +1349,50 @@ public:
         }
         return false;
     }
-    // ДНИ ПУТИ и СТРАХ МАРШРУТА — две меры решения «дальше или домой», обе
+    // ПУТЬ и СТРАХ МАРШРУТА — две меры решения «дальше или домой», обе
     // над одной дверью навигации (nav_path_cost), обе чистое чтение.
     // Темп — ПАРАМЕТР, и подаёт его звонящий из СВОЕЙ анкеты: мера решения
     // обязана идти тем же темпом, что ноги (M-6/M-436, вердикт владельца).
-    float march_days(std::uint32_t a, std::uint32_t b, float moveMult) const {
-        return march_days_(ctx_, a, b, moveMult);
+    // Путь — В ТИКАХ МИРА: решение рейса сравнивает темпы прибыли в целых, и
+    // дробные сутки ему ни к чему. −1 = пути нет (ответ мира). (Дверь тех
+    // же суток флоатом, `march_days`, звала снесённая рулетка «дальше против
+    // домой» и ушла с ней.)
+    std::int64_t march_ticks(std::uint32_t a, std::uint32_t b,
+                             float moveMult) const {
+        const float days = march_days_(ctx_, a, b, moveMult);
+        return days < 0.0f ? -1
+                           : std::int64_t(days * float(kTicksPerDay));
     }
-    float route_fear(std::uint32_t a, std::uint32_t b) const {
+    std::uint32_t route_fear(std::uint32_t a, std::uint32_t b) const {
         return route_fear_(ctx_, a, b);
+    }
+    // МОЙ РЕБЁНОК ЭТОГО ТИПА, ЖДУЩИЙ ГРУЗА ДОМА: стоит в моей клетке, свободен
+    // (`Idle`), трюм пуст — тем же вопросом о пустоте, каким сам рейс судит
+    // «нечего везти». kMacroNoSlot = такого нет. Обход — свои рёбра `Child`,
+    // та же форма, что у `has_child` выше: о своих детях спрашивают свою
+    // строку, а не мир.
+    std::uint16_t idle_child_at_home(MacroHandle self, SquadType t) const {
+        const MacroStore& st = store_ctx(ctx_);
+        if (!st.valid(self)) return kMacroNoSlot;
+        const Interests& in = st.interests[self.slot];
+        for (int i = 0; i < kMaxInterests; ++i) {
+            const Interest& it = in.slots[i];
+            if (it.stance == std::uint8_t(Stance::None)) break;
+            if (it.stance != std::uint8_t(Stance::Child)) continue;
+            const MacroHandle ch =
+                macro_handle_by_spawn_id(st, std::uint32_t(it.object));
+            if (!st.valid(ch) || st.dead[ch.slot] != 0) continue;
+            const ecs::MacroNpcRuntime& crt = st.runtime[ch.slot];
+            if (crt.squadType != std::uint8_t(t)
+                || crt.state != std::uint8_t(NS::Idle)
+                || st.cell[ch.slot].idx != st.cell[self.slot].idx)
+                continue;
+            const Inventory& hold = st.inventory[ch.slot].inv;
+            if (inventory_mass_g(hold) > 0 || inventory_value(hold) > 0)
+                continue;
+            return ch.slot;
+        }
+        return kMacroNoSlot;
     }
 private:
     const TickContext& ctx_;
@@ -1386,16 +1422,6 @@ public:
     //  каждый модуль вёз себя сам. Модуль пишет ЦЕЛЬ в свою строку, везут к
     //  ней ноги свипа: шагнуть из тела модуля теперь нечем — подписью.)
     int rand(int n) { return rand_int(ctx_, n); }
-    // БРОСОК В [0,1), А «КИДАТЬ НЕЧЕМ» — ЗНАЧЕНИЕ 1.0, НЕ ВЕТКА: рулетка без
-    // кости честно ОТКАЗЫВАЕТ дальней заявке (roll × total < bid неверно при
-    // roll = 1), а не берёт её даром — то же вырождение, каким дверь станции
-    // отдаёт урну первому весу. Квант 2^20 — ширина струи, по которой
-    // кидает и она; `rand_int` разыменовывает RNG, поэтому проверка здесь
-    // не вкус, а условие существования вызова.
-    float roll01() {
-        return ctx_.rng ? float(rand_int(ctx_, 1 << 20)) / float(1 << 20)
-                        : 1.0f;
-    }
     std::uint32_t rand_nearby(std::uint32_t around, int radius) {
         return cell_nearby(around, radius, ctx_);
     }
@@ -1413,21 +1439,27 @@ public:
     void home_wander(AiSelf& s) {
         ai_home_wanderer(s.h, s.rt, s.pools, ctx_);
     }
-    // ПОГРУЗКА ДОМА — одна дверь плана и исполнения (`plan_home_load_`):
-    // «что решили» и «что повезли» одно число и один коммит.
-    void load_home(AiSelf& s, std::uint16_t homeSlot) {
+    // ПОГРУЗКА РЕБЁНКА — СДЕЛКА «РОДИТЕЛЬ → РЕБЁНОК» (владелец 2026-11-12:
+    // «город рождает его и загружает»). Груз отдаёт тот, чей склад: одна
+    // дверь плана и исполнения (`plan_home_load_`) — всё, что у родителя
+    // сверх сезонной нужды, по плотности стоимости, на спину ребёнка.
+    // ЗДЕСЬ СТОЯЛ `load_home`, И ЗВАЛ ЕГО САМ РЕЙС: ребёнок брал со склада
+    // дома своей рукой, то есть решение о чужом инвентаре принимал не его
+    // хозяин.
+    void load_child(AiSelf& s, std::uint16_t child) {
         MacroStore& st = store_ctx(ctx_);
-        plan_home_load_(st, homeSlot, s.h.slot, st.sheet[homeSlot].skills,
-                        carry_capacity_g(s.rt, s.bag));
+        plan_home_load_(st, s.h.slot, child, s.sheet.skills,
+                        carry_capacity_g(st.runtime[child],
+                                         st.inventory[child].inv));
     }
     // СДЕЛКА НА РЫНКЕ — дверь торговли (S10/S25): обе ноги атомарны, сила
-    // торга у каждой стороны своя и берётся ЕЁ анкетой.
-    CaravanDeal trade_at(AiSelf& s, std::uint16_t market,
-                         std::uint16_t homeSlot) {
+    // торга у каждой стороны своя и берётся ЕЁ анкетой. Дома сделка не
+    // знает вовсе: купец судит рынок, на котором стоит, и растит стоимость
+    // своего трюма (`trade_caravan_at_station`).
+    CaravanDeal trade_at(AiSelf& s, std::uint16_t market) {
         MacroStore& st = store_ctx(ctx_);
-        return trade_vendor_at_market(
+        return trade_caravan_at_station(
             st, s.h.slot, carry_capacity_g(s.rt, s.bag), market,
-            handle_at(st, homeSlot),
             trade_power_of(sheet_of(st, s.h)),
             trade_power_of(st.sheet[market]));
     }
@@ -2175,49 +2207,17 @@ int pick_next_station_(const TickContext& ctx, std::uint32_t at,
     return pickId;   // -1 = тупик: рейс кончается, крю идёт домой
 }
 
-int market_price_seen(int commodityIdx) {
-    if (commodityIdx < 0 || commodityIdx >= kCommodityCount) return 0;
-    // ЧУЖОЙ РЫНОК ОЦЕНИВАЕТСЯ АБСОЛЮТНОЙ СТОИМОСТЬЮ СТРОКИ (CANON S10,
-    // вердикт владельца 2026-09-30: «у нас есть абсолютная стоимость /
-    // локальная цена от спроса предложения контекста»). Ярус 2 знания о
-    // цене — ведомость места и мировое среднее из неё — УНИЧТОЖЕН вместе с
-    // колонками места (ломтик E шаг 2), и на его дальнюю половину встало то
-    // же по смыслу число: «дальнее место выглядит обычным рынком». Разница
-    // в том, что оно больше не считается сезонным проходом по всем местам,
-    // а лежит строкой каталога — то есть его неоткуда рассинхронизировать.
-    //
-    // ЛОКАЛЬНОЙ ПОЛОВИНЫ ЯРУСА 2 БОЛЬШЕ НЕТ, и это названная дыра, а не
-    // умолчание: пока эконом-эпик не построит цену от спроса/предложения,
-    // спрашивающий не видит ни дефицита, ни завала у соседа. СВОЙ дом при
-    // этом виден точно — его склад и счёт читаются живьём там, где решение
-    // принимается, и ярусом это никогда не было.
-    const ItemDef* d = item_def_at(commodity_item_index(commodityIdx));
-    return d ? d->value : 0;
-}
+// (ЗДЕСЬ ЖИЛА «ЦЕНА ДАЛЬНЕГО РЫНКА» — дверь, отвечавшая абсолютной
+// стоимостью строки ВСЕМ И ВСЕГДА. Единственным её читателем была заявка
+// будущего плеча рейса, и умерла она вместе с ней 2026-11-12 (M-478). Знание
+// о дальних ценах — отдельная система, поле цены над тором, ряд M-479.)
 
 namespace {
 
-// ── СТОИМОСТЬ СДЕЛКИ, ОЖИДАЕМОЙ В ТОЧКЕ `at` (CANON S10) ────────────────
-// ОДНА арифметика на всех, кто решает «стоит ли туда ехать»: аукцион дома и
-// сам рейс на станции. Расходятся они только ВХОДОМ, и это законно —
-// решающий дома видит свой склад живьём, решающий в поле видит его
-// ВЕДОМОСТЬЮ (ярус 2). Поэтому цена дома и нехватка дома приходят
-// массивами, а не читаются внутри: второго правила о спреде не заводится
-// (S26), но и вранья «крю видит дом насквозь через полмира» не возникает.
-//
-//   выручка строки = единицы × (цена ТАМ − цена ДОМА), и ноль, если там не
-//   дороже; обратный конец — то же самое другой стороной.
-//
-// `mine[c]`     — единицы строки, которые решатель повезёт на продажу;
-// `homePrice[c]`— почём строка дома; `homeLack[c]` — сколько дому ещё надо.
-// Кошелёк рейса — то, что груз выручит ТАМ (бартер, S25): решение весит
-// только то, что можно оплатить (S10).
 // Вес страха на маршруте: threat худшей округи маршрута >> shift — минусом
-// в скор (те же деньги против той же ценности рейса; скор ≤ 0 = отказ рейса
-// ценой). Стартовая четверть — крутилка дубль-прогона: полный вес после
-// любой резни морил бы округу голодом дольше, чем горюет летопись.
-// ПЕРЕЕХАЛ СЮДА 2026-09-22: страх стал нужен не только аукциону, но и
-// развилке рейса на станции, а она выше по файлу.
+// из прибыли плеча (те же монеты против той же ценности рейса). Стартовая
+// четверть — крутилка дубль-прогона: полный вес после любой резни морил бы
+// округу голодом дольше, чем горюет летопись.
 constexpr int kThreatFearShift = 2;
 
 // ДНИ МАРША МЕЖДУ ДВУМЯ ТОЧКАМИ, В ОДНУ СТОРОНУ (CANON S7, та же дверь
@@ -2246,49 +2246,28 @@ float march_days_(const TickContext& ctx, std::uint32_t a, std::uint32_t b,
     // та же дверь пути, которой судится «кто ближе» (полушаги → клетки).
     return float(cell_dist(a, b, ctx.mapW)) / float(kStepStraight) / perDay;
 }
-float route_fear_(const TickContext& ctx, std::uint32_t a, std::uint32_t b) {
+// СТРАХ МАРШРУТА — В МОНЕТАХ И ЦЕЛЫМ: угроза худшей округи между двумя
+// клетками, взвешенная сдвигом. Ноль = поле угрозы не запечено либо клетка
+// вне округ. (Отвечала флоатом от целого сдвига — ставка симуляции во флоате
+// без единой дробной части; читатель один, и он считает в целых.)
+std::uint32_t route_fear_(const TickContext& ctx, std::uint32_t a,
+                          std::uint32_t b) {
     NavWorld* nv = ctx.mw.nav;
-    if (!nv || !nv->baked() || nv->threat.empty()) return 0.0f;
+    if (!nv || !nv->baked() || nv->threat.empty()) return 0;
     const std::uint16_t ra = nav_region_at(*nv, a);
     const std::uint16_t rb = nav_region_at(*nv, b);
-    if (ra == kNavNoRegion || rb == kNavNoRegion) return 0.0f;
-    return float(threat_on_route(*nv, ra, rb) >> kThreatFearShift);
+    if (ra == kNavNoRegion || rb == kNavNoRegion) return 0;
+    return threat_on_route(*nv, ra, rb) >> kThreatFearShift;
 }
 
-// (Параметр `const Place& at` снят вместе со строкой места, ломтик F:
-// у него не было ни одного читателя в теле — цену «там» даёт прейскурант
-// каталога, а не адрес рынка.)
-// (`mw`, `fromX`, `fromY` снят ы 2026-10-09 — ТОТ ЖЕ класс, что снятый выше
-// `const Place& at`: цену спрашивают у `market_price_seen(c)`, которая
-// отвечает абсолютной стоимостью строки ВСЕМ И ВСЕГДА, то есть «где я»
-// этой ставке сегодня не известно вовсе. Это НАЗВАННАЯ ДЫРА M-191
-// (ближняя половина яруса 2 знания о цене), и теперь она видна в подписи,
-// а не спрятана за параметром, который делает вид, что место учтено.)
-long long trade_bid_value_(const int* mine,
-                           const int* homePrice, const int* homeLack) {
-    long long value = 0;
-    long long purse = 0;
-    int therePrice[kCommodityCount];
-    for (int c = 0; c < kCommodityCount; ++c) {
-        therePrice[c] = market_price_seen(c);
-        const long long units = mine ? (long long)mine[c] : 0;
-        if (units <= 0 || therePrice[c] <= 0) continue;
-        purse += units * therePrice[c];
-        if (therePrice[c] > homePrice[c])
-            value += units * (therePrice[c] - homePrice[c]);
-    }
-    for (int c = 0; c < kCommodityCount && purse > 0; ++c) {
-        const long long lack = homeLack ? (long long)homeLack[c] : 0;
-        if (lack <= 0 || therePrice[c] <= 0) continue;
-        if (homePrice[c] <= therePrice[c]) continue;
-        const long long buyable =
-            std::min<long long>(lack, purse / therePrice[c]);
-        if (buyable <= 0) continue;
-        value += buyable * (homePrice[c] - therePrice[c]);
-        purse -= buyable * therePrice[c];
-    }
-    return value;
-}
+// (ЗДЕСЬ ЖИЛА «ЗАЯВКА СДЕЛКИ» — оценка БУДУЩЕГО плеча рейса, — И УМЕРЛА ОНА
+// 2026-11-12 (M-478) ВМЕСТЕ С РУЛЕТКОЙ «ДАЛЬШЕ ПРОТИВ ДОМОЙ». Она мерила
+// выгоду ценами ДОМА (что дома дорого, чего дому не хватает), а чужой рынок
+// оценивала абсолютной стоимостью строки — то есть не видела его вовсе.
+// Замысел владельца: цель корована — стоимость СВОЕГО инвентаря, а возврат
+// решается ПРЕДЕЛЬНОЙ ОТДАЧЕЙ уже сделанного плеча (`caravan_think` ниже):
+// ожидание от следующего плеча есть прибыль последнего, и гадать о
+// несделанном больше некому.)
 
 // (ДВЕ ПРИВАТНЫЕ КОПИИ ТОРГОВОЙ СИЛЫ УМЕРЛИ 2026-10-18. Здесь стояли
 //  `leader_trade_power_` и `place_trade_power_`, и их возвращающая строка
@@ -2438,19 +2417,20 @@ long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
 // мой рынок», ДВА уже читали цель, а третье — колонку, и единственный её
 // писатель стоял строкой рядом с `goal_set`, дублируя тот же ординал. Теперь
 // носитель один, и ответ у трёх читателей общий (`AiView::goal_rooted`).
-// `rt.prevStationId` ОСТАЛСЯ: «откуда пришёл» — другая величина, ею рулетка
-// станции исключает только что обслуженный рынок.
-// ПОЧЕМУ ЭТО НЕ УДОБСТВО, А НЕОБХОДИМОСТЬ, циферью (замер 2026-09-19):
-// продать еду ГОЛОДНОМУ городу невозможно арифметически — при сезонной
-// гиперболе первая буханка у пустой полки стоит база × сезонная нужда / 2
-// (≈185 000 у города на 1200 душ), и кошелька на неё нет ни у кого. Зонд
-// показал ловушку ликвидности прямо: 4035 артелей в рейсах сбыта — 45
-// сделок в день на весь мир, деревни с 3.6 млн хлеба, города выедены в
-// ноль. Сделка обязана происходить НА ДЕШЁВОМ КОНЦЕ: покупатель едет туда,
-// где товар изобилен (цена 1-2), и его кошелька хватает на горы. Один
-// закон цены, ни одного нового — просто рейс в правильную сторону.
-// Рейс: погрузить дешёвое дома, дойти до рынка ЦЕЛИ, продать, купить
-// домашние нехватки, вернуться. Ротация поднимает и судит крю как любую.
+// «Откуда пришёл» — другая величина: ею рулетка станции исключает только что
+// обслуженный рынок. Она лежит словом памяти модуля (`kCaravanMemPrevStation`).
+// ЗАМЫСЕЛ — СЛОВАМИ ВЛАДЕЛЬЦА 2026-11-12 (дословно — CANON, блок «AI-МОДУЛИ»):
+// «корован сам выбирает рынки и что ему делать (его аи модуль) город рождает
+// его и загружает … корован сам идёт торговать получать прибыль (т оесть по
+// сути его цель вырастить стоимость своего инвентаря …) … вернуть всё что
+// наторговваал обогатить свой город». Отсюда рейс:
+//   · ГРУЗИТ РОДИТЕЛЬ (`city_think` → `load_child`), корован ждёт груза;
+//   · на рынке купец растит АБСОЛЮТНУЮ СТОИМОСТЬ СВОЕГО ТРЮМА — продаёт
+//     строку, которая здесь дороже базы, берёт ту, что дешевле; склад дома в
+//     сделке не читается вовсе (`trade_caravan_at_station`);
+//   · домой — по ПРЕДЕЛЬНОЙ ОТДАЧЕ (ступень Working ниже), и дома отдаёт всё.
+// Своя память рейса — пять слов памяти модуля (`kCaravanMem…@src/macro/npc_ai.h`).
+// (Слова своей памяти рейса — `kCaravanMem…@src/macro/npc_ai.h`.)
 void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
     const std::uint32_t home = view.home(s.h);
     if (home == ecs::kNoCell) { pult.nomad(s); return; }
@@ -2463,11 +2443,11 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
     auto& rt = s.rt;
 
     if (rt.state == std::uint8_t(NS::Idle)) {
-        // ПРИШЁЛ (ноги назвали прибытие и сделали сквад Idle). Дома —
-        // purchases and earnings land on the home store; the rotation
-        // dissolves the crew at dawn. Вылив сумки — ОДНА сделка лотом по
-        // всему словарю (ломоть 2 M-72), остаток стоимости — той же дверью
-        // цены. «Дома» — клетка дома, тот же вопрос, что у погрузки ниже.
+        // ПРИШЁЛ (ноги назвали прибытие и сделали сквад Idle). ДОМА КОРОВАН
+        // ОТДАЁТ ВСЁ НАТОРГОВАННОЕ (владелец 2026-11-12: «вернуть всё что
+        // наторговваал обогатить свой город»): вылив сумки — ОДНА сделка
+        // лотом по всему словарю, остаток стоимости — той же дверью цены.
+        // «Дома» — клетка дома, тот же вопрос, что у ног (M-461).
         if (ecs::march_arrived(rt)) {
             if (s.cell.idx == home)
                 pult.dump_bag_home(s, homeSlot);
@@ -2475,18 +2455,10 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
                 std::uint32_t((10 + pult.rand(15)) * kAiTicks));
         }
         if (squad_recovering(rt)) return;
-        // ПОГРУЗКА — ТОЛЬКО ДОМА («ничего не телепортируется», S5): Idle
-        // вне дома — это пробуждение после привала в пути (Resting будит в
-        // Idle), и рейс ПРОДОЛЖАЕТСЯ, а не грузится телепатией со склада —
-        // измерено: вендор в горах перегружался с домашнего склада на
-        // каждом привале.
-        // «ДОМА» — КЛЕТКА ДОМА, И ЭТО ТОТ ЖЕ ВОПРОС, ЧТО У НОГ (M-461): марш
-        // кончается в клетке цели, значит прибывший домой стоит в клетке
-        // дома. Пока ноги сажали за клетку до цели, равенство здесь объявляло
-        // севшего «не дома» — рейс возобновлялся К ГОРОДУ из клетки у крыльца
-        // и челнок не завершался (измерено тогда: артели 1299 заперты в поле
-        // 30 дней). Лечили это повтором порога ног в модуле; теперь у ног и у
-        // модуля один ответ, и повторять нечего.
+        // Idle ВНЕ ДОМА — пробуждение после привала в пути (Resting будит в
+        // Idle): рейс ПРОДОЛЖАЕТСЯ к рынку, который несёт цель, а без него —
+        // домой. Ни погрузки, ни выбора рынка вне дома нет («ничего не
+        // телепортируется», S5).
         if (s.cell.idx != home) {
             const std::uint16_t m2 = view.goal_rooted(g);
             if (m2 != kMacroNoSlot && view.is_settlement(m2)) {
@@ -2499,42 +2471,35 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
             }
             return;
         }
-        // РЫНОК ВЫЕЗДА НАЗЫВАЕТ САМ МОДУЛЬ — ТЕМ ЖЕ ВОПРОСОМ, КОТОРЫМ ОН
-        // ВЫБИРАЕТ СЛЕДУЮЩЕЕ ПЛЕЧО РЕЙСА: сосед по мембране от точки стояния,
-        // рулеткой по дням пути (`next_station`). Точка стояния здесь — дом,
-        // «откуда пришёл» — никто.
-        // ЗДЕСЬ СТОЯЛО «РЫНОК — ИЗ ЦЕЛИ», И У ЭТОГО ВОПРОСА НЕ БЫЛО ПИСАТЕЛЯ:
-        // цель дома рынка не несёт никогда (возвращение пишет в неё адрес
-        // дома, рождение не пишет ничего), а первый рынок ставил аукцион
-        // целей, казнённый ломтём 4 M-72. Корован без рынка уходил в
-        // `home_wander` навсегда: замер 2 сида × 64 дня — НОЛЬ фактов сделки
-        // на весь мир при 66 живых корованах. Сборщику тогда же поставили
-        // гейт рождения от той же дыры (`city_think`), коровану — нет.
-        const std::uint16_t market = view.rooted_slot(pult.next_station(
-            home, int(view.rooted_id(homeSlot)), 0, rt.moveMult));
-        const bool hasMarket = market != kMacroNoSlot && market != homeSlot;
-        // (Здесь крю снимало СНИМОК своего рынка на выезде. Снимок вырезан
-        // 2026-09-22: на вопрос «чего дому не хватает» отвечает ВЕДОМОСТЬ
-        // места, и отвечала всегда она — снимок писался и не читался.)
-        // (ШОВ ДАНИ ВЫРЕЗАН 2026-09-22. Здесь рейс сбыта грузил долг
-        // вассала и вёз его НА ЛЮБОЙ рынок, куда ехал сам, — то есть дань
-        // рассеивалась случайному соседу вместо сюзерена, и это был
-        // главный «врёт читателю» проекта, живший с сессии 7 (§55).
-        // Дань теперь ходит своей машиной СВЕРХУ ВНИЗ: сюзерен поднимает
-        // сборщика на каждого должника, CANON S4 «Сборщик идёт вниз».)
-        // Load what is cheap at home — the one loading law
-        // (load_cheap_at_home_): never a row the home itself is short of
-        // (склад держит только излишек — долг съел нужду приходом).
-        if (hasMarket) pult.load_home(s, homeSlot);
-        if (!hasMarket
-            || (inventory_mass_g(s.bag) <= 0
-                && inventory_value(s.bag) <= 0)) {
-            // Некуда ехать (соседа по мембране нет) либо нечего везти:
-            // переждать утро — долгом восстановления, не чужим поведением.
+        // ДОМА. ГРУЗИТ ГОРОД, А НЕ КОРОВАН (владелец 2026-11-12: «город
+        // рождает его и загружает»): груз отдаёт модуль родителя своей
+        // сделкой (`city_think` → `load_child`), а корован в склад дома не
+        // лезет. Пустой трюм значит «дом ещё не дал груза» — ждать.
+        // РЫНОК ВЫЕЗДА НАЗЫВАЕТ САМ МОДУЛЬ — тем же вопросом, которым он
+        // выбирает следующее плечо рейса: сосед по мембране от точки
+        // стояния, рулеткой по дням пути (`next_station`). Точка стояния
+        // здесь — дом, «откуда пришёл» — никто. (Стояло «рынок — из цели»,
+        // и у вопроса не было писателя: первый рынок ставил аукцион целей,
+        // казнённый ломтём 4 M-72, — ряд M-477.)
+        const bool loaded = inventory_mass_g(s.bag) > 0
+                         || inventory_value(s.bag) > 0;
+        const std::uint16_t market = !loaded ? kMacroNoSlot
+            : view.rooted_slot(pult.next_station(
+                  home, int(view.rooted_id(homeSlot)), 0, rt.moveMult));
+        if (market == kMacroNoSlot || market == homeSlot) {
+            // Нечего везти либо некуда ехать (соседа по мембране нет):
+            // переждать — долгом восстановления, не чужим поведением.
             charge_squad_recovery(rt,
                 std::uint32_t((40 + pult.rand(40)) * kAiTicks));
             return;
         }
+        // ВЫЕЗД — РЕЙС ЗАПОМИНАЕТ СЕБЯ: стоимость трюма в этот миг и ноль
+        // пройденного пути. По этим двум числам судится возврат.
+        rt.mem[kCaravanMemTripValue] = std::uint32_t(inventory_value(s.bag));
+        rt.mem[kCaravanMemTripTicks] = 0;
+        rt.mem[kCaravanMemPrevLegRate] = 0;
+        rt.mem[kCaravanMemDeals] = 0;
+        rt.mem[kCaravanMemPrevStation] = 0;   // ноль = «никто»
         ecs::goal_set(g, view.rooted_cell(market),
                       ecs::goal_what(ecs::GoalKind::Squad,
                                      view.rooted_id(market)),
@@ -2546,117 +2511,100 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
         // К рынку везут ноги свипа; прибытие сделает сквад Working само.
         // АКТ МГНОВЕНЕН: сделка случится первой же свободной думкой, её
         // длительность повиснет ПОСЛЕ как долг (инверсия castTime).
-        // (Выход «застрял → домой» снесён вместе с артельным — M-2.)
         return;
     }
     if (rt.state == std::uint8_t(NS::Working)) {
         if (squad_recovering(rt)) return;
         if (const std::uint16_t market = view.goal_rooted(g);
             market != kMacroNoSlot && view.is_settlement(market)) {
-            // ЧТО ВЕЗТИ ДОМОЙ судит ВЕДОМОСТЬ ДОМА, а не память крю
-            // (CANON S10, ярус 2): дом сам выписал свои цены точным
-            // складом и своим счётом.
-            const CaravanDeal leg = pult.trade_at(s, market, homeSlot);
+            // СДЕЛКА РАСТИТ СТОИМОСТЬ ТРЮМА, И ПРИБЫЛЬ ПЛЕЧА ЕСТЬ ЕЁ ПРИРОСТ
+            // (замысел владельца 2026-11-12: «его цель вырастить стоимость
+            // своего инвентаря»). Стоимость меряется базой строки, поэтому
+            // прибыль видна В САМОЙ СДЕЛКЕ: продал дороже базы — монеты
+            // пришло больше, чем ушло товара; взял дешевле базы — товара
+            // пришло больше, чем ушло монеты. Склад дома здесь не читается.
+            const std::int64_t before = inventory_value(s.bag);
+            const CaravanDeal leg = pult.trade_at(s, market);
+            const std::int64_t after = inventory_value(s.bag);
             if (leg.movedTableValue > 0) {
                 // СДЕЛКА СОСТОЯЛАСЬ — ДОЛГ ПОВИС («сделал → вишу»): тики
-                // авторские, своей строки у сделки пока нет (придёт с
-                // ИИ-модулями M-307). Пустой визит акта не делал — долга
-                // нет, развилка рейса решается той же думкой.
+                // авторские, своей строки у сделки пока нет. Пустой визит
+                // акта не делал — долга нет, развилка решается той же думкой.
                 charge_squad_recovery(rt,
                     std::uint32_t((4 + pult.rand(4)) * kAiTicks));
                 pult.traded_fact(s, cell_x(g.cell, view.map_w()),
                                  cell_y(g.cell, view.map_w()),
                                  leg.movedTableValue,
                                  int(ecs::goal_ordinal(g.what)));
+                // СДЕЛКА СОВЕРШЕНА — вера в среднюю по рейсу растёт с каждой
+                // (пустой рынок доверия не прибавляет).
+                ++rt.mem[kCaravanMemDeals];
             }
-        // ── РАЗВИЛКА РЕЙСА: «ДАЛЬШЕ» ПРОТИВ «ДОМОЙ» (CANON S10) ──────────
-        // Здесь до 2026-09-22 стоял безусловный разворот домой — рейс
-        // кончался ПРИБЫТИЕМ, один рынок за выезд. Это был один из четырёх
-        // ответов на «пора ли кончать» (problems §55-III); теперь ответ один
-        // на всех: ДОМОЙ — ЭТО ПРОСТО ЕЩЁ ОДНА ЗАЯВКА В ТОМ ЖЕ АУКЦИОНЕ,
-        // обе в «монетах на душу в день», выбор — рулетка.
-        // Ни счётчика станций, ни таймера рейса: таймер живёт в знаменателе,
-        // и потому у дальности рейса нет потолка (владелец 2026-09-22).
-        {
-            // ЧТО ДОМУ НУЖНО И ПОЧЁМ — СЧИТАЕТСЯ ЖИВЬЁМ ПО САМОМУ ДОМУ.
-            // Кэш-ведомость (ярус 2) уничтожена 2026-09-30; закон не
-            // изменился — те же season_demand_for и stock_price, которыми
-            // она и выписывалась. Оговорка «крю не видит склад дома живьём»
-            // была фикцией уже тогда: нехватка и здесь, и в сборщике
-            // считалась ВЫЧИТАНИЕМ живого склада дома из кэша.
-            int homePrice[kCommodityCount] = {};
-            int homeLack[kCommodityCount] = {};
-            int cargo[kCommodityCount] = {};
-            long long homeValue = 0;
-            for (int c = 0; c < kCommodityCount; ++c) {
-                const int id = commodity_item_index(c);
-                // ЦЕНА И НЕХВАТКА СТРОКИ ДОМА — ДВЕ ДВЕРИ ВИДА, обе над
-                // одним законом (`season_demand_for` + `stock_price`), и
-                // ту же цену ими спрашивает решение артели «что добыть».
-                homePrice[c] = int(view.need_price(homeSlot, id));
-                homeLack[c] = view.need_lack(homeSlot, id);
-                cargo[c] = s.bag.count_of(id);
-                // ЗАЯВКА «ДОМОЙ» — «что уже в трюме стоит ДЛЯ НУЖДЫ ДОМА»,
-                // а не вся стоимость груза: серебро, которого дому не надо,
-                // домой не торопится. Оттого числитель растёт ровно по мере
-                // того, как трюм набивается НУЖНЫМ, — и рейс кончается сам,
-                // без квоты и без счётчика.
-                const long long fit =
-                    std::min<long long>(cargo[c], homeLack[c]);
-                if (fit > 0) homeValue += fit * homePrice[c];
-            }
-            const float daysHome =
-                view.march_days(s.cell.idx, home, s.rt.moveMult);
-            const float bidHome =
-                daysHome > 0.0f ? float(homeValue) / daysHome : 0.0f;
-            // КАНДИДАТ — СОСЕД ПО МЕМБРАНЕ, ИЗ ТОЧКИ СТОЯНИЯ (S7,
-            // диффузия), и НЕ тот, откуда пришли: рынок, который только что
-            // обслужили, шанса не получает.
-            const int nextId = pult.next_station(
-                s.cell.idx, int(view.rooted_id(market)), rt.prevStationId,
-                s.rt.moveMult);
-            float bidGo = 0.0f;
-            const std::uint16_t next = view.rooted_slot(nextId);
-            if (next != kMacroNoSlot && next != homeSlot) {
+            // ── ВОЗВРАТ ДОМОЙ — ПО ПРЕДЕЛЬНОЙ ОТДАЧЕ ─────────────────────
+            // Закон и оба краевых наблюдения владельца (холодный старт,
+            // дальняя сверхприбыль) — `trip_goes_on@src/macro/economy.h`, там
+            // же свидетели под компилятором; здесь только его входы.
+            const int prevId = int(rt.mem[kCaravanMemPrevStation]);
+            const std::uint16_t from =
+                prevId != 0 ? view.rooted_slot(prevId) : homeSlot;
+            const std::int64_t legTicks = view.march_ticks(
+                from != kMacroNoSlot ? view.rooted_cell(from) : home,
+                s.cell.idx, rt.moveMult);
+            const std::int64_t homeTicks =
+                view.march_ticks(s.cell.idx, home, rt.moveMult);
+            if (legTicks > 0)
+                rt.mem[kCaravanMemTripTicks] += std::uint32_t(legTicks);
+            // ОКНО В ДВА ПЛЕЧА: отдача предыдущего плеча лежит словом памяти;
+            // у первого плеча рейса «предыдущим» служит оно само. В память
+            // идёт отдача САМОЙ СДЕЛКИ — страх следующей дороги к прошлому
+            // плечу отношения не имеет. Упаковка в слово насыщается: это
+            // страж ширины, а не поведение.
+            const std::int64_t dealRate =
+                leg_rate(after - before, legTicks, kTicksPerDay);
+            const std::int64_t prevRate = prevId != 0
+                ? std::int64_t(rt.mem[kCaravanMemPrevLegRate]) : dealRate;
+            rt.mem[kCaravanMemPrevLegRate] = std::uint32_t(
+                std::min<std::int64_t>(dealRate, 0xFFFFFFFFll));
+            const std::uint16_t next = view.rooted_slot(pult.next_station(
+                s.cell.idx, int(view.rooted_id(market)), prevId,
+                rt.moveMult));
+            // Трюм пуст — торговать нечем, искать незачем.
+            const bool holdEmpty = inventory_mass_g(s.bag) <= 0 && after <= 0;
+            if (next != kMacroNoSlot && next != homeSlot && !holdEmpty
+                && legTicks > 0 && homeTicks >= 0) {
                 const std::uint32_t nextCell = view.rooted_cell(next);
-                const long long gain =
-                    trade_bid_value_(cargo, homePrice, homeLack);
-                // ДЛИТЕЛЬНОСТЬ — ВЕСЬ ОСТАТОК РЕЙСА: туда И оттуда домой.
-                // Иначе «дальше» дешевело бы по построению, и крю уходило бы
-                // от дома бесконечно — знаменатель обязан расти с отъездом.
-                const float daysGo =
-                    view.march_days(s.cell.idx, nextCell, s.rt.moveMult)
-                    + view.march_days(nextCell, home, s.rt.moveMult);
-                if (daysGo > 0.0f)
-                    bidGo = (float(gain)
-                             - view.route_fear(s.cell.idx, nextCell))
-                            / daysGo;
-            }
-            // РУЛЕТКА, А НЕ ARGMAX — закон аукциона целей. Ни одной
-            // положительной заявки = домой: сквад без возвращения есть
-            // молчаливая утечка склада душ (S4).
-            bool goOn = false;
-            if (bidGo > 0.0f) {
-                const float total =
-                    bidGo + (bidHome > 0.0f ? bidHome : 0.0f);
-                const float roll = pult.roll01();
-                goOn = roll * total < bidGo;
-            }
-            if (goOn && next != kMacroNoSlot) {
-                rt.prevStationId = int(view.rooted_id(market));
-                // Рынок следующего плеча НАЗЫВАЕТ ЦЕЛЬ, и больше ничто:
-                // здесь стояла строка-дубль `rt.errandObject = …` с тем же
-                // ординалом (ломоть 4 M-72).
-                ecs::goal_set(g, view.rooted_cell(next),
-                              ecs::goal_what(ecs::GoalKind::Squad,
-                                             view.rooted_id(next)),
-                              0, std::uint8_t(NS::Working));
-                rt.state = std::uint8_t(NS::Traveling);
-                return;
+                // ОЖИДАНИЕ ОТ СЛЕДУЮЩЕГО ПЛЕЧА — ОТДАЧА ПОСЛЕДНЕГО, ЗА ВЫЧЕТОМ
+                // СТРАХА ДОРОГИ К НАЗВАННОМУ РЫНКУ (поле угрозы): плечо, чью
+                // прибыль съедает страх, не едут — отказ ценой, а не
+                // запретом. Сегодня ожидание кормит только опыт; знание о
+                // дальних ценах (поле цены, ряд M-479) встанет сюда же.
+                const std::int64_t fear = view.route_fear(s.cell.idx, nextCell);
+                const std::int64_t expectRate =
+                    leg_rate((after - before) - fear, legTicks, kTicksPerDay);
+                const std::int64_t tripGain =
+                    after - std::int64_t(rt.mem[kCaravanMemTripValue]);
+                // БЕЗ ПРИБЫЛИ страху противопоставить нечего: на опасную
+                // дорогу рейс без единой сделки не сворачивает. «Первый
+                // рынок рейса» — тот, куда пришли из дома (станции нет).
+                if ((tripGain > 0 || fear == 0)
+                    && trip_goes_on(expectRate, prevRate, tripGain,
+                                    std::int64_t(rt.mem[kCaravanMemTripTicks])
+                                        + homeTicks,
+                                    std::int64_t(rt.mem[kCaravanMemDeals]),
+                                    /*firstStop=*/prevId == 0,
+                                    kTicksPerDay)) {
+                    rt.mem[kCaravanMemPrevStation] = view.rooted_id(market);
+                    // Рынок следующего плеча НАЗЫВАЕТ ЦЕЛЬ, и больше ничто.
+                    ecs::goal_set(g, nextCell,
+                                  ecs::goal_what(ecs::GoalKind::Squad,
+                                                 view.rooted_id(next)),
+                                  0, std::uint8_t(NS::Working));
+                    rt.state = std::uint8_t(NS::Traveling);
+                    return;
+                }
             }
         }
-        }
-        rt.prevStationId = 0;   // ноль = «никто» (ЗАКОН СЛОВАРЯ п.6)
+        rt.mem[kCaravanMemPrevStation] = 0;   // ноль = «никто»
         ecs::goal_set(g, home, 0, 0, std::uint8_t(NS::Idle));
         rt.state = std::uint8_t(NS::Returning);
         return;
@@ -2973,14 +2921,25 @@ void city_think(AiSelf& s, const AiView& view, AiPult& pult) {
         && !view.has_child(s.h, SquadType::Collector)) {
         pult.spawn(s, SquadType::Collector, kCrewSouls);
     }
-    // КОРОВАН — БЕЗ ГЕЙТА НУЖДЫ, И ЭТО НЕ ПРОПУСК: рейс сбыта решает, что
-    // везти и что брать, НА МЕСТЕ и своей же анкетой (`caravan_think`:
-    // погрузка по полке дома, сделка по цене рынка). Спрашивать нужду здесь
+    // КОРОВАН — БЕЗ ГЕЙТА НУЖДЫ, И ЭТО НЕ ПРОПУСК: куда ехать и что брать на
+    // рынке, рейс решает сам, НА МЕСТЕ и своей же анкетой (`caravan_think`:
+    // рынок называет он, сделку судит ценой рынка). Спрашивать нужду здесь
     // значило бы решить за него дважды — вторым носителем одного решения.
+    // Город решает одно — ЧТО ОТДАТЬ: свой излишек (погрузка ниже).
     // Свободные души читаются ЗАНОВО: сборщик выше мог только что увести
     // свои восемь, и вчерашний ответ о них уже неверен.
     if (has_spare_souls_(s) && !view.has_child(s.h, SquadType::Caravan))
         pult.spawn(s, SquadType::Caravan, kCrewSouls);
+    // ГОРОД ГРУЗИТ СВОЙ КОРОВАН (владелец 2026-11-12: «город рождает его и
+    // загружает»). Груз отдаёт тот, чей склад: ребёнок, стоящий дома
+    // свободным и пустым, получает излишек родителя ОДНОЙ сделкой. Путь
+    // один и на рождение, и на возвращение — новорождённый стоит дома
+    // пустым ровно так же, как вернувшийся и отдавший наторгованное.
+    if (const std::uint16_t waiting =
+            view.idle_child_at_home(s.h, SquadType::Caravan);
+        waiting != kMacroNoSlot) {
+        pult.load_child(s, waiting);
+    }
 }
 
 // Переходники пятёрки — те же, что у трёх образцов, МИНУС преамбула
@@ -3286,7 +3245,7 @@ void ai_mage_hunt(MacroHandle self, ecs::MacroNpcRuntime& rt,
 }
 
 // ── МОДУЛЬ РОДА Dragon — вылеты из логова (ломоть 6 M-72) ────────────────
-// Дом — КЛЕТКА (rt.lairCell, гора — не ландмарк). В вылете бьёт любой сквад
+// Дом — КЛЕТКА (lair, гора — не ландмарк). В вылете бьёт любой сквад
 // СЛАБЕЕ себя (слово владельца) — той же дверью встречи, что threat step;
 // наевшись или улетев за поводок — домой. Игрокова встреча — форс-двери
 // игрока, как у всех. До 2026-11-02 это была модель AIBehaviour::LairSorties
@@ -3347,10 +3306,11 @@ void ai_dragon(MacroHandle self, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
     // Логово самозалечивается: тело без дома объявляет домом место, где
     // проснулось (спавн-дверь анкеты пишет честную клетку раньше).
     const std::uint32_t at = store_ctx(ctx).cell[self.slot].idx;
-    if (rt.lairCell == ecs::kNoCell) rt.lairCell = at;
+    if (dragon_lair(rt) == ecs::kNoCell) dragon_set_lair(rt, at);
+    const std::uint32_t lair = dragon_lair(rt);
     // ПОВОДОК — в клетках пути от логова, дверью над индексами.
     const bool inLeash =
-        cell_within(at, rt.lairCell, kDragonLeashCells, ctx.mapW);
+        cell_within(at, lair, kDragonLeashCells, ctx.mapW);
 
     if (ctx.squads && ctx.mw.store && ctx.mw.gs && inLeash) {
         const MacroHandle prey =
@@ -3393,10 +3353,10 @@ void ai_dragon(MacroHandle self, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
     // модуля — тот же, равенством индексов. Здесь стоял порог `fromLair <
     // 2.0f` — повтор порога ног, без которого севший за клетку до логова
     // числился «не дома» каждую думку.
-    const bool atLair = at == rt.lairCell;
+    const bool atLair = at == lair;
     if (!inLeash
         || (rt.state != std::uint8_t(NS::Wandering) && !atLair)) {
-        ecs::goal_set(g, rt.lairCell, 0, 0, std::uint8_t(NS::Idle));
+        ecs::goal_set(g, lair, 0, 0, std::uint8_t(NS::Idle));
         rt.state = std::uint8_t(NS::Returning);
         return;
     }
@@ -3407,13 +3367,13 @@ void ai_dragon(MacroHandle self, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
         // передышка, с круга — долгая (числа прежние, обе авторские).
         if (ecs::march_arrived(rt)) {
             charge_squad_recovery(rt,
-                g.cell == rt.lairCell
+                g.cell == lair
                     ? std::uint32_t((3 + rand_int(ctx, 5)) * kAiTicks)
                     : std::uint32_t((10 + rand_int(ctx, 20)) * kAiTicks));
         }
         if (!squad_recovering(rt)) {
             ecs::goal_set(g,
-                          cell_nearby(rt.lairCell, kDragonLeashCells, ctx),
+                          cell_nearby(lair, kDragonLeashCells, ctx),
                           0, 0, std::uint8_t(NS::Idle));
             rt.state = std::uint8_t(NS::Wandering);
         }
@@ -3444,7 +3404,7 @@ void ai_dragon(MacroHandle self, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
 // `combatant_behaviour`, она отвечала `true` и на Patrol, и на Aggressive, а
 // строка Guard переведена именно в Aggressive — `subworld_ai_for` вернёт тот
 // же `SubworldAi::Combat`.
-// Поле угрозы и страх артелей ЖИВЫ — kThreatFearShift ниже читает аукцион.)
+// Поле угрозы и страх рейса ЖИВЫ — `route_fear_` читает развилка рейса.)
 
 void ai_teleporter(MacroHandle self, ecs::MacroNpcRuntime& rt,
                    [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
@@ -4210,10 +4170,10 @@ void dispatch(MacroHandle e, ecs::MacroNpcRuntime& rt,
 
 } // namespace
 
-// ── Trading at a market, two strategies over ONE price law ───────────────
+// ── Trading at a market: ONE deal over ONE price law ─────────────────────
 // (owner 2026-08-30: «караван приходит в город и НА МЕСТЕ смотрит, что
 // выгодно продать и купить» — locality, no omniscience, no rumours.)
-// Both functions price through economy.h stock_price at POST-TRADE supply
+// The deal prices through economy.h stock_price at POST-TRADE supply
 // (every lot pays its own slippage), and coin travels by transfer_value:
 // conservation is by construction, not by audit.
 
@@ -4248,15 +4208,22 @@ int max_affordable_lot_(int base, int have, int demand, bool selling,
     return lo;
 }
 
-// The STATION deal — a caravan standing on a CITY market. Symmetric and
-// purely local: a market short of a good (its SEASONAL need above supply —
-// the price law's own horizon, S19.2) BUYS from the hold up to that need; a
-// market glutted (supply above the seasonal need) SELLS the surplus into
-// the hold. The bounds fall straight out of the price law — price > base ⇔
-// seasonal need > supply — so «продай что здесь дорого, купи что дёшево»
-// needs no threshold constants at all, and the trade drives every market it
-// touches TOWARD its own need. Arbitrage is emergent: the surplus bought
-// cheap here is exactly what the next hungry station pays above base for.
+// СДЕЛКА НА РЫНКЕ — КУПЕЦ РАСТИТ СТОИМОСТЬ СВОЕГО ТРЮМА. Симметрична и чисто
+// локальна: судится только рынок, на котором сквад СТОИТ, — ни дома, ни
+// слухов, ни рода торговца (торговец есть СЛОТ стора). Рынку не хватает
+// строки (сезонная нужда выше запаса, цена выше базы) — купец ПРОДАЁТ в
+// дефицит; строка в завале (запас выше нужды, цена ниже базы) — купец
+// БЕРЁТ её. Границы выпадают из самой кривой цены, порогов нет.
+//
+// РАЗМЕР ЛОТА — ЗАКОН КУПЦА (`trader_lot@src/macro/economy.h`): лот, дающий
+// наибольший прирост стоимости трюма, доводит полку до СРЕДНЕГО
+// ГЕОМЕТРИЧЕСКОГО запаса и спроса. ЗДЕСЬ СТОЯЛ ЛОТ «ДО САМОЙ НУЖДЫ» — и он
+// прибыли не нёс вовсе: весь лот платится по полке ПОСЛЕ сделки, а полка,
+// доведённая до нужды, стоит ровно базу. Купец с целью «вырастить стоимость
+// своего инвентаря» (владелец 2026-11-12) таким лотом не зарабатывал ничего,
+// кроме разницы торговых сил. Арбитраж остаётся эмерджентным: взятое дёшево
+// в завале есть ровно то, за что следующий голодный рынок даст выше базы, а
+// остаток дефицита достаётся следующему купцу — полка сходится к нужде.
 CaravanDeal trade_caravan_at_station(MacroStore& st,
                                      std::uint16_t traderSlot,
                                      std::int64_t capacityG,
@@ -4264,144 +4231,49 @@ CaravanDeal trade_caravan_at_station(MacroStore& st,
                                      int myTradePct, int theirTradePct) {
     CaravanDeal out{};
     // Склад и счёт рынка — колонки его ТЕЛА (M-90 шаг 5); гашение долга
-    // рынка приходом (CANON S10) теперь внутри двери deal.
+    // рынка приходом (CANON S10) — внутри двери deal.
     Inventory& hold = st.inventory[traderSlot].inv;
     Inventory& ms = st.inventory[marketSlot].inv;
     // Анкета рынка — КОЛОНКА его тела (рождение места её и заполнило).
     const Skills& site = st.sheet[marketSlot].skills;
+    // Спрос СЕЗОННЫЙ (остаток счёта + производный) — одна дверь на оба
+    // прохода, спрашивается заново перед каждой сделкой: предыдущая строка
+    // могла погасить счёт рынка и сдвинуть производный спрос.
+    const auto demand_of = [&](int id) {
+        return season_demand_for(id, st.upkeep[marketSlot].needDebt,
+                                 souls_home(st, marketSlot), site, &ms);
+    };
+    // СТРОКА В ОДНОМ ВИЗИТЕ ИДЁТ В ОДНУ СТОРОНУ: проданное сейчас в эту же
+    // сделку не выкупается. Перевес торговых сил даёт сильному отрицательный
+    // спред против слабого рынка (вывод — у `trader_lot`), и без этого
+    // правила купец продавал строку сверх нужды и вторым проходом выкупал её
+    // дешевле — монета рынка уходила, товар не двигался. Это свойство
+    // СДЕЛКИ, а не запрет рынку: сколько рынок возьмёт, не ограничено ничем.
+    bool sold[std::size_t(kCommodityCount)] = {};
+    // ── ПРОХОД 1: ПРОДАЖА В ДЕФИЦИТ. Первым — потому что выручка этого
+    // прохода и есть кошелёк второго.
     for (int i = 0; i < kCommodityCount; ++i) {
         const int id = commodity_item_index(i);
         const ItemDef* def = item_def_at(id);
         const int base = def ? def->value : 0;
         if (base <= 0) continue;
-        const int demand = season_demand_for(id, st.upkeep[marketSlot].needDebt,
-                                             souls_home(st, marketSlot), site,
-                                             &ms);
-        // Спрос уже СЕЗОННЫЙ (остаток счёта + производный) — прежний
-        // множитель горизонта умер вместе с календарём кривой.
-        const int need = demand;
+        const int demand = demand_of(id);
         const int have = ms.count_of(id);
-        if (need > have) {
-            // SELL into the shortage, up to the market's own seasonal need,
-            // bounded by what its whole store can PAY at the SAME margined
-            // price the debit uses (max_affordable_lot_ — фикс разрыва).
-            int n = std::min(hold.count_of(id), need - have);
-            if (n <= 0) continue;
-            n = max_affordable_lot_(base, have, demand, /*selling=*/true,
-                                    inventory_value(ms), n,
-                                    myTradePct, theirTradePct);
-            if (n <= 0) continue;
-            // The ONE trade-price law (economy.h): the seller's charisma
-            // and trade skill claw back part of the house margin — a
-            // caravan out-trades a peasant because its ROW rolls a better
-            // sheet, never because the code knows who it is (owner,
-            // 2026-08-30). Композиция — одной дверью lot_unit_price (Б3).
-            const int price = lot_unit_price(base, have, demand, n,
-                                             /*selling=*/true,
-                                             myTradePct, theirTradePct);
-            // ТОВАР И ОПЛАТА — ОДНА СДЕЛКА (ломоть 2 M-72): exact-лоты,
-            // недоплаченная поставка невыразима — не покрыл рынок счёт,
-            // не уехал и товар.
-            DealLine goods[1];
-            goods[0] = DealLine{};
-            goods[0].want = n;
-            goods[0].def = std::uint16_t(id);
-            goods[0].exact = 1;
-            DealLine pay[64];
-            const StagedValue sv = stage_value_lines(ms, n * price, pay);
-            if (!deal_covered(sv.value, n * price)) continue;
-            const DealFact f =
-                deal(st, traderSlot, marketSlot, goods,
-                     std::span<DealLine>(pay, std::size_t(sv.lines)),
-                     kNoCarryLimitG, kNoCarryLimitG);
-            if (!f.settled) continue;
-            out.soldValue += sv.value;
-            out.movedTableValue += base * n;
-        } else if (have > need) {
-            // BUY the surplus above the market's own seasonal need — never
-            // its living stock; the lot is bounded by the caravan's purse
-            // through the same exact door (max_affordable_lot_).
-            const std::int64_t freeG = capacityG - inventory_mass_g(hold);
-            int n = freeG <= 0
-                        ? 0
-                        : int(std::min<std::int64_t>(
-                              have - need,
-                              freeG / std::int64_t(item_mass_g(*def))));
-            n = max_affordable_lot_(base, have, demand, /*selling=*/false,
-                                    inventory_value(hold), n,
-                                    myTradePct, theirTradePct);
-            if (n <= 0) continue;
-            const int cost = n * lot_unit_price(base, have, demand, n,
-                                                /*selling=*/false,
-                                                myTradePct, theirTradePct);
-            DealLine goods[1];
-            goods[0] = DealLine{};
-            goods[0].want = n;
-            goods[0].def = std::uint16_t(id);
-            goods[0].exact = 1;
-            DealLine pay[64];
-            const StagedValue sv = stage_value_lines(hold, cost, pay);
-            if (!deal_covered(sv.value, cost)) continue;
-            const DealFact f =
-                deal(st, traderSlot, marketSlot,
-                     std::span<DealLine>(pay, std::size_t(sv.lines)), goods,
-                     kNoCarryLimitG, freeG);
-            if (!f.settled) continue;
-            out.boughtValue += sv.value;
-            out.movedTableValue += base * n;
-        }
-    }
-    return out;
-}
-
-// The VENDOR deal — a village crew at its NEAREST city's market (владелец:
-// «крестьяне просто всегда идут продавать на рынок ближайшего города»).
-// Not an arbitrageur: sells EVERYTHING it carried (the village's surplus,
-// at whatever the local law prices it), then spends the earnings down the
-// home's needs ladder — what the home's own LEDGER says the village lacks.
-// Ведомость принадлежит МЕСТУ, а не слуху: крю читает счёт своего дома.
-CaravanDeal trade_vendor_at_market(MacroStore& st,
-                                   std::uint16_t traderSlot,
-                                   std::int64_t capacityG,
-                                   std::uint16_t marketSlot,
-                                   MacroHandle home,
-                                   int myTradePct, int theirTradePct) {
-    CaravanDeal out{};
-    // Склад и счёт рынка — колонки его ТЕЛА (M-90 шаг 5); гашение долга
-    // рынка приходом (CANON S10) теперь внутри двери deal.
-    Inventory& bag = st.inventory[traderSlot].inv;
-    Inventory& ms = st.inventory[marketSlot].inv;
-    const Skills& site = st.sheet[marketSlot].skills;
-    const auto base_value = [](int defIdx) {
-        const ItemDef* d = item_def_at(defIdx);
-        return d ? d->value : 0;
-    };
-    // SELL the whole load first — the coin below buys the home's lacks.
-    for (int i = 0; i < kCommodityCount; ++i) {
-        const int id = commodity_item_index(i);
-        const int base = base_value(id);
-        if (base <= 0) continue;
-        int n = bag.count_of(id);
-        if (n <= 0) continue;
-        const int demand = season_demand_for(id, st.upkeep[marketSlot].needDebt,
-                                             souls_home(st, marketSlot), site,
-                                             &ms);
-        const int have = ms.count_of(id);
-        // Affordability by the exact door (max_affordable_lot_), as at the
-        // station: the lot pays the post-trade shelf AT THE MARGINED PRICE
-        // (фикс разрыва наценки), so a famine ceiling price never blanks a
-        // sale the market can genuinely afford.
+        if (demand <= have) continue;   // не дефицит — продавать не во что
+        int n = trader_lot(base, have, demand, /*selling=*/true,
+                           myTradePct, theirTradePct, hold.count_of(id));
+        // Граница по кошельку РЫНКА — той же ценой с маржой, какой идёт
+        // списание (max_affordable_lot_): меньший лот только дороже за
+        // единицу, выгода купца от среза не теряется.
         n = max_affordable_lot_(base, have, demand, /*selling=*/true,
                                 inventory_value(ms), n,
                                 myTradePct, theirTradePct);
         if (n <= 0) continue;
-        // Same ONE trade-price law as the station: a village hand haggles
-        // with a peasant's charisma, a caravan with a trader's — the sheet
-        // is the whole difference. Композиция — одной дверью (Б3).
         const int price = lot_unit_price(base, have, demand, n,
                                          /*selling=*/true,
                                          myTradePct, theirTradePct);
-        // ТОВАР И ОПЛАТА — ОДНА СДЕЛКА: недоплаченная поставка невыразима.
+        // ТОВАР И ОПЛАТА — ОДНА СДЕЛКА (ломоть 2 M-72): exact-лоты,
+        // недоплаченная поставка невыразима.
         DealLine goods[1];
         goods[0] = DealLine{};
         goods[0].want = n;
@@ -4415,135 +4287,86 @@ CaravanDeal trade_vendor_at_market(MacroStore& st,
                  std::span<DealLine>(pay, std::size_t(sv.lines)),
                  kNoCarryLimitG, kNoCarryLimitG);
         if (!f.settled) continue;
+        sold[std::size_t(i)] = true;
         out.soldValue += sv.value;
         out.movedTableValue += base * n;
     }
-    // BUY with the WHOLE purse (owner 2026-08-30: «деревня не копит
-    // капитал» — the earnings leave with the goods, and scarce town wares
-    // are exactly what drains the village's coin back into the city). The
-    // shopping list is the home's needs ladder unrolled to recipe inputs
-    // (caravan_buy_order), each line topped up to a SEASON's stock at home
-    // — the one stint of foresight a place is allowed; whatever the market
-    // cannot supply leaves the rest of the purse to ride home, where the
-    // tax graph will claim it (CANON S24).
-    // ── ЧТО КУПЕЦ ПОКУПАЕТ: ОДИН ЗАКОН, А НЕ СПИСОК ────────────────────
-    // Владелец, 2026-09-18: «почему корованы не могут покупать вообще всё
-    // что угодно — покупай дёшево, продавай дорого, просто смотреть, что им
-    // выгоднее всего купить по цене относительно стоимости?». Белый список
-    // «нужды дома → входы рецептов» (caravan_buy_order) был спецпутём той же
-    // породы, что монетные ворота: он решал за купца, ЧТО бывает товаром, и
-    // поэтому руда никогда им не была.
-    //
-    // Закон один и обе его половины уже живут в коде: товар стоит СТОЛЬКО,
-    // сколько за него дадут ДОМА (домашняя цена по классу памяти — та же
-    // scarcity-кривая), и стоит СТОЛЬКО, сколько просят ЗДЕСЬ. Выгода рейса
-    // = разница, а ранжирование — на КИЛОГРАММ, потому что дорога везёт вес,
-    // а не строки. Отсюда даром: домашние нужды выигрывают САМИ (голодный
-    // дом = дефицит = высокая домашняя цена, до ×4), затоваренное отсеивается
-    // САМО (×0.25), а серебро с горы становится товаром без единой строки
-    // «металл — это нужда».
-    // ЦЕНА ДОМА СЧИТАЕТСЯ ЖИВЬЁМ, ТОЙ ЖЕ ДВЕРЬЮ, ЧТО И ЦЕНА РЫНКА.
-    // Прежде здесь читался КЭШ — ведомость дома, выписанная на границе
-    // сезона (ярус 2). Кэш уничтожен 2026-09-30 (ломтик E шаг 2) вместе с
-    // колонками места, а закон остался тот же: `season_demand_for` +
-    // `stock_price`, ровно те же две функции, которыми ведомость и
-    // считалась. Второго диалекта цены не появилось — исчезла только копия.
-    // Свой дом крю знает точно и знало всегда: его склад читается строкой
-    // ниже, и горизонтом это никогда не было (горизонт — про ЧУЖИЕ рынки,
-    // market_price_seen).
-    if (st.valid(home)) {
-        // Плечо дома — колонки его ТЕЛА (M-90 шаг 5).
-        const std::uint16_t hSlot = home.slot;
-        const Skills& homeHands = st.sheet[hSlot].skills;
-        const Inventory& homeInv = st.inventory[hSlot].inv;
-        // ВЫГОДА НА МАССУ — ДРОБЬЮ, А НЕ ФЛОАТОМ: держим ЧИСЛИТЕЛЬ (монеты) и
-        // ЗНАМЕНАТЕЛЬ (граммы) порознь, а порядок решает перекрёстное
-        // умножение ниже — тот же приём, что у `value_dense_order` и у
-        // `densest_value_slot`. Делить было не нужно никогда: сортировке
-        // нужен ПОРЯДОК, а не само отношение.
-        struct Lot { int i; int gain; std::int64_t massG; int homeCap; };
-        Lot lots[std::size_t(kCommodityCount)];
-        int lotCount = 0;
-        for (int i = 0; i < kCommodityCount; ++i) {
-            const int id = commodity_item_index(i);
-            const ItemDef* def = item_def_at(id);
-            const int base = def ? def->value : 0;
-            if (base <= 0) continue;
-            const int have = ms.count_of(id);
-            if (have <= 0) continue;
-            const int demand =
-                season_demand_for(id, st.upkeep[marketSlot].needDebt,
-                                  souls_home(st, marketSlot), site, &ms);
-            const int buyHere =
-                lot_unit_price(base, have, demand, /*n=*/0,
-                               /*selling=*/false, myTradePct, theirTradePct);
-            // Чего это стоит ДОМА — тем же счётом и той же кривой.
-            const int homeDemand =
-                season_demand_for(id, st.upkeep[hSlot].needDebt,
-                                  souls_home(st, hSlot),
-                                  homeHands, &homeInv);
-            const int worthHome =
-                stock_price(base, homeInv.count_of(id), homeDemand);
-            if (worthHome <= 0) continue;         // дома этой строке нет цены
-            if (worthHome <= buyHere) continue;   // рейс не окупает закупку
-            // ПОТОЛОК СТРОКИ — сезон домашней нужды (спрос уже сезонный),
-            // но он больше НЕ ворота: у товара, который дома никто не ест,
-            // потолок — только трюм и кошелёк.
-            const int seasonCap = homeDemand > 0 ? homeDemand : (1 << 20);
-            lots[std::size_t(lotCount++)] =
-                Lot{i, worthHome - buyHere,
-                    std::int64_t(item_mass_g(*def)), seasonCap};
-        }
-        // Выгоднейшее — первым: трюм и кошелёк конечны, и купец грузит их
-        // тем, что несёт больше всего ценности на единицу массы.
-        std::sort(lots, lots + lotCount, [](const Lot& a, const Lot& b) {
-            return std::int64_t(a.gain) * b.massG
-                 > std::int64_t(b.gain) * a.massG;
-        });
-        for (int li = 0; li < lotCount; ++li) {
-            const int i = lots[li].i;
-            const int id = commodity_item_index(i);
-            const ItemDef* def = item_def_at(id);
-            const int base = def->value;
-            const int demand =
-                season_demand_for(id, st.upkeep[marketSlot].needDebt,
-                                  souls_home(st, marketSlot), site, &ms);
-            const int have = ms.count_of(id);
-            const std::int64_t freeG = capacityG - inventory_mass_g(bag);
-            int n = freeG <= 0
-                        ? 0
-                        : int(std::min<std::int64_t>(
-                              {have, lots[li].homeCap,
-                               freeG / std::int64_t(item_mass_g(*def))}));
-            // Точная граница по кошельку (max_affordable_lot_): срез лота
-            // по цене ДО среза недокупал — оставшаяся полка дешевле, и
-            // честная точка выше. Цена границы — С МАРЖОЙ, та же, что ниже.
-            n = max_affordable_lot_(base, have, demand, /*selling=*/false,
-                                    inventory_value(bag), n,
-                                    myTradePct, theirTradePct);
-            if (n <= 0) continue;
-            const int cost = n * lot_unit_price(base, have, demand, n,
-                                                /*selling=*/false,
-                                                myTradePct, theirTradePct);
-            DealLine goods[1];
-            goods[0] = DealLine{};
-            goods[0].want = n;
-            goods[0].def = std::uint16_t(id);
-            goods[0].exact = 1;
-            DealLine pay[64];
-            const StagedValue sv = stage_value_lines(bag, cost, pay);
-            if (!deal_covered(sv.value, cost)) continue;
-            const DealFact f =
-                deal(st, traderSlot, marketSlot,
-                     std::span<DealLine>(pay, std::size_t(sv.lines)), goods,
-                     kNoCarryLimitG, freeG);
-            if (!f.settled) continue;
-            out.boughtValue += sv.value;
-            out.movedTableValue += base * n;
-        }
+    // ── ПРОХОД 2: ПОКУПКА ИЗ ЗАВАЛА, ВЫГОДНЕЙШЕЕ НА ГРАММ — ПЕРВЫМ: трюм и
+    // кошелёк конечны, и купец грузит их тем, что несёт больше всего
+    // прироста стоимости на единицу массы. Выгода на массу — ДРОБЬЮ, а не
+    // флоатом: числитель (монеты) и знаменатель (граммы) порознь, порядок
+    // решает перекрёстное умножение — тот же приём, что у `densest_value_slot`.
+    struct Lot { int i; int gain; std::int64_t massG; };
+    Lot lots[std::size_t(kCommodityCount)];
+    int lotCount = 0;
+    for (int i = 0; i < kCommodityCount; ++i) {
+        const int id = commodity_item_index(i);
+        const ItemDef* def = item_def_at(id);
+        const int base = def ? def->value : 0;
+        if (base <= 0) continue;
+        if (sold[std::size_t(i)]) continue;   // эту строку сейчас продали
+        const int demand = demand_of(id);
+        const int have = ms.count_of(id);
+        if (have <= demand) continue;   // не завал — брать нечего
+        const int n0 = trader_lot(base, have, demand, /*selling=*/false,
+                                  myTradePct, theirTradePct, have);
+        if (n0 <= 0) continue;
+        lots[std::size_t(lotCount++)] =
+            Lot{i,
+                base - lot_unit_price(base, have, demand, n0,
+                                      /*selling=*/false,
+                                      myTradePct, theirTradePct),
+                std::int64_t(item_mass_g(*def))};
+    }
+    std::sort(lots, lots + lotCount, [](const Lot& a, const Lot& b) {
+        return std::int64_t(a.gain) * b.massG
+             > std::int64_t(b.gain) * a.massG;
+    });
+    for (int li = 0; li < lotCount; ++li) {
+        const int id = commodity_item_index(lots[li].i);
+        const ItemDef* def = item_def_at(id);
+        const int base = def->value;
+        const int demand = demand_of(id);
+        const int have = ms.count_of(id);
+        const std::int64_t freeG = capacityG - inventory_mass_g(hold);
+        if (freeG <= 0) break;          // трюм полон — брать некуда
+        const std::int64_t fit = freeG / lots[li].massG;
+        int n = trader_lot(base, have, demand, /*selling=*/false,
+                           myTradePct, theirTradePct,
+                           int(std::min<std::int64_t>(have, fit)));
+        // Граница по кошельку КУПЦА — той же дверью и той же ценой.
+        n = max_affordable_lot_(base, have, demand, /*selling=*/false,
+                                inventory_value(hold), n,
+                                myTradePct, theirTradePct);
+        if (n <= 0) continue;
+        const int cost = n * lot_unit_price(base, have, demand, n,
+                                            /*selling=*/false,
+                                            myTradePct, theirTradePct);
+        DealLine goods[1];
+        goods[0] = DealLine{};
+        goods[0].want = n;
+        goods[0].def = std::uint16_t(id);
+        goods[0].exact = 1;
+        DealLine pay[64];
+        const StagedValue sv = stage_value_lines(hold, cost, pay);
+        if (!deal_covered(sv.value, cost)) continue;
+        const DealFact f =
+            deal(st, traderSlot, marketSlot,
+                 std::span<DealLine>(pay, std::size_t(sv.lines)), goods,
+                 kNoCarryLimitG, freeG);
+        if (!f.settled) continue;
+        out.boughtValue += sv.value;
+        out.movedTableValue += base * n;
     }
     return out;
 }
+
+// (ЗДЕСЬ ЖИЛА ВТОРАЯ СДЕЛКА — «рейс сбыта деревни»: продать ВЕСЬ груз, не
+// глядя на цену, и на весь кошелёк купить то, чего не хватает ДОМУ, читая
+// его склад и счёт. Снесена 2026-11-12 (M-478) замыслом владельца: цель
+// корована — стоимость СВОЕГО инвентаря, и судит он рынок, на котором
+// стоит. У мира осталась ОДНА сделка сквада на рынке — та, что выше; нужды
+// мест обслуживаются ценой, а не знанием купца о чужом складе.)
 
 // ЗДЕСЬ СТОЯЛ `squad_season_needs` — ВТОРОЙ ЗАКОН СОДЕРЖАНИЯ, И ОН УМЕР
 // 2026-09-22 вместе со своим близнецом у мест. Он расходился с ним в двух

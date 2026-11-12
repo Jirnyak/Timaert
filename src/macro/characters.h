@@ -76,7 +76,7 @@ struct DesignCharacterDef {
     // Дом — ВЕРШИНА ГОРНОГО МАССИВА (владелец: «рандом центр горного
     // массива — самая высокая клетка»): homeType = None, спавн-дверь
     // резолвит homeIndex-ю из высочайших клеток карты с разносом, и она
-    // же становится ЛОГОВОМ (rt.lairCell) для модуля дракона (ai_dragon).
+    // же становится ЛОГОВОМ (слово памяти модуля, dragon_lair) для дракона.
     bool         homePeak;
     std::int16_t cellX, cellY;
     AIBehaviour  behaviour; // какая модель думает (лестница effective_behaviour)

@@ -456,9 +456,10 @@ void spawn_design_characters(GameState& gs, MacroStore& st,
         st.runtime[slot].squadType = std::uint8_t(row.type);
 
         // Логово — дом-клетка модели вылетов: вершина и есть его дом.
-        // Адрес = одно число (M-3), сентинел ecs::kNoCell = логова нет.
+        // Адрес = одно число (M-3); лежит словом памяти модуля Dragon.
         if (row.homePeak) {
-            st.runtime[slot].lairCell = ecs::cell_index(hx, hy, gs.mapW);
+            dragon_set_lair(st.runtime[slot],
+                            ecs::cell_index(hx, hy, gs.mapW));
         }
 
         // Маршрут «дом ↔ ближайший ландмарк рода из агенды» — резолв

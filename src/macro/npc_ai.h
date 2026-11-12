@@ -241,9 +241,46 @@ bool scent_hunt_step(MacroHandle self,
                      const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
                      ecs::Pools& pools, const TickContext& ctx);
 
+// ── ПАМЯТЬ МОДУЛЯ Dragon: СЛОВО 0 — ЛОГОВО ─────────────────────────────
+// Логово — дом-КЛЕТКА для тех, чей дом не сквад (драконья гора): модуль рода
+// Dragon кружит вокруг неё и возвращается. Лежит словом СВОЕЙ ПАМЯТИ МОДУЛЯ
+// (`MacroNpcRuntime::mem@src/bus/squad_row.h`), и кодировку держит модуль:
+// клетка + 1, потому что ноль у слова памяти значит «пусто», а клетка 0 —
+// законный адрес. `ecs::kNoCell` = логова нет. Двери две и публичны затем,
+// что логово пишет ещё и рождение (спавн анкеты называет вершину).
+inline constexpr int kDragonMemLair = 0;
+static_assert(kDragonMemLair < ecs::kModuleMemSlots);
+inline std::uint32_t dragon_lair(const ecs::MacroNpcRuntime& rt) {
+    const std::uint32_t word = rt.mem[kDragonMemLair];
+    return word == 0 ? ecs::kNoCell : word - 1;
+}
+inline void dragon_set_lair(ecs::MacroNpcRuntime& rt, std::uint32_t cell) {
+    rt.mem[kDragonMemLair] = cell == ecs::kNoCell ? 0 : cell + 1;
+}
+
+// ── ПАМЯТЬ МОДУЛЯ Caravan — ПЯТЬ СЛОВ ───────────────────────────────────
+// Слова своей памяти рейса (`MacroNpcRuntime::mem@src/bus/squad_row.h`):
+// станция, с которой рейс пришёл (ординал, ноль = «никто»: рулетка соседей не
+// гоняет его обратно на только что обслуженный рынок), и четыре числа правила
+// возврата (`trip_goes_on@src/macro/economy.h`) — стоимость трюма на выезде,
+// тики пройденного пути, отдача предыдущего плеча (монет за сутки пути: окно
+// в два плеча) и число совершённых сделок (вера в среднюю растёт с каждой).
+// Пишет и читает их один модуль — `caravan_think`; публичны номера затем,
+// что свидетель обязан видеть, что память рейса действительно ведётся.
+enum : int {
+    kCaravanMemPrevStation,
+    kCaravanMemTripValue,
+    kCaravanMemTripTicks,
+    kCaravanMemPrevLegRate,
+    kCaravanMemDeals,
+    kCaravanMemCount
+};
+static_assert(kCaravanMemCount <= ecs::kModuleMemSlots,
+              "память рейса обязана лечь в кап своей памяти модуля");
+
 // ── Trading at a market (owner, 2026-08-30; CANON S10/S25) ───────────────
 // Locality is the law: every decision reads the market the squad STANDS ON
-// — no omniscience, no rumours. Two strategies over the ONE price law
+// — no omniscience, no rumours. ONE deal over the ONE price law
 // (economy.h stock_price at post-trade supply; transfer_value moves coin —
 // nothing minted, nothing confiscated). At namespace scope (the
 // settle_rooted_day pattern) so caravan_deal_test can drive one deal.
@@ -253,9 +290,11 @@ struct CaravanDeal {
     int movedTableValue = 0;  // TABLE value of all goods that changed hands
                               //   (the chronicle's dealValue, as before)
 };
-// The caravan's STATION stop: sell into the market's shortage (up to its
-// daily demand), buy its surplus (above its daily demand) — the bounds ARE
-// the price law's own break-even, so no threshold constants exist.
+// СДЕЛКА СКВАДА НА РЫНКЕ: продать в дефицит, взять из завала — границы даёт
+// сама кривая цены, порогов нет. Размер лота — закон купца
+// (`trader_lot@src/macro/economy.h`): полка доводится до среднего
+// геометрического запаса и спроса, это лот наибольшего прироста стоимости
+// трюма (замысел владельца 2026-11-12: цель — стоимость своего инвентаря).
 // charisma/bargaining are the trader's SHEET (the one trade-price law of
 // economy.h modulates both halves): a caravan out-trades a peasant because
 // its row rolls better numbers — never a hardcode (owner 2026-08-30).
@@ -268,36 +307,8 @@ CaravanDeal trade_caravan_at_station(MacroStore& st,
                                      std::int64_t capacityG,
                                      std::uint16_t marketSlot,
                                      int myTradePct, int theirTradePct);
-// The village crew selling at its nearest city: unload everything, then
-// spend the WHOLE purse down the home's needs ladder («деревня не копит
-// капитал», owner 2026-08-30) — each line up to a season's stock at home;
-// what the market cannot supply leaves coin to ride home for the tax graph.
-//
-// `home` — ТЕЛО дома (невалидный хэндл = у крю нет дома). Что почём и чего не хватает,
-// считается здесь же живьём — теми же двумя дверьми (`season_demand_for` +
-// `stock_price`), которыми это считала снесённая ведомость. Она и решает,
-// что стоит везти: товар берут, если дома за него дают больше, чем просят
-// здесь. nullptr (у крю нет дома) — крю НИЧЕГО НЕ ПОКУПАЕТ и уезжает с
-// выручкой: без дома честнее не гадать, а продать и вернуться (CANON S10,
-// ярус 1 — торговля стоит и без знания).
-//
-// ЧТО ЗДЕСЬ УМЕРЛО 2026-09-30 (ломтик E шаг 2): параметр
-// `const LandmarkLedger* homeLedger` вместе с самой ведомостью — она была
-// КЭШЕМ этих двух функций в колонке МЕСТА, а места больше нет, есть сквад.
-// Закон не изменился ни на строку; исчезла копия и сезонный проход, её
-// писавший.
-//
-// ЧТО ЗДЕСЬ УМЕРЛО 2026-09-20: `homeSnapshot` (4-битный класс памяти крю с
-// потолком «много = 4096» — из-за него город с 45 млн хлеба выглядел
-// голодным и мир качал хлеб ВВЕРХ) вместе с `homeDebt`, `homePopulation` и
-// `homeSite`, которые существовали только чтобы пересчитать домашний спрос
-// по этому огрублённому снимку. Память сквада (ярус 3) веса не несёт нигде.
-CaravanDeal trade_vendor_at_market(MacroStore& st,
-                                   std::uint16_t traderSlot,
-                                   std::int64_t capacityG,
-                                   std::uint16_t marketSlot,
-                                   MacroHandle home,
-                                   int myTradePct, int theirTradePct);
+// (Второй сделки — «рейс сбыта деревни», читавшей склад и счёт ДОМА, —
+// больше нет: снесена 2026-11-12, M-478. Сделка сквада на рынке одна.)
 
 // ТИП СКВАДА живёт в tables/squad_type.h — его называют двое: сквад
 // (колонкой) и СТРОКА РЕЕСТРА МЕСТА (объявляя, кого поднимает).
@@ -329,25 +340,11 @@ int pick_next_station_(const TickContext& ctx, std::uint32_t at,
 // один. Лагерь — ПАУЗА, НЕ АМНЕЗИЯ: возвращается ПРЕРВАННАЯ нога.
 void wake_from_rest(ecs::MacroNpcRuntime& rt);
 
-// ── ЦЕНА ЧУЖОГО РЫНКА = АБСОЛЮТНАЯ СТОИМОСТЬ СТРОКИ (CANON S10) ─────────
-// Вердикт владельца 2026-09-30, дословно: «у нас есть абсолютная стоимость /
-// локальная цена от спроав предлложения контекста и / цена/массу для как раз
-// транзакукий и что брать с собой - эмерджентные деньги».
-//
-// Эта дверь отвечает на первый из трёх вопросов и только на него: СКОЛЬКО
-// СТРОКА СТОИТ САМА ПО СЕБЕ. Ярус 2 (ведомость места и мировое среднее из
-// неё) уничтожен 2026-09-30 вместе с колонками места; на его ДАЛЬНЮЮ
-// половину встало то же по смыслу число — «дальнее место выглядит обычным
-// рынком», — но лежащее строкой каталога, а не пересчитываемое сезонным
-// проходом по всем местам. Рассинхронизировать его теперь неоткуда.
-//
-// БЛИЖНЕЙ ПОЛОВИНЫ ЯРУСА 2 НЕТ, и это названная дыра: локальный дефицит и
-// завал у соседа спрашивающему не видны, пока эконом-эпик не построит цену
-// от спроса и предложения. СВОЙ дом — не ярус и никогда им не был: его
-// склад и счёт читаются живьём там, где принимается решение.
-//
-// Возвращает 0 у строки, товаром не являющейся.
-int market_price_seen(int commodityIdx);
+// (ЗДЕСЬ СТОЯЛА ДВЕРЬ «ЦЕНА ЧУЖОГО РЫНКА»: она отвечала абсолютной
+// стоимостью строки всем и всегда, то есть дальнего рынка не видела вовсе.
+// Единственный её читатель — заявка будущего плеча рейса — умер 2026-11-12
+// (M-478), и дверь ушла с ним. Абсолютную стоимость строки даёт сама строка
+// каталога (`ItemDef::value`); знание о дальних ценах — ряд M-479.)
 
 // КЕМ ДУМАЕТ СКВАД БЕЗ ТИПА — лестница приоритетов, ЗАКОН (владелец,
 // 2026-09-10): приказ (маршрут в SquadOrders — его наличие И ЕСТЬ приказ)

@@ -89,7 +89,9 @@ int main() {
     // сторожит ТОРГОВЛЮ, поэтому его рынок обязан быть платёжеспособным;
     // сама находка — «оплата натурой ест сезонный амбар» — записана хвостом
     // в NEXT_SESSION, она старше этой правки и ею не лечится.
-    CHECK(shelf(mstore, city).add("coin_empire_copper", 6000), "fixture: city purse");
+    // КАЗНА С ЗАПАСОМ НАД ЦЕНОЙ ЛОТА: упрись сделка в кошелёк рынка, размер
+    // лота назвал бы кошелёк, а не закон купца, — а сторожится здесь закон.
+    CHECK(shelf(mstore, city).add("coin_empire_copper", 600000), "fixture: city purse");
 
     // Трейдеры фикстур — высокие слоты стора (места рождаются снизу
     // эмитентом): сделка адресуется СЛОТАМИ (deal.h, ломоть 2 M-72).
@@ -103,6 +105,7 @@ int main() {
     // сторожит ПРОДАЖУ в нужду, поэтому платёжное плечо — монета.
     CHECK(hold.add("coin_empire_copper", 12000), "fixture: hold purse");
 
+    const int holdValueBefore = sm::inventory_value(hold);
     const long long coinBefore =
         sm::coin_census_value(hold) + sm::coin_census_value(shelf(mstore, city));
     const long long woodBefore = commodity_total(hold, shelf(mstore, city), "wood");
@@ -139,8 +142,13 @@ int main() {
           "station: goods are conserved (food — through the bill)");
     CHECK(st.soldValue > 0, "station: the shortage was sold into");
     const int soldFood = int(foodBefore) - hold.count("food");
-    CHECK(soldFood > 0 && soldFood <= foodDemand,
-          "station: sells only up to the market's own unpaid need");
+    CHECK(soldFood > 0 && soldFood < std::min(200, foodDemand),
+          "station: ЛОТ КУПЦА — продано меньше и груза, и непогашенной нужды: "
+          "лот «до самой нужды» прибыли не несёт");
+    // ЦЕЛЬ СДЕЛКИ — СТОИМОСТЬ ТРЮМА (владелец 2026-11-12): она выросла.
+    CHECK(sm::inventory_value(hold) > holdValueBefore,
+          "station: абсолютная стоимость трюма купца ВЫРОСЛА — продал дороже "
+          "базы, взял дешевле");
     CHECK(foodDebtPaid > 0,
           "station: the sold food paid the bill on the spot");
     CHECK(st.boughtValue > 0, "station: the surplus was bought");
@@ -163,140 +171,144 @@ int main() {
               && st.soldValue >= soldFood,
           "station: shortage paid inside the law's own bounds");
 
-    // ── The vendor run ───────────────────────────────────────────────────
-    // A village crew brings food to a town that lacks it; home lacks tools
-    // (snapshot class 0), the town holds them.
-    const std::uint16_t town = fixture_rooted(mstore, gsFix, sm::SquadType::City);
-    sm::raise_flock_into_container(shelf(mstore, town), 64);
-    // Хлебный счёт не погашен — из него производный спрос на зерно (город
-    // печёт); счёт по инструментам оплачен, полка с ними — ИЗЛИШЕК.
-    need_debt(mstore, town)[sm::commodity_index("food")] =
-        sm::upkeep_bill(shelf(mstore, town)).board;
-    CHECK(shelf(mstore, town).add("tools", 50), "fixture: town tools");
-    // The purse covers the load at the SEASONAL famine price (the corridor
-    // died 2026-09-18): a starving shelf prices near base × seasonal need,
-    // and a fixture purse tuned to the old 4× ceiling could afford nothing —
-    // which is the affordability law working, not the vendor failing.
-    CHECK(shelf(mstore, town).add("coin_empire_copper", 20000), "fixture: town purse");
-
-    // ДОМ — САМО МЕСТО: зерна навалом, инструментов нет. Ведомость-кэш
-    // уничтожена 2026-09-30 (ломтик E шаг 2), и сделка читает дом теми же
-    // двумя дверьми, которыми ведомость и выписывалась.
-    std::unique_ptr<sm::GameState> hgsOwn = sm::make_game_state();
-    sm::GameState& hgs = *hgsOwn;
-    hgs.mapW = 64;
-    hgs.mapH = 64;
-    // Дом идёт ТОЙ ЖЕ дверью, что рынки: ломтиком F второй двери рождения
-    // места не существует вовсе.
-    const sm::MacroHandle home =
-        sm::birth_squad(hgs, nullptr, mstore, sm::SquadType::Village, 0, 0);
-    sm::raise_flock_into_container(shelf(mstore, home.slot), 50);
-    CHECK(shelf(mstore, home.slot).add("food", 5000), "fixture: home food");
-
-    const std::uint16_t bagSlot = 16001;
-    sm::Inventory& bag = mstore.inventory[bagSlot].inv;
-    CHECK(bag.add("food", 300), "fixture: vendor food");
-
-    const long long vCoinBefore =
-        sm::coin_census_value(bag) + sm::coin_census_value(shelf(mstore, town));
-    const sm::CaravanDeal vd = sm::trade_vendor_at_market(
-        mstore, bagSlot, sm::kNoCarryLimitG, town, home,
-        /*myTradePct=*/0, /*theirTradePct=*/0);
-
-    CHECK(sm::coin_census_value(bag) + sm::coin_census_value(shelf(mstore, town))
-              == vCoinBefore,
-          "vendor: coin is conserved");
-    // Проданное в место с непогашенным счётом гасится и СЪЕДАЕТСЯ в дверях
-    // прихода (CANON S10), поэтому «весь груз продан» читается суммой полки
-    // и оплаченного счёта — с 2026-09-20 голодная строка и есть пища, и
-    // привезённое зерно ложится ровно в тот счёт, который город не покрыл.
-    // Счёт, который город НЕ покрыл, читается той же дверью, что его
-    // выставила (upkeep_bill по головам) — ни одного пересказанного числа.
-    const int townDebtPaid = sm::upkeep_bill(shelf(mstore, town)).board
-        - need_debt(mstore, town)[sm::commodity_index("food")];
-    CHECK(bag.count("food") == 0
-              && shelf(mstore, town).count("food") + townDebtPaid == 300,
-          "vendor: the whole load was sold");
-    CHECK(vd.soldValue > 0, "vendor: the sale paid real coin");
-    CHECK(bag.count("tools") > 0,
-          "vendor: the earnings bought the home's lack");
-    CHECK(vd.boughtValue > 0 && vd.boughtValue <= vd.soldValue
-              + 0 /* the crew carried no purse of its own */,
-          "vendor: purchases are funded by the sale alone");
-
-    // ── НАСОС ВЫКЛЮЧЕН: дом, тонущий в хлебе, хлеба НЕ покупает ─────────
-    // Закон, ради которого ярус 2 и строился (CANON S10, 2026-09-20). Пока
-    // запас дома читался 4-битным КЛАССОМ памяти крю с потолком «много =
-    // 4096», город с 45 млн хлеба при сезонной нужде 80 640 выглядел
-    // голодным (цена дома ≈ база × 19.7), и крю честно скупало хлеб, чтобы
-    // везти ДОМОЙ, — мир качал хлеб ВВЕРХ. Закон пережил снос ведомости:
-    // точный склад дома теперь читается живьём в точке сделки.
+    // ── ЗАКОН ЛОТА КУПЦА (`trader_lot@src/macro/economy.h`) ───────────────
+    // Здесь стоял «рейс сбыта деревни» — вторая сделка, читавшая склад и счёт
+    // ДОМА; она снесена 2026-11-12 (M-478), и с ней ушли её свидетели. Законы,
+    // которые они держали сверх своей сделки, — сохранение монеты и товара —
+    // держит станция выше.
     //
-    // СВИДЕТЕЛЬ — ПАРА, А НЕ ОДИНОЧНАЯ ПРОВЕРКА, и это принципиально: «крю
-    // не купило хлеба» верно и у немой фикстуры (дома нет, рынок пуст,
-    // кошелёк пуст), то есть одиночная проверка зеленела бы по любой из
-    // трёх посторонних причин. Поэтому тот же крю на ТОМ ЖЕ рынке с ТЕМ ЖЕ
-    // грузом сводится с двумя домами, и утверждается РАЗНИЦА.
+    // ЯКОРЬ: лот купца есть ЛОТ НАИБОЛЬШЕЙ ПРИБЫЛИ, и проверяется это НЕ его
+    // же формулой, а полным перебором через дверь цены: прибыль лота n есть
+    // n × (цена единицы после сделки − база), и никакой другой размер лота в
+    // пределах дефицита (завала) не приносит больше.
     {
-        const auto buy_home_food = [&](int homeFood) {
-            const std::uint16_t hm =
-                fixture_rooted(mstore, gsFix, sm::SquadType::City);
-            sm::raise_flock_into_container(shelf(mstore, hm), 2520);
-            // Счёт сезона ВЫСТАВЛЕН целиком у ОБОИХ — довод «у него же есть
-            // нужда» снят заранее: нужда есть, и гора всё равно делает хлеб
-            // дешёвым дома.
-            need_debt(mstore, hm)[sm::commodity_index("food")] =
-                sm::upkeep_bill(shelf(mstore, hm)).board;
-            if (homeFood > 0)
-                CHECK(shelf(mstore, hm).add("food", homeFood),
-                      "fixture: the home's shelf");
-
-            const std::uint16_t mkt =
-                fixture_rooted(mstore, gsFix, sm::SquadType::City);
-            sm::raise_flock_into_container(shelf(mstore, mkt), 64);
-            CHECK(shelf(mstore, mkt).add("food", 4000), "fixture: market food");
-            CHECK(shelf(mstore, mkt).add("coin_empire_copper", 20000),
-                  "fixture: market purse");
-
-            const std::uint16_t crewSlot = 16002;
-            sm::Inventory& crew = mstore.inventory[crewSlot].inv;
-            crew = sm::Inventory{};   // лямбда зовётся дважды — слот чистится
-            CHECK(crew.add("food", 300), "fixture: crew load");
-            sm::trade_vendor_at_market(mstore, crewSlot, sm::kNoCarryLimitG,
-                                       mkt, sm::handle_at(mstore, hm),
-                                       /*myTradePct=*/0,
-                                       /*theirTradePct=*/0);
-            return crew.count("food");
+        const auto gain = [](int base, int have, int demand, int n,
+                             bool selling) {
+            const long long unit = sm::lot_unit_price(base, have, demand, n,
+                                                      selling, 0, 0);
+            return selling ? n * (unit - base) : n * (base - unit);
         };
-        const int boughtStarving = buy_home_food(0);
-        const int boughtGlutted  = buy_home_food(45000000);
-        CHECK(boughtStarving > 0,
-              "негативный контроль: голодный дом хлеб ПОКУПАЕТ — значит "
-              "рынок, кошелёк и сделка в этой фикстуре живы");
-        CHECK(boughtGlutted == 0,
-              "the food mountain buys no food: the pump is off");
+        constexpr int kBase = 1000;   // крупная база: округление цены до
+                                      // монеты не размывает максимум
+        // Продажа в дефицит: полка 99, нужда 399.
+        const int sellLot = sm::trader_lot(kBase, 99, 399, /*selling=*/true,
+                                           0, 0, /*cap=*/1 << 20);
+        long long bestSell = 0;
+        int rangeSell = 0;
+        for (int n = 1; n <= 399 - 99; ++n, ++rangeSell)
+            bestSell = std::max(bestSell, gain(kBase, 99, 399, n, true));
+        CHECK(rangeSell == 300 && sellLot > 0
+                  && gain(kBase, 99, 399, sellLot, true) == bestSell,
+              "ЛОТ КУПЦА (продажа): из всех лотов в пределах дефицита он несёт "
+              "наибольшую прибыль — перебором через дверь цены");
+        CHECK(gain(kBase, 99, 399, 399 - 99, true) <= 0,
+              "лот «до самой нужды» прибыли не несёт: его цена после сделки "
+              "равна базе");
+        CHECK(99 + sellLot < 399,
+              "и полку до нужды он не доводит — остаток достаётся следующему");
+        // Покупка из завала: полка 399, нужда 99.
+        const int buyLot = sm::trader_lot(kBase, 399, 99, /*selling=*/false,
+                                          0, 0, /*cap=*/1 << 20);
+        long long bestBuy = 0;
+        int rangeBuy = 0;
+        for (int n = 1; n <= 399 - 99; ++n, ++rangeBuy)
+            bestBuy = std::max(bestBuy, gain(kBase, 399, 99, n, false));
+        CHECK(rangeBuy == 300 && buyLot > 0
+                  && gain(kBase, 399, 99, buyLot, false) == bestBuy,
+              "ЛОТ КУПЦА (покупка): наибольшая прибыль среди всех лотов завала");
+        CHECK(399 - buyLot > 99,
+              "и ниже нужды рынка полку он не опускает");
+        // Кап держится, и сквозь него лот остаётся выгодным.
+        CHECK(sm::trader_lot(kBase, 99, 399, true, 0, 0, 7) == 7,
+              "кап лота (груз, трюм) режет лот, а не отменяет его");
+        // ВСЯКИЙ ЛОТ СТРОГО ВЫГОДЕН И НЕ ПЕРЕЛЕТАЕТ РАВНОВЕСИЕ — по сетке
+        // полок, нужд, баз (включая копеечную, где цена округляется до базы)
+        // и разниц торговых сил.
+        int samples = 0, lots = 0, bad = 0;
+        for (int base : {1, 3, 10, 1000}) {
+            for (int have = 0; have <= 40; ++have) {
+                for (int demand = 0; demand <= 120; ++demand) {
+                    for (int edge : {-20, 0, 20}) {
+                        for (bool selling : {true, false}) {
+                            ++samples;
+                            const int n = sm::trader_lot(
+                                base, have, demand, selling, edge, 0, 1 << 20);
+                            if (n < 0) ++bad;
+                            if (n <= 0) continue;
+                            ++lots;
+                            const int unit = sm::lot_unit_price(
+                                base, have, demand, n, selling, edge, 0);
+                            if (selling ? unit <= base : unit >= base) ++bad;
+                            if (!selling && n > have) ++bad;
+                            // При равных силах торгуют только в дефицит
+                            // (завал), и равновесие не перелетают. Перевес
+                            // сил сдвигает оптимум за нужду — границы на это
+                            // нет нарочно (вывод — у `trader_lot`).
+                            if (edge == 0
+                                && (selling ? have + n > demand
+                                            : have - n < demand))
+                                ++bad;
+                        }
+                    }
+                }
+            }
+        }
+        CHECK(samples > 0 && lots > 0 && bad == 0,
+              "сетка лотов: каждый строго выгоден, не больше полки, а при "
+              "равных силах не перелетает нужду рынка");
     }
 
-    // ── БЕЗ ДОМА КРЮ НЕ ГАДАЕТ ───────────────────────────────────────────
-    // У крю нет дома — значит нет и того, чьи нужды оно бы закрывало. Оно
-    // обязано продать и уехать с выручкой, а не покупать вслепую (CANON
-    // S10, ярус 1 — торговля стоит и без знания).
+    // ── СТРОКА В ОДНОМ ВИЗИТЕ ИДЁТ В ОДНУ СТОРОНУ ────────────────────────
+    // Насос монеты, найденный ревью: перевес торговых сил даёт сильному
+    // отрицательный спред против слабого рынка — он продаёт строку сверх
+    // нужды и той же сделкой выкупает её дешевле. Проявиться он может только
+    // на строке, приход которой НЕ СЪЕДАЕТСЯ счётом (иначе полка не растёт):
+    // это строка с ПРОИЗВОДНЫМ спросом — сырьё рецепта, чей выход рынку
+    // нужен. Свидетель её не угадывает, а находит: рынку выставлен счёт на
+    // инструмент, и берётся первая строка без своего счёта, на которую от
+    // этого лёг спрос.
     {
-        const std::uint16_t mkt =
-            fixture_rooted(mstore, gsFix, sm::SquadType::City);
-        sm::raise_flock_into_container(shelf(mstore, mkt), 64);
-        CHECK(shelf(mstore, mkt).add("tools", 50), "fixture: unlit market tools");
-        CHECK(shelf(mstore, mkt).add("coin_empire_copper", 20000),
-              "fixture: unlit market purse");
-        const std::uint16_t bag4Slot = 16003;
-        sm::Inventory& bag4 = mstore.inventory[bag4Slot].inv;
-        CHECK(bag4.add("food", 300), "fixture: unlit crew load");
-        const sm::CaravanDeal d = sm::trade_vendor_at_market(
-            mstore, bag4Slot, sm::kNoCarryLimitG, mkt, sm::MacroHandle{},
-            /*myTradePct=*/0, /*theirTradePct=*/0);
-        CHECK(d.soldValue > 0 && d.boughtValue == 0
-                  && bag4.count("tools") == 0,
-              "no home, no guessing: the crew sells and rides home");
+        const std::uint16_t m = fixture_rooted(mstore, gsFix, sm::SquadType::City);
+        sm::raise_flock_into_container(shelf(mstore, m), 64);
+        const sm::Skills& hands =
+            sm::squad_birth(sm::SquadType::City).sheet.skills;
+        need_debt(mstore, m)[sm::commodity_index("tools")] = 400;
+        int rawIdx = -1, rawNeed = 0;
+        for (int c = 0; c < sm::kCommodityCount && rawIdx < 0; ++c) {
+            if (need_debt(mstore, m)[c] != 0) continue;   // свой счёт — съест
+            const int id = sm::commodity_item_index(c);
+            const int need = sm::season_demand_for(
+                id, need_debt(mstore, m), sm::souls_home(mstore, m), hands,
+                &shelf(mstore, m));
+            if (need > 16) { rawIdx = id; rawNeed = need; }
+        }
+        CHECK(rawIdx >= 0,
+              "предусловие: у рынка нашлась строка с производным спросом — "
+              "сырьё, приход которого счётом не съедается");
+        if (rawIdx >= 0) {
+            const int shelfBefore = rawNeed - 8;   // недостаёт восьми
+            CHECK(shelf(mstore, m).add_of(rawIdx, shelfBefore),
+                  "fixture: raw shelf");
+            CHECK(shelf(mstore, m).add("coin_empire_copper", 600000),
+                  "fixture: market purse");
+            const std::uint16_t hSlot = 16006;
+            sm::Inventory& h = mstore.inventory[hSlot].inv;
+            constexpr int kHoldRaw = 400;
+            CHECK(h.add_of(rawIdx, kHoldRaw), "fixture: hold raw");
+            const sm::CaravanDeal d = sm::trade_caravan_at_station(
+                mstore, hSlot, sm::kNoCarryLimitG, m,
+                /*myTradePct=*/20, /*theirTradePct=*/0);
+            const int soldRaw = kHoldRaw - h.count_of(rawIdx);
+            CHECK(d.soldValue > 0 && soldRaw > 8,
+                  "предусловие насоса встретилось: сильный купец продал "
+                  "БОЛЬШЕ, чем рынку недоставало, — полка стала завалом");
+            CHECK(shelf(mstore, m).count_of(rawIdx) == shelfBefore + soldRaw,
+                  "ОДНА СТОРОНА ЗА ВИЗИТ: проданное осталось у рынка — в ту "
+                  "же сделку оно обратно не выкуплено");
+            CHECK(d.boughtValue == 0,
+                  "и монета назад не ушла: брать у этого рынка было нечего, "
+                  "кроме только что проданного");
+        }
     }
 
     // ── Negative control: a coinless market buys nothing, loses nothing ──

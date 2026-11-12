@@ -325,7 +325,7 @@ void test_the_dragon_lands_in_its_lair_cell() {
     World w;
     const MacroHandle d = w.walker(NPCType::Peasant, SquadType::Dragon,
                                    std::uint8_t(NPCState::Idle), 38, 30, 7u);
-    w.st.runtime[d.slot].lairCell = w.at(30, 30);
+    sm::dragon_set_lair(w.st.runtime[d.slot], w.at(30, 30));
     w.think(1);
     CHECK(w.st.runtime[d.slot].state == std::uint8_t(NPCState::Returning)
               && w.st.goal[d.slot].cell == w.at(30, 30),
@@ -360,7 +360,7 @@ void test_next_to_the_lair_is_not_home() {
     World w;
     const MacroHandle d = w.walker(NPCType::Peasant, SquadType::Dragon,
                                    std::uint8_t(NPCState::Idle), 31, 30, 7u);
-    w.st.runtime[d.slot].lairCell = w.at(30, 30);
+    sm::dragon_set_lair(w.st.runtime[d.slot], w.at(30, 30));
     w.think(1);
     CHECK(w.st.goal[d.slot].cell == w.at(30, 30),
           "В СОСЕДНЕЙ КЛЕТКЕ — НЕ ДОМА: адресом названо логово, а не круг "
@@ -399,13 +399,13 @@ void test_the_dragon_leash_is_a_path_radius() {
     const MacroHandle far = w.walker(NPCType::Peasant, SquadType::Dragon,
                                      std::uint8_t(NPCState::Wandering),
                                      50, 30, 7u);
-    w.st.runtime[far.slot].lairCell = w.at(30, 30);
+    sm::dragon_set_lair(w.st.runtime[far.slot], w.at(30, 30));
     ecs::goal_set(w.st.goal[far.slot], w.at(55, 30), 0, 0,
                   std::uint8_t(NPCState::Idle));
     const MacroHandle near = w.walker(NPCType::Peasant, SquadType::Dragon,
                                       std::uint8_t(NPCState::Wandering),
                                       10, 44, 8u);
-    w.st.runtime[near.slot].lairCell = w.at(10, 40);
+    sm::dragon_set_lair(w.st.runtime[near.slot], w.at(10, 40));
     ecs::goal_set(w.st.goal[near.slot], w.at(10, 47), 0, 0,
                   std::uint8_t(NPCState::Idle));
     w.think(1);

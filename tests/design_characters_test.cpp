@@ -327,7 +327,7 @@ void test_dragons_nest_on_mountain_peaks() {
           "one massif births one dragon — spacing is honest");
 
     const auto& rt = std_.runtime[d1.slot];
-    CHECK(rt.lairCell == sm::ecs::cell_index(48, 48, kW),
+    CHECK(sm::dragon_lair(rt) == sm::ecs::cell_index(48, 48, kW),
           "his LAIR is the massif's highest cell (one number, M-3)");
     CHECK(rt.flying == 1,
           "the row's cruiseM cached as the march-side flying byte (v93)");
