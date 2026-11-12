@@ -162,6 +162,32 @@ struct Fixture {
         sm::nav_bake(mw, nav);
     }
 
+    // Ровный сухой мир с ОДНИМ местом в середине: вся карта — его округа,
+    // вес везде единица, подъёмов нет. Цена пути здесь есть чистая геометрия
+    // запекания — на ней и судится цена диагонали (M-463).
+    void build_flat() {
+        gs.mapW = W;
+        gs.mapH = H;
+        gs.worldSeed = 44;
+        pc.width = W;
+        pc.height = H;
+        pc.costGrid.assign(std::size_t(W) * H, 1.0f);
+        pc.water.assign(std::size_t(W) * H, 0);
+        pc.height16.assign(std::size_t(W) * H, 0);
+        sm::store_reset(places());
+        seeded.clear();
+        const sm::MacroHandle h = sm::birth_squad(
+            gs, &ses, places(), sm::SquadType::City, 32, 32);
+        sm::settle_souls(gs, places(), h.slot, 100);
+        seeded.push_back(
+            Place{32, 32, int(places().spawnId[h.slot].index), h.slot});
+        mw.gs = &gs;
+        mw.session = &ses;
+        mw.store = &places();
+        mw.pathCost = &pc;
+        sm::nav_bake(mw, nav);
+    }
+
     // «Суша ли» — ОПИСАНИЕ ГЕОГРАФИИ фикстуры, а не правило мира: с
     // 2026-10-06 предиката стояния не существует, и клетка воды законна для
     // всякого ходока. Осталось затем, чтобы ИЗМЕРЯТЬ, сколько воды прошёл
@@ -449,6 +475,30 @@ int main() {
         }
         CHECK(sawDead && sawBorn,
               "старый житель сеет свою округу, и новорождённый тоже");
+    }
+
+    // ── ЗАПЕКАНИЕ ЦЕНИТ ДИАГОНАЛЬ ПАРОЙ ИГРЫ (M-463) ─────────────────────
+    // План обязан мерить шаг той же ценой, какой его оплатят ноги: прямой
+    // `kStepStraight`, диагональный `kStepDiagonal` (`src/core/torus.h`).
+    // На ровном мире цена из места до клетки своей округи есть чистая
+    // геометрия, поэтому N диагональных шагов относятся к N прямым ровно как
+    // пара. Здесь стоял √2, а ноги платили за диагональ как за прямой шаг —
+    // мутация «запекание снова с √2» до этого свидетеля молчала.
+    {
+        Fixture flat;
+        flat.build_flat();
+        CHECK(flat.nav.baked(), "фикстура: ровный мир запечён");
+        const int n = 6;
+        const std::uint32_t straight =
+            sm::nav_path_cost(flat.nav, 32, 32, 32 + n, 32);
+        const std::uint32_t diagonal =
+            sm::nav_path_cost(flat.nav, 32, 32, 32 + n, 32 + n);
+        CHECK(straight != sm::kNavFar && straight > 0u,
+              "фикстура: шесть клеток прямо — в округе места и стоят цены");
+        CHECK(diagonal * std::uint32_t(sm::kStepStraight)
+                  == straight * std::uint32_t(sm::kStepDiagonal),
+              "ДИАГОНАЛЬ В ЗАПЕКАНИИ — ПО ПАРЕ: шесть диагональных шагов "
+              "относятся к шести прямым как диагональная цена к прямой");
     }
 
     return sm::test::report("nav_region_test");

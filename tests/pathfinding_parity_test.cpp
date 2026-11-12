@@ -93,25 +93,60 @@ int main()
                                            static_cast<sm::FeatureType>(255)), 2.0f),
                  "unknown feature must fall through to biome movement weight");
 
-    sm::PathCostData grid = flat_grid(5, 5, 1.0f);
-    sm::PathResult wrapped = sm::find_path(grid, 0, 0, 4, 0, 8);
+    // Сторона — степень двойки (ЗАКОН АДРЕСА): здесь стояла сетка 5×5, и
+    // фикстура лгала о мире ровно там, где эвристика складывает ось маской.
+    sm::PathCostData grid = flat_grid(8, 8, 1.0f);
+    sm::PathResult wrapped = sm::find_path(grid, 0, 0, 7, 0, 8);
     CHECK(wrapped.found, "torus neighbor path should be found");
     CHECK(wrapped.path.size() == 2, "torus neighbor path should be one edge");
     if (wrapped.path.size() == 2)
     {
         CHECK(wrapped.path[0].x == 0 && wrapped.path[0].y == 0,
                      "path should start at wrapped start");
-        CHECK(wrapped.path[1].x == 4 && wrapped.path[1].y == 0,
+        CHECK(wrapped.path[1].x == 7 && wrapped.path[1].y == 0,
                      "path should end at wrapped goal");
     }
 
-    sm::PathResult capped = sm::find_path(grid, 0, 0, 4, 0, 1);
+    sm::PathResult capped = sm::find_path(grid, 0, 0, 7, 0, 1);
     CHECK(!capped.found && capped.path.empty(),
                  "maxSteps cap should stop search before second pop");
 
-    sm::PathResult enoughBudget = sm::find_path(grid, 0, 0, 4, 0, 2);
+    sm::PathResult enoughBudget = sm::find_path(grid, 0, 0, 7, 0, 2);
     CHECK(enoughBudget.found,
                  "same path should succeed when cap allows target pop");
+
+    // ── ДИАГОНАЛЬ В ПЛАНЕ СТОИТ ПО ПАРЕ ИГРЫ (M-463) ─────────────────────
+    // Маршрут выбирается той же ценой диагонали, какой его оплатят ноги:
+    // `kDiagonalStepLen@src/core/torus.h` (3 к 2), а не √2 и не единица.
+    // Свидетель — ВЫБОР пути, не пересчёт цены: рядом с прямой дорогой лежит
+    // полоса чуть дешевле, и заехать на неё стоит двух диагоналей. Веса
+    // подобраны из самой пары так, что объезд окупается при любой диагонали
+    // короче пары и НЕ окупается при ней: прямой путь 4·W, объезд
+    // w·(len + 2) + W·len, полоса w взята посередине между порогами √2 и пары.
+    {
+        const float W = 1.4f;                       // вес ровной земли
+        const float sqrt2 = 1.41421356f;
+        const float len = sm::kDiagonalStepLen;
+        // объезд равен прямому при w* = W·(4 − len)/(len + 2)
+        const float wAtPair  = W * (4.0f - len)   / (len   + 2.0f);
+        const float wAtSqrt2 = W * (4.0f - sqrt2) / (sqrt2 + 2.0f);
+        CHECK(wAtPair < wAtSqrt2,
+              "фикстура: порог окупаемости объезда у пары ниже, чем у √2 — "
+              "между ними есть вес, различающий две цены диагонали");
+        const float lane = 0.5f * (wAtPair + wAtSqrt2);
+        sm::PathCostData field = flat_grid(16, 16, W);
+        for (int x = 1; x <= 3; ++x)
+            field.costGrid[std::size_t(1) * 16u + std::size_t(x)] = lane;
+        const sm::PathResult route = sm::find_path(field, 0, 0, 4, 0, 4096);
+        CHECK(route.found && route.path.size() == 5,
+              "маршрут найден и идёт пятью клетками");
+        bool leftTheRow = false;
+        for (const sm::PathPoint& pt : route.path)
+            if (pt.y != 0) leftTheRow = true;
+        CHECK(!leftTheRow,
+              "ДИАГОНАЛЬ СТОИТ ПО ПАРЕ: полоса дешевле ровно настолько, что "
+              "объезд окупился бы при √2 и не окупается при цене ног");
+    }
 
     sm::TerrainData td = make_terrain(2, 2);
     CHECK(td.cell_count() == 4u && td.has_rgba_storage(),

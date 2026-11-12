@@ -398,7 +398,11 @@ void test_dragon_eats_peasants_emergently() {
 
     MacroNpcAiRuntime air{};
     reset_macro_npc_ai_runtime(air, 7u);
-    for (int i = 0; i < 16; ++i) {
+    // Срок — с запасом и до события: свидетель судит ЗАКОН (дракон съел
+    // слабого), а не темп полёта. Здесь стояло ровно 16 думок — число,
+    // прибитое к прежней цене диагонали (дракон летит к логову наискось, и с
+    // парой 2 и 3 тот же путь занимает семнадцать думок, M-463).
+    for (int i = 0; i < 64 && st.valid(prey) && st.dead[prey.slot] == 0; ++i) {
         MacroWorld mw{.gs = &gs, .store = &st};
         tick_macro_npc_ai(mw, air, kAiTicks);
     }

@@ -110,13 +110,16 @@ void optical_sweep(int width, int height, int sx, int sy, float budget,
         return std::size_t(y) * std::size_t(width) + std::size_t(x);
     };
 
-    // 8-neighbourhood with Euclidean step lengths so open-terrain optical
-    // distance tracks true distance (octile), not Manhattan.
+    // 8-neighbourhood; a diagonal step is LONGER than a straight one by the
+    // game's one pair (`kDiagonalStepLen@src/core/torus.h`, M-463) — the same
+    // length the legs pay and the planners price, so sight and travel agree
+    // on what "N cells away" means. (√2 stood here.)
     static constexpr int kNX[8] = {1, -1, 0, 0, 1, 1, -1, -1};
     static constexpr int kNY[8] = {0, 0, 1, -1, 1, -1, 1, -1};
-    static constexpr float kNL[8] = {1.0f,        1.0f,        1.0f,        1.0f,
-                                     1.41421356f, 1.41421356f, 1.41421356f,
-                                     1.41421356f};
+    static constexpr float kNL[8] = {
+        1.0f, 1.0f, 1.0f, 1.0f,
+        kDiagonalStepLen, kDiagonalStepLen, kDiagonalStepLen,
+        kDiagonalStepLen};
 
     using optics_detail::Node;
     using optics_detail::NodeGreater;

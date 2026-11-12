@@ -134,5 +134,83 @@ int main() {
               "КОНТРОЛЬ: без клетки игрока тот же бюджет уносит дальше неё");
     }
 
+    // ── ДИАГОНАЛЬНЫЙ КВАНТ ОСИ СТОИТ ПО ПАРЕ ИГРЫ (M-463) ─────────────────
+    // Клетка есть квадрат земли, диагональ длиннее стороны: квант оси стоит
+    // `kStepStraight` на прямом шаге и `kStepDiagonal` на диагональном
+    // (`src/core/torus.h`). Один и тот же бюджет — два ходока из центра
+    // клетки: прямой проезжает весь бюджет квантами оси, диагональный —
+    // ровно в отношении пары. Ожидание выведено из самих констант.
+    {
+        const std::uint32_t leg =
+            std::uint32_t(2 * sm::ecs::kCellSubEdge);   // одна прямая клетка
+        // Проехано квантов оси: до края и вглубь следующей клетки.
+        const auto ridden = [](const sm::ecs::MacroNpcRuntime& r) {
+            return sm::ecs::kCellSubEdge
+                 + (int(r.sub.x) + sm::ecs::kCellSubEdge);
+        };
+        sm::ecs::MacroNpcRuntime east{};
+        sm::ecs::MacroCell eastAt{sm::cell_of(40, 40, 128)};
+        sm::try_move(eastAt, east, sm::cell_of(60, 40, 128), leg, ground);
+        CHECK(eastAt.idx == sm::cell_of(41, 40, 128)
+                  && ridden(east) == int(leg),
+              "ПРЯМОЙ ШАГ: бюджет клетки проезжает клетку — квант оси стоит "
+              "как прямой");
+
+        sm::ecs::MacroNpcRuntime diag{};
+        sm::ecs::MacroCell diagAt{sm::cell_of(40, 40, 128)};
+        sm::try_move(diagAt, diag, sm::cell_of(60, 60, 128), leg, ground);
+        CHECK(diagAt.idx == sm::cell_of(41, 41, 128)
+                  && diag.sub.x == diag.sub.y,
+              "ДИАГОНАЛЬ: оси едут вместе — сквад в диагональном соседе");
+        CHECK(ridden(diag)
+                  == int(leg) * sm::kStepStraight / sm::kStepDiagonal,
+              "ДИАГОНАЛЬНЫЙ КВАНТ ОСИ СТОИТ ПО ПАРЕ: тем же бюджетом проехано "
+              "в отношении прямого шага к диагональному");
+    }
+
+    // ── ДОЕЗД В ЦЕНТР ПЛАТИТ ТОЙ ЖЕ ПАРОЙ (M-463) ────────────────────────
+    // Пока обе оси не в центре, они едут вместе по цене диагонального
+    // кванта; когда меньшая доехала, большая едет одна по цене прямого.
+    {
+        sm::ecs::CellSub s{-90, -30};
+        sm::ecs::cell_sub_walk_home(s, 30u);
+        const int together = 30 * sm::kStepStraight / sm::kStepDiagonal;
+        CHECK(int(s.x) == -90 + together && int(s.y) == -30 + together,
+              "ДОЕЗД, ОБЕ ОСИ: едут вместе, квант оси стоит как диагональный");
+
+        sm::ecs::CellSub full{-90, -30};
+        const std::uint32_t need = std::uint32_t(
+            (30 * sm::kStepDiagonal + 60 * sm::kStepStraight
+             + sm::kStepStraight - 1) / sm::kStepStraight);
+        sm::ecs::cell_sub_walk_home(full, need);
+        CHECK(full.x == 0 && full.y == 0,
+              "ДОЕЗД ЦЕЛИКОМ: путь до центра — диагональная часть и прямая, "
+              "той же парой");
+        sm::ecs::CellSub shy{-90, -30};
+        sm::ecs::cell_sub_walk_home(shy, need - 2u);
+        CHECK(shy.y == 0 && shy.x < 0,
+              "…и на квант-другой меньше до центра не хватает: доезд не "
+              "дешевле пути");
+    }
+
+    // ── ЖАДНЫЙ ШАГ НЕ ИДЁТ ЛЕСЕНКОЙ (M-463) ──────────────────────────────
+    // Шаги разной длины сравниваются по цене НА ЕДИНИЦУ ПРИБЛИЖЕНИЯ: по
+    // голой цене ребра ходок предпочёл бы короткие прямые шаги длинной
+    // диагонали и шёл бы к диагональной цели лесенкой — вдвое дольше. Летун
+    // (походка ему не положена, идёт жадным шагом): бюджета ровно на пять
+    // диагональных клеток от центра до центра.
+    {
+        sm::ecs::MacroNpcRuntime bird{};
+        bird.flying = 1;
+        sm::ecs::MacroCell birdAt{sm::cell_of(40, 40, 128)};
+        const std::uint32_t five = std::uint32_t(
+            5 * 2 * sm::ecs::kCellSubEdge * sm::kStepDiagonal
+            / sm::kStepStraight);
+        sm::try_move(birdAt, bird, sm::cell_of(45, 45, 128), five, ground);
+        CHECK(birdAt.idx == sm::cell_of(45, 45, 128),
+              "ЛЕТУН ДОЛЕТЕЛ ПО ДИАГОНАЛИ: пять диагональных клеток бюджетом "
+              "пяти диагональных клеток — не лесенкой");
+    }
+
     return sm::test::report("flag_march_test");
 }

@@ -217,6 +217,13 @@ inline int torus_cheb_cells(int ax, int ay, int bx, int by, int side) {
 // Корня и приближения в коде при этом нет — только эти два целых.
 inline constexpr int kStepStraight = 2;
 inline constexpr int kStepDiagonal = 3;
+// Та же пара ОТНОШЕНИЕМ — длина диагонального шага в прямых. Нужна там, где
+// цену шага умножают на вес-флоат (запекание навигации, A*, оптика, жадный
+// шаг): вес остаётся их величиной, длина шага — этой. Второго числа
+// диагонали (√2, единицы) у планировщика быть не может: маршрут выбирается
+// той же ценой, какой его оплатят ноги (M-463).
+inline constexpr float kDiagonalStepLen =
+    float(kStepDiagonal) / float(kStepStraight);
 static_assert(kStepStraight < kStepDiagonal
                   && kStepDiagonal <= 2 * kStepStraight,
               "цена шага обязана быть метрикой: диагональ дороже прямого, но "

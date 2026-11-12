@@ -23,21 +23,27 @@ namespace sm
 
         constexpr int DX[8] = {0, 1, 1, 1, 0, -1, -1, -1};
         constexpr int DY[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
-        constexpr float STEP_COST[8] = {1.0f, 1.4142136f, 1.0f, 1.4142136f,
-                                        1.0f, 1.4142136f, 1.0f, 1.4142136f};
+        // Длина шага — пара игры отношением (`kDiagonalStepLen@src/core/
+        // torus.h`, M-463): маршрут выбирается той же ценой диагонали, какой
+        // его оплатят ноги. Здесь стоял √2.
+        constexpr float STEP_COST[8] = {
+            1.0f, kDiagonalStepLen, 1.0f, kDiagonalStepLen,
+            1.0f, kDiagonalStepLen, 1.0f, kDiagonalStepLen};
 
         // (was a private copy of the torus wrap — core/torus.h owns it)
 
         inline float octile_torus(int x1, int y1, int x2, int y2, int w, int h)
         {
-            // Эвристика СВОЯ (октиль), а кратчайший размах по оси — общий
-            // (core/torus.h torus_span). Здесь стояло шестое, последнее в
-            // макромире рукописное тело половинного размаха.
-            const int dx = int(torus_span(float(x2), float(x1), float(w)));
-            const int dy = int(torus_span(float(y2), float(y1), float(h)));
+            // Эвристика — путь по ровной решётке той же парой, что у шага:
+            // диагонали по `kDiagonalStepLen`, остальное прямо. Размах по оси
+            // — целой складкой (`torus_fold@src/core/torus.h`); здесь клетки
+            // гонялись через флоат и обратно (M-462).
+            (void)h;   // мир квадратен — складка одна на обе оси
+            const int dx = std::abs(torus_fold(x2 - x1, w));
+            const int dy = std::abs(torus_fold(y2 - y1, w));
             return dx > dy
-                       ? float(dx) + 0.4142136f * float(dy)
-                       : float(dy) + 0.4142136f * float(dx);
+                       ? float(dx) + (kDiagonalStepLen - 1.0f) * float(dy)
+                       : float(dy) + (kDiagonalStepLen - 1.0f) * float(dx);
         }
 
     } // namespace

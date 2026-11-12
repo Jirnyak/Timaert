@@ -279,8 +279,32 @@ void test_torus_wrap_and_fail_closed_door() {
 
 } // namespace
 
+// ── ДИАГОНАЛЬ В ЗРЕНИИ СТОИТ ПО ПАРЕ ИГРЫ (M-463) ───────────────────────
+// Зрение и ход обязаны одинаково понимать, что такое «N клеток»: шаг взгляда
+// по диагонали длиннее прямого в `kDiagonalStepLen@src/core/torus.h` — той
+// же парой, какой платят ноги. Бюджет взят из самой пары: чуть меньше пяти
+// диагональных шагов. При прежней цене √2 пятая диагональ была бы видна.
+void test_sight_prices_a_diagonal_by_the_game_pair() {
+    std::unique_ptr<sm::KnowledgeLayer> kOwn{new sm::KnowledgeLayer()};
+    sm::KnowledgeLayer& k = *kOwn;
+    sm::knowledge_reset(k, W, H);
+    sm::SightRuntime rt;
+    const std::unique_ptr<sm::FeatureLayer> featOwn = open_ground();
+    const sm::FeatureLayer& feat = *featOwn;
+    sm::OpticalWorld world{&feat, nullptr, nullptr};
+    const float budget = 5.0f * sm::kDiagonalStepLen - 0.1f;
+    sm::update_player_sight(k, rt, world, 32.5f, 32.5f, budget);
+    CHECK(at(k, 32 + 7, 32) == sm::kKnowledgeVisible,
+          "семь клеток прямо — внутри бюджета");
+    CHECK(at(k, 32 + 4, 32 + 4) == sm::kKnowledgeVisible,
+          "четыре диагонали стоят шести прямых — внутри");
+    CHECK(at(k, 32 + 5, 32 + 5) == sm::kKnowledgeUnknown,
+          "ПЯТАЯ ДИАГОНАЛЬ — СНАРУЖИ: взгляд платит за диагональ парой игры");
+}
+
 int main() {
     test_open_sight_opens_a_disc_and_only_once();
+    test_sight_prices_a_diagonal_by_the_game_pair();
     test_canopy_shortens_reach();
     test_road_carries_sight_farther();
     test_ridge_blocks_and_hilltop_overlooks();

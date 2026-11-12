@@ -37,6 +37,7 @@
 #include <cstdint>
 #include <memory>
 
+#include "core/torus.h"   // пара цены шага — одна на всю игру (M-463)
 #include "sub/map_data.h"
 
 namespace sm::sub {
@@ -87,11 +88,16 @@ inline constexpr int kCourseRumbFields = 8;
 inline constexpr int kCoursePointFields = 16;
 inline constexpr int kCourseFieldCount = kCourseRumbFields + kCoursePointFields;
 
-// Цена ребра — вес ячейки-входа × длину шага в ПОЛУтайлах ячейки: 2 —
-// кардинал, 3 — диагональ (3/2 = 1.5 ≈ √2, погрешность 6% — целыми,
-// ЗАКОН ТИПА: флоату в содержимом поля делать нечего).
-inline constexpr std::uint32_t kCourseStepCardinal = 2;
-inline constexpr std::uint32_t kCourseStepDiagonal = 3;
+// Цена ребра — вес ячейки-входа × длину шага в ПОЛУшагах: прямой и
+// диагональный — ТА ЖЕ ПАРА ЦЕЛЫХ, что у макромира (`kStepStraight` и
+// `kStepDiagonal` в `core/torus.h`, вердикт владельца 2026-11-12, M-463).
+// Пара родилась здесь раньше закона (3/2 ≈ √2 целыми — ЗАКОН ТИПА: флоату в
+// содержимом поля делать нечего); теперь число одно на всю игру, и здесь
+// стоят его алиасы, а не вторая копия.
+inline constexpr std::uint32_t kCourseStepCardinal =
+    std::uint32_t(kStepStraight);
+inline constexpr std::uint32_t kCourseStepDiagonal =
+    std::uint32_t(kStepDiagonal);
 
 // Кольцо корзин Дейкстры Диала — po2 СТРОГО БОЛЬШЕ максимального ребра
 // (солидная ячейка 320 квантов × диагональ 3 = 960): пока это так, две

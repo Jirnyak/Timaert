@@ -1,6 +1,5 @@
 // Macroworld NPC AI — full behaviour set, faithful port of `npc-ai.ts`.
 #include "macro/npc_ai.h"
-#include <numbers>                 // sqrt2 — евклидова дорога картинки
 #include "core/caps.h"             // kUnifiedCap — резерв скрэтчей порядка
 #include "macro/upkeep_window.h"   // ОДИН суд границы на всякий контейнер
 #include "macro/characters.h"  // стол анкет — ступень лестницы поведения
@@ -548,9 +547,17 @@ float cell_weight(const PathCostData* pc, std::uint32_t cell) {
 // plus the uphill climb half (movement_cost.h: the law's two halves; the
 // squad walks the same slopes the player and both A*s pay for). Обе клетки —
 // индексы: сетка весов лежит над тем же тором, её индекс и есть индекс мира.
+//
+// ВЕС КЛЕТКИ УМНОЖАЕТСЯ НА ДЛИНУ ШАГА (M-463): диагональный сосед дальше в
+// `kDiagonalStepLen@src/core/torus.h` — ровно тем же составом ребро считает
+// запекание навигации (`edge_cost_of` в nav_field.cpp), так что жадный шаг и
+// походка оценивают один шаг одинаково. Летуну вес клетки — единица.
 float edge_weight(const PathCostData* pc, std::uint32_t from,
-                  std::uint32_t to) {
-    float w = cell_weight(pc, to);
+                  std::uint32_t to, int side, bool flying) {
+    const CellDelta d = cell_delta(from, to, side);
+    const float len = (d.dx != 0 && d.dy != 0) ? kDiagonalStepLen : 1.0f;
+    if (flying) return len;
+    float w = cell_weight(pc, to) * len;
     if (pc && pc->live() && pc->height16.size() == pc->costGrid.size()
         && from < pc->costGrid.size() && to < pc->costGrid.size()) {
         w += pc->climb(from, to);
@@ -589,7 +596,7 @@ float edge_weight(const PathCostData* pc, std::uint32_t from,
 // SAME march the player walks (kMacroWalkCellsPerHour per game hour), paced
 // by the avatar's own sheet (moveMult: spd × athletics) and by the ground
 // underfoot (terrain_speed_mult of the CURRENT cell — one sample per think).
-// Base numbers: 3 cells per think on a road, ~1 in open water. ЛЕТУН (v93):
+// Base numbers: 0.75 клетки за думку на ровной земле (8 клеток в час). ЛЕТУН (v93):
 // воздух — его стихия; рельеф не платится (вес — единица), внутри ядра любая
 // клетка держит — ОДИН цикл марша, меняется стихия.
 //
@@ -4948,6 +4955,12 @@ void try_move(ecs::MacroCell& cell, ecs::MacroNpcRuntime& rt,
     // кванты, которым некуда идти, сгорают.
     rt.marchFlags = 0;
 
+    // БЮДЖЕТ — В ЕДИНИЦАХ ПУТИ (M-463): квант оси стоит `kStepStraight` на
+    // прямом шаге и `kStepDiagonal` на диагональном — пара целых, одна на
+    // всю игру (`src/core/torus.h`). Звонящий по-прежнему даёт бюджет квантами
+    // ПРЯМОГО хода (254 на клетку); пара живёт внутри ядра.
+    std::uint32_t budget = quanta * std::uint32_t(kStepStraight);
+
     // ИЗЪЯТИЕ НОГ ПО АРЕНДЕ (ЗАХВАТ, ломоть 2 M-419): в девяти клетках окна
     // позицию ведёт СУБМИР, fold сворачивает её на границе тика — макро-ноги
     // здесь отказывают ЦЕЛИКОМ: ни клетки, ни доли (доля тоже fold'а).
@@ -4956,7 +4969,7 @@ void try_move(ecs::MacroCell& cell, ecs::MacroNpcRuntime& rt,
     // параметр captured свипа, не флаг.
     if (cell_in_lease_frame(g.leaseCenter, cell.idx, g.side)) return;
 
-    while (quanta > 0) {
+    while (budget > 0) {
         std::uint32_t next = ecs::kNoCell;
         if (route != nullptr) {
             // «ШАГ ЗАДАН» (M-412в): маршрут A* игрока исполняется БУКВАЛЬНО
@@ -4988,12 +5001,17 @@ void try_move(ecs::MacroCell& cell, ecs::MacroNpcRuntime& rt,
                 // ЖАДНЫЙ ШАГ — закон дальних маршей вне округ (Session 21,
                 // owner's choice over per-squad A*): среди восьми соседей
                 // берутся те, что СТРОГО БЛИЖЕ к цели по пути
-                // (`cell_dist@src/core/torus.h`), и из них самый дешёвый по
-                // единой сетке весов. Прямой шаг к цели — кандидат
-                // БЕЗУСЛОВНО и выигрывает ничьи: ровный мир идётся по
-                // прямой, берег обходится, потому что вода дорога (суша
-                // 2–5×, вода 10×), а река без дешёвого обхода переходится
-                // вброд по честной цене. O(8) на клетку.
+                // (`cell_dist@src/core/torus.h`), и из них — самый дешёвый
+                // НА ЕДИНИЦУ ПРИБЛИЖЕНИЯ: цена ребра, делённая на то,
+                // насколько шаг сократил путь. Шаги разной длины иначе не
+                // сравнить (M-463): диагональ дороже прямого в полтора раза,
+                // но и приближает на три полушага против одного-двух — по
+                // голой цене ребра ходок предпочёл бы короткие шаги и шёл
+                // лесенкой. Прямой сосед в сторону цели — кандидат
+                // БЕЗУСЛОВНО и выигрывает ничьи: ровный мир идётся по прямой,
+                // берег обходится, потому что вода дорога (суша 2–5×, вода
+                // 10×), а река без дешёвого обхода переходится вброд по
+                // честной цене. O(8) на клетку.
                 //
                 // ШАГ ЕСТЬ ВСЕГДА, И ВЕТКИ «ШАГА НЕТ» ЗДЕСЬ БОЛЬШЕ НЕТ: стены
                 // умерли 2026-10-06 (M-236), и прямой сосед в сторону цели
@@ -5001,24 +5019,28 @@ void try_move(ecs::MacroCell& cell, ecs::MacroNpcRuntime& rt,
                 // Стоявшая здесь ветка с флагом «ноги отказали» была
                 // недостижима пять недель; в индексной форме она невыразима,
                 // и флаг ушёл вместе с ней (ряд M-458).
-                const auto walker_w = [&](std::uint32_t to) {
-                    if (flying) return 1.0f;   // воздух — дорога летуна
-                    return edge_weight(g.pathCost, cell.idx, to);
-                };
-                next = cell_toward(cell.idx, goal, g.side);
-                float bw = walker_w(next);
-                const std::uint32_t straight = next;
                 const int dHere = cell_dist(cell.idx, goal, g.side);
+                next = cell_toward(cell.idx, goal, g.side);
+                const std::uint32_t straight = next;
+                float bw = edge_weight(g.pathCost, cell.idx, next, g.side,
+                                       flying);
+                int bgain = dHere - cell_dist(next, goal, g.side);
                 for (int oy = -1; oy <= 1; ++oy) {
                     for (int ox = -1; ox <= 1; ++ox) {
                         if (ox == 0 && oy == 0) continue;
                         const std::uint32_t n =
                             cell_step(cell.idx, ox, oy, g.side);
                         if (n == straight) continue;
-                        // only steps that progress
-                        if (cell_dist(n, goal, g.side) >= dHere) continue;
-                        const float w = walker_w(n);
-                        if (w < bw) { next = n; bw = w; }
+                        const int gain = dHere - cell_dist(n, goal, g.side);
+                        if (gain <= 0) continue;   // only steps that progress
+                        const float w = edge_weight(g.pathCost, cell.idx, n,
+                                                    g.side, flying);
+                        // w / gain < bw / bgain — без деления.
+                        if (w * float(bgain) < bw * float(gain)) {
+                            next = n;
+                            bw = w;
+                            bgain = gain;
+                        }
                     }
                 }
             }
@@ -5031,35 +5053,50 @@ void try_move(ecs::MacroCell& cell, ecs::MacroNpcRuntime& rt,
         const int dy = (step.dy > 0) - (step.dy < 0);
 
         // ЦЕНА ПЕРЕСЕЧЕНИЯ — доехать долей до края по каждой активной оси;
-        // оси едут ВМЕСТЕ, поэтому диагональ стоит те же 2×127 кванта от
-        // края до края, что и прямой ход, — прежний закон «клетка = 1.0
-        // бюджета в любом румбе», теперь целыми числами.
+        // оси едут ВМЕСТЕ, и квант оси стоит по роду шага: прямой —
+        // `kStepStraight`, диагональный — `kStepDiagonal`. Клетка есть
+        // квадрат земли, её диагональ длиннее стороны — и ноги платят за это
+        // той же парой, какой путь меряет дверь `cell_dist` и какой маршрут
+        // выбирают планировщики (M-463, вердикт владельца 2026-11-12).
+        // (Здесь стояло «диагональ стоит те же 2×127 кванта, что и прямой
+        // ход»: по диагонали сквад шёл на 41 % быстрее, чем то же тело идёт
+        // по той же земле в субмире.)
         const int costX =
             dx != 0 ? ecs::kCellSubEdge - dx * int(rt.sub.x) : 0;
         const int costY =
             dy != 0 ? ecs::kCellSubEdge - dy * int(rt.sub.y) : 0;
-        const std::uint32_t cost = std::uint32_t(costX > costY ? costX : costY);
+        const std::uint32_t rate = std::uint32_t(
+            (dx != 0 && dy != 0) ? kStepDiagonal : kStepStraight);
+        const std::uint32_t cost =
+            std::uint32_t(costX > costY ? costX : costY) * rate;
 
-        // Кванты уходят ДВЕРЬЮ drain (ЗАКОН ТРЁХ ДВЕРЕЙ): взять сколько
+        // Единицы уходят ДВЕРЬЮ drain (ЗАКОН ТРЁХ ДВЕРЕЙ): взять сколько
         // есть, факт честен — хватило на край или нет, решает возврат.
-        const std::uint32_t spent = drain(quanta, cost);
-        rt.marchFlags |= ecs::kMarchAdvanced;
+        const std::uint32_t spent = drain(budget, cost);
         if (spent < cost) {
-            // Края не достигли: доля едет ВНУТРИ текущей клетки (ось у
-            // своего края стоит клампом), позиция мира не меняется —
-            // «сквад локально хранит свою промежуточную позицию».
-            if (dx != 0) {
-                const int nx = int(rt.sub.x) + dx * int(spent);
-                rt.sub.x = std::int8_t(std::clamp(
-                    nx, -ecs::kCellSubEdge, ecs::kCellSubEdge));
-            }
-            if (dy != 0) {
-                const int ny = int(rt.sub.y) + dy * int(spent);
-                rt.sub.y = std::int8_t(std::clamp(
-                    ny, -ecs::kCellSubEdge, ecs::kCellSubEdge));
+            // Края не достигли: доля едет ВНУТРИ текущей клетки на целые
+            // кванты оси (остаток меньше кванта сгорает; ось у своего края
+            // стоит клампом), позиция мира не меняется — «сквад локально
+            // хранит свою промежуточную позицию». ФЛАГ ХОДА — только если
+            // проехан хотя бы квант: думка без движения маршем не является
+            // (M-465).
+            const int ride = int(spent / rate);
+            if (ride > 0) {
+                rt.marchFlags |= ecs::kMarchAdvanced;
+                if (dx != 0) {
+                    const int nx = int(rt.sub.x) + dx * ride;
+                    rt.sub.x = std::int8_t(std::clamp(
+                        nx, -ecs::kCellSubEdge, ecs::kCellSubEdge));
+                }
+                if (dy != 0) {
+                    const int ny = int(rt.sub.y) + dy * ride;
+                    rt.sub.y = std::int8_t(std::clamp(
+                        ny, -ecs::kCellSubEdge, ecs::kCellSubEdge));
+                }
             }
             break;
         }
+        rt.marchFlags |= ecs::kMarchAdvanced;
 
         // ПЕРЕСЕЧЕНИЕ КРАЯ — ОДИН ФАКТ, ОДНА ЗАПИСЬ: клетка меняется,
         // активные оси входят с противоположного края, пассивная ось долю
@@ -5097,8 +5134,9 @@ void try_move(ecs::MacroCell& cell, ecs::MacroNpcRuntime& rt,
     const bool goalDone = route != nullptr
         ? route->idx >= route->count
         : cell.idx == goal;
-    if (goalDone && quanta > 0u) {
-        (void)ecs::cell_sub_walk_home(rt.sub, quanta);
+    if (goalDone && budget > 0u) {
+        ecs::cell_sub_walk_home(rt.sub,
+                                budget / std::uint32_t(kStepStraight));
     }
 }
 

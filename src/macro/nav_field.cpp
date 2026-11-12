@@ -43,8 +43,11 @@ inline float cell_weight_of(const PathCostData* pc, std::size_t idx) {
 
 inline float edge_cost_of(const PathCostData* pc, std::size_t from,
                           std::size_t to, int d) {
+    // Длина шага — пара игры отношением (`kDiagonalStepLen@src/core/torus.h`):
+    // здесь стоял √2, а ноги платили за диагональ как за прямой шаг — план и
+    // ход расходились на 41 % (M-463).
     const float stepLen =
-        (kNavDX[d] != 0 && kNavDY[d] != 0) ? 1.4142136f : 1.0f;
+        (kNavDX[d] != 0 && kNavDY[d] != 0) ? kDiagonalStepLen : 1.0f;
     float w = cell_weight_of(pc, to) * stepLen;
     if (pc && pc->height16.size() == pc->costGrid.size()) w += pc->climb(from, to);
     return w;

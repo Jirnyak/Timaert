@@ -134,24 +134,36 @@ inline constexpr std::uint8_t kFightThinks = 2u;
 // оставляет тело НА КРАЮ новой клетки, поэтому всякое ПРИБЫТИЕ (цель этой
 // клеткой достигнута, маршрут исчерпан, тело встало) доводит долю к центру
 // ТЕМ ЖЕ квантовым ходом — иначе финиш вечно паркует на углу четырёх клеток
-// (стенд владельца, Б5). Оси едут вместе; МАРШЕМ это не является: флагов не
-// ставит, жжения не несёт — тело уже стоит В СВОЕЙ клетке и «устраивается».
-// Возврат — потраченные кванты (картинке).
-inline constexpr std::uint32_t cell_sub_walk_home(CellSub& sub,
-                                                  std::uint32_t quanta) {
-    const std::uint32_t ax = std::uint32_t(sub.x < 0 ? -sub.x : sub.x);
-    const std::uint32_t ay = std::uint32_t(sub.y < 0 ? -sub.y : sub.y);
-    const std::uint32_t cost = ax > ay ? ax : ay;
-    const std::uint32_t spent = quanta < cost ? quanta : cost;
-    if (spent == 0u) return 0u;
-    const int step = int(spent);
-    sub.x = std::int8_t(sub.x > 0 ? (int(sub.x) > step ? int(sub.x) - step : 0)
-                                  : (-int(sub.x) > step ? int(sub.x) + step
-                                                        : 0));
-    sub.y = std::int8_t(sub.y > 0 ? (int(sub.y) > step ? int(sub.y) - step : 0)
-                                  : (-int(sub.y) > step ? int(sub.y) + step
-                                                        : 0));
-    return spent;
+// (стенд владельца, Б5). МАРШЕМ это не является: флагов не ставит, жжения не
+// несёт — тело уже стоит В СВОЕЙ клетке и «устраивается».
+//
+// ЦЕНА — ТОЙ ЖЕ ПАРОЙ, ЧТО У ШАГА (M-463, `kStepStraight` / `kStepDiagonal`):
+// пока обе оси не в центре, они едут вместе, и квант оси стоит как
+// диагональный; когда меньшая ось доехала, большая едет одна, по цене
+// прямого. `quanta` — бюджет в квантах прямого хода, как у ядра марша.
+// (Возврата «сколько потрачено — картинке» больше нет: его не читал никто.)
+inline constexpr void cell_sub_walk_home(CellSub& sub, std::uint32_t quanta) {
+    const int ax = sub.x < 0 ? -sub.x : sub.x;
+    const int ay = sub.y < 0 ? -sub.y : sub.y;
+    const int lo = ax < ay ? ax : ay;
+    const int hi = ax < ay ? ay : ax;
+    std::uint32_t units = quanta * std::uint32_t(kStepStraight);
+    int both = int(units / std::uint32_t(kStepDiagonal));
+    if (both > lo) both = lo;
+    // Вычитание — дверью (ЗАКОН ТРЁХ ДВЕРЕЙ): `both` взят из тех же единиц,
+    // ниже нуля остатку быть нечему, и закон места — насыщение.
+    units = sub_sat(units,
+                    std::uint32_t(both) * std::uint32_t(kStepDiagonal));
+    int alone = 0;
+    if (both == lo) {
+        alone = int(units / std::uint32_t(kStepStraight));
+        if (alone > hi - lo) alone = hi - lo;
+    }
+    // Меньшая ось проехала `both`, большая — `both + alone`; обе — к нулю.
+    const int rideX = ax < ay ? both : both + alone;
+    const int rideY = ax < ay ? both + alone : both;
+    sub.x = std::int8_t(sub.x > 0 ? int(sub.x) - rideX : int(sub.x) + rideX);
+    sub.y = std::int8_t(sub.y > 0 ? int(sub.y) - rideY : int(sub.y) + rideY);
 }
 
 // NPC link to type registry (NPCType enum value).
