@@ -211,8 +211,6 @@ SKELETON.md	items.h:194
 SKELETON.md	items.h:217
 SKELETON.md	items.h:285
 SKELETON.md	items.h:301-449
-SKELETON.md	knowledge.cpp:22
-SKELETON.md	knowledge.cpp:36
 SKELETON.md	knowledge.h:45
 SKELETON.md	lighting.h:56-67
 SKELETON.md	logic_nodes.cpp:52
