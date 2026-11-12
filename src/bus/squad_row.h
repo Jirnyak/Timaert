@@ -95,7 +95,10 @@ inline constexpr CellSub cell_sub_after_step(int dx, int dy,
 
 // Флаги марша одной думки (MacroNpcRuntime::marchFlags, вердикт 2026-11-02):
 inline constexpr std::uint8_t kMarchAdvanced = 1u;  // кванты проехали
-inline constexpr std::uint8_t kMarchRefused = 2u;   // шага к цели нет
+// (Бит 2 нёс `kMarchRefused` — «шага к цели нет». Флаг снят рядом M-458
+//  вместе с последним читателем: писатель был недостижим с 2026-10-06, а в
+//  индексной форме ядра марша (M-462) ветка «шага нет» невыразима. Значение
+//  бита не переиспользовано — исход марша ниже остаётся четвёркой.)
 // ИСХОД МАРША — ЧЕМ НОГИ КОНЧИЛИ ПРОШЛУЮ ДУМКУ (M-2). Пишет дверь прибытия
 // ниже (`goal_arrive`), зовёт её ОДИН звонящий — ноги свипа
 // (`march_goal@src/macro/npc_ai.cpp`), читает модуль следующей думкой
@@ -107,7 +110,7 @@ inline constexpr std::uint8_t kMarchRefused = 2u;   // шага к цели не
 // предмета: стены умерли 2026-10-06 (M-236), и с того дня жадный шаг ядра
 // ВСЕГДА находит клетку — прямой шаг к цели есть кандидат безусловно, вода
 // лишь дорога. Предикат «рейс застрял», который спрашивали артель и корован,
-// читал флаг `kMarchRefused`, а его писатель недостижим: ветки «бросить
+// читал флаг «ноги отказали», а его писатель был недостижим: ветки «бросить
 // рейс домой» не исполнялись ни разу за пять недель. Они снесены, а не
 // перевезены в новую дверь — дверь без звонящего была бы тем же спящим
 // законом под новым именем.
@@ -343,7 +346,7 @@ struct MacroNpcRuntime {
     std::uint8_t  travelRank = 0;
     std::uint8_t  marathonRank = 0;
     // Phase 6: the scouting rank widens how far this squad SEES (npc_ai
-    // squad_sight_cells) — cached beside its two SP siblings because the
+    // squad_sight_way) — cached beside its two SP siblings because the
     // sight query runs per think, where a sheet re-derivation has no
     // business. Same one refresh door, so it cannot drift either.
     std::uint8_t  scoutRank = 0;

@@ -55,12 +55,12 @@ std::unique_ptr<GameState> make_world(int relation) {
 
 sm::MacroHandle make_squad_at(sm::MacroStore& st, NPCType type,
                               const char* faction,
-                              int level, float x, float y,
+                              int level, int x, int y,
                               std::uint32_t ordinal,
                               std::initializer_list<std::uint32_t> memberIds,
                               NPCType memberKind, int memberLevel) {
     sm::MacroHandle h = sm::store_birth(st);
-    st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(int(x), int(y), kMap)};
+    st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(x, y, kMap)};
     st.runtime[h.slot].sub = {};   // доля клетки: фикстура рождает в центре (M-244a)
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(type),
                                    std::uint16_t(faction_index(faction))};
@@ -96,13 +96,11 @@ int container_count(sm::MacroStore& st, GameState& gs, std::uint32_t ordinal) {
                             MacroStockKey{std::int32_t(ordinal), 0, 0});
 }
 
-float dist(sm::MacroStore& st, sm::MacroHandle a, sm::MacroHandle b) {
-    const auto& ca = (*sm::body_state<ecs::MacroCell>(st, a));
-    const auto& cb = (*sm::body_state<ecs::MacroCell>(st, b));
-    return std::sqrt(torus_dist_sq(
-        float(ecs::cell_x(ca, kMap)), float(ecs::cell_y(ca, kMap)),
-        float(ecs::cell_x(cb, kMap)), float(ecs::cell_y(cb, kMap)),
-        float(kMap), float(kMap)));
+// Путь между двумя сквадами — дверью мира над индексами (полушаги): свидетель
+// судит ОТНОШЕНИЯ («стало дальше», «стало ближе»), единица ему не важна.
+int dist(sm::MacroStore& st, sm::MacroHandle a, sm::MacroHandle b) {
+    return sm::cell_dist((*sm::body_state<ecs::MacroCell>(st, a)).idx,
+                         (*sm::body_state<ecs::MacroCell>(st, b)).idx, kMap);
 }
 
 // `ses` — сессия фикстуры (кэш носителя флажка и аренда окна живут в ней);
@@ -123,10 +121,10 @@ void test_hostiles_on_one_cell_fight_and_the_ledger_pays() {
     sm::MacroStore& st = *wStore_;
     // A strong bandit warband and a weak caravan, standing on the same cell.
     const auto bandit = make_squad_at(st, NPCType::Bandit, "bandits", 5,
-                                      10.0f, 10.0f, 1u, {11u, 12u, 13u, 14u},
+                                      10, 10, 1u, {11u, 12u, 13u, 14u},
                                       NPCType::Bandit, 4);
     const auto caravan = make_squad_at(st, NPCType::Merchant, "timaert", 1,
-                                       10.0f, 10.0f, 2u, {21u},
+                                       10, 10, 2u, {21u},
                                        NPCType::Peasant, 1);
     (*sm::body_state<ecs::NpcInventory>(st, caravan)).inv.add("wood", 5);
 
@@ -158,6 +156,37 @@ void test_hostiles_on_one_cell_fight_and_the_ledger_pays() {
     }
 }
 
+// ЗРЕНИЕ — РАДИУС В КЛЕТКАХ ПУТИ (M-462): сильный враг ДАЛЬШЕ зрения не
+// пугает. Обратная полярность — тест ниже (в четырёх клетках слабый бежит);
+// без этой половины «бежит» было бы верно и для сквада, видящего весь мир
+// (мутация «зрение без предела» до этого свидетеля молчала во всех
+// приборах). Десять клеток — дальше зрения, но внутри соседней корзины
+// сетки близости: кандидат найден и отвергнут именно радиусом.
+void test_a_foe_beyond_sight_is_not_seen() {
+    std::unique_ptr<GameState> gsOwn = make_world(-80);
+    GameState& gs = *gsOwn;
+    auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
+    const auto bandit = make_squad_at(st, NPCType::Bandit, "bandits", 6,
+                                      10, 10, 1u, {11u, 12u, 13u, 14u},
+                                      NPCType::Bandit, 5);
+    const auto caravan = make_squad_at(st, NPCType::Merchant, "timaert", 1,
+                                       20, 10, 2u, {},
+                                       NPCType::Peasant, 1);
+    {
+        (*sm::body_state<ecs::Pools>(st, bandit)).sp = 0;
+        (*sm::body_state<ecs::MacroNpcRuntime>(st, bandit)).state =
+            std::uint8_t(NPCState::Resting);
+    }
+    MacroNpcAiRuntime rt{};
+    reset_macro_npc_ai_runtime(rt, 43u);
+    drive(gs, nullptr, st, rt, 3);
+    CHECK((*sm::body_state<ecs::MacroNpcRuntime>(st, caravan)).state
+              != std::uint8_t(NPCState::Fleeing),
+          "ДАЛЬШЕ ЗРЕНИЯ — НЕ ВИДИТ: слабый в десяти клетках от сильного "
+          "не бежит");
+}
+
 // The weak run from strength they can see; fighters close in on prey.
 void test_the_weak_flee_and_fighters_pursue() {
     std::unique_ptr<GameState> gsOwn = make_world(-80);
@@ -165,10 +194,10 @@ void test_the_weak_flee_and_fighters_pursue() {
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
     const auto bandit = make_squad_at(st, NPCType::Bandit, "bandits", 6,
-                                      10.0f, 10.0f, 1u, {11u, 12u, 13u, 14u},
+                                      10, 10, 1u, {11u, 12u, 13u, 14u},
                                       NPCType::Bandit, 5);
     const auto caravan = make_squad_at(st, NPCType::Merchant, "timaert", 1,
-                                       14.0f, 10.0f, 2u, {},
+                                       14, 10, 2u, {},
                                        NPCType::Peasant, 1);
     // Freeze the bandits: resting with empty stamina, so the caravan's
     // flight is measured against a fixed threat.
@@ -179,7 +208,7 @@ void test_the_weak_flee_and_fighters_pursue() {
     }
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 43u);
-    const float before = dist(st, bandit, caravan);
+    const int before = dist(st, bandit, caravan);
     // Enough thinks for one whole CELL of flight at the derived budget
     // (kMacroWalkCellsPerHour × kAiTickGameHours per think — the pace is the
     // owner's data, the test never pins a literal): flee-the-state shows on
@@ -200,10 +229,10 @@ void test_the_weak_flee_and_fighters_pursue() {
     auto w2Store_ = sm::make_macro_store();
     sm::MacroStore& st2 = *w2Store_;
     const auto hunter = make_squad_at(st2, NPCType::Bandit, "bandits", 6,
-                                      10.0f, 10.0f, 1u, {11u, 12u, 13u, 14u},
+                                      10, 10, 1u, {11u, 12u, 13u, 14u},
                                       NPCType::Bandit, 5);
     const auto prey = make_squad_at(st2, NPCType::Merchant, "timaert", 1,
-                                    15.0f, 10.0f, 2u, {},
+                                    15, 10, 2u, {},
                                     NPCType::Peasant, 1);
     {
         (*sm::body_state<ecs::Pools>(st2, prey)).sp = 0;
@@ -212,7 +241,7 @@ void test_the_weak_flee_and_fighters_pursue() {
     }
     MacroNpcAiRuntime rt2{};
     reset_macro_npc_ai_runtime(rt2, 44u);
-    const float before2 = dist(st2, hunter, prey);
+    const int before2 = dist(st2, hunter, prey);
     // Same derived budget: enough thinks for one cell of pursuit — far too
     // few to close the whole gap and RESOLVE the battle, which is a
     // different law's test.
@@ -238,10 +267,10 @@ void test_a_reflex_that_stops_a_squad_drops_its_address() {
         auto wStore_ = sm::make_macro_store();
         sm::MacroStore& st = *wStore_;
         const auto bandit = make_squad_at(st, NPCType::Bandit, "bandits", 5,
-                                          10.0f, 10.0f, 1u,
+                                          10, 10, 1u,
                                           {11u, 12u, 13u, 14u},
                                           NPCType::Bandit, 4);
-        make_squad_at(st, NPCType::Merchant, "timaert", 1, 10.0f, 10.0f, 2u,
+        make_squad_at(st, NPCType::Merchant, "timaert", 1, 10, 10, 2u,
                       {21u}, NPCType::Peasant, 1);
         // Банда шла по своим делам — далеко на восток.
         ecs::goal_set(st.goal[bandit.slot], ecs::cell_index(40, 10, kMap),
@@ -269,11 +298,11 @@ void test_a_reflex_that_stops_a_squad_drops_its_address() {
         auto wStore_ = sm::make_macro_store();
         sm::MacroStore& st = *wStore_;
         const auto bandit = make_squad_at(st, NPCType::Bandit, "bandits", 6,
-                                          10.0f, 10.0f, 1u,
+                                          10, 10, 1u,
                                           {11u, 12u, 13u, 14u},
                                           NPCType::Bandit, 5);
         const auto caravan = make_squad_at(st, NPCType::Merchant, "timaert",
-                                           1, 14.0f, 10.0f, 2u, {},
+                                           1, 14, 10, 2u, {},
                                            NPCType::Peasant, 1);
         (*sm::body_state<ecs::Pools>(st, bandit)).sp = 0;
         (*sm::body_state<ecs::MacroNpcRuntime>(st, bandit)).state =
@@ -308,10 +337,10 @@ void test_neutral_squads_ignore_each_other() {
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
     const auto a = make_squad_at(st, NPCType::Bandit, "bandits", 5,
-                                 10.0f, 10.0f, 1u, {11u, 12u},
+                                 10, 10, 1u, {11u, 12u},
                                  NPCType::Bandit, 4);
     const auto b = make_squad_at(st, NPCType::Merchant, "timaert", 1,
-                                 10.0f, 10.0f, 2u, {21u},
+                                 10, 10, 2u, {21u},
                                  NPCType::Peasant, 1);
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 45u);
@@ -344,10 +373,10 @@ void test_a_meeting_in_the_leased_window_is_not_resolved_upstairs() {
         auto wStore_ = sm::make_macro_store();
         sm::MacroStore& st = *wStore_;
         const auto a = make_squad_at(st, NPCType::Bandit, "bandits", 5,
-                                     10.0f, 10.0f, 1u, {11u, 12u},
+                                     10, 10, 1u, {11u, 12u},
                                      NPCType::Bandit, 4);
         const auto b = make_squad_at(st, NPCType::Merchant, "timaert", 1,
-                                     10.0f, 10.0f, 2u, {21u},
+                                     10, 10, 2u, {21u},
                                      NPCType::Peasant, 1);
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, 46u);
@@ -379,10 +408,10 @@ void test_a_meeting_in_the_leased_window_is_not_resolved_upstairs() {
         auto wStore_ = sm::make_macro_store();
         sm::MacroStore& st = *wStore_;
         const auto a = make_squad_at(st, NPCType::Bandit, "bandits", 5,
-                                     10.0f, 10.0f, 1u, {11u, 12u},
+                                     10, 10, 1u, {11u, 12u},
                                      NPCType::Bandit, 4);
         const auto b = make_squad_at(st, NPCType::Merchant, "timaert", 1,
-                                     10.0f, 10.0f, 2u, {21u},
+                                     10, 10, 2u, {21u},
                                      NPCType::Peasant, 1);
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, 46u);
@@ -409,7 +438,7 @@ void test_a_victorious_avatar_levels() {
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
     const auto tsar = make_squad_at(st, NPCType::Peasant, "timaert", 1,
-                                    10.0f, 10.0f, 1u, {}, NPCType::Peasant, 1);
+                                    10, 10, 1u, {}, NPCType::Peasant, 1);
     auto& hp = (*sm::body_state<ecs::Pools>(st, tsar));
     const int maxHp0 = hp.maxHp;
     hp.hp = hp.maxHp / 2;   // walks in wounded
@@ -452,7 +481,7 @@ void test_a_level_does_not_strip_what_is_worn() {
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
     const auto mule = make_squad_at(st, NPCType::Peasant, "timaert", 1,
-                                    10.0f, 10.0f, 1u, {}, NPCType::Peasant, 1);
+                                    10, 10, 1u, {}, NPCType::Peasant, 1);
 
     // Ячейки тела — от строки сквада, как их ставит рождение (`gear_init`);
     // фикстура выше строит запись руками и до них не доходит.
@@ -531,7 +560,7 @@ void test_wearing_alone_refreshes_the_derived_columns() {
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
     const auto mule = make_squad_at(st, NPCType::Peasant, "timaert", 1,
-                                    10.0f, 10.0f, 1u, {}, NPCType::Peasant, 1);
+                                    10, 10, 1u, {}, NPCType::Peasant, 1);
     sm::Gear& gear = st.gear[mule.slot].gear;
     sm::gear_init(gear, sm::npc_def(NPCType::Peasant).slots);
     sm::Inventory& bag = st.inventory[mule.slot].inv;
@@ -605,7 +634,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     // сравнение ниже уводит одну из сторон в другой знак.
     const std::uint32_t exp0 = sm::player_sheet(ses, *wStore_)->levelData.exp;
     const auto enemy = make_squad_at(st, NPCType::Bandit, "bandits", 3,
-                                     10.0f, 10.0f, 9u, {31u, 32u},
+                                     10, 10, 9u, {31u, 32u},
                                      NPCType::Bandit, 2);
     (*sm::body_state<ecs::NpcInventory>(st, enemy)).inv.add("wood", 4);
 
@@ -656,7 +685,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     player_pools(ses2, *w2Store_)->maxHp = 100;
     player_pools(ses2, *w2Store_)->hp = 100;
     const auto victor = make_squad_at(st2, NPCType::Bandit, "bandits", 6,
-                                      10.0f, 10.0f, 9u, {41u},
+                                      10, 10, 9u, {41u},
                                       NPCType::Bandit, 5);
     AutoBattleOutcome loss{};
     loss.winner = 1;
@@ -846,17 +875,17 @@ void test_the_avatars_training_reads_at_the_new_doors() {
         // сороковой уровень против первого, и оба тянут одно и то же.
         const int kRichLevel = 40, kPoorLevel = 1;
         const sm::MacroHandle rich = make_squad_at(
-            st, NPCType::Peasant, "timaert", kRichLevel, 10.0f, 10.0f, 1u,
+            st, NPCType::Peasant, "timaert", kRichLevel, 10, 10, 1u,
             {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u}, NPCType::Peasant, 1);
         // РОСТЕР ОБОИХ — ОДИН РОД: иначе менялись бы ДВЕ величины сразу (лист
         // ведущего и рацион состава), и равенство ниже ничего бы не доказало.
         const sm::MacroHandle poor = make_squad_at(
-            st, NPCType::Guard, "timaert", kPoorLevel, 20.0f, 20.0f, 999u,
+            st, NPCType::Guard, "timaert", kPoorLevel, 20, 20, 999u,
             {11u, 12u, 13u, 14u, 15u, 16u, 17u, 18u}, NPCType::Peasant, 1);
         // ЗВЕРЬ В КОНТЕЙНЕРЕ — ТРЕТИЙ ЛАГЕРЬ: его строка несёт kNpcUpkeepNone,
         // то есть жалованья он не берёт, а рацион по своей строке — берёт.
         const sm::MacroHandle beasts = make_squad_at(
-            st, NPCType::Peasant, "timaert", 1, 30.0f, 30.0f, 777u,
+            st, NPCType::Peasant, "timaert", 1, 30, 30, 777u,
             {21u, 22u, 23u, 24u, 25u, 26u, 27u, 28u}, NPCType::Wolf, 1);
         // НЕГАТИВНЫЙ КОНТРОЛЬ САМОГО СРАВНЕНИЯ: два листа обязаны РЕАЛЬНО
         // расходиться, иначе ниже сравниваются два одинаковых счёта и закон
@@ -996,6 +1025,7 @@ int main() {
     test_hostiles_on_one_cell_fight_and_the_ledger_pays();
     test_a_victory_does_not_erase_a_table_born_sheet();
     test_the_avatars_training_reads_at_the_new_doors();
+    test_a_foe_beyond_sight_is_not_seen();
     test_the_weak_flee_and_fighters_pursue();
     test_a_reflex_that_stops_a_squad_drops_its_address();
     test_neutral_squads_ignore_each_other();

@@ -31,8 +31,6 @@ src/app/smoke.cpp	mod	const int ocy = ((ccy + 5) % H + H) % H;
 src/macro/cell_facts.cpp	index	std::size_t(f.y) * std::size_t(td.width) + std::size_t(f.x);
 src/macro/map_generator.cpp	index	const std::size_t s = (std::size_t(y) * w + x) * 4;
 src/macro/map_generator.cpp	mod	path.push_back({source % w, source / w});
-src/macro/npc_ai.cpp	wrapf	float nx = wrapf(cx + float(rand_int(ctx, range * 2) - range),
-src/macro/npc_ai.cpp	wrapf	float ny = wrapf(cy + float(rand_int(ctx, range * 2) - range),
 src/macro/npc_spawn.cpp	index	terrain.rgba[(std::size_t(y) * mapW + x) * 4u + 0];
 src/macro/optics.h	index	return std::size_t(y) * std::size_t(width) + std::size_t(x);
 src/macro/pathfinding.cpp	index	const std::size_t cidx = std::size_t(cur.y) * W + cur.x;

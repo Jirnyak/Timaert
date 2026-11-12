@@ -6,8 +6,9 @@
 // ни доли. Шаг В аренду — последний шаг думки: вошедший встаёт на ПЕРВОЙ
 // арендованной клетке и захватывается следующим слепком (пролёт насквозь
 // был бы сквадом в окне, которого слепок не воплотил). Отказ — БЕЗ ФЛАГОВ:
-// kMarchRefused значил бы «мир не пускает», а цели захваченных ЖИВУТ (думка
-// идёт — M-313; читатель флага «рейс застрял» снесён M-2 как спящий).
+// «ноги не наши» не есть «мир не пускает», а цели захваченных ЖИВУТ (думка
+// идёт — M-313). Флаг «ноги отказали» снят рядом M-458 вместе с читателем;
+// закон «захваченный не штампуется ходом» держат проверки `marchFlags == 0`.
 // Ритму «тело стоит» говорит параметр captured свипа: реген — фон, жжения
 // нет («жжение только при движении»), доезд доли в центр не бежит — доля
 // писателя fold. Прыжок телепортёра ИЗ аренды отлагается той же формой,
@@ -20,8 +21,9 @@
 //    оба отказа, доля, флаги, оба думка-кейса, ведьма целиком;
 //  - брейк «шаг В аренду» снят → КРАСНЫЙ, 1 из 20: «ВХОД: встал НА первой
 //    арендованной клетке» — думка пролетела окно насквозь;
-//  - входной гейт ставит kMarchRefused → КРАСНЫЙ, 2 из 20: «БЕЗ ФЛАГОВ» и
-//    «kMarchRefused не вставал» — ровно ложь «мир не пускает»;
+//  - входной гейт ставил флаг «ноги отказали» → КРАСНЫЙ, 2 из 20: «БЕЗ
+//    ФЛАГОВ» и «флаг не вставал» (мутация 2026-11-07; флаг снят M-458, её
+//    наследница — «входной гейт ставит флаг хода» — в ряду M-462);
 //  - рамки нет, только центр (гейт равенством с leaseCenter) → КРАСНЫЙ,
 //    6 из 20: «УГОЛ РАМКИ» плюс оба думка-кейса — их центр НА СОСЕДЕ;
 //  - captured не передан ритму (всегда false) → КРАСНЫЙ, 2 из 20: «ПЛАНКА
@@ -104,25 +106,27 @@ void test_legs_refuse_on_a_leased_cell() {
     // Центр аренды: ноги отказывают целиком — клетка, доля, дорога.
     sm::ecs::MacroNpcRuntime rt{};
     rt.sub = {5, -7};
-    sm::MacroPos p{10.0f, 10.0f};
-    const float walked = sm::try_move(p, rt, 20.0f, 10.0f, cells(4), g);
-    CHECK(walked == 0.0f, "ЦЕНТР АРЕНДЫ: дороги нет — ноги не наши");
-    CHECK(p.x == 10.0f && p.y == 10.0f, "ЦЕНТР АРЕНДЫ: клетка не тронута");
+    sm::ecs::MacroCell at{sm::cell_of(10, 10, 128)};
+    const std::uint32_t goal = sm::cell_of(20, 10, 128);
+    sm::try_move(at, rt, goal, cells(4), g);
+    CHECK(at.idx == sm::cell_of(10, 10, 128),
+          "ЦЕНТР АРЕНДЫ: клетка не тронута — ноги не наши");
     CHECK(rt.sub.x == 5 && rt.sub.y == -7,
           "ЦЕНТР АРЕНДЫ: доля не тронута — она писателя fold");
     CHECK(rt.marchFlags == 0,
-          "БЕЗ ФЛАГОВ: kMarchRefused был бы ложью «мир не пускает», "
-          "а цели захваченных живут");
+          "БЕЗ ФЛАГОВ: ни «кванты проехали», ни чего иного — «ноги не "
+          "наши» не есть ход, а цели захваченных живут");
 
     // Угловая клетка РАМКИ, не центр: пин геометрии 3×3 — мутация «только
     // центр» обязана краснеть здесь (урок squad_war_test).
     sm::ecs::MacroNpcRuntime rtc{};
     rtc.sub = {5, -7};
-    sm::MacroPos pc{11.0f, 11.0f};
-    const float walkedC = sm::try_move(pc, rtc, 20.0f, 10.0f, cells(4), g);
+    sm::ecs::MacroCell corner{sm::cell_of(11, 11, 128)};
+    sm::try_move(corner, rtc, goal, cells(4), g);
     CHECK(g.leaseCenter != sm::cell_of(11, 11, 128),
           "фикстура: угловая клетка — РАМКА, не центр");
-    CHECK(walkedC == 0.0f && pc.x == 11.0f && pc.y == 11.0f,
+    CHECK(corner.idx == sm::cell_of(11, 11, 128) && rtc.marchFlags == 0
+              && rtc.sub.x == 5 && rtc.sub.y == -7,
           "УГОЛ РАМКИ: отказ по всем девяти клеткам, не по одной");
 
     // Контроль сентинела: без аренды тот же старт идёт — гейт спит
@@ -130,10 +134,10 @@ void test_legs_refuse_on_a_leased_cell() {
     sm::MarchGround freeG;
     freeG.side = 128;
     sm::ecs::MacroNpcRuntime rtf{};
-    sm::MacroPos pf{10.0f, 10.0f};
-    const float walkedF = sm::try_move(pf, rtf, 20.0f, 10.0f, cells(4), freeG);
-    CHECK(walkedF > 0.0f && pf.x > 10.0f,
-          "КОНТРОЛЬ СЕНТИНЕЛА: аренды нет — марш идёт");
+    sm::ecs::MacroCell freeAt{sm::cell_of(10, 10, 128)};
+    sm::try_move(freeAt, rtf, goal, cells(4), freeG);
+    CHECK(sm::cell_delta(sm::cell_of(10, 10, 128), freeAt.idx, 128).dx > 0,
+          "КОНТРОЛЬ СЕНТИНЕЛА: аренды нет — марш идёт на восток, к цели");
     CHECK((rtf.marchFlags & sm::ecs::kMarchAdvanced) != 0,
           "КОНТРОЛЬ СЕНТИНЕЛА: кванты проехали честно");
 }
@@ -144,12 +148,13 @@ void test_step_into_lease_is_the_last_step() {
     g.side = 128;
     g.leaseCenter = sm::cell_of(10, 10, 128);
     sm::ecs::MacroNpcRuntime rt{};
-    sm::MacroPos p{7.0f, 10.0f};
+    sm::ecs::MacroCell at{sm::cell_of(7, 10, 128)};
     // Цель ЗА окном, бюджета — с запасом на пролёт: без гейта думка прошла
     // бы окно насквозь и захват не состоялся бы.
-    const float walked = sm::try_move(p, rt, 13.0f, 10.0f, cells(8), g);
-    CHECK(walked > 0.0f, "ВХОД: до окна шёл честно");
-    CHECK(p.x == 9.0f && p.y == 10.0f,
+    sm::try_move(at, rt, sm::cell_of(13, 10, 128), cells(8), g);
+    CHECK((rt.marchFlags & sm::ecs::kMarchAdvanced) != 0,
+          "ВХОД: до окна шёл честно");
+    CHECK(at.idx == sm::cell_of(9, 10, 128),
           "ВХОД: встал НА первой арендованной клетке — вошедший "
           "захватывается следующим слепком, пролёта насквозь нет");
 }
@@ -184,8 +189,8 @@ void test_captured_walker_keeps_cell_share_and_goal() {
           "ЗАХВАЧЕН: доля не тронута — ни маршем, ни доездом в центр");
     CHECK(st.goal[h.slot].cell == ecs::cell_index(40, 10, kMap),
           "ЦЕЛЬ ЖИВА: думка идёт, отказ ног не стал «мир не пускает»");
-    CHECK((st.runtime[h.slot].marchFlags & ecs::kMarchRefused) == 0,
-          "ЗАХВАЧЕН: kMarchRefused не вставал");
+    CHECK((st.runtime[h.slot].marchFlags & ecs::kMarchAdvanced) == 0,
+          "ЗАХВАЧЕН: флаг хода не вставал — макро-ноги в окне не шагали");
 
     // Конец аренды — ноги вернулись: тот же мир, та же цель.
     sm::release_window(ses);
@@ -233,6 +238,45 @@ void test_captured_teleporter_neither_jumps_nor_burns() {
           "ПЛАНКА ЦЕЛА: захваченный для ритма ВСТАЛ — жжения нет, реген фон");
 }
 
+// ── КОНТРОЛЬ: СВОБОДНЫЙ ТЕЛЕПОРТЁР ПРЫГАЕТ, И ПРЫГАЕТ ДВЕРЬЮ ПРЫЖКА ─────
+// Обратная полярность проверки выше (тот же род, тот же срок, аренды нет):
+// прыжок случается — иначе «ни прыжка» в аренде было бы верно и при мёртвом
+// ролле. И закон самого прыжка (M-462): модуль прыгает ОБЩЕЙ дверью
+// `squad_jump_to_cell@src/bus/store.h`, поэтому после прыжка румб входа
+// стёрт, а доля стоит в центре клетки. Прежде модуль писал черновик позиции
+// и сам штамповал «румба нет», а центр доле ставил драйвер по догадке.
+// Прыжок опознаётся перемещением: марш за думку не уходит дальше клетки.
+void test_free_teleporter_jumps_by_the_jump_door() {
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
+    gs.mapW = kMap;
+    gs.mapH = kMap;
+    auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
+    const auto h = make_walker(st, NPCType::Witch, SquadType::None,
+                               std::uint8_t(NPCState::Idle), 10, 10);
+    MacroNpcAiRuntime rt{};
+    int jumps = 0, dirtyJumps = 0;
+    for (int i = 0; i < 2000; ++i) {
+        const std::uint32_t before = st.cell[h.slot].idx;
+        drive(gs, nullptr, st, rt, 1);
+        const std::uint32_t after = st.cell[h.slot].idx;
+        // Шаг марша приводит в ту же клетку или в одну из восьми соседних
+        // (диагональный сосед — тоже шаг); всё дальше — прыжок.
+        const sm::CellDelta d = sm::cell_delta(before, after, kMap);
+        if (d.dx >= -1 && d.dx <= 1 && d.dy >= -1 && d.dy <= 1) continue;
+        ++jumps;
+        const auto& r = st.runtime[h.slot];
+        if (r.entryDir != sm::kEntryDirNone || r.sub.x != 0 || r.sub.y != 0)
+            ++dirtyJumps;
+    }
+    CHECK(jumps > 0,
+          "КОНТРОЛЬ: без аренды телепортёр за тот же срок прыгает — гейт "
+          "аренды выше держит именно прыжок, а не мёртвый ролл");
+    CHECK(dirtyJumps == 0,
+          "ПРЫЖОК — ДВЕРЬЮ ПРЫЖКА: румб входа стёрт, доля в центре клетки");
+}
+
 }  // namespace
 
 int main() {
@@ -240,5 +284,6 @@ int main() {
     test_step_into_lease_is_the_last_step();
     test_captured_walker_keeps_cell_share_and_goal();
     test_captured_teleporter_neither_jumps_nor_burns();
+    test_free_teleporter_jumps_by_the_jump_door();
     return sm::test::report("capture_legs_test");
 }

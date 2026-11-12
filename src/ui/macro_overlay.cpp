@@ -13,7 +13,7 @@
 #include "macro/player_entity.h"
 #include "macro/squad_index.h"  // squads_in_frame — кандидаты рамкой (ломоть 6)
 #include "ui/trade_widgets.h"
-#include "macro/npc_ai.h"   // try_move/settle_walk_cell — ОДИН закон марша (M-412)
+#include "macro/npc_ai.h"   // try_move — ОДИН закон марша (M-412)
 #include "ecs/components.h"
 #include "macro/state.h"
 #include "macro/squad.h"   // record_deed — THE deed door (S20.1)
@@ -630,14 +630,11 @@ std::size_t step_macro_walk(GameState& gs, const Session& ses,
     // карте аренды нет по построению (ходок недостижим при активном
     // субмире, подъём её снимает), так что гейт спит ЗНАЧЕНИЕМ, не веткой.
     g.leaseCenter = ses.leasedWindow;
-    MacroPos p{float(ecs::cell_x(*cell, W)), float(ecs::cell_y(*cell, W))};
     const std::size_t idx0 = route.idx;
-    const int cx0 = int(p.x), cy0 = int(p.y);
-    const float walked = try_move(p, *rt, p.x, p.y, quanta, g, &route);
-
-    // Клетка мира — ЕДИНСТВЕННОЙ дверью settle_walk_cell (M-412г), той же,
-    // что у драйвера свипа: марш оставил румб входа — доля цела.
-    settle_walk_cell(*cell, *rt, ecs::cell_index(int(p.x), int(p.y), W));
+    const int cx0 = ecs::cell_x(*cell, W), cy0 = ecs::cell_y(*cell, W);
+    // Ядро идёт прямо по колонке клетки флажка и само её пишет (M-462);
+    // цель при маршруте не читается — её место занимает сентинел.
+    try_move(*cell, *rt, ecs::kNoCell, quanta, g, &route);
 
     // Пройденные вейпоинты: ПЕРЕСЕЧЕНИЕ = вейпоинт не своей клетки
     // (пропуск своей — не прибытие, как и прежде). Писатель визита
@@ -656,13 +653,6 @@ std::size_t step_macro_walk(GameState& gs, const Session& ses,
     // флажка — часы, не фаза думки: его думки — инпуты).
     if (reached > 0) rt->tickAccum = 0;
     cursor.pathIdx = route.idx;
-
-    // СКОРОСТЬ КАРТИНКИ — той же дверью, что у думки НПЦ, и в той же
-    // величине: евклидова ДОРОГА кадра за его время. Гейт walked > 0 —
-    // защита глаза от квантования кадра: нулевой по округлению кадр не
-    // гасит глайд (у думки НПЦ период крупный, ей гейт не нужен).
-    if (walked > 0.0f) {
-    }
 
     if (cursor.pathIdx >= cursor.path.size()) {
         cursor.path.clear();

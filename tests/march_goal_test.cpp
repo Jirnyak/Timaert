@@ -363,6 +363,59 @@ void test_next_to_the_lair_is_not_home() {
           "по округе");
 }
 
+// ── 11. В МИРЕ БЕЗ ИГРОКА НЕТ «КЛЕТКИ ИГРОКА» ───────────────────────────
+// Ядро марша встаёт НА клетке игрока, чтобы многоклеточная думка не
+// перепрыгнула встречу. «Игрока нет» обязано быть значением, а не клеткой:
+// пока клетка флажка ехала парой флоатов с умолчанием (0, 0), мир без игрока
+// останавливал марш всякого сквада на клетке (0,0) — остаток квантов думки
+// сгорал, тело вставало на краю. Сентинел индекса клеткой не является (M-462).
+// У мира этой фикстуры сессии нет вовсе; ходок входит в (0,0) через шов.
+void test_a_world_without_a_player_has_no_player_cell() {
+    World w;
+    const MacroHandle h = w.walker(NPCType::Peasant, SquadType::Spire,
+                                   std::uint8_t(NPCState::Working),
+                                   kMap - 1, 0, 7u);
+    ecs::goal_set(w.st.goal[h.slot], w.at(3, 0), 0, 0,
+                  std::uint8_t(NPCState::Idle));
+    w.think(1);
+    CHECK(w.st.cell[h.slot].idx == w.at(0, 0),
+          "фикстура: первая думка внесла ходока в клетку (0,0) через шов");
+    CHECK(int(w.st.runtime[h.slot].sub.x) > -ecs::kCellSubEdge,
+          "НЕ ВСТАЛ НА КРАЮ: остаток квантов думки проехал вглубь клетки — "
+          "клетки игрока у мира без игрока нет");
+}
+
+// ── 12. ПОВОДОК ДРАКОНА — В КЛЕТКАХ ПУТИ ОТ ЛОГОВА ──────────────────────
+// Кружащий дракон, ушедший за поводок, поворачивает домой; кружащий внутри
+// поводка продолжает круг. Обе полярности: иначе «повернул домой» было бы
+// верно и для модуля, который возвращает всякого (а мутация «поводка нет»
+// до этого свидетеля молчала во всех приборах).
+void test_the_dragon_leash_is_a_path_radius() {
+    World w;
+    const MacroHandle far = w.walker(NPCType::Peasant, SquadType::Dragon,
+                                     std::uint8_t(NPCState::Wandering),
+                                     50, 30, 7u);
+    w.st.runtime[far.slot].lairCell = w.at(30, 30);
+    ecs::goal_set(w.st.goal[far.slot], w.at(55, 30), 0, 0,
+                  std::uint8_t(NPCState::Idle));
+    const MacroHandle near = w.walker(NPCType::Peasant, SquadType::Dragon,
+                                      std::uint8_t(NPCState::Wandering),
+                                      10, 44, 8u);
+    w.st.runtime[near.slot].lairCell = w.at(10, 40);
+    ecs::goal_set(w.st.goal[near.slot], w.at(10, 47), 0, 0,
+                  std::uint8_t(NPCState::Idle));
+    w.think(1);
+    CHECK(w.st.goal[far.slot].cell == w.at(30, 30)
+              && w.st.runtime[far.slot].state
+                     == std::uint8_t(NPCState::Returning),
+          "ЗА ПОВОДКОМ: двадцать клеток от логова — круг брошен, адресом "
+          "названо логово");
+    CHECK(w.st.goal[near.slot].cell == w.at(10, 47)
+              && w.st.runtime[near.slot].state
+                     == std::uint8_t(NPCState::Wandering),
+          "ВНУТРИ ПОВОДКА: четыре клетки от логова — круг продолжается");
+}
+
 } // namespace
 
 int main() {
@@ -376,5 +429,7 @@ int main() {
     test_a_module_decides_and_the_sweep_walks();
     test_the_dragon_lands_in_its_lair_cell();
     test_next_to_the_lair_is_not_home();
+    test_a_world_without_a_player_has_no_player_cell();
+    test_the_dragon_leash_is_a_path_radius();
     return sm::test::report("march_goal_test");
 }

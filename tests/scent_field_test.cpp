@@ -212,10 +212,8 @@ void test_deposit_writes_both_channels() {
                    make_soldier(std::uint16_t(NPCType::Peasant), 1, 2u));
     bag.inv.add("food", 10);
 
-    const auto& dcell = (*sm::body_state<ecs::MacroCell>(*rig.wStore_, e));
-    scent_squad_deposit(e, MacroPos{float(ecs::cell_x(dcell, rig.ctx.mapW)),
-                                    float(ecs::cell_y(dcell, rig.ctx.mapW))},
-                        (*sm::body_state<ecs::NPCKind>(*rig.wStore_, e)), rig.ctx);
+    scent_squad_deposit(
+        e, (*sm::body_state<ecs::NPCKind>(*rig.wStore_, e)), rig.ctx);
 
     CHECK(scent_strength_at(rig.gs.scent, fVil, 20, 20) > 0u,
           "сила следа легла: squad_power сквада — не ноль");
@@ -238,17 +236,15 @@ void test_hunter_climbs_wealth_gradient() {
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u, 400u);
 
     const auto& pc = (*sm::body_state<ecs::MacroCell>(*rig.wStore_, e));
-    MacroPos p{float(ecs::cell_x(pc, rig.ctx.mapW)),
-               float(ecs::cell_y(pc, rig.ctx.mapW))};
     auto& rt = (*sm::body_state<ecs::MacroNpcRuntime>(*rig.wStore_, e));
-    CHECK(scent_hunt_step(e, p, (*sm::body_state<ecs::NPCKind>(*rig.wStore_, e)), rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx),
+    CHECK(scent_hunt_step(e, (*sm::body_state<ecs::NPCKind>(*rig.wStore_, e)), rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx),
           "запах добычи съедает think — охота пошла");
     // РЕФЛЕКС РЕШАЕТ, НОГ У НЕГО НЕТ (M-2). Здесь стоял второй вызов
     // рефлекса и проверка «позиция стала 11,10»: охота шагала сама, голым
     // звонком ног. Теперь она пишет ЦЕЛЬ — САМОГО лучшего соседа (M-461:
     // прибытие есть равенство клеток, удваивать румб незачем), — а везёт
     // общая дверь свипа.
-    CHECK(int(p.x) == 10 && int(p.y) == 10,
+    CHECK(pc.idx == ecs::cell_index(10, 10, rig.ctx.mapW),
           "сам рефлекс с места не сдвинул: шагнуть ему нечем");
     const ecs::SquadGoal& g = rig.wStore_->goal[e.slot];
     CHECK(g.cell == ecs::cell_index(11, 10, rig.ctx.mapW) && g.underway == 1,
@@ -277,24 +273,23 @@ void test_fear_filter_and_scent_floor() {
     rig.make_enemies(fBandit, fPrey);
 
     const auto& pc = (*sm::body_state<ecs::MacroCell>(*rig.wStore_, e));
-    MacroPos p{float(ecs::cell_x(pc, rig.ctx.mapW)),
-               float(ecs::cell_y(pc, rig.ctx.mapW))};
     auto& rt = (*sm::body_state<ecs::MacroNpcRuntime>(*rig.wStore_, e));
     const auto& kind = (*sm::body_state<ecs::NPCKind>(*rig.wStore_, e));
 
     // Богато, но след силы страшнее моей смелости — не преследуем: пусть
     // решает визуальный рефлекс (закон боя), не запах.
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 4u << 20, 400u);
-    CHECK(!scent_hunt_step(e, p, kind, rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx),
+    CHECK(!scent_hunt_step(e, kind, rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx),
           "страшный след не преследуется");
 
     // Пылинка диффузии ниже пола не дёргает бойца с места.
     scent_reset(rig.gs.scent, 64, 64);
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u,
                   (kHuntScentFloor / 2u) << kScentQuantShift);
-    CHECK(!scent_hunt_step(e, p, kind, rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx),
+    CHECK(!scent_hunt_step(e, kind, rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx),
           "запах беднее пола — не стоит и шага");
-    CHECK(int(p.x) == 10 && int(p.y) == 10, "ноги не тронуты");
+    CHECK(pc.idx == ecs::cell_index(10, 10, rig.ctx.mapW),
+          "ноги не тронуты");
 }
 
 void test_local_maximum_ends_the_hunt_and_keeps_role_memory() {
@@ -304,9 +299,6 @@ void test_local_maximum_ends_the_hunt_and_keeps_role_memory() {
     auto e = rig.spawn(NPCType::Bandit, fBandit, 10.0f, 10.0f);
     rig.make_enemies(fBandit, fPrey);
 
-    const auto& pc = (*sm::body_state<ecs::MacroCell>(*rig.wStore_, e));
-    MacroPos p{float(ecs::cell_x(pc, rig.ctx.mapW)),
-               float(ecs::cell_y(pc, rig.ctx.mapW))};
     auto& rt = (*sm::body_state<ecs::MacroNpcRuntime>(*rig.wStore_, e));
     const auto& kind = (*sm::body_state<ecs::NPCKind>(*rig.wStore_, e));
 
@@ -327,12 +319,12 @@ void test_local_maximum_ends_the_hunt_and_keeps_role_memory() {
     // Сам стою на максимуме — подъёма нет, погоня окончена, думает роль.
     scent_deposit(rig.gs.scent, fPrey, 10, 10, 0u, 4000u);
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u, 400u);
-    CHECK(!scent_hunt_step(e, p, kind, rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx),
+    CHECK(!scent_hunt_step(e, kind, rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx),
           "локальный максимум = конец погони");
 
     scent_reset(rig.gs.scent, 64, 64);
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u, 400u);
-    CHECK(scent_hunt_step(e, p, kind, rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx), "охота пошла (фикстура)");
+    CHECK(scent_hunt_step(e, kind, rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx), "охота пошла (фикстура)");
     // РОЛЬ ЦЕЛА — ЭТО ЖИВОЙ ЗАКОН, И ОН ОСТАЁТСЯ: отвлечение не превращает
     // корована в кого-то другого и не стирает его память.
     CHECK(rt.squadType == std::uint8_t(SquadType::Caravan)
@@ -361,11 +353,8 @@ void test_civilian_never_hunts() {
     rig.make_enemies(fVil, fPrey);
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u, 4000u);
 
-    const auto& pc = (*sm::body_state<ecs::MacroCell>(*rig.wStore_, e));
-    MacroPos p{float(ecs::cell_x(pc, rig.ctx.mapW)),
-               float(ecs::cell_y(pc, rig.ctx.mapW))};
     auto& rt = (*sm::body_state<ecs::MacroNpcRuntime>(*rig.wStore_, e));
-    CHECK(!scent_hunt_step(e, p, (*sm::body_state<ecs::NPCKind>(*rig.wStore_, e)), rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx),
+    CHECK(!scent_hunt_step(e, (*sm::body_state<ecs::NPCKind>(*rig.wStore_, e)), rt, (*sm::body_state<ecs::Pools>(*rig.wStore_, e)), rig.ctx),
           "не-combatant не охотится: кто хищник — решает колонка поведения");
 }
 

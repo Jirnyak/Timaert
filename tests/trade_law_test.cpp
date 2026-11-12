@@ -86,11 +86,9 @@ int main() {
         ctx.mapH = gs.mapH;
         Rng roll(90u);
         ctx.rng = &roll;
-        float sx = 0.0f, sy = 0.0f;
-        const int pick = pick_next_station_(ctx, MacroPos{60.0f, 32.0f},
-                                            /*currentId*/kHomeId,
-                                            /*prevId*/-1,
-                                            /*moveMult*/1.0f, sx, sy);
+        const int pick = pick_next_station_(
+            ctx, ecs::cell_index(60, 32, gs.mapW), /*currentId*/kHomeId,
+            /*prevId*/-1, /*moveMult*/1.0f);
         CHECK(pick >= 0, "the trade door named a station at all");
         CHECK(pick == kAcrossSeamId,
               "ЗАКОН АДРЕСА: the city 6 cells away THROUGH the seam beats the "

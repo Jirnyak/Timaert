@@ -93,10 +93,10 @@ void draw_macro_overlay(const MacroWorld& mw,
                         float questMarkerScale = 1.0f);
 
 // Advance auto-walk: the INPUT half of the one macro march (подпосадка 4).
-// Input is the flag holder's "AI": it banks `cellsPerSec * dt` into the SAME
-// `MacroNpcRuntime::sub` — целые кванты доли, которые ведёт тот же марш, что у
-// squad's MacroCell whole cells at 1.0 budget each — a fractional macro
-// position is unrepresentable, the glide between cells is MacroVisual's.
+// Ввод — «ИИ» держателя флажка: кадр даёт `cellsPerSec * dt` квантов ТОМУ ЖЕ
+// ядру марша (`try_move@src/macro/npc_ai.h`), что возит всякий сквад; ядро
+// идёт по колонке клетки флажка и по его доле `MacroNpcRuntime::sub`. Дробной
+// макро-позиции не существует — глайд между клетками рисует кэш глаз карты.
 // Calls `onReached` once per entered path cell.
 std::size_t step_macro_walk(GameState& gs, const Session& ses,
                             MacroStore& st, MacroCursor& cursor,

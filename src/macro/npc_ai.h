@@ -107,13 +107,9 @@ struct TickContext {
     int             mapW = 0;
     int             mapH = 0;
     Rng*            rng = nullptr;
-    // NOT a perception channel (owner, 2026-08-29: «игрок ничем не особенен»
-    // — the player's squad sits in the SquadIndex like anyone's). The one
-    // consumer left is try_move's stop-ON-the-meeting-cell law: a multi-cell
-    // march must not hop OVER the player, because the forced-encounter door
-    // (Inc 6) is geometric and looks at his cell.
-    float           playerX = 0.0f;
-    float           playerY = 0.0f;
+    // (ЗДЕСЬ СТОЯЛА ПАРА `float playerX/playerY` — клетка флажка в типе
+    //  флоата. Она переехала индексом `playerCell` ниже, к слоту игрока:
+    //  M-462, «никаких флоатов координат».)
     // Squad↔squad perception (Session 15). `mw.world` + `squads` let a
     // behaviour see the OTHER squads.
     //
@@ -133,6 +129,17 @@ struct TickContext {
     // — гейты встреч и исключение свипа; до смерти тегов заполняются из
     // тегов (make_tick_context), после — из GameState. kMacroNoSlot = нет.
     std::uint16_t playerFlagSlot  = kMacroNoSlot;
+    // КЛЕТКА ФЛАЖКА ИГРОКА — ИНДЕКС, И «ИГРОКА НЕТ» ЕСТЬ ЗНАЧЕНИЕ (M-462).
+    // NOT a perception channel (owner, 2026-08-29: «игрок ничем не особенен»
+    // — the player's squad sits in the SquadIndex like anyone's). The one
+    // consumer is try_move's stop-ON-the-meeting-cell law: a multi-cell
+    // march must not hop OVER the player, because the forced-encounter door
+    // (Inc 6) is geometric and looks at his cell.
+    // ДЕФЕКТ, УШЕДШИЙ С ТИПОМ: пара флоатов по умолчанию была (0, 0), и мир
+    // без игрока останавливал марш всякого сквада на клетке (0,0) — «нет
+    // игрока» и «игрок в углу тора» были одним значением. Сентинел
+    // `kNoCell` клеткой не является, гейт спит значением.
+    std::uint32_t playerCell = ecs::kNoCell;
     // ЗДЕСЬ СТОЯЛА `factionHostileMask[kMaxFactions]` — 512 Б запечённой
     // враждебности реестра, и она СНЕСЕНА (M-268, вердикт владельца
     // 2026-10-21: «отношения фракций однозначно динамические … ради полировки
@@ -192,8 +199,14 @@ struct TickContext {
 // адрес индекса летописи (`ChronicleLinks@src/macro/chronicle.h`, M-423) —
 // выводные цепочки лежат вне состояния мира, и читатель окрестности находит
 // их этим адресом. Своих полей вид думки не приобрёл; хвостовая дыра прежняя.
-static_assert(sizeof(TickContext) == 144,
-              "вид думки на мир: 144 Б на стеке, один экземпляр на тик (не "
+// 2026-11-12: 144 → 136. −8 Б СВОИ, и это первая убыль собственных полей
+// вида: пара `float playerX/playerY` (8 Б, клетка флажка в типе флоата)
+// стала одним индексом `playerCell` (4 Б, M-462) и встала к слоту игрока, в
+// бывшую хвостовую дыру. Данных теперь 136 Б ровно — хвостовой дыры нет, и
+// первое слепое пятно выше («колонка, влезающая в хвостовую дыру, проходит
+// молча») закрылось само: влезать больше некуда.
+static_assert(sizeof(TickContext) == 136,
+              "вид думки на мир: 136 Б на стеке, один экземпляр на тик (не "
               "на сквад) — раскладка изменилась, назови КАКУЮ колонку и "
               "зачем (DOD п.9-10)");
 
@@ -210,20 +223,21 @@ inline constexpr std::uint32_t kHuntScentFloor = 8u;
 // Писатель полей следов — вклад сквада в свою клетку (сила = squad_power,
 // цена = души по строкам найма + ценность груза); зовётся из dispatch на
 // каждый think, для игрока — свипом (scent_player_deposit внутри драйверов).
-// Дробный СКРЕТЧ марша внутри одного think (transition of the scale split,
-// 2026-09-10): ХРАНЕНИЕ клетки сквада — ecs::MacroCell (одно число, S2), а
-// эта пара float живёт только на стеке думки — драйвер декодирует клетку на
-// входе и кодирует обратно после settle. Никогда не компонент: полклетки в
-// хранилище невыразимы по построению. (Хвост: перевод внутренней арифметики
-// марша на int убьёт и этот скретч.)
-struct MacroPos { float x = 0.0f; float y = 0.0f; };
+// (ЗДЕСЬ ЖИЛ `MacroPos` — пара `float x, y` на стеке думки, «дробный
+// скретч марша»: драйвер разворачивал клетку сквада в пару флоатов на входе
+// и сворачивал обратно после хода. Дробным он не был ни разу — перепись
+// 2026-11-12 нашла 26 мест рождения, все `float(cell_x(...))`, и сто
+// преобразований `int(...)` обратно. Снесён M-462 по вердикту владельца
+// «никаких флоатов координат … вся симуляция ИСКЛЮЧИТЕЛЬНО через индексы
+// клеточек»: позицию сквада несёт ОДИН носитель — колонка `MacroCell`, её
+// читает модуль и пишет ядро марша; второго носителя на время думки нет.)
 
-void scent_squad_deposit(MacroHandle self, const MacroPos& p,
+void scent_squad_deposit(MacroHandle self,
                          const ecs::NPCKind& kind, const TickContext& ctx);
 // Рефлекс охоты: незанятый боем combatant идёт ВВЕРХ по градиенту чужой
 // ЦЕНЫ под фильтром СИЛЫ (след силы ≤ моя сила × 2^kHuntBoldShift); true =
 // think съеден охотой, макроцель в rt не тронута (пауза, не амнезия).
-bool scent_hunt_step(MacroHandle self, MacroPos& p,
+bool scent_hunt_step(MacroHandle self,
                      const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
                      ecs::Pools& pools, const TickContext& ctx);
 
@@ -300,9 +314,10 @@ CaravanDeal trade_vendor_at_market(MacroStore& st,
 // (`march_cells_per_day` выше, M-6/M-436). До 2026-11-08 рулетка взвешивала
 // кандидатов ОДНИМ глобальным темпом, то есть конный корован выбирал станцию
 // по пешему расписанию.
-int pick_next_station_(const TickContext& ctx, const MacroPos& p,
-                       int currentId, int prevId, float moveMult,
-                       float& outX, float& outY);
+// (Выходы `outX/outY` — клетка выбранной станции парой флоатов — сняты
+// M-462: их не читал никто, клетку станции спрашивающий берёт по ординалу.)
+int pick_next_station_(const TickContext& ctx, std::uint32_t at,
+                       int currentId, int prevId, float moveMult);
 
 // ── ДВЕРЬ ПОДЪЁМА ИЗ ЛАГЕРЯ — ОДНА НА ДВЕ ПРИЧИНЫ ВСТАТЬ ─────────────────
 // Объявлена здесь по той же причине, что станция выше: ЗАКОН обязан иметь
@@ -468,10 +483,10 @@ struct MarchGround {
     const NavWorld*     nav      = nullptr; // походка; null = жадный шаг
     int side = 0;   // сторона тора — одна на обе оси (мир КВАДРАТЕН, ЗАКОН АДРЕСА)
     // Закон «не перепрыгнуть встречу» (Inc 6): многоклеточная думка встаёт
-    // НА клетке игрока. Для марша САМОГО игрока гейта нет (−1 — вне тора):
-    // его встречу судит detect_forced_encounter после шага.
-    int playerCellX = -1;
-    int playerCellY = -1;
+    // НА клетке игрока. Для марша САМОГО игрока и для мира без игрока гейта
+    // нет (`kNoCell` клеткой не является): встречу игрока судит
+    // detect_forced_encounter после шага.
+    std::uint32_t playerCell = ecs::kNoCell;
     // ИЗЪЯТИЕ НОГ ПО АРЕНДЕ (ЗАХВАТ, ломоть 2 M-419): центр аренды окна
     // сентинелом, чтобы ядро не читало ни состояния, ни сессии. В девяти арендованных
     // клетках позицию ведёт СУБМИР (fold сворачивает её на границе тика) —
@@ -492,26 +507,27 @@ struct MarchRoute {
 
 // Бюджет квантов — ЕДИНСТВЕННЫЙ вход темпа (M-412б): его состав — закон
 // ЗВОНЯЩЕГО (думка: march_cells_per_think выше; кадр игрока: его темп в
-// main.cpp). Возвращает евклидову дорогу В КЛЕТКАХ — скорость картинки
-// платит звонящий СВОИМ периодом (думка — своими тиками, кадр — dt).
-// При route != nullptr tx/ty не читаются.
-float try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, float tx, float ty,
-               std::uint32_t quanta, const MarchGround& ground,
-               MarchRoute* route = nullptr);
+// main.cpp). При route != nullptr `goal` не читается.
+//
+// ЯДРО ГОВОРИТ ИНДЕКСАМИ (M-462): идёт оно прямо по колонке клетки сквада и
+// САМО ЖЕ ЕЁ ПИШЕТ на каждом пересечении края, вместе с долей и румбом
+// входа — одним действием, потому что это один факт. Цель — индекс клетки.
+// Здесь стояли пара флоатов позиции, пара флоатов цели и возврат «евклидова
+// дорога в клетках для картинки»: позиция была целой клеткой в типе флоата,
+// а возврат не читал никто (у игрока он упирался в пустое `if`; темп
+// картинки меряет кадровый кэш глаз сам, M-425).
+void try_move(ecs::MacroCell& cell, ecs::MacroNpcRuntime& rt,
+              std::uint32_t goal, std::uint32_t quanta,
+              const MarchGround& ground, MarchRoute* route = nullptr);
 
-// ЕДИНСТВЕННЫЙ ПИСАТЕЛЬ КЛЕТКИ ПОСЛЕ ХОДА (M-412г; прежде их было два —
-// драйвер свипа у НПЦ и сам ходок у игрока, порознь). Марш оставил румб
-// входа — доля цела; смена клетки БЕЗ румба — телепорт, тело встаёт в
-// центр (kEntryDirNone штампуют прыжковые двери).
-inline void settle_walk_cell(ecs::MacroCell& cell, ecs::MacroNpcRuntime& rt,
-                             std::uint32_t newIdx) {
-    if (newIdx != cell.idx) {
-        int sdx = 0, sdy = 0;
-        unpack_entry_dir(rt.entryDir, sdx, sdy);
-        if (sdx == 0 && sdy == 0) rt.sub = {};
-    }
-    cell.idx = newIdx;
-}
+// (ЗДЕСЬ СТОЯЛА `settle_walk_cell` — «единственный писатель клетки после
+// хода», M-412г. Она существовала, потому что ход шёл по черновику-паре, и
+// клетку надо было свернуть обратно в колонку; заодно она угадывала прыжок
+// по отсутствию румба входа и ставила долю в центр. Черновика больше нет
+// (M-462): ШАГ пишет ядро марша выше, ПРЫЖОК — своя дверь
+// `squad_jump_to_cell@src/bus/store.h`, которая центр ставит явно, а не по
+// догадке. Писателей у клетки сквада теперь ровно столько, сколько есть
+// способов её сменить: шаг, прыжок и свёртка шва `squad_fold_pos`.)
 
 // ЧАСЫ ФЛАЖКА (M-412д). Свип игрока не водит НИКОГДА (ни флажок, ни родной
 // сквад — пропуск в теле свипа), поэтому его время идёт ЗДЕСЬ, тем же
