@@ -31,9 +31,7 @@
 // поля по клетке), а не чем это число для кого-то значит.
 static int cell_number_at(const sm::GameState& gs, const sm::MacroStore& st,
                           std::uint16_t slot) {
-    const auto& c = st.cell[slot];
-    return sm::feature_number_read(gs, sm::ecs::cell_x(c, gs.mapW),
-                           sm::ecs::cell_y(c, gs.mapW));
+    return sm::feature_number_read(gs, st.cell[slot].idx);
 }
 
 namespace {

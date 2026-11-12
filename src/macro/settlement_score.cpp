@@ -33,8 +33,7 @@ int arable_term(const SettlementSiteContext& ctx, std::uint32_t at) {
             if (dx == 0 && dy == 0) continue;   // the town stands here
             const std::uint32_t n = cell_step(at, dx, dy, side);
             const int wheat = resource_field_read(ctx.w, ResourceFieldId::Wheat,
-                                                  cell_x(n, side),
-                                                  cell_y(n, side));
+                                                  n);
             // Insertion into the fattest-first shortlist. Гнездо звалось `at`
             // и ЗАТЕНЯЛО адрес клетки тем же именем — переименовано, потому
             // что теперь адрес приходит параметром и путать их нельзя.
@@ -104,9 +103,7 @@ int forest_term(const SettlementSiteContext& ctx, std::uint32_t at) {
     for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy)
         for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
             const std::uint32_t n = cell_step(at, dx, dy, side);
-            best = std::max(best,
-                            int(trees.at(cell_x(n, side),
-                                         cell_y(n, side))));
+            best = std::max(best, int(trees.at(n)));
         }
     // kMaxTreesPerCell = 16384 → /1024 lands in 0..16.
     return std::min(kTermMax, best / 1024);

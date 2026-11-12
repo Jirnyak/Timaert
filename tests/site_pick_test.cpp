@@ -92,7 +92,7 @@ void test_world_pick_matches_the_loop_it_replaced() {
         // каждая следующая мерит разнос от всех предыдущих.
         for (int n = 0; n < 20; ++n) {
             const auto admitXY = [&](int x, int y) {
-                return !td.is_water(x, y) && ((x + y) % 3) != 0;
+                return !td.is_water(cell_of(x, y, td.width)) && ((x + y) % 3) != 0;
             };
             const std::uint32_t want =
                 legacy_world_pick(a, kSide, 16, placedA, admitXY);

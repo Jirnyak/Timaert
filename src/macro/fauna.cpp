@@ -125,25 +125,20 @@ const FaunaEntry* creature_def_from_kind(std::uint16_t kindType) {
 // until 2026-08-24 — the drifted second implementation of "what stands on
 // this cell". The baked index answers now, in the same priority order.)
 
-int fauna_cell_capacity_at(const MacroWorld& w, int x, int y) {
+int fauna_cell_capacity_at(const MacroWorld& w, std::uint32_t cell) {
     const TerrainData* terrain = w.terrain;
     if (!terrain || !terrain->has_rgba_storage()
         || terrain->width <= 0 || terrain->height <= 0) {
         return 0;
     }
-    // Ось клетки мира сворачивается КАНОНИЧЕСКОЙ ДВЕРЬЮ (ЗАКОН АДРЕСА п.2):
-    // здесь стоял `FeatureLayer::wrap_coord`, то есть ТОТ ЖЕ `wrap_axis`,
-    // позванный через статик живого слоя фич, — а слой уехал из этого
-    // заголовка вместе с законом ролла (ломоть 3 эпика пакетов v1). Число
-    // бит-в-бит то же: `wrap_coord` и есть звонок к `wrap_axis`.
-    const int wx = wrap_axis(x, terrain->width);
-    const int wy = wrap_axis(y, terrain->height);
+    // Клетку называют ОДНИМ ЧИСЛОМ (ЗАКОН АДРЕСА п.2, M-462 ломоть 4): здесь
+    // стояла пара координат с двумя свёртками осей, а оба читателя ниже
+    // спрашивали поле тем же индексом, собранным обратно.
     // THE cell cascade (map_generator.h biome_at_cell). This function used to
     // classify by float threshold while the subworld read the mask — the same
     // coastal cell fed a wolf and refused a boot (canon-audit C5).
-    const Biome biome = biome_at_cell(*terrain, wx, wy);
-    const int treeCount = (w.gs && w.gs->treeLayer.has_complete_storage())
-        ? int(w.gs->treeLayer.at(wx, wy)) : 0;
+    const Biome biome = biome_at_cell(*terrain, cell);
+    const int treeCount = w.gs ? int(w.gs->treeLayer.at(cell)) : 0;
     // ЗДЕСЬ ЖИЛ СКАН СКВАДОВ (`settlement_at`) — второй носитель рода против
     // байта фичи у ролла, и он умер с род-развилками (M-371): природная
     // ёмкость спрашивает только ЗЕМЛЮ. Подавление у поселения — вычистка его

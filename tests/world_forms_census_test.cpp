@@ -114,7 +114,7 @@ void judge_item_harvest(World& w, ResourceFieldId row, int x, int y,
     const long long unit = item_value(yieldId);
     CHECK_OR_RETURN(unit > 0, "строка выхода несёт цену — иначе закон пуст");
     const WorldForms before = census_world_forms(mw);
-    const int got = field_harvest(mw, row, x, y, /*want=*/3, w.artel.slot);
+    const int got = field_harvest(mw, row, cell_of(x, y, mw.gs->mapW), /*want=*/3, w.artel.slot);
     CHECK_OR_RETURN(got > 0, what);
     const WorldForms after = census_world_forms(mw);
 
@@ -133,26 +133,26 @@ void judge_item_harvest(World& w, ResourceFieldId row, int x, int y,
 void test_item_harvest_is_form_transition() {
     World w = make_world();
 
-    set_tree_count(w.gs.treeLayer, 12, 10, 9);
+    set_tree_count(w.gs.treeLayer, cell_of(12, 10, w.gs.treeLayer.width), 9);
     judge_item_harvest(w, ResourceFieldId::Trees, 12, 10, "wood",
                        "рубка состоялась");
 
-    CHECK_OR_RETURN(feature_put(w.gs.features, w.td, 8, 8, FT_Field)
+    CHECK_OR_RETURN(feature_put(w.gs.features, w.td, cell_of(8, 8, w.gs.features.width), FT_Field)
                         == FT_Field,
                     "парцелла встала");
     judge_item_harvest(w, ResourceFieldId::Wheat, 8, 8, "food",
                        "жатва пашни состоялась");
 
-    CHECK_OR_RETURN(feature_put(w.gs.features, w.td, 9, 8, FT_FlaxField)
+    CHECK_OR_RETURN(feature_put(w.gs.features, w.td, cell_of(9, 8, w.gs.features.width), FT_FlaxField)
                         == FT_FlaxField,
                     "льняная парцелла встала");
     judge_item_harvest(w, ResourceFieldId::Wheat, 9, 8, "fibre",
                        "жатва льна состоялась");
 
-    CHECK_OR_RETURN(feature_put(w.gs.features, w.td, 14, 8, FT_IronMine)
+    CHECK_OR_RETURN(feature_put(w.gs.features, w.td, cell_of(14, 8, w.gs.features.width), FT_IronMine)
                         == FT_IronMine,
                     "шахта встала");
-    feature_number_write(w.gs, 14, 8, 9);   // залежь — число фичи шахты
+    feature_number_write(w.gs, cell_of(14, 8, w.gs.mapW), 9);   // залежь — число фичи шахты
     judge_item_harvest(w, ResourceFieldId::Vein, 14, 8, "iron",
                        "выемка жилы состоялась");
 }
@@ -161,10 +161,10 @@ void test_item_harvest_is_form_transition() {
 void test_creature_harvest_is_form_transition() {
     World w = make_world();
     MacroWorld mw = w.mw();
-    CHECK_OR_RETURN(feature_put(w.gs.features, w.td, 11, 8, FT_Pasture)
+    CHECK_OR_RETURN(feature_put(w.gs.features, w.td, cell_of(11, 8, w.gs.features.width), FT_Pasture)
                         == FT_Pasture,
                     "загон встал");
-    feature_number_write(w.gs, 11, 8, 5);   // стадо — число фичи
+    feature_number_write(w.gs, cell_of(11, 8, w.gs.mapW), 5);   // стадо — число фичи
 
     const WorldForms before = census_world_forms(mw);
     const std::size_t r = std::size_t(ResourceFieldId::Livestock);
@@ -172,7 +172,7 @@ void test_creature_harvest_is_form_transition() {
                     "стадо видно переписи головами залежи");
     CHECK(before.depositValue[r] == 0,
           "и стоимостью оно не оценено: выход ряда — существо");
-    const int got = field_harvest(mw, ResourceFieldId::Livestock, 11, 8, 2,
+    const int got = field_harvest(mw, ResourceFieldId::Livestock, cell_of(11, 8, mw.gs->mapW), 2,
                                   w.artel.slot);
     CHECK_OR_RETURN(got == 2, "поимка состоялась");
     const WorldForms after = census_world_forms(mw);
@@ -210,7 +210,7 @@ void test_census_sees_creation() {
     const long long wood = item_value("wood");
     CHECK_OR_RETURN(wood > 0, "строка дерева несёт цену");
     const WorldForms before = census_world_forms(mw);
-    CHECK_OR_RETURN(field_move(mw, ResourceFieldId::Trees, 30, 30, +7) == 7,
+    CHECK_OR_RETURN(field_move(mw, ResourceFieldId::Trees, cell_of(30, 30, mw.gs->mapW), +7) == 7,
                     "семь деревьев встали без источника");
     const WorldForms grown = census_world_forms(mw);
     CHECK(grown.value_carried() - before.value_carried() == 7 * wood,

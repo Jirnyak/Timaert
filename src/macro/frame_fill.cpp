@@ -59,7 +59,7 @@ void fill_local_frame(const MacroWorld& w, std::uint32_t centerCell,
             out.cells[std::size_t(i)] = cell_facts(w, x, y);
             for (int f = 0; f < kFrameFieldRows; ++f) {
                 out.stock[std::size_t(f) * kFrameCells + std::size_t(i)] =
-                    resource_field_read(w, ResourceFieldId(f), x, y);
+                    resource_field_read(w, ResourceFieldId(f), cell);
             }
         }
     }

@@ -114,12 +114,12 @@ inline void census_deposits(const MacroWorld& w, WorldForms& out) {
         long long value = 0, heads = 0, bare = 0, byFeature = 0;
         for (int y = 0; y < H; ++y) {
             for (int x = 0; x < W; ++x) {
-                const int units = resource_field_read(w, row, x, y);
+                const int units = resource_field_read(w, row, cell_of(x, y, w.gs->mapW));
                 if (units <= 0) continue;
                 // Порядок тот же, что у транзакции: предмет фичи или ряда
                 // старше существа ряда.
-                const int ord = field_yield_ordinal(w, row, x, y);
-                if (feature_def(w.gs->features.at(x, y)).yieldItem != nullptr)
+                const int ord = field_yield_ordinal(w, row, cell_of(x, y, w.gs->mapW));
+                if (feature_def(w.gs->features.at(cell_of(x, y, w.gs->features.width))).yieldItem != nullptr)
                     byFeature += units;
                 if (ord >= 0) {
                     const ItemDef* def = item_def_at(ord);
@@ -160,9 +160,7 @@ inline void census_local(const MacroWorld& w, WorldForms& out) {
     }
     if (!w.gs) return;
     for_each_rooted(st, [&](std::uint16_t slot) {
-        const auto& c = st.cell[slot];
-        out.flockNumber += feature_number_read(
-            *w.gs, ecs::cell_x(c, w.gs->mapW), ecs::cell_y(c, w.gs->mapW));
+        out.flockNumber += feature_number_read(*w.gs, st.cell[slot].idx);
         out.folkRooted += (long long)st.inventory[slot].inv.sum().folkHeads;
     });
 }

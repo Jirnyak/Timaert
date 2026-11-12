@@ -147,7 +147,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 
-    const int layerLost = 16 - int(layer.at(14, 10));
+    const int layerLost = 16 - int(layer.at(cell_of(14, 10, layer.width)));
     const int storeGained =
         st.inventory[vil.slot].inv.count("wood");
     const int inBag =
@@ -213,7 +213,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     // bare ground, and the chronicle stays SILENT — the forest regrows by its
     // own law (resource_fields_daily_growth), so an emptied cell is weather,
     // not the irreversible loss FactKind::Drained records.
-    CHECK(layer.at(14, 10) == 0, "the control condition fired: bare cell");
+    CHECK(layer.at(cell_of(14, 10, layer.width)) == 0, "the control condition fired: bare cell");
     CHECK(tally_facts(gs.chronicle, FactKind::Drained, 14, 10).n == 0,
           "a felled forest writes NO Drained fact - a forest is not a vein");
 }
@@ -226,7 +226,7 @@ void test_the_farmer_works_the_field() {
     // A field two cells east — where stamp_field_features would put one.
     FeatureLayer& features = gs.features;
     features.resize(kMap, kMap);
-    feature_put(features, all_land(), 12, 10, FT_Field);
+    feature_put(features, all_land(), cell_of(12, 10, features.width), FT_Field);
 
     // The terrain master: fertile land everywhere. Without it the reap is
     // fail-closed (Field Inc F4), so the honest test wires it.
@@ -298,7 +298,7 @@ void test_the_farmer_works_the_field() {
     // mid-trip with the haul on his back, where the old single-take cycle always
     // ended at the door.
     const sm::ResourceGrid& wheatScars = gs.wheatScars;
-    CHECK(wheatScars.at(12, 10) == foodUnits + inBag,
+    CHECK(wheatScars.at(cell_of(12, 10, wheatScars.width)) == foodUnits + inBag,
           "food gained by store AND bag == stands the field lost");
     CHECK(wheatScars.liveCells == 1,
           "the farmer scars only the field he works");
@@ -314,7 +314,7 @@ void test_farmer_without_terrain_conjures_nothing() {
     gs.mapH = kMap;
     FeatureLayer& features = gs.features;
     features.resize(kMap, kMap);
-    feature_put(features, all_land(), 12, 10, FT_Field);
+    feature_put(features, all_land(), cell_of(12, 10, features.width), FT_Field);
 
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
@@ -467,8 +467,8 @@ void test_the_mine_runs_while_the_player_is_away() {
     // рожает своё предусловие сам: фича + число фичи, как их ставит генерация.
     FeatureLayer& features = gs.features;
     features.resize(kMap, kMap);
-    feature_put(features, all_land(), 14, 10, FT_IronMine);
-    feature_number_write(gs, 14, 10, 20);
+    feature_put(features, all_land(), cell_of(14, 10, features.width), FT_IronMine);
+    feature_number_write(gs, cell_of(14, 10, gs.mapW), 20);
 
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
@@ -510,7 +510,7 @@ void test_the_mine_runs_while_the_player_is_away() {
 
     // Залежь шахты — число фичи: выработка видна там же, где её оставила
     // транзакция. Что добыто — решила ФИЧА (железная шахта → железо).
-    const int veinLeft = feature_number_read(gs, 14, 10);
+    const int veinLeft = feature_number_read(gs, cell_of(14, 10, gs.mapW));
     CHECK(20 - veinLeft > 0,
           "the mine is worked while the player is underground, exactly as it "
           "is worked while he is on the map");
@@ -713,8 +713,8 @@ void test_the_miner_works_the_vein() {
     // фичи); что добыто, решает СТРОКА фичи (железная шахта → iron).
     FeatureLayer& features = gs.features;
     features.resize(kMap, kMap);
-    feature_put(features, all_land(), 14, 10, FT_IronMine);
-    feature_number_write(gs, 14, 10, 20);
+    feature_put(features, all_land(), cell_of(14, 10, features.width), FT_IronMine);
+    feature_number_write(gs, cell_of(14, 10, gs.mapW), 20);
 
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
@@ -756,7 +756,7 @@ void test_the_miner_works_the_vein() {
         tick_macro_npc_ai(mw, art, kAiTicks);
     }
 
-    const int veinLeft = feature_number_read(gs, 14, 10);
+    const int veinLeft = feature_number_read(gs, cell_of(14, 10, gs.mapW));
     const int veinLost = 20 - veinLeft;
     const int storeGained = st.inventory[vil.slot].inv.count("iron");
     const int inBag = (*sm::body_state<ecs::NpcInventory>(st, e)).inv.count("iron");
@@ -916,14 +916,14 @@ void test_the_catch_lands_as_creatures() {
     // ±kSettlementReach вокруг дома и НЕ сама деревня: её число — паства
     // (`settle_souls` выше), и смысл ему задаёт её собственная фича.
     constexpr int kFoldX = 12, kFoldY = 10;
-    feature_put(features, all_land(), kFoldX, kFoldY, sm::FT_Pasture);
+    feature_put(features, all_land(), cell_of(kFoldX, kFoldY, features.width), sm::FT_Pasture);
     MacroWorld seedWorld{.gs = &gs, .store = &st, .terrain = &terrain};
     // Избыточная дельта: дверь ряда САМА зажимает в кап клетки, поэтому
     // число берётся из фертильности, а не из головы автора.
     sm::field_move(seedWorld, ResourceFieldId::Livestock,
-                             kFoldX, kFoldY, sm::kMaxFieldUnitsPerCell);
+                             sm::cell_of(kFoldX, kFoldY, seedWorld.gs->mapW), sm::kMaxFieldUnitsPerCell);
     const int herdAtFence = sm::resource_field_read(
-        seedWorld, ResourceFieldId::Livestock, kFoldX, kFoldY);
+        seedWorld, ResourceFieldId::Livestock, sm::cell_of(kFoldX, kFoldY, seedWorld.gs->mapW));
     CHECK(herdAtFence > 0,
           "загон наполнился СВОЕЙ дверью до капа, выведенного из травы "
           "клетки — число стада есть число фичи");
@@ -942,7 +942,7 @@ void test_the_catch_lands_as_creatures() {
     // контроль этого стоит ниже: его заголовок обязан остаться пустым.
     const int lost = herdAtFence
         - sm::resource_field_read(seedWorld, ResourceFieldId::Livestock,
-                                  kFoldX, kFoldY);
+                                  sm::cell_of(kFoldX, kFoldY, seedWorld.gs->mapW));
     CHECK(gs.wheatScars.liveCells == 0,
           "у ряда-НОСИТЕЛЯ своего поля шрамов нет (M-258; заголовок снесён в "
           "v157), и в единственное поле шрамов — пашни — выемка стада не пишет");

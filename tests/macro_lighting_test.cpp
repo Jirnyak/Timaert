@@ -180,11 +180,11 @@ int main() {
 
         // v120: a spire's charge is its cell's feature number (ordinal + 1);
         // drained = 0 — the spent spire's cell simply stays unwritten.
-        feature_number_write(gs, 40, 40, 1);
+        feature_number_write(gs, cell_of(40, 40, gs.mapW), 1);
 
         sm::birth_squad(gs, nullptr, st, SquadType::Spire, 40, 40, -1, nullptr, &land);
         sm::birth_squad(gs, nullptr, st, SquadType::Spire, 50, 50, -1, nullptr, &land);
-        CHECK(feat.at(40, 40) == FT_Spire && feat.at(50, 50) == FT_Spire,
+        CHECK(feat.at(cell_of(40, 40, feat.width)) == FT_Spire && feat.at(cell_of(50, 50, feat.width)) == FT_Spire,
               "рождение поставило обеим клеткам шпиля их фичу — без неё "
               "вопрос «выкачан ли» не задаётся вовсе");
 
@@ -316,7 +316,7 @@ int main() {
         for (std::size_t c = 0; c < std::size_t(W) * std::size_t(H); ++c)
             roadTd.rgba[c * 4u + 0] = field_word_of(140.0f / 255.0f);
         for (int x = 21; x <= 32; ++x)
-            feature_put(feat, roadTd, x, 20, FT_Road);  // a road running east
+            feature_put(feat, roadTd, cell_of(x, 20, feat.width), FT_Road);  // a road running east
         MacroLight L{};
         L.nx = (20.0f + 0.5f) / W;
         L.ny = (20.0f + 0.5f) / H;

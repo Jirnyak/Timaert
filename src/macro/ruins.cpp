@@ -70,8 +70,7 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
             placedCells, [&](std::uint32_t cell) {
                 if (!site_open_for_structure(features, terrain, cell))
                     return false;
-                const int z = int(zones.at(cell_x(cell, gs.mapW),
-                                           cell_y(cell, gs.mapW)));
+                const int z = int(zones.at(cell));
                 return z >= int(kRuinMinZone) && z <= int(kRuinMaxZone);
             });
         if (site == kNoSite) {

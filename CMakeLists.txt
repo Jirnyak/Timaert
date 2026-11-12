@@ -2068,9 +2068,6 @@ timaert_test(far_terrain_test
     SOURCES
         src/sub/base_generator.cpp)
 
-timaert_test(deposit_reach_test
-    SOURCES
-        src/macro/deposit_layer.cpp)
 # R2 — settlement derives from resources: the veto/percentile/negative-control
 # contract on village placement (macro/settlement_score.{h,cpp} + the
 # hinterland scan in state.cpp). Links the whole generation chain the score

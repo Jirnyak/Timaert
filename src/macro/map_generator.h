@@ -200,13 +200,19 @@ struct TerrainData {
     // Fail-closed при незаконной форме мира отдаёт НОЛЬ, а ноль высоты ниже
     // любого уровня моря — то есть незаконный мир целиком вода и на нём
     // ничего не ставится. Это отказ, а не выдуманная суша.
-    inline std::uint16_t height_at(int x, int y) const {
-        if (!world_shape_ok(width, height)) return 0u;
-        return rgba[std::size_t(cell_of(x, y, width)) * 4 + 0];
+    //
+    // КЛЕТКУ КАРТЕ НАЗЫВАЮТ ОДНИМ ЧИСЛОМ (ЗАКОН АДРЕСА п.2, M-462 ломоть 4):
+    // у всех каналов форма одна — индекс. Парных форм `(x, y)` здесь больше
+    // нет; у кого на руках геометрия (генерация, экран), сворачивает её
+    // дверью `cell_of` сам. Индекс уже свёрнут по построению, поэтому двери
+    // нужна только граница памяти.
+    inline std::uint16_t height_at(std::uint32_t cell) const {
+        const std::size_t i = std::size_t(cell) * 4u + 0u;
+        return i < rgba.size() ? rgba[i] : std::uint16_t(0);
     }
-    inline std::uint16_t moisture_at(int x, int y) const {
-        if (!world_shape_ok(width, height)) return 0u;
-        return rgba[std::size_t(cell_of(x, y, width)) * 4 + 1];
+    inline std::uint16_t moisture_at(std::uint32_t cell) const {
+        const std::size_t i = std::size_t(cell) * 4u + 1u;
+        return i < rgba.size() ? rgba[i] : std::uint16_t(0);
     }
     // ── ЕДИНСТВЕННЫЙ ОТВЕТ «ВОДА ЛИ КЛЕТКА» ──────────────────────────────
     // Вердикт владельца (2026-09-25, дословно): «НИКАКИХ МАСОК строго единый
@@ -219,17 +225,12 @@ struct TerrainData {
     // СПЕЛЛИНГОМ: её последним действием переписывает тот же порог
     // (`map_generator.cpp`, врез рек), так что расходиться они могли только
     // округлением, и ровно этим и расходились на берегу.
-    // Адрес — ОДНО ЧИСЛО (ЗАКОН АДРЕСА): первичная форма берёт индекс, пара
-    // x,y входит через `cell_of` и остаётся для тех, у кого на руках геометрия.
+    // Адрес — ОДНО ЧИСЛО (ЗАКОН АДРЕСА): дверь берёт индекс, и только его.
     // Fail-closed в ВОДУ: карты нет — суши нет (ноль вклада, не выдуманная
-    // земля и не падение).
+    // земля и не падение); индекс за границей карты — тоже вода.
     inline bool is_water(std::uint32_t cell) const {
-        if (!has_rgba_storage()) return true;
-        return rgba[std::size_t(cell) * 4u + 0u] < seaLevel16;
-    }
-    inline bool is_water(int x, int y) const {
-        if (!world_shape_ok(width, height)) return true;
-        return is_water(cell_of(x, y, width));
+        const std::size_t i = std::size_t(cell) * 4u + 0u;
+        return i < rgba.size() ? rgba[i] < seaLevel16 : true;
     }
 };
 
@@ -268,16 +269,12 @@ inline Biome biome_classify(const TerrainData& td, std::uint32_t cell) {
 
 // `biome_at_cell` — ЧТЕНИЕ ПОЛЯ, и это единственный ответ живого мира на
 // «какой биом у этой клетки» (CANON S6). Форма адреса та же, что у `is_water`:
-// первичен ИНДЕКС (ЗАКОН АДРЕСА), пара x,y остаётся тем, у кого на руках
-// геометрия. Fail-closed в ВОДУ — и здесь это не только «нет карты», но и
-// «мир не дорождён»: поля нет, значит `bake_biomes` не звали.
+// ИНДЕКС, и только он (ЗАКОН АДРЕСА). Fail-closed в ВОДУ — и здесь это не
+// только «нет карты», но и «мир не дорождён»: поля нет, значит `bake_biomes`
+// не звали.
 inline Biome biome_at_cell(const TerrainData& td, std::uint32_t cell) {
     return std::size_t(cell) < td.biome.size() ? Biome(td.biome[cell])
                                                : Biome::Water;
-}
-inline Biome biome_at_cell(const TerrainData& td, int x, int y) {
-    if (!world_shape_ok(td.width, td.height)) return Biome::Water;
-    return biome_at_cell(td, cell_of(x, y, td.width));
 }
 
 // ПОСЛЕДНИЙ АКТ РОЖДЕНИЯ: свернуть каскад в поле. Дверь стоит рядом со своим

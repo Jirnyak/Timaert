@@ -46,7 +46,7 @@ int count_state(const sm::KnowledgeLayer& k, std::uint8_t s) {
     return n;
 }
 
-std::uint8_t at(const sm::KnowledgeLayer& k, int x, int y) { return k.at(x, y); }
+std::uint8_t at(const sm::KnowledgeLayer& k, int x, int y) { return k.at(sm::cell_of(x, y, k.width)); }
 
 // Клетка глаза — ИНДЕКСОМ: дверь зрения берёт адрес клетки, а не точку в ней
 // (M-462: внутри клетки у мира позиции нет).
@@ -158,7 +158,7 @@ void test_road_carries_sight_farther() {
     sm::FeatureLayer& roadFeat = *roadFeatOwn;
     const sm::TerrainData roadTd = all_land();
     for (int x = 20; x <= 20 + steps; ++x)
-        sm::feature_put(roadFeat, roadTd, x, 20, sm::FT_Road);
+        sm::feature_put(roadFeat, roadTd, sm::cell_of(x, 20, roadFeat.width), sm::FT_Road);
     std::unique_ptr<sm::KnowledgeLayer> roadKOwn{new sm::KnowledgeLayer()};
     sm::KnowledgeLayer& roadK = *roadKOwn;
     sm::knowledge_reset(roadK, W, H);
@@ -258,7 +258,7 @@ void test_torus_wrap_and_fail_closed_door() {
 
     std::unique_ptr<sm::KnowledgeLayer> emptyOwn{new sm::KnowledgeLayer()};
     const sm::KnowledgeLayer& empty = *emptyOwn;
-    CHECK(empty.at(5, 5) == sm::kKnowledgeUnknown,
+    CHECK(empty.at(sm::cell_of(5, 5, empty.width)) == sm::kKnowledgeUnknown,
           "an absent grid answers Unknown - fail closed, nothing shows");
 }
 

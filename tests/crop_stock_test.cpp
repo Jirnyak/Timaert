@@ -56,12 +56,23 @@ TerrainData flat_terrain(float moisture01) {
     return t;
 }
 
+// Состояние мира фикстуры: сторона НАЗВАНА в нём, как у всякого рождённого
+// мира (род 4 — форма мира). Двери полей берут клетку индексом, а индекс из
+// пары сворачивается по стороне мира; состояние без стороны — не мир.
+constexpr int kSide = 4;
+std::unique_ptr<GameState> world_state() {
+    std::unique_ptr<GameState> gs = make_game_state();
+    gs->mapW = kSide;
+    gs->mapH = kSide;
+    return gs;
+}
+
 MacroStockKey cell_key(int x, int y) {
     return MacroStockKey{-1, std::int16_t(x), std::int16_t(y)};
 }
 
 void test_untouched_cell_reads_fertility_estimate() {
-    std::unique_ptr<GameState> gsOwn = make_game_state();
+    std::unique_ptr<GameState> gsOwn = world_state();
     GameState& gs = *gsOwn;
     const TerrainData terrain = flat_terrain(160.0f / 255.0f);
     MacroWorld w{.gs = &gs, .terrain = &terrain};
@@ -76,7 +87,7 @@ void test_untouched_cell_reads_fertility_estimate() {
 }
 
 void test_estimate_follows_fertility() {
-    std::unique_ptr<GameState> gsOwn = make_game_state();
+    std::unique_ptr<GameState> gsOwn = world_state();
     GameState& gs = *gsOwn;
     TerrainData terrain = flat_terrain(128.0f / 255.0f);
     // Cell (1,1) is wetter than cell (2,2) — the wetter one must read more.
@@ -94,7 +105,7 @@ void test_estimate_follows_fertility() {
 }
 
 void test_harvest_thins_and_return_does_not_resurrect() {
-    std::unique_ptr<GameState> gsOwn = make_game_state();
+    std::unique_ptr<GameState> gsOwn = world_state();
     GameState& gs = *gsOwn;
     const TerrainData terrain = flat_terrain(160.0f / 255.0f);
     MacroWorld w{.gs = &gs, .terrain = &terrain};
@@ -123,13 +134,13 @@ void test_harvest_thins_and_return_does_not_resurrect() {
     macro_stock_apply(w, MacroStock::CropCount, cell_key(2, 2), -1000000);
     CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(2, 2)) == 0,
           "a cell can be emptied but never owes wheat");
-    CHECK(gs.wheatScars.at(2, 2)
+    CHECK(gs.wheatScars.at(cell_of(2, 2, gs.wheatScars.width))
               <= 4096,
           "the scar is capped - no millennium of regrowth from one writer");
 }
 
 void test_regrow_self_cleans_when_whole() {
-    std::unique_ptr<GameState> gsOwn = make_game_state();
+    std::unique_ptr<GameState> gsOwn = world_state();
     GameState& gs = *gsOwn;
     const TerrainData terrain = flat_terrain(160.0f / 255.0f);
     MacroWorld w{.gs = &gs, .terrain = &terrain};
@@ -171,7 +182,7 @@ void test_regrow_self_cleans_when_whole() {
 }
 
 void test_no_terrain_fails_closed() {
-    std::unique_ptr<GameState> gsOwn = make_game_state();
+    std::unique_ptr<GameState> gsOwn = world_state();
     GameState& gs = *gsOwn;
     MacroWorld w{.gs = &gs};
     CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(1, 1)) == 0,

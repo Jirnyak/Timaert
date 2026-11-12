@@ -136,7 +136,7 @@ void test_forest_asks_the_one_cascade() {
 
     long onWater = 0, onMountain = 0, onBarrenClimate = 0, onShore = 0;
     for (const TreePoint& t : trees) {
-        switch (biome_at_cell(td, t.x, t.y)) {
+        switch (biome_at_cell(td, cell_of(t.x, t.y, td.width))) {
         case Water:    ++onWater; break;
         case Mountain: ++onMountain; break;
         case Tundra: case Snow: case Desert: ++onBarrenClimate; break;

@@ -113,24 +113,24 @@ void accumulate_occluded(const MacroLight& L, int width, int height,
 void refresh_feature_lights(GameState& gs) {
     const FeatureLayer& features = gs.features;
     if (features.width <= 0 || features.height <= 0) return;
-    for (int y = 0; y < features.height; ++y) {
-        for (int x = 0; x < features.width; ++x) {
-            const FeatureDef& def =
-                feature_def(FeatureLayer::decode(features.at(x, y)));
-            if (def.lightPalette == 0) continue;
-            const int number = feature_number_read(gs, x, y);
-            int strength = def.lightBase > 0 ? int(def.lightBase) : number;
-            // Числовой гейт: орб шпиля и залежь выемки тушат огонь СВОИМ
-            // числом (0 = выкачано) — событию-писателю здесь делать нечего.
-            if (def.lightNumberGated && number <= 0) strength = 0;
-            light_emission_write(
-                gs, x, y,
-                strength <= 0
-                    ? 0
-                    : int(light_pack(def.lightPalette,
-                                     std::uint16_t(std::min(
-                                         strength, int(kLightStrengthMax))))));
-        }
+    // Обход всех клеток идёт по индексу (ЗАКОН АДРЕСА п.2): порядок тот же,
+    // что у прежних вложенных циклов по строкам.
+    const std::uint32_t cells = std::uint32_t(features.cell_count());
+    for (std::uint32_t c = 0; c < cells; ++c) {
+        const FeatureDef& def = feature_def(features.at(c));
+        if (def.lightPalette == 0) continue;
+        const int number = feature_number_read(gs, c);
+        int strength = def.lightBase > 0 ? int(def.lightBase) : number;
+        // Числовой гейт: орб шпиля и залежь выемки тушат огонь СВОИМ
+        // числом (0 = выкачано) — событию-писателю здесь делать нечего.
+        if (def.lightNumberGated && number <= 0) strength = 0;
+        light_emission_write(
+            gs, c,
+            strength <= 0
+                ? 0
+                : int(light_pack(def.lightPalette,
+                                 std::uint16_t(std::min(
+                                     strength, int(kLightStrengthMax))))));
     }
 }
 

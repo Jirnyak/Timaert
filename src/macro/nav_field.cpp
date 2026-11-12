@@ -88,10 +88,6 @@ struct BakeHeap {
 
 } // namespace
 
-std::size_t NavWorld::cell(int x, int y) const {
-    return cell_of(x, y, mapW);   // ЗАКОН АДРЕСА: одна дверь, маска
-}
-
 // (Нет nav_can_stand. ВЕРДИКТ ВЛАДЕЛЬЦА 2026-10-06, дословно: «да уничтодить
 // вторую стену она портит всё (ВЕСА БЫЛО ЕДИНОЕ РЕШЕНИЕ». Предикат отвечал на
 // ТРИ вопроса — пройти, встать лагерем, залить округу, — и на все три уже
@@ -102,9 +98,10 @@ std::size_t NavWorld::cell(int x, int y) const {
 // что дорого, а потому, что запрещено. Теперь заливка замощает весь тор, и
 // требование «от любого места до любого добраться» истинно ПО ПОСТРОЕНИЮ.)
 
-std::uint16_t nav_region_at(const NavWorld& nv, int x, int y) {
-    if (!nv.baked()) return kNavNoRegion;
-    return nv.regionOf[nv.cell(x, y)];
+std::uint16_t nav_region_at(const NavWorld& nv, std::uint32_t cell) {
+    if (!nv.baked() || std::size_t(cell) >= nv.regionOf.size())
+        return kNavNoRegion;
+    return nv.regionOf[cell];
 }
 
 const NavPortal* nav_region_portals(const NavWorld& nv, std::uint16_t region,
@@ -151,9 +148,7 @@ void nav_bake(const MacroWorld& mw, NavWorld& nv) {
     nv.regionCell.clear();
     for_each_rooted(st, [&](std::uint16_t slot) {
         nv.regionRootedId.push_back(int(st.spawnId[slot].index));
-        nv.regionCell.push_back(
-            int(nv.cell(ecs::cell_x(st.cell[slot], gs.mapW),
-                        ecs::cell_y(st.cell[slot], gs.mapW))));
+        nv.regionCell.push_back(int(st.cell[slot].idx));
     });
     const int R = int(nv.regionRootedId.size());
     if (R == 0 || R >= int(kNavNoRegion)) {
@@ -522,19 +517,19 @@ bool nav_ensure(const MacroWorld& mw, NavWorld& nv) {
     return nv.baked();
 }
 
-std::uint32_t nav_path_cost(const NavWorld& nv, int ax, int ay,
-                            int bx, int by) {
+std::uint32_t nav_path_cost(const NavWorld& nv, std::uint32_t a,
+                            std::uint32_t b) {
     if (!nv.baked()) return kNavFar;
     const std::size_t R = nv.regionRootedId.size();
-    const std::uint16_t ra = nav_region_at(nv, ax, ay);
-    const std::uint16_t rb = nav_region_at(nv, bx, by);
+    const std::uint16_t ra = nav_region_at(nv, a);
+    const std::uint16_t rb = nav_region_at(nv, b);
     if (std::size_t(ra) >= R || std::size_t(rb) >= R) return kNavFar;
     // u32: локальные копии были `std::uint16_t` и СРЕЗАЛИ бы расширенное поле
     // обратно — тот же немой кламп на уровень ниже. Назвал его компилятор
     // (-Wtautological-constant-out-of-range-compare на сравнении с сентинелом),
     // а не ревью, и это ровно то, зачем стоит -Werror.
-    const std::uint32_t da = nv.distHome[nv.cell(ax, ay)];
-    const std::uint32_t db = nv.distHome[nv.cell(bx, by)];
+    const std::uint32_t da = nv.distHome[a];
+    const std::uint32_t db = nv.distHome[b];
     if (da == kNavFar || db == kNavFar) return kNavFar;
     if (ra == rb) return std::uint32_t(da) + std::uint32_t(db);
     const std::uint32_t mid = nv.routeDist[std::size_t(ra) * R + std::size_t(rb)];
@@ -542,35 +537,27 @@ std::uint32_t nav_path_cost(const NavWorld& nv, int ax, int ay,
     return std::uint32_t(da) + mid + std::uint32_t(db);
 }
 
-bool nav_step(const NavWorld& nv, int x, int y, int tx, int ty,
-              int& sdx, int& sdy) {
-    if (!nv.baked()) return false;
-    const std::size_t c = nv.cell(x, y);
-    const std::size_t t = nv.cell(tx, ty);
-    if (c == t) return false;
+std::uint32_t nav_step(const NavWorld& nv, std::uint32_t at,
+                       std::uint32_t goal) {
+    if (!nv.baked()) return kNoCell;
+    const std::size_t c = at;
+    const std::size_t t = goal;
+    if (c == t || c >= nv.regionOf.size() || t >= nv.regionOf.size())
+        return kNoCell;
     const std::uint16_t rc = nv.regionOf[c];
     const std::uint16_t rt = nv.regionOf[t];
     // Ни одной поправки «а если цель на воде»: у воды теперь СВОЯ округа, как
     // у всякой клетке тора. kNavNoRegion остался сентинелем незапечённого
     // мира и выхода за таблицу, а не именем стихии.
-    if (rt == kNavNoRegion) return false;
+    if (rt == kNavNoRegion) return kNoCell;
     const int W = nv.mapW, H = nv.mapH;
-    const auto step_to = [&](std::size_t n) {
-        const int nx = cell_x(std::uint32_t(n), W);
-        const int ny = cell_y(std::uint32_t(n), W);
-        int dx = nx - wrap_axis(x, W);
-        if (dx > 1) dx = -1; else if (dx < -1) dx = 1;
-        int dy = ny - wrap_axis(y, H);
-        if (dy > 1) dy = -1; else if (dy < -1) dy = 1;
-        sdx = dx;
-        sdy = dy;
-        return true;
-    };
+    // Сосед, названный таблицей, И ЕСТЬ ответ: здесь стояло разложение его
+    // индекса в пару, вычитание координат ходока и ручная складка смещения
+    // через шов — чтобы звонящий тут же собрал из смещения тот же индекс.
+    const auto step_to = [](std::size_t n) { return std::uint32_t(n); };
     const auto step_dir = [&](std::uint8_t dir) {
-        if (dir == kNavNoStep) return false;
-        sdx = kNavDX[dir];
-        sdy = kNavDY[dir];
-        return true;
+        if (dir == kNavNoStep) return kNoCell;
+        return cell_step(std::uint32_t(c), kNavDX[dir], kNavDY[dir], W);
     };
     // (НЕТ ВОДНОЙ ВЕТКИ, и она была НЕДОСТИЖИМОЙ по построению ещё до реза.
     // Её вход — `rc == kNavNoRegion`, то есть «у клетки под ходоком нет
@@ -604,7 +591,7 @@ bool nav_step(const NavWorld& nv, int x, int y, int tx, int ty,
     // принимает), а морская работала фолбэком — см. надгробие выше.
     const std::size_t R2 = nv.regionRootedId.size();
     const std::uint16_t nr = nv.routeNext[std::size_t(rc) * R2 + rt];
-    if (nr == kNavNoRegion) return false;   // честно недостижимо
+    if (nr == kNavNoRegion) return kNoCell;   // честно недостижимо
     const std::uint32_t begin = nv.portalBegin[rc];
     int bestSlot = -1;
     std::uint16_t bestVal = kNavUnreached;

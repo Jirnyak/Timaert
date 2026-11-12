@@ -58,7 +58,7 @@ inline bool is_land(const TerrainData& t, int mapW, int mapH, int x, int y) {
     // ровно пока мир дорождён: `biome_at_cell` отвечает `Water` и тогда, когда
     // поля нет вовсе (fail-closed), то есть на недопечённом мире объявляет
     // водой ВЕСЬ мир и останавливает спавн целиком.
-    return !t.is_water(x, y);
+    return !t.is_water(cell_of(x, y, t.width));
 }
 
 struct XY { int x, y; };

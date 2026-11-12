@@ -28,7 +28,7 @@ namespace sm {
 // у ролла и умер с род-развилками. Missing layers read as no context:
 // nothing to embody, 0.
 struct MacroWorld;
-int fauna_cell_capacity_at(const MacroWorld& w, int x, int y);
+int fauna_cell_capacity_at(const MacroWorld& w, std::uint32_t cell);
 
 // ── Creature views over THE one body table ───────────────────────────
 // The source of truth for every creature (rabbit → dragon) is the same

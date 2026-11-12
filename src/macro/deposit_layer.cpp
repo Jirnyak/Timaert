@@ -79,10 +79,9 @@ constexpr int kDepositGenCount =
 // в нём — та же вода, что в море, по тому же единственному порогу. Россыпь
 // ложится у воды, а не у «реки»: сорта воды в этом мире нет и заводить его
 // значило бы вернуть снесённый второй спеллинг.
-bool water_adjacent(const TerrainData& t, int x, int y) {
+bool water_adjacent(const TerrainData& t, std::uint32_t at) {
     if (!t.has_rgba_storage() || !world_shape_ok(t.width, t.height))
         return false;
-    const std::uint32_t at = cell_of(x, y, t.width);
     for (int dy = -1; dy <= 1; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {
             if (t.is_water(cell_step(at, dx, dy, t.width))) return true;
@@ -94,27 +93,31 @@ bool water_adjacent(const TerrainData& t, int x, int y) {
 // Вклад ОДНОЙ генераторной компоненты в ёмкость клетки.
 std::int32_t component_virgin_at(const TerrainData& terrain,
                                  std::uint32_t seed,
-                                 const DepositGenRow& g, int wx, int wy) {
+                                 const DepositGenRow& g, std::uint32_t cell) {
     // The terrain WEIGHT (never a gate): metals ride height⁴ — mountains ~1,
     // plains vanishing but legal; clay rides the river-wetted lowland.
     float weight = 0.0f;
     switch (g.affinity) {
         case OreAffinity::MountainHeight: {
-            const float h01 = field01_of(terrain.height_at(wx, wy));
+            const float h01 = field01_of(terrain.height_at(cell));
             weight = h01 * h01 * h01 * h01;
             break;
         }
         case OreAffinity::RiverMoisture: {
-            const float m01 = field01_of(terrain.moisture_at(wx, wy));
-            weight = water_adjacent(terrain, wx, wy) ? m01 : m01 / 8.0f;
+            const float m01 = field01_of(terrain.moisture_at(cell));
+            weight = water_adjacent(terrain, cell) ? m01 : m01 / 8.0f;
             break;
         }
     }
     // Below-threshold weight cannot crest whatever the noise says — skip the
     // fbm for the 90% of cells it cannot help.
     if (weight <= g.threshold) return 0;
-    const float ux = (float(wx) + 0.5f) / float(terrain.width);
-    const float uy = (float(wy) + 0.5f) / float(terrain.height);
+    // Точка карты для шума — геометрия ГЕНЕРАЦИИ: индекс раскладывается в
+    // координаты здесь, у единственного, кому они нужны.
+    const float ux = (float(cell_x(cell, terrain.width)) + 0.5f)
+                   / float(terrain.width);
+    const float uy = (float(cell_y(cell, terrain.width)) + 0.5f)
+                   / float(terrain.height);
     const float fseed = float(seed % 100000u);
     const float n = terrain_fbm(ux * g.period, uy * g.period, 3, 0.5f,
                                 g.period, fseed + float(g.salt & 0xFFFFu));
@@ -136,43 +139,14 @@ void allocate_deposit_fields(DepositLayer& layer, int width, int height) {
     layer.width = width;
     layer.height = height;
     // A field is born with the world rather than on first use: one allocated
-    // lazily is one whose first reader pays for everyone. The reach radius is
-    // READ FROM THE ROW's home (kGathererReach lives beside the resource
-    // rows): every vein reaches exactly as far as a gatherer walks.
+    // lazily is one whose first reader pays for everyone.
     layer.cells_.allocate(width, height);
-    // Весь кап, не только клетки мира: хвост обязан стоять нулём (M-180).
-    std::memset(layer.reach_, 0, sizeof(layer.reach_));
 }
 
-void DepositLayer::stamp_(int x, int y, int delta) {
-    if (!cells_.live()) return;
-    // Клетки диска — шаги ИНДЕКСА через cell_step (ЗАКОН АДРЕСА): центр
-    // адресуется один раз, сосед есть арифметика, а не вторая свёртка.
-    const std::uint32_t at = cells_.index(x, y);
-    const int R = kGathererReach;
-    for (int dy = -R; dy <= R; ++dy) {
-        const int span = int(std::sqrt(double(R * R - dy * dy)));
-        for (int dx = -span; dx <= span; ++dx) {
-            std::uint16_t& c = reach_[cell_step(at, dx, dy, cells_.width)];
-            // A count can only be walked down by a cell that walked it up,
-            // so the floor is a statement about deposit_set rather than a
-            // clamp. Guarded anyway: an underflow grants forever.
-            if (delta > 0) ++c;
-            else if (c > 0u) --c;
-        }
-    }
-}
-
-void deposit_set(DepositLayer& layer, int x, int y, std::int32_t value) {
-    if (!layer.cells_.live()) return;
-    // Переход «пусто ↔ живо» читается у самого поля ДО и ПОСЛЕ записи: кламп
-    // ширины клетки стоит в `write`, и судить о переходе по намерению, а не
-    // по факту, значило бы повторить его вторым экземпляром.
-    const bool was = layer.cells_.at(x, y) != 0;
-    layer.cells_.write(x, y, value);
-    const bool now = layer.cells_.at(x, y) != 0;
-    if (!was && now) layer.stamp_(x, y, +1);
-    else if (was && !now) layer.stamp_(x, y, -1);
+void deposit_set(DepositLayer& layer, std::uint32_t cell, std::int32_t value) {
+    // Кламп ширины клетки и счёт живых стоят в самой записи поля
+    // (`ResourceGrid::write`); неродившееся поле запись глотает там же.
+    layer.cells_.write(cell, value);
 }
 
 // ЁМКОСТЬ КЛЕТКИ — ЧИСТАЯ ФУНКЦИЯ ТЕРРАИНА И СИДА, как фертильность
@@ -180,20 +154,17 @@ void deposit_set(DepositLayer& layer, int x, int y, std::int32_t value) {
 // компонент; кламп к ширине клетки поля — у единственной двери записи
 // (ResourceGrid::write), здесь сумма честная.
 std::int32_t vein_virgin_at(const TerrainData& terrain, std::uint32_t seed,
-                            int x, int y) {
-    if (terrain.width <= 0 || terrain.height <= 0
-        || !terrain.has_rgba_storage()) {
+                            std::uint32_t cell) {
+    if (!world_shape_ok(terrain.width, terrain.height)
+        || !terrain.has_rgba_storage() || cell >= terrain.cell_count()) {
         return 0;
     }
-    // Сторона МИРА → заворот маской (ЗАКОН АДРЕСА).
-    const int wx = wrap_axis(x, terrain.width);
-    const int wy = wrap_axis(y, terrain.height);
     // Уровень моря НЕ ПАРАМЕТР этой двери: плоскость одна на мир и её несёт
     // сама карта (`TerrainData::seaLevel8`).
-    if (terrain.is_water(wx, wy)) return 0;
+    if (terrain.is_water(cell)) return 0;
     std::int64_t sum = 0;
     for (int k = 0; k < kDepositGenCount; ++k) {
-        sum += component_virgin_at(terrain, seed, kDepositGen[k], wx, wy);
+        sum += component_virgin_at(terrain, seed, kDepositGen[k], cell);
     }
     return std::int32_t(std::min<std::int64_t>(sum, kMaxFieldUnitsPerCell));
 }
@@ -202,29 +173,28 @@ void build_deposit_layer(DepositLayer& layer, const TerrainData& terrain,
                          std::uint32_t seed) {
     layer.birthSeed = seed;
     layer.virginUnits = 0;
-    layer.revision = 0;
     allocate_deposit_fields(layer, terrain.width, terrain.height);
     if (terrain.width <= 0 || terrain.height <= 0
         || !terrain.has_rgba_storage()) {
         return;
     }
-    for (int y = 0; y < terrain.height; ++y) {
-        for (int x = 0; x < terrain.width; ++x) {
-            const std::int32_t amount = vein_virgin_at(terrain, seed, x, y);
-            if (amount <= 0) continue;
-            deposit_set(layer, x, y, amount);
-            layer.virginUnits += amount;
-        }
+    // Обход всех клеток мира идёт по индексу: порядок тот же, что у прежних
+    // вложенных циклов по строкам, поэтому отпечаток геологии не сдвинулся.
+    const std::uint32_t cells = std::uint32_t(layer.cells().cell_count());
+    for (std::uint32_t c = 0; c < cells; ++c) {
+        const std::int32_t amount = vein_virgin_at(terrain, seed, c);
+        if (amount <= 0) continue;
+        deposit_set(layer, c, amount);
+        layer.virginUnits += amount;
     }
     // The geology fingerprint — the calibration eye of the field law.
     std::fprintf(stderr, "[deposits] vein=%lld/%d  (units/cells)\n",
                  (long long)layer.virginUnits, int(layer.cells().liveCells));
 }
 
-std::int32_t vein_cluster_cap(const DepositLayer& layer, int x, int y) {
+std::int32_t vein_cluster_cap(const DepositLayer& layer, std::uint32_t root) {
     if (!layer.cells().live()) return 0;
-    const std::uint32_t root = layer.wrap_index(x, y);
-    if (layer.cells().at_index(root) == 0) return 0;
+    if (layer.cells().at(root) == 0) return 0;
     // Однократные буферы вопроса (ЗАКОН ГЕНЕРАЦИИ п.3 — и у сезонного
     // визита цена та же: кластеры суть гнёзда в десятки клеток).
     std::vector<std::uint32_t> frontier{root};
@@ -233,12 +203,12 @@ std::int32_t vein_cluster_cap(const DepositLayer& layer, int x, int y) {
     while (!frontier.empty()) {
         const std::uint32_t c = frontier.back();
         frontier.pop_back();
-        sum += layer.cells().at_index(c);
+        sum += layer.cells().at(c);
         for (int dy = -1; dy <= 1; ++dy) {
             for (int dx = -1; dx <= 1; ++dx) {
                 if (dx == 0 && dy == 0) continue;
                 const std::uint32_t n = cell_step(c, dx, dy, layer.width);
-                if (layer.cells().at_index(n) == 0) continue;
+                if (layer.cells().at(n) == 0) continue;
                 if (std::find(seen.begin(), seen.end(), n) != seen.end())
                     continue;
                 seen.push_back(n);
@@ -247,13 +217,6 @@ std::int32_t vein_cluster_cap(const DepositLayer& layer, int x, int y) {
         }
     }
     return std::int32_t(std::min<std::int64_t>(sum, kMaxFieldUnitsPerCell));
-}
-
-void create_deposit(DepositLayer& layer, int x, int y, std::int32_t amount) {
-    if (layer.width <= 0 || layer.height <= 0) return;
-    if (amount <= 0) return;
-    deposit_set(layer, x, y, amount);
-    ++layer.revision;
 }
 
 } // namespace sm

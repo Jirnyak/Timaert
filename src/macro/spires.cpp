@@ -72,8 +72,7 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
                 placedCells, [&](std::uint32_t cell) {
                     if (!site_open_for_structure(features, terrain, cell))
                         return false;
-                    return int(zones.at(cell_x(cell, gs.mapW),
-                                        cell_y(cell, gs.mapW))) >= gate;
+                    return int(zones.at(cell)) >= gate;
                 });
             if (site != kNoSite) break;
         }
@@ -109,8 +108,7 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         // The spell is the spire's FEATURE NUMBER («у поля урожай, у шахты
         // залежи, у порта корабли — у шпиля спелл»): kSpellDefs ordinal + 1
         // under FT_Spire, 0 = drained (закон нуля-ординала).
-        feature_number_write(gs, cell_x(site, gs.mapW), cell_y(site, gs.mapW),
-                             ord + 1);
+        feature_number_write(gs, site, ord + 1);
         placedCells.push_back(site);
     }
 }
@@ -119,15 +117,13 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
 // Вне строки: вопрос задают панель, оверлей, сборщик фактов клетки и дневной
 // тик — ни одного горячего цикла, а заголовок за это остаётся на `<cstdint>`
 // и fwd-декларациях (§5 п.13: тело в заголовке платит каждый включивший).
-SpireOrb spire_orb(const MacroWorld& w, int x, int y) {
+SpireOrb spire_orb(const MacroWorld& w, std::uint32_t cell) {
     SpireOrb o{};
     // Нулевой вклад отсутствующего слоя (S6) — не ветка, а данные.
     if (!w.gs) return o;
     const GameState& gs = *w.gs;
-    const int cx = wrap_axis(x, gs.mapW);
-    const int cy = wrap_axis(y, gs.mapH);
-    if (w.gs->features.at(cx, cy) != FT_Spire) return o;
-    o.spell = feature_number_read(gs, cx, cy);
+    if (gs.features.at(cell) != FT_Spire) return o;
+    o.spell = feature_number_read(gs, cell);
     // Выкачанный шпиль ЗАБЫЛ свой спелл, как выработанная жила — свою руду,
     // поэтому тир у него честно ноль, а не последний запомненный.
     o.tier = o.spell > 0

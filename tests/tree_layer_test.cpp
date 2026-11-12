@@ -141,16 +141,16 @@ void test_build_and_mutation() {
     build_tree_layer(layer, td, forestMask.data(), forestMask.size());
     CHECK_OR_RETURN(layer.has_complete_storage(),
                     "the derived layer has full storage");
-    CHECK(layer.at(2, 0) == 0, "the water row carries nothing");
-    CHECK(layer.at(4, 4) == kMaxTreesPerCell,
+    CHECK(layer.at(cell_of(2, 0, layer.width)) == 0, "the water row carries nothing");
+    CHECK(layer.at(cell_of(4, 4, layer.width)) == kMaxTreesPerCell,
           "9/9 forest = the golden max");
-    CHECK(layer.at(3, 3) == derived_tree_count(Biome::Mountain, 4.0f / 9.0f),
+    CHECK(layer.at(cell_of(3, 3, layer.width)) == derived_tree_count(Biome::Mountain, 4.0f / 9.0f),
           "the mountain cell derives through the biome cascade");
     // Ring cell (5,5): itself + 3 ring mates in ITS 3×3 → frac 4/9 over Meadow.
-    CHECK(layer.at(5, 5) == derived_tree_count(Biome::Meadow, 4.0f / 9.0f),
+    CHECK(layer.at(cell_of(5, 5, layer.width)) == derived_tree_count(Biome::Meadow, 4.0f / 9.0f),
           "a ring cell sees its own 3x3 fraction");
     // Torus: (7,6) neighbours the forest at (0,6) across the wrap.
-    CHECK(layer.at(7, 6) == derived_tree_count(Biome::Meadow, 1.0f / 9.0f),
+    CHECK(layer.at(cell_of(7, 6, layer.width)) == derived_tree_count(Biome::Meadow, 1.0f / 9.0f),
           "the massif neighbourhood wraps the torus");
     // Fail closed: truncated terrain → empty layer, at() reads 0.
     TerrainData bad;
@@ -161,27 +161,27 @@ void test_build_and_mutation() {
     build_tree_layer(badLayer, bad, forestMask.data(), forestMask.size());
     CHECK(!badLayer.has_complete_storage(),
           "truncated terrain fails closed to an empty layer");
-    CHECK(badLayer.at(3, 3) == 0, "an empty layer reads 0 everywhere");
+    CHECK(badLayer.at(cell_of(3, 3, badLayer.width)) == 0, "an empty layer reads 0 everywhere");
 
     // ── 3. The grid's poke door + the v36 load path ──
     const std::uint32_t rev0 = layer.revision;
-    set_tree_count(layer, 4, 4, kMaxTreesPerCell - 5);
-    CHECK(layer.at(4, 4) == kMaxTreesPerCell - 5, "the poke door writes");
+    set_tree_count(layer, cell_of(4, 4, layer.width), kMaxTreesPerCell - 5);
+    CHECK(layer.at(cell_of(4, 4, layer.width)) == kMaxTreesPerCell - 5, "the poke door writes");
     CHECK(layer.revision == rev0 + 1, "a real change bumps the revision");
-    set_tree_count(layer, 4, 4, -37);
-    CHECK(layer.at(4, 4) == 0, "a negative count clamps to zero");
-    set_tree_count(layer, 4, 4, kMaxTreesPerCell * 3);
-    CHECK(layer.at(4, 4) == kMaxTreesPerCell, "an excess count clamps to max");
+    set_tree_count(layer, cell_of(4, 4, layer.width), -37);
+    CHECK(layer.at(cell_of(4, 4, layer.width)) == 0, "a negative count clamps to zero");
+    set_tree_count(layer, cell_of(4, 4, layer.width), kMaxTreesPerCell * 3);
+    CHECK(layer.at(cell_of(4, 4, layer.width)) == kMaxTreesPerCell, "an excess count clamps to max");
     // Leave (4,4) at a value that DIFFERS from its virgin derivation (the
     // golden max): a restore fixture equal to the virgin grid cannot see a
     // disarmed restore — that blindness was caught live by this file's own
     // negative control.
-    set_tree_count(layer, 4, 4, kMaxTreesPerCell - 5);
-    set_tree_count(layer, 12, -2, 77);
-    CHECK(layer.at(4, 6) == 77, "the write torus-wraps its coordinates");
+    set_tree_count(layer, cell_of(4, 4, layer.width), kMaxTreesPerCell - 5);
+    set_tree_count(layer, cell_of(12, -2, layer.width), 77);
+    CHECK(layer.at(cell_of(4, 6, layer.width)) == 77, "the write torus-wraps its coordinates");
     // Same value again: no revision churn.
     const std::uint32_t revStable = layer.revision;
-    set_tree_count(layer, 4, 6, 77);
+    set_tree_count(layer, cell_of(4, 6, layer.width), 77);
     CHECK(layer.revision == revStable,
           "writing the same value does not churn the revision");
 
@@ -206,7 +206,7 @@ void test_layer_is_flat_under_world_cell_cap() {
     CHECK(layer.cells().size() == 256u,
           "live cells are the world's, not the cap's");
     std::ranges::fill(layer.cells(), std::uint16_t(900));
-    CHECK(layer.at(15, 15) == 900 && layer.data[255] == 900,
+    CHECK(layer.at(cell_of(15, 15, layer.width)) == 900 && layer.data[255] == 900,
           "precondition: the big world is written to its last cell");
 
     // The same storage reborn over a SMALLER world: nothing of the old world
@@ -224,7 +224,7 @@ void test_layer_is_flat_under_world_cell_cap() {
           "a world of exactly the cap is live");
     tree_layer_reset(layer, int(sm::kWorldSideCap) * 2,
                      int(sm::kWorldSideCap) * 2);
-    CHECK(!layer.has_complete_storage() && layer.at(0, 0) == 0,
+    CHECK(!layer.has_complete_storage() && layer.at(cell_of(0, 0, layer.width)) == 0,
           "a world past the cap is refused: no sides, no cells");
 }
 

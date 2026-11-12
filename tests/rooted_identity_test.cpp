@@ -97,8 +97,8 @@ int main() {
     // Клетка B: зеркально — фича ДЕРЕВНЯ, колонка ГОРОД.
     // Два ответа разведены НАРОЧНО, чтобы вопрос «чей победил» имел смысл.
     constexpr int kAx = 40, kAy = 40, kBx = 70, kBy = 70;
-    sm::feature_put(features, terrain, kAx, kAy, sm::FT_City);
-    sm::feature_put(features, terrain, kBx, kBy, sm::FT_Village);
+    sm::feature_put(features, terrain, sm::cell_of(kAx, kAy, features.width), sm::FT_City);
+    sm::feature_put(features, terrain, sm::cell_of(kBx, kBy, features.width), sm::FT_Village);
     birth_squad_at(st, kAx, kAy, sm::SquadType::Village);
     birth_squad_at(st, kBx, kBy, sm::SquadType::City);
     sm::build_squad_index(idx, st, gs.mapW, gs.mapH);

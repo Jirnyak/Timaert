@@ -294,9 +294,9 @@ inline void shift_home_flock(GameState& gs, const MacroStore& st,
     //  `bornPopBase` — M-320. Руина и шпиль стали ФИЧАМИ, слотов у них нет,
     //  значит домом для чужих душ им не стать: `rooted_handle_by_ordinal`
     //  к ним не резолвит. Одна дверь, один закон.)
-    const auto& c = st.cell[home.slot];
-    const int x = ecs::cell_x(c, gs.mapW), y = ecs::cell_y(c, gs.mapW);
-    feature_number_write(gs, x, y, std::max(0, feature_number_read(gs, x, y) + delta));
+    const std::uint32_t cell = st.cell[home.slot].idx;
+    feature_number_write(gs, cell,
+                         std::max(0, feature_number_read(gs, cell) + delta));
 }
 
 // ── ВТОРАЯ ПОЛОВИНА ПАРЫ, ИЗМЕРЕННАЯ ФАКТОМ ──────────────────────────────
@@ -387,9 +387,7 @@ inline void reconcile_rooted_flock(GameState& gs, MacroStore& st,
         if (squad_archetype(SquadType(st.runtime[slot].squadType))
             != SquadArchetype::Rooted)
             continue;
-        const auto& c = st.cell[slot];
-        feature_number_write(gs, ecs::cell_x(c, gs.mapW), ecs::cell_y(c, gs.mapW),
-                     souls[slot]);
+        feature_number_write(gs, st.cell[slot].idx, souls[slot]);
     }
 }
 

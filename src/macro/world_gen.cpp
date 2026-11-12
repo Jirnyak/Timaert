@@ -155,16 +155,13 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         });
         for (std::uint16_t vs : villageRows) {
             bool water = false, deposit = false;
-            const std::uint32_t vIdx = cell_of(rooted_x(vs), rooted_y(vs),
-                                               gs.mapW);
+            const std::uint32_t vIdx = st.cell[vs].idx;
             for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy)
                 for (int dx = -kSettlementReach; dx <= kSettlementReach;
                      ++dx) {
                     const std::uint32_t n = cell_step(vIdx, dx, dy, gs.mapW);
-                    const int x = cell_x(n, gs.mapW);
-                    const int y = cell_y(n, gs.mapW);
                     if (out.terrain->is_water(n)) water = true;
-                    if (out.deposits->vein_at(x, y) != 0) deposit = true;
+                    if (out.deposits->vein_at(n) != 0) deposit = true;
                 }
             nearWater   += water   ? 1 : 0;
             nearDeposit += deposit ? 1 : 0;
@@ -283,7 +280,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
                     spireRows.push_back(slot);
             });
             for (std::uint16_t ss : spireRows) {
-                const int z = int(out.zones->at(rooted_x(ss), rooted_y(ss)));
+                const int z = int(out.zones->at(st.cell[ss].idx));
                 zoneMin = std::min(zoneMin, z);
                 zoneMax = std::max(zoneMax, z);
                 for (std::uint16_t os : spireRows) {
@@ -362,7 +359,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
                                 const std::uint32_t n = cell_step(
                                     std::uint32_t(i), dx, dy, side);
                                 const FeatureType f = gs.features.at(
-                                    cell_x(n, side), cell_y(n, side));
+                                    n);
                                 if (f == FT_Road || f == FT_DirtRoad
                                     || f == FT_Bridge) {
                                     ++roadNeighbours;

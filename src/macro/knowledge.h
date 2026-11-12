@@ -70,12 +70,12 @@ struct KnowledgeLayer {
     std::span<const std::uint8_t> cells() const { return {data, cell_count()}; }
     std::span<std::uint8_t> cells() { return {data, cell_count()}; }
     // THE door every consumer asks — overlays, NPC draw filters, the map
-    // screen. Torus-wrapped; an absent grid answers Unknown (fail closed:
-    // a world with no knowledge layer shows nothing, not everything).
-    std::uint8_t at(int x, int y) const {
-        if (!world_shape_ok(width, height) || cell_count() == 0u)
-            return kKnowledgeUnknown;
-        return data[cell_of(x, y, width)];
+    // screen. Клетку называют ОДНИМ ЧИСЛОМ (ЗАКОН АДРЕСА п.2, M-462 ломоть
+    // 4); экран сворачивает свою пару дверью `cell_of`. An absent grid
+    // answers Unknown (fail closed: a world with no knowledge layer shows
+    // nothing, not everything).
+    std::uint8_t at(std::uint32_t cell) const {
+        return cell < cell_count() ? data[cell] : kKnowledgeUnknown;
     }
 };
 static_assert(sizeof(KnowledgeLayer) == 12u + kWorldCellCap,

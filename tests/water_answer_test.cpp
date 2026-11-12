@@ -72,7 +72,7 @@ void test_one_plane_answers_everyone() {
             const bool water = td.is_water(c);
             ++samples;
             if (water) ++doorWater;
-            if ((biome_at_cell(td, x, y) == Biome::Water) != water)
+            if ((biome_at_cell(td, cell_of(x, y, td.width)) == Biome::Water) != water)
                 ++disagreeBiome;
             if ((cost.water[std::size_t(c)] != 0u) != water) ++disagreeCost;
             if ((td.rgba[std::size_t(c) * 4u + 3u] == 0u) != water)
@@ -117,7 +117,7 @@ void test_one_number_moves_the_world() {
         for (int x = 0; x < kSide; ++x) {
             const std::uint32_t c = cell_of(x, y, kSide);
             const bool water = high.is_water(c);
-            if ((biome_at_cell(high, x, y) == Biome::Water) != water) ++disagree;
+            if ((biome_at_cell(high, cell_of(x, y, high.width)) == Biome::Water) != water) ++disagree;
             if ((high.rgba[std::size_t(c) * 4u + 3u] == 0u) != water) ++disagree;
         }
     CHECK(disagree == 0,
@@ -189,7 +189,7 @@ void test_negative_controls() {
             water ? std::uint16_t(kFieldWordMax) : std::uint16_t(0);
         if (td.is_water(c) != water) ++flipped;
         const bool biomeWater =
-            biome_at_cell(td, cell_x(c, kSide), cell_y(c, kSide))
+            biome_at_cell(td, c)
                 == Biome::Water;
         if (biomeWater != water) ++flipped;
     }
@@ -209,8 +209,9 @@ void test_negative_controls() {
     // (г) FAIL-CLOSED В ВОДУ: карты нет — суши нет. Отказ «всё суша» пустил бы
     // размещателей искать землю там, где её не бывает.
     const TerrainData absent{};
-    CHECK(absent.is_water(0u) && absent.is_water(0, 0),
-          "карта без хранилища отвечает водой, а не выдуманной сушей");
+    CHECK(absent.is_water(0u) && absent.is_water(cell_of(5, 3, 64)),
+          "карта без хранилища отвечает водой на всякой клетке, а не "
+          "выдуманной сушей");
 }
 
 // ── 4. Перевод float→слово — одна дверь, и она под компилятором ──────────

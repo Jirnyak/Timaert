@@ -78,9 +78,9 @@ struct TreeLayer {
         return {data, cell_count()};
     }
     std::span<std::uint16_t> cells() { return {data, cell_count()}; }
-    std::uint16_t at(int x, int y) const {
-        if (!world_shape_ok(width, height) || cell_count() == 0u) return 0;
-        return data[cell_of(x, y, width)];
+    // Клетку слою называют ОДНИМ ЧИСЛОМ (ЗАКОН АДРЕСА п.2, M-462 ломоть 4).
+    std::uint16_t at(std::uint32_t cell) const {
+        return cell < cell_count() ? data[cell] : std::uint16_t(0);
     }
 };
 static_assert(sizeof(TreeLayer) == 12u + 2u * kWorldCellCap,
@@ -115,7 +115,7 @@ void build_tree_layer(TreeLayer& out, const TerrainData& terrain,
 // bumps `revision`. This is the GRID's one poke door — gameplay never calls
 // it directly, it mutates through field_move (the Trees carrier
 // row), so the ledger and the renderer can never see different forests.
-void set_tree_count(TreeLayer& layer, int x, int y, int count);
+void set_tree_count(TreeLayer& layer, std::uint32_t cell, int count);
 
 // (Дверь наката клеток из сейва стояла здесь и умерла 2026-11-10, ломоть 3
 // сейв-эпика: единственный её звонящий — свёртка загрузки — получает лес

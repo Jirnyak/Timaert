@@ -92,6 +92,6 @@ struct SpireOrb {
 // панель поселения объявляла у себя («a preview without the world degrades
 // to "not drained"»), теперь выраженная ОДИН раз.
 struct MacroWorld;
-SpireOrb spire_orb(const MacroWorld& w, int x, int y);
+SpireOrb spire_orb(const MacroWorld& w, std::uint32_t cell);
 
 } // namespace sm

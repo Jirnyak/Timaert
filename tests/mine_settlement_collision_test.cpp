@@ -88,16 +88,16 @@ void build(Fixture& f, bool veinPeakUnderTown) {
 
     // Деревня: байт фичи + ПАСТВА числом той же клетки (souls_flock читает
     // число фичи при bornPopBase == 0 — это и есть носитель, который ломался).
-    sm::feature_put(f.fl, f.td, kTownX, kTownY, sm::FT_Village);
-    sm::feature_number_write(f.gs, kTownX, kTownY, kVillageFlock);
+    sm::feature_put(f.fl, f.td, sm::cell_of(kTownX, kTownY, f.fl.width), sm::FT_Village);
+    sm::feature_number_write(f.gs, sm::cell_of(kTownX, kTownY, f.gs.mapW), kVillageFlock);
 
     // Кластер из трёх связных клеток: деревня, её сосед и ещё один сосед.
     // Веса подобраны так, что САМАЯ ЖИРНАЯ клетка — под деревней, то есть
     // прежний выбор пика неминуемо целился бы в неё.
-    sm::create_deposit(f.deposits, kTownX, kTownY,
+    sm::deposit_set(f.deposits, sm::cell_of(kTownX, kTownY, f.deposits.width),
                        veinPeakUnderTown ? 9000 : 10);
-    sm::create_deposit(f.deposits, kPeakX, kPeakY, 500);
-    sm::create_deposit(f.deposits, kPeakX + 1, kPeakY, 100);
+    sm::deposit_set(f.deposits, sm::cell_of(kPeakX, kPeakY, f.deposits.width), 500);
+    sm::deposit_set(f.deposits, sm::cell_of(kPeakX + 1, kPeakY, f.deposits.width), 100);
 }
 
 void test_mine_does_not_eat_the_village() {
@@ -108,7 +108,7 @@ void test_mine_does_not_eat_the_village() {
     // ГЛАВНОЕ: байт деревни цел. Утверждается ОТНОШЕНИЕ («клетка осталась
     // местом»), а не конкретный байт шахты — какой род шахты выпал, решает
     // сеяный вес, и прибивать его литералом значило бы охранять случай.
-    const sm::FeatureType onTown = f.fl.at(kTownX, kTownY);
+    const sm::FeatureType onTown = f.fl.at(sm::cell_of(kTownX, kTownY, f.fl.width));
     CHECK(onTown == sm::FT_Village,
           "клетка деревни обязана остаться деревней — шахта не разрабатывает "
           "уже разрабатываемую клетку (ЗАКОН ПОЛЯ п.3)");
@@ -117,17 +117,17 @@ void test_mine_does_not_eat_the_village() {
 
     // И ЧИСЛО — вторая половина закона, и она ВАЖНЕЕ байта: именно его
     // перезапись превращала паству 128 в десятки тысяч.
-    CHECK(sm::feature_number_read(f.gs, kTownX, kTownY) == kVillageFlock,
+    CHECK(sm::feature_number_read(f.gs, sm::cell_of(kTownX, kTownY, f.gs.mapW)) == kVillageFlock,
           "паства деревни обязана остаться нетронутой — число фичи у неё "
           "значит души, а не залежь");
 
     // ШАХТА ВСЁ-ТАКИ ВСТАЛА, И НЕ ТАМ: вердикт владельца именно «пик уезжает
     // на свободную клетку», а не «кластер теряет шахту». Без этой проверки
     // закон был бы зелен и у правки, которая просто перестала ставить шахты.
-    const sm::FeatureType onPeak = f.fl.at(kPeakX, kPeakY);
+    const sm::FeatureType onPeak = f.fl.at(sm::cell_of(kPeakX, kPeakY, f.fl.width));
     CHECK(sm::feature_def(onPeak).numberRow == sm::ResourceFieldId::Vein,
           "шахта обязана встать на свободный максимум кластера, а не пропасть");
-    CHECK(sm::feature_number_read(f.gs, kPeakX, kPeakY) > 0,
+    CHECK(sm::feature_number_read(f.gs, sm::cell_of(kPeakX, kPeakY, f.gs.mapW)) > 0,
           "у переехавшей шахты обязана быть своя залежь числом её клетки");
 }
 
@@ -140,12 +140,12 @@ void test_free_peak_is_untouched() {
     build(f, /*veinPeakUnderTown=*/false);
     sm::stamp_mines(f.gs, f.td, f.deposits, kSeed);
 
-    CHECK(sm::feature_def(f.fl.at(kPeakX, kPeakY)).numberRow
+    CHECK(sm::feature_def(f.fl.at(sm::cell_of(kPeakX, kPeakY, f.fl.width))).numberRow
               == sm::ResourceFieldId::Vein,
           "свободный максимум кластера обязан получить шахту как прежде");
-    CHECK(f.fl.at(kTownX, kTownY) == sm::FT_Village,
+    CHECK(f.fl.at(sm::cell_of(kTownX, kTownY, f.fl.width)) == sm::FT_Village,
           "деревня цела и в этом случае");
-    CHECK(sm::feature_number_read(f.gs, kTownX, kTownY) == kVillageFlock,
+    CHECK(sm::feature_number_read(f.gs, sm::cell_of(kTownX, kTownY, f.gs.mapW)) == kVillageFlock,
           "паства цела и в этом случае");
 }
 

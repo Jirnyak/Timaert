@@ -154,7 +154,7 @@ int main()
     const std::unique_ptr<sm::FeatureLayer> fullFeaturesOwn{new sm::FeatureLayer()};
     sm::FeatureLayer& fullFeatures = *fullFeaturesOwn;
     fullFeatures.resize(2, 2);
-    sm::feature_put(fullFeatures, td, 0, 0, sm::FT_Road);
+    sm::feature_put(fullFeatures, td, sm::cell_of(0, 0, fullFeatures.width), sm::FT_Road);
 
     // Cell (1,0) is a mountain by ELEVATION (biome), not a feature: raise its
     // height above the mountain level so build_cost_grid classifies it Mountain
@@ -239,7 +239,7 @@ int main()
     const std::unique_ptr<sm::FeatureLayer> mismatchedFeaturesOwn{new sm::FeatureLayer()};
     sm::FeatureLayer& mismatchedFeatures = *mismatchedFeaturesOwn;
     mismatchedFeatures.resize(1, 2);
-    sm::feature_put(mismatchedFeatures, td, 0, 0, sm::FT_Road);
+    sm::feature_put(mismatchedFeatures, td, sm::cell_of(0, 0, mismatchedFeatures.width), sm::FT_Road);
     const sm::PathCostData mismatchCosts = sm::build_cost_grid(td, &mismatchedFeatures);
     CHECK(mismatchCosts.costGrid == noFeatures.costGrid,
                  "dimension-mismatched feature storage must be ignored");
@@ -248,7 +248,7 @@ int main()
     sm::FeatureLayer& invalidFeatures = *invalidFeaturesOwn;
     invalidFeatures.resize(2, 2);
     invalidFeatures.data[0] = 255u;
-    sm::feature_put(invalidFeatures, td, 1, 0, sm::FT_Road);
+    sm::feature_put(invalidFeatures, td, sm::cell_of(1, 0, invalidFeatures.width), sm::FT_Road);
     const sm::PathCostData invalidFeatureCosts = sm::build_cost_grid(td, &invalidFeatures);
     CHECK(invalidFeatureCosts.costGrid.size() == 4u,
                  "invalid-byte feature grid must still build a complete cost grid");
@@ -362,11 +362,11 @@ int main()
     // The danger is a 0..255 CONTINUUM (owner 2026-08-24): every byte is a
     // legal value — the door returns it raw — and only a cell the short
     // storage cannot back fails closed to zero.
-    CHECK(malformedZones.at(0, 0) == 255u,
+    CHECK(malformedZones.at(sm::cell_of(0, 0, malformedZones.width)) == 255u,
                  "a stored danger byte must come back untouched");
-    CHECK(malformedZones.at(1, 1) == 0u,
+    CHECK(malformedZones.at(sm::cell_of(1, 1, malformedZones.width)) == 0u,
                  "a cell past the short storage must fail closed to zero");
-    CHECK(malformedZones.at(1, 1) == 0u,
+    CHECK(malformedZones.at(sm::cell_of(1, 1, malformedZones.width)) == 0u,
                  "out-of-backing zone lookup must fail closed");
 
     return sm::test::report("pathfinding_parity_test");

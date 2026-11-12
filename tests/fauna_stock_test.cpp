@@ -58,12 +58,23 @@ TerrainData meadow_terrain() {
     return t;
 }
 
+// Состояние мира фикстуры: сторона НАЗВАНА в нём, как у всякого рождённого
+// мира (род 4 — форма мира). Двери полей берут клетку индексом, а индекс из
+// пары сворачивается по стороне мира; состояние без стороны — не мир.
+constexpr int kSide = 4;
+std::unique_ptr<GameState> world_state() {
+    std::unique_ptr<GameState> gs = make_game_state();
+    gs->mapW = kSide;
+    gs->mapH = kSide;
+    return gs;
+}
+
 MacroStockKey cell_key(int x, int y) {
     return MacroStockKey{-1, std::int16_t(x), std::int16_t(y)};
 }
 
 void test_untouched_cell_reads_capacity() {
-    std::unique_ptr<GameState> gsOwn = make_game_state();
+    std::unique_ptr<GameState> gsOwn = world_state();
     GameState& gs = *gsOwn;
     const TerrainData terrain = meadow_terrain();
     MacroWorld w{.gs = &gs, .terrain = &terrain};
@@ -72,7 +83,7 @@ void test_untouched_cell_reads_capacity() {
     generate_fauna_field(w);
 
     MacroWorld capW{.gs = &gs, .terrain = &terrain};
-    const int cap = fauna_cell_capacity_at(capW, 1, 1);
+    const int cap = fauna_cell_capacity_at(capW, cell_of(1, 1, kSide));
     CHECK(cap > 0, "a meadow carries wildlife - the baseline is real");
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(1, 1)) == cap,
           "an untouched cell reads its own table capacity");
@@ -83,7 +94,7 @@ void test_untouched_cell_reads_capacity() {
 }
 
 void test_hunt_thins_and_return_does_not_resurrect() {
-    std::unique_ptr<GameState> gsOwn = make_game_state();
+    std::unique_ptr<GameState> gsOwn = world_state();
     GameState& gs = *gsOwn;
     const TerrainData terrain = meadow_terrain();
     MacroWorld w{.gs = &gs, .terrain = &terrain};
@@ -103,7 +114,8 @@ void test_hunt_thins_and_return_does_not_resurrect() {
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(2, 2)) == cap - 2,
           "leave and RETURN: the culled stay culled");
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(1, 1)) ==
-              fauna_cell_capacity_at(MacroWorld{.gs = &gs, .terrain = &terrain}, 1, 1),
+              fauna_cell_capacity_at(MacroWorld{.gs = &gs, .terrain = &terrain},
+                                     cell_of(1, 1, kSide)),
           "the scar is per cell - the neighbour still stands whole");
 
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(2, 2), -999);
@@ -112,7 +124,7 @@ void test_hunt_thins_and_return_does_not_resurrect() {
 }
 
 void test_regrow_self_cleans_at_baseline() {
-    std::unique_ptr<GameState> gsOwn = make_game_state();
+    std::unique_ptr<GameState> gsOwn = world_state();
     GameState& gs = *gsOwn;
     const TerrainData terrain = meadow_terrain();
     MacroWorld w{.gs = &gs, .terrain = &terrain};
@@ -125,7 +137,7 @@ void test_regrow_self_cleans_at_baseline() {
     // Ряд-носитель (M-371): удар ложится в САМО поле ровно на эту клетку,
     // а шрам носителя не растёт никогда — прежний «scars exactly one cell»
     // охранял форму шрама, умершую с вердиктом «звери это просто поле».
-    CHECK(fauna_field_read(gs, 0, 3) == cap - 2,
+    CHECK(fauna_field_read(gs, cell_of(0, 3, gs.mapW)) == cap - 2,
           "the hunt hits the carrier field on exactly the hunted cell");
     CHECK(gs.wheatScars.liveCells == 0,
           "a carrier row never writes a scar - the one scar field stays clean");
@@ -140,7 +152,7 @@ void test_regrow_self_cleans_at_baseline() {
 }
 
 void test_regrow_runs_on_game_days() {
-    std::unique_ptr<GameState> gsOwn = make_game_state();
+    std::unique_ptr<GameState> gsOwn = world_state();
     GameState& gs = *gsOwn;
     const TerrainData terrain = meadow_terrain();
     MacroWorld w{.gs = &gs, .terrain = &terrain};
@@ -183,14 +195,14 @@ void test_regrow_runs_on_game_days() {
 }
 
 void test_no_context_fails_closed() {
-    std::unique_ptr<GameState> gsOwn = make_game_state();
+    std::unique_ptr<GameState> gsOwn = world_state();
     GameState& gs = *gsOwn;
     MacroWorld w{.gs = &gs};
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(1, 1)) == 0,
           "no terrain wired = nothing stands here");
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(1, 1), -3);
     CHECK(gs.wheatScars.liveCells == 0, "and nothing moves");
-    CHECK(fauna_cell_capacity_at(MacroWorld{}, 0, 0) == 0,
+    CHECK(fauna_cell_capacity_at(MacroWorld{}, 0u) == 0,
           "null context capacity is zero, not a crash");
 }
 

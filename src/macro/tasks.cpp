@@ -145,6 +145,7 @@ int task_offers_for(const MacroStore& st, const GameState& gs,
     const std::uint32_t placeId = st.spawnId[slot].index;
     if (placeId == 0u) return 0;
     const int W = gs.mapW;
+    const std::uint32_t here = st.cell[slot].idx;
     const int px = ecs::cell_x(st.cell[slot], W);
     const int py = ecs::cell_y(st.cell[slot], W);
 
@@ -249,13 +250,13 @@ int task_offers_for(const MacroStore& st, const GameState& gs,
              dy <= kVisitScanRadius && sightCount < 16; ++dy) {
             for (int dx = -kVisitScanRadius;
                  dx <= kVisitScanRadius && sightCount < 16; ++dx) {
-                const int x = wrap_axis(px + dx, W);
-                const int y = wrap_axis(py + dy, W);
-                const FeatureType ft = features.at(x, y);
+                // Сосед — шаг ИНДЕКСА (`cell_step`, ЗАКОН АДРЕСА): здесь
+                // стояли две свёртки осей и две сборки индекса обратно.
+                const std::uint32_t n = cell_step(here, dx, dy, W);
+                const FeatureType ft = features.at(n);
                 for (const FeatureType want : kVisitWorthy) {
                     if (ft != want) continue;
-                    sights[sightCount++] = {std::uint16_t(ft),
-                                            cell_of(x, y, W)};
+                    sights[sightCount++] = {std::uint16_t(ft), n};
                     break;
                 }
             }

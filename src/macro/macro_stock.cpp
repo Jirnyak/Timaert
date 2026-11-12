@@ -37,12 +37,20 @@ struct MacroStockRow {
 };
 
 // ── tree_count: the forest of one cell — the registry's carrier row ───────
+// КЛЮЧ ВЕДОМОСТИ НЕСЁТ КЛЕТКУ ПАРОЙ (он строка дельты шва —
+// `MacroStockKey@src/tables/stock_key.h`), а поля мира спрашивают её одним
+// числом: пара сворачивается ЗДЕСЬ, у дверей ведомости, один раз. Без мира
+// свернуть нечем — отвечает клетка 0, а ряды ниже без мира и так молчат.
+std::uint32_t key_cell(const MacroWorld& w, MacroStockKey k) {
+    return w.gs ? cell_of(k.cellX, k.cellY, w.gs->mapW) : 0u;
+}
+
 int read_tree_count(const MacroWorld& w, MacroStockKey k) {
-    return resource_field_read(w, ResourceFieldId::Trees, k.cellX, k.cellY);
+    return resource_field_read(w, ResourceFieldId::Trees, key_cell(w, k));
 }
 
 void write_tree_count(MacroWorld& w, MacroStockKey k, int delta) {
-    field_move(w, ResourceFieldId::Trees, k.cellX, k.cellY, delta);
+    field_move(w, ResourceFieldId::Trees, key_cell(w, k), delta);
 }
 
 // ── ЗДЕСЬ ЖИЛ РЯД `population`, И ОН УНИЧТОЖЕН КАК ВТОРОЙ СЛОВАРЬ (M-324) ──
@@ -178,7 +186,8 @@ void write_creatures(MacroWorld& w, MacroStockKey k, int delta) {
 // the map renders). Deposits join as carrier rows in Inc B.
 
 // (field_cell_index умер 2026-09-18 вместе с хешем шрамов: поле индексирует
-// себя само — клетка спрашивается координатами, а не ключом.)
+// себя само. С ломтя 4 ряда M-462 клетку ряду называют ИНДЕКСОМ — все хуки
+// ниже берут одно число, а не пару координат.)
 
 // Wheat potential: the climate's fertility channel (master G — the same
 // number the field stamp scores cells by), scaled to stands per cell by
@@ -186,18 +195,16 @@ void write_creatures(MacroWorld& w, MacroStockKey k, int delta) {
 // field stamp and the settlement score share this scale).
 // Settlement (FT_Field parcels, garden plots) only decides WHERE this
 // potential is embodied — it never enters the baseline.
-int wheat_baseline(const MacroWorld& w, int x, int y) {
-    const int wx = FeatureLayer::wrap_coord(x, w.terrain->width);
-    const int wy = FeatureLayer::wrap_coord(y, w.terrain->height);
-    const std::size_t idx =
-        (std::size_t(wy) * std::size_t(w.terrain->width) + std::size_t(wx))
-        * 4u + 1u;   // G = moisture, "the fertility" (macro/spawners.h)
-    if (idx >= w.terrain->rgba.size()) return 0;
-    return int(field01_of(w.terrain->rgba[idx]) * float(kMaxWheatStandsPerCell));
+int wheat_baseline(const MacroWorld& w, std::uint32_t cell) {
+    // G = moisture, "the fertility" (macro/spawners.h). Канал читает дверь
+    // карты: здесь стоял рукописный индекс `(wy * width + wx) * 4 + 1` с
+    // двумя свёртками осей; клетка за картой отвечает нулём там же.
+    return int(field01_of(w.terrain->moisture_at(cell))
+               * float(kMaxWheatStandsPerCell));
 }
 
-int fauna_baseline(const MacroWorld& w, int x, int y) {
-    return fauna_cell_capacity_at(w, x, y);
+int fauna_baseline(const MacroWorld& w, std::uint32_t cell) {
+    return fauna_cell_capacity_at(w, cell);
 }
 
 // ФАУНА — РЯД-НОСИТЕЛЬ НА СВОЁ ПОЛЕ (M-371, вердикт владельца 2026-11-02:
@@ -205,14 +212,14 @@ int fauna_baseline(const MacroWorld& w, int x, int y) {
 // рождении мира»). Живое поголовье лежит в `GameState::faunaField`; базовая
 // (природная ёмкость: биом + лес) осталась потолком роста и клампом выемки —
 // форма ровно та же, что у стада: своя базовая плюс свой контейнер.
-int fauna_read(const MacroWorld& w, int x, int y) {
-    return w.gs ? fauna_field_read(*w.gs, x, y) : 0;
+int fauna_read(const MacroWorld& w, std::uint32_t cell) {
+    return w.gs ? fauna_field_read(*w.gs, cell) : 0;
 }
-void fauna_apply(MacroWorld& w, int x, int y, int delta) {
+void fauna_apply(MacroWorld& w, std::uint32_t cell, int delta) {
     if (!w.gs) return;
-    const int cap = fauna_baseline(w, x, y);
-    fauna_field_write(*w.gs, x, y,
-                      std::clamp(fauna_field_read(*w.gs, x, y) + delta,
+    const int cap = fauna_baseline(w, cell);
+    fauna_field_write(*w.gs, cell,
+                      std::clamp(fauna_field_read(*w.gs, cell) + delta,
                                  0, std::max(0, cap)));
 }
 
@@ -221,13 +228,13 @@ void fauna_apply(MacroWorld& w, int x, int y, int delta) {
 // the virgin derivation is an initial condition, not an attractor), so
 // read/apply go to the grid, and set_tree_count keeps clamp + revision at
 // the layer's own door.
-int trees_read(const MacroWorld& w, int x, int y) {
-    return w.gs ? int(w.gs->treeLayer.at(x, y)) : 0;
+int trees_read(const MacroWorld& w, std::uint32_t cell) {
+    return w.gs ? int(w.gs->treeLayer.at(cell)) : 0;
 }
-void trees_apply(MacroWorld& w, int x, int y, int delta) {
+void trees_apply(MacroWorld& w, std::uint32_t cell, int delta) {
     if (!w.gs || delta == 0) return;
-    const int now = int(w.gs->treeLayer.at(x, y));
-    set_tree_count(w.gs->treeLayer, x, y, now + delta);
+    const int now = int(w.gs->treeLayer.at(cell));
+    set_tree_count(w.gs->treeLayer, cell, now + delta);
 }
 
 // ЖИЛА: НА КАКОЙ КЛЕТКЕ ЧИСЛО ЕСТЬ ЗАЛЕЖЬ ШАХТЫ — колонкой строки фичи
@@ -235,15 +242,15 @@ void trees_apply(MacroWorld& w, int x, int y, int delta) {
 // ряда два, и оба чужие: дикая жила — производный грид DepositLayer (чистая
 // геология, геймплеем не мутируется), залежь шахты — число фичи в `featureNumber`
 // (кап связного кластера, свёрнутый генерацией шахт — вердикт 2026-10-23).
-bool vein_mine_cell_(const MacroWorld& w, int x, int y) {
+bool vein_mine_cell_(const MacroWorld& w, std::uint32_t cell) {
     return w.gs
-        && feature_def(w.gs->features.at(x, y)).numberRow
+        && feature_def(w.gs->features.at(cell)).numberRow
                == ResourceFieldId::Vein;
 }
 
-int vein_read(const MacroWorld& w, int x, int y) {
-    if (vein_mine_cell_(w, x, y)) return feature_number_read(*w.gs, x, y);
-    return w.deposits ? int(w.deposits->vein_at(x, y)) : 0;
+int vein_read(const MacroWorld& w, std::uint32_t cell) {
+    if (vein_mine_cell_(w, cell)) return feature_number_read(*w.gs, cell);
+    return w.deposits ? int(w.deposits->vein_at(cell)) : 0;
 }
 
 // КАП ЗАЛЕЖИ — ФУНДАМЕНТ (вердикт 2026-10-23: «фундментальные поля типа
@@ -252,32 +259,32 @@ int vein_read(const MacroWorld& w, int x, int y) {
 // клетки кап есть СВЯЗНОСТЬ её кластера природного поля — та же дверь, какой
 // генерация сеяла залежь. O(кластер), и зовётся только на шахтных клетках
 // (гейт numberRow — O(1) первым).
-int vein_baseline(const MacroWorld& w, int x, int y) {
-    if (!vein_mine_cell_(w, x, y) || !w.deposits) return 0;
-    return int(vein_cluster_cap(*w.deposits, x, y));
+int vein_baseline(const MacroWorld& w, std::uint32_t cell) {
+    if (!vein_mine_cell_(w, cell) || !w.deposits) return 0;
+    return int(vein_cluster_cap(*w.deposits, cell));
 }
 
 // ЗАЛЕЖЬ ДОРАСТАЕТ ДО КАПА ТЕМ ЖЕ ТЕМПОМ, ЧТО ПАШНЯ: четверть ёмкости за
 // сезонный визит — полный кап за год. Единый закон роста, не свой; число —
 // баланс (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ).
-int vein_growth_at(const MacroWorld& w, int x, int y) {
-    const int cap = vein_baseline(w, x, y);
+int vein_growth_at(const MacroWorld& w, std::uint32_t cell) {
+    const int cap = vein_baseline(w, cell);
     return cap > 0 ? std::max(1, cap / 4) : 0;
 }
 
-void vein_apply(MacroWorld& w, int x, int y, int delta) {
+void vein_apply(MacroWorld& w, std::uint32_t cell, int delta) {
     // ДОБЫЧА СУЩЕСТВУЕТ ПО ШАХТАМ (вердикт 2026-10-23): дикая жила —
     // природное поле, и оно НЕ УБЫВАЕТ («метал не убывает как и
     // фертильность») — двигается только залежь под фичей шахты. Клетка без
     // шахты отказывает записи молча-честно: взять с неё нечего по закону,
     // а не по невезению. Приход клампится КАПОМ СВЯЗНОСТИ: рост не надувает
     // залежь выше фундамента.
-    if (!vein_mine_cell_(w, x, y) || delta == 0) return;
+    if (!vein_mine_cell_(w, cell) || delta == 0) return;
     const int cap = w.deposits
-        ? int(vein_cluster_cap(*w.deposits, x, y))
-        : feature_number_read(*w.gs, x, y);   // фикстура без геологии: тратить можно
-    feature_number_write(*w.gs, x, y,
-                 std::clamp(feature_number_read(*w.gs, x, y) + delta, 0,
+        ? int(vein_cluster_cap(*w.deposits, cell))
+        : feature_number_read(*w.gs, cell);   // фикстура без геологии: тратить можно
+    feature_number_write(*w.gs, cell,
+                 std::clamp(feature_number_read(*w.gs, cell) + delta, 0,
                             std::max(cap, 0)));
 }
 
@@ -292,28 +299,26 @@ void vein_apply(MacroWorld& w, int x, int y, int delta) {
 // one stand per season regardless of fertility — fed the world ~7 grain a
 // day and starved every farmer within a week of genesis (measured,
 // balance_run 2026-08-30).
-int wheat_growth_at(const MacroWorld& w, int x, int y) {
-    return std::max(1, wheat_baseline(w, x, y) / kWheatSeasonsToRegrow);
+int wheat_growth_at(const MacroWorld& w, std::uint32_t cell) {
+    return std::max(1, wheat_baseline(w, cell) / kWheatSeasonsToRegrow);
 }
 
 // Fauna: beasts breed where beasts are. One head per visit while at least
 // HALF the 3×3 valley is alive (the old 1/32-days rate at a living edge);
 // a wiped-out region has nobody left to breed, and repopulates from its
 // edges inward — or never, if the whole valley was emptied.
-int fauna_growth_at(const MacroWorld& w, int x, int y) {
+int fauna_growth_at(const MacroWorld& w, std::uint32_t at) {
     // Обход 3×3 — арифметика ИНДЕКСА через дверь cell_step (ЗАКОН АДРЕСА);
     // без терраина все девять чтений и так отвечали нулём — отказ тот же.
     if (!w.terrain || !world_shape_ok(w.terrain->width, w.terrain->height))
         return 0;
     const int side = w.terrain->width;
-    const std::uint32_t at = cell_of(x, y, side);
     int alive = 0, cap = 0;
     for (int dy = -1; dy <= 1; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {
             const std::uint32_t n = cell_step(at, dx, dy, side);
-            const int nx = cell_x(n, side), ny = cell_y(n, side);
-            cap   += fauna_cell_capacity_at(w, nx, ny);
-            alive += resource_field_read(w, ResourceFieldId::Fauna, nx, ny);
+            cap   += fauna_cell_capacity_at(w, n);
+            alive += resource_field_read(w, ResourceFieldId::Fauna, n);
         }
     }
     if (cap <= 0) return 0;
@@ -331,23 +336,20 @@ int fauna_growth_at(const MacroWorld& w, int x, int y) {
 // (no new constants): min(kBiomeBaseTreeCount, 1024)/1024 — taiga and
 // tropics (≥1024) grow at full rate, meadow at ~0.6, desert (40) almost
 // never, water not at all.
-int trees_growth_at(const MacroWorld& w, int x, int y) {
+int trees_growth_at(const MacroWorld& w, std::uint32_t at) {
     if (!w.gs || !w.terrain || !w.terrain->has_rgba_storage()
         || !world_shape_ok(w.terrain->width, w.terrain->height))
         return 0;
     const int side = w.terrain->width;
-    const std::uint32_t at = cell_of(x, y, side);
     int sum = 0;
     for (int dy = -1; dy <= 1; ++dy)
-        for (int dx = -1; dx <= 1; ++dx) {
-            const std::uint32_t n = cell_step(at, dx, dy, side);
-            sum += int(w.gs->treeLayer.at(cell_x(n, side), cell_y(n, side)));
-        }
+        for (int dx = -1; dx <= 1; ++dx)
+            sum += int(w.gs->treeLayer.at(cell_step(at, dx, dy, side)));
     int growth = sum * kGrowthEpochDays / (9 * 1024);
     if (growth <= 0) return 0;
     // THE cell cascade (map_generator.h biome_at_cell) — fail-closed to
     // Water, whose base tree count is 0: no storage, no growth.
-    const Biome biome = biome_at_cell(*w.terrain, x, y);
+    const Biome biome = biome_at_cell(*w.terrain, at);
     const int b = int(biome);
     const int base = biome_base_tree_count(b);
     return growth * std::min(base, 1024) / 1024;
@@ -363,18 +365,18 @@ int trees_growth_at(const MacroWorld& w, int x, int y) {
 //
 // Fail-closed без терраина: у ряда-НОСИТЕЛЯ двери зовутся ДО общего гейта
 // `resource_field_read`, значит собственную землю они обязаны проверять сами.
-int grass_feeds_head(const MacroWorld& w, int x, int y) {
+int grass_feeds_head(const MacroWorld& w, std::uint32_t cell) {
     if (!w.terrain || w.terrain->width <= 0) return 0;
-    return wheat_baseline(w, x, y) / (kDaysPerSeason * 4);
+    return wheat_baseline(w, cell) / (kDaysPerSeason * 4);
 }
 
 // НА КАКОЙ КЛЕТКЕ ЧИСЛО ЕСТЬ СТАДО — спрашивается КОЛОНКОЙ СТРОКИ ФИЧИ
 // (`FeatureDef::numberRow`), никогда родом фичи веткой: поле чисел фич одно,
 // и «что значит это число» есть вопрос о фиче (ЗАКОН ПОЛЯ п.3, ЗАКОН СТРОКИ
 // КАТАЛОГА). Без слоя фич стада нет вовсе — fail-closed, ничего не выдумываем.
-bool livestock_cell_(const MacroWorld& w, int x, int y) {
+bool livestock_cell_(const MacroWorld& w, std::uint32_t cell) {
     return w.gs
-        && feature_def(w.gs->features.at(x, y)).numberRow
+        && feature_def(w.gs->features.at(cell)).numberRow
                == ResourceFieldId::Livestock;
 }
 
@@ -382,8 +384,8 @@ bool livestock_cell_(const MacroWorld& w, int x, int y) {
 // чьё число есть стадо. Ноль у всех прочих клеток — и это он даёт ходоку
 // роста право пропустить их одним сравнением (`cap <= 0 → continue`), то
 // есть мир больше не платит за выгон, которого нет.
-int livestock_baseline(const MacroWorld& w, int x, int y) {
-    return livestock_cell_(w, x, y) ? grass_feeds_head(w, x, y) : 0;
+int livestock_baseline(const MacroWorld& w, std::uint32_t cell) {
+    return livestock_cell_(w, cell) ? grass_feeds_head(w, cell) : 0;
 }
 
 // ПОГОЛОВЬЕ РАСТЁТ, ПОКА ЗАГОН НЕ ПОЛОН: одна голова за сезонный визит —
@@ -393,19 +395,19 @@ int livestock_baseline(const MacroWorld& w, int x, int y) {
 // соседних клеток, а дикого стада больше нет — число живёт внутри загона,
 // и у загона нет соседей, у которых бы оно стояло. Закон стал проще, потому
 // что вопрос стал уже, а не потому что его упростили.
-int livestock_growth_at(const MacroWorld&, int, int) { return 1; }
+int livestock_growth_at(const MacroWorld&, std::uint32_t) { return 1; }
 
 // ЧТЕНИЕ И ЗАПИСЬ — ЧЕРЕЗ ПОЛЕ ЧИСЕЛ ФИЧ. Выемка зажимается в [0, кап] ЗДЕСЬ,
 // у единственной двери ряда: `feature_number_write` сам по себе про кап стада не
 // знает ничего (под другой фичей там спелл или паства), и знать не должен.
-int livestock_read(const MacroWorld& w, int x, int y) {
-    return livestock_cell_(w, x, y) ? feature_number_read(*w.gs, x, y) : 0;
+int livestock_read(const MacroWorld& w, std::uint32_t cell) {
+    return livestock_cell_(w, cell) ? feature_number_read(*w.gs, cell) : 0;
 }
-void livestock_apply(MacroWorld& w, int x, int y, int delta) {
-    if (!livestock_cell_(w, x, y)) return;
-    const int cap = grass_feeds_head(w, x, y);
-    feature_number_write(*w.gs, x, y,
-                 std::clamp(feature_number_read(*w.gs, x, y) + delta, 0, cap));
+void livestock_apply(MacroWorld& w, std::uint32_t cell, int delta) {
+    if (!livestock_cell_(w, cell)) return;
+    const int cap = grass_feeds_head(w, cell);
+    feature_number_write(*w.gs, cell,
+                 std::clamp(feature_number_read(*w.gs, cell) + delta, 0, cap));
 }
 
 // (Здесь СТОЯЛО «роста у ряда жилы больше нет — одноразовый ком»; снято
@@ -419,22 +421,20 @@ constexpr ResourceFieldDef kResourceFields[] = {
     // (FeatureDef::yieldItem — лён поверх пашни, металл шахты поверх жилы).
     /* Wheat */ {"wheat", &wheat_baseline,
                  GrowthDomain::HealToBaseline, &wheat_growth_at,
-                 nullptr, nullptr, 0, "food", NPCType::Count},
+                 nullptr, nullptr, "food", NPCType::Count},
     // ФАУНА — РЯД-НОСИТЕЛЬ НА СВОЁ ХРАНИМОЕ ПОЛЕ (M-371): живое — в
     // `GameState::faunaField` (генератор заполняет при рождении мира), шрам
     // мёртв, рост лечит носителя к природной базовой тем же ходоком.
     /* Fauna */ {"fauna", &fauna_baseline,
                  GrowthDomain::HealToBaseline, &fauna_growth_at,
-                 &fauna_read, &fauna_apply, 0, "food", NPCType::Count},
+                 &fauna_read, &fauna_apply, "food", NPCType::Count},
     // ЛЕС — ЕДИНСТВЕННОЕ ИСКЛЮЧЕНИЕ ЗАКОНА, и оно названо вслух: базовой у
     // него нет, потому что нетронутая земля зарастает ГУЩЕ девственной.
-    // The forest reaches nobody: no gate asks «is there wood near» today, и
-    // этот 0 — не вся правда: лес есть НОСИТЕЛЬ, его живое состояние — это
-    // TreeLayer, поэтому allocate_world_fields его пропускает и диска
-    // досягаемости у него нет вовсе.
+    // Лес есть НОСИТЕЛЬ: его живое состояние — это TreeLayer, поэтому
+    // allocate_world_fields его пропускает.
     /* Trees */ {"trees", nullptr,
                  GrowthDomain::CarrierSpread, &trees_growth_at,
-                 &trees_read, &trees_apply, 0, "wood", NPCType::Count},
+                 &trees_read, &trees_apply, "wood", NPCType::Count},
     // СТАДО — РЯД-НОСИТЕЛЬ НА ПОЛЕ ЧИСЕЛ ФИЧ (M-258): базовая есть КАП, а
     // живое число лежит в `featureNumber` под фичей, которая объявила его своим.
     // Форма ровно та же, что у жилы ниже: своя базовая плюс чужой контейнер.
@@ -442,7 +442,7 @@ constexpr ResourceFieldDef kResourceFields[] = {
     // контейнер, спина сразу в обозе (сводка — разряд А).
     /* Livestock */ {"livestock", &livestock_baseline,
                  GrowthDomain::HealToBaseline, &livestock_growth_at,
-                 &livestock_read, &livestock_apply, 0,
+                 &livestock_read, &livestock_apply,
                  nullptr, NPCType::Horse},
     // ЖИЛА — ОДНО ПРИРОДНОЕ ПОЛЕ (вердикт 2026-10-22): рода нет, род РЕСУРСА
     // решает фича шахты (её `yieldItem`) — поэтому умолчание выхода у ряда
@@ -450,21 +450,15 @@ constexpr ResourceFieldDef kResourceFields[] = {
     // (фундамент), текущее дорастает к нему единым законом (2026-10-23).
     /* Vein */ {"vein", &vein_baseline,
                 GrowthDomain::HealToBaseline, &vein_growth_at,
-                &vein_read, &vein_apply, kGathererReach,
+                &vein_read, &vein_apply,
                 nullptr, NPCType::Count},
 };
 static_assert(sizeof(kResourceFields) / sizeof(kResourceFields[0])
                   == std::size_t(ResourceFieldId::Count),
               "every ResourceFieldId needs its def — the table IS the system");
-// THE VEIN ROWS' REACH, pinned where the decision would be made. The deposit
-// layer sizes its fields with kGathererReach directly (its table cannot link
-// this one — the growth laws below drag the ECS with them), so this is what
-// keeps "the radius is the ROW's column" true rather than merely intended: a
-// row that ever wants a different reach reddens here, at the table.
-static_assert(kResourceFields[std::size_t(ResourceFieldId::Vein)].reachCells
-                  == kGathererReach,
-              "deposit_layer.cpp sizes the vein field with kGathererReach; "
-              "give the vein row its own reach and teach it that first");
+// (Колонка радиуса досягаемости ряда и её сторож стояли здесь и сняты ломтём
+// 4 ряда M-462 вместе с полем досягаемости жил: у вопроса «есть ли ряд рядом»
+// не было читателя, а колонку читал один этот сторож.)
 
 // РЯД-ШРАМ РОВНО ОДИН, И ЭТО СТЕНА, А НЕ НАБЛЮДЕНИЕ. Шрам держит ряд без
 // носителя (`carrierRead == nullptr`); поле под него в мире одно —
@@ -504,11 +498,10 @@ static_assert(scar_row_count() == 1u
 void generate_fauna_field(MacroWorld& w) {
     if (!w.gs || !w.terrain || w.terrain->width <= 0 || w.terrain->height <= 0)
         return;
-    for (int y = 0; y < w.terrain->height; ++y) {
-        for (int x = 0; x < w.terrain->width; ++x) {
-            const int cap = fauna_cell_capacity_at(w, x, y);
-            if (cap > 0) fauna_field_write(*w.gs, x, y, cap);
-        }
+    const std::uint32_t n = std::uint32_t(w.terrain->cell_count());
+    for (std::uint32_t c = 0; c < n; ++c) {
+        const int cap = fauna_cell_capacity_at(w, c);
+        if (cap > 0) fauna_field_write(*w.gs, c, cap);
     }
 }
 
@@ -539,7 +532,7 @@ void allocate_world_fields(GameState& gs, int width, int height) {
 // win, water refuses, no rock terraces): what differs between a field and
 // a pasture is only WHICH row's fertility bars the gate, never the ground.
 static bool parcel_ground_ok_(const FeatureLayer& fl, const MacroWorld& world,
-                              int x, int y) {
+                              std::uint32_t cell) {
     std::size_t total = 0;
     if (!FeatureLayer::cell_count_for(fl.width, fl.height, total)
         || fl.cell_count() < total || !world.terrain)
@@ -553,7 +546,6 @@ static bool parcel_ground_ok_(const FeatureLayer& fl, const MacroWorld& world,
     if (td.width != fl.width || td.height != fl.height
         || td.rgba.size() < total * 4u)
         return false;
-    const std::uint32_t cell = cell_of(x, y, fl.width);
     if (fl.at(cell) != FT_None) return false;  // roads win
     // ЕДИНСТВЕННЫЙ ЗАПРЕТ МИРА — ВОДА (владелец, 2026-09-23, дословно:
     // «никаких запретов в расселении у нас подход через веса проходимости
@@ -575,36 +567,34 @@ static bool parcel_ground_ok_(const FeatureLayer& fl, const MacroWorld& world,
     return true;
 }
 
-bool plough_cell_ok(const MacroWorld& world, int x, int y, int& wheatOut)
+bool plough_cell_ok(const MacroWorld& world, std::uint32_t cell, int& wheatOut)
 {
     if (!world.gs) return false;   // нет мира — нет и поля фич
     const FeatureLayer& fl = world.gs->features;
-    if (!parcel_ground_ok_(fl, world, x, y)) return false;
+    if (!parcel_ground_ok_(fl, world, cell)) return false;
     // The ONE fertility door: potential minus what play has taken. ВОЗВРАЩАЕТСЯ
     // ЧИСЛО, А НЕ ВЕРДИКТ: планка `wheatOut >= field_wheat_min()` снесена
     // вердиктом владельца 2026-10-01 (spawners.h — там же её эпитафия и вывод).
     // Пахать можно всюду, где земля не вода и не занята; СКОЛЬКО уродится,
     // говорит само поле, и на камне оно говорит «ноль» без всякого запрета.
-    wheatOut = resource_field_read(world, ResourceFieldId::Wheat,
-                                   FeatureLayer::wrap_coord(x, fl.width),
-                                   FeatureLayer::wrap_coord(y, fl.height));
+    wheatOut = resource_field_read(world, ResourceFieldId::Wheat, cell);
     return true;
 }
 
-bool plough_field_cell(const MacroWorld& world, int x, int y,
+bool plough_field_cell(const MacroWorld& world, std::uint32_t cell,
                        FeatureType parcel)
 {
     // ЧЕМ ЗАСЕЯНО — КОЛОНКА ФИЧИ, А НЕ ВТОРАЯ ДВЕРЬ (2026-09-20): земля,
     // проверка и цена у хлебной и льняной парцеллы одни и те же, поэтому
     // вспашка одна, а вид парцеллы — её аргумент.
     int wheat = 0;
-    if (!plough_cell_ok(world, x, y, wheat)) return false;
+    if (!plough_cell_ok(world, cell, wheat)) return false;
     FeatureLayer& fl = world.gs->features;
     // ОДНА ДВЕРЬ ШТАМПА (M-212): воду она спрашивает сама, колонкой строки.
     // Гейт воды в `plough_cell_ok` остаётся — он отвечает на ДРУГОЙ вопрос
     // («стоит ли вообще тратить день»), и без него работа была бы оплачена
     // прежде, чем выяснилось, что ставить нечего.
-    return feature_put(fl, *world.terrain, x, y, parcel) != FT_None;
+    return feature_put(fl, *world.terrain, cell, parcel) != FT_None;
 }
 
 // (ДВЕ ДВЕРИ ЗАГОНА СНЕСЕНЫ 2026-10-12, M-258: `pasture_cell_ok` и
@@ -625,15 +615,16 @@ const ResourceFieldDef& resource_field_def(ResourceFieldId f) {
                            ? std::size_t(f) : 0];
 }
 
-int resource_field_read(const MacroWorld& w, ResourceFieldId f, int x, int y) {
+int resource_field_read(const MacroWorld& w, ResourceFieldId f,
+                        std::uint32_t cell) {
     const ResourceFieldDef& def = resource_field_def(f);
-    if (def.carrierRead) return def.carrierRead(w, x, y);
+    if (def.carrierRead) return def.carrierRead(w, cell);
     if (!w.gs || !w.terrain || w.terrain->width <= 0) return 0;
-    const int scar = int(w.gs->wheatScars.at(x, y));
-    return std::max(0, def.baseline(w, x, y) - scar);
+    const int scar = int(w.gs->wheatScars.at(cell));
+    return std::max(0, def.baseline(w, cell) - scar);
 }
 
-int field_move(MacroWorld& w, ResourceFieldId f, int x, int y, int delta) {
+int field_move(MacroWorld& w, ResourceFieldId f, std::uint32_t cell, int delta) {
     if (delta == 0) return 0;
     const ResourceFieldDef& carrier = resource_field_def(f);
     if (carrier.carrierApply) {
@@ -641,10 +632,10 @@ int field_move(MacroWorld& w, ResourceFieldId f, int x, int y, int delta) {
         // клампят каждый по-своему (лес — своим капом, стадо — травой, жила —
         // ёмкостью), и спрашивать их «сколько реально встало» честнее, чем
         // переписывать три клампа четвёртым экземпляром.
-        const int before = carrier.carrierRead ? carrier.carrierRead(w, x, y)
+        const int before = carrier.carrierRead ? carrier.carrierRead(w, cell)
                                                : 0;
-        carrier.carrierApply(w, x, y, delta);
-        const int after = carrier.carrierRead ? carrier.carrierRead(w, x, y)
+        carrier.carrierApply(w, cell, delta);
+        const int after = carrier.carrierRead ? carrier.carrierRead(w, cell)
                                               : 0;
         return after - before;
     }
@@ -662,12 +653,12 @@ int field_move(MacroWorld& w, ResourceFieldId f, int x, int y, int delta) {
     // Spending (−delta) deepens the scar, returning (+delta, regrowth)
     // heals it; the scar never exceeds the baseline, so a runaway writer
     // cannot wind a cell into a millennium of regrowth.
-    const int cap = std::max(0, resource_field_def(f).baseline(w, x, y));
-    const int was = int(scars.at(x, y));
+    const int cap = std::max(0, resource_field_def(f).baseline(w, cell));
+    const int was = int(scars.at(cell));
     const int scar = std::clamp(was - delta, 0, cap);
     // A healed cell is the field's own legal ZERO — no erase, no key, and
     // the live count the grid keeps is what the wire writes out.
-    scars.write(x, y, std::int32_t(scar));
+    scars.write(cell, std::int32_t(scar));
     return was - scar;   // факт тем же знаком, что намерение
 }
 
@@ -703,25 +694,26 @@ int feature_yield_ordinal(FeatureType t) {
 }
 } // namespace
 
-int field_yield_ordinal(const MacroWorld& w, ResourceFieldId f, int x, int y) {
+int field_yield_ordinal(const MacroWorld& w, ResourceFieldId f,
+                        std::uint32_t cell) {
     if (w.gs) {
-        const int fid = feature_yield_ordinal(w.gs->features.at(x, y));
+        const int fid = feature_yield_ordinal(w.gs->features.at(cell));
         if (fid >= 0) return fid;   // предмет фичи старше умолчания ряда
     }
     const ResourceFieldDef& row = resource_field_def(f);
     return row.yieldCreature == NPCType::Count ? row_yield_ordinal(f) : -1;
 }
 
-int field_harvest(MacroWorld& w, ResourceFieldId f, int x, int y, int want,
-                  std::uint32_t squadSlot) {
+int field_harvest(MacroWorld& w, ResourceFieldId f, std::uint32_t cell,
+                  int want, std::uint32_t squadSlot) {
     if (want <= 0 || !w.store || squadSlot >= kUnifiedCap) return 0;
     if (!w.store->alive[squadSlot]) return 0;
-    const int have = resource_field_read(w, f, x, y);
+    const int have = resource_field_read(w, f, cell);
     if (have <= 0) return 0;
     // ВЫХОД: фича клетки старше умолчания ряда (вердикт 2026-10-22 «что там
     // окажется решает фича шахты»; лён поверх пашни — тот же закон).
     const ResourceFieldDef& row = resource_field_def(f);
-    const int outIdx = field_yield_ordinal(w, f, x, y);
+    const int outIdx = field_yield_ordinal(w, f, cell);
     const NPCType creature = outIdx >= 0 ? NPCType::Count : row.yieldCreature;
     Inventory& bag = w.store->inventory[squadSlot].inv;
     if (creature != NPCType::Count) {
@@ -733,7 +725,7 @@ int field_harvest(MacroWorld& w, ResourceFieldId f, int x, int y, int want,
                                   npc_def(creature).baseLevel, take)) {
             return 0;   // нет слота — ничего не наколдовано, поле не тронуто
         }
-        field_move(w, f, x, y, -take);
+        field_move(w, f, cell, -take);
         return take;
     }
     if (outIdx < 0) return 0;   // ряд без выхода — добычи не существует
@@ -752,7 +744,7 @@ int field_harvest(MacroWorld& w, ResourceFieldId f, int x, int y, int want,
     const int take = std::min({want, have, backMax});
     if (take <= 0) return 0;
     if (!bag.add_of(outIdx, take)) return 0;   // отказ слота: поле не тронуто
-    field_move(w, f, x, y, -take);
+    field_move(w, f, cell, -take);
     return take;
 }
 
@@ -776,14 +768,15 @@ void resource_fields_daily_growth(MacroWorld& w, int day) {
             // в эпоху и получает эпоху роста — плавная долгая динамика без
             // полнокарточного дня и без работы в тике.
             if (!w.gs || !w.gs->treeLayer.has_complete_storage()) break;
-            const int W = w.gs->treeLayer.width;
-            const std::size_t n = w.gs->treeLayer.cell_count();
-            for (std::size_t idx = std::size_t(day % kGrowthEpochDays);
-                 idx < n; idx += std::size_t(kGrowthEpochDays)) {
-                const int x = cell_x(std::uint32_t(idx), W);
-                const int y = cell_y(std::uint32_t(idx), W);
-                const int born = def.growthAt(w, x, y);
-                if (born > 0) field_move(w, row, x, y, born);
+            // Срез идёт по ИНДЕКСУ и им же спрашивает ряд: здесь стояла
+            // раскладка индекса в пару на каждой клетке среза, а хук и пульт
+            // собирали его обратно (M-462 ломоть 4).
+            const std::uint32_t n =
+                std::uint32_t(w.gs->treeLayer.cell_count());
+            for (std::uint32_t c = std::uint32_t(day % kGrowthEpochDays);
+                 c < n; c += std::uint32_t(kGrowthEpochDays)) {
+                const int born = def.growthAt(w, c);
+                if (born > 0) field_move(w, row, c, born);
             }
             break;
         }
@@ -798,21 +791,17 @@ void resource_fields_daily_growth(MacroWorld& w, int day) {
             // клетке просто ничего не делает. Одна петля дешевле двух
             // диалектов обхода — клеток/32 в день, тот же срез, что у леса.
             if (!w.terrain || w.terrain->width <= 0) break;
-            const int W = w.terrain->width;
-            const std::size_t n =
-                std::size_t(W) * std::size_t(w.terrain->height);
-            for (std::size_t idx = std::size_t(day % kGrowthEpochDays);
-                 idx < n; idx += std::size_t(kGrowthEpochDays)) {
-                const int x = cell_x(std::uint32_t(idx), W);
-                const int y = cell_y(std::uint32_t(idx), W);
+            const std::uint32_t n = std::uint32_t(w.terrain->cell_count());
+            for (std::uint32_t c = std::uint32_t(day % kGrowthEpochDays);
+                 c < n; c += std::uint32_t(kGrowthEpochDays)) {
                 // Полная клетка не лечится: спрашиваем ёмкость ДО закона
                 // роста, потому что для жилы ёмкость — это шум, и платить за
                 // него на каждой полной клетке незачем.
-                const int cap = def.baseline ? def.baseline(w, x, y) : 0;
+                const int cap = def.baseline ? def.baseline(w, c) : 0;
                 if (cap <= 0) continue;
-                if (resource_field_read(w, row, x, y) >= cap) continue;
-                const int born = def.growthAt(w, x, y);
-                if (born > 0) field_move(w, row, x, y, born);
+                if (resource_field_read(w, row, c) >= cap) continue;
+                const int born = def.growthAt(w, c);
+                if (born > 0) field_move(w, row, c, born);
             }
             break;
         }
@@ -825,24 +814,24 @@ namespace {
 // ── The stock rows over the container ──────────────────────────────────────
 
 int read_fauna_count(const MacroWorld& w, MacroStockKey k) {
-    return resource_field_read(w, ResourceFieldId::Fauna, k.cellX, k.cellY);
+    return resource_field_read(w, ResourceFieldId::Fauna, key_cell(w, k));
 }
 void write_fauna_count(MacroWorld& w, MacroStockKey k, int delta) {
-    field_move(w, ResourceFieldId::Fauna, k.cellX, k.cellY, delta);
+    field_move(w, ResourceFieldId::Fauna, key_cell(w, k), delta);
 }
 int read_crop_count(const MacroWorld& w, MacroStockKey k) {
-    return resource_field_read(w, ResourceFieldId::Wheat, k.cellX, k.cellY);
+    return resource_field_read(w, ResourceFieldId::Wheat, key_cell(w, k));
 }
 void write_crop_count(MacroWorld& w, MacroStockKey k, int delta) {
-    field_move(w, ResourceFieldId::Wheat, k.cellX, k.cellY, delta);
+    field_move(w, ResourceFieldId::Wheat, key_cell(w, k), delta);
 }
 // Число фичи клетки — носитель GameState::featureNumber (один на мир, ЗАКОН ПОЛЯ
 // п.3); feature_number_write клампит в ноль сам — ниже нуля числа фич не живут.
 int read_feature_number(const MacroWorld& w, MacroStockKey k) {
-    return w.gs ? feature_number_read(*w.gs, k.cellX, k.cellY) : 0;
+    return w.gs ? feature_number_read(*w.gs, key_cell(w, k)) : 0;
 }
 void write_feature_number(MacroWorld& w, MacroStockKey k, int delta) {
-    if (w.gs) feature_number_add(*w.gs, k.cellX, k.cellY, delta);
+    if (w.gs) feature_number_add(*w.gs, key_cell(w, k), delta);
 }
 
 constexpr MacroStockRow kRows[] = {

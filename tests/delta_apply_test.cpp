@@ -93,31 +93,31 @@ int main() {
 
     // ── (1) КОММУТАТИВНОСТЬ: порядок «рост → применение» и «применение →
     // рост» дают ОДНО число. Две клетки, один сценарий, два порядка.
-    sm::feature_number_write(gs, cx, cy, 10);
-    sm::feature_number_write(gs, cx + 1, cy, 10);
+    sm::feature_number_write(gs, sm::cell_of(cx, cy, gs.mapW), 10);
+    sm::feature_number_write(gs, sm::cell_of(cx + 1, cy, gs.mapW), 10);
     sm::DeltaBuffer d{};
     push_feature_number(d, cx, cy, -3, gs.mapW);
-    sm::feature_number_add(gs, cx, cy, +5);              // фоновый рост ДО границы
+    sm::feature_number_add(gs, sm::cell_of(cx, cy, gs.mapW), +5);              // фоновый рост ДО границы
     sm::apply_local_delta(mw, d);                // граница тика
     push_feature_number(d, cx + 1, cy, -3, gs.mapW);
     sm::apply_local_delta(mw, d);                // граница ДО роста
-    sm::feature_number_add(gs, cx + 1, cy, +5);          // рост после
-    CHECK(sm::feature_number_read(gs, cx, cy) == 12
-              && sm::feature_number_read(gs, cx + 1, cy) == 12,
+    sm::feature_number_add(gs, sm::cell_of(cx + 1, cy, gs.mapW), +5);          // рост после
+    CHECK(sm::feature_number_read(gs, sm::cell_of(cx, cy, gs.mapW)) == 12
+              && sm::feature_number_read(gs, sm::cell_of(cx + 1, cy, gs.mapW)) == 12,
           "операция коммутирует с фоновым ростом: оба порядка дают 12");
 
     // ── (2) СВЕЖЕСТЬ: буфер опустошён целиком, пустое применение — но-оп.
     CHECK(d.stockCount == 0 && d.factCount == 0 && d.droppedOps == 0,
           "применение опустошает буфер целиком");
     sm::apply_local_delta(mw, d);
-    CHECK(sm::feature_number_read(gs, cx, cy) == 12,
+    CHECK(sm::feature_number_read(gs, sm::cell_of(cx, cy, gs.mapW)) == 12,
           "повторное применение пустого буфера мира не трогает");
 
     // ── Ряд FeatureNumber клампит в ноль: передренированный орб не дюпит
     //    числом.
     push_feature_number(d, cx, cy, -1000, gs.mapW);
     sm::apply_local_delta(mw, d);
-    CHECK(sm::feature_number_read(gs, cx, cy) == 0,
+    CHECK(sm::feature_number_read(gs, sm::cell_of(cx, cy, gs.mapW)) == 0,
           "передренаж числа фичи оседает нулём, не заворотом");
 
     // ── (3) ПРОТУХШИЙ АДРЕСАТ: операция по субъекту, которого не существует
@@ -132,7 +132,7 @@ int main() {
         op.stock = std::uint8_t(sm::MacroStock::Creatures);
         push_feature_number(d, cx + 1, cy, -2, gs.mapW);  // живая строка следом
         sm::apply_local_delta(mw, d);
-        CHECK(sm::feature_number_read(gs, cx + 1, cy) == 10,
+        CHECK(sm::feature_number_read(gs, sm::cell_of(cx + 1, cy, gs.mapW)) == 10,
               "протухший адресат не рвёт применение: строка за ним легла");
     }
 

@@ -167,7 +167,7 @@ void build_rig(Rig& r) {
         std::int32_t(50 * kDaysPerSeason);
 
     // Руина в округе — цель «посети» из СЛОЯ ФИЧ, дверью мира (feature_put).
-    feature_put(r.features, all_land(), 14, 10, FT_Ruin);
+    feature_put(r.features, all_land(), cell_of(14, 10, r.features.width), FT_Ruin);
 
     // Игрок ничем не особенен — обычный сквад (ЗАКОН АНКЕТЫ п.6).
     r.player = make_walker(st, 10, 10, "timaert", 101u);

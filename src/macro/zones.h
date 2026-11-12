@@ -44,10 +44,9 @@ struct ZoneLayer {
         return n > 0u && data.size() >= n;
     }
 
-    std::uint8_t at(int x, int y) const {
-        if (!world_shape_ok(width, height) || data.empty()) return 0;
-        const std::size_t i = cell_of(x, y, width);
-        return i < data.size() ? data[i] : std::uint8_t(0);
+    // Клетку слою называют ОДНИМ ЧИСЛОМ (ЗАКОН АДРЕСА п.2, M-462 ломоть 4).
+    std::uint8_t at(std::uint32_t cell) const {
+        return cell < data.size() ? data[cell] : std::uint8_t(0);
     }
 };
 

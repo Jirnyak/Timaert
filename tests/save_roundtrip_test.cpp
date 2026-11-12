@@ -219,16 +219,16 @@ void build_world(World& w, const TerrainData& land) {
     gs.knowledge.data[0] = kKnowledgeExplored;
     gs.knowledge.data[kWorldCellCap - 1u] = kKnowledgeExplored;
     tree_layer_reset(gs.treeLayer, kSide, kSide);
-    set_tree_count(gs.treeLayer, 17, 0, 12000);
-    set_tree_count(gs.treeLayer, kLast, kLast, 600);
+    set_tree_count(gs.treeLayer, cell_of(17, 0, gs.treeLayer.width), 12000);
+    set_tree_count(gs.treeLayer, cell_of(kLast, kLast, gs.treeLayer.width), 600);
     gs.features.resize(kSide, kSide);
-    feature_put(gs.features, land, kLast, kLast, FT_Road);
-    feature_number_write(gs, 9, 4, 2);
-    fauna_field_write(gs, kLast, 0, 31);
+    feature_put(gs.features, land, cell_of(kLast, kLast, gs.features.width), FT_Road);
+    feature_number_write(gs, cell_of(9, 4, gs.mapW), 2);
+    fauna_field_write(gs, cell_of(kLast, 0, gs.mapW), 31);
     // Поле света — ПОСЛЕДНИЙ член состояния, и это его последняя клетка: байт,
     // которым кончается первый кусок файла. Прежний провод поле света не вёз
     // вовсе; дамп везёт все поля состояния единообразно.
-    light_emission_write(gs, kLast, kLast, 777);
+    light_emission_write(gs, cell_of(kLast, kLast, gs.mapW), 777);
     gs.cellOwner.data[kWorldCellCap - 1u] = 3u;
     scent_ensure(gs.scent, kSide, kSide);
     scent_deposit(gs.scent, 1, 100, 100, 400u, 4000u);
@@ -543,10 +543,10 @@ void test_dump_roundtrip() {
         // что двери поселили до записи, то и стоит после чтения.
         const int cx = ecs::cell_x(st2.cell[city.slot], kSide);
         const int cy = ecs::cell_y(st2.cell[city.slot], kSide);
-        const int flock0 = feature_number_read(w.gs, cx, cy);
+        const int flock0 = feature_number_read(w.gs, cell_of(cx, cy, w.gs.mapW));
         const int home0 = souls_home(w.st, city.slot);
         CHECK(flock0 > 0 && home0 > 0
-                  && feature_number_read(gs2, cx, cy) == flock0
+                  && feature_number_read(gs2, cell_of(cx, cy, gs2.mapW)) == flock0
                   && souls_home(st2, city.slot) == home0
                   && st2.inventory[city.slot].inv.count("wood") == 19
                   && gs2.features.at(st2.cell[city.slot].idx) == FT_City,
@@ -556,11 +556,11 @@ void test_dump_roundtrip() {
     CHECK(gs2.features.at(w.ruinCell) == FT_Ruin,
           "РУИНА ОСТАЁТСЯ РУИНОЙ (M-456): поле фич приехало из файла, а не "
           "перевыведено из сида");
-    CHECK(gs2.features.at(kLast, kLast) == FT_Road
-              && gs2.treeLayer.at(kLast, kLast) == 600
+    CHECK(gs2.features.at(cell_of(kLast, kLast, gs2.features.width)) == FT_Road
+              && gs2.treeLayer.at(cell_of(kLast, kLast, gs2.treeLayer.width)) == 600
               && gs2.knowledge.data[kWorldCellCap - 1u] == kKnowledgeExplored
               && gs2.cellOwner.data[kWorldCellCap - 1u] == 3u
-              && gs2.lightEmission.at(kLast, kLast) == 777
+              && gs2.lightEmission.at(cell_of(kLast, kLast, gs2.lightEmission.width)) == 777
               // След квантуется самим полем — ожидание берётся у исходного
               // мира, а не пересказывается литералом (§8 п.4).
               && scent_strength_at(gs2.scent, kFactionCount - 1, kLast, kLast)

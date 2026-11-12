@@ -94,7 +94,7 @@ Sample measure_cell(const TerrainData& td, int cx, int cy, std::uint32_t seed) {
     for (int dy = -1; dy <= 1; ++dy)
         for (int dx = -1; dx <= 1; ++dx) {
             const int i = (dy + 1) * 3 + (dx + 1);
-            nbH[i] = field01_of(td.height_at(cx + dx, cy + dy));
+            nbH[i] = field01_of(td.height_at(cell_of(cx + dx, cy + dy, td.width)));
             nbB[i] = biome_at_cell(td, cell_of(cx + dx, cy + dy, td.width));
         }
     for (int dy = -2; dy <= 2; ++dy)
@@ -221,7 +221,7 @@ int main(int argc, char** argv) {
             for (int cx = 2; cx < kW - 2; cx += 13) {
                 const std::uint32_t idx = cell_of(cx, cy, kW);
                 if (td.is_water(idx)) continue;
-                const float h = field01_of(td.height_at(cx, cy));
+                const float h = field01_of(td.height_at(cell_of(cx, cy, td.width)));
                 const Biome b = biome_at_cell(td, idx);
                 int k = -1;
                 // Биомы со СВОЕЙ фактурой идут первыми: у болота и пустыни

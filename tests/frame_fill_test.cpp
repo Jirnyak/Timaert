@@ -157,7 +157,7 @@ int main() {
                 if (frame.stock[std::size_t(f) * sm::kFrameCells
                                 + std::size_t(i)]
                     == sm::resource_field_read(mw, sm::ResourceFieldId(f),
-                                               ccx + dx, ccy + dy))
+                                               sm::cell_of(ccx + dx, ccy + dy, mw.gs->mapW)))
                     ++stockEqual;
             }
         }

@@ -54,9 +54,8 @@ namespace sm {
 //
 // It lives HERE, with the resource rows, rather than with the AI that walks
 // it, because several modules measure by it on both sides: the gatherer's
-// errand (npc_ai.h), village siting (settlement_score.cpp, spawners.cpp) and
-// the vein reach field sized by it (deposit_layer.h). A number they must all
-// agree on belongs below all of them.
+// errand (npc_ai.h) and village siting (settlement_score.cpp, spawners.cpp).
+// A number they must all agree on belongs below all of them.
 inline constexpr int kGathererReach = 16;
 
 struct GameState;
@@ -139,33 +138,29 @@ enum class GrowthDomain : std::uint8_t { HealToBaseline, CarrierSpread };
 
 struct ResourceFieldDef {
     const char* id;
-    // The pure baseline: world context → capacity of one WRAPPED cell.
+    // The pure baseline: world context → capacity of one cell. Клетку ряду
+    // называют ОДНИМ ЧИСЛОМ (ЗАКОН АДРЕСА п.2, M-462 ломоть 4): все хуки
+    // ниже берут индекс, а не пару координат — ходок роста и пульт держат
+    // индекс и раньше раскладывали его в пару, чтобы хук собрал его обратно.
     // Sparse rows read baseline − scar and clamp the scar to it; a carrier
     // row's baseline is its initial condition only (null: the carrier was
     // filled by worldgen and lives its own life from there).
-    int (*baseline)(const MacroWorld& w, int x, int y);
+    int (*baseline)(const MacroWorld& w, std::uint32_t cell);
     // The growth law. growthAt = units regained at a DUE cell this visit.
     // Pure and deterministic — context in, delta out; the walker owns dueness,
     // the write, and the clamp to the row's own baseline.
     GrowthDomain growthDomain;
-    int (*growthAt)(const MacroWorld& w, int x, int y);
+    int (*growthAt)(const MacroWorld& w, std::uint32_t cell);
     // Carrier hooks — both set = the row's live state is a dense structure
     // outside the scar maps (trees: the TreeLayer grid the map renders).
     // Read is the current count; apply clamps to the row's own cap, writes
     // the carrier and bumps its revision. Sparse rows leave both null.
-    int  (*carrierRead)(const MacroWorld& w, int x, int y);
-    void (*carrierApply)(MacroWorld& w, int x, int y, int delta);
-    // HOW FAR THIS ROW REACHES, in cells — the radius of the derived field
-    // that answers "is there any of this near here". 0 = the row is never
-    // asked about a neighbourhood and pays for no reach field.
-    //
-    // It is a COLUMN because the question is not geology's: the street crowd
-    // gates a miner on ore within a gatherer's reach today, and the day
-    // somebody gates a woodcutter on forest within his, the answer already
-    // exists. That was the shape of the original defect — the reach question
-    // was written as a one-off scan inside the context assembler instead of
-    // as a property of the row being asked about.
-    int reachCells;
+    int  (*carrierRead)(const MacroWorld& w, std::uint32_t cell);
+    void (*carrierApply)(MacroWorld& w, std::uint32_t cell, int delta);
+    // (Колонка `reachCells` — радиус производного поля «есть ли ряд рядом» —
+    // стояла здесь и снята ломтём 4 ряда M-462 вместе с самим полем
+    // досягаемости жил: читателя у вопроса в игре не было, колонку читал один
+    // сторож. Вопрос об окрестности заводится вместе с первым читателем.)
     // ── ЧТО РЯД КЛАДЁТ В РУКИ (ломоть 1 M-72, словарь «поле→предмет» 3 → 1) ──
     // Читатель — транзакция field_harvest (ниже): умолчание выхода, когда
     // фича клетки не переопределила его своей строкой (FeatureDef::yieldItem —
@@ -205,7 +200,8 @@ void generate_fauna_field(MacroWorld& w);
 
 // The current count of a cell. Sparse rows: capacity − scar, floored at
 // zero, fail-closed without terrain. Carrier rows: the carrier's cell.
-int resource_field_read(const MacroWorld& w, ResourceFieldId f, int x, int y);
+int resource_field_read(const MacroWorld& w, ResourceFieldId f,
+                        std::uint32_t cell);
 
 // ── ДВЕРЬ №1 ПУЛЬТА: ДВИЖЕНИЕ ПОЛЯ С ВОЗВРАТОМ ФАКТА (ломоть 1 M-72) ──────
 // Move the field: negative spends, positive returns. Sparse rows clamp the
@@ -217,7 +213,7 @@ int resource_field_read(const MacroWorld& w, ResourceFieldId f, int x, int y);
 // невыразимо; вернуть выше ёмкости — тоже). Прежнее имя resource_field_apply
 // умерло: дверь без факта заставляла каждого звонящего читать поле самому,
 // и 57 строк между read и apply у артели дюпали выемку двух сквадов.
-int field_move(MacroWorld& w, ResourceFieldId f, int x, int y, int delta);
+int field_move(MacroWorld& w, ResourceFieldId f, std::uint32_t cell, int delta);
 
 // ── ДВЕРЬ №2 ПУЛЬТА: ТРАНЗАКЦИЯ «ПОЛЕ → КОНТЕЙНЕР СКВАДА» ─────────────────
 // Форма продиктована владельцем дословно: «списание из поля клетки ->
@@ -233,15 +229,16 @@ int field_move(MacroWorld& w, ResourceFieldId f, int x, int y, int delta);
 // дверь клампит по «есть», по спине (товар) и по слоту (существо).
 // Вход — АДРЕС контейнера (слот сквада), никогда голый Inventory& (вердикт
 // 2026-10-22 п.3: второй носитель пишется дверью контейнера, разряд А).
-int field_harvest(MacroWorld& w, ResourceFieldId f, int x, int y, int want,
-                  std::uint32_t squadSlot);
+int field_harvest(MacroWorld& w, ResourceFieldId f, std::uint32_t cell,
+                  int want, std::uint32_t squadSlot);
 
 // ЧТО ЗДЕСЬ КЛАДУТ В РУКИ — ординал ПРЕДМЕТА выхода транзакции на этой
 // клетке: оверрайд фичи, иначе умолчание ряда; -1 = предметного выхода нет
 // (выход существо или ряд без выхода). Тот же резолв, которым берёт
 // field_harvest, — для скоринга целей и выгрузки домой (ЗАКОН СЛОВАРЯ:
 // ординалы кэшированы у таблиц, в тике ходит число).
-int field_yield_ordinal(const MacroWorld& w, ResourceFieldId f, int x, int y);
+int field_yield_ordinal(const MacroWorld& w, ResourceFieldId f,
+                        std::uint32_t cell);
 
 // (`field_set` / `field_set_allocate` — абсолютная установка поля «вне пульта»
 //  — УМЕРЛИ с проводом сейва, M-439. Звонящих у пары было три рода: рождение
@@ -306,8 +303,7 @@ void resource_fields_daily_growth(MacroWorld& w, int day);
 // ПОЧЕМУ НЕ `int32`. Считано по фактическим потолкам (сторож ниже): самый
 // толстый ряд занимает четверть диапазона. Половина памяти — не главное;
 // главное КЭШ: на линию 64 Б ложится 32 клетки вместо 16, и проходы, которые
-// упираются в память (сезонный ходок роста, штамп диска досягаемости),
-// ускоряются вдвое. Это свойство скелета «соседняя клетка — соседняя память»,
+// упираются в память (сезонный ходок роста), ускоряются вдвое. Это свойство скелета «соседняя клетка — соседняя память»,
 // а не микрооптимизация.
 //
 // ПОЧЕМУ БЕЗЗНАКОВЫЙ. Счёт, ёмкость и шрам отрицательными не бывают (ЗАКОН
@@ -329,9 +325,9 @@ static_assert(kMaxWheatStandsPerCell <= kMaxFieldUnitsPerCell,
 // длина, второй носитель размера мира рядом с `width/height`; теперь носитель
 // один — стороны. `reach` (счёт живых клеток ряда в радиусе) — производное,
 // которое было непустым у ОДНОГО экземпляра из всех (дикая жила) и вечно
-// пустым заголовком у остальных; оно уехало к своему единственному хозяину,
-// `DepositLayer@src/macro/deposit_layer.h`, вместе со штампом диска и
-// радиусом. У поля осталось то, что есть у КАЖДОГО поля: клетки и их счёт.
+// пустым заголовком у остальных; оно уехало к слою жил и там снято вовсе
+// (ломоть 4 ряда M-462 — читателя у него не было). У поля осталось то, что
+// есть у КАЖДОГО поля: клетки и их счёт.
 //
 // Поле весит 2 МиБ и на стеке не живёт; мир меньше капа занимает первые
 // side² клеток, хвост стоит нулём (его чистит `allocate`).
@@ -360,14 +356,15 @@ struct ResourceGrid {
             && std::has_single_bit(std::uint32_t(width))
             && cell_count() != 0u;
     }
-    // Адрес клетки — ЕДИНСТВЕННАЯ дверь мира (`core/torus.h cell_of`).
-    // Здесь стоял собственный спеллинг через `wrapi`, то есть аппаратное
-    // деление по рантайм-делителю на самом горячем пути полей.
-    std::uint32_t index(int x, int y) const {
-        return cell_of(x, y, width);
-    }
-    int at(int x, int y) const {
-        return live() ? int(cells[index(x, y)]) : 0;
+    // КЛЕТКУ ПОЛЮ НАЗЫВАЮТ ОДНИМ ЧИСЛОМ (ЗАКОН АДРЕСА п.2, M-462 ломоть 4).
+    // Здесь стояли две формы чтения — `at(x, y)` со своей дверью `index` и
+    // `at_index(i)` — и пара была основной: звонящий с индексом на руках
+    // раскладывал его в координаты, чтобы поле собрало индекс обратно. Индекс
+    // уже свёрнут по построению (`cell_of`, `cell_step`), поэтому маска ему
+    // не нужна — нужна только граница памяти; у кого на руках геометрия,
+    // сворачивает её дверью `cell_of` сам.
+    int at(std::uint32_t cell) const {
+        return live() && cell < cell_count() ? int(cells[cell]) : 0;
     }
 
 private:
@@ -378,32 +375,28 @@ private:
     // списке друзей, и компилятор молчать не будет. (12 сайтов write до
     // стены: 4 геймплейных ушли в двери, 1 генерация, 5 загрузка, 2 умерли
     // с consolidate_deposit_cluster — перепись 2026-10-23.)
-    friend int  field_move(MacroWorld&, ResourceFieldId, int, int, int);
+    friend int  field_move(MacroWorld&, ResourceFieldId, std::uint32_t, int);
     friend void allocate_world_fields(GameState&, int, int);
-    friend void feature_number_write(GameState&, int, int, int);
-    friend void feature_number_add(GameState&, int, int, int);
-    friend void fauna_field_write(GameState&, int, int, int);
-    friend void light_emission_write(GameState&, int, int, int);
-    // Жила: ОДНА дверь записи на весь слой (`deposit_set`), потому что
-    // запись клетки жилы обязана двигать и диск досягаемости — а он живёт у
-    // слоя, не у поля. Рождение и генезис идут через неё же.
+    friend void feature_number_write(GameState&, std::uint32_t, int);
+    friend void feature_number_add(GameState&, std::uint32_t, int);
+    friend void fauna_field_write(GameState&, std::uint32_t, int);
+    friend void light_emission_write(GameState&, std::uint32_t, int);
+    // Жила: ОДНА дверь записи на весь слой (`deposit_set`) — рождение мира
+    // и фикстуры идут через неё.
     friend void allocate_deposit_fields(struct DepositLayer&, int, int);
-    friend void deposit_set(struct DepositLayer&, int, int, std::int32_t);
+    friend void deposit_set(struct DepositLayer&, std::uint32_t, std::int32_t);
 
     // THE ONE WRITE. Everything a cell's value implies — the live count and
     // the revision — moves with it, here, because a derived number kept in
     // step by its CALLERS is one that drifts the first time somebody adds a
-    // fifth caller. (Диск досягаемости жилы держится тем же законом, но у
-    // своего хозяина: `deposit_set@src/macro/deposit_layer.cpp` — единственный
-    // писатель клеток жилы, и штамп стоит в нём.)
+    // fifth caller.
     // Значение ЗАЖИМАЕТСЯ в ширину ряда прямо здесь, у единственной двери:
     // иначе перелив был бы невидимым — клетка молча заворачивалась бы в малое
     // число, и мир беднел бы без единого следа. Сторож ширины (ниже по файлу)
     // держит потолки рядов под этим числом, поэтому зажим — страховка на
     // случай арифметики, а не рабочий режим.
-    void write(int x, int y, int value) {
-        if (!live()) return;
-        const std::uint32_t i = index(x, y);
+    void write(std::uint32_t i, int value) {
+        if (!live() || i >= cell_count()) return;
         const FieldCell v = FieldCell(value < 0 ? 0
                                       : (value > kMaxFieldUnitsPerCell
                                              ? kMaxFieldUnitsPerCell : value));
@@ -431,7 +424,7 @@ public:
 
     // The lowest-indexed cell that holds something; kNoCell when the row is
     // empty. For the callers that want "any one of them" rather than all.
-    static constexpr std::uint32_t kNoCell = ~0u;
+    static constexpr std::uint32_t kNoCell = sm::kNoCell;
     std::uint32_t first_live() const {
         if (!live()) return kNoCell;
         const std::size_t n = cell_count();
@@ -441,15 +434,10 @@ public:
         return kNoCell;
     }
 
-    // A flat index back into coordinates — the inverse of index(), for the
-    // callers that walk the array and then need to know WHERE they are.
-    // Через двери cell_x/cell_y: здесь стояло `% width` / `/ width` —
-    // аппаратное деление по рантайм-делителю на пути мира (ЗАКОН АДРЕСА).
-    int x_of(std::uint32_t i) const { return cell_x(i, width); }
-    int y_of(std::uint32_t i) const { return cell_y(i, width); }
-    int at_index(std::uint32_t i) const {
-        return i < cell_count() ? int(cells[i]) : 0;
-    }
+    // (Пара `x_of`/`y_of` и вторая форма чтения `at_index` стояли здесь и
+    // сняты ломтём 4 ряда M-462: чтение одно и берёт индекс, а кому нужна
+    // координата клетки для экрана или текста, спрашивает двери тора
+    // `cell_x`/`cell_y`.)
 
     // Two fields are the same field when they cover the same world and hold
     // the same values. Сравниваются клетки МИРА, не кап: хвост за миром не

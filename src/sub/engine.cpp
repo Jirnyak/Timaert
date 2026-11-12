@@ -802,7 +802,9 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     // fertility, the vein reach and the season along for an enum, and the
     // seam would pay for all of it sixteen times per generated cell.
     auto biomeResolver = [this](int x, int y) {
-        return mw_.terrain ? biome_at_cell(*mw_.terrain, x, y) : Biome::Meadow;
+        return mw_.terrain
+            ? biome_at_cell(*mw_.terrain, cell_of(x, y, mw_.terrain->width))
+            : Biome::Meadow;
     };
 
     // Дверь рендера — конвертная: дальний мир и апрон высот спрашивают

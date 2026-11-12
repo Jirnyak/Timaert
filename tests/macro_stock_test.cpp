@@ -41,9 +41,7 @@
 // поля по клетке), а не чем это число для кого-то значит.
 static int cell_number_at(const sm::GameState& gs, const sm::MacroStore& st,
                           std::uint16_t slot) {
-    const auto& c = st.cell[slot];
-    return sm::feature_number_read(gs, sm::ecs::cell_x(c, gs.mapW),
-                           sm::ecs::cell_y(c, gs.mapW));
+    return sm::feature_number_read(gs, st.cell[slot].idx);
 }
 
 namespace {
@@ -605,10 +603,10 @@ void test_trees_are_a_carrier_row() {
                  .terrain = &td};
 
     const std::uint32_t rev0 = trees.revision;
-    field_move(w, ResourceFieldId::Trees, 5, 6, -123);
-    CHECK(int(trees.at(5, 6)) == 377,
+    field_move(w, ResourceFieldId::Trees, cell_of(5, 6, w.gs->mapW), -123);
+    CHECK(int(trees.at(cell_of(5, 6, trees.width))) == 377,
           "a registry write lands in the very grid the renderer draws");
-    CHECK(resource_field_read(w, ResourceFieldId::Trees, 5, 6) == 377,
+    CHECK(resource_field_read(w, ResourceFieldId::Trees, cell_of(5, 6, w.gs->mapW)) == 377,
           "the registry reads the same grid back");
     CHECK(trees.revision == rev0 + 1,
           "a registry write moves the grid revision (u_treeMap refresh)");
@@ -620,12 +618,12 @@ void test_trees_are_a_carrier_row() {
     // Inc C: the growth law is live. The felled cell sits among live
     // forest (neighbours at 500), so its due slice day births trees back —
     // through the SAME carrier door (grid + revision), never a scar.
-    const int before = int(trees.at(5, 6));
+    const int before = int(trees.at(cell_of(5, 6, trees.width)));
     const std::uint32_t cellIdx = 6u * 64u + 5u;
     const int dueDay =
         int(cellIdx % std::uint32_t(kGrowthEpochDays)) + kGrowthEpochDays;
     resource_fields_daily_growth(w, dueDay);
-    CHECK(int(trees.at(5, 6)) > before,
+    CHECK(int(trees.at(cell_of(5, 6, trees.width))) > before,
           "a due visit among live forest births trees into the grid");
     CHECK(gs.wheatScars.liveCells == 0,
           "growth writes the carrier, never a scar");
@@ -645,16 +643,16 @@ void test_vein_is_a_two_carrier_row() {
     std::unique_ptr<sm::DepositLayer> depositsOwn{new sm::DepositLayer()};
     sm::DepositLayer& deposits = *depositsOwn;
     allocate_deposit_fields(deposits, gs.mapW, gs.mapH);
-    create_deposit(deposits, 9, 9, 1000);   // дикая жила
+    deposit_set(deposits, cell_of(9, 9, deposits.width), 1000);   // дикая жила
     FeatureLayer& features = gs.features;
     features.resize(gs.mapW, gs.mapH);
     MacroWorld w{.gs = &gs, .store = wld.store.get(),
                  .deposits = &deposits};
 
-    CHECK(resource_field_read(w, ResourceFieldId::Vein, 9, 9) == 1000,
+    CHECK(resource_field_read(w, ResourceFieldId::Vein, cell_of(9, 9, w.gs->mapW)) == 1000,
           "без шахты ряд читает дикую жилу — геологию видно");
-    CHECK(field_move(w, ResourceFieldId::Vein, 9, 9, -60) == 0
-              && deposits.vein_at(9, 9) == 1000,
+    CHECK(field_move(w, ResourceFieldId::Vein, cell_of(9, 9, w.gs->mapW), -60) == 0
+              && deposits.vein_at(cell_of(9, 9, deposits.width)) == 1000,
           "дикая жила инертна: добыча существует по шахтам");
 
     {   // Шахта — дверью рода фичи (стена ломтя 1): суша под дверью.
@@ -666,18 +664,18 @@ void test_vein_is_a_two_carrier_row() {
         for (std::size_t c = 0;
              c < std::size_t(gs.mapW) * std::size_t(gs.mapH); ++c)
             td.rgba[c * 4u + 0] = field_word_of(140.0f / 255.0f);
-        feature_put(features, td, 9, 9, FT_Quarry);
+        feature_put(features, td, cell_of(9, 9, features.width), FT_Quarry);
     }
-    feature_number_write(gs, 9, 9, 500);   // залежь, свёрнутая генерацией
-    CHECK(resource_field_read(w, ResourceFieldId::Vein, 9, 9) == 500,
+    feature_number_write(gs, cell_of(9, 9, gs.mapW), 500);   // залежь, свёрнутая генерацией
+    CHECK(resource_field_read(w, ResourceFieldId::Vein, cell_of(9, 9, w.gs->mapW)) == 500,
           "под шахтой ряд читает ЗАЛЕЖЬ — число фичи, не геологию");
-    CHECK(field_move(w, ResourceFieldId::Vein, 9, 9, -60) == -60
-              && feature_number_read(gs, 9, 9) == 440,
+    CHECK(field_move(w, ResourceFieldId::Vein, cell_of(9, 9, w.gs->mapW), -60) == -60
+              && feature_number_read(gs, cell_of(9, 9, gs.mapW)) == 440,
           "выемка движет залежь и отвечает фактом");
-    CHECK(deposits.vein_at(9, 9) == 1000,
+    CHECK(deposits.vein_at(cell_of(9, 9, deposits.width)) == 1000,
           "и не трогает природное поле — метал не убывает");
-    CHECK(field_move(w, ResourceFieldId::Vein, 9, 9, -1000) == -440
-              && feature_number_read(gs, 9, 9) == 0,
+    CHECK(field_move(w, ResourceFieldId::Vein, cell_of(9, 9, w.gs->mapW), -1000) == -440
+              && feature_number_read(gs, cell_of(9, 9, gs.mapW)) == 0,
           "взять больше, чем лежит, невыразимо: факт — остаток");
 
     CHECK(gs.wheatScars.liveCells == 0,

@@ -184,7 +184,10 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
             // п.3; та же строка, что у курсора карты мира).
             const int cx = wrap_axis(int(std::floor(wx)), mapW);
             const int cy = wrap_axis(int(std::floor(wy)), mapH);
-            const std::uint8_t know = gs.knowledge.at(cx, cy);
+            // Курсор держит пару (экран), мир спрашивают индексом: пара
+            // сворачивается один раз, здесь (ЗАКОН АДРЕСА п.2).
+            const std::uint32_t hoverCell = cell_of(cx, cy, mapW);
+            const std::uint8_t know = gs.knowledge.at(hoverCell);
 
             // Hover rect (cell top = wy+1 after the Y flip).
             const ImVec2 tl = to_screen(float(cx), float(cy) + 1.0f, st,
@@ -199,7 +202,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
                 ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.60f, 1),
                                    "Uncharted");
             } else {
-                const Biome b = biome_at_cell(terrain, cx, cy);
+                const Biome b = biome_at_cell(terrain, hoverCell);
                 ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1), "%s",
                                    kBiomes[std::size_t(b)].name);
                 // КТО НА ЭТОЙ КЛЕТКЕ — КАРКАСОМ, И ДВЕРЬ КИНД-СЛЕПА (M-288).
@@ -286,7 +289,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
         const auto& c = store.cell[slot];
         const int lx = ecs::cell_x(c, mapW);
         const int ly = ecs::cell_y(c, mapW);
-        const std::uint8_t know = gs.knowledge.at(lx, ly);
+        const std::uint8_t know = gs.knowledge.at(c.idx);
         if (know == kKnowledgeUnknown) continue;
         ++discovered[std::size_t(type)];
         const bool faded = know < kKnowledgeVisible;
@@ -304,7 +307,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
         // Depleted = half strength, remembered = reduced alpha — the same
         // derivations the old panel used; ONE colour authority throughout.
         // Выкачанность — ОДИН вывод на весь мир (spire_orb, M-233 п.8).
-        const std::uint32_t base = spire_orb(mw, lx, ly).depleted
+        const std::uint32_t base = spire_orb(mw, c.idx).depleted
             ? ((argb >> 1) & 0x7F7F7Fu) : argb;
         const ImU32 fill = argb_im(base, faded ? 140 : 230);
         const ImU32 rim = argb_im(base >> 2 & 0x3F3F3Fu, 255);
@@ -333,10 +336,11 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
         const FeatureLayer& features = mw.gs->features;
         for (int ly = 0; ly < mapH; ++ly) {
             for (int lx = 0; lx < mapW; ++lx) {
+                const std::uint32_t cell = cell_of(lx, ly, mapW);
                 const FeatureDef& fd =
-                    kFeatureDefs[std::size_t(features.at(lx, ly))];
+                    kFeatureDefs[std::size_t(features.at(cell))];
                 if (fd.markPx == 0) continue;
-                const std::uint8_t know = gs.knowledge.at(lx, ly);
+                const std::uint8_t know = gs.knowledge.at(cell);
                 if (know == kKnowledgeUnknown) continue;
                 const bool faded = know < kKnowledgeVisible;
                 const ImVec2 p = to_screen(float(lx) + 0.5f, float(ly) + 0.5f,
@@ -348,7 +352,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
                 const float r = std::max(kFeatureChartR, zoomLogical * 0.5f);
                 // Выкачанность — ОДИН вывод на весь мир (spire_orb, M-233
                 // п.8); полуцвет — та же дериват, что у меток сквадов выше.
-                const std::uint32_t base = spire_orb(mw, lx, ly).depleted
+                const std::uint32_t base = spire_orb(mw, cell).depleted
                     ? ((fd.mapColor >> 1) & 0x7F7F7Fu)
                     : fd.mapColor;
                 const ImU32 fill = argb_im(base, faded ? 140 : 230);
@@ -365,7 +369,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
         if (!(kMarkerSurface[si] & kMarkerOnMap)) continue;
         const int mx = cell_x(m.cell, mapW);
         const int my = cell_y(m.cell, mapW);
-        if (gs.knowledge.at(mx, my) == kKnowledgeUnknown) continue;
+        if (gs.knowledge.at(m.cell) == kKnowledgeUnknown) continue;
         const ImVec2 p = to_screen(float(mx) + 0.5f, float(my) + 0.5f, st,
                                    zoomLogical, viewW, viewH, mapW, mapH);
         if (p.x < -32 || p.x > viewW + 32 || p.y < -32 || p.y > viewH + 32)
@@ -409,7 +413,7 @@ void draw_map_screen(MapScreenState& st, const MacroWorld& mw,
     bool styleSeen[4] = {};
     for (const Marker& m : gs.markers.live()) {
         if ((kMarkerSurface[std::size_t(m.style) & 3u] & kMarkerOnMap)
-            && gs.knowledge.at(cell_x(m.cell, mapW), cell_y(m.cell, mapW))
+            && gs.knowledge.at(m.cell)
                    != kKnowledgeUnknown)
             styleSeen[std::size_t(m.style) & 3u] = true;
     }

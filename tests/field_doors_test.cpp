@@ -107,23 +107,23 @@ World make_world() {
 void test_move_returns_fact() {
     World w = make_world();
     MacroWorld mw = w.mw();
-    set_tree_count(w.trees, 5, 5, 3);
+    set_tree_count(w.trees, cell_of(5, 5, w.trees.width), 3);
 
-    CHECK(field_move(mw, ResourceFieldId::Trees, 5, 5, -10) == -3,
+    CHECK(field_move(mw, ResourceFieldId::Trees, cell_of(5, 5, mw.gs->mapW), -10) == -3,
           "drain: хотели 10, стояло 3 — факт −3, не эхо намерения");
-    CHECK(resource_field_read(mw, ResourceFieldId::Trees, 5, 5) == 0,
+    CHECK(resource_field_read(mw, ResourceFieldId::Trees, cell_of(5, 5, mw.gs->mapW)) == 0,
           "после выемки клетка пуста");
-    CHECK(field_move(mw, ResourceFieldId::Trees, 5, 5, -1) == 0,
+    CHECK(field_move(mw, ResourceFieldId::Trees, cell_of(5, 5, mw.gs->mapW), -1) == 0,
           "из пустой клетки взять нечего — факт 0, дюп невыразим");
-    CHECK(field_move(mw, ResourceFieldId::Trees, 5, 5, +4) == +4,
+    CHECK(field_move(mw, ResourceFieldId::Trees, cell_of(5, 5, mw.gs->mapW), +4) == +4,
           "возврат: четыре встали — факт +4");
 
     // Шрамовый ряд: пашня. Ёмкость клетки — baseline(фертильность) > 0.
-    const int cap = resource_field_read(mw, ResourceFieldId::Wheat, 6, 6);
+    const int cap = resource_field_read(mw, ResourceFieldId::Wheat, cell_of(6, 6, mw.gs->mapW));
     CHECK_OR_RETURN(cap > 8, "фикстура несёт честную ёмкость пашни");
-    CHECK(field_move(mw, ResourceFieldId::Wheat, 6, 6, -5) == -5,
+    CHECK(field_move(mw, ResourceFieldId::Wheat, cell_of(6, 6, mw.gs->mapW), -5) == -5,
           "шрамовый ряд: взято ровно 5");
-    CHECK(field_move(mw, ResourceFieldId::Wheat, 6, 6, +9999) == +5,
+    CHECK(field_move(mw, ResourceFieldId::Wheat, cell_of(6, 6, mw.gs->mapW), +9999) == +5,
           "заживление клампится ёмкостью: вернулось ровно снятое");
 }
 
@@ -131,19 +131,19 @@ void test_move_returns_fact() {
 void test_harvest_honest_and_no_dupe() {
     World w = make_world();
     MacroWorld mw = w.mw();
-    set_tree_count(w.trees, 12, 10, 3);
+    set_tree_count(w.trees, cell_of(12, 10, w.trees.width), 3);
     Inventory& bag = w.store->inventory[w.artel.slot].inv;
 
-    const int got = field_harvest(mw, ResourceFieldId::Trees, 12, 10,
+    const int got = field_harvest(mw, ResourceFieldId::Trees, cell_of(12, 10, mw.gs->mapW),
                                   /*want=*/5, w.artel.slot);
     CHECK(got == 3, "хотели 5, стояло 3 — транзакция вернула факт 3");
     CHECK(bag.count("wood") == 3, "кредит: ровно факт лёг в контейнер");
-    CHECK(resource_field_read(mw, ResourceFieldId::Trees, 12, 10) == 0,
+    CHECK(resource_field_read(mw, ResourceFieldId::Trees, cell_of(12, 10, mw.gs->mapW)) == 0,
           "дебет: поле отдало ровно факт");
 
     // ДВОЙНАЯ ВЫЕМКА: второй сквад приходит на ту же клетку В ТОТ ЖЕ тик.
     // Прежний путь (read → 57 строк → apply) отдал бы обоим по 3.
-    const int second = field_harvest(mw, ResourceFieldId::Trees, 12, 10,
+    const int second = field_harvest(mw, ResourceFieldId::Trees, cell_of(12, 10, mw.gs->mapW),
                                      /*want=*/5, w.village.slot);
     CHECK(second == 0, "второму скваду той же клетки взять нечего — не дюпает");
     CHECK(bag.count("wood") == 3, "первый унёс своё, больше ниоткуда не взялось");
@@ -153,30 +153,30 @@ void test_harvest_honest_and_no_dupe() {
 void test_refusal_leaves_field() {
     World w = make_world();
     MacroWorld mw = w.mw();
-    set_tree_count(w.trees, 20, 20, 50);
+    set_tree_count(w.trees, cell_of(20, 20, w.trees.width), 50);
 
     // СПИНА ПОЛНА: грузим артель её же добычей до отказа (want велик — дверь
     // сама клампит по спине), потом спрашиваем ещё раз.
     int lastGot = -1;
     for (int i = 0; i < 64 && lastGot != 0; ++i) {
-        lastGot = field_harvest(mw, ResourceFieldId::Trees, 20, 20,
+        lastGot = field_harvest(mw, ResourceFieldId::Trees, cell_of(20, 20, mw.gs->mapW),
                                 /*want=*/1 << 20, w.artel.slot);
-        if (lastGot > 0) set_tree_count(w.trees, 20, 20, 50);   // долить
+        if (lastGot > 0) set_tree_count(w.trees, cell_of(20, 20, w.trees.width), 50);   // долить
     }
     CHECK_OR_RETURN(lastGot == 0, "спина артели конечна — отказ достигнут");
-    const int standing = resource_field_read(mw, ResourceFieldId::Trees, 20, 20);
-    CHECK(field_harvest(mw, ResourceFieldId::Trees, 20, 20, 1 << 20,
+    const int standing = resource_field_read(mw, ResourceFieldId::Trees, cell_of(20, 20, mw.gs->mapW));
+    CHECK(field_harvest(mw, ResourceFieldId::Trees, cell_of(20, 20, mw.gs->mapW), 1 << 20,
                         w.artel.slot) == 0,
           "полная спина: транзакция отвечает 0");
-    CHECK(resource_field_read(mw, ResourceFieldId::Trees, 20, 20) == standing,
+    CHECK(resource_field_read(mw, ResourceFieldId::Trees, cell_of(20, 20, mw.gs->mapW)) == standing,
           "и поле НЕ тронуто — добыча не испаряется в полный контейнер");
 
     // СЛОТ СУЩЕСТВА: пастбище со стадом, а область существ контейнера забита
     // стопками разных уровней — push_stack отказывает, стадо цело.
-    CHECK_OR_RETURN(feature_put(w.features, w.td, 30, 30, FT_Pasture)
+    CHECK_OR_RETURN(feature_put(w.features, w.td, cell_of(30, 30, w.features.width), FT_Pasture)
                         == FT_Pasture,
                     "загон встал");
-    feature_number_write(w.gs, 30, 30, 7);   // стадо — число фичи (M-258)
+    feature_number_write(w.gs, cell_of(30, 30, w.gs.mapW), 7);   // стадо — число фичи (M-258)
     Inventory& bag = w.store->inventory[w.artel.slot].inv;
     // Именная душа не сливается ни с кем (entityId — свой слот каждой),
     // поэтому область существ забивается честно, слот за слотом.
@@ -189,10 +189,10 @@ void test_refusal_leaves_field() {
     }
     CHECK_OR_RETURN(!creatures_push_stack(bag, NPCType::Horse, 1, 1),
                     "область существ забита — предусловие отказа создано");
-    CHECK(field_harvest(mw, ResourceFieldId::Livestock, 30, 30, 2,
+    CHECK(field_harvest(mw, ResourceFieldId::Livestock, cell_of(30, 30, mw.gs->mapW), 2,
                         w.artel.slot) == 0,
           "нет слота под душу: транзакция отвечает 0");
-    CHECK(resource_field_read(mw, ResourceFieldId::Livestock, 30, 30) == 7,
+    CHECK(resource_field_read(mw, ResourceFieldId::Livestock, cell_of(30, 30, mw.gs->mapW)) == 7,
           "и стадо не тронуто");
 
     // СЛОТА НЕТ ПРИ СВОБОДНОЙ СПИНЕ — ровно тот случай, где «дебет до
@@ -200,7 +200,7 @@ void test_refusal_leaves_field() {
     // но под НОВЫЙ предмет нет ни стака, ни пустого слота. Предусловие
     // «спина свободна» утверждается вслух — иначе отказ пришёл бы по спине
     // (take = 0 до кредита), и дыра дебета осталась бы невидимой.
-    CHECK_OR_RETURN(feature_put(w.features, w.td, 22, 20, FT_Field)
+    CHECK_OR_RETURN(feature_put(w.features, w.td, cell_of(22, 20, w.features.width), FT_Field)
                         == FT_Field,
                     "парцелла под жатву встала");
     const std::int64_t freeG =
@@ -208,12 +208,12 @@ void test_refusal_leaves_field() {
         - inventory_mass_g(bag);
     CHECK_OR_RETURN(freeG > 64000, "спина свободна — отказ будет СЛОТОМ");
     const int wheatBefore = resource_field_read(mw, ResourceFieldId::Wheat,
-                                                22, 20);
+                                                cell_of(22, 20, mw.gs->mapW));
     CHECK_OR_RETURN(wheatBefore > 2, "пашня несёт честную ёмкость");
-    CHECK(field_harvest(mw, ResourceFieldId::Wheat, 22, 20, 2,
+    CHECK(field_harvest(mw, ResourceFieldId::Wheat, cell_of(22, 20, mw.gs->mapW), 2,
                         w.artel.slot) == 0,
           "нет слота под предмет при свободной спине: транзакция отвечает 0");
-    CHECK(resource_field_read(mw, ResourceFieldId::Wheat, 22, 20)
+    CHECK(resource_field_read(mw, ResourceFieldId::Wheat, cell_of(22, 20, mw.gs->mapW))
               == wheatBefore,
           "и пашня не тронута — дебет без кредита невыразим");
 }
@@ -225,18 +225,18 @@ void test_feature_decides_yield() {
     Inventory& bag = w.store->inventory[w.artel.slot].inv;
 
     // Пашня: фича без оверрайда — умолчание ряда Wheat («food»).
-    CHECK_OR_RETURN(feature_put(w.features, w.td, 8, 8, FT_Field) == FT_Field,
+    CHECK_OR_RETURN(feature_put(w.features, w.td, cell_of(8, 8, w.features.width), FT_Field) == FT_Field,
                     "парцелла встала");
-    CHECK_OR_RETURN(field_harvest(mw, ResourceFieldId::Wheat, 8, 8, 2,
+    CHECK_OR_RETURN(field_harvest(mw, ResourceFieldId::Wheat, cell_of(8, 8, mw.gs->mapW), 2,
                                   w.artel.slot) == 2,
                     "жатва пашни состоялась");
     CHECK(bag.count("food") == 2, "пашня даёт умолчание ряда — пищу");
 
     // Лён: ТА ЖЕ фертильность, тот же ряд Wheat — выход переопределяет фича.
-    CHECK_OR_RETURN(feature_put(w.features, w.td, 9, 8, FT_FlaxField)
+    CHECK_OR_RETURN(feature_put(w.features, w.td, cell_of(9, 8, w.features.width), FT_FlaxField)
                         == FT_FlaxField,
                     "льняная парцелла встала");
-    CHECK_OR_RETURN(field_harvest(mw, ResourceFieldId::Wheat, 9, 8, 2,
+    CHECK_OR_RETURN(field_harvest(mw, ResourceFieldId::Wheat, cell_of(9, 8, mw.gs->mapW), 2,
                                   w.artel.slot) == 2,
                     "жатва льна состоялась");
     CHECK(bag.count("fibre") == 2,
@@ -244,29 +244,29 @@ void test_feature_decides_yield() {
     CHECK(bag.count("food") == 2, "и пища от этого не прибавилась");
 
     // Пастбище: существо — умолчание ряда Livestock, душой в контейнер.
-    CHECK_OR_RETURN(feature_put(w.features, w.td, 11, 8, FT_Pasture)
+    CHECK_OR_RETURN(feature_put(w.features, w.td, cell_of(11, 8, w.features.width), FT_Pasture)
                         == FT_Pasture,
                     "загон встал");
-    feature_number_write(w.gs, 11, 8, 5);
+    feature_number_write(w.gs, cell_of(11, 8, w.gs.mapW), 5);
     const int before = creature_count(bag);
-    CHECK_OR_RETURN(field_harvest(mw, ResourceFieldId::Livestock, 11, 8, 1,
+    CHECK_OR_RETURN(field_harvest(mw, ResourceFieldId::Livestock, cell_of(11, 8, mw.gs->mapW), 1,
                                   w.artel.slot) == 1,
                     "поимка состоялась");
     CHECK(creature_count(bag) == before + 1,
           "конь встал ДУШОЙ в контейнер, не предметом в сумку");
-    CHECK(resource_field_read(mw, ResourceFieldId::Livestock, 11, 8) == 4,
+    CHECK(resource_field_read(mw, ResourceFieldId::Livestock, cell_of(11, 8, mw.gs->mapW)) == 4,
           "стадо отдало ровно факт");
 }
 
 // ── feature_put: FT_None — значение, и оно СНИМАЕТ ───────────────────────
 void test_feature_put_none_removes() {
     World w = make_world();
-    CHECK_OR_RETURN(feature_put(w.features, w.td, 40, 40, FT_Field)
+    CHECK_OR_RETURN(feature_put(w.features, w.td, cell_of(40, 40, w.features.width), FT_Field)
                         == FT_Field,
                     "фича встала");
-    CHECK(feature_put(w.features, w.td, 40, 40, FT_None) == FT_None,
+    CHECK(feature_put(w.features, w.td, cell_of(40, 40, w.features.width), FT_None) == FT_None,
           "снятие отвечает фактом FT_None");
-    CHECK(w.features.at(40, 40) == FT_None,
+    CHECK(w.features.at(cell_of(40, 40, w.features.width)) == FT_None,
           "клетка чиста — выработанную фичу ЕСТЬ чем снять");
 }
 

@@ -55,9 +55,7 @@
 // поля по клетке), а не чем это число для кого-то значит.
 static int cell_number_at(const sm::GameState& gs, const sm::MacroStore& st,
                           std::uint16_t slot) {
-    const auto& c = st.cell[slot];
-    return sm::feature_number_read(gs, sm::ecs::cell_x(c, gs.mapW),
-                           sm::ecs::cell_y(c, gs.mapW));
+    return sm::feature_number_read(gs, st.cell[slot].idx);
 }
 
 namespace {
@@ -278,7 +276,7 @@ void test_vetoes_hold() {
     CHECK_OR_RETURN(!villages.empty(), "the lush world settles villages");
     int onRock = 0;
     for (const RootedRow& v : villages) {
-        CHECK(!w.td.is_water(v.x, v.y), "no village on water");
+        CHECK(!w.td.is_water(cell_of(v.x, v.y, w.td.width)), "no village on water");
         // НАХОДКА 2026-09-23, И ОНА НЕ ПРО ЭТОТ ТЕСТ. Свойство «деревня не
         // на скале» мир НЕ ГАРАНТИРУЕТ: вето на гору в расселении нет, камень
         // просто плохо пахнет скору. На мире 96×96 этого хватало; когда мир
@@ -302,7 +300,7 @@ void test_vetoes_hold() {
         // стало больше, deposit-терм тянет деревню на скалу, а фертильность
         // слепа к высоте — это дыра мира M-101, и свидетель везения её не
         // чинил, а прятал (§8 п.5). Число — вслух, счётчиком ниже.)
-        if (field01_of(w.td.height_at(v.x, v.y)) >= 0.75f) ++onRock;
+        if (field01_of(w.td.height_at(cell_of(v.x, v.y, w.td.width))) >= 0.75f) ++onRock;
         // ЗДЕСЬ СТОЯЛО `CHECK(!is_forest_cell(trees.at(v.x,v.y)))` — свидетель
         // СНЕСЁННОГО вето (владелец 2026-09-25: «вето лесного массива при
         // расселении: „весом“», M-111). Утверждение было про запрет, а запрет
@@ -362,7 +360,7 @@ void test_only_water_vetoes() {
         // Чаща: у клетки (x0+2, y0+2) все восемь соседей лежат в маске, то
         // есть её 3×3-доля равна 9/9 и счёт деревьев уперся в потолок.
         const int inX = o.x + 2, inY = o.y + 2;
-        CHECK_OR_RETURN(is_forest_cell(int(w.trees.at(inX, inY))),
+        CHECK_OR_RETURN(is_forest_cell(int(w.trees.at(cell_of(inX, inY, w.trees.width)))),
                         "фикстура обязана родить настоящую чащу");
         ++samples;
 
@@ -429,7 +427,7 @@ void test_roulette_is_red() {
         const int   dist = 4 + int(rng.next_u32() % 11u);
         const int   x = wrapi(c.x + int(std::cos(ang) * float(dist)), kW);
         const int   y = wrapi(c.y + int(std::sin(ang) * float(dist)), kH);
-        if (w.td.is_water(x, y)) continue;
+        if (w.td.is_water(cell_of(x, y, w.td.width))) continue;
         const SettlementSiteTerms t = settlement_site_terms(ctx, x, y);
         if (t.arable < kVillageArableGate
             && t.deposit < kVillageDepositGate)
@@ -548,15 +546,14 @@ void test_villages_stand_next_to_something() {
                 // стала всякая не-водная клетка, и «нашлась ли пашня рядом»
                 // спрашивается теперь без порога. Утверждение не ослаблено —
                 // у него сменился предмет вместе с миром.
-                if (!w.td.is_water(x, y)) found = true;
-                if (int(w.trees.at(x, y)) >= 4096) found = true;
+                if (!w.td.is_water(cell_of(x, y, w.td.width))) found = true;
+                if (int(w.trees.at(cell_of(x, y, w.trees.width))) >= 4096) found = true;
             }
         }
         for (int dy = -kGathererReach; dy <= kGathererReach && !found; ++dy) {
             for (int dx = -kGathererReach; dx <= kGathererReach && !found;
                  ++dx) {
-                if (w.deposits.vein_at(wrapi(v.x + dx, kW),
-                                       wrapi(v.y + dy, kH)) != 0)
+                if (w.deposits.vein_at(cell_of(wrapi(v.x + dx, kW), wrapi(v.y + dy, kH), w.deposits.width)) != 0)
                     found = true;
             }
         }
@@ -598,7 +595,7 @@ void test_cities_read_the_ground() {
                                                      12, &ctx);
     CHECK_OR_RETURN(!scored.empty(), "the world holds cities");
     for (const auto& c : scored) {
-        CHECK(!w.td.is_water(c.x, c.y), "no city on water");
+        CHECK(!w.td.is_water(cell_of(c.x, c.y, w.td.width)), "no city on water");
         const int score = settlement_site_score(
             ctx, SettlementScoreRow::City, c.x, c.y);
         const bool isCapital = c.isCapital;
@@ -671,7 +668,7 @@ int settlement_kind_disagreements(const GameState& gs, const FeatureLayer& fl,
     int bad = 0, seen = 0;
     for (int y = 0; y < gs.mapH; ++y) {
         for (int x = 0; x < gs.mapW; ++x) {
-            const FeatureType ft = fl.at(x, y);
+            const FeatureType ft = fl.at(cell_of(x, y, fl.width));
             if (settlement_feature_of(SquadType::City) != ft
                 && settlement_feature_of(SquadType::Village) != ft
                 && settlement_feature_of(SquadType::Spire) != ft

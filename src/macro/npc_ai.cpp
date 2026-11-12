@@ -207,11 +207,9 @@ std::uint32_t find_home_field(const TickContext& ctx, std::uint32_t at,
     for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy) {
         for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
             const std::uint32_t n = cell_step(home, dx, dy, ctx.mapW);
-            const int cx = cell_x(n, ctx.mapW);
-            const int cy = cell_y(n, ctx.mapW);
-            if (ctx.mw.gs->features.at(cx, cy) != std::uint8_t(parcel)) continue;
+            if (ctx.mw.gs->features.at(n) != parcel) continue;
             const int stock =
-                resource_field_read(ctx.mw, ResourceFieldId::Wheat, cx, cy);
+                resource_field_read(ctx.mw, ResourceFieldId::Wheat, n);
             if (stock <= 0) continue;   // eaten bare — nothing to reap here
             const int d = cell_dist(at, n, ctx.mapW);
             if (stock > bestStock || (stock == bestStock && d < best)) {
@@ -237,7 +235,7 @@ std::uint32_t find_home_fauna(const TickContext& ctx, std::uint32_t at,
             const std::uint32_t n = cell_step(home, dx, dy, ctx.mapW);
             const int stock =
                 resource_field_read(ctx.mw, ResourceFieldId::Fauna,
-                                    cell_x(n, ctx.mapW), cell_y(n, ctx.mapW));
+                                    n);
             if (stock <= 0) continue;   // выбито — здесь не охотятся
             const int d = cell_dist(at, n, ctx.mapW);
             if (stock > bestStock || (stock == bestStock && d < best)) {
@@ -307,6 +305,20 @@ float cell_weight(const PathCostData* pc, std::uint32_t cell);
 // объявления здесь не просят: они публичны и приезжают из `npc_ai.h`.
 bool squad_threat_step(MacroHandle self, const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
                        ecs::Pools& pools, const TickContext& ctx);
+
+// ПОГОНЯ КОНЧИЛАСЬ — ЕЁ ПРЕДИКАТ УМИРАЕТ ВМЕСТЕ С НЕЙ (M-468; вердикт
+// владельца 2026-11-12 «да давай» на простую форму: кто отпускает погоню,
+// оставляет колонку цели ПУСТОЙ, как её уже оставляет бегство). Погоня
+// пишет в цель «кого ловлю» — ординал добычи, по нему ноги каждую думку
+// пересчитывают адрес. `goal_drop@src/bus/squad_row.h` бросает один адрес и
+// бережёт «что я искал» для следующего решения — это верно для рынка
+// корована после стычки и неверно для добычи: погоня кончилась, а её ординал
+// оставался лежать в той же колонке, которой роль называет свой рынок или
+// должника. Пустая цель выразима общей дверью записи: адреса нет, «чего
+// ищу» — ноль; отдельной двери под это не заводится.
+inline void chase_release(ecs::SquadGoal& g) {
+    ecs::goal_set(g, ecs::kNoCell, 0u, 0, std::uint8_t(NPCState::Idle));
+}
 
 // (No can_stand_at, and no nav_can_stand behind it. THE standing predicate
 // died 2026-10-06 — «да уничтодить вторую стену она портит всё (ВЕСА БЫЛО
@@ -918,7 +930,7 @@ std::uint32_t find_home_pasture(const TickContext& ctx, std::uint32_t at,
             // здесь ноль, не зная друг о друге.
             const int stock =
                 resource_field_read(ctx.mw, ResourceFieldId::Livestock,
-                                    cell_x(n, ctx.mapW), cell_y(n, ctx.mapW));
+                                    n);
             if (stock <= 0) continue;   // нет загона или выеден начисто
             const int d = cell_dist(at, n, ctx.mapW);
             if (stock > bestStock || (stock == bestStock && d < best)) {
@@ -992,11 +1004,10 @@ std::uint32_t find_home_deposit(const TickContext& ctx, ResourceFieldId row,
     (void)row;   // ряд один — жила; подпись держит форму вызова worksite
     if (!ctx.mw.gs || ctx.mapW <= 0) return ecs::kNoCell;
     const FeatureLayer& fl = ctx.mw.gs->features;
-    const int hx = cell_x(home, ctx.mapW), hy = cell_y(home, ctx.mapW);
     NavWorld* nv = ctx.mw.nav;
     const bool navReady = nv && nav_ensure(ctx.mw, *nv);
     const std::uint16_t myRegion =
-        navReady ? nav_region_at(*nv, hx, hy) : kNavNoRegion;
+        navReady ? nav_region_at(*nv, home) : kNavNoRegion;
     std::uint32_t bestDry = ~0u;
     int bestWay = std::numeric_limits<int>::max();
     std::uint32_t dryAt = ecs::kNoCell;
@@ -1010,12 +1021,10 @@ std::uint32_t find_home_deposit(const TickContext& ctx, ResourceFieldId row,
     // candidate discarded (problems.md §52 is the same lesson, one door over).
     const auto consider = [&](int dx, int dy) {
         const std::uint32_t n = cell_step(home, dx, dy, ctx.mapW);
-        const int x = cell_x(n, ctx.mapW);
-        const int y = cell_y(n, ctx.mapW);
         // Шахта с живой залежью — предикат колонкой строки фичи, не родом;
         // залежь спрашивается ДВЕРЬЮ ряда (число фичи сырьём читает только она).
         if (feature_def(fl.at(n)).numberRow != ResourceFieldId::Vein) return;
-        if (resource_field_read(ctx.mw, ResourceFieldId::Vein, x, y) == 0)
+        if (resource_field_read(ctx.mw, ResourceFieldId::Vein, n) == 0)
             return;   // выработана — не рабочее место
         if (!navReady) {
             const int way = cell_dist(home, n, ctx.mapW);
@@ -1025,9 +1034,9 @@ std::uint32_t find_home_deposit(const TickContext& ctx, ResourceFieldId row,
             }
             return;
         }
-        const std::uint16_t reg = nav_region_at(*nv, x, y);
+        const std::uint16_t reg = nav_region_at(*nv, n);
         if (reg == myRegion) {
-            const std::uint32_t d = nv->distHome[nv->cell(x, y)];
+            const std::uint32_t d = nv->distHome[n];
             if (d < bestDry) {
                 bestDry = d;
                 dryAt = n;
@@ -1059,10 +1068,8 @@ std::uint32_t find_worksite(const GathererDef& def, const TickContext& ctx,
             // острова ежедневно уплывал за материковым деревом, и деревня
             // вымирала в отлучку (измерено: 158 душ → 1 за 13 дней).
             if (NavWorld* nv = ctx.mw.nav; nv && nv->baked()) {
-                const std::uint16_t rh = nav_region_at(
-                    *nv, cell_x(home, ctx.mapW), cell_y(home, ctx.mapW));
-                const std::uint16_t rw = nav_region_at(
-                    *nv, cell_x(tree, ctx.mapW), cell_y(tree, ctx.mapW));
+                const std::uint16_t rh = nav_region_at(*nv, home);
+                const std::uint16_t rw = nav_region_at(*nv, tree);
                 if (rh != kNavNoRegion && rw != rh) return ecs::kNoCell;
             }
             return tree;
@@ -1160,8 +1167,8 @@ public:
                            std::uint32_t home) const {
         return find_worksite(def, ctx_, at, home);
     }
-    int field_read(ResourceFieldId row, int x, int y) const {
-        return resource_field_read(ctx_.mw, row, x, y);
+    int field_read(ResourceFieldId row, std::uint32_t cell) const {
+        return resource_field_read(ctx_.mw, row, cell);
     }
     // «НЕ ДАЛЬШЕ R КЛЕТОК ПУТИ» — геометрия над индексами
     // (`cell_within@src/core/torus.h`). «Я ДОМА» методом не является вовсе:
@@ -1365,11 +1372,11 @@ class AiPult {
 public:
     explicit AiPult(const TickContext& ctx) : ctx_(ctx) {}
     // Транзакция «поле → контейнер» — одна дверь (ломоть 1 M-72).
-    int harvest(ResourceFieldId row, int x, int y, int hands,
+    int harvest(ResourceFieldId row, std::uint32_t cell, int hands,
                 std::uint32_t squadSlot) {
         MacroWorld mw = ctx_.mw;  // the envelope, whole — never a
                                   // partial re-pick of its layers
-        return field_harvest(mw, row, x, y, hands, squadSlot);
+        return field_harvest(mw, row, cell, hands, squadSlot);
     }
     // Сдача каталожной строки домой — одна сделка deal (ломоть 2 M-72).
     void deliver_home(MacroHandle self, int defIdx) {
@@ -1899,7 +1906,7 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
             // лошадь в контейнере — спина и рот, не рука.
             const int workers = production_hands(count_human_souls(s.bag));
             const int got =
-                pult.harvest(def->row, tx, ty, workers, s.h.slot);
+                pult.harvest(def->row, g.cell, workers, s.h.slot);
             const bool tookSomething = got > 0;
             if (got > 0) {
                 // The cycle is PAID the moment it produced — through the
@@ -1922,7 +1929,7 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
                 // law, so their emptied cells write nothing. Факт судится
                 // по ОСТАТКУ после транзакции.
                 if (def->worksite == Worksite::Deposit
-                    && view.field_read(def->row, tx, ty) == 0) {
+                    && view.field_read(def->row, g.cell) == 0) {
                     pult.drained_fact(s.h, tx, ty, def->row);
                 }
             }
@@ -2085,8 +2092,7 @@ int pick_next_station_(const TickContext& ctx, std::uint32_t at,
     const std::size_t R = nv ? nv->regionRootedId.size() : 0;
     const bool baked = nv && nv->baked();
     const std::uint16_t here =
-        baked ? nav_region_at(*nv, cell_x(at, ctx.mapW), cell_y(at, ctx.mapW))
-              : kNavNoRegion;
+        baked ? nav_region_at(*nv, at) : kNavNoRegion;
     // ДНИ ДО КАНДИДАТА — одна мера решения (та же, что у road_days_ в
     // аукционе): цена пути, когда мир запечён, хорда — когда дорог ещё нет.
     // В одну сторону: крю идёт ТУДА и едет дальше, а не возвращается.
@@ -2136,9 +2142,7 @@ int pick_next_station_(const TickContext& ctx, std::uint32_t at,
             // (M-320): она объявляла этот вывод МИРОВЫМ, а он принадлежит
             // модулю читающего.
             if (!rooted_is_settlement(SquadType(stp.runtime[slot].squadType))
-                || feature_number_read(*ctx.mw.gs,
-                               ecs::cell_x(stp.cell[slot], ctx.mapW),
-                               ecs::cell_y(stp.cell[slot], ctx.mapW)) <= 0)
+                || feature_number_read(*ctx.mw.gs, stp.cell[slot].idx) <= 0)
                 return;
             offer_(slot);
         });
@@ -2164,9 +2168,7 @@ int pick_next_station_(const TickContext& ctx, std::uint32_t at,
         const std::uint16_t slot = rooted_slot_by_id(ctx, lmId);
         if (slot == kMacroNoSlot
             || !rooted_is_settlement(SquadType(stp.runtime[slot].squadType))
-            || feature_number_read(*ctx.mw.gs,
-                           ecs::cell_x(stp.cell[slot], ctx.mapW),
-                           ecs::cell_y(stp.cell[slot], ctx.mapW)) <= 0)
+            || feature_number_read(*ctx.mw.gs, stp.cell[slot].idx) <= 0)
             continue;
         offer_(slot);
     }
@@ -2235,9 +2237,7 @@ float march_days_(const TickContext& ctx, std::uint32_t a, std::uint32_t b,
     if (!(perDay > 0.0f)) return -1.0f;   // стоячий ходок никуда не дойдёт
     const NavWorld* nv = ctx.mw.nav;
     if (nv && nv->baked()) {
-        const std::uint32_t c = nav_path_cost(
-            *nv, cell_x(a, ctx.mapW), cell_y(a, ctx.mapW),
-            cell_x(b, ctx.mapW), cell_y(b, ctx.mapW));
+        const std::uint32_t c = nav_path_cost(*nv, a, b);
         if (c == kNavFar) return -1.0f;   // ПУТИ НЕТ — ответ мира, не хорда
         return (float(c) / 16.0f) / perDay;
     }
@@ -2249,10 +2249,8 @@ float march_days_(const TickContext& ctx, std::uint32_t a, std::uint32_t b,
 float route_fear_(const TickContext& ctx, std::uint32_t a, std::uint32_t b) {
     NavWorld* nv = ctx.mw.nav;
     if (!nv || !nv->baked() || nv->threat.empty()) return 0.0f;
-    const std::uint16_t ra =
-        nav_region_at(*nv, cell_x(a, ctx.mapW), cell_y(a, ctx.mapW));
-    const std::uint16_t rb =
-        nav_region_at(*nv, cell_x(b, ctx.mapW), cell_y(b, ctx.mapW));
+    const std::uint16_t ra = nav_region_at(*nv, a);
+    const std::uint16_t rb = nav_region_at(*nv, b);
     if (ra == kNavNoRegion || rb == kNavNoRegion) return 0.0f;
     return float(threat_on_route(*nv, ra, rb) >> kThreatFearShift);
 }
@@ -3118,8 +3116,8 @@ void ai_aggressive(MacroHandle self, ecs::MacroNpcRuntime& rt,
     // What is left below is the row's untroubled day: wander.
     ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
     if (rt.state == std::uint8_t(NS::Chasing)) {
-        // Добычи больше нет — встать: погоню бросает отказ от её адреса.
-        ecs::goal_drop(g);
+        // Добычи больше нет — встать: погоня отпущена, колонка пуста.
+        chase_release(g);
         rt.state = std::uint8_t(NS::Idle);
         charge_squad_recovery(rt,
             std::uint32_t((5 + rand_int(ctx, 10)) * kAiTicks));
@@ -3233,8 +3231,8 @@ void ai_mage_hunt(MacroHandle self, ecs::MacroNpcRuntime& rt,
                     Ambush::None, *ctx.rng);
                 settle_auto_battle(ctx.mw, self, prey, o);
                 if (!macro_dead(st, self)) {
-                    // После боя — стоять: адрес погони брошен.
-                    ecs::goal_drop(st.goal[self.slot]);
+                    // После боя — стоять: погоня отпущена, колонка пуста.
+                    chase_release(st.goal[self.slot]);
                     rt.state = std::uint8_t(NS::Idle);
                     charge_squad_recovery(rt,
                         std::uint32_t((3 + rand_int(ctx, 5)) * kAiTicks));
@@ -3258,7 +3256,7 @@ void ai_mage_hunt(MacroHandle self, ecs::MacroNpcRuntime& rt,
     // Некого бить — чистый роам: дальняя случайная цель по ВСЕЙ карте, не
     // прогулка по околице. Поводка нет — слово владельца.
     if (rt.state == std::uint8_t(NS::Chasing)) {
-        ecs::goal_drop(g);   // добыча пропала — погоня брошена
+        chase_release(g);   // добыча пропала — погоня отпущена
         rt.state = std::uint8_t(NS::Idle);
         return;
     }
@@ -3362,8 +3360,8 @@ void ai_dragon(MacroHandle self, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
                     Ambush::SideA, *ctx.rng);
                 settle_auto_battle(ctx.mw, self, prey, o);
                 if (!macro_dead(st, self)) {
-                    // После боя — стоять: адрес погони брошен.
-                    ecs::goal_drop(st.goal[self.slot]);
+                    // После боя — стоять: погоня отпущена, колонка пуста.
+                    chase_release(st.goal[self.slot]);
                     rt.state = std::uint8_t(NS::Idle);
                     charge_squad_recovery(rt,
                         std::uint32_t((5 + rand_int(ctx, 8)) * kAiTicks));
@@ -3416,8 +3414,9 @@ void ai_dragon(MacroHandle self, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
     }
     if (rt.state == std::uint8_t(NS::Wandering)) return;   // везут ноги
     // Состояние, которого дракон не ведёт (Chasing без добычи, Fleeing):
-    // встать и перерешить. Встать — значит отказаться от адреса.
-    ecs::goal_drop(g);
+    // встать и перерешить. Погоня без добычи кончилась — колонка пуста
+    // (`chase_release`, M-468); у бегства «чего ищу» и так ноль.
+    chase_release(g);
     rt.state = std::uint8_t(NS::Idle);
     charge_squad_recovery(rt,
         std::uint32_t((3 + rand_int(ctx, 5)) * kAiTicks));
@@ -3665,9 +3664,15 @@ bool squad_threat_step(MacroHandle self, const ecs::NPCKind& kind, ecs::MacroNpc
             ambush ? Ambush::SideA : Ambush::None, *ctx.rng);
         settle_auto_battle(ctx.mw, self, enemy, o);
         if (!macro_dead(st, self)) {
-            // После боя — стоять: прежний адрес брошен, предикат цел
-            // (`goal_drop@src/bus/squad_row.h`), роль перерешит по нему.
-            ecs::goal_drop(st.goal[self.slot]);
+            // После боя — стоять. Кто ГНАЛСЯ, тот свою погоню кончил: её
+            // предикат умирает с ней (`chase_release` выше, M-468). Кого бой
+            // застал в его собственном деле, тот бросает один адрес, а
+            // предикат цел (`goal_drop@src/bus/squad_row.h`) — роль
+            // перерешит по нему (рынок корована после стычки).
+            if (rt.state == std::uint8_t(NS::Chasing))
+                chase_release(st.goal[self.slot]);
+            else
+                ecs::goal_drop(st.goal[self.slot]);
             rt.state = std::uint8_t(NS::Idle);
             charge_squad_recovery(rt,
                 std::uint32_t((3 + rand_int(ctx, 5)) * kAiTicks));
@@ -5003,14 +5008,8 @@ void try_move(ecs::MacroCell& cell, ecs::MacroNpcRuntime& rt,
             // миру без запечённого слоя. Гейт «стоит на суше» снят
             // 2026-10-06 вместе со стеной: после единой заливки у КАЖДОЙ
             // клетки тора есть округа — походка отвечает и из воды.
-            if (!flying && g.nav && g.nav->baked()) {
-                int fdx = 0, fdy = 0;
-                if (nav_step(*g.nav, cell_x(cell.idx, g.side),
-                             cell_y(cell.idx, g.side), cell_x(goal, g.side),
-                             cell_y(goal, g.side), fdx, fdy)) {
-                    next = cell_step(cell.idx, fdx, fdy, g.side);
-                }
-            }
+            if (!flying && g.nav && g.nav->baked())
+                next = nav_step(*g.nav, cell.idx, goal);
             if (next == ecs::kNoCell) {
                 // ЖАДНЫЙ ШАГ — закон дальних маршей вне округ (Session 21,
                 // owner's choice over per-squad A*): среди восьми соседей

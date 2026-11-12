@@ -196,20 +196,17 @@ struct FeatureLayer {
     // ИНВАРИАНТ (ЗАКОН АДРЕСА): мир квадратен и степень двойки, иначе
     // fail-closed — потому что маска на незаконном мире врёт молча.
     //
-    // ДВЕ ФОРМЫ ОДНОЙ ДВЕРИ, А НЕ ДВЕ ДВЕРИ (ЗАКОН АДРЕСА п.2, M-112): адрес
-    // клетки есть ОДНО ЧИСЛО, и форма по индексу — основная; пара `x,y`
-    // законна там, где у звонящего ГЕОМЕТРИЯ, и сворачивается в адрес ЗДЕСЬ,
-    // а не руками у каждого. Индекс уже свёрнут по построению (`cell_of`,
-    // `cell_step`), поэтому маска ему не нужна — нужна только граница памяти.
-    // До этого наряда записи фич не было вовсе: девять мест писали
+    // ФОРМА ОДНА — ИНДЕКС (ЗАКОН АДРЕСА п.2; парная форма `at(x, y)` снята
+    // ломтём 4 ряда M-462): адрес клетки есть ОДНО ЧИСЛО. У кого на руках
+    // геометрия (генерация, экран), сворачивает её дверью `cell_of` сам —
+    // пара на доступе к полю была налогом для всех, кто уже держал индекс.
+    // Индекс свёрнут по построению (`cell_of`, `cell_step`), поэтому маска
+    // ему не нужна — нужна только граница памяти.
+    // До наряда M-112 записи фич не было вовсе: девять мест писали
     // `data[y*w+x] = FT_…` мимо двери, то есть девять раз заворот и проверка
     // рода держались на памяти автора, а не на типе.
     FeatureType at(std::uint32_t cell) const {
         return cell < cell_count() ? decode(data[cell]) : FT_None;
-    }
-    FeatureType at(int x, int y) const {
-        if (!world_shape_ok(width, height) || cell_count() == 0u) return FT_None;
-        return at(cell_of(x, y, width));
     }
 
 private:
@@ -220,8 +217,6 @@ private:
     // (tests/feature_layer_parity_test.cpp — гейты формы и шов индекс/пара).
     friend FeatureType feature_put(FeatureLayer&, const TerrainData&,
                                    std::uint32_t, FeatureType);
-    friend FeatureType feature_put(FeatureLayer&, const TerrainData&,
-                                   int, int, FeatureType);
     friend struct FeatureLayerProbe;
 
     void set(std::uint32_t cell, FeatureType t) {
@@ -230,10 +225,6 @@ private:
         if (data[cell] == byte) return;   // правки не было — счётчик стоит
         data[cell] = byte;
         ++revision;
-    }
-    void set(int x, int y, FeatureType t) {
-        if (!world_shape_ok(width, height) || cell_count() == 0u) return;
-        set(cell_of(x, y, width), t);
     }
 };
 static_assert(sizeof(FeatureLayer) == 16u + kWorldCellCap,
@@ -256,13 +247,6 @@ inline FeatureType feature_put(FeatureLayer& fl, const TerrainData& td,
     if (got == FT_None) return FT_None;   // вода отказала — не встало ничего
     fl.set(cell, got);
     return got;
-}
-
-// Та же дверь парой координат — для звонящих, у которых на руках геометрия
-// (ЗАКОН АДРЕСА: индекс первичен, пара законна там, где она уже есть).
-inline FeatureType feature_put(FeatureLayer& fl, const TerrainData& td,
-                               int x, int y, FeatureType want) {
-    return feature_put(fl, td, cell_of(x, y, fl.width), want);
 }
 
 } // namespace sm

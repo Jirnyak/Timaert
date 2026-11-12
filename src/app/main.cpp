@@ -4984,7 +4984,7 @@ void register_console_commands(App& app) {
             if (app.subworld.harvest_prop_near_player(float(r), &cx, &cy, &prev,
                                                       &kTreeOnly))
                 c.printfln(Lvl::Ok, "chop: cell %d,%d trees %d -> %d",
-                           cx, cy, prev, int(app.gs.treeLayer.at(cx, cy)));
+                           cx, cy, prev, int(app.gs.treeLayer.at(cell_of(cx, cy, app.gs.treeLayer.width))));
             else
                 c.warn("no tree in reach");
             return true;

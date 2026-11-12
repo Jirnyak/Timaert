@@ -21,29 +21,33 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
     // missing world has no land to walk, grow or hunt).
     if (!w.terrain || !w.terrain->has_rgba_storage()) return f;
     const TerrainData& td = *w.terrain;
-    f.x = wrap_axis(x, td.width);
-    f.y = wrap_axis(y, td.height);
-    const std::size_t idx =
-        std::size_t(f.y) * std::size_t(td.width) + std::size_t(f.x);
+    // Пара звонящего сворачивается в адрес ОДИН раз, дверью тора; все слои
+    // ниже спрашиваются этим индексом (ЗАКОН АДРЕСА п.2). Здесь стояли две
+    // свёртки осей и рукописный `y * width + x`, а каждый слой сворачивал
+    // пару заново по своей ширине.
+    const std::uint32_t cell = cell_of(x, y, td.width);
+    f.x = cell_x(cell, td.width);
+    f.y = cell_y(cell, td.width);
+    const std::size_t idx = cell;
 
     f.height01      = field01_of(td.rgba[idx * 4u + 0u]);
     f.fertility01   = field01_of(td.rgba[idx * 4u + 1u]);
     f.temperature01 = field01_of(td.rgba[idx * 4u + 2u]);
-    f.biome = biome_at_cell(td, f.x, f.y);
+    f.biome = biome_at_cell(td, cell);
     // ВОДА — ОТ ПОРОГА (M-212). Здесь факт выводился из СОСЕДНЕГО факта того
     // же набора, и оба были производными одного порога: лишнее звено, которое
     // умеет разойтись и не умеет ничего добавить.
-    f.water = td.is_water(std::uint32_t(idx));
+    f.water = td.is_water(cell);
 
-    f.feature = w.gs ? w.gs->features.at(f.x, f.y) : FT_None;
+    f.feature = w.gs ? w.gs->features.at(cell) : FT_None;
     f.treeCount = (w.gs && w.gs->treeLayer.has_complete_storage())
-        ? int(w.gs->treeLayer.at(f.x, f.y)) : -1;
-    f.zone = w.zones ? w.zones->at(f.x, f.y) : std::uint8_t(0);
+        ? int(w.gs->treeLayer.at(cell)) : -1;
+    f.zone = w.zones ? w.zones->at(cell) : std::uint8_t(0);
 
     if (w.gs) {
         f.seasonTempOffset = season_temp_offset(w.gs->worldTime.day());
         f.cropHarvested = resource_field_scar(*w.gs, ResourceFieldId::Wheat,
-                                              std::uint32_t(idx));
+                                              cell);
         // Чья это земля — тем же выводом, которым спавн наследует почву
         // (невладеемое = вольный народ); колонка строки, не вторая дверь.
         f.cellOwner = faction_index_for_cell(w.gs->cellOwner,
@@ -77,7 +81,7 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
     // M-233 п.8). Здесь он СТОЯЛ, и шесть соседей писали его заново;
     // теперь сборщик его ПУБЛИКУЕТ, а вывод живёт в модуле шпиля и
     // ключуется ФИЧЕЙ клетки, не колонкой рода (ЗАКОН ПОЛЯ п.3).
-    const SpireOrb orb = spire_orb(w, f.x, f.y);
+    const SpireOrb orb = spire_orb(w, cell);
     const MacroHandle who = (w.squads && w.store)
         ? settlement_at(*w.squads, *w.store, f.x, f.y) : MacroHandle{};
     // One population, one find (ломтик F): the by-kind switch over three
@@ -100,7 +104,7 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
                   // слот). Под `FT_City` модуль города прочтёт его своей
                   // популяцией, под `FT_Spire` там спелл — толкует ЧИТАЮЩИЙ
                   // МОДУЛЬ, внутри себя.
-                  .size = w.gs ? feature_number_read(*w.gs, f.x, f.y) : 0,
+                  .size = w.gs ? feature_number_read(*w.gs, cell) : 0,
                   .tier = orb.tier,
                   .spell = orb.spell,
                   .factionIdx = manned

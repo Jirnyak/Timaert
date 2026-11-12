@@ -65,7 +65,7 @@ int derive_city_spacing(const TerrainData* terrain,
         for (int y = 0; y < mapH; y += 4)
             for (int x = 0; x < mapW; x += 4) {
                 ++sampled;
-                if (!terrain->is_water(x, y)) ++land;
+                if (!terrain->is_water(cell_of(x, y, terrain->width))) ++land;
             }
         if (sampled > 0)
             areaCells = int(float(land) / float(sampled) * float(mapW * mapH));
@@ -124,7 +124,7 @@ std::vector<City> generate_politik(std::uint32_t seed, int mapW, int mapH,
     // Land predicate (defaults to "everywhere is land" when no terrain).
     auto is_land = [&](int x, int y) -> bool {
         if (!useTerrain) return true;
-        return !terrain->is_water(x, y);
+        return !terrain->is_water(cell_of(x, y, terrain->width));
     };
 
     // Seed capitals + cities per realm.
@@ -421,7 +421,7 @@ void snap_cities_to_land(std::vector<City>& cities, const TerrainData& td,
                          int radius) {
     if (!td.has_rgba_storage()) return;
     const int W = td.width;
-    auto is_land = [&](int x, int y) { return !td.is_water(x, y); };
+    auto is_land = [&](int x, int y) { return !td.is_water(cell_of(x, y, td.width)); };
     for (auto& c : cities) {
         if (is_land(c.x, c.y)) continue;
         // Spiral outward in concentric square rings — шаги ИНДЕКСА (cell_step).
@@ -462,8 +462,8 @@ void finalize_politik(std::vector<City>& cities,
     const int W = td.width, H = td.height;
     // Пять рукописных сравнений `rgba[..*4+0] >= seaLevel8` стояли здесь и
     // выше — шестой спеллинг «вода ли клетка», мимо двери карты (M-109).
-    auto is_land = [&](int x, int y) { return !td.is_water(x, y); };
-    auto is_water = [&](int x, int y) { return td.is_water(x, y); };
+    auto is_land = [&](int x, int y) { return !td.is_water(cell_of(x, y, td.width)); };
+    auto is_water = [&](int x, int y) { return td.is_water(cell_of(x, y, td.width)); };
     auto count_local_water = [&](int cx, int cy, int r) {
         int n = 0;
         const std::uint32_t at = cell_of(cx, cy, W);

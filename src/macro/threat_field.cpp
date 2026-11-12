@@ -47,7 +47,8 @@ void threat_field_daily(const MacroWorld& mw, int day) {
             const WorldFact& f = c.facts[seq - 1u];
             if (f.kind != std::uint16_t(FactKind::Died)) continue;
             if (f.amount <= 0) continue;
-            const std::uint16_t r = nav_region_at(*nv, int(f.x), int(f.y));
+            const std::uint16_t r =
+                nav_region_at(*nv, cell_of(int(f.x), int(f.y), nv->mapW));
             if (std::size_t(r) >= R) continue;   // вода/вне графа
             const int age = day - f.day;
             const int shift = age > 0 ? age / kThreatDecayDays : 0;

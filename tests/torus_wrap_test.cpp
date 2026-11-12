@@ -58,21 +58,18 @@ int main() {
     CHECK(wrapi(-5, -8) == 0, "and neither does a negative one explode");
 
     // ── The named doors agree with the one behind them ───────────────────
-    // `FeatureLayer::wrap_coord` and `DepositLayer::wrap_index` read as
-    // documentation at their call sites, so they survive as names — but they
-    // must not survive as second implementations.
-    std::unique_ptr<DepositLayer> depOwn{new DepositLayer()};
-    DepositLayer& dep = *depOwn;
-    dep.width = kW;
-    dep.height = kW;
+    // `FeatureLayer::wrap_coord` reads as documentation at its call sites,
+    // so it survives as a name — but it must not survive as a second
+    // implementation. (`DepositLayer::wrap_index` стояла здесь второй такой
+    // дверью и снята ломтём 4 ряда M-462: клетку слою называют индексом.)
     for (int v = -2048; v <= 2048; v += 13) {
         CHECK(FeatureLayer::wrap_coord(v, kW) == wrapi(v, kW),
               "the feature grid wraps by the one law");
     }
-    CHECK(dep.wrap_index(-1, 0) == std::uint32_t(kW - 1),
-          "a deposit one cell west of the origin is on the far side of the map");
-    CHECK(dep.wrap_index(0, -1) == std::uint32_t(kW) * std::uint32_t(kW - 1),
-          "and one cell north of it is on the bottom row");
+    CHECK(cell_of(-1, 0, kW) == std::uint32_t(kW - 1),
+          "a cell one step west of the origin is on the far side of the map");
+    CHECK(cell_of(0, -1, kW) == std::uint32_t(kW) * std::uint32_t(kW - 1),
+          "and one step north of it is on the bottom row");
 
     // ── ЗАКОН АДРЕСА: клетка есть ОДНО число, сосед есть шаг по нему ─────
     // Свидетель проверяет не тела, а ЗАКОН: адрес маской обязан отвечать то

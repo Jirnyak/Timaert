@@ -285,9 +285,10 @@ struct NpcTraits {
 // homeIsVillage register bit died with the second id space it existed to
 // disambiguate.
 // «Нет клетки» — последнее значение типа (ЗАКОН УЗКОГО ИНДЕКСА: клетка 0 —
-// законный адрес мира); имя — из продиктованной формы цели (M-1). Один
-// сентинел на всякий хранимый адрес-клетку рода 2 (цель, логово).
-inline constexpr std::uint32_t kNoCell = ~0u;
+// законный адрес мира); имя — из продиктованной формы цели (M-1). Сентинел
+// ОДИН на весь мир и объявлен у дверей адреса (`kNoCell@src/core/torus.h`);
+// здесь он назван в пространстве строк сквада, а не объявлен второй раз.
+using sm::kNoCell;
 
 struct MacroNpcRuntime {
     // (`homeSettlementId` умерла 2026-10-22, M-245: ДОМ = РОДИТЕЛЬ, ребро

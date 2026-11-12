@@ -60,9 +60,7 @@
 // поля по клетке), а не чем это число для кого-то значит.
 static int cell_number_at(const sm::GameState& gs, const sm::MacroStore& st,
                           std::uint16_t slot) {
-    const auto& c = st.cell[slot];
-    return sm::feature_number_read(gs, sm::ecs::cell_x(c, gs.mapW),
-                           sm::ecs::cell_y(c, gs.mapW));
+    return sm::feature_number_read(gs, st.cell[slot].idx);
 }
 
 namespace {
@@ -604,7 +602,7 @@ int main(int argc, char** argv) {
                     // мерит сам скор.
                     const std::uint32_t lmCell =
                         sm::cell_of(lmx, lmy, gs.mapW);
-                    const int treesHere = int(treeLayer.at(lmx, lmy));
+                    const int treesHere = int(treeLayer.at(sm::cell_of(lmx, lmy, treeLayer.width)));
                     int treesNear = 0;
                     for (int dy = -sm::kSettlementReach;
                          dy <= sm::kSettlementReach; ++dy)
@@ -614,8 +612,7 @@ int main(int argc, char** argv) {
                                 sm::cell_step(lmCell, dx, dy, gs.mapW);
                             treesNear = std::max(
                                 treesNear,
-                                int(treeLayer.at(sm::cell_x(n, gs.mapW),
-                                                 sm::cell_y(n, gs.mapW))));
+                                int(treeLayer.at(n)));
                         }
                     // ── ПЕРЕПИСЬ ОФФЕРОВ ДОСКИ (bugs.md Б6 «No work today»)
                     // ТОЙ ЖЕ ДВЕРЬЮ, ЧТО ВКЛАДКА CONTRACTS. Доска

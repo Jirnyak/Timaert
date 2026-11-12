@@ -235,13 +235,13 @@ void test_one_spire_per_spell_in_the_band() {
     std::set<int> spells;
     for (const std::uint32_t c : spires) {
         const int x = cell_x(c, gs.mapW), y = cell_y(c, gs.mapW);
-        const int spell = feature_number_read(gs, x, y);
+        const int spell = feature_number_read(gs, cell_of(x, y, gs.mapW));
         CHECK(spell >= 1 && spell <= kSpellCount
                   && spells.insert(spell).second,
               "клетка шпиля работает СВОЙ спелл: ординал реестра + 1, и два "
               "шпиля одного спелла не несут");
-        CHECK(!terrain.is_water(x, y), "a spire stands on land");
-        CHECK(int(zones.at(x, y)) >= int(kSpireMinZone),
+        CHECK(!terrain.is_water(cell_of(x, y, terrain.width)), "a spire stands on land");
+        CHECK(int(zones.at(cell_of(x, y, zones.width))) >= int(kSpireMinZone),
               "a spire stands inside the spire generator's zone band");
     }
     CHECK(spells.size() == std::size_t(kSpellCount),
@@ -253,9 +253,9 @@ void test_one_spire_per_spell_in_the_band() {
     int doomSeen = 0;
     for (const std::uint32_t c : spires) {
         const int x = cell_x(c, gs.mapW), y = cell_y(c, gs.mapW);
-        if (feature_number_read(gs, x, y) != doomSpell) continue;
+        if (feature_number_read(gs, cell_of(x, y, gs.mapW)) != doomSpell) continue;
         ++doomSeen;
-        CHECK(int(zones.at(x, y)) == int(kSpireMaxZone),
+        CHECK(int(zones.at(cell_of(x, y, zones.width))) == int(kSpireMaxZone),
               "the top-tier spire stands at the band's cap");
     }
     CHECK(doomSeen == 1, "шпиль старшего спелла нашёлся, и ровно один");
@@ -389,7 +389,7 @@ void test_named_rooted_veto_their_cells() {
         int vetoCells = 0;
         for (int y = 32; y < 48; ++y)
             for (int x = 32; x < 48; ++x)
-                if (flI.at(x, y) == FT_Village) ++vetoCells;
+                if (flI.at(cell_of(x, y, flI.width)) == FT_Village) ++vetoCells;
         CHECK_OR_RETURN(vetoCells == 16 * 16,
                         "фикстура заняла ВСЮ пригодную землю — иначе вето "
                         "нечем проверять, и пустой результат ничего не значит");
@@ -496,7 +496,7 @@ void test_no_live_slot_stands_on_a_spell_cell() {
     int vetoCells = 0;
     for (int y = 32; y < 48; ++y)
         for (int x = 32; x < 48; ++x)
-            if (fl.at(x, y) == FT_Village) ++vetoCells;
+            if (fl.at(cell_of(x, y, fl.width)) == FT_Village) ++vetoCells;
     CHECK_OR_RETURN(vetoCells == born,
                     "предусловие рождено ОБЕИМИ половинами: у каждой деревни "
                     "есть и слот, и БАЙТ — вето спрашивает байт, и фикстура "
@@ -516,7 +516,7 @@ void test_no_live_slot_stands_on_a_spell_cell() {
         ++scanned;
         const auto& c = st.cell[slot];
         const int x = cell_x(c, gs.mapW), y = cell_y(c, gs.mapW);
-        if (fl.at(x, y) == FT_Spire) {
+        if (fl.at(cell_of(x, y, fl.width)) == FT_Spire) {
             ++onSpell;
             std::printf("  ЖИВОЙ СЛОТ НА КЛЕТКЕ СО СПЕЛЛОМ: слот %zu, клетка "
                         "%d,%d\n", slot, x, y);
@@ -579,8 +579,8 @@ void test_genesis_places_ruins_and_spires_as_features() {
     const std::vector<std::uint32_t> ruinCells = feature_cells(flH, FT_Ruin);
     for (const std::uint32_t c : ruinCells) {
         const int x = cell_x(c, gs.mapW), y = cell_y(c, gs.mapW);
-        CHECK(!terrain.is_water(x, y), "a ruin stands on land");
-        const int z = int(zones.at(x, y));
+        CHECK(!terrain.is_water(cell_of(x, y, terrain.width)), "a ruin stands on land");
+        const int z = int(zones.at(cell_of(x, y, zones.width)));
         CHECK(z >= int(kRuinMinZone) && z <= int(kRuinMaxZone),
               "a ruin stands inside its generator zone band");
     }
@@ -662,7 +662,7 @@ void test_one_answer_to_the_drained_orb() {
     // утверждение теперь о ЧИСЛЕ, а не о колонке: у свежего города оно ноль
     // — ровно то значение, которое у шпиля значит «выкачан», — и ни один
     // вывод о выкачанности не смеет спутать их без вопроса о ФИЧЕ.
-    CHECK(feature_number_read(gs, 40, 40) == 0,
+    CHECK(feature_number_read(gs, cell_of(40, 40, gs.mapW)) == 0,
           "свежий город пуст — число поля под ним ноль, то есть ровно то "
           "число, которое под FT_Spire значит «выкачан»");
 
@@ -682,10 +682,10 @@ void test_one_answer_to_the_drained_orb() {
     const std::vector<std::uint32_t> spireCells = feature_cells(feat, FT_Spire);
     CHECK(spireCells.size() == std::size_t(kSpellCount),
           "штамп прошёл по настоящим шпилям, и их столько же, сколько спеллов");
-    CHECK(feat.at(40, 40) == FT_City,
+    CHECK(feat.at(cell_of(40, 40, feat.width)) == FT_City,
           "а на клетке города стоит ЕГО фича — значит ключ различает их");
 
-    const SpireOrb cityOrb = spire_orb(mw, 40, 40);
+    const SpireOrb cityOrb = spire_orb(mw, cell_of(40, 40, mw.gs->mapW));
     CHECK(!cityOrb.depleted,
           "ГОРОД С ПУСТОЙ ПАСТВОЙ НЕ ВЫКАЧАН: выкачанность есть вопрос о "
           "ШПИЛЕ, и у не-шпиля она ЛОЖЬ всегда");
@@ -697,8 +697,7 @@ void test_one_answer_to_the_drained_orb() {
     int charged = 0, wrongTier = 0, wrongSpell = 0, falseDepleted = 0;
     for (const std::uint32_t c : spireCells) {
         ++charged;
-        const SpireOrb o = spire_orb(mw, cell_x(c, gs.mapW),
-                                     cell_y(c, gs.mapW));
+        const SpireOrb o = spire_orb(mw, c);
         if (o.depleted) ++falseDepleted;
         if (o.spell <= 0 || o.spell > kSpellCount) ++wrongSpell;
         else if (o.tier != kSpellDefs[o.spell - 1].tier) ++wrongTier;
@@ -717,17 +716,16 @@ void test_one_answer_to_the_drained_orb() {
                     "нашёлся шпиль, у которого можно забрать орб");
     const int vx = cell_x(spireCells[0], gs.mapW);
     const int vy = cell_y(spireCells[0], gs.mapW);
-    feature_number_write(gs, vx, vy, 0);   // ровно то, что делает рука игрока внизу
+    feature_number_write(gs, cell_of(vx, vy, gs.mapW), 0);   // ровно то, что делает рука игрока внизу
 
-    const SpireOrb drained = spire_orb(mw, vx, vy);
+    const SpireOrb drained = spire_orb(mw, cell_of(vx, vy, mw.gs->mapW));
     CHECK(drained.depleted && drained.spell == 0 && drained.tier == 0,
           "забранный орб: выкачан, спелла нет, тир ноль — выкачанный шпиль "
           "ЗАБЫЛ свой спелл, как выработанная жила — свою руду");
     // ОСТАЛЬНЫЕ ШПИЛИ НЕ ТРОНУТЫ: дверь отвечает О КЛЕТКЕ, а не о роде вообще.
     int otherDepleted = 0;
     for (std::size_t i = 1; i < spireCells.size(); ++i)
-        if (spire_orb(mw, cell_x(spireCells[i], gs.mapW),
-                      cell_y(spireCells[i], gs.mapW)).depleted)
+        if (spire_orb(mw, spireCells[i]).depleted)
             ++otherDepleted;
     CHECK(otherDepleted == 0,
           "обобран РОВНО один шпиль — выкачанность есть факт КЛЕТКИ");
@@ -823,9 +821,8 @@ void test_one_answer_to_the_drained_orb() {
 // ДВА ИМЕНИ РАЗРЕШЕНЫ, И ОБА НАЗВАНЫ, А НЕ ПРОЩЕНЫ:
 //   · `src/macro/spires.cpp` — САМА дверь плюс запись орба в генезисе;
 //   · `src/app/smoke.cpp` — смоук-свидетели, которым и положено писать СЫРУЮ
-//     истину слоя, чтобы проверить ею производный ответ (тот же приём, что
-//     объяснён в `tests/deposit_reach_test.cpp`: справа стоит ВОПРОС, а не
-//     вторая копия реализации).
+//     истину слоя, чтобы проверить ею производный ответ: справа стоит
+//     ВОПРОС, а не вторая копия реализации.
 // `feature_number_write` под правило не попадает: у ЗАПИСИ орба один писатель-акт
 // (рука игрока в субмире), и он не вывод.
 constexpr const char* kOrbDoor = "src/macro/spires.cpp";

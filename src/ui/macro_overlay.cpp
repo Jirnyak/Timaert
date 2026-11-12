@@ -293,17 +293,19 @@ void draw_macro_overlay(const MacroWorld& mw,
             // Tooltip: biome / feature / place / coords — but only what
             // the player KNOWS (macro/knowledge.h). Terra incognita answers
             // its coordinates and nothing else.
-            const std::uint8_t hoverKnow =
-                gs.knowledge.at(cursor.hoverX, cursor.hoverY);
+            // Курсор держит пару (экран), мир спрашивают индексом: пара
+            // сворачивается один раз, здесь (ЗАКОН АДРЕСА п.2).
+            const std::uint32_t hoverCell =
+                cell_of(cursor.hoverX, cursor.hoverY, mapW);
+            const std::uint8_t hoverKnow = gs.knowledge.at(hoverCell);
             ImGui::BeginTooltip();
             ImGui::Text("(%d, %d)", cursor.hoverX, cursor.hoverY);
             if (hoverKnow == kKnowledgeUnknown) {
                 ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.60f, 1),
                                    "Uncharted");
             } else {
-                Biome b = biome_at_cell(terrain, cursor.hoverX,
-                                        cursor.hoverY);
-                FeatureType f = features.at(cursor.hoverX, cursor.hoverY);
+                Biome b = biome_at_cell(terrain, hoverCell);
+                FeatureType f = features.at(hoverCell);
                 ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1), "%s",
                                    kBiomes[b].name);
                 const char* fn = feature_caption(f);
@@ -315,8 +317,7 @@ void draw_macro_overlay(const MacroWorld& mw,
                 // sight; memory keeps the map, not this season's tree count.
                 if (hoverKnow == kKnowledgeVisible && treeLayer
                     && treeLayer->has_complete_storage()) {
-                    const int tc =
-                        int(treeLayer->at(cursor.hoverX, cursor.hoverY));
+                    const int tc = int(treeLayer->at(hoverCell));
                     if (is_forest_cell(tc)) {
                         ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1),
                                            "Forest (%d trees)", tc);
@@ -370,12 +371,13 @@ void draw_macro_overlay(const MacroWorld& mw,
             const int cy = y & maskY;
             for (int x = x0; x < x0 + nx; ++x) {
                 const int cx = x & maskX;
+                const std::uint32_t cell = cell_of(cx, cy, mapW);
                 const FeatureDef& fd =
-                    kFeatureDefs[std::size_t(features.at(cx, cy))];
+                    kFeatureDefs[std::size_t(features.at(cell))];
                 if (fd.markPx == 0) continue;
                 // Фича — факт карты: по памяти рисуется поблёкшей, тем же
                 // законом, что здания (`remembered` у архетипа).
-                const std::uint8_t know = gs.knowledge.at(cx, cy);
+                const std::uint8_t know = gs.knowledge.at(cell);
                 if (know == kKnowledgeUnknown) continue;
                 const bool faded = know < kKnowledgeVisible;
                 const ImVec2 p = world_to_screen(float(cx) + 0.5f,
@@ -386,7 +388,7 @@ void draw_macro_overlay(const MacroWorld& mw,
                                              float(fd.markMaxPx));
                 // Выкачанность — ОДИН вывод на весь мир (spire_orb): тёмный
                 // шпиль туши отвечает тем же полуцветом, что метка чарта.
-                const std::uint32_t argb = spire_orb(mw, cx, cy).depleted
+                const std::uint32_t argb = spire_orb(mw, cell).depleted
                     ? ((fd.mapColor >> 1) & 0x7F7F7Fu)
                     : fd.mapColor;
                 draw_sprite(dl, p, SpriteId::None, size,
@@ -437,7 +439,10 @@ void draw_macro_overlay(const MacroWorld& mw,
             // даже глифа. Дальше решает колонка ГРУППЫ — здание есть факт
             // карты и рисуется поблёкшим по памяти, а живого человека память
             // не держит, он виден только в прямом виду.
-            const std::uint8_t know = gs.knowledge.at(cx, cy);
+            // Клетка, где сквад НАРИСОВАН (глаз представления), — её и
+            // спрашивает знание; пара глаза сворачивается здесь один раз.
+            const std::uint32_t drawCell = cell_of(cx, cy, mapW);
+            const std::uint8_t know = gs.knowledge.at(drawCell);
             if (know == kKnowledgeUnknown) continue;
             const bool faded = know < kKnowledgeVisible;
             if (faded && !grp.remembered) continue;
@@ -480,8 +485,8 @@ void draw_macro_overlay(const MacroWorld& mw,
                                             (argb >> 8) & 0xFF, argb & 0xFF,
                                             faded ? 120 : 230);
             draw_sprite(dl, p,
-                        spire_orb(mw, cx, cy).depleted ? row.spriteDepleted
-                                                       : row.sprite,
+                        spire_orb(mw, drawCell).depleted ? row.spriteDepleted
+                                                         : row.sprite,
                         size, fallback,
                         faded ? IM_COL32(255, 255, 255, 120) : IM_COL32_WHITE);
             if (row.labelZoom > 0.0f && zoom >= row.labelZoom) {
@@ -525,7 +530,7 @@ void draw_macro_overlay(const MacroWorld& mw,
             // nothing — a pin never points into the dark.
             const int mx = cell_x(m.cell, mapW);
             const int my = cell_y(m.cell, mapW);
-            if (gs.knowledge.at(mx, my) == kKnowledgeUnknown) continue;
+            if (gs.knowledge.at(m.cell) == kKnowledgeUnknown) continue;
             ImVec2 p = world_to_screen(float(mx) + 0.5f, float(my) + 0.5f,
                                        camX, camY, zoom, viewW, viewH, mapW, mapH);
             if (!on_screen(p, viewW, viewH, 96.0f)) continue;
@@ -946,11 +951,8 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                             // Выкачанность — ОДИН вывод на весь мир
                             // (spire_orb@src/macro/spires.h, M-233 п.8); здесь
                             // стояло своё написание, четвёртое по счёту.
-                            const auto& lcell = st.cell[slot];
                             const SpriteId sid =
-                                spire_orb(mw,
-                                          ecs::cell_x(lcell, gs.mapW),
-                                          ecs::cell_y(lcell, gs.mapW))
+                                spire_orb(mw, st.cell[slot].idx)
                                         .depleted
                                     ? drow.spriteDepleted : drow.sprite;
                             if (sid != SpriteId::None) sp = sprite_get(sid);
@@ -1033,9 +1035,7 @@ NpcProximityResult draw_npc_proximity_panel(const MacroWorld& mw,
                         // Число поля фич ПО КЛЕТКЕ; подпись «Pop» — вывод
                         // оверлея, а не мировой двери (M-320).
                         ImGui::Text("%d",
-                            feature_number_read(gs,
-                                ecs::cell_x(store.cell[slot], gs.mapW),
-                                ecs::cell_y(store.cell[slot], gs.mapW)));
+                            feature_number_read(gs, store.cell[slot].idx));
                     }
                     ImGui::EndGroup();
 

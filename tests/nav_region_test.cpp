@@ -71,6 +71,10 @@ struct Fixture {
     sm::Session ses{};
     sm::PathCostData pc;
     sm::NavWorld nav;
+    // Счёт шагов прогулок прибора и тех из них, где походка ответила НЕ
+    // соседом (см. `walk`): ходок — const-метод, счётчики копит сама фикстура.
+    mutable int stepsWalked = 0;
+    mutable int notNeighbour = 0;
     sm::MacroWorld mw{};
     std::vector<Place> seeded;
 
@@ -213,10 +217,21 @@ struct Fixture {
             if (sm::wrapi(x, W) == sm::wrapi(tx, W)
                 && sm::wrapi(y, H) == sm::wrapi(ty, H))
                 return s;
-            int dx = 0, dy = 0;
-            if (!sm::nav_step(nav, x, y, tx, ty, dx, dy)) return -1;
-            x = sm::wrapi(x + dx, W);
-            y = sm::wrapi(y + dy, H);
+            const std::uint32_t at = sm::cell_of(x, y, W);
+            const std::uint32_t next =
+                sm::nav_step(nav, at, sm::cell_of(tx, ty, W));
+            if (next == sm::kNoCell) return -1;
+            // ПОХОДКА ОТВЕЧАЕТ СОСЕДОМ. Прежняя подпись отдавала смещение,
+            // зажатое в ±1, и шагнуть дальше соседа было нечем; теперь ответ
+            // — адрес, и ноги встают прямо в него, поэтому «это сосед, и не
+            // та же клетка» утверждается здесь, на каждом шаге каждой
+            // прогулки прибора.
+            const sm::CellDelta d = sm::cell_delta(at, next, W);
+            ++stepsWalked;
+            if (next == at || d.dx < -1 || d.dx > 1 || d.dy < -1 || d.dy > 1)
+                ++notNeighbour;
+            x = sm::cell_x(next, W);
+            y = sm::cell_y(next, W);
             if (wet && !dry(x, y)) ++*wet;
         }
         return -1;
@@ -254,7 +269,7 @@ int main() {
         for (int x = 0; x < W; ++x) {
             ++cellsAll;
             const bool isOwned =
-                sm::nav_region_at(base.nav, x, y) != sm::kNavNoRegion;
+                sm::nav_region_at(base.nav, sm::cell_of(x, y, base.nav.mapW)) != sm::kNavNoRegion;
             if (isOwned) ++owned;
             if (base.dry(x, y)) { ++dryCells; if (isOwned) ++dryOwned; }
         }
@@ -263,7 +278,7 @@ int main() {
     CHECK(dryCells > 0 && dryOwned == dryCells,
           "...and in particular every cell of LAND, which is the requirement "
           "«от любого места до любого добраться» made true by construction");
-    CHECK(sm::nav_region_at(base.nav, 56, 8) != sm::kNavNoRegion,
+    CHECK(sm::nav_region_at(base.nav, sm::cell_of(56, 8, base.nav.mapW)) != sm::kNavNoRegion,
           "the lake pocket has an округа now: its ring of water is a price");
 
     // Ландмарк → ландмарк: все 30 упорядоченных пар доходят (в т.ч. через
@@ -314,6 +329,10 @@ int main() {
                   "route length survives the torus translation");
         }
     }
+    CHECK(base.stepsWalked > 0 && shifted.stepsWalked > 0
+              && base.notNeighbour == 0 && shifted.notNeighbour == 0,
+          "походка отвечает СОСЕДНЕЙ клеткой на каждом шаге: ноги встают в "
+          "ответ как есть, и не-сосед был бы прыжком по цене шага");
 
     // ── ОСТРОВ ДОСТИЖИМ, И ЭТО ГЛАВНЫЙ СВИДЕТЕЛЬ M-236 ────────────────
     // Этот блок утверждал РОВНО ОБРАТНОЕ до 2026-10-06: «пеший профиль
@@ -328,8 +347,8 @@ int main() {
         CHECK(sea.nav.baked(), "island world bakes");
         CHECK(int(sea.nav.regionRootedId.size()) == 2,
               "mainland and island each seed a region");
-        const auto rm = sm::nav_region_at(sea.nav, 5, 32);
-        const auto ri = sm::nav_region_at(sea.nav, 40, 32);
+        const auto rm = sm::nav_region_at(sea.nav, sm::cell_of(5, 32, sea.nav.mapW));
+        const auto ri = sm::nav_region_at(sea.nav, sm::cell_of(40, 32, sea.nav.mapW));
         CHECK(rm != sm::kNavNoRegion && ri != sm::kNavNoRegion && rm != ri,
               "the strait still SPLITS the partition: water is dear, so the "
               "two shores remain two округи with a portal between them");
@@ -345,7 +364,7 @@ int main() {
         // «ничейных» клеток не остаётся ни одной. Это та самая правда,
         // которой стена не давала быть: 4328–4701 клетка суши жила вне всякой
         // округи в каждом замеренном мире.
-        CHECK(sm::nav_region_at(sea.nav, 44, 32) != sm::kNavNoRegion,
+        CHECK(sm::nav_region_at(sea.nav, sm::cell_of(44, 32, sea.nav.mapW)) != sm::kNavNoRegion,
               "shore water belongs to a region like any other cell");
         std::size_t noRegion = 0;
         for (std::size_t c = 0; c < sea.nav.regionOf.size(); ++c)
@@ -369,7 +388,7 @@ int main() {
         // незапечённом мире и выходе за таблицу) — но географией он больше
         // не рождается, и это ровно то требование владельца «от любого места
         // до любого добраться», ставшее правдой по построению.
-        const std::uint32_t pocket = sm::nav_path_cost(base.nav, 5, 32, 56, 8);
+        const std::uint32_t pocket = sm::nav_path_cost(base.nav, sm::cell_of(5, 32, base.nav.mapW), sm::cell_of(56, 8, base.nav.mapW));
         CHECK(pocket != sm::kNavFar,
               "a lake pocket is EXPENSIVE, not unreachable: the ring of water "
               "is a price now");
@@ -379,7 +398,7 @@ int main() {
         CHECK(base.dry(56, 6) && !base.dry(56, 7),
               "the fixture is honest: (56,6) is dry land outside the ring and "
               "(56,7) is the ring itself");
-        CHECK(pocket > sm::nav_path_cost(base.nav, 5, 32, 56, 6),
+        CHECK(pocket > sm::nav_path_cost(base.nav, sm::cell_of(5, 32, base.nav.mapW), sm::cell_of(56, 6, base.nav.mapW)),
               "...and strictly dearer than the dry doorstep outside the ring, "
               "so the water really is being PAID for and not ignored");
         // ЗАКОН, НА КОТОРОМ СТОЯТ ВСЕ ЧИТАТЕЛИ: из МЕСТА дверь точна —
@@ -390,19 +409,19 @@ int main() {
             CHECK(rc0 >= 0, "region 0 names a cell");
             const int lx = int(rc0 % base.nav.mapW);
             const int ly = int(rc0 / base.nav.mapW);
-            CHECK(base.nav.distHome[base.nav.cell(lx, ly)] == 0u,
+            CHECK(base.nav.distHome[sm::cell_of(lx, ly, base.nav.mapW)] == 0u,
                   "a place stands at the zero of its own field");
-            CHECK(sm::nav_path_cost(base.nav, lx, ly, lx, ly) == 0u,
+            CHECK(sm::nav_path_cost(base.nav, sm::cell_of(lx, ly, base.nav.mapW), sm::cell_of(lx, ly, base.nav.mapW)) == 0u,
                   "from a place to itself the path costs nothing");
             int checked = 0;
             for (int y = 0; y < H && checked < 64; ++y)
                 for (int x = 0; x < W && checked < 64; ++x) {
-                    if (sm::nav_region_at(base.nav, x, y) != 0) continue;
+                    if (sm::nav_region_at(base.nav, sm::cell_of(x, y, base.nav.mapW)) != 0) continue;
                     const std::uint32_t dh =
-                        base.nav.distHome[base.nav.cell(x, y)];
+                        base.nav.distHome[sm::cell_of(x, y, base.nav.mapW)];
                     if (dh == sm::kNavFar) continue;
                     ++checked;
-                    if (sm::nav_path_cost(base.nav, lx, ly, x, y) != dh) {
+                    if (sm::nav_path_cost(base.nav, sm::cell_of(lx, ly, base.nav.mapW), sm::cell_of(x, y, base.nav.mapW)) != dh) {
                         CHECK(false,
                               "from a place the door is exactly distHome");
                         y = H; break;
@@ -422,7 +441,7 @@ int main() {
             const int bx = int(lcg(seed) % unsigned(W));
             const int by = int(lcg(seed) % unsigned(H));
             if (!base.dry(ax, ay) || !base.dry(bx, by)) continue;
-            const std::uint32_t c = sm::nav_path_cost(base.nav, ax, ay, bx, by);
+            const std::uint32_t c = sm::nav_path_cost(base.nav, sm::cell_of(ax, ay, base.nav.mapW), sm::cell_of(bx, by, base.nav.mapW));
             if (c == sm::kNavFar) continue;
             ++sampled;
             const float cells = float(c) / 16.0f;
@@ -490,9 +509,9 @@ int main() {
         CHECK(flat.nav.baked(), "фикстура: ровный мир запечён");
         const int n = 6;
         const std::uint32_t straight =
-            sm::nav_path_cost(flat.nav, 32, 32, 32 + n, 32);
+            sm::nav_path_cost(flat.nav, sm::cell_of(32, 32, flat.nav.mapW), sm::cell_of(32 + n, 32, flat.nav.mapW));
         const std::uint32_t diagonal =
-            sm::nav_path_cost(flat.nav, 32, 32, 32 + n, 32 + n);
+            sm::nav_path_cost(flat.nav, sm::cell_of(32, 32, flat.nav.mapW), sm::cell_of(32 + n, 32 + n, flat.nav.mapW));
         CHECK(straight != sm::kNavFar && straight > 0u,
               "фикстура: шесть клеток прямо — в округе места и стоят цены");
         CHECK(diagonal * std::uint32_t(sm::kStepStraight)

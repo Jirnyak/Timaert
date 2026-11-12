@@ -78,8 +78,8 @@ void test_the_field_obeys_the_world() {
     long long landHeightSum = 0, landCells = 0;
     for (int y = 0; y < td.height; ++y)
         for (int x = 0; x < td.width; ++x)
-            if (!td.is_water(x, y)) {
-                landHeightSum += td.height_at(x, y);
+            if (!td.is_water(cell_of(x, y, td.width))) {
+                landHeightSum += td.height_at(cell_of(x, y, td.width));
                 ++landCells;
             }
     const long long landMean = landHeightSum / std::max(1LL, landCells);
@@ -87,19 +87,19 @@ void test_the_field_obeys_the_world() {
     bool affinityHolds = true;
     bool nested = false;
     layer.cells().for_each_live([&](std::uint32_t idx, std::int32_t remaining) {
-        const int x = layer.cells().x_of(idx);
-        const int y = layer.cells().y_of(idx);
+        const int x = cell_x(idx, layer.width);
+        const int y = cell_y(idx, layer.width);
         // Вода не несёт ничего; всякая жила — высоко ЛИБО у воды. На этой
         // фикстуре вне реки влажность не перелезает порог глины, поэтому
         // дизъюнкция полна: сломай вес — и жила встанет на ровной сухой
         // земле, уронив ровно эту проверку.
-        affinityHolds = affinityHolds && !td.is_water(x, y) && remaining > 0
-            && (td.height_at(x, y) > landMean || river_adjacent(td, x, y));
+        affinityHolds = affinityHolds && !td.is_water(cell_of(x, y, td.width)) && remaining > 0
+            && (td.height_at(cell_of(x, y, td.width)) > landMean || river_adjacent(td, x, y));
         if (!nested) {
             for (int dy = -1; dy <= 1 && !nested; ++dy)
                 for (int dx = -1; dx <= 1 && !nested; ++dx) {
                     if (dx == 0 && dy == 0) continue;
-                    if (layer.cells().at(x + dx, y + dy) != 0) nested = true;
+                    if (layer.cells().at(cell_of(x + dx, y + dy, layer.cells().width)) != 0) nested = true;
                 }
         }
     });
@@ -114,13 +114,44 @@ void test_the_field_obeys_the_world() {
     int sampled = 0;
     for (int y = 0; y < td.height; y += 7) {
         for (int x = 0; x < td.width; x += 7) {
-            const std::int32_t derived = vein_virgin_at(td, 777u, x, y);
-            pureMatches = pureMatches && derived == layer.vein_at(x, y);
+            const std::int32_t derived = vein_virgin_at(td, 777u, cell_of(x, y, td.width));
+            pureMatches = pureMatches && derived == layer.vein_at(cell_of(x, y, layer.width));
             ++sampled;
         }
     }
     CHECK(sampled > 0 && pureMatches,
           "vein_virgin_at IS the built grid — one function births and answers");
+
+    // ЯКОРЬ, НЕЗАВИСИМЫЙ ОТ ФОРМУЛЫ (тождество «дверь равна гриду» выше слепо
+    // к самой формуле: обе стороны считает одна функция). Генератор берёт
+    // клетку ИНДЕКСОМ и раскладывает её в точку карты для шума у себя; шум,
+    // читающий одну ось дважды, даёт поле из полос. На горной полосе фикстуры
+    // вес у всех клеток один, значит различия даёт только шум — и он обязан
+    // меняться ВДОЛЬ ОБЕИХ осей: в КАЖДОМ столбце есть разные клетки и в
+    // КАЖДОЙ строке есть разные клетки. Окно взято В ГЛУБИНЕ полосы (x >= 12,
+    // y >= 50): у её кромки и у реки (x = 8) вес меняет соседство с водой, и
+    // различие там сказало бы о весе, а не о шуме.
+    constexpr int kX0 = 12, kY0 = 50;
+    bool variesAlongY = true, variesAlongX = true;
+    for (int x = kX0; x < td.width; ++x) {
+        bool differs = false;
+        for (int y = kY0 + 1; y < td.height; ++y)
+            differs = differs
+                || layer.vein_at(cell_of(x, y, td.width))
+                       != layer.vein_at(cell_of(x, kY0, td.width));
+        variesAlongY = variesAlongY && differs;
+    }
+    for (int y = kY0; y < td.height; ++y) {
+        bool differs = false;
+        for (int x = kX0 + 1; x < td.width; ++x)
+            differs = differs
+                || layer.vein_at(cell_of(x, y, td.width))
+                       != layer.vein_at(cell_of(kX0, y, td.width));
+        variesAlongX = variesAlongX && differs;
+    }
+    CHECK(variesAlongY && variesAlongX,
+          "геология меняется вдоль обеих осей: шум читает точку карты, а не "
+          "одну ось дважды");
 
     // One seed, one geology; a different seed shuffles the sites.
     std::unique_ptr<DepositLayer> againOwn{new DepositLayer()};
@@ -139,14 +170,17 @@ void test_the_genesis_door() {
     std::unique_ptr<DepositLayer> layerOwn{new DepositLayer()};
     DepositLayer& layer = *layerOwn;
     allocate_deposit_fields(layer, 64, 64);
-    const std::uint32_t rev0 = layer.revision;
-    create_deposit(layer, 10, 10, 1234);
-    CHECK(layer.vein_at(10, 10) == 1234, "genesis writes the cell");
+    deposit_set(layer, cell_of(10, 10, layer.width), 1234);
+    CHECK(layer.vein_at(cell_of(10, 10, layer.width)) == 1234, "the one write lands the cell");
     CHECK(layer.cells().liveCells == 1, "the live count rides the write");
-    CHECK(layer.revision > rev0, "the mutation moved the revision");
-    create_deposit(layer, 11, 10, 0);
-    CHECK(layer.vein_at(11, 10) == 0,
-          "genesis of an empty vein is refused — zero is absence");
+    deposit_set(layer, cell_of(11, 10, layer.width), 0);
+    CHECK(layer.vein_at(cell_of(11, 10, layer.width)) == 0
+              && layer.cells().liveCells == 1,
+          "a zero write is absence — no vein is born and the count stands");
+    deposit_set(layer, cell_of(10, 10, layer.width), 0);
+    CHECK(layer.vein_at(cell_of(10, 10, layer.width)) == 0
+              && layer.cells().liveCells == 0,
+          "writing zero over a live vein exhausts it and the count follows");
 }
 
 } // namespace

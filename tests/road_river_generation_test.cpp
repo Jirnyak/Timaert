@@ -363,13 +363,13 @@ void test_road_bridges_one_cell_river()
     const std::unique_ptr<sm::FeatureLayer> flOwn{new sm::FeatureLayer()};
     sm::FeatureLayer& fl = *flOwn;
     sm::build_feature_layer(fl, td, roads, nullptr);
-    CHECK(fl.at(5, wetY) == sm::FT_Bridge,
+    CHECK(fl.at(sm::cell_of(5, wetY, fl.width)) == sm::FT_Bridge,
           "a road cell on biome water must stamp FT_Bridge");
-    CHECK(fl.at(4, wetY) == sm::FT_Road && fl.at(6, wetY) == sm::FT_Road,
+    CHECK(fl.at(sm::cell_of(4, wetY, fl.width)) == sm::FT_Road && fl.at(sm::cell_of(6, wetY, fl.width)) == sm::FT_Road,
           "the bridge's banks must stamp FT_Road");
     int wetFeatures = 0;
     for (int y = 0; y < td.height; ++y)
-        if (fl.at(5, y) != sm::FT_None)
+        if (fl.at(sm::cell_of(5, y, fl.width)) != sm::FT_None)
             ++wetFeatures;
     CHECK(wetFeatures == 1,
           "exactly the paid crossing carries a feature on the river");
@@ -433,22 +433,22 @@ void test_dirt_lane_lays_a_stone_bridge()
     int wet = 0, wetY = -1;
     for (int y = 0; y < td.height; ++y)
     {
-        if (features.at(5, y) != sm::FT_None)
+        if (features.at(sm::cell_of(5, y, features.width)) != sm::FT_None)
         {
             ++wet;
             wetY = y;
         }
     }
-    CHECK(wet == 1 && features.at(5, wetY) == sm::FT_Bridge,
+    CHECK(wet == 1 && features.at(sm::cell_of(5, wetY, features.width)) == sm::FT_Bridge,
           "the dirt lane's crossing must land FT_Bridge — stone, never dirt");
-    CHECK(features.at(4, wetY) == sm::FT_DirtRoad
-              && features.at(6, wetY) == sm::FT_DirtRoad,
+    CHECK(features.at(sm::cell_of(4, wetY, features.width)) == sm::FT_DirtRoad
+              && features.at(sm::cell_of(6, wetY, features.width)) == sm::FT_DirtRoad,
           "the span's banks carry the lane's own dirt class, square-on");
     const int failsBefore = sm::test::failures();
     for (int y = 0; y < td.height; ++y)
     {
-        CHECK(features.at(13, y) == sm::FT_None
-                  && features.at(14, y) == sm::FT_None,
+        CHECK(features.at(sm::cell_of(13, y, features.width)) == sm::FT_None
+                  && features.at(sm::cell_of(14, y, features.width)) == sm::FT_None,
               "the two-cell strait must stay lane-free (wide water refused)");
         if (sm::test::failures() != failsBefore)
         {
@@ -697,7 +697,7 @@ void test_dirt_roads_lay_a_star_lanes()
     const std::unique_ptr<sm::FeatureLayer> featuresOwn{new sm::FeatureLayer()};
     sm::FeatureLayer& features = *featuresOwn;
     features.resize(td.width, td.height);
-    sm::feature_put(features, td, 12, 4,
+    sm::feature_put(features, td, sm::cell_of(12, 4, features.width),
                     sm::FT_Road);   // the city stands on stone already
 
     std::vector<sm::VillageRoadSite> villages(1);
@@ -710,9 +710,9 @@ void test_dirt_roads_lay_a_star_lanes()
     const int laid = sm::trace_dirt_roads(features, td, villages, {}, 4);
 
     CHECK(laid > 0, "a reachable home city must get a dirt lane");
-    CHECK(features.at(2, 4) == sm::FT_DirtRoad,
+    CHECK(features.at(sm::cell_of(2, 4, features.width)) == sm::FT_DirtRoad,
           "the village cell must carry its road class (wrapped coordinates)");
-    CHECK(features.at(12, 4) == sm::FT_Road,
+    CHECK(features.at(sm::cell_of(12, 4, features.width)) == sm::FT_Road,
           "a dirt lane must never overwrite stone at its target");
     // The lane is CONTINUOUS ground the A* walked: the torus-shortest route
     // 2 -> 12 is westward (6 steps), so at least that many cells landed.
@@ -744,14 +744,14 @@ void test_dirt_roads_refuse_unreachable_targets()
 
     CHECK(laid == 1,
           "a cross-island city gets no lane — only the village cell stamps");
-    CHECK(features.at(2, 4) == sm::FT_DirtRoad,
+    CHECK(features.at(sm::cell_of(2, 4, features.width)) == sm::FT_DirtRoad,
           "the orphan village still sits on its road class");
-    CHECK(features.at(12, 4) == sm::FT_None,
+    CHECK(features.at(sm::cell_of(12, 4, features.width)) == sm::FT_None,
           "no causeway: the far shore must stay untouched");
     int wetDirt = 0;
     for (int y = 0; y < td.height; ++y)
         for (int x = 0; x < td.width; ++x)
-            if (td.is_water(x, y) && features.at(x, y) != sm::FT_None)
+            if (td.is_water(sm::cell_of(x, y, td.width)) && features.at(sm::cell_of(x, y, features.width)) != sm::FT_None)
                 ++wetDirt;
     CHECK(wetDirt == 0, "dirt lanes must never stamp water cells");
 }
@@ -771,7 +771,7 @@ void test_dirt_roads_reach_gates_rooted_lane()
     nearFeatures.resize(td.width, td.height);
     const int laidNear =
         sm::trace_dirt_roads(nearFeatures, td, villages, rootedSites, 9);
-    CHECK(laidNear > 1 && nearFeatures.at(10, 2) == sm::FT_DirtRoad,
+    CHECK(laidNear > 1 && nearFeatures.at(sm::cell_of(10, 2, nearFeatures.width)) == sm::FT_DirtRoad,
           "a place within reach must get a lane ending at the place");
 
     const std::unique_ptr<sm::FeatureLayer> farFeaturesOwn{new sm::FeatureLayer()};
@@ -779,7 +779,7 @@ void test_dirt_roads_reach_gates_rooted_lane()
     farFeatures.resize(td.width, td.height);
     const int laidFar =
         sm::trace_dirt_roads(farFeatures, td, villages, rootedSites, 4);
-    CHECK(laidFar == 1 && farFeatures.at(10, 2) == sm::FT_None,
+    CHECK(laidFar == 1 && farFeatures.at(sm::cell_of(10, 2, farFeatures.width)) == sm::FT_None,
           "a place beyond reach gets no lane — only the village cell");
 }
 
@@ -813,7 +813,7 @@ void test_dirt_roads_fail_closed_on_malformed_inputs()
           "dirt-road tracing must fail closed on a non-covering feature layer");
     for (int y = 0; y < 4; ++y)
         for (int x = 0; x < 4; ++x)
-            CHECK(mismatched.at(x, y) == sm::FT_None,
+            CHECK(mismatched.at(sm::cell_of(x, y, mismatched.width)) == sm::FT_None,
                   "failed-closed tracing must leave the feature layer untouched");
 }
 

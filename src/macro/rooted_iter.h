@@ -120,8 +120,8 @@ void for_each_rooted_view(const MacroWorld& w, F&& fn) {
                          .x = x,
                          .y = y,
                          .name = name,
-                         .featureNumber = feature_number_read(gs, x, y),
-                         .depleted = spire_orb(w, x, y).depleted});
+                         .featureNumber = feature_number_read(gs, c.idx),
+                         .depleted = spire_orb(w, c.idx).depleted});
         }
     }
 }

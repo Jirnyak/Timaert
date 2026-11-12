@@ -145,7 +145,8 @@ void optical_sweep(int width, int height, int sx, int sy, float budget,
             const int nx = wrap_axis(cur.x + kNX[k], width);
             const int ny = wrap_axis(cur.y + kNY[k], height);
             const std::size_t ni = index(nx, ny);
-            float base = feat ? feature_optical_cost(feat->at(nx, ny)) : 1.0f;
+            float base = feat
+                ? feature_optical_cost(feat->at(std::uint32_t(ni))) : 1.0f;
             if (td) base += kCanopyOpticalCost * (*td)[ni];
             float step = kNL[k] * base;
             if (hs) {

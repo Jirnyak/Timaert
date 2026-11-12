@@ -331,6 +331,112 @@ void test_a_reflex_that_stops_a_squad_drops_its_address() {
     }
 }
 
+// ── ПРЕДИКАТ ПОГОНИ УМИРАЕТ С ПОГОНЕЙ (M-468) ───────────────────────────
+// Рефлекс и роль делят ОДНУ колонку цели. Погоня кладёт в неё «кого ловлю»;
+// кончившись, она обязана оставить колонку ПУСТОЙ — иначе ординал добычи
+// прочтёт следующим решением роль (рейс — как свой рынок, сборщик — как
+// должника). Обратная полярность рядом: бой, заставший сквад в ЕГО деле,
+// предикат не стирает — рынок корована переживает стычку.
+void test_a_chase_dies_with_its_predicate() {
+    // ── настигший и победивший: колонка пуста ───────────────────────────
+    {
+        std::unique_ptr<GameState> gsOwn = make_world(-80);
+        GameState& gs = *gsOwn;
+        auto wStore_ = sm::make_macro_store();
+        sm::MacroStore& st = *wStore_;
+        const auto bandit = make_squad_at(st, NPCType::Bandit, "bandits", 5,
+                                          10, 10, 1u,
+                                          {11u, 12u, 13u, 14u},
+                                          NPCType::Bandit, 4);
+        const auto prey = make_squad_at(st, NPCType::Merchant, "timaert", 1,
+                                        13, 10, 2u, {21u},
+                                        NPCType::Peasant, 1);
+        const std::uint32_t preyId = st.spawnId[prey.slot].index;
+        MacroNpcAiRuntime rt{};
+        reset_macro_npc_ai_runtime(rt, 44u);
+        drive(gs, nullptr, st, rt, 1);
+        CHECK(st.runtime[bandit.slot].state
+                  == std::uint8_t(NPCState::Chasing)
+                  && ecs::goal_kind(st.goal[bandit.slot].what)
+                         == ecs::GoalKind::Squad
+                  && ecs::goal_ordinal(st.goal[bandit.slot].what) == preyId,
+              "фикстура: сильный гонится, и в цели лежит ординал добычи");
+        // Добыча настигнута: она на клетке погони (свидетель рожает встречу
+        // сам, а не ждёт её от ног).
+        st.cell[prey.slot].idx = st.cell[bandit.slot].idx;
+        drive(gs, nullptr, st, rt, 1);
+        CHECK(st.runtime[bandit.slot].state == std::uint8_t(NPCState::Idle)
+                  && ecs::squad_recovering(st.runtime[bandit.slot]),
+              "фикстура: встреча решена боем, победитель стоит паузу");
+        CHECK(st.goal[bandit.slot].what == 0u
+                  && st.goal[bandit.slot].cell == ecs::kNoCell
+                  && st.goal[bandit.slot].underway == 0,
+              "ПОГОНЯ КОНЧИЛАСЬ — колонка цели пуста: ординала добычи в "
+              "ней нет");
+    }
+    // ── добыча пропала из виду: погоня отпущена, колонка пуста ──────────
+    {
+        std::unique_ptr<GameState> gsOwn = make_world(-80);
+        GameState& gs = *gsOwn;
+        auto wStore_ = sm::make_macro_store();
+        sm::MacroStore& st = *wStore_;
+        const auto bandit = make_squad_at(st, NPCType::Bandit, "bandits", 5,
+                                          10, 10, 1u,
+                                          {11u, 12u, 13u, 14u},
+                                          NPCType::Bandit, 4);
+        const auto prey = make_squad_at(st, NPCType::Merchant, "timaert", 1,
+                                        13, 10, 2u, {21u},
+                                        NPCType::Peasant, 1);
+        MacroNpcAiRuntime rt{};
+        reset_macro_npc_ai_runtime(rt, 46u);
+        drive(gs, nullptr, st, rt, 1);
+        CHECK(st.runtime[bandit.slot].state
+                  == std::uint8_t(NPCState::Chasing)
+                  && st.goal[bandit.slot].what != 0u,
+              "фикстура: сильный гонится, предикат погони в колонке");
+        // Добычу уносит далеко за радиус зрения.
+        st.cell[prey.slot].idx = ecs::cell_index(40, 40, kMap);
+        drive(gs, nullptr, st, rt, 1);
+        CHECK(st.runtime[bandit.slot].state == std::uint8_t(NPCState::Idle),
+              "фикстура: гнаться не за кем — встал");
+        CHECK(st.goal[bandit.slot].what == 0u
+                  && st.goal[bandit.slot].cell == ecs::kNoCell
+                  && st.goal[bandit.slot].underway == 0,
+              "ДОБЫЧА ПРОПАЛА — колонка цели пуста, ординала добычи в ней "
+              "нет");
+    }
+    // ── бой застал в своём деле: предикат цел ───────────────────────────
+    {
+        std::unique_ptr<GameState> gsOwn = make_world(-80);
+        GameState& gs = *gsOwn;
+        auto wStore_ = sm::make_macro_store();
+        sm::MacroStore& st = *wStore_;
+        const auto bandit = make_squad_at(st, NPCType::Bandit, "bandits", 5,
+                                          10, 10, 1u,
+                                          {11u, 12u, 13u, 14u},
+                                          NPCType::Bandit, 4);
+        make_squad_at(st, NPCType::Merchant, "timaert", 1, 10, 10, 2u,
+                      {21u}, NPCType::Peasant, 1);
+        // Банда шла по своему делу к названному скваду (не к этой добыче).
+        constexpr std::uint32_t kErrand = 777u;
+        ecs::goal_set(st.goal[bandit.slot], ecs::cell_index(40, 10, kMap),
+                      ecs::goal_what(ecs::GoalKind::Squad, kErrand), 0,
+                      std::uint8_t(NPCState::Idle));
+        st.runtime[bandit.slot].state = std::uint8_t(NPCState::Wandering);
+        MacroNpcAiRuntime rt{};
+        reset_macro_npc_ai_runtime(rt, 45u);
+        drive(gs, nullptr, st, rt, 1);
+        CHECK(ecs::squad_recovering(st.runtime[bandit.slot])
+                  && st.goal[bandit.slot].cell == ecs::kNoCell,
+              "фикстура: бой случился, адрес брошен");
+        CHECK(ecs::goal_kind(st.goal[bandit.slot].what)
+                      == ecs::GoalKind::Squad
+                  && ecs::goal_ordinal(st.goal[bandit.slot].what) == kErrand,
+              "СВОЁ ДЕЛО ПЕРЕЖИВАЕТ СТЫЧКУ: «что я искал» цело, стёрт только "
+              "адрес");
+    }
+}
+
 void test_neutral_squads_ignore_each_other() {
     std::unique_ptr<GameState> gsOwn = make_world(0);
     GameState& gs = *gsOwn;
@@ -1122,6 +1228,7 @@ int main() {
     test_a_foe_beyond_sight_is_not_seen();
     test_the_weak_flee_and_fighters_pursue();
     test_a_reflex_that_stops_a_squad_drops_its_address();
+    test_a_chase_dies_with_its_predicate();
     test_neutral_squads_ignore_each_other();
     test_an_accord_of_two_squads_adds_to_their_peoples_relation();
     test_a_grudge_turns_a_peaceful_stranger_but_not_ones_own();

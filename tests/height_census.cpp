@@ -186,11 +186,11 @@ void write_pngs(const sm::TerrainData& td, std::uint32_t seed) {
     const float logFull = std::log2(1.0f + kSlopeFullScaleM);
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
-            const float c = sm::field01_of(td.height_at(x, y));
+            const float c = sm::field01_of(td.height_at(sm::cell_of(x, y, td.width)));
             float worst = 0.0f;
             const int dx[4] = {1, -1, 0, 0}, dy[4] = {0, 0, 1, -1};
             for (int k = 0; k < 4; ++k) {
-                const float n = sm::field01_of(td.height_at(x + dx[k], y + dy[k]));
+                const float n = sm::field01_of(td.height_at(sm::cell_of(x + dx[k], y + dy[k], td.width)));
                 worst = std::max(worst, std::fabs(n - c));
             }
             const float m = worst * sm::sub::height_gain_m(c);
@@ -339,18 +339,18 @@ SeedResult census_seed(std::uint32_t seed) {
     slopes.reserve(n * 2u);
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
-            if (td.is_water(x, y)) continue;
-            const float c = sm::field01_of(td.height_at(x, y));
-            const bool cMtn = sm::biome_at_cell(td, x, y) == sm::Biome::Mountain;
+            if (td.is_water(sm::cell_of(x, y, td.width))) continue;
+            const float c = sm::field01_of(td.height_at(sm::cell_of(x, y, td.width)));
+            const bool cMtn = sm::biome_at_cell(td, sm::cell_of(x, y, td.width)) == sm::Biome::Mountain;
             const int dx[2] = {1, 0}, dy[2] = {0, 1};
             for (int k = 0; k < 2; ++k) {
                 const int nx = x + dx[k], ny = y + dy[k];
-                if (td.is_water(nx, ny)) continue;
-                const float nb = sm::field01_of(td.height_at(nx, ny));
+                if (td.is_water(sm::cell_of(nx, ny, td.width))) continue;
+                const float nb = sm::field01_of(td.height_at(sm::cell_of(nx, ny, td.width)));
                 const float riseM = std::fabs(nb - c)
                                   * sm::sub::height_gain_m(std::max(nb, c));
                 slopes.push_back(riseM);
-                if (cMtn || sm::biome_at_cell(td, nx, ny) == sm::Biome::Mountain)
+                if (cMtn || sm::biome_at_cell(td, sm::cell_of(nx, ny, td.width)) == sm::Biome::Mountain)
                     mtnSlopes.push_back(riseM);
             }
         }

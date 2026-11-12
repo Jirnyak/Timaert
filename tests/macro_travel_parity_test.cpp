@@ -76,8 +76,8 @@ std::unique_ptr<sm::FeatureLayer> make_features(const sm::TerrainData& td) {
     features.resize(2, 2);
     // Дверью рода фичи (стена ломтя 1): вода решает колонкой строки — на
     // клетке 1,1 этой карты суша, дорога встаёт как спрошено.
-    sm::feature_put(features, td, 0, 0, sm::FT_Road);
-    sm::feature_put(features, td, 1, 1, sm::FT_DirtRoad);
+    sm::feature_put(features, td, sm::cell_of(0, 0, features.width), sm::FT_Road);
+    sm::feature_put(features, td, sm::cell_of(1, 1, features.width), sm::FT_DirtRoad);
     return featuresOwn;
 }
 
@@ -94,20 +94,20 @@ void test_cell_costs_follow_the_weight_table() {
     const auto weight_at = [&](int x, int y, const sm::FeatureLayer* f) {
         const int wx = sm::FeatureLayer::wrap_coord(x, terrain.width);
         const int wy = sm::FeatureLayer::wrap_coord(y, terrain.height);
-        const sm::Biome b = sm::biome_at_cell(terrain, wx, wy);
+        const sm::Biome b = sm::biome_at_cell(terrain, sm::cell_of(wx, wy, terrain.width));
         const sm::FeatureType ft =
-            f && f->covers(terrain.width, terrain.height) ? f->at(wx, wy)
+            f && f->covers(terrain.width, terrain.height) ? f->at(sm::cell_of(wx, wy, f->width))
                                                           : sm::FT_None;
         return sm::cell_sp_weight(b, ft);
     };
 
-    CHECK(sm::biome_at_cell(terrain, 0, 0) == sm::Water,
+    CHECK(sm::biome_at_cell(terrain, sm::cell_of(0, 0, terrain.width)) == sm::Water,
           "height below seaLevel becomes Water");
     CHECK(nearf(weight_at(0, 0, nullptr), 10.0f),
           "bare water carries the water weight");
     CHECK(nearf(weight_at(0, 0, &features), 1.0f),
           "a road over water is walked at the road weight, not the water one");
-    CHECK(sm::biome_at_cell(terrain, 0, 1) == sm::Mountain,
+    CHECK(sm::biome_at_cell(terrain, sm::cell_of(0, 1, terrain.width)) == sm::Mountain,
           "height above mountain level becomes the Mountain biome");
     CHECK(nearf(weight_at(0, 1, &features), 5.0f),
           "a mountain cell carries the mountain weight (no feature on it)");

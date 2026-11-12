@@ -995,18 +995,21 @@ static_assert(std::is_standard_layout_v<GameState>,
 // The grid sizes itself from the world's own dimensions on the first write,
 // so no caller has to remember to allocate and a read off an unborn world
 // answers 0 — fail-closed by construction.
-inline int feature_number_read(const GameState& gs, int x, int y) {
-    return int(gs.featureNumber.at(x, y));
+//
+// КЛЕТКА — ОДНИМ ЧИСЛОМ (ЗАКОН АДРЕСА п.2, M-462 ломоть 4): все двери полей
+// состояния ниже берут индекс клетки, а не пару координат.
+inline int feature_number_read(const GameState& gs, std::uint32_t cell) {
+    return int(gs.featureNumber.at(cell));
 }
-inline void feature_number_write(GameState& gs, int x, int y, int value) {
+inline void feature_number_write(GameState& gs, std::uint32_t cell, int value) {
     if (!gs.featureNumber.live()) {
         if (gs.mapW <= 0 || gs.mapH <= 0) return;   // no world, no field
         gs.featureNumber.allocate(gs.mapW, gs.mapH);
     }
-    gs.featureNumber.write(x, y, std::int32_t(value < 0 ? 0 : value));
+    gs.featureNumber.write(cell, std::int32_t(value < 0 ? 0 : value));
 }
-inline void feature_number_add(GameState& gs, int x, int y, int delta) {
-    feature_number_write(gs, x, y, feature_number_read(gs, x, y) + delta);
+inline void feature_number_add(GameState& gs, std::uint32_t cell, int delta) {
+    feature_number_write(gs, cell, feature_number_read(gs, cell) + delta);
 }
 
 // ── Двери поля фауны — та же идиома, что у поля чисел фич выше ──────────
@@ -1014,15 +1017,15 @@ inline void feature_number_add(GameState& gs, int x, int y, int delta) {
 // пульт полей через носителя ряда Fauna (fauna_apply@macro_stock.cpp — рост
 // и охота), рождение поселения (вычищает свою клетку). Читает всё остальное
 // пульт resource_field_read — прямых читателей у грида не заводить.
-inline int fauna_field_read(const GameState& gs, int x, int y) {
-    return int(gs.faunaField.at(x, y));
+inline int fauna_field_read(const GameState& gs, std::uint32_t cell) {
+    return int(gs.faunaField.at(cell));
 }
-inline void fauna_field_write(GameState& gs, int x, int y, int value) {
+inline void fauna_field_write(GameState& gs, std::uint32_t cell, int value) {
     if (!gs.faunaField.live()) {
         if (gs.mapW <= 0 || gs.mapH <= 0) return;   // no world, no field
         gs.faunaField.allocate(gs.mapW, gs.mapH);
     }
-    gs.faunaField.write(x, y, std::int32_t(value < 0 ? 0 : value));
+    gs.faunaField.write(cell, std::int32_t(value < 0 ? 0 : value));
 }
 
 // ── Дверь поля света — та же идиома (M-370) ─────────────────────────────
@@ -1030,12 +1033,12 @@ inline void fauna_field_write(GameState& gs, int x, int y, int value) {
 // (read-дверь умерла 2026-11-06: единственный читатель поля —
 // macro_lighting.cpp — идёт for_each_live по живым клеткам, поклеточного
 // вопроса никто не задаёт.)
-inline void light_emission_write(GameState& gs, int x, int y, int value) {
+inline void light_emission_write(GameState& gs, std::uint32_t cell, int value) {
     if (!gs.lightEmission.live()) {
         if (gs.mapW <= 0 || gs.mapH <= 0) return;   // no world, no field
         gs.lightEmission.allocate(gs.mapW, gs.mapH);
     }
-    gs.lightEmission.write(x, y, std::int32_t(value < 0 ? 0 : value));
+    gs.lightEmission.write(cell, std::int32_t(value < 0 ? 0 : value));
 }
 
 // (record_rooted_fact УЕХАЛА в macro/squad.h флипом M-90 шаг 5: слава

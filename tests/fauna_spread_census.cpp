@@ -311,14 +311,14 @@ void census_seed(std::uint32_t seed) {
 
     for (int y = 0; y < side; ++y) {
         for (int x = 0; x < side; ++x) {
-            const sm::FeatureType ft = sm::feature_decode(features.at(x, y));
+            const sm::FeatureType ft = sm::feature_decode(features.at(sm::cell_of(x, y, features.width)));
             if (ft != sm::FT_Spire && ft != sm::FT_Ruin) continue;
             const std::size_t c =
                 std::size_t(y) * std::size_t(side) + std::size_t(x);
             const int treeCount =
                 c < treeLayer.cell_count() ? int(treeLayer.data[c]) : 0;
             const int budget =
-                sm::resource_field_read(mw, sm::ResourceFieldId::Fauna, x, y);
+                sm::resource_field_read(mw, sm::ResourceFieldId::Fauna, sm::cell_of(x, y, mw.gs->mapW));
             sm::SpawnContext ctx{};
             ctx.biome = sm::biome_at_cell(terrain, std::uint32_t(c));
             ctx.forest = sm::is_forest_cell(treeCount);
@@ -341,7 +341,7 @@ void census_seed(std::uint32_t seed) {
             sm::sub::DungeonRef ref{};
             ref.kind = sm::sub::DungeonRef::SpireTower;
             ref.param = std::uint8_t(std::clamp(
-                int(sm::spire_orb(mw, x, y).tier), 1, 5));
+                int(sm::spire_orb(mw, sm::cell_of(x, y, mw.gs->mapW)).tier), 1, 5));
             const int storeys = sm::sub::dungeon_spire_tower_floors(ref);
             sm::SpawnContext tctx = ctx;
             tctx.band = towerDen;

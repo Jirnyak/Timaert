@@ -22,7 +22,7 @@ void build_tree_layer(TreeLayer& layer, const TerrainData& terrain,
             if (terrain.is_water(std::uint32_t(i))) continue; // 0 деревьев
             // THE cell cascade (map_generator.h biome_at_cell) — the private
             // copy that lived here was canon-audit C5.
-            const Biome biome = biome_at_cell(terrain, x, y);
+            const Biome biome = biome_at_cell(terrain, std::uint32_t(i));
             int forest = 0;
             if (haveMask) {
                 // Сосед массива — шаг ИНДЕКСА (cell_step, ЗАКОН АДРЕСА);
@@ -37,11 +37,7 @@ void build_tree_layer(TreeLayer& layer, const TerrainData& terrain,
     }
 }
 
-void set_tree_count(TreeLayer& layer, int x, int y, int count) {
-    if (!layer.has_complete_storage()) return;
-    const int wx = FeatureLayer::wrap_coord(x, layer.width);
-    const int wy = FeatureLayer::wrap_coord(y, layer.height);
-    const std::size_t i = std::size_t(wy) * std::size_t(layer.width) + std::size_t(wx);
+void set_tree_count(TreeLayer& layer, std::uint32_t i, int count) {
     if (i >= layer.cell_count()) return;
     if (count < 0) count = 0;
     if (count > kMaxTreesPerCell) count = kMaxTreesPerCell;

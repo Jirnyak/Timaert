@@ -142,7 +142,6 @@ decr	src/macro/npc_ai.cpp	--b)
 decr	src/macro/npc_ai.cpp	if (pick-- != 0) return;
 decr	src/macro/npc_ai.cpp	if (pick-- != 0) return;	#2
 decr	src/macro/resource_field.h	else if (was != 0 && v == 0) --liveCells;
-decr	src/macro/deposit_layer.cpp	else if (c > 0u) --c;
 decr	src/macro/settlement_score.cpp	for (int k = kFieldsPerVillage - 1; k > slot; --k)
 decr	src/macro/spawners.cpp	for (int k = last; k > at; --k) best[k] = best[k - 1];
 decr	src/macro/tasks.cpp	needs[pick] = needs[--needCount]; // без повтора той же строки

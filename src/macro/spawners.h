@@ -158,10 +158,10 @@ void stamp_field_features(const MacroWorld& world,
 // through plough_cell_ok, so a runtime field and a genesis field can never
 // disagree. Returns false when the cell refuses the plough (feature there
 // already / water / rock / lean soil). Torus-wrapped.
-bool plough_cell_ok(const MacroWorld& world, int x, int y, int& wheatOut);
+bool plough_cell_ok(const MacroWorld& world, std::uint32_t cell, int& wheatOut);
 // `parcel` — ЧЕМ засеяно (FT_Field хлебом, FT_FlaxField льном): земля и цена
 // у них одни, различается только строка цели, которая с парцеллы берёт.
-bool plough_field_cell(const MacroWorld& world, int x, int y,
+bool plough_field_cell(const MacroWorld& world, std::uint32_t cell,
                        FeatureType parcel = FT_Field);
 
 // ── ГЕНЕРАЦИЯ ШАХТ (вердикт владельца 2026-10-23, дословно: «по этим

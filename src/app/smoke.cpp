@@ -2059,7 +2059,7 @@ bool smoke_cell_is_land(const sm::TerrainData& terrain, int x, int y) {
     // Суша — ОДНА дверь мира (M-109): здесь стоял байт маски A и своя пара
     // свёрток координат, то есть восьмой спеллинг «вода ли клетка» — в
     // харнессе, который этим же вопросом судит игру.
-    return !terrain.is_water(x, y);
+    return !terrain.is_water(cell_of(x, y, terrain.width));
 }
 
 bool smoke_find_danger_land_cell(const App& app, int& outX, int& outY) {
@@ -2069,7 +2069,7 @@ bool smoke_find_danger_land_cell(const App& app, int& outX, int& outY) {
     for (int level = sm::kZoneCount - 1; level >= 3; --level) {
         for (int y = 0; y < app.zones.height; ++y) {
             for (int x = 0; x < app.zones.width; ++x) {
-                if (int(sm::zone_band(app.zones.at(x, y))) != level) continue;
+                if (int(sm::zone_band(app.zones.at(cell_of(x, y, app.zones.width)))) != level) continue;
                 if (!smoke_cell_is_land(app.terrain, x, y)) continue;
                 outX = x;
                 outY = y;
@@ -2142,7 +2142,7 @@ bool smoke_find_open_subworld_cell(const App& app, int& outX, int& outY) {
                     continue;
                 }
                 if (hasRooted(x, y)) continue;
-                const float h = sm::field01_of(app.terrain.height_at(x, y));
+                const float h = sm::field01_of(app.terrain.height_at(cell_of(x, y, app.terrain.width)));
                 // The [minH, 0.72] band sits below kMountainBiomeLevel (0.75),
                 // so Mountain-biome cells are already excluded here.
                 if (h < minH || h > 0.72f) continue;
@@ -2180,8 +2180,8 @@ bool smoke_find_tree_subworld_cell(const App& app, int& outX, int& outY) {
                     || y >= app.gs.mapH - 64) {
                     continue;
                 }
-                if (!sm::is_forest_cell(int(app.gs.treeLayer.at(x, y)))) continue;
-                const float h = sm::field01_of(app.terrain.height_at(x, y));
+                if (!sm::is_forest_cell(int(app.gs.treeLayer.at(cell_of(x, y, app.gs.treeLayer.width))))) continue;
+                const float h = sm::field01_of(app.terrain.height_at(cell_of(x, y, app.terrain.width)));
                 if (h < minH) continue;
                 outX = x;
                 outY = y;
@@ -3187,7 +3187,7 @@ bool run_subworld_exit_gate_smoke(App& app) {
     app.subworld.leave(false);
     const bool freed = !app.subworld.active();
 
-    const int zone = int(app.zones.at(cellX, cellY));
+    const int zone = int(app.zones.at(cell_of(cellX, cellY, app.zones.width)));
     restore();
 
     std::fprintf(stderr,
@@ -4020,8 +4020,8 @@ bool run_dungeon_cave_smoke(App& app) {
     bool haveMouth = false;
     for (int cy = 0; cy < app.gs.mapH && mouths == 0; cy += 7) {
         for (int cx = 0; cx < app.gs.mapW && mouths == 0; cx += 7) {
-            if (app.terrain.is_water(cx, cy)) continue;        // sea
-            if (sm::field01_of(app.terrain.height_at(cx, cy))
+            if (app.terrain.is_water(cell_of(cx, cy, app.terrain.width))) continue;        // sea
+            if (sm::field01_of(app.terrain.height_at(cell_of(cx, cy, app.terrain.width)))
                 < sm::kMountainBiomeLevel) continue;
             ++tried;
             if (tried > 24) break;                             // bounded hunt
@@ -4625,9 +4625,7 @@ bool run_prologue_road_smoke(App& app) {
 // снесена как лишняя система; смысл числу даёт модуль, а свидетелю нужно
 // само число). Локальная функция смоука, не мировая дверь.
 static int smoke_cell_number(const App& app, std::uint16_t slot) {
-    const auto& c = app.macroStore->cell[slot];
-    return sm::feature_number_read(app.gs, sm::ecs::cell_x(c, app.gs.mapW),
-                           sm::ecs::cell_y(c, app.gs.mapW));
+    return sm::feature_number_read(app.gs, app.macroStore->cell[slot].idx);
 }
 
 bool run_spire_climb_smoke(App& app) {
@@ -4663,8 +4661,8 @@ bool run_spire_climb_smoke(App& app) {
     const int mapW = app.gs.mapW, mapH = app.gs.mapH;
     for (int sy = 0; sy < mapH; ++sy) {
         for (int sx = 0; sx < mapW; ++sx) {
-            if (app.gs.features.at(sx, sy) != sm::FT_Spire) continue;
-            const int orb = sm::feature_number_read(app.gs, sx, sy);
+            if (app.gs.features.at(cell_of(sx, sy, app.gs.features.width)) != sm::FT_Spire) continue;
+            const int orb = sm::feature_number_read(app.gs, sm::cell_of(sx, sy, app.gs.mapW));
             if (orb <= 0 || orb > sm::kSpellCount) continue;
             const int spell = orb - 1;
             if (sm::spellbook_has_learned(smoke_player_book(app), spell))
@@ -4871,7 +4869,7 @@ bool run_spire_climb_smoke(App& app) {
         // Здесь стоял резолв сквада по ординалу (`rooted_handle_by_ordinal`),
         // чтобы узнать адрес шпиля, — а у шпиля нет ни сквада, ни ординала,
         // и адрес у смоука уже на руках: это та клетка, на которую он встал.
-        depletedFlag = sm::feature_number_read(app.gs, targetX, targetY) == 0;
+        depletedFlag = sm::feature_number_read(app.gs, sm::cell_of(targetX, targetY, app.gs.mapW)) == 0;
         orbsAfter = 0;
         for (const auto& s : app.subworld.mgr().structures()) {
             if (s.kind == sm::sub::Structure::SpireOrb) ++orbsAfter;
@@ -7502,7 +7500,7 @@ bool run_console_smoke(App& app) {
         }
         // Срубленное — строка дельты; счётчик клетки падает на ГРАНИЦЕ тика.
         smoke_advance_to_macro_tick(app);
-        const int after = int(app.gs.treeLayer.at(cx, cy));
+        const int after = int(app.gs.treeLayer.at(cell_of(cx, cy, app.gs.treeLayer.width)));
         const int expected = prev > 0 ? prev - 1 : 0;
         // prev == 0 is legal (a tree on a zero-count cell's dry water margin):
         // the count clamps at 0 and the revision does not move.
@@ -7982,8 +7980,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 for (int y = 0; y < app.gs.mapH; ++y) {
                     for (int x = 0; x < app.gs.mapW; ++x) {
                         // Mountain biome = land cell at elevation ≥ level.
-                        if (app.terrain.is_water(x, y)) continue;
-                        if (sm::field01_of(app.terrain.height_at(x, y))
+                        if (app.terrain.is_water(cell_of(x, y, app.terrain.width))) continue;
+                        if (sm::field01_of(app.terrain.height_at(cell_of(x, y, app.terrain.width)))
                             < sm::kMountainBiomeLevel) continue;
                         const long dx = x - pcx, dy = y - pcy;
                         const long d = dx * dx + dy * dy;
@@ -8006,7 +8004,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 auto isLand = [&](int x, int y) {
                     if (x < 0 || y < 0 || x >= app.gs.mapW || y >= app.gs.mapH)
                         return true;  // off-map: treat as land (no relocate)
-                    return !app.terrain.is_water(x, y);
+                    return !app.terrain.is_water(cell_of(x, y, app.terrain.width));
                 };
                 int bestX = -1, bestY = -1;
                 long bestD = 1L << 60;
@@ -10030,14 +10028,14 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const int fy = sm::cell_y(std::uint32_t(densest), app.gs.mapW);
             sm::MacroWorld fellMw = macro_world(app);
             const int moved = sm::field_move(
-                fellMw, sm::ResourceFieldId::Trees, fx, fy, -trees0);
+                fellMw, sm::ResourceFieldId::Trees, sm::cell_of(fx, fy, fellMw.gs->mapW), -trees0);
             SMOKE_CHECK(app, moved == -trees0
-                                 && app.gs.treeLayer.at(fx, fy) == 0u,
+                                 && app.gs.treeLayer.at(cell_of(fx, fy, app.gs.treeLayer.width)) == 0u,
                         "дверь поля вырубила клетку леса состояния дочиста");
             app.smoke.forestFelledCell = int(densest);
             std::fprintf(stderr,
                          "[smoke] forest_fell_macro cell=%d,%d trees=%d->%d\n",
-                         fx, fy, trees0, int(app.gs.treeLayer.at(fx, fy)));
+                         fx, fy, trees0, int(app.gs.treeLayer.at(cell_of(fx, fy, app.gs.treeLayer.width))));
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -10277,8 +10275,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                             && sm::site_open_for_structure(app.gs.features,
                                                            app.terrain, cell)
                             && app.gs.features.at(cell) == sm::FT_None
-                            && app.gs.knowledge.at(sm::cell_x(cell, side),
-                                                   sm::cell_y(cell, side))
+                            && app.gs.knowledge.at(cell)
                                    == sm::kKnowledgeVisible;
                     });
                 if (site == sm::kNoSite) {

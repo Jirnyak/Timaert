@@ -19,9 +19,6 @@ struct sm::FeatureLayerProbe {
                     sm::FeatureType t) {
         fl.set(cell, t);
     }
-    static void set(sm::FeatureLayer& fl, int x, int y, sm::FeatureType t) {
-        fl.set(x, y, t);
-    }
 };
 
 namespace
@@ -169,17 +166,17 @@ void test_feature_priority_and_water_filter()
 
     CHECK(fl.width == 4 && fl.height == 4,
                  "feature layer dimensions must match terrain");
-    CHECK(fl.at(0, 1) == sm::FT_DirtRoad,
+    CHECK(fl.at(sm::cell_of(0, 1, fl.width)) == sm::FT_DirtRoad,
                  "dirt-road pass must stamp connector cells");
-    CHECK(fl.at(1, 0) == sm::FT_Road,
+    CHECK(fl.at(sm::cell_of(1, 0, fl.width)) == sm::FT_Road,
                  "road pass must stamp main road cells");
-    CHECK(fl.at(1, 1) == sm::FT_Road,
+    CHECK(fl.at(sm::cell_of(1, 1, fl.width)) == sm::FT_Road,
                  "road pass must have highest feature priority");
-    CHECK(fl.at(2, 2) == sm::FT_Bridge,
+    CHECK(fl.at(sm::cell_of(2, 2, fl.width)) == sm::FT_Bridge,
                  "a masked biome-water cell is a paid crossing: FT_Bridge");
-    CHECK(fl.at(-1, 0) == sm::FT_DirtRoad,
+    CHECK(fl.at(sm::cell_of(-1, 0, fl.width)) == sm::FT_DirtRoad,
                  "feature lookup must wrap negative x toroidally");
-    CHECK(fl.at(5, 1) == sm::FT_Road,
+    CHECK(fl.at(sm::cell_of(5, 1, fl.width)) == sm::FT_Road,
                  "feature lookup must wrap positive x toroidally");
 }
 
@@ -188,7 +185,7 @@ void test_empty_and_malformed_inputs_are_safe()
     const std::unique_ptr<sm::FeatureLayer> emptyOwn{new sm::FeatureLayer()};
     sm::FeatureLayer& empty = *emptyOwn;
     empty.resize(0, 4);
-    sm::FeatureLayerProbe::set(empty, 0, 0, sm::FT_Road);
+    sm::FeatureLayerProbe::set(empty, sm::cell_of(0, 0, empty.width), sm::FT_Road);
 
     // МИР ВНЕ КАПА КЛЕТОК (M-456). Здесь стояла «короткая память» — вектор
     // короче своих сторон. У плоского слоя под капом клеток такое невыразимо:
@@ -200,7 +197,7 @@ void test_empty_and_malformed_inputs_are_safe()
     overCap.width = int(sm::kWorldSideCap) * 2;
     overCap.height = int(sm::kWorldSideCap) * 2;
     overCap.data[0] = std::uint8_t(sm::FT_DirtRoad);
-    sm::FeatureLayerProbe::set(overCap, 3, 3, sm::FT_Road);
+    sm::FeatureLayerProbe::set(overCap, sm::cell_of(3, 3, overCap.width), sm::FT_Road);
 
     const std::unique_ptr<sm::FeatureLayer> invalidStorageOwn{new sm::FeatureLayer()};
     sm::FeatureLayer& invalidStorage = *invalidStorageOwn;
@@ -211,7 +208,7 @@ void test_empty_and_malformed_inputs_are_safe()
     const std::unique_ptr<sm::FeatureLayer> invalidSetOwn{new sm::FeatureLayer()};
     sm::FeatureLayer& invalidSet = *invalidSetOwn;
     invalidSet.resize(1, 1);
-    sm::FeatureLayerProbe::set(invalidSet, 0, 0, static_cast<sm::FeatureType>(255u));
+    sm::FeatureLayerProbe::set(invalidSet, sm::cell_of(0, 0, invalidSet.width), static_cast<sm::FeatureType>(255u));
 
     const std::unique_ptr<sm::FeatureLayer> validStorageOwn{new sm::FeatureLayer()};
     sm::FeatureLayer& validStorage = *validStorageOwn;
@@ -237,7 +234,7 @@ void test_empty_and_malformed_inputs_are_safe()
 
     CHECK(empty.width == 0 && empty.height == 0 && empty.cell_count() == 0u,
                  "empty feature resize must clear storage");
-    CHECK(empty.at(0, 0) == sm::FT_None,
+    CHECK(empty.at(sm::cell_of(0, 0, empty.width)) == sm::FT_None,
                  "empty feature lookup must be safe");
     // ЗАКОН АДРЕСА (владелец, 2026-09-23): сторона мира — ВСЕГДА степень
     // двойки, поэтому заворот оси есть маска. Здесь стоял предел 3 —
@@ -251,15 +248,15 @@ void test_empty_and_malformed_inputs_are_safe()
                  "feature coordinate wrap must handle INT_MIN without overflow");
     CHECK(overCap.cell_count() == 0u && !overCap.has_complete_storage(),
                  "a world wider than the cell cap has no live cells");
-    CHECK(overCap.at(0, 0) == sm::FT_None && overCap.at(3, 3) == sm::FT_None
+    CHECK(overCap.at(sm::cell_of(0, 0, overCap.width)) == sm::FT_None && overCap.at(sm::cell_of(3, 3, overCap.width)) == sm::FT_None
                      && overCap.data[3 * overCap.width + 3] == 0u,
                  "an over-cap layer fails closed everywhere: no read, no write");
-    CHECK(invalidStorage.at(0, 0) == sm::FT_None,
+    CHECK(invalidStorage.at(sm::cell_of(0, 0, invalidStorage.width)) == sm::FT_None,
                  "invalid feature bytes must decode to None");
-    CHECK(invalidStorage.at(1, 0) == sm::FT_DirtRoad,
+    CHECK(invalidStorage.at(sm::cell_of(1, 0, invalidStorage.width)) == sm::FT_DirtRoad,
                  "valid feature bytes must decode unchanged");
     CHECK(sm::FeatureLayer::is_valid_byte(std::uint8_t(sm::FT_Field))
-                     && fieldStorage.at(0, 0) == sm::FT_Field
+                     && fieldStorage.at(sm::cell_of(0, 0, fieldStorage.width)) == sm::FT_Field
                      && sm::FeatureLayer::decode(std::uint8_t(sm::FT_Field))
                             == sm::FT_Field,
                  "FT_Field must be a first-class feature byte");
@@ -288,7 +285,7 @@ void test_empty_and_malformed_inputs_are_safe()
                      && sanitized.empty(),
                  "an over-cap layer must not expose an upload view");
     CHECK(invalidSet.data[0] == std::uint8_t(sm::FT_None)
-                     && invalidSet.at(0, 0) == sm::FT_None,
+                     && invalidSet.at(sm::cell_of(0, 0, invalidSet.width)) == sm::FT_None,
                  "feature setter must sanitize invalid enum casts");
 
     const std::unique_ptr<sm::FeatureLayer> hugeExtentOwn{new sm::FeatureLayer()};
@@ -296,15 +293,15 @@ void test_empty_and_malformed_inputs_are_safe()
     hugeExtent.width = std::numeric_limits<int>::max();
     hugeExtent.height = 1;
     hugeExtent.data[0] = std::uint8_t(sm::FT_Road);
-    sm::FeatureLayerProbe::set(hugeExtent, std::numeric_limits<int>::max() - 1, 0, sm::FT_DirtRoad);
+    sm::FeatureLayerProbe::set(hugeExtent, sm::cell_of(std::numeric_limits<int>::max() - 1, 0, hugeExtent.width), sm::FT_DirtRoad);
     // ЗАКОН АДРЕСА (владелец, 2026-09-23) СДЕЛАЛ ЭТОТ ОТКАЗ ПОЛНЫМ. Прежде
     // слой с уродливыми размерами доверялся ЧАСТИЧНО: клетка (0,0) ещё
     // отвечала своим байтом, и только дальняя падала в None. Теперь мир,
     // не бывший квадратом степени двойки, не является миром вовсе, и слой
     // отвечает None ВЕЗДЕ. Ожидание переписано под новый закон, а не
     // подогнано: обещание строки («fail closed») стало исполняться СИЛЬНЕЕ.
-    CHECK(hugeExtent.at(0, 0) == sm::FT_None
-                     && hugeExtent.at(std::numeric_limits<int>::max() - 1, 0) == sm::FT_None,
+    CHECK(hugeExtent.at(sm::cell_of(0, 0, hugeExtent.width)) == sm::FT_None
+                     && hugeExtent.at(sm::cell_of(std::numeric_limits<int>::max() - 1, 0, hugeExtent.width)) == sm::FT_None,
                  "malformed huge feature extents must wrap safely and fail closed");
     CHECK(!sm::FeatureLayer::is_valid_byte(255u)
                      && sm::FeatureLayer::is_valid_byte(std::uint8_t(sm::FT_DirtRoad)),
@@ -335,9 +332,9 @@ void test_empty_and_malformed_inputs_are_safe()
                      && sm::FeatureLayer::decode(std::uint8_t(sm::FT_Count))
                             == sm::FT_None,
                  "first unassigned feature byte must fail closed to None");
-    CHECK(fl.at(0, 0) == sm::FT_Road,
+    CHECK(fl.at(sm::cell_of(0, 0, fl.width)) == sm::FT_Road,
                  "short road masks must apply prefix bytes");
-    CHECK(fl.at(1, 0) == sm::FT_DirtRoad,
+    CHECK(fl.at(sm::cell_of(1, 0, fl.width)) == sm::FT_DirtRoad,
                  "short dirt masks must apply prefix bytes");
 }
 
@@ -422,11 +419,11 @@ void test_feature_water_is_the_plane_not_the_mask()
     sm::FeatureLayer& fl = *flOwn;
     sm::build_feature_layer(fl, td, empty, &dirt);
 
-    CHECK(fl.at(0, 0) == sm::FT_DirtRoad,
+    CHECK(fl.at(sm::cell_of(0, 0, fl.width)) == sm::FT_DirtRoad,
                  "dirt pass must stamp features on land cells");
-    CHECK(fl.at(2, 0) == sm::FT_Bridge,
+    CHECK(fl.at(sm::cell_of(2, 0, fl.width)) == sm::FT_Bridge,
                  "a cell BELOW the sea plane under a paid lane stamps FT_Bridge");
-    CHECK(fl.at(3, 0) == sm::FT_DirtRoad,
+    CHECK(fl.at(sm::cell_of(3, 0, fl.width)) == sm::FT_DirtRoad,
                  "маска A не авторитет: высота выше плоскости — земля, не пролёт");
 }
 
@@ -458,17 +455,17 @@ void test_feature_water_filter_uses_map_sea_level()
     sm::FeatureLayer& defaultSea = *defaultSeaOwn;
     sm::build_feature_layer(defaultSea, defaultSeaTd, road, &dirt);
 
-    CHECK(lowSea.at(0, 0) == sm::FT_Road,
+    CHECK(lowSea.at(sm::cell_of(0, 0, lowSea.width)) == sm::FT_Road,
                  "feature water filter must use active low sea level for roads");
-    CHECK(lowSea.at(1, 0) == sm::FT_DirtRoad,
+    CHECK(lowSea.at(sm::cell_of(1, 0, lowSea.width)) == sm::FT_DirtRoad,
                  "feature water filter must use active low sea level for dirt roads");
     // Под плоскостью 0.40 те же клетки — вода, а путь по воде ЕСТЬ платный
     // пролёт: камень (FT_Bridge), а не пустота. Прежде здесь ждали FT_None —
     // и это был не закон, а следствие несогласия маски с высотой: широкий
     // предикат воды снимал фичу, узкий отказывался звать её мостом.
-    CHECK(defaultSea.at(0, 0) == sm::FT_Bridge,
+    CHECK(defaultSea.at(sm::cell_of(0, 0, defaultSea.width)) == sm::FT_Bridge,
                  "дорога под плоскостью моря — пролёт, и он камень");
-    CHECK(defaultSea.at(1, 0) == sm::FT_Bridge,
+    CHECK(defaultSea.at(sm::cell_of(1, 0, defaultSea.width)) == sm::FT_Bridge,
                  "грунтовка под плоскостью моря — тот же пролёт, тот же камень");
 }
 
@@ -507,28 +504,28 @@ void test_settlement_feature_survives_road_pass()
     // Предусловие СЕЕТСЯ, а не ждётся от генератора: город на пути камня,
     // деревня на пути грунтовки, грунтовка под камнем. Дверь слой не обнулит:
     // covers() истинна, resize внутри не случится.
-    sm::FeatureLayerProbe::set(fl, 1, 0, sm::FT_City);
-    sm::FeatureLayerProbe::set(fl, 1, 2, sm::FT_Village);
-    sm::FeatureLayerProbe::set(fl, 2, 0, sm::FT_DirtRoad);
+    sm::FeatureLayerProbe::set(fl, sm::cell_of(1, 0, fl.width), sm::FT_City);
+    sm::FeatureLayerProbe::set(fl, sm::cell_of(1, 2, fl.width), sm::FT_Village);
+    sm::FeatureLayerProbe::set(fl, sm::cell_of(2, 0, fl.width), sm::FT_DirtRoad);
     sm::build_feature_layer(fl, td, road, &dirt);
 
     // 1. Фича рода на пути КАМНЯ неприкосновенна.
-    CHECK(fl.at(1, 0) == sm::FT_City,
+    CHECK(fl.at(sm::cell_of(1, 0, fl.width)) == sm::FT_City,
           "камень не перетирает фичу рода: город на пути дороги остаётся городом");
     // 2. Фича рода на пути ГРУНТОВКИ неприкосновенна.
-    CHECK(fl.at(1, 2) == sm::FT_Village,
+    CHECK(fl.at(sm::cell_of(1, 2, fl.width)) == sm::FT_Village,
           "грунтовка ложится только на пустоту: деревня остаётся деревней");
     // 3. Камень бьёт грунтовку — свой же класс ниже рангом.
-    CHECK(fl.at(2, 0) == sm::FT_Road,
+    CHECK(fl.at(sm::cell_of(2, 0, fl.width)) == sm::FT_Road,
           "камень кладётся поверх грунтовки — приоритет внутри класса дорог");
     // 4. ОБРАТНАЯ ПОЛЯРНОСТЬ: пустота под масками ПОЛУЧАЕТ дорогу — гейт
     //    держит фичу рода, а не запрещает проход вообще.
-    CHECK(fl.at(0, 0) == sm::FT_Road && fl.at(3, 0) == sm::FT_Road,
+    CHECK(fl.at(sm::cell_of(0, 0, fl.width)) == sm::FT_Road && fl.at(sm::cell_of(3, 0, fl.width)) == sm::FT_Road,
           "пустота под камнем мостится: гейт держит фичу, а не дорогу");
-    CHECK(fl.at(0, 2) == sm::FT_DirtRoad && fl.at(3, 2) == sm::FT_DirtRoad,
+    CHECK(fl.at(sm::cell_of(0, 2, fl.width)) == sm::FT_DirtRoad && fl.at(sm::cell_of(3, 2, fl.width)) == sm::FT_DirtRoad,
           "пустота под грунтовкой мостится тем же проходом");
     // 5. Клетка без маски не тронута проходом.
-    CHECK(fl.at(1, 1) == sm::FT_None,
+    CHECK(fl.at(sm::cell_of(1, 1, fl.width)) == sm::FT_None,
           "клетка без маски остаётся как была — проход не трогает чужое");
 }
 
@@ -544,10 +541,11 @@ void test_feature_write_goes_through_one_door()
     sm::FeatureLayer& fl = *flOwn;
     fl.resize(kSide, kSide);
 
-    // 1. ДВЕ ФОРМЫ — ОДНА ДВЕРЬ. Пара `x,y` и адрес одним числом обязаны
-    //    отвечать ОДНИМ байтом на каждой клетке мира; разойдись они — у слоя
-    //    два адресных пространства, то есть второй ответ на вопрос «что стоит
-    //    на этой клетке» (DOD п.6). Род берётся из ЕНУМА по адресу, а не
+    // 1. АДРЕС ОДИН. Парных форм у слоя больше нет (M-462 ломоть 4): пару
+    //    сворачивает дверь тора `cell_of`, и клетка, записанная индексом,
+    //    обязана читаться тем же байтом по свёрнутой паре; разойдись они — у
+    //    слоя два адресных пространства, то есть второй ответ на вопрос «что
+    //    стоит на этой клетке» (DOD п.6). Род берётся из ЕНУМА по адресу, а не
     //    списком руками: новая строка реестра фич попадёт под свидетеля сама.
     int samples = 0, mismatches = 0;
     for (int y = 0; y < kSide; ++y)
@@ -558,14 +556,18 @@ void test_feature_write_goes_through_one_door()
             const sm::FeatureType t =
                 sm::FeatureType(cell % std::uint32_t(sm::FT_Count));
             sm::FeatureLayerProbe::set(fl, cell, t);                                  // пишем адресом
-            if (fl.at(x, y) != t) ++mismatches;               // читаем парой
-            sm::FeatureLayerProbe::set(fl, x, y, sm::FT_None);                        // пишем парой
+            // читаем по паре, свёрнутой дверью тора через шов мира
+            if (fl.at(sm::cell_of(x + kSide, y - kSide, fl.width)) != t)
+                ++mismatches;
+            sm::FeatureLayerProbe::set(fl, sm::cell_of(x - kSide, y + kSide,
+                                                       fl.width),
+                                       sm::FT_None);          // пишем через шов
             if (fl.at(cell) != sm::FT_None) ++mismatches;     // читаем адресом
             ++samples;
         }
     }
     CHECK(samples == kSide * kSide && mismatches == 0,
-          "дверь по адресу и дверь по паре — одна дверь: один байт на клетку");
+          "адрес клетки один: индекс и свёрнутая через шов пара — один байт");
 
     // 2. ДВЕРЬ СУДИТ РОД БАЙТА, А СЫРАЯ ЗАПИСЬ НЕ СУДИЛА НИЧЕГО. Это не
     //    украшение: ре-штамп загрузки (`main.cpp`, builtFeatures) несёт байт
@@ -584,9 +586,9 @@ void test_feature_write_goes_through_one_door()
     const int seamY = kSide - 1;
     const std::size_t raw =
         std::size_t(seamY) * std::size_t(kSide) + std::size_t(seamX);
-    sm::FeatureLayerProbe::set(fl, seamX, seamY, sm::FT_Bridge);
+    sm::FeatureLayerProbe::set(fl, sm::cell_of(seamX, seamY, fl.width), sm::FT_Bridge);
     const std::uint32_t door = sm::cell_of(seamX, seamY, kSide);
-    CHECK(fl.at(door) == sm::FT_Bridge && fl.at(1, kSide - 1) == sm::FT_Bridge
+    CHECK(fl.at(door) == sm::FT_Bridge && fl.at(sm::cell_of(1, kSide - 1, fl.width)) == sm::FT_Bridge
               && std::size_t(door) != raw && raw >= fl.cell_count(),
           "ручной y*w+x на шве уезжает с клетки — дверь заворачивает адрес");
 }

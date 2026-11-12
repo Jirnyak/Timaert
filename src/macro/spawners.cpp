@@ -679,7 +679,7 @@ namespace sm
 
         const int w = fl.width;
         auto cell_ok = [&](int x, int y, int& wheatOut) {
-            return plough_cell_ok(world, x, y, wheatOut);
+            return plough_cell_ok(world, cell_of(x, y, w), wheatOut);
         };
 
         for (const FieldSite& v : villages) {
@@ -721,7 +721,8 @@ namespace sm
                 // «как рождается пашня» в мире было два ответа. Гейты те же
                 // самые: шортлист набран `plough_cell_ok`, и дверь спросит
                 // его повторно — на клетках шортлиста он даёт то же «да».
-                plough_field_cell(world, best[k].x, best[k].y, FT_Field);
+                plough_field_cell(world, cell_of(best[k].x, best[k].y, w),
+                                  FT_Field);
             }
         }
     }
@@ -800,7 +801,7 @@ namespace sm
             while (!frontier.empty()) {
                 const std::uint32_t c = frontier.back();
                 frontier.pop_back();
-                const std::int32_t units = deposits.cells().at_index(c);
+                const std::int32_t units = deposits.cells().at(c);
                 // Занятость судится КОЛОНКОЙ строки места, а не списком имён
                 // байтов: обратная дверь `rooted_kind_of_feature` отвечает
                 // «чьё это место, если на клетке такой байт», и `None` у неё
@@ -823,7 +824,7 @@ namespace sm
                     for (int dx = -1; dx <= 1; ++dx) {
                         if (dx == 0 && dy == 0) continue;
                         const std::uint32_t n = cell_step(c, dx, dy, W);
-                        if (seen[n] || deposits.cells().at_index(n) == 0)
+                        if (seen[n] || deposits.cells().at(n) == 0)
                             continue;
                         seen[n] = 1;
                         frontier.push_back(n);
@@ -845,8 +846,6 @@ namespace sm
                 cursor += m.weight;
                 if (pick < cursor) { ft = m.ft; break; }
             }
-            const int px = cell_x(peak, W);
-            const int py = cell_y(peak, W);
             // Жила на воде не родится (vein_virgin_at), так что вода шахту
             // не откажет; факт всё равно судится возвратом двери.
             if (feature_put(fl, td, peak, ft) != ft) return;
@@ -854,7 +853,7 @@ namespace sm
             // потом дорастает (vein_cluster_cap: фундамент даёт кап, мир
             // рождается полным). На загрузке эти залежи живут в ГЕНЕЗИСНОМ
             // gs и честно гибнут при свёртке app.gs = move(fresh).
-            feature_number_write(gs, px, py, vein_cluster_cap(deposits, px, py));
+            feature_number_write(gs, peak, vein_cluster_cap(deposits, peak));
             ++stamped[std::size_t(ft)];
         });
 

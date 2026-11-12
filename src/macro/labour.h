@@ -127,9 +127,7 @@ inline int settle_souls(GameState& gs, MacroStore& st, std::uint16_t slot,
     Inventory& store = st.inventory[slot].inv;
     const int stood = raise_flock_into_container(store, souls);
     if (stood > 0) {
-        const auto& c = st.cell[slot];
-        feature_number_add(gs, ecs::cell_x(c, gs.mapW), ecs::cell_y(c, gs.mapW),
-                   stood);
+        feature_number_add(gs, st.cell[slot].idx, stood);
     }
     return stood;
 }

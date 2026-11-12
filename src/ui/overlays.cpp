@@ -62,9 +62,7 @@ namespace sm::ui
         int cell_number_of(const GameState &gs, const MacroStore &st,
                            std::uint16_t slot)
         {
-            const auto &c = st.cell[slot];
-            return feature_number_read(gs, ecs::cell_x(c, gs.mapW),
-                               ecs::cell_y(c, gs.mapW));
+            return feature_number_read(gs, st.cell[slot].idx);
         }
 
         float modal_width(const ImGuiViewport *vp,

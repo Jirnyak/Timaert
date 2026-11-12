@@ -72,9 +72,7 @@ namespace sm
             // THE cell cascade (map_generator.h biome_at_cell): water rides
             // the baked mask, mountains their elevation class — the decode-
             // and-classify copy that lived here was canon-audit C5.
-            const int cx = int(i % std::size_t(td.width));
-            const int cy = int(i / std::size_t(td.width));
-            const Biome b = biome_at_cell(td, cx, cy);
+            const Biome b = biome_at_cell(td, std::uint32_t(i));
             const FeatureType f = featureData ? FeatureLayer::decode(featureData[i]) : FT_None;
             // The continuous canopy (the boolean forest-class cliff is gone):
             // density feeds the sum law exactly as it feeds the optics.

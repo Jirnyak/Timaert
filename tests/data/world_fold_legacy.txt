@@ -28,7 +28,6 @@ src/app/smoke.cpp	index	tl[std::size_t(y) * W + cx] == WATER; ++y) ++dn;
 src/app/smoke.cpp	index	tl[std::size_t(y) * W + x] == WATER;
 src/app/smoke.cpp	mod	const int ocx = ((ccx + 7) % W + W) % W;
 src/app/smoke.cpp	mod	const int ocy = ((ccy + 5) % H + H) % H;
-src/macro/cell_facts.cpp	index	std::size_t(f.y) * std::size_t(td.width) + std::size_t(f.x);
 src/macro/map_generator.cpp	index	const std::size_t s = (std::size_t(y) * w + x) * 4;
 src/macro/map_generator.cpp	mod	path.push_back({source % w, source / w});
 src/macro/npc_spawn.cpp	index	terrain.rgba[(std::size_t(y) * mapW + x) * 4u + 0];
@@ -37,7 +36,6 @@ src/macro/pathfinding.cpp	index	const std::size_t cidx = std::size_t(cur.y) * W 
 src/macro/pathfinding.cpp	index	scratch.set_score(std::size_t(sy) * W + sx, 0.0f, -1, -1);
 src/macro/pathfinding.cpp	index	std::size_t k = std::size_t(cy) * W + cx;
 src/macro/pathfinding.cpp	index	std::size_t nidx = std::size_t(ny) * W + nx;
-src/macro/pathfinding.cpp	mod	const int cx = int(i % std::size_t(td.width));
 src/macro/pathfinding.h	index	return std::size_t(y) * width + x;
 src/macro/politik.cpp	index	std::size_t idx = std::size_t(y) * W + x;
 src/macro/politik.cpp	index	std::size_t ni = std::size_t(nb[1]) * W + nb[0];
@@ -50,7 +48,6 @@ src/macro/spawners.cpp	index	const int bComponent = landComponent[std::size_t(by
 src/macro/spawners.cpp	index	const std::size_t i = std::size_t(y) * W + x;
 src/macro/spawners.cpp	index	if (cg.costGrid[std::size_t(p.y) * W + p.x]
 src/macro/spawners.cpp	index	std::size_t k = std::size_t(p.y) * W + p.x;
-src/macro/tree_layer.cpp	index	const std::size_t i = std::size_t(wy) * std::size_t(layer.width) + std::size_t(wx);
 src/macro/tree_layer.cpp	index	const std::size_t i = std::size_t(y) * std::size_t(W) + std::size_t(x);
 src/macro/zones.cpp	index	const std::size_t i = std::size_t(y) * std::size_t(width) + std::size_t(x);
 src/macro/zones.cpp	mod	pull_from(int(i % std::size_t(width)),
