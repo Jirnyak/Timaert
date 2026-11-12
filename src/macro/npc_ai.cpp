@@ -582,13 +582,16 @@ float edge_weight(const PathCostData* pc, std::uint32_t from,
 // охота по запаху и дракон шагали сами, мимо общего прибытия. Теперь шагнуть
 // из модуля нечем.
 //
-// РОД `Squad` В ДУМКЕ ЧИТАЮТ НОГИ И ИХ ПРЕДИКАТ ПРИБЫТИЯ — И НИКТО БОЛЬШЕ
-// (M-307, вердикт владельца 2026-10-24: «сама механика преследования когда сквад уже
-// преследует должна быть единая да агностичная»). Погоня есть цель,
-// названная ОРДИНАЛОМ: адрес — кэш предиката, и для движущегося рода он
-// пересчитывается каждую думку. Добыча умерла или ушла из мира — ординал не
-// резолвится, адрес остаётся последним известным: сквад дойдёт туда, где
-// видел её в последний раз, и прибудет. Отдельной ветки «цель пропала» нет.
+// К НАЗВАННОМУ СКВАДУ НОГИ ВЕЗУТ ТУДА, ГДЕ ОН СЕЙЧАС (M-307, вердикт
+// владельца 2026-10-24: «сама механика преследования когда сквад уже
+// преследует должна быть единая да агностичная»). Цель, названная ОРДИНАЛОМ
+// сквада, держит адрес кэшем предиката, и ноги пересчитывают его каждую
+// думку — для всякого названного сквада одинаково (M-459): добыча погони
+// ушла — адрес идёт за ней; рынок стоит — пересчёт даёт ту же клетку.
+// Спрашивать, «стоит ли он», ногам незачем. Названный умер или ушёл из мира
+// — ординал не резолвится, адрес остаётся последним известным: сквад дойдёт
+// туда, где видел его в последний раз, и прибудет. Отдельной ветки «цель
+// пропала» нет.
 //
 // СОСТАВ БЮДЖЕТА — закон этого звонящего (M-412а/б; ядро марша
 // экспортировано, `try_move@src/macro/npc_ai.h`, и его же зовёт марш игрока
@@ -609,10 +612,10 @@ void march_goal(MacroHandle e, ecs::MacroNpcRuntime& rt,
     if (g.underway == 0) return;
 
     if (ecs::goal_kind(g.what) == ecs::GoalKind::Squad) {
-        const MacroHandle prey =
+        const MacroHandle named =
             macro_handle_by_spawn_id(st, ecs::goal_ordinal(g.what));
-        if (st.valid(prey) && st.dead[prey.slot] == 0)
-            g.cell = st.cell[prey.slot].idx;
+        if (st.valid(named) && st.dead[named.slot] == 0)
+            g.cell = st.cell[named.slot].idx;
     }
 
     // Ноги идут ПРЯМО ПО КОЛОНКЕ КЛЕТКИ (M-462): черновика позиции на время
@@ -1212,12 +1215,20 @@ public:
         return rooted_is_settlement(
             SquadType(store_ctx(ctx_).runtime[slot].squadType));
     }
-    // МЕСТО ЦЕЛИ — ОДНА ДВЕРЬ НА ТРИ ЧИТАТЕЛЯ РЕЙСА (прежде этот тернарник
-    // стоял ТРЕМЯ написаниями в одном модуле: «не дома», погрузка и сделка на
-    // рынке — DOD п.6). kMacroNoSlot = цель местом не названа либо место
-    // умерло, и это ЗНАЧЕНИЕ, а не ошибка: рейсу тогда некуда ехать.
+    // СТОЯЩИЙ СКВАД ЦЕЛИ — ОДНА ДВЕРЬ НА ТРИ ЧИТАТЕЛЯ РЕЙСА (прежде этот
+    // тернарник стоял ТРЕМЯ написаниями в одном модуле: «не дома», погрузка и
+    // сделка на рынке — DOD п.6). kMacroNoSlot = цель сквадом не названа,
+    // названный умер либо он не из стоящих, и это ЗНАЧЕНИЕ, а не ошибка:
+    // рейсу тогда некуда ехать. «Из стоящих ли он» отвечает ось типа САМОГО
+    // названного (её гейтит резолвер `rooted_slot_by_id`), а не тег цели: род
+    // цели у рынка и у добычи погони один (M-459). Остаток погони за
+    // БРОДЯЧИМ сквадом поэтому рынком не прочтётся — его ординал не стоящего.
+    // Остаток погони за СТОЯЩИМ врагом (логово, чужой город) эта дверь
+    // вернула бы — сегодня недостижимо: аватары рейса и сборщика не бойцы, и
+    // рефлекс погоню им не пишет. Долг назван рядом M-468 реестра: рефлекс и
+    // роль делят одну колонку цели.
     std::uint16_t goal_rooted(const ecs::SquadGoal& g) const {
-        return ecs::goal_kind(g.what) == ecs::GoalKind::Rooted
+        return ecs::goal_kind(g.what) == ecs::GoalKind::Squad
             ? rooted_slot_by_id(ctx_, int(ecs::goal_ordinal(g.what)))
             : kMacroNoSlot;
     }
@@ -2419,7 +2430,7 @@ long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
 // ═════ МОДУЛЬ Caravan — РЕЙС К РЫНКУ (форма образца) ════════════════════
 // РЕЙС К РЫНКУ — одна машина для ЛЮБЫХ двух мест (владелец 2026-09-19:
 // «добавим сквад горожан, которые идут в деревню закупаться»). Рынок берётся
-// ИЗ ЦЕЛИ — род `GoalKind::Rooted`, ординал рынка в `goal.what`, — а не из
+// ИЗ ЦЕЛИ — род `GoalKind::Squad`, ординал рынка в `goal.what`, — а не из
 // феодального ребра: деревня едет к сюзерену, горожане — в деревню домена,
 // и это ОДИН рейс, а не два ИИ.
 //
@@ -2520,7 +2531,7 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
             return;
         }
         ecs::goal_set(g, view.rooted_cell(market),
-                      ecs::goal_what(ecs::GoalKind::Rooted,
+                      ecs::goal_what(ecs::GoalKind::Squad,
                                      view.rooted_id(market)),
                       0, std::uint8_t(NS::Working));
         rt.state = std::uint8_t(NS::Traveling);
@@ -2632,7 +2643,7 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
                 // здесь стояла строка-дубль `rt.errandObject = …` с тем же
                 // ординалом (ломоть 4 M-72).
                 ecs::goal_set(g, view.rooted_cell(next),
-                              ecs::goal_what(ecs::GoalKind::Rooted,
+                              ecs::goal_what(ecs::GoalKind::Squad,
                                              view.rooted_id(next)),
                               0, std::uint8_t(NS::Working));
                 rt.state = std::uint8_t(NS::Traveling);
@@ -2694,7 +2705,7 @@ void ai_vendor(MacroHandle e, ecs::MacroNpcRuntime& rt,
 // стака» — заплатить зерном, оставив серебро, невозможно.
 //
 // ═════ МОДУЛЬ Collector — форма образца ═════════════════════════════════
-// ДОЛЖНИК — ИЗ ЦЕЛИ (род Rooted), как рынок у рейса сбыта: поручение
+// ДОЛЖНИК — ИЗ ЦЕЛИ (род Squad), как рынок у рейса сбыта: поручение
 // (`rt.errandObject`) здесь умерло тем же ломтём и по той же причине — цель
 // УЖЕ несла ординал вассала в обеих ветках Idle, то есть колонка была
 // вторым носителем одной величины (DOD п.6). Взыскание целиком — ОДИН
@@ -2763,7 +2774,7 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
     // `interests` по `Stance::Vassal`, не скан мира), поэтому решение
     // принадлежит МОДУЛЮ, а не внешнему распределителю.
     //
-    // ФОРМА ЦЕЛИ — ТА ЖЕ, ЧТО У ДВУХ ВЕТОК Idle НИЖЕ (род Rooted, ординал
+    // ФОРМА ЦЕЛИ — ТА ЖЕ, ЧТО У ДВУХ ВЕТОК Idle НИЖЕ (род Squad, ординал
     // вассала, `onArrival = Working`): второго способа назвать должника не
     // заводится, иначе у одной величины станет два носителя (DOD п.6).
     //
@@ -2790,7 +2801,7 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
         // продолжается. Дома — решает ветка ниже: должен ли он ещё.
         if (s.cell.idx != home) {
             ecs::goal_set(g, view.rooted_cell(vassal),
-                          ecs::goal_what(ecs::GoalKind::Rooted,
+                          ecs::goal_what(ecs::GoalKind::Squad,
                                          view.rooted_id(vassal)),
                           0, std::uint8_t(NS::Working));
             rt.state = std::uint8_t(NS::Traveling);
@@ -2804,7 +2815,7 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
             return;
         }
         ecs::goal_set(g, view.rooted_cell(vassal),
-                      ecs::goal_what(ecs::GoalKind::Rooted,
+                      ecs::goal_what(ecs::GoalKind::Squad,
                                      view.rooted_id(vassal)),
                       0, std::uint8_t(NS::Working));
         rt.state = std::uint8_t(NS::Traveling);
@@ -3024,7 +3035,7 @@ void ai_trader(MacroHandle self, ecs::MacroNpcRuntime& rt,
                         return;
                     if (pick-- != 0) return;
                     ecs::goal_set(g, st.cell[slot].idx,
-                                  ecs::goal_what(ecs::GoalKind::Rooted,
+                                  ecs::goal_what(ecs::GoalKind::Squad,
                                                  st.spawnId[slot].index),
                                   0, std::uint8_t(NS::Working));
                     rt.state  = std::uint8_t(NS::Traveling);
@@ -3055,8 +3066,10 @@ void ai_nomad(MacroHandle self, ecs::MacroNpcRuntime& rt,
               [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
     const MacroStore& st = store_ctx(ctx);
     ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
-    // «Не тот город, где был» — прежний ординал несёт сама цель (род Rooted).
-    const int lastRooted = ecs::goal_kind(g.what) == ecs::GoalKind::Rooted
+    // «Не тот город, где был» — прежний ординал несёт сама цель (род Squad).
+    // Ординал чужой погони городом не окажется: пространство ординалов одно,
+    // и урна ниже сверяет его с ординалами ГОРОДОВ.
+    const int lastRooted = ecs::goal_kind(g.what) == ecs::GoalKind::Squad
                               ? int(ecs::goal_ordinal(g.what))
                               : 0;
     if (rt.state == std::uint8_t(NS::Idle)) {
@@ -3079,7 +3092,7 @@ void ai_nomad(MacroHandle self, ecs::MacroNpcRuntime& rt,
                         return;
                     if (pick-- != 0) return;
                     ecs::goal_set(g, st.cell[slot].idx,
-                                  ecs::goal_what(ecs::GoalKind::Rooted,
+                                  ecs::goal_what(ecs::GoalKind::Squad,
                                                  st.spawnId[slot].index),
                                   0, std::uint8_t(NS::Idle));
                     rt.state  = std::uint8_t(NS::Traveling);
@@ -4803,8 +4816,8 @@ static void tick_macro_npc_ai_one(MacroWorld& mw, MacroNpcAiRuntime& runtime) {
     // Свип не водит АКТИВНОГО — его ноги у ввода, и двух писателей у одной
     // записи не бывает. Второй слот (дом) ушёл с `.home` (ломоть 7б M-421,
     // вердикт «только за активным»): прочие сквады под контролем ведутся
-    // свипом, как всякий сквад мира, — своей целью, которая у стоящего есть
-    // «стой тут».
+    // свипом, как всякий сквад мира, — своей целью, а у стоящего её нет:
+    // везти некуда.
     for (const SquadWalkEntry& sw : runtime.squadIndex.order) {
         const std::uint16_t slot = sw.slot;
         if (slot == ctx.playerFlagSlot) continue;

@@ -602,13 +602,13 @@ void test_the_vendor_sells_at_the_nearest_city() {
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     st.runtime[h.slot] = crt;
-    // РЫНОК — ИЗ ЦЕЛИ (род Place, ломоть 4 M-72): рейс к рынку читает
+    // РЫНОК — ИЗ ЦЕЛИ (род Squad, ломоть 4 M-72): рейс к рынку читает
     // КОЛОНКУ ЦЕЛИ, а не феодальное ребро, — потому что тем же рейсом
     // горожане едут закупаться В ДЕРЕВНЮ. Фикстура называет рынок РОВНО
     // ТОЙ ЖЕ дверью и в той же форме, какой его назовёт сам рейс, решив
-    // следующее плечо: {клетка рынка, Place(ординал), 0, Working}.
+    // следующее плечо: {клетка рынка, Squad(ординал), 0, Working}.
     ecs::goal_set(st.goal[h.slot], st.cell[city.slot].idx,
-                  ecs::goal_what(ecs::GoalKind::Rooted,
+                  ecs::goal_what(ecs::GoalKind::Squad,
                                  std::uint32_t(cityId)),
                   0, std::uint8_t(NPCState::Working));
     sm::store_rename_ordinal(st, h, 13u);

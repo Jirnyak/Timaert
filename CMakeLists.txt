@@ -2213,7 +2213,7 @@ timaert_test(collector_tithe_test
     # остальные два закона свои проверки отдавали, и выпавшая треть была
     # невидима. Пин закрывает это целиком — ctest краснеет на любой пропавшей
     # проверке, не разбираясь, какая именно.
-    PIN "OK collector_tithe_test .19 checks")
+    PIN "OK collector_tithe_test .24 checks")
 
 timaert_test(woodcutter_gather_test
     SOURCES
@@ -2271,7 +2271,7 @@ timaert_test(task_constructor_test
     # ctest, не разбираясь, которая. 52 → 53 (M-423, 2026-11-10): свидетель
     # «убийство ДО дня взятия контракт не закрывает» рождает своё предусловие
     # настоящей дверью деяния, и запись этого предусловия — проверка.
-    PIN "OK task_constructor_test .53 checks")
+    PIN "OK task_constructor_test .62 checks")
 
 # МИР ПРОИЗВОДИТ (И3, ломоть 5а M-72): закон «из мира вышла вещь» не держал
 # НИ ОДИН из 134 приборов — `bricks_produced` ушёл 169 578 → 0 при зелёной

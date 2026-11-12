@@ -53,6 +53,10 @@ struct ContractScan {
     std::uint32_t doneSeq = 0;
     std::int32_t takenDay = 0;
     std::int32_t packed = 0;
+    // Новейшее взятие этого сквада ГДЕ УГОДНО, не только у этого места.
+    // Задача есть ОДНА цель (вердикт №2): взял контракт в другом городе —
+    // прежний брошен, и говорит это ЛЕТОПИСЬ, а не тег цели.
+    std::uint32_t newestTakenSeq = 0;
 };
 
 // Новейший QuestTaken против новейшего QuestDone этой пары (игрок, место).
@@ -61,8 +65,14 @@ struct ContractScan {
 void scan_contract(void* user, const WorldFact& f) {
     auto& s = *static_cast<ContractScan*>(user);
     if (f.subjectKind != std::uint8_t(FactSubject::Squad)
-        || f.subject != s.playerId
-        || f.objectKind != std::uint8_t(FactSubject::Rooted)
+        || f.subject != s.playerId) {
+        return;
+    }
+    if (f.kind == std::uint16_t(FactKind::QuestTaken)
+        && s.newestTakenSeq == 0u) {
+        s.newestTakenSeq = f.seq;
+    }
+    if (f.objectKind != std::uint8_t(FactSubject::Rooted)
         || f.object != s.placeId) {
         return;
     }
@@ -311,6 +321,13 @@ TaskActive task_active_at(const MacroStore& st, const GameState& gs,
                          kWholeChain, scan_contract, &s);
     if (s.takenSeq == 0u) return t;            // контрактов не брали
     if (s.doneSeq > s.takenSeq) return t;      // новейший уже сдан
+    // ВЗЯТ БОЛЕЕ НОВЫЙ КОНТРАКТ В ДРУГОМ МЕСТЕ — ЭТОТ БРОШЕН (M-459). Прежде
+    // это отвечал ТЕГ цели: «принести» ложилось родом места, «убить» — родом
+    // сквада, и сверка рода ниже отличала одно от другого. Род цели у них
+    // теперь один, а тег и раньше судил слабо — два контракта «убить» из
+    // двух городов он не различал вовсе. Летопись различает всё: цель у
+    // сквада одна, значит жив только новейший взятый.
+    if (s.newestTakenSeq != s.takenSeq) return t;
     t.verb = task_verb(s.packed);
     if (t.verb >= std::size(kTaskVerbs)) return t;
     t.object = task_object(s.packed);

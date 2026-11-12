@@ -110,10 +110,10 @@ bool targets(const sm::MacroStore& st, sm::MacroHandle e, float x, float y,
         == sm::ecs::cell_index(int(x), int(y), mapW);
 }
 
-// Ординал места из «чего ищу» цели (род Place), 0 = не место.
+// Ординал места из «чего ищу» цели (род Squad), 0 = не сквад.
 int goal_rooted(const sm::MacroStore& st, sm::MacroHandle e) {
     const sm::ecs::SquadGoal& g = st.goal[e.slot];
-    return sm::ecs::goal_kind(g.what) == sm::ecs::GoalKind::Rooted
+    return sm::ecs::goal_kind(g.what) == sm::ecs::GoalKind::Squad
         ? int(sm::ecs::goal_ordinal(g.what)) : 0;
 }
 
@@ -228,10 +228,10 @@ void test_nomad_excludes_current_target() {
     auto e = spawn_ai(st, sm::NPCType::Peasant, 40.0f, 10.0f, -1);
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
     rt.squadType = std::uint8_t(sm::SquadType::Caravan);
-    // «Стою у standing» — прежний ординал несёт сама цель (род Place).
+    // «Стою у standing» — прежний ординал несёт сама цель (род Squad).
     sm::ecs::goal_set(st.goal[e.slot],
                       sm::ecs::cell_index(40, 10, 128),
-                      sm::ecs::goal_what(sm::ecs::GoalKind::Rooted,
+                      sm::ecs::goal_what(sm::ecs::GoalKind::Squad,
                                          std::uint32_t(standingId)),
                       0, std::uint8_t(sm::NPCState::Idle));
 

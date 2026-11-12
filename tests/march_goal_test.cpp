@@ -153,7 +153,7 @@ void test_dropped_goal_stands_and_keeps_its_predicate() {
     World w;
     const MacroHandle h = w.walker(NPCType::Peasant, SquadType::Spire,
                                    std::uint8_t(NPCState::Idle), 10, 10, 7u);
-    const std::uint32_t what = ecs::goal_what(ecs::GoalKind::Rooted, 4242u);
+    const std::uint32_t what = ecs::goal_what(ecs::GoalKind::Squad, 4242u);
     ecs::goal_set(w.st.goal[h.slot], w.at(40, 10), what, 0,
                   std::uint8_t(NPCState::Working));
     w.think(2);

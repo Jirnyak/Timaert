@@ -72,7 +72,7 @@ struct TaskVerbDef {
 // родом 3, у которого своя ведомость стока. Разбор — CANON S20.1 «КТО
 // БЫВАЕТ СУБЪЕКТОМ ИСТОРИИ», ряд M-423.
 inline constexpr TaskVerbDef kTaskVerbs[] = {
-    {"fetch", "Bring", TaskObjectSpace::Need, ecs::GoalKind::Rooted,
+    {"fetch", "Bring", TaskObjectSpace::Need, ecs::GoalKind::Squad,
      FactKind::None, 15, 0},
     {"kill", "Slay", TaskObjectSpace::Hostile, ecs::GoalKind::Squad,
      FactKind::Killed, 30, 200},

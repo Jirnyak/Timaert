@@ -96,7 +96,7 @@ void owe_tithe(MacroStore& st, int vassalId, int suzerainId,
 }
 
 // Сборщик — сквад рода Collector: дом ребром Parent, ДОЛЖНИК — КОЛОНКОЙ
-// ЦЕЛИ в той же форме {клетка, Place(ординал), 0, Working}, какой её
+// ЦЕЛИ в той же форме {клетка, Squad(ординал), 0, Working}, какой её
 // поставит сам модуль, решив следующее плечо (ломоть 4 M-72).
 MacroHandle make_collector(MacroStore& st, int x, int y,
                            int homeId, MacroHandle vassal, int vassalId,
@@ -118,7 +118,7 @@ MacroHandle make_collector(MacroStore& st, int x, int y,
     pools.sp = pools.maxSp;
     st.runtime[h.slot] = rt;
     ecs::goal_set(st.goal[h.slot], st.cell[vassal.slot].idx,
-                  ecs::goal_what(ecs::GoalKind::Rooted,
+                  ecs::goal_what(ecs::GoalKind::Squad,
                                  std::uint32_t(vassalId)),
                   0, std::uint8_t(NPCState::Working));
     store_rename_ordinal(st, h, ordinal);
@@ -456,9 +456,55 @@ void test_the_back_never_exceeds_its_carry_capacity() {
 
 } // namespace
 
+// ── ЗАКОН 4: ОСТАТОК ЧУЖОЙ ПОГОНИ В ЦЕЛИ ДОЛЖНИКОМ НЕ ЧИТАЕТСЯ (M-459) ───
+// Род цели «сквад» один: должника и добычу погони называет ОДИН тег с
+// ординалом. Прежде их различал сам тег (`Rooted` против `Squad`); теперь
+// «из стоящих ли он» отвечает строка САМОГО названного — ось его типа,
+// которую гейтит резолвер (`rooted_handle_by_ordinal@src/bus/store.h`).
+// Цель — колонка общая: рефлекс угрозы пишет в неё погоню поверх рейса, а
+// `goal_drop` после стычки оставляет «что я искал». Сборщик, прочитавший
+// бродягу как должника, ехал бы «взыскивать» с того, кто ничего не должен,
+// и настоящий долг висел бы вечно.
+void test_a_leftover_chase_is_not_read_as_the_debtor() {
+    Rig r;
+    build_rig(r, kTitheFood, /*silverLots*/0, /*owed*/200);
+    MacroStore& st = *r.store;
+
+    // Бродяга — сквад НЕ из стоящих, своей фракции (угрозой он не станет:
+    // закон под проверкой — чтение цели, а не рефлекс).
+    const MacroHandle roamer =
+        birth_squad(r.gs, nullptr, st, SquadType::None, 12, 12,
+                    std::int16_t(faction_index("timaert")));
+    CHECK(st.valid(roamer)
+              && squad_archetype(SquadType(st.runtime[roamer.slot].squadType))
+                     != SquadArchetype::Rooted,
+          "фикстура: названный остатком погони — не стоящий сквад");
+    const std::uint32_t roamerId = st.spawnId[roamer.slot].index;
+
+    // Сборщик дома, в цели — погоня, от адреса которой он уже отказался.
+    ecs::SquadGoal& g = st.goal[r.man.slot];
+    ecs::goal_set(g, st.cell[roamer.slot].idx,
+                  ecs::goal_what(ecs::GoalKind::Squad, roamerId), 0,
+                  std::uint8_t(NPCState::Chasing));
+    ecs::goal_drop(g);
+    st.runtime[r.man.slot].state = std::uint8_t(NPCState::Idle);
+    CHECK(ecs::goal_ordinal(g.what) == roamerId
+              && ecs::goal_kind(g.what) == ecs::GoalKind::Squad,
+          "фикстура: в колонке цели лежит остаток погони за бродягой");
+
+    const long long owedBefore = owed_now(r);
+    run_days(r, 600);
+
+    CHECK(ecs::goal_ordinal(g.what) != roamerId,
+          "остаток погони ПЕРЕРЕШЁН: бродяга должником не прочитан");
+    CHECK(owed_now(r) < owedBefore,
+          "и настоящий долг ВЗЫСКАН — сборщик нашёл своего вассала сам");
+}
+
 int main() {
     test_the_tithe_is_collected_and_comes_home();
     test_the_tithe_loads_by_home_need_before_value_density();
     test_the_back_never_exceeds_its_carry_capacity();
+    test_a_leftover_chase_is_not_read_as_the_debtor();
     return sm::test::report("collector_tithe_test");
 }

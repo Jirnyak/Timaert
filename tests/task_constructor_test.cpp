@@ -259,7 +259,7 @@ int main() {
         const ecs::SquadGoal& g = st.goal[r.player.slot];
         CHECK(g.cell == st.cell[r.place.slot].idx,
               "цель игрока — та же колонка рода 2: адрес сдачи");
-        CHECK(ecs::goal_kind(g.what) == ecs::GoalKind::Rooted
+        CHECK(ecs::goal_kind(g.what) == ecs::GoalKind::Squad
                   && ecs::goal_ordinal(g.what) == std::uint32_t(r.placeId),
               "цель игрока названа родом Rooted и ординалом места");
         CHECK(g.amount == 5, "amount цели — колонка, не флаг");
@@ -409,6 +409,63 @@ int main() {
     CHECK(task_turn_in(st, gs, r.links, r.player, r.place), "сдача визита проходит");
     act = task_active_at(st, gs, r.links, r.player, r.place);
     CHECK(!act.valid, "после сдачи визита активного контракта нет");
+
+    // ── ЗАДАЧА ЕСТЬ ОДНА ЦЕЛЬ: НОВЫЙ КОНТРАКТ В ДРУГОМ ГОРОДЕ БРОСАЕТ ПРЕЖНИЙ
+    // (M-459). Род цели у «принести» и «убить» теперь один — сквад; прежде
+    // эти два контракта различал тег цели. Судит летопись: жив только
+    // новейший взятый, где бы он ни был взят.
+    {
+        const MacroHandle other =
+            birth_squad(gs, nullptr, st, SquadType::City, 20, 20,
+                        std::int16_t(faction_index("timaert")));
+        const std::uint32_t otherId = st.spawnId[other.slot].index;
+
+        // (а) «Убить» в первом городе, потом «принести» во втором.
+        TaskOffer slay{};
+        slay.verb = 1;
+        slay.target = r.preyId;
+        slay.cell = st.cell[r.prey.slot].idx;
+        slay.amount = 1;
+        CHECK(task_take(st, gs, r.player, r.place, slay),
+              "фикстура: контракт «убить» взят в первом городе");
+        CHECK(task_active_at(st, gs, r.links, r.player, r.place).valid,
+              "КОНТРОЛЬ: пока он новейший — он активен");
+        TaskOffer bring{};
+        bring.verb = 0;
+        bring.object = std::uint16_t(foodItem);
+        bring.target = otherId;
+        bring.cell = st.cell[other.slot].idx;
+        bring.amount = 3;
+        CHECK(task_take(st, gs, r.player, other, bring),
+              "фикстура: контракт «принести» взят во втором городе");
+        CHECK(!task_active_at(st, gs, r.links, r.player, r.place).valid,
+              "прежнее «убить» БРОШЕНО: цель одна, и она уже про второй город");
+        const TaskActive second =
+            task_active_at(st, gs, r.links, r.player, other);
+        CHECK(second.valid && second.verb == 0,
+              "а «принести» второго города активно");
+
+        // (б) Обратный порядок, цель НАЗЫВАЕТ ПЕРВЫЙ ГОРОД оба раза:
+        // «принести в первый», потом во втором — «убить первый». Ординал
+        // цели тот же, тег тот же — различить их может только летопись.
+        TaskOffer bringHome = bring;
+        bringHome.target = std::uint32_t(r.placeId);
+        bringHome.cell = st.cell[r.place.slot].idx;
+        CHECK(task_take(st, gs, r.player, r.place, bringHome),
+              "фикстура: «принести» взято в первом городе");
+        TaskOffer slayFirst = slay;
+        slayFirst.target = std::uint32_t(r.placeId);
+        slayFirst.cell = st.cell[r.place.slot].idx;
+        CHECK(task_take(st, gs, r.player, other, slayFirst),
+              "фикстура: во втором городе взято «убить первый»");
+        CHECK(!task_active_at(st, gs, r.links, r.player, r.place).valid,
+              "«принести» первого города НЕ ОЖИЛО от цели, назвавшей его же "
+              "ординал: жив только новейший контракт");
+        const TaskActive kill2 =
+            task_active_at(st, gs, r.links, r.player, other);
+        CHECK(kill2.valid && kill2.verb == 1,
+              "активен новейший — «убить», взятое во втором городе");
+    }
 
     return sm::test::report("task_constructor_test");
 }
