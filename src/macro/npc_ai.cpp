@@ -400,14 +400,15 @@ ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
 // where no camp is possible is not rest» was the second half of the wall, and
 // it died with the first.
 //
-// STOPPED is not the same question as "did not change cell this think", and
-// getting that wrong is how the first cut of this law paid marchers to march:
-// the pace is fractional (kMacroWalkCellsPerHour against a think's slice of
-// the day), so a body on the road banks part-cells and stands still on maybe a
-// quarter of its thinks. Reading those as rest handed a walking squad free
-// stamina and no squad ever ran out again. A body has stopped when it is where
-// it meant to be, or when it has DECIDED to stop — which is exactly the
-// player's own gate, «маршрут пуст», said in the squads' words.
+// «ШЁЛ ЛИ» — ВОПРОС К САМОМУ ХОДУ, А НЕ К КЛЕТКЕ И НЕ К ЦЕЛИ (M-465). Он не
+// равен «сменил ли клетку в эту думку», и первая редакция закона на этом
+// обожглась: темп был дробным, тело на дороге копило долю клетки и на
+// четверти думок «стояло» — приняв это за отдых, закон платил идущим за
+// марш, и ни один сквад больше не выдыхался. Лечили тогда предикатом
+// «остановился = там, где хотел быть, либо РЕШИЛ встать». С квантовым ходом
+// (2026-11-02) копить нечего: всякий оплаченный квант ядро марша метит
+// флагом `kMarchAdvanced`, и «флага нет» есть точное «не шёл» — предикат
+// остановки умер, а вместе с ним и чтение цели, состояния и аренды ритмом.
 //
 // `overloadBurden` — МНОЖИТЕЛЬ ГРУЗА ПАРАМЕТРОМ, А НЕ КОЛОНКОЙ (M-302 +
 // M-310): свип считает его дверью `overload_burden_of` выше в той же думке, ДО
@@ -416,12 +417,13 @@ ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
 // (`int16` → `int` → `float`) и его РОЛЬ в формуле (слагаемое → множитель).
 // `captured` — АРЕНДОВАН ЛИ СТАРТ ДУМКИ (ЗАХВАТ, ломоть 2 M-419): свип
 // сэмплит его тем же моментом, что землю часа, и передаёт параметром — как
-// грунт и груз. Захваченный для ритма ВСТАЛ (макро-ног в окне нет: реген —
-// фон, жжения нет — «жжение только при движении»), а доезд доли в центр для
-// него не бежит: доля — писателя fold.
-void settle_march_rhythm(MacroHandle e, std::uint32_t at,
+// грунт и груз. Нужен он ритму для ОДНОГО: доезд доли в центр у
+// захваченного не бежит — доля писателя fold. Жжения у него нет по общему
+// закону (макро-ног в окне нет — флаг хода не встаёт), отдельной ветки
+// «захваченный встал» для этого не требуется.
+void settle_march_rhythm(MacroHandle e,
                          ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
-                         bool moved, bool captured, const TickContext& ctx,
+                         bool captured, const TickContext& ctx,
                          float overloadBurden, float groundWeight) {
     const int maxSp = std::max<int>(1, hp.maxSp);
 
@@ -476,29 +478,36 @@ void settle_march_rhythm(MacroHandle e, std::uint32_t at,
         // a swing mid-recovery», sub/spawn.cpp).
     }
 
-    // A body is STOPPED when it is where it meant to be or when it DECIDED
-    // to stop (owner 2026-08-31: «если встал — безусловно, агностично, сразу
-    // реген»).
-    // (ТРЕТЬЕ СЛАГАЕМОЕ — «ноги отказали», флаг `kMarchRefused` — снято
-    //  вместе с флагом, ряд M-458: его писатель был недостижим с 2026-10-06
-    //  (стены умерли, прямой шаг к цели есть всегда), а в индексной форме
-    //  ядра марша ветка «шага нет» невыразима. Слагаемое было ложно всегда —
-    //  снятие нулевое по поведению.)
-    const bool stopped = captured
-                         || rt.state == std::uint8_t(NPCState::Resting)
-                         || at_goal(at, store_ctx(ctx).goal[e.slot]);
-
-    // ...and `!moved` on top, because a think that arrived still MARCHED: you
-    // do not walk two cells and take a slice of rest in the same breath. Rest
-    // begins on the first think after the legs stop.
-    const bool resting = stopped && !moved;
+    // ОТДЫХ ЕСТЬ ДУМКА, В КОТОРУЮ НОГИ НЕ ПРОЕХАЛИ НИ КВАНТА — И БОЛЬШЕ
+    // НИЧЕГО (M-465, вердикт владельца 2026-11-12: «не двигается не жжот это
+    // правмльный замысел типа чтобы сжигание включало именно движение как
+    // универсальная система»; и раньше, 2026-08-31: «если встал —
+    // безусловно, агностично, сразу реген»). Ответ даёт сам ход: ядро марша
+    // ставит `kMarchAdvanced` на первом же оплаченном кванте, и другого
+    // вопроса ритм не задаёт — ни о цели, ни о состоянии, ни об аренде.
+    //
+    // ЧТО ЗДЕСЬ СТОЯЛО: двухступенчатый предикат — сперва «есть ли причина
+    // стоять» (`stopped` = в аренде, в лагере или в клетке цели), потом «и не
+    // сдвинулся». У сквада, которому модуль велел ВСТАТЬ (`goal_drop` стирает
+    // адрес), причины не находилось: он стоял, жёг SP как на марше и не
+    // лечился. Зонд 2026-11-12, 20 думок стоя на одной земле: без адреса SP
+    // 70 → 92, HP 80 → 80; с целью «стой тут» SP 70 → 95, HP 80 → 100.
+    //
+    // ПОЧЕМУ ПРЕДИКАТ БЫЛ НУЖЕН И ПЕРЕСТАЛ: при дробном банке хода сквад
+    // копил долю клетки и ШЁЛ, не меняя клетки, — «не сдвинулся» не значило
+    // «стоит». С квантовым ходом (2026-11-02) всякий проеханный квант
+    // оставляет флаг, и «флага нет» есть точное «стоит». В лагере, в аренде,
+    // в клетке цели и у стоящего места ответ прежний — они не шагают;
+    // ПРЫЖОК ходом не является (ноги не ехали), и марша он больше не платит.
+    const bool resting = (rt.marchFlags & ecs::kMarchAdvanced) == 0;
 
     // ВСТАВШЕЕ ТЕЛО ДОЕЗЖАЕТ В ЦЕНТР СВОЕЙ КЛЕТКИ (M-375, «у нас вообще
     // должно быть завершено стояние между клетками»): думка, чья машина
     // марша не звалась (цель — своя клетка, ожидание, работа на месте),
     // иначе навсегда оставила бы долю на краю входа. Темп — базовый шаг
     // думки (та же величина, что производит марш); это НЕ марш — resting
-    // уже вычислен, жжения доезд не несёт.
+    // уже вычислен, жжения доезд не несёт. Вставший без адреса доезжает так
+    // же (M-465): «встал» больше не требует причины.
     // …НО НЕ В АРЕНДЕ: доля захваченного — писателя fold (ЗАХВАТ, ломоть 2
     // M-419); доезд сверху был бы вторым писателем той же величины.
     if (resting && !captured) {
@@ -4881,12 +4890,11 @@ static void tick_macro_npc_ai_one(MacroWorld& mw, MacroNpcAiRuntime& runtime) {
         } else {
             rt.marchFlags &= ecs::kMarchArrived;
         }
-        // «moved» включает внутриклеточный ход: доля проехала — тело шло,
-        // даже если клетка (позиция мира) не сменилась.
-        settle_march_rhythm(h, cell.idx, rt, hp,
-                            cell.idx != startCell
-                                || (rt.marchFlags & ecs::kMarchAdvanced) != 0,
-                            captured, ctx, overloadBurden, groundWeight);
+        // Шло ли тело в эту думку, ритм спрашивает у САМОГО ХОДА — у флага
+        // `kMarchAdvanced`, который ядро марша ставит на первом оплаченном
+        // кванте (M-465): драйвер ему этого больше не пересказывает.
+        settle_march_rhythm(h, rt, hp, captured, ctx, overloadBurden,
+                            groundWeight);
     }
 
     // The END of every dead squad's story, once per tick (CANON S4): any

@@ -416,6 +416,50 @@ void test_the_dragon_leash_is_a_path_radius() {
           "ВНУТРИ ПОВОДКА: четыре клетки от логова — круг продолжается");
 }
 
+// ── 13. ОТДЫХ ЕСТЬ ДУМКА, В КОТОРУЮ НОГИ НЕ ПРОЕХАЛИ НИ КВАНТА (M-465) ───
+// Жжение включает ХОД и ничто иное: стоящему не нужна причина стоять. Сквад,
+// которому модуль велел встать (адрес стёрт), прежде числился «не
+// остановившимся» — жёг SP как на марше и не лечился; зонд 2026-11-12 дал
+// за 20 думок SP 70 → 92 и HP 80 → 80 против 70 → 95 и 80 → 100 у стоящего с
+// целью на своей клетке. Обе полярности на одной земле и одной анкете:
+// вставший без адреса отдыхает РОВНО как стоящий с адресом, а идущий — жжёт
+// и не лечится.
+void test_rest_is_a_think_without_a_step() {
+    World w;
+    const MacroHandle dropped = w.walker(NPCType::Peasant, SquadType::Spire,
+                                         std::uint8_t(NPCState::Idle),
+                                         20, 20, 7u);
+    const MacroHandle standing = w.walker(NPCType::Peasant, SquadType::Spire,
+                                          std::uint8_t(NPCState::Idle),
+                                          40, 40, 8u);
+    const MacroHandle marcher = w.walker(NPCType::Peasant, SquadType::Spire,
+                                         std::uint8_t(NPCState::Working),
+                                         10, 50, 9u);
+    ecs::goal_drop(w.st.goal[dropped.slot]);                  // «встать»
+    ecs::goal_stand(w.st.goal[standing.slot], w.at(40, 40));  // «стой тут»
+    ecs::goal_set(w.st.goal[marcher.slot], w.at(30, 50), 0, 0,
+                  std::uint8_t(NPCState::Idle));
+    for (const MacroHandle h : {dropped, standing, marcher}) {
+        w.st.pools[h.slot].sp = w.st.pools[h.slot].maxSp - 40;
+        w.st.pools[h.slot].hp = w.st.pools[h.slot].maxHp - 20;
+    }
+    const int hp0 = w.st.pools[dropped.slot].hp;
+    w.think(10);
+    const ecs::Pools& a = w.st.pools[dropped.slot];
+    const ecs::Pools& b = w.st.pools[standing.slot];
+    const ecs::Pools& c = w.st.pools[marcher.slot];
+    CHECK(w.st.cell[marcher.slot].idx != w.at(10, 50)
+              && w.st.goal[marcher.slot].underway != 0,
+          "фикстура: третий сквад все десять думок ШЁЛ и ещё не дошёл");
+    CHECK(a.sp == b.sp && a.hp == b.hp,
+          "ВСТАВШИЙ БЕЗ АДРЕСА ОТДЫХАЕТ РОВНО КАК СТОЯЩИЙ С АДРЕСОМ: "
+          "причина стоять ритму не нужна");
+    CHECK(a.hp > hp0,
+          "…И ЛЕЧИТСЯ: думка без хода есть отдых");
+    CHECK(c.hp == hp0 && c.sp < a.sp,
+          "КОНТРОЛЬ: идущий не лечится и жжёт — жжение включает ход");
+}
+
 } // namespace
 
 int main() {
@@ -431,5 +475,6 @@ int main() {
     test_next_to_the_lair_is_not_home();
     test_a_world_without_a_player_has_no_player_cell();
     test_the_dragon_leash_is_a_path_radius();
+    test_rest_is_a_think_without_a_step();
     return sm::test::report("march_goal_test");
 }
