@@ -3038,12 +3038,10 @@ bool run_macro_npc_trace_smoke(App& app) {
     const int stepsY = std::abs(int(std::lround(logicalY)) - baseY);
     const int steps = std::max(std::min(stepsX, app.gs.mapW - stepsX),
                                std::min(stepsY, app.gs.mapH - stepsY));
-    // A traveler HALTS inside the arrival ring (npc_ai.cpp at_target,
-    // dist² < 4 — a two-cell ring), so a three-cell leg is walked to the
-    // last whole cell OUTSIDE it: exactly 3 − 1 steps. The old `steps == 3`
-    // was true only while one think spent the whole leg before the ring was
-    // ever re-asked.
-    const bool logicalMoved = steps == 3 - 1 && subStamped;
+    // ПРИБЫТИЕ ЕСТЬ РАВЕНСТВО КЛЕТОК (M-461): плечо в три клетки пройдено
+    // до самой клетки цели — ровно три шага. Здесь стояло `3 − 1`: ходок
+    // вставал в окрестности цели, за клетку до неё.
+    const bool logicalMoved = steps == 3 && subStamped;
     const bool visualSmoothed =
         visualBefore == float(baseX)
         && glidedMid > 0.0f

@@ -1931,7 +1931,7 @@ timaert_test(capture_legs_test
 # одно; погоня есть цель рода Squad, адрес которой пересчитывают ноги.
 # Замыкание — как у capture_legs_test: дверь ног живёт в npc_ai.cpp.
 timaert_test(march_goal_test
-    PIN "OK march_goal_test .35 checks."
+    PIN "OK march_goal_test .37 checks."
     SOURCES
         src/macro/npc_spawn.cpp
         src/macro/npc_ai.cpp

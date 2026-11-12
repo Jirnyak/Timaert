@@ -359,6 +359,64 @@ void test_farmer_without_terrain_conjures_nothing() {
           "no terrain wired: no scar appears either");
 }
 
+// ── «ДОМА» — КЛЕТКА ДОМА: У КРЫЛЬЦА НЕ СДАЮТ (M-461) ─────────────────────
+// Сдача груза случается в клетке дома — тем же равенством индексов, каким
+// ноги судят прибытие («ничего не телепортируется», S5). Пока модуль
+// повторял порог ног «ближе двух клеток», прогулка, кончившаяся в соседней с
+// домом клетке, выливала сумку на склад через клетку. Обе полярности: у
+// крыльца груз остаётся в спине, в клетке дома — уходит на склад (иначе
+// первая проверка была бы верна и при сломанной сдаче).
+void test_the_haul_is_not_delivered_from_the_porch() {
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
+    gs.mapW = kMap;
+    gs.mapH = kMap;
+    chronicle_init(gs.chronicle, kMap, kMap);
+    tree_layer_reset(gs.treeLayer, kMap, kMap);   // леса нет — работы нет
+
+    auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
+    const sm::MacroHandle vil =
+        sm::birth_squad(gs, nullptr, st, SquadType::Village, 10, 10);
+    const int vilId = int(st.spawnId[vil.slot].index);
+    sm::settle_souls(gs, st, vil.slot, 40);
+    const sm::MacroHandle wc = make_woodcutter(st, 13.0f, 10.0f, vilId);
+    auto bag_wood = [&] {
+        return (*sm::body_state<ecs::NpcInventory>(st, wc)).inv.count("wood");
+    };
+    (*sm::body_state<ecs::NpcInventory>(st, wc)).inv.add("wood", 5);
+
+    MacroNpcAiRuntime rt{};
+    reset_macro_npc_ai_runtime(rt, 50u);
+    auto think = [&] {
+        MacroWorld mw{.gs = &gs, .store = &st};
+        tick_macro_npc_ai(mw, rt, kAiTicks);
+    };
+    // Прогулка к клетке у крыльца — та же запись, какой её ставит ветка
+    // блуждания артели: адрес и «стать Idle по прибытии».
+    auto walk_to = [&](int x, int y, NPCState leg) {
+        ecs::goal_set(st.goal[wc.slot], ecs::cell_index(x, y, kMap), 0, 0,
+                      std::uint8_t(NPCState::Idle));
+        st.runtime[wc.slot].state = std::uint8_t(leg);
+        for (int i = 0; i < 40 && st.goal[wc.slot].underway != 0; ++i) think();
+    };
+
+    walk_to(11, 10, NPCState::Wandering);
+    CHECK(st.cell[wc.slot].idx == ecs::cell_index(11, 10, kMap)
+              && st.goal[wc.slot].underway == 0,
+          "фикстура: артель ПРИБЫЛА в клетку рядом с домом");
+    think();   // модуль читает «я пришёл»
+    CHECK(bag_wood() == 5,
+          "У КРЫЛЬЦА НЕ СДАЮТ: в соседней с домом клетке груз остался в спине");
+
+    walk_to(10, 10, NPCState::Returning);
+    CHECK(st.cell[wc.slot].idx == ecs::cell_index(10, 10, kMap),
+          "фикстура: артель прибыла В клетку дома");
+    think();
+    CHECK(bag_wood() == 0,
+          "В КЛЕТКЕ ДОМА — СДАЛ: тот же груз ушёл из спины на склад");
+}
+
 void test_no_layer_no_chop() {
     // Without a live tree layer the behaviour must not invent wood — the
     // old walk-to-forest-and-back pantomime, unchanged.
@@ -1064,6 +1122,7 @@ int main() {
     // on (С3): a silently never-running test, the exact family check.h's
     // zero-checks rule hunts, hidden one scope deeper.
     test_no_layer_no_chop();
+    test_the_haul_is_not_delivered_from_the_porch();
     test_the_farmer_works_the_field();
     test_farmer_without_terrain_conjures_nothing();
     test_the_miner_works_the_vein();
