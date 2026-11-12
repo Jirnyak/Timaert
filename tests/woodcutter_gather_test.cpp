@@ -560,6 +560,11 @@ void test_the_vendor_sells_at_the_nearest_city() {
         // payment.
         row.add("coin_timaert_copper", 40000);
     }
+    // ГОРОД ЖИЛОЙ — души дверью мира. Рейс называет рынком только место, под
+    // которым лежит ненулевое число фичи (`pick_next_station_`): пустое
+    // место рынком не является, и пока рынок ставила рука фикстуры, этот
+    // вопрос здесь не задавался вовсе.
+    sm::settle_souls(gs, st, city.slot, 10);
     const sm::MacroHandle vil =
         sm::birth_squad(gs, nullptr, st, SquadType::Village, 16, 10);
     const int vilId = int(st.spawnId[vil.slot].index);
@@ -602,15 +607,13 @@ void test_the_vendor_sells_at_the_nearest_city() {
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     st.runtime[h.slot] = crt;
-    // РЫНОК — ИЗ ЦЕЛИ (род Squad, ломоть 4 M-72): рейс к рынку читает
-    // КОЛОНКУ ЦЕЛИ, а не феодальное ребро, — потому что тем же рейсом
-    // горожане едут закупаться В ДЕРЕВНЮ. Фикстура называет рынок РОВНО
-    // ТОЙ ЖЕ дверью и в той же форме, какой его назовёт сам рейс, решив
-    // следующее плечо: {клетка рынка, Squad(ординал), 0, Working}.
-    ecs::goal_set(st.goal[h.slot], st.cell[city.slot].idx,
-                  ecs::goal_what(ecs::GoalKind::Squad,
-                                 std::uint32_t(cityId)),
-                  0, std::uint8_t(NPCState::Working));
+    // РЫНОК ФИКСТУРА НЕ НАЗЫВАЕТ — ЕГО НАЗЫВАЕТ САМ РЕЙС (`caravan_think`:
+    // сосед по мембране от дома). Здесь стояла запись цели РУКОЙ «в той же
+    // форме, какой её назовёт рейс», и она проверяла путь, которого в игре
+    // не было: в живом мире цель новорождённому коровану не писал никто, и
+    // он не торговал ни разу (замер 2 сида × 64 дня: ноль фактов сделки) —
+    // а этот свидетель был зелёным. Теперь сквад рождается БЕЗ цели, как в
+    // мире, и всё ниже утверждается о нём.
     sm::store_rename_ordinal(st, h, 13u);
     h = sm::handle_at(st, h.slot);
     sm::set_relation(st, int(h.id), vilId, sm::Stance::Parent);
@@ -695,6 +698,77 @@ void test_the_vendor_sells_at_the_nearest_city() {
           "the fact's object is the city it traded AT");
     CHECK(traded.last.amount > 0,
           "the deal's worth is real: table value of what changed hands");
+}
+
+// КОРОВАНУ НЕКУДА ЕХАТЬ — ОН ЖДЁТ ДОМА, ПУСТОЙ. Вторая полярность закона
+// «рынок называет сам рейс»: соседа по мембране нет (в мире одно жилое место —
+// его же дом), значит выезда нет, погрузки нет и чужого поведения тоже нет —
+// ожидание есть долг восстановления (ЗАКОН СПОСОБНОСТИ: «двигаться можно
+// всегда», но ехать некуда). Прежде здесь корован уходил в `home_wander`.
+void test_the_caravan_with_no_market_waits_at_home() {
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
+    gs.mapW = kMap;
+    gs.mapH = kMap;
+    chronicle_init(gs.chronicle, kMap, kMap);
+    auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
+
+    const sm::MacroHandle vil =
+        sm::birth_squad(gs, nullptr, st, SquadType::Village, 16, 10);
+    const int vilId = int(st.spawnId[vil.slot].index);
+    constexpr int kSurplus = 4000;
+    st.inventory[vil.slot].inv.add("food", kSurplus);
+    sm::settle_souls(gs, st, vil.slot, 50);
+    const std::uint32_t homeCell = st.cell[vil.slot].idx;
+
+    sm::MacroHandle h = sm::store_birth(st);
+    st.cell[h.slot] = ecs::MacroCell{homeCell};
+    st.runtime[h.slot].sub = {};
+    st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
+                                   std::uint16_t(faction_index("timaert"))};
+    ecs::MacroNpcRuntime crt{};
+    crt.squadType = std::uint8_t(SquadType::Caravan);
+    crt.state = std::uint8_t(NPCState::Idle);
+    ecs::Pools pools{};
+    refresh_body_from_sheet(
+        pools, &crt,
+        make_character_sheet(NPCType::Peasant, 3, avatar_sheet_seed(14u)),
+        NPCType::Peasant);
+    pools.sp = pools.maxSp;
+    st.runtime[h.slot] = crt;
+    sm::store_rename_ordinal(st, h, 14u);
+    h = sm::handle_at(st, h.slot);
+    sm::set_relation(st, int(h.id), vilId, sm::Stance::Parent);
+    st.sheet[h.slot] = make_character_sheet(
+        NPCType::Peasant, 3, avatar_sheet_seed(st.spawnId[h.slot].index));
+    pools.hp = pools.maxHp = 25;
+    st.pools[h.slot] = pools;
+
+    MacroNpcAiRuntime rt{};
+    reset_macro_npc_ai_runtime(rt, 71u);
+    int samples = 0, awayFromHome = 0, loaded = 0, waiting = 0;
+    for (int i = 0; i < 600; ++i) {
+        MacroWorld mw{.gs = &gs, .store = &st};
+        tick_macro_npc_ai(mw, rt, kAiTicks);
+        ++samples;
+        if (st.cell[h.slot].idx != homeCell) ++awayFromHome;
+        if (sm::inventory_mass_g(st.inventory[h.slot].inv) > 0) ++loaded;
+        if (ecs::squad_recovering(st.runtime[h.slot])) ++waiting;
+    }
+    CHECK(samples == 600 && st.valid(h),
+          "the fixture ran: 600 thinks over a living caravan");
+    CHECK(awayFromHome == 0,
+          "no neighbour across a membrane — the caravan never leaves the "
+          "home cell (it used to wander off on a foreign behaviour)");
+    CHECK(loaded == 0,
+          "nowhere to go — nothing is loaded: the hold stays empty");
+    CHECK(st.inventory[vil.slot].inv.count("food") == kSurplus,
+          "the home shelf is untouched: no market, no cargo taken");
+    CHECK(waiting > 0,
+          "the wait is a recovery debt of the squad's own row");
+    CHECK(tally_facts(gs.chronicle, FactKind::Traded, 16, 10).n == 0,
+          "no deal happened — there was nobody to deal with");
 }
 
 // The miner: the SAME gatherer row-loop as the chop above, pointed at a
@@ -1128,6 +1202,7 @@ int main() {
     test_the_miner_works_the_vein();
     test_the_mine_runs_while_the_player_is_away();
     test_the_vendor_sells_at_the_nearest_city();
+    test_the_caravan_with_no_market_waits_at_home();
     test_the_catch_lands_as_creatures();
     return sm::test::report("woodcutter_gather_test");
 }
