@@ -657,7 +657,6 @@ constexpr Row kAppRows[] = {
      "режим оболочки + settlementId; в сейв не едет (v157). Остаток M-190: "
      "режим хранится, а не выводится из открытых панелей"},
     {"preBattleNpc", Rod::Session, "хэндл сессии; протухание мертвит поколение"},
-    {"encounterGraceNpc", Rod::Session, ""},
     {"subjectSquad", Rod::Session, ""},
     {"encounterTalkLine", Rod::Session, ""},
     {"simSpeed", Rod::Session, ""},

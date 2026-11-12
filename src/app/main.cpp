@@ -634,23 +634,47 @@ int encounter_payoff_cost(App& app, sm::MacroHandle npc) {
     return cost;
 }
 
-// The odds of slipping away: your share of the combined strength, banded so
-// there is always a chance and never a certainty.
-float encounter_flee_chance(App& app, sm::MacroHandle npc) {
-    const float mine = sm::squad_power(player_auto_battle_side(app));
-    const float their = sm::squad_power(
-        sm::auto_battle_side_of((*app.macroStore), npc));
-    return std::clamp(0.25f + 0.5f * mine / std::max(1.0f, mine + their),
-                      0.05f, 0.95f);
-}
-
-void close_pre_battle(App& app, bool grace) {
-    if (grace) app.encounterGraceNpc = app.preBattleNpc;
+void close_pre_battle(App& app) {
     app.preBattleNpc = {};
     app.encounterTalkLine.clear();
     if (app.subState.kind == sm::GameSubStateKind::PreBattle) {
         app.subState.kind = sm::GameSubStateKind::Exploring;
     }
+}
+
+// ── ДОГОВОР ВСТРЕЧИ ЕСТЬ СВЯЗЬ ДВУХ СКВАДОВ СО СРОКОМ ────────────────────
+// Вердикт владельца 2026-11-12, дословно: «Если договорились (откуп,
+// харизма/диалог, пощада после стычки) — это должно жить НЕ отдельной
+// „милостью“, а через уже существующую системную модель связей и сроков в
+// анкете сквада (какой сквад с кем, какой тип отношения/перемирия и на какой
+// срок в днях — в общей системе, которая уже есть и тикает сама)».
+//
+// Договор пишет ОДНА дверь связи (`set_relation@src/bus/store.h`) — личную
+// связь двух сквадов, симметрично, со сроком в днях. Сила её прибавляется к
+// отношению народов (`squads_hostile@src/macro/squad.h`), поэтому вражды
+// между этими двумя нет ни для двери встречи, ни для рефлекса угрозы того
+// сквада; срок убавляет мир сам, раз в день, и вражда возвращается.
+//
+// ЧТО ЗДЕСЬ СТОЯЛО: «милость» — ячейка сессии с ОДНИМ хэндлом, которую
+// читала только дверь встречи. Две банды на клетке перебрасывали её друг
+// другу, сам помилованный сквад о ней не знал (его рефлекс считал игрока
+// врагом по-прежнему), а в сейв она не ехала.
+//
+// СРОКИ — БАЛАНС, И У НИХ ОДИН ИНВАРИАНТ: счётчик дней убавляется на границе
+// суток, поэтому срок в один день может истечь через минуту после сделки.
+// Два дня — наименьший срок, который держит полные сутки; им и живёт
+// передышка после стычки. Купленный проход держит восемь дней — четверть
+// сезона.
+constexpr int kTruceAfterFightDays = 2;
+constexpr int kTruceBoughtDays = 8;
+
+bool settle_encounter_accord(App& app, sm::MacroHandle npc, int days) {
+    sm::MacroStore& st = (*app.macroStore);
+    const sm::MacroHandle pf = sm::player_flag_handle(app.session);
+    if (!st.valid(npc) || !st.valid(pf)) return false;
+    return sm::set_relation(st, int(st.spawnId[pf.slot].index),
+                            int(st.spawnId[npc.slot].index),
+                            sm::Stance::Personal, sm::kAccordValue, days);
 }
 
 void push_combat_log(App& app, std::string msg) {
@@ -680,37 +704,11 @@ void perform_encounter_auto(App& app, sm::MacroHandle npc, sm::Ambush ambush) {
                   won ? "victory" : "defeat",
                   int(o.casualtiesA.size()), int(o.casualtiesB.size()), xp);
     push_combat_log(app, line);
-    const bool enemyGone = sm::macro_dead(st, npc);
-    close_pre_battle(app, /*grace*/!enemyGone);
-}
-
-// ПОПЫТКА ПОБЕГА ИЗ ПРЕДБОЯ — именованной дверью, как авторезолв выше: строка
-// таблицы действий зовёт её, и её же жмёт смоук (свидетелю нужна та самая
-// дверь, которой играет игрок, а не её пересказ). Шансы — закон силы; провал
-// значит, что они настигли, и бой идёт на земле.
-bool perform_encounter_flee(App& app, sm::MacroHandle npc) {
-    if (app.gs.playerRoll.next_f01() < encounter_flee_chance(app, npc)) {
-        // УДАЧНЫЙ ПОБЕГ ЕСТЬ МИЛОСТЬ, И БОЛЬШЕ НИЧЕГО (вердикт владельца
-        // 2026-11-12 на вариант «без отскока вовсе»; его же слова о прежней
-        // форме: «мне кажется это костыль»). Враг не трогает, пока двое не
-        // разойдутся по клеткам (`encounterGraceNpc`), а уходит игрок своими
-        // ногами и платит веса земли, как всякий сквад, — вода в том числе:
-        // она вес, а не стена.
-        //
-        // ЧТО ЗДЕСЬ СТОЯЛО: бесплатный прыжок на две клетки «прямо прочь от
-        // них» с обходом воды — телепорт мимо системы движения, рождённый
-        // вместе с экраном предбоя (2026-08-06), когда позиции были дробными.
-        // С тех пор как встреча судится одной клеткой, «прочь» было считать
-        // не из чего: смещение врага ко мне равно нулю всегда, срабатывала
-        // запасная ветка, и прыжок молча вёл на восток.
-        push_combat_log(app, "Slipped away from a hostile band.");
-        close_pre_battle(app, /*grace*/true);
-        return true;
-    }
-    push_combat_log(app, "They caught you as you turned to run!");
-    close_pre_battle(app, /*grace*/false);
-    (void)route_macro_npc_attack(app, npc);
-    return true;
+    // Оба пережили стычку — передышка: связь на срок, а не ячейка сессии.
+    // Без неё двое в одной клетке встретились бы снова следующим же кадром.
+    if (!sm::macro_dead(st, npc))
+        (void)settle_encounter_accord(app, npc, kTruceAfterFightDays);
+    close_pre_battle(app);
 }
 
 // One action row of the pre-battle screen.
@@ -740,7 +738,7 @@ const PreBattleAction kPreBattleActions[] = {
          return false;   // stays open — words are not an exit
      },
      "Hear what they have to say."},
-    // Pay off: gold buys the road. Grace lets you actually walk away.
+    // Pay off: gold buys the road — договор двух сквадов со сроком.
     {[](App& app, sm::MacroHandle npc, char* out, std::size_t n) {
          std::snprintf(out, n, "Pay off (%d gold)",
                        encounter_payoff_cost(app, npc));
@@ -785,21 +783,14 @@ const PreBattleAction kPreBattleActions[] = {
          std::snprintf(line, sizeof(line),
                        "Paid %d gold to be let through.", paid);
          push_combat_log(app, line);
-         close_pre_battle(app, /*grace*/true);
+         (void)settle_encounter_accord(app, npc, kTruceBoughtDays);
+         close_pre_battle(app);
          return true;
      },
      "Buy your way past. A greedy leader asks double."},
-    // Flee attempt: odds from the one strength law; failing means they are
-    // on you — the fight happens on the ground.
-    {[](App& app, sm::MacroHandle npc, char* out, std::size_t n) {
-         std::snprintf(out, n, "Try to flee (~%d%%)",
-                       int(encounter_flee_chance(app, npc) * 100.0f));
-     },
-     [](App&, sm::MacroHandle) { return true; },
-     [](App& app, sm::MacroHandle npc) {
-         return perform_encounter_flee(app, npc);
-     },
-     "Odds follow the strength law. Fail, and they are on you."},
+    // (Строки «попробовать убежать» здесь НЕТ — вердикт владельца 2026-11-12:
+    //  попался врагу на одной клетке — контакт уже случился, убегать надо
+    //  ногами по карте ДО встречи; из предбоя — либо бой, либо договориться.)
     // Fight: the subworld battle against exactly the people the creatures
     // names — the old attack path, now behind the forced stop.
     {[](App&, sm::MacroHandle, char* out, std::size_t n) {
@@ -807,7 +798,7 @@ const PreBattleAction kPreBattleActions[] = {
      },
      [](App&, sm::MacroHandle) { return true; },
      [](App& app, sm::MacroHandle npc) {
-         close_pre_battle(app, /*grace*/false);
+         close_pre_battle(app);
          (void)route_macro_npc_attack(app, npc);
          return true;
      },
@@ -838,16 +829,6 @@ void detect_forced_encounter(App& app) {
 
     sm::MacroStore& st = (*app.macroStore);
 
-    // A graced squad stops gracing the moment the two part cells.
-    if (app.encounterGraceNpc.id != 0) {
-        bool together = false;
-        if (const auto* gc = sm::body_state<sm::ecs::MacroCell>(
-                st, app.encounterGraceNpc)) {
-            together = sm::ecs::cell_x(*gc, app.gs.mapW) == px
-                && sm::ecs::cell_y(*gc, app.gs.mapW) == py;
-        }
-        if (!together) app.encounterGraceNpc = {};
-    }
     // КАНДИДАТЫ — РАМКОЙ 3×3 ЧЕРЕЗ КАРКАС (вердикт владельца M-244
     // 2026-10-15: «согласен 3х3»), скан капа умер этим ломтём. Гейт —
     // ЦЕЛОЧИСЛЕННАЯ дистанция в мировом подкоординатном пространстве
@@ -871,7 +852,6 @@ void detect_forced_encounter(App& app) {
             if (dxCell != 0 || dyCell != 0) return;   // встреча = ОДНА клетка
             if (st.alive[slot] == 0 || st.dead[slot] != 0) return;
             if (slot == flagSlot) return;   // себя не встречаешь — АКТИВНОГО
-            if (sm::handle_at(st, slot) == app.encounterGraceNpc) return;
             // ТЕЛО МЕСТА — НЕ ВСТРЕЧНЫЙ СКВАД (ось рода, M-90 шаг 5): шаг
             // на клетку шпиля не есть бой с его телом; осаду построит свой
             // закон.
@@ -881,13 +861,15 @@ void detect_forced_encounter(App& app) {
                 return;
             }
             if (st.pools[slot].hp <= 0) return;
-            // Hostile to the PLAYER by the one relation law — the same
-            // predicate the battle masks bake and the AI wars ask.
-            if (!sm::player_hostile_to(
-                    &app.gs,
-                    sm::faction_id_for_index(st.kind[slot].factionIdx))) {
+            // ВРАЖДА — ТОЙ ЖЕ ДВЕРЬЮ, ЧТО У РЕФЛЕКСА УГРОЗЫ ВСЯКОГО СКВАДА:
+            // отношение народов плюс личная связь этих двух сквадов
+            // (`squads_hostile@src/macro/squad.h`). Сквад под флажком здесь
+            // обычный сквад со своей строкой фракции; договор встречи —
+            // запись связи со сроком, и пока она жива, встречи нет. (Стояли
+            // строковый вопрос «враг ли ИГРОКУ эта фракция» и отдельный
+            // пропуск «помилованного» по ячейке сессии.)
+            if (!sm::squads_hostile(st, app.gs.factions, flagSlot, slot))
                 return;
-            }
             found = sm::handle_at(st, slot);
         });
     if (found.id != 0) {
@@ -909,7 +891,7 @@ void draw_pre_battle_modal(App& app) {
     const sm::MacroStore& st = (*app.macroStore);
     const sm::MacroHandle npc = app.preBattleNpc;
     if (sm::macro_dead(st, npc) || st.pools[npc.slot].hp <= 0) {
-        close_pre_battle(app, false);   // fail closed (stale save / dead foe)
+        close_pre_battle(app);   // fail closed (stale save / dead foe)
         return;
     }
 

@@ -399,13 +399,11 @@ struct App {
     // сейв не едет (M-190, v157; тип — в шапке этого файла).
     sm::GameSubState subState{};
     // Forced encounter (Session 15 Inc 6). The squad the pre-battle screen is
-    // about, and the one squad the player just parleyed with / paid off — it
-    // does not re-force the encounter while the two still share a cell;
-    // separation clears the grace. Runtime-only: entt handles are not save
-    // material.
-    sm::MacroHandle preBattleNpc{};        // шаг 1г: {slot,gen} вместо
-    sm::MacroHandle encounterGraceNpc{};   //   entt-энтити; протухание
-                                           //   мертвит поколение
+    // about. Runtime-only. (Рядом стояла ячейка «помилованного» сквада —
+    // снята 2026-11-12: договор встречи есть связь двух сквадов со сроком в
+    // их анкетах, а не состояние сессии.)
+    sm::MacroHandle preBattleNpc{};        // {slot,gen}; протухание мертвит
+                                           // поколение
     // THE subject panel's squad (меню-сессия: одна панель на всех — клик по
     // сквад-ряду открывает её на нём; kMacroNoSlot = панель показывает
     // место). Runtime-only, как preBattleNpc; хэндл
@@ -493,8 +491,8 @@ sm::OpticalWorld optical_world(App& app);
 //  `status == Ready`, а та включает контрольную сумму файла.)
 bool route_macro_npc_attack(App& app, sm::MacroHandle npc);
 void perform_encounter_auto(App& app, sm::MacroHandle npc, sm::Ambush ambush);
-bool perform_encounter_flee(App& app, sm::MacroHandle npc);
-float encounter_flee_chance(App& app, sm::MacroHandle npc);
+bool settle_encounter_accord(App& app, sm::MacroHandle npc, int days);
+void close_pre_battle(App& app);
 void detect_forced_encounter(App& app);
 float& player_sp_carry(App& app);
 sm::ecs::Pools& player_pools(App& app);

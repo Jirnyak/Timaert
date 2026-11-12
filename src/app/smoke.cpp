@@ -9814,55 +9814,77 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "hostile squad did not force the encounter");
                 break;
             }
-            // ── УДАЧНЫЙ ПОБЕГ ЕСТЬ МИЛОСТЬ, А НЕ ПРЫЖОК (M-464) ──────────────
-            // Вердикт владельца 2026-11-12: «без отскока вовсе». Побег не
-            // двигает сквад: клетка та же, враг помилован, карта отдана назад,
-            // а уходить игроку своими ногами. Харнесс подбирает бросок (кости
-            // — его забота, закон под проверкой — исход), жмёт ТУ ЖЕ дверь,
-            // что строка таблицы действий.
+            // ── ДОГОВОР ВСТРЕЧИ ЕСТЬ СВЯЗЬ ДВУХ СКВАДОВ СО СРОКОМ (M-469) ─────
+            // Вердикт владельца 2026-11-12: побега кнопкой и «милости» нет;
+            // договорились — это запись в общей системе связей, которая
+            // прибавляется к отношению народов и тикает днями сама. Харнесс
+            // жмёт ТУ ЖЕ дверь договора, что откуп и передышка после стычки,
+            // и судит три вещи: связь легла на ОБА конца со сроком; пока она
+            // жива, встречи нет; срок вышел — вражда вернулась.
             //
             // МУТАЦИЯ → ИСХОД (сид 12345) — таблица в теле коммита шага.
             {
-                const std::uint32_t cellBefore =
-                    sm::player_flag_cell(app.session, *app.macroStore)->idx;
-                const float chance = encounter_flee_chance(app, hostile);
-                bool rollFound = false;
-                for (int burn = 0; burn < 256 && !rollFound; ++burn) {
-                    sm::Rng peek = app.gs.playerRoll;
-                    if (peek.next_f01() < chance) rollFound = true;
-                    else (void)app.gs.playerRoll.next_f01();
-                }
-                SMOKE_CHECK(app, rollFound,
-                            "фикстура: удачный бросок побега подобран");
-                if (!rollFound) break;
-                const bool consumed = perform_encounter_flee(app, hostile);
-                SMOKE_CHECK(app, consumed
-                                && app.subState.kind
-                                       == sm::GameSubStateKind::Exploring,
-                            "удачный побег закрывает экран встречи");
-                SMOKE_CHECK(app, app.encounterGraceNpc == hostile,
-                            "и враг помилован");
+                sm::MacroStore& ast = *app.macroStore;
+                const sm::MacroHandle me =
+                    sm::player_flag_handle(app.session);
+                const int myId = int(ast.spawnId[me.slot].index);
+                const int hisId = int(ast.spawnId[hostile.slot].index);
+                const std::uint32_t cellBefore = ast.cell[me.slot].idx;
                 SMOKE_CHECK(app,
-                            sm::player_flag_cell(app.session, *app.macroStore)
-                                    ->idx == cellBefore,
-                            "ПОБЕГ НЕ ДВИГАЕТ СКВАД: клетка игрока прежняя");
-                // Пока двое в одной клетке, милость держит: кадр игры встречу
-                // заново не открывает.
+                            sm::squads_hostile(ast, app.gs.factions, me.slot,
+                                               hostile.slot),
+                            "КОНТРОЛЬ: до договора эти двое враждуют");
+                constexpr int kDays = 2;
+                SMOKE_CHECK(app, settle_encounter_accord(app, hostile, kDays),
+                            "договор записан");
+                close_pre_battle(app);
+                const sm::Interest* mine =
+                    sm::interest_find(ast.interests[me.slot], hisId);
+                const sm::Interest* his =
+                    sm::interest_find(ast.interests[hostile.slot], myId);
+                SMOKE_CHECK(app,
+                            mine != nullptr && his != nullptr
+                                && mine->stance
+                                       == std::uint8_t(sm::Stance::Personal)
+                                && his->stance
+                                       == std::uint8_t(sm::Stance::Personal)
+                                && mine->term == kDays && his->term == kDays
+                                && mine->value == his->value
+                                && mine->value > 0,
+                            "связь лежит на ОБОИХ концах: та же роль, сила и "
+                            "срок в днях");
+                SMOKE_CHECK(app,
+                            !sm::squads_hostile(ast, app.gs.factions, me.slot,
+                                                hostile.slot)
+                                && !sm::squads_hostile(ast, app.gs.factions,
+                                                       hostile.slot, me.slot),
+                            "вражды между ними нет — для обеих сторон");
                 advance_sim_steps(app, 1, /*allowInput*/false);
                 SMOKE_CHECK(app, app.subState.kind
-                                     == sm::GameSubStateKind::Exploring
-                                && app.encounterGraceNpc == hostile,
-                            "милость держит, пока не разошлись по клеткам");
-                // КОНТРОЛЬ ОБРАТНОЙ ПОЛЯРНОСТИ, и он же возвращает сцену
-                // остальному сценарию: без милости тот же кадр встречу
-                // открывает — значит строка выше судит милость, а не спящую
-                // дверь встречи.
-                app.encounterGraceNpc = {};
+                                     == sm::GameSubStateKind::Exploring,
+                            "пока договор жив, кадр игры встречу не открывает");
+                SMOKE_CHECK(app, ast.cell[me.slot].idx == cellBefore,
+                            "договор не двигает сквад: клетка игрока прежняя");
+                // СРОК ИСТЁК — той же дверью, какой мир убавляет его раз в
+                // день. Вражда возвращается к отношению народов, и встреча
+                // открывается снова: это и контроль обратной полярности, и
+                // возврат сцены остальному сценарию.
+                for (int d = 0; d < kDays; ++d) {
+                    (void)sm::interests_tick_day(ast.interests[me.slot]);
+                    (void)sm::interests_tick_day(ast.interests[hostile.slot]);
+                }
+                SMOKE_CHECK(app,
+                            sm::interest_find(ast.interests[me.slot], hisId)
+                                    == nullptr
+                                && sm::interest_find(
+                                       ast.interests[hostile.slot], myId)
+                                       == nullptr,
+                            "срок вышел — запись снята с обоих концов");
                 advance_sim_steps(app, 1, /*allowInput*/false);
                 SMOKE_CHECK(app, app.subState.kind
                                      == sm::GameSubStateKind::PreBattle
                                 && app.preBattleNpc == hostile,
-                            "контроль: без милости встреча открывается снова");
+                            "вражда вернулась: встреча открывается снова");
                 if (app.subState.kind != sm::GameSubStateKind::PreBattle) break;
             }
             const sm::Inventory* pArmy = sm::player_inventory(app.session, *app.macroStore);

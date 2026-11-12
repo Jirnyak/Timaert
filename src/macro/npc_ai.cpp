@@ -3581,8 +3581,13 @@ MacroHandle nearest_hostile_squad(MacroHandle self, const ecs::NPCKind& kind,
     // 578 648…614 391 звонков и 2 263 088…2 447 875 строковых вопросов ЗА
     // ИГРОВОЙ ДЕНЬ. Теперь это два чтения массива (ЗАКОН СЛОВАРЯ: внутри
     // симуляции живут только числа).
+    //
+    // ВРАЖДА ДВУХ СКВАДОВ — МАТРИЦА НАРОДОВ ПЛЮС ИХ ЛИЧНАЯ СВЯЗЬ (вердикт
+    // владельца 2026-11-12, дверь `squads_hostile@src/macro/squad.h`): здесь
+    // спрашивали одну матрицу, и договор двух сквадов рефлексу был не виден.
+    // Цена — обход реестра связей СВОЕЙ строки до первой пустой записи; у
+    // ходячего сквада их единицы.
     const FactionState& fx = ctx.mw.gs->factions;
-    const FactionSlot myFaction = FactionSlot(kind.factionIdx);
     const std::uint32_t at = st.cell[self.slot].idx;
     const int cx0 = cell_x(at, ctx.mapW) / b.cellSize;
     const int cy0 = cell_y(at, ctx.mapW) / b.cellSize;
@@ -3597,15 +3602,11 @@ MacroHandle nearest_hostile_squad(MacroHandle self, const ecs::NPCKind& kind,
                  it != end; ++it) {
                 const SquadWalkEntry& sw = g.order[*it];
                 if (sw.slot == self.slot) continue;
-                const auto& ok = st.kind[sw.slot];
                 // Враждебность СПЕРВА: гейт и расстояние суть КОНЪЮНКЦИЯ,
                 // порядок ответа не меняет (мир вышел побитово тем же), а
                 // дешёвый вопрос вперёд дорогого снимает ~12 торовых
                 // расстояний со звонка до единиц.
-                if (!factions_hostile(fx, myFaction,
-                                      FactionSlot(ok.factionIdx))) {
-                    continue;
-                }
+                if (!squads_hostile(st, fx, self.slot, sw.slot)) continue;
                 const auto& oc = st.cell[sw.slot];
                 const int d = cell_dist(at, oc.idx, ctx.mapW);
                 if (d >= best) continue;

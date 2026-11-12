@@ -351,6 +351,100 @@ void test_neutral_squads_ignore_each_other() {
           "nobody's creatures paid for a meeting of neutrals");
 }
 
+// ── ВРАЖДА ДВУХ СКВАДОВ — МАТРИЦА НАРОДОВ ПЛЮС ИХ ЛИЧНАЯ СВЯЗЬ (M-469) ───
+// Вердикт владельца 2026-11-12: договорённость живёт в общей системе связей
+// и сроков; связи сквадов «плюсуются» к матрице фракций, которая есть
+// умолчание. Свидетель судит дверь ПОВЕДЕНИЕМ мира, обе полярности на одной
+// паре: те же двое, что в первом тесте дерутся насмерть, под договором стоят
+// в одной клетке и не трогают друг друга, а когда срок вышел — дерутся.
+void test_an_accord_of_two_squads_adds_to_their_peoples_relation() {
+    std::unique_ptr<GameState> gsOwn = make_world(-80);
+    GameState& gs = *gsOwn;
+    auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
+    const auto bandit = make_squad_at(st, NPCType::Bandit, "bandits", 5,
+                                      10, 10, 1u, {11u, 12u, 13u, 14u},
+                                      NPCType::Bandit, 4);
+    const auto caravan = make_squad_at(st, NPCType::Merchant, "timaert", 1,
+                                       10, 10, 2u, {21u},
+                                       NPCType::Peasant, 1);
+    CHECK(sm::squads_hostile(st, gs.factions, bandit.slot, caravan.slot)
+              && sm::squads_hostile(st, gs.factions, caravan.slot, bandit.slot),
+          "КОНТРОЛЬ: без договора народы этих двоих враждуют, и они тоже");
+
+    constexpr int kDays = 2;
+    CHECK(sm::set_relation(st, 1, 2, sm::Stance::Personal, sm::kAccordValue,
+                           kDays),
+          "договор записан одной дверью связи");
+    CHECK(!sm::squads_hostile(st, gs.factions, bandit.slot, caravan.slot)
+              && !sm::squads_hostile(st, gs.factions, caravan.slot,
+                                     bandit.slot),
+          "ДОГОВОР СНИМАЕТ ВРАЖДУ — для обеих сторон, одной записью на конец");
+    CHECK(sm::factions_hostile(gs.factions, faction_index("bandits"),
+                               faction_index("timaert")),
+          "а НАРОДЫ враждуют по-прежнему: матрицу договор не трогал");
+
+    MacroNpcAiRuntime rt{};
+    reset_macro_npc_ai_runtime(rt, 42u);
+    drive(gs, nullptr, st, rt, 3);
+    CHECK(!sm::macro_dead(st, bandit) && !sm::macro_dead(st, caravan)
+              && container_count(st, gs, 1u) == 4
+              && container_count(st, gs, 2u) == 1,
+          "под договором двое стоят в одной клетке и никто не дерётся: "
+          "рефлекс угрозы судит ту же дверь");
+
+    // СРОК — днями, той же дверью, какой мир убавляет его раз в сутки.
+    for (int d = 0; d < kDays; ++d) {
+        (void)sm::interests_tick_day(st.interests[bandit.slot]);
+        (void)sm::interests_tick_day(st.interests[caravan.slot]);
+    }
+    CHECK(sm::squads_hostile(st, gs.factions, bandit.slot, caravan.slot),
+          "СРОК ВЫШЕЛ — вражда вернулась к отношению народов");
+    drive(gs, nullptr, st, rt, 1);
+    CHECK(!st.valid(sm::handle_at(st, caravan.slot)),
+          "и встреча решена боем — как у всякой пары врагов");
+
+    // РОЛЬ СТРУКТУРЫ ДОГОВОРОМ НЕ ЗАТИРАЕТСЯ: запись на пару одна, а срок на
+    // родительском ребре снял бы само ребро.
+    const auto child = make_squad_at(st, NPCType::Peasant, "bandits", 1,
+                                     12, 12, 3u, {31u}, NPCType::Peasant, 1);
+    sm::set_relation(st, 3, 1, sm::Stance::Parent);
+    CHECK(!sm::set_relation(st, 3, 1, sm::Stance::Personal, sm::kAccordValue,
+                            kDays),
+          "поверх роли структуры личная связь не пишется");
+    CHECK(sm::parent_of(st, child.slot) == 1,
+          "и ребро «дом» цело");
+}
+
+// ЛИЧНАЯ ОБИДА — ТА ЖЕ ДВЕРЬ, ДРУГОЙ ЗНАК: сквад МИРНОГО чужого народа она
+// делает врагом, сквад СВОЕГО народа — нет (своя фракция стоит на верху
+// шкалы, и одна обида до порога вражды её не доводит). Утверждается
+// отношение двух строк шкалы, а не пересказанное число.
+void test_a_grudge_turns_a_peaceful_stranger_but_not_ones_own() {
+    std::unique_ptr<GameState> gsOwn = make_world(0);
+    GameState& gs = *gsOwn;
+    auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
+    const auto a = make_squad_at(st, NPCType::Bandit, "bandits", 5,
+                                 10, 10, 1u, {11u}, NPCType::Bandit, 4);
+    const auto stranger = make_squad_at(st, NPCType::Merchant, "timaert", 1,
+                                        11, 10, 2u, {21u},
+                                        NPCType::Peasant, 1);
+    const auto kinsman = make_squad_at(st, NPCType::Bandit, "bandits", 1,
+                                       12, 10, 3u, {31u}, NPCType::Bandit, 1);
+    CHECK(!sm::squads_hostile(st, gs.factions, a.slot, stranger.slot)
+              && !sm::squads_hostile(st, gs.factions, a.slot, kinsman.slot),
+          "КОНТРОЛЬ: без личной связи ни чужой мирный, ни свой — не враг");
+    CHECK(sm::set_relation(st, 1, 2, sm::Stance::Personal, kRelationMin, 0)
+              && sm::set_relation(st, 1, 3, sm::Stance::Personal, kRelationMin,
+                                  0),
+          "фикстура: обе обиды записаны, бессрочно");
+    CHECK(sm::squads_hostile(st, gs.factions, a.slot, stranger.slot),
+          "обида на сквад мирного чужого народа — вражда, хотя народы в мире");
+    CHECK(!sm::squads_hostile(st, gs.factions, a.slot, kinsman.slot),
+          "обида на сквад СВОЕГО народа до вражды не доводит");
+}
+
 // ИЗЪЯТИЕ ВСТРЕЧИ АДРЕСУЕТСЯ КЛЕТКАМИ, А НЕ РОДОМ СЦЕНЫ (M-226, вердикт
 // владельца 2026-10-06: «это плохо нельзя отклюячать автобой во всём мире
 // толкьо в этих 3х3 клетках»).
@@ -1029,6 +1123,8 @@ int main() {
     test_the_weak_flee_and_fighters_pursue();
     test_a_reflex_that_stops_a_squad_drops_its_address();
     test_neutral_squads_ignore_each_other();
+    test_an_accord_of_two_squads_adds_to_their_peoples_relation();
+    test_a_grudge_turns_a_peaceful_stranger_but_not_ones_own();
     test_a_meeting_in_the_leased_window_is_not_resolved_upstairs();
     test_a_victorious_avatar_levels();
     test_a_level_does_not_strip_what_is_worn();

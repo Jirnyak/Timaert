@@ -574,15 +574,50 @@ inline int parent_of(const MacroStore& st, std::uint16_t slot) {
 // контрагент — зеркало (Vassal | Child). SELF-СВЯЗЬ законна ТОЛЬКО у Parent
 // (место — дом себе) и ставится ОДНОЙ записью без зеркала: «одна запись на
 // пару субъектов» — часть формы (interest_find ищет по object).
-inline void set_relation(MacroStore& st, int subjectId, int otherId,
+//
+// ЛИЧНАЯ СВЯЗЬ (`Stance::Personal`) ИДЁТ ТОЙ ЖЕ ДВЕРЬЮ, И У НЕЁ ТРИ ОТЛИЧИЯ ОТ
+// РОЛЕЙ СТРУКТУРЫ: она СИММЕТРИЧНА (оба конца получают одну роль, силу и
+// срок); носителей у субъекта сколько угодно (прежнего дверь не снимает); и
+// поверх роли структуры она НЕ ПИШЕТСЯ — запись на пару субъектов одна, а
+// срок на феодальном или родительском ребре снял бы само ребро в день
+// истечения. Ответ `false` значит «связь не записана»: конец не найден,
+// пара уже связана ролью структуры либо реестр полон.
+inline bool set_relation(MacroStore& st, int subjectId, int otherId,
                          Stance role, int value = 0, int term = 0) {
-    if (role != Stance::Suzerain && role != Stance::Parent) return;
+    if (role == Stance::Personal) {
+        if (subjectId <= 0 || otherId <= 0 || subjectId == otherId)
+            return false;
+        const MacroHandle a =
+            macro_handle_by_spawn_id(st, std::uint32_t(subjectId));
+        const MacroHandle b =
+            macro_handle_by_spawn_id(st, std::uint32_t(otherId));
+        if (!st.valid(a) || !st.valid(b)) return false;
+        Interests& ain = st.interests[a.slot];
+        Interests& bin = st.interests[b.slot];
+        const Interest* ea = interest_find(ain, otherId);
+        const Interest* eb = interest_find(bin, subjectId);
+        const auto structural = [](const Interest* e) {
+            return e != nullptr && e->stance != std::uint8_t(Stance::Personal);
+        };
+        if (structural(ea) || structural(eb)) return false;
+        // Оба конца или ни одного: место под новую запись проверяется ДО
+        // первой записи, иначе полный реестр одного конца оставил бы связь
+        // односторонней.
+        if ((ea == nullptr && interests_count(ain) >= kMaxInterests)
+            || (eb == nullptr && interests_count(bin) >= kMaxInterests)) {
+            return false;
+        }
+        interest_set(ain, otherId, Stance::Personal, value, term);
+        interest_set(bin, subjectId, Stance::Personal, value, term);
+        return true;
+    }
+    if (role != Stance::Suzerain && role != Stance::Parent) return false;
     const Stance mirror = role == Stance::Suzerain ? Stance::Vassal
                                                    : Stance::Child;
     const MacroHandle vh = macro_handle_by_spawn_id(st,
                                                     std::uint32_t(subjectId));
-    if (!st.valid(vh)) return;
-    if (subjectId == otherId && role != Stance::Parent) return;
+    if (!st.valid(vh)) return false;
+    if (subjectId == otherId && role != Stance::Parent) return false;
     Interests& vin = st.interests[vh.slot];
     // Прежний носитель той же роли теряет этот конец — с обеих сторон;
     // вместе со ЗНАНИЕМ роли умирает и ДОЛГ НА РЕБРЕ: непогашенная дань
@@ -598,13 +633,14 @@ inline void set_relation(MacroStore& st, int subjectId, int otherId,
         interest_clear(vin, it.object);
         break;                     // носитель роли у субъекта ровно один
     }
-    if (otherId <= 0) return;      // «стал ничьим» — это и есть весь вызов
+    if (otherId <= 0) return true; // «стал ничьим» — это и есть весь вызов
     const MacroHandle sh = macro_handle_by_spawn_id(st,
                                                     std::uint32_t(otherId));
-    if (!st.valid(sh)) return;     // висячего ребра не заводим
+    if (!st.valid(sh)) return false;   // висячего ребра не заводим
     interest_set(vin, otherId, role, value, term);
     if (sh.slot != vh.slot)        // self-ребро Parent зеркала не имеет
         interest_set(st.interests[sh.slot], subjectId, mirror, value, term);
+    return true;
 }
 
 // РЕБРО ДАНИ ЭТОГО ВАССАЛА — ЕГО ЖЕ ЗАПИСЬ Suzerain (M-245: долг и память
