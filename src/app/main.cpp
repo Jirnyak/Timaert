@@ -126,6 +126,13 @@ namespace sm::app {
 // defaults they seed.
 constexpr const char* kSaveOrgName = "Timaert";
 constexpr const char* kSaveAppName = "timaert_c";
+// КАТАЛОГ ТЕХНИЧЕСКОГО ПРОГОНА (M-470). Прогон со смоук-скриптом пишет СЕЙВ
+// сюда, а не в каталог игрока: сюита смоуков четырежды зовёт `save_game`, и
+// до этой строки каждый её полный прогон молча затирал слот владельца миром
+// прибора. Тот же приём, что у звука (немое устройство при смоук-скрипте):
+// одна ветка там, где путь считается. Настройки интерфейса и раскладка
+// клавиш читаются из каталога игрока по-прежнему — прогон их не пишет.
+constexpr const char* kSmokeAppName = "timaert_smoke";
 constexpr int kSubworldDailyTicksPerStep = 1;
 // (kSubworldMacroNpcTicksPerStep умер с M-379: бюджет думок на шаг был нужен
 // бюджетному драйверу, который копил свипы и разом их отрабатывал; единый
@@ -408,8 +415,9 @@ std::uint32_t choose_new_game_seed(const App& app) {
 // A global preferences file (UI prefs, keymap) — a sibling of the save in the
 // per-user pref dir (SDL_GetPrefPath). No legacy migration: a missing file
 // just means "use defaults". Falls back to the cwd if the pref dir is missing.
-std::string resolve_prefs_path(const char* fileName) {
-    char* pref = SDL_GetPrefPath(kSaveOrgName, kSaveAppName);
+std::string resolve_prefs_path(const char* fileName, bool technicalRun) {
+    char* pref = SDL_GetPrefPath(kSaveOrgName,
+                                 technicalRun ? kSmokeAppName : kSaveAppName);
     if (!pref || pref[0] == '\0') {
         if (pref) SDL_free(pref);
         return fileName;
@@ -423,7 +431,9 @@ std::string resolve_prefs_path(const char* fileName) {
 // The save lives beside the prefs, in the same per-user pref dir — ONE path.
 // The old exe-dir fallback and its copy-forward migration are gone: there is
 // no save compatibility (CANON S21), so there is nothing worth migrating.
-std::string resolve_save_path() { return resolve_prefs_path(kSaveFileName); }
+std::string resolve_save_path(bool technicalRun) {
+    return resolve_prefs_path(kSaveFileName, technicalRun);
+}
 
 
 // Панель субъекта открывается для ЛЮБОГО ландмарка («меню города — хороший
@@ -6465,7 +6475,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
     if (!parse_smoke_script(std::getenv(kSmokeScriptEnv), app.smoke)) return 2;
     if (!boot_window(app)) return 1;
     boot_audio(app);
-    app.savePath = resolve_save_path();
+    app.savePath = resolve_save_path(app.smoke.enabled);
     // The autosave slot is a SIBLING of the manual save: same directory,
     // its own file. resolve_save_path always ends in kSaveFileName.
     app.autosavePath =
@@ -6477,9 +6487,9 @@ int main(int /*argc*/, char* /*argv*/[]) {
                      app.savePath.c_str(), app.autosavePath.c_str());
         std::fflush(stderr);
     }
-    app.prefsPath = resolve_prefs_path(kPrefsFileName);
+    app.prefsPath = resolve_prefs_path(kPrefsFileName, false);
     load_ui_settings(app.uiSettings, app.prefsPath);  // missing file -> defaults stand
-    app.keymapPath = resolve_prefs_path(kKeymapFileName);
+    app.keymapPath = resolve_prefs_path(kKeymapFileName, false);
     load_keymap(app.keymap, app.keymapPath);          // missing file -> defaults stand
     if (boot_trace_enabled() || app.smoke.enabled) {
         std::fprintf(stderr, "[ui] prefs=%s\n", app.prefsPath.c_str());

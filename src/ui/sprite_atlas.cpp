@@ -24,6 +24,7 @@ namespace sm {
 namespace {
 
 std::array<Sprite, std::size_t(SpriteId::Count_)> g_sprites{};
+int g_missing = 0;   // названо таблицей, не найдено на диске (M-471)
 
 // Try a list of candidate paths until one decodes.
 unsigned char* try_load(const char* file, int& w, int& h) {
@@ -58,6 +59,7 @@ void load_one(SpriteId id) {
     unsigned char* px = try_load(file, w, h);
     if (!px) {
         std::fprintf(stderr, "[sprite] missing: %s\n", file);
+        ++g_missing;
         return;
     }
     s.tex = sm::ui::create_ui_texture(w, h, px, /*linear=*/true);
@@ -69,6 +71,8 @@ void load_one(SpriteId id) {
 }
 
 } // namespace
+
+int sprite_missing_count() { return g_missing; }
 
 const Sprite* sprite_get(SpriteId id) {
     if (std::size_t(id) >= g_sprites.size()) return nullptr;

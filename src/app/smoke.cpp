@@ -112,6 +112,7 @@ static void smoke_give_visual(sm::sub::SubObjects& objs, int s,
 #include "macro/squad_index.h"     // settlement_at — «кто живёт на клетке»
 #include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP witness
 #include "macro/player_entity.h"
+#include "ui/sprite_atlas.h"   // sprite_missing_count — вердикт прогона без арта (M-471)
 #include "bus/entry_context.h"  // unpack_entry_dir — закон доли марша (M-244a)
 #include "bus/store.h"
 #include "bus/world_row.h"   // creatures_push_stack — предусловие ростера (Б8)
@@ -7621,6 +7622,21 @@ bool run_console_smoke(App& app) {
 // is silent while a fact holds. Printed rather than enforced, so the gap
 // shrinks visibly instead of being exempted by a flag (M-131).
 void smoke_report(App& app) {
+    // АРТ, НАЗВАННЫЙ ТАБЛИЦЕЙ СПРАЙТОВ, ОБЯЗАН НАЙТИСЬ (M-471). Игра без него
+    // не падает — рисует запасную процедурную картинку, — и прогон без арта
+    // оставался зелёным: три полные сюиты 2026-11-12 прошли 70 из 70 без
+    // единого спрайта (копия бинарника без `assets` в рабочем каталоге), а
+    // владелец увидел это в окнах прогона как «слетели все спрайты». Отказ —
+    // вслух и в вердикте: технический прогон без арта красный.
+    if (const int missing = sm::sprite_missing_count(); missing > 0) {
+        std::fprintf(stderr,
+                     "[smoke] FAIL art named by the sprite table was not "
+                     "found: %d file(s) — run from a directory that has "
+                     "assets/sprites/\n", missing);
+        app.smoke.failed = true;
+        ++app.smoke.checksRun;
+        ++app.smoke.checksFailed;
+    }
     int silent = 0;
     for (int i = 0; i < app.smoke.count; ++i) {
         const SmokeAction a = app.smoke.actions[std::size_t(i)];

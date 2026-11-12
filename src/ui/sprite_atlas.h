@@ -26,6 +26,12 @@ struct Sprite {
 // call every frame.
 const Sprite* sprite_get(SpriteId id);
 
+// Сколько файлов арта, НАЗВАННЫХ строками таблицы спрайтов, не нашлось на
+// диске с начала процесса. Игра при этом не падает — рисует запасную
+// процедурную картинку; технический прогон обязан назвать это провалом
+// (читатель — вердикт смоука, M-471).
+int sprite_missing_count();
+
 // Free all loaded textures (call once at shutdown). Optional.
 void sprite_atlas_shutdown();
 

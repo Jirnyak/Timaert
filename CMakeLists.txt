@@ -70,9 +70,17 @@ set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL
 # построению, а не по ревью (ЗАКОН ФРЕЙМА п.7: стену ставит компилятор).
 
 # stb (single-header image / etc.) — needed for sprite PNG loading.
+#
+# ЗАКРЕПЛЁН КОММИТОМ, А НЕ ВЕТКОЙ (2026-11-12). Здесь стояло `GIT_TAG master`:
+# свежая сборка брала то, что лежит в чужой ветке сегодня, и коммит stb от
+# 2026-11-11 перестал собираться под нашими флагами (`stb_image.h`: необъявленное
+# имя и два предупреждения-ошибки) — рабочие деревья при этом оставались
+# зелёными, потому что их `_deps` снят в апреле. Закреплён ровно тот коммит,
+# на котором собрано всё дерево. Мелкий клон выключен: по хэшу коммита он не
+# берётся.
 FetchContent_Declare(stb
     GIT_REPOSITORY https://github.com/nothings/stb.git
-    GIT_TAG master GIT_SHALLOW TRUE)
+    GIT_TAG 31c1ad37456438565541f4919958214b6e762fb4 GIT_SHALLOW FALSE)
 FetchContent_MakeAvailable(stb)
 
 FetchContent_Declare(imgui
