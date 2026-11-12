@@ -1270,6 +1270,12 @@ void sync_audio_music(App& app) {
 }
 
 void boot_audio(App& app) {
+    // Технический прогон (задан смоук-скрипт) идёт без звука: немое устройство
+    // SDL «dummy» — тот же приём, что в `audio_runtime_test`. Микшер живёт
+    // целиком (музыка играет и переключается, смоук `subworld_audio` судит
+    // настоящий путь), в колонки не идёт ничего. Обычный запуск — со звуком;
+    // настройки звука для игрока — отдельная будущая система.
+    if (app.smoke.enabled) SDL_SetHint(SDL_HINT_AUDIODRIVER, "dummy");
     if (!app.audio.init()) {
         std::fprintf(stderr, "[audio] disabled: %s\n", app.audio.last_error());
         std::fflush(stderr);

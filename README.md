@@ -142,7 +142,9 @@ TIMAERT_SMOKE_HOUR=1 TIMAERT_SMOKE_YAW=180 TIMAERT_SHOT_PATH=/tmp/moon.png \
 Ручки смоука (все опциональны): `TIMAERT_SMOKE_SCRIPT` (токены через запятую),
 `TIMAERT_SMOKE_SEED`, `TIMAERT_SMOKE_HOUR` (0..23), `TIMAERT_SMOKE_YAW`/`_PITCH`,
 `TIMAERT_SMOKE_SUBPOS` (`"x,y"`), `TIMAERT_SMOKE_SPELL`, `TIMAERT_SMOKE_PROBE`.
-Мутация ECS откладывает захват минимум на кадр (AGENTS §8 п.10). Безоконный путь
+Смоук-прогон (задан `TIMAERT_SMOKE_SCRIPT`) идёт БЕЗ ЗВУКА: `boot_audio@src/app/main.cpp`
+ставит немое устройство SDL «dummy» — микшер работает целиком, в колонки не идёт
+ничего; обычный запуск — со звуком. Мутация ECS откладывает захват минимум на кадр (AGENTS §8 п.10). Безоконный путь
 к кадру — харнесс `gpu_smoke3d` (`GPU_SMOKE_SHOT=<path>.ppm`,
 `GPU_SMOKE_FRAMES=N`, `GPU_SMOKE_NIGHT=1`, `GPU_SMOKE_LIGHT=1`, `GPU_SMOKE_FX=1`).
 
