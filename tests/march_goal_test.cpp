@@ -172,21 +172,25 @@ void test_dropped_goal_stands_and_keeps_its_predicate() {
           "брошенная цель не «прибывает»: onArrival не применён");
 }
 
-// ── 4. «СТОЙ ТУТ» — АДРЕС НАЗВАН, ВЕЗТИ НЕКУДА, ПРИБЫТИЯ НЕТ ─────────────
-// Пара с контролем: та же клетка двумя дверями. `goal_set` на свою клетку
-// есть марш нулевой длины и честно прибывает; `goal_stand` — нет.
+// ── 4. НОВОРОЖДЁННЫЙ СТОИТ БЕЗ ЦЕЛИ, И «Я ПРИШЁЛ» ЕМУ НЕ ПРИХОДИТ ────────
+// Пара с контролем: рождение цели не ставит (адреса нет, везти некуда), а
+// `goal_set` на свою клетку есть марш нулевой длины и честно прибывает.
+// (Прежде новорождённому ставили цель «стой тут» особой дверью — она снята,
+// M-459/вердикт 2026-11-12: стоять значит не иметь адреса.)
 void test_standing_goal_is_not_a_march() {
     World w;
     const MacroHandle stand = w.walker(NPCType::Peasant, SquadType::Spire,
                                        std::uint8_t(NPCState::Idle), 10, 10, 7u);
     const MacroHandle zero = w.walker(NPCType::Peasant, SquadType::Spire,
                                       std::uint8_t(NPCState::Idle), 30, 30, 8u);
-    ecs::goal_stand(w.st.goal[stand.slot], w.at(10, 10));
     ecs::goal_set(w.st.goal[zero.slot], w.at(30, 30), 0, 0,
                   std::uint8_t(NPCState::Working));
-    CHECK(w.st.goal[stand.slot].cell == w.at(10, 10)
-              && w.st.goal[stand.slot].underway == 0,
-          "«стой тут»: адрес — своя клетка, и сквад к ней НЕ в пути");
+    CHECK(w.st.goal[stand.slot].cell == ecs::kNoCell
+              && w.st.goal[stand.slot].underway == 0
+              && ecs::goal_kind(w.st.goal[stand.slot].what)
+                     == ecs::GoalKind::None,
+          "ФИКСТУРА: у рождённого слота адреса нет, рода нет, он не в пути "
+          "(закон рождения сквада судит `rooted_module_day_test`)");
 
     w.think(1);
     CHECK(w.st.runtime[stand.slot].state == std::uint8_t(NPCState::Idle)
@@ -436,7 +440,10 @@ void test_rest_is_a_think_without_a_step() {
                                          std::uint8_t(NPCState::Working),
                                          10, 50, 9u);
     ecs::goal_drop(w.st.goal[dropped.slot]);                  // «встать»
-    ecs::goal_stand(w.st.goal[standing.slot], w.at(40, 40));  // «стой тут»
+    // «Стоит с адресом» — прибывший: марш нулевой длины кончается первой же
+    // думкой, адрес остаётся кэшем предиката.
+    ecs::goal_set(w.st.goal[standing.slot], w.at(40, 40), 0, 0,
+                  std::uint8_t(NPCState::Idle));
     ecs::goal_set(w.st.goal[marcher.slot], w.at(30, 50), 0, 0,
                   std::uint8_t(NPCState::Idle));
     for (const MacroHandle h : {dropped, standing, marcher}) {

@@ -375,8 +375,6 @@ static sm::MacroHandle smoke_birth_squad_at_player(App& app,
     const int pcy = int(smoke_player_y(app));
     st.cell[h.slot].idx = sm::ecs::cell_index(pcx, pcy, app.gs.mapW);
     st.runtime[h.slot].sub = {};   // пин — прыжок: центр клетки (M-244a)
-    // «Стой тут» — цель на собственную клетку (M-1): прибытие уже истинно.
-    sm::ecs::goal_stand(st.goal[h.slot], st.cell[h.slot].idx);
     std::fprintf(stderr,
                  "[smoke] squad spawned at player cell %d,%d faction=%d "
                  "ordinal=%u\n", pcx, pcy, factionIndex,
