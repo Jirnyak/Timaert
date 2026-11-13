@@ -188,6 +188,24 @@ set(TIMAERT_GENS_SOURCES
     src/sub/gens/road.cpp
     src/sub/gens/field.cpp)
 
+# ИИ-модули сквадов — по файлу на модуль (CANON «КАЖДЫЙ МОДУЛЬ — ОДИН ФАЙЛ»):
+# таблица `kAiModuleRows` и тела окна модуля живут в `src/macro/npc_ai.cpp`,
+# поэтому всякий таргет, линкующий его, линкует и этот список. Игра берёт
+# их сама — глобом своего модуля `macro`.
+set(TIMAERT_SQUAD_AI_SOURCES
+    src/macro/squad_ai/untyped.cpp
+    src/macro/squad_ai/city.cpp
+    src/macro/squad_ai/village.cpp
+    src/macro/squad_ai/artel.cpp
+    src/macro/squad_ai/ploughmen.cpp
+    src/macro/squad_ai/hunters.cpp
+    src/macro/squad_ai/flaxers.cpp
+    src/macro/squad_ai/miners.cpp
+    src/macro/squad_ai/woodcutters.cpp
+    src/macro/squad_ai/caravan.cpp
+    src/macro/squad_ai/collector.cpp
+    src/macro/squad_ai/dragon.cpp)
+
 # (СБОРКА ИГРЫ ПЕРЕЕХАЛА НИЖЕ `timaert_build_flags` — ломоть 5 M-171: игра
 #  собирается МОДУЛЯМИ-ВИДАМИ (`timaert_module`), и каждому модулю нужен
 #  таргет флагов, объявленный раньше его. Здесь остался только штамп хэша.)
@@ -549,6 +567,7 @@ add_executable(balance_run tests/balance_run.cpp
     src/macro/knowledge.cpp
     src/macro/npc_spawn.cpp
     src/macro/npc_ai.cpp
+    ${TIMAERT_SQUAD_AI_SOURCES}
     src/macro/deal.cpp
     # перепись доски контрактов (Б6) спрашивает ТУ ЖЕ дверь, что вкладка
     src/macro/tasks.cpp
@@ -606,6 +625,7 @@ add_executable(road_reach_census tests/road_reach_census.cpp
     src/macro/knowledge.cpp
     src/macro/npc_spawn.cpp
     src/macro/npc_ai.cpp
+    ${TIMAERT_SQUAD_AI_SOURCES}
     src/macro/deal.cpp
     src/macro/recovery.cpp
     src/macro/nav_field.cpp
@@ -702,6 +722,7 @@ add_executable(fauna_spread_census tests/fauna_spread_census.cpp
     src/macro/knowledge.cpp
     src/macro/npc_spawn.cpp
     src/macro/npc_ai.cpp
+    ${TIMAERT_SQUAD_AI_SOURCES}
     src/macro/deal.cpp
     src/macro/recovery.cpp
     src/macro/nav_field.cpp
@@ -836,6 +857,7 @@ timaert_test(world_tick_parity_test
         src/macro/scent_field.cpp
         # the daily labour rotation lives with the working AI (npc_ai.h)
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/deal.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
@@ -876,6 +898,7 @@ timaert_test(flock_pairing_law_test
         # Дневной тик спрашивает тир орба ОДНИМ выводом (M-233 п.8).
         src/macro/spires.cpp
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/deal.cpp
         src/macro/macro_stock.cpp
         src/macro/econ_day.cpp
@@ -1057,6 +1080,7 @@ timaert_test(squad_creatures_test
 timaert_test(caravan_deal_test
     SOURCES
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/deal.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
@@ -1078,6 +1102,7 @@ timaert_test(macro_npc_ai_parity_test
         src/macro/squad_index.cpp   # каркас клеток (ломтик F)
         src/ui/macro_eyes.cpp       # глаза карты — свидетель глайда (M-244a)
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/deal.cpp
         # effective_sheet_of (squad.h, посадка Б) sums worn gear via
         # anatomy.cpp worn_bonuses — the daily bread law walks it now.
@@ -1167,6 +1192,7 @@ timaert_test(squad_war_test
     SOURCES
         src/macro/squad_index.cpp   # каркас клеток (ломтик F)
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/deal.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
@@ -1206,6 +1232,7 @@ timaert_test(design_characters_test
     SOURCES
         src/macro/squad_index.cpp   # каркас клеток — прибор дракона гоняет думки
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/deal.cpp
         src/macro/recovery.cpp
         src/macro/nav_field.cpp
@@ -1232,6 +1259,7 @@ timaert_test(squad_travel_test
         # settle_dead_squads unloads the pool through raise_deserter_bands (AI-2)
         src/macro/npc_spawn.cpp
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/deal.cpp
         # effective_sheet_of (squad.h, посадка Б) sums worn gear via
         # anatomy.cpp worn_bonuses — the daily bread law walks it now.
@@ -1814,6 +1842,7 @@ timaert_test(trade_law_test
         # settle_dead_squads unloads the pool through raise_deserter_bands (AI-2)
         src/macro/npc_spawn.cpp
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/deal.cpp
         # effective_sheet_of (squad.h, посадка Б) sums worn gear via
         # anatomy.cpp worn_bonuses — the daily bread law walks it now.
@@ -1850,6 +1879,7 @@ timaert_test(ai_cadence_test
     SOURCES
         src/macro/npc_spawn.cpp
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/squad_index.cpp
         src/macro/deal.cpp
         src/macro/recovery.cpp
@@ -1877,6 +1907,7 @@ timaert_test(flag_march_test
     SOURCES
         src/macro/npc_spawn.cpp
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/squad_index.cpp
         src/macro/deal.cpp
         src/macro/recovery.cpp
@@ -1914,6 +1945,7 @@ timaert_test(capture_legs_test
     SOURCES
         src/macro/npc_spawn.cpp
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/squad_index.cpp
         src/macro/deal.cpp
         src/macro/recovery.cpp
@@ -1943,6 +1975,7 @@ timaert_test(march_goal_test
     SOURCES
         src/macro/npc_spawn.cpp
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/squad_index.cpp
         src/macro/deal.cpp
         src/macro/recovery.cpp
@@ -1979,6 +2012,7 @@ timaert_test(fight_state_test
         src/sub/damage.cpp
         src/macro/npc_spawn.cpp
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/squad_index.cpp
         src/macro/deal.cpp
         src/macro/recovery.cpp
@@ -2023,6 +2057,7 @@ timaert_test(econ_v1_test
         # свидетель судит оба рядом с механикой акта, поэтому линкует модули
         # тем же набором, что caravan_deal_test.
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/deal.cpp
         src/macro/recovery.cpp
         src/macro/nav_field.cpp
@@ -2146,6 +2181,7 @@ timaert_test(crop_stock_test
         src/macro/scent_field.cpp
         # the daily labour rotation lives with the working AI (npc_ai.h)
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/deal.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
@@ -2189,6 +2225,7 @@ timaert_test(fauna_stock_test
         src/macro/scent_field.cpp
         # the daily labour rotation lives with the working AI (npc_ai.h)
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/deal.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
@@ -2211,6 +2248,7 @@ timaert_test(collector_tithe_test
     SOURCES
         src/macro/squad_index.cpp   # каркас клеток
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/deal.cpp          # вылив дани домой — один глагол обмена
         src/macro/recovery.cpp
         src/macro/nav_field.cpp
@@ -2238,6 +2276,7 @@ timaert_test(woodcutter_gather_test
     SOURCES
         src/macro/squad_index.cpp   # каркас клеток (ломтик F)
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/deal.cpp
         # effective_sheet_of (squad.h, посадка Б) sums worn gear via
         # anatomy.cpp worn_bonuses — the daily bread law walks it now.
@@ -2271,6 +2310,7 @@ timaert_test(task_constructor_test
         src/macro/state.cpp
         src/macro/squad_index.cpp
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/deal.cpp
         src/macro/recovery.cpp
         src/macro/nav_field.cpp
@@ -2308,6 +2348,7 @@ timaert_test(rooted_module_day_test
         src/macro/player_entity.cpp
         src/macro/squad_index.cpp
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/deal.cpp
         src/macro/recovery.cpp
         src/macro/nav_field.cpp
@@ -2337,6 +2378,7 @@ timaert_test(artel_types_test
         src/macro/player_entity.cpp
         src/macro/squad_index.cpp
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/deal.cpp
         src/macro/recovery.cpp
         src/macro/nav_field.cpp
@@ -2377,6 +2419,7 @@ timaert_test(threat_field_test
 timaert_test(scent_field_test
     SOURCES
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         # Охотника по следу теперь ВЕЗЁТ СВИП (M-2: у рефлекса ног нет), и
         # свидетель «шаг вверх по градиенту» гонит настоящий драйвер думок —
         # ему нужен индекс сквадов.
@@ -2741,6 +2784,7 @@ timaert_test(player_is_a_squad_test
         src/macro/npc_spawn.cpp
         src/macro/player_entity.cpp
         src/macro/npc_ai.cpp
+        ${TIMAERT_SQUAD_AI_SOURCES}
         src/macro/deal.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.

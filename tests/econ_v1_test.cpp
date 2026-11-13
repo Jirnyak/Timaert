@@ -1115,8 +1115,8 @@ void sect14_squad_craft_act() {
 // меряет сделка; предел наступает обратной связью — выход копится, масса
 // против спины роняет его оценку; вход тает — его оценка растёт. Решение
 // судится на голых числах своей строки, и у деревни и у города оно своё
-// (`village_craft_pick@src/macro/npc_ai.cpp`,
-// `city_craft_pick@src/macro/npc_ai.cpp`; AGENTS §4 п.5), поэтому каждое
+// (`village_craft_pick@src/macro/squad_ai/village.cpp`,
+// `city_craft_pick@src/macro/squad_ai/city.cpp`; AGENTS §4 п.5), поэтому каждое
 // утверждение ниже стоит над обоими; выгода всякого другого объёма — теми же
 // дверями ядра цены.
 namespace {

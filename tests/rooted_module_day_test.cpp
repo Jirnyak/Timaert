@@ -639,8 +639,8 @@ void test_a_standing_rooted_pays_nothing_for_the_road() {
 
 // ═════ 6. ПОСЛЕДНЮЮ СМЕНУ РУК ИЗ ДОМА НЕ ВЫПИСЫВАЮТ ═════════════════════
 // Наряд M-314, заведён НЕЗАВИСИМЫМ РЕВЬЮ 2026-10-25. Закон:
-// `village_has_spare_souls_@src/macro/npc_ai.cpp` и
-// `city_has_spare_souls_@src/macro/npc_ai.cpp` (у каждого модуля свой) требуют
+// `village_has_spare_souls_@src/macro/squad_ai/village.cpp` и
+// `city_has_spare_souls_@src/macro/squad_ai/city.cpp` (у каждого модуля свой) требуют
 // СТРОГО больше крю, а не
 // «не меньше», — потому что дом, отдавший последнюю смену рук, встаёт с
 // НУЛЁМ работников у своих же верстаков, то есть перестаёт производить тем

@@ -138,10 +138,10 @@ decr	src/macro/language.cpp	for (int i = n - 1; i > 0; --i) {
 decr	src/macro/nav_field.cpp	for (std::size_t i = chain.size(); i-- > 0;) {
 decr	src/macro/npc_ai.cpp	--b)
 decr	src/macro/npc_ai.cpp	if (pick-- != 0) return;
-decr	src/macro/npc_ai.cpp	if (pick-- != 0) return;	#2
 decr	src/macro/resource_field.h	else if (was != 0 && v == 0) --liveCells;
 decr	src/macro/settlement_score.cpp	for (int k = kFieldsPerVillage - 1; k > slot; --k)
 decr	src/macro/spawners.cpp	for (int k = last; k > at; --k) best[k] = best[k - 1];
+decr	src/macro/squad_ai/untyped.cpp	if (pick-- != 0) return;
 decr	src/macro/tasks.cpp	needs[pick] = needs[--needCount]; // без повтора той же строки
 decr	src/macro/tasks.cpp	prey[pick] = prey[--preyCount];
 decr	src/macro/tasks.cpp	sights[pick] = sights[--sightCount];

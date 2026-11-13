@@ -27,10 +27,6 @@ CANON.md	engine.cpp:3123
 CANON.md	features.h:173
 CANON.md	features.h:5-8
 CANON.md	items.cpp:266
-CANON.md	npc_ai.cpp:3070
-CANON.md	npc_ai.cpp:3161
-CANON.md	npc_ai.cpp:3279
-CANON.md	npc_ai.cpp:3508-3514
 CANON.md	npc_spawn.cpp:556
 CANON.md	resource_field.h:12-14
 CANON.md	resource_field.h:22-24
@@ -257,8 +253,6 @@ SKELETON.md	npc.h:134
 SKELETON.md	npc_ai.cpp:1372
 SKELETON.md	npc_ai.cpp:2313
 SKELETON.md	npc_ai.cpp:2862
-SKELETON.md	npc_ai.cpp:3479
-SKELETON.md	npc_ai.cpp:3608
 SKELETON.md	npc_ai.cpp:917
 SKELETON.md	npc_ai.h:102
 SKELETON.md	npc_spawn.cpp:216
@@ -525,10 +519,7 @@ macro-registry.md	npc_ai.cpp:2850-2960
 macro-registry.md	npc_ai.cpp:2862
 macro-registry.md	npc_ai.cpp:2978
 macro-registry.md	npc_ai.cpp:2999-3012
-macro-registry.md	npc_ai.cpp:3113-3115
-macro-registry.md	npc_ai.cpp:3508-3514
 macro-registry.md	npc_ai.cpp:383
-macro-registry.md	npc_ai.cpp:4248
 macro-registry.md	npc_ai.cpp:834-849
 macro-registry.md	npc_ai.h:231
 macro-registry.md	npc_spawn.cpp:247

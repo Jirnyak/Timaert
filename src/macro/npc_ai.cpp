@@ -1,8 +1,9 @@
 // Macroworld NPC AI — full behaviour set, faithful port of `npc-ai.ts`.
 #include "macro/npc_ai.h"
+#include "macro/squad_ai/module_window.h"  // окно модуля: своя строка, вид, пульт
+#include "macro/squad_ai/module_entries.h"  // точки входа модулей для kAiModuleRows
 #include "core/caps.h"             // kUnifiedCap — резерв скрэтчей порядка
 #include "macro/upkeep_window.h"   // ОДИН суд границы на всякий контейнер
-#include "macro/characters.h"  // стол анкет — ступень лестницы поведения
 #include "macro/chronicle.h"
 #include "macro/currency.h"
 #include "macro/deal.h"   // deal/unit_mass_g/kNoCarryLimitG — один глагол обмена
@@ -48,29 +49,17 @@
 namespace sm {
 
 
-namespace {
-
 // TS uses Math.random() inside behaviours. The C++ port uses App-owned
 // MacroNpcAiRuntime RNG so world resets do not inherit hidden module state.
-inline int rand_int(const TickContext& ctx, int range) {
+int rand_int(const TickContext& ctx, int range) {
     if (range <= 0) return 0;
     return int(ctx.rng->next_u32() % std::uint32_t(range));
 }
 
-inline float rand_f01(const TickContext& ctx) { return ctx.rng->next_f01(); }
+namespace {
 
 // (МАССА ЕДИНИЦЫ СТРОКИ — `unit_mass_g@src/macro/deal.h`: уехала к двери
 // `deal` вместе с клампом спины; провенанс килограмма существа стоит там.)
-
-// Store свипа — из конверта (make_tick_context кладёт адрес в ctx.mw.store).
-// Фолбэка через ctx реестра больше нет (M-150 ломоть A): store в конверте
-// обязателен, звонящий проверяет ctx.mw.store.
-inline MacroStore& store_mw(const MacroWorld& mw) {
-    return *mw.store;
-}
-inline MacroStore& store_ctx(const TickContext& ctx) {
-    return store_mw(ctx.mw);
-}
 
 // ── РЕЗОЛВ МЕСТА В ДУМКЕ: ОРДИНАЛ → СЛОТ (ломтик F) ─────────────────────
 // Думка зовёт этот резолв по нескольку раз за think, поэтому он обязан быть
@@ -96,6 +85,8 @@ inline std::uint16_t rooted_slot_by_id(const TickContext& ctx, int id) {
     return rooted_slot_of(store_ctx(ctx), id);
 }
 
+}  // namespace
+
 // УРНА ГОРОДОВ — ОДИН предикат на оба рейса (торговец и кочевник). Он стоял
 // ДВУМЯ побайтово одинаковыми лямбдами в двух соседних поведениях, и это был
 // второй ответ на один вопрос мира (DOD п.6), просто спрятанный в области
@@ -103,8 +94,8 @@ inline std::uint16_t rooted_slot_by_id(const TickContext& ctx, int id) {
 // `macro/rooted_iter.h`): ось рода ТЕЛА отвечает «город ли это», второго
 // списка городов в мире нет. `notId` — ординал, который спрашивающий
 // исключает (свой дом у торговца, текущая цель у кочевника).
-inline bool is_other_city(const MacroStore& st, std::uint16_t slot,
-                          int notId) {
+bool is_other_city(const MacroStore& st, std::uint16_t slot,
+                   int notId) {
     return SquadType(st.runtime[slot].squadType) == SquadType::City
            && int(st.spawnId[slot].index) != notId;
 }
@@ -150,6 +141,8 @@ std::uint32_t home_cell(MacroHandle self, const TickContext& ctx) {
     if (slot == kMacroNoSlot) return ecs::kNoCell;
     return store_ctx(ctx).cell[slot].idx;
 }
+
+namespace {
 
 // ДОМ АРТЕЛИ — СЛОТ тела места; kMacroNoSlot = дома нет. (Спутник
 // home_inventory умер с переводом сдачи груза на deal: сделка адресуется
@@ -264,14 +257,7 @@ void settle_exhaustion(MacroHandle e, const ecs::Pools& hp,
 // это всё, что вес читает (M-412 — тем же входом его зовёт и марш игрока).
 float cell_weight(const PathCostData* pc, std::uint32_t cell);
 
-// РЕФЛЕКС УГРОЗЫ — ОБЪЯВЛЕН ЗДЕСЬ, ПОТОМУ ЧТО ЕГО ЗОВУТ МОДУЛИ, А НЕ ДИСПЕТЧ
-// (первая половина M-307, ломоть 5а M-72). Преамбула рефлексов переехала из
-// `dispatch` в головы четырёх думающих модулей, и три из них написаны ВЫШЕ
-// определения этого тела — та же причина, по которой выше объявлены ритм и
-// вес клетки. Два других рефлекса (`scent_squad_deposit`, `scent_hunt_step`)
-// объявления здесь не просят: они публичны и приезжают из `npc_ai.h`.
-bool squad_threat_step(MacroHandle self, const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
-                       ecs::Pools& pools, const TickContext& ctx);
+}  // namespace
 
 // ПОГОНЯ КОНЧИЛАСЬ — ЕЁ ПРЕДИКАТ УМИРАЕТ ВМЕСТЕ С НЕЙ (M-468; вердикт
 // владельца 2026-11-12 «да давай» на простую форму: кто отпускает погоню,
@@ -283,9 +269,11 @@ bool squad_threat_step(MacroHandle self, const ecs::NPCKind& kind, ecs::MacroNpc
 // оставался лежать в той же колонке, которой роль называет свой рынок или
 // должника. Пустая цель выразима общей дверью записи: адреса нет, «чего
 // ищу» — ноль; отдельной двери под это не заводится.
-inline void chase_release(ecs::SquadGoal& g) {
+void chase_release(ecs::SquadGoal& g) {
     ecs::goal_set(g, ecs::kNoCell, 0u, 0, std::uint8_t(NPCState::Idle));
 }
+
+namespace {
 
 // (No can_stand_at, and no nav_can_stand behind it. THE standing predicate
 // died 2026-10-06 — «да уничтодить вторую стену она портит всё (ВЕСА БЫЛО
@@ -659,9 +647,9 @@ std::uint32_t find_nearest_tree_grid(const MacroWorld& mw, const TreeGrid& g,
     return found;
 }
 
-// ── Behaviours ────────────────────────────────────────────────
+}  // namespace
 
-using NS = NPCState;
+// ── Behaviours ────────────────────────────────────────────────
 
 // ПОВОДОК ПРОГУЛКИ: бродящий дальше стольких клеток пути от дома сперва
 // возвращается. Число балансное; прежде стояло литералом `400.0f` (квадрат
@@ -698,8 +686,6 @@ void ai_home_wanderer(MacroHandle self,
     // В пути (Wandering/Returning) модулю решать нечего: к цели везут ноги
     // свипа, они же сделают его Idle по прибытии.
 }
-
-} // namespace
 
 // ПОДЪЁМ ИЗ ЛАГЕРЯ — ОДНА ДВЕРЬ, И ЭТО НЕ СТИЛЬ (DOD п.6; сведено 2026-10-12,
 // M-254). ЛАГЕРЬ — ПАУЗА, НЕ АМНЕЗИЯ (`stateAfterPause@src/ecs/components.h`):
@@ -833,11 +819,6 @@ std::uint32_t route_fear_(const TickContext& ctx, std::uint32_t a,
                           std::uint32_t b);
 long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
                           std::uint16_t traderSlot, std::int64_t capG);
-// ФОЛБЭКИ — ТОЖЕ ГЛАГОЛЫ ПУЛЬТА: сквад без дома и сквад без цели ходят
-// чужими модулями, и право позвать их даёт пульт, а не прямой вызов из тела.
-void ai_nomad(MacroHandle self, ecs::MacroNpcRuntime& rt,
-              ecs::Pools& pools, const TickContext& ctx);
-
 
 // Приёмник-МЕСТО (CANON S10): склад + счёт — дверь прихода гасит долг СРАЗУ
 // тем, что упало. Сумки в Depot не заворачиваются (неявная конверсия из
@@ -847,1407 +828,443 @@ inline Depot depot_(std::uint16_t slot, const MacroWorld& mw) {
     return Depot(st.inventory[slot].inv, st.upkeep[slot].needDebt);
 }
 
-// The sell-run machine (defined with the trade behaviours below): the
-// peasant crew whose errand is Sell walks the SAME machine the vendor
-// walked — reuse, not a second copy (CANON S26).
-void ai_vendor(MacroHandle self,
-               ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
-               const TickContext& ctx);
+}  // namespace
 
-// ═════ ФОРМА АИ-МОДУЛЯ — ОБРАЗЕЦ (ломоть 4 M-72) ═════════════════════════
-// Вердикт владельца 2026-10-22 №1 (CANON «AI-МОДУЛИ»): «модуль получает
-// const-КОНТЕКСТ (чтение мира родами пакета) и ПУЛЬТ (глаголы-двери); мира
-// в руках у модуля нет, запись мимо пульта несобираема». Ограничение ставит
-// ПОДПИСЬ (прецедент S29): телу модуля передаются ровно три вещи — СВОЯ
-// СТРОКА (мутабельные колонки самого сквада), ВИД (const-чтение мира) и
-// ПУЛЬТ (глаголы). TickContext лежит в виде и пульте ПРИВАТНО: дотянуться
-// до MacroWorld из тела модуля не из чего — стена стоит подписью, не ревью.
-// Форму СКОПИРОВАЛИ `caravan_think` и `collector_think` (рейс сбыта и
-// сборщик дани) — у трёх модулей ОДИН вид и ОДИН пульт, и всякая новая
-// нужда приходит в них const-методом либо глаголом. Остался модуль места
-// (ломоть 5); переходники-пятёрки умрут одним флипом подписи kAiModuleRows,
-// когда мигрирует последний модуль.
+// ── ОКНО МОДУЛЯ: ТЕЛА ВИДА И ПУЛЬТА ─────────────────────────────────────
+// Объявления и законы каждого метода — в окне
+// (`src/macro/squad_ai/module_window.h`), которое включает всякий модуль;
+// здесь только тела. Окно знает мир через конверт думки, и тела его
+// дверей поэтому живут рядом с самим миром ИИ, а не в модуле.
 
-// СВОЯ СТРОКА: колонки самого сквада. Себя модуль пишет без пульта — право
-// на МИР и на чужое даёт только глагол.
-struct AiSelf {
-    MacroHandle h;
-    // СВОЯ КЛЕТКА — сама колонка сквада, не её копия на время думки
-    // (M-462): второго носителя позиции нет.
-    const ecs::MacroCell& cell;
-    ecs::MacroNpcRuntime& rt;
-    ecs::Pools& pools;
-    ecs::SquadGoal& goal;
-    Inventory& bag;   // свой контейнер: руки, спина, души
-    // СВОЯ анкета (ЗАКОН АНКЕТЫ п.2: «анкета источник») — эффективное
-    // рековери акта считается из НЕЁ той же дверью, что у руки внизу.
-    const CharacterSheet& sheet;
-};
+AiView::AiView(const TickContext& ctx) : ctx_(ctx) {}
 
-// ВИД: const-чтение мира. Новая нужда модуля = новый const-метод, никогда
-// прямой MacroWorld в теле.
-class AiView {
-public:
-    explicit AiView(const TickContext& ctx) : ctx_(ctx) {}
-    int map_w() const { return ctx_.mapW; }
-    // Клетка дома; `ecs::kNoCell` = дома нет.
-    std::uint32_t home(MacroHandle self) const {
-        return home_cell(self, ctx_);
-    }
-    std::uint16_t home_slot(MacroHandle self) const {
-        return home_rooted_slot(self, ctx_);
-    }
-    // ── ВОПРОСЫ К МИРУ О МЕСТАХ РАБОТЫ — их вправе задать всякий сквад;
-    // `ecs::kNoCell` = такого места в округе нет. Вид отвечает «где»; идти ли
-    // и зачем — решает модуль.
-    // Ближайшее дерево от клетки `at`, в одной округе навигации с домом.
-    std::uint32_t tree_near(std::uint32_t at, std::uint32_t home) const {
-        return find_home_tree(ctx_, at, home);
-    }
-    // Самая спелая парцелла рода `parcel` у дома (пашня, лён).
-    std::uint32_t field_near(FeatureType parcel, std::uint32_t at,
-                             std::uint32_t home) const {
-        return find_home_field(ctx_, at, home, parcel);
-    }
-    // Самая богатая зверем клетка у дома.
-    std::uint32_t fauna_near(std::uint32_t at, std::uint32_t home) const {
-        return find_home_fauna(ctx_, at, home);
-    }
-    // Ближайшая живая жила округи дома.
-    std::uint32_t vein_near(std::uint32_t home) const {
-        return find_home_deposit(ctx_, home);
-    }
-    // Что отдаст клетка поля `row`: ординал предмета (его называет фича
-    // клетки, иначе сам ряд); -1 — предмета нет.
-    int yield_at(ResourceFieldId row, std::uint32_t cell) const {
-        return field_yield_ordinal(ctx_.mw, row, cell);
-    }
-    // ВО СКОЛЬКО СКВАД ЦЕНИТ СТРОКУ — числа стороны для ядра оценки, той же
-    // дверью, какой их берёт сделка (`side_row@src/macro/deal.h`).
-    RowSide row_of(std::uint16_t slot, int itemIdx) const {
-        const ItemDef* d = item_def_at(itemIdx);
-        return side_row(store_ctx(ctx_), slot, itemIdx, d ? d->value : 0);
-    }
-    int field_read(ResourceFieldId row, std::uint32_t cell) const {
-        return resource_field_read(ctx_.mw, row, cell);
-    }
-    // «НЕ ДАЛЬШЕ R КЛЕТОК ПУТИ» — геометрия над индексами
-    // (`cell_within@src/core/torus.h`). «Я ДОМА» методом не является вовсе:
-    // это равенство двух индексов, и модуль пишет его как есть (M-461 —
-    // здесь стояли пять сравнений с порогом ног, число ядра в модулях).
-    bool within(std::uint32_t a, std::uint32_t b, int cells) const {
-        return cell_within(a, b, cells, ctx_.mapW);
-    }
-    // СЧЁТ НУЖДЫ СВОЕЙ СТРОКИ — вход оценки запаса (мост
-    // `row_side@src/macro/economy.h` читает остаток долга и только его);
-    // nullptr — мира нет.
-    const std::int32_t* need_account(std::uint16_t slot) const {
-        if (!ctx_.mw.store || slot == kMacroNoSlot) return nullptr;
-        return ctx_.mw.store->upkeep[slot].needDebt;
-    }
-    // ЧЬЮ МОНЕТУ ЧЕКАНИТ ЭТОТ СКВАД — своя колонка фракции (`faction_or_freefolk`
-    // сводит вольных к имперской семье; -1 — двора нет).
-    int coin_faction(std::uint16_t slot) const {
-        if (!ctx_.mw.store || slot == kMacroNoSlot) return -1;
-        return faction_or_freefolk(
-            std::int16_t(ctx_.mw.store->kind[slot].factionIdx));
-    }
-    // ── МЕСТО: ОДИН ПЕРЕХОДНИК ОРДИНАЛА И ТРИ ЕГО КОЛОНКИ ────────────────
-    std::uint16_t rooted_slot(int id) const { return rooted_slot_by_id(ctx_, id); }
-    std::uint32_t rooted_id(std::uint16_t slot) const {
-        return store_ctx(ctx_).spawnId[slot].index;
-    }
-    std::uint32_t rooted_cell(std::uint16_t slot) const {
-        return store_ctx(ctx_).cell[slot].idx;
-    }
-    bool is_settlement(std::uint16_t slot) const {
-        return rooted_is_settlement(
-            SquadType(store_ctx(ctx_).runtime[slot].squadType));
-    }
-    // СТОЯЩИЙ СКВАД ЦЕЛИ — ОДНА ДВЕРЬ НА ТРИ ЧИТАТЕЛЯ РЕЙСА (прежде этот
-    // тернарник стоял ТРЕМЯ написаниями в одном модуле: «не дома», погрузка и
-    // сделка на рынке — DOD п.6). kMacroNoSlot = цель сквадом не названа,
-    // названный умер либо он не из стоящих, и это ЗНАЧЕНИЕ, а не ошибка:
-    // рейсу тогда некуда ехать. «Из стоящих ли он» отвечает ось типа САМОГО
-    // названного (её гейтит резолвер `rooted_slot_by_id`), а не тег цели: род
-    // цели у рынка и у добычи погони один (M-459). Остаток погони за
-    // БРОДЯЧИМ сквадом поэтому рынком не прочтётся — его ординал не стоящего.
-    // Остаток погони за СТОЯЩИМ врагом (логово, чужой город) эта дверь
-    // вернула бы — сегодня недостижимо: аватары рейса и сборщика не бойцы, и
-    // рефлекс погоню им не пишет. Долг назван рядом M-468 реестра: рефлекс и
-    // роль делят одну колонку цели.
-    std::uint16_t goal_rooted(const ecs::SquadGoal& g) const {
-        return ecs::goal_kind(g.what) == ecs::GoalKind::Squad
-            ? rooted_slot_by_id(ctx_, int(ecs::goal_ordinal(g.what)))
-            : kMacroNoSlot;
-    }
-    // Долг вассала на ребре Suzerain (M-245) — есть ли что взыскивать.
-    bool owes_tithe(std::uint16_t rootedSlot) const {
-        return sm::owes_tithe(store_ctx(ctx_), rootedSlot);
-    }
-    // МОЙ ДОЛЖНИК — ПЕРВЫЙ ВАССАЛ С НЕПОГАШЕННЫМ ДОЛГОМ, И ВОПРОС ЭТОТ
-    // ЗАДАЁТСЯ СВОИМ РЕЕСТРОМ СВЯЗЕЙ, А НЕ ПОИСКОМ ПО МИРУ. Зеркало
-    // `Stance::Vassal` пишет та же дверь, что ставит `Suzerain`
-    // (`set_relation@src/bus/store.h`) — роль несимметрична по природе
-    // (ФРЕЙМ род 6), поэтому «кому я сюзерен» лежит колонкой МОЕЙ строки, и
-    // обходить мир незачем. Обход плотный: занятые записи идут подряд от
-    // нуля, первая `Stance::None` закрывает проход — тот же стоп, которым
-    // ходит `tithe_of@src/bus/store.h`.
-    // kMacroNoSlot = должника нет, и это ЗНАЧЕНИЕ: сборщику некого доить.
-    std::uint16_t owing_vassal(std::uint16_t suzerainSlot) const {
-        if (suzerainSlot == kMacroNoSlot) return kMacroNoSlot;
-        const MacroStore& st = store_ctx(ctx_);
-        const Interests& in = st.interests[suzerainSlot];
-        for (int i = 0; i < kMaxInterests; ++i) {
-            const Interest& it = in.slots[i];
-            if (it.stance == std::uint8_t(Stance::None)) break;
-            if (it.stance != std::uint8_t(Stance::Vassal)) continue;
-            // Ординал → слот одной дверью резолва (M-271); мёртвый вассал
-            // отвечает kMacroNoSlot и просто пропускается.
-            const std::uint16_t slot = rooted_slot_by_id(ctx_, it.object);
-            if (slot != kMacroNoSlot && sm::owes_tithe(st, slot)) return slot;
-        }
-        return kMacroNoSlot;
-    }
-    // ЕСТЬ ЛИ У МЕНЯ ЖИВОЙ РЕБЁНОК ЭТОГО ТИПА — гейт дубля перед рождением,
-    // И ОТВЕЧАЮТ НА НЕГО СВОИ РЁБРА, А НЕ СКАН МИРА. Вопрос о СВОИХ детях
-    // есть вопрос о СВОЕЙ строке: `set_relation@src/bus/store.h` ставит
-    // родителю зеркало `Stance::Child` той же записью, которой ставит
-    // ребёнку `Parent`, — значит дети перечислены колонкой МОЕЙ строки, как
-    // вассалы у `owing_vassal` выше. Тип на ребре не лежит и не должен:
-    // ребро говорит «кто», а «что он делает» есть колонка ЕГО строки
-    // (`runtime.squadType`, ЗАКОН АНКЕТЫ п.1) — поэтому форма двухшаговая,
-    // ровно та же, которой `owing_vassal` спрашивает долг.
-    //
-    // ЗДЕСЬ СТОЯЛ ПРОХОД КАПОМ, И СНЕСЁН ОН ЗА ФОРМУ, А НЕ ЗА СКОРОСТЬ
-    // (DOD п.6; ЗАКОН КЛЕТОЧНОГО КАРКАСА п.3 — «скан всех записей … тот же
-    // класс дефекта, что скан жил у геологии, только на энтити»): два метода
-    // ОДНОГО класса, стоящие в сорока строках друг от друга, спрашивали «кто
-    // со мной связан» ДВУМЯ разными способами. Структура старше чисел
-    // (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ), и это здесь единственный довод.
-    //
-    // ЧИСЛА НАЗВАНЫ ОБА, ВКЛЮЧАЯ ТО, КОТОРОЕ ВЫИГРЫША НЕ ПОКАЗАЛО. Зонд в
-    // самой точке считал ОБЕ формы одним прогоном (72 дня, сид 7): вызовов
-    // **99 439**, итераций КАПОМ **400 930 850**, итераций РЁБРАМИ за ТОТ ЖЕ
-    // ответ **653 692** — **613×**, в установившемся режиме ≈ 39.9 млн
-    // итераций в сутки. А СТЕННОГО ВЫИГРЫША НЕТ: замер назад-к-назад на
-    // простое дал `aiMsDay` **2205 / 2215** мс капом против **2237 / 2366**
-    // мс рёбрами, то есть разницу ВНУТРИ пола шума этой колонки. Значит скан
-    // стоил около процента прохода думки — ровно поэтому его никто и не
-    // заметил, — и ускорением эта правка НЕ является. Что она покупает
-    // кроме формы: цена ответа перестала расти с КАПОМ, то есть подъём
-    // `kUnifiedCap` (ЗАКОН КАПА — наше число, его можно назвать заново)
-    // больше не удваивает здесь работу.
-    //
-    // Обход плотный и ограничен `kMaxInterests`: занятые записи идут подряд
-    // от нуля, первая `Stance::None` закрывает проход (`interest_clear`
-    // затыкает дыру последней записью — плотность есть часть формы).
-    //
-    // ПОВЕДЕНИЕ НЕ СДВИНУЛОСЬ, И ЭТО ПАРИТЕТ, А НЕ НАДЕЖДА: 2 сида × 128
-    // дней — `places_*.tsv` ПОБАЙТОВО идентичны, из 134 колонок
-    // `world_*.tsv` разошлась ОДНА, `aiMsDay` (стенное время прибора).
-    //
-    // РЁБРА НЕ ГНИЮТ, И ЭТО ТОЖЕ ЗАМЕР, А НЕ НАДЕЖДА (256 дней, сид 7):
-    // рёбер `Child` у мест **≈ 2488** (по одному на место), УСТАРЕВШИХ
-    // (ординал мёртв или слот прибран) — **0**, максимум занятых записей у
-    // места **60–61 ПЛОСКО** из 128, упёршихся в кап — **0**. Переезд
-    // ребёнка к новому дому снимает старое ребро той же дверью
-    // (`set_relation` чистит зеркало), а ординалы монотонны, поэтому мёртвый
-    // ребёнок честно не резолвится и просто пропускается.
-    //
-    // МЕСТО РЕБЁНКОМ СЕБЕ НЕ ЯВЛЯЕТСЯ — ВЕРДИКТ ВЛАДЕЛЬЦА 2026-10-25.
-    // Self-ребро `Parent` у места значит «мой дом — я сам», а не «я свой
-    // ребёнок», и зеркала `Child` оно не имеет по построению (`set_relation`:
-    // «self-ребро Parent зеркала не имеет»). Прежний скан капом отвечал на
-    // вопрос места о СВОЁМ типе «да» — через это самое self-ребро, — и это
-    // был АРТЕФАКТ ФОРМЫ, а не закон: ответ никем не спрашивался (деревня
-    // спрашивает про типы артелей, город — `Collector` и `Caravan`), поэтому
-    // смена формы его и сняла.
-    //
-    // ЧИТАТЕЛИ — МОДУЛИ ТИПОВ: `village_think` спрашивает про каждый тип
-    // артели (M-488), `city_think` — про `Collector` и `Caravan`. Это гейт
-    // ДУБЛЯ перед рождением («артель этого типа у меня есть, второй не
-    // нужно»), и он же делает ненужной колонку «число рождённых»: выводимое
-    // не хранится (ЗАКОН АНКЕТЫ п.2, шрам трёх носителей). Свидетели гейта —
-    // `tests/rooted_module_day_test.cpp` (пятые сутки, душ с избытком, артель
-    // по-прежнему ОДНА) и `tests/artel_types_test.cpp` (одна на тип).
-    bool has_child(MacroHandle self, SquadType t) const {
-        const MacroStore& st = store_ctx(ctx_);
-        if (!st.valid(self)) return false;
-        const Interests& in = st.interests[self.slot];
-        for (int i = 0; i < kMaxInterests; ++i) {
-            const Interest& it = in.slots[i];
-            if (it.stance == std::uint8_t(Stance::None)) break;
-            if (it.stance != std::uint8_t(Stance::Child)) continue;
-            // Ординал → слот ОДНОЙ дверью резолва (M-271); дети суть ХОДОКИ,
-            // поэтому дверь нужна общая, а не местная. Мёртвый ребёнок не
-            // резолвится, прибранный — отсеивается байтом `dead`, как и у
-            // прежнего прохода.
-            const MacroHandle ch =
-                macro_handle_by_spawn_id(st, std::uint32_t(it.object));
-            if (!st.valid(ch) || st.dead[ch.slot] != 0) continue;
-            if (st.runtime[ch.slot].squadType == std::uint8_t(t)) return true;
-        }
-        return false;
-    }
-    // ДЕТИ У ПОРОГА: всякий мой живой ребёнок, стоящий без дела в моей
-    // клетке, — слот в `fn`. Что у него в трюме, вид не судит (это вопрос
-    // того, кто спрашивает). Холодный проход по интересам — суточный каденс.
-    template <class Fn>
-    void each_child_here(MacroHandle self, Fn&& fn) const {
-        const MacroStore& st = store_ctx(ctx_);
-        if (!st.valid(self)) return;
-        const Interests& in = st.interests[self.slot];
-        for (int i = 0; i < kMaxInterests; ++i) {
-            const Interest& it = in.slots[i];
-            if (it.stance == std::uint8_t(Stance::None)) break;
-            if (it.stance != std::uint8_t(Stance::Child)) continue;
-            const MacroHandle ch =
-                macro_handle_by_spawn_id(st, std::uint32_t(it.object));
-            if (!st.valid(ch) || st.dead[ch.slot] != 0) continue;
-            if (st.runtime[ch.slot].state != std::uint8_t(NS::Idle)
-                || st.cell[ch.slot].idx != st.cell[self.slot].idx) {
-                continue;
-            }
-            fn(ch.slot);
-        }
-    }
-    // Есть ли у МОЕГО ДОМА живой ребёнок типа `t` — тот же вопрос, заданный
-    // ребёнком о своей семье (сам спрашивающий тоже ребёнок дома).
-    bool has_sibling(MacroHandle self, SquadType t) const {
-        const MacroStore& st = store_ctx(ctx_);
-        const std::uint16_t homeSlot = home_rooted_slot(self, ctx_);
-        return homeSlot != kMacroNoSlot
-            && has_child(handle_at(st, homeSlot), t);
-    }
-    // ПУТЬ и СТРАХ МАРШРУТА — две меры решения «дальше или домой», обе
-    // над одной дверью навигации (nav_path_cost), обе чистое чтение.
-    // Темп — ПАРАМЕТР, и подаёт его звонящий из СВОЕЙ анкеты: мера решения
-    // обязана идти тем же темпом, что ноги (M-6/M-436, вердикт владельца).
-    // Путь — В ТИКАХ МИРА: решение рейса сравнивает темпы прибыли в целых, и
-    // дробные сутки ему ни к чему. −1 = пути нет (ответ мира). (Дверь тех
-    // же суток флоатом, `march_days`, звала снесённая рулетка «дальше против
-    // домой» и ушла с ней.)
-    std::int64_t march_ticks(std::uint32_t a, std::uint32_t b,
-                             float moveMult) const {
-        const float days = march_days_(ctx_, a, b, moveMult);
-        return days < 0.0f ? -1
-                           : std::int64_t(days * float(kTicksPerDay));
-    }
-    std::uint32_t route_fear(std::uint32_t a, std::uint32_t b) const {
-        return route_fear_(ctx_, a, b);
-    }
-    // МОЙ РЕБЁНОК ЭТОГО ТИПА, ЖДУЩИЙ ГРУЗА ДОМА: стоит в моей клетке, свободен
-    // (`Idle`), трюм пуст — тем же вопросом о пустоте, каким сам рейс судит
-    // «нечего везти». kMacroNoSlot = такого нет. Обход — свои рёбра `Child`,
-    // та же форма, что у `has_child` выше: о своих детях спрашивают свою
-    // строку, а не мир.
-    std::uint16_t idle_child_at_home(MacroHandle self, SquadType t) const {
-        const MacroStore& st = store_ctx(ctx_);
-        if (!st.valid(self)) return kMacroNoSlot;
-        const Interests& in = st.interests[self.slot];
-        for (int i = 0; i < kMaxInterests; ++i) {
-            const Interest& it = in.slots[i];
-            if (it.stance == std::uint8_t(Stance::None)) break;
-            if (it.stance != std::uint8_t(Stance::Child)) continue;
-            const MacroHandle ch =
-                macro_handle_by_spawn_id(st, std::uint32_t(it.object));
-            if (!st.valid(ch) || st.dead[ch.slot] != 0) continue;
-            const ecs::MacroNpcRuntime& crt = st.runtime[ch.slot];
-            if (crt.squadType != std::uint8_t(t)
-                || crt.state != std::uint8_t(NS::Idle)
-                || st.cell[ch.slot].idx != st.cell[self.slot].idx)
-                continue;
-            const Inventory& hold = st.inventory[ch.slot].inv;
-            if (inventory_mass_g(hold) > 0 || inventory_value(hold) > 0)
-                continue;
-            return ch.slot;
-        }
-        return kMacroNoSlot;
-    }
-private:
-    const TickContext& ctx_;
-};
+int AiView::map_w() const { return ctx_.mapW; }
 
-// (Здесь жил `kCraftThinksPerDay` = kTicksPerDay/kAiTicks — день, пересчи-
-// танный в ДУМКИ под прежний носитель `stateTimer`. Гейт занятости ходит
-// МИРОВЫМИ ТИКАМИ, и пересчёт умер вместе с единицей: день есть
-// `kTicksPerDay`, своего имени у него здесь больше нет.)
-
-// ПУЛЬТ: глаголы-двери — всё, чем модуль касается мира и соседей.
-class AiPult {
-public:
-    explicit AiPult(const TickContext& ctx) : ctx_(ctx) {}
-    // ── АКТЫ СКВАДА: МОДУЛЬ НАЗЫВАЕТ «ЧТО И СКОЛЬКО», МЕХАНИКА — ЗДЕСЬ ────
-    // Право, цена SP (делённая на рабочих юнитов) и восстановление — одна
-    // дверь на всякий акт всякого сквада (`charge_squad_act@src/macro/squad_act.h`).
-    // Глагол решения не принимает и рода сквада не знает.
-    static ActSelf act_self(AiSelf& s) {
-        return ActSelf{s.pools, s.rt, s.sheet, s.bag};
-    }
-    // ДОБЫТЬ: транзакция «поле → свой контейнер» объёмом до `want` (одна дверь
-    // поля), оплаченная по ФАКТУ взятого строкой акта `action`. Возвращает
-    // взятое; ноль — земля не дала или тело занято: акта не было, и сквад не
-    // заплатил ничем. Какое поле, каким актом и сколько — называет модуль.
-    int gather(AiSelf& s, ResourceFieldId row, std::uint8_t action,
-               std::uint32_t cell, int want) {
-        const ActionDef& act = action_def(int(action));
-        ActSelf self = act_self(s);
-        if (!squad_act_ready(self, act)) return 0;
-        MacroWorld mw = ctx_.mw;  // the envelope, whole — never a
-                                  // partial re-pick of its layers
-        const int got = field_harvest(mw, row, cell, want, s.h.slot);
-        if (got > 0) charge_squad_act(self, act, got);
-        return got;
-    }
-    // СКРАФТИТЬ `batches` партий строки `outIdx` из своего инвентаря. Возвращает
-    // сделанные партии (0 — акта не было, мир не тронут).
-    int craft(AiSelf& s, int outIdx, int batches) {
-        ActSelf self = act_self(s);
-        return squad_craft(self, outIdx, batches);
-    }
-    // ЦЕНА АКТА В SP — вопрос политики модуля («хватит ли бара»): трудиться
-    // ли в долг, решает он, у двери отказа по усталости нет.
-    std::int64_t act_cost(AiSelf& s, std::uint8_t action,
-                          std::int64_t volume) const {
-        return squad_act_cost(act_self(s), action_def(int(action)), volume);
-    }
-    // ПЕРЕДАТЬ: `n` единиц строки `defIdx` едут от сквада `from` скваду `to`
-    // одной сделкой с пустым встречным лотом — взаимодействие пары, ни цены,
-    // ни времени. Кому и сколько — решает модуль; приход гасит счёт берущего
-    // сразу (закон самой двери `deal@src/macro/deal.h`).
-    void hand(std::uint16_t from, std::uint16_t to, int defIdx, int n) {
-        if (!ctx_.mw.store || from == kMacroNoSlot || to == kMacroNoSlot
-            || defIdx < 0 || n <= 0) {
-            return;
-        }
-        DealLine lot[1];
-        lot[0] = DealLine{};
-        lot[0].want = n;
-        lot[0].def = std::uint16_t(defIdx);
-        (void)deal(store_ctx(ctx_), from, to, lot, {},
-                   kNoCarryLimitG, kNoCarryLimitG);
-    }
-    // (ГЛАГОЛА НОГ ЗДЕСЬ БОЛЬШЕ НЕТ — M-2. Стоял `march(p, rt, x, y)`, и им
-    //  каждый модуль вёз себя сам. Модуль пишет ЦЕЛЬ в свою строку, везут к
-    //  ней ноги свипа: шагнуть из тела модуля теперь нечем — подписью.)
-    int rand(int n) { return rand_int(ctx_, n); }
-    std::uint32_t rand_nearby(std::uint32_t around, int radius) {
-        return cell_nearby(around, radius, ctx_);
-    }
-    // Летопись: выработанная жила — факт мира (FactKind::Drained).
-    void drained_fact(MacroHandle self, int x, int y, ResourceFieldId row) {
-        record_rooted_fact(store_ctx(ctx_), *ctx_.mw.gs, FactKind::Drained,
-                             parent_of(store_ctx(ctx_), self.slot),
-                             x, y, int(row) + 1);
-    }
-    // ── ЧУЖИМ МОДУЛЕМ — ТОЖЕ ГЛАГОЛОМ ───────────────────────────────────
-    // Сквад без дома ходит бродягой, сквад без цели — вокруг дома. Это не
-    // «фолбэк на всякий случай», а два законных ответа мира: дома нет —
-    // значит некуда возить, цели нет — значит нечего решать.
-    void nomad(AiSelf& s) { ai_nomad(s.h, s.rt, s.pools, ctx_); }
-    void home_wander(AiSelf& s) {
-        ai_home_wanderer(s.h, s.rt, s.pools, ctx_);
-    }
-    // ПОГРУЗКА РЕБЁНКА — ПЕРЕНОС «РОДИТЕЛЬ → РЕБЁНОК» (владелец 2026-11-12:
-    // «город рождает его и загружает»). Груз отдаёт тот, чей склад: одна
-    // дверь плана и исполнения (`plan_home_load_`) — то, что ребёнок со
-    // свободной спиной ценит выше родителя, выгоднейшее на грамм первым.
-    // ЗДЕСЬ СТОЯЛ `load_home`, И ЗВАЛ ЕГО САМ РЕЙС: ребёнок брал со склада
-    // дома своей рукой, то есть решение о чужом инвентаре принимал не его
-    // хозяин.
-    void load_child(AiSelf& s, std::uint16_t child) {
-        MacroStore& st = store_ctx(ctx_);
-        plan_home_load_(st, s.h.slot, child,
-                        carry_capacity_g(st.runtime[child],
-                                         st.inventory[child].inv));
-    }
-    // СДЕЛКА НА РЫНКЕ — дверь торговли (S10/S25): обе ноги атомарны, сила
-    // и спина у каждой стороны свои и читаются дверями стороны
-    // (`side_row`, `side_trade_power`). Дома сделка не знает вовсе: купец
-    // судит рынок, на котором стоит, и растит свою оценку своего трюма
-    // (`trade_caravan_at_station`).
-    CaravanDeal trade_at(AiSelf& s, std::uint16_t market) {
-        MacroStore& st = store_ctx(ctx_);
-        return trade_caravan_at_station(
-            st, s.h.slot, carry_capacity_g(s.rt, s.bag), market);
-    }
-    // Летопись: состоявшийся обмен — факт мира (FactKind::Traded).
-    void traded_fact(AiSelf& s, int x, int y, int value, int marketId) {
-        MacroStore& st = store_ctx(ctx_);
-        record_rooted_fact(st, *ctx_.mw.gs, FactKind::Traded,
-                             parent_of(st, s.h.slot), x, y, value, marketId);
-    }
-    // СЛЕДУЮЩАЯ СТАНЦИЯ — рулетка по весу `1/(1 + дни)` среди жилых мест
-    // соседних округ: глагол, потому что КИДАЕТ КОСТЬ (дневная струя RNG).
-    // Пара выходных координат двери здесь не берётся: решение называет
-    // МЕСТО, а его клетку спрашивают у колонок места (вид), и прежние два
-    // мёртвых локала умерли вместе с этим вопросом.
-    int next_station(std::uint32_t at, int currentId, int prevId,
-                     float moveMult) {
-        return pick_next_station_(ctx_, at, currentId, prevId, moveMult);
-    }
-    // ВЫЛИВ СУМКИ ДОМОЙ — ОДНА сделка лотом по всему словарю плюс остаток
-    // стоимости той же дверью цены (ломоть 2 M-72). Один глагол на оба рейса
-    // (сбыт и дань): вопрос у них один — «всё, что привёз, на склад дома».
-    void dump_bag_home(AiSelf& s, std::uint16_t homeSlot) {
-        MacroStore& st = store_ctx(ctx_);
-        DealLine dump[kCommodityCount];
-        for (int i = 0; i < kCommodityCount; ++i) {
-            dump[i] = DealLine{};
-            dump[i].want = 1 << 30;
-            dump[i].def = std::uint16_t(commodity_item_index(i));
-        }
-        deal(st, s.h.slot, homeSlot, dump, {},
-             kNoCarryLimitG, kNoCarryLimitG);
-        // ВЫГРУЗКА ИЗ спины В СКЛАД: предела нет, и это ВЫСКАЗЫВАНИЕ, а не
-        // пропуск (M-308) — у склада места спины нет вовсе, потому что обоз
-        // есть свойство анкеты, которая идёт, а место не идёт никуда
-        // (`kNoCarryLimitG@src/macro/deal.h`).
-        transfer_value_dense(s.bag, depot_(homeSlot, ctx_.mw),
-                             inventory_value(s.bag), kNoCarryLimitG);
-    }
-    // ── ВЗЫСКАНИЕ ДАНИ — ОДИН ГЛАГОЛ, ПОТОМУ ЧТО ОДНА ТОЧКА ──────────────
-    // ВЗЫСКАНИЕ И ПОГАШЕНИЕ — В ОДНОЙ ТОЧКЕ: сколько увёз, столько и
-    // списал, поэтому шва между «взято» и «зачтено» физически нет.
-    // Долг живёт на РЕБРЕ Suzerain самого вассала (M-245).
-    void collect_tithe(AiSelf& s, std::uint16_t vassal,
-                       std::uint16_t homeSlot) {
-        MacroStore& st = store_ctx(ctx_);
-        Inventory& homeInv = st.inventory[homeSlot].inv;
-        auto& rt = s.rt;
-        Inventory* bag = &s.bag;
-        Interest* edge = tithe_of(st, vassal);
-        long long owed = edge ? edge->owedValue : 0;
-        long long took = 0;
-        // ── СНАЧАЛА ПО НУЖДЕ ДОМА, ОСТАТОК — ПО ПЛОТНОСТИ ───────────────
-        // Вердикт владельца 2026-09-21, дословно: «грузит ПО НУЖДЕ ДОМА,
-        // остаток — по value_dense_order. Иначе сборщик везёт домой
-        // серебро, а меряем мы еду». Это ровно то, что измерилось
-        // 2026-09-22, когда порядок был только по плотности: город получал
-        // казну и продолжал голодать (food_city −99.8 %).
-        // Чего дому не хватает — считается по самому дому той же дверью
-        // (ведомость-кэш уничтожена 2026-09-30, ломтик E шаг 2; закон и
-        // обе его функции — те же).
-        if (owed > 0) {
-            const Skills& homeHands = st.sheet[homeSlot].skills;
-            const auto home_demand_of = [&](int cid) {
-                return season_demand_for(cid, st.upkeep[homeSlot].needDebt,
-                                         souls_home(st, homeSlot), homeHands,
-                                         &homeInv);
-            };
-            // ПОРЯДОК НУЖДЫ — ПО ТОМУ, ЧЕГО ДОМУ НЕ ХВАТАЕТ БОЛЬШЕ ВСЕГО
-            // В СТОИМОСТИ (нехватка × домашняя цена), а НЕ по плотности.
-            // Измерено 2026-09-22: с плотностью еда стоит последней (она
-            // самая дешёвая на килограмм), долг кончался на серебре, и
-            // город продолжал голодать при работающем сборщике
-            // (food_city −99.4 %). Цена дома уже несёт срочность —
-            // непокрытая нужда сама дорожает, — поэтому ноль новых правил.
-            int order[kCommodityCount];
-            long long urgency[kCommodityCount];
-            for (int c = 0; c < kCommodityCount; ++c) {
-                order[c] = c;
-                const int cid = commodity_item_index(c);
-                const ItemDef* cd = item_def_at(cid);
-                const int cbase = cd ? cd->value : 0;
-                const int chave = homeInv.count_of(cid);
-                const int cdemand = home_demand_of(cid);
-                const int lk = cdemand - chave;
-                urgency[c] = lk > 0 && cbase > 0
-                    ? (long long)lk * stock_price(cbase, chave, cdemand)
-                    : 0;
-            }
-            for (int a = 1; a < kCommodityCount; ++a)
-                for (int b = a; b > 0
-                                && urgency[order[b]] > urgency[order[b - 1]];
-                     --b)
-                    std::swap(order[b], order[b - 1]);
-            for (int oi = 0; oi < kCommodityCount && owed > 0; ++oi) {
-                const int c = order[oi];
-                const int id = commodity_item_index(c);
-                const ItemDef* d = item_def_at(id);
-                const int base = d ? d->value : 0;
-                if (base <= 0) continue;
-                const int lack =
-                    home_demand_of(id) - homeInv.count_of(id);
-                if (lack <= 0) continue;
-                const long long affordable = owed / base;
-                if (affordable <= 0) continue;
-                const int want = int(std::min<long long>(lack, affordable));
-                // Взыскание — строка сделки (ломоть 2 M-72): спина сборщика
-                // клампит дверью, факт честный — дюпа «add без снятия» нет.
-                DealLine draw[1];
-                draw[0] = DealLine{};
-                draw[0].want = want;
-                draw[0].def = std::uint16_t(id);
-                deal(st, vassal, s.h.slot, draw, {},
-                     carry_capacity_g(rt, *bag) - inventory_mass_g(*bag),
-                     kNoCarryLimitG);
-                const int moved = draw[0].done;
-                if (moved <= 0) continue;
-                owed -= (long long)moved * base;
-                took += (long long)moved * base;
-            }
-        }
-        // ОСТАТОК ДОЛГА — ПО ПЛОТНОСТИ: самое ценное, что осталось у
-        // вассала. Заплатить зерном, оставив серебро, нельзя ни с какой
-        // стороны — нужда дома уже взяла своё зерно выше.
-        if (owed > 0) {
-            // ЗАГРУЗКА В спину: предел — ОСТАТОК ЁМКОСТИ, тот же, что у
-            // ветки нужды выше (M-308). До этого наряда здесь не было
-            // предела вовсе, и две половины ОДНОЙ загрузки спрашивали спину
-            // по-разному — вассал, гасящий остаток по плотности, грузил
-            // сборщика без всякого предела.
-            const int dense = transfer_value_dense(
-                st.inventory[vassal].inv, Depot(*bag),
-                int(std::min<long long>(owed, 1 << 30)),
-                carry_capacity_g(rt, *bag) - inventory_mass_g(*bag));
-            if (dense > 0) {
-                owed -= dense;
-                took += dense;
-            }
-        }
-        if (took > 0 && edge) {
-            edge->owedValue -= took;
-            if (edge->owedValue < 0) edge->owedValue = 0;
-            record_rooted_fact(st, *ctx_.mw.gs, FactKind::Taxed,
-                                 int(st.spawnId[vassal].index),
-                                 cell_x(s.cell.idx, ctx_.mapW),
-                                 cell_y(s.cell.idx, ctx_.mapW),
-                                 int(std::min<long long>(took, 1 << 30)),
-                                 parent_of(st, s.h.slot));
-        }
-    }
-    // (ЗДЕСЬ СТОЯЛ ГЛАГОЛ `craft(AiSelf&)` БЕЗ «ЧТО И СКОЛЬКО» — дневной
-    //  выпуск поселения: он звал общую лестницу `econ_produce_day`, и решала
-    //  она. Снят 2026-11-13 рядом M-486: решение — в модуле, у деревни и
-    //  города каждое своё (`village_craft_pick`, `city_craft_pick`), акт —
-    //  глагол `craft(s, что, сколько)` выше.)
-    // ── РОЖДЕНИЕ ПАРЫ РОДИТЕЛЬ↔РОЖДЁННЫЙ — ОДИН ГЛАГОЛ ──────────────────
-    // «Родил» есть ПАРА, а не узел (вердикт владельца 2026-10-24 №3):
-    // родитель называет СЕБЯ в данных рождаемого (`parentId`), и ребро
-    // `Parent`/`Child` ставит сама дверь рождения. Отдельной колонки «число
-    // рождённых» нет — выводимое не хранится (ЗАКОН АНКЕТЫ п.2, шрам трёх
-    // носителей); сколько детей есть, отвечает `AiView::has_child`.
-    //
-    // ОТКАЗ — В ТОЧКЕ РОЖДЕНИЯ И ВСЛУХ (§5 п.3): душ дома меньше, чем просит
-    // крю, — пары не возникает ВОВСЕ, и возврат это говорит невалидным
-    // хэндлом. Fail-closed на чтении соврал бы потише: сквад без своих душ
-    // был бы рождён из воздуха.
-    //
-    // РОЖДЕНИЕ ПЛАТИТ ДУШАМИ РОДИТЕЛЯ, И ПЛАТИТ ПО ФАКТУ УСПЕХА
-    // (`bleed_flock@src/bus/world_row.h` — дверь drain, берёт сколько
-    // есть и возвращает факт): лидер и члены СХОДЯТ головами из своего
-    // контейнера. Это и есть предел рождения по построению — потолка числа
-    // детей колонкой не заводится (ЗАКОН КЛАМПА: предел наступает обратной
-    // связью, и убыль паствы её даёт). Паству (число фичи клетки)
-    // рождение НЕ трогает: души ушли В ПОЛЕ, а не умерли.
-    //
-    // ФРАКЦИЯ НЕ ЗАДАЁТСЯ НАРОЧНО: дефолт спеки (-1) означает «решает
-    // земля», и рождённый у дома наследует дом через родителя — второго
-    // носителя «чей он» рядом не ставится.
-    // Тип рождённому ставится ПОСЛЕ успеха: спека типа не несёт вовсе.
-    //
-    // ЗВОНЯЩИЕ — ТЕ ЖЕ ДВА МОДУЛЯ, ЧТО У `craft`: рождение рабочих сквадов —
-    // РЕШЕНИЕ РОДИТЕЛЯ, а не аукцион. Деревня поднимает артель нужного ТИПА
-    // (M-488), город — `Caravan` и (только при вассале-должнике) `Collector`;
-    // по одному ребёнку на тип держит гейт дубля `AiView::has_child`.
-    // ── ПЕРЕПИСАТЬ ФИЧУ ПОД СОБОЙ — ГЛАГОЛ, А НЕ ПРАВКА СЛОЯ ────────────
-    // Вердикт владельца 2026-10-25, дословно: «можно сделать через модуль —
-    // если сквад умирает он в своём модуле пишет что переписыает фичу под
-    // собой её тип в фичу руина … он это должен мочь сделать (это идёт через
-    // систему работа/способность)»; и о границе: «это не какотой общий закон
-    // а чисто внутри каждого модуля своё — например город переписывает фичу
-    // под собой в руины / а допустим будут потом сквады места без фичи под
-    // собой (так можно кто сказал чт онет — всё агностично) и он в модуле не
-    // будет ничего пистаь».
-    //
-    // ПОЭТОМУ ЗДЕСЬ ГЛАГОЛ, А НЕ ЗАКОН: пульт умеет переписать фичу, а ЧТО
-    // писать и писать ли вообще — дело модуля рода. Слой фич модуль не
-    // видит и видеть не должен (DOD-инкапсуляция пульта), дверь одна —
-    // `feature_put@src/macro/features.h`, та же, которой фичи ставит
-    // генерация, и вода у неё решает ровно у ПОСТАНОВКИ.
-    //
-    // ВОЗВРАТ — ФАКТ, А НЕ НАМЕРЕНИЕ: `feature_put` отдаёт, ЧТО встало
-    // (вода может отказать), и `FT_None` значит «не встало ничего». Модуль,
-    // которому ответ не нужен, его просто не читает.
-    FeatureType reshape_feature(MacroHandle self, FeatureType want) {
-        if (!ctx_.mw.gs || !ctx_.mw.terrain || !ctx_.mw.store)
-            return FT_None;
-        const MacroStore& st = store_ctx(ctx_);
-        if (!st.valid(self)) return FT_None;
-        return feature_put(ctx_.mw.gs->features, *ctx_.mw.terrain,
-                           st.cell[self.slot].idx, want);
-    }
-    MacroHandle spawn(AiSelf& s, SquadType bornType, int crewSouls) {
-        if (crewSouls <= 0 || !ctx_.mw.gs || !ctx_.mw.terrain)
-            return MacroHandle{};
-        MacroStore& st = store_ctx(ctx_);
-        if (count_human_souls(s.bag) < crewSouls) return MacroHandle{};
-        const std::uint16_t slot = s.h.slot;
-        SquadSpec spec{};
-        spec.avatarType = NPCType::Peasant;
-        spec.x = ecs::cell_x(st.cell[slot], ctx_.mapW);
-        spec.y = ecs::cell_y(st.cell[slot], ctx_.mapW);
-        spec.parentId = int(st.spawnId[slot].index);
-        for (int m = 1; m < crewSouls; ++m) {
-            // ГЕНЕРИК (CANON S4): члены — ОДИН стак, не пер-душевые
-            // ординалы (`SquadSpecMembers::push` сливает равные записи);
-            // поток имён остаётся лидерам и душам с историей.
-            SoldierRecord rec{};
-            rec.kind = std::uint16_t(spec.avatarType);
-            rec.level = 1;
-            if (!spec.members.push(rec)) break;
-        }
-        const MacroHandle born =
-            spawn_squad(*ctx_.mw.gs, st, *ctx_.mw.terrain, spec);
-        if (!st.valid(born)) return MacroHandle{};
-        st.runtime[born.slot].squadType = std::uint8_t(bornType);
-        bleed_flock(s.bag, 1 + spec.members.size());
-        return born;
-    }
-private:
-    const TickContext& ctx_;
-};
-
-// ═════ МОДУЛИ АРТЕЛЕЙ ═══════════════════════════════════════════════════════
-// Вердикт владельца 2026-11-13 (CANON S25, блок «СЫРЬЁ ТЯНЕТ МОДУЛЬ ДЕРЕВНИ
-// ТИПАМИ АРТЕЛЕЙ»): тип артели — отдельный тип сквада со СВОИМ модулем; что
-// тянуть, решает модуль деревни, поднимая артель нужного типа; модуль артели
-// делает только своё дело — идёт к месту работы, добывает, везёт домой.
-// Сменить тип — логика внутри её же модуля: в каждом прямо прописано, кем он
-// может стать и когда. Двери «сменить тип» в ядре нет; смена зануляет память.
-//
-// КАЖДЫЙ МОДУЛЬ НИЖЕ НАПИСАН ЦЕЛИКОМ (AGENTS §4 п.5: под модули общих систем
-// не создаётся). Одинаковые куски у соседей — законная копия, а не долг:
-// общее у них только то, что есть у всякого сквада, — дверь акта
-// (`AiPult::gather`), дверь сделки (`AiPult::hand`), вопросы к миру (`AiView`).
-//
-// ХАРЧ: артель отдаёт добычу дому сама, а едой её грузит модуль дома своим
-// суточным кругом — каждый модуль распоряжается только своим инвентарём.
-// Артель ждёт погрузки дома, только если дом еду ДАСТ (ценит её ниже, чем
-// она: семья судит голым сравнением оценок, силы (0, 1)); дом сам голоден —
-// не ждёт и работает.
-
-// ═════ МОДУЛЬ Woodcutters — лесорубы ════════════════════════════════════════
-constexpr std::uint8_t kWoodcuttersAct = action_slot("fell_tree");
-static_assert(archetype_of(action_def(int(kWoodcuttersAct)).type)
-                      == ActionArchetype::Labour
-                  && action_def(int(kWoodcuttersAct)).spRatePerDay > 0,
-              "акт лесорубов — трудовая строка с темповой ценой");
-
-void woodcutters_think(AiSelf& s, const AiView& view, AiPult& pult) {
-    static const int kFood = commodity_item_index(hunger_commodity_ordinal());
-    const std::uint32_t home = view.home(s.h);
-    const std::uint16_t homeSlot = view.home_slot(s.h);
-    if (home == ecs::kNoCell || homeSlot == kMacroNoSlot) return;
-    ecs::SquadGoal& g = s.goal;
-    const auto go_home = [&]() {
-        ecs::goal_set(g, home, g.what, 0, std::uint8_t(NS::Idle));
-        s.rt.state = std::uint8_t(NS::Returning);
-    };
-    // КЕМ МОГУТ СТАТЬ ЛЕСОРУБЫ: только неопределённой артелью — когда леса в
-    // округе нет или дом ценит дерево по полу. Память модуля зануляется.
-    const auto become_artel = [&]() {
-        s.rt.squadType = std::uint8_t(SquadType::Artel);
-        for (std::uint32_t& w : s.rt.mem) w = 0;
-        ecs::goal_drop(g);
-        s.rt.state = std::uint8_t(NS::Idle);
-    };
-    const auto back_full = [&](int product) {
-        return product >= 0 && s.bag.count_of(product) > 0
-            && carry_capacity_g(s.rt, s.bag) - inventory_mass_g(s.bag)
-                   < unit_mass_g(item_def_at(product));
-    };
-
-    if (s.rt.state == std::uint8_t(NS::Idle)) {
-        const bool atHome = s.cell.idx == home;
-        if (atHome && ecs::march_arrived(s.rt)) {
-            // ДОМА: отдать дому всё добытое — сделкой, как всякий сквад.
-            for (int c = 0; c < kCommodityCount; ++c) {
-                const int item = commodity_item_index(c);
-                const int n = s.bag.count_of(item);
-                if (n > 0) pult.hand(s.h.slot, homeSlot, item, n);
-            }
-        }
-        if (atHome) {
-            const RowSide mine = view.row_of(s.h.slot, kFood);
-            if (mine.net < 0
-                && gain_units(view.row_of(homeSlot, kFood), mine, -mine.net,
-                              true, 0, 1) > 0) {
-                return;   // жду погрузки харча
-            }
-        }
-        const std::uint32_t site = view.tree_near(s.cell.idx, home);
-        const int product = site != ecs::kNoCell
-            ? view.yield_at(ResourceFieldId::Trees, site) : -1;
-        if (!atHome) {
-            // В поле: полная спина или пустая округа — сперва домой.
-            if (back_full(product) || product < 0) go_home();
-            else {
-                ecs::goal_set(g, site,
-                              ecs::goal_what(ecs::GoalKind::Cell, 0), 0,
-                              std::uint8_t(NS::Working));
-                s.rt.state = std::uint8_t(NS::Traveling);
-            }
-            return;
-        }
-        // ДОМА: работы нет или дом завален моим товаром — меняю тип.
-        if (product < 0
-            || worth_arriving(view.row_of(homeSlot, product), 1) <= 1) {
-            become_artel();
-            return;
-        }
-        // БЮДЖЕТ ЦИКЛОВ — сколько циклов вместит спина при нынешних руках.
-        const std::int64_t perCycleG = std::max<std::int64_t>(
-            1, std::int64_t(work_units(s.bag))
-                   * unit_mass_g(item_def_at(product)));
-        const std::int64_t freeG =
-            carry_capacity_g(s.rt, s.bag) - inventory_mass_g(s.bag);
-        ecs::goal_set(g, site, ecs::goal_what(ecs::GoalKind::Cell, 0),
-                      std::uint16_t(std::clamp<std::int64_t>(
-                          freeG / perCycleG, 1, 0xFFFF)),
-                      std::uint8_t(NS::Working));
-        s.rt.state = std::uint8_t(NS::Traveling);
-        return;
-    }
-    if (s.rt.state == std::uint8_t(NS::Working)) {
-        if (squad_recovering(s.rt)) return;   // висит долг прошлого цикла
-        // ОБЪЁМ АКТА — по дереву на рабочего юнита; в долг артель не трудится.
-        const int workers = work_units(s.bag);
-        const std::int64_t cycleCost =
-            pult.act_cost(s, kWoodcuttersAct, workers);
-        if (std::int64_t(s.pools.sp) < cycleCost) { go_home(); return; }
-        const int product = view.yield_at(ResourceFieldId::Trees, g.cell);
-        const int got = pult.gather(s, ResourceFieldId::Trees,
-                                    kWoodcuttersAct, g.cell, workers);
-        // Ещё цикл — пока земля даёт, спина вмещает, бар покупает и жив
-        // остаток циклов цели; иначе домой.
-        if (got > 0 && !back_full(product)
-            && std::int64_t(s.pools.sp) >= cycleCost && ecs::goal_spend(g)) {
-            return;
-        }
-        go_home();
-        return;
-    }
-    // Traveling/Returning: к цели везут ноги свипа.
+std::uint32_t AiView::home(MacroHandle self) const {
+    return home_cell(self, ctx_);
 }
 
-void ai_woodcutters(MacroHandle e, ecs::MacroNpcRuntime& rt,
-                    ecs::Pools& pools, const TickContext& ctx) {
-    if (!ctx.mw.store || !ctx.mw.gs) return;
-    // Рефлексы — выбор модуля: след, угроза, охота по запаху.
-    const ecs::NPCKind& kind = store_ctx(ctx).kind[e.slot];
-    scent_squad_deposit(e, kind, ctx);
-    if (squad_threat_step(e, kind, rt, pools, ctx)) return;
-    if (scent_hunt_step(e, kind, rt, pools, ctx)) return;
-    AiSelf self{e, store_ctx(ctx).cell[e.slot], rt, pools,
-                store_ctx(ctx).goal[e.slot],
-                store_ctx(ctx).inventory[e.slot].inv,
-                store_ctx(ctx).sheet[e.slot]};
-    const AiView view(ctx);
-    AiPult pult(ctx);
-    woodcutters_think(self, view, pult);
+std::uint16_t AiView::home_slot(MacroHandle self) const {
+    return home_rooted_slot(self, ctx_);
 }
 
-// ═════ МОДУЛЬ Ploughmen — пахари ════════════════════════════════════════════
-constexpr std::uint8_t kPloughmenAct = action_slot("reap_wheat");
-static_assert(archetype_of(action_def(int(kPloughmenAct)).type)
-                      == ActionArchetype::Labour
-                  && action_def(int(kPloughmenAct)).spRatePerDay > 0,
-              "акт пахарей — трудовая строка с темповой ценой");
-
-void ploughmen_think(AiSelf& s, const AiView& view, AiPult& pult) {
-    static const int kFood = commodity_item_index(hunger_commodity_ordinal());
-    const std::uint32_t home = view.home(s.h);
-    const std::uint16_t homeSlot = view.home_slot(s.h);
-    if (home == ecs::kNoCell || homeSlot == kMacroNoSlot) return;
-    ecs::SquadGoal& g = s.goal;
-    const auto go_home = [&]() {
-        ecs::goal_set(g, home, g.what, 0, std::uint8_t(NS::Idle));
-        s.rt.state = std::uint8_t(NS::Returning);
-    };
-    // КЕМ МОГУТ СТАТЬ ПАХАРИ: только неопределённой артелью — когда спелой
-    // пашни у дома нет или дом ценит урожай по полу. Память зануляется.
-    const auto become_artel = [&]() {
-        s.rt.squadType = std::uint8_t(SquadType::Artel);
-        for (std::uint32_t& w : s.rt.mem) w = 0;
-        ecs::goal_drop(g);
-        s.rt.state = std::uint8_t(NS::Idle);
-    };
-    const auto back_full = [&](int product) {
-        return product >= 0 && s.bag.count_of(product) > 0
-            && carry_capacity_g(s.rt, s.bag) - inventory_mass_g(s.bag)
-                   < unit_mass_g(item_def_at(product));
-    };
-
-    if (s.rt.state == std::uint8_t(NS::Idle)) {
-        const bool atHome = s.cell.idx == home;
-        if (atHome && ecs::march_arrived(s.rt)) {
-            // ДОМА: отдать дому всё добытое — сделкой, как всякий сквад.
-            for (int c = 0; c < kCommodityCount; ++c) {
-                const int item = commodity_item_index(c);
-                const int n = s.bag.count_of(item);
-                if (n > 0) pult.hand(s.h.slot, homeSlot, item, n);
-            }
-        }
-        if (atHome) {
-            const RowSide mine = view.row_of(s.h.slot, kFood);
-            if (mine.net < 0
-                && gain_units(view.row_of(homeSlot, kFood), mine, -mine.net,
-                              true, 0, 1) > 0) {
-                return;   // жду погрузки харча
-            }
-        }
-        const std::uint32_t site = view.field_near(FT_Field, s.cell.idx, home);
-        const int product = site != ecs::kNoCell
-            ? view.yield_at(ResourceFieldId::Wheat, site) : -1;
-        if (!atHome) {
-            // В поле: полная спина или пустая округа — сперва домой.
-            if (back_full(product) || product < 0) go_home();
-            else {
-                ecs::goal_set(g, site,
-                              ecs::goal_what(ecs::GoalKind::Cell, 0), 0,
-                              std::uint8_t(NS::Working));
-                s.rt.state = std::uint8_t(NS::Traveling);
-            }
-            return;
-        }
-        // ДОМА: работы нет или дом завален моим товаром — меняю тип.
-        if (product < 0
-            || worth_arriving(view.row_of(homeSlot, product), 1) <= 1) {
-            become_artel();
-            return;
-        }
-        // БЮДЖЕТ ЦИКЛОВ — сколько циклов вместит спина при нынешних руках.
-        const std::int64_t perCycleG = std::max<std::int64_t>(
-            1, std::int64_t(work_units(s.bag))
-                   * unit_mass_g(item_def_at(product)));
-        const std::int64_t freeG =
-            carry_capacity_g(s.rt, s.bag) - inventory_mass_g(s.bag);
-        ecs::goal_set(g, site, ecs::goal_what(ecs::GoalKind::Cell, 0),
-                      std::uint16_t(std::clamp<std::int64_t>(
-                          freeG / perCycleG, 1, 0xFFFF)),
-                      std::uint8_t(NS::Working));
-        s.rt.state = std::uint8_t(NS::Traveling);
-        return;
-    }
-    if (s.rt.state == std::uint8_t(NS::Working)) {
-        if (squad_recovering(s.rt)) return;   // висит долг прошлого цикла
-        // ОБЪЁМ АКТА — по снопу на рабочего юнита; в долг артель не трудится.
-        const int workers = work_units(s.bag);
-        const std::int64_t cycleCost =
-            pult.act_cost(s, kPloughmenAct, workers);
-        if (std::int64_t(s.pools.sp) < cycleCost) { go_home(); return; }
-        const int product = view.yield_at(ResourceFieldId::Wheat, g.cell);
-        const int got = pult.gather(s, ResourceFieldId::Wheat, kPloughmenAct,
-                                    g.cell, workers);
-        if (got > 0 && !back_full(product)
-            && std::int64_t(s.pools.sp) >= cycleCost && ecs::goal_spend(g)) {
-            return;
-        }
-        go_home();
-        return;
-    }
-    // Traveling/Returning: к цели везут ноги свипа.
+std::uint32_t AiView::tree_near(std::uint32_t at, std::uint32_t home) const {
+    return find_home_tree(ctx_, at, home);
 }
 
-void ai_ploughmen(MacroHandle e, ecs::MacroNpcRuntime& rt,
-                  ecs::Pools& pools, const TickContext& ctx) {
-    if (!ctx.mw.store || !ctx.mw.gs) return;
-    // Рефлексы — выбор модуля: след, угроза, охота по запаху.
-    const ecs::NPCKind& kind = store_ctx(ctx).kind[e.slot];
-    scent_squad_deposit(e, kind, ctx);
-    if (squad_threat_step(e, kind, rt, pools, ctx)) return;
-    if (scent_hunt_step(e, kind, rt, pools, ctx)) return;
-    AiSelf self{e, store_ctx(ctx).cell[e.slot], rt, pools,
-                store_ctx(ctx).goal[e.slot],
-                store_ctx(ctx).inventory[e.slot].inv,
-                store_ctx(ctx).sheet[e.slot]};
-    const AiView view(ctx);
-    AiPult pult(ctx);
-    ploughmen_think(self, view, pult);
+std::uint32_t AiView::field_near(FeatureType parcel, std::uint32_t at,
+                                 std::uint32_t home) const {
+    return find_home_field(ctx_, at, home, parcel);
 }
 
-// ═════ МОДУЛЬ Hunters — охотники ════════════════════════════════════════════
-constexpr std::uint8_t kHuntersAct = action_slot("hunt_fauna");
-static_assert(archetype_of(action_def(int(kHuntersAct)).type)
-                      == ActionArchetype::Labour
-                  && action_def(int(kHuntersAct)).spRatePerDay > 0,
-              "акт охотников — трудовая строка с темповой ценой");
-
-void hunters_think(AiSelf& s, const AiView& view, AiPult& pult) {
-    static const int kFood = commodity_item_index(hunger_commodity_ordinal());
-    const std::uint32_t home = view.home(s.h);
-    const std::uint16_t homeSlot = view.home_slot(s.h);
-    if (home == ecs::kNoCell || homeSlot == kMacroNoSlot) return;
-    ecs::SquadGoal& g = s.goal;
-    const auto go_home = [&]() {
-        ecs::goal_set(g, home, g.what, 0, std::uint8_t(NS::Idle));
-        s.rt.state = std::uint8_t(NS::Returning);
-    };
-    // КЕМ МОГУТ СТАТЬ ОХОТНИКИ: только неопределённой артелью — когда зверя у
-    // дома нет или дом ценит дичь по полу. Память зануляется.
-    const auto become_artel = [&]() {
-        s.rt.squadType = std::uint8_t(SquadType::Artel);
-        for (std::uint32_t& w : s.rt.mem) w = 0;
-        ecs::goal_drop(g);
-        s.rt.state = std::uint8_t(NS::Idle);
-    };
-    const auto back_full = [&](int product) {
-        return product >= 0 && s.bag.count_of(product) > 0
-            && carry_capacity_g(s.rt, s.bag) - inventory_mass_g(s.bag)
-                   < unit_mass_g(item_def_at(product));
-    };
-
-    if (s.rt.state == std::uint8_t(NS::Idle)) {
-        const bool atHome = s.cell.idx == home;
-        if (atHome && ecs::march_arrived(s.rt)) {
-            // ДОМА: отдать дому всё добытое — сделкой, как всякий сквад.
-            for (int c = 0; c < kCommodityCount; ++c) {
-                const int item = commodity_item_index(c);
-                const int n = s.bag.count_of(item);
-                if (n > 0) pult.hand(s.h.slot, homeSlot, item, n);
-            }
-        }
-        if (atHome) {
-            const RowSide mine = view.row_of(s.h.slot, kFood);
-            if (mine.net < 0
-                && gain_units(view.row_of(homeSlot, kFood), mine, -mine.net,
-                              true, 0, 1) > 0) {
-                return;   // жду погрузки харча
-            }
-        }
-        const std::uint32_t site = view.fauna_near(s.cell.idx, home);
-        const int product = site != ecs::kNoCell
-            ? view.yield_at(ResourceFieldId::Fauna, site) : -1;
-        if (!atHome) {
-            // В поле: полная спина или пустая округа — сперва домой.
-            if (back_full(product) || product < 0) go_home();
-            else {
-                ecs::goal_set(g, site,
-                              ecs::goal_what(ecs::GoalKind::Cell, 0), 0,
-                              std::uint8_t(NS::Working));
-                s.rt.state = std::uint8_t(NS::Traveling);
-            }
-            return;
-        }
-        // ДОМА: работы нет или дом завален моим товаром — меняю тип.
-        if (product < 0
-            || worth_arriving(view.row_of(homeSlot, product), 1) <= 1) {
-            become_artel();
-            return;
-        }
-        // БЮДЖЕТ ЦИКЛОВ — сколько циклов вместит спина при нынешних руках.
-        const std::int64_t perCycleG = std::max<std::int64_t>(
-            1, std::int64_t(work_units(s.bag))
-                   * unit_mass_g(item_def_at(product)));
-        const std::int64_t freeG =
-            carry_capacity_g(s.rt, s.bag) - inventory_mass_g(s.bag);
-        ecs::goal_set(g, site, ecs::goal_what(ecs::GoalKind::Cell, 0),
-                      std::uint16_t(std::clamp<std::int64_t>(
-                          freeG / perCycleG, 1, 0xFFFF)),
-                      std::uint8_t(NS::Working));
-        s.rt.state = std::uint8_t(NS::Traveling);
-        return;
-    }
-    if (s.rt.state == std::uint8_t(NS::Working)) {
-        if (squad_recovering(s.rt)) return;   // висит долг прошлого цикла
-        // ОБЪЁМ АКТА — по зверю на рабочего юнита; в долг артель не трудится.
-        const int workers = work_units(s.bag);
-        const std::int64_t cycleCost = pult.act_cost(s, kHuntersAct, workers);
-        if (std::int64_t(s.pools.sp) < cycleCost) { go_home(); return; }
-        const int product = view.yield_at(ResourceFieldId::Fauna, g.cell);
-        const int got = pult.gather(s, ResourceFieldId::Fauna, kHuntersAct,
-                                    g.cell, workers);
-        if (got > 0 && !back_full(product)
-            && std::int64_t(s.pools.sp) >= cycleCost && ecs::goal_spend(g)) {
-            return;
-        }
-        go_home();
-        return;
-    }
-    // Traveling/Returning: к цели везут ноги свипа.
+std::uint32_t AiView::fauna_near(std::uint32_t at, std::uint32_t home) const {
+    return find_home_fauna(ctx_, at, home);
 }
 
-void ai_hunters(MacroHandle e, ecs::MacroNpcRuntime& rt,
-                ecs::Pools& pools, const TickContext& ctx) {
-    if (!ctx.mw.store || !ctx.mw.gs) return;
-    // Рефлексы — выбор модуля: след, угроза, охота по запаху.
-    const ecs::NPCKind& kind = store_ctx(ctx).kind[e.slot];
-    scent_squad_deposit(e, kind, ctx);
-    if (squad_threat_step(e, kind, rt, pools, ctx)) return;
-    if (scent_hunt_step(e, kind, rt, pools, ctx)) return;
-    AiSelf self{e, store_ctx(ctx).cell[e.slot], rt, pools,
-                store_ctx(ctx).goal[e.slot],
-                store_ctx(ctx).inventory[e.slot].inv,
-                store_ctx(ctx).sheet[e.slot]};
-    const AiView view(ctx);
-    AiPult pult(ctx);
-    hunters_think(self, view, pult);
+std::uint32_t AiView::vein_near(std::uint32_t home) const {
+    return find_home_deposit(ctx_, home);
 }
 
-// ═════ МОДУЛЬ Flaxers — льноводы ════════════════════════════════════════════
-constexpr std::uint8_t kFlaxersAct = action_slot("reap_flax");
-static_assert(archetype_of(action_def(int(kFlaxersAct)).type)
-                      == ActionArchetype::Labour
-                  && action_def(int(kFlaxersAct)).spRatePerDay > 0,
-              "акт льноводов — трудовая строка с темповой ценой");
-
-void flaxers_think(AiSelf& s, const AiView& view, AiPult& pult) {
-    static const int kFood = commodity_item_index(hunger_commodity_ordinal());
-    const std::uint32_t home = view.home(s.h);
-    const std::uint16_t homeSlot = view.home_slot(s.h);
-    if (home == ecs::kNoCell || homeSlot == kMacroNoSlot) return;
-    ecs::SquadGoal& g = s.goal;
-    const auto go_home = [&]() {
-        ecs::goal_set(g, home, g.what, 0, std::uint8_t(NS::Idle));
-        s.rt.state = std::uint8_t(NS::Returning);
-    };
-    // КЕМ МОГУТ СТАТЬ ЛЬНОВОДЫ: только неопределённой артелью — когда спелого
-    // льна у дома нет или дом ценит волокно по полу. Память зануляется.
-    const auto become_artel = [&]() {
-        s.rt.squadType = std::uint8_t(SquadType::Artel);
-        for (std::uint32_t& w : s.rt.mem) w = 0;
-        ecs::goal_drop(g);
-        s.rt.state = std::uint8_t(NS::Idle);
-    };
-    const auto back_full = [&](int product) {
-        return product >= 0 && s.bag.count_of(product) > 0
-            && carry_capacity_g(s.rt, s.bag) - inventory_mass_g(s.bag)
-                   < unit_mass_g(item_def_at(product));
-    };
-
-    if (s.rt.state == std::uint8_t(NS::Idle)) {
-        const bool atHome = s.cell.idx == home;
-        if (atHome && ecs::march_arrived(s.rt)) {
-            // ДОМА: отдать дому всё добытое — сделкой, как всякий сквад.
-            for (int c = 0; c < kCommodityCount; ++c) {
-                const int item = commodity_item_index(c);
-                const int n = s.bag.count_of(item);
-                if (n > 0) pult.hand(s.h.slot, homeSlot, item, n);
-            }
-        }
-        if (atHome) {
-            const RowSide mine = view.row_of(s.h.slot, kFood);
-            if (mine.net < 0
-                && gain_units(view.row_of(homeSlot, kFood), mine, -mine.net,
-                              true, 0, 1) > 0) {
-                return;   // жду погрузки харча
-            }
-        }
-        const std::uint32_t site =
-            view.field_near(FT_FlaxField, s.cell.idx, home);
-        const int product = site != ecs::kNoCell
-            ? view.yield_at(ResourceFieldId::Wheat, site) : -1;
-        if (!atHome) {
-            // В поле: полная спина или пустая округа — сперва домой.
-            if (back_full(product) || product < 0) go_home();
-            else {
-                ecs::goal_set(g, site,
-                              ecs::goal_what(ecs::GoalKind::Cell, 0), 0,
-                              std::uint8_t(NS::Working));
-                s.rt.state = std::uint8_t(NS::Traveling);
-            }
-            return;
-        }
-        // ДОМА: работы нет или дом завален моим товаром — меняю тип.
-        if (product < 0
-            || worth_arriving(view.row_of(homeSlot, product), 1) <= 1) {
-            become_artel();
-            return;
-        }
-        // БЮДЖЕТ ЦИКЛОВ — сколько циклов вместит спина при нынешних руках.
-        const std::int64_t perCycleG = std::max<std::int64_t>(
-            1, std::int64_t(work_units(s.bag))
-                   * unit_mass_g(item_def_at(product)));
-        const std::int64_t freeG =
-            carry_capacity_g(s.rt, s.bag) - inventory_mass_g(s.bag);
-        ecs::goal_set(g, site, ecs::goal_what(ecs::GoalKind::Cell, 0),
-                      std::uint16_t(std::clamp<std::int64_t>(
-                          freeG / perCycleG, 1, 0xFFFF)),
-                      std::uint8_t(NS::Working));
-        s.rt.state = std::uint8_t(NS::Traveling);
-        return;
-    }
-    if (s.rt.state == std::uint8_t(NS::Working)) {
-        if (squad_recovering(s.rt)) return;   // висит долг прошлого цикла
-        // ОБЪЁМ АКТА — по снопу на рабочего юнита; в долг артель не трудится.
-        const int workers = work_units(s.bag);
-        const std::int64_t cycleCost = pult.act_cost(s, kFlaxersAct, workers);
-        if (std::int64_t(s.pools.sp) < cycleCost) { go_home(); return; }
-        const int product = view.yield_at(ResourceFieldId::Wheat, g.cell);
-        const int got = pult.gather(s, ResourceFieldId::Wheat, kFlaxersAct,
-                                    g.cell, workers);
-        if (got > 0 && !back_full(product)
-            && std::int64_t(s.pools.sp) >= cycleCost && ecs::goal_spend(g)) {
-            return;
-        }
-        go_home();
-        return;
-    }
-    // Traveling/Returning: к цели везут ноги свипа.
+int AiView::yield_at(ResourceFieldId row, std::uint32_t cell) const {
+    return field_yield_ordinal(ctx_.mw, row, cell);
 }
 
-void ai_flaxers(MacroHandle e, ecs::MacroNpcRuntime& rt,
-                ecs::Pools& pools, const TickContext& ctx) {
-    if (!ctx.mw.store || !ctx.mw.gs) return;
-    // Рефлексы — выбор модуля: след, угроза, охота по запаху.
-    const ecs::NPCKind& kind = store_ctx(ctx).kind[e.slot];
-    scent_squad_deposit(e, kind, ctx);
-    if (squad_threat_step(e, kind, rt, pools, ctx)) return;
-    if (scent_hunt_step(e, kind, rt, pools, ctx)) return;
-    AiSelf self{e, store_ctx(ctx).cell[e.slot], rt, pools,
-                store_ctx(ctx).goal[e.slot],
-                store_ctx(ctx).inventory[e.slot].inv,
-                store_ctx(ctx).sheet[e.slot]};
-    const AiView view(ctx);
-    AiPult pult(ctx);
-    flaxers_think(self, view, pult);
+RowSide AiView::row_of(std::uint16_t slot, int itemIdx) const {
+    const ItemDef* d = item_def_at(itemIdx);
+    return side_row(store_ctx(ctx_), slot, itemIdx, d ? d->value : 0);
 }
 
-// ═════ МОДУЛЬ Miners — шахтёры ══════════════════════════════════════════════
-// Что даёт жила, решает фича шахты на её клетке: товар шахтёров — вопрос к
-// миру о клетке цели, а не слово модуля.
-constexpr std::uint8_t kMinersAct = action_slot("mine_vein");
-static_assert(archetype_of(action_def(int(kMinersAct)).type)
-                      == ActionArchetype::Labour
-                  && action_def(int(kMinersAct)).spRatePerDay > 0,
-              "акт шахтёров — трудовая строка с темповой ценой");
-
-void miners_think(AiSelf& s, const AiView& view, AiPult& pult) {
-    static const int kFood = commodity_item_index(hunger_commodity_ordinal());
-    const std::uint32_t home = view.home(s.h);
-    const std::uint16_t homeSlot = view.home_slot(s.h);
-    if (home == ecs::kNoCell || homeSlot == kMacroNoSlot) return;
-    ecs::SquadGoal& g = s.goal;
-    const auto go_home = [&]() {
-        ecs::goal_set(g, home, g.what, 0, std::uint8_t(NS::Idle));
-        s.rt.state = std::uint8_t(NS::Returning);
-    };
-    // КЕМ МОГУТ СТАТЬ ШАХТЁРЫ: только неопределённой артелью — когда живой
-    // жилы в округе нет или дом ценит её металл по полу. Память зануляется.
-    const auto become_artel = [&]() {
-        s.rt.squadType = std::uint8_t(SquadType::Artel);
-        for (std::uint32_t& w : s.rt.mem) w = 0;
-        ecs::goal_drop(g);
-        s.rt.state = std::uint8_t(NS::Idle);
-    };
-    const auto back_full = [&](int product) {
-        return product >= 0 && s.bag.count_of(product) > 0
-            && carry_capacity_g(s.rt, s.bag) - inventory_mass_g(s.bag)
-                   < unit_mass_g(item_def_at(product));
-    };
-
-    if (s.rt.state == std::uint8_t(NS::Idle)) {
-        const bool atHome = s.cell.idx == home;
-        if (atHome && ecs::march_arrived(s.rt)) {
-            // ДОМА: отдать дому всё добытое — сделкой, как всякий сквад.
-            for (int c = 0; c < kCommodityCount; ++c) {
-                const int item = commodity_item_index(c);
-                const int n = s.bag.count_of(item);
-                if (n > 0) pult.hand(s.h.slot, homeSlot, item, n);
-            }
-        }
-        if (atHome) {
-            const RowSide mine = view.row_of(s.h.slot, kFood);
-            if (mine.net < 0
-                && gain_units(view.row_of(homeSlot, kFood), mine, -mine.net,
-                              true, 0, 1) > 0) {
-                return;   // жду погрузки харча
-            }
-        }
-        const std::uint32_t site = view.vein_near(home);
-        const int product = site != ecs::kNoCell
-            ? view.yield_at(ResourceFieldId::Vein, site) : -1;
-        if (!atHome) {
-            // В поле: полная спина или пустая округа — сперва домой.
-            if (back_full(product) || product < 0) go_home();
-            else {
-                ecs::goal_set(g, site,
-                              ecs::goal_what(ecs::GoalKind::Cell, 0), 0,
-                              std::uint8_t(NS::Working));
-                s.rt.state = std::uint8_t(NS::Traveling);
-            }
-            return;
-        }
-        // ДОМА: работы нет или дом завален моим товаром — меняю тип.
-        if (product < 0
-            || worth_arriving(view.row_of(homeSlot, product), 1) <= 1) {
-            become_artel();
-            return;
-        }
-        // БЮДЖЕТ ЦИКЛОВ — сколько циклов вместит спина при нынешних руках.
-        const std::int64_t perCycleG = std::max<std::int64_t>(
-            1, std::int64_t(work_units(s.bag))
-                   * unit_mass_g(item_def_at(product)));
-        const std::int64_t freeG =
-            carry_capacity_g(s.rt, s.bag) - inventory_mass_g(s.bag);
-        ecs::goal_set(g, site, ecs::goal_what(ecs::GoalKind::Cell, 0),
-                      std::uint16_t(std::clamp<std::int64_t>(
-                          freeG / perCycleG, 1, 0xFFFF)),
-                      std::uint8_t(NS::Working));
-        s.rt.state = std::uint8_t(NS::Traveling);
-        return;
-    }
-    if (s.rt.state == std::uint8_t(NS::Working)) {
-        if (squad_recovering(s.rt)) return;   // висит долг прошлого цикла
-        // ОБЪЁМ АКТА — по объекту на рабочего юнита; в долг артель не трудится.
-        const int workers = work_units(s.bag);
-        const std::int64_t cycleCost = pult.act_cost(s, kMinersAct, workers);
-        if (std::int64_t(s.pools.sp) < cycleCost) { go_home(); return; }
-        const int product = view.yield_at(ResourceFieldId::Vein, g.cell);
-        const int got = pult.gather(s, ResourceFieldId::Vein, kMinersAct,
-                                    g.cell, workers);
-        // Жила, выработанная до нуля, — факт мира; лес и пашня отрастают
-        // своим законом и факта не пишут. Судится по остатку после акта.
-        if (got > 0 && view.field_read(ResourceFieldId::Vein, g.cell) == 0) {
-            pult.drained_fact(s.h, cell_x(g.cell, view.map_w()),
-                              cell_y(g.cell, view.map_w()),
-                              ResourceFieldId::Vein);
-        }
-        if (got > 0 && !back_full(product)
-            && std::int64_t(s.pools.sp) >= cycleCost && ecs::goal_spend(g)) {
-            return;
-        }
-        go_home();
-        return;
-    }
-    // Traveling/Returning: к цели везут ноги свипа.
+int AiView::field_read(ResourceFieldId row, std::uint32_t cell) const {
+    return resource_field_read(ctx_.mw, row, cell);
 }
 
-void ai_miners(MacroHandle e, ecs::MacroNpcRuntime& rt,
-               ecs::Pools& pools, const TickContext& ctx) {
-    if (!ctx.mw.store || !ctx.mw.gs) return;
-    // Рефлексы — выбор модуля: след, угроза, охота по запаху.
-    const ecs::NPCKind& kind = store_ctx(ctx).kind[e.slot];
-    scent_squad_deposit(e, kind, ctx);
-    if (squad_threat_step(e, kind, rt, pools, ctx)) return;
-    if (scent_hunt_step(e, kind, rt, pools, ctx)) return;
-    AiSelf self{e, store_ctx(ctx).cell[e.slot], rt, pools,
-                store_ctx(ctx).goal[e.slot],
-                store_ctx(ctx).inventory[e.slot].inv,
-                store_ctx(ctx).sheet[e.slot]};
-    const AiView view(ctx);
-    AiPult pult(ctx);
-    miners_think(self, view, pult);
+bool AiView::within(std::uint32_t a, std::uint32_t b, int cells) const {
+    return cell_within(a, b, cells, ctx_.mapW);
 }
 
-// ═════ МОДУЛЬ Artel — неопределённая артель ═════════════════════════════════
-// Артель без дела: стоит дома и раз в сутки решает, кем стать (владелец: «как
-// нейтрино осцилляции артель может менять свой тип на другой»; сюда же ляжет
-// «ходить торговать» и прочее третье — модуль расширяется строками условий).
-//
-// КЕМ МОЖЕТ СТАТЬ И КОГДА — прописано здесь: пахарями, охотниками, льноводами,
-// лесорубами или шахтёрами — тем типом, чей груз одного выхода дом ценит выше
-// всего, при трёх условиях: место работы этого типа есть в округе; дом ценит
-// его товар выше пола; живой артели этого типа у дома ещё нет. Ни один тип не
-// проходит — стоит дома до следующего круга.
-//
-// ПАМЯТЬ МОДУЛЯ: слово 0 — сколько думок до следующего круга решения.
-enum : int { kArtelMemWait, kArtelMemCount };
-static_assert(kArtelMemCount <= ecs::kModuleMemSlots,
-              "слова неопределённой артели помещаются в память модуля");
+const std::int32_t* AiView::need_account(std::uint16_t slot) const {
+    if (!ctx_.mw.store || slot == kMacroNoSlot) return nullptr;
+    return ctx_.mw.store->upkeep[slot].needDebt;
+}
 
-void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
-    const std::uint32_t home = view.home(s.h);
-    const std::uint16_t homeSlot = view.home_slot(s.h);
-    if (home == ecs::kNoCell || homeSlot == kMacroNoSlot) return;
-    ecs::SquadGoal& g = s.goal;
-    if (s.rt.state != std::uint8_t(NS::Idle)) return;   // в пути — везут ноги
-    if (s.cell.idx != home) {
-        ecs::goal_set(g, home, 0, 0, std::uint8_t(NS::Idle));
-        s.rt.state = std::uint8_t(NS::Returning);
+int AiView::coin_faction(std::uint16_t slot) const {
+    if (!ctx_.mw.store || slot == kMacroNoSlot) return -1;
+    return faction_or_freefolk(
+        std::int16_t(ctx_.mw.store->kind[slot].factionIdx));
+}
+
+std::uint16_t AiView::rooted_slot(int id) const { return rooted_slot_by_id(ctx_, id); }
+
+std::uint32_t AiView::rooted_id(std::uint16_t slot) const {
+    return store_ctx(ctx_).spawnId[slot].index;
+}
+
+std::uint32_t AiView::rooted_cell(std::uint16_t slot) const {
+    return store_ctx(ctx_).cell[slot].idx;
+}
+
+bool AiView::is_settlement(std::uint16_t slot) const {
+    return rooted_is_settlement(
+        SquadType(store_ctx(ctx_).runtime[slot].squadType));
+}
+
+std::uint16_t AiView::goal_rooted(const ecs::SquadGoal& g) const {
+    return ecs::goal_kind(g.what) == ecs::GoalKind::Squad
+        ? rooted_slot_by_id(ctx_, int(ecs::goal_ordinal(g.what)))
+        : kMacroNoSlot;
+}
+
+bool AiView::owes_tithe(std::uint16_t rootedSlot) const {
+    return sm::owes_tithe(store_ctx(ctx_), rootedSlot);
+}
+
+std::uint16_t AiView::owing_vassal(std::uint16_t suzerainSlot) const {
+    if (suzerainSlot == kMacroNoSlot) return kMacroNoSlot;
+    const MacroStore& st = store_ctx(ctx_);
+    const Interests& in = st.interests[suzerainSlot];
+    for (int i = 0; i < kMaxInterests; ++i) {
+        const Interest& it = in.slots[i];
+        if (it.stance == std::uint8_t(Stance::None)) break;
+        if (it.stance != std::uint8_t(Stance::Vassal)) continue;
+        // Ординал → слот одной дверью резолва (M-271); мёртвый вассал
+        // отвечает kMacroNoSlot и просто пропускается.
+        const std::uint16_t slot = rooted_slot_by_id(ctx_, it.object);
+        if (slot != kMacroNoSlot && sm::owes_tithe(st, slot)) return slot;
+    }
+    return kMacroNoSlot;
+}
+
+bool AiView::has_child(MacroHandle self, SquadType t) const {
+    const MacroStore& st = store_ctx(ctx_);
+    if (!st.valid(self)) return false;
+    const Interests& in = st.interests[self.slot];
+    for (int i = 0; i < kMaxInterests; ++i) {
+        const Interest& it = in.slots[i];
+        if (it.stance == std::uint8_t(Stance::None)) break;
+        if (it.stance != std::uint8_t(Stance::Child)) continue;
+        // Ординал → слот ОДНОЙ дверью резолва (M-271); дети суть ХОДОКИ,
+        // поэтому дверь нужна общая, а не местная. Мёртвый ребёнок не
+        // резолвится, прибранный — отсеивается байтом `dead`, как и у
+        // прежнего прохода.
+        const MacroHandle ch =
+            macro_handle_by_spawn_id(st, std::uint32_t(it.object));
+        if (!st.valid(ch) || st.dead[ch.slot] != 0) continue;
+        if (st.runtime[ch.slot].squadType == std::uint8_t(t)) return true;
+    }
+    return false;
+}
+
+int AiView::children_here(MacroHandle self,
+                          std::uint16_t (&slots)[kMaxInterests]) const {
+    int n = 0;
+    const MacroStore& st = store_ctx(ctx_);
+    if (!st.valid(self)) return n;
+    const Interests& in = st.interests[self.slot];
+    for (int i = 0; i < kMaxInterests; ++i) {
+        const Interest& it = in.slots[i];
+        if (it.stance == std::uint8_t(Stance::None)) break;
+        if (it.stance != std::uint8_t(Stance::Child)) continue;
+        const MacroHandle ch =
+            macro_handle_by_spawn_id(st, std::uint32_t(it.object));
+        if (!st.valid(ch) || st.dead[ch.slot] != 0) continue;
+        if (st.runtime[ch.slot].state != std::uint8_t(NS::Idle)
+            || st.cell[ch.slot].idx != st.cell[self.slot].idx) {
+            continue;
+        }
+        slots[n++] = ch.slot;
+    }
+    return n;
+}
+
+bool AiView::has_sibling(MacroHandle self, SquadType t) const {
+    const MacroStore& st = store_ctx(ctx_);
+    const std::uint16_t homeSlot = home_rooted_slot(self, ctx_);
+    return homeSlot != kMacroNoSlot
+        && has_child(handle_at(st, homeSlot), t);
+}
+
+std::int64_t AiView::march_ticks(std::uint32_t a, std::uint32_t b,
+                                 float moveMult) const {
+    const float days = march_days_(ctx_, a, b, moveMult);
+    return days < 0.0f ? -1
+                       : std::int64_t(days * float(kTicksPerDay));
+}
+
+std::uint32_t AiView::route_fear(std::uint32_t a, std::uint32_t b) const {
+    return route_fear_(ctx_, a, b);
+}
+
+std::uint16_t AiView::idle_child_at_home(MacroHandle self, SquadType t) const {
+    const MacroStore& st = store_ctx(ctx_);
+    if (!st.valid(self)) return kMacroNoSlot;
+    const Interests& in = st.interests[self.slot];
+    for (int i = 0; i < kMaxInterests; ++i) {
+        const Interest& it = in.slots[i];
+        if (it.stance == std::uint8_t(Stance::None)) break;
+        if (it.stance != std::uint8_t(Stance::Child)) continue;
+        const MacroHandle ch =
+            macro_handle_by_spawn_id(st, std::uint32_t(it.object));
+        if (!st.valid(ch) || st.dead[ch.slot] != 0) continue;
+        const ecs::MacroNpcRuntime& crt = st.runtime[ch.slot];
+        if (crt.squadType != std::uint8_t(t)
+            || crt.state != std::uint8_t(NS::Idle)
+            || st.cell[ch.slot].idx != st.cell[self.slot].idx)
+            continue;
+        const Inventory& hold = st.inventory[ch.slot].inv;
+        if (inventory_mass_g(hold) > 0 || inventory_value(hold) > 0)
+            continue;
+        return ch.slot;
+    }
+    return kMacroNoSlot;
+}
+
+AiPult::AiPult(const TickContext& ctx) : ctx_(ctx) {}
+
+ActSelf AiPult::act_self(AiSelf& s) {
+    return ActSelf{s.pools, s.rt, s.sheet, s.bag};
+}
+
+int AiPult::gather(AiSelf& s, ResourceFieldId row, std::uint8_t action,
+                   std::uint32_t cell, int want) {
+    const ActionDef& act = action_def(int(action));
+    ActSelf self = act_self(s);
+    if (!squad_act_ready(self, act)) return 0;
+    MacroWorld mw = ctx_.mw;  // the envelope, whole — never a
+                              // partial re-pick of its layers
+    const int got = field_harvest(mw, row, cell, want, s.h.slot);
+    if (got > 0) charge_squad_act(self, act, got);
+    return got;
+}
+
+int AiPult::craft(AiSelf& s, int outIdx, int batches) {
+    ActSelf self = act_self(s);
+    return squad_craft(self, outIdx, batches);
+}
+
+std::int64_t AiPult::act_cost(AiSelf& s, std::uint8_t action,
+                              std::int64_t volume) const {
+    return squad_act_cost(act_self(s), action_def(int(action)), volume);
+}
+
+void AiPult::hand(std::uint16_t from, std::uint16_t to, int defIdx, int n) {
+    if (!ctx_.mw.store || from == kMacroNoSlot || to == kMacroNoSlot
+        || defIdx < 0 || n <= 0) {
         return;
     }
-    if (ecs::march_arrived(s.rt)) {
-        // ДОМА: отдать дому всё добытое — сделкой, как всякий сквад.
+    DealLine lot[1];
+    lot[0] = DealLine{};
+    lot[0].want = n;
+    lot[0].def = std::uint16_t(defIdx);
+    (void)deal(store_ctx(ctx_), from, to, lot, {},
+               kNoCarryLimitG, kNoCarryLimitG);
+}
+
+int AiPult::rand(int n) { return rand_int(ctx_, n); }
+
+std::uint32_t AiPult::rand_nearby(std::uint32_t around, int radius) {
+    return cell_nearby(around, radius, ctx_);
+}
+
+void AiPult::drained_fact(MacroHandle self, int x, int y, ResourceFieldId row) {
+    record_rooted_fact(store_ctx(ctx_), *ctx_.mw.gs, FactKind::Drained,
+                         parent_of(store_ctx(ctx_), self.slot),
+                         x, y, int(row) + 1);
+}
+
+void AiPult::nomad(AiSelf& s) { ai_nomad(s.h, s.rt, s.pools, ctx_); }
+
+void AiPult::home_wander(AiSelf& s) {
+    ai_home_wanderer(s.h, s.rt, s.pools, ctx_);
+}
+
+void AiPult::load_child(AiSelf& s, std::uint16_t child) {
+    MacroStore& st = store_ctx(ctx_);
+    plan_home_load_(st, s.h.slot, child,
+                    carry_capacity_g(st.runtime[child],
+                                     st.inventory[child].inv));
+}
+
+CaravanDeal AiPult::trade_at(AiSelf& s, std::uint16_t market) {
+    MacroStore& st = store_ctx(ctx_);
+    return trade_caravan_at_station(
+        st, s.h.slot, carry_capacity_g(s.rt, s.bag), market);
+}
+
+void AiPult::traded_fact(AiSelf& s, int x, int y, int value, int marketId) {
+    MacroStore& st = store_ctx(ctx_);
+    record_rooted_fact(st, *ctx_.mw.gs, FactKind::Traded,
+                         parent_of(st, s.h.slot), x, y, value, marketId);
+}
+
+int AiPult::next_station(std::uint32_t at, int currentId, int prevId,
+                         float moveMult) {
+    return pick_next_station_(ctx_, at, currentId, prevId, moveMult);
+}
+
+void AiPult::dump_bag_home(AiSelf& s, std::uint16_t homeSlot) {
+    MacroStore& st = store_ctx(ctx_);
+    DealLine dump[kCommodityCount];
+    for (int i = 0; i < kCommodityCount; ++i) {
+        dump[i] = DealLine{};
+        dump[i].want = 1 << 30;
+        dump[i].def = std::uint16_t(commodity_item_index(i));
+    }
+    deal(st, s.h.slot, homeSlot, dump, {},
+         kNoCarryLimitG, kNoCarryLimitG);
+    // ВЫГРУЗКА ИЗ спины В СКЛАД: предела нет, и это ВЫСКАЗЫВАНИЕ, а не
+    // пропуск (M-308) — у склада места спины нет вовсе, потому что обоз
+    // есть свойство анкеты, которая идёт, а место не идёт никуда
+    // (`kNoCarryLimitG@src/macro/deal.h`).
+    transfer_value_dense(s.bag, depot_(homeSlot, ctx_.mw),
+                         inventory_value(s.bag), kNoCarryLimitG);
+}
+
+void AiPult::collect_tithe(AiSelf& s, std::uint16_t vassal,
+                           std::uint16_t homeSlot) {
+    MacroStore& st = store_ctx(ctx_);
+    Inventory& homeInv = st.inventory[homeSlot].inv;
+    auto& rt = s.rt;
+    Inventory* bag = &s.bag;
+    Interest* edge = tithe_of(st, vassal);
+    long long owed = edge ? edge->owedValue : 0;
+    long long took = 0;
+    // ── СНАЧАЛА ПО НУЖДЕ ДОМА, ОСТАТОК — ПО ПЛОТНОСТИ ───────────────
+    // Вердикт владельца 2026-09-21, дословно: «грузит ПО НУЖДЕ ДОМА,
+    // остаток — по value_dense_order. Иначе сборщик везёт домой
+    // серебро, а меряем мы еду». Это ровно то, что измерилось
+    // 2026-09-22, когда порядок был только по плотности: город получал
+    // казну и продолжал голодать (food_city −99.8 %).
+    // Чего дому не хватает — считается по самому дому той же дверью
+    // (ведомость-кэш уничтожена 2026-09-30, ломтик E шаг 2; закон и
+    // обе его функции — те же).
+    if (owed > 0) {
+        const Skills& homeHands = st.sheet[homeSlot].skills;
+        const auto home_demand_of = [&](int cid) {
+            return season_demand_for(cid, st.upkeep[homeSlot].needDebt,
+                                     souls_home(st, homeSlot), homeHands,
+                                     &homeInv);
+        };
+        // ПОРЯДОК НУЖДЫ — ПО ТОМУ, ЧЕГО ДОМУ НЕ ХВАТАЕТ БОЛЬШЕ ВСЕГО
+        // В СТОИМОСТИ (нехватка × домашняя цена), а НЕ по плотности.
+        // Измерено 2026-09-22: с плотностью еда стоит последней (она
+        // самая дешёвая на килограмм), долг кончался на серебре, и
+        // город продолжал голодать при работающем сборщике
+        // (food_city −99.4 %). Цена дома уже несёт срочность —
+        // непокрытая нужда сама дорожает, — поэтому ноль новых правил.
+        int order[kCommodityCount];
+        long long urgency[kCommodityCount];
         for (int c = 0; c < kCommodityCount; ++c) {
-            const int item = commodity_item_index(c);
-            const int n = s.bag.count_of(item);
-            if (n > 0) pult.hand(s.h.slot, homeSlot, item, n);
+            order[c] = c;
+            const int cid = commodity_item_index(c);
+            const ItemDef* cd = item_def_at(cid);
+            const int cbase = cd ? cd->value : 0;
+            const int chave = homeInv.count_of(cid);
+            const int cdemand = home_demand_of(cid);
+            const int lk = cdemand - chave;
+            urgency[c] = lk > 0 && cbase > 0
+                ? (long long)lk * stock_price(cbase, chave, cdemand)
+                : 0;
+        }
+        for (int a = 1; a < kCommodityCount; ++a)
+            for (int b = a; b > 0
+                            && urgency[order[b]] > urgency[order[b - 1]];
+                 --b)
+                std::swap(order[b], order[b - 1]);
+        for (int oi = 0; oi < kCommodityCount && owed > 0; ++oi) {
+            const int c = order[oi];
+            const int id = commodity_item_index(c);
+            const ItemDef* d = item_def_at(id);
+            const int base = d ? d->value : 0;
+            if (base <= 0) continue;
+            const int lack =
+                home_demand_of(id) - homeInv.count_of(id);
+            if (lack <= 0) continue;
+            const long long affordable = owed / base;
+            if (affordable <= 0) continue;
+            const int want = int(std::min<long long>(lack, affordable));
+            // Взыскание — строка сделки (ломоть 2 M-72): спина сборщика
+            // клампит дверью, факт честный — дюпа «add без снятия» нет.
+            DealLine draw[1];
+            draw[0] = DealLine{};
+            draw[0].want = want;
+            draw[0].def = std::uint16_t(id);
+            deal(st, vassal, s.h.slot, draw, {},
+                 carry_capacity_g(rt, *bag) - inventory_mass_g(*bag),
+                 kNoCarryLimitG);
+            const int moved = draw[0].done;
+            if (moved <= 0) continue;
+            owed -= (long long)moved * base;
+            took += (long long)moved * base;
         }
     }
-    // (Харча неопределённая артель не ждёт особо: она и так стоит дома, и
-    //  дом грузит её своим суточным кругом, как всякого ребёнка у порога.)
-    // КРУГ РЕШЕНИЯ — РАЗ В СУТКИ: слово убывает на думку.
-    std::uint32_t& wait = s.rt.mem[kArtelMemWait];
-    if (wait > 0) {
-        wait = sub_sat(wait, std::uint32_t(1));   // угасание счёта ожидания
-        return;
-    }
-    wait = kAiThinksPerDay;
-
-    // ГРУЗ ОДНОГО ВЫХОДА, КАКИМ ЕГО ОЦЕНИТ ДОМ: сколько единиц товара вместит
-    // спина, той же оценкой запаса, какой меряет сделка.
-    const std::int64_t backG = carry_capacity_g(s.rt, s.bag);
-    SquadType best = SquadType::Artel;
-    std::int64_t bestGain = 0;
-    const auto consider = [&](SquadType t, ResourceFieldId row,
-                              std::uint32_t site) {
-        if (site == ecs::kNoCell) return;               // работы нет
-        const int product = view.yield_at(row, site);
-        if (product < 0) return;
-        const RowSide homeRow = view.row_of(homeSlot, product);
-        if (worth_arriving(homeRow, 1) <= 1) return;    // дом завален
-        if (view.has_sibling(s.h, t)) return;           // такая у дома есть
-        const std::int64_t load = std::max<std::int64_t>(
-            1, backG / std::max<std::int64_t>(
-                   1, unit_mass_g(item_def_at(product))));
-        const std::int64_t gain = lot_take(homeRow, load);
-        if (gain > bestGain) {
-            bestGain = gain;
-            best = t;
+    // ОСТАТОК ДОЛГА — ПО ПЛОТНОСТИ: самое ценное, что осталось у
+    // вассала. Заплатить зерном, оставив серебро, нельзя ни с какой
+    // стороны — нужда дома уже взяла своё зерно выше.
+    if (owed > 0) {
+        // ЗАГРУЗКА В спину: предел — ОСТАТОК ЁМКОСТИ, тот же, что у
+        // ветки нужды выше (M-308). До этого наряда здесь не было
+        // предела вовсе, и две половины ОДНОЙ загрузки спрашивали спину
+        // по-разному — вассал, гасящий остаток по плотности, грузил
+        // сборщика без всякого предела.
+        const int dense = transfer_value_dense(
+            st.inventory[vassal].inv, Depot(*bag),
+            int(std::min<long long>(owed, 1 << 30)),
+            carry_capacity_g(rt, *bag) - inventory_mass_g(*bag));
+        if (dense > 0) {
+            owed -= dense;
+            took += dense;
         }
-    };
-    consider(SquadType::Ploughmen, ResourceFieldId::Wheat,
-             view.field_near(FT_Field, home, home));
-    consider(SquadType::Hunters, ResourceFieldId::Fauna,
-             view.fauna_near(home, home));
-    consider(SquadType::Flaxers, ResourceFieldId::Wheat,
-             view.field_near(FT_FlaxField, home, home));
-    consider(SquadType::Woodcutters, ResourceFieldId::Trees,
-             view.tree_near(home, home));
-    consider(SquadType::Miners, ResourceFieldId::Vein, view.vein_near(home));
-    if (best == SquadType::Artel) return;   // никем — стою до нового круга
-    // СМЕНА ТИПА: память зануляется, новый модуль начнёт с чистого Idle дома.
-    s.rt.squadType = std::uint8_t(best);
-    for (std::uint32_t& w : s.rt.mem) w = 0;
-    ecs::goal_drop(g);
-    s.rt.state = std::uint8_t(NS::Idle);
+    }
+    if (took > 0 && edge) {
+        edge->owedValue -= took;
+        if (edge->owedValue < 0) edge->owedValue = 0;
+        record_rooted_fact(st, *ctx_.mw.gs, FactKind::Taxed,
+                             int(st.spawnId[vassal].index),
+                             cell_x(s.cell.idx, ctx_.mapW),
+                             cell_y(s.cell.idx, ctx_.mapW),
+                             int(std::min<long long>(took, 1 << 30)),
+                             parent_of(st, s.h.slot));
+    }
 }
 
-void ai_artel(MacroHandle e, ecs::MacroNpcRuntime& rt,
-              ecs::Pools& pools, const TickContext& ctx) {
-    if (!ctx.mw.store || !ctx.mw.gs) return;
-    // Рефлексы — выбор модуля: след, угроза, охота по запаху.
-    const ecs::NPCKind& kind = store_ctx(ctx).kind[e.slot];
-    scent_squad_deposit(e, kind, ctx);
-    if (squad_threat_step(e, kind, rt, pools, ctx)) return;
-    if (scent_hunt_step(e, kind, rt, pools, ctx)) return;
-    AiSelf self{e, store_ctx(ctx).cell[e.slot], rt, pools,
-                store_ctx(ctx).goal[e.slot],
-                store_ctx(ctx).inventory[e.slot].inv,
-                store_ctx(ctx).sheet[e.slot]};
-    const AiView view(ctx);
-    AiPult pult(ctx);
-    artel_think(self, view, pult);
+FeatureType AiPult::reshape_feature(MacroHandle self, FeatureType want) {
+    if (!ctx_.mw.gs || !ctx_.mw.terrain || !ctx_.mw.store)
+        return FT_None;
+    const MacroStore& st = store_ctx(ctx_);
+    if (!st.valid(self)) return FT_None;
+    return feature_put(ctx_.mw.gs->features, *ctx_.mw.terrain,
+                       st.cell[self.slot].idx, want);
 }
 
-// ── The city's trading agent (W2b) ───────────────────────────────────────
-// An honest caravan: no TradeRoute abstraction settles anything — the goods
-// ride in the caravan's OWN bag between real inventories, so a robbery on
-// the road takes REAL cargo. What to haul is decided by the HOME ITSELF —
-// its own shelf and its own season's bill, read live at the moment of the
-// deal (the cached ledger died 2026-09-30, ломтик E шаг 2): by the time the
-// crew gets back the answer may be stale, and that is a trader's life.
-//
-// How much it hauls is its OWN carry law and nothing else: rt.carryCap =
-// get_carry_capacity(sheet) × the row's haulMult (squad.h
-// refresh_leader_travel_stats — a caravan is wagons and mules, ×32). A flat
-// `kCaravanCapacityKg = 256` lived here until 2026-08-29: a SECOND capacity
-// beside the legal one, so the hold neither grew with the avatar's back nor
-// answered to the overload law that priced the very same cargo's march.
+MacroHandle AiPult::spawn(AiSelf& s, SquadType bornType, int crewSouls) {
+    if (crewSouls <= 0 || !ctx_.mw.gs || !ctx_.mw.terrain)
+        return MacroHandle{};
+    MacroStore& st = store_ctx(ctx_);
+    if (count_human_souls(s.bag) < crewSouls) return MacroHandle{};
+    const std::uint16_t slot = s.h.slot;
+    SquadSpec spec{};
+    spec.avatarType = NPCType::Peasant;
+    spec.x = ecs::cell_x(st.cell[slot], ctx_.mapW);
+    spec.y = ecs::cell_y(st.cell[slot], ctx_.mapW);
+    spec.parentId = int(st.spawnId[slot].index);
+    for (int m = 1; m < crewSouls; ++m) {
+        // ГЕНЕРИК (CANON S4): члены — ОДИН стак, не пер-душевые
+        // ординалы (`SquadSpecMembers::push` сливает равные записи);
+        // поток имён остаётся лидерам и душам с историей.
+        SoldierRecord rec{};
+        rec.kind = std::uint16_t(spec.avatarType);
+        rec.level = 1;
+        if (!spec.members.push(rec)) break;
+    }
+    const MacroHandle born =
+        spawn_squad(*ctx_.mw.gs, st, *ctx_.mw.terrain, spec);
+    if (!st.valid(born)) return MacroHandle{};
+    st.runtime[born.slot].squadType = std::uint8_t(bornType);
+    bleed_flock(s.bag, 1 + spec.members.size());
+    return born;
+}
+
+namespace {
 
 // (Объявление `ai_nomad` переехало к пульту выше: фолбэк стал ГЛАГОЛОМ, и
 //  дверь к нему обязана стоять до класса, который её проносит модулю.)
@@ -2598,975 +1615,7 @@ long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
     return planned;
 }
 
-// (ЗДЕСЬ ЖИЛ ai_caravan — 163 строки рейса «город → город со станциями».
-// Снесён 2026-09-21 вместе с родом NPCType::Caravan: караван оказался
-// СКВАДОМ, притворившимся видом существа, и его обоз был вписан в породу
-// лидера 32 спинами вопреки закону «обоз = сумма спин состава» (squad.h).
-// Торговый канал мира держат рейсы сбыта артелей — ai_vendor, одна машина
-// рейса на любые два места. Караван вернётся сквадом: люди плюс лошади.)
-
-// ═════ МОДУЛЬ Caravan — РЕЙС К РЫНКУ (форма образца) ════════════════════
-// РЕЙС К РЫНКУ — одна машина для ЛЮБЫХ двух мест (владелец 2026-09-19:
-// «добавим сквад горожан, которые идут в деревню закупаться»). Рынок НАЗЫВАЕТ
-// САМ МОДУЛЬ — на выезде из дома и на каждом следующем плече одним вопросом
-// (`next_station`: сосед по мембране от точки стояния), — а В ПУТИ его несёт
-// ЦЕЛЬ: род `GoalKind::Squad`, ординал рынка в `goal.what`. Феодальное ребро
-// рынка не называет: к сюзерену и в деревню домена едет ОДИН рейс, а не два ИИ.
-//
-// ПОРУЧЕНИЕ (`rt.errandObject`) ЗДЕСЬ УМЕРЛО (ломоть 4 M-72), и это был
-// ВТОРОЙ НОСИТЕЛЬ ОДНОЙ ВЕЛИЧИНЫ (DOD п.6): из трёх мест, спрашивавших «где
-// мой рынок», ДВА уже читали цель, а третье — колонку, и единственный её
-// писатель стоял строкой рядом с `goal_set`, дублируя тот же ординал. Теперь
-// носитель один, и ответ у трёх читателей общий (`AiView::goal_rooted`).
-// «Откуда пришёл» — другая величина: ею рулетка станции исключает только что
-// обслуженный рынок. Она лежит словом памяти модуля (`kCaravanMemPrevStation`).
-// ЗАМЫСЕЛ — СЛОВАМИ ВЛАДЕЛЬЦА 2026-11-12 (дословно — CANON, блок «AI-МОДУЛИ»):
-// «корован сам выбирает рынки и что ему делать (его аи модуль) город рождает
-// его и загружает … корован сам идёт торговать получать прибыль (т оесть по
-// сути его цель вырастить стоимость своего инвентаря …) … вернуть всё что
-// наторговваал обогатить свой город». Отсюда рейс:
-//   · ГРУЗИТ РОДИТЕЛЬ (`city_think` → `load_child`), корован ждёт груза;
-//   · на рынке купец растит СВОЮ ОЦЕНКУ СВОЕГО ТРЮМА (S25, «ЕДИНАЯ
-//     ЦЕНОМОДЕЛЬ») — отдаёт то, что рынок ценит выше него, берёт то, что сам
-//     ценит выше рынка; склад дома в сделке не читается вовсе
-//     (`trade_caravan_at_station`);
-//   · домой — по ПРЕДЕЛЬНОЙ ОТДАЧЕ (ступень Working ниже), и дома отдаёт всё.
-// Своя память рейса — пять слов памяти модуля (`kCaravanMem…@src/macro/npc_ai.h`).
-void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
-    const std::uint32_t home = view.home(s.h);
-    if (home == ecs::kNoCell) { pult.nomad(s); return; }
-    ecs::SquadGoal& g = s.goal;
-    // Плечо дома — ребро Parent (M-245): один резолв слота на такт. Ветки
-    // «а если дома нет» здесь больше нет, и это не упрощение: `view.home`
-    // выше спрашивает ТОТ ЖЕ слот ТОГО ЖЕ ребра и уже отказал бы — ветка
-    // была недостижима с рождения (образец Artel её и не имеет).
-    const std::uint16_t homeSlot = view.home_slot(s.h);
-    auto& rt = s.rt;
-
-    if (rt.state == std::uint8_t(NS::Idle)) {
-        // ПРИШЁЛ (ноги назвали прибытие и сделали сквад Idle). ДОМА КОРОВАН
-        // ОТДАЁТ ВСЁ НАТОРГОВАННОЕ (владелец 2026-11-12: «вернуть всё что
-        // наторговваал обогатить свой город»): вылив сумки — ОДНА сделка
-        // лотом по всему словарю, остаток стоимости — той же дверью цены.
-        // «Дома» — клетка дома, тот же вопрос, что у ног (M-461).
-        if (ecs::march_arrived(rt)) {
-            if (s.cell.idx == home)
-                pult.dump_bag_home(s, homeSlot);
-            charge_squad_recovery(rt,
-                std::uint32_t((10 + pult.rand(15)) * kAiTicks));
-        }
-        if (squad_recovering(rt)) return;
-        // Idle ВНЕ ДОМА — пробуждение после привала в пути (Resting будит в
-        // Idle): рейс ПРОДОЛЖАЕТСЯ к рынку, который несёт цель, а без него —
-        // домой. Ни погрузки, ни выбора рынка вне дома нет («ничего не
-        // телепортируется», S5).
-        if (s.cell.idx != home) {
-            const std::uint16_t m2 = view.goal_rooted(g);
-            if (m2 != kMacroNoSlot && view.is_settlement(m2)) {
-                ecs::goal_set(g, view.rooted_cell(m2), g.what, 0,
-                              std::uint8_t(NS::Working));
-                rt.state = std::uint8_t(NS::Traveling);
-            } else {
-                ecs::goal_set(g, home, 0, 0, std::uint8_t(NS::Idle));
-                rt.state = std::uint8_t(NS::Returning);
-            }
-            return;
-        }
-        // ДОМА. ГРУЗИТ ГОРОД, А НЕ КОРОВАН (владелец 2026-11-12: «город
-        // рождает его и загружает»): груз отдаёт модуль родителя своей
-        // сделкой (`city_think` → `load_child`), а корован в склад дома не
-        // лезет. Пустой трюм значит «дом ещё не дал груза» — ждать.
-        // РЫНОК ВЫЕЗДА НАЗЫВАЕТ САМ МОДУЛЬ — тем же вопросом, которым он
-        // выбирает следующее плечо рейса: сосед по мембране от точки
-        // стояния, рулеткой по дням пути (`next_station`). Точка стояния
-        // здесь — дом, «откуда пришёл» — никто. (Стояло «рынок — из цели»,
-        // и у вопроса не было писателя: первый рынок ставил аукцион целей,
-        // казнённый ломтём 4 M-72, — ряд M-477.)
-        const bool loaded = inventory_mass_g(s.bag) > 0
-                         || inventory_value(s.bag) > 0;
-        const std::uint16_t market = !loaded ? kMacroNoSlot
-            : view.rooted_slot(pult.next_station(
-                  home, int(view.rooted_id(homeSlot)), 0, rt.moveMult));
-        if (market == kMacroNoSlot || market == homeSlot) {
-            // Нечего везти либо некуда ехать (соседа по мембране нет):
-            // переждать — долгом восстановления, не чужим поведением.
-            charge_squad_recovery(rt,
-                std::uint32_t((40 + pult.rand(40)) * kAiTicks));
-            return;
-        }
-        // ВЫЕЗД — РЕЙС НАЧИНАЕТ СЕБЯ С НУЛЯ: ни прибыли, ни пройденного пути.
-        // По этим двум числам судится возврат.
-        rt.mem[kCaravanMemTripGain] = 0;
-        rt.mem[kCaravanMemTripTicks] = 0;
-        rt.mem[kCaravanMemPrevLegRate] = 0;
-        rt.mem[kCaravanMemDeals] = 0;
-        rt.mem[kCaravanMemPrevStation] = 0;   // ноль = «никто»
-        ecs::goal_set(g, view.rooted_cell(market),
-                      ecs::goal_what(ecs::GoalKind::Squad,
-                                     view.rooted_id(market)),
-                      0, std::uint8_t(NS::Working));
-        rt.state = std::uint8_t(NS::Traveling);
-        return;
-    }
-    if (rt.state == std::uint8_t(NS::Traveling)) {
-        // К рынку везут ноги свипа; прибытие сделает сквад Working само.
-        // АКТ МГНОВЕНЕН: сделка случится первой же свободной думкой, её
-        // длительность повиснет ПОСЛЕ как долг (инверсия castTime).
-        return;
-    }
-    if (rt.state == std::uint8_t(NS::Working)) {
-        if (squad_recovering(rt)) return;
-        if (const std::uint16_t market = view.goal_rooted(g);
-            market != kMacroNoSlot && view.is_settlement(market)) {
-            // СДЕЛКА РАСТИТ ОЦЕНКУ ТРЮМА, И ПРИБЫЛЬ ПЛЕЧА ЕСТЬ ЕЁ ПРИРОСТ
-            // (замысел владельца 2026-11-12: «его цель вырастить стоимость
-            // своего инвентаря»; мерка — своя оценка купца, единая
-            // ценомодель). Прирост называет сама сделка: во сколько купец
-            // ценит взятое минус во сколько ценил отданное. Склад дома здесь
-            // не читается. Память насыщается на ширине слова — страж, не
-            // поведение.
-            const CaravanDeal leg = pult.trade_at(s, market);
-            // Нога исполняется, только если оценка купца от неё растёт
-            // (`barter_leg_`), так что прибыль сделки не отрицательна; ноль
-            // здесь — страж упаковки слова, не поведение.
-            const std::int64_t dealGain = leg.gain > 0 ? leg.gain : 0;
-            rt.mem[kCaravanMemTripGain] = std::uint32_t(
-                std::min<std::int64_t>(
-                    std::int64_t(rt.mem[kCaravanMemTripGain]) + dealGain,
-                    0xFFFFFFFFll));
-            if (leg.movedTableValue > 0) {
-                // СДЕЛКА СОСТОЯЛАСЬ — ДОЛГ ПОВИС («сделал → вишу»): тики
-                // авторские, своей строки у сделки пока нет. Пустой визит
-                // акта не делал — долга нет, развилка решается той же думкой.
-                charge_squad_recovery(rt,
-                    std::uint32_t((4 + pult.rand(4)) * kAiTicks));
-                pult.traded_fact(s, cell_x(g.cell, view.map_w()),
-                                 cell_y(g.cell, view.map_w()),
-                                 leg.movedTableValue,
-                                 int(ecs::goal_ordinal(g.what)));
-                // СДЕЛКА СОВЕРШЕНА — вера в среднюю по рейсу растёт с каждой
-                // (пустой рынок доверия не прибавляет).
-                ++rt.mem[kCaravanMemDeals];
-            }
-            // ── ВОЗВРАТ ДОМОЙ — ПО ПРЕДЕЛЬНОЙ ОТДАЧЕ ─────────────────────
-            // Закон и оба краевых наблюдения владельца (холодный старт,
-            // дальняя сверхприбыль) — `trip_goes_on@src/macro/economy.h`, там
-            // же свидетели под компилятором; здесь только его входы.
-            const int prevId = int(rt.mem[kCaravanMemPrevStation]);
-            const std::uint16_t from =
-                prevId != 0 ? view.rooted_slot(prevId) : homeSlot;
-            const std::int64_t legTicks = view.march_ticks(
-                from != kMacroNoSlot ? view.rooted_cell(from) : home,
-                s.cell.idx, rt.moveMult);
-            const std::int64_t homeTicks =
-                view.march_ticks(s.cell.idx, home, rt.moveMult);
-            if (legTicks > 0)
-                rt.mem[kCaravanMemTripTicks] += std::uint32_t(legTicks);
-            // ОКНО В ДВА ПЛЕЧА: отдача предыдущего плеча лежит словом памяти;
-            // у первого плеча рейса «предыдущим» служит оно само. В память
-            // идёт отдача САМОЙ СДЕЛКИ — страх следующей дороги к прошлому
-            // плечу отношения не имеет. Упаковка в слово насыщается: это
-            // страж ширины, а не поведение.
-            const std::int64_t dealRate =
-                leg_rate(dealGain, legTicks, kTicksPerDay);
-            const std::int64_t prevRate = prevId != 0
-                ? std::int64_t(rt.mem[kCaravanMemPrevLegRate]) : dealRate;
-            rt.mem[kCaravanMemPrevLegRate] = std::uint32_t(
-                std::min<std::int64_t>(dealRate, 0xFFFFFFFFll));
-            const std::uint16_t next = view.rooted_slot(pult.next_station(
-                s.cell.idx, int(view.rooted_id(market)), prevId,
-                rt.moveMult));
-            // Трюм пуст — торговать нечем, искать незачем.
-            const bool holdEmpty = inventory_mass_g(s.bag) <= 0
-                                && inventory_value(s.bag) <= 0;
-            if (next != kMacroNoSlot && next != homeSlot && !holdEmpty
-                && legTicks > 0 && homeTicks >= 0) {
-                const std::uint32_t nextCell = view.rooted_cell(next);
-                // ОЖИДАНИЕ ОТ СЛЕДУЮЩЕГО ПЛЕЧА — ОТДАЧА ПОСЛЕДНЕГО, ЗА ВЫЧЕТОМ
-                // СТРАХА ДОРОГИ К НАЗВАННОМУ РЫНКУ (поле угрозы): плечо, чью
-                // прибыль съедает страх, не едут — отказ ценой, а не
-                // запретом. Сегодня ожидание кормит только опыт; знание о
-                // дальних ценах (поле цены, ряд M-479) встанет сюда же.
-                const std::int64_t fear = view.route_fear(s.cell.idx, nextCell);
-                const std::int64_t expectRate =
-                    leg_rate(dealGain - fear, legTicks, kTicksPerDay);
-                const std::int64_t tripGain =
-                    std::int64_t(rt.mem[kCaravanMemTripGain]);
-                // БЕЗ ПРИБЫЛИ страху противопоставить нечего: на опасную
-                // дорогу рейс без единой сделки не сворачивает. «Первый
-                // рынок рейса» — тот, куда пришли из дома (станции нет).
-                if ((tripGain > 0 || fear == 0)
-                    && trip_goes_on(expectRate, prevRate, tripGain,
-                                    std::int64_t(rt.mem[kCaravanMemTripTicks])
-                                        + homeTicks,
-                                    std::int64_t(rt.mem[kCaravanMemDeals]),
-                                    /*firstStop=*/prevId == 0,
-                                    kTicksPerDay)) {
-                    rt.mem[kCaravanMemPrevStation] = view.rooted_id(market);
-                    // Рынок следующего плеча НАЗЫВАЕТ ЦЕЛЬ, и больше ничто.
-                    ecs::goal_set(g, nextCell,
-                                  ecs::goal_what(ecs::GoalKind::Squad,
-                                                 view.rooted_id(next)),
-                                  0, std::uint8_t(NS::Working));
-                    rt.state = std::uint8_t(NS::Traveling);
-                    return;
-                }
-            }
-        }
-        rt.mem[kCaravanMemPrevStation] = 0;   // ноль = «никто»
-        ecs::goal_set(g, home, 0, 0, std::uint8_t(NS::Idle));
-        rt.state = std::uint8_t(NS::Returning);
-        return;
-    }
-    // Wandering/Returning: в пути решать нечего — везут ноги свипа, вылив
-    // дома разбирает ступень Idle по прибытии.
-}
-
-// Переходник пятёрки — тот же, что у образца: собирает СВОЮ СТРОКУ, ВИД и
-// ПУЛЬТ. Фолбэк «мира нет» ведёт бродягой — ровно куда вёл прежний отказ
-// `!ctx.mw.store` в теле (а `gs` здесь добавлен не ради формы: летопись
-// сделки разыменовывала его без проверки).
-void ai_vendor(MacroHandle e, ecs::MacroNpcRuntime& rt,
-               ecs::Pools& pools, const TickContext& ctx) {
-    if (!ctx.mw.store || !ctx.mw.gs) {
-        ai_nomad(e, rt, pools, ctx);
-        return;
-    }
-    // Преамбула рефлексов — та же и в том же порядке (M-307, см. ai_artel).
-    const ecs::NPCKind& kind = store_ctx(ctx).kind[e.slot];
-    scent_squad_deposit(e, kind, ctx);
-    if (squad_threat_step(e, kind, rt, pools, ctx)) return;
-    if (scent_hunt_step(e, kind, rt, pools, ctx)) return;
-    AiSelf self{e, store_ctx(ctx).cell[e.slot], rt, pools,
-                store_ctx(ctx).goal[e.slot],
-                store_ctx(ctx).inventory[e.slot].inv,
-                store_ctx(ctx).sheet[e.slot]};
-    const AiView view(ctx);
-    AiPult pult(ctx);
-    caravan_think(self, view, pult);
-}
-
-// The SUZERAIN place a town owes — a place's Stance::Suzerain row in its
-// (`capital_of_` СНЕСЁН 2026-09-22 вместе с дорогой дани ВВЕРХ: он отвечал
-//  «кому этот город платит», а платить наверх больше некому — сюзерен сам
-//  посылает сборщика вниз. Наряд сессии 7 требовал этого сноса, и вот он.)
-
-// ── СБОРЩИК ИДЁТ ВНИЗ (CANON S4 «Сборщик идёт вниз», Б-4) ───────────────
-// Здесь стоял `ai_taxrun` — 145 строк, и он носил дань ВВЕРХ: вассал сам
-// снаряжал курьера к сюзерену. Канон говорит обратное, и владелец повторил
-// это дословно: «город рождает… сборщика налогов, который ходит в
-// вассальные деревни». Машина перевёрнута 2026-09-22.
-//
-// Поручение ставит ТОТ ЖЕ аукцион, что поднимает артель и корована: заявка
-// сборщика — одна на КАЖДОГО должника, объект = ординал вассала, скор —
-// та же выработка в день рейса (стоимость долга / дни пути). Пул рук
-// урезает, как и всех (CANON S4 «рождение сквада — один закон»).
-//
-// ДОЛГ БЕРЁТСЯ ПО ПЛОТНОСТИ СТОИМОСТИ (владелец 2026-09-22): первым уходит
-// самое ценное, что есть у вассала. Это строже прежнего «доля каждого
-// стака» — заплатить зерном, оставив серебро, невозможно.
-//
-// ═════ МОДУЛЬ Collector — форма образца ═════════════════════════════════
-// ДОЛЖНИК — ИЗ ЦЕЛИ (род Squad), как рынок у рейса сбыта: поручение
-// (`rt.errandObject`) здесь умерло тем же ломтём и по той же причине — цель
-// УЖЕ несла ординал вассала в обеих ветках Idle, то есть колонка была
-// вторым носителем одной величины (DOD п.6). Взыскание целиком — ОДИН
-// глагол пульта (`collect_tithe`): «сколько увёз, столько и списал» есть
-// одна транзакция мира, и разрезать её телу модуля нечем.
-void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
-    const std::uint32_t home = view.home(s.h);
-    if (home == ecs::kNoCell) { pult.nomad(s); return; }
-    ecs::SquadGoal& g = s.goal;
-    // Плечо дома — ребро Parent (M-245); вассала — колонки его ТЕЛА.
-    // (Ветка «дома нет» снята как недостижимая: `view.home` выше спрашивает
-    // тот же слот того же ребра.)
-    const std::uint16_t homeSlot = view.home_slot(s.h);
-    auto& rt = s.rt;
-
-    // ДОРОГА ДОМОЙ ДОЛЖНИКА НЕ СПРАШИВАЕТ, И ЭТА СТУПЕНЬ СТОИТ ВЫШЕ ГЕЙТА
-    // НАМЕРЕННО. Взыскание заканчивается тем, что цель перенацеливается на
-    // ДОМ, а `what` обнуляется — должник в ней больше не нужен. Но гейт
-    // ниже читает должника ИЗ ЦЕЛИ, и пока эта ступень стояла после него,
-    // гружёный сборщик на первой же думке обратного плеча получал
-    // «должника нет» и уходил в `home_wander` — а ветка `Returning` с
-    // `dump_bag_home` была НЕДОСТИЖИМА.
-    //
-    // ЧЕМ ЭТО БЫЛО В МИРЕ: долг ребра списывался, товар уезжал со склада
-    // вассала — и НАВСЕГДА оставался в спине бродящего вокруг дома
-    // сборщика. Дань не доезжала НИ РАЗУ; дом беднел, вассал платил,
-    // материя зависала в кармане. Замер этого прибора: долг 200 → 0, у
-    // вассала 40 → 0, дома 0, В СПИНЕ 40, сквад жив и бродит на (14,2).
-    //
-    // ОТКУДА ВЗЯЛОСЬ: ломоть 4 M-72 увёл должника из колонки
-    // `rt.errandObject` в колонку ЦЕЛИ — верно по форме (второй носитель
-    // одной величины умер), но цель несёт ещё и «куда иду», и обратное
-    // плечо затирало ею же идентичность поручения. Свидетеля у рода
-    // `Collector` не было ни одного, поэтому дефект приехал зелёным.
-    //
-    // ПОЧЕМУ ИМЕННО ТАК, А НЕ «СОХРАНИТЬ ДОЛЖНИКА В `what` НА ОБРАТНОМ
-    // ПЛЕЧЕ»: `what` отвечает на вопрос «к чему я иду», и на обратном плече
-    // честный ответ — ДОМ. Вписать туда должника значило бы заставить
-    // колонку врать ради удобства гейта. Какое плечо идёт, знает `state`, и
-    // спрашивать надо его.
-    //
-    // С M-2 СТУПЕНЬ СТАЛА КОРОЧЕ, А ЕЁ МЕСТО — ТЕМ ЖЕ: домой везут ноги свипа,
-    // и они же делают сборщика Idle по прибытии, поэтому здесь остались две
-    // строки — «в пути домой решать нечего» и «пришёл — вылил». Обе стоят
-    // ВЫШЕ гейта должника по той же причине, что и прежде.
-    if (rt.state == std::uint8_t(NS::Returning)) return;
-    if (rt.state == std::uint8_t(NS::Idle) && ecs::march_arrived(rt)) {
-        // Вылив дани домой — ОДНА сделка (ломоть 2 M-72). ТОЛЬКО ДОМА: в
-        // клетке дома, тем же вопросом, каким «дома» судит рейс сбыта. Прежняя
-        // ветка блуждания выливала сумку и по прибытии в точку прогулки — до
-        // двенадцати клеток от склада, мимо закона «ничего не
-        // телепортируется» (S5).
-        if (s.cell.idx == home)
-            pult.dump_bag_home(s, homeSlot);
-        charge_squad_recovery(rt,
-            std::uint32_t((10 + pult.rand(15)) * kAiTicks));
-        return;
-    }
-
-    // ДОЛЖНИКА СБОРЩИК НАХОДИТ САМ, И ЭТО ПОЧИНКА МЁРТВОГО ПИСАТЕЛЯ, А НЕ
-    // НОВАЯ МЕХАНИКА (ломоть 5а M-72). Цель сборщика ставил АУКЦИОН, а он
-    // казнён ломтём 4 — то есть у колонки цели этого рода не осталось
-    // писателя ни одного, и всякий рождённый сборщик падал в `home_wander`
-    // НАВСЕГДА: род был жив, канал дани пуст. Спрашивать «кто мне должен»
-    // есть вопрос о СВОИХ рёбрах (`AiView::owing_vassal` — обход своих
-    // `interests` по `Stance::Vassal`, не скан мира), поэтому решение
-    // принадлежит МОДУЛЮ, а не внешнему распределителю.
-    //
-    // ФОРМА ЦЕЛИ — ТА ЖЕ, ЧТО У ДВУХ ВЕТОК Idle НИЖЕ (род Squad, ординал
-    // вассала, `onArrival = Working`): второго способа назвать должника не
-    // заводится, иначе у одной величины станет два носителя (DOD п.6).
-    //
-    // ЗДЕСЬ ДОЛЖНИК ТОЛЬКО НАЗЫВАЕТСЯ, В ЦЕЛЬ ЕГО ПИШЕТ ВЫЕЗД (M-2). Прежде
-    // эта ступень писала цель сразу — и это было «назвать», а не «идти»,
-    // пока ноги спрашивали состояние. Названный адрес теперь значит «везти»
-    // (`goal_set@src/bus/squad_row.h`), и запись на этой ступени погнала бы
-    // к вассалу сборщика, который ещё отдыхает дома. Обе ветки Idle ниже
-    // пишут ту же цель в момент выезда — второго носителя не появилось.
-    std::uint16_t vassal = view.goal_rooted(g);
-    if (vassal == kMacroNoSlot || vassal == homeSlot) {
-        const std::uint16_t owing = view.owing_vassal(homeSlot);
-        if (owing == kMacroNoSlot || owing == homeSlot) {
-            // Дом никому не сюзерен (или все рассчитались) — ждать нечего.
-            pult.home_wander(s);
-            return;
-        }
-        vassal = owing;
-    }
-
-    if (rt.state == std::uint8_t(NS::Idle)) {
-        if (squad_recovering(rt)) return;
-        // Проснулся НЕ дома (привал в пути будит в Idle) — рейс к должнику
-        // продолжается. Дома — решает ветка ниже: должен ли он ещё.
-        if (s.cell.idx != home) {
-            ecs::goal_set(g, view.rooted_cell(vassal),
-                          ecs::goal_what(ecs::GoalKind::Squad,
-                                         view.rooted_id(vassal)),
-                          0, std::uint8_t(NS::Working));
-            rt.state = std::uint8_t(NS::Traveling);
-            return;
-        }
-        if (!view.owes_tithe(vassal)) {
-            // Должник рассчитался (собрали или простили) — ждать нечего,
-            // ротация завтра переторгует эту строку заново.
-            charge_squad_recovery(rt,
-                std::uint32_t((8 + pult.rand(8)) * kAiTicks));
-            return;
-        }
-        ecs::goal_set(g, view.rooted_cell(vassal),
-                      ecs::goal_what(ecs::GoalKind::Squad,
-                                     view.rooted_id(vassal)),
-                      0, std::uint8_t(NS::Working));
-        rt.state = std::uint8_t(NS::Traveling);
-        return;
-    }
-    if (rt.state == std::uint8_t(NS::Traveling)) {
-        // К вассалу везут ноги свипа; прибытие сделает сборщика Working
-        // само. АКТ МГНОВЕНЕН: взыскание случится первой же свободной
-        // думкой, его длительность повиснет ПОСЛЕ как долг (инверсия
-        // castTime).
-        // (Здесь стояла строка ног с шрамом 2026-09-22: без неё машина
-        //  СТОЯЛА, вечно числясь «в пути» — Traveling 799 563 при Working
-        //  РОВНО НОЛЬ. Забыть ноги модулю больше нечем: их у него нет.)
-        return;
-    }
-    if (rt.state == std::uint8_t(NS::Working)) {
-        if (squad_recovering(rt)) return;
-        pult.collect_tithe(s, vassal, homeSlot);
-        // ВЗЫСКАНИЕ СЛУЧИЛОСЬ — ДОЛГ ПОВИС («сделал → вишу»): тики
-        // авторские, своей строки у взыскания пока нет (придёт с M-307).
-        charge_squad_recovery(rt,
-            std::uint32_t((2 + pult.rand(3)) * kAiTicks));
-        ecs::goal_set(g, home, 0, 0, std::uint8_t(NS::Idle));
-        rt.state = std::uint8_t(NS::Returning);
-        return;
-    }
-    // Блуждание с живым должником: в пути решать нечего — прогулку довезут
-    // ноги, прибытие разобрано выше гейта должника.
-    if (rt.state == std::uint8_t(NS::Wandering)) return;
-    // Состояние, которого этот модуль не ведёт (его оставил рефлекс):
-    // встать и перерешить. Встать — значит отказаться от адреса.
-    ecs::goal_drop(g);
-    rt.state = std::uint8_t(NS::Idle);
-    charge_squad_recovery(rt, std::uint32_t(4 * kAiTicks));
-}
-
-// Переходник пятёрки — тот же, что у образца и у рейса сбыта.
-void ai_collector(MacroHandle e, ecs::MacroNpcRuntime& rt,
-                  ecs::Pools& pools, const TickContext& ctx) {
-    if (!ctx.mw.store || !ctx.mw.gs) {
-        ai_nomad(e, rt, pools, ctx);
-        return;
-    }
-    // Преамбула рефлексов — та же и в том же порядке (M-307, см. ai_artel).
-    const ecs::NPCKind& kind = store_ctx(ctx).kind[e.slot];
-    scent_squad_deposit(e, kind, ctx);
-    if (squad_threat_step(e, kind, rt, pools, ctx)) return;
-    if (scent_hunt_step(e, kind, rt, pools, ctx)) return;
-    AiSelf self{e, store_ctx(ctx).cell[e.slot], rt, pools,
-                store_ctx(ctx).goal[e.slot],
-                store_ctx(ctx).inventory[e.slot].inv,
-                store_ctx(ctx).sheet[e.slot]};
-    const AiView view(ctx);
-    AiPult pult(ctx);
-    collector_think(self, view, pult);
-}
-
-// ═════ МОДУЛИ Village / City / Capital — ТЕ ЖЕ ОБЫЧНЫЕ МОДУЛИ СКВАДОВ ════
-// Вердикт владельца 2026-10-24, дословно: «нет это снова фигня какаято - у
-// нас место это же АРХЕТИП сквадов и всё а система сквадов едины у них ест
-// ьвсе системы - архетип эоо как ТЕБЯ видят другие а не какой ты (город
-// деревню и столицу видят как места наприме корвоаны - что за бред». Поэтому
-// ниже — тот же `AiSelf` + const-`AiView` + `AiPult`, что у трёх образцов
-// выше, та же ось ступеней `NPCState` и тот же гейт занятости
-// `recoverySteps`. Архетип в этих телах не упомянут ни разу, и законов
-// «места» среди них нет ни одного.
-//
-// ЧЕГО В НИХ НЕТ — И ЭТО ИХ ВНУТРЕННЕЕ ДЕЛО, А НЕ СВОЙСТВО РОДА: ни `march`,
-// ни преамбулы рефлексов. Ногами эти два модуля сегодня не пользуются;
-// рефлексы (след, порог угрозы, охота по запаху) стоят в головах ЧЕТЫРЁХ
-// ходоков и сюда не скопированы. Прежде они стояли в `dispatch`, и ровно
-// поэтому строки Village/City/Capital нельзя было заполнить: ветка бегства
-// `squad_threat_step` предиката бойца не имеет вовсе, у места
-// `traits.count == 0` ⇒ `bravery_of` = 1.5, — то есть город, увидевший в
-// шести клетках что-то в полтора раза сильнее, ПОСТАВИЛ БЫ ЦЕЛЬ В ВОСЬМИ
-// КЛЕТКАХ И УШЁЛ, оставив свою фичу позади. Страж, не пускавший рефлексы к
-// неподвижному сквадy, был САМ `nullptr` в строке диспетча — заполнение
-// строк его снимало, поэтому преамбула уехала в головы ходоков ПЕРВОЙ
-// (первая половина M-307, ломоть 5а M-72).
-//
-// (Размеры крю `kVillageCrewSouls` и `kCityCrewSouls` объявлены в `npc_ai.h`
-// — свидетель читает их оттуда.)
-
-// ── МОДУЛЬ Village ───────────────────────────────────────────────────────
-// Всё отсюда до `village_think` включительно — тело одного модуля деревни,
-// написанное целиком; у города свой комплект ниже, и копия у соседа законна
-// (AGENTS §4 п.5: под модули общего не создаётся).
-
-// ДУШИ СВОБОДНЫ ТОЛЬКО ТЕ, БЕЗ КОТОРЫХ ДЕРЕВНЯ ОСТАЁТСЯ СТОЯТЬ, — отсюда
-// строгое «больше», а не «не меньше». Это не потолок численности (ЗАКОН
-// КЛАМПА): предел рождения даёт сама плата душами (`bleed_flock` в `spawn`),
-// а здесь сказано лишь то, что последнюю душу из дома не выписывают — иначе
-// деревня с ровно восемью головами ушла бы в крю ЦЕЛИКОМ и осталась бы с
-// одним рабочим юнитом — аватаром: тот же бар покупал бы ему в девять раз
-// меньше работы, и производить больше она собралась бы решением, которым
-// производить перестала.
-bool village_has_spare_souls_(const AiSelf& s) {
-    return count_human_souls(s.bag) > kVillageCrewSouls;
-}
-
-// КОГДА МОДУЛЬ ДЕРЕВНИ ДУМАЕТ О КРАФТЕ — ТРИ ВОПРОСА, ТРИ НОСИТЕЛЯ.
-// «Занят ли» после крафта назначает АКТ: он вешает восстановление по
-// сделанному (ЗАКОН СПОСОБНОСТИ п.4), и модуль лишь спрашивает гейт. «Есть ли
-// что решать» отвечает счётчик изменений своего инвентаря и свёртка счёта
-// нужды: решение зависит только от них (навыки неизменны, спина и юниты
-// выводятся из того же инвентаря), поэтому пока они не сдвинулись, прежнее
-// «крафтить нечего» верно, и думка стоит одного сравнения. Таймера нет
-// (вердикт владельца 2026-11-13, ряд M-497). «Круг решений о рождении» идёт
-// раз в сутки своим словом (`AiView::has_child` — холодный проход, и его
-// шапка требует дневного каденса).
-//
-// Истина — «ещё жду»: слово убывает на думку.
-bool village_waits_(AiSelf& s, int word) {
-    std::uint32_t& left = s.rt.mem[word];
-    if (left == 0) return false;
-    left = sub_sat(left, std::uint32_t(1));   // угасание счёта ожидания
-    return true;
-}
-
-// Свёртка счёта нужды в слово памяти: порядок строк в неё входит, поэтому
-// перестановка долга между товарами её сдвигает.
-std::uint32_t village_need_word_(const std::int32_t* needDebt) {
-    if (!needDebt) return 0;
-    std::uint32_t h = 0;
-    for (int c = 0; c < kCommodityCount; ++c)
-        h = h * 31u + std::uint32_t(needDebt[c]);
-    return h;
-}
-
-} // namespace — решение о крафте судит свидетель, ему нужна внешняя связь
-
-// ── ЧТО И СКОЛЬКО КРАФТИТЬ — РЕШЕНИЕ МОДУЛЯ ДЕРЕВНИ ─────────────────────────
-// Вердикты владельца (CANON S25, 2026-11-13; п.4 вердиктов 2026-10-22):
-// решает модуль, механика акта одна на всех. Это решение деревни; у города
-// своё (`city_craft_pick` ниже), копия законна (AGENTS §4 п.5).
-//
-// ПРАВИЛО: крафт есть сделка с самим собой (вердикт 2026-11-13, «Б»). Выгода
-// лота — во сколько сквад ценит пришедший выход минус во сколько ценил ушедшие
-// входы, той же оценкой запаса, какой меряет торговля
-// (`lot_take@src/macro/economy.h`, `lot_loss@src/macro/economy.h`; нужду несёт
-// счёт). Из всего, на что есть право, берётся лот с наибольшей выгодой;
-// объём — не больше, чем кормят материалы и чем покупает нынешний бар SP (в
-// долг деревня не трудится). Ни один лот оценку не растит — крафтить
-// нечего. Потолка числом нет: выход копится — масса против спины роняет его
-// оценку; вход тает — его оценка растёт.
-//
-// ПОИСК ОБЪЁМА: выгода как функция числа партий вогнута (каждая следующая
-// даёт не больше предыдущей; ревью 2026-11-13 — 16 817 состояний точной
-// арифметикой), поэтому максимум один и ищется делением отрезка на трети с
-// перебором остатка. Оценка округлена до кванта, так что на плато поиск
-// вправе встать в пределах шума округления от максимума.
-CraftPick village_craft_pick(const Inventory& bag,
-                             const std::int32_t* needDebt,
-                             const Skills& skills, std::int64_t backG,
-                             int mintFactionIdx, int maxSp, int sp,
-                             int units) {
-    CraftOutput outs[kCraftOutputCap];
-    const int outCount = craft_outputs(mintFactionIdx, outs);
-    const auto side = [&](int idx) {
-        const ItemDef* d = item_def_at(idx);
-        return row_side(idx, d ? d->value : 0, needDebt, bag,
-                        d ? std::int64_t(item_mass_g(*d)) : 1, backG);
-    };
-    CraftPick best{};
-    for (int c = 0; c < outCount; ++c) {
-        const CraftOutput& o = outs[c];
-        const ActionDef& act = action_def(int(o.action));
-        if (!recipe_known(skills, act.gateSkill, int(act.minRank))) continue;
-        // Предел объёма: бар (цена строки, делённая на рабочих юнитов), и
-        // материалы — каждая часть состава.
-        std::int64_t most =
-            act_sp_reach(maxSp, act.spRatePerDay, std::int64_t(sp), units);
-        const auto parts = item_parts(o.outIdx);
-        RowSide partSide[kMaxItemParts];
-        int partCount = 0;
-        for (const ItemPart& part : parts) {
-            most = std::min<std::int64_t>(
-                most, bag.count_of(int(part.def)) / int(part.count));
-            partSide[partCount++] = side(int(part.def));
-        }
-        const int yield = item_yield(o.outIdx);
-        // Страж ширины двери материи: счёт выхода лежит в `int`.
-        most = std::min<std::int64_t>(
-            most, std::numeric_limits<int>::max() / std::max(1, yield));
-        if (most <= 0) continue;
-        const RowSide outSide = side(o.outIdx);
-        const auto gain = [&](std::int64_t b) {
-            std::int64_t spent = 0;
-            for (int k = 0; k < partCount; ++k)
-                spent += lot_loss(partSide[k], b * int(parts[std::size_t(k)].count));
-            return lot_take(outSide, b * yield) - spent;
-        };
-        std::int64_t lo = 1, hi = most;
-        while (hi - lo > 16) {
-            const std::int64_t third = (hi - lo) / 3;
-            const std::int64_t m1 = lo + third, m2 = hi - third;
-            if (gain(m1) < gain(m2)) lo = m1; else hi = m2;
-        }
-        for (std::int64_t b = lo; b <= hi; ++b) {
-            const std::int64_t g = gain(b);
-            if (g > best.gain) best = CraftPick{o.outIdx, int(b), g};
-        }
-    }
-    return best;
-}
-
-namespace {
-
-// КРАФТ-ДУМКА ДЕРЕВНИ: модуль решает по СВОЕЙ строке (инвентарь, счёт,
-// навыки, спина, бар, юниты) и зовёт глагол. Истина — акт состоялся.
-bool village_craft_(AiSelf& s, const AiView& view, AiPult& pult) {
-    const CraftPick pick = village_craft_pick(
-        s.bag, view.need_account(s.h.slot), s.sheet.skills,
-        carry_capacity_g(s.rt, s.bag), view.coin_faction(s.h.slot),
-        int(s.pools.maxSp), int(s.pools.sp), work_units(s.bag));
-    return pick.outIdx >= 0 && pult.craft(s, pick.outIdx, pick.batches) > 0;
-}
-
-// «Думать ли о крафте на этой думке» и сама думка. Запоминается состояние, в
-// котором крафтить было НЕЧЕГО; состоявшийся акт сам сдвигает счётчик
-// инвентаря, и помнить после него нечего. Пустой бар не запоминается: он
-// наполняется сам, без единой записи в инвентарь.
-void village_craft_think_(AiSelf& s, const AiView& view, AiPult& pult) {
-    if (squad_recovering(s.rt)) return;
-    const std::uint32_t seen = std::uint32_t(s.bag.revision() + 1);
-    const std::uint32_t debt = village_need_word_(view.need_account(s.h.slot));
-    if (s.rt.mem[kVillageMemCraftSeen] == seen
-        && s.rt.mem[kVillageMemCraftDebt] == debt) {
-        return;
-    }
-    if (village_craft_(s, view, pult) || s.pools.sp <= 0) return;
-    s.rt.mem[kVillageMemCraftSeen] = seen;
-    s.rt.mem[kVillageMemCraftDebt] = debt;
-}
-
-void village_think(AiSelf& s, const AiView& view, AiPult& pult) {
-    // КРАФТ: что и сколько — решает модуль, акт вешает восстановление по
-    // сделанному. Решение пересчитывается, только когда изменились инвентарь
-    // или счёт нужды.
-    village_craft_think_(s, view, pult);
-    // КРУГ РЕШЕНИЙ О РОЖДЕНИИ — РАЗ В СУТКИ, и от занятости крафтом он не
-    // зависит: рождение — не способность.
-    if (village_waits_(s, kVillageMemBirthWait)) return;
-    s.rt.mem[kVillageMemBirthWait] = kAiThinksPerDay;
-
-    // ── ХАРЧ ДЕТЯМ: деревня грузит едой всякого своего ребёнка у порога ─────
-    // Каждый модуль распоряжается только своим инвентарём: артель отдаёт
-    // добычу сама, едой её грузит дом. Семья судит голым сравнением оценок
-    // (силы (0, 1)): единица едет, пока ребёнок ценит её выше дома, и не
-    // больше его непогашенного счёта харча. Тип ребёнка и его трюм не
-    // спрашиваются: голоден и стоит дома — этого довольно.
-    static const int kFood = commodity_item_index(hunger_commodity_ordinal());
-    view.each_child_here(s.h, [&](std::uint16_t child) {
-        const RowSide theirs = view.row_of(child, kFood);
-        if (theirs.net >= 0) return;
-        const std::int64_t n = gain_units(view.row_of(s.h.slot, kFood),
-                                          theirs, -theirs.net, true, 0, 1);
-        if (n > 0) pult.hand(s.h.slot, child, kFood, int(n));
-    });
-
-    // ── ЧТО ДЕРЕВНЕ НАДО — И АРТЕЛЬ КАКОГО ТИПА ПОДНЯТЬ ─────────────────────
-    // (вердикт владельца 2026-11-13: «деревне чтото надо она создаёт артель
-    // этого типа и она идёт по своему модулю»). НАДО товар, когда его строка
-    // сама в нужде (счёт не оплачен — так стоит еда) либо когда он — сырьё
-    // вещи, которую хотят жители (счёт по вещи не оплачен), руки её умеют, а
-    // сырья на полке меньше, чем на одну партию. Что даёт место работы,
-    // отвечает мир; своего списка товаров деревня не держит.
-    if (!village_has_spare_souls_(s)) return;
-    // Неопределённая артель у дома сама возьмёт нужду — новую не поднимаю.
-    if (view.has_child(s.h, SquadType::Artel)) return;
-    const auto wants = [&](int product) {
-        if (product < 0) return false;
-        if (view.row_of(s.h.slot, product).net < 0) return true;
-        CraftOutput outs[kCraftOutputCap];
-        const int outCount = craft_outputs(view.coin_faction(s.h.slot), outs);
-        for (int c = 0; c < outCount; ++c) {
-            if (outs[c].outIdx < 0) continue;
-            const ActionDef& act = action_def(int(outs[c].action));
-            if (!recipe_known(s.sheet.skills, act.gateSkill, int(act.minRank)))
-                continue;
-            if (view.row_of(s.h.slot, outs[c].outIdx).net >= 0) continue;
-            for (const ItemPart& part : item_parts(outs[c].outIdx)) {
-                if (int(part.def) == product
-                    && s.bag.count_of(product) < int(part.count)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    };
-    // По одной живой артели на тип; одно рождение за круг. Гейт дубля стоит
-    // последним — проход по детям платится только за решение, дошедшее до
-    // рождения.
-    const std::uint32_t home = s.cell.idx;
-    const auto raise = [&](SquadType t, ResourceFieldId row,
-                           std::uint32_t site) {
-        if (site == ecs::kNoCell || !wants(view.yield_at(row, site)))
-            return false;
-        if (view.has_child(s.h, t)) return false;
-        pult.spawn(s, t, kVillageCrewSouls);
-        return true;
-    };
-    if (raise(SquadType::Ploughmen, ResourceFieldId::Wheat,
-              view.field_near(FT_Field, home, home))) return;
-    if (raise(SquadType::Hunters, ResourceFieldId::Fauna,
-              view.fauna_near(home, home))) return;
-    if (raise(SquadType::Flaxers, ResourceFieldId::Wheat,
-              view.field_near(FT_FlaxField, home, home))) return;
-    if (raise(SquadType::Woodcutters, ResourceFieldId::Trees,
-              view.tree_near(home, home))) return;
-    (void)raise(SquadType::Miners, ResourceFieldId::Vein,
-                view.vein_near(home));
-}
-
-// ── МОДУЛЬ City (его же зовёт Capital через `ai_city`) ──────────────────
-// Всё отсюда до `city_think` включительно — тело одного модуля города,
-// написанное целиком; совпадение с телами деревни выше — законная копия,
-// а не общий код (AGENTS §4 п.5).
-
-// ДУШИ СВОБОДНЫ ТОЛЬКО ТЕ, БЕЗ КОТОРЫХ ГОРОД ОСТАЁТСЯ СТОЯТЬ, — отсюда
-// строгое «больше», а не «не меньше». Это не потолок численности (ЗАКОН
-// КЛАМПА): предел рождения даёт сама плата душами (`bleed_flock` в `spawn`),
-// а здесь сказано лишь то, что последнюю душу из дома не выписывают — иначе
-// город с ровно восемью головами ушёл бы в крю ЦЕЛИКОМ и остался бы с одним
-// рабочим юнитом — аватаром: тот же бар покупал бы ему в девять раз меньше
-// работы, и производить больше он собрался бы решением, которым производить
-// перестал.
-bool city_has_spare_souls_(const AiSelf& s) {
-    return count_human_souls(s.bag) > kCityCrewSouls;
-}
-
-// КОГДА МОДУЛЬ ГОРОДА ДУМАЕТ О КРАФТЕ — ТРИ ВОПРОСА, ТРИ НОСИТЕЛЯ.
-// «Занят ли» после крафта назначает АКТ: он вешает восстановление по
-// сделанному (ЗАКОН СПОСОБНОСТИ п.4), и модуль лишь спрашивает гейт. «Есть ли
-// что решать» отвечает счётчик изменений своего инвентаря и свёртка счёта
-// нужды: решение зависит только от них (навыки неизменны, спина и юниты
-// выводятся из того же инвентаря), поэтому пока они не сдвинулись, прежнее
-// «крафтить нечего» верно, и думка стоит одного сравнения. Таймера нет
-// (вердикт владельца 2026-11-13, ряд M-497). «Круг решений о рождении и
-// погрузке» идёт раз в сутки своим словом (`AiView::has_child` — холодный
-// проход, и его шапка требует дневного каденса).
-//
-// Истина — «ещё жду»: слово убывает на думку.
-bool city_waits_(AiSelf& s, int word) {
-    std::uint32_t& left = s.rt.mem[word];
-    if (left == 0) return false;
-    left = sub_sat(left, std::uint32_t(1));   // угасание счёта ожидания
-    return true;
-}
-
-// Свёртка счёта нужды в слово памяти: порядок строк в неё входит, поэтому
-// перестановка долга между товарами её сдвигает.
-std::uint32_t city_need_word_(const std::int32_t* needDebt) {
-    if (!needDebt) return 0;
-    std::uint32_t h = 0;
-    for (int c = 0; c < kCommodityCount; ++c)
-        h = h * 31u + std::uint32_t(needDebt[c]);
-    return h;
-}
-
-} // namespace — решение о крафте судит свидетель, ему нужна внешняя связь
-
-// ── ЧТО И СКОЛЬКО КРАФТИТЬ — РЕШЕНИЕ МОДУЛЯ ГОРОДА ──────────────────────────
-// Вердикты владельца (CANON S25, 2026-11-13; п.4 вердиктов 2026-10-22):
-// решает модуль, механика акта одна на всех. Это решение города; у деревни
-// своё (`village_craft_pick` выше), копия законна (AGENTS §4 п.5).
-//
-// ПРАВИЛО: крафт есть сделка с самим собой (вердикт 2026-11-13, «Б»). Выгода
-// лота — во сколько сквад ценит пришедший выход минус во сколько ценил ушедшие
-// входы, той же оценкой запаса, какой меряет торговля
-// (`lot_take@src/macro/economy.h`, `lot_loss@src/macro/economy.h`; нужду несёт
-// счёт). Из всего, на что есть право, берётся лот с наибольшей выгодой;
-// объём — не больше, чем кормят материалы и чем покупает нынешний бар SP (в
-// долг город не трудится). Ни один лот оценку не растит — крафтить нечего.
-// Потолка числом нет: выход копится — масса против спины роняет его оценку;
-// вход тает — его оценка растёт.
-//
-// ПОИСК ОБЪЁМА: выгода как функция числа партий вогнута (каждая следующая
-// даёт не больше предыдущей; ревью 2026-11-13 — 16 817 состояний точной
-// арифметикой), поэтому максимум один и ищется делением отрезка на трети с
-// перебором остатка. Оценка округлена до кванта, так что на плато поиск
-// вправе встать в пределах шума округления от максимума.
-CraftPick city_craft_pick(const Inventory& bag,
-                          const std::int32_t* needDebt,
-                          const Skills& skills, std::int64_t backG,
-                          int mintFactionIdx, int maxSp, int sp, int units) {
-    CraftOutput outs[kCraftOutputCap];
-    const int outCount = craft_outputs(mintFactionIdx, outs);
-    const auto side = [&](int idx) {
-        const ItemDef* d = item_def_at(idx);
-        return row_side(idx, d ? d->value : 0, needDebt, bag,
-                        d ? std::int64_t(item_mass_g(*d)) : 1, backG);
-    };
-    CraftPick best{};
-    for (int c = 0; c < outCount; ++c) {
-        const CraftOutput& o = outs[c];
-        const ActionDef& act = action_def(int(o.action));
-        if (!recipe_known(skills, act.gateSkill, int(act.minRank))) continue;
-        // Предел объёма: бар (цена строки, делённая на рабочих юнитов), и
-        // материалы — каждая часть состава.
-        std::int64_t most =
-            act_sp_reach(maxSp, act.spRatePerDay, std::int64_t(sp), units);
-        const auto parts = item_parts(o.outIdx);
-        RowSide partSide[kMaxItemParts];
-        int partCount = 0;
-        for (const ItemPart& part : parts) {
-            most = std::min<std::int64_t>(
-                most, bag.count_of(int(part.def)) / int(part.count));
-            partSide[partCount++] = side(int(part.def));
-        }
-        const int yield = item_yield(o.outIdx);
-        // Страж ширины двери материи: счёт выхода лежит в `int`.
-        most = std::min<std::int64_t>(
-            most, std::numeric_limits<int>::max() / std::max(1, yield));
-        if (most <= 0) continue;
-        const RowSide outSide = side(o.outIdx);
-        const auto gain = [&](std::int64_t b) {
-            std::int64_t spent = 0;
-            for (int k = 0; k < partCount; ++k)
-                spent += lot_loss(partSide[k], b * int(parts[std::size_t(k)].count));
-            return lot_take(outSide, b * yield) - spent;
-        };
-        std::int64_t lo = 1, hi = most;
-        while (hi - lo > 16) {
-            const std::int64_t third = (hi - lo) / 3;
-            const std::int64_t m1 = lo + third, m2 = hi - third;
-            if (gain(m1) < gain(m2)) lo = m1; else hi = m2;
-        }
-        for (std::int64_t b = lo; b <= hi; ++b) {
-            const std::int64_t g = gain(b);
-            if (g > best.gain) best = CraftPick{o.outIdx, int(b), g};
-        }
-    }
-    return best;
-}
-
-namespace {
-
-// КРАФТ-ДУМКА ГОРОДА: модуль решает по СВОЕЙ строке (инвентарь, счёт,
-// навыки, спина, бар, юниты) и зовёт глагол. Истина — акт состоялся.
-bool city_craft_(AiSelf& s, const AiView& view, AiPult& pult) {
-    const CraftPick pick = city_craft_pick(
-        s.bag, view.need_account(s.h.slot), s.sheet.skills,
-        carry_capacity_g(s.rt, s.bag), view.coin_faction(s.h.slot),
-        int(s.pools.maxSp), int(s.pools.sp), work_units(s.bag));
-    return pick.outIdx >= 0 && pult.craft(s, pick.outIdx, pick.batches) > 0;
-}
-
-// «Думать ли о крафте на этой думке» и сама думка. Запоминается состояние, в
-// котором крафтить было НЕЧЕГО; состоявшийся акт сам сдвигает счётчик
-// инвентаря, и помнить после него нечего. Пустой бар не запоминается: он
-// наполняется сам, без единой записи в инвентарь.
-void city_craft_think_(AiSelf& s, const AiView& view, AiPult& pult) {
-    if (squad_recovering(s.rt)) return;
-    const std::uint32_t seen = std::uint32_t(s.bag.revision() + 1);
-    const std::uint32_t debt = city_need_word_(view.need_account(s.h.slot));
-    if (s.rt.mem[kCityMemCraftSeen] == seen
-        && s.rt.mem[kCityMemCraftDebt] == debt) {
-        return;
-    }
-    if (city_craft_(s, view, pult) || s.pools.sp <= 0) return;
-    s.rt.mem[kCityMemCraftSeen] = seen;
-    s.rt.mem[kCityMemCraftDebt] = debt;
-}
-
-void city_think(AiSelf& s, const AiView& view, AiPult& pult) {
-    // КРАФТ: что и сколько — решает модуль, акт вешает восстановление по
-    // сделанному. Решение пересчитывается, только когда изменились инвентарь
-    // или счёт нужды.
-    city_craft_think_(s, view, pult);
-    // КРУГ РЕШЕНИЙ О РОЖДЕНИИ — РАЗ В СУТКИ, и от занятости крафтом он не
-    // зависит: рождение — не способность.
-    if (city_waits_(s, kCityMemBirthWait)) return;
-    s.rt.mem[kCityMemBirthWait] = kAiThinksPerDay;
-
-    // СБОРЩИК — ТОЛЬКО ПРИ ВАССАЛЕ-ДОЛЖНИКЕ, И ВОПРОС ЭТОТ ЗАДАЁТСЯ СВОИМИ
-    // РЁБРАМИ, А НЕ ПОИСКОМ ПО МИРУ (`AiView::owing_vassal` — обход своих
-    // `interests` по `Stance::Vassal`). Должника нет — сборщику некого доить,
-    // и рождать его значило бы послать сквад в `home_wander` навсегда: ровно
-    // так он и жил, пока его цель ставил казнённый аукцион.
-    if (city_has_spare_souls_(s)
-        && view.owing_vassal(s.h.slot) != kMacroNoSlot
-        && !view.has_child(s.h, SquadType::Collector)) {
-        pult.spawn(s, SquadType::Collector, kCityCrewSouls);
-    }
-    // КОРОВАН — БЕЗ ГЕЙТА НУЖДЫ, И ЭТО НЕ ПРОПУСК: куда ехать и что брать на
-    // рынке, рейс решает сам, НА МЕСТЕ и своей же анкетой (`caravan_think`:
-    // рынок называет он, сделку судит ценой рынка). Спрашивать нужду здесь
-    // значило бы решить за него дважды — вторым носителем одного решения.
-    // Город решает одно — ЧТО ОТДАТЬ: свой излишек (погрузка ниже).
-    // Свободные души читаются ЗАНОВО: сборщик выше мог только что увести
-    // свои восемь, и вчерашний ответ о них уже неверен.
-    if (city_has_spare_souls_(s) && !view.has_child(s.h, SquadType::Caravan))
-        pult.spawn(s, SquadType::Caravan, kCityCrewSouls);
-    // ГОРОД ГРУЗИТ СВОЙ КОРОВАН (владелец 2026-11-12: «город рождает его и
-    // загружает»). Груз отдаёт тот, чей склад: ребёнок, стоящий дома
-    // свободным и пустым, получает излишек родителя ОДНОЙ сделкой. Путь
-    // один и на рождение, и на возвращение — новорождённый стоит дома
-    // пустым ровно так же, как вернувшийся и отдавший наторгованное.
-    if (const std::uint16_t waiting =
-            view.idle_child_at_home(s.h, SquadType::Caravan);
-        waiting != kMacroNoSlot) {
-        pult.load_child(s, waiting);
-    }
-}
-
-// Переходники пятёрки — те же, что у трёх образцов, МИНУС преамбула
-// рефлексов (причина названа в шапке модулей выше).
-void ai_village(MacroHandle e, ecs::MacroNpcRuntime& rt,
-                ecs::Pools& pools, const TickContext& ctx) {
-    if (!ctx.mw.store || !ctx.mw.gs) return;
-    AiSelf self{e, store_ctx(ctx).cell[e.slot], rt, pools,
-                store_ctx(ctx).goal[e.slot],
-                store_ctx(ctx).inventory[e.slot].inv,
-                store_ctx(ctx).sheet[e.slot]};
-    const AiView view(ctx);
-    AiPult pult(ctx);
-    village_think(self, view, pult);
-}
-
-void ai_city(MacroHandle e, ecs::MacroNpcRuntime& rt,
-             ecs::Pools& pools, const TickContext& ctx) {
-    if (!ctx.mw.store || !ctx.mw.gs) return;
-    AiSelf self{e, store_ctx(ctx).cell[e.slot], rt, pools,
-                store_ctx(ctx).goal[e.slot],
-                store_ctx(ctx).inventory[e.slot].inv,
-                store_ctx(ctx).sheet[e.slot]};
-    const AiView view(ctx);
-    AiPult pult(ctx);
-    city_think(self, view, pult);
-}
-
-void ai_trader(MacroHandle self, ecs::MacroNpcRuntime& rt,
-               [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
-    const std::uint32_t home = home_cell(self, ctx);
-    if (home == ecs::kNoCell) return;
-    const MacroStore& st = store_ctx(ctx);
-    ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
-    const int myHomeId = parent_of(st, self.slot);
-
-    if (rt.state == std::uint8_t(NS::Idle)) {
-        // Вернулся домой — постоял (прибытие назвали ноги).
-        if (ecs::march_arrived(rt)) {
-            charge_squad_recovery(rt,
-                std::uint32_t((20 + rand_int(ctx, 30)) * kAiTicks));
-        }
-        if (!squad_recovering(rt)) {
-            // Pick another city (id != home).
-            int candidates = 0;
-            for_each_rooted(st, [&](std::uint16_t slot) {
-                if (is_other_city(st, slot, myHomeId)) ++candidates;
-            });
-            if (candidates > 0) {
-                int pick = rand_int(ctx, candidates);
-                // Обход без досрочного выхода: взявший урну гасит флаг, и
-                // остаток прохода молчит (у двери мест нет break — её
-                // порядок есть закон приоритета клетки).
-                bool taken = false;
-                for_each_rooted(st, [&](std::uint16_t slot) {
-                    if (taken || !is_other_city(st, slot, myHomeId))
-                        return;
-                    if (pick-- != 0) return;
-                    ecs::goal_set(g, st.cell[slot].idx,
-                                  ecs::goal_what(ecs::GoalKind::Squad,
-                                                 st.spawnId[slot].index),
-                                  0, std::uint8_t(NS::Working));
-                    rt.state  = std::uint8_t(NS::Traveling);
-                    taken = true;
-                });
-            } else {
-                charge_squad_recovery(rt, std::uint32_t(20 * kAiTicks));
-            }
-        }
-        return;
-    }
-    if (rt.state == std::uint8_t(NS::Working)) {
-        // Дошёл до чужого города (ноги сделали его Working) — стоянка.
-        if (ecs::march_arrived(rt)) {
-            charge_squad_recovery(rt,
-                std::uint32_t((15 + rand_int(ctx, 20)) * kAiTicks));
-        }
-        if (!squad_recovering(rt)) {
-            ecs::goal_set(g, home, 0, 0, std::uint8_t(NS::Idle));
-            rt.state = std::uint8_t(NS::Returning);
-        }
-        return;
-    }
-    // Traveling/Returning: в пути решать нечего — везут ноги свипа.
-}
+}  // namespace
 
 void ai_nomad(MacroHandle self, ecs::MacroNpcRuntime& rt,
               [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
@@ -3613,408 +1662,7 @@ void ai_nomad(MacroHandle self, ecs::MacroNpcRuntime& rt,
     // Traveling: в пути решать нечего — везут ноги свипа.
 }
 
-void ai_aggressive(MacroHandle self, ecs::MacroNpcRuntime& rt,
-                   [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
-    // No private player-channel here any more (owner, 2026-08-29: «игрок
-    // ничем не особенен»). Perception and pursuit are squad_threat_step's —
-    // the player's squad sits in the SAME SquadIndex at the SAME
-    // kSquadSightCells as every other squad, so an aggressive row that can
-    // see the player chases him through the one law it chases anyone by.
-    // The old channel saw the player at 10 cells against everyone else's 6.
-    // What is left below is the row's untroubled day: wander.
-    ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
-    if (rt.state == std::uint8_t(NS::Chasing)) {
-        // Добычи больше нет — встать: погоня отпущена, колонка пуста.
-        chase_release(g);
-        rt.state = std::uint8_t(NS::Idle);
-        charge_squad_recovery(rt,
-            std::uint32_t((5 + rand_int(ctx, 10)) * kAiTicks));
-        return;
-    }
-    if (rt.state == std::uint8_t(NS::Idle)) {
-        // Дошёл — постоял (прибытие назвали ноги).
-        if (ecs::march_arrived(rt)) {
-            charge_squad_recovery(rt,
-                std::uint32_t((8 + rand_int(ctx, 15)) * kAiTicks));
-        }
-        if (!squad_recovering(rt)) {
-            ecs::goal_set(g,
-                          cell_nearby(store_ctx(ctx).cell[self.slot].idx, 20,
-                                      ctx),
-                          0, 0, std::uint8_t(NS::Idle));
-            rt.state = std::uint8_t(NS::Wandering);
-        }
-        return;
-    }
-    // Wandering: в пути решать нечего — везут ноги свипа.
-}
-
-// ── Царь-крестьянин: роамер-охотник на магов (стол анкет) ────────────────
-// Слово владельца (2026-09-10): «культистов он не трогает, только магов
-// Магики — но НЕ крестьян фракции магики»; поводка нет — чистый роамер по
-// всей карте. Кто цель — решение ЭТОЙ функции (закон стола: данные в
-// строке — решения в функции): тело мага (Witch/Sorceress) фракции
-// magika. Встреча решается ТОЙ ЖЕ дверью боя, что у threat step — один
-// закон битвы (CANON S13), никакого второго резолвера.
-
-// Охотничий глаз: в полтора раза дальше сквадного (kSquadSightCells = 8) —
-// охотник ИЩЕТ, а не натыкается; ±2 бакета грида (cellSize 8) покрывают
-// радиус целиком.
-constexpr int kMageHuntSightCells = 12;
-
-MacroHandle nearest_magika_mage(MacroHandle self, const TickContext& ctx) {
-    const SquadIndex& g = *ctx.squads;
-    const CellBuckets& b = g.grid;
-    if (b.cols <= 0 || b.rows <= 0) return MacroHandle{};
-    const MacroStore& st = store_ctx(ctx);
-    // Ординал НА СБОРКЕ (M-268): здесь стоял `faction_index("magika")` —
-    // линейный скан реестра по строке на КАЖДУЮ думку охотника. Имя задано
-    // авторски, извне приехать не может, поэтому оно и не доживает до тика.
-    constexpr int magika = faction_ordinal("magika");
-    static_assert(magika >= 0, "реестр обязан нести строку магов");
-    const std::uint32_t at = st.cell[self.slot].idx;
-    const int cx0 = cell_x(at, ctx.mapW) / b.cellSize;
-    const int cy0 = cell_y(at, ctx.mapW) / b.cellSize;
-    // «Вижу» — в пределах пути в столько клеток; +1 — строгое сравнение.
-    int best = kMageHuntSightCells * kStepStraight + 1;
-    MacroHandle found{};
-    for (int oy = -2; oy <= 2; ++oy) {
-        for (int ox = -2; ox <= 2; ++ox) {
-            const int gx = wrapi(cx0 + ox, b.cols);
-            const int gy = wrapi(cy0 + oy, b.rows);
-            for (const std::uint32_t* it = b.cell_begin(gx, gy),
-                                    * end = b.cell_end(gx, gy);
-                 it != end; ++it) {
-                // Бакет несёт индекс в порядке (шаг 3): слот — ключ к
-                // колонкам, хэндл — для дверей и долгой ссылки.
-                const SquadWalkEntry& sw = g.order[*it];
-                if (sw.slot == self.slot) continue;
-                if (st.dead[sw.slot] != 0) continue;
-                const auto& mcell = st.cell[sw.slot];
-                const auto* oc = &mcell;
-                const auto* ok = &st.kind[sw.slot];
-                // Маг = род тела, не флаг: ведьма и чародейка — строки
-                // реестра. Крестьянин Магики проходит мимо этого фильтра
-                // ЖИВЫМ — ровно то, что владелец назвал важным.
-                if (int(ok->factionIdx) != magika) continue;
-                const NPCType t = NPCType(std::uint8_t(ok->type));
-                if (t != NPCType::Witch && t != NPCType::Sorceress) continue;
-                const int d = cell_dist(at, oc->idx, ctx.mapW);
-                if (d >= best) continue;
-                best = d;
-                found = handle_at(st, sw.slot);
-            }
-        }
-    }
-    return found;
-}
-
-void ai_mage_hunt(MacroHandle self, ecs::MacroNpcRuntime& rt,
-                  [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
-    if (ctx.squads && ctx.mw.store && ctx.mw.gs) {
-        const MacroHandle prey = nearest_magika_mage(self, ctx);
-        MacroStore& st = store_ctx(ctx);
-        if (st.valid(prey)) {
-            if (st.cell[self.slot].idx == st.cell[prey.slot].idx) {
-                // Игрок в теле ведьмы: встреча принадлежит форс-двери
-                // игрока (main.cpp detect_forced_encounter), не тихому
-                // резолву — тот же гард, что у threat step.
-                // ИЗЪЯТИЕ ОСТАЁТСЯ ЗА АКТИВНЫМ, И ЭТО МАРШРУТ, А НЕ
-                // НЕУЯЗВИМОСТЬ: встреча активного принадлежит ЕГО двери
-                // (`detect_forced_encounter@src/app/main.cpp`), которая
-                // открывает предбоевой экран, — тихий авторезолв решил бы её
-                // за игрока. Второй слот (ДОМ) ушёл с `.home` (ломоть 7б
-                // M-421, вердикт владельца 2026-11-09 «только за активным»):
-                // прочие сквады под контролем есть ОБЫЧНЫЕ сквады мира.
-                if (prey.slot == ctx.playerFlagSlot) return;
-                // ИЗЪЯТИЕ ПО КЛЕТКЕ, А НЕ ПО РОДУ СЦЕНЫ (M-226): клетка
-                // встречи в аренде у субмира — значит её ведёт он, и решать
-                // этот бой наверху значило бы завести второго писателя.
-                // Встреча не пропадает: она ОТЛАГАЕТСЯ до конца аренды.
-                if (cell_is_leased(ctx.mw.session, st.cell[self.slot].idx,
-                                   ctx.mapW)) return;
-                const AutoBattleOutcome o = resolve_auto_battle(
-                    auto_battle_side_of(st, self),
-                    auto_battle_side_of(st, prey),
-                    Ambush::None, *ctx.rng);
-                settle_auto_battle(ctx.mw, self, prey, o);
-                if (!macro_dead(st, self)) {
-                    // После боя — стоять: погоня отпущена, колонка пуста.
-                    chase_release(st.goal[self.slot]);
-                    rt.state = std::uint8_t(NS::Idle);
-                    charge_squad_recovery(rt,
-                        std::uint32_t((3 + rand_int(ctx, 5)) * kAiTicks));
-                }
-                return;
-            }
-            // Добыча ДВИЖЕТСЯ — род цели «сквад»: модуль называет, ЗА КЕМ,
-            // а адрес каждую думку пересчитывают ноги свипа (кэш предиката,
-            // случай четвёртый) — модуль рода не читает. Настигнув,
-            // сквад остаётся Chasing: встречу решит следующая думка.
-            ecs::goal_set(store_ctx(ctx).goal[self.slot],
-                          st.cell[prey.slot].idx,
-                          ecs::goal_what(ecs::GoalKind::Squad,
-                                         st.spawnId[prey.slot].index),
-                          0, std::uint8_t(NS::Chasing));
-            rt.state = std::uint8_t(NS::Chasing);
-            return;
-        }
-    }
-    ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
-    // Некого бить — чистый роам: дальняя случайная цель по ВСЕЙ карте, не
-    // прогулка по околице. Поводка нет — слово владельца.
-    if (rt.state == std::uint8_t(NS::Chasing)) {
-        chase_release(g);   // добыча пропала — погоня отпущена
-        rt.state = std::uint8_t(NS::Idle);
-        return;
-    }
-    if (rt.state == std::uint8_t(NS::Idle)) {
-        // Дошёл — постоял (прибытие назвали ноги).
-        if (ecs::march_arrived(rt)) {
-            charge_squad_recovery(rt,
-                std::uint32_t((8 + rand_int(ctx, 15)) * kAiTicks));
-        }
-        if (!squad_recovering(rt)) {
-            ecs::goal_set(g,
-                          cell_of(rand_int(ctx, ctx.mapW),
-                                  rand_int(ctx, ctx.mapH), ctx.mapW),
-                          0, 0, std::uint8_t(NS::Idle));
-            rt.state = std::uint8_t(NS::Wandering);
-        }
-        return;
-    }
-    // Wandering: в пути решать нечего — везут ноги свипа.
-}
-
-// ── МОДУЛЬ РОДА Dragon — вылеты из логова (ломоть 6 M-72) ────────────────
-// Дом — КЛЕТКА (lair, гора — не ландмарк). В вылете бьёт любой сквад
-// СЛАБЕЕ себя (слово владельца) — той же дверью встречи, что threat step;
-// наевшись или улетев за поводок — домой. Игрокова встреча — форс-двери
-// игрока, как у всех. До 2026-11-02 это была модель AIBehaviour::LairSorties
-// под родом None (лестница стола анкет) — второй ответ на «как он действует»
-// рядом с осью рода; теперь думку раздаёт ОДНА таблица kAiModuleRows.
-MacroHandle nearest_weaker_squad(MacroHandle self, int sightCells,
-                                 const TickContext& ctx) {
-    const SquadIndex& g = *ctx.squads;
-    const CellBuckets& b = g.grid;
-    if (b.cols <= 0 || b.rows <= 0) return MacroHandle{};
-    const MacroStore& st = store_ctx(ctx);
-    const float myPower = squad_power(auto_battle_side_of(st, self));
-    const std::uint32_t at = st.cell[self.slot].idx;
-    const int cx0 = cell_x(at, ctx.mapW) / b.cellSize;
-    const int cy0 = cell_y(at, ctx.mapW) / b.cellSize;
-    int best = sightCells * kStepStraight + 1;
-    MacroHandle found{};
-    for (int oy = -2; oy <= 2; ++oy) {
-        for (int ox = -2; ox <= 2; ++ox) {
-            const int gx = wrapi(cx0 + ox, b.cols);
-            const int gy = wrapi(cy0 + oy, b.rows);
-            for (const std::uint32_t* it = b.cell_begin(gx, gy),
-                                    * end = b.cell_end(gx, gy);
-                 it != end; ++it) {
-                const SquadWalkEntry& sw = g.order[*it];
-                if (sw.slot == self.slot) continue;
-                if (st.dead[sw.slot] != 0) continue;
-                const auto& oc = st.cell[sw.slot];
-                const int d = cell_dist(at, oc.idx, ctx.mapW);
-                if (d >= best) continue;
-                if (squad_power(auto_battle_side_of(
-                        st, handle_at(st, sw.slot))) >= myPower) {
-                    continue;   // добыча — только слабее
-                }
-                best = d;
-                found = handle_at(st, sw.slot);
-            }
-        }
-    }
-    return found;
-}
-
-// Поводок — ВНУТРИ модуля (вердикт владельца 2026-10-10, дословно
-// «5) внутри модуля»; список НЕ-ЕДИНОГО называет его прямо): не колонка
-// сквада и не агенда строки — у агенды радиуса был второй носитель того же
-// числа. Значение — БАЛАНС: прежняя авторская агенда драконов стояла 10.
-constexpr int kDragonLeashCells = 10;
-
-void ai_dragon(MacroHandle self, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
-               const TickContext& ctx) {
-    if (!ctx.mw.store || !ctx.mw.gs) return;
-    // Преамбула рефлексов — та же и в том же порядке, что у четырёх
-    // думающих модулей (M-307, см. ai_artel). Повтор — НОРМА (DOD п.5).
-    const ecs::NPCKind& kind = store_ctx(ctx).kind[self.slot];
-    scent_squad_deposit(self, kind, ctx);
-    if (squad_threat_step(self, kind, rt, pools, ctx)) return;
-    if (scent_hunt_step(self, kind, rt, pools, ctx)) return;
-    // Логово самозалечивается: тело без дома объявляет домом место, где
-    // проснулось (спавн-дверь анкеты пишет честную клетку раньше).
-    const std::uint32_t at = store_ctx(ctx).cell[self.slot].idx;
-    if (dragon_lair(rt) == ecs::kNoCell) dragon_set_lair(rt, at);
-    const std::uint32_t lair = dragon_lair(rt);
-    // ПОВОДОК — в клетках пути от логова, дверью над индексами.
-    const bool inLeash =
-        cell_within(at, lair, kDragonLeashCells, ctx.mapW);
-
-    if (ctx.squads && ctx.mw.store && ctx.mw.gs && inLeash) {
-        const MacroHandle prey =
-            nearest_weaker_squad(self, kDragonLeashCells, ctx);
-        MacroStore& st = store_ctx(ctx);
-        if (st.valid(prey)) {
-            if (st.cell[self.slot].idx == st.cell[prey.slot].idx) {
-                if (prey.slot == ctx.playerFlagSlot) return;   // дом ушёл с `.home`
-                if (cell_is_leased(ctx.mw.session, st.cell[self.slot].idx,
-                                   ctx.mapW)) return;
-                const AutoBattleOutcome o = resolve_auto_battle(
-                    auto_battle_side_of(st, self),
-                    auto_battle_side_of(st, prey),
-                    Ambush::SideA, *ctx.rng);
-                settle_auto_battle(ctx.mw, self, prey, o);
-                if (!macro_dead(st, self)) {
-                    // После боя — стоять: погоня отпущена, колонка пуста.
-                    chase_release(st.goal[self.slot]);
-                    rt.state = std::uint8_t(NS::Idle);
-                    charge_squad_recovery(rt,
-                        std::uint32_t((5 + rand_int(ctx, 8)) * kAiTicks));
-                }
-                return;
-            }
-            // Добыча ДВИЖЕТСЯ — род цели «сквад»: адрес каждую думку
-            // пересчитывают ноги свипа. Настигнув, остаётся Chasing.
-            ecs::goal_set(store_ctx(ctx).goal[self.slot],
-                          st.cell[prey.slot].idx,
-                          ecs::goal_what(ecs::GoalKind::Squad,
-                                         st.spawnId[prey.slot].index),
-                          0, std::uint8_t(NS::Chasing));
-            rt.state = std::uint8_t(NS::Chasing);
-            return;
-        }
-    }
-
-    ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
-    // Улетел за радиус или добычи нет и стоит не дома — домой.
-    // «ДОМА» — КЛЕТКА ЛОГОВА (M-461): ноги сажают в клетку цели, и вопрос
-    // модуля — тот же, равенством индексов. Здесь стоял порог `fromLair <
-    // 2.0f` — повтор порога ног, без которого севший за клетку до логова
-    // числился «не дома» каждую думку.
-    const bool atLair = at == lair;
-    if (!inLeash
-        || (rt.state != std::uint8_t(NS::Wandering) && !atLair)) {
-        ecs::goal_set(g, lair, 0, 0, std::uint8_t(NS::Idle));
-        rt.state = std::uint8_t(NS::Returning);
-        return;
-    }
-    // Дома и сыт: кружи по округе логова.
-    if (rt.state == std::uint8_t(NS::Idle)) {
-        // Сел (прибытие назвали ноги) — постоял. Какое плечо кончилось,
-        // говорит сама цель: её адрес прибытием не гасится. Домой — короткая
-        // передышка, с круга — долгая (числа прежние, обе авторские).
-        if (ecs::march_arrived(rt)) {
-            charge_squad_recovery(rt,
-                g.cell == lair
-                    ? std::uint32_t((3 + rand_int(ctx, 5)) * kAiTicks)
-                    : std::uint32_t((10 + rand_int(ctx, 20)) * kAiTicks));
-        }
-        if (!squad_recovering(rt)) {
-            ecs::goal_set(g,
-                          cell_nearby(lair, kDragonLeashCells, ctx),
-                          0, 0, std::uint8_t(NS::Idle));
-            rt.state = std::uint8_t(NS::Wandering);
-        }
-        return;
-    }
-    if (rt.state == std::uint8_t(NS::Wandering)) return;   // везут ноги
-    // Состояние, которого дракон не ведёт (Chasing без добычи, Fleeing):
-    // встать и перерешить. Погоня без добычи кончилась — колонка пуста
-    // (`chase_release`, M-468); у бегства «чего ищу» и так ноль.
-    chase_release(g);
-    rt.state = std::uint8_t(NS::Idle);
-    charge_squad_recovery(rt,
-        std::uint32_t((3 + rand_int(ctx, 5)) * kAiTicks));
-}
-
-// (ЗДЕСЬ ЖИЛА ПАТРУЛЬНАЯ ВЫЛАЗКА — снесена 2026-09-21 вместе с механикой.
-// Ушли: kPatrolReachHops / kPatrolDwellDays / kPatrolDwellThinks,
-// PatrolRoamCells, collect_trouble_cells_, ai_patrol_errand (91 строка),
-// патрульная урна run_patrol_auction и подъём вылазки из гарнизона.
-//
-// А 2026-09-22 ушёл и `ai_patrol` — последний легаси-круг у дома, который
-// ходили генезисные одиночки-стражники. Их вырезали тем же ходом
-// (npc_spawn.cpp), и машина осталась без единого носителя. Вместе с ней
-// умерли значение `AIBehaviour::Patrol` и состояние `NPCState::Patrolling`:
-// колонка без писателя — дефект (AGENTS §9), а не задел.
-//
-// СЦЕНА ЭТОГО НЕ ЗАМЕТИТ, и это проверено, а не обещано: стойку тела даёт
-// `combatant_behaviour`, она отвечала `true` и на Patrol, и на Aggressive, а
-// строка Guard переведена именно в Aggressive — `subworld_ai_for` вернёт тот
-// же `SubworldAi::Combat`.
-// Поле угрозы и страх рейса ЖИВЫ — `route_fear_` читает развилка рейса.)
-
-void ai_teleporter(MacroHandle self, ecs::MacroNpcRuntime& rt,
-                   [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
-    ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
-    // ПРЫЖОК — АКТ, и занятость ему ставит ТОТ ЖЕ гейт, что всем актам
-    // сквада. Здесь жил `teleportCooldown` — второй счётчик того же
-    // субъекта со своим ручным сливом, буквально «своя таблица
-    // восстановления у отдельного рода действий» (ЗАКОН СПОСОБНОСТИ п.6);
-    // прежняя пара «кулдаун 50 думок + пауза Idle 10» слилась в один заряд.
-    // ПРЫЖОК ИЗ АРЕНДЫ ОТЛАГАЕТСЯ (ЗАХВАТ, ломоть 2 M-419): в окне позицию
-    // ведёт субмир — прыжок макро был бы вторым писателем (тело осталось бы
-    // в сцене, запись уехала). Прыжок В окно законен: вошедший захватывается
-    // следующим слепком. Форма гейта — та же, что у судов автобоя
-    // (`cell_is_leased` по адресу сессии: нулевой адрес — аренды нет); он
-    // стоит ПЕРВЫМ, чтобы отложенный прыжок не сжигал ролл.
-    const std::uint32_t at = store_ctx(ctx).cell[self.slot].idx;
-    const bool jumpLeased = cell_is_leased(ctx.mw.session, at, ctx.mapW);
-    if (!jumpLeased && !squad_recovering(rt) && rand_f01(ctx) < 0.005f) {
-        // ПРЫЖОК — ДВЕРЬЮ ПРЫЖКА (`squad_jump_to_cell@src/bus/store.h`), той
-        // же, какой прыгают побег, консоль и выход из субмира: клетка,
-        // стёртый румб входа и доля в центре — одним действием. Здесь модуль
-        // писал черновик позиции и сам штамповал «румба нет», а центр доле
-        // ставил драйвер по догадке «клетка сменилась без румба» (M-462).
-        const std::uint32_t to = cell_nearby(at, 40, ctx);
-        squad_jump_to_cell(store_ctx(ctx), self, cell_x(to, ctx.mapW),
-                           cell_y(to, ctx.mapW), ctx.mapW);
-        charge_squad_recovery(rt, std::uint32_t(50 * kAiTicks));
-        // Прыгнул — стоит: прежняя прогулка осталась там, откуда прыгал.
-        ecs::goal_drop(g);
-        rt.state = std::uint8_t(NS::Idle);
-        return;
-    }
-    if (rt.state == std::uint8_t(NS::Idle)) {
-        // Дошёл — постоял (прибытие назвали ноги).
-        if (ecs::march_arrived(rt)) {
-            charge_squad_recovery(rt,
-                std::uint32_t((12 + rand_int(ctx, 20)) * kAiTicks));
-        }
-        if (!squad_recovering(rt)) {
-            ecs::goal_set(g, cell_nearby(at, 15, ctx),
-                          0, 0, std::uint8_t(NS::Idle));
-            rt.state = std::uint8_t(NS::Wandering);
-        }
-        return;
-    }
-    // Wandering: в пути решать нечего — везут ноги свипа.
-}
-
-void ai_wanderer(MacroHandle self, ecs::MacroNpcRuntime& rt,
-                 [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
-    ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
-    if (rt.state == std::uint8_t(NS::Idle)) {
-        // Дошёл — постоял (прибытие назвали ноги).
-        if (ecs::march_arrived(rt)) {
-            charge_squad_recovery(rt,
-                std::uint32_t((10 + rand_int(ctx, 15)) * kAiTicks));
-        }
-        if (!squad_recovering(rt)) {
-            ecs::goal_set(g,
-                          cell_nearby(store_ctx(ctx).cell[self.slot].idx, 25,
-                                      ctx),
-                          0, 0, std::uint8_t(NS::Idle));
-            rt.state = std::uint8_t(NS::Wandering);
-        }
-        return;
-    }
-    // Wandering: в пути решать нечего — везут ноги свипа.
-}
+namespace {
 
 // ── Squad↔squad perception and war (Session 15) ───────────────────────────
 //
@@ -4125,6 +1773,8 @@ MacroHandle nearest_hostile_squad(MacroHandle self, const ecs::NPCKind& kind,
     }
     return found;
 }
+
+}  // namespace
 
 // Returns true when the threat consumed this think (fled, pursued or
 // fought); the role behaviour then waits for a calmer half hour.
@@ -4242,8 +1892,6 @@ bool squad_threat_step(MacroHandle self, const ecs::NPCKind& kind, ecs::MacroNpc
     }
     return false;
 }
-
-} // namespace
 
 // ── СЛЕД И ОХОТА (scent_field.h, CANON S10 «хищник-жертва», 2026-09-03) ──
 // Поле отвечает «куда», закон боя — «бить или бежать». Писатель один: каждый
@@ -4427,76 +2075,6 @@ bool scent_hunt_step(MacroHandle self, const ecs::NPCKind& kind, ecs::MacroNpcRu
 
 namespace {
 
-// Follow the waypoint route in the squad's orders (Session 15, Inc 7): walk
-// to the current waypoint, arrive, take the next, loop. A squad ordered onto
-// a route with no route wanders — a degraded order is a visible NPC, not a
-// frozen one.
-void ai_waypoints(MacroHandle e, ecs::MacroNpcRuntime& rt,
-                  ecs::Pools& pools, const TickContext& ctx) {
-    ecs::SquadOrders* orders = ctx.mw.store
-        ? &store_ctx(ctx).orders[e.slot] : nullptr;
-    if (!orders || orders->waypointCount == 0) {
-        ai_wanderer(e, rt, pools, ctx);
-        return;
-    }
-    const int i = orders->currentWaypoint % orders->waypointCount;
-    ecs::SquadGoal& g = store_ctx(ctx).goal[e.slot];
-    const std::uint32_t wp =
-        cell_of(int(orders->waypoints[std::size_t(i * 2)]),
-                int(orders->waypoints[std::size_t(i * 2 + 1)]), ctx.mapW);
-    // ДОШЁЛ ДО ТОЧКИ МАРШРУТА (прибытие назвали ноги, и адрес цели — она):
-    // взять следующую, постоять. Чужое прибытие — конец бегства — маршрут не
-    // двигает: какое плечо кончилось, говорит адрес самой цели.
-    if (ecs::march_arrived(rt) && g.cell == wp) {
-        orders->currentWaypoint =
-            std::uint8_t((i + 1) % orders->waypointCount);
-        charge_squad_recovery(rt,
-            std::uint32_t((2 + rand_int(ctx, 4)) * kAiTicks));
-        return;
-    }
-    // Стоянка на точке: цели не пишем — названный адрес значит «везти».
-    if (rt.state == std::uint8_t(NS::Idle) && squad_recovering(rt)) return;
-    ecs::goal_set(g, wp, 0, 0, std::uint8_t(NS::Idle));
-    rt.state = std::uint8_t(NS::Traveling);
-}
-
-} // namespace
-
-// The behaviour a squad ACTUALLY lives by: its type row's ai column, unless
-// it CARRIES a waypoint route — the route's presence is the order (owner's
-// ruling: one knob, not two). New kinds of squad AI are rows, never fields.
-// ЛЕСТНИЦА ПРИОРИТЕТОВ — ЗАКОН этой двери (владелец, 2026-09-10).
-// Поведение не хранится — оно ВЫВОДИТСЯ каждый think из данных на
-// сущности, ступени сверху вниз:
-//   1. ПРИКАЗ: маршрут в SquadOrders (его наличие И ЕСТЬ приказ);
-//   2. (будущие перекрытия контекста — событие/факт пишет данные,
-//      ступень читает их здесь, никогда веткой в диспетче);
-//   3. АНКЕТА: строка стола дизайн-персонажей по ординалу тега;
-//   4. строка типа (kNpcTypeDefs.ai) — род как он есть.
-// Новая модель ИИ = функция + строка enum; новая ступень = данные на
-// сущности + одна строка здесь.
-// ПОВЕДЕНИЕ НЕТИПИЗИРОВАННОГО СКВАДА — и это ЕДИНСТВЕННАЯ ТОЧКА, ГДЕ
-// МАКРОМИР ЕЩЁ ЧИТАЕТ КАТАЛОГ ТЕЛ (CANON S2 «Протокол двух миров»; до
-// 2026-09-21 таких точек было четыре, и ни одна не была названа).
-// Зовётся ТОЛЬКО из модуля None-строки kAiModuleRows — для сквадов, у которых
-// нет макро-источника поведения вовсе: генезисных одиночек и квестовой цели.
-// Лестница честная и по убыванию authority: маршрут в приказе (он и есть
-// приказ — вердикт владельца), строка стола анкет (МАКРО-таблица, законно),
-// и только потом мобная строка лидера — та самая течь.
-// С их сносом (порция Б-6, «всё через универсальную систему анкет») эта
-// функция умирает целиком, а не переезжает.
-AIBehaviour untyped_squad_behaviour(const MacroStore& st, MacroHandle h,
-                                     const ecs::NPCKind& kind) {
-    if (st.orders[h.slot].waypointCount > 0) return AIBehaviour::Waypoints;
-    if (const DesignCharacterDef* row =
-            design_character(st.designTag[h.slot].ordinal)) {
-        return row->behaviour;
-    }
-    return kNpcTypeDefs[kind.type].ai;
-}
-
-namespace {
-
 // Exhaustion, settled once per think AFTER the behaviour marched — the one
 // door for every behaviour, where the dispatcher holds the entity and its
 // Health (try_move deliberately sees neither).
@@ -4534,65 +2112,6 @@ void settle_exhaustion(MacroHandle e, const ecs::Pools& hp,
     kill_fallen_squad_creatures(st);
 }
 
-// ПОВЕДЕНИЕ НЕТИПИЗИРОВАННОГО СКВАДА — МОДУЛЬ None-СТРОКИ kAiModuleRows
-// (ломоть 4 M-72): лестница untyped_squad_behaviour и её switch по
-// AIBehaviour живут ВНУТРИ модуля; снаружи диспетч знает одну ось SquadType.
-// ПОЧЕМУ У ДЕСЯТИ `ai_*` НИЖЕ СТОИТ `[[maybe_unused]] ecs::Pools& pools`, А
-// НЕ СНЯТЫЙ ПАРАМЕТР (2026-10-09, вместе со сносом `-Wno-unused-parameter`).
-// Это СЕМЕЙСТВО С ЕДИНОЙ ФОРМОЙ ВЫЗОВА: один `switch` по `AIBehaviour`, и
-// каждая ветвь зовёт свою функцию ОДНОЙ И ТОЙ ЖЕ пятёркой аргументов.
-// Снять параметр у тех десяти, кто пулы не читает, значит сделать подписи
-// семейства рваными — ветвь начнёт знать, какой именно вид её callee, то
-// есть ровно то знание, ради избавления от которого диспетчер и написан.
-// Поэтому глушитель здесь ЛОКАЛЬНЫЙ и НАЗВАННЫЙ, а глобального одеяла
-// (`-Wno-unused-parameter` на весь проект) больше нет: новый мёртвый
-// параметр в любом другом месте дерева теперь красит сборку.
-// Уйдёт это вместе с модулем: эпик ИИ переписывает здесь всё (M-235/M-242),
-// и чинить форму семейства ДО его переписки значит работать на снос (§5 п.14).
-void ai_untyped(MacroHandle e, ecs::MacroNpcRuntime& rt,
-                ecs::Pools& pools, const TickContext& ctx) {
-    const ecs::NPCKind& kind = store_ctx(ctx).kind[e.slot];
-    // Преамбула рефлексов — та же и в том же порядке (M-307, см. ai_artel).
-    // Гейта мира у этого модуля нет и не было: его зовёт тот же свип, что
-    // уже проверил store и gs на входе.
-    scent_squad_deposit(e, kind, ctx);
-    if (squad_threat_step(e, kind, rt, pools, ctx)) return;
-    if (scent_hunt_step(e, kind, rt, pools, ctx)) return;
-    switch (untyped_squad_behaviour(store_ctx(ctx), e, kind)) {
-        // ПОСЛЕДНИЕ ДВЕ МАКРО-РОЛИ, ЕЩЁ ЖИВУЩИЕ В КАТАЛОГЕ ТЕЛ (CANON S2):
-        // `Gatherer` на строке Peasant и `Trader` на строке Merchant. Они
-        // здесь не потому, что нетипизированный сквад должен добывать, а
-        // потому что их несут СТРОКИ, и снести значение раньше строки нельзя.
-        // Нетипизированный крестьянин — ДОМОСЕД, и теперь это сказано
-        // прямо: прежде он проваливался в добытчика до gatherer_def_of (нет
-        // поручения → home_wanderer), но поручений больше нет — «что
-        // добыть» решает МОДУЛЬ Artel по своей цели (ломоть 4 M-72), а
-        // думать добычей нетипизированному не с чего. Обе роли уйдут вместе
-        // со своими строками (порция Б-6).
-        case AIBehaviour::Gatherer:  ai_home_wanderer(e, rt, pools, ctx); break;
-        // `TaxRun` ОСТАЛСЯ БЕЗ МАКРО-СМЫСЛА 2026-09-22 (сборщик стал ТИПОМ
-        // сквада). Значение ещё несёт строка TaxCollector каталога тел,
-        // поэтому ветка обязана существовать — но ведёт она туда же, куда
-        // ведёт всякая роль без занятия. Умрёт вместе со строкой (Б-6).
-        case AIBehaviour::TaxRun:       ai_wanderer  (e, rt, pools, ctx); break;
-        case AIBehaviour::Trader:       ai_trader    (e, rt, pools, ctx); break;
-        case AIBehaviour::Aggressive:   ai_aggressive(e, rt, pools, ctx); break;
-        case AIBehaviour::Teleporter:   ai_teleporter(e, rt, pools, ctx); break;
-        case AIBehaviour::Wanderer:     ai_wanderer  (e, rt, pools, ctx); break;
-        // Prey. Running is not its own errand: the threat step above already
-        // makes ANY row run from what it cannot beat (squad_power), so what
-        // this column says about an untroubled day is "it roams" — the same
-        // walk a wanderer takes. The difference between a fox and a rabbit is
-        // what happens when something appears, and that is decided above.
-        case AIBehaviour::Flee:         ai_wanderer  (e, rt, pools, ctx); break;
-        case AIBehaviour::Waypoints:    ai_waypoints (e, rt, pools, ctx); break;
-        case AIBehaviour::MageHunt:     ai_mage_hunt (e, rt, pools, ctx); break;
-        // (`LairSorties` УМЕР 2026-11-02, ломоть 6 M-72: вылеты из логова —
-        //  МОДУЛЬ рода Dragon (ai_dragon), лестница None их не раздаёт.)
-        case AIBehaviour::Count:        break;
-    }
-}
-
 // РОД → МОДУЛЬ: диспетч есть ТАБЛИЦА по ординалу SquadType, не ветвление
 // (ломоть 4 M-72; образец формы — kGenKindRows@src/sub/gens/dispatch.cpp).
 // nullptr = «у рода думки нет»: его день идёт своим проходом
@@ -4624,23 +2143,6 @@ struct AiModuleRow {
     AiModuleFn module;   // nullptr = род не думает
     AiDeathFn death;     // nullptr = род на своей смерти не пишет ничего
 };
-// ГОРОД И СТОЛИЦА ОСТАВЛЯЮТ ПО СЕБЕ РУИНУ (вердикт владельца: «например
-// город переписывает фичу под собой в руины»). Руина — ЖИВАЯ строка оси и
-// фичи, то есть мир честно говорит «здесь ЖИЛИ», а не «здесь город».
-void city_death(MacroHandle self, AiPult& pult) {
-    pult.reshape_feature(self, FT_Ruin);
-}
-
-// ДЕРЕВНЯ СНИМАЕТ ФИЧУ ВОВСЕ — ПОЛЕ ЗАРОСЛО (вердикт владельца 2026-10-25,
-// строка смерти деревни). `FT_None` здесь ЗНАЧЕНИЕ, а не отказ: у снятия
-// вода не спрашивается вовсе (`feature_put` судит воду только у постановки),
-// поэтому деревня исчезает с карты фич на любой земле одинаково. Руины она
-// по себе не оставляет, и это не копия городской строки, а ДРУГОЙ ответ:
-// деревня есть пашня с домами, и без рук её затягивает, а не рушит.
-void village_death(MacroHandle self, AiPult& pult) {
-    pult.reshape_feature(self, FT_None);
-}
-
 constexpr AiModuleRow kAiModuleRows[] = {
     { SquadType::None,      ai_untyped,   nullptr       },
     // СТОЛИЦЕ ДАНА ФУНКЦИЯ ГОРОДА — ОДНА ФУНКЦИЯ ДВУМ СТРОКАМ ЗАКОННА,
