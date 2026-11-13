@@ -8,7 +8,6 @@
 #include <cstdint>
 
 #include "bus/anketa.h"      // inventory_mass_g
-#include "core/torus.h"      // cell_x / cell_y — адрес факта
 #include "macro/currency.h"  // inventory_value — пуст ли трюм
 #include "macro/economy.h"   // trip_goes_on, leg_rate
 
@@ -175,10 +174,9 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
                 // акта не делал — долга нет, развилка решается той же думкой.
                 charge_squad_recovery(rt,
                     std::uint32_t((4 + pult.rand(4)) * kAiTicks));
-                pult.traded_fact(s, cell_x(g.cell, view.map_w()),
-                                 cell_y(g.cell, view.map_w()),
-                                 leg.movedTableValue,
-                                 int(ecs::goal_ordinal(g.what)));
+                // Число факта сделки — её стоимость, объект — рынок.
+                pult.fact(s, FactKind::Traded, g.cell, leg.movedTableValue,
+                          int(ecs::goal_ordinal(g.what)));
                 // СДЕЛКА СОВЕРШЕНА — вера в среднюю по рейсу растёт с каждой
                 // (пустой рынок доверия не прибавляет).
                 ++rt.mem[kCaravanMemDeals];

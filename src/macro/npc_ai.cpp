@@ -48,15 +48,15 @@
 
 namespace sm {
 
+namespace {
 
 // TS uses Math.random() inside behaviours. The C++ port uses App-owned
 // MacroNpcAiRuntime RNG so world resets do not inherit hidden module state.
+// Файл-локальна: модули бросают кость дверью пульта `AiPult::rand`.
 int rand_int(const TickContext& ctx, int range) {
     if (range <= 0) return 0;
     return int(ctx.rng->next_u32() % std::uint32_t(range));
 }
-
-namespace {
 
 // (МАССА ЕДИНИЦЫ СТРОКИ — `unit_mass_g@src/macro/deal.h`: уехала к двери
 // `deal` вместе с клампом спины; провенанс килограмма существа стоит там.)
@@ -123,9 +123,13 @@ bool is_other_city(const MacroStore& st, std::uint16_t slot,
 // (`stamp_feature_if_bare` ВЫРЕЗАНА 2026-09-22: фичи ставит генерация мира,
 // а не сквады — артель больше не строит ничего.)
 
+namespace {
+
 // Случайная клетка в боксе ±range вокруг `c` — шаг ИНДЕКСА, заворот делает
 // маска `cell_step`. Разброс симметричен: [-range, +range] по каждой оси
 // (флоатная предшественница брала [-range, range-1] — на клетку смещённо).
+// Файл-локальна, как и клетка дома ниже: модули зовут двери окна
+// `AiPult::rand_nearby` и `AiView::home`.
 std::uint32_t cell_nearby(std::uint32_t c, int range, const TickContext& ctx) {
     const int dx = rand_int(ctx, range * 2 + 1) - range;
     const int dy = rand_int(ctx, range * 2 + 1) - range;
@@ -141,8 +145,6 @@ std::uint32_t home_cell(MacroHandle self, const TickContext& ctx) {
     if (slot == kMacroNoSlot) return ecs::kNoCell;
     return store_ctx(ctx).cell[slot].idx;
 }
-
-namespace {
 
 // ДОМ АРТЕЛИ — СЛОТ тела места; kMacroNoSlot = дома нет. (Спутник
 // home_inventory умер с переводом сдачи груза на deal: сделка адресуется
@@ -1062,10 +1064,12 @@ std::uint32_t AiPult::rand_nearby(std::uint32_t around, int radius) {
     return cell_nearby(around, radius, ctx_);
 }
 
-void AiPult::drained_fact(MacroHandle self, int x, int y, ResourceFieldId row) {
-    record_rooted_fact(store_ctx(ctx_), *ctx_.mw.gs, FactKind::Drained,
-                         parent_of(store_ctx(ctx_), self.slot),
-                         x, y, int(row) + 1);
+void AiPult::fact(AiSelf& s, FactKind kind, std::uint32_t cell, int amount,
+                  int object) {
+    MacroStore& st = store_ctx(ctx_);
+    record_rooted_fact(st, *ctx_.mw.gs, kind, parent_of(st, s.h.slot),
+                       cell_x(cell, ctx_.mapW), cell_y(cell, ctx_.mapW),
+                       amount, object);
 }
 
 void AiPult::nomad(AiSelf& s) { ai_nomad(s.h, s.rt, s.pools, ctx_); }
@@ -1078,12 +1082,6 @@ CaravanDeal AiPult::trade_at(AiSelf& s, std::uint16_t market) {
     MacroStore& st = store_ctx(ctx_);
     return trade_caravan_at_station(
         st, s.h.slot, carry_capacity_g(s.rt, s.bag), market);
-}
-
-void AiPult::traded_fact(AiSelf& s, int x, int y, int value, int marketId) {
-    MacroStore& st = store_ctx(ctx_);
-    record_rooted_fact(st, *ctx_.mw.gs, FactKind::Traded,
-                         parent_of(st, s.h.slot), x, y, value, marketId);
 }
 
 int AiPult::next_station(std::uint32_t at, int currentId, int prevId,

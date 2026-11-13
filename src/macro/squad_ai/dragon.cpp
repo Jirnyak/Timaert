@@ -70,6 +70,10 @@ constexpr int kDragonLeashCells = 10;
 void ai_dragon(MacroHandle self, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
                const TickContext& ctx) {
     if (!ctx.mw.store || !ctx.mw.gs) return;
+    // ПУЛЬТ ОКНА — кость и случайная клетка у всякого сквада одни (раскладка
+    // (а) ряда M-499); чтение мира в погоне ниже пока идёт из `ctx` напрямую
+    // — угроза и погоня ждут решений владельца.
+    AiPult pult(ctx);
     // Преамбула рефлексов — та же и в том же порядке, что у четырёх
     // думающих модулей (M-307, см. ai_artel). Повтор — НОРМА (DOD п.5).
     const ecs::NPCKind& kind = store_ctx(ctx).kind[self.slot];
@@ -104,7 +108,7 @@ void ai_dragon(MacroHandle self, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
                     chase_release(st.goal[self.slot]);
                     rt.state = std::uint8_t(NS::Idle);
                     charge_squad_recovery(rt,
-                        std::uint32_t((5 + rand_int(ctx, 8)) * kAiTicks));
+                        std::uint32_t((5 + pult.rand(8)) * kAiTicks));
                 }
                 return;
             }
@@ -141,12 +145,12 @@ void ai_dragon(MacroHandle self, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
         if (ecs::march_arrived(rt)) {
             charge_squad_recovery(rt,
                 g.cell == lair
-                    ? std::uint32_t((3 + rand_int(ctx, 5)) * kAiTicks)
-                    : std::uint32_t((10 + rand_int(ctx, 20)) * kAiTicks));
+                    ? std::uint32_t((3 + pult.rand(5)) * kAiTicks)
+                    : std::uint32_t((10 + pult.rand(20)) * kAiTicks));
         }
         if (!squad_recovering(rt)) {
             ecs::goal_set(g,
-                          cell_nearby(lair, kDragonLeashCells, ctx),
+                          pult.rand_nearby(lair, kDragonLeashCells),
                           0, 0, std::uint8_t(NS::Idle));
             rt.state = std::uint8_t(NS::Wandering);
         }
@@ -159,7 +163,7 @@ void ai_dragon(MacroHandle self, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
     chase_release(g);
     rt.state = std::uint8_t(NS::Idle);
     charge_squad_recovery(rt,
-        std::uint32_t((3 + rand_int(ctx, 5)) * kAiTicks));
+        std::uint32_t((3 + pult.rand(5)) * kAiTicks));
 }
 
 }  // namespace sm

@@ -365,8 +365,8 @@ struct Depot {
 // SP не списывала. Вердикт владельца того же дня: решает ИИ-модуль сквада,
 // механика акта одна на всех, цена SP делится на рабочих юнитов. Механика —
 // `squad_craft@src/macro/squad_act.h`; решение — модули деревни и города,
-// каждый своё: `village_craft_pick@src/macro/npc_ai.cpp`,
-// `city_craft_pick@src/macro/npc_ai.cpp`.)
+// каждый своё: `village_craft_pick@src/macro/squad_ai/village.cpp`,
+// `city_craft_pick@src/macro/squad_ai/city.cpp`.)
 
 // ЧТО ВООБЩЕ КРАФТИТСЯ — выходы таблицы рецептов ординалами каталога, для
 // модуля, который выбирает: по строке на товарный рецепт и по строке на

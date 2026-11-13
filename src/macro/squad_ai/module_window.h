@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <span>
 
+#include "bus/fact.h"         // FactKind — род факта двери записи
 #include "bus/interests.h"    // kMaxInterests — обход детей у порога
 #include "bus/squad_row.h"    // MacroCell, MacroNpcRuntime, SquadGoal, NPCKind
 #include "core/macro_handle.h"
@@ -299,8 +300,17 @@ public:
     //  ней ноги свипа: шагнуть из тела модуля теперь нечем — подписью.)
     int rand(int n);
     std::uint32_t rand_nearby(std::uint32_t around, int radius);
-    // Летопись: выработанная жила — факт мира (FactKind::Drained).
-    void drained_fact(MacroHandle self, int x, int y, ResourceFieldId row);
+    // ЗАПИСАТЬ ФАКТ — ОДНА ДВЕРЬ ВСЯКОГО СКВАДА, РОД ФАКТА — ПАРАМЕТРОМ
+    // (ряд M-499, раскладка (б), одобрена владельцем 2026-11-13). Здесь
+    // стояло по глаголу на род — «жила выработана» и «обмен состоялся», — и
+    // оба делали одно: писали деяние на ДОМ сквада (`parent_of`) той же
+    // дверью летописи (`record_rooted_fact@src/macro/squad.h`). Субъект —
+    // дом, как и прежде; клетка — одно число (ЗАКОН АДРЕСА п.2), пару
+    // координат строки летописи дверь выводит сама. Что значат `amount` и
+    // `object`, называет род факта (`FactKind@src/bus/fact.h`) и модуль,
+    // который его пишет; `object` 0 — объекта нет.
+    void fact(AiSelf& s, FactKind kind, std::uint32_t cell, int amount,
+              int object = 0);
     // ── ЧУЖИМ МОДУЛЕМ — ТОЖЕ ГЛАГОЛОМ ───────────────────────────────────
     // Сквад без дома ходит бродягой, сквад без цели — вокруг дома. Это не
     // «фолбэк на всякий случай», а два законных ответа мира: дома нет —
@@ -318,8 +328,6 @@ public:
     // судит рынок, на котором стоит, и растит свою оценку своего трюма
     // (`trade_caravan_at_station`).
     CaravanDeal trade_at(AiSelf& s, std::uint16_t market);
-    // Летопись: состоявшийся обмен — факт мира (FactKind::Traded).
-    void traded_fact(AiSelf& s, int x, int y, int value, int marketId);
     // СЛЕДУЮЩАЯ СТАНЦИЯ — рулетка по весу `1/(1 + дни)` среди жилых мест
     // соседних округ: глагол, потому что КИДАЕТ КОСТЬ (дневная струя RNG).
     // Пара выходных координат двери здесь не берётся: решение называет
@@ -413,16 +421,16 @@ bool squad_threat_step(MacroHandle self, const ecs::NPCKind& kind, ecs::MacroNpc
 // вердикта владельца — не скопированы и не обобщены; в комментарии к
 // каждой названо, кто зовёт.
 //
-// Бросок кости дневной струи (модули untyped и dragon; пульт `rand`).
-int rand_int(const TickContext& ctx, int range);
-// Случайная клетка в боксе ±range (модули untyped и dragon; пульт
-// `rand_nearby`, `ai_home_wanderer`).
-std::uint32_t cell_nearby(std::uint32_t c, int range, const TickContext& ctx);
+// (Здесь стояли бросок кости дневной струи, случайная клетка в боксе и
+//  клетка дома — `rand_int`, `cell_nearby`, `home_cell`. Двери у всякого
+//  сквада у них уже были — `AiPult::rand`, `AiPult::rand_nearby`,
+//  `AiView::home`, — и модули untyped и dragon зовут теперь их (раскладка (а)
+//  ряда M-499); сами функции стали файл-локальными в `npc_ai.cpp`, где их
+//  зовут двери окна и `ai_nomad`.)
+//
 // Погоня кончилась — колонка цели пуста (модули untyped и dragon; рефлекс
 // угрозы `squad_threat_step`).
 void chase_release(ecs::SquadGoal& g);
-// Клетка дома (модуль untyped — `ai_trader`; вид `home`, `ai_home_wanderer`).
-std::uint32_t home_cell(MacroHandle self, const TickContext& ctx);
 // Урна городов (модуль untyped — `ai_trader`; `ai_nomad`).
 bool is_other_city(const MacroStore& st, std::uint16_t slot, int notId);
 // ФОЛБЭКИ — ТОЖЕ ГЛАГОЛЫ ПУЛЬТА: сквад без дома и сквад без цели ходят

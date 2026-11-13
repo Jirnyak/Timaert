@@ -22,6 +22,9 @@
 //   5. СТОЯЩЕЕ МЕСТО НЕ ПЛАТИТ ЗА ДОРОГУ (M-313: цель на свою клетку);
 //   6. ПОСЛЕДНЮЮ СМЕНУ РУК ИЗ ДОМА НЕ ВЫПИСЫВАЮТ — гейт свободных душ
 //      (M-314: до 2026-10-25 этот гейт стоял БЕЗ СВИДЕТЕЛЯ ВОВСЕ).
+//   (и закон памяти крафта — «крафтить нечего» запомнено, будит его только
+//    сдвиг инвентаря или счёта нужды — у деревни судится в законе 1, у
+//    города и столицы своим свидетелем, ряд M-519).
 //
 // ЯКОРИ НЕ ПЕРЕСЧИТЫВАЮТ ПРОДАКШН-ФОРМУЛУ (§8 п.5-6: копия логики проверяет
 // умение копировать, а тождество двух вычислений с одной формулой слепо к
@@ -101,10 +104,16 @@ struct TownModule {
     SquadType kind;
     int crew;          // своя публичная строка крю модуля
     const char* who;
+    // Свои слова памяти крафта модуля (`src/macro/npc_ai.h`): «при каком
+    // инвентаре» и «при каком счёте нужды» крафтить было нечего.
+    int memCraftSeen;
+    int memCraftDebt;
 };
 constexpr TownModule kTownModules[] = {
-    {SquadType::City, kCityCrewSouls, "город"},
-    {SquadType::Capital, kCapitalCrewSouls, "столица"},
+    {SquadType::City, kCityCrewSouls, "город", kCityMemCraftSeen,
+     kCityMemCraftDebt},
+    {SquadType::Capital, kCapitalCrewSouls, "столица", kCapitalMemCraftSeen,
+     kCapitalMemCraftDebt},
 };
 
 // ПЕРИОД ПРОИЗВОДСТВЕННОГО АКТА — ТОЖЕ ВЫВОД, А НЕ ЦИТАТА: думка идёт раз в
@@ -419,6 +428,192 @@ void test_village_produces_through_its_own_think() {
           "НОВОЕ СЫРЬЁ ПОШЛО В ДЕЛО СРАЗУ: ни суток, ни иной задержки");
     std::printf("  [привезли волокно] ткани после одной думки: %d\n",
                 shelf.count_of(clothIdx));
+}
+
+// ═════ 1б. ГОРОД И СТОЛИЦА ПОМНЯТ, ЧТО КРАФТИТЬ НЕЧЕГО (ряд M-519) ═══════
+// Закон памяти тот же, что у деревни выше, а носитель у каждого модуля свой
+// (AGENTS §4 п.5): `city_craft_think_@src/macro/squad_ai/city.cpp` со
+// словами `kCityMemCraftSeen`/`kCityMemCraftDebt` и
+// `capital_craft_think_@src/macro/squad_ai/capital.cpp` со словами
+// `kCapitalMemCraftSeen`/`kCapitalMemCraftDebt` (`src/macro/npc_ai.h`).
+// Мутация одной копии другую не задевает — поэтому плечи стоят над обоими.
+// Три закона, по плечу на каждый и по своему миру на плечо:
+//   (а) при том же инвентаре и том же счёте решение второй раз не
+//       считается: слова стоят, акта нет — при полном баре и свободном теле,
+//       иначе «акта нет» не доказывало бы ничего;
+//   (б) сдвиг ИНВЕНТАРЯ, делающий лот выгодным, будит — следующей думкой акт;
+//   (в) сдвиг СЧЁТА НУЖДЫ при том же инвентаре будит — тоже акт.
+//
+// ФИКСТУРА СВОЯ, И ДУШ В НЕЙ РОВНО НА КРЮ: в общей город с первой думки
+// рождает корован, и счёт рабочих юнитов перестаёт держаться. Здесь
+// свободных душ нет (гейт свободных душ — закон 6), рождений нет, и
+// инвентарь места двигает только прибор.
+//
+// «КРАФТИТЬ НЕЧЕГО» ПРИБОР РОЖАЕТ НУЖДОЙ, А НЕ ПУСТОЙ ПОЛКОЙ: на полке глина,
+// и счёт места требует глины вдвое больше, чем лежит. Глину кормит один
+// рецепт — кирпич ({clay 1}, `kPartsAuthoring@src/tables/items.cpp`), — а
+// отдать недостающую глину за кирпич значит потерять в оценке: единица в
+// нужде стоит стоимость × (глубина + 1) (AGENTS «ЗАКОН ЕДИНОЙ ЦЕНОМОДЕЛИ»
+// п.2). Пустая полка не годилась бы: при ней сдвиг счёта не будит ничего, и
+// плечо (в) было бы не на чем судить. Что рецепт под рукой ЕСТЬ и мира
+// хватает на акт, доказывают плечи (б) и (в): оба кончаются кирпичом.
+constexpr int kRestClay = 64;                  // глины на полке
+constexpr int kRestClayDebt = 2 * kRestClay;   // счёт глины вдвое глубже
+
+struct TownAtRest {
+    MacroHandle h;
+    std::uint32_t seenWord = 0;   // слова памяти крафта после первой думки
+    std::uint32_t debtWord = 0;
+};
+
+// Рожает место модуля `m` в «крафтить нечего» и даёт ему одну думку; что
+// модуль запомнил это и не сделал ничего — утверждается здесь же, потому что
+// это предусловие всех трёх плеч.
+TownAtRest town_with_nothing_to_craft(Fixture& f, MacroNpcAiRuntime& rt,
+                                      const TownModule& m) {
+    TownAtRest out{};
+    out.h = f.rooted(m.kind, 10, 10, m.crew);
+    const std::uint16_t slot = out.h.slot;
+    Inventory& shelf = f.st().inventory[slot].inv;
+    const ecs::MacroNpcRuntime& trt = f.st().runtime[slot];
+    const int clayIdx = item_index("clay");
+    const int bricksIdx = item_index("bricks");
+    const int clayCol = commodity_index("clay");
+    CHECK(clayIdx >= 0 && bricksIdx >= 0 && clayCol >= 0,
+          "каталог знает глину и кирпич, словарь товаров — глину");
+    CHECK(shelf.add_of(clayIdx, kRestClay), "глина легла на полку места");
+    f.st().upkeep[slot].needDebt[clayCol] = kRestClayDebt;
+
+    // ПРАВО НА РЕЦЕПТ — ВОПРОС АНКЕТЫ, И ОНО ЕСТЬ: иначе «нечего» значило бы
+    // «не умею», и плечи (б) и (в) судили бы не память, а неграмотность.
+    const ActionDef& act =
+        action_def(int(kRecipes[recipe_of_item(bricksIdx)].action));
+    CHECK(recipe_known(f.st().sheet[slot].skills, act.gateSkill,
+                       int(act.minRank)),
+          "место знает рецепт кирпича своей анкетой");
+    CHECK(trt.mem[m.memCraftSeen] == 0 && trt.mem[m.memCraftDebt] == 0,
+          "до первой думки память крафта пуста — запись ниже есть запись "
+          "этой думки, а не наследство");
+
+    f.think_on(rt, 1);
+    out.seenWord = trt.mem[m.memCraftSeen];
+    out.debtWord = trt.mem[m.memCraftDebt];
+    CHECK(shelf.count_of(bricksIdx) == 0
+              && shelf.count_of(clayIdx) == kRestClay,
+          "КРАФТИТЬ НЕЧЕГО: нужную глину место за кирпич не отдало");
+    CHECK(out.seenWord == std::uint32_t(shelf.revision() + 1),
+          "И ЗАПОМНИЛО ЭТО СОСТОЯНИЕМ ИНВЕНТАРЯ — счётчиком изменений своего "
+          "контейнера плюс один, а не таймером");
+    CHECK(out.debtWord != 0,
+          "и счёт нужды лёг в своё слово (ноль у слова значит «не помню»)");
+    const int townId = int(f.st().spawnId[slot].index);
+    CHECK(f.heads(slot) == m.crew
+              && f.children_of(townId, SquadType::Caravan) == 0
+              && f.children_of(townId, SquadType::Collector) == 0,
+          "рождений нет: душ ровно на крю, и рабочих юнитов столько же, "
+          "сколько было");
+    return out;
+}
+
+// Сколько кирпича и глины на полке — наблюдение акта.
+struct Shelf {
+    int bricks = 0;
+    int clay = 0;
+};
+Shelf shelf_of(Fixture& f, std::uint16_t slot) {
+    const Inventory& inv = f.st().inventory[slot].inv;
+    return Shelf{inv.count_of(item_index("bricks")),
+                 inv.count_of(item_index("clay"))};
+}
+
+void test_the_town_remembers_it_has_nothing_to_craft() {
+    const int clayIdx = item_index("clay");
+    const int clayCol = commodity_index("clay");
+    for (const TownModule& m : kTownModules) {
+        std::printf("  [память крафта: %s]\n", m.who);
+
+        // ── (а) НИЧЕГО НЕ СДВИНУЛОСЬ — РЕШЕНИЕ ТО ЖЕ, АКТА НЕТ ─────────────
+        // Это и негативный контроль двух других плеч: без сдвига кирпича нет.
+        {
+            Fixture f;
+            MacroNpcAiRuntime rt{};
+            reset_macro_npc_ai_runtime(rt, 50u);
+            const TownAtRest t = town_with_nothing_to_craft(f, rt, m);
+            const ecs::MacroNpcRuntime& trt = f.st().runtime[t.h.slot];
+            const ecs::Pools& bar = f.st().pools[t.h.slot];
+            // Сутки и ещё две думки — через круг рождений и погрузки, чтобы
+            // утверждение покрывало всю думку модуля, а не её первую строку.
+            f.think_on(rt, kThinksPerDay + 2);
+            CHECK(trt.mem[m.memCraftSeen] == t.seenWord
+                      && trt.mem[m.memCraftDebt] == t.debtWord,
+                  "(а) СЛОВА СТОЯТ: инвентарь и счёт те же — помнить нечего "
+                  "нового");
+            const Shelf s = shelf_of(f, t.h.slot);
+            CHECK(s.bricks == 0 && s.clay == kRestClay,
+                  "(а) АКТА НЕТ: ни кирпича, ни убыли глины за сутки думок");
+            CHECK(int(bar.sp) == int(bar.maxSp) && bar.maxSp > 0
+                      && !ecs::squad_recovering(trt),
+                  "(а) предусловие живо: бар полон и тело свободно — значит "
+                  "акт держит решение, а не усталость и не восстановление");
+        }
+
+        // ── (б) СДВИГ ИНВЕНТАРЯ БУДИТ ─────────────────────────────────────
+        {
+            Fixture f;
+            MacroNpcAiRuntime rt{};
+            reset_macro_npc_ai_runtime(rt, 50u);
+            const TownAtRest t = town_with_nothing_to_craft(f, rt, m);
+            Inventory& shelf = f.st().inventory[t.h.slot].inv;
+            const ecs::MacroNpcRuntime& trt = f.st().runtime[t.h.slot];
+            // Привезли глины на весь счёт: запас перерос нужду, и излишек
+            // глины место ценит ниже кирпича из него.
+            CHECK(shelf.add_of(clayIdx, kRestClayDebt),
+                  "(б) привезённая глина легла на полку");
+            CHECK(std::uint32_t(shelf.revision() + 1) != t.seenWord,
+                  "(б) предусловие: запись сдвинула счётчик изменений "
+                  "инвентаря");
+            CHECK(f.st().upkeep[t.h.slot].needDebt[clayCol] == kRestClayDebt
+                      && trt.mem[m.memCraftDebt] == t.debtWord,
+                  "(б) предусловие: счёт нужды тот же — будить вправе только "
+                  "инвентарь");
+            CHECK(int(f.st().pools[t.h.slot].sp)
+                          == int(f.st().pools[t.h.slot].maxSp)
+                      && !ecs::squad_recovering(trt),
+                  "(б) предусловие: бар полон и тело свободно");
+            f.think_on(rt, 1);
+            const Shelf s = shelf_of(f, t.h.slot);
+            CHECK(s.bricks > 0 && s.clay < kRestClay + kRestClayDebt,
+                  "(б) СДВИГ ИНВЕНТАРЯ РАЗБУДИЛ РЕШЕНИЕ: на следующей же "
+                  "думке глина пошла в кирпич");
+            std::printf("    (б) кирпича после одной думки: %d\n", s.bricks);
+        }
+
+        // ── (в) СДВИГ СЧЁТА НУЖДЫ БУДИТ ПРИ ТОМ ЖЕ ИНВЕНТАРЕ ────────────────
+        {
+            Fixture f;
+            MacroNpcAiRuntime rt{};
+            reset_macro_npc_ai_runtime(rt, 50u);
+            const TownAtRest t = town_with_nothing_to_craft(f, rt, m);
+            const Inventory& shelf = f.st().inventory[t.h.slot].inv;
+            const ecs::MacroNpcRuntime& trt = f.st().runtime[t.h.slot];
+            // Счёт глины закрыт: нужды в ней нет, и вся полка — излишек.
+            f.st().upkeep[t.h.slot].needDebt[clayCol] = 0;
+            CHECK(std::uint32_t(shelf.revision() + 1) == t.seenWord
+                      && trt.mem[m.memCraftSeen] == t.seenWord,
+                  "(в) предусловие: инвентарь тот же — будить вправе только "
+                  "счёт");
+            CHECK(int(f.st().pools[t.h.slot].sp)
+                          == int(f.st().pools[t.h.slot].maxSp)
+                      && !ecs::squad_recovering(trt),
+                  "(в) предусловие: бар полон и тело свободно");
+            f.think_on(rt, 1);
+            const Shelf s = shelf_of(f, t.h.slot);
+            CHECK(s.bricks > 0 && s.clay < kRestClay,
+                  "(в) СДВИГ СЧЁТА РАЗБУДИЛ РЕШЕНИЕ: при той же полке глина "
+                  "пошла в кирпич на следующей же думке");
+            std::printf("    (в) кирпича после одной думки: %d\n", s.bricks);
+        }
+    }
 }
 
 // ═════ 2. ДЕРЕВНЯ РОЖАЕТ АРТЕЛЬ НУЖНОГО ТИПА И ПЛАТИТ ДУШАМИ ═══════════
@@ -1052,6 +1247,25 @@ int traded_facts_at(const GameState& gs, int x, int y) {
     return ctx.n;
 }
 
+// Первый факт сделки на клетке рынка целиком — кто его субъект, кто объект и
+// какое число; пустой факт — сделки там не было.
+WorldFact first_traded_fact_at(const GameState& gs, int x, int y) {
+    struct Ctx { int x, y; bool found; WorldFact fact; } ctx{x, y, false, {}};
+    const std::unique_ptr<ChronicleLinks> links = make_chronicle_links();
+    chronicle_near(gs.chronicle, *links, x, y, /*radiusCells*/0,
+                   /*sinceDay*/0,
+                   [](void* u, const WorldFact& fact) {
+                       Ctx& t = *static_cast<Ctx*>(u);
+                       if (!t.found
+                           && fact.kind == std::uint16_t(FactKind::Traded)
+                           && fact.x == t.x && fact.y == t.y) {
+                           t.found = true;
+                           t.fact = fact;
+                       }
+                   }, &ctx);
+    return ctx.fact;
+}
+
 // ЯКОРЬ ПРИБЫЛИ СДЕЛКИ — НЕ ПЕРЕСЧЁТ ЕЁ ФОРМУЛЫ (§8 п.5-6). Прибыль сделки
 // есть «во сколько рейс ценит взятое минус во сколько ценил отданное», и у
 // стороны без нужды всякая единица излишка ценится не ниже пола (единица) и
@@ -1178,6 +1392,24 @@ void test_the_caravan_grows_its_hold_and_brings_it_home() {
           "дал модуль родителя");
     CHECK(traded,
           "РЫНОК НАЗВАЛ САМ РЕЙС и доехал: на клетке рынка лёг факт сделки");
+    // ЧЕЙ ФАКТ — СКАЗАНО ДВЕРЬЮ ЗАПИСИ
+    // (`AiPult::fact@src/macro/squad_ai/module_window.h`): деяние пишется на
+    // ДОМ рейса, объект — рынок, число — стоимость сделки. Утверждается
+    // ОРДИНАЛАМИ, рождёнными фикстурой, а не пересчётом двери: дом — город,
+    // рынок — деревня на клетке сделки.
+    {
+        const WorldFact sale = first_traded_fact_at(f.gs, 14, 10);
+        CHECK(sale.subjectKind == std::uint8_t(FactSubject::Rooted)
+                  && sale.subject == std::uint32_t(cityId),
+              "СУБЪЕКТ СДЕЛКИ — ДОМ РЕЙСА: факт записан на город, чьим "
+              "ребёнком корован торгует, а не на сам корован");
+        CHECK(sale.objectKind == std::uint8_t(FactSubject::Rooted)
+                  && sale.object
+                         == std::uint32_t(f.st().spawnId[mkt.slot].index)
+                  && sale.amount > 0,
+              "ОБЪЕКТ — РЫНОК, ЧИСЛО — СТОИМОСТЬ: деревня на клетке сделки и "
+              "положительная стоимость сменившего руки");
+    }
     // В НУЖДУ (единая ценомодель): рынок ценит недостающее выше стоимости, а
     // рейс без нужды — не выше, и первая же сделка кормит рынок.
     CHECK(debtAfterFirstDeal >= 0 && debtAfterFirstDeal < bill,
@@ -1632,6 +1864,7 @@ void test_the_caravan_with_no_market_waits_at_home() {
 
 int main() {
     test_village_produces_through_its_own_think();
+    test_the_town_remembers_it_has_nothing_to_craft();
     test_village_raises_an_artel_and_pays_in_souls();
     test_city_raises_a_collector_only_for_a_debtor();
     test_no_duplicate_child_however_long_the_world_runs();

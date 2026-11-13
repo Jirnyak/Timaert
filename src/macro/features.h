@@ -57,7 +57,8 @@ namespace sm {
 // `std::vector<std::uint8_t>`, а сам слой жил членом оболочки приложения и
 // приходил в симуляцию указателем конверта. Поле при этом ПИСАЛОСЬ В ЖИВОМ
 // МИРЕ — смерть города кладёт на клетку руину, смерть деревни снимает фичу
-// (`city_death@src/macro/npc_ai.cpp`, `village_death@src/macro/npc_ai.cpp`), —
+// (`city_death@src/macro/squad_ai/city.cpp`,
+// `village_death@src/macro/squad_ai/village.cpp`), —
 // а в сейв не ехало и на загрузке перевыводилось из сида: руина после загрузки
 // снова становилась городом. Теперь форма та же, что у леса
 // (`TreeLayer@src/macro/tree_layer.h`): heap-члена нет, слой жив, когда его

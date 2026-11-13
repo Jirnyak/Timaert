@@ -25,7 +25,11 @@ inline float rand_f01(const TickContext& ctx) { return ctx.rng->next_f01(); }
 
 void ai_trader(MacroHandle self, ecs::MacroNpcRuntime& rt,
                [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
-    const std::uint32_t home = home_cell(self, ctx);
+    // ОКНО МОДУЛЯ — клетка дома и кость у всякого сквада одни (раскладка (а)
+    // ряда M-499).
+    const AiView view(ctx);
+    AiPult pult(ctx);
+    const std::uint32_t home = view.home(self);
     if (home == ecs::kNoCell) return;
     const MacroStore& st = store_ctx(ctx);
     ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
@@ -35,7 +39,7 @@ void ai_trader(MacroHandle self, ecs::MacroNpcRuntime& rt,
         // Вернулся домой — постоял (прибытие назвали ноги).
         if (ecs::march_arrived(rt)) {
             charge_squad_recovery(rt,
-                std::uint32_t((20 + rand_int(ctx, 30)) * kAiTicks));
+                std::uint32_t((20 + pult.rand(30)) * kAiTicks));
         }
         if (!squad_recovering(rt)) {
             // Pick another city (id != home).
@@ -44,7 +48,7 @@ void ai_trader(MacroHandle self, ecs::MacroNpcRuntime& rt,
                 if (is_other_city(st, slot, myHomeId)) ++candidates;
             });
             if (candidates > 0) {
-                int pick = rand_int(ctx, candidates);
+                int pick = pult.rand(candidates);
                 // Обход без досрочного выхода: взявший урну гасит флаг, и
                 // остаток прохода молчит (у двери мест нет break — её
                 // порядок есть закон приоритета клетки).
@@ -70,7 +74,7 @@ void ai_trader(MacroHandle self, ecs::MacroNpcRuntime& rt,
         // Дошёл до чужого города (ноги сделали его Working) — стоянка.
         if (ecs::march_arrived(rt)) {
             charge_squad_recovery(rt,
-                std::uint32_t((15 + rand_int(ctx, 20)) * kAiTicks));
+                std::uint32_t((15 + pult.rand(20)) * kAiTicks));
         }
         if (!squad_recovering(rt)) {
             ecs::goal_set(g, home, 0, 0, std::uint8_t(NS::Idle));
@@ -83,6 +87,7 @@ void ai_trader(MacroHandle self, ecs::MacroNpcRuntime& rt,
 
 void ai_aggressive(MacroHandle self, ecs::MacroNpcRuntime& rt,
                    [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
+    AiPult pult(ctx);   // кость и случайная клетка — двери окна
     // No private player-channel here any more (owner, 2026-08-29: «игрок
     // ничем не особенен»). Perception and pursuit are squad_threat_step's —
     // the player's squad sits in the SAME SquadIndex at the SAME
@@ -96,19 +101,19 @@ void ai_aggressive(MacroHandle self, ecs::MacroNpcRuntime& rt,
         chase_release(g);
         rt.state = std::uint8_t(NS::Idle);
         charge_squad_recovery(rt,
-            std::uint32_t((5 + rand_int(ctx, 10)) * kAiTicks));
+            std::uint32_t((5 + pult.rand(10)) * kAiTicks));
         return;
     }
     if (rt.state == std::uint8_t(NS::Idle)) {
         // Дошёл — постоял (прибытие назвали ноги).
         if (ecs::march_arrived(rt)) {
             charge_squad_recovery(rt,
-                std::uint32_t((8 + rand_int(ctx, 15)) * kAiTicks));
+                std::uint32_t((8 + pult.rand(15)) * kAiTicks));
         }
         if (!squad_recovering(rt)) {
             ecs::goal_set(g,
-                          cell_nearby(store_ctx(ctx).cell[self.slot].idx, 20,
-                                      ctx),
+                          pult.rand_nearby(
+                              store_ctx(ctx).cell[self.slot].idx, 20),
                           0, 0, std::uint8_t(NS::Idle));
             rt.state = std::uint8_t(NS::Wandering);
         }
@@ -179,6 +184,7 @@ MacroHandle nearest_magika_mage(MacroHandle self, const TickContext& ctx) {
 
 void ai_mage_hunt(MacroHandle self, ecs::MacroNpcRuntime& rt,
                   [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
+    AiPult pult(ctx);   // кость — дверь окна
     if (ctx.squads && ctx.mw.store && ctx.mw.gs) {
         const MacroHandle prey = nearest_magika_mage(self, ctx);
         MacroStore& st = store_ctx(ctx);
@@ -211,7 +217,7 @@ void ai_mage_hunt(MacroHandle self, ecs::MacroNpcRuntime& rt,
                     chase_release(st.goal[self.slot]);
                     rt.state = std::uint8_t(NS::Idle);
                     charge_squad_recovery(rt,
-                        std::uint32_t((3 + rand_int(ctx, 5)) * kAiTicks));
+                        std::uint32_t((3 + pult.rand(5)) * kAiTicks));
                 }
                 return;
             }
@@ -240,12 +246,12 @@ void ai_mage_hunt(MacroHandle self, ecs::MacroNpcRuntime& rt,
         // Дошёл — постоял (прибытие назвали ноги).
         if (ecs::march_arrived(rt)) {
             charge_squad_recovery(rt,
-                std::uint32_t((8 + rand_int(ctx, 15)) * kAiTicks));
+                std::uint32_t((8 + pult.rand(15)) * kAiTicks));
         }
         if (!squad_recovering(rt)) {
             ecs::goal_set(g,
-                          cell_of(rand_int(ctx, ctx.mapW),
-                                  rand_int(ctx, ctx.mapH), ctx.mapW),
+                          cell_of(pult.rand(ctx.mapW),
+                                  pult.rand(ctx.mapH), ctx.mapW),
                           0, 0, std::uint8_t(NS::Idle));
             rt.state = std::uint8_t(NS::Wandering);
         }
@@ -273,6 +279,7 @@ void ai_mage_hunt(MacroHandle self, ecs::MacroNpcRuntime& rt,
 
 void ai_teleporter(MacroHandle self, ecs::MacroNpcRuntime& rt,
                    [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
+    AiPult pult(ctx);   // кость и случайная клетка — двери окна
     ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
     // ПРЫЖОК — АКТ, и занятость ему ставит ТОТ ЖЕ гейт, что всем актам
     // сквада. Здесь жил `teleportCooldown` — второй счётчик того же
@@ -293,7 +300,7 @@ void ai_teleporter(MacroHandle self, ecs::MacroNpcRuntime& rt,
         // стёртый румб входа и доля в центре — одним действием. Здесь модуль
         // писал черновик позиции и сам штамповал «румба нет», а центр доле
         // ставил драйвер по догадке «клетка сменилась без румба» (M-462).
-        const std::uint32_t to = cell_nearby(at, 40, ctx);
+        const std::uint32_t to = pult.rand_nearby(at, 40);
         squad_jump_to_cell(store_ctx(ctx), self, cell_x(to, ctx.mapW),
                            cell_y(to, ctx.mapW), ctx.mapW);
         charge_squad_recovery(rt, std::uint32_t(50 * kAiTicks));
@@ -306,10 +313,10 @@ void ai_teleporter(MacroHandle self, ecs::MacroNpcRuntime& rt,
         // Дошёл — постоял (прибытие назвали ноги).
         if (ecs::march_arrived(rt)) {
             charge_squad_recovery(rt,
-                std::uint32_t((12 + rand_int(ctx, 20)) * kAiTicks));
+                std::uint32_t((12 + pult.rand(20)) * kAiTicks));
         }
         if (!squad_recovering(rt)) {
-            ecs::goal_set(g, cell_nearby(at, 15, ctx),
+            ecs::goal_set(g, pult.rand_nearby(at, 15),
                           0, 0, std::uint8_t(NS::Idle));
             rt.state = std::uint8_t(NS::Wandering);
         }
@@ -320,17 +327,18 @@ void ai_teleporter(MacroHandle self, ecs::MacroNpcRuntime& rt,
 
 void ai_wanderer(MacroHandle self, ecs::MacroNpcRuntime& rt,
                  [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
+    AiPult pult(ctx);   // кость и случайная клетка — двери окна
     ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
     if (rt.state == std::uint8_t(NS::Idle)) {
         // Дошёл — постоял (прибытие назвали ноги).
         if (ecs::march_arrived(rt)) {
             charge_squad_recovery(rt,
-                std::uint32_t((10 + rand_int(ctx, 15)) * kAiTicks));
+                std::uint32_t((10 + pult.rand(15)) * kAiTicks));
         }
         if (!squad_recovering(rt)) {
             ecs::goal_set(g,
-                          cell_nearby(store_ctx(ctx).cell[self.slot].idx, 25,
-                                      ctx),
+                          pult.rand_nearby(
+                              store_ctx(ctx).cell[self.slot].idx, 25),
                           0, 0, std::uint8_t(NS::Idle));
             rt.state = std::uint8_t(NS::Wandering);
         }
@@ -345,6 +353,7 @@ void ai_wanderer(MacroHandle self, ecs::MacroNpcRuntime& rt,
 // frozen one.
 void ai_waypoints(MacroHandle e, ecs::MacroNpcRuntime& rt,
                   ecs::Pools& pools, const TickContext& ctx) {
+    AiPult pult(ctx);   // кость — дверь окна
     ecs::SquadOrders* orders = ctx.mw.store
         ? &store_ctx(ctx).orders[e.slot] : nullptr;
     if (!orders || orders->waypointCount == 0) {
@@ -363,7 +372,7 @@ void ai_waypoints(MacroHandle e, ecs::MacroNpcRuntime& rt,
         orders->currentWaypoint =
             std::uint8_t((i + 1) % orders->waypointCount);
         charge_squad_recovery(rt,
-            std::uint32_t((2 + rand_int(ctx, 4)) * kAiTicks));
+            std::uint32_t((2 + pult.rand(4)) * kAiTicks));
         return;
     }
     // Стоянка на точке: цели не пишем — названный адрес значит «везти».

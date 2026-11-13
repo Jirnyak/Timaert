@@ -115,10 +115,10 @@ void miners_think(AiSelf& s, const AiView& view, AiPult& pult) {
                                     g.cell, workers);
         // Жила, выработанная до нуля, — факт мира; лес и пашня отрастают
         // своим законом и факта не пишут. Судится по остатку после акта.
+        // Число факта жилы — ЧТО выработано: строка реестра поля + 1.
         if (got > 0 && view.field_read(ResourceFieldId::Vein, g.cell) == 0) {
-            pult.drained_fact(s.h, cell_x(g.cell, view.map_w()),
-                              cell_y(g.cell, view.map_w()),
-                              ResourceFieldId::Vein);
+            pult.fact(s, FactKind::Drained, g.cell,
+                      int(ResourceFieldId::Vein) + 1);
         }
         if (got > 0 && !back_full(product)
             && std::int64_t(s.pools.sp) >= cycleCost && ecs::goal_spend(g)) {

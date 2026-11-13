@@ -52,8 +52,9 @@ enum class AIBehaviour : std::uint8_t {
     // фракции не трогает (слово владельца), культы — не его война.
     MageHunt,
     // (`LairSorties` СНЕСЁН 2026-11-02, ломоть 6 M-72: вылеты из логова —
-    //  МОДУЛЬ рода SquadType::Dragon (ai_dragon@src/macro/npc_ai.cpp), а не
-    //  ступень лестницы None. Значение осталось бы без единого писателя:
+    //  МОДУЛЬ рода SquadType::Dragon
+    //  (ai_dragon@src/macro/squad_ai/dragon.cpp), а не ступень лестницы None.
+    //  Значение осталось бы без единого писателя:
     //  дизайн-строки драконов несут род сквада колонкой `type` и в лестницу
     //  untyped_squad_behaviour не попадают никогда.)
     Count,
