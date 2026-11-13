@@ -66,7 +66,9 @@
 #include "macro/labour.h"        // settle_souls — двери душ
 #include "bus/world_row.h"
 #include "macro/chronicle.h"
+#include "macro/deal.h"          // side_row — нужда дома глазами сделки
 #include "macro/econ_day.h"
+#include "macro/economy.h"       // lot_take — оценка недостающего лота
 #include "macro/squad.h"
 #include "bus/store.h"
 #include "tables/faction.h"
@@ -454,6 +456,138 @@ void test_the_back_never_exceeds_its_carry_capacity() {
                 owed_now(r));
 }
 
+// ── ЗАКОН 5: ЧЕГО ДОМУ НЕ ХВАТАЕТ — ОДИН ОТВЕТ, ЕГО ЖЕ ЧИТАЕТ СДЕЛКА ──────
+//
+// Закон (AGENTS «ЗАКОН ЕДИНОЙ ЦЕНОМОДЕЛИ» п.1–2; ряд M-488): у стороны ОДНА
+// оценка вещи и ОДИН ответ на «чего ей не хватает» — непогашенный счёт
+// против полки (`side_row@src/macro/deal.h`). Ветка нужды дома грузит
+//   (а) ТОЛЬКО недостающее — не больше, чем дом недополучил по счёту;
+//   (б) по убыванию того, во сколько ДОМ ценит недостающий лот — его же
+//       оценкой (`lot_take`), а не плотностью и не порядком словаря.
+// Наблюдение — ПЕРВАЯ погрузка: спина сборщика снимается в тот тик, когда
+// она перестала быть пустой, то есть до того, как дом что-либо с грузом
+// сделал. Счёт и полки ставит сама фикстура (§8 п.11): полки дома пусты,
+// счёт стоит ровно по названным строкам.
+//
+// ТАБЛИЦА «МУТАЦИЯ → ИСХОД» ЗАКОНА 5 (прогнано вживую, M-488 ломоть 3;
+// контроль — чистое дерево: OK, 37 проверок):
+//   · порядок сортировки груза развёрнут (`>` → `<` у срочности)
+//                                      →  КРАСНО, 2 из 37 (оба расклада)
+//   · `want` без нехватки (`min(lack, affordable)` → `affordable`)
+//                                      →  КРАСНО, 1 из 37 (спина 100 еды
+//        при нехватке 10)
+//   · переименование локальной `home` → `homeRow` в `collect_tithe`
+//                                      →  МОЛЧИТ, OK 37
+struct FirstLoad {
+    int food = 0;
+    int cloth = 0;
+    int silver = 0;
+    bool seen = false;
+};
+
+FirstLoad watch_first_load(Rig& r, int ticks) {
+    FirstLoad out;
+    MacroNpcAiRuntime rt{};
+    reset_macro_npc_ai_runtime(rt, 70u);
+    for (int i = 0; i < ticks && !out.seen; ++i) {
+        MacroWorld mw{.gs = &r.gs, .store = r.store.get()};
+        tick_macro_npc_ai(mw, rt, kAiTicks);
+        MacroStore& st = *r.store;
+        if (!st.valid(r.man)) continue;
+        const auto* bag = body_state<ecs::NpcInventory>(st, r.man);
+        if (!bag || inventory_mass_g(bag->inv) <= 0) continue;
+        out.seen = true;
+        out.food = bag->inv.count("food");
+        out.cloth = bag->inv.count("cloth");
+        out.silver = bag->inv.count("silver");
+    }
+    return out;
+}
+
+// Дом голоден ровно по двум строкам: `foodLack` еды и `clothLack` ткани.
+void bill_home(Rig& r, int foodLack, int clothLack) {
+    std::int32_t* debt = r.store->upkeep[r.home.slot].needDebt;
+    for (int c = 0; c < kCommodityCount; ++c) debt[c] = 0;
+    debt[commodity_index("food")] = foodLack;
+    debt[commodity_index("cloth")] = clothLack;
+}
+
+// Во сколько дом ценит весь недостающий лот строки — оценкой ядра. Это
+// ПРЕДУСЛОВИЕ расклада (какая строка дому дороже), а не ожидание исхода:
+// исход утверждается отношением «дороже — грузится первой».
+std::int64_t home_values_lack(const Rig& r, const char* id, int lack) {
+    const int idx = item_index(id);
+    const ItemDef* d = item_def_at(idx);
+    return lot_take(side_row(*r.store, r.home.slot, idx, d ? d->value : 0),
+                    lack);
+}
+
+void test_the_tithe_loads_the_lack_the_home_values_most_first() {
+    // ДВА РАСКЛАДА — ОДНИ И ТЕ ЖЕ ДВЕ СТРОКИ С ПЕРЕСТАВЛЕННЫМИ НЕХВАТКАМИ.
+    // Долг равен стоимости нехватки той строки, которую дом ценит выше:
+    // правильный порядок тратит его весь на неё, и второй строке не
+    // достаётся ничего; обратный порядок сначала берёт вторую, и в спине
+    // оказываются обе. Перестановка — контроль на то, что порядок задаёт
+    // ОЦЕНКА ДОМА, а не словарь (еда стоит в нём раньше ткани) и не
+    // плотность (ткань в четыре раза плотнее еды по стоимости).
+    struct Case {
+        int foodLack;
+        int clothLack;
+        long long owed;
+    };
+    const Case cases[] = {
+        {40, 2, 40LL * 5},     // еды недостаёт много — она дому дороже
+        {2, 40, 40LL * 20},    // ткани недостаёт много — дороже она
+    };
+    int firstFood = 0, firstCloth = 0;
+    for (const Case& k : cases) {
+        Rig r;
+        build_rig(r, /*foodLots*/100, /*silverLots*/0, k.owed);
+        r.store->inventory[r.vassal.slot].inv.add("cloth", 100);
+        bill_home(r, k.foodLack, k.clothLack);
+        const std::int64_t vFood = home_values_lack(r, "food", k.foodLack);
+        const std::int64_t vCloth = home_values_lack(r, "cloth", k.clothLack);
+        CHECK(vFood != vCloth && vFood > 0 && vCloth > 0,
+              "фикстура: обе нехватки дому чего-то стоят, и одна дороже");
+        const bool foodFirst = vFood > vCloth;
+        const FirstLoad got = watch_first_load(r, 600);
+        CHECK(got.seen, "сборщик погрузился хоть раз — иначе судить нечего");
+        if (foodFirst) {
+            ++firstFood;
+            CHECK(got.food == k.foodLack && got.cloth == 0,
+                  "ПЕРВОЙ грузится строка, чей недостающий лот дом ценит "
+                  "выше (еда), и долг уходит на неё весь");
+        } else {
+            ++firstCloth;
+            CHECK(got.cloth == k.clothLack && got.food == 0,
+                  "ПЕРВОЙ грузится строка, чей недостающий лот дом ценит "
+                  "выше (ткань), и долг уходит на неё весь");
+        }
+    }
+    CHECK(firstFood == 1 && firstCloth == 1,
+          "контроль перестановки: переставленные нехватки переставили "
+          "порядок — его задаёт оценка дома, а не строка словаря");
+}
+
+void test_the_need_stage_loads_no_more_than_the_home_lacks() {
+    // Дому недостаёт 10 еды, у вассала её 100, долг 2000 — на четыреста
+    // единиц еды. Ветка нужды берёт РОВНО недостающие 10; остаток долга
+    // добирает плотность — серебром, которое в 64 раза плотнее еды и
+    // поэтому еды на второй ступени не тронет.
+    constexpr int kLack = 10;
+    Rig r;
+    build_rig(r, /*foodLots*/100, kTitheSilverLots, /*owed*/2000);
+    bill_home(r, kLack, 0);
+    const FirstLoad got = watch_first_load(r, 600);
+    CHECK(got.seen, "сборщик погрузился хоть раз — иначе судить нечего");
+    CHECK(got.food == kLack,
+          "нужда дома взята ЦЕЛИКОМ и НЕ БОЛЬШЕ: в спине ровно столько еды, "
+          "сколько дому недостаёт по счёту");
+    CHECK(got.silver > 0,
+          "а остаток долга добран по плотности — вторая ступень работала, "
+          "значит долга хватало и на лишнюю еду");
+}
+
 } // namespace
 
 // ── ЗАКОН 4: ОСТАТОК ЧУЖОЙ ПОГОНИ В ЦЕЛИ ДОЛЖНИКОМ НЕ ЧИТАЕТСЯ (M-459) ───
@@ -506,5 +640,7 @@ int main() {
     test_the_tithe_loads_by_home_need_before_value_density();
     test_the_back_never_exceeds_its_carry_capacity();
     test_a_leftover_chase_is_not_read_as_the_debtor();
+    test_the_tithe_loads_the_lack_the_home_values_most_first();
+    test_the_need_stage_loads_no_more_than_the_home_lacks();
     return sm::test::report("collector_tithe_test");
 }

@@ -10,12 +10,11 @@
 #include "core/rng.h"
 #include "core/torus.h"
 #include "macro/chronicle.h"
-#include "macro/deal.h"
+#include "macro/deal.h"     // side_row — нужда места глазами сделки
 #include "macro/econ_day.h"
-#include "macro/economy.h"
+#include "macro/economy.h"  // RowSide
 #include "macro/factions.h"
 #include "macro/features.h"
-#include "macro/labour.h"
 #include "macro/squad.h"
 #include "macro/squad_index.h"
 #include "macro/state.h"
@@ -154,10 +153,11 @@ int task_offers_for(const MacroStore& st, const GameState& gs,
 
     int n = 0;
 
-    // ── ПРИНЕСИ: товар из НУЖД места — дефицит сам называет и предмет, и
-    // количество (та же дверь season_demand_for, какой торгует панель).
+    // ── ПРИНЕСИ: чего месту не хватает — сколько не оплачено по его счёту
+    // сверх полки. Ответ тот же, каким нужду места читает сделка
+    // (`side_row@src/macro/deal.h`: запас минус счёт); строку без счёта
+    // (сырьё) доска не просит.
     {
-        const Inventory& inv = st.inventory[slot].inv;
         struct Need {
             std::uint16_t item;
             int lack;
@@ -169,14 +169,11 @@ int task_offers_for(const MacroStore& st, const GameState& gs,
             if (item < 0 || item > 0xFFF) continue;  // упаковка 12 бит
             const ItemDef* d = item_def_at(item);
             if (!d || d->value <= 0) continue;
-            const int lack =
-                season_demand_for(item, st.upkeep[slot].needDebt,
-                                  souls_home(st, slot), st.sheet[slot].skills,
-                                  &inv)
-                - inv.count_of(item);
+            const RowSide row = side_row(st, slot, item, d->value);
+            const std::int64_t lack = row.net < 0 ? -row.net : 0;
             if (lack <= 0) continue;
             needs[needCount++] = {std::uint16_t(item),
-                                  lack > 0xFFFF ? 0xFFFF : lack};
+                                  lack > 0xFFFF ? 0xFFFF : int(lack)};
         }
         for (int k = 0; k < kOffersPerVerb[0] && needCount > 0 && n < cap;
              ++k) {

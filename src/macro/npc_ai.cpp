@@ -1122,7 +1122,6 @@ void AiPult::dump_bag_home(AiSelf& s, std::uint16_t homeSlot) {
 void AiPult::collect_tithe(AiSelf& s, std::uint16_t vassal,
                            std::uint16_t homeSlot) {
     MacroStore& st = store_ctx(ctx_);
-    Inventory& homeInv = st.inventory[homeSlot].inv;
     auto& rt = s.rt;
     Inventory* bag = &s.bag;
     Interest* edge = tithe_of(st, vassal);
@@ -1134,36 +1133,29 @@ void AiPult::collect_tithe(AiSelf& s, std::uint16_t vassal,
     // серебро, а меряем мы еду». Это ровно то, что измерилось
     // 2026-09-22, когда порядок был только по плотности: город получал
     // казну и продолжал голодать (food_city −99.8 %).
-    // Чего дому не хватает — считается по самому дому той же дверью
-    // (ведомость-кэш уничтожена 2026-09-30, ломтик E шаг 2; закон и
-    // обе его функции — те же).
+    // Чего дому не хватает — сколько не оплачено по его счёту сверх полки,
+    // тем же ответом, каким нужду дома читает сделка (`side_row`: запас
+    // минус счёт). Строка без счёта (сырьё) нуждой не бывает.
     if (owed > 0) {
-        const Skills& homeHands = st.sheet[homeSlot].skills;
-        const auto home_demand_of = [&](int cid) {
-            return season_demand_for(cid, st.upkeep[homeSlot].needDebt,
-                                     souls_home(st, homeSlot), homeHands,
-                                     &homeInv);
-        };
-        // ПОРЯДОК НУЖДЫ — ПО ТОМУ, ЧЕГО ДОМУ НЕ ХВАТАЕТ БОЛЬШЕ ВСЕГО
-        // В СТОИМОСТИ (нехватка × домашняя цена), а НЕ по плотности.
+        // ПОРЯДОК НУЖДЫ — ПО ТОМУ, ВО СКОЛЬКО ДОМ ЦЕНИТ НЕДОСТАЮЩИЙ ЛОТ
+        // (`lot_take` его строки на всю нехватку), а НЕ по плотности.
         // Измерено 2026-09-22: с плотностью еда стоит последней (она
         // самая дешёвая на килограмм), долг кончался на серебре, и
         // город продолжал голодать при работающем сборщике
-        // (food_city −99.4 %). Цена дома уже несёт срочность —
+        // (food_city −99.4 %). Оценка дома уже несёт срочность —
         // непокрытая нужда сама дорожает, — поэтому ноль новых правил.
         int order[kCommodityCount];
-        long long urgency[kCommodityCount];
+        std::int64_t lack[kCommodityCount];
+        std::int64_t urgency[kCommodityCount];
         for (int c = 0; c < kCommodityCount; ++c) {
             order[c] = c;
             const int cid = commodity_item_index(c);
             const ItemDef* cd = item_def_at(cid);
             const int cbase = cd ? cd->value : 0;
-            const int chave = homeInv.count_of(cid);
-            const int cdemand = home_demand_of(cid);
-            const int lk = cdemand - chave;
-            urgency[c] = lk > 0 && cbase > 0
-                ? (long long)lk * stock_price(cbase, chave, cdemand)
-                : 0;
+            const RowSide home = side_row(st, homeSlot, cid, cbase);
+            lack[c] = home.net < 0 ? -home.net : 0;
+            urgency[c] = lack[c] > 0 && cbase > 0 ? lot_take(home, lack[c])
+                                                  : 0;
         }
         for (int a = 1; a < kCommodityCount; ++a)
             for (int b = a; b > 0
@@ -1176,12 +1168,10 @@ void AiPult::collect_tithe(AiSelf& s, std::uint16_t vassal,
             const ItemDef* d = item_def_at(id);
             const int base = d ? d->value : 0;
             if (base <= 0) continue;
-            const int lack =
-                home_demand_of(id) - homeInv.count_of(id);
-            if (lack <= 0) continue;
+            if (lack[c] <= 0) continue;
             const long long affordable = owed / base;
             if (affordable <= 0) continue;
-            const int want = int(std::min<long long>(lack, affordable));
+            const int want = int(std::min<long long>(lack[c], affordable));
             // Взыскание — строка сделки (ломоть 2 M-72): спина сборщика
             // клампит дверью, факт честный — дюпа «add без снятия» нет.
             DealLine draw[1];

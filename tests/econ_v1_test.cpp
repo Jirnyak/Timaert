@@ -419,11 +419,22 @@ void sect7_no_matter_from_nothing() {
     // kGatherPerWorkerDay единиц пищи, а единица пищи кроет РОВНО ОДИН
     // житель-день (голодная строка лестницы, popPerUnitDay == 1). Произведение
     // и есть «кормит 32 душ»; разойдись любая из двух — переоценится весь мир.
-    // Якорь спрашивается ДВЕРЬЮ ГОЛОДА, а не колонкой умершей лестницы:
-    // сезон харча 32 душ, делённый на дни сезона, и есть дневная добыча.
-    CHECK(season_hunger_units(32) / kDaysPerSeason == kGatherPerWorkerDay
-              && season_hunger_units(1) == kDaysPerSeason,
-          "the gatherer-day must feed exactly 32 souls for a day");
+    // Якорь спрашивается ДВЕРЬЮ СЧЁТА, какой харч выставляет окно сезона
+    // (`upkeep_bill@src/macro/upkeep_window.h`: рацион голов × дни сезона), а
+    // не колонкой умершей лестницы: сезон харча 32 душ, делённый на дни
+    // сезона, и есть дневная добыча. (Здесь спрашивалась `season_hunger_units`
+    // — счёт голода без контейнера, умерший рядом M-488 вместе с кривой, его
+    // единственным читателем.)
+    {
+        Inventory crew{}, one{};
+        raise_flock_into_container(crew, 32);
+        raise_flock_into_container(one, 1);
+        CHECK(count_human_souls(crew) == 32 && count_human_souls(one) == 1,
+              "фикстура: души легли в контейнер дверью мира");
+        CHECK(upkeep_bill(crew).board / kDaysPerSeason == kGatherPerWorkerDay
+                  && upkeep_bill(one).board == kDaysPerSeason,
+              "the gatherer-day must feed exactly 32 souls for a day");
+    }
     // ...и голодная строка обязана быть ТЕРМИНАЛЬНОЙ материей мира: еду
     // растят и добывают, печь между полем и ртом больше не стоит.
     CHECK(item_parts(hunger_item_index()).empty(),

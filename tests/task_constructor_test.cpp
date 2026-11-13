@@ -3,9 +3,11 @@
 // ЧТО ЗДЕСЬ УТВЕРЖДАЕТСЯ — ЗАКОНЫ ФОРМЫ, НЕ ПЕРЕСКАЗ КОДА:
 //   1) ДОСКА ДЕТЕРМИНИРОВАНА: та же доска в тот же день у того же места —
 //      офферы не состояние мира, а вывод из (сид, день, место).
-//   2) ОФФЕР НАЗЫВАЕТ НАСТОЯЩИЙ КОНТЕКСТ: нехватка — той же дверью мира
-//      (season_demand_for), добыча — враждебный сосед, цель визита — фича
-//      из слоя. Оракул — та дверь, какой живёт мир, не копия формулы.
+//   2) ОФФЕР НАЗЫВАЕТ НАСТОЯЩИЙ КОНТЕКСТ: нехватка — непогашенный счёт
+//      сверх полки (тот же ответ, каким нужду читает сделка; сырьё без
+//      счёта не просится), добыча — враждебный сосед, цель визита — фича
+//      из слоя. Ожидание — факт фикстуры (она сама ставит счёт и полку),
+//      не копия формулы.
 //   3) ВЗЯТИЕ = ЦЕЛЬ ИГРОКУ (та же колонка рода 2, что у любого сквада) +
 //      ФАКТ QuestTaken (первый писатель рода за историю словаря — M-270).
 //   4) СУД ПО ХОДУ, ПАМЯТЬЮ МИРА: fetch — инвентарь, kill/visit — летопись
@@ -36,6 +38,18 @@
 //                                  детектор, краснеющий на баланс, — не
 //                                  детектор)
 //
+// ТАБЛИЦА РАЗДЕЛА 2б (M-488 ломоть 3; контроль — чистое дерево: OK, 70):
+//   · нехватка без вычета полки (`lack` = счёт)
+//                                → КРАСНО, 2 из 70 (просит 40 вместо 25;
+//                                  просит оплаченную еду)
+//   · фильтр нехватки снят (все строки словаря в офферы)
+//                                → КРАСНО, 6 из 73 (нулевые N, строки без
+//                                  счёта на обеих досках)
+//   · сырьё без счёта возвращено в офферы
+//                                → КРАСНО, 6 из 73
+//   · переименование локальной `lack` → `deficit`
+//                                → МОЛЧИТ, OK 70
+//
 // ЧТО ПЕРВЫЙ ПРОГОН НАШЁЛ В МОДУЛЕ — ЖИВОЙ ДЕФЕКТ, НЕ ПОКРЫТИЕ: скан
 // контракта сравнивал ДНИ, и повторное взятие в день сдачи читалось «уже
 // сдан» (day == day). Порядок внутри дня несёт seq — починено сравнением
@@ -46,7 +60,6 @@
 #include "macro/birth_squad.h"    // место родится ТЕЛОМ
 #include "macro/chronicle.h"
 #include "macro/econ_day.h"       // commodity_item_index — ординал каталога
-#include "macro/economy.h"        // season_demand_for — оракул нужды
 #include "macro/factions.h"
 #include "macro/features.h"
 #include "macro/labour.h"         // settle_souls — двери душ
@@ -221,14 +234,16 @@ int main() {
         CHECK(o.amount > 0, "оффер считает ненулевое N");
         const TaskVerbDef& v = kTaskVerbs[o.verb];
         if (v.object == TaskObjectSpace::Need) {
-            const Inventory& inv = st.inventory[r.place.slot].inv;
-            const int lack =
-                season_demand_for(int(o.object), st.upkeep[r.place.slot].needDebt,
-                                  souls_home(st, r.place.slot),
-                                  st.sheet[r.place.slot].skills, &inv)
-                - inv.count_of(int(o.object));
-            CHECK(lack > 0, "«принеси» называет НАСТОЯЩУЮ нехватку — оракул "
-                            "season_demand_for, та же дверь, какой живёт мир");
+            // ФАКТ ФИКСТУРЫ, А НЕ ПЕРЕСЧЁТ ФОРМУЛЫ: единственный счёт рига —
+            // еда (`build_rig`), полка еды — то, что лежит у места.
+            const int shelf =
+                st.inventory[r.place.slot].inv.count_of(foodItem);
+            const std::int32_t bill =
+                st.upkeep[r.place.slot].needDebt[commodity_index("food")];
+            CHECK(o.object == std::uint16_t(foodItem)
+                      && int(o.amount) == int(bill) - shelf,
+                  "«принеси» называет строку со счётом и просит ровно счёт "
+                  "минус полку");
         }
         if (v.object == TaskObjectSpace::Hostile) {
             sawKill = true;
@@ -245,6 +260,78 @@ int main() {
     }
     CHECK(sawKill, "враждебный сосед в радиусе — глагол «убей» на доске");
     CHECK(sawVisit, "руина в радиусе — глагол «посети» на доске");
+
+    // ── 2б) НЕХВАТКА — СЧЁТ СВЕРХ ПОЛКИ, И БОЛЬШЕ НИЧЕГО ─────────────────
+    // Закон (AGENTS «ЗАКОН ЕДИНОЙ ЦЕНОМОДЕЛИ» п.1; ряд M-488): у места ОДИН
+    // ответ на «чего ему не хватает» — непогашенный счёт против полки, тот
+    // же, каким нужду места читает сделка. Фикстура САМА ставит счёт и полку
+    // трём строкам второго места и утверждает факт:
+    //   · ткань: счёт 40, полка 15 → доска просит РОВНО 25;
+    //   · еда:   счёт 30, полка 30 → счёт оплачен, доска НЕ просит;
+    //   · волокно: счёта нет, полка пуста, а руки места ткут из него ткань,
+    //     по которой счёт стоит, — доска его НЕ просит: нужды в сырье
+    //     числом нет (вердикт владельца 2026-11-13), сырьё тянет модуль
+    //     деревни.
+    {
+        const MacroHandle shop =
+            birth_squad(gs, nullptr, st, SquadType::City, 24, 24,
+                        std::int16_t(faction_index("timaert")));
+        CHECK(st.valid(shop), "фикстура: второе место родилось дверью мира");
+        const int clothItem = commodity_item_index(commodity_index("cloth"));
+        const int fibreItem = commodity_item_index(commodity_index("fibre"));
+        // ПРЕДУСЛОВИЕ НЕГАТИВНОГО КОНТРОЛЯ: ткань делается из волокна, и руки
+        // этого места умеют её ткать. Без этого «волокно не просится» было
+        // бы пустотой рецепта, а не законом.
+        bool fibreIsInput = false;
+        for (const ItemPart& part : item_parts(clothItem)) {
+            if (int(part.def) == fibreItem) fibreIsInput = true;
+        }
+        const int weaveRow = recipe_of_item(clothItem);
+        const ActionDef& weave =
+            action_def(int(kRecipes[weaveRow >= 0 ? weaveRow : 0].action));
+        CHECK(fibreIsInput && weaveRow >= 0
+                  && recipe_known(st.sheet[shop.slot].skills, weave.gateSkill,
+                                  int(weave.minRank)),
+              "фикстура: ткань ткётся из волокна, и руки места это умеют");
+        std::int32_t* debt = st.upkeep[shop.slot].needDebt;
+        for (int c = 0; c < kCommodityCount; ++c) debt[c] = 0;
+        debt[commodity_index("cloth")] = 40;
+        debt[commodity_index("food")] = 30;
+        Inventory& shelf = st.inventory[shop.slot].inv;
+        CHECK(shelf.add_of(clothItem, 15) && shelf.add_of(foodItem, 30)
+                  && shelf.count_of(clothItem) == 15
+                  && shelf.count_of(foodItem) == 30
+                  && shelf.count_of(fibreItem) == 0,
+              "фикстура: полки легли ровно так, как поставлены");
+        TaskOffer board[8];
+        const int boardN =
+            task_offers_for(st, gs, r.ses, r.idx, shop, board, 8);
+        int fetches = 0, clothAsks = 0, clothAmount = 0;
+        int foodAsks = 0, fibreAsks = 0, otherAsks = 0;
+        for (int i = 0; i < boardN; ++i) {
+            if (kTaskVerbs[board[i].verb].object != TaskObjectSpace::Need)
+                continue;
+            ++fetches;
+            if (board[i].object == std::uint16_t(clothItem)) {
+                ++clothAsks;
+                clothAmount = board[i].amount;
+            } else if (board[i].object == std::uint16_t(foodItem)) {
+                ++foodAsks;
+            } else if (board[i].object == std::uint16_t(fibreItem)) {
+                ++fibreAsks;
+            } else {
+                ++otherAsks;
+            }
+        }
+        CHECK(fetches > 0, "доска места со счётом не пуста");
+        CHECK(clothAsks == 1 && clothAmount == 40 - 15,
+              "доска просит строку со счётом РОВНО на счёт минус полку");
+        CHECK(foodAsks == 0, "строку с оплаченным счётом доска не просит");
+        CHECK(fibreAsks == 0,
+              "сырьё без счёта доска не просит, даже когда руки места делают "
+              "из него товар, по которому счёт стоит");
+        CHECK(otherAsks == 0, "и ничего, по чему счёта нет вовсе");
+    }
 
     // ── 3) ВЗЯТИЕ: ЦЕЛЬ + ФАКТ ──────────────────────────────────────────
     TaskOffer fetch{};

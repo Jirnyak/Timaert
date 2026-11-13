@@ -3,9 +3,9 @@
 // (`src/macro/economy.h`); здесь — то, что компилятору не по силам: свип по
 // состояниям рынка и силам сторон, негативный контроль на МЁРТВОМ законе
 // наценки и связь ядра с листом. Утверждается:
-//   · кривая производства — отсутствие дорого, завал дёшев, коридора нет
-//     (её читают только решения о труде; сделка её не спрашивает);
-//   · нужда идёт с ОДНОЙ лестницы нужд;
+//   · нужда строки — остаток счёта стороны, и её читает ОДИН мост
+//     (`row_side`): запас минус счёт, у строки вне словаря счёта нет;
+//   · счёт комфорта — бюджет горожанина, дороже — реже, линейно по душам;
 //   · ОЦЕНКА: нужда поднимает, завал роняет, и «много» мерит масса против
 //     спины — тысяча лёгких монет идёт почти по номиналу, тысяча возов нет;
 //   · НАСОСА НЕТ: круг «отдал — забрал» не приносит ничего при ЛЮБЫХ силах
@@ -13,69 +13,85 @@
 //     ВИДИТ насос у закона наценки за кривую, которым мир торговал до
 //     2026-11-12 (351 монета за круг в точке, найденной ревью M-478);
 //   · торговая сила — одна дверь листа, и делит она выгоду ОТНОШЕНИЕМ.
-#include "macro/characters.h"   // squad_birth — руки рода
+//
+// (Здесь стояли свидетели формы КРИВОЙ ПРОИЗВОДСТВА и спроса без счёта —
+// механика умерла рядом M-488, ломоть 3, и свидетели ушли с ней. Живой закон
+// «прямая нужда = остаток счёта» перенесён на мост.)
 #include "check.h"
 
 #include "macro/economy.h"
 #include "macro/econ_day.h"
 
 namespace {
-// Руки города и деревни — анкета их рода (characters.h), а не вид места.
-static const sm::Skills& CITY =
-    sm::squad_birth(sm::SquadType::City).sheet.skills;
 
 using namespace sm;
 
-void test_scarcity_shape() {
-    CHECK(stock_scarcity(0, 0) == 1.0f, "empty shelf, no demand = base");
-    CHECK(stock_scarcity(1000, 8) < stock_scarcity(10, 8),
-          "glut is cheaper than a modest stock");
-    // РАВНОВЕСИЕ БЕЗ КАЛЕНДАРЯ (CANON S10, долг 2026-09-19): спрос приходит
-    // сезонным ЧИСЛОМ (остаток счёта), и «склад == непокрытая нужда» даёт
-    // базу без единого множителя горизонта в этой двери.
-    CHECK(stock_scarcity(100, 100) == 1.0f,
-          "stock == the unpaid need = base price (the world's equilibrium)");
-    CHECK(stock_scarcity(0, 100) == float(100 + 1),
-          "hungry absence prices the whole unpaid need — no ceiling");
-    CHECK(stock_scarcity(1 << 20, 0) < stock_scarcity(1 << 10, 0),
-          "a deeper glut keeps getting cheaper — no floor on the curve");
-    CHECK(stock_price(10, 0, 100) == 10 * (100 + 1),
-          "price = base x scarcity");
-    CHECK(stock_price(10, 1 << 20, 0) >= 1,
-          "a price never reaches zero — «ничто не бесплатно» is the floor");
-    // ── СПРОС БЕЗ СЧЁТА — ДОЛЯ БЮДЖЕТА ГОРОЖАНИНА (M-137) ────────────────
-    // ПОЧЕМУ ЭТОТ СВИДЕТЕЛЬ ПЕРЕПИСАН 2026-09-26: он прибивал ЧИСЛО умершей
-    // лестницы (`cloth` = 4 единицы в день, потому что в таблице стояло
-    // `popPerUnitDay = 32`) и краснел ровно на том, что было УЛУЧШЕНИЕМ —
-    // §8 ЗАКОН НУЛЕВОЙ п.5/п.7: он охранял случай, а не закон. Теперь
-    // утверждается сам закон, и ни одного прибитого числа в нём нет.
+// ── НУЖДА СТРОКИ — ОСТАТОК СЧЁТА, И ЧИТАЕТ ЕЁ ОДИН МОСТ ──────────────────
+// Закон мира (AGENTS «ЗАКОН ЕДИНОЙ ЦЕНОМОДЕЛИ» п.1; CANON S10 «спрос читается
+// из ДОЛГА»): у стороны один ответ на «чего ей не хватает» — запас против
+// счёта нужды (`row_side@src/macro/economy.cpp`). Утверждается ОТНОШЕНИЕ
+// полки и счёта, поставленных самой фикстурой, а не пересказ формулы.
+void test_need_is_the_unpaid_bill() {
+    const int food = hunger_item_index();
+    const int foodOrd = hunger_commodity_ordinal();
+    CHECK(food >= 0 && foodOrd >= 0 && commodity_of_item(food) == foodOrd,
+          "фикстура: голодная строка — строка словаря товаров");
+    constexpr std::int32_t kBill = 777;
+    std::int32_t debt[kCommodityCount] = {};
+    debt[foodOrd] = kBill;
+    const auto net_of = [&](const Inventory& inv, const std::int32_t* bill) {
+        return row_side(food, 5, bill, inv, 1000, 1000000).net;
+    };
+    Inventory inv{};
+    CHECK(net_of(inv, debt) == -kBill,
+          "пустая полка: недостаёт ровно непогашенного счёта");
+    inv.add_of(food, 300);
+    CHECK(net_of(inv, debt) == 300 - kBill,
+          "полупогашенный счёт: недостаёт счёта минус полка (S − D)");
+    inv.add_of(food, 1000);
+    CHECK(net_of(inv, debt) == 1300 - kBill,
+          "полка выше счёта — излишек, нужды нет (S − D > 0)");
+    CHECK(net_of(inv, nullptr) == 1300,
+          "у стороны без счёта нужды нет вовсе — одна полка");
+    // СТРОКА ВНЕ СЛОВАРЯ ТОВАРОВ СЧЁТА НЕ ИМЕЕТ: кинжал при счёте, стоящем
+    // по ВСЕМ строкам словаря, — по-прежнему одна полка.
+    std::int32_t full[kCommodityCount];
+    for (std::int32_t& d : full) d = 999;
+    const int dagger = item_index("wpn_dagger");
+    Inventory bag{};
+    bag.add_of(dagger, 3);
+    CHECK(dagger >= 0 && commodity_of_item(dagger) < 0
+              && row_side(dagger, 50, full, bag, 1000, 1000000).net == 3,
+          "строка вне словаря товаров нужды не имеет: счёт её не видит");
+    // Негативный контроль: тот же полный счёт строку СЛОВАРЯ видит.
+    CHECK(net_of(inv, full) == 1300 - 999,
+          "негативный контроль: полный счёт видит строку словаря");
+}
+
+// ── СЧЁТ КОМФОРТА — ДОЛЯ БЮДЖЕТА ГОРОЖАНИНА (M-137) ──────────────────────
+// Утверждается сам закон, а не числа таблицы: сумма стоимости сезонного
+// счёта всех строк комфорта есть бюджет горожанина с точностью до усечения,
+// дороже — реже, вдвое больше душ — вдвое больше счёта. Счёт выставляет окно
+// сезона (`upkeep_season_window@src/macro/upkeep_window.h`) этой дверью.
+void test_comfort_bill_is_the_citizen_budget() {
     {
         const int pop = 128;
-        // 1. ГОЛОД — житель-дни: одна единица кроет один день одной души.
-        CHECK(season_demand_for(hunger_item_index(), nullptr, pop, CITY,
-                                nullptr) == pop * kDaysPerSeason,
-              "голод спрашивается житель-днями, и это своя система");
-        // 2. НЕ ТОВАР — НЕ НУЖДА: у кинжала прямого спроса нет вовсе.
-        CHECK(season_demand_for(item_index("wpn_dagger"), nullptr, pop, CITY,
-                                nullptr) == 0,
-              "строка, товаром не являющаяся, прямой нужды не имеет");
-        // 3. БЮДЖЕТ: сумма стоимости всех строк комфорта не превышает
-        //    население × сезон × бюджет дня и не отстаёт от него больше, чем
-        //    на усечение по строке (целое деление роняет остаток дешевле
-        //    одной единицы каждой строки). Второй копии формулы здесь нет —
-        //    только её ПОТОЛОК и граница усечения.
+        // БЮДЖЕТ: сумма стоимости всех строк комфорта не превышает
+        // население × сезон × бюджет дня и не отстаёт от него больше, чем
+        // на усечение по строке (целое деление роняет остаток дешевле
+        // одной единицы каждой строки). Второй копии формулы здесь нет —
+        // только её ПОТОЛОК и граница усечения.
         long long spend = 0, truncation = 0;
         int comfortRows = 0, dearer = -1, dearerUnits = -1;
         for (int c = 0; c < kCommodityCount; ++c) {
             if (!commodity_is_comfort(c)) continue;
             ++comfortRows;
             const int idx = commodity_item_index(c);
-            const int units = season_demand_for(idx, nullptr, pop, CITY,
-                                                nullptr);
+            const int units = season_comfort_units(pop, c);
             const int value = item_def_at(idx)->value;
             spend += (long long)units * value;
             truncation += value;
-            // 4. ДОРОЖЕ — РЕЖЕ: строгая обратная монотонность по стоимости.
+            // ДОРОЖЕ — РЕЖЕ: строгая обратная монотонность по стоимости.
             if (dearer < 0 || value > dearer) {
                 if (dearer >= 0) {
                     CHECK(units <= dearerUnits,
@@ -84,10 +100,9 @@ void test_scarcity_shape() {
                 dearer = value;
                 dearerUnits = units;
             }
-            // 5. МАСШТАБ: вдвое больше душ — вдвое больше нужды (с точностью
-            //    до того же усечения).
-            const int twice = season_demand_for(idx, nullptr, pop * 2, CITY,
-                                                nullptr);
+            // МАСШТАБ: вдвое больше душ — вдвое больше нужды (с точностью
+            // до того же усечения).
+            const int twice = season_comfort_units(pop * 2, c);
             CHECK(twice >= units * 2 - 1 && twice <= units * 2 + 1,
                   "нужда линейна по населению");
         }
@@ -98,7 +113,9 @@ void test_scarcity_shape() {
               "стоимость всей нужды сезона = бюджет горожанина, с точностью "
               "до усечения по строке");
     }
+}
 
+void test_no_good_is_spun_from_food() {
     // НИ ОДНО БЛАГО НЕ ВАРИТСЯ ИЗ ПИЩИ — сквозной закон по ВСЕЙ таблице
     // составов (владелец, 2026-09-20; ради него и заведено ВОЛОКНО со своей
     // парцеллой). ПОЧЕМУ ЭТО ЗАКОН, А НЕ ВКУС: пока ткань пряли из зерна,
@@ -126,14 +143,6 @@ void test_scarcity_shape() {
         CHECK(foodFree,
               "no comfort good is spun from the hunger row — the world must "
               "not be able to weave its food into shirts");
-    }
-    // СПРОС ЧИТАЕТ ДОЛГ: полупогашенный счёт хлеба — и спрос ровно он.
-    {
-        std::int32_t debt[kCommodityCount] = {};
-        debt[commodity_index("food")] = 777;
-        CHECK(season_demand_for(hunger_item_index(), debt, 128, CITY,
-                                nullptr) == 777,
-              "the direct demand IS the unpaid bill");
     }
 }
 
@@ -578,7 +587,9 @@ void test_trade_power_is_one_door() {
 } // namespace
 
 int main() {
-    test_scarcity_shape();
+    test_need_is_the_unpaid_bill();
+    test_comfort_bill_is_the_citizen_budget();
+    test_no_good_is_spun_from_food();
     test_worth_is_lifted_by_need_and_dropped_by_glut();
     test_no_pump_at_any_power();
     test_lot_doors_keep_their_promises();

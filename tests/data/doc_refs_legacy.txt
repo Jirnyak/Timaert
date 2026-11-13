@@ -121,7 +121,6 @@ SKELETON.md	:620
 SKELETON.md	:6330
 SKELETON.md	:65
 SKELETON.md	:6715
-SKELETON.md	:68
 SKELETON.md	:6805
 SKELETON.md	:688
 SKELETON.md	:689
@@ -171,8 +170,6 @@ SKELETON.md	econ_day.cpp:95-99
 SKELETON.md	econ_day.h:114-115
 SKELETON.md	econ_day.h:18-19
 SKELETON.md	econ_v1_test.cpp:565
-SKELETON.md	economy.cpp:46-63
-SKELETON.md	economy.cpp:85
 SKELETON.md	ecs/components.h:218
 SKELETON.md	ecs/components.h:243
 SKELETON.md	ecs/components.h:362

@@ -197,11 +197,6 @@ int hunger_commodity_ordinal() {
 
 int hunger_item_index() { return commodity_item_index(hunger_commodity_ordinal()); }
 
-int recipe_out_item(int recipeRow) {
-    return (recipeRow >= 0 && recipeRow < kRecipeCount)
-        ? resolved().recipes[recipeRow].outItem : -1;
-}
-
 // Строка каталога → ЕЁ рецепт, резолв один раз (тот же паттерн, что мост
 // товаров ниже). Монетные строки отвечают минтом: его outItem = -1 («coin»
 // не строка каталога), поэтому их вяжет архетип Currency, а не id.

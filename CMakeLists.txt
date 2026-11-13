@@ -1111,7 +1111,7 @@ timaert_test(macro_npc_ai_parity_test
         # crews — both live in npc_spawn.cpp.
         src/macro/npc_spawn.cpp
         src/macro/nav_field.cpp
-        # the caravan deal prices through the one law (stock_price)
+        # мост нужды row_side — сделка читает нужду стороны им (единая ценомодель)
         src/macro/economy.cpp
         # the gatherer and the caravan file world facts (chronicle door)
         src/macro/chronicle.cpp
@@ -1198,7 +1198,7 @@ timaert_test(squad_war_test
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
         src/macro/nav_field.cpp
-        # the caravan deal prices through the one law (stock_price)
+        # мост нужды row_side — сделка читает нужду стороны им (единая ценомодель)
         src/macro/economy.cpp
         # the gatherer and the caravan file world facts (chronicle door)
         src/macro/chronicle.cpp
@@ -1267,7 +1267,7 @@ timaert_test(squad_travel_test
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
         src/macro/nav_field.cpp
-        # the caravan deal prices through the one law (stock_price)
+        # мост нужды row_side — сделка читает нужду стороны им (единая ценомодель)
         src/macro/economy.cpp
         # the gatherer and the caravan file world facts (chronicle door)
         src/macro/chronicle.cpp
@@ -1850,7 +1850,7 @@ timaert_test(trade_law_test
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
         src/macro/nav_field.cpp
-        # the caravan deal prices through the one law (stock_price)
+        # мост нужды row_side — сделка читает нужду стороны им (единая ценомодель)
         src/macro/economy.cpp
         src/macro/macro_stock.cpp
         src/macro/fauna.cpp
@@ -2252,7 +2252,7 @@ timaert_test(collector_tithe_test
         src/macro/deal.cpp          # вылив дани домой — один глагол обмена
         src/macro/recovery.cpp
         src/macro/nav_field.cpp
-        src/macro/economy.cpp       # цена дома решает срочность нужды
+        src/macro/economy.cpp       # мост нужды: чего дому не хватает и во сколько он это ценит
         src/macro/chronicle.cpp
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
@@ -2269,8 +2269,9 @@ timaert_test(collector_tithe_test
     # проверок, код 0: §8 п.2 ловит только тест с НУЛЁМ проверок, а здесь
     # остальные два закона свои проверки отдавали, и выпавшая треть была
     # невидима. Пин закрывает это целиком — ctest краснеет на любой пропавшей
-    # проверке, не разбираясь, какая именно.
-    PIN "OK collector_tithe_test .24 checks")
+    # проверке, не разбираясь, какая именно. 24 → 37 (M-488, ломоть 3): закон 5
+    # — порядок груза дани по оценке дома и «нужда — не больше нехватки».
+    PIN "OK collector_tithe_test .37 checks")
 
 timaert_test(woodcutter_gather_test
     SOURCES
@@ -2284,7 +2285,7 @@ timaert_test(woodcutter_gather_test
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
         src/macro/nav_field.cpp
-        # the caravan deal prices through the one law (stock_price)
+        # мост нужды row_side — сделка читает нужду стороны им (единая ценомодель)
         src/macro/economy.cpp
         # the gatherer and the caravan file world facts (chronicle door)
         src/macro/chronicle.cpp
@@ -2300,7 +2301,7 @@ timaert_test(woodcutter_gather_test
     LINK_SDL)
 
 # КОНСТРУКТОР ЗАДАЧ (ломоть 6б M-72): доска детерминирована сидом, оффер
-# называет настоящий контекст (оракул — season_demand_for), взятие = цель +
+# называет настоящий контекст (нехватка — счёт сверх полки), взятие = цель +
 # QuestTaken, суд ПО ХОДУ памятью мира, сдача = deal + QuestDone + опыт
 # чистой стоимостью. Список исходников — woodcutter + tasks.cpp + state.cpp
 # (create_factions: вражда фикстуры ставится дверью мира).
@@ -2330,7 +2331,9 @@ timaert_test(task_constructor_test
     # ctest, не разбираясь, которая. 52 → 53 (M-423, 2026-11-10): свидетель
     # «убийство ДО дня взятия контракт не закрывает» рождает своё предусловие
     # настоящей дверью деяния, и запись этого предусловия — проверка.
-    PIN "OK task_constructor_test .62 checks")
+    # 62 → 70 (M-488, ломоть 3): раздел 2б — фикстура сама ставит счёт и
+    # полку трём строкам, доска просит ровно счёт минус полку и ничего сверх.
+    PIN "OK task_constructor_test .70 checks")
 
 # МИР ПРОИЗВОДИТ (И3, ломоть 5а M-72): закон «из мира вышла вещь» не держал
 # НИ ОДИН из 134 приборов — `bricks_produced` ушёл 169 578 → 0 при зелёной
@@ -2790,7 +2793,7 @@ timaert_test(player_is_a_squad_test
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
         src/macro/nav_field.cpp
-        # the caravan deal prices through the one law (stock_price)
+        # мост нужды row_side — сделка читает нужду стороны им (единая ценомодель)
         src/macro/economy.cpp
         # the gatherer and the caravan file world facts (chronicle door)
         src/macro/chronicle.cpp
