@@ -50,7 +50,6 @@ SKELETON.md	:129
 SKELETON.md	:1321
 SKELETON.md	:143
 SKELETON.md	:156-158
-SKELETON.md	:164-167
 SKELETON.md	:1823
 SKELETON.md	:1835
 SKELETON.md	:184-185
@@ -171,8 +170,6 @@ SKELETON.md	deposit_layer.cpp:178
 SKELETON.md	deposit_layer.cpp:89
 SKELETON.md	deposit_layer.h:12-21
 SKELETON.md	deposit_layer.h:18-21
-SKELETON.md	econ_day.cpp:148-189
-SKELETON.md	econ_day.cpp:176
 SKELETON.md	econ_day.cpp:209
 SKELETON.md	econ_day.cpp:95-99
 SKELETON.md	econ_day.h:114-115

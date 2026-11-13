@@ -29,15 +29,20 @@
 #include "check.h"
 #include "macro/currency.h"
 #include "macro/econ_day.h"
+#include "macro/economy.h"       // row_side / lot_take / lot_loss — оценка запаса
 #include "tables/squad_type.h"  // SquadType — ось рода (амбар рождения уехал
                                 // в kSquadBirth@src/macro/characters.h)
 #include "macro/upkeep_window.h"  // upkeep_season_window — ОДНА дверь суда границы (M-233)
-#include "bus/world_row.h"   // raise_flock_into_container / count_human_souls
+#include "macro/squad_act.h"      // squad_craft — акт крафта сквада (M-486)
+#include "macro/npc_ai.h"         // settlement_craft_pick — решение модуля поселения
+#include "bus/squad_sheet.h"      // refresh_body_from_sheet — тело той же дверью, что мир
+#include "bus/world_row.h"   // raise_flock_into_container / count_human_souls / work_units
 #include "bus/anketa.h"
 
 #include <array>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 
 namespace {
 
@@ -371,29 +376,11 @@ void sect5_half_season_starves_half() {
           "a sub-season scrap forgives exactly one death");
 }
 
-// ── 6. Produce: the first recipe may not hog the town ───────────────
-// Mountains of food beside a little clay: before the fix the table's first
-// row staffed ceil(stock/8) workers — the whole town — and bricks never saw a
-// single worker-day. Output DIVERSITY is the law: with inputs for both,
-// both are made.
-void sect6_produce_fair_shares() {
-    Inventory s{};
-    s.remove_of(commodity_item_index(commodity_index("food")),
-            s.count_of(commodity_item_index(commodity_index("food"))));
-    s.add_of(commodity_item_index(commodity_index("food")), 1024);
-    s.remove_of(commodity_item_index(commodity_index("clay")),
-                  s.count_of(commodity_item_index(commodity_index("clay"))));
-    s.add_of(commodity_item_index(commodity_index("clay")), 64);
-    // population 0: no demand pass — pure fair shares, the exact surface
-    // the old hog bug lived on.
-    const int made =
-        econ_produce_day(s, nullptr, CITY, 8, 0);
-    CHECK(made > 0, "city with inputs and workers made nothing");
-    CHECK(s.count_of(commodity_item_index(commodity_index("bricks"))) > 0,
-          "first recipe hogged every worker - no output diversity");
-    CHECK(s.count_of(commodity_item_index(commodity_index("food"))) > 0,
-          "fair shares must not starve the FIRST recipe either");
-}
+// ── 6. (СТОЯЛО «первый рецепт не забирает весь город» — делёж рук дня между
+// рецептами; умер 2026-11-13 вместе с лестницей `econ_produce_day`, ряд M-486:
+// акт крафта есть ОДИН рецепт объёмом партий, что крафтить — решает модуль
+// сквада по выгоде, и разнообразие выходов стало следствием дней, а не
+// законом одного дня.) ──
 
 // ── 7. A recipe with no inputs would mint matter — table law ────────
 // Every output must carry a composition on its catalog row, or the day
@@ -588,23 +575,79 @@ void sect11_one_store() {
     inv.add("food", 100);
     inv.add("potion_hp", 3);   // NOT a commodity — must ride untouched
     std::int32_t debt[kCommodityCount] = {};
-    econ_produce_day(inv, debt, VILLAGE, /*workers*/4,
-                     /*population*/40);
+    // (Здесь же стоял день производства, умерший 2026-11-13 с лестницей,
+    //  ряд M-486; на этом складе он был холостым — ни один рецепт не кормится
+    //  едой и зельем. Что акт крафта трогает только свои строки — блок 14, А4.)
     boundary_(inv, debt);
     CHECK(inv.count("potion_hp") == 3,
           "a day of economy disturbed what is not a commodity");
     CHECK(inv.count("food") <= 100, "consumption cannot create matter");
 }
 
-// ── 12. Zero workers craft nothing — the ghost-bench half of the
-// honest-death law (owner, 2026-08-29; the population side lives in
-// world_tick_parity_test, which links settle_rooted_day).
-void sect12_ghost_bench() {
-    Inventory ghost;
-    ghost.add("food", 100);
-    CHECK(econ_produce_day(ghost, nullptr, CITY, /*workers*/0,
-                           /*population*/0) == 0,
-          "zero workers produced something");
+// ── 12. (СТОЯЛО «ноль рук — ноль выпуска», призрачный станок; умер 2026-11-13
+// с квотой рук лестницы дня, ряд M-486: рабочих юнитов у сквада не бывает
+// меньше одного — аватар тоже юнит (`work_units@src/bus/world_row.h`), и
+// одиночка крафтит той же дверью, что город, — блок 14, А1.) ──
+
+// ── ФИКСТУРА АКТА: ГОЛАЯ СВОЯ СТРОКА СКВАДА ─────────────────────────────
+// Четыре колонки слота, которые читает акт (`ActSelf@src/macro/squad_act.h`),
+// и больше ничего: мира у акта нет. Тело рождается ТОЙ ЖЕ дверью, что у
+// всякого рождения поселения (`refresh_body_from_sheet` над строкой Peasant —
+// как `birth_squad@src/macro/birth_squad.h`), бар полон, гейт свободен. Люди
+// ложатся в контейнер дверью мира (`raise_flock_into_container`), и рабочих
+// юнитов становится 1 + людей — фикстура рожает своё предусловие сама.
+struct Actor {
+    ecs::Pools pools{};
+    ecs::MacroNpcRuntime rt{};
+    CharacterSheet sheet{};
+    Inventory bag{};
+};
+Actor born_actor(SquadType type, int souls) {
+    Actor a{};
+    a.sheet = squad_birth(type).sheet;
+    refresh_body_from_sheet(a.pools, &a.rt, a.sheet, NPCType::Peasant);
+    a.pools.hp = a.pools.maxHp;
+    a.pools.mp = a.pools.maxMp;
+    a.pools.sp = a.pools.maxSp;
+    if (souls > 0) raise_flock_into_container(a.bag, souls);
+    return a;
+}
+
+// ПОКОРМИТЬ ЛАРЬ НА `batches` ПАРТИЙ строки `outIdx`: состав читается у самой
+// строки каталога (`item_parts`), а не пересказывается числом.
+bool feed(Inventory& bag, int outIdx, int batches) {
+    bool ok = !item_parts(outIdx).empty();
+    for (const ItemPart& p : item_parts(outIdx))
+        ok = bag.add_of(int(p.def), batches * int(p.count)) && ok;
+    return ok;
+}
+
+// СНИМОК СВОЕЙ СТРОКИ АКТА. Все три колонки стоят под `TIMAERT_PACKED`
+// (каждый байт принадлежит названному члену), поэтому побайтовое равенство и
+// есть «мир не тронут» — без перечня полей, который забыл бы одно.
+struct ActSnap {
+    ecs::Pools pools;
+    ecs::MacroNpcRuntime rt;
+    Inventory bag;
+};
+ActSnap snap(const Actor& a) { return ActSnap{a.pools, a.rt, a.bag}; }
+bool untouched(const Actor& a, const ActSnap& s) {
+    return std::memcmp(&a.pools, &s.pools, sizeof(ecs::Pools)) == 0
+        && std::memcmp(&a.rt, &s.rt, sizeof(ecs::MacroNpcRuntime)) == 0
+        && std::memcmp(&a.bag, &s.bag, sizeof(Inventory)) == 0;
+}
+
+// ЛАРЬ, НАБИТЫЙ ДО ПОСЛЕДНЕГО СЛОТА: каждый слот, кроме одного, занят своим
+// родом (разные семена не складываются). Последний займёт вход фикстуры.
+bool fill_all_but_one(Inventory& bag) {
+    for (int i = 0; i < kMaxInventorySlots - 1; ++i) {
+        ItemRef junk{};
+        junk.def = std::uint16_t(item_index("potion_hp"));
+        junk.count = 1;
+        junk.seed = std::uint32_t(i + 1);
+        if (!bag.add_ref(junk)) return false;
+    }
+    return true;
 }
 
 // ── 13. THE MINT is inside the conservation law ────────────────────
@@ -634,57 +677,67 @@ void sect13_mint_conservation() {
     const int yield = item_yield(coinRow);
     CHECK(yield > 0 && metal->value == yield * coinDef->value,
           "the mint metal's price is not yield x nominal");
-    // A store of metal and nothing else: no other City recipe can be fed,
-    // so every write below belongs to the mint. Two workers on a hamlet's
-    // population strike far less than the store holds — the leftover is
-    // what makes a SECOND debit visible at all (drain the stack dry and
-    // the extra remove_of fails silently and hides itself).
-    Inventory store;
-    store.add("silver", 40);
-    econ_produce_day(store, nullptr, CITY, /*workers*/2,
-                     /*population*/2, faction_index("empire"));
+    // ЧЕКАНКА — АКТ КРАФТА СКВАДА, как всякий рецепт (ряд M-486): сколько
+    // партий, решает модуль, а здесь судится одна механика — что металл и
+    // монета сходятся. Ларь — металл и ничего больше, поэтому всякая запись
+    // ниже принадлежит двору. Партий — вдвое меньше, чем кормит ларь: остаток
+    // и делает ВТОРОЕ списание видимым (высуши стак — лишний remove_of
+    // откажет молча и спрячет себя).
+    const auto coinParts = item_parts(coinRow);
+    CHECK_OR_RETURN(coinParts.size() == 1
+                        && int(coinParts[0].def) == item_index("silver")
+                        && coinParts[0].count > 0,
+                    "предусловие: монета чеканится из одного серебра");
+    const int perBatch = int(coinParts[0].count);
+    const int batches = 40 / perBatch / 2;
+    CHECK_OR_RETURN(batches > 0, "предусловие: ларь кормит хоть одну партию");
+    // Крю из `batches − 1` людей — юнитов ровно `batches`, и акт стоит цену
+    // одной партии одиночки: чеканка не уводит бар в долг, судится материя.
+    Actor city = born_actor(SquadType::City, batches - 1);
+    CHECK_OR_RETURN(work_units(city.bag) == batches,
+                    "предусловие: люди крю легли в контейнер");
+    city.bag.add("silver", 40);
+    ActSelf cs{city.pools, city.rt, city.sheet, city.bag};
+    CHECK(squad_craft(cs, coinRow, batches) == batches,
+          "город с правом и металлом чеканит названные партии");
 
-    const int spent = 40 - store.count("silver");
-    const int coins = store.count("coin_empire_silver");
+    const int spent = 40 - city.bag.count("silver");
+    const int coins = city.bag.count("coin_empire_silver");
     CHECK(coins > 0, "the mint struck nothing from a store of silver");
     // (ЗДЕСЬ СТОЯЛО «the Minted fact and the coins on the shelf disagree»
     //  — закон О САМОМ КАНАЛЕ, и он умер вместе с ним 2026-11-03 (§8 п.6).
     //  Переводить нечего: ЯКОРЬ МИРА стоит строкой ниже и он сильнее —
     //  он судит монеты против МЕТАЛЛА по авторской колонке `item_yield`,
     //  а не доклад двери против её же собственной полки.)
-    const bool metalMatchesCoins = spent * yield == coins;
+    const bool metalMatchesCoins =
+        spent == batches * perBatch && coins == batches * yield;
     if (!metalMatchesCoins) {
-        std::printf("  mint: silver spent=%d yield=%d coins struck=%d\n",
-                    spent, yield, coins);
+        std::printf("  mint: batches=%d silver spent=%d yield=%d coins struck=%d\n",
+                    batches, spent, yield, coins);
     }
     CHECK(metalMatchesCoins,
           "the mint's metal does not match the coins struck");
 
     // The refused strike. Every slot but one is taken by a distinct kind
-    // (distinct seeds do not stack), the last holds more metal than one
-    // day can strike — so the debited stack stays occupied, the coin has
+    // (distinct seeds do not stack), the last holds more metal than the
+    // strike eats — so the debited stack stays occupied, the coin has
     // nowhere to land, and add() refuses.
-    Inventory full;
-    bool fixtureFilled = true;
-    for (int i = 0; i < kMaxInventorySlots - 1; ++i) {
-        ItemRef junk{};
-        junk.def = std::uint16_t(item_index("potion_hp"));
-        junk.count = 1;
-        junk.seed = std::uint32_t(i + 1);
-        if (!full.add_ref(junk)) { fixtureFilled = false; break; }
-    }
+    Actor full = born_actor(SquadType::City, 0);
     // Один вердикт на всю засыпку, а не 1023: предусловие тут ОДНО — ларь
     // набит, — и записывать его тысячу раз значило бы топить счёт прибора в
     // одной фикстуре.
-    CHECK_OR_RETURN(fixtureFilled, "could not fill the fixture's store");
-    full.add("silver", 40);
-    CHECK_OR_RETURN(full.full(), "the fixture's store is not full");
-    econ_produce_day(full, nullptr, CITY, /*workers*/2,
-                     /*population*/2,
-                     faction_index("empire"));
-    CHECK(full.count("coin_empire_silver") == 0,
+    CHECK_OR_RETURN(fill_all_but_one(full.bag),
+                    "could not fill the fixture's store");
+    full.bag.add("silver", 40);
+    CHECK_OR_RETURN(full.bag.full() && 40 > batches * perBatch,
+                    "the fixture's store is not full, or the strike drains "
+                    "the metal's slot");
+    ActSelf fs{full.pools, full.rt, full.sheet, full.bag};
+    CHECK(squad_craft(fs, coinRow, batches) == 0,
+          "a full shelf struck a lot it had no slot for");
+    CHECK(full.bag.count("coin_empire_silver") == 0,
           "a full shelf accepted coins it had no slot for");
-    const int metalLeft = full.count("silver");
+    const int metalLeft = full.bag.count("silver");
     if (metalLeft != 40) {
         std::printf("  refused mint: silver left=%d of 40\n", metalLeft);
     }
@@ -711,7 +764,7 @@ void sect_village_all_but_the_mint() {
         const RecipeDef& r = kRecipes[i];
         const bool isMint = std::strcmp(r.output, kMintOutput) == 0;
         // Право рецепта — колонки его Craft-строки (M-369): тот же
-        // вопрос, та же дверь, что у дня производства.
+        // вопрос, та же дверь, что у акта крафта (`craft_item`).
         const ActionDef& act = action_def(int(r.action));
         const bool village =
             recipe_known(VILLAGE, act.gateSkill, int(act.minRank));
@@ -754,6 +807,625 @@ void print_coverage() {
 
 } // namespace
 
+// ── 14. АКТ КРАФТА СКВАДА — МЕХАНИКА ОДНА НА ВСЕХ (ряд M-486) ────────────
+// Вердикт владельца 2026-11-13 (CANON S25, «СКВАД, МОДУЛЬ И ЕДИНАЯ МЕХАНИКА
+// ДЕЙСТВИЯ»): что и сколько крафтить, решает ИИ-модуль сквада; механика акта
+// одна — право по анкете, материя «всё или ничего», цена SP строки, делённая
+// на рабочих юнитов, и восстановление ровно сделанному («он будет рековери
+// ровно столько скольок требовалось за крафт»). Здесь судится МЕХАНИКА на
+// голой своей строке (`squad_craft@src/macro/squad_act.h`); ожидания выводятся
+// из тех же строк и дверей, что читает код, а не из литералов.
+//
+// (ЗДЕСЬ СТОЯЛИ 14г «неполный день», 14з «лот дня — не ступень лестницы
+//  половин», 14д «руки перетекают» и 14ж «скудные руки делятся»; умерли
+//  2026-11-13 вместе с рамкой лестницы дня, ряд M-486: рабочего дня руки, КПД
+//  от log2 населения и дележа рук между рецептами за день больше нет — акт
+//  есть один рецепт одним объёмом, а объём называет модуль.)
+void sect14_squad_craft_act() {
+    const int clothIdx = item_index("cloth");
+    const int fibreIdx = item_index("fibre");
+    const int clothRecipe = recipe_of_item(clothIdx);
+    CHECK_OR_RETURN(clothRecipe >= 0 && fibreIdx >= 0,
+                    "предусловие: у ткани есть рецепт, у волокна — строка");
+    const ActionDef& weave = action_def(int(kRecipes[clothRecipe].action));
+    const auto clothParts = item_parts(clothIdx);
+    CHECK_OR_RETURN(clothParts.size() == 1
+                        && int(clothParts[0].def) == fibreIdx
+                        && clothParts[0].count > 0,
+                    "предусловие: ткань ткётся из одного волокна");
+    const int fibrePerBatch = int(clothParts[0].count);
+    const int clothYield = item_yield(clothIdx);
+    const int rate = int(weave.spRatePerDay);
+
+    // А1. ЦЕНА ДЕЛИТСЯ НА ЮНИТОВ. Бар у сквада один и от ростера не растёт;
+    // растёт то, сколько работы он покупает.
+    Actor lone = born_actor(SquadType::City, 0);
+    const int maxSp = lone.pools.maxSp;
+    const int rowPrice = sp_price(maxSp, rate);
+    CHECK_OR_RETURN(work_units(lone.bag) == 1 && rate > 1 && rowPrice >= 2
+                        && lone.pools.sp == maxSp
+                        && lone.rt.recoverySteps == 0,
+                    "предусловие: одиночка — один юнит, бар полон, гейт "
+                    "свободен; темп строки больше одной партии в день и цена "
+                    "партии не меньше двух (иначе «меньше дня» и «меньше "
+                    "одиночки» невыразимы)");
+    CHECK_OR_RETURN(feed(lone.bag, clothIdx, 1),
+                    "предусловие: волокно на партию легло в ларь");
+    ActSelf ls{lone.pools, lone.rt, lone.sheet, lone.bag};
+    CHECK(squad_craft(ls, clothIdx, 1) == 1,
+          "одиночка с правом и волокном ткёт партию");
+    const int loneCost = maxSp - lone.pools.sp;
+    CHECK(loneCost == rowPrice,
+          "ОДИНОЧКА ПЛАТИТ ЦЕНУ СТРОКИ: партия стоит бар, делённый на темп");
+
+    constexpr int kCrew = 7;
+    Actor crew = born_actor(SquadType::City, kCrew);
+    const int crewUnits = work_units(crew.bag);
+    CHECK_OR_RETURN(crewUnits == kCrew + 1 && crew.pools.maxSp == maxSp,
+                    "предусловие: люди крю легли в контейнер — юнитов 1 + "
+                    "людей; бар тот же, что у одиночки");
+    CHECK_OR_RETURN(feed(crew.bag, clothIdx, crewUnits),
+                    "предусловие: волокно на N+1 партию легло в ларь");
+    ActSelf cs{crew.pools, crew.rt, crew.sheet, crew.bag};
+    CHECK(squad_craft(cs, clothIdx, crewUnits) == crewUnits,
+          "сквад с крю ткёт N+1 партию");
+    const int crewCost = maxSp - crew.pools.sp;
+    CHECK(crewCost == rowPrice,
+          "N+1 ЮНИТ ДЕЛАЕТ N+1 ПАРТИЮ ПО ЦЕНЕ ОДНОЙ: бар падает ровно на цену "
+          "строки");
+
+    Actor crewOne = born_actor(SquadType::City, kCrew);
+    CHECK_OR_RETURN(feed(crewOne.bag, clothIdx, 1),
+                    "предусловие: волокно на партию легло в ларь");
+    ActSelf c1{crewOne.pools, crewOne.rt, crewOne.sheet, crewOne.bag};
+    CHECK(squad_craft(c1, clothIdx, 1) == 1, "сквад с крю ткёт одну партию");
+    const int crewOneCost = maxSp - crewOne.pools.sp;
+    CHECK(crewOneCost > 0 && crewOneCost < loneCost,
+          "ПАРТИЯ МНОГОЛЮДНОГО ДЕШЕВЛЕ, НО НЕ ДАРОВАЯ: платит не ноль и "
+          "меньше одиночки");
+    std::printf("  [цена акта] бар %d, темп %d: одиночка 1 партия −%d, крю %d "
+                "юнитов %d партий −%d, крю 1 партия −%d\n",
+                maxSp, rate, loneCost, crewUnits, crewUnits, crewCost,
+                crewOneCost);
+
+    // А2. ВОССТАНОВЛЕНИЕ РАВНО СДЕЛАННОМУ: эффективное время одной партии
+    // (база строки через ту же дверь `recovery_steps`) × объём ÷ юниты.
+    const int oneBatchRec = recovery_steps(
+        weave.recoveryTicks, lone.sheet.attributes, lone.sheet.skills,
+        action_tempo_generic(weave));
+    // А2а. Одна партия одиночки — время одной партии, и это доля дня.
+    CHECK(oneBatchRec > 0 && lone.rt.recoverySteps == std::uint32_t(oneBatchRec),
+          "ВОССТАНОВЛЕНИЕ РАВНО СДЕЛАННОМУ: одна партия висит временем одной "
+          "партии строки");
+    CHECK(std::uint64_t(lone.rt.recoverySteps) < kTicksPerDay,
+          "…и это доля рабочего дня, а не весь день: темп строки больше одной "
+          "партии");
+    // А2б. Пропорция объёму: k партий одиночки висят в k раз дольше (юнит
+    // один — делить нечего, округлению негде встать).
+    constexpr int kBatches = 3;
+    Actor loneK = born_actor(SquadType::City, 0);
+    CHECK_OR_RETURN(feed(loneK.bag, clothIdx, kBatches),
+                    "предусловие: волокно на k партий легло в ларь");
+    ActSelf lk{loneK.pools, loneK.rt, loneK.sheet, loneK.bag};
+    CHECK(squad_craft(lk, clothIdx, kBatches) == kBatches,
+          "одиночка ткёт k партий");
+    CHECK(loneK.rt.recoverySteps == std::uint32_t(kBatches * oneBatchRec),
+          "ПРОПОРЦИЯ ОБЪЁМУ: k партий одиночки висят ровно в k раз дольше "
+          "одной");
+    // А2в. Деление на юнитов: N+1 партия на N+1 юнита — время одной партии.
+    CHECK(crew.rt.recoverySteps == lone.rt.recoverySteps,
+          "ДЕЛЕНИЕ НА ЮНИТОВ: N+1 юнит висит за N+1 партию столько же, "
+          "сколько одиночка за одну");
+    // А2г. Человеко-день: полный бар одиночки покупает темп строки партий, и
+    // эта работа занимает рабочий день — с точностью до остатка деления дня
+    // на темп. Утверждение о НЕЙТРАЛЬНОМ работнике: резвость и генерик
+    // домена базу не правят — это предусловие, а не допуск.
+    const std::int64_t dayLot = act_sp_reach(maxSp, rate, maxSp, 1);
+    CHECK_OR_RETURN(dayLot == rate
+                        && oneBatchRec == int(weave.recoveryTicks),
+                    "предусловие: полный бар одиночки покупает ровно темп "
+                    "строки, а лист нейтрален к базе восстановления");
+    Actor loneDay = born_actor(SquadType::City, 0);
+    CHECK_OR_RETURN(feed(loneDay.bag, clothIdx, int(dayLot)),
+                    "предусловие: волокно на человеко-день легло в ларь");
+    ActSelf ld{loneDay.pools, loneDay.rt, loneDay.sheet, loneDay.bag};
+    CHECK(squad_craft(ld, clothIdx, int(dayLot)) == int(dayLot),
+          "одиночка ткёт человеко-день");
+    const std::uint64_t dayRec = loneDay.rt.recoverySteps;
+    CHECK(dayRec <= kTicksPerDay
+              && kTicksPerDay - dayRec < std::uint64_t(rate),
+          "ЧЕЛОВЕКО-ДЕНЬ: полный бар работы висит рабочим днём (до остатка "
+          "деления дня на темп)");
+    std::printf("  [восстановление] партия %d тиков, %d партий %u, крю %d "
+                "партий %u, человеко-день (%lld партий) %llu из %llu\n",
+                oneBatchRec, kBatches, unsigned(loneK.rt.recoverySteps),
+                crewUnits, unsigned(crew.rt.recoverySteps),
+                (long long)dayLot, (unsigned long long)dayRec,
+                (unsigned long long)kTicksPerDay);
+
+    // А3. ОТКАЗ — МИР НЕ ТРОНУТ: возврат 0, и бар, гейт занятости и
+    // инвентарь побайтово те же. Три причины, у каждой — противоположная
+    // полярность, что отказала именно она.
+    {   // (1) материала не хватает одной единицы.
+        Actor a = born_actor(SquadType::City, 0);
+        CHECK_OR_RETURN(a.bag.add_of(fibreIdx, fibrePerBatch - 1)
+                            && a.bag.count_of(fibreIdx) == fibrePerBatch - 1,
+                        "предусловие: волокна на единицу меньше партии");
+        const ActSnap before = snap(a);
+        ActSelf s{a.pools, a.rt, a.sheet, a.bag};
+        CHECK(squad_craft(s, clothIdx, 1) == 0 && untouched(a, before),
+              "ОТКАЗ ПО МАТЕРИАЛУ: партий ноль, бар, гейт и ларь не тронуты");
+        CHECK(a.bag.add_of(fibreIdx, 1) && squad_craft(s, clothIdx, 1) == 1,
+              "…а с последней единицей волокна та же партия ткётся");
+    }
+    {   // (2) навык ниже минранга строки: деревня и монетный двор.
+        const int coinRow = item_index("coin_empire_silver");
+        const int mintRecipe = recipe_of_item(coinRow);
+        CHECK_OR_RETURN(mintRecipe >= 0,
+                        "предусловие: у монеты есть рецепт — монетный двор");
+        const ActionDef& mint = action_def(int(kRecipes[mintRecipe].action));
+        Actor v = born_actor(SquadType::Village, 0);
+        CHECK_OR_RETURN(!recipe_known(v.sheet.skills, mint.gateSkill,
+                                      int(mint.minRank))
+                            && feed(v.bag, coinRow, 1),
+                        "предусловие: металл на партию есть, а ранг деревни "
+                        "ниже монетной строки");
+        const ActSnap before = snap(v);
+        ActSelf s{v.pools, v.rt, v.sheet, v.bag};
+        CHECK(squad_craft(s, coinRow, 1) == 0 && untouched(v, before),
+              "ОТКАЗ ПО ПРАВУ: деревня не чеканит, бар, гейт и ларь не "
+              "тронуты");
+        Actor c = born_actor(SquadType::City, 0);
+        CHECK_OR_RETURN(feed(c.bag, coinRow, 1),
+                        "предусловие: металл на партию легло в ларь города");
+        ActSelf cc{c.pools, c.rt, c.sheet, c.bag};
+        CHECK(squad_craft(cc, coinRow, 1) == 1,
+              "…а тот же металл у города чеканится: отказал ранг, а не ларь");
+    }
+    {   // (3) контейнер полон: кирпичу лечь некуда.
+        const int bricksIdx = item_index("bricks");
+        const auto brickParts = item_parts(bricksIdx);
+        Actor a = born_actor(SquadType::City, 0);
+        CHECK_OR_RETURN(fill_all_but_one(a.bag),
+                        "could not fill the fixture's store");
+        a.bag.add("clay", 40);
+        CHECK_OR_RETURN(a.bag.full() && recipe_of_item(bricksIdx) >= 0
+                            && brickParts.size() == 1
+                            && int(brickParts[0].def) == item_index("clay")
+                            && 40 > int(brickParts[0].count),
+                        "предусловие: ларь набит, глина кормит партию и её "
+                        "слот после партии не освобождается");
+        const ActSnap before = snap(a);
+        ActSelf s{a.pools, a.rt, a.sheet, a.bag};
+        CHECK(squad_craft(s, bricksIdx, 1) == 0 && untouched(a, before),
+              "ОТКАЗ ПОЛНОГО КОНТЕЙНЕРА: кирпичу лечь некуда — партий ноль, "
+              "глина, бар и гейт не тронуты");
+    }
+
+    // А4. МАТЕРИЯ: входы уходят ровно партии × счёт каждой части, выход
+    // приходит ровно партии × выход строки, чужая строка не тронута. Рецепт из
+    // ДВУХ частей — чтобы «каждая часть» было вопросом, а не одной строкой.
+    {
+        int outIdx = -1;
+        for (int r = 0; r < kRecipeCount && outIdx < 0; ++r) {
+            if (std::strcmp(kRecipes[r].output, kMintOutput) == 0) continue;
+            const ActionDef& act = action_def(int(kRecipes[r].action));
+            const int idx = item_index(kRecipes[r].output);
+            if (idx >= 0 && item_parts(idx).size() >= 2
+                && recipe_known(CITY, act.gateSkill, int(act.minRank)))
+                outIdx = idx;
+        }
+        const int foodIdx = hunger_item_index();
+        CHECK_OR_RETURN(outIdx >= 0 && foodIdx >= 0
+                            && item_parts(foodIdx).empty(),
+                        "предусловие: есть рецепт из двух частей, открытый "
+                        "городу, и терминальная чужая строка — еда");
+        constexpr int kLot = 3;
+        Actor a = born_actor(SquadType::City, kLot - 1);
+        CHECK_OR_RETURN(feed(a.bag, outIdx, kLot + 2)
+                            && a.bag.add_of(foodIdx, 100),
+                        "предусловие: состав на лот с остатком и чужая строка "
+                        "легли в ларь");
+        const auto parts = item_parts(outIdx);
+        int partBefore[kMaxItemParts] = {};
+        for (std::size_t k = 0; k < parts.size(); ++k)
+            partBefore[k] = a.bag.count_of(int(parts[k].def));
+        const int outBefore = a.bag.count_of(outIdx);
+        const int soulsBefore = count_human_souls(a.bag);
+        ActSelf s{a.pools, a.rt, a.sheet, a.bag};
+        CHECK(squad_craft(s, outIdx, kLot) == kLot,
+              "город крафтит лот из двух частей");
+        bool partsExact = true;
+        for (std::size_t k = 0; k < parts.size(); ++k)
+            partsExact = partsExact
+                && partBefore[k] - a.bag.count_of(int(parts[k].def))
+                       == kLot * int(parts[k].count);
+        CHECK(partsExact,
+              "МАТЕРИЯ: каждая часть ушла ровно партии × свой счёт");
+        CHECK(a.bag.count_of(outIdx) - outBefore == kLot * item_yield(outIdx),
+              "МАТЕРИЯ: выход пришёл ровно партии × выход строки");
+        CHECK(a.bag.count_of(foodIdx) == 100
+                  && count_human_souls(a.bag) == soulsBefore,
+              "акт трогает только свои строки: еда и люди не тронуты");
+    }
+
+    // А5. В ДОЛГ ДВЕРЬ НЕ ОТКАЗЫВАЕТ: отказа по усталости у механики нет —
+    // трудиться ли в долг, решает модуль. Пустой бар уходит в минус ровно на
+    // цену строки (укус HP — закон двери траты, не этой).
+    {
+        Actor a = born_actor(SquadType::City, 0);
+        a.pools.sp = 0;
+        CHECK_OR_RETURN(a.pools.maxSp == maxSp && feed(a.bag, clothIdx, 1),
+                        "предусловие: бар пуст, тот же потолок, волокно на "
+                        "партию есть");
+        ActSelf s{a.pools, a.rt, a.sheet, a.bag};
+        CHECK(squad_craft(s, clothIdx, 1) == 1
+                  && a.bag.count_of(clothIdx) == clothYield,
+              "В ДОЛГ ДВЕРЬ НЕ ОТКАЗЫВАЕТ: при пустом баре партия соткана");
+        CHECK(a.pools.sp == -rowPrice,
+              "…и бар ушёл в минус ровно на цену строки");
+    }
+
+    // А6. СТРАЖ ШИРИНЫ ДВЕРИ МАТЕРИИ: лот, чей выход не ложится в `int`,
+    // отказан, и ларь не тронут. Без стража произведение переполнялось,
+    // отрицательный приход принимался за «нечего добавить», и металл исчезал
+    // (ревью 2026-11-13). Монета — самый широкий выход каталога.
+    {
+        const int coinRow = item_index("coin_empire_silver");
+        const int recipe = recipe_of_item(coinRow);
+        const auto parts = item_parts(coinRow);
+        const int yield = item_yield(coinRow);
+        CHECK_OR_RETURN(recipe >= 0 && yield > 1 && parts.size() == 1
+                            && parts[0].count > 0,
+                        "предусловие: монета — один металл и выход больше "
+                        "одной штуки");
+        const std::uint8_t mintAct = kRecipes[recipe].action;
+        const ActionDef& mint = action_def(int(mintAct));
+        constexpr int kIntMax = std::numeric_limits<int>::max();
+        const int wide = kIntMax / yield + 1;   // наименьший лот не по ширине
+        CHECK_OR_RETURN(wide <= kIntMax / int(parts[0].count)
+                            && recipe_known(CITY, mint.gateSkill,
+                                            int(mint.minRank)),
+                        "предусловие: вход лота в int ложится и право есть — "
+                        "отказать может только страж выхода");
+        const int metal = wide * int(parts[0].count);
+        Inventory bag{};
+        CHECK_OR_RETURN(bag.add_of(int(parts[0].def), metal)
+                            && bag.count_of(int(parts[0].def)) == metal,
+                        "предусловие: стак держит металл на весь лот");
+        Inventory one = bag;
+        CHECK(craft_item(one, coinRow, 1, CITY, mintAct)
+                  && one.count_of(coinRow) == yield,
+              "…партия из того же ларя чеканится: отказывает ширина, а не "
+              "ларь");
+        const Inventory before = bag;
+        CHECK(!craft_item(bag, coinRow, wide, CITY, mintAct),
+              "СТРАЖ ШИРИНЫ: лот, чей выход не ложится в int, отказан");
+        CHECK(std::memcmp(&bag, &before, sizeof(Inventory)) == 0,
+              "…и ларь не тронут: металл не исчез");
+        std::printf("  [страж ширины] выход %d, отказан лот %d партий из %d "
+                    "металла\n", yield, wide, metal);
+    }
+}
+
+// ── 14Б. ЧТО И СКОЛЬКО КРАФТИТЬ — РЕШЕНИЕ МОДУЛЯ ПОСЕЛЕНИЯ (ряд M-486) ──────
+// Закон мира (AGENTS «ЗАКОН ЕДИНОЙ ЦЕНОМОДЕЛИ» п.2 и п.4; вердикт владельца
+// 2026-11-13: крафт — сделка с самим собой). Выгода лота есть оценка
+// пришедшего выхода минус оценка ушедших входов, той же оценкой запаса, какой
+// меряет сделка; предел наступает обратной связью — выход копится, масса
+// против спины роняет его оценку; вход тает — его оценка растёт. Решение
+// судится на голых числах своей строки (`settlement_craft_pick@src/macro/
+// npc_ai.cpp`); выгода всякого другого объёма — теми же дверями ядра цены.
+namespace {
+
+// СТОРОНА СТРОКИ ГЛАЗАМИ СВОЕГО ЛАРЯ — мост, который читает и решение
+// (`row_side@src/macro/economy.h`): стоимость и масса — колонки строки.
+RowSide own_side(const Inventory& inv, int idx, const std::int32_t* debt,
+                 std::int64_t backG) {
+    const ItemDef* d = item_def_at(idx);
+    return row_side(idx, d ? d->value : 0, debt, inv,
+                    d ? std::int64_t(item_mass_g(*d)) : 1, backG);
+}
+// ВЫГОДА ЛОТА `b` ПАРТИЙ строки `outIdx` от нынешнего ларя.
+std::int64_t lot_gain(const Inventory& inv, int outIdx, std::int64_t b,
+                      const std::int32_t* debt, std::int64_t backG) {
+    std::int64_t spent = 0;
+    for (const ItemPart& p : item_parts(outIdx))
+        spent += lot_loss(own_side(inv, int(p.def), debt, backG),
+                          b * int(p.count));
+    return lot_take(own_side(inv, outIdx, debt, backG),
+                    b * item_yield(outIdx)) - spent;
+}
+// ПРЕДЕЛ МАТЕРИАЛОВ — сколько партий кормит ларь.
+std::int64_t material_lots(const Inventory& inv, int outIdx) {
+    std::int64_t most = std::numeric_limits<std::int64_t>::max();
+    for (const ItemPart& p : item_parts(outIdx))
+        most = std::min<std::int64_t>(most,
+                                      inv.count_of(int(p.def)) / int(p.count));
+    return item_parts(outIdx).empty() ? 0 : most;
+}
+// ОЦЕНКА СВОИХ СТРОК ЛАРЯ — сумма оценок запаса (`stock_worth`), цель сквада
+// «растить свою оценку своего инвентаря» буквально.
+std::int64_t rows_worth(const Inventory& inv, const int* rows, int n,
+                        const std::int32_t* debt, std::int64_t backG) {
+    std::int64_t w = 0;
+    for (int k = 0; k < n; ++k) {
+        const RowSide r = own_side(inv, rows[k], debt, backG);
+        w += stock_worth(r, r.net);
+    }
+    return w;
+}
+
+// Спина фикстуры — тонна: против неё масса запаса роняет его оценку.
+constexpr std::int64_t kFixtureBackG = 1000000;
+// Спина малая — пятьдесят килограммов: завал наступает на сотне партий.
+constexpr std::int64_t kSmallBackG = 50000;
+// Спина без края: завала нет вовсе, выгода партии постоянна.
+constexpr std::int64_t kBoundlessBackG = std::int64_t(1) << 40;
+// Юнитов столько, что бар заведомо не предел (свидетель утверждает это сам).
+constexpr int kManyUnits = 256;
+
+} // namespace
+
+void sect14b_settlement_craft_pick() {
+    const int clothIdx = item_index("cloth");
+    const int fibreIdx = item_index("fibre");
+    const int bricksIdx = item_index("bricks");
+    const int clothRecipe = recipe_of_item(clothIdx);
+    CHECK_OR_RETURN(clothRecipe >= 0 && recipe_of_item(bricksIdx) >= 0
+                        && fibreIdx >= 0,
+                    "предусловие: у ткани и кирпича есть рецепты");
+    const ActionDef& weave = action_def(int(kRecipes[clothRecipe].action));
+    const int rate = int(weave.spRatePerDay);
+    const int maxSp = born_actor(SquadType::City, 0).pools.maxSp;
+    CHECK_OR_RETURN(rate > 0 && maxSp > 0,
+                    "предусловие: у строки ткани есть темп, у тела — бар");
+
+    // Б1. ВЫБОР ПО ВЫГОДЕ: волокно на одну ткань и глина на один кирпич;
+    // ткань растит оценку больше — берётся ткань.
+    {
+        Inventory s{};
+        s.add("fibre", 2);
+        s.add("clay", 1);
+        const std::int64_t gCloth = lot_gain(s, clothIdx, 1, nullptr, kFixtureBackG);
+        const std::int64_t gBricks = lot_gain(s, bricksIdx, 1, nullptr, kFixtureBackG);
+        CHECK_OR_RETURN(gCloth > gBricks && gBricks > 0
+                            && material_lots(s, clothIdx) == 1
+                            && material_lots(s, bricksIdx) == 1,
+                        "предусловие: обе партии растят оценку, ткань — "
+                        "больше; ларь кормит по одной");
+        const CraftPick p = settlement_craft_pick(
+            s, nullptr, CITY, kFixtureBackG, -1, maxSp, maxSp, 1);
+        CHECK(p.outIdx == clothIdx && p.batches == 1 && p.gain == gCloth,
+              "ВЫБОР ПО ВЫГОДЕ: из двух возможных крафтов взят тот, что "
+              "растит оценку больше, и выгода названа честно");
+        // ПРОТИВОПОЛОЖНАЯ ПОЛЯРНОСТЬ: тот же ларь, но счёт на кирпич —
+        // нужда поднимает оценку его выхода.
+        std::int32_t debt[kCommodityCount] = {};
+        debt[commodity_index("bricks")] = 9;
+        CHECK_OR_RETURN(lot_gain(s, bricksIdx, 1, debt, kFixtureBackG)
+                            > lot_gain(s, clothIdx, 1, debt, kFixtureBackG),
+                        "предусловие: со счётом на кирпич его партия "
+                        "выгоднее ткани");
+        const CraftPick n = settlement_craft_pick(
+            s, debt, CITY, kFixtureBackG, -1, maxSp, maxSp, 1);
+        CHECK(n.outIdx == bricksIdx,
+              "НУЖДА ПОДНИМАЕТ ОЦЕНКУ ВЫХОДА: со счётом на кирпич выбран "
+              "кирпич");
+    }
+
+    // Б2. НАСЫЩЕНИЕ: волокна завал, спина мала, бар заведомо не предел. Лот
+    // меньше предела материалов, и ни один другой объём того же рецепта
+    // оценку не растит больше (полный перебор дверями ядра).
+    {
+        Inventory s{};
+        s.add("fibre", 400);
+        const std::int64_t limit = material_lots(s, clothIdx);
+        CHECK_OR_RETURN(limit > 1
+                            && act_sp_reach(maxSp, rate, maxSp, kManyUnits) >= limit
+                            && lot_gain(s, clothIdx, 1, nullptr, kSmallBackG) > 0,
+                        "предусловие: первая партия растит оценку, а бар "
+                        "покупает весь предел материалов");
+        std::int64_t best = 0, bestGain = 0;
+        for (std::int64_t b = 1; b <= limit; ++b) {
+            const std::int64_t g = lot_gain(s, clothIdx, b, nullptr, kSmallBackG);
+            if (g > bestGain) { bestGain = g; best = b; }
+        }
+        const CraftPick p = settlement_craft_pick(
+            s, nullptr, CITY, kSmallBackG, -1, maxSp, maxSp, kManyUnits);
+        CHECK(p.outIdx == clothIdx && p.batches > 0 && p.batches < limit,
+              "НАСЫЩЕНИЕ: лот меньше предела материалов — предел дала спина, "
+              "а не полка");
+        CHECK(p.gain == lot_gain(s, clothIdx, p.batches, nullptr, kSmallBackG)
+                  && p.gain >= bestGain,
+              "ЛОТ ЛУЧШИЙ: ни один другой объём того же рецепта оценку не "
+              "растит больше");
+        std::printf("  [насыщение] предел %lld партий, лучший перебором %lld "
+                    "(выгода %lld), выбрано %d (выгода %lld)\n",
+                    (long long)limit, (long long)best, (long long)bestGain,
+                    p.batches, (long long)p.gain);
+    }
+
+    // Б3. ВХОД ПОД СЧЁТОМ НЕ ДОЕДАЕТСЯ: на волокно счёт, волокна вдвое больше
+    // счёта. Каждая партия сверх излишка ест волокно, которого стороне уже не
+    // хватает, и оно дорожает быстрее, чем прибавляет ткань.
+    {
+        std::int32_t debt[kCommodityCount] = {};
+        debt[commodity_index("fibre")] = 30;
+        Inventory s{};
+        s.add("fibre", 60);
+        const std::int64_t limit = material_lots(s, clothIdx);
+        std::int64_t best = 0, bestGain = 0;
+        for (std::int64_t b = 1; b <= limit; ++b) {
+            const std::int64_t g = lot_gain(s, clothIdx, b, debt, kFixtureBackG);
+            if (g > bestGain) { bestGain = g; best = b; }
+        }
+        CHECK_OR_RETURN(best > 0 && best < limit
+                            && lot_gain(s, clothIdx, limit, debt, kFixtureBackG) < bestGain
+                            && act_sp_reach(maxSp, rate, maxSp, kManyUnits) >= limit,
+                        "предусловие: лучший лот есть, он меньше всего "
+                        "волокна, и бар не предел");
+        const CraftPick p = settlement_craft_pick(
+            s, debt, CITY, kFixtureBackG, -1, maxSp, maxSp, kManyUnits);
+        CHECK(p.outIdx == clothIdx && p.batches > 0 && p.batches < limit
+                  && p.gain >= bestGain,
+              "ВХОД ПОД СЧЁТОМ НЕ ДОЕДАЕТСЯ: выбран лучший лот, волокно "
+              "осталось");
+        std::printf("  [вход под счётом] лучший лот %lld (выгода %lld), выбрано "
+                    "%d (выгода %lld) из %lld\n",
+                    (long long)best, (long long)bestGain, p.batches,
+                    (long long)p.gain, (long long)limit);
+    }
+
+    // Б4. ЧЕКАНКА — ВЫГОДА ТОЛЬКО В ТОМ, ЧТО МОНЕТА ЛЕГЧЕ РУДЫ. Монета стоит
+    // ровно свой металл; при спине без края выгода всей руды меньше кванта, и
+    // руда монетой не становится. При тесной спине — становится.
+    const int empire = faction_index("empire");
+    const int coinRow = item_index("coin_empire_silver");
+    const std::array<int, 3>& mintRows = faction_mint_rows(empire);
+    const int mintRecipe = recipe_of_item(coinRow);
+    CHECK_OR_RETURN(mintRecipe >= 0
+                        && (mintRows[0] == coinRow || mintRows[1] == coinRow
+                            || mintRows[2] == coinRow),
+                    "предусловие: серебряная крона — номинал монетного двора "
+                    "империи");
+    const ActionDef& mint = action_def(int(kRecipes[mintRecipe].action));
+    {
+        Inventory s{};
+        s.add("silver", 40);
+        CHECK_OR_RETURN(recipe_known(CITY, mint.gateSkill, int(mint.minRank))
+                            && material_lots(s, coinRow) > 0
+                            && act_sp_reach(maxSp, int(mint.spRatePerDay),
+                                            maxSp, kManyUnits)
+                                   >= material_lots(s, coinRow),
+                        "предусловие: у города есть право, металл и бар — "
+                        "отказ ниже есть решение, а не неумение");
+        const CraftPick loose = settlement_craft_pick(
+            s, nullptr, CITY, kBoundlessBackG, empire, maxSp, maxSp, kManyUnits);
+        CHECK(loose.outIdx != coinRow,
+              "РУДА БЕЗ ЗАВАЛА НЕ ЧЕКАНИТСЯ: монета стоит ровно свой металл, и "
+              "выгода чеканки меньше кванта");
+        const CraftPick tight = settlement_craft_pick(
+            s, nullptr, CITY, kFixtureBackG, empire, maxSp, maxSp, kManyUnits);
+        CHECK(tight.outIdx == coinRow && tight.batches > 0 && tight.gain > 0,
+              "ПРИ ТЕСНОЙ СПИНЕ РУДА ЧЕКАНИТСЯ: монета легче руды");
+        // Б7. ПРАВО: тот же металл и та же спина у деревни — чеканки нет,
+        // потому что ранг ниже монетной строки (противоположная полярность —
+        // город строкой выше).
+        CHECK_OR_RETURN(!recipe_known(VILLAGE, mint.gateSkill, int(mint.minRank)),
+                        "предусловие: кузнечный ранг деревни ниже монетной "
+                        "строки");
+        const CraftPick village = settlement_craft_pick(
+            s, nullptr, VILLAGE, kFixtureBackG, empire, maxSp, maxSp, kManyUnits);
+        CHECK(village.outIdx != coinRow,
+              "ПРАВО: рецепт выше ранга не выбирается, хотя сырьё есть");
+    }
+
+    // Б5. БАР ОГРАНИЧИВАЕТ ОБЪЁМ: спина без края, выгода растёт с каждой
+    // партией, а бар покупает две. Пустой бар — выбирать нечего.
+    {
+        Inventory s{};
+        s.add("fibre", 400);
+        const int sp = 2 * sp_price(maxSp, rate) + 1;
+        const std::int64_t reach = act_sp_reach(maxSp, rate, sp, 1);
+        CHECK_OR_RETURN(reach >= 1 && reach < material_lots(s, clothIdx)
+                            && lot_gain(s, clothIdx, reach + 1, nullptr, kBoundlessBackG)
+                                   > lot_gain(s, clothIdx, reach, nullptr, kBoundlessBackG),
+                        "предусловие: без бара модуль взял бы больше — "
+                        "материалы и выгода дальше бара есть");
+        const CraftPick p = settlement_craft_pick(
+            s, nullptr, CITY, kBoundlessBackG, -1, maxSp, sp, 1);
+        CHECK(p.outIdx == clothIdx && p.batches > 0 && p.batches <= reach,
+              "БАР ОГРАНИЧИВАЕТ ОБЪЁМ: не больше, чем покупает нынешний бар");
+        const CraftPick spent = settlement_craft_pick(
+            s, nullptr, CITY, kBoundlessBackG, -1, maxSp, 0, 1);
+        const CraftPick owed = settlement_craft_pick(
+            s, nullptr, CITY, kBoundlessBackG, -1, maxSp, -sp, kManyUnits);
+        CHECK(spent.outIdx == -1 && owed.outIdx == -1,
+              "ПУСТОЙ БАР — ВЫБИРАТЬ НЕЧЕГО: в долг поселение не трудится");
+    }
+
+    // Б6. ЮНИТЫ РАСШИРЯЮТ ОБЪЁМ: тот же бар и тот же ларь, юнитов больше —
+    // бар покупает больше, и модуль берёт больше.
+    {
+        Inventory s{};
+        s.add("fibre", 400);
+        constexpr int kFew = 1, kMore = 8;
+        const std::int64_t reachFew = act_sp_reach(maxSp, rate, maxSp, kFew);
+        const std::int64_t reachMore = act_sp_reach(maxSp, rate, maxSp, kMore);
+        const CraftPick few = settlement_craft_pick(
+            s, nullptr, CITY, kBoundlessBackG, -1, maxSp, maxSp, kFew);
+        CHECK_OR_RETURN(reachFew < reachMore
+                            && reachMore < material_lots(s, clothIdx)
+                            && few.outIdx == clothIdx
+                            && few.batches == reachFew,
+                        "предусловие: объём одиночки упёрся именно в бар");
+        const CraftPick more = settlement_craft_pick(
+            s, nullptr, CITY, kBoundlessBackG, -1, maxSp, maxSp, kMore);
+        CHECK(more.outIdx == clothIdx && more.batches > few.batches
+                  && more.batches <= reachMore,
+              "ЮНИТЫ РАСШИРЯЮТ ОБЪЁМ: тот же бар у многолюдного покупает и "
+              "берёт больше");
+        std::printf("  [бар и юниты] бар %d: %d юнит — %lld партий, %d юнитов "
+                    "— %lld (выбрано %d и %d)\n",
+                    maxSp, kFew, (long long)reachFew, kMore,
+                    (long long)reachMore, few.batches, more.batches);
+    }
+
+    // Б8. ПУСТОЙ ИНВЕНТАРЬ — КРАФТИТЬ НЕЧЕГО.
+    {
+        const Inventory empty{};
+        CHECK(settlement_craft_pick(empty, nullptr, CITY, kFixtureBackG, empire,
+                                    maxSp, maxSp, kManyUnits).outIdx == -1,
+              "пустой ларь — выбирать нечего");
+    }
+}
+
+// ── 14В. РЕШЕНИЕ → АКТ: модуль назвал лот, механика его исполнила ─────────
+// Оценка своих строк выросла ровно на выгоду решения, бар упал на цену акта,
+// сквад висит восстановлением ровно сделанному.
+void sect14c_pick_then_act() {
+    constexpr int kCrew = 7;
+    Actor a = born_actor(SquadType::City, kCrew);
+    a.bag.add("fibre", 400);
+    const int units = work_units(a.bag);
+    CHECK_OR_RETURN(units == kCrew + 1 && a.rt.recoverySteps == 0,
+                    "предусловие: крю в контейнере, гейт свободен");
+    const CraftPick p = settlement_craft_pick(
+        a.bag, nullptr, a.sheet.skills, kSmallBackG, -1, a.pools.maxSp,
+        a.pools.sp, units);
+    CHECK_OR_RETURN(p.outIdx >= 0 && p.batches > 0 && p.gain > 0,
+                    "предусловие: модуль назвал лот, растящий оценку");
+    const int recipe = recipe_of_item(p.outIdx);
+    CHECK_OR_RETURN(recipe >= 0, "предусловие: у выхода есть рецепт");
+    const ActionDef& act = action_def(int(kRecipes[recipe].action));
+    int rows[1 + kMaxItemParts] = {p.outIdx};
+    int rowCount = 1;
+    for (const ItemPart& part : item_parts(p.outIdx)) rows[rowCount++] = int(part.def);
+    const std::int64_t worthBefore =
+        rows_worth(a.bag, rows, rowCount, nullptr, kSmallBackG);
+    const int spBefore = a.pools.sp;
+    ActSelf s{a.pools, a.rt, a.sheet, a.bag};
+    CHECK(squad_craft(s, p.outIdx, p.batches) == p.batches,
+          "АКТ ИСПОЛНИЛ РЕШЕНИЕ: названные партии сделаны");
+    const std::int64_t worthAfter =
+        rows_worth(a.bag, rows, rowCount, nullptr, kSmallBackG);
+    CHECK(worthAfter - worthBefore == p.gain,
+          "ОЦЕНКА ИНВЕНТАРЯ ВЫРОСЛА РОВНО НА ВЫГОДУ РЕШЕНИЯ");
+    CHECK(std::int64_t(spBefore - a.pools.sp)
+              == act_sp_price(a.pools.maxSp, act.spRatePerDay, p.batches, units),
+          "БАР УПАЛ НА ЦЕНУ АКТА: цена строки на объём, делённая на юнитов");
+    CHECK(squad_recovering(a.rt)
+              && a.rt.recoverySteps == squad_act_recovery(s, act, p.batches),
+          "СКВАД В ВОССТАНОВЛЕНИИ РОВНО СДЕЛАННОМУ");
+    std::printf("  [решение → акт] %d партий строки %d: оценка %lld → %lld "
+                "(выгода %lld), бар %d → %d, восстановление %u\n",
+                p.batches, p.outIdx, (long long)worthBefore,
+                (long long)worthAfter, (long long)p.gain, spBefore,
+                a.pools.sp, unsigned(a.rt.recoverySteps));
+}
+
+
 int main() {
     sect1_dictionary_commodities();
     sect1_dictionary_recipes();
@@ -761,15 +1433,16 @@ int main() {
     sect_hunger_proportional();
     sect4_boundary_shortfall();
     sect5_half_season_starves_half();
-    sect6_produce_fair_shares();
     sect7_no_matter_from_nothing();
     sect7b_overflow_rides_the_day();
     sect8_one_dictionary_link();
     sect9_birth_stocks();
     sect10_supply_ceiling_population();
     sect11_one_store();
-    sect12_ghost_bench();
     sect13_mint_conservation();
+    sect14_squad_craft_act();
+    sect14b_settlement_craft_pick();
+    sect14c_pick_then_act();
     sect_village_all_but_the_mint();
     print_coverage();
     // Границы у этого прибора НЕТ, и это не упущение: `check.h` даёт форму без

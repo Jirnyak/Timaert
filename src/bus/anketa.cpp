@@ -26,6 +26,15 @@ bool craft_item(Inventory& inv, int defIdx, int n,
     if (!recipe_known(hands, act.gateSkill, int(act.minRank))) return false;
     const auto parts = item_parts(defIdx);
     if (parts.empty()) return false;             // terminal: nothing composes it
+    // СТРАЖ ШИРИНЫ: счёт выхода и каждого входа обязан лечь в `int` дверей
+    // контейнера. Без него лот от 2^24 партий монеты (выход 128) переполнял
+    // произведение, отрицательный приход принимался за «нечего добавить», и
+    // материя исчезала (ревью 2026-11-13).
+    constexpr int kIntMax = std::numeric_limits<int>::max();
+    if (n > kIntMax / std::max(1, item_yield(defIdx))) return false;
+    for (const ItemPart& part : parts) {
+        if (n > kIntMax / std::max(1, int(part.count))) return false;
+    }
     // All-or-nothing on a copy (the deal-door idiom, macro/deal.h): remove_of can succeed
     // partially across stacks before a later part runs short, and add_of can
     // refuse a full bag after the materials already left it.

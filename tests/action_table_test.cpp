@@ -423,15 +423,22 @@ void craft_segment_is_the_recipes_other_half() {
                     "(тот же закон sp_price, что у добычи и у руки)");
 
     // ПОЛНОТА ПОДОТРЕЗКА: у всякой Craft-строки право НАЗВАНО (в отличие от
-    // добычи, где SkillId::Count — «рангом не ограничено»), база — рабочий
-    // ДЕНЬ тиками («сделал → вишу», M-326), охват — оба мира (город и
-    // рука), домен темпа — Армсмастер через лестницу.
+    // добычи, где SkillId::Count — «рангом не ограничено»), база — время
+    // ОДНОЙ партии, и вместе с темпом строки она даёт рабочий день (вердикт
+    // владельца 2026-11-13: восстановление — ровно столько, сколько сделано;
+    // работа на полный бар одиночки занимает день), охват — оба мира (сквад
+    // и рука), домен темпа — Армсмастер через лестницу.
     int samples = 0, defects = 0;
     for (int i = 0; i < sm::kActionLabourCount; ++i) {
         const sm::ActionDef& a = sm::action_def(sm::kActionLabourFirst + i);
         if (a.type != ActionType::Craft) continue;
         if (a.gateSkill == sm::SkillId::Count) ++defects;
-        if (a.recoveryTicks != std::uint32_t(sm::kTicksPerDay)) ++defects;
+        // Темп партий × база партии = рабочий день (до остатка деления).
+        if (std::uint64_t(a.recoveryTicks) * std::uint64_t(a.spRatePerDay)
+                > std::uint64_t(sm::kTicksPerDay)
+            || std::uint64_t(a.recoveryTicks + 1) * std::uint64_t(a.spRatePerDay)
+                <= std::uint64_t(sm::kTicksPerDay))
+            ++defects;
         if (a.scope != sm::ActionScope::MicroMacro) ++defects;
         if (sm::action_tempo_generic(a) != sm::SkillId::Armsmaster) ++defects;
         ++samples;

@@ -71,7 +71,6 @@ minus	src/macro/econ_day.cpp	needDebt[idx] -= eaten;
 minus	src/macro/economy.cpp	outSeason -= store->count_of(outIdx);
 minus	src/macro/loot_pool.cpp	roll -= double(danger_match_weight(value_strength(i), power));
 minus	src/macro/loot_pool.cpp	left -= paid;
-minus	src/macro/npc_ai.cpp	pools.spCarry -= float(cycleCost);
 minus	src/macro/npc_ai.cpp	owed -= (long long)moved * base;
 minus	src/macro/npc_ai.cpp	owed -= dense;
 minus	src/macro/npc_ai.cpp	edge->owedValue -= took;

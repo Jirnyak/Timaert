@@ -1154,29 +1154,41 @@ class Container {
     const ItemRef* begin() const noexcept { return a_.data(); }
     const ItemRef* end() const noexcept { return a_.data() + a_.size(); }
     const InventorySummary& sum() const noexcept { return sum_; }
+    std::uint64_t revision() const noexcept { return rev_; }
 
     void write(std::size_t i, const ItemRef& next, SlotWrite) noexcept {
         ItemRef& cell = a_[i];
         sum_ += slot_tally(cell, -std::int64_t(cell.count));   // старое долой
         cell = next;
         sum_ += slot_tally(cell, cell.count);                  // новое в счёт
+        ++rev_;
     }
     // Обнуление целиком — единственный случай, когда сводка известна БЕЗ
     // счёта: у пустого контейнера все восемь нулей по определению.
     void wipe(SlotWrite) noexcept {
         a_.fill(ItemRef{});
         sum_ = InventorySummary{};
+        ++rev_;
     }
 
     // Для стены «без дыр» (`TIMAERT_PACKED@src/core/row_law.h`): члены
     // частные, поэтому сумму их размеров называет сама структура.
     static constexpr std::size_t member_bytes() noexcept {
-        return sizeof(a_) + sizeof(sum_);
+        return sizeof(a_) + sizeof(sum_) + sizeof(rev_);
     }
 
   private:
     std::array<ItemRef, kMaxInventorySlots> a_{};
     InventorySummary                        sum_{};
+    // СЧЁТЧИК ИЗМЕНЕНИЙ — «МОЙ ИНВЕНТАРЬ ИЗМЕНИЛСЯ» ТОЧНО, А НЕ ПО ТАЙМЕРУ
+    // (вердикт владельца 2026-11-13, ряд M-497). Растёт в той же единственной
+    // двери записи, что правит сводку (разряд А: разойтись невыразимо), и
+    // никогда не убывает. Читает его модуль сквада: решение, зависящее от
+    // инвентаря, пересчитывается только когда счётчик сдвинулся, — думка, на
+    // которой ничего не менялось, стоит одного сравнения, а не прохода по
+    // слотам. Ширина — по достижимому диапазону (ЗАКОН ТИПА): `uint32`
+    // оставил бы в структуре дыру в 4 Б, а записей за жизнь мира — миллиарды.
+    std::uint64_t                           rev_ = 0;
 };
 
 struct Inventory {
@@ -1185,6 +1197,8 @@ struct Inventory {
     // Сводка — ПРОИЗВОДНОЕ от слотов, поэтому читается, но не пишется ни
     // откуда: писателя у неё нет вовсе, её правит сама запись слота.
     const InventorySummary& sum() const noexcept { return slots.sum(); }
+    // Счётчик изменений — той же дверью записи (шапка у `Container`).
+    std::uint64_t revision() const noexcept { return slots.revision(); }
 
     // ── Reading ───────────────────────────────────────────────────────────
     int count_of(int defIdx) const noexcept {
@@ -1424,10 +1438,12 @@ struct Inventory {
 // по-прежнему нет.
 static_assert(sizeof(Inventory)
                   == kMaxInventorySlots * sizeof(ItemRef)
-                         + sizeof(InventorySummary),
-              "инвентарь = 1024 плоских слота плюс сводка, без дырок");
-static_assert(sizeof(Inventory) == 41024,
-              "и это 41 024 Б ровно: 40 960 слотов + 64 сводки");
+                         + sizeof(InventorySummary) + sizeof(std::uint64_t),
+              "инвентарь = 1024 плоских слота, сводка и счётчик изменений, "
+              "без дырок");
+static_assert(sizeof(Inventory) == 41032,
+              "и это 41 032 Б ровно: 40 960 слотов + 64 сводки + 8 счётчика "
+              "изменений (M-497)");
 static_assert(std::is_trivially_copyable_v<Inventory>,
               "контейнер переживает memcpy: сводка едет С НИМ, поэтому "
               "копия-откат (`craft_item`, `scrap_at`, дверь `deal`) и "

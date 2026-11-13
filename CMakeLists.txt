@@ -2013,11 +2013,24 @@ timaert_test(rpg_rules_test
 timaert_test(econ_v1_test
     SOURCES
         src/macro/econ_day.cpp
-        # Ранжирование рук спрашивает ОДИН закон цены (stock_price).
+        # Оценка запаса — ею модуль поселения решает, что и сколько крафтить.
         src/macro/economy.cpp
         # The one-dictionary link law: every commodity is an item-catalog row.
         src/bus/anketa.cpp
-        src/tables/items.cpp)
+        src/tables/items.cpp
+        # Решение о крафте живёт в модуле поселения (settlement_craft_pick);
+        # свидетель судит его рядом с механикой акта, поэтому линкует модули
+        # тем же набором, что caravan_deal_test.
+        src/macro/npc_ai.cpp
+        src/macro/deal.cpp
+        src/macro/recovery.cpp
+        src/macro/nav_field.cpp
+        src/macro/chronicle.cpp
+        src/macro/macro_stock.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/tables/fauna.cpp
+        src/macro/tree_layer.cpp)
 
 # THE matter law (CANON «Крафт/Скрап», owner verdicts 2026-09-11): composition
 # on the catalog row, the reversible reaction doors, no-arbitrage, auto-scrap.

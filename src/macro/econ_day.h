@@ -329,13 +329,10 @@ constexpr int season_hunger_units(int population) {
     return population > 0 ? population * kDaysPerSeason : 0;
 }
 
-// One worker per this many heads (po2) — the BENCH quota: the share of
-// hands staffing the recipes (econ_produce_day). Крю-половина закона труда
-// 2026-08-31 (crews rows + labourShift) казнена ломтём 4 M-72, а колонка
-// `labourShift` снесена 2026-11-01 (ломоть 5б: сирота со стражем) — квота
-// станков осталась ЕДИНСТВЕННЫМ носителем этого числа; «сколько рук у рода»
-// назовёт модуль рода своим числом, когда появится читатель.
-inline constexpr int kCreaturesPerCityWorker = 8;
+// (КВОТА СТАНКОВ УМЕРЛА ЗДЕСЬ 2026-11-13, ряд M-486. Стояло
+// `kCreaturesPerCityWorker` = 8: руками крафта поселения был один из восьми
+// его людей. Рабочие юниты сквада считает одна дверь на всякий труд —
+// `work_units@src/bus/world_row.h`, и на них делится цена акта.)
 
 // (THE WORKING RHYTHM died here, 2026-09-16. `kWorkCyclesPerBar` = 4 declared
 // how many hauls a rested worker made in a day, and `kGatherPerCycle` = 32/4
@@ -350,17 +347,10 @@ inline constexpr int kCreaturesPerCityWorker = 8;
 // пакетов v1 — вместе с якорем темпа, которым она делит полосу: оба читает
 // субмир, а §11 запрещает ему macro/. Закон не тронут, дверь одна.)
 
-// HOW MANY HANDS a production has. Hands multiply the YIELD and never the
-// price: the bar belongs to the SQUAD (it is the avatar body's own bar and
-// does not grow with the creatures), so N souls do N workers' work for one
-// action's price. Owner, verbatim: «каждый работник рубит по дереву, SP
-// тратится как у игрока, просто деревьев в число людей больше».
-//
-// The avatar is a hand too — that is the +1, and it is why a lone walker is
-// not a special case of anything.
-inline constexpr int production_hands(int creatureCount) {
-    return 1 + (creatureCount > 0 ? creatureCount : 0);
-}
+// (СЧЁТ РУК `production_hands` УМЕР ЗДЕСЬ 2026-11-13, ряд M-486: «руки множат
+// выход, а не цену» было тем же отношением, что «цена делится на юнитов»,
+// сказанным наоборот и только для добычи. Закон один и назван владельцем
+// делением — `act_sp_price@src/tables/econ_laws.h`.)
 
 // ── ФАКТЫ ДНЯ — РОД 5 ФРЕЙМА, И ЗДЕСЬ ИХ БОЛЬШЕ НЕТ ──────────────
 // (некролог — в шапке файла: `EconFact` и `EconFactSink` уничтожены
@@ -384,40 +374,29 @@ struct Depot {
     Depot(Inventory& i, std::int32_t* debt) : inv(i), needDebt(debt) {}
 };
 
-// ── The day, in three pure steps ─────────────────────────────────────────
+// ── Двери дня поселения ──────────────────────────────────────────────────
 
-// РАНЖИРОВАНИЕ РУК (CANON S10, владелец 2026-09-18: «руки идут туда, где выше
-// стоимость выхода на рабочий день»). Кандидат — выходная СТРОКА КАТАЛОГА:
-// одна на товарный рецепт, чьё ремесло и ранг открыты анкете места, плюс по
-// одной на каждый номинал у монетного. Каждый рабочий день уходит в кандидата
-// с наибольшей стоимостью выхода по ТЕКУЩЕЙ цене склада (цена × партий ×
-// выход), где партий не больше, чем даёт труд строки на КПД места и чем
-// кормит сырьё на полке. Цена пересчитывается ПОСЛЕ каждого назначения —
-// слиппедж производства: полка растёт → цена падает → руки сами переходят
-// дальше; сезон проедает склад → цена растёт → возвращаются. Ни порога
-// «работать или нет», ни потолка выпуска колонкой: потолок ВЫВОДИТСЯ из цены.
-// День кончается, когда ни один кандидат не кормится сырьём.
-// Прежние три прохода «стол / честные доли / остатки» УМЕРЛИ 2026-09-18
-// вместе с «нуждой» `1 << 30` (econ_day.cpp, там же замер: они были грубым
-// ранжированием, где все рецепты равно ценны).
-// Returns total units produced. Conservation: inputs leave the store as
-// outputs enter.
-// `mintFactionIdx`: whose coin FAMILY the kMintOutput recipe strikes — the
-// town's faction (its three nominals run gold-first, each off its own metal;
-// faction_coins resolves the free folk to the imperial family). -1 = this
-// place has no mint and the row simply does not run.
-// `needDebt` — счёт места (CANON S10): спрос, по которому ранжируются
-// руки, читает ОСТАТОК ДОЛГА (season_demand_for); nullptr — фикстура без
-// счёта, прямая часть спроса падает на лестницу населения.
-// `dayBaseTicksOut` (ломоть stateTimer M-369): максимум `recoveryTicks`
-// Craft-строк, чьи партии сегодня состоялись, — база «сделал → вишу» для
-// гейта занятости места; 0 = партий не было. nullptr — звонящему (фикстуре)
-// база не нужна.
-int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
-                     const Skills& hands, int workers,
-                     int population,
-                     int mintFactionIdx = -1,
-                     std::uint32_t* dayBaseTicksOut = nullptr);
+// (ЛЕСТНИЦА ДНЯ `econ_produce_day` УНИЧТОЖЕНА 2026-11-13, ряд M-486. Она
+// была общей функцией, которая сама решала, что и сколько крафтит поселение:
+// руками считала один из восьми его людей, выпуск множила на log2 населения,
+// SP не списывала. Вердикт владельца того же дня: решает ИИ-модуль сквада,
+// механика акта одна на всех, цена SP делится на рабочих юнитов. Механика —
+// `squad_craft@src/macro/squad_act.h`; решение — модуль поселения,
+// `settlement_craft_pick@src/macro/npc_ai.cpp`.)
+
+// ЧТО ВООБЩЕ КРАФТИТСЯ — выходы таблицы рецептов ординалами каталога, для
+// модуля, который выбирает: по строке на товарный рецепт и по строке на
+// каждый номинал монетной семьи `mintFactionIdx` (каждый номинал ест свой
+// металл; -1 — монетного двора нет, и чеканка в список не идёт). Строки без
+// состава или без стоимости в список не попадают. Право, цена и темп — на
+// Craft-строке `action`; решение здесь не принимается. Пишет не больше
+// `kCraftOutputCap` записей, возвращает их число.
+struct CraftOutput {
+    int outIdx = -1;            // выходная строка каталога
+    std::uint8_t action = 0;    // ординал Craft-строки рецепта
+};
+inline constexpr int kCraftOutputCap = kRecipeCount + 2;
+int craft_outputs(int mintFactionIdx, CraftOutput* out);
 
 // (`ConsumeOutcome` и `econ_debt_boundary` УНИЧТОЖЕНЫ 2026-10-06, M-233:
 // это была ВТОРАЯ дверь содержания, и в день границы сезона поселение

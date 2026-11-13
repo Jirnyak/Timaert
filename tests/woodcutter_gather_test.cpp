@@ -186,7 +186,11 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     }
 
     CHECK(layerLost > 0, "the chop really fell trees in the layer");
-    CHECK(storeGained > 0, "the haul reached the village store");
+    // (Здесь стояло «the haul reached the village store» по СЫРОМУ дереву на
+    // полке. С ряда M-486 деревня вправе пустить в дело всё дерево до
+    // последнего — «сырьё осталось» было обстоятельством прежнего
+    // ранжирования, а не законом. Что привезённое дошло, держат две
+    // проверки ниже: дерево стало вещью, и материя сошлась.)
     CHECK(woodInGoods > 0,
           "деревня ПУСТИЛА привезённое в дело — иначе слагаемое ниже было бы "
           "нулевым и ведомость снова мерила бы только сырьё");
@@ -199,8 +203,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     int rootedCount = 0;
     sm::for_each_rooted(st,
                        [&](std::uint16_t) { ++rootedCount; });
-    CHECK(st.inventory[vil.slot].inv.count("wood") > 0
-              && rootedCount == 1,
+    CHECK(rootedCount == 1,
           "the village man hauls for the VILLAGE (no city even exists here)");
 
     // NEGATIVE CONTROL for the vein writer: the forest cell was felled to
@@ -210,6 +213,59 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     CHECK(layer.at(cell_of(14, 10, layer.width)) == 0, "the control condition fired: bare cell");
     CHECK(tally_facts(gs.chronicle, FactKind::Drained, 14, 10).n == 0,
           "a felled forest writes NO Drained fact - a forest is not a vein");
+}
+
+// ОДИН АКТ КРЮ — ПО ОБЪЕКТУ НА РАБОЧЕГО ЮНИТА (владелец, дословно: «каждый
+// работник рубит по дереву»; цена акта делится на рабочих юнитов — CANON S25,
+// 2026-11-13). Сколько просить у земли, решает модуль артели; этот свидетель
+// держит его решение: первый же акт крю из восьми юнитов снимает с клетки
+// восемь деревьев, а не одно.
+void test_a_crew_takes_one_object_per_unit() {
+    std::unique_ptr<GameState> gsOwn = make_game_state();
+    GameState& gs = *gsOwn;
+    gs.mapW = kMap;
+    gs.mapH = kMap;
+    chronicle_init(gs.chronicle, kMap, kMap);
+
+    constexpr int kTrees = 64;
+    TreeLayer& layer = gs.treeLayer;
+    tree_layer_reset(layer, kMap, kMap);
+    layer.data[10 * kMap + 14] = kTrees;
+    const std::vector<TreePoint> trees{{14, 10}};
+    TreeGrid grid;
+    build_tree_grid(grid, trees, kMap, kMap);
+
+    auto wStore_ = sm::make_macro_store();
+    sm::MacroStore& st = *wStore_;
+    const sm::MacroHandle vil =
+        sm::birth_squad(gs, nullptr, st, SquadType::Village, 10, 10);
+    const int vilId = int(st.spawnId[vil.slot].index);
+    sm::settle_souls(gs, st, vil.slot, 40);
+    const sm::MacroHandle wc = make_woodcutter(st, 10.0f, 10.0f, vilId);
+    constexpr int kCrewPeople = 7;
+    sm::Inventory& crewBag =
+        (*sm::body_state<ecs::NpcInventory>(st, wc)).inv;
+    CHECK(sm::raise_flock_into_container(crewBag, kCrewPeople) == kCrewPeople,
+          "семь человек встали в инвентарь артели");
+    const int units = sm::work_units(crewBag);
+    CHECK(units == 1 + kCrewPeople && units < kTrees,
+          "предусловие: рабочих юнитов восемь (аватар и семь человек), и "
+          "деревьев на клетке больше, чем юнитов");
+
+    MacroNpcAiRuntime rt{};
+    reset_macro_npc_ai_runtime(rt, 50u);
+    const std::uint32_t site = cell_of(14, 10, layer.width);
+    int firstTake = 0;
+    for (int i = 0; i < 400 && firstTake == 0; ++i) {
+        const int before = int(layer.at(site));
+        MacroWorld mw{.gs = &gs, .store = &st, .treeGrid = &grid};
+        tick_macro_npc_ai(mw, rt, kAiTicks);
+        firstTake = before - int(layer.at(site));
+    }
+    CHECK(firstTake == units,
+          "ПЕРВЫЙ АКТ КРЮ СНЯЛ ПО ДЕРЕВУ НА РАБОЧЕГО ЮНИТА — восемь, не одно");
+    std::printf("  [акт крю] юнитов %d, первый акт снял %d деревьев из %d\n",
+                units, firstTake, kTrees);
 }
 
 void test_the_farmer_works_the_field() {
@@ -598,11 +654,30 @@ void test_the_miner_works_the_vein() {
     const int veinLost = 20 - veinLeft;
     const int storeGained = st.inventory[vil.slot].inv.count("iron");
     const int inBag = (*sm::body_state<ecs::NpcInventory>(st, e)).inv.count("iron");
+    // ЖЕЛЕЗО, УЖЕ СТАВШЕЕ ВЕЩЬЮ: что и сколько крафтить, решает модуль деревни
+    // (ряд M-486), и привезённое железо он вправе пустить в дело. Ведомость
+    // материи обязана видеть его и там — та же единая таблица состава, что у
+    // дерева выше (`item_parts@src/tables/items.h`), тот же один шаг.
+    const int ironIdx = sm::item_index("iron");
+    int ironInGoods = 0;
+    {
+        const auto cat = sm::item_catalog();
+        const sm::Inventory& shelf = st.inventory[vil.slot].inv;
+        for (int i = 0; i < int(cat.size()); ++i) {
+            const int have = shelf.count_of(i);
+            if (have <= 0) continue;
+            for (const sm::ItemPart& part : sm::item_parts(i))
+                if (int(part.def) == ironIdx)
+                    ironInGoods += have * int(part.count);
+        }
+    }
 
     CHECK(veinLost > 0, "the dig really drained the vein");
-    CHECK(storeGained > 0, "the haul reached the village store");
-    CHECK(veinLost == storeGained + inBag,
-          "CONSERVATION: vein loss == store gain + what still rides the bag");
+    CHECK(storeGained + ironInGoods > 0,
+          "the haul reached the village store — сырьём или уже вещью");
+    CHECK(veinLost == storeGained + inBag + ironInGoods,
+          "CONSERVATION: vein loss == сырьё на складе + сырьё в спине + "
+          "железо, уже ставшее вещью");
     // The world ran dry: 20 units at kGatherPerWorkerDay per trip is gone
     // within the 400 thinks — and by the ANNIHILATION law (owner,
     // 2026-08-28) the worked-out vein is a vein that no longer exists: the
@@ -610,7 +685,7 @@ void test_the_miner_works_the_vein() {
     // chronicle (below) is the only record of what stood here.
     CHECK(veinLeft == 0,
           "the worked-out mine reads 0 — its deposit is the feature's number");
-    CHECK(storeGained + inBag == 20,
+    CHECK(storeGained + inBag + ironInGoods == 20,
           "everything the vein ever held is accounted for");
 
     // The worked-out vein is a FACT of the world (S20.1): filed ONCE — the
@@ -961,6 +1036,7 @@ int main() {
     // zero-checks rule hunts, hidden one scope deeper.
     test_no_layer_no_chop();
     test_the_haul_is_not_delivered_from_the_porch();
+    test_a_crew_takes_one_object_per_unit();
     test_the_farmer_works_the_field();
     test_farmer_without_terrain_conjures_nothing();
     test_the_miner_works_the_vein();

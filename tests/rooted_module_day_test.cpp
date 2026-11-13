@@ -61,7 +61,7 @@
 #include "bus/store.h"         // parent_of / tithe_of / set_relation
 #include "bus/world_row.h"     // count_human_souls
 #include "macro/chronicle.h"
-#include "macro/econ_day.h"      // kCreaturesPerCityWorker, econ_produce_day
+#include "macro/econ_day.h"      // hunger_commodity_ordinal — счёт нужды
 #include "bus/interests.h"
 #include "macro/resource_field.h"
 #include "macro/squad.h"
@@ -80,10 +80,10 @@ using namespace sm;
 constexpr int kMap = 32;
 
 // РАЗМЕР КРЮ СЧИТАЕТСЯ ПРИБОРОМ САМ, ИЗ ТОЙ ЖЕ ПУБЛИЧНОЙ СТРОКИ, ИЗ КОТОРОЙ
-// его берёт модуль (`kCreaturesPerCityWorker@src/macro/econ_day.h`). Копии
-// числа здесь нет нарочно: прибитый литерал ломался бы на каждой
-// перекалибровке и не доказывал бы замысла (§8 п.4).
-constexpr int kCrew = kCreaturesPerCityWorker;
+// его берёт модуль (`kCrewSouls@src/macro/npc_ai.h`). Копии числа здесь нет
+// нарочно: прибитый литерал ломался бы на каждой перекалибровке и не
+// доказывал бы замысла (§8 п.4).
+constexpr int kCrew = kCrewSouls;
 
 // ПЕРИОД ПРОИЗВОДСТВЕННОГО АКТА — ТОЖЕ ВЫВОД, А НЕ ЦИТАТА: думка идёт раз в
 // `kAiTicks` мировых тиков, в сутках `kTicksPerDay` тиков.
@@ -213,11 +213,10 @@ struct Fixture {
     }
 };
 
-// ═════ 1. ДЕРЕВНЯ ПРОИЗВОДИТ ЧЕРЕЗ ДУМКУ, И РОВНО РАЗ В СУТКИ ════════════
-// Второго пути выпуска в мире нет: вызов `econ_produce_day` из
-// `tick_squads_day_@src/macro/world_tick.cpp` УМЕР этим же ломтём, а здесь
-// дневной такт мира не крутится вовсе — крутится ТОЛЬКО думка. Значит всякий
-// кирпич, найденный на полке, пришёл через модуль.
+// ═════ 1. ДЕРЕВНЯ КРАФТИТ ЧЕРЕЗ ДУМКУ, И ВИСИТ РОВНО ПО СДЕЛАННОМУ ═══════
+// Второго пути выпуска в мире нет: дневной такт мира здесь не крутится вовсе
+// — крутится ТОЛЬКО думка. Значит всякий кирпич, найденный на полке, пришёл
+// через модуль: он решил, что и сколько, а акт исполнила дверь.
 void test_village_produces_through_its_own_think() {
     Fixture f;
     const MacroHandle vil = f.rooted(SquadType::Village, 10, 10, 64);
@@ -271,42 +270,91 @@ void test_village_produces_through_its_own_think() {
     //  них — якорь по АВТОРСКОЙ строке каталога (`item_yield`), то есть
     //  утверждение более сильное, чем согласие двери с самой собой.)
 
-    // ПЕРИОД — ЭФФЕКТИВНЫЙ ДЕНЬ ИЗ ТОЙ ЖЕ ДВЕРИ, ЧТО ЧИТАЕТ ГЛАГОЛ (ломоть
-    // stateTimer M-369): база — «рабочий день тиками» Craft-строки, Spd и
-    // генерик домена труда ЭТОЙ анкеты его только укорачивают. «Ровно
-    // kThinksPerDay думок» был пересказом константы, умершей вместе со
-    // stateTimer; ожидание берётся из закона, не из литерала (§8 п.4).
+    // ВОССТАНОВЛЕНИЕ — РОВНО ПО СДЕЛАННОМУ (вердикт владельца 2026-11-13,
+    // CANON S25: «он будет рековери ровно столько скольок требовалось за
+    // крафт»): время одной партии на число партий, делённое на рабочих
+    // юнитов. Ожидание выводится из СТРОКИ действия и из инвентаря, не из
+    // литерала (§8 п.4).
     const CharacterSheet& sheet = f.st().sheet[vil.slot];
-    const int effTicks = recovery_steps(
-        std::uint32_t(kTicksPerDay), sheet.attributes, sheet.skills,
-        tempo_generic(ActionArchetype::Labour));
+    const ActionDef& act =
+        action_def(int(kRecipes[recipe_of_item(bricksIdx)].action));
+    const int oneBatch = recovery_steps(act.recoveryTicks, sheet.attributes,
+                                        sheet.skills,
+                                        action_tempo_generic(act));
     // ЯКОРЬ ИЗВНЕ ФОРМУЛЫ (§8 п.6 «тождество одной формулы слепо к самой
-    // формуле»): прибор ниже зовёт ТУ ЖЕ recovery_steps с теми же входами,
-    // что продакшен, и ошибка внутри неё сошлась бы сама с собой. Независимо
-    // известный факт мира: анкета МЕСТА делит день на 1.00, значит
-    // эффективный день РАВЕН календарному. Поплывёт дверь или анкета —
-    // краснеет ЭТОТ якорь и получает перевердикт, а не молчаливое согласие.
-    CHECK(effTicks == int(kTicksPerDay),
-          "якорь: эффективный день места равен календарному (делитель "
-          "анкеты места — ровно 1.00)");
-    const int periodThinks = (effTicks + kAiTicks - 1) / kAiTicks;
-    CHECK(periodThinks > 1,
-          "эффективный день места длиннее одной думки — иначе период акта "
-          "ниже не проверяется вовсе");
+    // формуле»): анкета поселения время не укорачивает (делитель ровно 1.00),
+    // а время партии на темп строки даёт рабочий день. Поплывёт дверь, анкета
+    // или строка — краснеет ЭТОТ якорь, а не молчаливое согласие.
+    CHECK(oneBatch == int(act.recoveryTicks)
+              && std::int64_t(oneBatch) * act.spRatePerDay
+                     == std::int64_t(kTicksPerDay),
+          "якорь: время партии кирпича на темп строки — ровно рабочий день, "
+          "и анкета поселения его не укорачивает");
+    const std::int64_t units = work_units(shelf);
+    const std::int64_t batches = clayGone;   // кирпич = {глина 1}
+    const std::int64_t hangExpected =
+        (std::int64_t(oneBatch) * batches + units - 1) / units;
+    const std::int64_t hang = f.st().runtime[vil.slot].recoverySteps;
+    CHECK(units == 65 && hang == hangExpected,
+          "ВОССТАНОВЛЕНИЕ РАВНО СДЕЛАННОМУ: время партии × партии ÷ рабочие "
+          "юниты (аватар и 64 души)");
+    CHECK(hang > 0 && hang < std::int64_t(batches) * oneBatch,
+          "и оно меньше, чем у одиночки за те же партии: юниты работают разом");
+    std::printf("  [акт деревни] партий %lld, юнитов %lld, восстановление %lld "
+                "тиков (одиночке было бы %lld)\n",
+                (long long)batches, (long long)units, (long long)hang,
+                (long long)(batches * oneBatch));
+    const int hangThinks = int((hang + kAiTicks - 1) / kAiTicks);
+    CHECK(hangThinks > 1,
+          "восстановление длиннее одной думки — иначе гейт ниже не проверяется");
 
-    // ВОССТАНОВЛЕНИЕ ЕСТЬ ЗАКОН, А НЕ ПОЖЕЛАНИЕ: до конца эффективного дня
-    // второго акта не бывает. Это и ловит «произвёл дважды за день» — то,
-    // чем кончались бы ДВА живых пути выпуска.
-    f.think_on(rt, periodThinks - 1);
+    // ВОССТАНОВЛЕНИЕ ЕСТЬ ЗАКОН, А НЕ ПОЖЕЛАНИЕ: пока оно висит, второго акта
+    // не бывает.
+    f.think_on(rt, hangThinks - 1);
     CHECK(shelf.count_of(bricksIdx) == bricksAfterOne,
-          "ЗА ОСТАТОК ЭФФЕКТИВНОГО ДНЯ НИ ОДНОЙ ЛИШНЕЙ ПАРТИИ: период акта "
-          "заряжает сам глагол, поэтому дважды за день выпуск невыразим");
+          "ПОКА ВИСИТ ВОССТАНОВЛЕНИЕ — НИ ОДНОЙ ЛИШНЕЙ ПАРТИИ: гейт занятости "
+          "заряжает сама дверь акта");
 
-    // А на следующей думке день истёк — и акт повторяется.
+    // А дальше модуль думает снова: либо новый акт (кирпича прибыло), либо
+    // крафтить уже нечего, и он ЗАПОМНИЛ, при каком инвентаре это решил.
+    // Гейт восстановления ожиданием не заряжается: его заряжает только
+    // способность (вердикт владельца 2026-11-13).
+    int guard = 0;
+    while (f.st().runtime[vil.slot].mem[kSettlementMemCraftSeen]
+               != std::uint32_t(shelf.revision() + 1)
+           && guard < 64 * kThinksPerDay) {
+        f.think_on(rt, 1);
+        ++guard;
+    }
+    const ecs::MacroNpcRuntime& vrt = f.st().runtime[vil.slot];
+    CHECK(vrt.mem[kSettlementMemCraftSeen]
+              == std::uint32_t(shelf.revision() + 1),
+          "ПОСЕЛЕНИЕ ДОШЛО ДО «КРАФТИТЬ НЕЧЕГО» И ЗАПОМНИЛО ЭТО СОСТОЯНИЕМ "
+          "ИНВЕНТАРЯ, а не таймером");
+    CHECK(vrt.recoverySteps == 0 || shelf.count_of(bricksIdx) > bricksAfterOne,
+          "ОЖИДАНИЕ НЕ ЗАРЯЖАЕТ ГЕЙТ ВОССТАНОВЛЕНИЯ: без акта сквад свободен");
+    const int bricksIdle = shelf.count_of(bricksIdx);
+    const int clayIdle = shelf.count_of(clayIdx);
+    f.think_on(rt, 3);
+    CHECK(shelf.count_of(bricksIdx) == bricksIdle
+              && shelf.count_of(clayIdx) == clayIdle,
+          "ИНВЕНТАРЬ НЕ МЕНЯЛСЯ — РЕШЕНИЕ ТО ЖЕ: думки идут, полка стоит");
+
+    // ПРИВЕЗЛИ СЫРЬЁ — ПОСЕЛЕНИЕ ВИДИТ ЕГО НА СЛЕДУЮЩЕЙ ЖЕ ДУМКЕ. Волокна на
+    // полке не было; ткань — второй крафт, на который у деревни есть право.
+    const int fibreIdx = item_index("fibre");
+    const int clothIdx = item_index("cloth");
+    CHECK(shelf.count_of(fibreIdx) == 0 && shelf.count_of(clothIdx) == 0,
+          "предусловие: ни волокна, ни ткани на полке нет");
+    CHECK(shelf.add_of(fibreIdx, 64), "волокно легло на полку");
+    CHECK(std::uint32_t(shelf.revision() + 1)
+              != vrt.mem[kSettlementMemCraftSeen],
+          "запись в инвентарь сдвинула его счётчик изменений");
     f.think_on(rt, 1);
-    CHECK(shelf.count_of(bricksIdx) > bricksAfterOne,
-          "НОВЫЙ ДЕНЬ — НОВЫЙ АКТ: восстановление истекло, выпуск пошёл "
-          "снова (иначе прибор охранял бы ОДИН выпуск за всю жизнь мира)");
+    CHECK(shelf.count_of(clothIdx) > 0,
+          "НОВОЕ СЫРЬЁ ПОШЛО В ДЕЛО СРАЗУ: ни суток, ни иной задержки");
+    std::printf("  [привезли волокно] ткани после одной думки: %d\n",
+                shelf.count_of(clothIdx));
 }
 
 // ═════ 2. ДЕРЕВНЯ РОЖАЕТ АРТЕЛЬ И ПЛАТИТ ДУШАМИ ═════════════════════════
@@ -566,17 +614,30 @@ void test_the_last_shift_of_hands_is_never_written_out() {
               "глина легла на полку — иначе «дом всё ещё производит» ниже "
               "нечем было бы проверить");
 
-        // ЯКОРЬ ВРЕДА — ПУБЛИЧНОЙ ДВЕРЬЮ ЗАКОНА, А НЕ ПЕРЕСКАЗОМ ЕЁ ФОРМУЛЫ
-        // (§8 п.5): дом без душ держит НОЛЬ верстаков, и дверь выпуска
-        // отвечает нулём партий НА ТОЙ ЖЕ материи и с ТОЙ ЖЕ анкетой. Без
-        // этого утверждения «артели нет» не отличалось бы от «а и не надо».
-        Inventory handless = shelf;
-        CHECK(econ_produce_day(handless, nullptr, f.st().sheet[vil.slot].skills,
-                               /*workers*/0, /*population*/0,
-                               faction_index("timaert")) == 0,
-              "ВОТ ЧЕМ ГРОЗИТ ВЫПИСАННАЯ ПОСЛЕДНЯЯ СМЕНА: та же полка и та же "
-              "анкета без рук дают НОЛЬ партий — значит гейт охраняет не "
-              "численность, а способность дома работать");
+        // ЯКОРЬ ВРЕДА — ПУБЛИЧНОЙ ДВЕРЬЮ РЕШЕНИЯ, А НЕ ПЕРЕСКАЗОМ ЕЁ ФОРМУЛЫ
+        // (§8 п.5): цена акта делится на рабочих юнитов, и дом, выписавший
+        // всех людей, остаётся с одним аватаром — тот же бар покупает ему
+        // меньше работы НА ТОЙ ЖЕ материи и с ТОЙ ЖЕ анкетой. Без этого
+        // утверждения «артели нет» не отличалось бы от «а и не надо».
+        // (Здесь стояло «без рук — ноль партий»: руками была квота станков,
+        // и дом без душ не крафтил вовсе. Квота снята 2026-11-13, ряд M-486.)
+        {
+            const ecs::Pools& bar = f.st().pools[vil.slot];
+            const Skills& skills = f.st().sheet[vil.slot].skills;
+            const auto pick_with = [&](int units) {
+                return settlement_craft_pick(shelf, nullptr, skills,
+                                             /*backG*/1000000,
+                                             faction_index("timaert"),
+                                             int(bar.maxSp), int(bar.maxSp),
+                                             units);
+            };
+            const CraftPick staffed = pick_with(1 + kCrew);
+            const CraftPick emptied = pick_with(1);
+            CHECK(emptied.batches > 0 && staffed.batches > emptied.batches,
+                  "ВОТ ЧЕМ ГРОЗИТ ВЫПИСАННАЯ ПОСЛЕДНЯЯ СМЕНА: та же полка, та "
+                  "же анкета и тот же бар без людей покупают меньше партий — "
+                  "гейт охраняет способность дома работать");
+        }
 
         f.think(kThinksPerDay + 2);
 

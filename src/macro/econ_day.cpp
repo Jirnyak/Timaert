@@ -3,12 +3,10 @@
 #include "macro/labour.h"   // souls_home / souls_flock — две двери душ места
 #include "macro/upkeep_window.h"   // upkeep_bill — ОДИН счёт содержания (M-140)
 
-#include "macro/economy.h"    // stock_price — ranking asks THE price law
 #include "tables/faction.h"    // монетная семья фракции — ординалы номиналов
 #include "macro/state.h"      // GameState — ведомость пишется в осёдлый сквад
 
 #include <algorithm>
-#include <bit>
 #include <cstring>
 #include <vector>   // обратный мост ординалов — одна таблица, один резолв
 
@@ -19,12 +17,11 @@ namespace {
 // Recipe/need ids resolve once, lazily, into index tables — hot loops then
 // touch integers only (the faction-registry pattern).
 struct ResolvedRecipe {
-    int output = -1;
     // КАТАЛОЖНЫЙ ординал выхода — и он, а не товарный, делает вещь. Рецепт
     // вправе выдавать строку, которой в товарной лестнице НЕТ: зелье — это
     // предмет со своим составом, а не ярус нужд (владелец 2026-09-18,
-    // «поушоны будем варить»). Товарный индекс остаётся для ФАКТА и для
-    // «сегодняшнего стола» — там, где речь о нуждах населения.
+    // «поушоны будем варить»). (Товарный ординал выхода стоял здесь колонкой
+    // без читателя и снят рядом M-486.)
     int outItem = -1;
     // The mint row (econ_day.h kMintOutput): output resolves to the town's
     // faction coin at run time. NOTHING else about it is special (owner
@@ -44,7 +41,6 @@ const ResolvedTables& resolved() {
         ResolvedTables r{};
         for (int i = 0; i < kRecipeCount; ++i) {
             ResolvedRecipe& rr = r.recipes[i];
-            rr.output = commodity_index(kRecipes[i].output);
             rr.outItem = item_index(kRecipes[i].output);
             rr.isMint = std::strcmp(kRecipes[i].output, kMintOutput) == 0;
         }
@@ -55,158 +51,29 @@ const ResolvedTables& resolved() {
 
 } // namespace
 
-int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
-                     const Skills& hands, int workers,
-                     int population,
-                     int mintFactionIdx,
-                     std::uint32_t* dayBaseTicksOut) {
-    if (dayBaseTicksOut) *dayBaseTicksOut = 0;
-    if (workers <= 0) return 0;
-    // The mint's outputs: the faction's own coin family, GOLD FIRST — the
-    // same metal-per-day tempo strikes 100× the value when the store holds
-    // gold, which is exactly the nominal's point. Each nominal consumes its
-    // OWN metal through the one craft door; a metal the town lacks simply
-    // runs zero batches.
+int craft_outputs(int mintFactionIdx, CraftOutput* out) {
     // Строки номиналов — ОРДИНАЛАМИ, резолв один раз на фракцию (ЗАКОН
-    // СЛОВАРЯ п.1: три хеш-поиска на КАЖДОЕ место-день были тиком, а не
-    // проводкой). Таблица выводится из того же реестра фракций.
+    // СЛОВАРЯ п.1); золото первым.
     const std::array<int, 3>& mintRows = faction_mint_rows(mintFactionIdx);
     const ResolvedTables& t = resolved();
-
-    // РАНЖИРОВАНИЕ РУК (CANON S10, владелец 2026-09-18: «руки идут туда, где
-    // выше стоимость выхода на рабочий день»). Ни порога «работать или нет»,
-    // ни перевода единиц: каждый рабочий день уходит в рецепт с наибольшей
-    // стоимостью выхода по ТЕКУЩЕЙ цене склада (стоимость/день против
-    // стоимость/день). Цена пересчитывается после каждого назначения —
-    // слиппедж производства: полка растёт → цена падает → руки сами
-    // переходят к следующему рецепту; сезон проедает склад → цена растёт →
-    // возвращаются. Потолок выпечки ВЫВОДИТСЯ из цены, а не назначается.
-    // Три прохода «стол/честные доли/остатки» умерли вместе с «нуждой»
-    // `1 << 30`: они были грубым ранжированием, где все рецепты равно ценны,
-    // — ~300 из 315 городских рук пекли товар, которого никто не просил,
-    // и мир стоял у печи (замер 2026-09-18: хлеба на 17 сезонов, металла
-    // нет).
-    //
-    // Кандидат = выходная строка каталога: одна на товарный рецепт, по одной
-    // на каждый номинал монетного (каждый номинал ест СВОЙ металл через ту
-    // же дверь крафта — прежняя семантика слота минта, развёрнутая в строки).
-    struct Cand {
-        int outIdx;      // выходная строка каталога
-        int commodity;   // товарный ординал для факта (-1 у монеты)
-        bool isMint;
-        int demand;      // сезонный спрос выхода ЗДЕСЬ — единый закон
-                         // (season_demand_for: остаток счёта + производный)
-        int perDay;      // партий на рабочий день (труд строки × КПД места)
-        int yield;       // единиц в партии
-        int base;        // ItemDef::value выхода
-        std::uint8_t action;   // ординал Craft-строки рецепта — база дня
-                               // (recoveryTicks) читается по нему
-    };
-    Cand cands[std::size_t(kRecipeCount) + 2];
-    int candCount = 0;
-    // THE population-efficiency law (owner 2026-08-30, CANON S10, ?31
-    // closed): КПД = log2(популяции)/4 — «город вдвое больше работает на
-    // четверть лучше». Integer log2 (bit width); темп = spRatePerDay
-    // Craft-строки рецепта (tables/actions.h — то же число, которым платит
-    // рука в SP), в ПАРТИЯХ.
-    const int popLog =
-        population > 1 ? (std::bit_width(unsigned(population)) - 1) : 0;
-    const auto push_cand = [&](int outIdx, int commodity, bool isMint,
-                               int ratePerDay, std::uint8_t actionOrd) {
-        // -1 = минт без монеты (не двор) или мёртвый id — fail closed.
+    int n = 0;
+    const auto push = [&](int outIdx, std::uint8_t action) {
+        // -1 = монетного двора нет или мёртвый id — fail closed.
         if (outIdx < 0) return;
         if (item_parts(outIdx).empty()) return;   // без состава нет партий
         const ItemDef* def = item_def_at(outIdx);
         if (!def || def->value <= 0) return;
-        cands[std::size_t(candCount++)] = Cand{
-            outIdx, commodity, isMint,
-            season_demand_for(outIdx, needDebt, population, hands, &store),
-            std::max(1, ratePerDay * popLog / 4),
-            item_yield(outIdx), def->value, actionOrd};
+        out[n++] = CraftOutput{outIdx, action};
     };
     for (int i = 0; i < kRecipeCount; ++i) {
-        // Право и темп — колонки Craft-строки рецепта: ОДНА строка на оба
-        // мира, город спрашивает её же, что и рука (M-146: гейт один).
-        const ActionDef& act = action_def(int(kRecipes[i].action));
-        if (!recipe_known(hands, act.gateSkill, int(act.minRank)))
-            continue;
         const ResolvedRecipe& rr = t.recipes[i];
         if (rr.isMint) {
-            for (int m = 0; m < 3; ++m)
-                push_cand(mintRows[m], -1, true, act.spRatePerDay,
-                          kRecipes[i].action);
+            for (int m = 0; m < 3; ++m) push(mintRows[m], kRecipes[i].action);
         } else {
-            push_cand(rr.outItem, rr.output, false, act.spRatePerDay,
-                      kRecipes[i].action);
+            push(rr.outItem, kRecipes[i].action);
         }
     }
-
-    int total = 0;
-    long long madeBatches[std::size_t(kRecipeCount) + 2] = {};
-    for (int w = 0; w < workers; ++w) {
-        // Верхний рецепт дня: стоимость выхода на рабочий день по текущей
-        // полке = цена единицы × единиц за день. Пересчёт каждый раз —
-        // O(рецептов) целых операций, партий за день не больше
-        // workers × perDay (предохранитель переполнения жив арифметикой).
-        long long bestScore = 0;
-        int best = -1;
-        int bestBatches = 0;
-        for (int c = 0; c < candCount; ++c) {
-            const Cand& cd = cands[std::size_t(c)];
-            int batches = cd.perDay;
-            for (const ItemPart& part : item_parts(cd.outIdx)) {
-                batches = std::min(batches, store.count_of(int(part.def))
-                                                / int(part.count));
-            }
-            if (batches <= 0) continue;
-            const long long score =
-                (long long)stock_price(cd.base, store.count_of(cd.outIdx),
-                                       cd.demand)
-                * batches * cd.yield;
-            if (score > bestScore) {
-                bestScore = score;
-                best = c;
-                bestBatches = batches;
-            }
-        }
-        if (best < 0) break;   // ни один рецепт не кормим сырьём — руки без дела
-        // THE craft door — the town makes goods and strikes coin exactly as
-        // a hand at the bench does (owner 2026-09-12: «город делает монеты
-        // через систему крафта по своему ИИ»). All-or-nothing lives in the
-        // door: a full store is a day that did not happen, the inputs never
-        // left, and no fact lies about goods that do not exist.
-        if (!craft_item(store, cands[std::size_t(best)].outIdx,
-                        bestBatches, hands, cands[std::size_t(best)].action)) {
-            // Склад не принял (переполнение слотов) — кандидат мёртв на
-            // сегодня, иначе рука зациклится на несостоявшемся дне.
-            cands[std::size_t(best)].perDay = 0;
-            continue;
-        }
-        madeBatches[std::size_t(best)] += bestBatches;
-        total += bestBatches;
-    }
-    // БАЗА ИСПОЛНЕННОГО ДНЯ — МАКСИМУМ `recoveryTicks` строк, чьи партии
-    // сегодня состоялись (ломоть stateTimer M-369: макро читает базу дня
-    // ИЗ СТРОК, а не из своей константы). День раздаёт руки по нескольким
-    // рецептам, поэтому «базы выбранного рецепта» не существует — место
-    // виснет столько, сколько велит самая длинная из ИСПОЛНЕННЫХ строк;
-    // сегодня весь Craft-подотрезок несёт ровно kTicksPerDay («рабочий
-    // день тиками», M-326), разойдутся строки — день честно последует за
-    // ними. Ноль = партий не было: решает звонящий (глагол `craft`).
-    if (dayBaseTicksOut) {
-        std::uint32_t base = 0;
-        for (int c = 0; c < candCount; ++c)
-            if (madeBatches[std::size_t(c)] > 0)
-                base = std::max(
-                    base,
-                    action_def(int(cands[std::size_t(c)].action))
-                        .recoveryTicks);
-        *dayBaseTicksOut = base;
-    }
-    // (ЗДЕСЬ СТОЯЛ ПРОХОД ДОКЛАДА `Minted`/`Produced` — он умер 2026-11-03
-    //  вместе со вторым фактным путём, некролог в econ_day.h. Выпуск назван
-    //  ВОЗВРАТОМ двери, и число это то же: чеканка и выпуск видны на полке.)
-    return total;
+    return n;
 }
 
 int econ_pay_debt(Inventory& store, std::int32_t* needDebt) {

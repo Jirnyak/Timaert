@@ -27,6 +27,7 @@
 #include "macro/settlement_score.h" // kSettlementReach — the home-field box
 #include "macro/spawners.h"
 #include "macro/squad.h"
+#include "macro/squad_act.h"   // акт сквада: цена и восстановление одной дверью
 #include "bus/store.h"
 #include "macro/threat_field.h"     // поле угрозы: скор патруля, страх артелей
 #include "macro/travel.h"
@@ -270,15 +271,9 @@ bool at_goal(std::uint32_t at, const ecs::SquadGoal& g) {
 // (Здесь жила `goal_xy` — «точка марша из адреса цели», пара флоатов для
 // ног. Ноги берут адрес цели как он лежит в колонке — индексом: M-462.)
 
-// Settle the fractional SP carry into whole points — BOTH directions (march
-// costs push it negative, rest regen positive), the player's fractional-carry
-// idiom. The bar clamps at maxSp above and keeps its DEBT below zero, exactly
-// like the player's (movement_cost.h apply_stamina_cost).
-void settle_sp_carry(ecs::Pools& pools) {
-    // The bar is a plain int now that it lives with its siblings — the int16
-    // narrowing this wrapper existed to own went with the field it guarded.
-    sm::settle_sp_carry(pools.sp, pools.maxSp, pools.spCarry);
-}
+// (Здесь жила обёртка `settle_sp_carry(Pools&)` — ею артель сама списывала SP
+// за цикл через дробный перенос марша. Единственный звонящий ушёл в дверь
+// акта (`charge_squad_act@src/macro/squad_act.h`), ряд M-486.)
 
 // Why a think is or is not dispatched. A corpse is skipped WHOLE; a camping
 // body skips only the behaviour — it still lives through the think, and the
@@ -1210,6 +1205,20 @@ public:
                          - homeInv.count_of(itemIdx);
         return lack > 0 ? lack : 0;
     }
+    // СЧЁТ НУЖДЫ СВОЕЙ СТРОКИ — вход оценки запаса (мост
+    // `row_side@src/macro/economy.h` читает остаток долга и только его);
+    // nullptr — мира нет.
+    const std::int32_t* need_account(std::uint16_t slot) const {
+        if (!ctx_.mw.store || slot == kMacroNoSlot) return nullptr;
+        return ctx_.mw.store->upkeep[slot].needDebt;
+    }
+    // ЧЬЮ МОНЕТУ ЧЕКАНИТ ЭТОТ СКВАД — своя колонка фракции (`faction_or_freefolk`
+    // сводит вольных к имперской семье; -1 — двора нет).
+    int coin_faction(std::uint16_t slot) const {
+        if (!ctx_.mw.store || slot == kMacroNoSlot) return -1;
+        return faction_or_freefolk(
+            std::int16_t(ctx_.mw.store->kind[slot].factionIdx));
+    }
     // ── МЕСТО: ОДИН ПЕРЕХОДНИК ОРДИНАЛА И ТРИ ЕГО КОЛОНКИ ────────────────
     std::uint16_t rooted_slot(int id) const { return rooted_slot_by_id(ctx_, id); }
     std::uint32_t rooted_id(std::uint16_t slot) const {
@@ -1406,12 +1415,38 @@ private:
 class AiPult {
 public:
     explicit AiPult(const TickContext& ctx) : ctx_(ctx) {}
-    // Транзакция «поле → контейнер» — одна дверь (ломоть 1 M-72).
-    int harvest(ResourceFieldId row, std::uint32_t cell, int hands,
-                std::uint32_t squadSlot) {
+    // ── АКТЫ СКВАДА: МОДУЛЬ НАЗЫВАЕТ «ЧТО И СКОЛЬКО», МЕХАНИКА — ЗДЕСЬ ────
+    // Право, цена SP (делённая на рабочих юнитов) и восстановление — одна
+    // дверь на всякий акт всякого сквада (`charge_squad_act@src/macro/squad_act.h`).
+    // Глагол решения не принимает и рода сквада не знает.
+    static ActSelf act_self(AiSelf& s) {
+        return ActSelf{s.pools, s.rt, s.sheet, s.bag};
+    }
+    // ДОБЫТЬ: транзакция «поле → свой контейнер» объёмом до `want` (одна дверь
+    // поля, ломоть 1 M-72), оплаченная по ФАКТУ взятого. Возвращает взятое;
+    // ноль — земля не дала, акта не было, и сквад не заплатил ничем.
+    int gather(AiSelf& s, const GathererDef& def, std::uint32_t cell,
+               int want) {
+        const ActionDef& act = action_def(int(def.action));
+        ActSelf self = act_self(s);
+        if (!squad_act_ready(self, act)) return 0;
         MacroWorld mw = ctx_.mw;  // the envelope, whole — never a
                                   // partial re-pick of its layers
-        return field_harvest(mw, row, cell, hands, squadSlot);
+        const int got = field_harvest(mw, def.row, cell, want, s.h.slot);
+        if (got > 0) charge_squad_act(self, act, got);
+        return got;
+    }
+    // СКРАФТИТЬ `batches` партий строки `outIdx` из своего инвентаря. Возвращает
+    // сделанные партии (0 — акта не было, мир не тронут).
+    int craft(AiSelf& s, int outIdx, int batches) {
+        ActSelf self = act_self(s);
+        return squad_craft(self, outIdx, batches);
+    }
+    // ЦЕНА АКТА В SP — вопрос политики модуля («хватит ли бара»): трудиться
+    // ли в долг, решает он, у двери отказа по усталости нет.
+    std::int64_t act_cost(AiSelf& s, std::uint8_t action,
+                          std::int64_t volume) const {
+        return squad_act_cost(act_self(s), action_def(int(action)), volume);
     }
     // Сдача каталожной строки домой — одна сделка deal (ломоть 2 M-72).
     void deliver_home(MacroHandle self, int defIdx) {
@@ -1607,63 +1642,10 @@ public:
                                  parent_of(st, s.h.slot));
         }
     }
-    // ── ПРОИЗВОДСТВЕННЫЙ АКТ — ОДИН ГЛАГОЛ НА ДНЕВНОЙ ВЫПУСК ─────────────
-    // «Произвёл» есть РАБОТА, и решает её модуль, а ИСПОЛНЯЕТ дверь: сама
-    // лестница рецептов (`econ_produce_day@src/macro/econ_day.h`) не
-    // переписана и не удвоена — глагол лишь собирает ей входы ИЗ СВОЕЙ
-    // СТРОКИ и закрывает акт восстановлением.
-    //
-    // ВСЕ ВХОДЫ — СВОИ КОЛОНКИ, МИРА В НИХ НЕТ НИ ОДНОГО: склад — свой
-    // контейнер, счёт — свой `needDebt`, руки — скилы СВОЕЙ анкеты (ЗАКОН
-    // АНКЕТЫ п.2: «анкета источник»), верстаки — своя паства на квоту
-    // `kCreaturesPerCityWorker`, семья монет — своя колонка фракции
-    // (`faction_or_freefolk` сводит вольных к имперской; -1 глушит минтовый
-    // рецепт fail-closed). Ноль душ держит НОЛЬ верстаков: `max(1, …)` без
-    // этого гейта печатал призрачного работника пустому складу.
-    //
-    // И ГЛАГОЛ САМ СТАВИТ ВОССТАНОВЛЕНИЕ — ОДНА ДВЕРЬ ЗАРЯДА (ЗАКОН
-    // СПОСОБНОСТИ п.4): период производства назначает не модуль, а эта
-    // точка, поэтому второй акт РАНЬШЕ КОНЦА ЭФФЕКТИВНОГО ДНЯ невыразим.
-    // (Здесь стояло «произвёл дважды за СУТКИ невыразимо» — арифметика
-    // этого не держит: резвый лист законно укорачивает день, Spd 64 + ранг
-    // Armsmaster 27 дают делитель 2; у анкеты МЕСТА делитель 1.00, так что
-    // сегодня период и есть календарные сутки — якорь на этом живом числе
-    // держит rooted_module_day_test.) Носитель —
-    // гейт занятости `recoverySteps@src/bus/squad_row.h`, тот же, что у
-    // всех актов сквада. БАЗА — ИЗ ИСПОЛНЕННЫХ CRAFT-СТРОК (их
-    // `recoveryTicks`, «рабочий день тиками» — M-326), пустой день пробует
-    // через kTicksPerDay; ЭФФЕКТИВНОЕ считает та же дверь
-    // `recovery_steps@src/bus/anketa.h`, что у руки внизу (CANON «БАЗОВОЕ И
-    // ЭФФЕКТИВНОЕ»: Spd и генерик домена труда только укорачивают день —
-    // второй двери темпа не существует).
-    //
-    // ЗВОНЯЩИЕ — `village_think` и `city_think` (ломоть 5а M-72), и они
-    // ЕДИНСТВЕННЫЕ: прежний вызов `econ_produce_day` из
-    // `tick_squads_day_@src/macro/world_tick.cpp` УМЕР тем же шагом, которым
-    // появились модули, потому что два пути к одному акту мира держать
-    // запрещено (§5 п.14). Лестница рецептов при этом НЕ переехала и НЕ
-    // удвоилась — она осталась там, где живут рецепты, и зовётся ДВЕРЬЮ.
-    // Замер приёмки: `bricks_produced` 0 → 46 073, `minted` 0 → 17 792.
-    // Возвращает единиц выпущено (ответ двери, не свой счёт).
-    int craft(AiSelf& s) {
-        MacroStore& st = store_ctx(ctx_);
-        const std::uint16_t slot = s.h.slot;
-        const int heads = count_human_souls(s.bag);
-        std::uint32_t dayBase = 0;
-        const int made = econ_produce_day(
-            s.bag, st.upkeep[slot].needDebt, st.sheet[slot].skills,
-            heads > 0 ? std::max(1, heads / kCreaturesPerCityWorker) : 0,
-            heads,
-            faction_or_freefolk(std::int16_t(st.kind[slot].factionIdx)),
-            &dayBase);
-        const CharacterSheet& sheet = st.sheet[slot];
-        charge_squad_recovery(
-            s.rt, std::uint32_t(recovery_steps(
-                      dayBase > 0 ? dayBase : std::uint32_t(kTicksPerDay),
-                      sheet.attributes, sheet.skills,
-                      tempo_generic(ActionArchetype::Labour))));
-        return made;
-    }
+    // (ЗДЕСЬ СТОЯЛ ГЛАГОЛ `craft(AiSelf&)` БЕЗ «ЧТО И СКОЛЬКО» — дневной
+    //  выпуск поселения: он звал общую лестницу `econ_produce_day`, и решала
+    //  она. Снят 2026-11-13 рядом M-486: решение — в модуле
+    //  (`settlement_craft_pick`), акт — глагол `craft(s, что, сколько)` выше.)
     // ── РОЖДЕНИЕ ПАРЫ РОДИТЕЛЬ↔РОЖДЁННЫЙ — ОДИН ГЛАГОЛ ──────────────────
     // «Родил» есть ПАРА, а не узел (вердикт владельца 2026-10-24 №3):
     // родитель называет СЕБЯ в данных рождаемого (`parentId`), и ребро
@@ -1870,8 +1852,7 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
                 if (pickOut >= 0) {
                     const std::int64_t unitG =
                         unit_mass_g(item_def_at(pickOut));
-                    const int workers =
-                        production_hands(count_human_souls(s.bag));
+                    const int workers = work_units(s.bag);
                     const std::int64_t freeG =
                         carry_capacity_g(s.rt, s.bag)
                         - inventory_mass_g(s.bag);
@@ -1915,45 +1896,32 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
             // решение примет Idle, работы из воздуха нет (fail-closed).
             if (!def) { go_home(); return; }
             ecs::Pools& pools = s.pools;
-            // WORK COSTS SP through the one stamina law (CANON S14.1): цена
-            // цикла — бар / темп СТРОКИ своего акта (пашня 32 в день, охота
-            // 8 — зверь честно вчетверо дороже за единицу; рука берёт один
-            // объект всегда, вердикт 2026-09-16). Та же строка ценит топор
-            // субмира (M-369). Пустой бар — домой отдыхать, не работа в ноль.
-            const ActionDef& act = action_def(int(def->action));
-            const int cycleCost = sp_price(int(pools.maxSp),
-                                           act.spRatePerDay);
-            if (int(pools.sp) < cycleCost) { go_home(); return; }
+            // ОБЪЁМ АКТА — ПО ОБЪЕКТУ НА РАБОЧЕГО ЮНИТА (владелец: «каждый
+            // работник рубит по дереву»): это решение модуля артели, и столько
+            // она просит у земли. Цену и восстановление платит дверь акта —
+            // цена строки, делённая на тех же юнитов, то есть цена одного
+            // объекта одиночки (пашня — темп 32, охота — 8: зверь честно
+            // вчетверо дороже). Руки — люди: лошадь в контейнере — спина и
+            // рот.
+            const int workers = work_units(s.bag);
+            // ПОЛИТИКА МОДУЛЯ: в долг артель не трудится (CANON S14.1,
+            // 2026-09-17: «артель не трудится до самоубийства») — пустой бар
+            // ведёт домой отдыхать.
+            const std::int64_t cycleCost =
+                pult.act_cost(s, def->action, workers);
+            if (std::int64_t(pools.sp) < cycleCost) { go_home(); return; }
             // Рабочее место — АДРЕС ЦЕЛИ: прибытие его не гасит (адрес есть
             // кэш предиката), работа читает его клеткой. (Здесь артель
             // когда-то строила шахту над голой жилой — вырезано 2026-09-22,
             // вердикт: фичи ставит генерация мира; артель только добывает.)
             const int tx = cell_x(g.cell, view.map_w());
             const int ty = cell_y(g.cell, view.map_w());
-            // Every soul in the squad works: headcount multiplies the
-            // cycle's yield at the squad's one fixed SP price (owner: «SP
-            // тратится столько же, добывают кратно больше»). Руки — ЛЮДИ:
-            // лошадь в контейнере — спина и рот, не рука.
-            const int workers = production_hands(count_human_souls(s.bag));
-            const int got =
-                pult.harvest(def->row, g.cell, workers, s.h.slot);
+            const int got = pult.gather(s, *def, g.cell, workers);
             const bool tookSomething = got > 0;
             if (got > 0) {
-                // The cycle is PAID the moment it produced — through the
-                // same fractional carry the march charges: work and walking
-                // drain one purse, which is the whole law.
-                pools.spCarry -= float(cycleCost);
-                settle_sp_carry(pools);
-                // АКТ СЛУЧИЛСЯ — ДОЛГ ПОВИС («сделал → вишу», ломоть
-                // stateTimer M-369): база — `recoveryTicks` СТРОКИ акта
-                // (жатва/рубка/жила — замах, поимка лошади — рабочий ДЕНЬ
-                // 8192), эффективное — та же дверь `recovery_steps`, что у
-                // руки внизу. Темп циклов задаёт СТРОКА, а не авторская
-                // пауза модуля.
-                charge_squad_recovery(
-                    s.rt, std::uint32_t(recovery_steps(
-                              act.recoveryTicks, s.sheet.attributes,
-                              s.sheet.skills, action_tempo_generic(act))));
+                // (Здесь модуль сам списывал SP и сам ставил восстановление —
+                //  теперь это делает дверь акта внутри `gather`: «сделал →
+                //  вишу» базой СТРОКИ, ряд M-486.)
                 // A DEPOSIT worked down to nothing is a fact of the world
                 // (FactKind::Drained); forest and wheat regrow by their own
                 // law, so their emptied cells write nothing. Факт судится
@@ -1973,7 +1941,7 @@ void artel_think(AiSelf& s, const AiView& view, AiPult& pult) {
             const bool backsFull =
                 gatherer_creature_yield(*def) == NPCType::Count
                 && back_full_of_yield();
-            const bool barSpent = int(pools.sp) < cycleCost;
+            const bool barSpent = std::int64_t(pools.sp) < cycleCost;
             const bool budgetSpent = tookSomething && !ecs::goal_spend(g);
             if (tookSomething && !backsFull && !barSpent && !budgetSpent) {
                 // Стоит у места и способен: следующий цикл запейсит долг
@@ -2844,43 +2812,164 @@ void ai_collector(MacroHandle e, ecs::MacroNpcRuntime& rt,
 // строк его снимало, поэтому преамбула уехала в головы ходоков ПЕРВОЙ
 // (первая половина M-307, ломоть 5а M-72).
 //
-// РАЗМЕР КРЮ — ОДНА СМЕНА РУК СВОЕГО ЖЕ ВЕРСТАКА. Число НЕ новое:
-// `kCreaturesPerCityWorker@src/macro/econ_day.h` — квота станка, одна рука на
-// столько душ, — и взято оно затем, что говорит о мире ровно нужное: подняв
-// крю, место платит за него РОВНО ОДНИМ своим работником, а крю приносит в
-// поле `production_hands` от восьми душ, то есть девять рук. Второй константы
-// «сколько душ в артели» рядом не заводится (ЗАКОН КОНСТАНТ).
-//
-// И ЭТО БАЛАНС, А НЕ АВТОРСКОЕ РЕШЕНИЕ (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ): прежний
-// аукцион ротации выводил размер иначе — `пул / число живых строк`, где пул
-// был `паства >> labourShift` (деревня 1/2, город 1/8), — и крю его жили
-// РОВНО ОДИН день, распускаясь на рассвете. Здесь крю живёт, пока жив, значит
-// калибровка у числа другая по построению; двигать его свободно.
-inline constexpr int kCrewSouls = kCreaturesPerCityWorker;
+// (Размер крю `kCrewSouls` объявлен в `npc_ai.h` — свидетель читает его оттуда.)
 
 // ДУШИ СВОБОДНЫ ТОЛЬКО ТЕ, БЕЗ КОТОРЫХ МЕСТО ОСТАЁТСЯ СТОЯТЬ, — отсюда
 // строгое «больше», а не «не меньше». Это не потолок численности (ЗАКОН
 // КЛАМПА): предел рождения даёт сама плата душами (`bleed_flock` в `spawn`),
 // а здесь сказано лишь то, что последнюю душу из дома не выписывают — иначе
-// место с ровно восемью головами ушло бы в крю ЦЕЛИКОМ и встало бы с нулём
-// рук у своих же верстаков, то есть перестало бы производить тем самым
-// решением, которым собиралось производить больше.
+// поселение с ровно восемью головами ушло бы в крю ЦЕЛИКОМ и осталось бы с
+// одним рабочим юнитом — аватаром: тот же бар покупал бы ему в девять раз
+// меньше работы, и производить больше оно собралось бы решением, которым
+// производить перестало.
 bool has_spare_souls_(const AiSelf& s) {
     return count_human_souls(s.bag) > kCrewSouls;
 }
 
-// ДНЕВНОЙ ГЕЙТ — ОДИН НА ОБА МОДУЛЯ ПО ФОРМЕ, НО СВОЙ У КАЖДОГО ПО ТЕЛУ
-// (DOD п.5: похожий код в двух модулях есть НОРМА). Период назначает не
-// модуль, а глагол (`AiPult::craft` заряжает гейт занятости сам — ЗАКОН
-// СПОСОБНОСТИ п.4), поэтому здесь только вопрос «занят ли»: слив кванта
-// живёт в свипе, и ход, на котором гейт дотаял до нуля, И ЕСТЬ новый день.
-// Решения рождения стоят за этим же гейтом нарочно: `AiView::has_child` —
-// холодный проход капом, и его шапка требует дневного каденса прямым
-// текстом.
+// КОГДА МОДУЛЬ ПОСЕЛЕНИЯ ДУМАЕТ О КРАФТЕ — ТРИ ВОПРОСА, ТРИ НОСИТЕЛЯ.
+// «Занят ли» после крафта назначает АКТ: он вешает восстановление по
+// сделанному (ЗАКОН СПОСОБНОСТИ п.4), и модуль лишь спрашивает гейт. «Есть ли
+// что решать» отвечает счётчик изменений своего инвентаря и свёртка счёта
+// нужды: решение зависит только от них (навыки неизменны, спина и юниты
+// выводятся из того же инвентаря), поэтому пока они не сдвинулись, прежнее
+// «крафтить нечего» верно, и думка стоит одного сравнения. Таймера нет
+// (вердикт владельца 2026-11-13, ряд M-497). «Круг решений о рождении и
+// погрузке» идёт раз в сутки своим словом (`AiView::has_child` — холодный
+// проход, и его шапка требует дневного каденса).
+//
+// Истина — «ещё жду»: слово убывает на думку.
+bool settlement_waits_(AiSelf& s, int word) {
+    std::uint32_t& left = s.rt.mem[word];
+    if (left == 0) return false;
+    left = sub_sat(left, std::uint32_t(1));   // угасание счёта ожидания
+    return true;
+}
+
+// Свёртка счёта нужды в слово памяти: порядок строк в неё входит, поэтому
+// перестановка долга между товарами её сдвигает.
+std::uint32_t need_account_word_(const std::int32_t* needDebt) {
+    if (!needDebt) return 0;
+    std::uint32_t h = 0;
+    for (int c = 0; c < kCommodityCount; ++c)
+        h = h * 31u + std::uint32_t(needDebt[c]);
+    return h;
+}
+
+} // namespace — решение о крафте судит свидетель, ему нужна внешняя связь
+
+// ── ЧТО И СКОЛЬКО КРАФТИТЬ — ЛОГИКА МОДУЛЯ ПОСЕЛЕНИЯ ───────────────────────
+// Вердикты владельца (CANON S25, 2026-11-13; п.4 вердиктов 2026-10-22):
+// решает модуль, механика акта одна на всех. Логика у деревни и города
+// сегодня общая — как `has_spare_souls_` выше; разойдётся — разойдётся здесь.
+//
+// ПРАВИЛО: крафт есть сделка с самим собой (вердикт 2026-11-13, «Б»). Выгода
+// лота — во сколько сквад ценит пришедший выход минус во сколько ценил ушедшие
+// входы, той же оценкой запаса, какой меряет торговля
+// (`lot_take@src/macro/economy.h`, `lot_loss@src/macro/economy.h`; нужду несёт
+// счёт). Из всего, на что есть право, берётся лот с наибольшей выгодой;
+// объём — не больше, чем кормят материалы и чем покупает нынешний бар SP (в
+// долг поселение не трудится). Ни один лот оценку не растит — крафтить
+// нечего. Потолка числом нет: выход копится — масса против спины роняет его
+// оценку; вход тает — его оценка растёт.
+//
+// ПОИСК ОБЪЁМА: выгода как функция числа партий вогнута (каждая следующая
+// даёт не больше предыдущей; ревью 2026-11-13 — 16 817 состояний точной
+// арифметикой), поэтому максимум один и ищется делением отрезка на трети с
+// перебором остатка. Оценка округлена до кванта, так что на плато поиск
+// вправе встать в пределах шума округления от максимума.
+CraftPick settlement_craft_pick(const Inventory& bag,
+                                const std::int32_t* needDebt,
+                                const Skills& skills, std::int64_t backG,
+                                int mintFactionIdx, int maxSp, int sp,
+                                int units) {
+    CraftOutput outs[kCraftOutputCap];
+    const int outCount = craft_outputs(mintFactionIdx, outs);
+    const auto side = [&](int idx) {
+        const ItemDef* d = item_def_at(idx);
+        return row_side(idx, d ? d->value : 0, needDebt, bag,
+                        d ? std::int64_t(item_mass_g(*d)) : 1, backG);
+    };
+    CraftPick best{};
+    for (int c = 0; c < outCount; ++c) {
+        const CraftOutput& o = outs[c];
+        const ActionDef& act = action_def(int(o.action));
+        if (!recipe_known(skills, act.gateSkill, int(act.minRank))) continue;
+        // Предел объёма: бар (цена строки, делённая на рабочих юнитов), и
+        // материалы — каждая часть состава.
+        std::int64_t most =
+            act_sp_reach(maxSp, act.spRatePerDay, std::int64_t(sp), units);
+        const auto parts = item_parts(o.outIdx);
+        RowSide partSide[kMaxItemParts];
+        int partCount = 0;
+        for (const ItemPart& part : parts) {
+            most = std::min<std::int64_t>(
+                most, bag.count_of(int(part.def)) / int(part.count));
+            partSide[partCount++] = side(int(part.def));
+        }
+        const int yield = item_yield(o.outIdx);
+        // Страж ширины двери материи: счёт выхода лежит в `int`.
+        most = std::min<std::int64_t>(
+            most, std::numeric_limits<int>::max() / std::max(1, yield));
+        if (most <= 0) continue;
+        const RowSide outSide = side(o.outIdx);
+        const auto gain = [&](std::int64_t b) {
+            std::int64_t spent = 0;
+            for (int k = 0; k < partCount; ++k)
+                spent += lot_loss(partSide[k], b * int(parts[std::size_t(k)].count));
+            return lot_take(outSide, b * yield) - spent;
+        };
+        std::int64_t lo = 1, hi = most;
+        while (hi - lo > 16) {
+            const std::int64_t third = (hi - lo) / 3;
+            const std::int64_t m1 = lo + third, m2 = hi - third;
+            if (gain(m1) < gain(m2)) lo = m1; else hi = m2;
+        }
+        for (std::int64_t b = lo; b <= hi; ++b) {
+            const std::int64_t g = gain(b);
+            if (g > best.gain) best = CraftPick{o.outIdx, int(b), g};
+        }
+    }
+    return best;
+}
+
+namespace {
+
+// КРАФТ-ДУМКА ПОСЕЛЕНИЯ: модуль решает по СВОЕЙ строке (инвентарь, счёт,
+// навыки, спина, бар, юниты) и зовёт глагол. Истина — акт состоялся.
+bool settlement_craft_(AiSelf& s, const AiView& view, AiPult& pult) {
+    const CraftPick pick = settlement_craft_pick(
+        s.bag, view.need_account(s.h.slot), s.sheet.skills,
+        carry_capacity_g(s.rt, s.bag), view.coin_faction(s.h.slot),
+        int(s.pools.maxSp), int(s.pools.sp), work_units(s.bag));
+    return pick.outIdx >= 0 && pult.craft(s, pick.outIdx, pick.batches) > 0;
+}
+
+// «Думать ли о крафте на этой думке» и сама думка. Запоминается состояние, в
+// котором крафтить было НЕЧЕГО; состоявшийся акт сам сдвигает счётчик
+// инвентаря, и помнить после него нечего. Пустой бар не запоминается: он
+// наполняется сам, без единой записи в инвентарь.
+void settlement_craft_think_(AiSelf& s, const AiView& view, AiPult& pult) {
+    if (squad_recovering(s.rt)) return;
+    const std::uint32_t seen = std::uint32_t(s.bag.revision() + 1);
+    const std::uint32_t debt = need_account_word_(view.need_account(s.h.slot));
+    if (s.rt.mem[kSettlementMemCraftSeen] == seen
+        && s.rt.mem[kSettlementMemCraftDebt] == debt) {
+        return;
+    }
+    if (settlement_craft_(s, view, pult) || s.pools.sp <= 0) return;
+    s.rt.mem[kSettlementMemCraftSeen] = seen;
+    s.rt.mem[kSettlementMemCraftDebt] = debt;
+}
 
 void village_think(AiSelf& s, const AiView& view, AiPult& pult) {
-    if (squad_recovering(s.rt)) return;
-    pult.craft(s);
+    // КРАФТ: что и сколько — решает модуль, акт вешает восстановление по
+    // сделанному. Решение пересчитывается, только когда изменились инвентарь
+    // или счёт нужды.
+    settlement_craft_think_(s, view, pult);
+    // КРУГ РЕШЕНИЙ О РОЖДЕНИИ — РАЗ В СУТКИ, и от занятости крафтом он не
+    // зависит: рождение — не способность.
+    if (settlement_waits_(s, kSettlementMemBirthWait)) return;
+    s.rt.mem[kSettlementMemBirthWait] = kAiThinksPerDay;
 
     // АРТЕЛЬ — ПРИ СВОБОДНЫХ ДУШАХ И ЖИВОЙ НУЖДЕ. Нужда спрашивается ТОЙ ЖЕ
     // дверью, которой артель выбирает, ЧТО добыть (`season_demand_for` под
@@ -2903,8 +2992,14 @@ void village_think(AiSelf& s, const AiView& view, AiPult& pult) {
 }
 
 void city_think(AiSelf& s, const AiView& view, AiPult& pult) {
-    if (squad_recovering(s.rt)) return;
-    pult.craft(s);
+    // КРАФТ: что и сколько — решает модуль, акт вешает восстановление по
+    // сделанному. Решение пересчитывается, только когда изменились инвентарь
+    // или счёт нужды.
+    settlement_craft_think_(s, view, pult);
+    // КРУГ РЕШЕНИЙ О РОЖДЕНИИ — РАЗ В СУТКИ, и от занятости крафтом он не
+    // зависит: рождение — не способность.
+    if (settlement_waits_(s, kSettlementMemBirthWait)) return;
+    s.rt.mem[kSettlementMemBirthWait] = kAiThinksPerDay;
 
     // СБОРЩИК — ТОЛЬКО ПРИ ВАССАЛЕ-ДОЛЖНИКЕ, И ВОПРОС ЭТОТ ЗАДАЁТСЯ СВОИМИ
     // РЁБРАМИ, А НЕ ПОИСКОМ ПО МИРУ (`AiView::owing_vassal` — обход своих

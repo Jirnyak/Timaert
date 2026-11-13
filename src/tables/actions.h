@@ -314,6 +314,15 @@ inline constexpr ActionDef kMagicActions[] = {
 // M-369): цикл артели заряжает гейт занятости своего сквада
 // (`recoverySteps@src/bus/squad_row.h`) эффективным от `recoveryTicks`
 // строки — обе стороны мира висят по одной колонке.
+// БАЗА ПАРТИИ КРАФТА ИЗ ТЕМПА: `perDay` партий одиночка делает за человеко-день
+// и за полный бар — значит одна партия занимает день ÷ темп. Авторится этим
+// помощником, чтобы два числа одной строки не разъехались; связь прибита
+// `static_assert` ниже (ЗАКОН КОНСТАНТ: параллельные числа одной величины
+// сводятся к одной).
+inline constexpr std::uint32_t craft_batch_ticks(int perDay) {
+    return std::uint32_t(kTicksPerDay / perDay);
+}
+
 inline constexpr ActionDef kLabourActions[] = {
     {.id = "reap_wheat",      .recoveryTicks = steps_from_seconds(1.5f),
      .costHp = 0, .costMp = 0,    .costSp = 0,
@@ -347,9 +356,9 @@ inline constexpr ActionDef kLabourActions[] = {
      .type = ActionType::Gather,  .scope = ActionScope::MacroOnly},
 
     // ── КРАФТ (ломоть «крафт + работа» M-369) ────────────────────────────
-    // ОДНА СТРОКА — ОБА МИРА: наверху день места назначает руки по этим же
-    // строкам (`econ_produce_day@src/macro/econ_day.cpp`), внизу верстак руки
-    // ценит партию тем же темпом (вкладка Craft, `src/ui/overlays.cpp`).
+    // ОДНА СТРОКА — ОБА МИРА: наверху сквад крафтит актом по этим же строкам
+    // (`squad_craft@src/macro/squad_act.h`), внизу рука ценит партию тем же
+    // темпом (вкладка Craft, `src/ui/overlays.cpp`).
     // Спецтаблица рецептов (`kRecipes@src/macro/econ_day.h`) ссылается сюда
     // ординалом и несёт только СВОЁ — ЧТО выходит из партии; состав и выход
     // остаются строкой каталога (ЗАКОН ДВУХ ТАБЛИЦ).
@@ -367,119 +376,124 @@ inline constexpr ActionDef kLabourActions[] = {
     // ремеслом нет (пять ремёсел — слово владельца), дерево квартирует у
     // masonry («что сложено и сколочено»), как мебель и резьба.
     //
-    // БАЗА — РАБОЧИЙ ДЕНЬ ТИКАМИ («сделал → вишу», M-326: выпуск падает
-    // мгновенно, затем висит восстановление; квантование партий отклонено
-    // владельцем). МАКРО ЧИТАЕТ ЭТУ БАЗУ с 2026-11-06 (ломоть stateTimer
-    // M-369): день места виснет на максимуме `recoveryTicks` исполненных
-    // Craft-строк (`econ_produce_day@src/macro/econ_day.cpp` отдаёт его
-    // глаголу `craft`), эффективное — та же дверь `recovery_steps`, что у
-    // руки внизу.
-    {.id = "mint_coin",       .recoveryTicks = std::uint32_t(kTicksPerDay),
+    // БАЗА — ВРЕМЯ ОДНОЙ ПАРТИИ ОДНОГО РАБОТНИКА: человеко-день, делённый на
+    // темп строки (`craft_batch_ticks` ниже). У колонки `recoveryTicks` один
+    // смысл на весь трудовой отрезок — время ОДНОЙ единицы действия (у добычи
+    // это замах на объект). Восстановление акта — база × объём ÷ рабочие
+    // юниты сквада (`charge_squad_act@src/macro/squad_act.h`): работа на
+    // полный бар одиночки занимает ровно рабочий день, одна партия — его
+    // долю. Вердикт владельца 2026-11-13, дословно: «он будет рековери ровно
+    // столько скольок требовалось за крафт … там большое рековери если много
+    // кравитишь». «Сделал → вишу» (M-326) цело: выпуск падает мгновенно,
+    // затем висит восстановление.
+    // (Здесь стояло «база — рабочий день тиками» на всякий акт крафта: день
+    // места висел целиком, сколько бы партий ни вышло. Снято тем же вердиктом.)
+    {.id = "mint_coin",       .recoveryTicks = craft_batch_ticks(4),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 4,
      .gateSkill = SkillId::Blacksmith, .minRank = 30,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "fire_bricks",     .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "fire_bricks",     .recoveryTicks = craft_batch_ticks(8),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 8,
      .gateSkill = SkillId::Masonry, .minRank = 1,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "weave_cloth",     .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "weave_cloth",     .recoveryTicks = craft_batch_ticks(4),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 4,
      .gateSkill = SkillId::Tailoring, .minRank = 1,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "forge_tools",     .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "forge_tools",     .recoveryTicks = craft_batch_ticks(2),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 2,
      .gateSkill = SkillId::Blacksmith, .minRank = 1,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "join_furniture",  .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "join_furniture",  .recoveryTicks = craft_batch_ticks(2),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 2,
      .gateSkill = SkillId::Masonry, .minRank = 10,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "build_wagon",     .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "build_wagon",     .recoveryTicks = craft_batch_ticks(1),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 1,
      .gateSkill = SkillId::Blacksmith, .minRank = 15,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "cut_jewelry",     .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "cut_jewelry",     .recoveryTicks = craft_batch_ticks(1),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 1,
      .gateSkill = SkillId::Blacksmith, .minRank = 20,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "carve_figure",    .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "carve_figure",    .recoveryTicks = craft_batch_ticks(2),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 2,
      .gateSkill = SkillId::Masonry, .minRank = 5,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "hew_statue",      .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "hew_statue",      .recoveryTicks = craft_batch_ticks(1),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 1,
      .gateSkill = SkillId::Masonry, .minRank = 25,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "brew_potion_hp",  .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "brew_potion_hp",  .recoveryTicks = craft_batch_ticks(8),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 8,
      .gateSkill = SkillId::Alchemy, .minRank = 1,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "brew_potion_mp",  .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "brew_potion_mp",  .recoveryTicks = craft_batch_ticks(8),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 8,
      .gateSkill = SkillId::Alchemy, .minRank = 10,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "forge_dagger",    .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "forge_dagger",    .recoveryTicks = craft_batch_ticks(4),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 4,
      .gateSkill = SkillId::Blacksmith, .minRank = 1,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "forge_sword",     .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "forge_sword",     .recoveryTicks = craft_batch_ticks(2),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 2,
      .gateSkill = SkillId::Blacksmith, .minRank = 5,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "forge_spear",     .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "forge_spear",     .recoveryTicks = craft_batch_ticks(2),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 2,
      .gateSkill = SkillId::Blacksmith, .minRank = 3,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "forge_axe",       .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "forge_axe",       .recoveryTicks = craft_batch_ticks(2),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 2,
      .gateSkill = SkillId::Blacksmith, .minRank = 5,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "forge_mace",      .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "forge_mace",      .recoveryTicks = craft_batch_ticks(2),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 2,
      .gateSkill = SkillId::Blacksmith, .minRank = 8,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "carve_staff",     .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "carve_staff",     .recoveryTicks = craft_batch_ticks(4),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 4,
      .gateSkill = SkillId::Masonry, .minRank = 1,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "carve_bow",       .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "carve_bow",       .recoveryTicks = craft_batch_ticks(2),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 2,
      .gateSkill = SkillId::Masonry, .minRank = 5,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "sew_leather",     .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "sew_leather",     .recoveryTicks = craft_batch_ticks(2),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 2,
      .gateSkill = SkillId::Tailoring, .minRank = 5,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "forge_buckler",   .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "forge_buckler",   .recoveryTicks = craft_batch_ticks(4),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 4,
      .gateSkill = SkillId::Blacksmith, .minRank = 3,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "bind_round_shield", .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "bind_round_shield", .recoveryTicks = craft_batch_ticks(2),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 2,
      .gateSkill = SkillId::Masonry, .minRank = 3,
      .type = ActionType::Craft,   .scope = ActionScope::MicroMacro},
-    {.id = "bind_tower_shield", .recoveryTicks = std::uint32_t(kTicksPerDay),
+    {.id = "bind_tower_shield", .recoveryTicks = craft_batch_ticks(1),
      .costHp = 0, .costMp = 0,    .costSp = 0,
      .spRatePerDay = 1,
      .gateSkill = SkillId::Masonry, .minRank = 8,
@@ -585,6 +599,19 @@ inline constexpr bool labour_segment_is_rate_priced() {
     }
     return true;
 }
+// ЧЕЛОВЕКО-ДЕНЬ КРАФТА — ОДНА ВЕЛИЧИНА В ДВУХ КОЛОНКАХ: темп (партий за день и
+// за бар) и база (тиков на партию) обязаны давать вместе рабочий день.
+inline constexpr bool craft_rows_tie_tempo_to_day() {
+    for (int i = 0; i < kActionLabourCount; ++i) {
+        const ActionDef& a = kLabourActions[std::size_t(i)];
+        if (a.type != ActionType::Craft) continue;
+        if (a.recoveryTicks != craft_batch_ticks(a.spRatePerDay)) return false;
+    }
+    return true;
+}
+static_assert(craft_rows_tie_tempo_to_day(),
+              "Craft-строка: база партии обязана быть рабочим днём, делённым "
+              "на темп той же строки");
 static_assert(labour_segment_is_rate_priced(),
               "трудовой отрезок: типы Gather|Craft непрерывными группами, "
               "цена темпом (бар/rate, плоские нули — значения), акт не "
