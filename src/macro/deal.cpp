@@ -182,7 +182,7 @@ int side_trade_power(const MacroStore& st, std::uint16_t slot) {
 StagedPayment stage_payment(const MacroStore& st, std::uint16_t payer,
                             std::uint16_t receiver, std::int64_t target,
                             std::int64_t ceiling, std::int64_t roomG,
-                            Offer offeredBy, std::span<DealLine> out) {
+                            Standing standing, std::span<DealLine> out) {
     StagedPayment r{};
     if (target <= 0 || out.empty()) return r;
     const Inventory& inv = st.inventory[payer].inv;
@@ -212,14 +212,19 @@ StagedPayment stage_payment(const MacroStore& st, std::uint16_t payer,
         RowSide taker = side_row(st, receiver, int(s.def), d.value);
         giver.net = giver.net - staged;
         taker.net = taker.net + staged;
-        // Покрыть остаток с запасом — если плательщик остаётся под своим
-        // потолком; иначе ровно столько, сколько укладывается в остаток.
-        LotQuote q = cover_lot(giver, taker, payerPower, receiverPower,
-                               avail, left, offeredBy);
-        if (q.units > 0
-            && r.giverWorth + lot_loss(giver, q.units) > ceiling)
-            q = fit_lot(giver, taker, payerPower, receiverPower, avail, left,
-                        offeredBy);
+        LotQuote q{};
+        if (standing == Standing::Giver) {
+            // Платит стоящий: цена взятия его единиц не выше остатка.
+            q = reach_lot(giver, taker, payerPower, receiverPower, avail, left);
+        } else {
+            // Платит пришедший: покрыть остаток с запасом — если он остаётся
+            // под своим потолком; иначе столько, сколько в остаток
+            // укладывается.
+            q = cover_lot(giver, taker, avail, left);
+            if (q.units > 0
+                && r.giverWorth + lot_loss(giver, q.units) > ceiling)
+                q = fit_lot(giver, taker, avail, left);
+        }
         if (q.units <= 0) continue;
         DealLine& l = out[std::size_t(r.lines++)];
         l = DealLine{};

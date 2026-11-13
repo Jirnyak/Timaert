@@ -320,9 +320,10 @@ namespace sm::ui
         // ДВЕ СТОРОНЫ, ДВЕ АНКЕТЫ (CANON S25; починено 2026-09-21): обе
         // стороны называют своё производное одной дверью trade_power_of.
         // (Пара обёрток trade_overlay_buy/sell_price жила здесь дословными
-        // дублями наценки и снесена M-415/Б3; с 2026-11-12 цену обеих корзин
-        // называет ядро бартера `lot_price@src/macro/economy.h` — то же, чем
-        // торгует корован: цена игрока и цена НПЦ склеены по построению.)
+        // дублями наценки и снесена M-415/Б3; цену обеих корзин называет
+        // ядро бартера — `take_price@src/macro/economy.h` и оценка стоящего
+        // `lot_take@src/macro/economy.h`, — то же, чем торгует корован: цена
+        // игрока и цена НПЦ склеены по построению.)
 
         // (Хелперы квестов objective_kind_label/quest_category_label
         //  умерли с квест-машиной — ломоть 3 M-72, вариант А.)
@@ -1909,19 +1910,27 @@ namespace sm::ui
                                 std::numeric_limits<int>::max();
                             return int(v > kMax ? kMax : v);
                         };
-                        // «Беру у субъекта»: отдаёт он, беру я, и единицу
-                        // против выгоды предлагаю я — плачу его оценку.
-                        const auto takeLot = [&](const ItemRef &ref, int n) {
-                            return as_price(lot_price(
-                                side_of(slot, ref), side_of(pf.slot, ref),
-                                theirPower, h.tradePct, n, Offer::Taker));
+                        // СТОЯЩИЙ — СУБЪЕКТ, ПРИШЁЛ Я (S25, форма цены
+                        // 2026-11-13). «Беру у субъекта»: его оценка плюс его
+                        // доля от неё — чем слабее моя анкета против его, тем
+                        // ближе к двойной.
+                        // `before` — сколько единиц этой же вещи корзина
+                        // уже несёт другими строками: строка считается от
+                        // состояния ПОСЛЕ них.
+                        const auto takeLot = [&](const ItemRef &ref, int before,
+                                                 int n) {
+                            RowSide side = side_of(slot, ref);
+                            side.net -= before;
+                            return as_price(
+                                take_price(side, n, theirPower, h.tradePct));
                         };
-                        // «Отдаю субъекту»: отдаю я, берёт он, и единицу
-                        // против выгоды предлагаю я — получаю его оценку.
-                        const auto giveLot = [&](const ItemRef &ref, int n) {
-                            return as_price(lot_price(
-                                side_of(pf.slot, ref), side_of(slot, ref),
-                                h.tradePct, theirPower, n, Offer::Giver));
+                        // «Отдаю субъекту»: засчитывается по ЕГО оценке; моя
+                        // оценка в цену не входит.
+                        const auto giveLot = [&](const ItemRef &ref, int before,
+                                                 int n) {
+                            RowSide side = side_of(slot, ref);
+                            side.net += before;
+                            return as_price(lot_take(side, n));
                         };
                         draw_barter_body(
                             "Subject stock", g_subjectTrade,

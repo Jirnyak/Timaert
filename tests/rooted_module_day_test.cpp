@@ -899,7 +899,7 @@ int traded_facts_at(const GameState& gs, int x, int y) {
 // есть «во сколько рейс ценит взятое минус во сколько ценил отданное», и у
 // стороны без нужды всякая единица излишка ценится не ниже пола (единица) и
 // не выше своей стоимости, а медь стоимостью в единицу — ровно в единицу
-// (свидетели `unit_worth@src/macro/economy.h` под компилятором). Значит
+// (свидетели оценки запаса в `src/macro/economy.h` под компилятором). Значит
 // прибыль ЗАЖАТА разностью трюма до и после сделки: снизу — пришедшее по полу
 // минус ушедшее по стоимости, сверху — пришедшее по стоимости минус ушедшее
 // по полу. Строки — словарь товаров и монета мира; что разность стоимости
@@ -992,8 +992,8 @@ void test_the_caravan_grows_its_hold_and_brings_it_home() {
             for (int k = 0; k < kCommodityCount; ++k)
                 need = need || f.st().upkeep[c].needDebt[k] != 0;
             if (need) ++needful;
-            // Ноль законен: выгода единицы, которую рынок ценит выше рейса
-            // на одну монету, делится вниз в пользу берущего (`gain_share`).
+            // Якорь двусторонний: прирост слова прибыли лежит между «пришедшее
+            // по полу минус ушедшее по стоимости» и обратным.
             if (grew >= a.low && grew <= a.high) ++anchored;
         }
         if (!traded && traded_facts_at(f.gs, 14, 10) > 0) {
@@ -1110,7 +1110,7 @@ void test_the_city_loads_a_light_glut_densest_first() {
             const RowSide child = side_row(f.st(), c, foodIdx, food->value);
             // Оценки сошлись: следующую единицу ребёнок уже не ценит выше
             // дома.
-            settled = gain_units(home, child, 1, /*strict=*/true) == 0;
+            settled = gain_units(home, child, 1, /*strict=*/true, 0, 1) == 0;
             deadLawBlind =
                 dead_unit(food->value, child.backG / foodG, 1)
                     <= dead_unit(food->value, cityFits, glut - 1);

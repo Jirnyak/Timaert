@@ -98,9 +98,10 @@ struct RowSide {
 // int64. Нужда растит оценку ОТРЕЗКА квадратом своей глубины, поэтому сумма
 // нужды насыщается на 2^60: при стоимости 12 800 (наибольшая в каталоге) —
 // начиная с нужды в 13 миллионов штук, которых сезонный счёт города не
-// держит. Насыщается СУММА ОТРЕЗКА, а не оценка запаса от нуля: одна единица
-// и малый лот считаются точно при любой глубине нужды, и суммы согласны с
-// точным сравнением единиц ниже.
+// держит. Насыщается СУММА ОТРЕЗКА: одна единица и малый лот считаются точно
+// при любой глубине нужды и согласны с точным сравнением единиц ниже. У
+// самого насыщения (отрезок дороже 2^60) части лота перестают складываться в
+// целое — это край стража, а не поведение мира.
 namespace price_detail {
 inline constexpr std::int64_t kCountGuard = std::int64_t(1) << 31;
 inline constexpr std::int64_t kBaseGuard = std::int64_t(1) << 29;
@@ -180,22 +181,44 @@ constexpr std::int64_t span_worth(const RowSide& r, std::int64_t lo,
     return worth;
 }
 
-// ТОЧНОЕ СРАВНЕНИЕ ДВУХ ДРОБЕЙ a/b и c/d (числители неотрицательны,
-// знаменатели положительны): −1, 0, +1. Ход алгоритма Евклида — целые части,
-// затем обратные остаткам: умножения нет, значит нет и переполнения.
-constexpr int frac_cmp(std::int64_t a, std::int64_t b, std::int64_t c,
+// ТОЧНОЕ СРАВНЕНИЕ ДВУХ ПРОИЗВЕДЕНИЙ a × b и c × d (все неотрицательны):
+// −1, 0, +1. Произведение двух int64 в int64 не ложится, поэтому оно считается
+// в две половины по 64 бита (`__int128` у MSVC нет). Этим сравниваются дроби
+// — a/c против d/b — без деления и без переполнения.
+struct Wide {
+    std::uint64_t hi = 0;
+    std::uint64_t lo = 0;
+};
+constexpr Wide wide_mul(std::uint64_t a, std::uint64_t b) {
+    constexpr std::uint64_t kLow = 0xffffffffu;
+    const std::uint64_t a0 = a & kLow, a1 = a >> 32;
+    const std::uint64_t b0 = b & kLow, b1 = b >> 32;
+    const std::uint64_t p00 = a0 * b0, p01 = a0 * b1, p10 = a1 * b0;
+    const std::uint64_t mid = (p00 >> 32) + (p01 & kLow) + (p10 & kLow);
+    return {a1 * b1 + (p01 >> 32) + (p10 >> 32) + (mid >> 32),
+            (mid << 32) | (p00 & kLow)};
+}
+constexpr int wide_cmp(std::int64_t a, std::int64_t b, std::int64_t c,
                        std::int64_t d) {
-    for (;;) {
-        const std::int64_t qa = a / b, qc = c / d;
-        if (qa != qc) return qa < qc ? -1 : 1;
-        const std::int64_t ra = a % b, rc = c % d;
-        if (ra == 0 || rc == 0) return ra == rc ? 0 : (ra == 0 ? -1 : 1);
-        // ra/b против rc/d  ⇔  d/rc против b/ra.
-        a = d;
-        c = b;
-        b = rc;
-        d = ra;
-    }
+    const Wide x = wide_mul(std::uint64_t(a), std::uint64_t(b));
+    const Wide y = wide_mul(std::uint64_t(c), std::uint64_t(d));
+    if (x.hi != y.hi) return x.hi < y.hi ? -1 : 1;
+    return x.lo == y.lo ? 0 : (x.lo < y.lo ? -1 : 1);
+}
+
+// СИЛЫ ДВУХ СТОРОН. Страж области определения: сила — до 2^30 (итог листа —
+// сотни); у двух сторон без силы делить нечем — пополам.
+struct Powers {
+    std::int64_t standing = 1;
+    std::int64_t visitor = 1;
+};
+constexpr Powers powers(std::int64_t standingPower, std::int64_t visitorPower) {
+    constexpr std::int64_t kPowerGuard = std::int64_t(1) << 30;
+    const std::int64_t s = standingPower < 0 ? 0
+        : (standingPower > kPowerGuard ? kPowerGuard : standingPower);
+    const std::int64_t v = visitorPower < 0 ? 0
+        : (visitorPower > kPowerGuard ? kPowerGuard : visitorPower);
+    return s + v == 0 ? Powers{1, 1} : Powers{s, v};
 }
 }  // namespace price_detail
 
@@ -256,17 +279,25 @@ constexpr std::int64_t worth_leaving(const RowSide& r, std::int64_t k) {
 }
 
 // СКОЛЬКО ТУТ ЕСТЬ ЧТО ДЕЛИТЬ: наибольшее k (не больше `cap`), при котором
-// k-ю единицу берущий ценит ВЫШЕ отдающего (`strict`) либо НЕ НИЖЕ. Оценка
-// берущего с каждой единицей не растёт, отдающего — не падает, поэтому граница
-// одна и ищется делением пополам; сравнение точное.
+// k-ю единицу берущий ценит ВЫШЕ (`strict`) либо НЕ НИЖЕ, чем отдающий,
+// помноженный на наценку стоящего (1 + его доля) — с какой бы стороны
+// стоящий ни стоял, порог один. Силы (0, 1) дают долю ноль: голое сравнение
+// двух оценок — так судит семья (дом и его ребёнок) и корзина оплаты. Оценка
+// берущего с каждой единицей не растёт, отдающего — не падает, поэтому
+// граница одна и ищется делением пополам; сравнение точное.
 constexpr std::int64_t gain_units(const RowSide& giver, const RowSide& taker,
-                                  std::int64_t cap, bool strict) {
+                                  std::int64_t cap, bool strict,
+                                  std::int64_t standingPower,
+                                  std::int64_t visitorPower) {
     using namespace price_detail;
+    const Powers p = powers(standingPower, visitorPower);
+    const std::int64_t sum = p.standing + p.visitor, full = sum + p.standing;
     const std::int64_t from = at_guard(giver.net), to = at_guard(taker.net);
     const auto gainful = [&](std::int64_t k) {
         const Worth tw = edge_worth(taker, to + k);
         const Worth gw = edge_worth(giver, from - k + 1);
-        const int c = frac_cmp(tw.num, tw.den, gw.num, gw.den);
+        // tw > gw × full/sum  ⇔  tw.num × (gw.den × sum) > gw.num × (tw.den × full)
+        const int c = wide_cmp(tw.num, gw.den * sum, gw.num, tw.den * full);
         return strict ? c > 0 : c >= 0;
     };
     std::int64_t lo = 0;
@@ -285,155 +316,200 @@ constexpr std::int64_t gain_units(const RowSide& giver, const RowSide& taker,
 // шага оценки на одной штуке не виден; меряется лот. Сравнение точное.
 constexpr bool gain_denser(std::int64_t gainA, std::int64_t massGA,
                            std::int64_t gainB, std::int64_t massGB) {
-    return price_detail::frac_cmp(gainA, massGA, gainB, massGB) > 0;
+    // Страж области определения: убыток не выгода, вещь без массы весит квант.
+    const auto gain = [](std::int64_t v) { return v < 0 ? std::int64_t(0) : v; };
+    const auto mass = [](std::int64_t v) { return v < 1 ? std::int64_t(1) : v; };
+    return price_detail::wide_cmp(gain(gainA), mass(massGB), gain(gainB),
+                                  mass(massGA)) > 0;
 }
 
 // ── ЯДРО: ЦЕНА ───────────────────────────────────────────────────────────
-// Единицы едут от отдающего к берущему, и ОДНА формула называет цену:
+// В сделке есть СТОЯЩИЙ (к нему пришли) и ПРИШЕДШИЙ (он сделку предложил).
+// Цену называет оценка СТОЯЩЕГО, и закон один:
 //
-//     цена = оценка НЕ ПРЕДЛАГАВШЕГО ± его доля × max(0, разница оценок)
-//     разница = оценка берущего − оценка отдающего
-//     доля    = его сила / (сила отдающего + сила берущего), остаток — ему
+//     взять у стоящего:   его оценка × (1 + его доля)
+//     отдать стоящему:    по его оценке
+//     доля стоящего = его сила / (его сила + сила пришедшего)
 //
-// Плюс — когда не предлагал отдающий (он получает свою оценку и долю сверх),
-// минус — когда не предлагал берущий (он платит свою оценку без своей доли).
-// Продавца, покупателя, «товара» и «платежа» в законе нет — есть единицы,
-// едущие в две стороны, и у каждой стороны одна оценка на все случаи. Из
-// одного сравнения разницы с нулём выходит всё остальное:
-//   · разница БОЛЬШЕ нуля — цена лежит между двумя оценками, и каждая сторона
-//     в выигрыше по собственной мерке; делит выгоду ОТНОШЕНИЕ сил (вердикт
-//     владельца 2026-11-12): всегда между нулём и единицей без клампа;
-//   · разница НОЛЬ — цена ровно эта оценка, сила тут не при чём;
-//   · разница МЕНЬШЕ нуля («против выгоды») — делить нечего, доля ноль, и
-//     цена есть ровно оценка не предлагавшего: предложивший отдать получает
-//     оценку берущего, предложивший взять платит оценку отдающего. Такая
-//     единица едет только волей предложившего, и платит за это он. Модули
-//     сквадов такого не предлагают; предложить может рука игрока;
-//   · НЕДЕЛИМЫЙ ОСТАТОК доли достаётся не предлагавшему — тем же законом
-//     «ПЛАТИТ ТОТ, КОМУ НАДО». Владелец 2026-11-13, дословно: «если можно
-//     элегантно без проблем совместить это с модельюю лапатит тот мому надо
-//     (когда знак меньшу нуля там где разница цен ичтот чтот) то также и в
-//     пользу того кому меньше надо по сили там чтобы не выдаивали не
-//     вымарщивали монеточки»; и о форме: «это идёт по той же формуле … чемр з
-//     сранвнеи еразнице цен с нулем? или ещё один костыль это важно». По той
-//     же: «кто предложил» читается в ОДНОМ месте — чья оценка якорь.
-// Не предлагавший никогда не теряет по своей оценке, поэтому круг «отдал n и
-// забрал n» не приносит ничего при ЛЮБЫХ силах, а дробить лот предложившему
-// в убыток: каждая часть стоит ему своего остатка (свидетели ниже).
-enum class Offer : std::uint8_t { Giver, Taker };
+// Замысел — словами владельца (2026-11-13, дословно — CANON S25, «ВЕРДИКТ
+// 2026-11-13 — ФОРМА ЦЕНЫ»): «если слабай харизма и скил то почти всегда
+// тороговля в убыток это дефолт это норм но если гдето есть большой градиент
+// типа в одном городе оч дешево типа ломится рынок а на другом краю страшный
+// дефицит то тогда прибыль получает даже полный 0 в торговле … в пределе такой
+// градиент цен будет перебивать пропрость в скиле … а всреднем скил решает как
+// раз таки на сделаках где разница не велика то есть смылс такой что как в
+// любой торговле купил где дешевле продал где дороже». Из формулы это выходит
+// само:
+//   · доля лежит между нулём (пришёл мастер) и единицей (пришёл полный ноль),
+//     поэтому купить стоит от ×1 до ×2 оценки стоящего, а продать — от ÷1 до
+//     ÷2. Заваленный город дёшев для всех, голодный дорог для всех;
+//   · рейс «купил — привёз — продал» прибылен, когда оценки двух рынков
+//     расходятся больше чем в (1 + доля)² раз: у мастера порог 1, у полного
+//     нуля — 4. Разница в порядок перебивает любой скилл, на малой разнице
+//     решает он, а без разницы слабый в убытке;
+//   · СТОЯЩИЙ НИКОГДА НЕ ТЕРЯЕТ ПО СВОЕЙ ОЦЕНКЕ: за отданное он получает не
+//     меньше, чем ценил его сам. Поэтому круг «взял и вернул» пришедшему в
+//     убыток при любых силах, и мастер нуба не обувает;
+//   · неделимый остаток доли достаётся стоящему (доля — вверх), а дробить лот
+//     пришедшему в убыток: каждая часть стоит ему своего остатка;
+//   · ОЦЕНКА ПРИШЕДШЕГО В ЦЕНУ НЕ ВХОДИТ. Она решает, едет ли вещь и сколько
+//     её едет: пришедший берёт, пока сам ценит единицу выше её цены.
+// ЗДЕСЬ СТОЯЛО «сила делит разницу двух оценок» (2026-11-12): слабый платил
+// почти СВОЮ оценку, заваленный город для него дёшев не был, прибыль рейса
+// равнялась «доля × градиент», и у полного нуля была нулём при любом
+// градиенте (ряд M-492). Формы со степенью или отношением оценок перебраны и
+// отклонены: «лот — сумма по единицам, округлить один раз» выживает только у
+// форм, ЛИНЕЙНЫХ по оценкам.
 
-// ДОЛЯ стороны с силой `own` против `other` от выгоды `gain` — ВВЕРХ: это доля
-// НЕ ПРЕДЛАГАВШЕГО, и неделимый остаток её. Выгоды нет — доли нет. Доля не
-// больше самой выгоды. Страж области определения: у двух сторон без силы
-// делить нечем — пополам.
-constexpr std::int64_t gain_share(std::int64_t gain, std::int64_t own,
-                                  std::int64_t other) {
-    if (gain <= 0) return 0;
-    const std::int64_t p = own < 0 ? 0 : own;
-    const std::int64_t q = other < 0 ? 0 : other;
-    if (p + q == 0) return gain / 2 + gain % 2;
-    // Деление прежде умножения: произведение gain × p не обязано лечь в
-    // int64, а частное и остаток — ложатся всегда.
-    const std::int64_t tail = gain % (p + q) * p;
-    return gain / (p + q) * p + tail / (p + q) + (tail % (p + q) != 0 ? 1 : 0);
+// КТО В ЭТОЙ КОРЗИНЕ СТОЯЩИЙ — тот, кто отдаёт, или тот, кто берёт.
+enum class Standing : std::uint8_t { Giver, Taker };
+
+// ДОЛЯ СТОЯЩЕГО от суммы `worth` — ВВЕРХ: неделимый остаток его. Деление
+// прежде умножения — произведение не обязано лечь в int64, частное и остаток
+// ложатся всегда.
+constexpr std::int64_t standing_share(std::int64_t worth,
+                                      std::int64_t standingPower,
+                                      std::int64_t visitorPower) {
+    if (worth <= 0) return 0;
+    const price_detail::Powers p =
+        price_detail::powers(standingPower, visitorPower);
+    const std::int64_t sum = p.standing + p.visitor;
+    const std::int64_t tail = worth % sum * p.standing;
+    return worth / sum * p.standing + tail / sum + (tail % sum != 0 ? 1 : 0);
 }
 
-// ЦЕНА ПО ДВУМ СУММАМ — что теряет отдающий (`loss`) и что приобретает
-// берущий (`take`): формула выше, целиком. Не убывает, когда обе суммы растут.
-constexpr std::int64_t span_price(std::int64_t loss, std::int64_t take,
-                                  std::int64_t giverPower,
-                                  std::int64_t takerPower, Offer offeredBy) {
-    return offeredBy == Offer::Taker
-        ? loss + gain_share(take - loss, giverPower, takerPower)
-        : take - gain_share(take - loss, takerPower, giverPower);
+// ЦЕНА ВЗЯТОГО: во что пришедшему обходится то, что стоящий ценит в `worth`.
+constexpr std::int64_t ask_price(std::int64_t worth, std::int64_t standingPower,
+                                 std::int64_t visitorPower) {
+    return worth <= 0
+        ? 0 : worth + standing_share(worth, standingPower, visitorPower);
+}
+// ОБРАТНЫЙ ВОПРОС: стоящему дали на `credit` его оценки — на сколько своей
+// оценки он отдаст взамен. Наибольшее `worth`, чья цена взятия не выше
+// `credit`: credit × (сила обоих) / (сила обоих + сила стоящего), вниз.
+constexpr std::int64_t ask_reach(std::int64_t credit, std::int64_t standingPower,
+                                 std::int64_t visitorPower) {
+    if (credit <= 0) return 0;
+    const price_detail::Powers p =
+        price_detail::powers(standingPower, visitorPower);
+    const std::int64_t sum = p.standing + p.visitor;
+    const std::int64_t full = sum + p.standing;
+    return credit / full * sum + credit % full * sum / full;
 }
 
-// ЦЕНА ЛОТА из `n` единиц — СУММА ПО ЕДИНИЦАМ (вердикт владельца
-// 2026-11-12). Разница оценок с каждой единицей не растёт, поэтому лот есть
-// выгодное начало и остаток против выгоды, и формула берётся от каждого из
-// двух: выгода начала не покрывает убытка остатка — остаток оплачивает
-// предложивший целиком.
-constexpr std::int64_t lot_price(const RowSide& giver, const RowSide& taker,
-                                 std::int64_t giverPower,
-                                 std::int64_t takerPower, std::int64_t n,
-                                 Offer offeredBy) {
-    if (n <= 0) return 0;
-    const std::int64_t head = gain_units(giver, taker, n, true);
-    const std::int64_t headLoss = lot_loss(giver, head);
-    const std::int64_t headTake = lot_take(taker, head);
-    return span_price(headLoss, headTake, giverPower, takerPower, offeredBy)
-         + span_price(lot_loss(giver, n) - headLoss,
-                      lot_take(taker, n) - headTake, giverPower, takerPower,
-                      offeredBy);
+// ЦЕНА ЛОТА, ВЗЯТОГО У СТОЯЩЕГО: `n` единиц его строки. Что стоящему ОТДАЛИ,
+// он ценит своей `lot_take` — отдельной двери у этого нет.
+constexpr std::int64_t take_price(const RowSide& standing, std::int64_t n,
+                                  std::int64_t standingPower,
+                                  std::int64_t visitorPower) {
+    return ask_price(lot_loss(standing, n), standingPower, visitorPower);
 }
 
-// ЛОТ ВЫГОДЫ — наибольшее число единиц (не больше `cap`), КАЖДУЮ из которых
-// берущий ценит строго выше отдающего и которые он способен оплатить
-// (`wallet` — его покупательная способность). Это ответ ядра на вопрос
-// «сколько тут есть что делить»; ВЕЗТИ ЛИ и ПРОДАВАТЬ ЛИ — решает модуль
-// звонящего.
+// ── ДВЕРИ ЛОТА ───────────────────────────────────────────────────────────
+// Сколько единиц едет — решает ПРИШЕДШИЙ своей оценкой (`gain_units` с
+// наценкой: берущий ценит единицу больше чем в (1 + доля) раз выше
+// отдающего); сколько за них причитается — называет оценка СТОЯЩЕГО. ВЕЗТИ ЛИ
+// и ПРОДАВАТЬ ЛИ — решает модуль звонящего.
 struct LotQuote {
     std::int64_t units = 0;   // сколько единиц едет
-    std::int64_t price = 0;   // сколько стоимости отдающий за них получает
+    std::int64_t price = 0;   // сколько это стоит в оценке стоящего
 };
-constexpr LotQuote gainful_lot(const RowSide& giver, const RowSide& taker,
-                               std::int64_t giverPower,
-                               std::int64_t takerPower, std::int64_t cap,
-                               std::int64_t wallet, Offer offeredBy) {
-    const auto price = [&](std::int64_t n) {
-        return lot_price(giver, taker, giverPower, takerPower, n, offeredBy);
-    };
-    std::int64_t lo = 0, hi = gain_units(giver, taker, cap, true);
+
+// ВЗЯТЬ У СТОЯЩЕГО: наибольшее число единиц (не больше `cap`), каждую из
+// которых пришедший ценит выше её цены и которые он способен оплатить
+// (`credit` — на сколько оценки стоящего он может дать взамен). Цена — цена
+// взятия.
+constexpr LotQuote take_lot(const RowSide& standing, const RowSide& visitor,
+                            std::int64_t standingPower,
+                            std::int64_t visitorPower, std::int64_t cap,
+                            std::int64_t credit) {
+    std::int64_t lo = 0;
+    std::int64_t hi = gain_units(standing, visitor, cap, true, standingPower,
+                                 visitorPower);
     while (lo < hi) {
         const std::int64_t mid = lo + (hi - lo + 1) / 2;
-        if (price(mid) <= wallet) lo = mid;
+        if (take_price(standing, mid, standingPower, visitorPower) <= credit)
+            lo = mid;
+        else hi = mid - 1;
+    }
+    return lo > 0
+        ? LotQuote{lo, take_price(standing, lo, standingPower, visitorPower)}
+        : LotQuote{};
+}
+
+// ОТДАТЬ СТОЯЩЕМУ: наибольшее число единиц (не больше `cap`), каждую из
+// которых стоящий ценит выше пришедшего с наценкой и за которые он способен
+// расплатиться (`reach` — на сколько своей оценки он может отдать взамен).
+// Цена — на сколько оценки стоящего пришедший вправе взять за них.
+constexpr LotQuote give_lot(const RowSide& visitor, const RowSide& standing,
+                            std::int64_t standingPower,
+                            std::int64_t visitorPower, std::int64_t cap,
+                            std::int64_t reach) {
+    const auto price = [&](std::int64_t n) {
+        return ask_reach(lot_take(standing, n), standingPower, visitorPower);
+    };
+    std::int64_t lo = 0;
+    std::int64_t hi = gain_units(visitor, standing, cap, true, standingPower,
+                                 visitorPower);
+    while (lo < hi) {
+        const std::int64_t mid = lo + (hi - lo + 1) / 2;
+        if (price(mid) <= reach) lo = mid;
         else hi = mid - 1;
     }
     return lo > 0 ? LotQuote{lo, price(lo)} : LotQuote{};
 }
 
-// ВСТРЕЧНАЯ КОРЗИНА — ТЕМ ЖЕ ЗАКОНОМ: сколько единиц строки (не больше
-// `avail`) отдающий должен отдать, чтобы их цена покрыла `target`. Едут только
-// единицы, которые берущий ценит НЕ НИЖЕ отдающего: отданное из-под своей
-// нужды или в забитую спину берущего в корзину не идёт — это не платёж, а
-// убыток одной из сторон. Не набралось — идёт всё, что годится. Последняя
-// единица вправе переплатить (бартер без сдачи — ряд M-487).
-constexpr LotQuote cover_lot(const RowSide& giver, const RowSide& taker,
-                             std::int64_t giverPower, std::int64_t takerPower,
-                             std::int64_t avail, std::int64_t target,
-                             Offer offeredBy) {
+// ── КОРЗИНА ОПЛАТЫ — ТЕМ ЖЕ ЗАКОНОМ, СТРОКА ЗА СТРОКОЙ ───────────────────
+// Едут только единицы, которые берущий ценит НЕ НИЖЕ отдающего: отданное
+// из-под своей нужды или в забитую спину берущего в корзину не идёт — это не
+// платёж, а убыток одной из сторон.
+//
+// ПЛАТИТ ПРИШЕДШИЙ. Его единицы стоящий засчитывает по своей оценке; покрыть
+// надо `target`. `cover_lot` — наименьшее число единиц, покрывающее цель (не
+// набралось — всё, что годится); последняя единица вправе переплатить (бартер
+// без сдачи — ряд M-487). `fit_lot` — без переплаты: наибольшее число единиц,
+// засчитанных не выше `budget`.
+constexpr LotQuote cover_lot(const RowSide& visitor, const RowSide& standing,
+                             std::int64_t avail, std::int64_t target) {
     if (target <= 0) return {};
-    const auto price = [&](std::int64_t n) {
-        return lot_price(giver, taker, giverPower, takerPower, n, offeredBy);
-    };
-    std::int64_t lo = 1, hi = gain_units(giver, taker, avail, false);
+    std::int64_t lo = 1, hi = gain_units(visitor, standing, avail, false, 0, 1);
     if (hi <= 0) return {};
     while (lo < hi) {
         const std::int64_t mid = lo + (hi - lo) / 2;
-        if (price(mid) >= target) hi = mid;
+        if (lot_take(standing, mid) >= target) hi = mid;
         else lo = mid + 1;
     }
-    return LotQuote{lo, price(lo)};
+    return LotQuote{lo, lot_take(standing, lo)};
 }
-
-// ТА ЖЕ КОРЗИНА, НО БЕЗ ПЕРЕПЛАТЫ: наибольшее число единиц (не больше
-// `avail`), чья цена НЕ ВЫШЕ `budget`. Плательщик зовёт её там, где покрыть
-// сумму с запасом значило бы отдать больше, чем он сам ценит взятое.
-constexpr LotQuote fit_lot(const RowSide& giver, const RowSide& taker,
-                           std::int64_t giverPower, std::int64_t takerPower,
-                           std::int64_t avail, std::int64_t budget,
-                           Offer offeredBy) {
+constexpr LotQuote fit_lot(const RowSide& visitor, const RowSide& standing,
+                           std::int64_t avail, std::int64_t budget) {
     if (budget <= 0) return {};
-    const auto price = [&](std::int64_t n) {
-        return lot_price(giver, taker, giverPower, takerPower, n, offeredBy);
-    };
-    std::int64_t lo = 0, hi = gain_units(giver, taker, avail, false);
+    std::int64_t lo = 0, hi = gain_units(visitor, standing, avail, false, 0, 1);
     while (lo < hi) {
         const std::int64_t mid = lo + (hi - lo + 1) / 2;
-        if (price(mid) <= budget) lo = mid;
+        if (lot_take(standing, mid) <= budget) lo = mid;
         else hi = mid - 1;
     }
-    return lo > 0 ? LotQuote{lo, price(lo)} : LotQuote{};
+    return lo > 0 ? LotQuote{lo, lot_take(standing, lo)} : LotQuote{};
+}
+// ПЛАТИТ СТОЯЩИЙ. Его единицы обходятся пришедшему в цену взятия, и стоящий
+// не отдаёт больше, чем на `budget`: наибольшее число единиц, чья цена
+// взятия не выше бюджета. Переплаты у стоящего не бывает.
+constexpr LotQuote reach_lot(const RowSide& standing, const RowSide& visitor,
+                             std::int64_t standingPower,
+                             std::int64_t visitorPower, std::int64_t avail,
+                             std::int64_t budget) {
+    if (budget <= 0) return {};
+    std::int64_t lo = 0, hi = gain_units(standing, visitor, avail, false, 0, 1);
+    while (lo < hi) {
+        const std::int64_t mid = lo + (hi - lo + 1) / 2;
+        if (take_price(standing, mid, standingPower, visitorPower) <= budget)
+            lo = mid;
+        else hi = mid - 1;
+    }
+    return lo > 0
+        ? LotQuote{lo, take_price(standing, lo, standingPower, visitorPower)}
+        : LotQuote{};
 }
 
 // ── СВИДЕТЕЛИ ЯДРА — ПОД КОМПИЛЯТОРОМ ────────────────────────────────────
@@ -461,19 +537,26 @@ constexpr RowSide after(RowSide r, std::int64_t delta) {
     r.net += delta;
     return r;
 }
-// Круг «отдал n — забрал те же n», и обе ноги предлагает первая сторона:
-// выручка минус выкуп.
-constexpr std::int64_t round_trip(const RowSide& a, const RowSide& b,
-                                  std::int64_t aPower, std::int64_t bPower,
-                                  std::int64_t n) {
-    return lot_price(a, b, aPower, bPower, n, Offer::Giver)
-         - lot_price(after(b, n), after(a, -n), bPower, aPower, n,
-                     Offer::Taker);
+// ЗАВАЛ ПО ПОЛУ: руда стоимостью 15 по четыре килограмма, у рынка её
+// четыреста штук при спине на шестнадцать — каждую он ценит в единицу. У
+// пустого купца спина на сто таких штук.
+inline constexpr RowSide kFlood{15, 400, 4 * kKg, 16 * 4 * kKg};
+inline constexpr RowSide kPicker{15, 0, 4 * kKg, 100 * 4 * kKg};
+// Круги пришедшего со стоящим `s`: получил минус уплатил, в оценке стоящего.
+// «Взял n и вернул»: уплатил цену взятия, за возврат причитается оценка
+// стоящего без его доли. «Отдал n и забрал»: наоборот.
+constexpr std::int64_t take_then_return(const RowSide& s, std::int64_t sp,
+                                        std::int64_t vp, std::int64_t n) {
+    return ask_reach(lot_take(after(s, -n), n), sp, vp) - take_price(s, n, sp, vp);
 }
-// Точное «берущий ценит k-ю единицу выше отдающего».
+constexpr std::int64_t give_then_retake(const RowSide& s, std::int64_t sp,
+                                        std::int64_t vp, std::int64_t n) {
+    return ask_reach(lot_take(s, n), sp, vp) - take_price(after(s, n), n, sp, vp);
+}
+// Точное «берущий ценит k-ю единицу выше отдающего» — без наценки.
 constexpr bool unit_gainful(const RowSide& giver, const RowSide& taker,
                             std::int64_t k) {
-    return gain_units(giver, taker, k, true) == k;
+    return gain_units(giver, taker, k, true, 0, 1) == k;
 }
 }  // namespace price_witness
 static_assert(worth_arriving(price_witness::after(price_witness::kEmpty, -1), 1) == 100
@@ -516,11 +599,11 @@ static_assert(lot_take(RowSide{5, 0, price_witness::kKg, 1000 * price_witness::k
               "единицы дало бы 500, по пять за штуку");
 static_assert(worth_arriving(price_witness::kCheapChild, 1)
               == worth_leaving(price_witness::kCheapHome, 1)
-              && gain_units(price_witness::kCheapHome, price_witness::kCheapChild, 25000, true) == 49
+              && gain_units(price_witness::kCheapHome, price_witness::kCheapChild, 25000, true, 0, 1) == 49
               && lot_take(price_witness::kCheapChild,
-                          gain_units(price_witness::kCheapHome, price_witness::kCheapChild, 25000, true))
+                          gain_units(price_witness::kCheapHome, price_witness::kCheapChild, 25000, true, 0, 1))
                  > lot_loss(price_witness::kCheapHome,
-                            gain_units(price_witness::kCheapHome, price_witness::kCheapChild, 25000, true)),
+                            gain_units(price_witness::kCheapHome, price_witness::kCheapChild, 25000, true, 0, 1)),
               "ЗЕРНИСТОСТЬ (M-490): завал в двадцатую долю спины на одной "
               "единице не виден — обе стороны ценят её в те же 5 квантов, — а "
               "на лоте виден: ребёнок ценит взятое выше, чем дом отданное. "
@@ -555,177 +638,164 @@ static_assert(lot_take(price_witness::kEmpty, 31) > lot_take(price_witness::kEmp
 static_assert(gain_denser(6, 49 * price_witness::kKg, 6, 50 * price_witness::kKg)
               && !gain_denser(6, 49 * price_witness::kKg, 6, 49 * price_witness::kKg)
               && gain_denser(std::int64_t(1) << 61, 3, (std::int64_t(1) << 61) - 1, 3)
-              && !gain_denser(0, 7, 1, std::int64_t(1) << 61),
+              && !gain_denser(0, 7, 1, std::int64_t(1) << 61)
+              && gain_denser((std::int64_t(1) << 33) - 1, std::int64_t(1) << 32,
+                             std::int64_t(1) << 33, (std::int64_t(1) << 33) - 1)
+              && !gain_denser(-5, 10, 1, 10),
               "выбор по массе: та же выгода на меньшей массе плотнее, равное не "
-              "плотнее равного; сравнение не переполняется у края int64");
-static_assert(gain_share(200, 13, 13) == 100
-              && gain_share(200, 1, 13) == 15
-              && gain_share(200, 13, 1) == 186
-              && gain_share(200, 0, 0) == 100
-              && gain_share(3, 0, 0) == 2
-              && gain_share(200, 5, 0) == 200
-              && gain_share(200, 0, 5) == 0
-              && gain_share(1, 1, 13) == 1
-              && gain_share(7, 510, 1) <= 7
-              && gain_share(0, 5, 5) == 0
-              && gain_share(-7, 5, 5) == 0,
-              "доля не предлагавшего — отношение сил, вверх (200/14 = 14.3 → 15, "
-              "200·13/14 = 185.7 → 186): между нулём и всей выгодой без клампа, "
-              "равные делят пополам, бессильный не получает ничего, неделимый "
-              "квант — ему; убыток не делится");
-static_assert(gain_share(std::int64_t(1) << 61, 510, 13)
-              < (std::int64_t(1) << 61),
-              "доля не переполняется на выгоде у края int64");
-static_assert(span_price(100, 300, 1, 13, Offer::Taker) == 115
-              && span_price(100, 300, 1, 13, Offer::Giver) == 114
-              && span_price(100, 300, 13, 13, Offer::Taker)
-                 == span_price(100, 300, 13, 13, Offer::Giver)
-              && span_price(300, 100, 1, 510, Offer::Giver) == 100
-              && span_price(300, 100, 510, 1, Offer::Taker) == 300
-              && span_price(100, 100, 510, 1, Offer::Taker) == 100
-              && span_price(100, 100, 1, 510, Offer::Giver) == 100,
-              "ОДНА ФОРМУЛА ЦЕНЫ: якорь — оценка не предлагавшего. Выгода 200 "
-              "при силах 1 против 13: слабый отдающий получает 115, если "
-              "предложил берущий, и 114, если предложил сам, — квант остатка "
-              "уходит не предлагавшему; где делится нацело, от предложившего не "
-              "зависит. Против выгоды — ровно оценка не предлагавшего при "
-              "любых силах; равные оценки — эта оценка");
-static_assert(lot_price(price_witness::kCoinPile, price_witness::kCoinNone, 1, 510, 50, Offer::Giver)
-              >= 50 * 90
-              && lot_price(price_witness::kCoinPile, price_witness::kCoinNone, 510, 1, 50, Offer::Giver)
-              <= 50 * 100,
-              "монета идёт около номинала при любых силах: куча в десятую "
-              "спины — всё, что на ней можно выторговать");
-static_assert(lot_price(price_witness::kTrader, price_witness::kHungry, 13, 13, 1, Offer::Giver)
-              == worth_leaving(price_witness::kTrader, 1)
-               + (worth_arriving(price_witness::kHungry, 1)
-                  - worth_leaving(price_witness::kTrader, 1)) / 2
-              && lot_price(price_witness::kTrader, price_witness::kHungry, 1, 13, 1, Offer::Giver)
-              == worth_leaving(price_witness::kTrader, 1)
-               + (worth_arriving(price_witness::kHungry, 1)
-                  - worth_leaving(price_witness::kTrader, 1)) / 14
-              && lot_price(price_witness::kTrader, price_witness::kHungry, 510, 13, 1, Offer::Giver)
-              < worth_arriving(price_witness::kHungry, 1)
-              && lot_price(price_witness::kTrader, price_witness::kHungry, 0, 13, 1, Offer::Giver)
-              == worth_leaving(price_witness::kTrader, 1)
-              && worth_leaving(price_witness::kTrader, 1) == 90,
-              "цена единицы лежит между оценкой отдающего и оценкой берущего; "
-              "бессильный получает свою оценку, сильнейший — меньше оценки рынка");
-static_assert(lot_price(price_witness::kSated, price_witness::kTrader, 13, 13, 1, Offer::Taker)
-              > worth_leaving(price_witness::kSated, 1)
-              && lot_price(price_witness::kSated, price_witness::kTrader, 13, 13, 1, Offer::Taker)
-              < worth_arriving(price_witness::kTrader, 1)
-              && lot_price(price_witness::kSated, price_witness::kTrader, 510, 1, 1, Offer::Taker)
-              > lot_price(price_witness::kSated, price_witness::kTrader, 1, 510, 1, Offer::Taker),
-              "ЗАВАЛ ТЕЧЁТ К СВОБОДНОЙ СПИНЕ: излишек рынка купец ценит выше "
-              "рынка, цена лежит между их оценками, и сила рынка её поднимает");
-static_assert(lot_price(price_witness::kHungry, price_witness::kTrader, 1, 510, 1, Offer::Taker)
-              == worth_leaving(price_witness::kHungry, 1)
-              && lot_price(price_witness::kHungry, price_witness::kTrader, 1, 510, 1, Offer::Giver)
-              == worth_arriving(price_witness::kTrader, 1)
-              && worth_leaving(price_witness::kHungry, 1)
-              > worth_arriving(price_witness::kTrader, 1),
-              "ПРОТИВ ВЫГОДЫ платит предложивший: взявший у голодного платит "
-              "оценку голодного, а отдавший нужное сам получает лишь оценку "
-              "берущего — сила тут не решает ничего");
-static_assert(price_witness::round_trip(price_witness::kTrader, price_witness::kHungry, 510, 1, 1) <= 0
-              && price_witness::round_trip(price_witness::kTrader, price_witness::kHungry, 510, 1, 9) <= 0
-              && price_witness::round_trip(price_witness::kTrader, price_witness::kSated, 510, 1, 9) <= 0
-              && price_witness::round_trip(price_witness::kSated, price_witness::kTrader, 510, 1, 20) <= 0
-              && price_witness::round_trip(price_witness::kTrader, price_witness::kHungry, 1, 510, 9) <= 0
-              && price_witness::round_trip(price_witness::kCoinPile, price_witness::kCoinNone, 510, 1, 500) <= 0
-              && price_witness::round_trip(price_witness::kCheapHome, price_witness::kCheapChild, 510, 1, 40) <= 0
-              && price_witness::round_trip(price_witness::kTrader, price_witness::kHungry, 13, 13, 9) <= 0,
-              "НАСОСА НЕТ: круг «отдал n — забрал n» не приносит ничего при "
-              "любом перевесе сил — на голодном и на сытом рынке, на завале и "
-              "на монете");
-static_assert(lot_price(price_witness::kTrader, price_witness::kHungry, 5, 13, 10, Offer::Giver)
-              >= lot_price(price_witness::kTrader, price_witness::kHungry, 5, 13, 4, Offer::Giver)
-               + lot_price(price_witness::after(price_witness::kTrader, -4),
-                           price_witness::after(price_witness::kHungry, 4), 5, 13, 6, Offer::Giver)
-              && lot_price(price_witness::kSated, price_witness::kTrader, 5, 13, 7, Offer::Taker)
-              <= lot_price(price_witness::kSated, price_witness::kTrader, 5, 13, 3, Offer::Taker)
-               + lot_price(price_witness::after(price_witness::kSated, -3),
-                           price_witness::after(price_witness::kTrader, 3), 5, 13, 4, Offer::Taker)
-              && lot_price(price_witness::kSated, price_witness::kTrader, 5, 13, 7, Offer::Taker)
-              < lot_price(price_witness::kSated, price_witness::kTrader, 5, 13, 1, Offer::Taker)
-               + lot_price(price_witness::after(price_witness::kSated, -1),
-                           price_witness::after(price_witness::kTrader, 1), 5, 13, 1, Offer::Taker)
-               + lot_price(price_witness::after(price_witness::kSated, -2),
-                           price_witness::after(price_witness::kTrader, 2), 5, 13, 5, Offer::Taker),
-              "ДРОБИТЬ ЛОТ — В УБЫТОК ПРЕДЛОЖИВШЕМУ: предложивший отдать "
-              "получает за части не больше, чем за целое; предложивший взять "
-              "платит за части не меньше — монетку дроблением не выжать");
-static_assert(lot_price(price_witness::kSated, price_witness::kTrader, 13, 13, 20, Offer::Taker)
-              == lot_price(price_witness::kSated, price_witness::kTrader, 13, 13, 7, Offer::Taker)
-               + lot_price(price_witness::after(price_witness::kSated, -7),
-                           price_witness::after(price_witness::kTrader, 7), 13, 13, 13, Offer::Taker)
-              && lot_price(price_witness::kSated, price_witness::kTrader, 13, 13, 20, Offer::Taker)
-              > lot_loss(price_witness::kSated, 20)
-              && lot_take(price_witness::kTrader, 20) < lot_loss(price_witness::kSated, 20),
-              "ЛОТ — СУММА ПО ЕДИНИЦАМ: смешанный лот (семь единиц выгодны, "
-              "остальные против выгоды) стоит ровно как его выгодное начало "
-              "плюс остаток. Убыток остатка выгоду начала не съедает: взявший "
-              "двадцать платит и долю на семи, и полную оценку отдающего на "
-              "тринадцати — больше, чем оценка отдающего за весь лот");
+              "плотнее равного; сравнение не переполняется у края int64 и не "
+              "теряет перенос средних разрядов ((2^33−1)² против 2^65); убыток "
+              "не плотнее выгоды");
+static_assert(standing_share(200, 13, 13) == 100
+              && standing_share(200, 13, 1) == 186
+              && standing_share(200, 1, 13) == 15
+              && standing_share(1, 13, 510) == 1
+              && standing_share(200, 0, 0) == 100
+              && standing_share(3, 0, 0) == 2
+              && standing_share(200, 13, 0) == 200
+              && standing_share(200, 0, 13) == 0
+              && standing_share(0, 13, 13) == 0
+              && standing_share(-7, 13, 13) == 0
+              && standing_share(std::int64_t(1) << 61, 13, 510) < (std::int64_t(1) << 61),
+              "доля стоящего — отношение сил, вверх (200·13/14 = 185.7 → 186, "
+              "200/14 = 14.3 → 15): между нулём и всей суммой без клампа, равные "
+              "— пополам, бессильный стоящий не берёт ничего, неделимый квант — "
+              "ему; у края int64 не переполняется");
+static_assert(ask_price(100, 13, 13) == 150 && ask_price(100, 13, 0) == 200
+              && ask_price(100, 0, 13) == 100 && ask_price(100, 13, 130) == 110
+              && ask_price(100, 13, 1) == 193 && ask_price(1, 13, 510) == 2
+              && ask_price(0, 13, 13) == 0,
+              "ЦЕНА ВЗЯТОГО — оценка стоящего × (1 + его доля): от ×1 у мастера "
+              "до ×2 у полного нуля; остаток — стоящему, поэтому и единственный "
+              "квант у него стоит два");
+static_assert(ask_reach(150, 13, 13) == 100 && ask_reach(149, 13, 13) == 99
+              && ask_reach(200, 13, 0) == 100 && ask_reach(100, 0, 13) == 100
+              && ask_reach(0, 13, 13) == 0
+              && ask_price(ask_reach(1000, 13, 7), 13, 7) <= 1000
+              && ask_price(ask_reach(1000, 13, 7) + 1, 13, 7) > 1000
+              && ask_reach(std::int64_t(1) << 62, 510, 13) < (std::int64_t(1) << 62),
+              "ОБРАТНЫЙ ВОПРОС: на сколько своей оценки стоящий отдаст за данное "
+              "ему — наибольшая сумма, чья цена взятия не выше данного; от ÷1 у "
+              "мастера до ÷2 у полного нуля");
+// ЗАМЫСЕЛ ВЛАДЕЛЬЦА ТРЕМЯ СВОЙСТВАМИ — числами: вещь, которую заваленный
+// город ценит в 20, а голодный в 500; рейс покупает в первом и продаёт во
+// втором. Сила города 13.
+static_assert(ask_reach(500, 13, 0) - ask_price(20, 13, 0) == 250 - 40
+              && ask_reach(500, 13, 1) - ask_price(20, 13, 1) == 259 - 39
+              && ask_reach(500, 13, 13) - ask_price(20, 13, 13) == 333 - 30
+              && ask_reach(400, 13, 0) == ask_price(100, 13, 0),
+              "БОЛЬШОЙ ГРАДИЕНТ ПЕРЕБИВАЕТ СКИЛЛ: на разнице в двадцать пять раз "
+              "прибыль получает и полный ноль (+210 против +303 у равного); его "
+              "порог — ровно вчетверо");
+static_assert(ask_reach(120, 13, 0) < ask_price(80, 13, 0)
+              && ask_reach(120, 13, 13) < ask_price(80, 13, 13)
+              && ask_reach(120, 13, 130) > ask_price(80, 13, 130),
+              "НА МАЛОЙ РАЗНИЦЕ РЕШАЕТ СКИЛЛ: полтора раза между рынками — нулю и "
+              "равному убыток, сильному прибыль");
+static_assert(ask_reach(100, 13, 13) < ask_price(100, 13, 13)
+              && ask_reach(100, 13, 1300) < ask_price(100, 13, 1300)
+              && ask_reach(100, 0, 13) == ask_price(100, 0, 13),
+              "БЕЗ РАЗНИЦЫ — В УБЫТОК: купить и продать по одной оценке стоит "
+              "пришедшему долю стоящего дважды, и даже мастеру — квант; вровень "
+              "только с бессильным стоящим");
+static_assert(take_price(price_witness::kSated, 1, 13, 13) == 75 + 38
+              && take_price(price_witness::kSated, 25, 13, 0)
+                 == 2 * lot_loss(price_witness::kSated, 25)
+              && take_price(price_witness::kHungry, 1, 13, 510)
+                 > worth_leaving(price_witness::kHungry, 1)
+              && ask_reach(lot_take(price_witness::kHungry, 1), 13, 510)
+                 < worth_arriving(price_witness::kHungry, 1),
+              "СТОЯЩИЙ НИКОГДА НЕ ТЕРЯЕТ ПО СВОЕЙ ОЦЕНКЕ: за отданное он получает "
+              "больше, чем ценил его сам, а за полученное отдаёт меньше — даже "
+              "против сильнейшего пришедшего и даже из-под своей нужды");
+static_assert(price_witness::take_then_return(price_witness::kSated, 13, 510, 9) < 0
+              && price_witness::take_then_return(price_witness::kHungry, 13, 510, 1) < 0
+              && price_witness::take_then_return(price_witness::kCoinPile, 1, 510, 500) < 0
+              && price_witness::take_then_return(price_witness::kCheapHome, 13, 0, 40) < 0
+              && price_witness::give_then_retake(price_witness::kHungry, 13, 510, 9) < 0
+              && price_witness::give_then_retake(price_witness::kSated, 1, 510, 20) < 0
+              && price_witness::give_then_retake(price_witness::kCoinNone, 13, 13, 500) < 0
+              && price_witness::take_then_return(price_witness::kSated, 0, 13, 9) == 0,
+              "НАСОСА НЕТ: круг «взял n и вернул» и круг «отдал n и забрал» "
+              "пришедшему в убыток при любом перевесе сил — на голодном и на "
+              "сытом рынке, на завале и на монете; вровень только с бессильным "
+              "стоящим");
+static_assert(take_price(price_witness::kSated, 7, 5, 13)
+              <= take_price(price_witness::kSated, 3, 5, 13)
+               + take_price(price_witness::after(price_witness::kSated, -3), 4, 5, 13)
+              && take_price(price_witness::kSated, 7, 5, 13)
+              < take_price(price_witness::kSated, 1, 5, 13)
+               + take_price(price_witness::after(price_witness::kSated, -1), 1, 5, 13)
+               + take_price(price_witness::after(price_witness::kSated, -2), 5, 5, 13)
+              && ask_reach(lot_take(price_witness::kHungry, 10), 5, 13)
+              >= ask_reach(lot_take(price_witness::kHungry, 4), 5, 13)
+               + ask_reach(lot_take(price_witness::after(price_witness::kHungry, 4), 6), 5, 13),
+              "ДРОБИТЬ ЛОТ — В УБЫТОК ПРИШЕДШЕМУ: взятое частями стоит не "
+              "меньше взятого разом, за отданное частями причитается не больше "
+              "— монетку дроблением не выжать");
+static_assert(gain_units(price_witness::kSated, price_witness::kTrader, 25, true, 13, 13) == 0
+              && gain_units(price_witness::kSated, price_witness::kTrader, 25, true, 13, 13000) == 7
+              && gain_units(price_witness::kTrader, price_witness::kHungry, 10, true, 13, 0) == 10
+              && gain_units(price_witness::kFlood, price_witness::kPicker, 400, true, 13, 0) == 86
+              && gain_units(price_witness::kFlood, price_witness::kPicker, 400, true, 0, 13) == 93
+              && gain_units(price_witness::kHungry, price_witness::kTrader, 10, true, 0, 1) == 0,
+              "СКОЛЬКО ЕДЕТ — РЕШАЕТ ОЦЕНКА ПРИШЕДШЕГО ПРОТИВ ЦЕНЫ: берущий берёт, "
+              "пока ценит единицу больше чем в (1 + доля) раз выше отдающего. "
+              "Малый завал (89 против 75) равному не выгоден, мастеру — семь "
+              "единиц; голодному везут всё; из завала, оценённого по полу, "
+              "полный ноль берёт 86 единиц (15·(100−k)/100 > 2), мастер — 93; "
+              "из-под чужой нужды брать невыгодно никому");
+static_assert(take_lot(price_witness::kFlood, price_witness::kPicker, 13, 0, 400, 1 << 30).units == 86
+              && take_lot(price_witness::kFlood, price_witness::kPicker, 13, 0, 400, 1 << 30).price == 2 * 86
+              && take_lot(price_witness::kFlood, price_witness::kPicker, 13, 0, 400, 51).units == 25
+              && take_lot(price_witness::kFlood, price_witness::kPicker, 13, 0, 400, 1).units == 0
+              && take_lot(price_witness::kFlood, price_witness::kPicker, 13, 0, 30, 1 << 30).units == 30,
+              "ВЗЯТЬ У СТОЯЩЕГО: все выгодные единицы по цене взятия (завал по "
+              "полу у полного нуля — два кванта за штуку); платёжеспособность "
+              "режет лот, груз — тоже; на один квант не купить ничего");
+static_assert(give_lot(price_witness::kTrader, price_witness::kHungry, 13, 13, 10, std::int64_t(1) << 40).units == 10
+              && give_lot(price_witness::kTrader, price_witness::kHungry, 13, 13, 10, std::int64_t(1) << 40).price
+                 == ask_reach(lot_take(price_witness::kHungry, 10), 13, 13)
+              && give_lot(price_witness::kTrader, price_witness::kHungry, 13, 13, 10, 3000).units == 1
+              && give_lot(price_witness::kTrader, price_witness::kHungry, 13, 13, 10, 3000).price <= 3000
+              && give_lot(price_witness::kTrader, price_witness::kSated, 13, 13, 10, std::int64_t(1) << 40).units == 0,
+              "ОТДАТЬ СТОЯЩЕМУ: голодному везут всё, и причитается за это его "
+              "оценка без его доли; стоящий, которому нечем расплатиться, "
+              "получает меньше; сытому, ценящему груз ниже купца, не везут");
+static_assert(cover_lot(price_witness::kCoinPile, price_witness::kCoinNone, 1000, 500).units == 5
+              && cover_lot(price_witness::kCoinPile, price_witness::kCoinNone, 1000, 500).price == 500
+              && cover_lot(price_witness::kCoinPile, price_witness::kCoinNone, 3, 5000).units == 3
+              && cover_lot(price_witness::kHungry, price_witness::kTrader, 40, 500).units == 0
+              && fit_lot(price_witness::kCoinPile, price_witness::kCoinNone, 1000, 499).units == 4
+              && fit_lot(price_witness::kCoinPile, price_witness::kCoinNone, 1000, 50).units == 0
+              && fit_lot(price_witness::kHungry, price_witness::kTrader, 40, 5000).units == 0,
+              "ПЛАТИТ ПРИШЕДШИЙ: его монету стоящий засчитывает по своей оценке "
+              "— пять монет покрывают пятьсот; тощий стак отдаётся весь; нужное "
+              "себе в платёж не идёт; без переплаты — четыре монеты, а на "
+              "бюджет меньше монеты не идёт ни одной");
+static_assert(reach_lot(price_witness::kCoinPile, price_witness::kCoinNone, 13, 13, 1000, 500).units == 3
+              && reach_lot(price_witness::kCoinPile, price_witness::kCoinNone, 13, 13, 1000, 500).price <= 500
+              && take_price(price_witness::kCoinPile, 4, 13, 13) > 500
+              && reach_lot(price_witness::kCoinPile, price_witness::kCoinNone, 0, 13, 1000, 500).units == 5
+              && reach_lot(price_witness::kHungry, price_witness::kTrader, 13, 13, 40, 1 << 30).units == 0,
+              "ПЛАТИТ СТОЯЩИЙ: его монета обходится пришедшему в цену взятия, и "
+              "больше бюджета он не отдаёт — на пятьсот равный получает три "
+              "монеты из кучи (каждая стоит ему 90 и ещё половину), мастер — "
+              "пять; нужным себе стоящий не платит");
 static_assert(worth_leaving(RowSide{12800, -100000000, price_witness::kKg, price_witness::kBack}, 1)
               == 12800 * std::int64_t(100000001)
-              && lot_price(RowSide{12800, -100000000, price_witness::kKg, price_witness::kBack},
-                           RowSide{12800, 0, price_witness::kKg, 10 * price_witness::kBack},
-                           0, 13, 1, Offer::Taker)
+              && take_price(RowSide{12800, -100000000, price_witness::kKg, price_witness::kBack}, 1, 0, 13)
                  == 12800 * std::int64_t(100000001)
-              && lot_price(RowSide{12800, 0, price_witness::kKg, price_witness::kBack},
-                           RowSide{12800, -(std::int64_t(1) << 27), price_witness::kKg, price_witness::kBack},
-                           1, 0, std::int64_t(1) << 27, Offer::Taker) > 0
+              && take_price(RowSide{12800, 0, price_witness::kKg, price_witness::kBack},
+                            std::int64_t(1) << 27, 13, 0) > 0
+              && ask_reach(lot_take(RowSide{12800, -(std::int64_t(1) << 27), price_witness::kKg, price_witness::kBack},
+                                    std::int64_t(1) << 27), 13, 0) > 0
               && worth_arriving(RowSide{100, (std::int64_t(1) << 31) - 2, 1, 1000}, 1) == 1,
               "СТРАЖ СОГЛАСОВАН С ТОЧНЫМ СРАВНЕНИЕМ: единица из-под нужды в сто "
               "миллионов штук стоит стороне ровно стоимость × (нужда + 1), и "
-              "взять её даром нельзя; лот через глубокую нужду считается без "
+              "взять её дешевле нельзя; лот через глубокую нужду считается без "
               "переполнения (иначе это выражение не было бы константой); у края "
               "счётчика стака пол цел");
-static_assert(cover_lot(RowSide{3, 12, 10, 209}, RowSide{3, -2, 10, 29}, 2, 13, 3, 100, Offer::Giver).units == 3
-              && cover_lot(RowSide{3, 12, 10, 209}, RowSide{3, -2, 10, 29}, 2, 13, 3, 100, Offer::Giver).price
-                 == lot_price(RowSide{3, 12, 10, 209}, RowSide{3, -2, 10, 29}, 2, 13, 3, Offer::Giver)
-              && fit_lot(RowSide{3, 56, 1, 50}, RowSide{3, 27, 1, 100}, 2, 0, 40, 1 << 20, Offer::Taker).price
-                 == lot_price(RowSide{3, 56, 1, 50}, RowSide{3, 27, 1, 100}, 2, 0,
-                              fit_lot(RowSide{3, 56, 1, 50}, RowSide{3, 27, 1, 100}, 2, 0, 40, 1 << 20, Offer::Taker).units,
-                              Offer::Taker)
-              && gainful_lot(price_witness::kSated, price_witness::kTrader, 13, 1, 25, 1 << 30, Offer::Taker).price
-                 == lot_price(price_witness::kSated, price_witness::kTrader, 13, 1, 7, Offer::Taker),
-              "КОРЗИНА И ЛОТ — ОДНА ЦЕНА: сколько бы единиц ни назвали двери "
-              "лота, стоят они ровно столько, сколько называет цена лота, — и "
-              "там, где в лот попали единицы «вровень» (точки найдены ревью "
-              "дифа: своя копия формулы давала предложившему лишний квант)");
-static_assert(gainful_lot(price_witness::kTrader, price_witness::kHungry, 1, 13, 10, 1 << 30, Offer::Giver).units == 10
-              && gainful_lot(price_witness::kTrader, price_witness::kHungry, 1, 13, 7, 1 << 30, Offer::Giver).units == 7
-              && gainful_lot(price_witness::kTrader, price_witness::kHungry, 1, 13, 10, 0, Offer::Giver).units == 0
-              && gainful_lot(price_witness::kHungry, price_witness::kTrader, 1, 13, 10, 1 << 30, Offer::Giver).units == 0,
-              "лот выгоды — все единицы, которые берущий ценит выше отдающего, "
-              "не больше груза; пустому кошельку продавать нечего, а из-под "
-              "чужой нужды брать невыгодно");
-static_assert(gainful_lot(price_witness::kSated, price_witness::kTrader, 13, 1, 25, 1 << 30, Offer::Taker).units == 7
-              && gainful_lot(price_witness::kTrader, price_witness::kHungry, 1, 13, 10, 1000, Offer::Giver).units
-                 < gainful_lot(price_witness::kTrader, price_witness::kHungry, 1, 13, 10, 5000, Offer::Giver).units
-              && gainful_lot(price_witness::kTrader, price_witness::kHungry, 1, 13, 10, 1000, Offer::Giver).price <= 1000,
-              "завал уходит к свободной спине, пока оценки не сойдутся (75+k−1 "
-              "против 89−k+1: семь единиц строго выгодны, восьмая — вровень), — "
-              "не весь; покупательная способность берущего режет лот");
-static_assert(cover_lot(price_witness::kCoinPile, price_witness::kCoinNone, 13, 13, 1000, 500, Offer::Giver).price >= 500
-              && cover_lot(price_witness::kCoinPile, price_witness::kCoinNone, 13, 13, 1000, 500, Offer::Giver).units <= 6
-              && cover_lot(price_witness::kCoinPile, price_witness::kCoinNone, 13, 13, 3, 5000, Offer::Giver).units == 3
-              && cover_lot(price_witness::kHungry, price_witness::kTrader, 13, 13, 40, 500, Offer::Giver).units == 0
-              && cover_lot(price_witness::kSated, price_witness::kTrader, 13, 13, 25, 300, Offer::Giver).price >= 300,
-              "встречная корзина: монета покрывает сумму малым числом штук, "
-              "тощий стак отдаётся весь, нужное себе в платёж не идёт, а "
-              "излишек — идёт");
-static_assert(fit_lot(price_witness::kCoinPile, price_witness::kCoinNone, 13, 13, 1000, 500, Offer::Giver).price <= 500
-              && fit_lot(price_witness::kCoinPile, price_witness::kCoinNone, 13, 13, 1000, 500, Offer::Giver).units >= 5
-              && fit_lot(price_witness::kCoinPile, price_witness::kCoinNone, 13, 13, 1000, 50, Offer::Giver).units == 0
-              && fit_lot(price_witness::kCoinPile, price_witness::kCoinNone, 13, 13, 3, 5000, Offer::Giver).units == 3
-              && fit_lot(price_witness::kSated, price_witness::kTrader, 13, 13, 25, 300, Offer::Giver).price <= 300
-              && fit_lot(price_witness::kHungry, price_witness::kTrader, 13, 13, 40, 5000, Offer::Giver).units == 0,
-              "корзина без переплаты: цена не выше бюджета, штука дороже "
-              "бюджета не идёт вовсе, нужное себе не идёт");
 
 // ── КРИВАЯ ПРОИЗВОДСТВА: «СТОИТ ЛИ ДЕЛАТЬ ЕЩЁ ОДНУ» ──────────────────────
 //     scarcity = (спрос + 1) / (запас + 1)   — в обе стороны, без коридора

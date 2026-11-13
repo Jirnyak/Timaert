@@ -2343,11 +2343,12 @@ long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
         const std::int64_t massG = item_mass_g(*d);
         const RowSide home = side_row(st, homeSlot, int(sl.def), base);
         const RowSide child = side_row(st, traderSlot, int(sl.def), base);
+        // Внутри семьи делить нечего: доля ноль, голое сравнение оценок.
         const std::int64_t units = gain_units(
             home, child,
             std::min<std::int64_t>(store.count_of(int(sl.def)),
                                    budgetG > 0 ? budgetG / massG : 0),
-            /*strict=*/true);
+            /*strict=*/true, /*standingPower=*/0, /*visitorPower=*/1);
         const std::int64_t gain =
             lot_take(child, units) - lot_loss(home, units);
         if (units <= 0 || gain <= 0) continue;
@@ -2359,21 +2360,20 @@ long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
     long long planned = 0;
     DealLine lot[kMaxInventorySlots];
     int lines = 0;
-    constexpr std::int64_t kNoWallet = std::int64_t(1) << 60;
     for (int r = 0; r < rowCount && used < capG; ++r) {
         const std::int64_t fit = (capG - used) / rows[r].massG;
         const std::int64_t cap =
             std::min<std::int64_t>(store.count_of(int(rows[r].def)), fit);
         if (cap <= 0) continue;
-        const LotQuote q = gainful_lot(
+        const std::int64_t units = gain_units(
             side_row(st, homeSlot, int(rows[r].def), rows[r].base),
             side_row(st, traderSlot, int(rows[r].def), rows[r].base),
-            1, 1, cap, kNoWallet, Offer::Giver);
-        if (q.units <= 0) continue;
-        planned += (long long)q.units * rows[r].base;
-        used += q.units * rows[r].massG;
+            cap, /*strict=*/true, /*standingPower=*/0, /*visitorPower=*/1);
+        if (units <= 0) continue;
+        planned += (long long)units * rows[r].base;
+        used += units * rows[r].massG;
         lot[lines] = DealLine{};
-        lot[lines].want = int(q.units);
+        lot[lines].want = int(units);
         lot[lines].def = rows[r].def;
         ++lines;
     }
@@ -4172,32 +4172,35 @@ void dispatch(MacroHandle e, ecs::MacroNpcRuntime& rt,
 // ЧТО ЗДЕСЬ РЕШАЕТ МОДУЛЬ, А ЧТО ЯДРО (единая ценомодель, 2026-11-12, слова
 // владельца — CANON S25). Цель сквада — растить СВОЮ ОЦЕНКУ своего инвентаря,
 // и модуль решает одно: ОТДАТЬ ВСЁ, ЧТО РЫНОК ЦЕНИТ ВЫШЕ МЕНЯ, И ВЗЯТЬ ВСЁ,
-// ЧТО Я ЦЕНЮ ВЫШЕ РЫНКА. Сколько таких единиц, почём идёт лот и чем за него
-// платят — отвечает ядро (`gainful_lot@src/macro/economy.h`,
+// ЧТО Я ЦЕНЮ ВЫШЕ РЫНКА, — с наценкой стоящего. Рынок здесь СТОЯЩИЙ, купец
+// ПРИШЕДШИЙ (форма цены 2026-11-13, ряд M-492): взятое у рынка стоит его
+// оценку плюс его долю от неё, отданное ему он засчитывает по своей оценке.
+// Сколько единиц едет, почём идёт лот и чем за него платят — отвечает ядро
+// (`take_lot@src/macro/economy.h`, `give_lot@src/macro/economy.h`,
 // `stage_payment@src/macro/deal.h`); обе стороны читаются одной дверью
-// `side_row@src/macro/deal.h`. Сделка симметрична и чисто локальна: судится
-// только рынок, на котором сквад СТОИТ, — ни дома, ни слухов, ни рода
-// торговца (торговец есть СЛОТ стора).
+// `side_row@src/macro/deal.h`. Сделка чисто локальна: судится только рынок,
+// на котором сквад СТОИТ, — ни дома, ни слухов, ни рода торговца (торговец
+// есть СЛОТ стора).
 //
-// Отсюда, без единой ветки: в нужду рынка купец отдаёт груз с премией; завал
-// рынка (излишек, забивший спину его жителей) берёт дешевле, чем ценит сам,
-// пока своя спина свободна; рынку без монеты отдаёт за его излишек и везёт
-// тот дальше. Круг «отдал — забрал» убыточен самим законом цены, поэтому ни
-// правила «строка за визит в одну сторону», ни границы лота по нужде здесь
-// нет (ряд M-483).
+// Отсюда, без единой ветки: в нужду рынка купец отдаёт груз дороже своей
+// оценки; завал рынка (излишек, забивший спину его жителей) берёт дешевле,
+// чем ценит сам, пока своя спина свободна; рынку без монеты отдаёт за его
+// излишек и везёт тот дальше. На малой разнице оценок слабый купец не
+// торгует вовсе — наценка рынка её съедает; большую разницу берёт и он. Круг
+// «отдал — забрал» пришедшему в убыток самим законом цены, поэтому ни правила
+// «строка за визит в одну сторону», ни границы лота по нужде здесь нет.
 
 namespace {
-// ОДНА НОГА БАРТЕРА: `giver` отдаёт `taker` до `cap` единиц строки — столько,
-// сколько тот ценит выше него и способен оплатить встречной корзиной, — и
-// получает её по закону цены. Ногу предлагает МОДУЛЬ одной из сторон
-// (`actorIsGiver`), и исполняется она, только если ЕГО оценка своего
-// инвентаря от неё растёт: цель сквада — своя оценка, а нога без прибыли
-// стоила бы ему восстановления даром. `giverFreeG` — свободная спина
-// отдающего (kNoCarryLimitG у склада): в оплату он принимает её и место,
-// которое освободит сам отданный груз.
+// ОДНА НОГА БАРТЕРА: `giver` отдаёт `taker` до `cap` единиц строки и получает
+// за них встречную корзину по закону цены. Ногу предлагает МОДУЛЬ одной из
+// сторон (`actorIsGiver`) — он ПРИШЕДШИЙ, другая сторона СТОЯЩАЯ, — и
+// исполняется нога, только если ЕГО оценка своего инвентаря от неё растёт:
+// цель сквада — своя оценка, а нога без прибыли стоила бы ему восстановления
+// даром. `giverFreeG` — свободная спина отдающего (kNoCarryLimitG у склада):
+// в оплату он принимает её и место, которое освободит сам отданный груз.
 struct LegFact {
     int units = 0;                // сколько единиц строки уехало
-    std::int64_t price = 0;       // сколько стоимости за них уплачено
+    std::int64_t price = 0;       // во что стала корзина оплаты в счёте стоящего
     std::int64_t giverGain = 0;   // прирост оценки у отдающего
     std::int64_t takerGain = 0;   // прирост оценки у берущего
 };
@@ -4208,42 +4211,76 @@ LegFact barter_leg_(MacroStore& st, std::uint16_t giver, std::uint16_t taker,
     if (cap <= 0 || base <= 0) return out;
     const RowSide g = side_row(st, giver, itemIdx, base);
     const RowSide t = side_row(st, taker, itemIdx, base);
-    const int gp = side_trade_power(st, giver);
-    const int tp = side_trade_power(st, taker);
+    // Стоящий — тот, к кому пришли: не тот, чей модуль предложил ногу.
+    const int standingPower = side_trade_power(st, actorIsGiver ? taker : giver);
+    const int visitorPower = side_trade_power(st, actorIsGiver ? giver : taker);
     const auto room_for = [&](std::int64_t units) {
         return giverFreeG >= kNoCarryLimitG
             ? kNoCarryLimitG : giverFreeG + units * g.unitMassG;
     };
-    constexpr std::int64_t kNoWallet = std::int64_t(1) << 60;
-    // Сделку предложил тот, кто пришёл: неделимый остаток доли достаётся
-    // другой стороне (`gain_share@src/macro/economy.h`). В ноге оплаты роли
-    // зеркальны: товар отдающий — получатель платежа.
-    const Offer goodsBy = actorIsGiver ? Offer::Giver : Offer::Taker;
-    const Offer payBy = actorIsGiver ? Offer::Taker : Offer::Giver;
+    constexpr std::int64_t kNoLimit = std::int64_t(1) << 60;
     DealLine pay[64];
-    LotQuote lot = gainful_lot(g, t, gp, tp, cap, kNoWallet, goodsBy);
     StagedPayment sp{};
-    // Корзина собирается под цену лота; не покрыла — лот режется до того,
-    // что берущий способен отдать, и корзина собирается заново. Цена лота
-    // с каждым заходом строго падает, поэтому заходов не больше числа единиц;
-    // страж числа заходов — ширина лота в битах с запасом.
-    for (int pass = 0; pass < 64 && lot.units > 0; ++pass) {
-        // Потолок плательщика — во сколько ОН ценит то, что берёт.
-        sp = stage_payment(st, taker, giver, lot.price,
-                           lot_take(t, lot.units), room_for(lot.units), payBy,
-                           pay);
-        if (sp.price >= lot.price) break;
-        lot = gainful_lot(g, t, gp, tp, cap, sp.price, goodsBy);
+    std::int64_t units = 0;
+    if (actorIsGiver) {
+        // ОТДАЮ СТОЯЩЕМУ. Он засчитывает лот по своей оценке и платит своими
+        // единицами по цене взятия — не больше засчитанного. Недоплатить он
+        // может по двум причинам, и лечатся они по-разному: ему НЕЧЕМ
+        // расплатиться — тогда выгоднее отдать меньше, столько, сколько
+        // покрывает уплаченное; либо оплата не помещается в МОЮ спину — тогда
+        // меньший лот освободит ещё меньше места, и резать его значит терять.
+        // Различает их сама цель сквада: пробую меньший лот и беру его,
+        // только если МОЯ оценка от этого выросла. Ниже лежит всегда пара
+        // «лот и корзина, собранная под него»; проба, не улучшившая оценку,
+        // отбрасывается целиком. (Здесь стояло «режь, пока засчитанное выше
+        // уплаченного» — ревью дифа 2026-11-13: при оплате, упёршейся в
+        // спину, лот таял в геометрической прогрессии, и на страже числа
+        // заходов уезжал лот меньше того, под который собрана корзина.)
+        std::int64_t tryUnits =
+            give_lot(g, t, standingPower, visitorPower, cap, kNoLimit).units;
+        std::int64_t best = 0;   // прирост моей оценки на лучшей пробе
+        DealLine tryPay[64];
+        // Лот с каждой пробой строго меньше; страж числа проб — с запасом.
+        for (int pass = 0; pass < 64 && tryUnits > 0; ++pass) {
+            const StagedPayment got = stage_payment(
+                st, taker, giver, lot_take(t, tryUnits), kNoLimit,
+                room_for(tryUnits), Standing::Giver, tryPay);
+            const std::int64_t gain = got.takerWorth - lot_loss(g, tryUnits);
+            if (gain <= best) break;
+            best = gain;
+            units = tryUnits;
+            sp = got;
+            std::copy(tryPay, tryPay + got.lines, pay);
+            const std::int64_t covered =
+                cover_lot(g, t, tryUnits, got.price).units;
+            if (covered >= tryUnits) break;
+            tryUnits = covered;
+        }
+        if (units <= 0) return out;
+    } else {
+        // БЕРУ У СТОЯЩЕГО. Корзина собирается под цену взятия; не покрыла —
+        // лот режется до того, что я способен дать, и корзина собирается
+        // заново. Потолок плательщика — во сколько Я ценю то, что беру.
+        LotQuote lot =
+            take_lot(g, t, standingPower, visitorPower, cap, kNoLimit);
+        for (int pass = 0; pass < 64 && lot.units > 0; ++pass) {
+            sp = stage_payment(st, taker, giver, lot.price,
+                               lot_take(t, lot.units), room_for(lot.units),
+                               Standing::Taker, pay);
+            if (sp.price >= lot.price) break;
+            lot = take_lot(g, t, standingPower, visitorPower, cap, sp.price);
+        }
+        if (lot.units <= 0 || sp.price < lot.price) return out;
+        units = lot.units;
     }
-    if (lot.units <= 0 || sp.price < lot.price) return out;
-    const std::int64_t giverGain = sp.takerWorth - lot_loss(g, lot.units);
-    const std::int64_t takerGain = lot_take(t, lot.units) - sp.giverWorth;
+    const std::int64_t giverGain = sp.takerWorth - lot_loss(g, units);
+    const std::int64_t takerGain = lot_take(t, units) - sp.giverWorth;
     if ((actorIsGiver ? giverGain : takerGain) <= 0) return out;
     // ТОВАР И ОПЛАТА — ОДНА СДЕЛКА (ломоть 2 M-72): exact-лоты,
     // недоплаченная поставка невыразима.
     DealLine goods[1];
     goods[0] = DealLine{};
-    goods[0].want = int(lot.units);
+    goods[0].want = int(units);
     goods[0].def = std::uint16_t(itemIdx);
     goods[0].exact = 1;
     const DealFact f =
@@ -4251,7 +4288,7 @@ LegFact barter_leg_(MacroStore& st, std::uint16_t giver, std::uint16_t taker,
              std::span<DealLine>(pay, std::size_t(sp.lines)),
              kNoCarryLimitG, kNoCarryLimitG);
     if (!f.settled) return out;
-    out.units = int(lot.units);
+    out.units = int(units);
     out.price = sp.price;
     out.giverGain = giverGain;
     out.takerGain = takerGain;
@@ -4298,6 +4335,8 @@ CaravanDeal trade_caravan_at_station(MacroStore& st,
     Lot lots[std::size_t(kCommodityCount)];
     int lotCount = 0;
     const std::int64_t roomG = free_back();
+    const int marketPower = side_trade_power(st, marketSlot);
+    const int myPower = side_trade_power(st, traderSlot);
     for (int i = 0; i < kCommodityCount; ++i) {
         const int id = commodity_item_index(i);
         const ItemDef* def = item_def_at(id);
@@ -4309,8 +4348,11 @@ CaravanDeal trade_caravan_at_station(MacroStore& st,
         const std::int64_t units = gain_units(
             market, mine,
             std::min<std::int64_t>(ms.count_of(id), roomG / massG),
-            /*strict=*/true);
-        const std::int64_t gain = lot_take(mine, units) - lot_loss(market, units);
+            /*strict=*/true, marketPower, myPower);
+        // Выгода лота глазами купца: во сколько он ценит взятое минус цена
+        // взятия (оплата — по номиналу; свою цену ей назовёт нога бартера).
+        const std::int64_t gain = lot_take(mine, units)
+            - take_price(market, units, marketPower, myPower);
         if (units <= 0 || gain <= 0) continue;
         lots[std::size_t(lotCount++)] = Lot{i, gain, units * massG, massG};
     }

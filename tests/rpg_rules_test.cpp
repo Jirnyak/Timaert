@@ -142,78 +142,83 @@ void test_wisdom_pays_a_dividend_on_every_grant() {
 }
 
 // ── 3. One price law ──────────────────────────────────────────────────────
-// Canon (S25, единая ценомодель 2026-11-12): у каждой стороны одна ОЦЕНКА
-// вещи — стоимость, поднятая её нуждой, — а цена лежит МЕЖДУ двумя оценками,
-// и торговая сила делит разницу отношением двух анкет. Наценка за оценку
-// рынка («сильнее на десять пунктов — покупаю за 90 и продаю за 110») умерла:
-// она заставляла слабую сторону торговать себе в убыток, и круг «продал —
-// выкупил» качал из неё монету при любом перевесе.
-void test_one_price_law_splits_the_gain_by_trade_power() {
+// Canon (S25, форма цены 2026-11-13): у каждой стороны одна ОЦЕНКА вещи —
+// стоимость, поднятая её нуждой и уроненная завалом. В сделке есть СТОЯЩИЙ (к
+// нему пришли) и ПРИШЕДШИЙ: взятое у стоящего стоит его оценку плюс его долю
+// от неё, отданное ему он засчитывает по своей оценке; доля — отношение сил
+// двух анкет. Купить стоит от ×1 до ×2 оценки стоящего, продать — от ÷1 до
+// ÷2. Наценка в пользу ПРИШЕДШЕГО («сильнее на десять пунктов — покупаю за 90
+// и продаю за 110») умерла: она заставляла стоящего торговать себе в убыток,
+// и круг «продал — выкупил» качал из него монету при любом перевесе.
+void test_one_price_law_is_the_standing_sides_markup() {
     using namespace sm;
-    // Спина всех трёх велика против груза (завала нет): здесь судится верхняя
-    // ветвь оценки и деление выгоды; завал — у самих дверей ядра и в
-    // price_law_test.
+    // Спина обеих сторон велика против груза (завала нет): здесь судится
+    // нужда и наценка; завал — у самих дверей ядра и в price_law_test.
     constexpr std::int64_t kWideBack = std::int64_t(1) << 40;
-    const RowSide roamer{100, 50, 1, kWideBack};   // груз есть, нужды нет
     const RowSide hungry{100, -4, 1, kWideBack};   // остаток счёта четыре
     const RowSide sated{100, 30, 1, kWideBack};    // излишек тридцать
-    // Сделку предлагает тот, кто пришёл: `gives` — отдающий, `takes` —
-    // берущий. Неделимый остаток доли достаётся другой стороне.
-    const auto gives = [](const RowSide& g, const RowSide& t, int gp, int tp,
-                          int n) {
-        return sm::lot_price(g, t, gp, tp, n, Offer::Giver);
+    // Пришедший ОТДАЁТ стоящему единицу: что ему за неё причитается.
+    // Силы — (стоящий, пришедший).
+    const auto gives = [](const RowSide& standing, int sp, int vp, int n) {
+        return ask_reach(lot_take(standing, n), sp, vp);
     };
-    const auto takes = [](const RowSide& g, const RowSide& t, int gp, int tp,
-                          int n) {
-        return sm::lot_price(g, t, gp, tp, n, Offer::Taker);
+    // Пришедший БЕРЁТ у стоящего.
+    const auto takes = [](const RowSide& standing, int sp, int vp, int n) {
+        return take_price(standing, n, sp, vp);
     };
 
-    // Оценки: рынок ценит первую пришедшую единицу в четыре стоимости
-    // (нужда три после прихода, полка пуста), ходок — ровно в стоимость.
-    CHECK(worth_arriving(hungry, 1) == 400 && worth_leaving(roamer, 1) == 100,
+    // Оценки: рынок ценит первую пришедшую единицу в четыре стоимости (нужда
+    // три после прихода, полка пуста), сытый — ровно в стоимость.
+    CHECK(worth_arriving(hungry, 1) == 400 && worth_leaving(sated, 1) == 100,
           "the hungry side values the unit above its worth, the side without "
           "a need values it at exactly its worth");
-    CHECK(gives(roamer, hungry, 10, 10, 1) == 250
-              && takes(roamer, hungry, 10, 10, 1) == 250,
-          "equal sheets split the gain in half: a hundred plus half of three "
-          "hundred — whoever made the offer");
-    CHECK(gives(roamer, hungry, 30, 10, 1) == 325
-              && gives(roamer, hungry, 10, 30, 1) == 175,
-          "the stronger side takes the larger share of the SAME gain, and "
-          "the two shares mirror each other");
-    CHECK(gives(roamer, hungry, 42, 42, 1) == gives(roamer, hungry, 7, 7, 1),
+    CHECK(gives(hungry, 10, 10, 1) == 266 && takes(sated, 10, 10, 1) == 150,
+          "equal sheets: two thirds of the standing side's valuation for what "
+          "it is given, one and a half for what is taken from it");
+    CHECK(gives(hungry, 10, 30, 1) == 320 && gives(hungry, 30, 10, 1) == 228
+              && takes(sated, 10, 30, 1) == 125
+              && takes(sated, 30, 10, 1) == 175,
+          "the stronger visitor gets more and pays less, the weaker one gets "
+          "less and pays more — against the same standing valuation");
+    CHECK(gives(hungry, 42, 42, 1) == gives(hungry, 7, 7, 1)
+              && takes(sated, 42, 42, 1) == takes(sated, 7, 7, 1),
           "the law reads the ratio of the two powers, not their size");
 
     // ПОЛА И ПОТОЛКА У ДОЛИ НЕТ ПО ПОСТРОЕНИЮ: отношение сил само лежит между
-    // нулём и единицей, и подавляющий перевес упирается в ОЦЕНКУ другой
-    // стороны, а не в назначенное число.
-    CHECK(gives(roamer, hungry, 510, 1, 1) < 400
-              && gives(roamer, hungry, 510, 1, 1) > 390,
-          "an overwhelming advantage approaches the taker's own valuation and "
-          "never reaches it: the side that did not offer keeps its quantum");
-    CHECK(gives(roamer, hungry, 0, 10, 1) == 100,
-          "a side with no power at all still gets its own valuation — nobody "
-          "gives a thing away below what it is worth to them");
-    // НЕДЕЛИМЫЙ ОСТАТОК — ТОМУ, КТО НЕ ПРЕДЛАГАЛ (вердикт 2026-11-13): 300
-    // выгоды при силах 1 против 6 — доля слабого 42.86. Предложил он сам —
-    // получает 42; предложил берущий — 43.
-    CHECK(gives(roamer, hungry, 1, 6, 1) == 142
-              && takes(roamer, hungry, 1, 6, 1) == 143,
-          "the indivisible quantum goes to the side that did NOT make the "
-          "offer");
+    // нулём и единицей. Мастер подходит к оценке стоящего и не достигает её;
+    // полный ноль получает половину и платит вдвое — и не хуже.
+    CHECK(gives(hungry, 1, 510, 1) < 400 && gives(hungry, 1, 510, 1) > 390
+              && takes(sated, 1, 510, 1) > 100 && takes(sated, 1, 510, 1) < 110,
+          "an overwhelming visitor approaches the standing side's valuation "
+          "and never reaches it: the standing side keeps its quantum");
+    CHECK(gives(hungry, 10, 0, 1) == 200 && takes(sated, 10, 0, 1) == 200,
+          "a visitor with no power at all gets half the standing valuation "
+          "and pays double — the worst the law can do to anyone");
+    CHECK(gives(hungry, 0, 10, 1) == 400 && takes(sated, 0, 10, 1) == 100,
+          "a standing side with no power at all trades at exactly its own "
+          "valuation — and never below it");
+    // НЕДЕЛИМЫЙ ОСТАТОК — СТОЯЩЕМУ: 100 при силах 1 против 6 — его доля
+    // 14.29. Взятое стоит 115, а за отданное на 115 причитается не 100.57, а
+    // 100: обратный вопрос не возвращает больше, чем стоило взятие.
+    CHECK(takes(sated, 1, 6, 1) == 115
+              && ask_reach(115, 1, 6) == 100 && ask_reach(114, 1, 6) == 99,
+          "the indivisible quantum of the share stays with the standing side");
 
-    // Где оценки равны, делить нечего: излишек, монета и чужой груз идут по
-    // стоимости при ЛЮБЫХ силах, и обратный путь стоит столько же.
-    CHECK(takes(roamer, sated, 510, 1, 5) == 500
-              && takes(sated, roamer, 1, 510, 5) == 500,
-          "equal valuations trade at worth whatever the powers are — there is "
-          "no gain to split");
-    // Против выгоды (берущий ценит ниже отдающего) вещь идёт по оценке
-    // отдающего: сила берущего её не сбивает.
-    CHECK(takes(hungry, roamer, 1, 510, 1) == worth_leaving(hungry, 1)
+    // БЕЗ РАЗНИЦЫ ОЦЕНОК — В УБЫТОК: купить пять у сытого и тут же отдать ему
+    // же стоит пришедшему долю стоящего дважды. С бессильным стоящим — вровень.
+    RowSide fewer = sated;
+    fewer.net -= 5;
+    CHECK(gives(fewer, 10, 10, 5) < takes(sated, 10, 10, 5)
+              && gives(fewer, 1, 510, 5) < takes(sated, 1, 510, 5)
+              && gives(fewer, 0, 10, 5) == takes(sated, 0, 10, 5),
+          "buying and selling back at one valuation is a loss for the visitor "
+          "whatever the powers — there is no pump");
+    // Отнять у голодного то, чего ему не хватает, стоит его оценки и доли
+    // сверх неё, как бы силён ни был берущий.
+    CHECK(takes(hungry, 1, 510, 1) > worth_leaving(hungry, 1)
               && worth_leaving(hungry, 1) > worth_arriving(hungry, 1),
-          "taking from a side what it lacks itself costs that side's own "
-          "valuation, however strong the taker");
+          "taking from a side what it lacks itself costs more than that "
+          "side's own valuation, however strong the taker");
     CHECK(worth_arriving(RowSide{100, 999, 1, kWideBack}, 1) == 100
               && worth_arriving(RowSide{100, 999, 1000, 100000}, 1) == 1,
           "a pile that weighs nothing against the back keeps its worth; the "
@@ -320,7 +325,7 @@ void test_the_recovery_door_is_one_lever() {
 int main() {
     test_a_moved_ceiling_keeps_the_wound_fraction();
     test_wisdom_pays_a_dividend_on_every_grant();
-    test_one_price_law_splits_the_gain_by_trade_power();
+    test_one_price_law_is_the_standing_sides_markup();
     test_the_recovery_door_is_one_lever();
     return sm::test::report("rpg_rules_test");
 }

@@ -376,6 +376,12 @@ inline GridClick draw_inventory_grid(const char* strId, const Inventory& inv,
 // ЦЕНА СТРОКИ — ЦЕНА ЕЁ ЛОТА ЦЕЛИКОМ (единая ценомодель, 2026-11-12): лот
 // есть сумма по единицам с пересчётом, и умножать «цену единицы» на число
 // здесь больше нечего — закон звонящего отвечает сразу за `want` штук.
+// СТРОКИ ОДНОЙ ВЕЩИ СЧИТАЮТСЯ ПОДРЯД, А НЕ КАЖДАЯ С НУЛЯ: вторая строка той же
+// вещи идёт от состояния ПОСЛЕ первой (`before` — сколько единиц этой вещи
+// корзина уже несёт). Именное и вещи с разным материалом не стакуются, и
+// сорок стаков по одной штуке суть лот в сорок единиц, а не сорок первых
+// единиц (ревью дифа 2026-11-13: по строкам с нуля голодный рынок засчитывал
+// игроку 160 000 там, где закон даёт 82 000).
 template <class LotPriceFn>
 inline int barter_package_value(const BarterPackage& pkg,
                                 const Inventory& shelf,
@@ -385,7 +391,12 @@ inline int barter_package_value(const BarterPackage& pkg,
         if (int(line.slot) >= kMaxInventorySlots) continue;
         const ItemRef& ref = shelf.slots[std::size_t(line.slot)];
         if (ref.empty() || !world_row_exists(ref.def)) continue;
-        total += lotPrice(ref, line.want);
+        int before = 0;
+        for (const DealLine& prev : pkg) {
+            if (&prev == &line) break;
+            if (prev.def == line.def) before += prev.want;
+        }
+        total += lotPrice(ref, before, line.want);
     }
     constexpr long long kMax = std::numeric_limits<int>::max();
     return int(total > kMax ? kMax : total);
@@ -520,7 +531,7 @@ inline void draw_barter_body(const char* stockLabel,
     stage_click(
         draw_inventory_grid("##shelf", shelf, &st.barter.take,
                             [&](const ItemRef& r, int n) {
-                                draw_lot_price(n, takeLot(r, n > 0 ? n : 1));
+                                draw_lot_price(n, takeLot(r, 0, n > 0 ? n : 1));
                             }),
         st.barter.take, shelf);
     ImGui::EndChild();
@@ -531,7 +542,7 @@ inline void draw_barter_body(const char* stockLabel,
     stage_click(
         draw_inventory_grid("##player_shelf", playerBag, &st.barter.give,
                             [&](const ItemRef& r, int n) {
-                                draw_lot_price(n, giveLot(r, n > 0 ? n : 1));
+                                draw_lot_price(n, giveLot(r, 0, n > 0 ? n : 1));
                             }),
         st.barter.give, playerBag);
     ImGui::EndChild();

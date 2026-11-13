@@ -152,7 +152,7 @@ void test_worth_is_lifted_by_need_and_dropped_by_glut() {
     // сторона `b`» — точно: единица едет от `b` (она у него j-я) к `a`.
     const auto dearer = [&](const RowSide& a, const RowSide& b,
                             std::int64_t j) {
-        return gain_units(at(b, j), at(a, j - 1), 1, /*strict=*/true) == 1;
+        return gain_units(at(b, j), at(a, j - 1), 1, /*strict=*/true, 0, 1) == 1;
     };
     int seen = 0, belowFloor = 0, liftedWithoutNeed = 0, droppedUnderNeed = 0;
     int notState = 0, notAdditive = 0, growsWithStock = 0;
@@ -209,7 +209,7 @@ void test_worth_is_lifted_by_need_and_dropped_by_glut() {
                     }
                     // Оценка единицы не растёт с запасом; потяжелее — не
                     // дороже; спина пошире — не дешевле. Точно.
-                    if (gain_units(at(r, net), at(r, net), 1, true) != 0)
+                    if (gain_units(at(r, net), at(r, net), 1, true, 0, 1) != 0)
                         ++growsWithStock;
                     const RowSide heavy{base, net, mass * 2, back};
                     const RowSide wide{base, net, mass, back * 2};
@@ -246,7 +246,7 @@ void test_worth_is_lifted_by_need_and_dropped_by_glut() {
           "негативный контроль: нужда и завал оба двигают оценку");
     CHECK(dearer(row, RowSide{100, 0, 4000, 1000000}, 100)
               && dearer(RowSide{100, 0, 1000, 2000000}, row, 100)
-              && gain_units(at(row, 500), row, 1, true) == 1,
+              && gain_units(at(row, 500), row, 1, true, 0, 1) == 1,
           "негативный контроль детектора: лёгкую вещь ценят выше тяжёлой, "
           "широкая спина ценит выше узкой, пустая сторона — выше заваленной");
     // ЯКОРЯ, посчитанные рукой по формуле закона. Монета: тысячная штука по
@@ -267,7 +267,7 @@ void test_worth_is_lifted_by_need_and_dropped_by_glut() {
     // (1000−k)/1000 > (474999+k)/500000 ⇔ 501·k < 25001 ⇔ k ≤ 49.
     const RowSide home{5, 25000, 1000, std::int64_t(500000) * 1000};
     const RowSide child{5, 0, 1000, std::int64_t(1000) * 1000};
-    const std::int64_t units = gain_units(home, child, 25000, true);
+    const std::int64_t units = gain_units(home, child, 25000, true, 0, 1);
     CHECK(worth_arriving(child, 1) == worth_leaving(home, 1) && units == 49
               && lot_take(child, units) > lot_loss(home, units),
           "завал меньше шага оценки на одной единице не виден, а на лоте "
@@ -275,54 +275,55 @@ void test_worth_is_lifted_by_need_and_dropped_by_glut() {
 }
 
 // ── НАСОСА НЕТ: НИ ОДИН КРУГ НЕ ПРИНОСИТ МОНЕТЫ ──────────────────────────
-// Закон мира: у стороны ОДНА оценка вещи, и цена лежит между оценками двух
-// сторон; единица против выгоды едет только волей предложившего, и платит за
-// неё он. Отсюда — круг «отдал n и забрал n» (или «забрал и отдал») убыточен
-// либо нулевой, какой бы ни была разница сил, спин и нужд.
+// Закон мира (AGENTS «ЗАКОН ЕДИНОЙ ЦЕНОМОДЕЛИ» п.3, форма 2026-11-13): взятое
+// у стоящего стоит его оценку плюс его долю от неё, отданное ему он
+// засчитывает по своей оценке. Стоящий никогда не теряет по своей оценке,
+// поэтому круг «взял n и вернул» (или «отдал и забрал») пришедшему в убыток
+// либо в ноль, какой бы ни была разница сил, спин и нужд.
 void test_no_pump_at_any_power() {
-    // Круг глазами стороны `a`, которая предлагает ОБЕ ноги.
-    const auto give_then_take = [](const RowSide& a, const RowSide& b,
-                                   int aPower, int bPower, int n) {
-        RowSide b2 = b, a2 = a;
-        b2.net += n;
-        a2.net -= n;
-        return lot_price(a, b, aPower, bPower, n, Offer::Giver)
-             - lot_price(b2, a2, bPower, aPower, n, Offer::Taker);
+    const auto at = [](RowSide r, std::int64_t net) {
+        r.net = net;
+        return r;
     };
-    const auto take_then_give = [](const RowSide& a, const RowSide& b,
-                                   int aPower, int bPower, int n) {
-        RowSide b2 = b, a2 = a;
-        b2.net -= n;
-        a2.net += n;
-        return lot_price(a2, b2, aPower, bPower, n, Offer::Giver)
-             - lot_price(b, a, bPower, aPower, n, Offer::Taker);
+    // Круги пришедшего со стоящим `s`: получил минус уплатил, в оценке
+    // стоящего. Силы — (стоящий, пришедший).
+    const auto take_then_return = [&](const RowSide& s, int sp, int vp, int n) {
+        return ask_reach(lot_take(at(s, s.net - n), n), sp, vp)
+             - take_price(s, n, sp, vp);
+    };
+    const auto give_then_retake = [&](const RowSide& s, int sp, int vp, int n) {
+        return ask_reach(lot_take(s, n), sp, vp)
+             - take_price(at(s, s.net + n), n, sp, vp);
     };
     {
-        int trips = 0, pumps = 0, movedPrice = 0;
+        int trips = 0, pumps = 0, losses = 0, movedPrice = 0, standingLost = 0;
         for (int base : {1, 5, 100, 12800}) {
             for (int net : {-512, -8, -1, 0, 1, 8, 64, 512}) {
                 for (std::int64_t mass : {10, 1000, 4000}) {
                     for (int n : {1, 2, 13, 64}) {
-                        for (int mine : {0, 1, 13, 510}) {
-                            for (int theirs : {0, 1, 13, 510}) {
+                        for (int sp : {0, 1, 13, 510}) {
+                            for (int vp : {0, 1, 13, 510}) {
                                 for (std::int64_t back :
                                      {std::int64_t(50000),
                                       std::int64_t(100000000)}) {
-                                    for (int cargo : {0, 40, 400}) {
-                                        const RowSide a{base, cargo, mass,
-                                                        50000};
-                                        const RowSide b{base, net, mass,
-                                                        back};
-                                        ++trips;
-                                        if (give_then_take(a, b, mine, theirs,
-                                                           n) > 0) ++pumps;
-                                        if (take_then_give(a, b, mine, theirs,
-                                                           n) > 0) ++pumps;
-                                        if (lot_price(a, b, mine, theirs, n,
-                                                      Offer::Giver)
-                                                != std::int64_t(base) * n)
-                                            ++movedPrice;
-                                    }
+                                    const RowSide s{base, net, mass, back};
+                                    ++trips;
+                                    const std::int64_t a =
+                                        take_then_return(s, sp, vp, n);
+                                    const std::int64_t b =
+                                        give_then_retake(s, sp, vp, n);
+                                    if (a > 0 || b > 0) ++pumps;
+                                    if (a < 0 || b < 0) ++losses;
+                                    // Стоящий не теряет: за отданное получает
+                                    // не меньше своей оценки, за полученное
+                                    // отдаёт не больше.
+                                    if (take_price(s, n, sp, vp) < lot_loss(s, n)
+                                        || ask_reach(lot_take(s, n), sp, vp)
+                                               > lot_take(s, n))
+                                        ++standingLost;
+                                    if (take_price(s, n, sp, vp)
+                                            != std::int64_t(base) * n)
+                                        ++movedPrice;
                                 }
                             }
                         }
@@ -332,18 +333,22 @@ void test_no_pump_at_any_power() {
         }
         CHECK(trips > 5000, "the sweep actually swept");
         CHECK(pumps == 0,
-              "НАСОСА НЕТ: круг не приносит ничего при любых силах, спинах, "
-              "массах и нуждах, в обе стороны круга");
-        CHECK(movedPrice > 1000,
-              "негативный контроль свипа: в нём ЕСТЬ сделки не по стоимости "
-              "— круг убыточен не потому, что всё идёт по номиналу");
+              "НАСОСА НЕТ: круг не приносит пришедшему ничего при любых силах, "
+              "спинах, массах и нуждах, в обе стороны круга");
+        CHECK(standingLost == 0,
+              "СТОЯЩИЙ НЕ ТЕРЯЕТ ПО СВОЕЙ ОЦЕНКЕ ни на взятом у него, ни на "
+              "отданном ему");
+        CHECK(losses > 1000 && movedPrice > 1000,
+              "негативный контроль свипа: в нём ЕСТЬ круги в убыток и сделки не "
+              "по стоимости — круг не прибылен не потому, что всё идёт по "
+              "номиналу");
     }
     // НЕГАТИВНЫЙ КОНТРОЛЬ НА МЁРТВОМ ЗАКОНЕ. Точка найдена ревью M-478: база
     // 100, полка 89, нужда 99, перевес сил +20. Закон наценки за кривую
     // (лот одной ценой по полке после сделки × (1 ± перевес)) давал в ней
-    // +351 монету за круг; тот же круг по ядру — в минус. Формула мёртвого
-    // закона выписана здесь нарочно: это мутация, которую детектор обязан
-    // видеть, а не вторая копия живой логики.
+    // +351 монету за круг: сильный продавал ДОРОЖЕ оценки рынка и выкупал
+    // ДЕШЕВЛЕ. Формула мёртвого закона выписана здесь нарочно: это мутация,
+    // которую детектор обязан видеть, а не вторая копия живой логики.
     {
         const auto dead_unit = [](int base, int have, int need, int n,
                                   bool selling, int edgePct) {
@@ -361,122 +366,118 @@ void test_no_pump_at_any_power() {
         CHECK(deadGain == 351,
               "детектор видит насос мёртвого закона: +351 за круг");
         // Та же точка глазами ядра: полка 89 против нужды 99 — непогашенная
-        // нужда десять.
-        const RowSide trader{base, 400, 1000, 1000000};
+        // нужда десять. Наценка есть только у стоящего и только в его пользу.
         const RowSide market{base, have - need, 1000, 100000000};
-        CHECK(give_then_take(trader, market, 20, 0, n) <= 0
-                  && give_then_take(trader, market, 510, 0, n) <= 0,
-              "тот же круг в той же точке по ядру не приносит ничего — при "
-              "том же и при предельном перевесе");
-    }
-    // ВТОРОЙ МЁРТВЫЙ ЗАКОН — единица против выгоды по оценке ОТДАЮЩЕГО, кто бы
-    // её ни предложил: купец с забитой спиной «продаёт» рынку штуку по своей
-    // оценке, хотя рынок ценит её ниже, и выкупает по оценке рынка. Точка:
-    // купец 10 штук, рынок 25 излишка, спины по сто штук. Именно этот круг
-    // закрывает правило «платит предложивший».
-    {
-        const RowSide trader{100, 10, 1000, 100000};
-        const RowSide market{100, 25, 1000, 100000};
-        RowSide m2 = market, t2 = trader;
-        m2.net += 9;
-        t2.net -= 9;
-        const std::int64_t deadGain =
-            lot_price(trader, market, 510, 1, 9, Offer::Taker)
-          - lot_price(m2, t2, 1, 510, 9, Offer::Taker);
-        CHECK(deadGain > 0,
-              "детектор видит насос закона «против выгоды всегда платит "
-              "берущий»");
-        CHECK(give_then_take(trader, market, 510, 1, 9) <= 0,
-              "по закону «платит предложивший» тот же круг не приносит ничего");
+        CHECK(give_then_retake(market, 13, 20, n) < 0
+                  && give_then_retake(market, 13, 510, n) < 0
+                  && give_then_retake(market, 0, 510, n) == 0,
+              "тот же круг в той же точке по ядру пришедшему в убыток — при том "
+              "же и при предельном перевесе; с бессильным стоящим — ровно ноль");
     }
 }
 
-// ── ДВЕРИ ЛОТА: ГРАНИЦЫ ЧЕСТНЫЕ, НЕ ПРЕДЛАГАВШИЙ НЕ ТЕРЯЕТ ────────────────
+// ── ДВЕРИ ЛОТА: ГРАНИЦЫ ЧЕСТНЫЕ, ЦЕНУ НАЗЫВАЕТ ОЦЕНКА СТОЯЩЕГО ────────────
 // Свойства, а не числа (§8 п.4): что бы ни назвали двери лота, это обязано
-// быть ровно тем, что обещает закон. Находки ревью дифа 2026-11-13: корзина
-// держала свою копию формулы цены и расходилась с ценой лота на квант.
+// быть ровно тем, что обещает закон. (Ревью дифа 2026-11-13 нашло, что корзина
+// держала свою копию формулы цены и расходилась с ценой лота на квант; с той
+// поры все двери читают одну цену.)
 void test_lot_doors_keep_their_promises() {
-    int seen = 0, nonOffererLost = 0, priceFell = 0, splitPaid = 0;
-    int gainfulBroken = 0, coverBroken = 0, fitBroken = 0, mixed = 0;
+    const auto at = [](RowSide r, std::int64_t net) {
+        r.net = net;
+        return r;
+    };
+    int seen = 0, priceFell = 0, splitPaid = 0, wanted = 0;
+    int takeBroken = 0, giveBroken = 0, coverBroken = 0, fitBroken = 0;
+    int reachBroken = 0;
     for (int base : {1, 3, 5, 100}) {
-        for (int gNet : {-3, 0, 2, 12, 56, 400}) {
-            for (int tNet : {-40, -2, 0, 27, 300}) {
-                for (std::int64_t gBack : {std::int64_t(50), std::int64_t(209),
+        for (int sNet : {-40, -3, 0, 2, 12, 56, 400}) {
+            for (int vNet : {-2, 0, 27, 300}) {
+                for (std::int64_t sBack : {std::int64_t(50), std::int64_t(209),
                                            std::int64_t(100000)}) {
-                    for (std::int64_t tBack : {std::int64_t(29), std::int64_t(100),
+                    for (std::int64_t vBack : {std::int64_t(29), std::int64_t(100),
                                                std::int64_t(1000000)}) {
-                        for (int gp : {0, 2, 13, 510}) {
-                            for (int tp : {0, 13}) {
-                                const RowSide g{base, gNet, 1, gBack};
-                                const RowSide t{base, tNet, 1, tBack};
-                                for (Offer by : {Offer::Giver, Offer::Taker}) {
-                                    ++seen;
-                                    const std::int64_t strict =
-                                        gain_units(g, t, 40, true);
-                                    const std::int64_t loose =
-                                        gain_units(g, t, 40, false);
-                                    if (strict < 40) ++mixed;
-                                    std::int64_t prev = 0;
-                                    for (std::int64_t n = 1; n <= 40; ++n) {
-                                        const std::int64_t p =
-                                            lot_price(g, t, gp, tp, n, by);
-                                        // Не предлагавший не теряет по своей
-                                        // оценке.
-                                        if (by == Offer::Giver
-                                                ? p > lot_take(t, n)
-                                                : p < lot_loss(g, n))
-                                            ++nonOffererLost;
-                                        // Цена не убывает с числом единиц.
-                                        if (n <= loose && p < prev) ++priceFell;
-                                        prev = p;
-                                        // Дробить предложившему не выгодно.
-                                        if (n >= 2) {
-                                            RowSide g2 = g, t2 = t;
-                                            g2.net -= 1;
-                                            t2.net += 1;
-                                            const std::int64_t parts =
-                                                lot_price(g, t, gp, tp, 1, by)
-                                              + lot_price(g2, t2, gp, tp, n - 1, by);
-                                            if (by == Offer::Giver ? parts > p
-                                                                   : parts < p)
-                                                ++splitPaid;
-                                        }
+                        for (int sp : {0, 2, 13, 510}) {
+                            for (int vp : {0, 13}) {
+                                const RowSide s{base, sNet, 1, sBack};
+                                const RowSide v{base, vNet, 1, vBack};
+                                ++seen;
+                                // Цена не убывает с числом единиц; дробить
+                                // пришедшему не выгодно.
+                                std::int64_t prevAsk = 0, prevReach = 0;
+                                for (std::int64_t n = 1; n <= 40; ++n) {
+                                    const std::int64_t ask =
+                                        take_price(s, n, sp, vp);
+                                    const std::int64_t reach =
+                                        ask_reach(lot_take(s, n), sp, vp);
+                                    if (ask < prevAsk || reach < prevReach)
+                                        ++priceFell;
+                                    prevAsk = ask;
+                                    prevReach = reach;
+                                    if (n >= 2
+                                        && (take_price(s, 1, sp, vp)
+                                                + take_price(at(s, sNet - 1), n - 1, sp, vp)
+                                                < ask
+                                            || ask_reach(lot_take(s, 1), sp, vp)
+                                                + ask_reach(lot_take(at(s, sNet + 1), n - 1), sp, vp)
+                                                > reach))
+                                        ++splitPaid;
+                                }
+                                const std::int64_t wantTake =
+                                    gain_units(s, v, 40, true, sp, vp);
+                                const std::int64_t wantGive =
+                                    gain_units(v, s, 40, true, sp, vp);
+                                if (wantTake > 0 || wantGive > 0) ++wanted;
+                                const std::int64_t payIn =
+                                    gain_units(v, s, 40, false, 0, 1);
+                                const std::int64_t payOut =
+                                    gain_units(s, v, 40, false, 0, 1);
+                                for (std::int64_t money : {0, 7, 60, 5000}) {
+                                    const LotQuote t =
+                                        take_lot(s, v, sp, vp, 40, money);
+                                    if (t.units > wantTake || t.price > money
+                                        || t.price != (t.units > 0
+                                                           ? take_price(s, t.units, sp, vp)
+                                                           : 0)
+                                        || (t.units < wantTake
+                                            && take_price(s, t.units + 1, sp, vp)
+                                                   <= money))
+                                        ++takeBroken;
+                                    const LotQuote g =
+                                        give_lot(v, s, sp, vp, 40, money);
+                                    if (g.units > wantGive || g.price > money
+                                        || g.price != (g.units > 0
+                                                           ? ask_reach(lot_take(s, g.units), sp, vp)
+                                                           : 0)
+                                        || (g.units < wantGive
+                                            && ask_reach(lot_take(s, g.units + 1), sp, vp)
+                                                   <= money))
+                                        ++giveBroken;
+                                    const LotQuote c = cover_lot(v, s, 40, money);
+                                    if (money <= 0 || payIn == 0) {
+                                        if (c.units != 0) ++coverBroken;
+                                    } else if (c.units < 1 || c.units > payIn
+                                               || c.price != lot_take(s, c.units)
+                                               || (c.price < money && c.units != payIn)
+                                               || (c.units > 1
+                                                   && lot_take(s, c.units - 1) >= money)) {
+                                        ++coverBroken;
                                     }
-                                    for (std::int64_t money : {0, 7, 60, 5000}) {
-                                        const LotQuote q = gainful_lot(
-                                            g, t, gp, tp, 40, money, by);
-                                        if (q.units > strict
-                                            || q.price != (q.units > 0
-                                                               ? lot_price(g, t, gp, tp, q.units, by)
-                                                               : 0)
-                                            || q.price > money
-                                            || (q.units < strict
-                                                && lot_price(g, t, gp, tp, q.units + 1, by)
-                                                       <= money))
-                                            ++gainfulBroken;
-                                        const LotQuote c =
-                                            cover_lot(g, t, gp, tp, 40, money, by);
-                                        if (money <= 0 || loose == 0) {
-                                            if (c.units != 0) ++coverBroken;
-                                        } else if (c.units < 1 || c.units > loose
-                                                   || c.price != lot_price(g, t, gp, tp, c.units, by)
-                                                   || (c.price < money && c.units != loose)
-                                                   || (c.units > 1
-                                                       && lot_price(g, t, gp, tp, c.units - 1, by)
-                                                              >= money)) {
-                                            ++coverBroken;
-                                        }
-                                        const LotQuote f =
-                                            fit_lot(g, t, gp, tp, 40, money, by);
-                                        if (f.units > loose || f.price > money
-                                            || f.price != (f.units > 0
-                                                               ? lot_price(g, t, gp, tp, f.units, by)
-                                                               : 0)
-                                            || (f.units < loose
-                                                && lot_price(g, t, gp, tp, f.units + 1, by)
-                                                       <= money))
-                                            ++fitBroken;
-                                    }
+                                    const LotQuote f = fit_lot(v, s, 40, money);
+                                    if (f.units > payIn || f.price > money
+                                        || f.price != lot_take(s, f.units)
+                                        || (f.units < payIn
+                                            && lot_take(s, f.units + 1) <= money))
+                                        ++fitBroken;
+                                    const LotQuote r =
+                                        reach_lot(s, v, sp, vp, 40, money);
+                                    if (r.units > payOut || r.price > money
+                                        || r.price != (r.units > 0
+                                                           ? take_price(s, r.units, sp, vp)
+                                                           : 0)
+                                        || (r.units < payOut
+                                            && take_price(s, r.units + 1, sp, vp)
+                                                   <= money))
+                                        ++reachBroken;
                                 }
                             }
                         }
@@ -485,24 +486,29 @@ void test_lot_doors_keep_their_promises() {
             }
         }
     }
-    CHECK(seen > 5000 && mixed > 1000,
-          "the sweep actually swept, and it holds lots that are not gainful "
-          "to the last unit");
-    CHECK(nonOffererLost == 0,
-          "НЕ ПРЕДЛАГАВШИЙ НЕ ТЕРЯЕТ: предложил отдающий — цена не выше оценки "
-          "берущего; предложил берущий — не ниже оценки отдающего");
-    CHECK(priceFell == 0, "цена лота не убывает с числом единиц");
+    CHECK(seen > 5000 && wanted > 500,
+          "the sweep actually swept, and it holds lots the visitor wants");
+    CHECK(priceFell == 0,
+          "цена взятого и причитающееся за отданное не убывают с числом единиц");
     CHECK(splitPaid == 0,
-          "ДРОБИТЬ ПРЕДЛОЖИВШЕМУ НЕ ВЫГОДНО: первая единица отдельно и остаток "
+          "ДРОБИТЬ ПРИШЕДШЕМУ НЕ ВЫГОДНО: первая единица отдельно и остаток "
           "отдельно не дают ему больше целого лота");
-    CHECK(gainfulBroken == 0,
-          "ЛОТ ВЫГОДЫ: не больше выгодных единиц, цена — цена лота, по "
-          "кошельку, и следующая единица уже не по кошельку");
+    CHECK(takeBroken == 0,
+          "ВЗЯТЬ У СТОЯЩЕГО: не больше единиц, чем пришедший ценит выше цены; "
+          "цена — цена взятия, по платёжеспособности, и следующая единица уже "
+          "не по ней");
+    CHECK(giveBroken == 0,
+          "ОТДАТЬ СТОЯЩЕМУ: не больше единиц, чем стоящий ценит выше с "
+          "наценкой; причитается его оценка без его доли, не больше, чем он "
+          "способен отдать");
     CHECK(coverBroken == 0,
-          "ВСТРЕЧНАЯ КОРЗИНА: цена — цена лота; покрыто, либо отдано всё, что "
-          "годится; ни единицы сверх покрытия");
+          "ПЛАТИТ ПРИШЕДШИЙ: засчитано по оценке стоящего; покрыто, либо отдано "
+          "всё, что годится; ни единицы сверх покрытия");
     CHECK(fitBroken == 0,
-          "КОРЗИНА БЕЗ ПЕРЕПЛАТЫ: цена — цена лота, не выше бюджета, и "
+          "ПЛАТИТ ПРИШЕДШИЙ БЕЗ ПЕРЕПЛАТЫ: засчитано не выше бюджета, и "
+          "следующая единица в бюджет уже не влезает");
+    CHECK(reachBroken == 0,
+          "ПЛАТИТ СТОЯЩИЙ: его единицы идут по цене взятия, не выше бюджета, и "
           "следующая единица в бюджет уже не влезает");
 }
 
@@ -510,8 +516,8 @@ void test_lot_doors_keep_their_promises() {
 // Свидетель заведён 2026-09-21 на дефект, проживший в панели ИГРОКА всё
 // время существования двусторонней цены: цена звалась как «(база, харизма,
 // ранг Торговли)» там, где подпись была «(база, МОЯ сила, ЕГО сила)». Два
-// симптома, оба видны игроку, оба утверждаются здесь — теперь на ядре
-// единой ценомодели (сила делит выгоду отношением двух анкет):
+// симптома, оба видны игроку, оба утверждаются здесь — на ядре единой
+// ценомодели (наценку стоящего задаёт отношение двух анкет):
 //   1. ранг Торговли стоял на месте ЧУЖОЙ силы ⇒ прокачка скилла ухудшала
 //      цену;
 //   2. анкета контрагента не спрашивалась вовсе ⇒ торг со столицей и с
@@ -533,32 +539,40 @@ void test_trade_power_is_one_door() {
     CHECK(trade_power_of(charming) > trade_power_of(weak),
           "харизма усиливает торговую силу");
 
-    // Сделка, в которой ЕСТЬ что делить: ходок отдаёт штуку рынку, которому
-    // её не хватает.
+    // Рынку не хватает девяти штук; пришедший отдаёт ему одну и берёт одну.
     constexpr std::int64_t kWideBack = std::int64_t(1) << 40;
-    const RowSide roamer{100, 50, 1, kWideBack};
     const RowSide hungry{100, -9, 1, kWideBack};
     const auto gives = [&](const CharacterSheet& mine,
                            const CharacterSheet& theirs) {
-        return lot_price(roamer, hungry, trade_power_of(mine),
-                         trade_power_of(theirs), 1, Offer::Giver);
+        return ask_reach(lot_take(hungry, 1), trade_power_of(theirs),
+                         trade_power_of(mine));
+    };
+    const auto takes = [&](const CharacterSheet& mine,
+                           const CharacterSheet& theirs) {
+        return take_price(hungry, 1, trade_power_of(theirs),
+                          trade_power_of(mine));
     };
     // 2. Цену двигает ОТНОШЕНИЕ анкет, значит контрагент обязан быть
-    //    спрошен: сильной стороне та же штука достаётся дешевле.
-    CHECK(gives(weak, skilled) < gives(weak, weak),
-          "у сильной стороны слабый получает меньше — анкета контрагента "
-          "участвует в цене");
+    //    спрошен: у сильной стороны слабый получает меньше и платит больше.
+    CHECK(gives(weak, skilled) < gives(weak, weak)
+              && takes(weak, skilled) > takes(weak, weak),
+          "у сильной стороны слабый получает меньше и платит больше — анкета "
+          "контрагента участвует в цене");
     // 3. Прокачка Торговли улучшает цену при ТОМ ЖЕ контрагенте. Это прямое
     //    утверждение симптома №1.
-    CHECK(gives(skilled, weak) > gives(weak, weak),
-          "прокачанный торговец получает БОЛЬШЕ — скилл работает НА игрока");
-    // 4. Негативный контроль: равные анкеты делят выгоду ровно пополам,
-    //    каковы бы они ни были. Без него проверки выше прошли бы и на законе
-    //    «цена всегда в пользу того, кто спросил».
+    CHECK(gives(skilled, weak) > gives(weak, weak)
+              && takes(skilled, weak) < takes(weak, weak),
+          "прокачанный торговец получает БОЛЬШЕ и платит МЕНЬШЕ — скилл "
+          "работает НА игрока");
+    // 4. Негативный контроль: равные анкеты дают одну цену, каковы бы они ни
+    //    были, — закон читает отношение сил. Якорь рукой: доля равного
+    //    стоящего — половина, значит за отданное причитается две трети его
+    //    оценки, а взятое стоит полторы.
     CHECK(gives(skilled, skilled) == gives(weak, weak)
-              && gives(weak, weak) == 100 + (worth_arriving(hungry, 1) - 100) / 2,
-          "негативный контроль: равные анкеты дают ровно середину между "
-          "двумя оценками");
+              && gives(weak, weak) == worth_arriving(hungry, 1) * 2 / 3
+              && takes(weak, weak) == worth_leaving(hungry, 1) * 3 / 2,
+          "негативный контроль: равные анкеты — две трети оценки стоящего за "
+          "отданное и полторы за взятое, какими бы сильными ни были оба");
 }
 
 } // namespace
