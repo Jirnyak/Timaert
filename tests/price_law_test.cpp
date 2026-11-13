@@ -1,24 +1,23 @@
-// The price-from-stock law (starcluster, W2d final) and the death of
-// arbitrage. Pinned:
-//   · scarcity shape — absence is dear, glut is cheap, NO corridor (the
-//     [0.25…4] clamp died 2026-09-18: it did not guard against the generous
-//     merchant, it CREATED him — slippage vanishes only at saturation), and
-//     the horizon is the SEASON (S19.2: the world eats once a season, so
-//     stock == a season's need ⇔ price == base — the readable equilibrium);
-//   · demand comes from the ONE needs ladder;
-//   · ARBITRAGE IS EXTINCT: a buy-then-sell round trip can never profit,
-//     for any stock, amount, charisma and context multipliers — including
-//     the generous-merchant pair (0.9 buy / 1.2 sell) that once yielded
-//     buy-81/sell-92 infinite money (audit III.2). The killer is the
-//     SLIPPAGE both sides pay: a buy prices the shelf it leaves behind
-//     (scarcer, dearer), a sell prices the glut it creates (cheaper).
+// ЕДИНАЯ ЦЕНОМОДЕЛЬ (CANON S25, вердикты владельца 2026-11-12) и смерть
+// насоса. Свидетели ядра стоят под компилятором у самих дверей
+// (`src/macro/economy.h`); здесь — то, что компилятору не по силам: свип по
+// состояниям рынка и силам сторон, негативный контроль на МЁРТВОМ законе
+// наценки и связь ядра с листом. Утверждается:
+//   · кривая производства — отсутствие дорого, завал дёшев, коридора нет
+//     (её читают только решения о труде; сделка её не спрашивает);
+//   · нужда идёт с ОДНОЙ лестницы нужд;
+//   · ОЦЕНКА: нужда поднимает, завал роняет, и «много» мерит масса против
+//     спины — тысяча лёгких монет идёт почти по номиналу, тысяча возов нет;
+//   · НАСОСА НЕТ: круг «отдал — забрал» не приносит ничего при ЛЮБЫХ силах
+//     и в любом состоянии рынка — в обе стороны круга. Тот же детектор
+//     ВИДИТ насос у закона наценки за кривую, которым мир торговал до
+//     2026-11-12 (351 монета за круг в точке, найденной ревью M-478);
+//   · торговая сила — одна дверь листа, и делит она выгоду ОТНОШЕНИЕМ.
 #include "macro/characters.h"   // squad_birth — руки рода
 #include "check.h"
 
 #include "macro/economy.h"
 #include "macro/econ_day.h"
-#include "macro/currency.h"
-#include "macro/deal.h"        // kNoCarryLimitG — «предела нет» ИМЕНЕМ (M-308)
 
 namespace {
 // Руки города и деревни — анкета их рода (characters.h), а не вид места.
@@ -138,150 +137,188 @@ void test_scarcity_shape() {
     }
 }
 
-void test_arbitrage_dies_two_ways() {
-    // INFINITE money is dead by two independent walls, and both are pinned.
-    //
-    // WALL 1 — SLIPPAGE: a full-shelf round trip (buy the lot, sell it
-    // back) prices the buy against the EMPTIED shelf and the sell against
-    // the restocked one, and the gap eats the round. Контекстные множители
-    // (настроение места, нрав купца) вырезаны 2026-09-19 — свип по ним
-    // умер вместе с ними: у цены остались кривая и разница анкет.
-    {
-        int trips = 0;
-        for (int s = 2; s <= 512; s *= 2) {
-            // РАВНЫЕ АНКЕТЫ (S25): обе стороны называют одну торговую силу,
-            // наценки нет, и единственное, что решает круг, — СЛИППЕДЖ.
-            // Свип по силе остаётся, но обе стороны идут одним числом:
-            // закон теперь про РАЗНИЦУ, и «моя сила против нуля» — это уже
-            // не прокрутка, а грабёж слабого (см. пин ниже).
-            for (int cha = 0; cha <= 200; cha += 50) {
-                for (int base : {5, 10, 100}) {
-                    for (int demand : {0, 8, 64}) {
-                        // A famine market (demand >= the whole shelf) pins
-                        // BOTH ends — no slippage exists there and WALL 2
-                        // (the purse) is the guard. Slippage needs headroom.
-                        if (demand >= s) continue;
-                        const int buyUnit = trade_price(
-                            stock_price(base, 0, demand),
-                            cha, cha, /*buying=*/true);
-                        const int sellUnit = trade_price(
-                            stock_price(base, s, demand),
-                            cha, cha, /*buying=*/false);
-                        ++trips;
-                        CHECK(sellUnit <= buyUnit,
-                              "full-shelf round trips never profit");
-                        if (sellUnit > buyUnit) return;
+// ── ОЦЕНКА: НУЖДА ПОДНИМАЕТ, ЗАВАЛ РОНЯЕТ, И «МНОГО» МЕРИТ МАССА ──────────
+void test_worth_is_lifted_by_need_and_dropped_by_glut() {
+    int seen = 0, notMonotone = 0, belowFloor = 0, liftedWithoutNeed = 0;
+    int droppedUnderNeed = 0, heavierDearer = 0, widerCheaper = 0;
+    for (int base : {1, 2, 10, 100, 12800}) {
+        for (int have : {0, 1, 9, 100, 1000, 1 << 20}) {
+            for (int need : {0, 1, 9, 100, 1000, 1 << 20}) {
+                for (std::int64_t mass : {10, 1000, 4000}) {
+                    for (std::int64_t back :
+                         {std::int64_t(0), std::int64_t(100000),
+                          std::int64_t(1) << 30}) {
+                        const std::int64_t w =
+                            unit_worth(base, have, need, mass, back);
+                        ++seen;
+                        if (w < 1) ++belowFloor;
+                        if (need <= have && w > base) ++liftedWithoutNeed;
+                        if (need > have && w < base) ++droppedUnderNeed;
+                        if (unit_worth(base, have + 1, need, mass, back) > w)
+                            ++notMonotone;
+                        if (unit_worth(base, have, need + 1, mass, back) < w)
+                            ++notMonotone;
+                        if (unit_worth(base, have, need, mass * 2, back) > w)
+                            ++heavierDearer;
+                        if (unit_worth(base, have, need, mass, back * 2) < w)
+                            ++widerCheaper;
                     }
                 }
             }
         }
-        CHECK(trips > 100, "the sweep actually swept");
     }
+    CHECK(seen > 1000, "the sweep actually swept");
+    CHECK(belowFloor == 0, "пол оценки — единица: «ничто не бесплатно»");
+    CHECK(liftedWithoutNeed == 0 && droppedUnderNeed == 0,
+          "выше стоимости оценку поднимает только нужда сверх запаса, ниже "
+          "роняет только излишек сверх нужды");
+    CHECK(notMonotone == 0,
+          "оценка не растёт с запасом и не падает с нуждой");
+    CHECK(heavierDearer == 0 && widerCheaper == 0,
+          "«много» мерит масса против спины: вещь потяжелее не ценится выше, "
+          "сторона со спиной пошире не ценит ниже");
+    // Негативный контроль свипа: обе ветви ДВИЖУТСЯ, свип не утверждает
+    // константу. И якорь, ради которого счёт штук заменён массой: тысяча
+    // лёгких монет идёт почти по номиналу, тысяча возов — завал.
+    CHECK(unit_worth(100, 0, 100, 1000, 100000) > unit_worth(100, 50, 100, 1000, 100000)
+              && unit_worth(100, 50, 100, 1000, 100000) > unit_worth(100, 100, 100, 1000, 100000)
+              && unit_worth(100, 100, 0, 1000, 1000000) > unit_worth(100, 500, 0, 1000, 1000000),
+          "негативный контроль: нужда и завал оба двигают оценку");
+    CHECK(unit_worth(100, 1000, 0, 10, 1000000) == 99
+              && unit_worth(100, 1000, 0, 4000, 1000000) == 1,
+          "МОНЕТА — ДЕНЬГИ БЕЗ ТЕГА: тысяча штук по десять граммов занимает "
+          "сотую спины, тысяча штук по четыре килограмма забивает её");
+}
 
-    // ...И ПЕРЕВЕС ЧЕСТНО ПРИБЫЛЕН — это ЗАКОН, а не дыра в нём (S25:
-    // «у кого больше, тот и наценивает»). Прокачанный торговец обирает
-    // слабую сторону на разницу анкет; сторожит это не кламп, которого
-    // больше нет, а WALL 2 ниже — КОШЕЛЁК контрагента конечен.
+// ── НАСОСА НЕТ: НИ ОДИН КРУГ НЕ ПРИНОСИТ МОНЕТЫ ──────────────────────────
+// Закон мира: у стороны ОДНА оценка вещи, и цена лежит между оценками двух
+// сторон; единица против выгоды едет только волей предложившего, и платит за
+// неё он. Отсюда — круг «отдал n и забрал n» (или «забрал и отдал») убыточен
+// либо нулевой, какой бы ни была разница сил, спин и нужд.
+void test_no_pump_at_any_power() {
+    // Круг глазами стороны `a`, которая предлагает ОБЕ ноги.
+    const auto give_then_take = [](const RowSide& a, const RowSide& b,
+                                   int aPower, int bPower, int n) {
+        RowSide b2 = b, a2 = a;
+        b2.net += n;
+        a2.net -= n;
+        return lot_price(a, b, aPower, bPower, n, Offer::Giver)
+             - lot_price(b2, a2, bPower, aPower, n, Offer::Taker);
+    };
+    const auto take_then_give = [](const RowSide& a, const RowSide& b,
+                                   int aPower, int bPower, int n) {
+        RowSide b2 = b, a2 = a;
+        b2.net -= n;
+        a2.net += n;
+        return lot_price(a2, b2, aPower, bPower, n, Offer::Giver)
+             - lot_price(b, a, bPower, aPower, n, Offer::Taker);
+    };
     {
-        const int shelf = 64, base = 10, demand = 8;
-        const int strongBuys = trade_price(stock_price(base, 0, demand),
-                                           /*mine=*/60, /*theirs=*/0,
-                                           /*buying=*/true);
-        const int strongSells = trade_price(stock_price(base, shelf, demand),
-                                            /*mine=*/60, /*theirs=*/0,
-                                            /*buying=*/false);
-        const int evenBuys = trade_price(stock_price(base, 0, demand),
-                                         0, 0, true);
-        const int evenSells = trade_price(stock_price(base, shelf, demand),
-                                          0, 0, false);
-        CHECK(strongBuys < evenBuys && strongSells > evenSells,
-              "перевес анкеты двигает ОБА конца в пользу сильного");
-        CHECK(evenSells <= evenBuys,
-              "негативный контроль: при равных анкетах тот же круг не "
-              "приносит ничего — работает только слиппедж");
-    }
-
-    // WALL 2 — THE PURSE: прибыль в мире ЕСТЬ, и это закон (S25: сильная
-    // анкета обирает слабую). Стережёт её не кламп, которого нет, а КОШЕЛЁК
-    // контрагента: каждый прибыльный круг его осушает, и ферма встаёт.
-    // Simulated as the panels settle it: real coin transfers, all-or-nothing.
-    {
-        Inventory player;
-        Inventory merchant;
-        player.add("coin_empire_copper", 1000);
-        merchant.add("coin_empire_copper", 200);   // his whole purse
-        merchant.add("food", 64);
-        const int myStart = coin_census_value(player);
-        int rounds = 0;
-        bool farmDied = false;
-        // ФЕРМА УМИРАЕТ ДВУМЯ СПОСОБАМИ, и оба надо узнавать: круг перестаёт
-        // быть выгодным (слиппедж) ЛИБО контрагенту нечем платить. Второй
-        // выглядит не как отказ, а как СТОЯЧИЙ круг: обчищенный купец
-        // отдаёт по крохе, и счётчик прибыли замирает.
-        int stale = 0;
-        for (; rounds < 10000; ++rounds) {
-            const int purseBefore = coin_census_value(player);
-            const int supply = merchant.count("food");
-            // Сильная анкета против слабой: покупаю со скидкой, продаю с
-            // наценкой — прибыльный круг, который и должен упереться в его
-            // кошелёк.
-            const int buyUnit = trade_price(
-                stock_price(100, supply - 1, 0), 60, 0, true);
-            const int sellUnit = trade_price(
-                stock_price(100, supply, 0), 60, 0, false);
-            if (sellUnit <= buyUnit) { farmDied = true; break; }   // profitless
-            if (coin_census_value(player) < buyUnit) break;
-            // ПРЕДЕЛА СПИНЫ ЗДЕСЬ НЕТ СОЗНАТЕЛЬНО (M-308): прибор судит
-            // ЦЕНУ, и кошелёк — та стена, в которую круг обязан упереться.
-            // Введи здесь ёмкость — и стеной станет она, то есть свидетель
-            // начал бы охранять ДРУГОЙ закон.
-            if (!transfer_value_dense(player, merchant, buyUnit,
-                                      kNoCarryLimitG)) break;
-            merchant.remove("food", 1);
-            player.add("food", 1);
-            if (!transfer_value_dense(merchant, player, sellUnit,
-                                      kNoCarryLimitG)) {
-                // He cannot pay: the deal does not happen — put it back.
-                player.remove("food", 1);
-                merchant.add("food", 1);
-                farmDied = true;   // he cannot pay: the purse wall
-                break;
-            }
-            player.remove("food", 1);
-            merchant.add("food", 1);
-            if (coin_census_value(player) <= purseBefore) {
-                if (++stale >= 3) { farmDied = true; break; }
-            } else {
-                stale = 0;
+        int trips = 0, pumps = 0, movedPrice = 0;
+        for (int base : {1, 5, 100, 12800}) {
+            for (int net : {-512, -8, -1, 0, 1, 8, 64, 512}) {
+                for (std::int64_t mass : {10, 1000, 4000}) {
+                    for (int n : {1, 2, 13, 64}) {
+                        for (int mine : {0, 1, 13, 510}) {
+                            for (int theirs : {0, 1, 13, 510}) {
+                                for (std::int64_t back :
+                                     {std::int64_t(50000),
+                                      std::int64_t(100000000)}) {
+                                    for (int cargo : {0, 40, 400}) {
+                                        const RowSide a{base, cargo, mass,
+                                                        50000};
+                                        const RowSide b{base, net, mass,
+                                                        back};
+                                        ++trips;
+                                        if (give_then_take(a, b, mine, theirs,
+                                                           n) > 0) ++pumps;
+                                        if (take_then_give(a, b, mine, theirs,
+                                                           n) > 0) ++pumps;
+                                        if (lot_price(a, b, mine, theirs, n,
+                                                      Offer::Giver)
+                                                != std::int64_t(base) * n)
+                                            ++movedPrice;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
-        const int profit = coin_census_value(player) - myStart;
-        CHECK(rounds < 10000 && farmDied,
-              "the farm DIES - profitless or purse-broke, never infinite");
-        // Прибыль сильного — не дефект (S25), поэтому пин здесь не «ноль»,
-        // а КОНЕЧНОСТЬ: сколько бы кругов ни прошло, взять больше, чем было
-        // у контрагента, невозможно — денег в мире не печатается.
-        CHECK(profit <= 200, "the profit can never exceed his whole purse");
-        CHECK(coin_census_value(player) + coin_census_value(merchant) == 1200,
-              "coin CONSERVES across every round - nothing was minted");
-        // (The metric is the COIN CENSUS, not the bags' whole value: since
-        // verdict №1 a debit may travel as goods when they are denser, and
-        // what this law is about is that no coin was minted.)
+        CHECK(trips > 5000, "the sweep actually swept");
+        CHECK(pumps == 0,
+              "НАСОСА НЕТ: круг не приносит ничего при любых силах, спинах, "
+              "массах и нуждах, в обе стороны круга");
+        CHECK(movedPrice > 1000,
+              "негативный контроль свипа: в нём ЕСТЬ сделки не по стоимости "
+              "— круг убыточен не потому, что всё идёт по номиналу");
+    }
+    // НЕГАТИВНЫЙ КОНТРОЛЬ НА МЁРТВОМ ЗАКОНЕ. Точка найдена ревью M-478: база
+    // 100, полка 89, нужда 99, перевес сил +20. Закон наценки за кривую
+    // (лот одной ценой по полке после сделки × (1 ± перевес)) давал в ней
+    // +351 монету за круг; тот же круг по ядру — в минус. Формула мёртвого
+    // закона выписана здесь нарочно: это мутация, которую детектор обязан
+    // видеть, а не вторая копия живой логики.
+    {
+        const auto dead_unit = [](int base, int have, int need, int n,
+                                  bool selling, int edgePct) {
+            const long long shelf = (selling ? have + n : have - n) + 1;
+            const long long curve =
+                (2LL * base * (need + 1) + shelf) / (2 * shelf);
+            const long long k = selling ? 100 + edgePct : 100 - edgePct;
+            const long long v = (curve * k + 50) / 100;
+            return v < 1 ? 1LL : v;
+        };
+        const int base = 100, have = 89, need = 99, n = 13, edge = 20;
+        const long long deadGain =
+            n * dead_unit(base, have, need, n, true, edge)
+          - n * dead_unit(base, have + n, need, n, false, edge);
+        CHECK(deadGain == 351,
+              "детектор видит насос мёртвого закона: +351 за круг");
+        // Та же точка глазами ядра: полка 89 против нужды 99 — непогашенная
+        // нужда десять.
+        const RowSide trader{base, 400, 1000, 1000000};
+        const RowSide market{base, have - need, 1000, 100000000};
+        CHECK(give_then_take(trader, market, 20, 0, n) <= 0
+                  && give_then_take(trader, market, 510, 0, n) <= 0,
+              "тот же круг в той же точке по ядру не приносит ничего — при "
+              "том же и при предельном перевесе");
+    }
+    // ВТОРОЙ МЁРТВЫЙ ЗАКОН — единица против выгоды по оценке ОТДАЮЩЕГО, кто бы
+    // её ни предложил: купец с забитой спиной «продаёт» рынку штуку по своей
+    // оценке, хотя рынок ценит её ниже, и выкупает по оценке рынка. Точка:
+    // купец 10 штук, рынок 25 излишка, спины по сто штук. Именно этот круг
+    // закрывает правило «платит предложивший».
+    {
+        const RowSide trader{100, 10, 1000, 100000};
+        const RowSide market{100, 25, 1000, 100000};
+        RowSide m2 = market, t2 = trader;
+        m2.net += 9;
+        t2.net -= 9;
+        const std::int64_t deadGain =
+            lot_price(trader, market, 510, 1, 9, Offer::Taker)
+          - lot_price(m2, t2, 1, 510, 9, Offer::Taker);
+        CHECK(deadGain > 0,
+              "детектор видит насос закона «против выгоды всегда платит "
+              "берущий»");
+        CHECK(give_then_take(trader, market, 510, 1, 9) <= 0,
+              "по закону «платит предложивший» тот же круг не приносит ничего");
     }
 }
 
 // ── ТОРГОВАЯ СИЛА — ОДНА ДВЕРЬ, И ОБЕ СТОРОНЫ НАЗЫВАЮТ ЕЮ СЕБЯ ────────────
 // Свидетель заведён 2026-09-21 на дефект, проживший в панели ИГРОКА всё
-// время существования двусторонней цены: `trade_price(база, МОЯ сила, ЕГО
-// сила)` звалась как `trade_price(база, харизма, ранг Торговли)`. Два
-// симптома, оба видны игроку, оба пинятся здесь:
+// время существования двусторонней цены: цена звалась как «(база, харизма,
+// ранг Торговли)» там, где подпись была «(база, МОЯ сила, ЕГО сила)». Два
+// симптома, оба видны игроку, оба утверждаются здесь — теперь на ядре
+// единой ценомодели (сила делит выгоду отношением двух анкет):
 //   1. ранг Торговли стоял на месте ЧУЖОЙ силы ⇒ прокачка скилла ухудшала
-//      цену (наценка выходила «моя харизма минус мой же скилл»);
+//      цену;
 //   2. анкета контрагента не спрашивалась вовсе ⇒ торг со столицей и с
 //      нищим бродягой стоил одинаково.
-// Пинится СВОЙСТВО, а не число: монотонность силы по обеим осям листа и то,
-// что чужая анкета цену двигает. Литералов из таблицы здесь нет — лист
-// собирается тут же, и правка балансных чисел анкет тест не уронит.
+// Утверждается СВОЙСТВО, а не число: монотонность силы по обеим осям листа
+// и то, что чужая анкета цену двигает. Литералов из таблицы здесь нет.
 void test_trade_power_is_one_door() {
     // 1. Сила растёт по ОБЕИМ осям листа: атрибут — природная мощь, скилл её
     //    МНОЖИТ (attributes.h). Инверсия по второй оси и была дефектом.
@@ -297,41 +334,40 @@ void test_trade_power_is_one_door() {
     CHECK(trade_power_of(charming) > trade_power_of(weak),
           "харизма усиливает торговую силу");
 
-    // 2. Цену двигает РАЗНИЦА анкет, значит контрагент обязан быть спрошен:
-    //    у сильного места слабый покупатель платит больше, чем у слабого.
-    const int base = 100;
-    const int atStrong = trade_price(base, trade_power_of(weak),
-                                     trade_power_of(skilled), /*buying=*/true);
-    const int atWeak = trade_price(base, trade_power_of(weak),
-                                   trade_power_of(weak), /*buying=*/true);
-    CHECK(atStrong > atWeak,
-          "у сильной стороны тот же товар дороже — анкета контрагента "
+    // Сделка, в которой ЕСТЬ что делить: ходок отдаёт штуку рынку, которому
+    // её не хватает.
+    constexpr std::int64_t kWideBack = std::int64_t(1) << 40;
+    const RowSide roamer{100, 50, 1, kWideBack};
+    const RowSide hungry{100, -9, 1, kWideBack};
+    const auto gives = [&](const CharacterSheet& mine,
+                           const CharacterSheet& theirs) {
+        return lot_price(roamer, hungry, trade_power_of(mine),
+                         trade_power_of(theirs), 1, Offer::Giver);
+    };
+    // 2. Цену двигает ОТНОШЕНИЕ анкет, значит контрагент обязан быть
+    //    спрошен: сильной стороне та же штука достаётся дешевле.
+    CHECK(gives(weak, skilled) < gives(weak, weak),
+          "у сильной стороны слабый получает меньше — анкета контрагента "
           "участвует в цене");
-
-    // 3. Прокачка Торговли улучшает цену покупателю при ТОМ ЖЕ контрагенте.
-    //    Это прямой пин симптома №1.
-    const int skilledBuys = trade_price(base, trade_power_of(skilled),
-                                        trade_power_of(weak), true);
-    const int weakBuys = trade_price(base, trade_power_of(weak),
-                                     trade_power_of(weak), true);
-    CHECK(skilledBuys < weakBuys,
-          "прокачанный торговец покупает ДЕШЕВЛЕ — скилл работает НА игрока");
-
-    // 4. Негативный контроль: равные анкеты — наценки нет вовсе. Без него
-    //    проверки выше прошли бы и на законе «цена всегда в пользу того, кто
-    //    спросил» (CANON S25: «равные стороны торгуют ровно по цене»).
-    CHECK(trade_price(base, trade_power_of(skilled),
-                      trade_power_of(skilled), true) == base
-          && trade_price(base, trade_power_of(skilled),
-                         trade_power_of(skilled), false) == base,
-          "негативный контроль: равные анкеты дают ровно базу с обоих концов");
+    // 3. Прокачка Торговли улучшает цену при ТОМ ЖЕ контрагенте. Это прямое
+    //    утверждение симптома №1.
+    CHECK(gives(skilled, weak) > gives(weak, weak),
+          "прокачанный торговец получает БОЛЬШЕ — скилл работает НА игрока");
+    // 4. Негативный контроль: равные анкеты делят выгоду ровно пополам,
+    //    каковы бы они ни были. Без него проверки выше прошли бы и на законе
+    //    «цена всегда в пользу того, кто спросил».
+    CHECK(gives(skilled, skilled) == gives(weak, weak)
+              && gives(weak, weak) == 100 + (worth_arriving(hungry, 1) - 100) / 2,
+          "негативный контроль: равные анкеты дают ровно середину между "
+          "двумя оценками");
 }
 
 } // namespace
 
 int main() {
     test_scarcity_shape();
-    test_arbitrage_dies_two_ways();
+    test_worth_is_lifted_by_need_and_dropped_by_glut();
+    test_no_pump_at_any_power();
     test_trade_power_is_one_door();
     return sm::test::report("price_law_test");
 }

@@ -1097,8 +1097,7 @@ float march_days_(const TickContext& ctx, std::uint32_t a, std::uint32_t b,
 std::uint32_t route_fear_(const TickContext& ctx, std::uint32_t a,
                           std::uint32_t b);
 long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
-                          std::uint16_t traderSlot, const Skills& site,
-                          std::int64_t capG);
+                          std::uint16_t traderSlot, std::int64_t capG);
 // ФОЛБЭКИ — ТОЖЕ ГЛАГОЛЫ ПУЛЬТА: сквад без дома и сквад без цели ходят
 // чужими модулями, и право позвать их даёт пульт, а не прямой вызов из тела.
 void ai_nomad(MacroHandle self, ecs::MacroNpcRuntime& rt,
@@ -1439,29 +1438,28 @@ public:
     void home_wander(AiSelf& s) {
         ai_home_wanderer(s.h, s.rt, s.pools, ctx_);
     }
-    // ПОГРУЗКА РЕБЁНКА — СДЕЛКА «РОДИТЕЛЬ → РЕБЁНОК» (владелец 2026-11-12:
+    // ПОГРУЗКА РЕБЁНКА — ПЕРЕНОС «РОДИТЕЛЬ → РЕБЁНОК» (владелец 2026-11-12:
     // «город рождает его и загружает»). Груз отдаёт тот, чей склад: одна
-    // дверь плана и исполнения (`plan_home_load_`) — всё, что у родителя
-    // сверх сезонной нужды, по плотности стоимости, на спину ребёнка.
+    // дверь плана и исполнения (`plan_home_load_`) — то, что ребёнок со
+    // свободной спиной ценит выше родителя, выгоднейшее на грамм первым.
     // ЗДЕСЬ СТОЯЛ `load_home`, И ЗВАЛ ЕГО САМ РЕЙС: ребёнок брал со склада
     // дома своей рукой, то есть решение о чужом инвентаре принимал не его
     // хозяин.
     void load_child(AiSelf& s, std::uint16_t child) {
         MacroStore& st = store_ctx(ctx_);
-        plan_home_load_(st, s.h.slot, child, s.sheet.skills,
+        plan_home_load_(st, s.h.slot, child,
                         carry_capacity_g(st.runtime[child],
                                          st.inventory[child].inv));
     }
     // СДЕЛКА НА РЫНКЕ — дверь торговли (S10/S25): обе ноги атомарны, сила
-    // торга у каждой стороны своя и берётся ЕЁ анкетой. Дома сделка не
-    // знает вовсе: купец судит рынок, на котором стоит, и растит стоимость
-    // своего трюма (`trade_caravan_at_station`).
+    // и спина у каждой стороны свои и читаются дверями стороны
+    // (`side_row`, `side_trade_power`). Дома сделка не знает вовсе: купец
+    // судит рынок, на котором стоит, и растит свою оценку своего трюма
+    // (`trade_caravan_at_station`).
     CaravanDeal trade_at(AiSelf& s, std::uint16_t market) {
         MacroStore& st = store_ctx(ctx_);
         return trade_caravan_at_station(
-            st, s.h.slot, carry_capacity_g(s.rt, s.bag), market,
-            trade_power_of(sheet_of(st, s.h)),
-            trade_power_of(st.sheet[market]));
+            st, s.h.slot, carry_capacity_g(s.rt, s.bag), market);
     }
     // Летопись: состоявшийся обмен — факт мира (FactKind::Traded).
     void traded_fact(AiSelf& s, int x, int y, int value, int marketId) {
@@ -2295,102 +2293,79 @@ std::uint32_t route_fear_(const TickContext& ctx, std::uint32_t a,
 // нужда съедается в момент прихода, на складе лежит только ИЗЛИШЕК —
 // «незачем беречь то, что уже проедено по дороге». Всё видимое свободно;
 // судит одна цена.
-// ── ГРУЗ ДОМА — ОДНА ДВЕРЬ, ДВА ЧИТАТЕЛЯ (CANON S10) ────────────────────
-// Вердикт владельца 2026-09-22, дословно: «надо универсально — город грузит
-// в путь ВСЕ товары, то есть у нас просто система, что всё в инвентаре это
-// товар (так и должно быть)».
+// ── ГРУЗ ДОМА — РОДИТЕЛЬ ОТДАЁТ РЕБЁНКУ ТО, ЧТО ТОТ ЦЕНИТ ВЫШЕ (CANON S10) ─
+// Вердикты владельца: «город грузит в путь ВСЕ товары, то есть у нас просто
+// система, что всё в инвентаре это товар» (2026-09-22) и «город рождает его и
+// загружает» (2026-11-12). Закон выбора — единая ценомодель (2026-11-12):
+// семья выигрывает ровно на тех единицах, которые ребёнок с его свободной
+// спиной ценит выше родителя, — это ЗАВАЛ родителя, излишек, забивший спину
+// его жителей. Их дом и отдаёт, выгоднейшее на грамм — первым, пока спина
+// ребёнка свободна и оценки не сошлись. Перенос даровой: внутри семьи
+// делить нечего.
 //
-// Обход идёт по ПЛОТНОСТИ СТОИМОСТИ (тот же закон, каким платит всякая
-// сделка — currency.h densest_value_slot), а НЕ по пятнадцати строкам
-// kCommodities, как было до 2026-09-22. Следствие, ради которого это и
-// сделано: МОНЕТА ПЕРЕСТАЁТ БЫТЬ НЕВИДИМОЙ. Прежний обход брал строку,
-// только если `stock_price(...) < base`, а у монеты цена И ЕСТЬ база —
-// условие не выполнялось никогда, и казна физически не могла уехать в рейс
-// (Х-13, «названо вслух, не проверено» — проверено замером 2026-09-22:
-// у медианного города еда 0 при 3 682 монетах, и он не мог купить хлеба).
-// Никакого «пути для монет» при этом не заводится: монета просто самый
-// плотный груз на складе (S10 «спецпутей и ворот для монет не существует»).
+// ЗДЕСЬ СТОЯЛ ОБХОД ПО ПЛОТНОСТИ СТОИМОСТИ, и он грузил МОНЕТУ ПЕРВОЙ: после
+// первого же рейса дом набивал спину ребёнка своей казной, а корован с одной
+// монетой не может ни отдать (её все ценят одинаково), ни взять (спина
+// полна) — рейсы шли пустыми (свидетель рейса, 2026-11-12: 47 пустых стоянок
+// из 82). Монета грузилась затем, чтобы дом мог КУПИТЬ недостающее своим же
+// корованом (шрам Х-13: «еда 0 при 3 682 монетах»); теперь голодному дому
+// еду привозит всякий купец, и платит дом из своего склада.
 //
-// Строка, у которой есть СЕЗОННАЯ НУЖДА, грузится только СВЕРХ неё — дом не
-// вывозит то, чего ему самому не хватает. Всё прочее (монета, инструмент,
-// трофей) нужды не имеет и едет целиком.
-//
-// `bag == nullptr` — НИЧЕГО НЕ ДВИГАТЬ, только посчитать стоимость, которую
-// рейс увезёт: так дверь спрашивает АУКЦИОН. Оттого «что решили» и «что
-// повезли» — одно число, посчитанное одним кодом, а не два (S26).
-// Стороны — СЛОТЫ стора (deal.h, ломоть 2 M-72): `traderSlot ==
-// kMacroNoSlot` значит «только посчитать» (так дверь спрашивает аукцион);
-// иначе план стейджится лотом и исполняется ОДНОЙ сделкой в конце —
-// «что решили» и «что повезли» теперь не только одно число, но и один
-// коммит.
+// Нужда дома неприкосновенна по построению: строку, которой ему не хватает,
+// он ценит выше ребёнка, и выгоды в её вывозе нет.
 long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
-                          std::uint16_t traderSlot, const Skills& site,
-                          std::int64_t capG) {
-    Inventory& store = st.inventory[homeSlot].inv;
-    const std::int32_t* needDebt = st.upkeep[homeSlot].needDebt;
-    const int population = souls_home(st, homeSlot);
-    Inventory* bag = traderSlot == kMacroNoSlot
-        ? nullptr : &st.inventory[traderSlot].inv;
+                          std::uint16_t traderSlot, std::int64_t capG) {
+    const Inventory& store = st.inventory[homeSlot].inv;
+    const Inventory& bag = st.inventory[traderSlot].inv;
+    // Строки склада, которые ребёнок ценит выше дома, — с выгодой первой
+    // единицы; порядок — выгода на грамм (перекрёстное умножение).
+    struct Row { std::uint16_t def; int base; std::int64_t gain; std::int64_t massG; };
+    Row rows[kMaxInventorySlots];
+    int rowCount = 0;
+    for (int i = 0; i < int(store.slots.size()); ++i) {
+        const ItemRef& sl = store.slots[std::size_t(i)];
+        const ItemDef* d = payable_row(sl);
+        if (!d) continue;
+        bool seen = false;
+        for (int k = 0; k < rowCount && !seen; ++k)
+            seen = rows[k].def == sl.def;
+        if (seen) continue;
+        const int base = d->value;
+        if (base <= 0) continue;
+        const std::int64_t first =
+            worth_arriving(side_row(st, traderSlot, int(sl.def), base), 1)
+          - worth_leaving(side_row(st, homeSlot, int(sl.def), base), 1);
+        if (first <= 0) continue;
+        rows[rowCount++] =
+            Row{sl.def, base, first, std::int64_t(item_mass_g(*d))};
+    }
+    std::sort(rows, rows + rowCount, [](const Row& a, const Row& b) {
+        return a.gain * b.massG > b.gain * a.massG;
+    });
     long long planned = 0;
-    bool done[kMaxInventorySlots] = {};
-    // Лот плана: по строке на выбранный СТАК (пер-слот, как и выбор).
     DealLine lot[kMaxInventorySlots];
     int lines = 0;
-    std::int64_t used = bag ? inventory_mass_g(*bag) : 0;
+    std::int64_t used = inventory_mass_g(bag);
     const std::int64_t budgetG = capG - used;   // спина этого рейса
-    while (used < capG) {
-        // ЗАКОН ПЛОТНОСТИ — ЧУЖАЯ ДВЕРЬ, И ЗДЕСЬ ОН БОЛЬШЕ НЕ ВЫПИСАН (M-298,
-        // вердикт владельца 2026-10-20 «слить в одну дверь сейчас»). Этот
-        // цикл держал ВТОРУЮ копию `densest_value_slot` — тот же перекрёстный
-        // `v·bestW > bestV·w`, та же вырождающаяся нулевая масса, — и
-        // комментарий выше ЧЕСТНО называл дверь, которую копия обходила.
-        // Разошлись они ровно в одном: копия пускала в гонку плотности и
-        // СУЩЕСТВО (у строки существа `item_def_at` отдаёт nullptr, то есть
-        // массу 0, то есть победу всегда), а дверь отсекает его `payable_row`
-        // ещё до взвешивания (M-292). Исход от этого не менялся — ниже стоял
-        // второй отказ `if (!d) continue`, — но каждая душа склада стоила
-        // лишнего прохода по тысяче слотов.
-        const DensestSlot best = densest_value_slot(store, done);
-        if (best.slot < 0) break;
-        done[std::size_t(best.slot)] = true;
-        const ItemRef& sl = store.slots[std::size_t(best.slot)];
-        const ItemDef* d = item_def_at(int(sl.def));
-        if (!d) continue;
-        int count = int(sl.count);
-        // Сезонная нужда дома неприкосновенна — вывозится только излишек.
-        // Ординал уже В РУКАХ: слот несёт `sl.def`, и мост товара читается
-        // обратным концом (commodity_of_item) — строка каталога в тик не
-        // заходит вовсе.
-        if (commodity_of_item(int(sl.def)) >= 0) {
-            const int have = store.count_of(int(sl.def));
-            const int demand = season_demand_for(int(sl.def), needDebt,
-                                                 population, site, &store);
-            const int surplus = have - demand;
-            if (surplus <= 0) continue;
-            if (count > surplus) count = surplus;
-        }
-        int fit = count;
-        // ВЕТКИ «А ЕСЛИ МАССА НОЛЬ» БОЛЬШЕ НЕТ, И ЭТО НЕ ПОТЕРЯ: нулевую массу
-        // несло здесь ТОЛЬКО существо, а его отсекает отказ `if (!d)` строкой
-        // выше, то есть `bestW > 0.0f` была истинна на каждом проходе мира.
-        // Страж колонки сделал её невыразимой и для будущей строки.
-        // Масса едет из двери плотности УЖЕ ЦЕЛОЙ В ГРАММАХ (`DensestSlot::
-        // massG`), и делить её больше не нужно — здесь стояло обратное
-        // превращение в килограммы, последнее на этом пути.
-        const std::int64_t byWeight = (capG - used) / best.massG;
-        if (std::int64_t(fit) > byWeight) fit = int(byWeight);
-        if (fit <= 0) continue;
-        planned += (long long)fit * best.value;
-        used += std::int64_t(fit) * best.massG;
-        if (bag) {
-            lot[lines] = DealLine{};
-            lot[lines].want = fit;
-            lot[lines].def = sl.def;
-            lot[lines].slot = std::uint16_t(best.slot);
-            ++lines;
-        }
+    constexpr std::int64_t kNoWallet = std::int64_t(1) << 60;
+    for (int r = 0; r < rowCount && used < capG; ++r) {
+        const std::int64_t fit = (capG - used) / rows[r].massG;
+        const std::int64_t cap =
+            std::min<std::int64_t>(store.count_of(int(rows[r].def)), fit);
+        if (cap <= 0) continue;
+        const LotQuote q = gainful_lot(
+            side_row(st, homeSlot, int(rows[r].def), rows[r].base),
+            side_row(st, traderSlot, int(rows[r].def), rows[r].base),
+            1, 1, cap, kNoWallet);
+        if (q.units <= 0) continue;
+        planned += (long long)q.units * rows[r].base;
+        used += q.units * rows[r].massG;
+        lot[lines] = DealLine{};
+        lot[lines].want = int(q.units);
+        lot[lines].def = rows[r].def;
+        ++lines;
     }
-    if (bag && lines > 0)
+    if (lines > 0)
         deal(st, homeSlot, traderSlot,
              std::span<DealLine>(lot, std::size_t(lines)), {},
              budgetG, kNoCarryLimitG);
@@ -2493,9 +2468,9 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
                 std::uint32_t((40 + pult.rand(40)) * kAiTicks));
             return;
         }
-        // ВЫЕЗД — РЕЙС ЗАПОМИНАЕТ СЕБЯ: стоимость трюма в этот миг и ноль
-        // пройденного пути. По этим двум числам судится возврат.
-        rt.mem[kCaravanMemTripValue] = std::uint32_t(inventory_value(s.bag));
+        // ВЫЕЗД — РЕЙС НАЧИНАЕТ СЕБЯ С НУЛЯ: ни прибыли, ни пройденного пути.
+        // По этим двум числам судится возврат.
+        rt.mem[kCaravanMemTripGain] = 0;
         rt.mem[kCaravanMemTripTicks] = 0;
         rt.mem[kCaravanMemPrevLegRate] = 0;
         rt.mem[kCaravanMemDeals] = 0;
@@ -2517,15 +2492,22 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
         if (squad_recovering(rt)) return;
         if (const std::uint16_t market = view.goal_rooted(g);
             market != kMacroNoSlot && view.is_settlement(market)) {
-            // СДЕЛКА РАСТИТ СТОИМОСТЬ ТРЮМА, И ПРИБЫЛЬ ПЛЕЧА ЕСТЬ ЕЁ ПРИРОСТ
+            // СДЕЛКА РАСТИТ ОЦЕНКУ ТРЮМА, И ПРИБЫЛЬ ПЛЕЧА ЕСТЬ ЕЁ ПРИРОСТ
             // (замысел владельца 2026-11-12: «его цель вырастить стоимость
-            // своего инвентаря»). Стоимость меряется базой строки, поэтому
-            // прибыль видна В САМОЙ СДЕЛКЕ: продал дороже базы — монеты
-            // пришло больше, чем ушло товара; взял дешевле базы — товара
-            // пришло больше, чем ушло монеты. Склад дома здесь не читается.
-            const std::int64_t before = inventory_value(s.bag);
+            // своего инвентаря»; мерка — своя оценка купца, единая
+            // ценомодель). Прирост называет сама сделка: во сколько купец
+            // ценит взятое минус во сколько ценил отданное. Склад дома здесь
+            // не читается. Память насыщается на ширине слова — страж, не
+            // поведение.
             const CaravanDeal leg = pult.trade_at(s, market);
-            const std::int64_t after = inventory_value(s.bag);
+            // Нога исполняется, только если оценка купца от неё растёт
+            // (`barter_leg_`), так что прибыль сделки не отрицательна; ноль
+            // здесь — страж упаковки слова, не поведение.
+            const std::int64_t dealGain = leg.gain > 0 ? leg.gain : 0;
+            rt.mem[kCaravanMemTripGain] = std::uint32_t(
+                std::min<std::int64_t>(
+                    std::int64_t(rt.mem[kCaravanMemTripGain]) + dealGain,
+                    0xFFFFFFFFll));
             if (leg.movedTableValue > 0) {
                 // СДЕЛКА СОСТОЯЛАСЬ — ДОЛГ ПОВИС («сделал → вишу»): тики
                 // авторские, своей строки у сделки пока нет. Пустой визит
@@ -2560,7 +2542,7 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
             // плечу отношения не имеет. Упаковка в слово насыщается: это
             // страж ширины, а не поведение.
             const std::int64_t dealRate =
-                leg_rate(after - before, legTicks, kTicksPerDay);
+                leg_rate(dealGain, legTicks, kTicksPerDay);
             const std::int64_t prevRate = prevId != 0
                 ? std::int64_t(rt.mem[kCaravanMemPrevLegRate]) : dealRate;
             rt.mem[kCaravanMemPrevLegRate] = std::uint32_t(
@@ -2569,7 +2551,8 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
                 s.cell.idx, int(view.rooted_id(market)), prevId,
                 rt.moveMult));
             // Трюм пуст — торговать нечем, искать незачем.
-            const bool holdEmpty = inventory_mass_g(s.bag) <= 0 && after <= 0;
+            const bool holdEmpty = inventory_mass_g(s.bag) <= 0
+                                && inventory_value(s.bag) <= 0;
             if (next != kMacroNoSlot && next != homeSlot && !holdEmpty
                 && legTicks > 0 && homeTicks >= 0) {
                 const std::uint32_t nextCell = view.rooted_cell(next);
@@ -2580,9 +2563,9 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
                 // дальних ценах (поле цены, ряд M-479) встанет сюда же.
                 const std::int64_t fear = view.route_fear(s.cell.idx, nextCell);
                 const std::int64_t expectRate =
-                    leg_rate((after - before) - fear, legTicks, kTicksPerDay);
+                    leg_rate(dealGain - fear, legTicks, kTicksPerDay);
                 const std::int64_t tripGain =
-                    after - std::int64_t(rt.mem[kCaravanMemTripValue]);
+                    std::int64_t(rt.mem[kCaravanMemTripGain]);
                 // БЕЗ ПРИБЫЛИ страху противопоставить нечего: на опасную
                 // дорогу рейс без единой сделки не сворачивает. «Первый
                 // рынок рейса» — тот, куда пришли из дома (станции нет).
@@ -4170,193 +4153,160 @@ void dispatch(MacroHandle e, ecs::MacroNpcRuntime& rt,
 
 } // namespace
 
-// ── Trading at a market: ONE deal over ONE price law ─────────────────────
-// (owner 2026-08-30: «караван приходит в город и НА МЕСТЕ смотрит, что
+// ── СДЕЛКА СКВАДА НА РЫНКЕ — МОДУЛЬ КОРОВАНА НАД ЯДРОМ БАРТЕРА ───────────
+// (владелец 2026-08-30: «караван приходит в город и НА МЕСТЕ смотрит, что
 // выгодно продать и купить» — locality, no omniscience, no rumours.)
-// The deal prices through economy.h stock_price at POST-TRADE supply
-// (every lot pays its own slippage), and coin travels by transfer_value:
-// conservation is by construction, not by audit.
-
-// НАИБОЛЬШИЙ ЛОТ ПО КОШЕЛЬКУ — точная граница двоичным поиском по
-// монотонной стоимости лота `n × цена(послесделочная полка)`. Прежняя пара
-// «потолок → одно уточнение» была построена под коридор [0.25…4.0]: без
-// него цена ПЕРВОЙ единицы на голодной полке (база × сезонный спрос) давала
-// afford = 0, и рынок в голоде не мог купить НИЧЕГО — хотя честная точка
-// n > 0 существует, потому что лот целиком оплачивается по полке ПОСЛЕ
-// сделки и с каждой единицей дешевеет. selling: полка растёт (have + n);
-// покупка у рынка: полка тает (have − n) — стоимость растёт в обе стороны
-// монотонно, и максимум по кошельку ищется за log шагов.
-// ЦЕНА ГРАНИЦЫ — ТА ЖЕ, ЧТО ЦЕНА СПИСАНИЯ (фикс разрыва наценки, ломоть 2
-// M-72): прежде лот резался по голому `stock_price`, а списывался по
-// `trade_sell_price` с маржой — рынку выставляли счёт больше, чем мерили
-// его кошелёк, и transfer довозил НЕ ВСЁ (недоплаченная поставка). Теперь
-// граница и списание считают ОДНИМ числом — маржа входит в поиск.
-int max_affordable_lot_(int base, int have, int demand, bool selling,
-                        int wallet, int cap, int myPct, int theirPct) {
-    if (cap <= 0 || wallet <= 0) return 0;
-    int lo = 0, hi = cap;
-    while (lo < hi) {
-        const int mid = lo + (hi - lo + 1) / 2;
-        // Цена границы — ТА ЖЕ композиция, что цена списания ниже
-        // (`lot_unit_price@src/macro/economy.h`, M-415/Б3): полка после
-        // сделки + маржа одной строкой, разрыв наценки невыразим.
-        const int unit =
-            lot_unit_price(base, have, demand, mid, selling, myPct, theirPct);
-        const long long cost = (long long)mid * unit;
-        if (cost <= wallet) lo = mid; else hi = mid - 1;
-    }
-    return lo;
-}
-
-// СДЕЛКА НА РЫНКЕ — КУПЕЦ РАСТИТ СТОИМОСТЬ СВОЕГО ТРЮМА. Симметрична и чисто
-// локальна: судится только рынок, на котором сквад СТОИТ, — ни дома, ни
-// слухов, ни рода торговца (торговец есть СЛОТ стора). Рынку не хватает
-// строки (сезонная нужда выше запаса, цена выше базы) — купец ПРОДАЁТ в
-// дефицит; строка в завале (запас выше нужды, цена ниже базы) — купец
-// БЕРЁТ её. Границы выпадают из самой кривой цены, порогов нет.
 //
-// РАЗМЕР ЛОТА — ЗАКОН КУПЦА (`trader_lot@src/macro/economy.h`): лот, дающий
-// наибольший прирост стоимости трюма, доводит полку до СРЕДНЕГО
-// ГЕОМЕТРИЧЕСКОГО запаса и спроса. ЗДЕСЬ СТОЯЛ ЛОТ «ДО САМОЙ НУЖДЫ» — и он
-// прибыли не нёс вовсе: весь лот платится по полке ПОСЛЕ сделки, а полка,
-// доведённая до нужды, стоит ровно базу. Купец с целью «вырастить стоимость
-// своего инвентаря» (владелец 2026-11-12) таким лотом не зарабатывал ничего,
-// кроме разницы торговых сил. Арбитраж остаётся эмерджентным: взятое дёшево
-// в завале есть ровно то, за что следующий голодный рынок даст выше базы, а
-// остаток дефицита достаётся следующему купцу — полка сходится к нужде.
+// ЧТО ЗДЕСЬ РЕШАЕТ МОДУЛЬ, А ЧТО ЯДРО (единая ценомодель, 2026-11-12, слова
+// владельца — CANON S25). Цель сквада — растить СВОЮ ОЦЕНКУ своего инвентаря,
+// и модуль решает одно: ОТДАТЬ ВСЁ, ЧТО РЫНОК ЦЕНИТ ВЫШЕ МЕНЯ, И ВЗЯТЬ ВСЁ,
+// ЧТО Я ЦЕНЮ ВЫШЕ РЫНКА. Сколько таких единиц, почём идёт лот и чем за него
+// платят — отвечает ядро (`gainful_lot@src/macro/economy.h`,
+// `stage_payment@src/macro/deal.h`); обе стороны читаются одной дверью
+// `side_row@src/macro/deal.h`. Сделка симметрична и чисто локальна: судится
+// только рынок, на котором сквад СТОИТ, — ни дома, ни слухов, ни рода
+// торговца (торговец есть СЛОТ стора).
+//
+// Отсюда, без единой ветки: в нужду рынка купец отдаёт груз с премией; завал
+// рынка (излишек, забивший спину его жителей) берёт дешевле, чем ценит сам,
+// пока своя спина свободна; рынку без монеты отдаёт за его излишек и везёт
+// тот дальше. Круг «отдал — забрал» убыточен самим законом цены, поэтому ни
+// правила «строка за визит в одну сторону», ни границы лота по нужде здесь
+// нет (ряд M-483).
+
+namespace {
+// ОДНА НОГА БАРТЕРА: `giver` отдаёт `taker` до `cap` единиц строки — столько,
+// сколько тот ценит выше него и способен оплатить встречной корзиной, — и
+// получает её по закону цены. Ногу предлагает МОДУЛЬ одной из сторон
+// (`actorIsGiver`), и исполняется она, только если ЕГО оценка своего
+// инвентаря от неё растёт: цель сквада — своя оценка, а нога без прибыли
+// стоила бы ему восстановления даром. `giverFreeG` — свободная спина
+// отдающего (kNoCarryLimitG у склада): в оплату он принимает её и место,
+// которое освободит сам отданный груз.
+struct LegFact {
+    int units = 0;                // сколько единиц строки уехало
+    std::int64_t price = 0;       // сколько стоимости за них уплачено
+    std::int64_t giverGain = 0;   // прирост оценки у отдающего
+    std::int64_t takerGain = 0;   // прирост оценки у берущего
+};
+LegFact barter_leg_(MacroStore& st, std::uint16_t giver, std::uint16_t taker,
+                    int itemIdx, int base, std::int64_t cap,
+                    std::int64_t giverFreeG, bool actorIsGiver) {
+    LegFact out{};
+    if (cap <= 0 || base <= 0) return out;
+    const RowSide g = side_row(st, giver, itemIdx, base);
+    const RowSide t = side_row(st, taker, itemIdx, base);
+    const int gp = side_trade_power(st, giver);
+    const int tp = side_trade_power(st, taker);
+    const auto room_for = [&](std::int64_t units) {
+        return giverFreeG >= kNoCarryLimitG
+            ? kNoCarryLimitG : giverFreeG + units * g.unitMassG;
+    };
+    constexpr std::int64_t kNoWallet = std::int64_t(1) << 60;
+    DealLine pay[64];
+    LotQuote lot = gainful_lot(g, t, gp, tp, cap, kNoWallet);
+    StagedPayment sp{};
+    // Корзина собирается под цену лота; не покрыла — лот режется до того,
+    // что берущий способен отдать, и корзина собирается заново. Цена лота
+    // с каждым заходом строго падает, поэтому заходов не больше числа единиц;
+    // страж числа заходов — ширина лота в битах с запасом.
+    for (int pass = 0; pass < 64 && lot.units > 0; ++pass) {
+        // Потолок плательщика — во сколько ОН ценит то, что берёт.
+        sp = stage_payment(st, taker, giver, lot.price,
+                           lot_take(t, lot.units), room_for(lot.units), pay);
+        if (sp.price >= lot.price) break;
+        lot = gainful_lot(g, t, gp, tp, cap, sp.price);
+    }
+    if (lot.units <= 0 || sp.price < lot.price) return out;
+    const std::int64_t giverGain = sp.takerWorth - lot_loss(g, lot.units);
+    const std::int64_t takerGain = lot_take(t, lot.units) - sp.giverWorth;
+    if ((actorIsGiver ? giverGain : takerGain) <= 0) return out;
+    // ТОВАР И ОПЛАТА — ОДНА СДЕЛКА (ломоть 2 M-72): exact-лоты,
+    // недоплаченная поставка невыразима.
+    DealLine goods[1];
+    goods[0] = DealLine{};
+    goods[0].want = int(lot.units);
+    goods[0].def = std::uint16_t(itemIdx);
+    goods[0].exact = 1;
+    const DealFact f =
+        deal(st, giver, taker, goods,
+             std::span<DealLine>(pay, std::size_t(sp.lines)),
+             kNoCarryLimitG, kNoCarryLimitG);
+    if (!f.settled) return out;
+    out.units = int(lot.units);
+    out.price = sp.price;
+    out.giverGain = giverGain;
+    out.takerGain = takerGain;
+    return out;
+}
+}  // namespace
+
 CaravanDeal trade_caravan_at_station(MacroStore& st,
                                      std::uint16_t traderSlot,
                                      std::int64_t capacityG,
-                                     std::uint16_t marketSlot,
-                                     int myTradePct, int theirTradePct) {
+                                     std::uint16_t marketSlot) {
     CaravanDeal out{};
     // Склад и счёт рынка — колонки его ТЕЛА (M-90 шаг 5); гашение долга
     // рынка приходом (CANON S10) — внутри двери deal.
     Inventory& hold = st.inventory[traderSlot].inv;
     Inventory& ms = st.inventory[marketSlot].inv;
-    // Анкета рынка — КОЛОНКА его тела (рождение места её и заполнило).
-    const Skills& site = st.sheet[marketSlot].skills;
-    // Спрос СЕЗОННЫЙ (остаток счёта + производный) — одна дверь на оба
-    // прохода, спрашивается заново перед каждой сделкой: предыдущая строка
-    // могла погасить счёт рынка и сдвинуть производный спрос.
-    const auto demand_of = [&](int id) {
-        return season_demand_for(id, st.upkeep[marketSlot].needDebt,
-                                 souls_home(st, marketSlot), site, &ms);
+    const auto free_back = [&] {
+        const std::int64_t freeG = capacityG - inventory_mass_g(hold);
+        return freeG > 0 ? freeG : std::int64_t(0);
     };
-    // СТРОКА В ОДНОМ ВИЗИТЕ ИДЁТ В ОДНУ СТОРОНУ: проданное сейчас в эту же
-    // сделку не выкупается. Перевес торговых сил даёт сильному отрицательный
-    // спред против слабого рынка (вывод — у `trader_lot`), и без этого
-    // правила купец продавал строку сверх нужды и вторым проходом выкупал её
-    // дешевле — монета рынка уходила, товар не двигался. Это свойство
-    // СДЕЛКИ, а не запрет рынку: сколько рынок возьмёт, не ограничено ничем.
-    bool sold[std::size_t(kCommodityCount)] = {};
-    // ── ПРОХОД 1: ПРОДАЖА В ДЕФИЦИТ. Первым — потому что выручка этого
-    // прохода и есть кошелёк второго.
+    // ── ОТДАЮ: всё, что рынок ценит выше меня. Первым — потому что отданный
+    // груз освобождает спину под то, что я возьму.
     for (int i = 0; i < kCommodityCount; ++i) {
         const int id = commodity_item_index(i);
         const ItemDef* def = item_def_at(id);
         const int base = def ? def->value : 0;
-        if (base <= 0) continue;
-        const int demand = demand_of(id);
-        const int have = ms.count_of(id);
-        if (demand <= have) continue;   // не дефицит — продавать не во что
-        int n = trader_lot(base, have, demand, /*selling=*/true,
-                           myTradePct, theirTradePct, hold.count_of(id));
-        // Граница по кошельку РЫНКА — той же ценой с маржой, какой идёт
-        // списание (max_affordable_lot_): меньший лот только дороже за
-        // единицу, выгода купца от среза не теряется.
-        n = max_affordable_lot_(base, have, demand, /*selling=*/true,
-                                inventory_value(ms), n,
-                                myTradePct, theirTradePct);
-        if (n <= 0) continue;
-        const int price = lot_unit_price(base, have, demand, n,
-                                         /*selling=*/true,
-                                         myTradePct, theirTradePct);
-        // ТОВАР И ОПЛАТА — ОДНА СДЕЛКА (ломоть 2 M-72): exact-лоты,
-        // недоплаченная поставка невыразима.
-        DealLine goods[1];
-        goods[0] = DealLine{};
-        goods[0].want = n;
-        goods[0].def = std::uint16_t(id);
-        goods[0].exact = 1;
-        DealLine pay[64];
-        const StagedValue sv = stage_value_lines(ms, n * price, pay);
-        if (!deal_covered(sv.value, n * price)) continue;
-        const DealFact f =
-            deal(st, traderSlot, marketSlot, goods,
-                 std::span<DealLine>(pay, std::size_t(sv.lines)),
-                 kNoCarryLimitG, kNoCarryLimitG);
-        if (!f.settled) continue;
-        sold[std::size_t(i)] = true;
-        out.soldValue += sv.value;
-        out.movedTableValue += base * n;
+        const int mine = hold.count_of(id);
+        if (base <= 0 || mine <= 0) continue;
+        const LegFact leg = barter_leg_(st, traderSlot, marketSlot, id, base,
+                                        mine, free_back(),
+                                        /*actorIsGiver=*/true);
+        if (leg.units <= 0) continue;
+        out.soldValue += int(leg.price);
+        out.movedTableValue += base * leg.units;
+        out.gain += leg.giverGain;
     }
-    // ── ПРОХОД 2: ПОКУПКА ИЗ ЗАВАЛА, ВЫГОДНЕЙШЕЕ НА ГРАММ — ПЕРВЫМ: трюм и
-    // кошелёк конечны, и купец грузит их тем, что несёт больше всего
-    // прироста стоимости на единицу массы. Выгода на массу — ДРОБЬЮ, а не
-    // флоатом: числитель (монеты) и знаменатель (граммы) порознь, порядок
-    // решает перекрёстное умножение — тот же приём, что у `densest_value_slot`.
-    struct Lot { int i; int gain; std::int64_t massG; };
+    // ── БЕРУ: всё, что я ценю выше рынка, — его завал. ВЫГОДНЕЙШЕЕ НА ГРАММ —
+    // ПЕРВЫМ: спина конечна, и купец грузит её тем, что несёт больше всего
+    // прироста оценки на единицу массы. Выгода на массу — ДРОБЬЮ, а не
+    // флоатом: порядок решает перекрёстное умножение — тот же приём, что у
+    // `densest_value_slot`.
+    struct Lot { int i; std::int64_t gain; std::int64_t massG; };
     Lot lots[std::size_t(kCommodityCount)];
     int lotCount = 0;
     for (int i = 0; i < kCommodityCount; ++i) {
         const int id = commodity_item_index(i);
         const ItemDef* def = item_def_at(id);
         const int base = def ? def->value : 0;
-        if (base <= 0) continue;
-        if (sold[std::size_t(i)]) continue;   // эту строку сейчас продали
-        const int demand = demand_of(id);
-        const int have = ms.count_of(id);
-        if (have <= demand) continue;   // не завал — брать нечего
-        const int n0 = trader_lot(base, have, demand, /*selling=*/false,
-                                  myTradePct, theirTradePct, have);
-        if (n0 <= 0) continue;
+        if (base <= 0 || ms.count_of(id) <= 0) continue;
+        const std::int64_t first =
+            worth_arriving(side_row(st, traderSlot, id, base), 1)
+          - worth_leaving(side_row(st, marketSlot, id, base), 1);
+        if (first <= 0) continue;
         lots[std::size_t(lotCount++)] =
-            Lot{i,
-                base - lot_unit_price(base, have, demand, n0,
-                                      /*selling=*/false,
-                                      myTradePct, theirTradePct),
-                std::int64_t(item_mass_g(*def))};
+            Lot{i, first, std::int64_t(item_mass_g(*def))};
     }
     std::sort(lots, lots + lotCount, [](const Lot& a, const Lot& b) {
-        return std::int64_t(a.gain) * b.massG
-             > std::int64_t(b.gain) * a.massG;
+        return a.gain * b.massG > b.gain * a.massG;
     });
     for (int li = 0; li < lotCount; ++li) {
         const int id = commodity_item_index(lots[li].i);
-        const ItemDef* def = item_def_at(id);
-        const int base = def->value;
-        const int demand = demand_of(id);
-        const int have = ms.count_of(id);
-        const std::int64_t freeG = capacityG - inventory_mass_g(hold);
-        if (freeG <= 0) break;          // трюм полон — брать некуда
-        const std::int64_t fit = freeG / lots[li].massG;
-        int n = trader_lot(base, have, demand, /*selling=*/false,
-                           myTradePct, theirTradePct,
-                           int(std::min<std::int64_t>(have, fit)));
-        // Граница по кошельку КУПЦА — той же дверью и той же ценой.
-        n = max_affordable_lot_(base, have, demand, /*selling=*/false,
-                                inventory_value(hold), n,
-                                myTradePct, theirTradePct);
-        if (n <= 0) continue;
-        const int cost = n * lot_unit_price(base, have, demand, n,
-                                            /*selling=*/false,
-                                            myTradePct, theirTradePct);
-        DealLine goods[1];
-        goods[0] = DealLine{};
-        goods[0].want = n;
-        goods[0].def = std::uint16_t(id);
-        goods[0].exact = 1;
-        DealLine pay[64];
-        const StagedValue sv = stage_value_lines(hold, cost, pay);
-        if (!deal_covered(sv.value, cost)) continue;
-        const DealFact f =
-            deal(st, traderSlot, marketSlot,
-                 std::span<DealLine>(pay, std::size_t(sv.lines)), goods,
-                 kNoCarryLimitG, freeG);
-        if (!f.settled) continue;
-        out.boughtValue += sv.value;
-        out.movedTableValue += base * n;
+        const int base = item_def_at(id)->value;
+        const std::int64_t fit = free_back() / lots[li].massG;
+        if (fit <= 0) break;            // спина полна — брать некуда
+        const std::int64_t cap =
+            std::min<std::int64_t>(ms.count_of(id), fit);
+        const LegFact leg = barter_leg_(st, marketSlot, traderSlot, id, base,
+                                        cap, kNoCarryLimitG,
+                                        /*actorIsGiver=*/false);
+        if (leg.units <= 0) continue;
+        out.boughtValue += int(leg.price);
+        out.movedTableValue += base * leg.units;
+        out.gain += leg.takerGain;
     }
     return out;
 }

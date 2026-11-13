@@ -142,35 +142,68 @@ void test_wisdom_pays_a_dividend_on_every_grant() {
 }
 
 // ── 3. One price law ──────────────────────────────────────────────────────
-// Canon (S25): наценка = РАЗНИЦА торговых сил двух анкет, одна формула на обе
-// половины. Сильнее на 10 пунктов — покупаю за 90 и продаю за 110; РАВНЫЕ
-// стороны торгуют ровно по цене. Спред 0.7 и клампы 0.5/1.5 умерли вместе с
-// «домом» у сделки, а контекстный множитель (настроение места, нрав купца) —
-// 2026-09-19: у цены остались кривая дефицита и разница торговых сил.
-void test_one_price_law_reads_only_the_difference_in_bargaining() {
+// Canon (S25, единая ценомодель 2026-11-12): у каждой стороны одна ОЦЕНКА
+// вещи — стоимость, поднятая её нуждой, — а цена лежит МЕЖДУ двумя оценками,
+// и торговая сила делит разницу отношением двух анкет. Наценка за оценку
+// рынка («сильнее на десять пунктов — покупаю за 90 и продаю за 110») умерла:
+// она заставляла слабую сторону торговать себе в убыток, и круг «продал —
+// выкупил» качал из неё монету при любом перевесе.
+void test_one_price_law_splits_the_gain_by_trade_power() {
     using namespace sm;
-    CHECK(trade_price(100, 10, 0, true) == 90,
-          "buying: ten points of advantage take a hundred down to ninety");
-    CHECK(trade_price(100, 0, 10, true) == 110,
-          "buying weaker by ten costs a hundred and ten — the SAME difference, "
-          "mirrored");
-    CHECK(trade_price(100, 42, 42, true) == 100,
-          "equal sheets buy at the price itself, however strong both are");
-    CHECK(trade_price(100, 42, 42, false) == 100,
-          "...and sell at it too: the law reads the difference, not the size");
-    CHECK(trade_price(100, 10, 0, false) == 110,
-          "selling: ten points of advantage take a hundred up to a hundred "
-          "and ten");
+    // Спина всех трёх велика против груза (завала нет): здесь судится верхняя
+    // ветвь оценки и деление выгоды; завал — у самих дверей ядра и в
+    // price_law_test.
+    constexpr std::int64_t kWideBack = std::int64_t(1) << 40;
+    const RowSide roamer{100, 50, 1, kWideBack};   // груз есть, нужды нет
+    const RowSide hungry{100, -4, 1, kWideBack};   // остаток счёта четыре
+    const RowSide sated{100, 30, 1, kWideBack};    // излишек тридцать
+    const auto lot_price = [](const RowSide& g, const RowSide& t, int gp,
+                              int tp, int n) {
+        return sm::lot_price(g, t, gp, tp, n, Offer::Taker);
+    };
 
-    // ПОЛА СКИДКИ 0.5 НЕТ (S25): граница выводится из анкет или её не
-    // существует — назначенный пол вернул бы кламп под другим именем.
-    // Подавляющий перевес доводит цену до ПОЛА ЗАКОНА, единицы: это «ничто не
-    // бесплатно», а не потолок наценки.
-    CHECK(trade_price(100, 200, 0, true) == 1,
-          "an overwhelming advantage runs into the law's own floor of one "
-          "coin, not into a named discount ceiling");
-    CHECK(trade_price(1, 0, 0, false) >= 1,
-          "nothing in the world is free: a price never falls below one coin");
+    // Оценки: рынок ценит первую пришедшую единицу в четыре стоимости
+    // (нужда три после прихода, полка пуста), ходок — ровно в стоимость.
+    CHECK(worth_arriving(hungry, 1) == 400 && worth_leaving(roamer, 1) == 100,
+          "the hungry side values the unit above its worth, the side without "
+          "a need values it at exactly its worth");
+    CHECK(lot_price(roamer, hungry, 10, 10, 1) == 250,
+          "equal sheets split the gain in half: a hundred plus half of three "
+          "hundred");
+    CHECK(lot_price(roamer, hungry, 30, 10, 1) == 325
+              && lot_price(roamer, hungry, 10, 30, 1) == 175,
+          "the stronger side takes the larger share of the SAME gain, and "
+          "the two shares mirror each other");
+    CHECK(lot_price(roamer, hungry, 42, 42, 1)
+              == lot_price(roamer, hungry, 7, 7, 1),
+          "the law reads the ratio of the two powers, not their size");
+
+    // ПОЛА И ПОТОЛКА У ДОЛИ НЕТ ПО ПОСТРОЕНИЮ: отношение сил само лежит между
+    // нулём и единицей, и подавляющий перевес упирается в ОЦЕНКУ другой
+    // стороны, а не в назначенное число.
+    CHECK(lot_price(roamer, hungry, 510, 1, 1) < 400
+              && lot_price(roamer, hungry, 510, 1, 1) > 390,
+          "an overwhelming advantage approaches the taker's own valuation and "
+          "never crosses it");
+    CHECK(lot_price(roamer, hungry, 0, 10, 1) == 100,
+          "a side with no power at all still gets its own valuation — nobody "
+          "gives a thing away below what it is worth to them");
+
+    // Где оценки равны, делить нечего: излишек, монета и чужой груз идут по
+    // стоимости при ЛЮБЫХ силах, и обратный путь стоит столько же.
+    CHECK(lot_price(roamer, sated, 510, 1, 5) == 500
+              && lot_price(sated, roamer, 1, 510, 5) == 500,
+          "equal valuations trade at worth whatever the powers are — there is "
+          "no gain to split");
+    // Против выгоды (берущий ценит ниже отдающего) вещь идёт по оценке
+    // отдающего: сила берущего её не сбивает.
+    CHECK(lot_price(hungry, roamer, 1, 510, 1) == 600,
+          "taking from a side what it lacks itself costs that side's own "
+          "valuation, however strong the taker");
+    CHECK(unit_worth(100, 1000, 0, 1, kWideBack) == 100
+              && unit_worth(100, 1000, 0, 1000, 100000) == 1,
+          "a pile that weighs nothing against the back keeps its worth; the "
+          "same count of a heavy thing is a glut");
 }
 
 // ── 4. THE recovery door (CANON S14 «один рычаг», 2026-09-07) ─────────────
@@ -273,7 +306,7 @@ void test_the_recovery_door_is_one_lever() {
 int main() {
     test_a_moved_ceiling_keeps_the_wound_fraction();
     test_wisdom_pays_a_dividend_on_every_grant();
-    test_one_price_law_reads_only_the_difference_in_bargaining();
+    test_one_price_law_splits_the_gain_by_trade_power();
     test_the_recovery_door_is_one_lever();
     return sm::test::report("rpg_rules_test");
 }

@@ -9,6 +9,8 @@
 #include "bus/anketa.h"     // Inventory — контейнер обеих сторон
 #include "macro/currency.h"   // densest_value_slot — стейджинг встречного лота
 #include "bus/store.h"      // MacroStore — адресация сторон слотами
+#include "bus/squad_sheet.h"  // effective_sheet_of — сила стороны с ЭФФЕКТИВНОГО листа
+#include "macro/squad.h"      // carry_capacity_g — спина стороны
 
 namespace sm {
 namespace {
@@ -161,6 +163,74 @@ StagedValue stage_value_lines(const Inventory& inv, int value,
         l.exact = 1;
         r.value += take * d.value;
         left = sub_sat(left, std::uint64_t(take) * uv);
+    }
+    return r;
+}
+
+RowSide side_row(const MacroStore& st, std::uint16_t slot, int itemIdx,
+                 std::int64_t base) {
+    const Inventory& inv = st.inventory[slot].inv;
+    return row_side(itemIdx, base, st.upkeep[slot].needDebt, inv,
+                    unit_mass_g(item_def_at(itemIdx)),
+                    carry_capacity_g(st.runtime[slot], inv));
+}
+
+int side_trade_power(const MacroStore& st, std::uint16_t slot) {
+    return trade_power_of(effective_sheet_of(st, handle_at(st, slot)));
+}
+
+StagedPayment stage_payment(const MacroStore& st, std::uint16_t payer,
+                            std::uint16_t receiver, std::int64_t target,
+                            std::int64_t ceiling, std::int64_t roomG,
+                            std::span<DealLine> out) {
+    StagedPayment r{};
+    if (target <= 0 || out.empty()) return r;
+    const Inventory& inv = st.inventory[payer].inv;
+    const int payerPower = side_trade_power(st, payer);
+    const int receiverPower = side_trade_power(st, receiver);
+    bool skip[kMaxInventorySlots] = {};
+    std::uint64_t room = std::uint64_t(roomG < 0 ? 0 : roomG);
+    std::int64_t left = target;
+    while (left > 0 && r.lines < int(out.size())) {
+        const DensestSlot d = densest_value_slot(inv, skip);
+        if (d.slot < 0) break;
+        skip[d.slot] = true;
+        const ItemRef& s = inv.slots[std::size_t(d.slot)];
+        const std::uint64_t unitG =
+            std::uint64_t(unit_mass_g(item_def_at(int(s.def))));
+        const std::uint64_t byRoom = room / unitG;
+        const std::int64_t avail = std::int64_t(
+            byRoom < std::uint64_t(s.count) ? byRoom : std::uint64_t(s.count));
+        if (avail <= 0) continue;
+        // Строка могла уже уехать соседним стаком этой же корзины: обе
+        // стороны считают её от состояния ПОСЛЕ уже застейдженного.
+        std::int64_t staged = 0;
+        for (int i = 0; i < r.lines; ++i)
+            if (out[std::size_t(i)].def == s.def)
+                staged += out[std::size_t(i)].want;
+        RowSide giver = side_row(st, payer, int(s.def), d.value);
+        RowSide taker = side_row(st, receiver, int(s.def), d.value);
+        giver.net = giver.net - staged;
+        taker.net = taker.net + staged;
+        // Покрыть остаток с запасом — если плательщик остаётся под своим
+        // потолком; иначе ровно столько, сколько укладывается в остаток.
+        LotQuote q = cover_lot(giver, taker, payerPower, receiverPower,
+                               avail, left);
+        if (q.units > 0
+            && r.giverWorth + lot_loss(giver, q.units) > ceiling)
+            q = fit_lot(giver, taker, payerPower, receiverPower, avail, left);
+        if (q.units <= 0) continue;
+        DealLine& l = out[std::size_t(r.lines++)];
+        l = DealLine{};
+        l.want  = int(q.units);
+        l.def   = s.def;
+        l.slot  = std::uint16_t(d.slot);
+        l.exact = 1;
+        r.price += q.price;
+        r.giverWorth += lot_loss(giver, q.units);
+        r.takerWorth += lot_take(taker, q.units);
+        left = q.price >= left ? 0 : left - q.price;
+        room = sub_sat(room, std::uint64_t(q.units) * unitG);
     }
     return r;
 }

@@ -262,14 +262,15 @@ inline void dragon_set_lair(ecs::MacroNpcRuntime& rt, std::uint32_t cell) {
 // Слова своей памяти рейса (`MacroNpcRuntime::mem@src/bus/squad_row.h`):
 // станция, с которой рейс пришёл (ординал, ноль = «никто»: рулетка соседей не
 // гоняет его обратно на только что обслуженный рынок), и четыре числа правила
-// возврата (`trip_goes_on@src/macro/economy.h`) — стоимость трюма на выезде,
-// тики пройденного пути, отдача предыдущего плеча (монет за сутки пути: окно
-// в два плеча) и число совершённых сделок (вера в среднюю растёт с каждой).
+// возврата (`trip_goes_on@src/macro/economy.h`) — прибыль рейса (на сколько
+// сделки рейса подняли оценку трюма по мерке самого купца), тики пройденного
+// пути, отдача предыдущего плеча (за сутки пути: окно в два плеча) и число
+// совершённых сделок (вера в среднюю растёт с каждой).
 // Пишет и читает их один модуль — `caravan_think`; публичны номера затем,
 // что свидетель обязан видеть, что память рейса действительно ведётся.
 enum : int {
     kCaravanMemPrevStation,
-    kCaravanMemTripValue,
+    kCaravanMemTripGain,
     kCaravanMemTripTicks,
     kCaravanMemPrevLegRate,
     kCaravanMemDeals,
@@ -278,35 +279,33 @@ enum : int {
 static_assert(kCaravanMemCount <= ecs::kModuleMemSlots,
               "память рейса обязана лечь в кап своей памяти модуля");
 
-// ── Trading at a market (owner, 2026-08-30; CANON S10/S25) ───────────────
-// Locality is the law: every decision reads the market the squad STANDS ON
-// — no omniscience, no rumours. ONE deal over the ONE price law
-// (economy.h stock_price at post-trade supply; transfer_value moves coin —
-// nothing minted, nothing confiscated). At namespace scope (the
-// settle_rooted_day pattern) so caravan_deal_test can drive one deal.
+// ── СДЕЛКА СКВАДА НА РЫНКЕ (owner, 2026-08-30; CANON S10/S25) ────────────
+// Локальность — закон: всякое решение читает рынок, на котором сквад СТОИТ, —
+// ни всеведения, ни слухов. Цену, лот и встречную корзину называет ядро
+// бартера (`src/macro/economy.h`, единая ценомодель 2026-11-12); модуль
+// решает одно — отдать всё, что рынок ценит выше него, и взять всё, что он
+// сам ценит выше рынка. На уровне пространства имён (образец
+// settle_rooted_day), чтобы caravan_deal_test мог водить одну сделку.
 struct CaravanDeal {
-    int boughtValue = 0;      // coin paid INTO the market for goods taken
-    int soldValue   = 0;      // coin the market paid for goods delivered
-    int movedTableValue = 0;  // TABLE value of all goods that changed hands
-                              //   (the chronicle's dealValue, as before)
+    int soldValue = 0;        // стоимость, уплаченная рынком за отданный груз
+    int boughtValue = 0;      // стоимость, уплаченная рынку за взятое
+    int movedTableValue = 0;  // стоимость всего сменившего руки по базе
+                              //   строки (dealValue летописи, как прежде)
+    // НА СКОЛЬКО ВЫРОСЛА ОЦЕНКА ТРЮМА ПО МЕРКЕ САМОГО КУПЦА — это и есть
+    // прибыль сделки (цель сквада — своя оценка своего инвентаря): её судит
+    // закон возврата рейса.
+    std::int64_t gain = 0;
 };
-// СДЕЛКА СКВАДА НА РЫНКЕ: продать в дефицит, взять из завала — границы даёт
-// сама кривая цены, порогов нет. Размер лота — закон купца
-// (`trader_lot@src/macro/economy.h`): полка доводится до среднего
-// геометрического запаса и спроса, это лот наибольшего прироста стоимости
-// трюма (замысел владельца 2026-11-12: цель — стоимость своего инвентаря).
-// charisma/bargaining are the trader's SHEET (the one trade-price law of
-// economy.h modulates both halves): a caravan out-trades a peasant because
-// its row rolls better numbers — never a hardcode (owner 2026-08-30).
-// «ПРЕДЕЛА НЕТ» — `kNoCarryLimitG@src/macro/deal.h` (уехал к двери `deal`
-// вместе с клампом спины; вывод числа стоит там же).
-// Торговец — СЛОТ стора (ломоть 2 M-72): обе ноги — атомарные сделки
-// дверью deal (товар и оплата exact-лотами одним коммитом).
+// Сила и спина каждой стороны читаются её дверями (`side_trade_power`,
+// `side_row@src/macro/deal.h`): закон делит силой выгоду, и больше она не
+// делает ничего. `capacityG` — спина купца: ни товара, ни оплаты сверх неё
+// он не принимает (оплату — в свободную спину и в место отданного груза).
+// Торговец — СЛОТ стора (ломоть 2 M-72): товар и оплата — exact-лоты одного
+// коммита двери deal.
 CaravanDeal trade_caravan_at_station(MacroStore& st,
                                      std::uint16_t traderSlot,
                                      std::int64_t capacityG,
-                                     std::uint16_t marketSlot,
-                                     int myTradePct, int theirTradePct);
+                                     std::uint16_t marketSlot);
 // (Второй сделки — «рейс сбыта деревни», читавшей склад и счёт ДОМА, —
 // больше нет: снесена 2026-11-12, M-478. Сделка сквада на рынке одна.)
 

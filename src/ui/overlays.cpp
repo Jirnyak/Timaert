@@ -39,6 +39,7 @@
 #include "sub/map_data.h"
 #include "bus/store.h"
 #include <stb_image.h>
+#include <limits>
 #include <algorithm>
 #include <bit>
 #include <cstdlib>
@@ -319,10 +320,9 @@ namespace sm::ui
         // ДВЕ СТОРОНЫ, ДВЕ АНКЕТЫ (CANON S25; починено 2026-09-21): обе
         // стороны называют своё производное одной дверью trade_power_of.
         // (Пара обёрток trade_overlay_buy/sell_price жила здесь дословными
-        // дублями trade_price и снесена M-415/Б3: композицию цены лямбды
-        // торговли берут той же дверью `lot_unit_price@src/macro/
-        // economy.h`, что корован и вендор, — цена игрока и цена НПЦ
-        // склеены по построению.)
+        // дублями наценки и снесена M-415/Б3; с 2026-11-12 цену обеих корзин
+        // называет ядро бартера `lot_price@src/macro/economy.h` — то же, чем
+        // торгует корован: цена игрока и цена НПЦ склеены по построению.)
 
         // (Хелперы квестов objective_kind_label/quest_category_label
         //  умерли с квест-машиной — ломоть 3 M-72, вариант А.)
@@ -1688,7 +1688,6 @@ namespace sm::ui
         const bool bodyFigures =
             archetype_draw(squad_archetype(sKind)).figuresFromPools;
         const std::uint16_t acts = actions_of(st, subject);
-        const CharacterSheet &sSheet = st.sheet[slot];
         const int sLevel = squad_level(st, slot);
         const auto *traits = &st.traits[slot];
 
@@ -1848,39 +1847,28 @@ namespace sm::ui
                     draw_trade_carry_line(h.sheet, playerBag, h.standing);
                     draw_counterparty_gold(sInv);
                     draw_trade_amount_input(&g_subjectTrade.amount);
-                    // ОДИН ЗАКОН ЦЕНЫ НА ОБОИХ. У ветки сквада спрос был
-                    // вписан НУЛЁМ (`stock_price(…, 0)`), у ветки места
-                    // считался `season_demand_for` — два ответа на «сколько
-                    // это здесь стоит». Остался второй: он спрашивает КОЛОНКИ
-                    // субъекта (остаток долга нужд, домашние души, руки
-                    // анкеты), и у ходока они свои, а не выдуманный ноль.
+                    // ОДИН ЗАКОН ЦЕНЫ НА ОБОИХ, И ОН — ЯДРО БАРТЕРА (единая
+                    // ценомодель, 2026-11-12; `src/macro/economy.h`). Прилавок
+                    // не носит своей цены вовсе: каждую строку обеих корзин
+                    // он спрашивает у ядра — «во сколько её ценит отдающий, во
+                    // сколько берущий», — а обе стороны читает одной дверью
+                    // `side_row@src/macro/deal.h` (стоимость и масса вещи;
+                    // нужда, спина и сила стороны). Одна оценка у стороны на
+                    // все случаи, поэтому:
+                    //   · монета идёт около номинала в обе стороны (она ничего
+                    //     не весит против спины) — здесь СТОЯЛА кривая по
+                    //     счёту штук, и куча в 1000 крон покупалась по
+                    //     стоимость/1001 за штуку;
+                    //   · круг «отдал — забрал» убыточен при любой силе —
+                    //     здесь СТОЯЛА наценка за кривую, и игрок с перевесом
+                    //     качал монету из рынка.
+                    // ЛИСТ У ОБЕИХ СТОРОН ЭФФЕКТИВНЫЙ (CANON S25: сделка
+                    // берёт «финалочку»): у субъекта здесь брался базовый.
                     //
                     // АНКЕТА ЭТОГО СКВАДА, А НЕ СТОЛ ЕГО РОДА: таблица рода —
                     // только ШАБЛОН РОЖДЕНИЯ (`birth_squad` ставит
                     // `st.sheet[slot] = squad_birth(kind).sheet`), после него
                     // истина у анкеты — она качается (ЗАКОН АНКЕТЫ).
-                    // Композиция цены — ОДНА дверь lot_unit_price (Б3):
-                    // полка после сделки + маржа, та же, что у корована.
-                    const auto buyUnit = [&](const ItemRef &ref, int n) {
-                        return lot_unit_price(
-                            value_of(ref), sInv.count_of(int(ref.def)),
-                            season_demand_for(int(ref.def),
-                                              st.upkeep[slot].needDebt,
-                                              souls_home(st, slot),
-                                              sSheet.skills, &sInv),
-                            n, /*selling=*/false,
-                            h.tradePct, trade_power_of(sSheet));
-                    };
-                    const auto sellUnit = [&](const ItemRef &ref, int n) {
-                        return lot_unit_price(
-                            value_of(ref), sInv.count_of(int(ref.def)),
-                            season_demand_for(int(ref.def),
-                                              st.upkeep[slot].needDebt,
-                                              souls_home(st, slot),
-                                              sSheet.skills, &sInv),
-                            n, /*selling=*/true,
-                            h.tradePct, trade_power_of(sSheet));
-                    };
                     // ВТОРАЯ ПОЛОВИНА СДЕЛКИ — ДВЕРЬ ПАСТВЫ, И ТА ЖЕ, ЧТО У
                     // НАЙМА (M-292, ЗАКОН КОНТЕЙНЕРА п.3). Контейнер и число
                     // фичи суть ДВА носителя одной души, и писать их порознь
@@ -1908,10 +1896,37 @@ namespace sm::ui
                     // его сквад под флагом; мира без него прилавку нет.
                     const MacroHandle pf = player_flag_handle(ses);
                     if (st.valid(pf)) {
+                        const int theirPower = side_trade_power(st, slot);
+                        const auto side_of = [&](std::uint16_t who,
+                                                 const ItemRef &ref) {
+                            return side_row(st, who, int(ref.def),
+                                            value_of(ref));
+                        };
+                        // Цена лота — в `int` прилавка; страж упаковки, не
+                        // поведение.
+                        const auto as_price = [](std::int64_t v) {
+                            constexpr std::int64_t kMax =
+                                std::numeric_limits<int>::max();
+                            return int(v > kMax ? kMax : v);
+                        };
+                        // «Беру у субъекта»: отдаёт он, беру я, и единицу
+                        // против выгоды предлагаю я — плачу его оценку.
+                        const auto takeLot = [&](const ItemRef &ref, int n) {
+                            return as_price(lot_price(
+                                side_of(slot, ref), side_of(pf.slot, ref),
+                                theirPower, h.tradePct, n, Offer::Taker));
+                        };
+                        // «Отдаю субъекту»: отдаю я, берёт он, и единицу
+                        // против выгоды предлагаю я — получаю его оценку.
+                        const auto giveLot = [&](const ItemRef &ref, int n) {
+                            return as_price(lot_price(
+                                side_of(pf.slot, ref), side_of(slot, ref),
+                                h.tradePct, theirPower, n, Offer::Giver));
+                        };
                         draw_barter_body(
                             "Subject stock", g_subjectTrade,
                             st, pf.slot, slot,
-                            buyUnit, sellUnit, [&](int gave, int took) {
+                            takeLot, giveLot, [&](int gave, int took) {
                                 flock_left_home(gs, st, slot, folkBefore);
                                 record_subject_deal_fact(gs, ses, st, st.spawnId[slot].index, sx, sy,
                                     gave, took);

@@ -893,13 +893,40 @@ int traded_facts_at(const GameState& gs, int x, int y) {
     return ctx.n;
 }
 
+// ЯКОРЬ ПРИБЫЛИ СДЕЛКИ — НЕ ПЕРЕСЧЁТ ЕЁ ФОРМУЛЫ (§8 п.5-6). Прибыль сделки
+// есть «во сколько рейс ценит взятое минус во сколько ценил отданное», и у
+// стороны без нужды всякая единица излишка ценится не ниже пола (единица) и
+// не выше своей стоимости, а медь стоимостью в единицу — ровно в единицу
+// (свидетели `unit_worth@src/macro/economy.h` под компилятором). Значит
+// прибыль ЗАЖАТА разностью трюма до и после сделки: снизу — пришедшее по полу
+// минус ушедшее по стоимости, сверху — пришедшее по стоимости минус ушедшее
+// по полу. Строки — словарь товаров и монета мира; что разность стоимости
+// трюма ими исчерпана, утверждается (иначе якорь молча не видел бы строку).
+struct GainAnchor {
+    long long low = 0, high = 0;
+    bool complete = false;   // все сменившие руки строки учтены
+};
+GainAnchor gain_anchor(const Inventory& before, const Inventory& after,
+                       int coinIdx) {
+    GainAnchor a{};
+    long long valueDelta = 0;
+    const auto tally = [&](int idx) {
+        const long long d = (long long)after.count_of(idx) - before.count_of(idx);
+        const long long base = item_def_at(idx)->value;
+        valueDelta += d * base;
+        if (d > 0) { a.low += d; a.high += d * base; }
+        if (d < 0) { a.low += d * base; a.high += d; }
+    };
+    for (int c = 0; c < kCommodityCount; ++c) tally(commodity_item_index(c));
+    tally(coinIdx);
+    a.complete = valueDelta
+        == (long long)inventory_value(after) - inventory_value(before);
+    return a;
+}
+
 void test_the_caravan_grows_its_hold_and_brings_it_home() {
     Fixture f;
     const MacroHandle city = f.rooted(SquadType::City, 10, 10, 64);
-    // Рынок мал НАРОЧНО: его сезонный счёт еды меньше спины рейса, поэтому
-    // лот «до самой нужды» закрыл бы счёт ПЕРВОЙ ЖЕ сделкой — и закон лота
-    // купца виден тем, что этого не происходит. (Что груза хватало, ниже
-    // утверждается, а не предполагается.)
     const MacroHandle mkt = f.rooted(SquadType::Village, 14, 10, 4);
     const int cityId = int(f.st().spawnId[city.slot].index);
     Inventory& cityInv = f.st().inventory[city.slot].inv;
@@ -912,7 +939,7 @@ void test_the_caravan_grows_its_hold_and_brings_it_home() {
     CHECK(mktInv.add("coin_timaert_copper", kMarketPurse),
           "фикстура: рынок платёжеспособен");
     // РЫНОК ГОЛОДЕН СЧЁТОМ (CANON S10): непогашенный сезонный счёт и есть
-    // его спрос — тем же числом, каким его выставляет мир.
+    // его нужда — тем же числом, каким его выставляет мир.
     const int bill = upkeep_bill(mktInv).board;
     f.st().upkeep[mkt.slot].needDebt[foodCol] = bill;
     CHECK(bill > 0, "фикстура: у рынка есть непогашенный счёт еды");
@@ -922,35 +949,67 @@ void test_the_caravan_grows_its_hold_and_brings_it_home() {
     const std::uint32_t homeCell = f.st().cell[city.slot].idx;
     int samples = 0;
     bool loadedAtHome = false;      // город дал груз, пока рейс стоял дома
-    int foodLoaded = 0;             // сколько еды город дал в первый рейс
     bool traded = false;
     int debtAfterFirstDeal = -1;    // счёт рынка сразу после первой сделки
     ecs::MacroNpcRuntime memAfterFirstDeal{};   // память рейса в тот же миг
     bool cameHomeEmpty = false;     // вернулся и отдал всё
     int cityCoinAfterReturn = 0;
+    // ПРИБЫЛЬ РЕЙСА ЕСТЬ СУММА ПРИБЫЛЕЙ ЕГО СДЕЛОК: на каждой думке, где счёт
+    // сделок вырос на одну, прирост слова прибыли обязан лечь в якорь этой
+    // сделки, а на выезде слово обязано стоять нулём.
+    Inventory holdBefore{};
+    std::uint32_t gainBefore = 0, dealsBefore = 0;
+    int dealThinks = 0, anchored = 0, incomplete = 0, needful = 0;
+    bool wasHome = true;            // рейс стоял на клетке дома
+    int departures = 0, departuresFromZero = 0;   // выезды после возврата
     const int kThinks = kThinksPerDay * 6;
     for (int i = 0; i < kThinks; ++i) {
+        const std::uint16_t c0 = caravan_of(f, cityId);
+        if (c0 != kMacroNoSlot) {
+            holdBefore = f.st().inventory[c0].inv;
+            gainBefore = f.st().runtime[c0].mem[kCaravanMemTripGain];
+            dealsBefore = f.st().runtime[c0].mem[kCaravanMemDeals];
+        }
         f.think_on(rt, 1);
         ++samples;
         const std::uint16_t c = caravan_of(f, cityId);
         if (c == kMacroNoSlot) continue;
         const Inventory& hold = f.st().inventory[c].inv;
+        const ecs::MacroNpcRuntime& crt = f.st().runtime[c];
         const bool atHome = f.st().cell[c].idx == homeCell;
         const bool empty = inventory_mass_g(hold) <= 0
                         && inventory_value(hold) <= 0;
-        if (atHome && !empty && !traded) {
-            loadedAtHome = true;
-            foodLoaded = std::max(foodLoaded, hold.count_of(item_index("food")));
+        if (atHome && !empty && !traded) loadedAtHome = true;
+        if (c == c0 && crt.mem[kCaravanMemDeals] == dealsBefore + 1) {
+            ++dealThinks;
+            const GainAnchor a = gain_anchor(holdBefore, hold, coinIdx);
+            const long long grew = (long long)crt.mem[kCaravanMemTripGain]
+                                 - (long long)gainBefore;
+            if (!a.complete) ++incomplete;
+            bool need = false;
+            for (int k = 0; k < kCommodityCount; ++k)
+                need = need || f.st().upkeep[c].needDebt[k] != 0;
+            if (need) ++needful;
+            // Ноль законен: выгода единицы, которую рынок ценит выше рейса
+            // на одну монету, делится вниз в пользу берущего (`gain_share`).
+            if (grew >= a.low && grew <= a.high) ++anchored;
         }
         if (!traded && traded_facts_at(f.gs, 14, 10) > 0) {
             traded = true;
             debtAfterFirstDeal = f.st().upkeep[mkt.slot].needDebt[foodCol];
-            memAfterFirstDeal = f.st().runtime[c];
+            memAfterFirstDeal = crt;
         }
         if (traded && atHome && empty && !cameHomeEmpty) {
             cameHomeEmpty = true;
             cityCoinAfterReturn = cityInv.count_of(coinIdx);
         }
+        if (cameHomeEmpty && wasHome && !atHome) {
+            ++departures;
+            if (crt.mem[kCaravanMemTripGain] == 0
+                && crt.mem[kCaravanMemDeals] == 0)
+                ++departuresFromZero;
+        }
+        wasHome = atHome;
     }
     const std::uint16_t c = caravan_of(f, cityId);
     CHECK(samples == kThinks && c != kMacroNoSlot,
@@ -960,34 +1019,45 @@ void test_the_caravan_grows_its_hold_and_brings_it_home() {
           "дал модуль родителя");
     CHECK(traded,
           "РЫНОК НАЗВАЛ САМ РЕЙС и доехал: на клетке рынка лёг факт сделки");
-    // ЗАКОН ЛОТА КУПЦА: первая сделка НЕ закрывает счёт рынка целиком, хотя
-    // груза у рейса хватало, — лот наибольшей прибыли доводит полку до
-    // среднего геометрического запаса и спроса, а не до нужды.
-    CHECK(foodLoaded >= bill,
-          "предусловие закона лота: груза в трюме ХВАТАЛО закрыть счёт рынка "
-          "целиком — иначе размер первой сделки назвал бы трюм, а не закон");
-    CHECK(debtAfterFirstDeal > 0 && debtAfterFirstDeal < bill,
-          "ЛОТ КУПЦА: первая сделка погасила ЧАСТЬ счёта рынка, не весь — "
-          "лот «до самой нужды» прибыли не несёт");
+    // В НУЖДУ (единая ценомодель): рынок ценит недостающее выше стоимости, а
+    // рейс без нужды — не выше, и первая же сделка кормит рынок.
+    CHECK(debtAfterFirstDeal >= 0 && debtAfterFirstDeal < bill,
+          "В НУЖДУ: первая сделка погасила счёт рынка — груз ушёл туда, где "
+          "его ценят выше");
     // ПАМЯТЬ РЕЙСА ВЕДЁТСЯ: правило возврата судит по четырём числам, и после
     // первой сделки каждое из них обязано быть записано — иначе закон под
     // компилятором считал бы нули.
-    CHECK(memAfterFirstDeal.mem[kCaravanMemTripValue] > 0
+    CHECK(memAfterFirstDeal.mem[kCaravanMemTripGain] > 0
               && memAfterFirstDeal.mem[kCaravanMemTripTicks] > 0,
-          "ПАМЯТЬ РЕЙСА: стоимость трюма на выезде и пройденный путь записаны");
+          "ПАМЯТЬ РЕЙСА: прибыль первой сделки и пройденный путь записаны");
     CHECK(memAfterFirstDeal.mem[kCaravanMemDeals] == 1
               && memAfterFirstDeal.mem[kCaravanMemPrevLegRate] > 0,
           "ПАМЯТЬ РЕЙСА: сделка сосчитана ровно одна, и её отдача легла в "
           "окно двух плеч");
+    CHECK(dealThinks > 0 && incomplete == 0 && needful == 0,
+          "предусловие якоря: сделки были, все сменившие руки строки учтены, "
+          "и у рейса нет нужды — излишек он ценит между полом и стоимостью");
+    CHECK(anchored == dealThinks,
+          "ПРИБЫЛЬ РЕЙСА ЕСТЬ СУММА ПРИБЫЛЕЙ СДЕЛОК: на каждой сделке слово "
+          "прибыли выросло ровно в пределах её якоря");
     CHECK(cameHomeEmpty,
           "РЕЙС ВЕРНУЛСЯ И ОТДАЛ ВСЁ: после сделки корован стоял дома пустым");
     CHECK(cityCoinAfterReturn > 0,
           "ГОРОД ОБОГАЩЁН: монета, которой у города не было вовсе, легла на "
           "его склад — наторгованное вернулось домой");
+    CHECK(departures > 0 && departuresFromZero == departures,
+          "ВЫЕЗД НАЧИНАЕТ РЕЙС С НУЛЯ: после возврата новый рейс уехал без "
+          "прибыли и без сделок прошлого");
     // Монета не чеканится и не сгорает: она ходит между тремя кошельками.
     CHECK(cityInv.count_of(coinIdx) + mktInv.count_of(coinIdx)
               + f.st().inventory[c].inv.count_of(coinIdx) == kMarketPurse,
           "СОХРАНЕНИЕ: монета только переходит из рук в руки");
+    std::printf("  [рейс] счёт рынка %d → %d после первой сделки, прибыль "
+                "первой сделки %u, сделок рейсов %d, выездов после возврата "
+                "%d\n",
+                bill, debtAfterFirstDeal,
+                memAfterFirstDeal.mem[kCaravanMemTripGain], dealThinks,
+                departures);
 }
 
 // ── ДВА СВИДЕТЕЛЯ ПУТИ РЕЙСА: ХОЛОДНЫЙ СТАРТ И ОКНО В ДВА ПЛЕЧА ──────────
@@ -997,8 +1067,19 @@ void test_the_caravan_grows_its_hold_and_brings_it_home() {
 // ли на ней сделка, говорит счёт сделок в памяти рейса (он обнуляется на
 // выезде). Рынков три и дом, квадратом: ни одна дорога между двумя из них не
 // идёт сквозь третий.
+//
+// КАЖДЫЙ МИР — ОДИН ПЕРВЫЙ РЕЙС, И МИРОВ МНОГО. Мир фикстуры неподвижен (ни
+// выпуска, ни окна счёта), а единая ценомодель отдаёт всю выгоду сразу:
+// первый рейс закрывает нужду живых рынков и увозит монету домой, и с этой
+// монетой город грузит следующий рейс — она плотнейшая строка склада — до
+// полной спины. Такой рейс ни продать (медь все ценят в единицу), ни купить
+// (свободной спины ноль) не может, и все его стоянки пусты. Это замер, а не
+// догадка: на прежней форме прибора (один мир, 48 дней) после первого рейса
+// не было ни одной сделки, и предусловия окна не встречались. Поэтому рейсы
+// с грузом берутся из разных миров — по одному на сид.
 struct TripTrace {
-    int samples = 0;
+    int worlds = 0;             // миров прогнано
+    int tripsDone = 0;          // …и в скольких первый рейс вернулся домой
     int stops = 0;              // стоянок на рынках всего
     int emptyFirst = 0;         // рейсов, чей ПЕРВЫЙ рынок оказался пустым
     int emptyFirstThenOn = 0;   // …и с него рейс поехал на другой рынок
@@ -1011,9 +1092,12 @@ struct TripTrace {
 };
 
 // `coinless` — битовая маска рынков без монеты (бит m — рынок m): такому
-// рынку платить нечем, и визит к нему пуст.
-TripTrace trace_trips(std::uint32_t seed, int days, unsigned coinless) {
+// рынку платить нечем, и визит к нему пуст. Рейс ведётся до возвращения
+// домой, но не дольше `days` суток.
+void trace_first_trip(std::uint32_t seed, int days, unsigned coinless,
+                      TripTrace& t) {
     Fixture f;
+    ++t.worlds;
     const MacroHandle city = f.rooted(SquadType::City, 10, 10, 64);
     const int cityId = int(f.st().spawnId[city.slot].index);
     const int foodCol = commodity_index("food");
@@ -1033,7 +1117,6 @@ TripTrace trace_trips(std::uint32_t seed, int days, unsigned coinless) {
     const std::uint32_t homeCell = f.st().cell[city.slot].idx;
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, seed);
-    TripTrace t;
     // СТОЯНКА СУДИТСЯ, КОГДА РЕЙС С НЕЁ УШЁЛ, а не когда встал: сделка
     // случается думкой ПОЗЖЕ прибытия, и первая редакция прибора, судившая
     // в миг прибытия, записывала прибыльную стоянку пустой — мутация «поиск
@@ -1049,13 +1132,7 @@ TripTrace trace_trips(std::uint32_t seed, int days, unsigned coinless) {
                 TwoEmptyAtStart };
     Tail tail = None;                   // хвост последней ОСУЖДЁННОЙ стоянки
     const auto judge_left_stop = [&]() {
-        if (cur == homeCell) {          // дом: рейс кончился, счёт с нуля
-            stopsInTrip = 0;
-            dealsLeft = 0;
-            prevHadDeal = false;
-            tail = None;
-            return;
-        }
+        if (cur == homeCell) return;    // дом: рейс ещё не начался
         ++t.stops;
         ++stopsInTrip;
         const bool dealHere = curDeals > dealsLeft;
@@ -1078,7 +1155,6 @@ TripTrace trace_trips(std::uint32_t seed, int days, unsigned coinless) {
     };
     for (int i = 0; i < kThinksPerDay * days; ++i) {
         f.think_on(rt, 1);
-        ++t.samples;
         const std::uint16_t c = caravan_of(f, cityId);
         if (c == kMacroNoSlot) continue;
         const std::uint32_t cell = f.st().cell[c].idx;
@@ -1101,6 +1177,9 @@ TripTrace trace_trips(std::uint32_t seed, int days, unsigned coinless) {
                 if (tail == EmptyAfterDeal) ++t.emptyAfterDealThenOn;
                 if (tail == TwoEmptyAfterDeal) ++t.twoEmptyThenOn;
                 if (tail == TwoEmptyAtStart) ++t.twoEmptyStartThenOn;
+            } else if (stopsInTrip > 0) {
+                ++t.tripsDone;                        // первый рейс окончен
+                return;
             }
             cur = cell;
             standing = true;
@@ -1110,19 +1189,35 @@ TripTrace trace_trips(std::uint32_t seed, int days, unsigned coinless) {
             curDeals = std::max(curDeals,
                                 f.st().runtime[c].mem[kCaravanMemDeals]);
     }
-    return t;
 }
 
 void test_the_trip_follows_the_return_law_at_its_edges() {
-    // Два мира: в первом без монеты один рынок из трёх, во втором — два.
+    // Два рода миров: в первом без монеты один рынок из трёх, во втором —
+    // два; в каждом роде — по миру на сид, от каждого мира его первый рейс.
     // Каждое утверждение стоит на своём ПРЕДУСЛОВИИ, и предусловие
     // утверждается первым: закон, которому не на чем проявиться, свидетель
     // не подтверждает, а молчит — и это обязано быть видно.
-    const TripTrace t = trace_trips(53u, 48, /*coinless=*/0b010u);
-    const TripTrace u = trace_trips(55u, 48, /*coinless=*/0b110u);
-    CHECK(t.samples == kThinksPerDay * 48 && t.stops > 0
-              && u.samples == kThinksPerDay * 48 && u.stops > 0,
-          "прибор померил оба мира: рейс стоял на рынках");
+    constexpr int kWorlds = 24;
+    constexpr int kTripDays = 6;
+    TripTrace t, u;
+    for (int w = 0; w < kWorlds; ++w) {
+        trace_first_trip(53u + std::uint32_t(w), kTripDays, 0b010u, t);
+        trace_first_trip(553u + std::uint32_t(w), kTripDays, 0b110u, u);
+    }
+    for (const TripTrace* x : {&t, &u})
+        std::printf("  [путь рейса] миров %d, стоянок %d: пустой первый %d "
+                    "(дальше %d), пустая после сделки %d (дальше %d), две "
+                    "пустые после сделки %d (дальше %d), две пустые с "
+                    "начала %d (дальше %d)\n",
+                    x->worlds, x->stops, x->emptyFirst, x->emptyFirstThenOn,
+                    x->emptyAfterDeal, x->emptyAfterDealThenOn,
+                    x->twoEmptyAfterDeal, x->twoEmptyThenOn,
+                    x->twoEmptyAtStart, x->twoEmptyStartThenOn);
+    CHECK(t.worlds == kWorlds && t.tripsDone == kWorlds
+              && u.worlds == kWorlds && u.tripsDone == kWorlds
+              && t.stops > 0 && u.stops > 0,
+          "прибор померил все миры: в каждом первый рейс стоял на рынках и "
+          "вернулся домой");
     // ХОЛОДНЫЙ СТАРТ: пустой первый рынок рейс домой не разворачивает…
     CHECK(t.emptyFirst > 0,
           "предусловие холодного старта встретилось: первый рынок рейса "

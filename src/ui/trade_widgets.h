@@ -17,6 +17,7 @@
 #pragma once
 #include <imgui.h>
 
+#include <limits>
 #include <cstdio>
 #include <string>
 
@@ -372,18 +373,22 @@ inline GridClick draw_inventory_grid(const char* strId, const Inventory& inv,
 // звонящего читает ТОЛЬКО её (`ItemDef&` в сигнатуру больше не идёт: ни
 // один из двух законов цены этого параметра не читал, он стоял под
 // `[[maybe_unused]]`).
-template <class UnitPriceFn>
+// ЦЕНА СТРОКИ — ЦЕНА ЕЁ ЛОТА ЦЕЛИКОМ (единая ценомодель, 2026-11-12): лот
+// есть сумма по единицам с пересчётом, и умножать «цену единицы» на число
+// здесь больше нечего — закон звонящего отвечает сразу за `want` штук.
+template <class LotPriceFn>
 inline int barter_package_value(const BarterPackage& pkg,
                                 const Inventory& shelf,
-                                UnitPriceFn unitPrice) {
-    int total = 0;
+                                LotPriceFn lotPrice) {
+    long long total = 0;
     for (const DealLine& line : pkg) {
         if (int(line.slot) >= kMaxInventorySlots) continue;
         const ItemRef& ref = shelf.slots[std::size_t(line.slot)];
         if (ref.empty() || !world_row_exists(ref.def)) continue;
-        total += unitPrice(ref, line.want) * line.want;
+        total += lotPrice(ref, line.want);
     }
-    return total;
+    constexpr long long kMax = std::numeric_limits<int>::max();
+    return int(total > kMax ? kMax : total);
 }
 
 // (draw_barter_column — the LIST shelf — died 2026-09-11 with the grid:
@@ -434,12 +439,12 @@ inline bool draw_barter_deal_button(BarterState& st, MacroStore& store,
 // they lie, the gold border and «count−staged» show the reservation.
 // `onDeal(gave, took)` fires on a settled package — the caller records
 // ITS fact and nothing else; the receipt message writes itself.
-template <class BuyFn, class SellFn, class OnDeal>
+template <class TakeFn, class GiveFn, class OnDeal>
 inline void draw_barter_body(const char* stockLabel,
                              BarterWrapState& st, MacroStore& store,
                              std::uint16_t playerSlot,
                              std::uint16_t shelfSlot,
-                             BuyFn buyUnit, SellFn sellUnit, OnDeal onDeal) {
+                             TakeFn takeLot, GiveFn giveLot, OnDeal onDeal) {
     Inventory& playerBag = store.inventory[playerSlot].inv;
     Inventory& shelf = store.inventory[shelfSlot].inv;
     if (st.message[0] != '\0') {
@@ -503,8 +508,9 @@ inline void draw_barter_body(const char* stockLabel,
     stage_click(
         draw_inventory_grid("##shelf", shelf, &st.barter.take,
                             [&](const ItemRef& r, int n) {
-                                ImGui::Text("buy at %d g each",
-                                            buyUnit(r, n > 0 ? n : 1));
+                                const int lot = n > 0 ? n : 1;
+                                ImGui::Text("take %d for %d", lot,
+                                            takeLot(r, lot));
                             }),
         st.barter.take, shelf);
     ImGui::EndChild();
@@ -515,16 +521,17 @@ inline void draw_barter_body(const char* stockLabel,
     stage_click(
         draw_inventory_grid("##player_shelf", playerBag, &st.barter.give,
                             [&](const ItemRef& r, int n) {
-                                ImGui::Text("sell at %d g each",
-                                            sellUnit(r, n > 0 ? n : 1));
+                                const int lot = n > 0 ? n : 1;
+                                ImGui::Text("give %d for %d", lot,
+                                            giveLot(r, lot));
                             }),
         st.barter.give, playerBag);
     ImGui::EndChild();
     ImGui::Columns(1);
     const int takeValue =
-        barter_package_value(st.barter.take, shelf, buyUnit);
+        barter_package_value(st.barter.take, shelf, takeLot);
     const int giveValue =
-        barter_package_value(st.barter.give, playerBag, sellUnit);
+        barter_package_value(st.barter.give, playerBag, giveLot);
     if (draw_barter_deal_button(st.barter, store, playerSlot, shelfSlot,
                                 giveValue, takeValue)) {
         st.set_deal_message(giveValue, takeValue);

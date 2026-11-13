@@ -26,28 +26,6 @@ inline constexpr float kPi = 3.14159265358979323846f;
 // построению — ровно то, чего не умели четыре независимых «тау» в дереве.
 inline constexpr float kTwoPi = 2.0f * kPi;
 
-// ── ЦЕЛЫЙ КОРЕНЬ: floor(√v), БЕЗ ФЛОАТА И БЕЗ ВЫЧИТАНИЯ ───────────────────
-// Величины симуляции ходят в целых (ЗАКОН ТИПА п.5), и корню из произведения
-// двух счётов флоат не нужен: ответ набирается ПО БИТУ СВЕРХУ — бит берётся,
-// если квадрат кандидата ещё не больше числа. 32 шага на любое u64, результат
-// точен (не «примерно, а потом поправим»), и области определения у двери нет:
-// ноль и полный u64 суть обычные входы. Первый читатель — закон лота купца
-// (`trader_lot@src/macro/economy.h`).
-constexpr std::uint32_t isqrt_floor(std::uint64_t v) {
-    std::uint32_t r = 0;
-    for (std::uint32_t bit = std::uint32_t(1) << 31; bit != 0; bit >>= 1) {
-        const std::uint64_t c = std::uint64_t(r | bit);
-        if (c * c <= v) r |= bit;
-    }
-    return r;
-}
-static_assert(isqrt_floor(0) == 0 && isqrt_floor(1) == 1
-              && isqrt_floor(15) == 3 && isqrt_floor(16) == 4
-              && isqrt_floor(17) == 4,
-              "целый корень округляет ВНИЗ и точен на границе квадрата");
-static_assert(isqrt_floor(~std::uint64_t(0)) == 0xFFFFFFFFu,
-              "полный u64 — обычный вход: квадрат кандидата не переполняется");
-
 struct vec2 { float x, y; };
 struct vec3 { float x, y, z; };
 struct vec4 { float x, y, z, w; };

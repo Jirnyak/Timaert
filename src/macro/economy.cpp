@@ -13,39 +13,13 @@ namespace sm {
 namespace {
 inline float jround(float v) { return std::round(v); }
 
-// НАЦЕНКА = РАЗНИЦА ТОРГОВЫХ СИЛ, в долях (CANON S25). Положительная — моя
-// сторона сильнее и наценивает в свою пользу; отрицательная — наценивает
-// другая. Одно вычитание: никакого «кто здесь хозяин лавки».
-inline float trade_edge(int myTradePct, int theirTradePct) {
-    return float(myTradePct - theirTradePct) * 0.01f;
-}
 } // namespace
 
-int trade_buy_price(int basePrice, int myTradePct, int theirTradePct) {
-    // Покупаю Я: сильнее — сбиваю цену, слабее — переплачиваю.
-    const float scaled = float(basePrice)
-                       * (1.0f - trade_edge(myTradePct, theirTradePct));
-    return std::max(1, static_cast<int>(jround(scaled)));
-}
-
-int trade_sell_price(int basePrice, int myTradePct, int theirTradePct) {
-    // Продаю Я: та же разница, другой знак — и ни одного второго числа
-    // (×0.7 спреда не существует: у сделки нет дома, который брал бы своё).
-    const float scaled = float(basePrice)
-                       * (1.0f + trade_edge(myTradePct, theirTradePct));
-    return std::max(1, static_cast<int>(jround(scaled)));
-}
-
-int trade_price(int baseValue, int myTradePct, int theirTradePct,
-                bool buying) {
-    const int base = std::max(1, baseValue);
-    return buying ? trade_buy_price(base, myTradePct, theirTradePct)
-                  : trade_sell_price(base, myTradePct, theirTradePct);
-}
-
 float stock_scarcity(int supply, int demandSeason) {
-    // ОДНА кривая цены (CANON S10, пять законов): `value × (спрос+1)/(запас+1)`,
-    // КОРИДОРА НЕТ. Спрос приходит СЕЗОННЫМ ЧИСЛОМ, и календаря в этой
+    // КРИВАЯ ПРОИЗВОДСТВА (CANON S10, пять законов): `value × (спрос+1)/(запас+1)`,
+    // в обе стороны, КОРИДОРА НЕТ. С 2026-11-12 её читают только решения о
+    // труде; сделка меряет оценкой ядра (`unit_worth@src/macro/economy.h`).
+    // Спрос приходит СЕЗОННЫМ ЧИСЛОМ, и календаря в этой
     // двери больше нет (CANON S10, долг, 2026-09-19): прямая часть спроса =
     // остаток СЧЁТА места — уже сезонная величина, тающая по мере оплаты, —
     // производная по рецептам считается той же меркой (season_demand_for),
@@ -188,9 +162,23 @@ int season_demand_for(int itemIdx, const std::int32_t* needDebt,
     return demand_for_(itemIdx, needDebt, population, hands, store, 4);
 }
 
-
-// (mood_price_mult и trait_price_mult вырезаны 2026-09-19 вместе со своими
-// реестрами: цена не умножается на характер — она выводится из кривой и
-// разницы торговых сил.)
+// ── МОСТ «НУЖДА → ЯДРО» ──────────────────────────────────────────────────
+// Нужда строки — остаток счёта сквада по ней, и больше ничего (закон и шрам —
+// у объявления). Строка вне словаря товаров счёта не имеет.
+RowSide row_side(int itemIdx, std::int64_t base, const std::int32_t* needDebt,
+                 const Inventory& inv, std::int64_t unitMassG,
+                 std::int64_t backG) {
+    RowSide r{};
+    r.base = base;
+    r.unitMassG = unitMassG;
+    r.backG = backG;
+    if (itemIdx < 0) return r;
+    const int commodity = commodity_of_item(itemIdx);
+    const std::int64_t debt =
+        (needDebt && commodity >= 0 && needDebt[commodity] > 0)
+            ? std::int64_t(needDebt[commodity]) : 0;
+    r.net = std::int64_t(inv.count_of(itemIdx)) - debt;
+    return r;
+}
 
 } // namespace sm
