@@ -34,7 +34,7 @@
                                 // в kSquadBirth@src/macro/characters.h)
 #include "macro/upkeep_window.h"  // upkeep_season_window — ОДНА дверь суда границы (M-233)
 #include "macro/squad_act.h"      // squad_craft — акт крафта сквада (M-486)
-#include "macro/npc_ai.h"         // settlement_craft_pick — решение модуля поселения
+#include "macro/npc_ai.h"         // village_craft_pick, city_craft_pick — решения модулей
 #include "bus/squad_sheet.h"      // refresh_body_from_sheet — тело той же дверью, что мир
 #include "bus/world_row.h"   // raise_flock_into_container / count_human_souls / work_units
 #include "bus/anketa.h"
@@ -1108,14 +1108,17 @@ void sect14_squad_craft_act() {
     }
 }
 
-// ── 14Б. ЧТО И СКОЛЬКО КРАФТИТЬ — РЕШЕНИЕ МОДУЛЯ ПОСЕЛЕНИЯ (ряд M-486) ──────
+// ── 14Б. ЧТО И СКОЛЬКО КРАФТИТЬ — РЕШЕНИЯ МОДУЛЕЙ ДЕРЕВНИ И ГОРОДА (M-486) ──
 // Закон мира (AGENTS «ЗАКОН ЕДИНОЙ ЦЕНОМОДЕЛИ» п.2 и п.4; вердикт владельца
 // 2026-11-13: крафт — сделка с самим собой). Выгода лота есть оценка
 // пришедшего выхода минус оценка ушедших входов, той же оценкой запаса, какой
 // меряет сделка; предел наступает обратной связью — выход копится, масса
 // против спины роняет его оценку; вход тает — его оценка растёт. Решение
-// судится на голых числах своей строки (`settlement_craft_pick@src/macro/
-// npc_ai.cpp`); выгода всякого другого объёма — теми же дверями ядра цены.
+// судится на голых числах своей строки, и у деревни и у города оно своё
+// (`village_craft_pick@src/macro/npc_ai.cpp`,
+// `city_craft_pick@src/macro/npc_ai.cpp`; AGENTS §4 п.5), поэтому каждое
+// утверждение ниже стоит над обоими; выгода всякого другого объёма — теми же
+// дверями ядра цены.
 namespace {
 
 // СТОРОНА СТРОКИ ГЛАЗАМИ СВОЕГО ЛАРЯ — мост, который читает и решение
@@ -1165,9 +1168,25 @@ constexpr std::int64_t kBoundlessBackG = std::int64_t(1) << 40;
 // Юнитов столько, что бар заведомо не предел (свидетель утверждает это сам).
 constexpr int kManyUnits = 256;
 
+// РЕШЕНИЕ МОДУЛЯ, КОТОРОЕ СУДИТ СЕКЦИЯ: у деревни своё, у города своё, и
+// набор проверок один на оба.
+using CraftPickFn = CraftPick (*)(const Inventory&, const std::int32_t*,
+                                  const Skills&, std::int64_t, int, int, int,
+                                  int);
+struct ModulePick {
+    CraftPickFn pick;
+    const char* who;
+};
+constexpr ModulePick kModulePicks[] = {
+    {&village_craft_pick, "деревня"},
+    {&city_craft_pick, "город"},
+};
+
 } // namespace
 
-void sect14b_settlement_craft_pick() {
+void sect14b_module_craft_pick(const ModulePick& m) {
+    std::printf("  [решение модуля: %s]\n", m.who);
+    const CraftPickFn pick = m.pick;
     const int clothIdx = item_index("cloth");
     const int fibreIdx = item_index("fibre");
     const int bricksIdx = item_index("bricks");
@@ -1194,7 +1213,7 @@ void sect14b_settlement_craft_pick() {
                             && material_lots(s, bricksIdx) == 1,
                         "предусловие: обе партии растят оценку, ткань — "
                         "больше; ларь кормит по одной");
-        const CraftPick p = settlement_craft_pick(
+        const CraftPick p = pick(
             s, nullptr, CITY, kFixtureBackG, -1, maxSp, maxSp, 1);
         CHECK(p.outIdx == clothIdx && p.batches == 1 && p.gain == gCloth,
               "ВЫБОР ПО ВЫГОДЕ: из двух возможных крафтов взят тот, что "
@@ -1207,7 +1226,7 @@ void sect14b_settlement_craft_pick() {
                             > lot_gain(s, clothIdx, 1, debt, kFixtureBackG),
                         "предусловие: со счётом на кирпич его партия "
                         "выгоднее ткани");
-        const CraftPick n = settlement_craft_pick(
+        const CraftPick n = pick(
             s, debt, CITY, kFixtureBackG, -1, maxSp, maxSp, 1);
         CHECK(n.outIdx == bricksIdx,
               "НУЖДА ПОДНИМАЕТ ОЦЕНКУ ВЫХОДА: со счётом на кирпич выбран "
@@ -1231,7 +1250,7 @@ void sect14b_settlement_craft_pick() {
             const std::int64_t g = lot_gain(s, clothIdx, b, nullptr, kSmallBackG);
             if (g > bestGain) { bestGain = g; best = b; }
         }
-        const CraftPick p = settlement_craft_pick(
+        const CraftPick p = pick(
             s, nullptr, CITY, kSmallBackG, -1, maxSp, maxSp, kManyUnits);
         CHECK(p.outIdx == clothIdx && p.batches > 0 && p.batches < limit,
               "НАСЫЩЕНИЕ: лот меньше предела материалов — предел дала спина, "
@@ -1265,7 +1284,7 @@ void sect14b_settlement_craft_pick() {
                             && act_sp_reach(maxSp, rate, maxSp, kManyUnits) >= limit,
                         "предусловие: лучший лот есть, он меньше всего "
                         "волокна, и бар не предел");
-        const CraftPick p = settlement_craft_pick(
+        const CraftPick p = pick(
             s, debt, CITY, kFixtureBackG, -1, maxSp, maxSp, kManyUnits);
         CHECK(p.outIdx == clothIdx && p.batches > 0 && p.batches < limit
                   && p.gain >= bestGain,
@@ -1300,12 +1319,12 @@ void sect14b_settlement_craft_pick() {
                                    >= material_lots(s, coinRow),
                         "предусловие: у города есть право, металл и бар — "
                         "отказ ниже есть решение, а не неумение");
-        const CraftPick loose = settlement_craft_pick(
+        const CraftPick loose = pick(
             s, nullptr, CITY, kBoundlessBackG, empire, maxSp, maxSp, kManyUnits);
         CHECK(loose.outIdx != coinRow,
               "РУДА БЕЗ ЗАВАЛА НЕ ЧЕКАНИТСЯ: монета стоит ровно свой металл, и "
               "выгода чеканки меньше кванта");
-        const CraftPick tight = settlement_craft_pick(
+        const CraftPick tight = pick(
             s, nullptr, CITY, kFixtureBackG, empire, maxSp, maxSp, kManyUnits);
         CHECK(tight.outIdx == coinRow && tight.batches > 0 && tight.gain > 0,
               "ПРИ ТЕСНОЙ СПИНЕ РУДА ЧЕКАНИТСЯ: монета легче руды");
@@ -1315,7 +1334,7 @@ void sect14b_settlement_craft_pick() {
         CHECK_OR_RETURN(!recipe_known(VILLAGE, mint.gateSkill, int(mint.minRank)),
                         "предусловие: кузнечный ранг деревни ниже монетной "
                         "строки");
-        const CraftPick village = settlement_craft_pick(
+        const CraftPick village = pick(
             s, nullptr, VILLAGE, kFixtureBackG, empire, maxSp, maxSp, kManyUnits);
         CHECK(village.outIdx != coinRow,
               "ПРАВО: рецепт выше ранга не выбирается, хотя сырьё есть");
@@ -1333,13 +1352,13 @@ void sect14b_settlement_craft_pick() {
                                    > lot_gain(s, clothIdx, reach, nullptr, kBoundlessBackG),
                         "предусловие: без бара модуль взял бы больше — "
                         "материалы и выгода дальше бара есть");
-        const CraftPick p = settlement_craft_pick(
+        const CraftPick p = pick(
             s, nullptr, CITY, kBoundlessBackG, -1, maxSp, sp, 1);
         CHECK(p.outIdx == clothIdx && p.batches > 0 && p.batches <= reach,
               "БАР ОГРАНИЧИВАЕТ ОБЪЁМ: не больше, чем покупает нынешний бар");
-        const CraftPick spent = settlement_craft_pick(
+        const CraftPick spent = pick(
             s, nullptr, CITY, kBoundlessBackG, -1, maxSp, 0, 1);
-        const CraftPick owed = settlement_craft_pick(
+        const CraftPick owed = pick(
             s, nullptr, CITY, kBoundlessBackG, -1, maxSp, -sp, kManyUnits);
         CHECK(spent.outIdx == -1 && owed.outIdx == -1,
               "ПУСТОЙ БАР — ВЫБИРАТЬ НЕЧЕГО: в долг поселение не трудится");
@@ -1353,14 +1372,14 @@ void sect14b_settlement_craft_pick() {
         constexpr int kFew = 1, kMore = 8;
         const std::int64_t reachFew = act_sp_reach(maxSp, rate, maxSp, kFew);
         const std::int64_t reachMore = act_sp_reach(maxSp, rate, maxSp, kMore);
-        const CraftPick few = settlement_craft_pick(
+        const CraftPick few = pick(
             s, nullptr, CITY, kBoundlessBackG, -1, maxSp, maxSp, kFew);
         CHECK_OR_RETURN(reachFew < reachMore
                             && reachMore < material_lots(s, clothIdx)
                             && few.outIdx == clothIdx
                             && few.batches == reachFew,
                         "предусловие: объём одиночки упёрся именно в бар");
-        const CraftPick more = settlement_craft_pick(
+        const CraftPick more = pick(
             s, nullptr, CITY, kBoundlessBackG, -1, maxSp, maxSp, kMore);
         CHECK(more.outIdx == clothIdx && more.batches > few.batches
                   && more.batches <= reachMore,
@@ -1375,8 +1394,8 @@ void sect14b_settlement_craft_pick() {
     // Б8. ПУСТОЙ ИНВЕНТАРЬ — КРАФТИТЬ НЕЧЕГО.
     {
         const Inventory empty{};
-        CHECK(settlement_craft_pick(empty, nullptr, CITY, kFixtureBackG, empire,
-                                    maxSp, maxSp, kManyUnits).outIdx == -1,
+        CHECK(pick(empty, nullptr, CITY, kFixtureBackG, empire,
+                   maxSp, maxSp, kManyUnits).outIdx == -1,
               "пустой ларь — выбирать нечего");
     }
 }
@@ -1384,14 +1403,16 @@ void sect14b_settlement_craft_pick() {
 // ── 14В. РЕШЕНИЕ → АКТ: модуль назвал лот, механика его исполнила ─────────
 // Оценка своих строк выросла ровно на выгоду решения, бар упал на цену акта,
 // сквад висит восстановлением ровно сделанному.
-void sect14c_pick_then_act() {
+void sect14c_pick_then_act(const ModulePick& m) {
+    std::printf("  [решение модуля: %s]\n", m.who);
+    const CraftPickFn pick = m.pick;
     constexpr int kCrew = 7;
     Actor a = born_actor(SquadType::City, kCrew);
     a.bag.add("fibre", 400);
     const int units = work_units(a.bag);
     CHECK_OR_RETURN(units == kCrew + 1 && a.rt.recoverySteps == 0,
                     "предусловие: крю в контейнере, гейт свободен");
-    const CraftPick p = settlement_craft_pick(
+    const CraftPick p = pick(
         a.bag, nullptr, a.sheet.skills, kSmallBackG, -1, a.pools.maxSp,
         a.pools.sp, units);
     CHECK_OR_RETURN(p.outIdx >= 0 && p.batches > 0 && p.gain > 0,
@@ -1441,8 +1462,8 @@ int main() {
     sect11_one_store();
     sect13_mint_conservation();
     sect14_squad_craft_act();
-    sect14b_settlement_craft_pick();
-    sect14c_pick_then_act();
+    for (const ModulePick& m : kModulePicks) sect14b_module_craft_pick(m);
+    for (const ModulePick& m : kModulePicks) sect14c_pick_then_act(m);
     sect_village_all_but_the_mint();
     print_coverage();
     // Границы у этого прибора НЕТ, и это не упущение: `check.h` даёт форму без

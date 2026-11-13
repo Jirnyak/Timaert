@@ -80,10 +80,12 @@ using namespace sm;
 constexpr int kMap = 32;
 
 // РАЗМЕР КРЮ СЧИТАЕТСЯ ПРИБОРОМ САМ, ИЗ ТОЙ ЖЕ ПУБЛИЧНОЙ СТРОКИ, ИЗ КОТОРОЙ
-// его берёт модуль (`kCrewSouls@src/macro/npc_ai.h`). Копии числа здесь нет
-// нарочно: прибитый литерал ломался бы на каждой перекалибровке и не
-// доказывал бы замысла (§8 п.4).
-constexpr int kCrew = kCrewSouls;
+// его берёт модуль, — у деревни и у города своей
+// (`kVillageCrewSouls@src/macro/npc_ai.h`, `kCityCrewSouls@src/macro/npc_ai.h`).
+// Копии числа здесь нет нарочно: прибитый литерал ломался бы на каждой
+// перекалибровке и не доказывал бы замысла (§8 п.4).
+constexpr int kVillageCrew = kVillageCrewSouls;
+constexpr int kCityCrew = kCityCrewSouls;
 
 // ПЕРИОД ПРОИЗВОДСТВЕННОГО АКТА — ТОЖЕ ВЫВОД, А НЕ ЦИТАТА: думка идёт раз в
 // `kAiTicks` мировых тиков, в сутках `kTicksPerDay` тиков.
@@ -320,14 +322,14 @@ void test_village_produces_through_its_own_think() {
     // Гейт восстановления ожиданием не заряжается: его заряжает только
     // способность (вердикт владельца 2026-11-13).
     int guard = 0;
-    while (f.st().runtime[vil.slot].mem[kSettlementMemCraftSeen]
+    while (f.st().runtime[vil.slot].mem[kVillageMemCraftSeen]
                != std::uint32_t(shelf.revision() + 1)
            && guard < 64 * kThinksPerDay) {
         f.think_on(rt, 1);
         ++guard;
     }
     const ecs::MacroNpcRuntime& vrt = f.st().runtime[vil.slot];
-    CHECK(vrt.mem[kSettlementMemCraftSeen]
+    CHECK(vrt.mem[kVillageMemCraftSeen]
               == std::uint32_t(shelf.revision() + 1),
           "ПОСЕЛЕНИЕ ДОШЛО ДО «КРАФТИТЬ НЕЧЕГО» И ЗАПОМНИЛО ЭТО СОСТОЯНИЕМ "
           "ИНВЕНТАРЯ, а не таймером");
@@ -348,7 +350,7 @@ void test_village_produces_through_its_own_think() {
           "предусловие: ни волокна, ни ткани на полке нет");
     CHECK(shelf.add_of(fibreIdx, 64), "волокно легло на полку");
     CHECK(std::uint32_t(shelf.revision() + 1)
-              != vrt.mem[kSettlementMemCraftSeen],
+              != vrt.mem[kVillageMemCraftSeen],
           "запись в инвентарь сдвинула его счётчик изменений");
     f.think_on(rt, 1);
     CHECK(shelf.count_of(clothIdx) > 0,
@@ -392,7 +394,7 @@ void test_village_raises_an_artel_and_pays_in_souls() {
           "ДЕРЕВНЯ РОДИЛА АРТЕЛЬ — ровно одну, и родителем названа ОНА");
     const int headsAfter = f.heads(vil.slot);
     // ЯКОРЬ С ДВУХ КОНЦОВ, И РАЗНИЦА В ЕДИНИЦУ ЕСТЬ ЛИДЕРСКОЕ ТЕЛО.
-    CHECK(headsBefore - headsAfter == kCrew,
+    CHECK(headsBefore - headsAfter == kVillageCrew,
           "РОЖДЕНИЕ ЗАПЛАТИЛО ДУШАМИ РОДИТЕЛЯ: дома стало РОВНО на крю "
           "меньше (предел по построению — потолка детей колонкой нет)");
 
@@ -406,7 +408,7 @@ void test_village_raises_an_artel_and_pays_in_souls() {
             bornSlot = int(s);
     }
     CHECK(bornSlot >= 0, "рождённая артель нашлась слотом");
-    CHECK(f.heads(std::uint16_t(bornSlot)) == kCrew - 1,
+    CHECK(f.heads(std::uint16_t(bornSlot)) == kVillageCrew - 1,
           "В КОНТЕЙНЕРЕ РОЖДЁННОГО СТОИТ КРЮ МИНУС ОДИН: недостающая душа "
           "и есть ЛИДЕРСКОЕ ТЕЛО, которым сквад воплощается, — закон "
           "утверждён с ОБОИХ концов пары, а не пересчётом одной формулы");
@@ -583,7 +585,9 @@ void test_a_standing_rooted_pays_nothing_for_the_road() {
 
 // ═════ 6. ПОСЛЕДНЮЮ СМЕНУ РУК ИЗ ДОМА НЕ ВЫПИСЫВАЮТ ═════════════════════
 // Наряд M-314, заведён НЕЗАВИСИМЫМ РЕВЬЮ 2026-10-25. Закон:
-// `has_spare_souls_@src/macro/npc_ai.cpp` требует СТРОГО больше крю, а не
+// `village_has_spare_souls_@src/macro/npc_ai.cpp` и
+// `city_has_spare_souls_@src/macro/npc_ai.cpp` (у каждого модуля свой) требуют
+// СТРОГО больше крю, а не
 // «не меньше», — потому что дом, отдавший последнюю смену рук, встаёт с
 // НУЛЁМ работников у своих же верстаков, то есть перестаёт производить тем
 // самым решением, которым собирался производить больше.
@@ -592,7 +596,7 @@ void test_a_standing_rooted_pays_nothing_for_the_road() {
 // НЕСУЩИЙ, и собственная дверь рождения его не дублирует: `AiPult::spawn`
 // судит `count_human_souls < crewSouls`, то есть при РАВЕНСТВЕ пропускает, а
 // `bleed_flock` уводит все восемь. Зонд ревью назвал цену: деревня РОВНО с
-// `kCrewSouls` душами и живой нуждой давала `heads` **8 → 0** и `artels`
+// `kVillageCrewSouls` душами и живой нуждой давала `heads` **8 → 0** и `artels`
 // **0 → 1** со снятым гейтом. При этом ТРИ мутации гейта — снят у деревни,
 // снят у города, строгое `>` заменено на `>=` — проходили **ЗЕЛЁНЫМИ 62/62**:
 // закон стоял в дереве без единого свидетеля (§8 п.6).
@@ -606,7 +610,8 @@ void test_the_last_shift_of_hands_is_never_written_out() {
     // ── ПЛЕЧО ОТКАЗА: ДУШ РОВНО НА ОДНО КРЮ ─────────────────────────────
     {
         Fixture f;
-        const MacroHandle vil = f.rooted(SquadType::Village, 10, 10, kCrew);
+        const MacroHandle vil =
+            f.rooted(SquadType::Village, 10, 10, kVillageCrew);
         const int vilId = int(f.st().spawnId[vil.slot].index);
         f.st().upkeep[vil.slot].needDebt[hunger_commodity_ordinal()] = 1 << 20;
         Inventory& shelf = f.st().inventory[vil.slot].inv;
@@ -624,19 +629,25 @@ void test_the_last_shift_of_hands_is_never_written_out() {
         {
             const ecs::Pools& bar = f.st().pools[vil.slot];
             const Skills& skills = f.st().sheet[vil.slot].skills;
-            const auto pick_with = [&](int units) {
-                return settlement_craft_pick(shelf, nullptr, skills,
-                                             /*backG*/1000000,
-                                             faction_index("timaert"),
-                                             int(bar.maxSp), int(bar.maxSp),
-                                             units);
-            };
-            const CraftPick staffed = pick_with(1 + kCrew);
-            const CraftPick emptied = pick_with(1);
-            CHECK(emptied.batches > 0 && staffed.batches > emptied.batches,
-                  "ВОТ ЧЕМ ГРОЗИТ ВЫПИСАННАЯ ПОСЛЕДНЯЯ СМЕНА: та же полка, та "
-                  "же анкета и тот же бар без людей покупают меньше партий — "
-                  "гейт охраняет способность дома работать");
+            // Решение о крафте у деревни и у города своё (AGENTS §4 п.5), и
+            // якорь стоит над обоими.
+            using PickFn = CraftPick (*)(const Inventory&,
+                                         const std::int32_t*, const Skills&,
+                                         std::int64_t, int, int, int, int);
+            for (const PickFn pick : {PickFn(&village_craft_pick),
+                                      PickFn(&city_craft_pick)}) {
+                const auto pick_with = [&](int units) {
+                    return pick(shelf, nullptr, skills, /*backG*/1000000,
+                                faction_index("timaert"), int(bar.maxSp),
+                                int(bar.maxSp), units);
+                };
+                const CraftPick staffed = pick_with(1 + kVillageCrew);
+                const CraftPick emptied = pick_with(1);
+                CHECK(emptied.batches > 0 && staffed.batches > emptied.batches,
+                      "ВОТ ЧЕМ ГРОЗИТ ВЫПИСАННАЯ ПОСЛЕДНЯЯ СМЕНА: та же полка, "
+                      "та же анкета и тот же бар без людей покупают меньше "
+                      "партий — гейт охраняет способность дома работать");
+            }
         }
 
         f.think(kThinksPerDay + 2);
@@ -644,7 +655,7 @@ void test_the_last_shift_of_hands_is_never_written_out() {
         CHECK(f.children_of(vilId, SquadType::Artel) == 0,
               "АРТЕЛИ НЕТ: душ ровно на крю, и последнюю смену рук дом не "
               "выписывает — строгое «больше», а не «не меньше»");
-        CHECK(f.heads(vil.slot) == kCrew,
+        CHECK(f.heads(vil.slot) == kVillageCrew,
               "и душ он не потерял НИ ОДНОЙ — отказ случился ДО платы, а не "
               "рождением с возвратом");
         CHECK(shelf.count_of(bricksIdx) > 0,
@@ -659,7 +670,8 @@ void test_the_last_shift_of_hands_is_never_written_out() {
     // детектор).
     {
         Fixture f;
-        const MacroHandle vil = f.rooted(SquadType::Village, 10, 10, kCrew + 1);
+        const MacroHandle vil = f.rooted(SquadType::Village, 10, 10,
+                                         kVillageCrew + 1);
         const int vilId = int(f.st().spawnId[vil.slot].index);
         f.st().upkeep[vil.slot].needDebt[hunger_commodity_ordinal()] = 1 << 20;
         Inventory& shelf = f.st().inventory[vil.slot].inv;
@@ -686,8 +698,9 @@ void test_the_last_shift_of_hands_is_never_written_out() {
     // доказывало бы один сайт из двух.
     {
         Fixture f;
-        const MacroHandle city = f.rooted(SquadType::City, 10, 10, kCrew);
-        const MacroHandle vassal = f.rooted(SquadType::Village, 14, 10, kCrew);
+        const MacroHandle city = f.rooted(SquadType::City, 10, 10, kCityCrew);
+        const MacroHandle vassal =
+            f.rooted(SquadType::Village, 14, 10, kVillageCrew);
         const int cityId = int(f.st().spawnId[city.slot].index);
         const int vassalId = int(f.st().spawnId[vassal.slot].index);
         set_relation(f.st(), vassalId, cityId, Stance::Suzerain);
@@ -704,7 +717,7 @@ void test_the_last_shift_of_hands_is_never_written_out() {
         CHECK(f.children_of(cityId, SquadType::Caravan) == 0,
               "и КОРОВАНА не поднял — второй сайт того же гейта, у которого "
               "гейта нужды нет вовсе");
-        CHECK(f.heads(city.slot) == kCrew,
+        CHECK(f.heads(city.slot) == kCityCrew,
               "и душ город не потерял ни одной");
     }
 }

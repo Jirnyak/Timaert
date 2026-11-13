@@ -105,9 +105,10 @@
 `src/tables/econ_laws.h`; рабочие юниты — `work_units` в `src/bus/world_row.h`;
 база партии крафта — `craft_batch_ticks` в `src/tables/actions.h`. Глаголы
 пульта `craft(что, сколько)`, `gather`, `act_cost`; решение модулей деревни и
-города — `settlement_craft_pick` (публично в `src/macro/npc_ai.h`); память
-модуля — `kSettlementMemCraftSeen`, `kSettlementMemCraftDebt`,
-`kSettlementMemBirthWait`; счётчик изменений — `Inventory::revision` в
+города — каждое своё: `village_craft_pick` и `city_craft_pick` (публично в
+`src/macro/npc_ai.h`); память модуля — у деревни `kVillageMemCraftSeen`,
+`kVillageMemCraftDebt`, `kVillageMemBirthWait`, у города `kCityMemCraftSeen`,
+`kCityMemCraftDebt`, `kCityMemBirthWait`; счётчик изменений — `Inventory::revision` в
 `src/bus/anketa.h`. Общая лестница дня `econ_produce_day`, квота станков и КПД
 от населения УМЕРЛИ — не искать и не возвращать.
 

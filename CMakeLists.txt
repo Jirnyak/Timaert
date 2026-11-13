@@ -2018,8 +2018,9 @@ timaert_test(econ_v1_test
         # The one-dictionary link law: every commodity is an item-catalog row.
         src/bus/anketa.cpp
         src/tables/items.cpp
-        # Решение о крафте живёт в модуле поселения (settlement_craft_pick);
-        # свидетель судит его рядом с механикой акта, поэтому линкует модули
+        # Решение о крафте живёт в модулях деревни и города, у каждого своё
+        # (village_craft_pick, city_craft_pick);
+        # свидетель судит оба рядом с механикой акта, поэтому линкует модули
         # тем же набором, что caravan_deal_test.
         src/macro/npc_ai.cpp
         src/macro/deal.cpp
