@@ -144,6 +144,9 @@ int side_trade_power(const MacroStore& st, std::uint16_t slot);
 // строка вправе переплатить» без потолка — рынок отдавал золотой за лот в 14
 // (ревью дифа 2026-11-12; для сделок мимо ядра вопрос открыт рядом M-487).
 // `roomG` — сколько массы берущий способен принять (kNoCarryLimitG у склада).
+// `offeredBy` — кто из двоих ПРЕДЛОЖИЛ сделку, в словах этой корзины:
+// `Offer::Giver` — плательщик, `Offer::Taker` — получатель платежа. Неделимый
+// остаток доли достаётся тому, кто не предлагал (`gain_share@src/macro/economy.h`).
 // Строки выходят exact. Покрыто меньше запроса — судит звонящий по `price`.
 struct StagedPayment {
     std::int64_t price = 0;       // сколько стоимости покрыто по закону цены
@@ -154,7 +157,7 @@ struct StagedPayment {
 StagedPayment stage_payment(const MacroStore& st, std::uint16_t payer,
                             std::uint16_t receiver, std::int64_t target,
                             std::int64_t ceiling, std::int64_t roomG,
-                            std::span<DealLine> out);
+                            Offer offeredBy, std::span<DealLine> out);
 
 // ПОКРЫТА ЛИ СДЕЛКА — ОДИН ВОПРОС, ОДНО ПРАВОПИСАНИЕ (M-415/Б3, вердикт
 // владельца 2026-11-07 «один помощник рядом»). Прежде стоял СЕМЬЮ

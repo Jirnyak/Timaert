@@ -432,6 +432,18 @@ inline bool draw_barter_deal_button(BarterState& st, MacroStore& store,
     return dealt;
 }
 
+// ПОДПИСЬ ЦЕНЫ ПОД КУРСОРОМ — ПРОСТО ЧИСЛО В КВАНТАХ СТОИМОСТИ (слово
+// владельца после живого теста 2026-11-13, дословно: «есть же просто цена (в
+// унивреслаьныйх квнатах) типа price: 5»). Стоимость — не монеты, а
+// минимальный квант стоимости; рынок выводит ТУ ЖЕ величину, уже
+// поправленную ценомоделью. Прежнее «take 1 for 5» читалось как курс обмена
+// штук на монеты. Без заказа — цена одной единицы; с заказом — цена всего
+// заказанного лота и его счёт в скобках.
+inline void draw_lot_price(int staged, int price) {
+    if (staged > 1) ImGui::Text("price: %d (x%d)", price, staged);
+    else ImGui::Text("price: %d", price);
+}
+
 // The BODY every counter shares: receipt line, the two 32×32 grids, the
 // one Deal button. Staging is IN-PLACE (владелец: «резервировать то, что
 // на продажу, в стеке продающего»): LMB reserves +Amount from the stack
@@ -508,9 +520,7 @@ inline void draw_barter_body(const char* stockLabel,
     stage_click(
         draw_inventory_grid("##shelf", shelf, &st.barter.take,
                             [&](const ItemRef& r, int n) {
-                                const int lot = n > 0 ? n : 1;
-                                ImGui::Text("take %d for %d", lot,
-                                            takeLot(r, lot));
+                                draw_lot_price(n, takeLot(r, n > 0 ? n : 1));
                             }),
         st.barter.take, shelf);
     ImGui::EndChild();
@@ -521,9 +531,7 @@ inline void draw_barter_body(const char* stockLabel,
     stage_click(
         draw_inventory_grid("##player_shelf", playerBag, &st.barter.give,
                             [&](const ItemRef& r, int n) {
-                                const int lot = n > 0 ? n : 1;
-                                ImGui::Text("give %d for %d", lot,
-                                            giveLot(r, lot));
+                                draw_lot_price(n, giveLot(r, n > 0 ? n : 1));
                             }),
         st.barter.give, playerBag);
     ImGui::EndChild();

@@ -2317,9 +2317,17 @@ long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
                           std::uint16_t traderSlot, std::int64_t capG) {
     const Inventory& store = st.inventory[homeSlot].inv;
     const Inventory& bag = st.inventory[traderSlot].inv;
-    // Строки склада, которые ребёнок ценит выше дома, — с выгодой первой
-    // единицы; порядок — выгода на грамм (перекрёстное умножение).
-    struct Row { std::uint16_t def; int base; std::int64_t gain; std::int64_t massG; };
+    std::int64_t used = inventory_mass_g(bag);
+    const std::int64_t budgetG = capG - used;   // спина этого рейса
+    // Строки склада, в которых семье есть что выиграть: лот выгоды под всю
+    // свободную спину рейса и выгода на нём — насколько ребёнок ценит взятое
+    // выше, чем дом отданное. Порядок — выгода лота на грамм лота. Единицей
+    // выгоду не мерить: завал меньше шага оценки на одной штуке не виден, а
+    // на лоте виден (ряд M-490).
+    struct Row {
+        std::uint16_t def; int base;
+        std::int64_t gain; std::int64_t lotG; std::int64_t massG;
+    };
     Row rows[kMaxInventorySlots];
     int rowCount = 0;
     for (int i = 0; i < int(store.slots.size()); ++i) {
@@ -2332,21 +2340,25 @@ long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
         if (seen) continue;
         const int base = d->value;
         if (base <= 0) continue;
-        const std::int64_t first =
-            worth_arriving(side_row(st, traderSlot, int(sl.def), base), 1)
-          - worth_leaving(side_row(st, homeSlot, int(sl.def), base), 1);
-        if (first <= 0) continue;
-        rows[rowCount++] =
-            Row{sl.def, base, first, std::int64_t(item_mass_g(*d))};
+        const std::int64_t massG = item_mass_g(*d);
+        const RowSide home = side_row(st, homeSlot, int(sl.def), base);
+        const RowSide child = side_row(st, traderSlot, int(sl.def), base);
+        const std::int64_t units = gain_units(
+            home, child,
+            std::min<std::int64_t>(store.count_of(int(sl.def)),
+                                   budgetG > 0 ? budgetG / massG : 0),
+            /*strict=*/true);
+        const std::int64_t gain =
+            lot_take(child, units) - lot_loss(home, units);
+        if (units <= 0 || gain <= 0) continue;
+        rows[rowCount++] = Row{sl.def, base, gain, units * massG, massG};
     }
     std::sort(rows, rows + rowCount, [](const Row& a, const Row& b) {
-        return a.gain * b.massG > b.gain * a.massG;
+        return gain_denser(a.gain, a.lotG, b.gain, b.lotG);
     });
     long long planned = 0;
     DealLine lot[kMaxInventorySlots];
     int lines = 0;
-    std::int64_t used = inventory_mass_g(bag);
-    const std::int64_t budgetG = capG - used;   // спина этого рейса
     constexpr std::int64_t kNoWallet = std::int64_t(1) << 60;
     for (int r = 0; r < rowCount && used < capG; ++r) {
         const std::int64_t fit = (capG - used) / rows[r].massG;
@@ -2356,7 +2368,7 @@ long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
         const LotQuote q = gainful_lot(
             side_row(st, homeSlot, int(rows[r].def), rows[r].base),
             side_row(st, traderSlot, int(rows[r].def), rows[r].base),
-            1, 1, cap, kNoWallet);
+            1, 1, cap, kNoWallet, Offer::Giver);
         if (q.units <= 0) continue;
         planned += (long long)q.units * rows[r].base;
         used += q.units * rows[r].massG;
@@ -2400,12 +2412,12 @@ long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
 // сути его цель вырастить стоимость своего инвентаря …) … вернуть всё что
 // наторговваал обогатить свой город». Отсюда рейс:
 //   · ГРУЗИТ РОДИТЕЛЬ (`city_think` → `load_child`), корован ждёт груза;
-//   · на рынке купец растит АБСОЛЮТНУЮ СТОИМОСТЬ СВОЕГО ТРЮМА — продаёт
-//     строку, которая здесь дороже базы, берёт ту, что дешевле; склад дома в
-//     сделке не читается вовсе (`trade_caravan_at_station`);
+//   · на рынке купец растит СВОЮ ОЦЕНКУ СВОЕГО ТРЮМА (S25, «ЕДИНАЯ
+//     ЦЕНОМОДЕЛЬ») — отдаёт то, что рынок ценит выше него, берёт то, что сам
+//     ценит выше рынка; склад дома в сделке не читается вовсе
+//     (`trade_caravan_at_station`);
 //   · домой — по ПРЕДЕЛЬНОЙ ОТДАЧЕ (ступень Working ниже), и дома отдаёт всё.
 // Своя память рейса — пять слов памяти модуля (`kCaravanMem…@src/macro/npc_ai.h`).
-// (Слова своей памяти рейса — `kCaravanMem…@src/macro/npc_ai.h`.)
 void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
     const std::uint32_t home = view.home(s.h);
     if (home == ecs::kNoCell) { pult.nomad(s); return; }
@@ -4203,8 +4215,13 @@ LegFact barter_leg_(MacroStore& st, std::uint16_t giver, std::uint16_t taker,
             ? kNoCarryLimitG : giverFreeG + units * g.unitMassG;
     };
     constexpr std::int64_t kNoWallet = std::int64_t(1) << 60;
+    // Сделку предложил тот, кто пришёл: неделимый остаток доли достаётся
+    // другой стороне (`gain_share@src/macro/economy.h`). В ноге оплаты роли
+    // зеркальны: товар отдающий — получатель платежа.
+    const Offer goodsBy = actorIsGiver ? Offer::Giver : Offer::Taker;
+    const Offer payBy = actorIsGiver ? Offer::Taker : Offer::Giver;
     DealLine pay[64];
-    LotQuote lot = gainful_lot(g, t, gp, tp, cap, kNoWallet);
+    LotQuote lot = gainful_lot(g, t, gp, tp, cap, kNoWallet, goodsBy);
     StagedPayment sp{};
     // Корзина собирается под цену лота; не покрыла — лот режется до того,
     // что берущий способен отдать, и корзина собирается заново. Цена лота
@@ -4213,9 +4230,10 @@ LegFact barter_leg_(MacroStore& st, std::uint16_t giver, std::uint16_t taker,
     for (int pass = 0; pass < 64 && lot.units > 0; ++pass) {
         // Потолок плательщика — во сколько ОН ценит то, что берёт.
         sp = stage_payment(st, taker, giver, lot.price,
-                           lot_take(t, lot.units), room_for(lot.units), pay);
+                           lot_take(t, lot.units), room_for(lot.units), payBy,
+                           pay);
         if (sp.price >= lot.price) break;
-        lot = gainful_lot(g, t, gp, tp, cap, sp.price);
+        lot = gainful_lot(g, t, gp, tp, cap, sp.price, goodsBy);
     }
     if (lot.units <= 0 || sp.price < lot.price) return out;
     const std::int64_t giverGain = sp.takerWorth - lot_loss(g, lot.units);
@@ -4272,26 +4290,32 @@ CaravanDeal trade_caravan_at_station(MacroStore& st,
     }
     // ── БЕРУ: всё, что я ценю выше рынка, — его завал. ВЫГОДНЕЙШЕЕ НА ГРАММ —
     // ПЕРВЫМ: спина конечна, и купец грузит её тем, что несёт больше всего
-    // прироста оценки на единицу массы. Выгода на массу — ДРОБЬЮ, а не
-    // флоатом: порядок решает перекрёстное умножение — тот же приём, что у
-    // `densest_value_slot`.
-    struct Lot { int i; std::int64_t gain; std::int64_t massG; };
+    // прироста оценки на единицу массы. Мерится ЛОТ под всю свободную спину,
+    // а не первая единица (ряд M-490: завал меньше шага оценки на одной штуке
+    // не виден); выгода на массу — ДРОБЬЮ, а не флоатом
+    // (`gain_denser@src/macro/economy.h`).
+    struct Lot { int i; std::int64_t gain; std::int64_t lotG; std::int64_t massG; };
     Lot lots[std::size_t(kCommodityCount)];
     int lotCount = 0;
+    const std::int64_t roomG = free_back();
     for (int i = 0; i < kCommodityCount; ++i) {
         const int id = commodity_item_index(i);
         const ItemDef* def = item_def_at(id);
         const int base = def ? def->value : 0;
         if (base <= 0 || ms.count_of(id) <= 0) continue;
-        const std::int64_t first =
-            worth_arriving(side_row(st, traderSlot, id, base), 1)
-          - worth_leaving(side_row(st, marketSlot, id, base), 1);
-        if (first <= 0) continue;
-        lots[std::size_t(lotCount++)] =
-            Lot{i, first, std::int64_t(item_mass_g(*def))};
+        const std::int64_t massG = item_mass_g(*def);
+        const RowSide market = side_row(st, marketSlot, id, base);
+        const RowSide mine = side_row(st, traderSlot, id, base);
+        const std::int64_t units = gain_units(
+            market, mine,
+            std::min<std::int64_t>(ms.count_of(id), roomG / massG),
+            /*strict=*/true);
+        const std::int64_t gain = lot_take(mine, units) - lot_loss(market, units);
+        if (units <= 0 || gain <= 0) continue;
+        lots[std::size_t(lotCount++)] = Lot{i, gain, units * massG, massG};
     }
     std::sort(lots, lots + lotCount, [](const Lot& a, const Lot& b) {
-        return a.gain * b.massG > b.gain * a.massG;
+        return gain_denser(a.gain, a.lotG, b.gain, b.lotG);
     });
     for (int li = 0; li < lotCount; ++li) {
         const int id = commodity_item_index(lots[li].i);

@@ -138,56 +138,140 @@ void test_scarcity_shape() {
 }
 
 // ── ОЦЕНКА: НУЖДА ПОДНИМАЕТ, ЗАВАЛ РОНЯЕТ, И «МНОГО» МЕРИТ МАССА ──────────
+// Закон мира (AGENTS «ЗАКОН ЕДИНОЙ ЦЕНОМОДЕЛИ» п.2; ряд M-490): у стороны одна
+// оценка вещи, и оценка ЗАПАСА строки есть функция состояния — до кванта
+// округляется сумма, а не единица. Свип утверждает свойства, а не числа;
+// «ценит выше» спрашивается у ядра ТОЧНО (`gain_units`), округлённые единицы
+// сравнивать нельзя — они расходятся с точной оценкой на квант.
 void test_worth_is_lifted_by_need_and_dropped_by_glut() {
-    int seen = 0, notMonotone = 0, belowFloor = 0, liftedWithoutNeed = 0;
-    int droppedUnderNeed = 0, heavierDearer = 0, widerCheaper = 0;
-    for (int base : {1, 2, 10, 100, 12800}) {
-        for (int have : {0, 1, 9, 100, 1000, 1 << 20}) {
-            for (int need : {0, 1, 9, 100, 1000, 1 << 20}) {
-                for (std::int64_t mass : {10, 1000, 4000}) {
-                    for (std::int64_t back :
-                         {std::int64_t(0), std::int64_t(100000),
-                          std::int64_t(1) << 30}) {
-                        const std::int64_t w =
-                            unit_worth(base, have, need, mass, back);
-                        ++seen;
-                        if (w < 1) ++belowFloor;
-                        if (need <= have && w > base) ++liftedWithoutNeed;
-                        if (need > have && w < base) ++droppedUnderNeed;
-                        if (unit_worth(base, have + 1, need, mass, back) > w)
-                            ++notMonotone;
-                        if (unit_worth(base, have, need + 1, mass, back) < w)
-                            ++notMonotone;
-                        if (unit_worth(base, have, need, mass * 2, back) > w)
-                            ++heavierDearer;
-                        if (unit_worth(base, have, need, mass, back * 2) < w)
-                            ++widerCheaper;
+    const auto at = [](RowSide r, std::int64_t net) {
+        r.net = net;
+        return r;
+    };
+    // «Единицу, приводящую запас к j, сторона `a` ценит строго выше, чем
+    // сторона `b`» — точно: единица едет от `b` (она у него j-я) к `a`.
+    const auto dearer = [&](const RowSide& a, const RowSide& b,
+                            std::int64_t j) {
+        return gain_units(at(b, j), at(a, j - 1), 1, /*strict=*/true) == 1;
+    };
+    int seen = 0, belowFloor = 0, liftedWithoutNeed = 0, droppedUnderNeed = 0;
+    int notState = 0, notAdditive = 0, growsWithStock = 0;
+    int heavierDearer = 0, widerCheaper = 0, offByMoreThanHalf = 0, exactSums = 0;
+    // (offByMoreThanHalf: дальше половины кванта у оценки от нуля, дальше
+    // кванта у лота.)
+    for (int base : {1, 2, 5, 100, 12800}) {
+        for (std::int64_t net :
+             {std::int64_t(-(1 << 20)), std::int64_t(-1000), std::int64_t(-9),
+              std::int64_t(-1), std::int64_t(0), std::int64_t(1),
+              std::int64_t(9), std::int64_t(100), std::int64_t(1000),
+              std::int64_t(1 << 20)}) {
+            for (std::int64_t mass : {10, 1000, 4000}) {
+                for (std::int64_t back :
+                     {std::int64_t(0), std::int64_t(100000),
+                      std::int64_t(1) << 30, std::int64_t(1) << 40}) {
+                    const RowSide r{base, net, mass, back};
+                    ++seen;
+                    const std::int64_t in = worth_arriving(r, 1);
+                    const std::int64_t out = worth_leaving(r, 1);
+                    if (in < 1 || out < 1) ++belowFloor;
+                    if (net >= 0 && in > base) ++liftedWithoutNeed;
+                    if (net < 0 && in < base) ++droppedUnderNeed;
+                    for (std::int64_t n : {1, 7, 500}) {
+                        // Взятое и возвращённое возвращает оценку запаса в
+                        // прежнее число; части складываются в целое точно.
+                        if (lot_take(r, n) != lot_loss(at(r, net + n), n))
+                            ++notState;
+                        if (lot_take(r, n + 3)
+                            != lot_take(r, n) + lot_take(at(r, net + n), 3))
+                            ++notAdditive;
                     }
+                    // ТОЧНАЯ СУММА — ПЕРЕБОРОМ ПО ЗАКОНУ, а не замкнутой формой
+                    // ядра: каждая единица излишка стоит стоимость × (F − j)/F,
+                    // не ниже единицы; копится числитель над общим знаменателем
+                    // F. Оценка запаса от нуля округлена до ближайшего — она
+                    // в половине кванта от точной; лот есть разность двух таких
+                    // оценок и потому лежит в пределах одного кванта. (Нужду
+                    // свип не суммирует: там оценка целая по закону, её держат
+                    // якоря ядра.)
+                    const std::int64_t fits = back / mass;
+                    if (net >= 0 && net <= 1000 && fits > 0 && fits <= 100000) {
+                        const std::int64_t n = 500;
+                        std::int64_t numer = 0;   // сумма × F
+                        for (std::int64_t j = net + 1; j <= net + n; ++j) {
+                            const std::int64_t part =
+                                j < fits ? std::int64_t(base) * (fits - j) : 0;
+                            numer += part < fits ? fits : part;
+                        }
+                        ++exactSums;
+                        const std::int64_t off = lot_take(r, n) * fits - numer;
+                        const std::int64_t room = net == 0 ? fits : 2 * fits;
+                        if (2 * off > room || 2 * off < -room) ++offByMoreThanHalf;
+                    }
+                    // Оценка единицы не растёт с запасом; потяжелее — не
+                    // дороже; спина пошире — не дешевле. Точно.
+                    if (gain_units(at(r, net), at(r, net), 1, true) != 0)
+                        ++growsWithStock;
+                    const RowSide heavy{base, net, mass * 2, back};
+                    const RowSide wide{base, net, mass, back * 2};
+                    if (dearer(heavy, r, net + 1)) ++heavierDearer;
+                    if (dearer(r, wide, net + 1)) ++widerCheaper;
                 }
             }
         }
     }
-    CHECK(seen > 1000, "the sweep actually swept");
+    CHECK(seen > 500, "the sweep actually swept");
     CHECK(belowFloor == 0, "пол оценки — единица: «ничто не бесплатно»");
     CHECK(liftedWithoutNeed == 0 && droppedUnderNeed == 0,
-          "выше стоимости оценку поднимает только нужда сверх запаса, ниже "
-          "роняет только излишек сверх нужды");
-    CHECK(notMonotone == 0,
-          "оценка не растёт с запасом и не падает с нуждой");
+          "выше стоимости оценку поднимает только непогашенная нужда, ниже "
+          "роняет только излишек");
+    CHECK(notState == 0 && notAdditive == 0,
+          "ОЦЕНКА ЗАПАСА — ФУНКЦИЯ СОСТОЯНИЯ: взятое и возвращённое возвращает "
+          "её в прежнее число, части лота складываются в целое точно");
+    CHECK(exactSums > 50 && offByMoreThanHalf == 0,
+          "ДО КВАНТА ОКРУГЛЯЕТСЯ СУММА: оценка пятисот единиц от пустой полки "
+          "лежит в половине кванта от точной суммы, посчитанной перебором по "
+          "закону, а лот с непустой полки — в пределах одного кванта");
+    CHECK(growsWithStock == 0,
+          "оценка единицы не растёт с запасом: следующую единицу сторона не "
+          "ценит выше той, что у неё уже есть");
     CHECK(heavierDearer == 0 && widerCheaper == 0,
           "«много» мерит масса против спины: вещь потяжелее не ценится выше, "
           "сторона со спиной пошире не ценит ниже");
-    // Негативный контроль свипа: обе ветви ДВИЖУТСЯ, свип не утверждает
-    // константу. И якорь, ради которого счёт штук заменён массой: тысяча
-    // лёгких монет идёт почти по номиналу, тысяча возов — завал.
-    CHECK(unit_worth(100, 0, 100, 1000, 100000) > unit_worth(100, 50, 100, 1000, 100000)
-              && unit_worth(100, 50, 100, 1000, 100000) > unit_worth(100, 100, 100, 1000, 100000)
-              && unit_worth(100, 100, 0, 1000, 1000000) > unit_worth(100, 500, 0, 1000, 1000000),
+    // Негативный контроль свипа: обе ветви ДВИЖУТСЯ, и детектор «ценит выше»
+    // умеет сказать «да» — свип не утверждает константу.
+    const RowSide row{100, 0, 1000, 1000000};
+    CHECK(worth_arriving(at(row, -100), 1) > worth_arriving(at(row, -50), 1)
+              && worth_arriving(at(row, -50), 1) > worth_arriving(row, 1)
+              && worth_arriving(at(row, 99), 1) > worth_arriving(at(row, 499), 1),
           "негативный контроль: нужда и завал оба двигают оценку");
-    CHECK(unit_worth(100, 1000, 0, 10, 1000000) == 99
-              && unit_worth(100, 1000, 0, 4000, 1000000) == 1,
+    CHECK(dearer(row, RowSide{100, 0, 4000, 1000000}, 100)
+              && dearer(RowSide{100, 0, 1000, 2000000}, row, 100)
+              && gain_units(at(row, 500), row, 1, true) == 1,
+          "негативный контроль детектора: лёгкую вещь ценят выше тяжёлой, "
+          "широкая спина ценит выше узкой, пустая сторона — выше заваленной");
+    // ЯКОРЯ, посчитанные рукой по формуле закона. Монета: тысячная штука по
+    // десять граммов занимает сотую спины — 100 × (1 − 0.01) = 99; тысяча
+    // штук по четыре килограмма спину забивает — пол.
+    CHECK(worth_arriving(RowSide{100, 999, 10, 1000000}, 1) == 99
+              && worth_arriving(RowSide{100, 999, 4000, 1000000}, 1) == 1,
           "МОНЕТА — ДЕНЬГИ БЕЗ ТЕГА: тысяча штук по десять граммов занимает "
           "сотую спины, тысяча штук по четыре килограмма забивает её");
+    // ЗЕРНИСТОСТЬ (M-490). Сто штук стоимостью 5 при спине в тысячу штук:
+    // точно 5 × (100 − 5050/1000) = 474.75. Округление КАЖДОЙ единицы дало
+    // бы 500 — по пять за штуку, завал не виден вовсе.
+    CHECK(lot_take(RowSide{5, 0, 1000, 1000000}, 100) == 475,
+          "до кванта округляется СУММА лота, а не единица: 474.75 → 475, а не "
+          "500");
+    // Дом завален на двадцатую долю спины, ребёнок пуст: одна единица у обоих
+    // стоит те же 5 квантов, а лот выгоден. Граница рукой:
+    // (1000−k)/1000 > (474999+k)/500000 ⇔ 501·k < 25001 ⇔ k ≤ 49.
+    const RowSide home{5, 25000, 1000, std::int64_t(500000) * 1000};
+    const RowSide child{5, 0, 1000, std::int64_t(1000) * 1000};
+    const std::int64_t units = gain_units(home, child, 25000, true);
+    CHECK(worth_arriving(child, 1) == worth_leaving(home, 1) && units == 49
+              && lot_take(child, units) > lot_loss(home, units),
+          "завал меньше шага оценки на одной единице не виден, а на лоте "
+          "виден: дом отдаёт ребёнку 49 единиц, и семья на этом выигрывает");
 }
 
 // ── НАСОСА НЕТ: НИ ОДИН КРУГ НЕ ПРИНОСИТ МОНЕТЫ ──────────────────────────
@@ -307,6 +391,121 @@ void test_no_pump_at_any_power() {
     }
 }
 
+// ── ДВЕРИ ЛОТА: ГРАНИЦЫ ЧЕСТНЫЕ, НЕ ПРЕДЛАГАВШИЙ НЕ ТЕРЯЕТ ────────────────
+// Свойства, а не числа (§8 п.4): что бы ни назвали двери лота, это обязано
+// быть ровно тем, что обещает закон. Находки ревью дифа 2026-11-13: корзина
+// держала свою копию формулы цены и расходилась с ценой лота на квант.
+void test_lot_doors_keep_their_promises() {
+    int seen = 0, nonOffererLost = 0, priceFell = 0, splitPaid = 0;
+    int gainfulBroken = 0, coverBroken = 0, fitBroken = 0, mixed = 0;
+    for (int base : {1, 3, 5, 100}) {
+        for (int gNet : {-3, 0, 2, 12, 56, 400}) {
+            for (int tNet : {-40, -2, 0, 27, 300}) {
+                for (std::int64_t gBack : {std::int64_t(50), std::int64_t(209),
+                                           std::int64_t(100000)}) {
+                    for (std::int64_t tBack : {std::int64_t(29), std::int64_t(100),
+                                               std::int64_t(1000000)}) {
+                        for (int gp : {0, 2, 13, 510}) {
+                            for (int tp : {0, 13}) {
+                                const RowSide g{base, gNet, 1, gBack};
+                                const RowSide t{base, tNet, 1, tBack};
+                                for (Offer by : {Offer::Giver, Offer::Taker}) {
+                                    ++seen;
+                                    const std::int64_t strict =
+                                        gain_units(g, t, 40, true);
+                                    const std::int64_t loose =
+                                        gain_units(g, t, 40, false);
+                                    if (strict < 40) ++mixed;
+                                    std::int64_t prev = 0;
+                                    for (std::int64_t n = 1; n <= 40; ++n) {
+                                        const std::int64_t p =
+                                            lot_price(g, t, gp, tp, n, by);
+                                        // Не предлагавший не теряет по своей
+                                        // оценке.
+                                        if (by == Offer::Giver
+                                                ? p > lot_take(t, n)
+                                                : p < lot_loss(g, n))
+                                            ++nonOffererLost;
+                                        // Цена не убывает с числом единиц.
+                                        if (n <= loose && p < prev) ++priceFell;
+                                        prev = p;
+                                        // Дробить предложившему не выгодно.
+                                        if (n >= 2) {
+                                            RowSide g2 = g, t2 = t;
+                                            g2.net -= 1;
+                                            t2.net += 1;
+                                            const std::int64_t parts =
+                                                lot_price(g, t, gp, tp, 1, by)
+                                              + lot_price(g2, t2, gp, tp, n - 1, by);
+                                            if (by == Offer::Giver ? parts > p
+                                                                   : parts < p)
+                                                ++splitPaid;
+                                        }
+                                    }
+                                    for (std::int64_t money : {0, 7, 60, 5000}) {
+                                        const LotQuote q = gainful_lot(
+                                            g, t, gp, tp, 40, money, by);
+                                        if (q.units > strict
+                                            || q.price != (q.units > 0
+                                                               ? lot_price(g, t, gp, tp, q.units, by)
+                                                               : 0)
+                                            || q.price > money
+                                            || (q.units < strict
+                                                && lot_price(g, t, gp, tp, q.units + 1, by)
+                                                       <= money))
+                                            ++gainfulBroken;
+                                        const LotQuote c =
+                                            cover_lot(g, t, gp, tp, 40, money, by);
+                                        if (money <= 0 || loose == 0) {
+                                            if (c.units != 0) ++coverBroken;
+                                        } else if (c.units < 1 || c.units > loose
+                                                   || c.price != lot_price(g, t, gp, tp, c.units, by)
+                                                   || (c.price < money && c.units != loose)
+                                                   || (c.units > 1
+                                                       && lot_price(g, t, gp, tp, c.units - 1, by)
+                                                              >= money)) {
+                                            ++coverBroken;
+                                        }
+                                        const LotQuote f =
+                                            fit_lot(g, t, gp, tp, 40, money, by);
+                                        if (f.units > loose || f.price > money
+                                            || f.price != (f.units > 0
+                                                               ? lot_price(g, t, gp, tp, f.units, by)
+                                                               : 0)
+                                            || (f.units < loose
+                                                && lot_price(g, t, gp, tp, f.units + 1, by)
+                                                       <= money))
+                                            ++fitBroken;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    CHECK(seen > 5000 && mixed > 1000,
+          "the sweep actually swept, and it holds lots that are not gainful "
+          "to the last unit");
+    CHECK(nonOffererLost == 0,
+          "НЕ ПРЕДЛАГАВШИЙ НЕ ТЕРЯЕТ: предложил отдающий — цена не выше оценки "
+          "берущего; предложил берущий — не ниже оценки отдающего");
+    CHECK(priceFell == 0, "цена лота не убывает с числом единиц");
+    CHECK(splitPaid == 0,
+          "ДРОБИТЬ ПРЕДЛОЖИВШЕМУ НЕ ВЫГОДНО: первая единица отдельно и остаток "
+          "отдельно не дают ему больше целого лота");
+    CHECK(gainfulBroken == 0,
+          "ЛОТ ВЫГОДЫ: не больше выгодных единиц, цена — цена лота, по "
+          "кошельку, и следующая единица уже не по кошельку");
+    CHECK(coverBroken == 0,
+          "ВСТРЕЧНАЯ КОРЗИНА: цена — цена лота; покрыто, либо отдано всё, что "
+          "годится; ни единицы сверх покрытия");
+    CHECK(fitBroken == 0,
+          "КОРЗИНА БЕЗ ПЕРЕПЛАТЫ: цена — цена лота, не выше бюджета, и "
+          "следующая единица в бюджет уже не влезает");
+}
+
 // ── ТОРГОВАЯ СИЛА — ОДНА ДВЕРЬ, И ОБЕ СТОРОНЫ НАЗЫВАЮТ ЕЮ СЕБЯ ────────────
 // Свидетель заведён 2026-09-21 на дефект, проживший в панели ИГРОКА всё
 // время существования двусторонней цены: цена звалась как «(база, харизма,
@@ -368,6 +567,7 @@ int main() {
     test_scarcity_shape();
     test_worth_is_lifted_by_need_and_dropped_by_glut();
     test_no_pump_at_any_power();
+    test_lot_doors_keep_their_promises();
     test_trade_power_is_one_door();
     return sm::test::report("price_law_test");
 }

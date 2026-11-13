@@ -157,8 +157,14 @@ void test_one_price_law_splits_the_gain_by_trade_power() {
     const RowSide roamer{100, 50, 1, kWideBack};   // груз есть, нужды нет
     const RowSide hungry{100, -4, 1, kWideBack};   // остаток счёта четыре
     const RowSide sated{100, 30, 1, kWideBack};    // излишек тридцать
-    const auto lot_price = [](const RowSide& g, const RowSide& t, int gp,
-                              int tp, int n) {
+    // Сделку предлагает тот, кто пришёл: `gives` — отдающий, `takes` —
+    // берущий. Неделимый остаток доли достаётся другой стороне.
+    const auto gives = [](const RowSide& g, const RowSide& t, int gp, int tp,
+                          int n) {
+        return sm::lot_price(g, t, gp, tp, n, Offer::Giver);
+    };
+    const auto takes = [](const RowSide& g, const RowSide& t, int gp, int tp,
+                          int n) {
         return sm::lot_price(g, t, gp, tp, n, Offer::Taker);
     };
 
@@ -167,41 +173,49 @@ void test_one_price_law_splits_the_gain_by_trade_power() {
     CHECK(worth_arriving(hungry, 1) == 400 && worth_leaving(roamer, 1) == 100,
           "the hungry side values the unit above its worth, the side without "
           "a need values it at exactly its worth");
-    CHECK(lot_price(roamer, hungry, 10, 10, 1) == 250,
+    CHECK(gives(roamer, hungry, 10, 10, 1) == 250
+              && takes(roamer, hungry, 10, 10, 1) == 250,
           "equal sheets split the gain in half: a hundred plus half of three "
-          "hundred");
-    CHECK(lot_price(roamer, hungry, 30, 10, 1) == 325
-              && lot_price(roamer, hungry, 10, 30, 1) == 175,
+          "hundred — whoever made the offer");
+    CHECK(gives(roamer, hungry, 30, 10, 1) == 325
+              && gives(roamer, hungry, 10, 30, 1) == 175,
           "the stronger side takes the larger share of the SAME gain, and "
           "the two shares mirror each other");
-    CHECK(lot_price(roamer, hungry, 42, 42, 1)
-              == lot_price(roamer, hungry, 7, 7, 1),
+    CHECK(gives(roamer, hungry, 42, 42, 1) == gives(roamer, hungry, 7, 7, 1),
           "the law reads the ratio of the two powers, not their size");
 
     // ПОЛА И ПОТОЛКА У ДОЛИ НЕТ ПО ПОСТРОЕНИЮ: отношение сил само лежит между
     // нулём и единицей, и подавляющий перевес упирается в ОЦЕНКУ другой
     // стороны, а не в назначенное число.
-    CHECK(lot_price(roamer, hungry, 510, 1, 1) < 400
-              && lot_price(roamer, hungry, 510, 1, 1) > 390,
+    CHECK(gives(roamer, hungry, 510, 1, 1) < 400
+              && gives(roamer, hungry, 510, 1, 1) > 390,
           "an overwhelming advantage approaches the taker's own valuation and "
-          "never crosses it");
-    CHECK(lot_price(roamer, hungry, 0, 10, 1) == 100,
+          "never reaches it: the side that did not offer keeps its quantum");
+    CHECK(gives(roamer, hungry, 0, 10, 1) == 100,
           "a side with no power at all still gets its own valuation — nobody "
           "gives a thing away below what it is worth to them");
+    // НЕДЕЛИМЫЙ ОСТАТОК — ТОМУ, КТО НЕ ПРЕДЛАГАЛ (вердикт 2026-11-13): 300
+    // выгоды при силах 1 против 6 — доля слабого 42.86. Предложил он сам —
+    // получает 42; предложил берущий — 43.
+    CHECK(gives(roamer, hungry, 1, 6, 1) == 142
+              && takes(roamer, hungry, 1, 6, 1) == 143,
+          "the indivisible quantum goes to the side that did NOT make the "
+          "offer");
 
     // Где оценки равны, делить нечего: излишек, монета и чужой груз идут по
     // стоимости при ЛЮБЫХ силах, и обратный путь стоит столько же.
-    CHECK(lot_price(roamer, sated, 510, 1, 5) == 500
-              && lot_price(sated, roamer, 1, 510, 5) == 500,
+    CHECK(takes(roamer, sated, 510, 1, 5) == 500
+              && takes(sated, roamer, 1, 510, 5) == 500,
           "equal valuations trade at worth whatever the powers are — there is "
           "no gain to split");
     // Против выгоды (берущий ценит ниже отдающего) вещь идёт по оценке
     // отдающего: сила берущего её не сбивает.
-    CHECK(lot_price(hungry, roamer, 1, 510, 1) == 600,
+    CHECK(takes(hungry, roamer, 1, 510, 1) == worth_leaving(hungry, 1)
+              && worth_leaving(hungry, 1) > worth_arriving(hungry, 1),
           "taking from a side what it lacks itself costs that side's own "
           "valuation, however strong the taker");
-    CHECK(unit_worth(100, 1000, 0, 1, kWideBack) == 100
-              && unit_worth(100, 1000, 0, 1000, 100000) == 1,
+    CHECK(worth_arriving(RowSide{100, 999, 1, kWideBack}, 1) == 100
+              && worth_arriving(RowSide{100, 999, 1000, 100000}, 1) == 1,
           "a pile that weighs nothing against the back keeps its worth; the "
           "same count of a heavy thing is a glut");
 }

@@ -28,8 +28,9 @@
 //
 // ГРАНИЦЫ ЦЕНЫ ЧИТАЮТСЯ У ДВЕРЕЙ ЯДРА, ФОРМУЛА ЗДЕСЬ НЕ ПЕРЕСЧИТЫВАЕТСЯ:
 // строка стороны — `side_row@src/macro/deal.h` (тот же мост, каким её читает
-// сделка), оценка единицы — `worth_arriving`/`worth_leaving`, сумма оценок
-// лота — `lot_loss`/`lot_take` (§8 п.5). Прибыль купца (`CaravanDeal::gain`)
+// сделка), «ценит ли выше» — `gain_units` (ТОЧНО: округлённые до кванта
+// единицы двух сторон сравнивать нельзя, M-490), сумма оценок лота —
+// `lot_loss`/`lot_take` (§8 п.5). Прибыль купца (`CaravanDeal::gain`)
 // держит ЯКОРЬ, а не пересчёт: монета меди стоит единицу у всякой стороны, а
 // излишек без нужды купец ценит не ниже пола и не выше стоимости (свидетели
 // `unit_worth` под компилятором) — значит прибыль зажата между выручкой минус
@@ -105,6 +106,17 @@ int main() {
     const auto row = [&](std::uint16_t slot, int idx) {
         return sm::side_row(mstore, slot, idx, sm::item_def_at(idx)->value);
     };
+    // «Сторона `to` ценит k-ю единицу, едущую к ней от `from`, строго выше
+    // (либо не ниже) отдающего» — точный ответ ядра, а не сравнение двух
+    // округлённых единиц.
+    const auto values_higher = [](const sm::RowSide& to, const sm::RowSide& from,
+                                  std::int64_t k = 1) {
+        return sm::gain_units(from, to, k, /*strict=*/true) == k;
+    };
+    const auto values_not_lower = [](const sm::RowSide& to,
+                                     const sm::RowSide& from) {
+        return sm::gain_units(from, to, 1, /*strict=*/false) == 1;
+    };
     // Сделка — той же спиной, какой её зовёт рейс (`carry_capacity_g`).
     const auto trade = [&](std::uint16_t t, std::uint16_t m) {
         return sm::trade_caravan_at_station(mstore, t, back(t), m);
@@ -176,9 +188,15 @@ int main() {
     CHECK(coins(t1, city) == coinBefore, "СОХРАНЕНИЕ: монета не чеканится");
     CHECK(shelf(t1).count_of(foodIdx) + shelf(city).count_of(foodIdx)
                   + paidDebt == cargo
-              && paidDebt == sold1,
+              && paidDebt == kBill && sold1 >= paidDebt,
           "СОХРАНЕНИЕ: еда либо в трюме, либо на полке, либо съедена в уплату "
-          "счёта — и съедено ровно проданное");
+          "счёта — счёт погашен целиком, и съедено не больше проданного");
+    // Проданное СВЕРХ счёта — завал купца (десятая доля его спины), утёкший
+    // к свободной спине рынка, пока оценки не сошлись: до M-490 округление
+    // единицы этой разницы не видело, и лот обрывался ровно на счёте.
+    CHECK(sold1 > kBill && shelf(city).count_of(foodIdx) == sold1 - kBill,
+          "ЗАВАЛ ТЕЧЁТ И ПОСЛЕ ПОГАШЕННОГО СЧЁТА: излишек купца лёг на "
+          "свободную полку рынка");
     CHECK(sold1 > 0 && d1.soldValue > 0 && d1.movedTableValue > 0,
           "В НУЖДУ: купец отдал груз голодному рынку");
     CHECK(d1.soldValue >= sm::lot_loss(tBefore, sold1)
@@ -199,10 +217,11 @@ int main() {
     CHECK(shelf(t1).count_of(foodIdx) > 0
               && sm::coin_census_value(shelf(city)) > 0,
           "предусловие полноты: лот не упёрся ни в трюм, ни в казну");
-    CHECK(sm::worth_arriving(mBefore, sold1) > sm::worth_leaving(tBefore, sold1),
+    // «Ценит выше» спрашивается у ядра ТОЧНО: округлённые до кванта единицы
+    // сравнивать нельзя — они расходятся с точной оценкой на квант (M-490).
+    CHECK(sm::gain_units(tBefore, mBefore, sold1, /*strict=*/true) == sold1,
           "НИ ЕДИНИЦЫ СВЕРХ ВЫГОДЫ: последнюю отданную рынок ценил выше купца");
-    CHECK(sm::worth_arriving(mBefore, sold1 + 1)
-              <= sm::worth_leaving(tBefore, sold1 + 1),
+    CHECK(sm::gain_units(tBefore, mBefore, sold1 + 1, /*strict=*/true) == sold1,
           "ВСЁ, ЧТО ВЫГОДНО: следующую единицу рынок уже не ценил выше купца");
     std::printf("  [станция] продано %d из %d, выручка %d, прибыль %lld, "
                 "остаток счёта %d\n",
@@ -212,8 +231,7 @@ int main() {
     // ── 3. БЕЗ ВЫГОДЫ НЕ ОТДАЁТСЯ НИЧЕГО; С ВЫГОДОЙ — И БЕЗ НУЖДЫ ─────────
     {
         // 3а. Второй визит к тому же рынку: делить больше нечего.
-        CHECK(sm::worth_arriving(row(city, foodIdx), 1)
-                  <= sm::worth_leaving(row(t1, foodIdx), 1),
+        CHECK(!values_higher(row(city, foodIdx), row(t1, foodIdx)),
               "предусловие: после сделки рынок ценит еду не выше купца");
         const int holdBefore = shelf(t1).count_of(foodIdx);
         const sm::CaravanDeal again = trade(t1, city);
@@ -223,23 +241,32 @@ int main() {
               "ВТОРОЙ ВИЗИТ ПУСТ: рынку, который не ценит груз выше купца, не "
               "отдаётся ни единицы — даже от купца с полным трюмом");
 
-        // 3б. Рынок БЕЗ НУЖДЫ, купец со свободной спиной: выгоды нет.
+        // 3б. Рынок БЕЗ НУЖДЫ, и еда занимает у него ту же долю спины, что у
+        // купца: оценки сошлись, выгоды нет ни в одну сторону. (Пустой рынок
+        // сюда не годится: завал купца, даже малый, течёт к свободной спине —
+        // это 3в и блок 1.)
         const std::uint16_t sated = market(64);
         CHECK(shelf(sated).add_of(coinIdx, 600000), "фикстура: казна");
         const std::uint16_t free = trader(13, 0, bigBackG);
         CHECK(shelf(free).add_of(foodIdx, 100), "фикстура: трюм купца");
+        const std::int64_t marketFits = back(sated) / foodG;
+        const std::int64_t traderFits = back(free) / foodG;
+        const int level =
+            int((100 * marketFits + traderFits - 1) / traderFits);
+        CHECK(shelf(sated).add_of(foodIdx, level),
+              "фикстура: полка рынка — та же доля спины, что трюм у купца");
         const sm::RowSide sRow = row(sated, foodIdx);
         CHECK(sRow.net >= 0,
               "предусловие: у рынка нет нужды в еде");
-        CHECK(sm::worth_arriving(sRow, 1)
-                  <= sm::worth_leaving(row(free, foodIdx), 1),
-              "предусловие: купец со свободной спиной ценит груз не ниже "
-              "рынка без нужды");
+        CHECK(!values_higher(sRow, row(free, foodIdx))
+                  && !values_higher(row(free, foodIdx), sRow),
+              "предусловие: оценки сошлись — ни одна сторона не ценит единицу "
+              "выше другой");
         const sm::CaravanDeal none = trade(free, sated);
-        CHECK(none.soldValue == 0 && none.gain == 0
+        CHECK(none.soldValue == 0 && none.boughtValue == 0 && none.gain == 0
                   && shelf(free).count_of(foodIdx) == 100
-                  && shelf(sated).count_of(foodIdx) == 0,
-              "БЕЗ НУЖДЫ И БЕЗ ВЫГОДЫ НЕ ОТДАЁТСЯ НИЧЕГО");
+                  && shelf(sated).count_of(foodIdx) == level,
+              "БЕЗ НУЖДЫ И БЕЗ ВЫГОДЫ НЕ ЕДЕТ НИЧЕГО — ни туда, ни обратно");
 
         // 3в. ПРОТИВОПОЛОЖНАЯ ПОЛЯРНОСТЬ: тот же рынок без нужды, но груз
         // забил спину купца — купец ценит его ниже рынка и отдаёт.
@@ -251,8 +278,7 @@ int main() {
               "предусловие: груз тяжелее спины купца — завал в своём трюме");
         const sm::RowSide oRow = row(open, foodIdx);
         const sm::RowSide jRow = row(jam, foodIdx);
-        CHECK(oRow.net >= 0
-                  && sm::worth_arriving(oRow, 1) > sm::worth_leaving(jRow, 1),
+        CHECK(oRow.net >= 0 && values_higher(oRow, jRow),
               "предусловие: у рынка нужды нет, но он ценит груз выше купца");
         const sm::CaravanDeal flow = trade(jam, open);
         const int flowed = 100 - shelf(jam).count_of(foodIdx);
@@ -290,8 +316,7 @@ int main() {
         CHECK(sm::worth_leaving(sBefore, 1) < stoneBase,
               "предусловие: излишек забил спину рынка — он ценит камень ниже "
               "стоимости");
-        CHECK(sm::worth_arriving(kBefore, fit + 1)
-                  > sm::worth_leaving(sBefore, fit + 1),
+        CHECK(values_higher(kBefore, sBefore, fit + 1),
               "предусловие: и за пределом спины купец ценил бы камень выше "
               "рынка — лот обязана остановить спина, а не оценка");
         const long long coinsBefore = coins(taker, small);
@@ -323,9 +348,17 @@ int main() {
         CHECK(back(big) > 20 * kLight * stoneG,
               "предусловие: излишек рынка лёгок против его спины (меньше "
               "двадцатой её доли)");
-        CHECK(sm::worth_arriving(row(idle, stoneIdx), 1)
-                  <= sm::worth_leaving(row(big, stoneIdx), 1),
-              "предусловие: купец ценит камень не выше рынка");
+        // Точно купец ценит камень чуть выше рынка (у него камня нет вовсе),
+        // но выгода всего такого лота меньше кванта: после доли рынка купцу,
+        // предложившему сделку, не остаётся ничего.
+        const std::int64_t lightUnits = sm::gain_units(
+            row(big, stoneIdx), row(idle, stoneIdx), kLight, /*strict=*/true);
+        const std::int64_t lightGain =
+            sm::lot_take(row(idle, stoneIdx), lightUnits)
+          - sm::lot_loss(row(big, stoneIdx), lightUnits);
+        CHECK(lightGain
+                  - sm::gain_share(lightGain, power(big), power(idle)) <= 0,
+              "предусловие: выгода купца на всём выгодном лоте меньше кванта");
         const sm::CaravanDeal skip = trade(idle, big);
         CHECK(skip.boughtValue == 0 && shelf(idle).count_of(stoneIdx) == 0
                   && shelf(big).count_of(stoneIdx) == kLight,
@@ -342,8 +375,7 @@ int main() {
         CHECK(shelf(t).add_of(foodIdx, cargo), "фикстура: трюм купца");
         CHECK(sm::inventory_value(shelf(broke)) == 0,
               "предусловие: у рынка нет ничего, чем можно платить");
-        CHECK(sm::worth_arriving(row(broke, foodIdx), 1)
-                  > sm::worth_leaving(row(t, foodIdx), 1),
+        CHECK(values_higher(row(broke, foodIdx), row(t, foodIdx)),
               "предусловие: рынок голоден — отказ будет не от сытости");
         const long long massBefore = sm::inventory_mass_g(shelf(broke));
         const int headsBefore = sm::count_human_souls(shelf(broke));
@@ -402,12 +434,17 @@ int main() {
         const std::uint16_t top = strong_market(255, sm::kMaxSkillRank);
         const std::uint16_t weak = trader(1, 0, bigBackG);
         CHECK(shelf(weak).add_of(clothIdx, 10), "фикстура: трюм купца");
+        // Выгода ВСЕГО лота, а не одной единицы: купец предлагает сам, и
+        // ему остаётся выгода минус доля рынка (остаток — рынку).
+        const std::int64_t zoneUnits = sm::gain_units(
+            row(weak, clothIdx), row(top, clothIdx), 10, /*strict=*/true);
         const std::int64_t zone =
-            sm::worth_arriving(row(top, clothIdx), 1)
-          - sm::worth_leaving(row(weak, clothIdx), 1);
-        CHECK(zone > 0 && sm::gain_share(zone, power(weak), power(top)) == 0,
+            sm::lot_take(row(top, clothIdx), zoneUnits)
+          - sm::lot_loss(row(weak, clothIdx), zoneUnits);
+        CHECK(zoneUnits > 0 && zone > 0
+                  && zone - sm::gain_share(zone, power(top), power(weak)) == 0,
               "предусловие: выгода в сделке есть, но доля слабейшего в ней "
-              "меньше монеты");
+              "меньше кванта");
         const sm::CaravanDeal none = trade(weak, top);
         CHECK(none.soldValue == 0 && none.gain == 0
                   && shelf(weak).count_of(clothIdx) == 10
@@ -481,16 +518,16 @@ int main() {
                   > std::int64_t(stoneBase) * ironG,
               "предусловие: руда плотнее камня — порядок плотности взял бы её "
               "первой");
-        CHECK(sm::worth_arriving(row(jammed, ironIdx), 1)
-                  < sm::worth_leaving(row(payer, ironIdx), 1)
-                  && sm::worth_arriving(row(jammed, stoneIdx), 1)
-                         >= sm::worth_leaving(row(payer, stoneIdx), 1),
+        CHECK(!values_not_lower(row(jammed, ironIdx), row(payer, ironIdx))
+                  && values_not_lower(row(jammed, stoneIdx),
+                                      row(payer, stoneIdx)),
               "предусловие: руду берущий ценит ниже плательщика, камень — "
               "не ниже");
         sm::DealLine lines[8];
         const sm::StagedPayment sp = sm::stage_payment(
             mstore, payer, jammed, /*target=*/3 * stoneBase,
-            /*ceiling=*/std::int64_t(1) << 40, sm::kNoCarryLimitG, lines);
+            /*ceiling=*/std::int64_t(1) << 40, sm::kNoCarryLimitG,
+            sm::Offer::Giver, lines);
         bool paidIron = false, paidStone = false;
         for (int i = 0; i < sp.lines; ++i) {
             paidIron = paidIron || int(lines[i].def) == ironIdx;
@@ -506,7 +543,7 @@ int main() {
         sm::DealLine lines2[8];
         const sm::StagedPayment sp2 = sm::stage_payment(
             mstore, payer, open, 3 * stoneBase, std::int64_t(1) << 40,
-            sm::kNoCarryLimitG, lines2);
+            sm::kNoCarryLimitG, sm::Offer::Giver, lines2);
         CHECK(sp2.lines > 0 && int(lines2[0].def) == ironIdx,
               "негативный контроль: свободной спине платят рудой — плотным "
               "вперёд");
@@ -525,14 +562,14 @@ int main() {
         sm::DealLine l3[4];
         const sm::StagedPayment tight = sm::stage_payment(
             mstore, rich, taker, small, /*ceiling=*/small + 1,
-            sm::kNoCarryLimitG, l3);
+            sm::kNoCarryLimitG, sm::Offer::Giver, l3);
         CHECK(tight.lines == 0 && tight.price == 0,
               "ПОТОЛОК: плательщик не отдаёт монету за то, что сам ценит "
               "дешевле неё, — корзина остаётся непокрытой");
         sm::DealLine l4[4];
         const sm::StagedPayment loose = sm::stage_payment(
             mstore, rich, taker, small, /*ceiling=*/2 * goldBase,
-            sm::kNoCarryLimitG, l4);
+            sm::kNoCarryLimitG, sm::Offer::Giver, l4);
         CHECK(loose.lines == 1 && loose.price >= small
                   && loose.giverWorth <= 2 * goldBase,
               "под высоким потолком он переплачивает монетой: сдачи у бартера "
@@ -609,6 +646,93 @@ int main() {
               "железо за премию «под рецепт» не продано — и выкупать нечего");
         CHECK(sm::worth_arriving(row(m, ironIdx), 1) == ironPlain,
               "и после прихода инструмента оценка железа прежняя");
+    }
+
+    // ── 7в. ЗЕРНИСТОСТЬ (M-490): ЗАВАЛ МЕНЬШЕ ШАГА ОЦЕНКИ ТЕЧЁТ ЛОТОМ ────
+    // Закон мира (AGENTS «ЗАКОН ЕДИНОЙ ЦЕНОМОДЕЛИ» п.2): завал обязан ронять
+    // оценку, и «много» мерит масса. У строки стоимостью 5 оценка единицы,
+    // округлённая до кванта, шагала 5, 4, 3, 2, 1, и завал меньше десятой
+    // доли спины ей был не виден: сделки между счетами сезона стояли. Теперь
+    // до кванта округляется сумма лота, а «ценит ли выше» решается точно.
+    {
+        const std::uint16_t full = market(64);
+        const std::int64_t fullFits = back(full) / foodG;
+        const int glut = int(fullFits * 8 / 100);   // восемь сотых спины
+        CHECK(glut > 0 && shelf(full).add_of(foodIdx, glut),
+              "фикстура: лёгкий завал еды у рынка");
+        const std::uint16_t buyer = trader(13, 0, bigBackG);
+        CHECK(shelf(buyer).add_of(coinIdx, 5000), "фикстура: кошелёк купца");
+        const sm::RowSide mBefore2 = row(full, foodIdx);
+        const sm::RowSide tBefore2 = row(buyer, foodIdx);
+        // МЁРТВЫЙ ЗАКОН — округление каждой единицы до ближайшего кванта,
+        // формула выписана нарочно (это мутация, которую детектор обязан
+        // видеть, а не копия живой логики): первой же единицы он не отдал бы.
+        const auto dead_unit = [](std::int64_t base, std::int64_t fits,
+                                  std::int64_t spare) {
+            if (spare <= 0) return base;
+            if (spare >= fits) return std::int64_t(1);
+            const std::int64_t w = (2 * base * (fits - spare) + fits) / (2 * fits);
+            return w < 1 ? std::int64_t(1) : w;
+        };
+        CHECK(dead_unit(foodBase, back(buyer) / foodG, 1)
+                  <= dead_unit(foodBase, fullFits, glut - 1),
+              "предусловие: по округлённым единицам выгоды нет — мёртвый закон "
+              "не взял бы здесь ни единицы");
+        const std::int64_t units = sm::gain_units(mBefore2, tBefore2, glut, true);
+        const std::int64_t zone =
+            sm::lot_take(tBefore2, units) - sm::lot_loss(mBefore2, units);
+        CHECK(units > 0
+                  && zone - sm::gain_share(zone, power(full), power(buyer)) > 0,
+              "предусловие: на лоте выгода есть, и купцу, предложившему "
+              "сделку, от неё остаётся хотя бы квант");
+        const long long coinsBefore2 = coins(buyer, full);
+        const sm::CaravanDeal flow = trade(buyer, full);
+        const int bought = shelf(buyer).count_of(foodIdx);
+        CHECK(bought == units && shelf(full).count_of(foodIdx) == glut - bought,
+              "ЛЁГКИЙ ЗАВАЛ ТЕЧЁТ К СВОБОДНОЙ СПИНЕ: купец взял ровно те "
+              "единицы, которые ценит выше рынка, и ни одной сверх");
+        CHECK(flow.boughtValue >= sm::lot_loss(mBefore2, bought)
+                  && flow.boughtValue <= sm::lot_take(tBefore2, bought)
+                  && flow.gain > 0 && coins(buyer, full) == coinsBefore2,
+              "цена лота — между оценкой рынка и оценкой купца, купец в "
+              "плюсе по своей мерке, монета не чеканится");
+        std::printf("  [зернистость] завал %d, взято %d, цена %d, выгода лота "
+                    "%lld, купцу %lld\n",
+                    glut, bought, flow.boughtValue, (long long)zone,
+                    (long long)flow.gain);
+    }
+
+    // ── 7г. ВЫБОР ПО МАССЕ: ВЫГОДНЕЙШЕЕ НА ГРАММ — ПЕРВЫМ ────────────────
+    // Закон ядра: масса решает дважды — в оценке и в выборе, что брать, пока
+    // спина свободна (`gain_denser@src/macro/economy.h`). Рынок завален и
+    // рудой, и камнем сверх своей спины; весят они одинаково, руда дороже.
+    // Спины купца на оба завала не хватит, и занять её обязана руда. (Дыра,
+    // найденная таблицей мутаций 2026-11-13: перевёрнутый порядок проходил
+    // зелёным.)
+    {
+        const std::uint16_t flooded = market(4);
+        const std::int64_t oreG = sm::item_mass_g(*ironDef);
+        constexpr int kBackUnits = 100;
+        const std::uint16_t picker = trader(13, 0, kBackUnits * oreG);
+        CHECK(shelf(picker).add_of(coinIdx, 2000), "фикстура: кошелёк купца");
+        const int flood = 2 * kBackUnits + int(2 * back(flooded) / oreG);
+        CHECK(shelf(flooded).add_of(ironIdx, flood)
+                  && shelf(flooded).add_of(stoneIdx, flood),
+              "фикстура: завал руды и завал камня");
+        CHECK(oreG == stoneG && ironDef->value > stoneBase
+                  && sm::worth_leaving(row(flooded, ironIdx), 1) == 1
+                  && sm::worth_leaving(row(flooded, stoneIdx), 1) == 1,
+              "предусловие: руда и камень весят одинаково, руда дороже, и оба "
+              "завала рынок ценит по полу — выгода на грамм у руды выше");
+        const sm::CaravanDeal picked = trade(picker, flooded);
+        const int gotOre = shelf(picker).count_of(ironIdx);
+        const int gotStone = shelf(picker).count_of(stoneIdx);
+        CHECK(picked.boughtValue > 0 && gotOre > kBackUnits / 2
+                  && gotOre > gotStone,
+              "ВЫГОДНЕЙШЕЕ НА ГРАММ — ПЕРВЫМ: спину купца заняла руда, камню "
+              "достался остаток");
+        std::printf("  [выбор по массе] руды %d, камня %d из спины на %d штук\n",
+                    gotOre, gotStone, kBackUnits);
     }
 
     // ── 8. ЛИСТ: СИЛА ДЕЛИТ ВЫГОДУ, А НЕ МЕНЯЕТ ЛОТ ──────────────────────

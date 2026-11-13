@@ -182,7 +182,7 @@ int side_trade_power(const MacroStore& st, std::uint16_t slot) {
 StagedPayment stage_payment(const MacroStore& st, std::uint16_t payer,
                             std::uint16_t receiver, std::int64_t target,
                             std::int64_t ceiling, std::int64_t roomG,
-                            std::span<DealLine> out) {
+                            Offer offeredBy, std::span<DealLine> out) {
     StagedPayment r{};
     if (target <= 0 || out.empty()) return r;
     const Inventory& inv = st.inventory[payer].inv;
@@ -215,10 +215,11 @@ StagedPayment stage_payment(const MacroStore& st, std::uint16_t payer,
         // Покрыть остаток с запасом — если плательщик остаётся под своим
         // потолком; иначе ровно столько, сколько укладывается в остаток.
         LotQuote q = cover_lot(giver, taker, payerPower, receiverPower,
-                               avail, left);
+                               avail, left, offeredBy);
         if (q.units > 0
             && r.giverWorth + lot_loss(giver, q.units) > ceiling)
-            q = fit_lot(giver, taker, payerPower, receiverPower, avail, left);
+            q = fit_lot(giver, taker, payerPower, receiverPower, avail, left,
+                        offeredBy);
         if (q.units <= 0) continue;
         DealLine& l = out[std::size_t(r.lines++)];
         l = DealLine{};

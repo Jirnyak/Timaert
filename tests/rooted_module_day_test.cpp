@@ -56,6 +56,8 @@
 #include "macro/features.h"      // FeatureLayer — фича ПОД местом
 #include "macro/labour.h"        // settle_souls — одна дверь прихода душ
 #include "macro/upkeep_window.h" // upkeep_bill — сезонный счёт рынка
+#include "macro/deal.h"          // side_row — строка стороны глазами ядра
+#include "macro/squad.h"         // carry_capacity_g — спина стороны
 #include "bus/store.h"         // parent_of / tithe_of / set_relation
 #include "bus/world_row.h"     // count_human_souls
 #include "macro/chronicle.h"
@@ -1060,6 +1062,108 @@ void test_the_caravan_grows_its_hold_and_brings_it_home() {
                 departures);
 }
 
+// ── ГОРОД ГРУЗИТ РЕЙС И ЛЁГКИМ ЗАВАЛОМ; ВЫГОДНЕЙШЕЕ НА ГРАММ — ПЕРВЫМ ─────
+// Закон мира (AGENTS «ЗАКОН ЕДИНОЙ ЦЕНОМОДЕЛИ» п.2; ряд M-490): завал обязан
+// ронять оценку, а «ценит ли выше» решается точно. Дом отдаёт ребёнку то, что
+// тот ценит выше него, — и тогда, когда на одной единице, округлённой до
+// кванта, разницы не видно. Свидетель рейса выше грузит город завалом в пять
+// спин, где старое правило работало тоже; таблица мутаций 2026-11-13 показала,
+// что и возврат округления единицы, и перевёрнутый порядок погрузки проходили
+// зелёными. Рукой здесь ставится только склад города; корован, груз и рейс —
+// дело модулей.
+void test_the_city_loads_a_light_glut_densest_first() {
+    // МЁРТВЫЙ ЗАКОН — оценка единицы, округлённая до ближайшего кванта;
+    // формула выписана нарочно (мутация, которую детектор обязан видеть).
+    const auto dead_unit = [](std::int64_t base, std::int64_t fits,
+                              std::int64_t spare) {
+        if (spare <= 0) return base;
+        if (spare >= fits) return std::int64_t(1);
+        const std::int64_t w = (2 * base * (fits - spare) + fits) / (2 * fits);
+        return w < 1 ? std::int64_t(1) : w;
+    };
+    // 1. ЛЁГКИЙ ЗАВАЛ: еда занимает восемь сотых спины города.
+    {
+        Fixture f;
+        const MacroHandle city = f.rooted(SquadType::City, 10, 10, 64);
+        const int cityId = int(f.st().spawnId[city.slot].index);
+        Inventory& cityInv = f.st().inventory[city.slot].inv;
+        const int foodIdx = item_index("food");
+        const ItemDef* food = item_def_at(foodIdx);
+        const std::int64_t foodG = item_mass_g(*food);
+        const std::int64_t cityFits =
+            carry_capacity_g(f.st().runtime[city.slot], cityInv) / foodG;
+        const int glut = int(cityFits * 8 / 100);
+        CHECK(glut > 0 && cityInv.add("food", glut),
+              "фикстура: лёгкий завал еды города");
+        MacroNpcAiRuntime rt{};
+        reset_macro_npc_ai_runtime(rt, 51u);
+        int loaded = 0, thinks = 0;
+        bool settled = false, deadLawBlind = false;
+        for (int i = 0; i < kThinksPerDay * 4 && loaded == 0; ++i) {
+            f.think_on(rt, 1);
+            ++thinks;
+            const std::uint16_t c = caravan_of(f, cityId);
+            if (c == kMacroNoSlot) continue;
+            loaded = f.st().inventory[c].inv.count_of(foodIdx);
+            if (loaded <= 0) continue;
+            const RowSide home = side_row(f.st(), city.slot, foodIdx, food->value);
+            const RowSide child = side_row(f.st(), c, foodIdx, food->value);
+            // Оценки сошлись: следующую единицу ребёнок уже не ценит выше
+            // дома.
+            settled = gain_units(home, child, 1, /*strict=*/true) == 0;
+            deadLawBlind =
+                dead_unit(food->value, child.backG / foodG, 1)
+                    <= dead_unit(food->value, cityFits, glut - 1);
+        }
+        CHECK(thinks > 0 && loaded > 0,
+              "ГОРОД ГРУЗИТ РЕЙС И ЛЁГКИМ ЗАВАЛОМ: завал в восемь сотых спины "
+              "уехал к свободной спине ребёнка");
+        CHECK(deadLawBlind,
+              "предусловие: по округлённым единицам выгоды нет — мёртвый закон "
+              "не погрузил бы ни единицы");
+        CHECK(settled && loaded < glut,
+              "груз — ровно выгодные единицы: оценки сошлись, и завал ушёл не "
+              "весь");
+        std::printf("  [погрузка] завал %d, погружено %d за %d думок\n", glut,
+                    loaded, thinks);
+    }
+    // 2. ВЫБОР ПО МАССЕ: город завален рудой и камнем сверх своей спины; весят
+    //    они одинаково, руда дороже — спину рейса обязана занять руда.
+    {
+        Fixture f;
+        const MacroHandle city = f.rooted(SquadType::City, 10, 10, 64);
+        const int cityId = int(f.st().spawnId[city.slot].index);
+        Inventory& cityInv = f.st().inventory[city.slot].inv;
+        const int ironIdx = item_index("iron");
+        const int stoneIdx = item_index("stone");
+        const ItemDef* iron = item_def_at(ironIdx);
+        const ItemDef* stone = item_def_at(stoneIdx);
+        constexpr int kFlood = 4000;
+        CHECK(cityInv.add("iron", kFlood) && cityInv.add("stone", kFlood),
+              "фикстура: завал руды и завал камня");
+        CHECK(item_mass_g(*iron) == item_mass_g(*stone)
+                  && iron->value > stone->value
+                  && worth_leaving(side_row(f.st(), city.slot, ironIdx, iron->value), 1) == 1
+                  && worth_leaving(side_row(f.st(), city.slot, stoneIdx, stone->value), 1) == 1,
+              "предусловие: руда и камень весят одинаково, руда дороже, и оба "
+              "завала город ценит по полу — выгода на грамм у руды выше");
+        MacroNpcAiRuntime rt{};
+        reset_macro_npc_ai_runtime(rt, 51u);
+        int ore = 0, rock = 0;
+        for (int i = 0; i < kThinksPerDay * 4 && ore + rock == 0; ++i) {
+            f.think_on(rt, 1);
+            const std::uint16_t c = caravan_of(f, cityId);
+            if (c == kMacroNoSlot) continue;
+            ore = f.st().inventory[c].inv.count_of(ironIdx);
+            rock = f.st().inventory[c].inv.count_of(stoneIdx);
+        }
+        CHECK(ore > 0 && ore > rock,
+              "ВЫГОДНЕЙШЕЕ НА ГРАММ — ПЕРВЫМ: спину рейса заняла руда, камню "
+              "достался остаток");
+        std::printf("  [погрузка] руды %d, камня %d\n", ore, rock);
+    }
+}
+
 // ── ДВА СВИДЕТЕЛЯ ПУТИ РЕЙСА: ХОЛОДНЫЙ СТАРТ И ОКНО В ДВА ПЛЕЧА ──────────
 // Наблюдения владельца 2026-11-12 (дословно — `trip_goes_on@src/macro/economy.h`).
 // Сам закон стоит там под компилятором; здесь утверждается, что РЕЙС ЕМУ
@@ -1297,6 +1401,7 @@ int main() {
     test_a_dying_rooted_rewrites_the_feature_under_itself();
     test_the_number_under_a_mine_is_ore_and_not_people();
     test_the_caravan_grows_its_hold_and_brings_it_home();
+    test_the_city_loads_a_light_glut_densest_first();
     test_the_trip_follows_the_return_law_at_its_edges();
     test_the_caravan_with_no_market_waits_at_home();
     return sm::test::report("rooted_module_day_test");
