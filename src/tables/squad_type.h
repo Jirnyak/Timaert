@@ -44,12 +44,12 @@ namespace sm {
 // макро-колонка. «Глагол» звучал как «занятие на сегодня» и потому не мешал
 // макромиру подглядывать в мобную строку; «тип» этого не позволяет.
 //
-// ТИП СЕГОДНЯ ВОЛАТИЛЕН, И ЭТО НЕ ДЕФЕКТ ФОРМЫ. Артель каждый день проходит
-// пере-аукцион и может сменить занятие: вчера копала, сегодня везёт. Строгое
-// разделение («деревни добывают, города торгуют» — владелец 2026-09-21) это
-// ЗАМОРОЗИТ: деревенская строка сможет получить только `Artel`, городская —
-// только `Caravan`, и решать будет СТРОКА РЕЕСТРА, а не суточная рулетка.
-// Тогда тип станет стойким и будет ставиться при рождении.
+// ТИП СТАВИТ РОЖДЕНИЕ, А МЕНЯЕТ ТОЛЬКО САМ СКВАД СВОИМ МОДУЛЕМ. Родитель
+// рождает ребёнка нужного типа (деревня — артель нужного типа, город —
+// корован и сборщика); дальше тип меняет лишь модуль самого сквада — у
+// артелей прямо в теле прописано, кем она может стать и когда (вердикт
+// владельца 2026-11-13, M-488). Двери «сменить тип» в ядре нет, смена
+// зануляет память модуля.
 // ── ОДНА ОСЬ НА ВСЕ СКВАДЫ, И МЕСТА НА НЕЙ ЖЕ (M-90 ломтик E шаг 3а) ──────
 // Вердикт владельца 2026-09-30: «теперь за всё отвечает squad type / сквад
 // это только что он делает»; 2026-10-01: «мы верзаем вообще всё про
@@ -122,17 +122,25 @@ enum class SquadType : std::uint8_t {
     Tower = 9,
 
     // ── ПОДВИЖНЫЕ: что сквад ДЕЛАЕТ ───────────────────────────────────────
-    // Артель: добывает. Объект = строка таблицы целей kGathererDefs.
+    // АРТЕЛИ. `Artel` — неопределённая артель: стоит дома и решает, кем
+    // стать. Остальные пять — типы добычи, у каждого СВОЙ модуль, написанный
+    // целиком (вердикт владельца 2026-11-13, CANON S25; AGENTS §4 п.5). Тип
+    // меняет сам сквад своим модулем, двери «сменить тип» в ядре нет.
     Artel = 10,
+    Ploughmen = 11,    // пахари: пашня у дома
+    Hunters = 12,      // охотники: зверь у дома
+    Flaxers = 13,      // льноводы: льняная парцелла у дома
+    Miners = 14,       // шахтёры: ближайшая живая жила округи
+    Woodcutters = 15,  // лесорубы: ближайший лес округи
     // Корован: рейс сбыта. Объект = ординал рынка.
     // Имя не «Sell», потому что это не занятие на день, а КТО ОН: у города
     // корован — единственная торговая сущность мира (род NPCType::Caravan
     // умер в v106, караван оказался сквадом, притворившимся видом).
-    Caravan = 11,
+    Caravan = 16,
     // Сборщик: идёт ВНИЗ к вассалу-должнику. Объект = ординал вассала.
     // Свой номер, а не переиспользованный патрульный, — как и было решено
     // при сносе патруля (2026-09-21).
-    Collector = 12,
+    Collector = 17,
 
     // ── ПЕРСОНАЛИИ: архетип Hero, и дракон его ЗАСЕЛЯЕТ ───────────────────
     // Вердикт владельца №7 (2026-10-22): «ось рода: +Capital, +Dragon;
@@ -150,7 +158,7 @@ enum class SquadType : std::uint8_t {
     // СТРОКА СУЩЕСТВА У НЕГО СВОЯ И ДРУГАЯ (ЗАКОН ДВУХ ТАБЛИЦ): здесь — чем
     // сквад ЗАНЯТ в макромире, а `NPCType::Dragon@src/tables/npc.h` — чем он
     // ДЕРЁТСЯ и ВОПЛОЩАЕТСЯ. Два разных вопроса, два разных словаря.
-    Dragon = 13,
+    Dragon = 18,
 
     Count,
 };
@@ -197,6 +205,11 @@ inline constexpr SquadArchetype squad_archetype(SquadType t) {
         case SquadType::Mine:
         case SquadType::Tower:     return SquadArchetype::Rooted;
         case SquadType::Artel:
+        case SquadType::Ploughmen:
+        case SquadType::Hunters:
+        case SquadType::Flaxers:
+        case SquadType::Miners:
+        case SquadType::Woodcutters:
         case SquadType::Caravan:
         case SquadType::Collector: return SquadArchetype::Worker;
         case SquadType::Dragon:    return SquadArchetype::Hero;
@@ -215,10 +228,10 @@ inline constexpr SquadArchetype squad_archetype(SquadType t) {
 static_assert(SquadType::Capital == SquadType(1)
                   && SquadType::Tower == SquadType(9)
                   && SquadType::Artel == SquadType(10)
-                  && SquadType::Collector == SquadType(12)
-                  && SquadType::Dragon == SquadType(13),
-              "неподвижные роды — сплошной отрезок 1..9, работники 10..12, "
-              "персоналии с 13: squad_archetype читает ось, а не список имён");
+                  && SquadType::Collector == SquadType(17)
+                  && SquadType::Dragon == SquadType(18),
+              "неподвижные роды — сплошной отрезок 1..9, работники 10..17, "
+              "персоналии с 18: squad_archetype читает ось, а не список имён");
 static_assert(squad_archetype(SquadType::Capital) == SquadArchetype::Rooted
                   && squad_archetype(SquadType::Tower) == SquadArchetype::Rooted
                   && squad_archetype(SquadType::Artel) == SquadArchetype::Worker
@@ -452,6 +465,36 @@ inline constexpr SquadKindRow kSquadKinds[std::size_t(SquadType::Count)] = {
      .color = 0x00000000u,
      .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
      .miniR = 0.0f, .id = "artel", .label = ""},
+    {.type = SquadType::Ploughmen, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None, .glyph = ' ', .mini = MiniShape::Dot,
+     .actions = kMapActTalk | kMapActTrade | kMapActAttack,
+     .color = 0x00000000u,
+     .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
+     .miniR = 0.0f, .id = "ploughmen", .label = ""},
+    {.type = SquadType::Hunters, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None, .glyph = ' ', .mini = MiniShape::Dot,
+     .actions = kMapActTalk | kMapActTrade | kMapActAttack,
+     .color = 0x00000000u,
+     .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
+     .miniR = 0.0f, .id = "hunters", .label = ""},
+    {.type = SquadType::Flaxers, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None, .glyph = ' ', .mini = MiniShape::Dot,
+     .actions = kMapActTalk | kMapActTrade | kMapActAttack,
+     .color = 0x00000000u,
+     .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
+     .miniR = 0.0f, .id = "flaxers", .label = ""},
+    {.type = SquadType::Miners, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None, .glyph = ' ', .mini = MiniShape::Dot,
+     .actions = kMapActTalk | kMapActTrade | kMapActAttack,
+     .color = 0x00000000u,
+     .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
+     .miniR = 0.0f, .id = "miners", .label = ""},
+    {.type = SquadType::Woodcutters, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None, .glyph = ' ', .mini = MiniShape::Dot,
+     .actions = kMapActTalk | kMapActTrade | kMapActAttack,
+     .color = 0x00000000u,
+     .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
+     .miniR = 0.0f, .id = "woodcutters", .label = ""},
     {.type = SquadType::Caravan, .sprite = SpriteId::None,
      .spriteDepleted = SpriteId::None, .glyph = ' ', .mini = MiniShape::Dot,
      .actions = kMapActTalk | kMapActTrade | kMapActAttack,

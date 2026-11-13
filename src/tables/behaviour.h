@@ -16,12 +16,10 @@
 namespace sm {
 
 enum class AIBehaviour : std::uint8_t {
-    // ONE loop for every gathering profession (owner: a profession per
-    // resource, rows not code): find the worksite the profession's row names
-    // (forest cell / home field / home deposit), work it through the
-    // resource-field registry, haul the commodity home. The per-profession
-    // nuance is a kGathererDefs row (npc_ai.cpp); with no worksite or no wired
-    // layer the man falls back to the home wander, fail closed.
+    // Ветка лестницы НЕТИПИЗИРОВАННОГО сквада. Добыча мира идёт не здесь, а
+    // ТИПАМИ артелей со своими модулями (M-488: пахари, охотники, льноводы,
+    // шахтёры, лесорубы — `src/macro/npc_ai.cpp`); with no worksite or no
+    // wired layer the man falls back to the home wander, fail closed.
     Gatherer = 0, Trader,
     Aggressive, Teleporter, Wanderer,
     // The city's trading agent (W2b): carries exports to the city's villages

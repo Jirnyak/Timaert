@@ -337,6 +337,11 @@ int main(int argc, char** argv) {
         std::fprintf(fw, "day\tpop\tcoinRooted\tcoinSquads"
                          "\ttrades\ttradedValue\tfoodHolds"
                          "\tcrewsGather\tcrewsSell\tcrewsOther"
+                         // АРТЕЛИ ПО ТИПАМ (M-488): `crewsGather` — все шесть
+                         // типов артели разом; ниже — каждый отдельно, первая
+                         // — неопределённая (стоит дома и решает, кем стать).
+                         "\tcrewsIdle\tcrewsPlough\tcrewsHunt\tcrewsFlax"
+                         "\tcrewsMine\tcrewsWood"
                          // ЛОШАДЬ-ЮНИТ (2026-09-19): свидетель контура —
                          // табуны в гарнизонах и спины в отрядах, миром.
                          "\thorsesGarr\thorsesSquads\tpastures"
@@ -344,8 +349,8 @@ int main(int argc, char** argv) {
                          // Матушка-земля одна: поле фертильности не знает,
                          // кто на нём стоит, а фича сверху говорит, что с
                          // клетки снимают. Поэтому парцелла — ОДНО число:
-                         // хлеб и лён качают одно поле (kGathererDefs
-                         // Worksite::HomeField / HomeFlaxField). Читает
+                         // хлеб и лён качают одно поле (пахари и льноводы
+                         // работают ряд Wheat, различает фича клетки). Читает
                          // разбор еды: «еда просела — пахать стало негде»
                          // отличается от «еда просела — некому пахать»
                          // ТОЛЬКО этой колонкой.
@@ -720,6 +725,8 @@ int main(int argc, char** argv) {
                 }
             }
             int crewsGather = 0, crewsSell = 0, crewsOther = 0;
+            // Счёт по типам артели — массив по самой оси типов сквада.
+            int crewsOfType[std::size_t(sm::SquadType::Count)] = {};
             for (std::uint16_t slot = 0;
                  slot < std::uint16_t(sm::kUnifiedCap); ++slot) {
                 if (macroStore->alive[slot] == 0) continue;
@@ -727,7 +734,11 @@ int main(int argc, char** argv) {
                 const auto& crt = macroStore->runtime[slot];
                 if (kind.type != std::uint16_t(sm::NPCType::Peasant))
                     continue;
-                if (crt.squadType == std::uint8_t(sm::SquadType::Artel))
+                if (crt.squadType < std::uint8_t(sm::SquadType::Count))
+                    ++crewsOfType[crt.squadType];
+                if (crt.squadType >= std::uint8_t(sm::SquadType::Artel)
+                    && crt.squadType
+                           <= std::uint8_t(sm::SquadType::Woodcutters))
                     ++crewsGather;
                 else if (crt.squadType
                          == std::uint8_t(sm::SquadType::Caravan))
@@ -759,6 +770,13 @@ int main(int argc, char** argv) {
                          gs.worldTime.day(), popTotal, coinLm, coinSquads,
                          trades, tradedValue, foodHolds,
                          crewsGather, crewsSell, crewsOther);
+            std::fprintf(fw, "\t%d\t%d\t%d\t%d\t%d\t%d",
+                         crewsOfType[std::size_t(sm::SquadType::Artel)],
+                         crewsOfType[std::size_t(sm::SquadType::Ploughmen)],
+                         crewsOfType[std::size_t(sm::SquadType::Hunters)],
+                         crewsOfType[std::size_t(sm::SquadType::Flaxers)],
+                         crewsOfType[std::size_t(sm::SquadType::Miners)],
+                         crewsOfType[std::size_t(sm::SquadType::Woodcutters)]);
             std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld",
                          horsesGarr, horsesSquads, pastures, parcels);
             // Баланс душ мира. soulsWorld печатается суммой, а не считается

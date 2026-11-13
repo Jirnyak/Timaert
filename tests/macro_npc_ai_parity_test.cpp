@@ -18,6 +18,7 @@
 #include "macro/map_generator.h"
 #include "macro/recovery.h"
 #include "macro/resource_field.h"
+#include "macro/tree_layer.h"   // живой лес под точками сетки
 #include "ecs/components.h"
 #include "bus/store.h"
 #include "ui/macro_eyes.h"
@@ -157,13 +158,19 @@ void test_woodcutter_targets_nearest_tree() {
     std::vector<sm::TreePoint> trees{{23, 20}, {80, 80}};
     sm::TreeGrid grid;
     sm::build_tree_grid(grid, trees, gs.mapW, gs.mapH, 32);
+    // Точка сетки — место работы, только если на её клетке живой лес (M-488):
+    // обе точки получают деревья в слое, иначе обе были бы пнями.
+    sm::tree_layer_reset(gs.treeLayer, gs.mapW, gs.mapH);
+    for (const sm::TreePoint& t : trees)
+        sm::set_tree_count(gs.treeLayer,
+                           sm::cell_of(t.x, t.y, gs.mapW), 16);
 
     auto e = spawn_ai(st, sm::NPCType::Peasant, 21.0f, 20.0f, homeId);
     {
-        // Поручений больше нет (ломоть 4 M-72): «что добыть» модуль решает
-        // сам — в фикстуре лес единственный кандидат.
+        // Лесоруб — ТИП сквада со своим модулем (M-488, вердикт владельца
+        // 2026-11-13): что добывать, назвал тип, а не выбор модуля в поле.
         auto& wrt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
-        wrt.squadType = std::uint8_t(sm::SquadType::Artel);
+        wrt.squadType = std::uint8_t(sm::SquadType::Woodcutters);
     }
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 20u);

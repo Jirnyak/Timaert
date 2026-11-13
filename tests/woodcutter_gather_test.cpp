@@ -86,9 +86,9 @@ sm::MacroHandle make_woodcutter(sm::MacroStore& st, float x, float y,
         NPCType::Peasant, 3, avatar_sheet_seed(11u));
     refresh_body_from_sheet(pools, &rt, sheet, NPCType::Peasant);
     pools.sp = pools.maxSp;
-    // Поручений больше нет (ломоть 4 M-72): «что добыть» модуль решает
-    // сам — фикстура держит нужное рабочее место единственным кандидатом.
-    rt.squadType = std::uint8_t(SquadType::Artel);
+    // Лесоруб — ТИП сквада со своим модулем (M-488, вердикт владельца
+    // 2026-11-13): что добывать, называет тип, а не выбор в поле.
+    rt.squadType = std::uint8_t(SquadType::Woodcutters);
     st.runtime[h.slot] = rt;
     sm::store_rename_ordinal(st, h, 11u);
     h = sm::handle_at(st, h.slot);
@@ -311,7 +311,7 @@ void test_the_farmer_works_the_field() {
         pools, &prt, make_character_sheet(NPCType::Peasant, 2, avatar_sheet_seed(12u)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
-    prt.squadType = std::uint8_t(SquadType::Artel);
+    prt.squadType = std::uint8_t(SquadType::Ploughmen);
     st.runtime[h.slot] = prt;
     sm::store_rename_ordinal(st, h, 12u);
     h = sm::handle_at(st, h.slot);
@@ -385,7 +385,7 @@ void test_farmer_without_terrain_conjures_nothing() {
         pools, &prt, make_character_sheet(NPCType::Peasant, 2, avatar_sheet_seed(12u)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
-    prt.squadType = std::uint8_t(SquadType::Artel);
+    prt.squadType = std::uint8_t(SquadType::Ploughmen);
     st.runtime[h.slot] = prt;
     sm::store_rename_ordinal(st, h, 12u);
     h = sm::handle_at(st, h.slot);
@@ -539,7 +539,7 @@ void test_the_mine_runs_while_the_player_is_away() {
         pools, &rt, make_character_sheet(NPCType::Peasant, 3, avatar_sheet_seed(13u)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
-    rt.squadType = std::uint8_t(SquadType::Artel);
+    rt.squadType = std::uint8_t(SquadType::Miners);
     st.runtime[h.slot] = rt;
     sm::store_rename_ordinal(st, h, 13u);
     h = sm::handle_at(st, h.slot);
@@ -591,8 +591,9 @@ void test_the_mine_runs_while_the_player_is_away() {
 // домой. Фикстура с рейсом, собранным РУКОЙ и приписанным деревне, описывала
 // бы путь, которого в игре нет.
 
-// The miner: the SAME gatherer row-loop as the chop above, pointed at a
-// deposit (CANON S10 (бывший resources.md) — a profession per resource, a row not a branch).
+// The miner: шахтёры — свой ТИП со своим модулем (M-488: профессия есть тип
+// сквада, а не строка общей таблицы целей), тот же цикл «к месту — акт —
+// домой», что у лесорубов выше, написанный в своём модуле целиком.
 // Pinned: the ore leaves through the Iron carrier row, hauls home into the
 // village store, CONSERVES, the drained vein stays a VISIBLE cell at 0 and
 // a dry world gives the miner nothing further; no deposit layer wired = no
@@ -631,7 +632,7 @@ void test_the_miner_works_the_vein() {
         pools, &rt, make_character_sheet(NPCType::Peasant, 3, avatar_sheet_seed(13u)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
-    rt.squadType = std::uint8_t(SquadType::Artel);
+    rt.squadType = std::uint8_t(SquadType::Miners);
     st.runtime[h.slot] = rt;
     sm::store_rename_ordinal(st, h, 13u);
     h = sm::handle_at(st, h.slot);
@@ -743,172 +744,14 @@ void test_the_miner_works_the_vein() {
           "no deposit layer => no honest ore, and none minted from nothing");
 }
 
-// ЛОШАДЬ — ЮНИТ, А НЕ ПРЕДМЕТ (CANON S10, владелец 2026-09-19). Пинится
-// ровно колонка закона — «выход ложится СУЩЕСТВОМ в контейнер, а не в
-// сумку» — и её сохранение: поле теряет ровно столько голов, сколько встало
-// в отряд, сумка при этом пуста, а обоз растёт спинами пойманных
-// (haulMult 8).
-//
-// СВИДЕТЕЛЬ РОЖДАЕТ СВОЁ ПРЕДУСЛОВИЕ (§8 п.11, переписан 2026-10-12, M-258):
-// число стада есть ЧИСЛО ФИЧИ, поэтому загон здесь СТАВИТСЯ руками теста, а
-// не ожидается от мира — ставить его будет генерация (M-79), которой ещё нет,
-// и надеяться на дикий табун больше нельзя: поле лошадей снесено вердиктом
-// владельца. Наполняется загон СВОЕЙ ЖЕ ДВЕРЬЮ ряда с заведомо избыточным
-// дельтой, то есть до КАПА, выведенного из фертильности клетки, — числа с
-// потолка здесь нет ни одного (§8 п.4).
-//
-// ЗАКОН УПРЯЖКИ СНЕСЁН ЦЕЛИКОМ (M-230, вердикт владельца 2026-10-06), и
-// здесь стояли ШЕСТЬ его свидетелей — такт 1 (сдача в стойло), тег Mount,
-// мера «по лошадке на душу», такт 2 с его сохранением и потолком. Они сняты
-// ВМЕСТЕ С НОСИТЕЛЕМ, а не подогнаны (AGENTS §5 п.6): закона, который они
-// охраняли, больше нет. Что осталось от них живым, то и проверяется ниже —
-// одна колонка haulMult и сохранение улова, теперь через ОДИН контейнер.
-// Проверка «у дома ноль голов» и есть негативный контроль сноса: вернись
-// двухтактный обоз — она краснеет первой.
-void test_the_catch_lands_as_creatures() {
-    std::unique_ptr<GameState> gsOwn = make_game_state();
-    GameState& gs = *gsOwn;
-    gs.mapW = kMap;
-    gs.mapH = kMap;
-    FeatureLayer& features = gs.features;
-    features.resize(kMap, kMap);
-
-    // Fertile ground everywhere: the herd baseline is the wheat row's own
-    // fertility read as mouths, so grass is what a pasture needs.
-    TerrainData terrain;
-    terrain.width = kMap;
-    terrain.height = kMap;
-    // УРОВНИ, а не байты (карта на слове, `kFieldWordMax`): полная
-    // фертильность — это ВЕРХ словаря, а не байт 255, который в слове значил
-    // бы 0.004.
-    terrain.rgba.assign(std::size_t(kMap) * kMap * 4u,
-                        sm::field_word_of(128.0f / 255.0f));
-    for (std::size_t i = 1; i < terrain.rgba.size(); i += 4) {
-        terrain.rgba[i] = std::uint16_t(sm::kFieldWordMax);   // G = fertility
-    }
-
-    auto wStore_ = sm::make_macro_store();
-    sm::MacroStore& st = *wStore_;
-
-    // Место есть неподвижный сквад, и ломтиком F оно ЕСТЬ слот store.
-    const sm::MacroHandle vil =
-        sm::birth_squad(gs, nullptr, st, SquadType::Village, 10, 10);
-    // Души — ДВЕРЬЮ МИРА (labour.h settle_souls): паства в число фичи
-    // фичи, головы в инвентарь ТЕЛА — тем же законом, что генезис.
-    sm::settle_souls(gs, st, vil.slot, 40);
-    sm::MacroHandle h = sm::store_birth(st);
-    sm::MacroHandle e = h;
-    st.cell[h.slot] = ecs::MacroCell{ecs::cell_index(10, 10, kMap)};
-    st.runtime[h.slot].sub = {};   // доля клетки: центр (M-244a)
-    st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
-                                   std::uint16_t(faction_index("timaert"))};
-    ecs::MacroNpcRuntime prt{};
-    prt.state = std::uint8_t(NPCState::Idle);
-    prt.recoverySteps = 0;
-    ecs::Pools pools{};
-    refresh_body_from_sheet(
-        pools, &prt,
-        make_character_sheet(NPCType::Peasant, 2, avatar_sheet_seed(77u)),
-        NPCType::Peasant);
-    pools.sp = pools.maxSp;
-    prt.squadType = std::uint8_t(SquadType::Artel);
-    prt.carryPerSoulG = 40'000;   // спина 40 кг в целых граммах
-    st.runtime[h.slot] = prt;
-    sm::store_rename_ordinal(st, h, 77u);
-    h = sm::handle_at(st, h.slot);
-    sm::set_relation(st, int(h.id), int(st.spawnId[vil.slot].index),
-                     sm::Stance::Parent);
-    e = h;   // алиас перецелен ПОСЛЕ пина ординала (M-220)
-    // Уровень — АНКЕТА (M-246а): та же дверь, какой рождает make_npc.
-    st.sheet[h.slot] = make_character_sheet(
-        NPCType::Peasant, 2, avatar_sheet_seed(st.spawnId[h.slot].index));
-    pools.hp = pools.maxHp = 20;
-    st.pools[h.slot] = pools;
-
-    // ЗАГОН — ПРЕДУСЛОВИЕ, И ЕГО СТАВИТ СВИДЕТЕЛЬ. Клетка в боксе
-    // ±kSettlementReach вокруг дома и НЕ сама деревня: её число — паства
-    // (`settle_souls` выше), и смысл ему задаёт её собственная фича.
-    constexpr int kFoldX = 12, kFoldY = 10;
-    feature_put(features, all_land(), cell_of(kFoldX, kFoldY, features.width), sm::FT_Pasture);
-    MacroWorld seedWorld{.gs = &gs, .store = &st, .terrain = &terrain};
-    // Избыточная дельта: дверь ряда САМА зажимает в кап клетки, поэтому
-    // число берётся из фертильности, а не из головы автора.
-    sm::field_move(seedWorld, ResourceFieldId::Livestock,
-                             sm::cell_of(kFoldX, kFoldY, seedWorld.gs->mapW), sm::kMaxFieldUnitsPerCell);
-    const int herdAtFence = sm::resource_field_read(
-        seedWorld, ResourceFieldId::Livestock, sm::cell_of(kFoldX, kFoldY, seedWorld.gs->mapW));
-    CHECK(herdAtFence > 0,
-          "загон наполнился СВОЕЙ дверью до капа, выведенного из травы "
-          "клетки — число стада есть число фичи");
-
-    MacroNpcAiRuntime rt{};
-    reset_macro_npc_ai_runtime(rt, 77u);
-    for (int i = 0; i < 400; ++i) {
-        MacroWorld mw{.gs = &gs, .store = &st, .terrain = &terrain};
-        tick_macro_npc_ai(mw, rt, kAiTicks);
-    }
-
-    const Inventory& creatures = (*sm::body_state<ecs::NpcInventory>(st, e)).inv;
-    const int caught = creature_count_of(creatures, NPCType::Horse);
-    // УБЫЛЬ ЧИТАЕТСЯ ТАМ, ГДЕ ТЕПЕРЬ ЖИВЁТ ЧИСЛО — на поле чисел фич, одной
-    // дверью ряда. Шрамового поля у стада больше нет вовсе, и негативный
-    // контроль этого стоит ниже: его заголовок обязан остаться пустым.
-    const int lost = herdAtFence
-        - sm::resource_field_read(seedWorld, ResourceFieldId::Livestock,
-                                  sm::cell_of(kFoldX, kFoldY, seedWorld.gs->mapW));
-    CHECK(gs.wheatScars.liveCells == 0,
-          "у ряда-НОСИТЕЛЯ своего поля шрамов нет (M-258; заголовок снесён в "
-          "v157), и в единственное поле шрамов — пашни — выемка стада не пишет");
-
-    const int athome =
-        creature_count_of(st.inventory[vil.slot].inv, NPCType::Horse);
-    CHECK(caught > 0, "the catch landed as SOULS, not as cargo");
-    CHECK(lost == caught,
-          "CONSERVATION ОДНИМ контейнером: поле лишилось ровно того, что "
-          "встало в отряд");
-    CHECK(athome == 0,
-          "НЕГАТИВНЫЙ КОНТРОЛЬ СНОСА (M-230): табун не принадлежит месту — "
-          "дом не получает ни одной головы, потому что обоза больше нет");
-    CHECK(st.inventory[vil.slot].inv.count("food") == 0
-              && (*sm::body_state<ecs::NpcInventory>(st, e)).inv.count("food") == 0,
-          "a creature yield rides NO bag: nothing landed in the store");
-    // (ЗДЕСЬ СТОЯЛИ ДВА СВИДЕТЕЛЯ ЗАКОНА «артель ставит загон ПЕРЕД ловлей».
-    // Закон отменён вердиктом владельца 2026-09-22 — «СТРОИТЕЛЬСТВО
-    // КРЕСТЬЯНАМИ НЕ РАБОТАЕТ НА НЕГО НЕЛЬЗЯ ПОЛАГАТЬСЯ», — поэтому
-    // свидетели сняты ВМЕСТЕ С ЗАКОНОМ, а не подогнаны под новый ответ.
-    // Ловля от этого не изменилась: проверка сохранения выше зелена —
-    // артель берёт с клетки поля, как лесоруб с клетки леса.
-    // Прегенерацию загонов миром несёт наряд M-79 реестра.)
-    // ЕДИНСТВЕННАЯ ВЫЖИВШАЯ КОЛОНКА ЛОШАДИ — СПИНА, и считает её живая
-    // дверь сводки, которую правит сама запись слота, а складывает
-    // `carry_capacity_g`. Обоз = своя спина ОТ АНКЕТЫ плюс ГРАММЫ
-    // объектов: конь даёт `haulMult × kHaulBackG` = 8 × 15 000 = 120 000 г,
-    // то есть те же 120 кг, и число это его
-    // собственное — от анкеты хозяина оно не зависит (ЗАКОН ДВУХ ТАБЛИЦ).
-    // Ожидание выводится из ТЕХ ЖЕ колонок, что читает код (§8 п.4), а не
-    // пересказывается литералом.
-    //
-    // ЗДЕСЬ СТОЯЛО `carryPerSoul × (1 + 8 × голов)` — свидетель охранял
-    // ДОЛЮ, то есть прежнее смешение таблиц, и переписан он вместе с
-    // законом, а не подогнан под него (§8 п.7: на одобренном улучшении
-    // презумпция вины на свидетеле).
-    {
-        const auto& rtNow =
-            (*sm::body_state<ecs::MacroNpcRuntime>(st, e));
-        const std::int64_t horseG = std::int64_t(std::lround(
-            double(npc_def(NPCType::Horse).haulMult)
-            * double(sm::kHaulBackG)));
-        // ДОПУСК СТАЛ ТОЧНым РАВЕНСТВОМ: здесь стояло
-        // `fabs(...) <= 0.5f` — полкилограмма слабины, купленной
-        // флоатом. В целых граммах прибор видит расхождение в
-        // ОДИН грамм — в 500 раз строже, и бесплатно.
-        CHECK(sm::carry_capacity_g(st, e)
-                  == std::int64_t(rtNow.carryPerSoulG)
-                         + horseG * std::int64_t(caught),
-              "обоз = спина анкеты ПЛЮС граммы объектов: пойманный конь "
-              "несёт свои 120 000 г, а не долю чужой анкеты");
-    }
-}
+// ЗДЕСЬ СТОЯЛ `test_the_catch_lands_as_creatures` — «артель ловит стадо с
+// клетки загона, улов встаёт ДУШАМИ в её контейнер». Снят ВМЕСТЕ С
+// НОСИТЕЛЕМ (§8 п.6, M-488): добычи существ артелью больше нет — модули типов
+// добывают только предметы, ловля стада ждёт ряда M-491 (оценка головы-
+// существа). Живая половина того свидетеля — «обоз = спина анкеты плюс
+// граммы объектов, конь несёт свои 120 кг» — держится ниже, в
+// `test_a_hauless_head_does_not_grow_the_train`, на конях, положенных в
+// контейнер прибором.
 
 // ── АВТОРСКИЙ НОЛЬ СПИНЫ ЗНАЧИТ НОЛЬ (M-297) ──────────────────────────────
 // Закон: обоз = спина АНКЕТЫ + Σ килограммов ОБЪЕКТОВ, и безрукая строка не
@@ -1041,6 +884,5 @@ int main() {
     test_farmer_without_terrain_conjures_nothing();
     test_the_miner_works_the_vein();
     test_the_mine_runs_while_the_player_is_away();
-    test_the_catch_lands_as_creatures();
     return sm::test::report("woodcutter_gather_test");
 }

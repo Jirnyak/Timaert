@@ -7838,8 +7838,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     if (!sm::squad_has_avatar(
                             sm::SquadType(sm::squad_type_ordinal(st, h))))
                         continue;
-                    artelsAlive += sm::squad_type_ordinal(st, h)
-                                   == std::uint8_t(sm::SquadType::Artel);
+                    // Все шесть типов артели — отрезок оси `Artel..Woodcutters`.
+                    const std::uint8_t type = sm::squad_type_ordinal(st, h);
+                    artelsAlive +=
+                        type >= std::uint8_t(sm::SquadType::Artel)
+                        && type <= std::uint8_t(sm::SquadType::Woodcutters);
                     const auto& g = st.goal[slot];
                     if (sm::ecs::goal_kind(g.what) == sm::ecs::GoalKind::None
                         || g.cell == sm::ecs::kNoCell

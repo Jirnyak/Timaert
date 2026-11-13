@@ -2720,8 +2720,8 @@ void SubworldEngine::charge_act_ticks(const ActionDef& act) {
 
 // ЦЕЛЬ → СТРОКА АКТА ДОБЫЧИ: колос жнут, всё прочее под топором рубят.
 // Резолвер цели — дело исполнителя своего мира (ЗАКОН СПОСОБНОСТИ: строка
-// агностична); наверху ту же строку называет спецтаблица добычи
-// (`kGathererDefs@src/macro/npc_ai.cpp`) — одна строка, два резолвера цели.
+// агностична); наверху ту же строку называет модуль типа артели (лесорубы,
+// пахари — `src/macro/npc_ai.cpp`) — одна строка, два резолвера цели.
 static const ActionDef& harvest_action_row(Structure::Kind k) {
     return action_def(k == Structure::Crop ? kActionReapWheat
                                            : kActionFellTree);

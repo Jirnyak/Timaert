@@ -67,6 +67,11 @@ inline constexpr CrowdLayoutRow kCrowdLayout[std::size_t(SquadType::Count)] = {
     // Подвижные роды толпу сцены не держат: их люди — головы инвентаря,
     // воплощаемые проекцией сквада, а не уличным спавном.
     {.type = SquadType::Artel},
+    {.type = SquadType::Ploughmen},
+    {.type = SquadType::Hunters},
+    {.type = SquadType::Flaxers},
+    {.type = SquadType::Miners},
+    {.type = SquadType::Woodcutters},
     {.type = SquadType::Caravan},
     {.type = SquadType::Collector},
     {.type = SquadType::Dragon},

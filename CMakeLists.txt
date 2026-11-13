@@ -2324,6 +2324,35 @@ timaert_test(rooted_module_day_test
         src/macro/econ_day.cpp
     LINK_SDL)
 
+# ТИПЫ АРТЕЛЕЙ (M-488, вердикт владельца 2026-11-13): деревня поднимает
+# артель НУЖНОГО типа, тип делает своё дело и сдаёт всё домой, смена в
+# неопределённую и обратно — внутри модулей, харч грузит дом. Список
+# исходников — тот же, что у rooted_module_day_test: тот же npc_ai + econ_day
+# + рождение.
+timaert_test(artel_types_test
+    SOURCES
+        src/macro/world_tick.cpp
+        src/macro/threat_field.cpp
+        src/macro/scent_field.cpp
+        src/macro/player_entity.cpp
+        src/macro/squad_index.cpp
+        src/macro/npc_ai.cpp
+        src/macro/deal.cpp
+        src/macro/recovery.cpp
+        src/macro/nav_field.cpp
+        src/macro/economy.cpp
+        src/macro/chronicle.cpp
+        src/macro/macro_stock.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/tables/fauna.cpp
+        src/macro/tree_layer.cpp
+        src/macro/npc_spawn.cpp
+        src/bus/anketa.cpp
+        src/tables/items.cpp
+        src/macro/econ_day.cpp
+    LINK_SDL)
+
 # (goal_auction_test СНЕСЁН вердиктом владельца 2026-10-04: «глупо гонять
 # 100 дней экономику, которой ещё нет». Свидетель охранял аукцион поручений
 # ротации — модель, уже записанную РАСХОЖДЕНИЕМ под снос («поручений дня не

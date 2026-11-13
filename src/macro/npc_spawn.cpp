@@ -319,9 +319,9 @@ void spawn_macro_npcs(GameState& gs, MacroStore& st,
     }
 
     // Villages seed no eternal gatherers either (owner 2026-08-30): the
-    // daily labour rotation raises every profession whose worksite is live
-    // — the same find_worksite the working AI walks by, so presence of ore
-    // IS still the presence of miners, just souls-deep and mortal.
+    // village module raises an artel of the type it needs, only where that
+    // type's worksite is live (M-488) — presence of ore IS still the presence
+    // of miners, just souls-deep and mortal.
     (void)deposits;
 
     // СТОЛ АНКЕТ — авторские фигуры мира, после массовки: их ординалы

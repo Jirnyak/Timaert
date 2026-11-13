@@ -11,9 +11,11 @@
 // ЧТО ИМЕННО УТВЕРЖДАЕТСЯ (шесть законов, по одному на тест):
 //   1. деревня ПРОИЗВОДИТ ЧЕРЕЗ ДУМКУ СВОЕГО МОДУЛЯ, и ровно РАЗ В СУТКИ —
 //      второго пути выпуска в мире нет (вызов из `tick_squads_day_` умер);
-//   2. деревня РОЖАЕТ АРТЕЛЬ и ПЛАТИТ ЗА НЕЁ ДУШАМИ своего контейнера;
+//   2. деревня РОЖАЕТ АРТЕЛЬ НУЖНОГО ТИПА (при нужде в еде и пашне у дома —
+//      пахарей, M-488) и ПЛАТИТ ЗА НЕЁ ДУШАМИ своего контейнера;
 //   3. город рожает СБОРЩИКА только при вассале-должнике;
-//   4. ДУБЛЬ не рождается — гейт `has_child` держит одного ребёнка на тип;
+//   4. ДУБЛЬ не рождается — гейт `has_child` держит одну артель на тип, а
+//      живая неопределённая артель новой не пускает вовсе;
 //   5. СТОЯЩЕЕ МЕСТО НЕ ПЛАТИТ ЗА ДОРОГУ (M-313: цель на свою клетку);
 //   6. ПОСЛЕДНЮЮ СМЕНУ РУК ИЗ ДОМА НЕ ВЫПИСЫВАЮТ — гейт свободных душ
 //      (M-314: до 2026-10-25 этот гейт стоял БЕЗ СВИДЕТЕЛЯ ВОВСЕ).
@@ -202,6 +204,48 @@ struct Fixture {
     int heads(std::uint16_t slot) {
         return count_human_souls(st().inventory[slot].inv);
     }
+    // ПАШНЯ У ДОМА — РАБОЧЕЕ МЕСТО ПАХАРЕЙ, И СТАВИТ ЕЁ ПРИБОР (§8 п.11):
+    // деревня поднимает артель только того типа, чьё место работы есть в её
+    // округе (M-488, вердикт владельца 2026-11-13), а генератора здесь нет.
+    // Фича ставится дверью мира, ёмкость пашни есть фертильность клетки —
+    // канал G карты, который ряд пашни читает сам; числа руками не кладутся.
+    void plough(int x, int y) {
+        const std::uint32_t c = cell_of(x, y, kMap);
+        terrain.rgba[std::size_t(c) * 4u + 1u] = std::uint16_t(kFieldWordMax);
+        CHECK(feature_put(features, terrain, c, FT_Field) == FT_Field,
+              "пашня встала дверью мира на сушу фикстуры");
+        const MacroWorld mw = world();
+        CHECK(resource_field_read(mw, ResourceFieldId::Wheat, c) > 0,
+              "и на ней стоит урожай — место работы пахарей живое");
+    }
+    // Артелей ЭТОГО родителя всех шести типов — отрезок оси
+    // `Artel..Woodcutters`: закон «одна на тип, и неопределённая держит
+    // новых» судится их суммой, какой бы тип артель ни носила сегодня.
+    int artels_of(int parentId) {
+        int n = 0;
+        for (std::size_t s = 0; s < kUnifiedCap; ++s) {
+            if (st().alive[s] == 0 || st().dead[s] != 0) continue;
+            const std::uint8_t t = st().runtime[s].squadType;
+            if (t < std::uint8_t(SquadType::Artel)
+                || t > std::uint8_t(SquadType::Woodcutters))
+                continue;
+            if (parent_of(st(), std::uint16_t(s)) == parentId) ++n;
+        }
+        return n;
+    }
+    // Слот единственной артели родителя (любого из шести типов); -1 — нет.
+    int artel_slot_of(int parentId) {
+        int found = -1;
+        for (std::size_t s = 0; s < kUnifiedCap; ++s) {
+            if (st().alive[s] == 0 || st().dead[s] != 0) continue;
+            const std::uint8_t t = st().runtime[s].squadType;
+            if (t < std::uint8_t(SquadType::Artel)
+                || t > std::uint8_t(SquadType::Woodcutters))
+                continue;
+            if (parent_of(st(), std::uint16_t(s)) == parentId) found = int(s);
+        }
+        return found;
+    }
     // Детей ЭТОГО родителя ЭТОГО типа — вопрос прибора, не копия двери:
     // `AiView::has_child` отвечает «есть ли», а свидетелю нужно «сколько».
     int children_of(int parentId, SquadType t) {
@@ -359,11 +403,14 @@ void test_village_produces_through_its_own_think() {
                 shelf.count_of(clothIdx));
 }
 
-// ═════ 2. ДЕРЕВНЯ РОЖАЕТ АРТЕЛЬ И ПЛАТИТ ДУШАМИ ═════════════════════════
+// ═════ 2. ДЕРЕВНЯ РОЖАЕТ АРТЕЛЬ НУЖНОГО ТИПА И ПЛАТИТ ДУШАМИ ═══════════
 void test_village_raises_an_artel_and_pays_in_souls() {
     Fixture f;
     const MacroHandle vil = f.rooted(SquadType::Village, 10, 10, 64);
     const int vilId = int(f.st().spawnId[vil.slot].index);
+    // Пашня у дома стоит В ОБОИХ плечах: негативное плечо обязано отказать
+    // из-за НУЖДЫ, а не из-за того, что работать негде (M-488).
+    f.plough(12, 10);
 
     // ЖИВАЯ НУЖДА — ПРЕДУСЛОВИЕ, И ПРИБОР РОЖДАЕТ ЕГО САМ. Счёт нужд есть
     // колонка места (`Upkeep::needDebt` по товарным ординалам), и ставится
@@ -380,9 +427,9 @@ void test_village_raises_an_artel_and_pays_in_souls() {
     // Оно же и есть контроль, который обязан КРАСНЕТЬ, если гейт нужды
     // снять: без него тест не отличал бы «решил» от «рождает всегда».
     f.think(kThinksPerDay + 2);
-    CHECK(f.children_of(vilId, SquadType::Artel) == 0,
+    CHECK(f.artels_of(vilId) == 0,
           "БЕЗ ЖИВОЙ НУЖДЫ АРТЕЛИ НЕТ: деревня, которой нечего просить, душ "
-          "в поле не выписывает");
+          "в поле не выписывает — хотя пашня у дома стоит");
     CHECK(f.heads(vil.slot) == headsBefore,
           "и душ она при этом не потеряла ни одной");
 
@@ -390,8 +437,10 @@ void test_village_raises_an_artel_and_pays_in_souls() {
     f.st().upkeep[vil.slot].needDebt[foodCom] = 4096;
     f.think(kThinksPerDay + 2);
 
-    CHECK(f.children_of(vilId, SquadType::Artel) == 1,
-          "ДЕРЕВНЯ РОДИЛА АРТЕЛЬ — ровно одну, и родителем названа ОНА");
+    CHECK(f.children_of(vilId, SquadType::Ploughmen) == 1
+              && f.artels_of(vilId) == 1,
+          "ДЕРЕВНЯ РОДИЛА АРТЕЛЬ НУЖНОГО ТИПА — еды не хватает, пашня у дома "
+          "есть, значит ПАХАРЕЙ, ровно одну, и родителем названа ОНА");
     const int headsAfter = f.heads(vil.slot);
     // ЯКОРЬ С ДВУХ КОНЦОВ, И РАЗНИЦА В ЕДИНИЦУ ЕСТЬ ЛИДЕРСКОЕ ТЕЛО.
     CHECK(headsBefore - headsAfter == kVillageCrew,
@@ -402,7 +451,8 @@ void test_village_raises_an_artel_and_pays_in_souls() {
     int bornSlot = -1;
     for (std::size_t s = 0; s < kUnifiedCap; ++s) {
         if (f.st().alive[s] == 0 || f.st().dead[s] != 0) continue;
-        if (f.st().runtime[s].squadType != std::uint8_t(SquadType::Artel))
+        if (f.st().runtime[s].squadType
+            != std::uint8_t(SquadType::Ploughmen))
             continue;
         if (parent_of(f.st(), std::uint16_t(s)) == vilId)
             bornSlot = int(s);
@@ -461,18 +511,22 @@ void test_no_duplicate_child_however_long_the_world_runs() {
     const MacroHandle vil = f.rooted(SquadType::Village, 10, 10, 200);
     const int vilId = int(f.st().spawnId[vil.slot].index);
     f.st().upkeep[vil.slot].needDebt[hunger_commodity_ordinal()] = 1 << 20;
+    f.plough(12, 10);
 
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 50u);
     f.think_on(rt, kThinksPerDay + 2);
-    CHECK(f.children_of(vilId, SquadType::Artel) == 1,
-          "первая артель поднялась");
+    CHECK(f.children_of(vilId, SquadType::Ploughmen) == 1
+              && f.artels_of(vilId) == 1,
+          "первая артель поднялась — пахари, единственное место работы");
     const int headsAfterFirst = f.heads(vil.slot);
 
     // ЧЕТВЕРО СУТОК СВЕРХУ, И ДУШ В ДОМЕ С ИЗБЫТКОМ (200 против крю): если
     // бы гейт дубля не держал, их хватило бы ещё на двадцать артелей.
     f.think_on(rt, 4 * kThinksPerDay);
-    CHECK(f.children_of(vilId, SquadType::Artel) == 1,
+    // Судится СУММА по шести типам: артель вправе сменить тип своим модулем
+    // (пашню выели — стала неопределённой), и рождением это не является.
+    CHECK(f.artels_of(vilId) == 1,
           "ПЯТЫЕ СУТКИ — АРТЕЛЬ ВСЁ ЕЩЁ ОДНА: дубль гасит `has_child`, и "
           "хранить «сколько я родил» колонкой незачем");
     CHECK(f.heads(vil.slot) == headsAfterFirst,
@@ -614,6 +668,8 @@ void test_the_last_shift_of_hands_is_never_written_out() {
             f.rooted(SquadType::Village, 10, 10, kVillageCrew);
         const int vilId = int(f.st().spawnId[vil.slot].index);
         f.st().upkeep[vil.slot].needDebt[hunger_commodity_ordinal()] = 1 << 20;
+        // Нужда и место работы есть — отказать вправе ТОЛЬКО гейт душ.
+        f.plough(12, 10);
         Inventory& shelf = f.st().inventory[vil.slot].inv;
         CHECK(shelf.add_of(clayIdx, kClay),
               "глина легла на полку — иначе «дом всё ещё производит» ниже "
@@ -652,7 +708,7 @@ void test_the_last_shift_of_hands_is_never_written_out() {
 
         f.think(kThinksPerDay + 2);
 
-        CHECK(f.children_of(vilId, SquadType::Artel) == 0,
+        CHECK(f.artels_of(vilId) == 0,
               "АРТЕЛИ НЕТ: душ ровно на крю, и последнюю смену рук дом не "
               "выписывает — строгое «больше», а не «не меньше»");
         CHECK(f.heads(vil.slot) == kVillageCrew,
@@ -674,12 +730,13 @@ void test_the_last_shift_of_hands_is_never_written_out() {
                                          kVillageCrew + 1);
         const int vilId = int(f.st().spawnId[vil.slot].index);
         f.st().upkeep[vil.slot].needDebt[hunger_commodity_ordinal()] = 1 << 20;
+        f.plough(12, 10);
         Inventory& shelf = f.st().inventory[vil.slot].inv;
         CHECK(shelf.add_of(clayIdx, kClay), "и здесь глина на полке");
 
         f.think(kThinksPerDay + 2);
 
-        CHECK(f.children_of(vilId, SquadType::Artel) == 1,
+        CHECK(f.artels_of(vilId) == 1,
               "ОДНОЙ ДУШИ СВЕРХ КРЮ ДОСТАТОЧНО: гейт считает ИЗБЫТОК, а не "
               "запас, и при избытке в одну душу крю уходит");
         CHECK(f.heads(vil.slot) == 1,
@@ -781,16 +838,11 @@ void test_a_dying_rooted_rewrites_the_feature_under_itself() {
         const MacroHandle vil = f.rooted(SquadType::Village, 10, 10, 200);
         const int vilId = int(f.st().spawnId[vil.slot].index);
         f.st().upkeep[vil.slot].needDebt[hunger_commodity_ordinal()] = 1 << 20;
+        f.plough(12, 10);
         f.think(kThinksPerDay + 2);
-        CHECK(f.children_of(vilId, SquadType::Artel) == 1,
+        CHECK(f.artels_of(vilId) == 1,
               "деревня подняла артель — предусловие рождено прибором");
-        int artel = -1;
-        for (std::size_t sl = 0; sl < kUnifiedCap; ++sl) {
-            if (f.st().alive[sl] == 0 || f.st().dead[sl] != 0) continue;
-            if (f.st().runtime[sl].squadType != std::uint8_t(SquadType::Artel))
-                continue;
-            if (parent_of(f.st(), std::uint16_t(sl)) == vilId) artel = int(sl);
-        }
+        const int artel = f.artel_slot_of(vilId);
         CHECK(artel >= 0, "артель нашлась слотом");
         const MacroHandle ah = handle_at(f.st(), std::uint16_t(artel));
         // АРТЕЛЬ СТАВИТСЯ НА КЛЕТКУ ДЕРЕВНИ ПРИБОРОМ, И ЭТО НЕ ПОДГОНКА, А
