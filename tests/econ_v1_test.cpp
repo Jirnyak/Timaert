@@ -34,7 +34,7 @@
                                 // в kSquadBirth@src/macro/characters.h)
 #include "macro/upkeep_window.h"  // upkeep_season_window — ОДНА дверь суда границы (M-233)
 #include "macro/squad_act.h"      // squad_craft — акт крафта сквада (M-486)
-#include "macro/npc_ai.h"         // village_craft_pick, city_craft_pick — решения модулей
+#include "macro/npc_ai.h"         // village/city/capital_craft_pick — решения модулей
 #include "bus/squad_sheet.h"      // refresh_body_from_sheet — тело той же дверью, что мир
 #include "bus/world_row.h"   // raise_flock_into_container / count_human_souls / work_units
 #include "bus/anketa.h"
@@ -1119,16 +1119,18 @@ void sect14_squad_craft_act() {
     }
 }
 
-// ── 14Б. ЧТО И СКОЛЬКО КРАФТИТЬ — РЕШЕНИЯ МОДУЛЕЙ ДЕРЕВНИ И ГОРОДА (M-486) ──
+// ── 14Б. ЧТО И СКОЛЬКО КРАФТИТЬ — РЕШЕНИЯ МОДУЛЕЙ ДЕРЕВНИ, ГОРОДА И СТОЛИЦЫ ─
 // Закон мира (AGENTS «ЗАКОН ЕДИНОЙ ЦЕНОМОДЕЛИ» п.2 и п.4; вердикт владельца
 // 2026-11-13: крафт — сделка с самим собой). Выгода лота есть оценка
 // пришедшего выхода минус оценка ушедших входов, той же оценкой запаса, какой
 // меряет сделка; предел наступает обратной связью — выход копится, масса
 // против спины роняет его оценку; вход тает — его оценка растёт. Решение
-// судится на голых числах своей строки, и у деревни и у города оно своё
-// (`village_craft_pick@src/macro/squad_ai/village.cpp`,
-// `city_craft_pick@src/macro/squad_ai/city.cpp`; AGENTS §4 п.5), поэтому каждое
-// утверждение ниже стоит над обоими; выгода всякого другого объёма — теми же
+// судится на голых числах своей строки, и у деревни, у города и у столицы
+// оно своё (`village_craft_pick@src/macro/squad_ai/village.cpp`,
+// `city_craft_pick@src/macro/squad_ai/city.cpp`,
+// `capital_craft_pick@src/macro/squad_ai/capital.cpp`; AGENTS §4 п.5), поэтому
+// каждое утверждение ниже стоит над всеми тремя (M-486; столица — свой модуль
+// по вердикту владельца 2026-11-13); выгода всякого другого объёма — теми же
 // дверями ядра цены.
 namespace {
 
@@ -1179,8 +1181,8 @@ constexpr std::int64_t kBoundlessBackG = std::int64_t(1) << 40;
 // Юнитов столько, что бар заведомо не предел (свидетель утверждает это сам).
 constexpr int kManyUnits = 256;
 
-// РЕШЕНИЕ МОДУЛЯ, КОТОРОЕ СУДИТ СЕКЦИЯ: у деревни своё, у города своё, и
-// набор проверок один на оба.
+// РЕШЕНИЕ МОДУЛЯ, КОТОРОЕ СУДИТ СЕКЦИЯ: у деревни, у города и у столицы
+// своё, и набор проверок один на все три.
 using CraftPickFn = CraftPick (*)(const Inventory&, const std::int32_t*,
                                   const Skills&, std::int64_t, int, int, int,
                                   int);
@@ -1191,6 +1193,7 @@ struct ModulePick {
 constexpr ModulePick kModulePicks[] = {
     {&village_craft_pick, "деревня"},
     {&city_craft_pick, "город"},
+    {&capital_craft_pick, "столица"},
 };
 
 } // namespace

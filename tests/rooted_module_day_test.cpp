@@ -14,6 +14,9 @@
 //   2. деревня РОЖАЕТ АРТЕЛЬ НУЖНОГО ТИПА (при нужде в еде и пашне у дома —
 //      пахарей, M-488) и ПЛАТИТ ЗА НЕЁ ДУШАМИ своего контейнера;
 //   3. город рожает СБОРЩИКА только при вассале-должнике;
+//   (законы думки города — сборщик, последняя смена рук, руина, погрузка
+//    корована — судятся над ДВУМЯ модулями, городом и столицей: столица —
+//    свой модуль, вердикт владельца 2026-11-13);
 //   4. ДУБЛЬ не рождается — гейт `has_child` держит одну артель на тип, а
 //      живая неопределённая артель новой не пускает вовсе;
 //   5. СТОЯЩЕЕ МЕСТО НЕ ПЛАТИТ ЗА ДОРОГУ (M-313: цель на свою клетку);
@@ -82,12 +85,27 @@ using namespace sm;
 constexpr int kMap = 32;
 
 // РАЗМЕР КРЮ СЧИТАЕТСЯ ПРИБОРОМ САМ, ИЗ ТОЙ ЖЕ ПУБЛИЧНОЙ СТРОКИ, ИЗ КОТОРОЙ
-// его берёт модуль, — у деревни и у города своей
-// (`kVillageCrewSouls@src/macro/npc_ai.h`, `kCityCrewSouls@src/macro/npc_ai.h`).
-// Копии числа здесь нет нарочно: прибитый литерал ломался бы на каждой
-// перекалибровке и не доказывал бы замысла (§8 п.4).
+// его берёт модуль, — у деревни, у города и у столицы своей
+// (`kVillageCrewSouls@src/macro/npc_ai.h`, `kCityCrewSouls@src/macro/npc_ai.h`,
+// `kCapitalCrewSouls@src/macro/npc_ai.h`). Копии числа здесь нет нарочно:
+// прибитый литерал ломался бы на каждой перекалибровке и не доказывал бы
+// замысла (§8 п.4).
 constexpr int kVillageCrew = kVillageCrewSouls;
-constexpr int kCityCrew = kCityCrewSouls;
+
+// ГОРОД И СТОЛИЦА — ДВА МОДУЛЯ (вердикт владельца 2026-11-13: «столица
+// отдельный модуль»), и всякий закон думки города стоит над обоими: тело
+// столицы — законная копия городского (AGENTS §4 п.5), значит и свидетель у
+// каждой копии свой — мутация одной копии другую не задевает. Фикстура сама
+// рожает своё место нужного типа (§8 п.11).
+struct TownModule {
+    SquadType kind;
+    int crew;          // своя публичная строка крю модуля
+    const char* who;
+};
+constexpr TownModule kTownModules[] = {
+    {SquadType::City, kCityCrewSouls, "город"},
+    {SquadType::Capital, kCapitalCrewSouls, "столица"},
+};
 
 // ПЕРИОД ПРОИЗВОДСТВЕННОГО АКТА — ТОЖЕ ВЫВОД, А НЕ ЦИТАТА: думка идёт раз в
 // `kAiTicks` мировых тиков, в сутках `kTicksPerDay` тиков.
@@ -466,41 +484,44 @@ void test_village_raises_an_artel_and_pays_in_souls() {
 
 // ═════ 3. СБОРЩИК — ТОЛЬКО ПРИ ВАССАЛЕ-ДОЛЖНИКЕ ═════════════════════════
 void test_city_raises_a_collector_only_for_a_debtor() {
-    Fixture f;
-    const MacroHandle city = f.rooted(SquadType::City, 10, 10, 64);
-    const MacroHandle vassal = f.rooted(SquadType::Village, 14, 10, 64);
-    const int cityId = int(f.st().spawnId[city.slot].index);
-    const int vassalId = int(f.st().spawnId[vassal.slot].index);
+    for (const TownModule& m : kTownModules) {
+        std::printf("  [сборщик: %s]\n", m.who);
+        Fixture f;
+        const MacroHandle city = f.rooted(m.kind, 10, 10, 64);
+        const MacroHandle vassal = f.rooted(SquadType::Village, 14, 10, 64);
+        const int cityId = int(f.st().spawnId[city.slot].index);
+        const int vassalId = int(f.st().spawnId[vassal.slot].index);
 
-    // ФЕОД СТАВИТСЯ ДВЕРЬЮ МИРА: роль зовётся с НИЖНЕГО конца — вассал
-    // получает `Suzerain`, сюзерен зеркало `Vassal` (store.h set_relation).
-    set_relation(f.st(), vassalId, cityId, Stance::Suzerain);
-    const Interest* edge = tithe_of(f.st(), vassal.slot);
-    CHECK(edge != nullptr, "ребро дани легло в реестр вассала");
-    CHECK(!owes_tithe(f.st(), vassal.slot),
-          "и долга на нём пока НЕТ — значит плечо ниже есть настоящее "
-          "условие, а не пустое");
+        // ФЕОД СТАВИТСЯ ДВЕРЬЮ МИРА: роль зовётся с НИЖНЕГО конца — вассал
+        // получает `Suzerain`, сюзерен зеркало `Vassal` (store.h set_relation).
+        set_relation(f.st(), vassalId, cityId, Stance::Suzerain);
+        const Interest* edge = tithe_of(f.st(), vassal.slot);
+        CHECK(edge != nullptr, "ребро дани легло в реестр вассала");
+        CHECK(!owes_tithe(f.st(), vassal.slot),
+              "и долга на нём пока НЕТ — значит плечо ниже есть настоящее "
+              "условие, а не пустое");
 
-    // ── НЕГАТИВНОЕ ПЛЕЧО: ФЕОД ЕСТЬ, ДОЛГА НЕТ — СБОРЩИКА НЕТ ───────────
-    f.think(kThinksPerDay + 2);
-    CHECK(f.children_of(cityId, SquadType::Collector) == 0,
-          "БЕЗ ДОЛГА СБОРЩИКА НЕТ: рождать его значило бы послать сквад "
-          "бродить вокруг дома навсегда");
-    // А КОРОВАН ПРИ ЭТОМ ЕСТЬ — ЭТО РАЗДЕЛЯЕТ ДВА РЕШЕНИЯ ГОРОДА. Без этой
-    // проверки «сборщика нет» могло бы значить «город вообще не думает», и
-    // негативное плечо выше оказалось бы вакуумным (§8 п.2).
-    CHECK(f.children_of(cityId, SquadType::Caravan) == 1,
-          "город ПРИ ТОМ ЖЕ ПРОГОНЕ поднял корован — значит думка шла, и "
-          "ноль сборщиков есть РЕШЕНИЕ, а не молчание модуля");
+        // ── НЕГАТИВНОЕ ПЛЕЧО: ФЕОД ЕСТЬ, ДОЛГА НЕТ — СБОРЩИКА НЕТ ───────────
+        f.think(kThinksPerDay + 2);
+        CHECK(f.children_of(cityId, SquadType::Collector) == 0,
+              "БЕЗ ДОЛГА СБОРЩИКА НЕТ: рождать его значило бы послать сквад "
+              "бродить вокруг дома навсегда");
+        // А КОРОВАН ПРИ ЭТОМ ЕСТЬ — ЭТО РАЗДЕЛЯЕТ ДВА РЕШЕНИЯ ГОРОДА. Без этой
+        // проверки «сборщика нет» могло бы значить «город вообще не думает», и
+        // негативное плечо выше оказалось бы вакуумным (§8 п.2).
+        CHECK(f.children_of(cityId, SquadType::Caravan) == 1,
+              "город ПРИ ТОМ ЖЕ ПРОГОНЕ поднял корован — значит думка шла, и "
+              "ноль сборщиков есть РЕШЕНИЕ, а не молчание модуля");
 
-    // ── ПОЛОЖИТЕЛЬНОЕ ПЛЕЧО: ДОЛГ ПОЯВИЛСЯ ─────────────────────────────
-    // Долг живёт СТОИМОСТЬЮ на ребре `Suzerain` самого вассала (M-245).
-    tithe_of(f.st(), vassal.slot)->owedValue = 10000;
-    CHECK(owes_tithe(f.st(), vassal.slot), "долг на ребре стал живым");
-    f.think(kThinksPerDay + 2);
-    CHECK(f.children_of(cityId, SquadType::Collector) == 1,
-          "ДОЛЖНИК ПОЯВИЛСЯ — ГОРОД ПОДНЯЛ СБОРЩИКА, и вопрос этот задан "
-          "СВОИМИ рёбрами, а не поиском по миру");
+        // ── ПОЛОЖИТЕЛЬНОЕ ПЛЕЧО: ДОЛГ ПОЯВИЛСЯ ─────────────────────────────
+        // Долг живёт СТОИМОСТЬЮ на ребре `Suzerain` самого вассала (M-245).
+        tithe_of(f.st(), vassal.slot)->owedValue = 10000;
+        CHECK(owes_tithe(f.st(), vassal.slot), "долг на ребре стал живым");
+        f.think(kThinksPerDay + 2);
+        CHECK(f.children_of(cityId, SquadType::Collector) == 1,
+              "ДОЛЖНИК ПОЯВИЛСЯ — ГОРОД ПОДНЯЛ СБОРЩИКА, и вопрос этот задан "
+              "СВОИМИ рёбрами, а не поиском по миру");
+    }
 }
 
 // ═════ 4. ДУБЛЬ НЕ РОЖДАЕТСЯ ════════════════════════════════════════════
@@ -685,13 +706,14 @@ void test_the_last_shift_of_hands_is_never_written_out() {
         {
             const ecs::Pools& bar = f.st().pools[vil.slot];
             const Skills& skills = f.st().sheet[vil.slot].skills;
-            // Решение о крафте у деревни и у города своё (AGENTS §4 п.5), и
-            // якорь стоит над обоими.
+            // Решение о крафте у деревни, у города и у столицы своё (AGENTS
+            // §4 п.5), и якорь стоит над всеми тремя.
             using PickFn = CraftPick (*)(const Inventory&,
                                          const std::int32_t*, const Skills&,
                                          std::int64_t, int, int, int, int);
             for (const PickFn pick : {PickFn(&village_craft_pick),
-                                      PickFn(&city_craft_pick)}) {
+                                      PickFn(&city_craft_pick),
+                                      PickFn(&capital_craft_pick)}) {
                 const auto pick_with = [&](int units) {
                     return pick(shelf, nullptr, skills, /*backG*/1000000,
                                 faction_index("timaert"), int(bar.maxSp),
@@ -747,15 +769,18 @@ void test_the_last_shift_of_hands_is_never_written_out() {
               "там, где кончается способность работать, а не произвольно");
     }
 
-    // ── ПЛЕЧО ГОРОДА: ЗАКОН ОДИН НА ОБА РОДА, И САЙТОВ ГЕЙТА ТАМ ДВА ─────
+    // ── ПЛЕЧО ГОРОДА И СТОЛИЦЫ: ЗАКОН ОДИН НА ВСЕ РОДА, И САЙТОВ ГЕЙТА У
+    // КАЖДОГО МОДУЛЯ ДВА ─────────────────────────────────────────────────
     // Без этого плеча два вызова гейта в `city_think` (сборщик и корован)
     // остаются без свидетеля: мутация, снимающая гейт ТОЛЬКО у города,
-    // проходит зелёной по деревенским плечам выше. Должник вассала назван
-    // нарочно — иначе ветка сборщика не дошла бы до гейта вовсе, и плечо
-    // доказывало бы один сайт из двух.
-    {
+    // проходит зелёной по деревенским плечам выше. То же у `capital_think` —
+    // своё тело, свои два сайта. Должник вассала назван нарочно — иначе
+    // ветка сборщика не дошла бы до гейта вовсе, и плечо доказывало бы один
+    // сайт из двух.
+    for (const TownModule& m : kTownModules) {
+        std::printf("  [последняя смена: %s]\n", m.who);
         Fixture f;
-        const MacroHandle city = f.rooted(SquadType::City, 10, 10, kCityCrew);
+        const MacroHandle city = f.rooted(m.kind, 10, 10, m.crew);
         const MacroHandle vassal =
             f.rooted(SquadType::Village, 14, 10, kVillageCrew);
         const int cityId = int(f.st().spawnId[city.slot].index);
@@ -774,7 +799,7 @@ void test_the_last_shift_of_hands_is_never_written_out() {
         CHECK(f.children_of(cityId, SquadType::Caravan) == 0,
               "и КОРОВАНА не поднял — второй сайт того же гейта, у которого "
               "гейта нужды нет вовсе");
-        CHECK(f.heads(city.slot) == kCityCrew,
+        CHECK(f.heads(city.slot) == m.crew,
               "и душ город не потерял ни одной");
     }
 }
@@ -797,13 +822,19 @@ void test_a_dying_rooted_rewrites_the_feature_under_itself() {
         settle_avatar_fraction(f.st(), h, 0.0f);
     };
 
-    // ── ГОРОД → РУИНА ───────────────────────────────────────────────────
-    {
+    // ── ГОРОД → РУИНА, СТОЛИЦА → РУИНА ──────────────────────────────────
+    // Строка смерти у каждого модуля своя (`city_death`, `capital_death`), и
+    // свидетель стоит над обеими.
+    for (const TownModule& m : kTownModules) {
+        std::printf("  [смерть: %s]\n", m.who);
         Fixture f;
-        const MacroHandle city = f.rooted(SquadType::City, 10, 10, 64);
-        CHECK(feature_of(f, city) == FT_City,
-              "ПРЕДУСЛОВИЕ: под городом стоит ФИЧА ГОРОДА — иначе проверка "
-              "ниже не отличала бы «переписал» от «тут и так было»");
+        const MacroHandle city = f.rooted(m.kind, 10, 10, 64);
+        CHECK(feature_of(f, city) == feature_of_rooted_kind(m.kind)
+                  && feature_of(f, city) != FT_None
+                  && feature_of(f, city) != FT_Ruin,
+              "ПРЕДУСЛОВИЕ: под местом стоит ЕГО ФИЧА (города — города, "
+              "столицы — столицы) — иначе проверка ниже не отличала бы "
+              "«переписал» от «тут и так было»");
         kill(f, city);
         f.think(1);
         CHECK(!f.st().valid(city) || f.st().dead[city.slot] != 0,
@@ -1188,16 +1219,26 @@ void test_the_caravan_grows_its_hold_and_brings_it_home() {
                 departures);
 }
 
-// ── ГОРОД ГРУЗИТ РЕЙС И ЛЁГКИМ ЗАВАЛОМ; ВЫГОДНЕЙШЕЕ НА ГРАММ — ПЕРВЫМ ─────
+// ── ГОРОД ГРУЗИТ РЕЙС И ЛЁГКИМ ЗАВАЛОМ; ВЫГОДНЕЙШЕЕ НА ГРАММ — ПЕРВЫМ; В
+// ПРЕДЕЛАХ СПИНЫ; ТОЛЬКО ПУСТОЙ ─────────────────────────────────────────────
 // Закон мира (AGENTS «ЗАКОН ЕДИНОЙ ЦЕНОМОДЕЛИ» п.2; ряд M-490): завал обязан
 // ронять оценку, а «ценит ли выше» решается точно. Дом отдаёт ребёнку то, что
 // тот ценит выше него, — и тогда, когда на одной единице, округлённой до
 // кванта, разницы не видно. Свидетель рейса выше грузит город завалом в пять
 // спин, где старое правило работало тоже; таблица мутаций 2026-11-13 показала,
 // что и возврат округления единицы, и перевёрнутый порядок погрузки проходили
-// зелёными. Рукой здесь ставится только склад города; корован, груз и рейс —
+// зелёными. Рукой здесь ставится только склад места; корован, груз и рейс —
 // дело модулей.
-void test_the_city_loads_a_light_glut_densest_first() {
+//
+// ПОГРУЗКА — РЕШЕНИЕ МОДУЛЯ МЕСТА, И У ГОРОДА И СТОЛИЦЫ ОНО СВОЁ
+// (`city_load_child_@src/macro/squad_ai/city.cpp`,
+// `capital_load_child_@src/macro/squad_ai/capital.cpp`; ряд M-499 (8)),
+// поэтому каждое плечо ниже стоит над обоими модулями. Плечи 2 и 3 добавлены
+// с переездом: груз ложится В СВОБОДНУЮ СПИНУ ребёнка (дверь передачи берёт
+// её пределом), и грузят ТОЛЬКО пустого — корован, которому груз уже дан,
+// дом не догружает.
+void test_the_town_loads_its_caravan(const TownModule& m) {
+    std::printf("  [погрузка: %s]\n", m.who);
     // МЁРТВЫЙ ЗАКОН — оценка единицы, округлённая до ближайшего кванта;
     // формула выписана нарочно (мутация, которую детектор обязан видеть).
     const auto dead_unit = [](std::int64_t base, std::int64_t fits,
@@ -1207,20 +1248,25 @@ void test_the_city_loads_a_light_glut_densest_first() {
         const std::int64_t w = (2 * base * (fits - spare) + fits) / (2 * fits);
         return w < 1 ? std::int64_t(1) : w;
     };
-    // 1. ЛЁГКИЙ ЗАВАЛ: еда занимает восемь сотых спины города.
+    const int foodIdx = item_index("food");
+    const ItemDef* food = item_def_at(foodIdx);
+    const std::int64_t foodG = item_mass_g(*food);
+    const int ironIdx = item_index("iron");
+    const int stoneIdx = item_index("stone");
+    const ItemDef* iron = item_def_at(ironIdx);
+    const ItemDef* stone = item_def_at(stoneIdx);
+    constexpr int kFlood = 4000;
+    // 1. ЛЁГКИЙ ЗАВАЛ: еда занимает восемь сотых спины места.
     {
         Fixture f;
-        const MacroHandle city = f.rooted(SquadType::City, 10, 10, 64);
+        const MacroHandle city = f.rooted(m.kind, 10, 10, 64);
         const int cityId = int(f.st().spawnId[city.slot].index);
         Inventory& cityInv = f.st().inventory[city.slot].inv;
-        const int foodIdx = item_index("food");
-        const ItemDef* food = item_def_at(foodIdx);
-        const std::int64_t foodG = item_mass_g(*food);
         const std::int64_t cityFits =
             carry_capacity_g(f.st().runtime[city.slot], cityInv) / foodG;
         const int glut = int(cityFits * 8 / 100);
         CHECK(glut > 0 && cityInv.add("food", glut),
-              "фикстура: лёгкий завал еды города");
+              "фикстура: лёгкий завал еды места");
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, 51u);
         int loaded = 0, thinks = 0;
@@ -1242,7 +1288,7 @@ void test_the_city_loads_a_light_glut_densest_first() {
                     <= dead_unit(food->value, cityFits, glut - 1);
         }
         CHECK(thinks > 0 && loaded > 0,
-              "ГОРОД ГРУЗИТ РЕЙС И ЛЁГКИМ ЗАВАЛОМ: завал в восемь сотых спины "
+              "МЕСТО ГРУЗИТ РЕЙС И ЛЁГКИМ ЗАВАЛОМ: завал в восемь сотых спины "
               "уехал к свободной спине ребёнка");
         CHECK(deadLawBlind,
               "предусловие: по округлённым единицам выгоды нет — мёртвый закон "
@@ -1253,18 +1299,14 @@ void test_the_city_loads_a_light_glut_densest_first() {
         std::printf("  [погрузка] завал %d, погружено %d за %d думок\n", glut,
                     loaded, thinks);
     }
-    // 2. ВЫБОР ПО МАССЕ: город завален рудой и камнем сверх своей спины; весят
-    //    они одинаково, руда дороже — спину рейса обязана занять руда.
+    // 2. ВЫБОР ПО МАССЕ И ПРЕДЕЛ СПИНЫ: место завалено рудой и камнем сверх
+    //    своей спины; весят они одинаково, руда дороже — спину рейса обязана
+    //    занять руда, и груз обязан в эту спину лечь.
     {
         Fixture f;
-        const MacroHandle city = f.rooted(SquadType::City, 10, 10, 64);
+        const MacroHandle city = f.rooted(m.kind, 10, 10, 64);
         const int cityId = int(f.st().spawnId[city.slot].index);
         Inventory& cityInv = f.st().inventory[city.slot].inv;
-        const int ironIdx = item_index("iron");
-        const int stoneIdx = item_index("stone");
-        const ItemDef* iron = item_def_at(ironIdx);
-        const ItemDef* stone = item_def_at(stoneIdx);
-        constexpr int kFlood = 4000;
         CHECK(cityInv.add("iron", kFlood) && cityInv.add("stone", kFlood),
               "фикстура: завал руды и завал камня");
         CHECK(item_mass_g(*iron) == item_mass_g(*stone)
@@ -1272,22 +1314,93 @@ void test_the_city_loads_a_light_glut_densest_first() {
                   && worth_leaving(side_row(f.st(), city.slot, ironIdx, iron->value), 1) == 1
                   && worth_leaving(side_row(f.st(), city.slot, stoneIdx, stone->value), 1) == 1,
               "предусловие: руда и камень весят одинаково, руда дороже, и оба "
-              "завала город ценит по полу — выгода на грамм у руды выше");
+              "завала место ценит по полу — выгода на грамм у руды выше");
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, 51u);
         int ore = 0, rock = 0;
+        std::int64_t heldG = 0, backG = 0;
         for (int i = 0; i < kThinksPerDay * 4 && ore + rock == 0; ++i) {
             f.think_on(rt, 1);
             const std::uint16_t c = caravan_of(f, cityId);
             if (c == kMacroNoSlot) continue;
-            ore = f.st().inventory[c].inv.count_of(ironIdx);
-            rock = f.st().inventory[c].inv.count_of(stoneIdx);
+            const Inventory& hold = f.st().inventory[c].inv;
+            ore = hold.count_of(ironIdx);
+            rock = hold.count_of(stoneIdx);
+            heldG = inventory_mass_g(hold);
+            backG = carry_capacity_g(f.st().runtime[c], hold);
         }
         CHECK(ore > 0 && ore > rock,
               "ВЫГОДНЕЙШЕЕ НА ГРАММ — ПЕРВЫМ: спину рейса заняла руда, камню "
               "достался остаток");
-        std::printf("  [погрузка] руды %d, камня %d\n", ore, rock);
+        // ПРЕДЕЛ СПИНЫ — НЕ ТАВТОЛОГИЯ: завала КАЖДОЙ строки одной хватило
+        // бы забить спину ребёнка, и ребёнок ценит обе выше пола, то есть без
+        // предела руда и камень легли бы каждая почти на всю спину.
+        CHECK(backG > 0 && std::int64_t(kFlood) * item_mass_g(*iron) > backG,
+              "предусловие: завала каждой строки хватило бы на всю спину "
+              "ребёнка — предел ниже судит то, что его держит");
+        CHECK(heldG > 0 && heldG <= backG,
+              "ГРУЗ ЛЁГ В СПИНУ РЕБЁНКА: масса трюма после погрузки не "
+              "больше его обоза");
+        std::printf("  [погрузка] руды %d, камня %d; трюм %lld г из %lld г "
+                    "спины\n", ore, rock, (long long)heldG, (long long)backG);
     }
+    // 3. ГРУЗЯТ ТОЛЬКО ПУСТОГО: рынка нет, корован с грузом ждёт дома
+    //    свободным; новый завал руды у места ему не идёт — груз ему уже дан.
+    {
+        Fixture f;
+        const MacroHandle city = f.rooted(m.kind, 10, 10, 64);
+        const int cityId = int(f.st().spawnId[city.slot].index);
+        const std::uint32_t homeCell = f.st().cell[city.slot].idx;
+        Inventory& cityInv = f.st().inventory[city.slot].inv;
+        const std::int64_t cityFits =
+            carry_capacity_g(f.st().runtime[city.slot], cityInv) / foodG;
+        const int glut = int(cityFits * 8 / 100);
+        CHECK(glut > 0 && cityInv.add("food", glut),
+              "фикстура: лёгкий завал еды места");
+        MacroNpcAiRuntime rt{};
+        reset_macro_npc_ai_runtime(rt, 53u);
+        std::uint16_t c = kMacroNoSlot;
+        int food0 = 0;
+        for (int i = 0; i < kThinksPerDay * 4 && food0 == 0; ++i) {
+            f.think_on(rt, 1);
+            c = caravan_of(f, cityId);
+            if (c != kMacroNoSlot)
+                food0 = f.st().inventory[c].inv.count_of(foodIdx);
+        }
+        CHECK(c != kMacroNoSlot && food0 > 0,
+              "предусловие: место подняло корован и дало ему груз");
+        CHECK(cityInv.add("iron", kFlood), "фикстура: завал руды — ПОСЛЕ погрузки");
+        // ПРЕДУСЛОВИЕ НЕГАТИВНОГО ПЛЕЧА: пустому ребёнку руду дали бы — он
+        // ценит её выше места, и спина для неё есть. Без этого «руды нет»
+        // ниже было бы свойством фикстуры, а не закона.
+        const Inventory& hold = f.st().inventory[c].inv;
+        CHECK(gain_units(side_row(f.st(), city.slot, ironIdx, iron->value),
+                         side_row(f.st(), c, ironIdx, iron->value), 1,
+                         /*strict=*/true, 0, 1) == 1
+                  && carry_capacity_g(f.st().runtime[c], hold)
+                         - inventory_mass_g(hold) >= item_mass_g(*iron),
+              "предусловие: ребёнок ценит руду выше места, и свободной спины "
+              "на неё хватает");
+        int samples = 0, idleAtHome = 0;
+        for (int i = 0; i < kThinksPerDay * 2; ++i) {
+            f.think_on(rt, 1);
+            ++samples;
+            if (f.st().cell[c].idx == homeCell
+                && f.st().runtime[c].state == std::uint8_t(NPCState::Idle))
+                ++idleAtHome;
+        }
+        CHECK(samples > 0 && idleAtHome == samples,
+              "прибор помЕрил: двое суток (два круга решений места) корован "
+              "стоял дома свободным — у порога, где его грузят");
+        CHECK(f.st().inventory[c].inv.count_of(ironIdx) == 0
+                  && f.st().inventory[c].inv.count_of(foodIdx) == food0,
+              "НЕПУСТОЙ НЕ ДОГРУЖАЕТСЯ: руды корован не получил, его груз тот "
+              "же — место грузит только пустой трюм");
+    }
+}
+
+void test_the_city_and_the_capital_load_their_caravans() {
+    for (const TownModule& m : kTownModules) test_the_town_loads_its_caravan(m);
 }
 
 // ── ДВА СВИДЕТЕЛЯ ПУТИ РЕЙСА: ХОЛОДНЫЙ СТАРТ И ОКНО В ДВА ПЛЕЧА ──────────
@@ -1527,7 +1640,7 @@ int main() {
     test_a_dying_rooted_rewrites_the_feature_under_itself();
     test_the_number_under_a_mine_is_ore_and_not_people();
     test_the_caravan_grows_its_hold_and_brings_it_home();
-    test_the_city_loads_a_light_glut_densest_first();
+    test_the_city_and_the_capital_load_their_caravans();
     test_the_trip_follows_the_return_law_at_its_edges();
     test_the_caravan_with_no_market_waits_at_home();
     return sm::test::report("rooted_module_day_test");

@@ -1,5 +1,5 @@
-// ИИ-МОДУЛЬ СКВАДА РОДОВ City и Capital — город: крафт своим решением,
-// сборщик и корован, погрузка корована. Строки `kAiModuleRows`; окно —
+// ИИ-МОДУЛЬ СКВАДА РОДА City — город: крафт своим решением, сборщик и
+// корован, погрузка корована. Строка `kAiModuleRows`; окно —
 // `macro/squad_ai/module_window.h`.
 
 #include "macro/squad_ai/module_window.h"
@@ -7,11 +7,14 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <span>
 
-#include "bus/anketa.h"      // Inventory, Skills, count_human_souls
+#include "bus/anketa.h"      // Inventory, Skills, count_human_souls, inventory_mass_g
 #include "core/subtract.h"   // sub_sat — угасание слова ожидания
+#include "macro/currency.h"  // payable_row, inventory_value — пуст ли трюм
+#include "macro/deal.h"      // DealLine — строка лота погрузки
 #include "macro/econ_day.h"  // craft_outputs
-#include "macro/economy.h"   // row_side, lot_take, lot_loss
+#include "macro/economy.h"   // row_side, lot_take, lot_loss, gain_units, gain_denser
 #include "macro/squad.h"     // carry_capacity_g
 #include "tables/actions.h"
 #include "tables/items.h"    // item_parts, item_yield
@@ -20,10 +23,10 @@ namespace sm {
 
 namespace {
 
-// ── МОДУЛЬ City (его же зовёт Capital через `ai_city`) ──────────────────
+// ── МОДУЛЬ City ─────────────────────────────────────────────────────────
 // Всё отсюда до `city_think` включительно — тело одного модуля города,
-// написанное целиком; совпадение с телами деревни выше — законная копия,
-// а не общий код (AGENTS §4 п.5).
+// написанное целиком; совпадение с телами деревни и столицы (каждая в своём
+// файле) — законная копия, а не общий код (AGENTS §4 п.5).
 
 // ДУШИ СВОБОДНЫ ТОЛЬКО ТЕ, БЕЗ КОТОРЫХ ГОРОД ОСТАЁТСЯ СТОЯТЬ, — отсюда
 // строгое «больше», а не «не меньше». Это не потолок численности (ЗАКОН
@@ -70,8 +73,8 @@ std::uint32_t city_need_word_(const std::int32_t* needDebt) {
 
 // ── ЧТО И СКОЛЬКО КРАФТИТЬ — РЕШЕНИЕ МОДУЛЯ ГОРОДА ──────────────────────────
 // Вердикты владельца (CANON S25, 2026-11-13; п.4 вердиктов 2026-10-22):
-// решает модуль, механика акта одна на всех. Это решение города; у деревни
-// своё (`village_craft_pick` выше), копия законна (AGENTS §4 п.5).
+// решает модуль, механика акта одна на всех. Это решение города; у деревни и
+// у столицы своё, каждое в своём файле, и копия законна (AGENTS §4 п.5).
 //
 // ПРАВИЛО: крафт есть сделка с самим собой (вердикт 2026-11-13, «Б»). Выгода
 // лота — во сколько сквад ценит пришедший выход минус во сколько ценил ушедшие
@@ -171,6 +174,97 @@ void city_craft_think_(AiSelf& s, const AiView& view, AiPult& pult) {
     s.rt.mem[kCityMemCraftDebt] = debt;
 }
 
+// ── ГРУЗ ДОМА — ГОРОД ОТДАЁТ РЕБЁНКУ ТО, ЧТО ТОТ ЦЕНИТ ВЫШЕ (CANON S10) ──
+// Вердикты владельца: «город грузит в путь ВСЕ товары, то есть у нас просто
+// система, что всё в инвентаре это товар» (2026-09-22) и «город рождает его и
+// загружает» (2026-11-12). Закон выбора — единая ценомодель (2026-11-12):
+// семья выигрывает ровно на тех единицах, которые ребёнок с его свободной
+// спиной ценит выше родителя, — это ЗАВАЛ родителя, излишек, забивший спину
+// его жителей. Их дом и отдаёт, выгоднейшее на грамм — первым, пока спина
+// ребёнка свободна и оценки не сошлись. Перенос даровой: внутри семьи
+// делить нечего.
+//
+// ЗДЕСЬ СТОЯЛ ОБХОД ПО ПЛОТНОСТИ СТОИМОСТИ, и он грузил МОНЕТУ ПЕРВОЙ: после
+// первого же рейса дом набивал спину ребёнка своей казной, а корован с одной
+// монетой не может ни отдать (её все ценят одинаково), ни взять (спина
+// полна) — рейсы шли пустыми (свидетель рейса, 2026-11-12: 47 пустых стоянок
+// из 82). Монета грузилась затем, чтобы дом мог КУПИТЬ недостающее своим же
+// корованом (шрам Х-13: «еда 0 при 3 682 монетах»); теперь голодному дому
+// еду привозит всякий купец, и платит дом из своего склада.
+//
+// Нужда дома неприкосновенна по построению: строку, которой ему не хватает,
+// он ценит выше ребёнка, и выгоды в её вывозе нет.
+//
+// ЭТО РЕШЕНИЕ ГОРОДА, И ЖИВЁТ ОНО В ЕГО МОДУЛЕ (ряд M-499 (8)): прежде оно
+// стояло в окне глаголом `load_child` с планом `plan_home_load_`. От окна
+// модулю нужны только двери, которые вправе позвать всякий сквад: оценка
+// строки стороны (`AiView::row_of`), свободная спина ребёнка
+// (`AiView::free_back_g`) и передача лотом (`AiPult::hand`).
+void city_load_child_(const AiSelf& s, const AiView& view, AiPult& pult,
+                      std::uint16_t child) {
+    const Inventory& store = s.bag;
+    const std::int64_t budgetG = view.free_back_g(child);   // спина этого рейса
+    // Строки склада, в которых семье есть что выиграть: лот выгоды под всю
+    // свободную спину рейса и выгода на нём — насколько ребёнок ценит взятое
+    // выше, чем дом отданное. Порядок — выгода лота на грамм лота. Единицей
+    // выгоду не мерить: завал меньше шага оценки на одной штуке не виден, а
+    // на лоте виден (ряд M-490).
+    struct Row {
+        std::uint16_t def;
+        std::int64_t gain; std::int64_t lotG; std::int64_t massG;
+    };
+    Row rows[kMaxInventorySlots];
+    int rowCount = 0;
+    for (int i = 0; i < int(store.slots.size()); ++i) {
+        const ItemRef& sl = store.slots[std::size_t(i)];
+        const ItemDef* d = payable_row(sl);
+        if (!d) continue;
+        bool seen = false;
+        for (int k = 0; k < rowCount && !seen; ++k)
+            seen = rows[k].def == sl.def;
+        if (seen) continue;
+        if (d->value <= 0) continue;
+        const std::int64_t massG = item_mass_g(*d);
+        const RowSide home = view.row_of(s.h.slot, int(sl.def));
+        const RowSide theirs = view.row_of(child, int(sl.def));
+        // Внутри семьи делить нечего: доля ноль, голое сравнение оценок.
+        const std::int64_t units = gain_units(
+            home, theirs,
+            std::min<std::int64_t>(store.count_of(int(sl.def)),
+                                   budgetG > 0 ? budgetG / massG : 0),
+            /*strict=*/true, /*standingPower=*/0, /*visitorPower=*/1);
+        const std::int64_t gain =
+            lot_take(theirs, units) - lot_loss(home, units);
+        if (units <= 0 || gain <= 0) continue;
+        rows[rowCount++] = Row{sl.def, gain, units * massG, massG};
+    }
+    std::sort(rows, rows + rowCount, [](const Row& a, const Row& b) {
+        return gain_denser(a.gain, a.lotG, b.gain, b.lotG);
+    });
+    std::int64_t loadedG = 0;   // масса, уже положенная в лот
+    DealLine lot[kMaxInventorySlots];
+    int lines = 0;
+    for (int r = 0; r < rowCount && loadedG < budgetG; ++r) {
+        const std::int64_t fit = (budgetG - loadedG) / rows[r].massG;
+        const std::int64_t cap =
+            std::min<std::int64_t>(store.count_of(int(rows[r].def)), fit);
+        if (cap <= 0) continue;
+        const std::int64_t units = gain_units(
+            view.row_of(s.h.slot, int(rows[r].def)),
+            view.row_of(child, int(rows[r].def)),
+            cap, /*strict=*/true, /*standingPower=*/0, /*visitorPower=*/1);
+        if (units <= 0) continue;
+        loadedG += units * rows[r].massG;
+        lot[lines] = DealLine{};
+        lot[lines].want = int(units);
+        lot[lines].def = rows[r].def;
+        ++lines;
+    }
+    if (lines > 0)
+        pult.hand(s.h.slot, child,
+                  std::span<DealLine>(lot, std::size_t(lines)), budgetG);
+}
+
 void city_think(AiSelf& s, const AiView& view, AiPult& pult) {
     // КРАФТ: что и сколько — решает модуль, акт вешает восстановление по
     // сделанному. Решение пересчитывается, только когда изменились инвентарь
@@ -205,11 +299,19 @@ void city_think(AiSelf& s, const AiView& view, AiPult& pult) {
     // свободным и пустым, получает излишек родителя ОДНОЙ сделкой. Путь
     // один и на рождение, и на возвращение — новорождённый стоит дома
     // пустым ровно так же, как вернувшийся и отдавший наторгованное.
-    if (const std::uint16_t waiting =
-            view.idle_child_at_home(s.h, SquadType::Caravan);
-        waiting != kMacroNoSlot) {
-        pult.load_child(s, waiting);
-    }
+    // Кого грузить, судит модуль сам: из детей у порога — первый корован с
+    // пустым трюмом (тем же вопросом о пустоте, каким сам рейс судит
+    // «нечего везти»). Непустой не догружается: груз ему уже дан.
+    std::uint16_t waiting = kMacroNoSlot;
+    view.each_child_here(s.h, [&](std::uint16_t child) {
+        if (waiting != kMacroNoSlot
+            || view.type_of(child) != SquadType::Caravan)
+            return;
+        const Inventory& hold = view.bag_of(child);
+        if (inventory_mass_g(hold) > 0 || inventory_value(hold) > 0) return;
+        waiting = child;
+    });
+    if (waiting != kMacroNoSlot) city_load_child_(s, view, pult, waiting);
 }
 
 }  // namespace
@@ -228,8 +330,8 @@ void ai_city(MacroHandle e, ecs::MacroNpcRuntime& rt,
     city_think(self, view, pult);
 }
 
-// ГОРОД И СТОЛИЦА ОСТАВЛЯЮТ ПО СЕБЕ РУИНУ (вердикт владельца: «например
-// город переписывает фичу под собой в руины»). Руина — ЖИВАЯ строка оси и
+// ГОРОД ОСТАВЛЯЕТ ПО СЕБЕ РУИНУ (вердикт владельца: «например город
+// переписывает фичу под собой в руины»). Руина — ЖИВАЯ строка оси и
 // фичи, то есть мир честно говорит «здесь ЖИЛИ», а не «здесь город».
 void city_death(MacroHandle self, AiPult& pult) {
     pult.reshape_feature(self, FT_Ruin);

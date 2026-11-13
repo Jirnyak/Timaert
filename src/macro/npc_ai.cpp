@@ -809,16 +809,14 @@ std::uint32_t find_home_tree(const TickContext& ctx, std::uint32_t at,
     return tree;
 }
 
-// ОПРЕДЕЛЕНЫ НИЖЕ, А СПРАШИВАЮТСЯ ЗДЕСЬ — ВИДОМ И ПУЛЬТОМ рейса: законы
-// дороги и погрузки живут рядом со своей торговой секцией, а дверь к ним обязана стоять ДО
-// классов, которые её проносят модулю. Переносить определения вверх значило
-// бы разорвать секцию с её шрамами.
+// ОПРЕДЕЛЕНЫ НИЖЕ, А СПРАШИВАЮТСЯ ЗДЕСЬ — ВИДОМ рейса: законы дороги живут
+// рядом со своей торговой секцией, а дверь к ним обязана стоять ДО классов,
+// которые её проносят модулю. Переносить определения вверх значило бы
+// разорвать секцию с её шрамами.
 float march_days_(const TickContext& ctx, std::uint32_t a, std::uint32_t b,
                   float moveMult);
 std::uint32_t route_fear_(const TickContext& ctx, std::uint32_t a,
                           std::uint32_t b);
-long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
-                          std::uint16_t traderSlot, std::int64_t capG);
 
 // Приёмник-МЕСТО (CANON S10): склад + счёт — дверь прихода гасит долг СРАЗУ
 // тем, что упало. Сумки в Depot не заворачиваются (неявная конверсия из
@@ -994,28 +992,18 @@ std::uint32_t AiView::route_fear(std::uint32_t a, std::uint32_t b) const {
     return route_fear_(ctx_, a, b);
 }
 
-std::uint16_t AiView::idle_child_at_home(MacroHandle self, SquadType t) const {
+SquadType AiView::type_of(std::uint16_t slot) const {
+    return SquadType(store_ctx(ctx_).runtime[slot].squadType);
+}
+
+const Inventory& AiView::bag_of(std::uint16_t slot) const {
+    return store_ctx(ctx_).inventory[slot].inv;
+}
+
+std::int64_t AiView::free_back_g(std::uint16_t slot) const {
     const MacroStore& st = store_ctx(ctx_);
-    if (!st.valid(self)) return kMacroNoSlot;
-    const Interests& in = st.interests[self.slot];
-    for (int i = 0; i < kMaxInterests; ++i) {
-        const Interest& it = in.slots[i];
-        if (it.stance == std::uint8_t(Stance::None)) break;
-        if (it.stance != std::uint8_t(Stance::Child)) continue;
-        const MacroHandle ch =
-            macro_handle_by_spawn_id(st, std::uint32_t(it.object));
-        if (!st.valid(ch) || st.dead[ch.slot] != 0) continue;
-        const ecs::MacroNpcRuntime& crt = st.runtime[ch.slot];
-        if (crt.squadType != std::uint8_t(t)
-            || crt.state != std::uint8_t(NS::Idle)
-            || st.cell[ch.slot].idx != st.cell[self.slot].idx)
-            continue;
-        const Inventory& hold = st.inventory[ch.slot].inv;
-        if (inventory_mass_g(hold) > 0 || inventory_value(hold) > 0)
-            continue;
-        return ch.slot;
-    }
-    return kMacroNoSlot;
+    const Inventory& hold = st.inventory[slot].inv;
+    return carry_capacity_g(st.runtime[slot], hold) - inventory_mass_g(hold);
 }
 
 AiPult::AiPult(const TickContext& ctx) : ctx_(ctx) {}
@@ -1059,6 +1047,15 @@ void AiPult::hand(std::uint16_t from, std::uint16_t to, int defIdx, int n) {
                kNoCarryLimitG, kNoCarryLimitG);
 }
 
+void AiPult::hand(std::uint16_t from, std::uint16_t to,
+                  std::span<DealLine> lot, std::int64_t roomG) {
+    if (!ctx_.mw.store || from == kMacroNoSlot || to == kMacroNoSlot
+        || lot.empty()) {
+        return;
+    }
+    (void)deal(store_ctx(ctx_), from, to, lot, {}, roomG, kNoCarryLimitG);
+}
+
 int AiPult::rand(int n) { return rand_int(ctx_, n); }
 
 std::uint32_t AiPult::rand_nearby(std::uint32_t around, int radius) {
@@ -1075,13 +1072,6 @@ void AiPult::nomad(AiSelf& s) { ai_nomad(s.h, s.rt, s.pools, ctx_); }
 
 void AiPult::home_wander(AiSelf& s) {
     ai_home_wanderer(s.h, s.rt, s.pools, ctx_);
-}
-
-void AiPult::load_child(AiSelf& s, std::uint16_t child) {
-    MacroStore& st = store_ctx(ctx_);
-    plan_home_load_(st, s.h.slot, child,
-                    carry_capacity_g(st.runtime[child],
-                                     st.inventory[child].inv));
 }
 
 CaravanDeal AiPult::trade_at(AiSelf& s, std::uint16_t market) {
@@ -1505,105 +1495,13 @@ std::uint32_t route_fear_(const TickContext& ctx, std::uint32_t a,
 // (No own_type_ any more: sheet_of asks the entity itself — «the haggler's
 // numbers are whoever's numbers they are» is the door's own law now.)
 
-// ЧТО ГРУЗИТ РЕЙС — один закон двух погрузок, артели и каравана (владелец
-// 2026-09-18: «если деревня добывает что угодно, она это и продаёт,
-// буквально живёт этим»): едет то, что ДОМА ДЕШЕВЛЕ БАЗЫ — затоваривание
-// по той же кривой цены, что судит сделку на месте. Дефицитное дома (цена
-// выше базы) не грузится вовсе — оно нужно здесь.
-// ВЫЧИТАНИЕ СЕЗОННОГО АМБАРА УМЕРЛО С ДОЛГОМ (CANON S10, 2026-09-19):
-// нужда съедается в момент прихода, на складе лежит только ИЗЛИШЕК —
-// «незачем беречь то, что уже проедено по дороге». Всё видимое свободно;
-// судит одна цена.
-// ── ГРУЗ ДОМА — РОДИТЕЛЬ ОТДАЁТ РЕБЁНКУ ТО, ЧТО ТОТ ЦЕНИТ ВЫШЕ (CANON S10) ─
-// Вердикты владельца: «город грузит в путь ВСЕ товары, то есть у нас просто
-// система, что всё в инвентаре это товар» (2026-09-22) и «город рождает его и
-// загружает» (2026-11-12). Закон выбора — единая ценомодель (2026-11-12):
-// семья выигрывает ровно на тех единицах, которые ребёнок с его свободной
-// спиной ценит выше родителя, — это ЗАВАЛ родителя, излишек, забивший спину
-// его жителей. Их дом и отдаёт, выгоднейшее на грамм — первым, пока спина
-// ребёнка свободна и оценки не сошлись. Перенос даровой: внутри семьи
-// делить нечего.
-//
-// ЗДЕСЬ СТОЯЛ ОБХОД ПО ПЛОТНОСТИ СТОИМОСТИ, и он грузил МОНЕТУ ПЕРВОЙ: после
-// первого же рейса дом набивал спину ребёнка своей казной, а корован с одной
-// монетой не может ни отдать (её все ценят одинаково), ни взять (спина
-// полна) — рейсы шли пустыми (свидетель рейса, 2026-11-12: 47 пустых стоянок
-// из 82). Монета грузилась затем, чтобы дом мог КУПИТЬ недостающее своим же
-// корованом (шрам Х-13: «еда 0 при 3 682 монетах»); теперь голодному дому
-// еду привозит всякий купец, и платит дом из своего склада.
-//
-// Нужда дома неприкосновенна по построению: строку, которой ему не хватает,
-// он ценит выше ребёнка, и выгоды в её вывозе нет.
-long long plan_home_load_(MacroStore& st, std::uint16_t homeSlot,
-                          std::uint16_t traderSlot, std::int64_t capG) {
-    const Inventory& store = st.inventory[homeSlot].inv;
-    const Inventory& bag = st.inventory[traderSlot].inv;
-    std::int64_t used = inventory_mass_g(bag);
-    const std::int64_t budgetG = capG - used;   // спина этого рейса
-    // Строки склада, в которых семье есть что выиграть: лот выгоды под всю
-    // свободную спину рейса и выгода на нём — насколько ребёнок ценит взятое
-    // выше, чем дом отданное. Порядок — выгода лота на грамм лота. Единицей
-    // выгоду не мерить: завал меньше шага оценки на одной штуке не виден, а
-    // на лоте виден (ряд M-490).
-    struct Row {
-        std::uint16_t def; int base;
-        std::int64_t gain; std::int64_t lotG; std::int64_t massG;
-    };
-    Row rows[kMaxInventorySlots];
-    int rowCount = 0;
-    for (int i = 0; i < int(store.slots.size()); ++i) {
-        const ItemRef& sl = store.slots[std::size_t(i)];
-        const ItemDef* d = payable_row(sl);
-        if (!d) continue;
-        bool seen = false;
-        for (int k = 0; k < rowCount && !seen; ++k)
-            seen = rows[k].def == sl.def;
-        if (seen) continue;
-        const int base = d->value;
-        if (base <= 0) continue;
-        const std::int64_t massG = item_mass_g(*d);
-        const RowSide home = side_row(st, homeSlot, int(sl.def), base);
-        const RowSide child = side_row(st, traderSlot, int(sl.def), base);
-        // Внутри семьи делить нечего: доля ноль, голое сравнение оценок.
-        const std::int64_t units = gain_units(
-            home, child,
-            std::min<std::int64_t>(store.count_of(int(sl.def)),
-                                   budgetG > 0 ? budgetG / massG : 0),
-            /*strict=*/true, /*standingPower=*/0, /*visitorPower=*/1);
-        const std::int64_t gain =
-            lot_take(child, units) - lot_loss(home, units);
-        if (units <= 0 || gain <= 0) continue;
-        rows[rowCount++] = Row{sl.def, base, gain, units * massG, massG};
-    }
-    std::sort(rows, rows + rowCount, [](const Row& a, const Row& b) {
-        return gain_denser(a.gain, a.lotG, b.gain, b.lotG);
-    });
-    long long planned = 0;
-    DealLine lot[kMaxInventorySlots];
-    int lines = 0;
-    for (int r = 0; r < rowCount && used < capG; ++r) {
-        const std::int64_t fit = (capG - used) / rows[r].massG;
-        const std::int64_t cap =
-            std::min<std::int64_t>(store.count_of(int(rows[r].def)), fit);
-        if (cap <= 0) continue;
-        const std::int64_t units = gain_units(
-            side_row(st, homeSlot, int(rows[r].def), rows[r].base),
-            side_row(st, traderSlot, int(rows[r].def), rows[r].base),
-            cap, /*strict=*/true, /*standingPower=*/0, /*visitorPower=*/1);
-        if (units <= 0) continue;
-        planned += (long long)units * rows[r].base;
-        used += units * rows[r].massG;
-        lot[lines] = DealLine{};
-        lot[lines].want = int(units);
-        lot[lines].def = rows[r].def;
-        ++lines;
-    }
-    if (lines > 0)
-        deal(st, homeSlot, traderSlot,
-             std::span<DealLine>(lot, std::size_t(lines)), {},
-             budgetG, kNoCarryLimitG);
-    return planned;
-}
+// (ЗДЕСЬ ЖИЛА `plan_home_load_` — погрузка ребёнка родителем, звавшаяся
+//  глаголом окна `AiPult::load_child`: что и сколько отдать ребёнку, решало
+//  окно. Это логика ОДНОГО модуля, и 2026-11-13 она уехала целиком в модуль
+//  города (`city_load_child_@src/macro/squad_ai/city.cpp`) и копией в модуль
+//  столицы (`capital_load_child_@src/macro/squad_ai/capital.cpp`), ряд
+//  M-499 (8). Её прежняя шапка «едет то, что ДОМА ДЕШЕВЛЕ БАЗЫ» описывала
+//  закон, умерший с единой ценомоделью, и с ней не поехала.)
 
 }  // namespace
 
@@ -2135,13 +2033,13 @@ struct AiModuleRow {
 };
 constexpr AiModuleRow kAiModuleRows[] = {
     { SquadType::None,      ai_untyped,   nullptr       },
-    // СТОЛИЦЕ ДАНА ФУНКЦИЯ ГОРОДА — ОДНА ФУНКЦИЯ ДВУМ СТРОКАМ ЗАКОННА,
-    // ПОТОМУ ЧТО ЭТО ДАННЫЕ: различие столицы ещё не названо системой
-    // (её строка `kSquadKinds` тоже носит городские числа), и выдумывать ей
-    // второе поведение раньше вердикта владельца значило бы назначить
-    // различие кодом (ЗАКОН ПРИОРИТЕТА СТРУКТУРЫ). Придёт различие —
-    // поменяется ЭТА СТРОКА, и больше ничего.
-    { SquadType::Capital,   ai_city,      city_death    },
+    // СТОЛИЦА — СВОЙ МОДУЛЬ (вердикт владельца 2026-11-13: «столица
+    // отдельный модуль»). Здесь стояла функция города двум строкам с доводом
+    // «это данные»; вердикт его снял: один модуль на два типа запрещён так
+    // же, как общий помощник (CANON «ЧТО РАЗБИЕНИЕ ОБНАЖИЛО И КУДА ЭТО
+    // ИДЁТ»). Тело столицы сегодня — полная копия городского, и копия
+    // законна (AGENTS §4 п.5); различие пишется в её файле.
+    { SquadType::Capital,   ai_capital,   capital_death },
     { SquadType::City,      ai_city,      city_death    },
     { SquadType::Village,   ai_village,   village_death },
     { SquadType::Spire,     nullptr,      nullptr       },
@@ -2168,6 +2066,29 @@ static_assert(std::size(kAiModuleRows) == std::size_t(SquadType::Count),
               "axis names its module (or nullptr) here, never a branch");
 static_assert(sm::rows_in_enum_order(kAiModuleRows, &AiModuleRow::type),
               "kAiModuleRows row order must mirror SquadType");
+
+// ОДИН МОДУЛЬ — ОДИН ТИП, ПОД КОМПИЛЯТОРОМ (вердикт владельца 2026-11-13,
+// CANON «ЧТО РАЗБИЕНИЕ ОБНАЖИЛО И КУДА ЭТО ИДЁТ»: один модуль на два типа
+// запрещён так же, как общий помощник). Ни думка, ни смерть не стоят в двух
+// строках таблицы; `nullptr` — значение «род не думает / не пишет», и
+// повтором оно не является. Прежде здесь строка `Capital` смотрела на
+// функцию города — теперь такая строка не собирается.
+template <std::size_t N>
+constexpr bool each_module_is_own(const AiModuleRow (&rows)[N]) {
+    for (std::size_t i = 0; i < N; ++i) {
+        for (std::size_t j = i + 1; j < N; ++j) {
+            if (rows[i].module != nullptr && rows[i].module == rows[j].module)
+                return false;
+            if (rows[i].death != nullptr && rows[i].death == rows[j].death)
+                return false;
+        }
+    }
+    return true;
+}
+static_assert(each_module_is_own(kAiModuleRows),
+              "kAiModuleRows: a module (think or death) serves ONE type — a "
+              "new type writes its own module file, never reuses a "
+              "neighbour's row");
 
 // ОДНА ДВЕРЬ «ЧТО ДЕЛАЕТ ЭТОТ СКВАД» (владелец 2026-09-21: «сквад должен
 // знать, кто он — тип задаёт поведение аи агента»). Ответ — ОДНА строка

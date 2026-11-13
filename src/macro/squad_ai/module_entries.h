@@ -32,7 +32,7 @@ void ai_untyped(MacroHandle e, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
 // «места» среди них нет ни одного.
 //
 // ЧЕГО В НИХ НЕТ — И ЭТО ИХ ВНУТРЕННЕЕ ДЕЛО, А НЕ СВОЙСТВО РОДА: ни `march`,
-// ни преамбулы рефлексов. Ногами эти два модуля сегодня не пользуются;
+// ни преамбулы рефлексов. Ногами эти три модуля сегодня не пользуются;
 // рефлексы (след, порог угрозы, охота по запаху) стоят в головах ЧЕТЫРЁХ
 // ходоков и сюда не скопированы. Прежде они стояли в `dispatch`, и ровно
 // поэтому строки Village/City/Capital нельзя было заполнить: ветка бегства
@@ -44,9 +44,14 @@ void ai_untyped(MacroHandle e, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
 // строк его снимало, поэтому преамбула уехала в головы ходоков ПЕРВОЙ
 // (первая половина M-307, ломоть 5а M-72).
 //
-// (Размеры крю `kVillageCrewSouls` и `kCityCrewSouls` объявлены в `npc_ai.h`
-// — свидетель читает их оттуда.)
+// (Размеры крю `kVillageCrewSouls`, `kCityCrewSouls` и `kCapitalCrewSouls`
+// объявлены в `npc_ai.h` — свидетель читает их оттуда.)
 
+// `squad_ai/capital.cpp` — свой модуль, не строка города (вердикт владельца
+// 2026-11-13: «столица отдельный модуль»).
+void ai_capital(MacroHandle e, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
+                const TickContext& ctx);
+void capital_death(MacroHandle self, AiPult& pult);
 // `squad_ai/city.cpp`
 void ai_city(MacroHandle e, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
              const TickContext& ctx);

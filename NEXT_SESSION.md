@@ -92,8 +92,10 @@
 `ask_price`, `take_price`, `ask_reach`; `take_lot`, `give_lot`; корзина —
 `cover_lot`, `fit_lot`, `reach_lot`; свидетели под `static_assert`. Двери
 стороны — `side_row`, `side_trade_power`, `stage_payment` в `src/macro/deal.h`.
-Модуль корована — `trade_caravan_at_station`, `barter_leg_`, `plan_home_load_`
-в `src/macro/npc_ai.cpp`. Прилавок игрока — `src/ui/overlays.cpp`,
+Модуль корована — `trade_caravan_at_station`, `barter_leg_`
+в `src/macro/npc_ai.cpp`; погрузку корована решают модули города и столицы —
+`city_load_child_` в `src/macro/squad_ai/city.cpp`, `capital_load_child_` в
+`src/macro/squad_ai/capital.cpp`. Прилавок игрока — `src/ui/overlays.cpp`,
 `src/ui/trade_widgets.h` (глазами после правок владелец не подтверждал —
 спросить узко: «на полке цена выше стоимости, в своём инвентаре — не выше;
 подпись `price: N`»).
@@ -104,11 +106,12 @@
 `squad_craft`. Цена — `act_sp_price` / `act_sp_reach` в
 `src/tables/econ_laws.h`; рабочие юниты — `work_units` в `src/bus/world_row.h`;
 база партии крафта — `craft_batch_ticks` в `src/tables/actions.h`. Глаголы
-пульта `craft(что, сколько)`, `gather`, `act_cost`; решение модулей деревни и
-города — каждое своё: `village_craft_pick` и `city_craft_pick` (публично в
-`src/macro/npc_ai.h`); память модуля — у деревни `kVillageMemCraftSeen`,
-`kVillageMemCraftDebt`, `kVillageMemBirthWait`, у города `kCityMemCraftSeen`,
-`kCityMemCraftDebt`, `kCityMemBirthWait`; счётчик изменений — `Inventory::revision` в
+пульта `craft(что, сколько)`, `gather`, `act_cost`; решение модулей деревни,
+города и столицы — каждое своё: `village_craft_pick`, `city_craft_pick` и
+`capital_craft_pick` (публично в `src/macro/npc_ai.h`); память модуля — у
+деревни `kVillageMemCraftSeen`, `kVillageMemCraftDebt`, `kVillageMemBirthWait`,
+у города `kCityMemCraftSeen`, `kCityMemCraftDebt`, `kCityMemBirthWait`, у
+столицы `kCapitalMemCraftSeen`, `kCapitalMemCraftDebt`, `kCapitalMemBirthWait`; счётчик изменений — `Inventory::revision` в
 `src/bus/anketa.h`. Общая лестница дня `econ_produce_day`, квота станков и КПД
 от населения УМЕРЛИ — не искать и не возвращать.
 
@@ -185,10 +188,14 @@ CANON S25, блок «СЫРЬЁ ТЯНЕТ МОДУЛЬ ДЕРЕВНИ ТИПА
 
 - **ОЧЕРЕДЬ, ОДОБРЕННАЯ ВЛАДЕЛЬЦЕМ 2026-11-13 (правило: однозначное и
   одобренное — жопусу сразу, очередью; раскладка — ряд M-499, кандидат 8):**
-  (1) столица — свой модуль `capital.cpp`, туда же погрузка ребёнка в модули
-  города и столицы; (2) одна дверь «записать факт», дракон на окно модуля;
-  (3) M-519; (4) M-495 вместе с переездом сбора дани в модуль сборщика.
-  УГРОЗУ И ПОГОНЮ НЕ ТРОГАТЬ — ждут сессии решений.
+  СДЕЛАНО — столица свой модуль (`capital.cpp`), погрузка ребёнка в модулях
+  города и столицы. ДАЛЬШЕ ПО ПОРЯДКУ: (1) одна дверь «записать факт»,
+  дракон и сквад без типа на двери окна вместо прямых вызовов, M-519 для
+  города и столицы; (2) M-495 вместе с переездом сбора дани в модуль
+  сборщика; (3) бродяга без дома — свой тип со своим модулем, корован и
+  сборщик без дома меняют тип на него. УГРОЗУ И ПОГОНЮ НЕ ТРОГАТЬ — ждут
+  сессии решений. НАХОДКА: столица в живом мире рождается типом города (ряд
+  M-522) — вопрос владельцу.
 - **M-519** — свидетель памяти крафта города (своя фикстура без рождений).
 - **M-495** — дань через бартер: долг меряет оценка вассала (доля ноль),
   груз выбирает оценка сюзерена. После ломтя 3 ряда M-488.
@@ -511,9 +518,11 @@ M-486, не прерывая его.
   старт: первый пустой рынок насквозь, второй подряд — домой), планка —
   средняя по рейсу × n/(n+1) по числу сделок, ожидание от следующего плеча —
   отдельный вход (сегодня: отдача последней сделки минус страх дороги);
-- **грузит город** — `city_think@src/macro/squad_ai/city.cpp` →
-  `AiView::idle_child_at_home@src/macro/npc_ai.cpp` →
-  `AiPult::load_child@src/macro/npc_ai.cpp`: дом отдаёт ребёнку то, что тот
+- **грузит город** (столица — своим модулем) — `city_think@src/macro/squad_ai/city.cpp`
+  (`capital_think@src/macro/squad_ai/capital.cpp`) обходит детей у порога
+  `each_child_here@src/macro/squad_ai/module_window.h` и сам судит тип и трюм →
+  `city_load_child_@src/macro/squad_ai/city.cpp`
+  (`capital_load_child_@src/macro/squad_ai/capital.cpp`): дом отдаёт ребёнку то, что тот
   ценит выше него (свой завал), а не «всё плотным вперёд»; **сделка сквада на
   рынке одна** — `trade_caravan_at_station@src/macro/npc_ai.cpp`: отдаёт всё,
   что рынок ценит выше него, берёт всё, что сам ценит выше рынка (правило

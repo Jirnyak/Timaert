@@ -409,12 +409,10 @@ macro-registry.md	:2245
 macro-registry.md	:2265-2268
 macro-registry.md	:2363-2393
 macro-registry.md	:265-276
-macro-registry.md	:3031
 macro-registry.md	:3244
 macro-registry.md	:3581
 macro-registry.md	:3585
 macro-registry.md	:362
-macro-registry.md	:3688
 macro-registry.md	:3712
 macro-registry.md	:419
 macro-registry.md	:4263
@@ -514,8 +512,6 @@ macro-registry.md	npc_ai.cpp:2313
 macro-registry.md	npc_ai.cpp:2616
 macro-registry.md	npc_ai.cpp:2850-2960
 macro-registry.md	npc_ai.cpp:2862
-macro-registry.md	npc_ai.cpp:2978
-macro-registry.md	npc_ai.cpp:2999-3012
 macro-registry.md	npc_ai.cpp:383
 macro-registry.md	npc_ai.cpp:834-849
 macro-registry.md	npc_ai.h:231

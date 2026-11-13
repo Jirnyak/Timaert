@@ -194,6 +194,7 @@ set(TIMAERT_GENS_SOURCES
 # их сама — глобом своего модуля `macro`.
 set(TIMAERT_SQUAD_AI_SOURCES
     src/macro/squad_ai/untyped.cpp
+    src/macro/squad_ai/capital.cpp
     src/macro/squad_ai/city.cpp
     src/macro/squad_ai/village.cpp
     src/macro/squad_ai/artel.cpp
@@ -2052,9 +2053,10 @@ timaert_test(econ_v1_test
         # The one-dictionary link law: every commodity is an item-catalog row.
         src/bus/anketa.cpp
         src/tables/items.cpp
-        # Решение о крафте живёт в модулях деревни и города, у каждого своё
-        # (village_craft_pick, city_craft_pick);
-        # свидетель судит оба рядом с механикой акта, поэтому линкует модули
+        # Решение о крафте живёт в модулях деревни, города и столицы, у
+        # каждого своё (village_craft_pick, city_craft_pick,
+        # capital_craft_pick); свидетель судит все три рядом с механикой акта,
+        # поэтому линкует модули
         # тем же набором, что caravan_deal_test.
         src/macro/npc_ai.cpp
         ${TIMAERT_SQUAD_AI_SOURCES}
