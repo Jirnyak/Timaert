@@ -113,6 +113,18 @@ inline void charge_body(ecs::Combat* gate, std::uint32_t pacedTicks) {
     if (pacedTicks > gate->recoverySteps) gate->recoverySteps = pacedTicks;
 }
 
+// ГЕЙТ ТЕЛА КАК СУБЪЕКТ АКТА — пара «занят ли / занять» над двумя дверями
+// выше, зеркало `SquadGate@src/macro/squad_act.h`. Им акт крафта (право,
+// материя, цена и тики — `craft_act@src/macro/squad_act.h`, одни на оба мира)
+// занимает ТЕЛО, когда игрок стоит в сцене (ряд M-493): заряд приходит уже
+// ЭФФЕКТИВНЫМ — время одной партии на объём, делённое на рабочих юнитов, —
+// и пишется той же монотонной `charge_body`. Своей арифметики у вида нет.
+struct BodyGate {
+    ecs::Combat* gate;
+    [[nodiscard]] bool busy() const { return !body_is_free(gate); }
+    void charge(std::uint32_t ticks) const { charge_body(gate, ticks); }
+};
+
 // ЗАНЯТЬ РУКУ на длину, которую называет СТРОКА действия.
 //
 // `baseTicks` — колонка строки (спелла, предмета, действия), УЖЕ В ТИКАХ

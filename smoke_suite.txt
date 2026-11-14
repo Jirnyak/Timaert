@@ -81,7 +81,12 @@ open_map
 open_stats
 # The bench tab + the reaction round trip (craft → white base → scrap back);
 # the capture photographs the OPEN Craft tab one frame after the mutation.
+# The craft is the player's ACT (M-493): SP falls by the act door's price,
+# the squad's gate holds its recovery, a second craft is refused.
 open_craft,capture_frame
+# The same act in the scene: the AVATAR BODY's gate takes the recovery, the
+# squad's gate stays untouched.
+subworld_enter,craft_body
 spend_attribute_end
 spend_skill_bodybuilding
 macro_travel_sp

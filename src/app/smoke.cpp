@@ -111,6 +111,7 @@ static void smoke_give_visual(sm::sub::SubObjects& objs, int s,
 #include "macro/squad.h"           // rooted_handle_by_ordinal — резолв места
 #include "macro/squad_index.h"     // settlement_at — «кто живёт на клетке»
 #include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP witness
+#include "macro/squad_act.h"  // squad_act_cost/recovery — ответ двери акта (M-493)
 #include "macro/player_entity.h"
 #include "ui/sprite_atlas.h"   // sprite_missing_count — вердикт прогона без арта (M-471)
 #include "bus/entry_context.h"  // unpack_entry_dir — закон доли марша (M-244a)
@@ -454,6 +455,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"open_map", SmokeAction::OpenMap},
     {"open_stats", SmokeAction::OpenStats},
     {"open_craft", SmokeAction::OpenCraft},
+    {"craft_body", SmokeAction::CraftBody},
     {"spend_attribute_end", SmokeAction::SpendAttributeEnd},
     {"spend_skill_bodybuilding", SmokeAction::SpendSkillBodybuilding},
     {"macro_travel_sp", SmokeAction::MacroTravelSp},
@@ -1600,6 +1602,112 @@ bool run_subworld_time_smoke(App& app) {
 // whole points on the map (the reference below) must buy exactly zero down
 // here. The smoke has flipped direction twice now, each time on an explicit
 // owner ruling — the comment trail IS the paper.
+// ── АКТ КРАФТА ИГРОКА — ОДИН ПУТЬ С КНОПКОЙ (ряд M-493) ──────────────────
+// Смоук зовёт ТУ ЖЕ дверь, что кнопка вкладки Craft
+// (`craft_as_player@src/ui/overlays.cpp`), и судит закон акта на субъекте,
+// которого она выбрала: SP убыл РОВНО на цену двери, часы субъекта взведены
+// РОВНО на её восстановление, второй акт до конца восстановления отказан и не
+// тронул ничего, часы ДРУГОГО субъекта не тронуты вовсе. Ожидания — ответы тех
+// же дверей (`squad_act_cost`/`squad_act_recovery@src/macro/squad_act.h`),
+// спрошенные ДО акта, как их спрашивает строка вкладки.
+//
+// Предусловия свидетель рождает сам (§8 п.11): право — ранг ремесла СВОЕЙ
+// строки на анкете записи, материал — в сумке. Свободный гейт субъекта —
+// предусловие мира (сквад и тело рождаются свободными), а не запись
+// свидетеля: сырой записи гейта мимо двери стена R9 не пускает.
+//
+// `subjectClock` — часы, которые обязан занять акт; `otherClock` (может быть
+// пуст) — часы второго субъекта, которых акт касаться не смеет.
+bool smoke_player_craft_act(App& app, const std::uint32_t* subjectClock,
+                            const std::uint32_t* otherClock,
+                            const char* where) {
+    sm::MacroStore& st = *app.macroStore;
+    const sm::MacroHandle fh = sm::player_flag_handle(app.session);
+    const int sword = sm::item_index("wpn_sword");
+    constexpr std::uint8_t forgeAct = sm::action_slot("forge_sword");
+    const int recipe = sword >= 0 ? sm::recipe_of_item(sword) : -1;
+    const auto swordParts = sm::item_parts(sword);   // −1 → пусто
+    if (!st.valid(fh) || subjectClock == nullptr || recipe < 0
+        || sm::kRecipes[recipe].action != forgeAct || swordParts.size() != 1
+        || int(swordParts[0].def) != sm::item_index("iron")) {
+        smoke_fail(app, "craft act: no player squad, no subject gate, or the "
+                        "sword is not forged from iron by forge_sword");
+        return false;
+    }
+    if (*subjectClock != 0u) {
+        smoke_fail(app, "craft act: the subject's gate is busy before the act "
+                        "(squad and body are born free)");
+        return false;
+    }
+    sm::Inventory& bag = st.inventory[fh.slot].inv;
+    sm::CharacterSheet& sheet = st.sheet[fh.slot];
+    sm::ecs::Pools& pools = st.pools[fh.slot];
+    const sm::ActionDef& act = sm::action_def(int(forgeAct));
+    if (sheet.skills[act.gateSkill] < act.minRank)
+        sheet.skills[act.gateSkill] = act.minRank;
+    // Железа на ДВЕ партии: второй акт обязан отказать ГЕЙТОМ, а не материей.
+    bag.add("iron", 2 * int(swordParts[0].count));
+
+    sm::ActSelf self{pools, st.runtime[fh.slot], sheet, bag};
+    const std::int64_t price = sm::squad_act_cost(self, act, 1);
+    const std::uint32_t rec = sm::squad_act_recovery(self, act, 1);
+    const std::uint32_t otherBefore = otherClock ? *otherClock : 0u;
+    const int spBefore = pools.sp;
+    const int swordBefore = bag.count_of(sword);
+    const int made = sm::ui::craft_as_player(app.session, st,
+                                             app.sceneObjects.get(), sword, 1);
+    const int spPaid = spBefore - pools.sp;
+    const std::uint32_t clockAfter = *subjectClock;
+    SMOKE_CHECK(app, made == 1 && bag.count_of(sword) == swordBefore + 1,
+                "the player's craft act made one sword");
+    SMOKE_CHECK(app, price > 0 && std::int64_t(spPaid) == price,
+                "SP fell by EXACTLY the act door's price of one batch");
+    SMOKE_CHECK(app, rec > 0 && clockAfter == rec,
+                "the subject's gate holds EXACTLY the act door's recovery");
+    SMOKE_CHECK(app, !otherClock || *otherClock == otherBefore,
+                "the other subject's gate is untouched by the act");
+
+    const int spMid = pools.sp;
+    const int ironMid = bag.count("iron");
+    const int swordMid = bag.count_of(sword);
+    const int again = sm::ui::craft_as_player(app.session, st,
+                                              app.sceneObjects.get(), sword, 1);
+    SMOKE_CHECK(app, again == 0 && pools.sp == spMid
+                    && bag.count("iron") == ironMid
+                    && bag.count_of(sword) == swordMid
+                    && *subjectClock == clockAfter,
+                "a second craft before the recovery ends is refused and "
+                "touches nothing");
+
+    // Числа для глаза владельца: та же цена и тот же срок ткани у этой анкеты
+    // одной и с семью людьми в сумке (копия сумки — мир не тронут).
+    const int cloth = sm::item_index("cloth");
+    const int clothRecipe = cloth >= 0 ? sm::recipe_of_item(cloth) : -1;
+    if (clothRecipe >= 0) {
+        const sm::ActionDef& weave =
+            sm::action_def(int(sm::kRecipes[clothRecipe].action));
+        sm::Inventory crewBag = bag;
+        sm::raise_flock_into_container(crewBag, 7);
+        sm::ActSelf crew{pools, st.runtime[fh.slot], sheet, crewBag};
+        std::fprintf(stderr,
+                     "[smoke] craft quote cloth %s maxSp=%d units=%d sp=%lld "
+                     "rec=%u | units=%d sp=%lld rec=%u\n",
+                     where, int(pools.maxSp), sm::work_units(bag),
+                     (long long)sm::squad_act_cost(self, weave, 1),
+                     unsigned(sm::squad_act_recovery(self, weave, 1)),
+                     sm::work_units(crewBag),
+                     (long long)sm::squad_act_cost(crew, weave, 1),
+                     unsigned(sm::squad_act_recovery(crew, weave, 1)));
+    }
+    std::fprintf(stderr,
+                 "[smoke] craft act %s made=%d sp_paid=%d price=%lld "
+                 "gate=%u recovery=%u second=%d\n",
+                 where, made, spPaid, (long long)price, unsigned(clockAfter),
+                 unsigned(rec), again);
+    std::fflush(stderr);
+    return true;
+}
+
 bool run_subworld_recovery_smoke(App& app) {
     if (!smoke_boot_invariants_hold(app)) {
         smoke_print_counts(app, "subworld_recovery_boot_failed");
@@ -11016,15 +11124,24 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             break;
         }
         case SmokeAction::OpenCraft: {
-            // The bench tab (CANON «Крафт/Скрап») + the two doors run
-            // through the honest bag: 2 iron craft a sword (white base),
-            // the sword scraps back to floor(2/2) = 1 iron. The panel is
-            // photographed by a following capture_frame (≥1 frame later,
-            // the mutate-then-photograph law).
+            // The bench tab (CANON «Крафт/Скрап») + the reaction round trip:
+            // a sword crafted (white base) scraps back to floor(2/2) = 1
+            // iron. The craft is THE PLAYER'S ACT — the button's own door,
+            // the act every squad crafts by (ряд M-493); on the map it
+            // occupies the SQUAD's gate. Here stood `craft_item` with forged
+            // hands: a batch per click, no SP, no recovery — the second
+            // spelling this row killed. The panel is photographed by a
+            // following capture_frame (≥1 frame later, the
+            // mutate-then-photograph law).
             std::fprintf(stderr, "[smoke] action=open_craft\n");
             std::fflush(stderr);
             if (!app.worldLoaded) {
                 smoke_fail(app, "open_craft without world");
+                break;
+            }
+            if (app.subworld.active()) {
+                smoke_fail(app, "open_craft is the MAP's bench — the scene's "
+                                "is craft_body");
                 break;
             }
             app.ui.character = true;
@@ -11035,16 +11152,17 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const int sword = sm::item_index("wpn_sword");
             const int ironBefore = bag.count("iron");
             const int swordBefore = bag.count_of(sword);
-            bag.add("iron", 2);
-            // Право рождает сам свидетель (§8 п.11): руки ровно с минрангом
-            // СВОЕЙ строки действия — дверь теперь спрашивает его сама
-            // (M-415/Б2), и смоук больше не куёт без права.
-            constexpr std::uint8_t forgeAct = sm::action_slot("forge_sword");
-            sm::Skills hands{};
-            hands[sm::action_def(int(forgeAct)).gateSkill] =
-                sm::action_def(int(forgeAct)).minRank;
-            const bool crafted =
-                sm::craft_item(bag, sword, 1, hands, forgeAct);
+            const sm::MacroHandle fh = sm::player_flag_handle(app.session);
+            if (!app.macroStore->valid(fh)) {
+                smoke_fail(app, "open_craft without the player's squad");
+                break;
+            }
+            if (!smoke_player_craft_act(
+                    app, &app.macroStore->runtime[fh.slot].recoverySteps,
+                    nullptr, "map")) {
+                break;
+            }
+            const bool crafted = bag.count_of(sword) == swordBefore + 1;
             const bool whiteBase = [&] {
                 for (const sm::ItemRef& s : bag.slots) {
                     if (!s.empty() && s.def == std::uint16_t(sword)
@@ -11062,7 +11180,12 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     scrapped = sm::scrap_at(bag, sl, 1);
                 }
             }
-            const bool conserved = bag.count("iron") == ironBefore + 1
+            // Железо: в сумку легло на ДВЕ партии, ушла одна (второй акт
+            // отказан гейтом), разбор вернул половину её состава —
+            // floor(count/2), CANON «Крафт/Скрап».
+            const int per = int(sm::item_parts(sword)[0].count);
+            const bool conserved =
+                bag.count("iron") == ironBefore + per + per / 2
                 && bag.count_of(sword) == swordBefore;
             std::fprintf(stderr,
                          "[smoke] craft open crafted=%d white_base=%d "
@@ -11072,6 +11195,38 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fflush(stderr);
             if (!crafted || !whiteBase || !scrapped || !conserved) {
                 smoke_fail(app, "craft/scrap round trip broke");
+                break;
+            }
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::CraftBody: {
+            // ТОТ ЖЕ АКТ В СЦЕНЕ (ряд M-493): вкладка открывается и внизу,
+            // кнопка зовёт ту же дверь, а часы занимает ТЕЛО аватара — его
+            // гейт `ecs::Combat::recoverySteps`, — и гейт сквада акт не
+            // трогает. Цена — та же: бар, анкета и сумка у тела — записи.
+            std::fprintf(stderr, "[smoke] action=craft_body\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded || !app.subworld.active()
+                || !app.sceneObjects) {
+                smoke_fail(app, "craft_body needs subworld_enter first");
+                break;
+            }
+            const int av = sm::sub::avatar_slot(*app.sceneObjects);
+            const sm::ecs::Combat* body =
+                av >= 0 ? sm::sub::slot_combat(*app.sceneObjects, av) : nullptr;
+            const sm::MacroHandle fh = sm::player_flag_handle(app.session);
+            if (body == nullptr || !app.macroStore->valid(fh)) {
+                smoke_fail(app, "craft_body: no avatar body with a gate, or no "
+                                "player squad");
+                break;
+            }
+            app.ui.character = true;
+            app.ui.characterTab = sm::ui::CharacterPanelTab::Craft;
+            if (!smoke_player_craft_act(
+                    app, &body->recoverySteps,
+                    &app.macroStore->runtime[fh.slot].recoverySteps,
+                    "scene")) {
                 break;
             }
             ++app.smoke.cursor;

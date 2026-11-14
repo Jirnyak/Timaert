@@ -86,11 +86,20 @@ struct DialogOverlayState {
 // `st` is here because the player's СУЩЕСТВ КОНТЕЙНЕРА is an ordinary squad
 // slot of the MacroStore now (macro/player_entity.h), not a field of
 // PlayerState; `sceneObjs` (nullable — no scene on the macro map) carries the
-// avatar's Combat gate for the Use-potion ability charge. The UI sits above
+// avatar's Combat gate for the Use-potion ability charge and for the craft
+// act (`craft_as_player` below). The UI sits above
 // every layer and may read from them; it still owns no game logic.
 void draw_character_panel(GameState& gs, const Session& ses, MacroStore& st,
                           sub::SubObjects* sceneObjs, bool* open,
                           CharacterPanelTab* tab, float scale = 1.0f);
+// КРАФТ ИГРОКА — ТОТ ЖЕ АКТ, ЧТО У СКВАДА МИРА (ряд M-493): кнопка вкладки
+// Craft зовёт ЭТО и только это. Субъект — запись под флажком (бар, анкета,
+// сумка, её рабочие юниты); часы занятости — у тела аватара, пока оно стоит в
+// сцене `scene`, иначе у сквада. Право, материя, цена и восстановление —
+// `craft_act@src/macro/squad_act.h`. Возвращает сделанные партии (0 — акта
+// не было, ничто не тронуто).
+int craft_as_player(const Session& ses, MacroStore& st, sub::SubObjects* scene,
+                    int outIdx, int batches);
 // THE subject panel (меню-сессия, фидбек владельца 2026-09-11: «сделай
 // единую систему... меню города хороший пример, его обобщить»). ONE window,
 // one pause law, one tab bar — И ОДИН ПРОХОД: субъект назван ОДНИМ хэндлом,

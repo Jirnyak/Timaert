@@ -1,5 +1,7 @@
 #include "macro/econ_day.h"
-#include "sub/ability.h"   // THE ability door — a sip pays the one gate   // sp_price — THE one price of an action
+#include "macro/squad_act.h"   // craft_act — акт крафта, один на оба мира (M-493)
+#include "sub/ability.h"   // THE ability door — a sip pays the one gate; BodyGate
+#include "core/time.h"     // absolute_minute — срок восстановления глазу
 #include "tables/seasons.h"    // kDaysPerSeason — the upkeep bill's horizon
 #include "ui/overlays.h"
 #include "macro/cell_facts.h"   // the Map preview's REAL cell context
@@ -467,7 +469,47 @@ namespace sm::ui
                 w = std::max(w, ImGui::CalcTextSize(rows[i].label).x);
             return w + number_field_x();
         }
+
+        // КТО ДЕЙСТВУЕТ ЗА ИГРОКА — запись под флажком и гейт её субъекта (ряд
+        // M-493). Бар, анкета и сумка — всегда записи (тело в сцене — её
+        // зеркало, `slot_pools_of@src/sub/record.h`); часы занятости — у ТЕЛА,
+        // пока его аватар стоит в сцене (`BodyGate@src/sub/ability.h`), иначе у
+        // сквада (`SquadGate@src/macro/squad_act.h`). Своего пути у игрока нет:
+        // это та же своя строка, что у всякого сквада (ЗАКОН АНКЕТЫ п.6), и
+        // вопросы и акт идут теми же дверями акта. Мира нет — `none`.
+        template <class R, class Fn>
+        R with_player_actor(const Session &ses, MacroStore &st,
+                            sub::SubObjects *scene, R none, Fn &&fn)
+        {
+            const MacroHandle h = player_flag_handle(ses);
+            if (!st.valid(h))
+                return none;
+            ActSelf self{st.pools[h.slot], st.runtime[h.slot], st.sheet[h.slot],
+                         st.inventory[h.slot].inv};
+            if (scene != nullptr)
+                if (const int a = sub::avatar_slot(*scene); a >= 0)
+                    return fn(self,
+                              sub::BodyGate{sub::slot_combat(*scene, a)});
+            return fn(self, SquadGate{self.rt});
+        }
+
+        // ЧТО ДВЕРИ АКТА ОТВЕЧАЮТ ОБ ОДНОЙ ПАРТИИ — для строки вкладки Craft.
+        struct CraftQuote
+        {
+            std::int64_t sp = 0;         // цена партии в SP (`squad_act_cost`)
+            std::uint32_t recovery = 0;  // её восстановление, тики
+            bool ready = false;          // право акта (`act_ready`)
+        };
     } // namespace
+
+    int craft_as_player(const Session &ses, MacroStore &st,
+                        sub::SubObjects *scene, int outIdx, int batches)
+    {
+        return with_player_actor(
+            ses, st, scene, 0, [&](ActSelf &self, const auto &gate) {
+                return craft_act(self, gate, outIdx, batches);
+            });
+    }
 
     void draw_character_panel(GameState &gs, const Session &ses,
                               MacroStore &st,
@@ -948,14 +990,38 @@ namespace sm::ui
                     ImGui::TextDisabled(
                         "Craft pays the full composition; scrap returns half"
                         " (the Inventory tab's button on any crafted thing).");
+                    // ЗАНЯТ ЛИ СУБЪЕКТ — вопрос его гейту, а не счётчик
+                    // здесь: сделал — висишь, «решил чтото сделать … и
+                    // ждёшь рековери прежде чем сделать ещё».
+                    const bool actorBusy = with_player_actor(
+                        ses, st, sceneObjs, false,
+                        [](ActSelf &, const auto &gate) {
+                            return gate.busy();
+                        });
+                    if (actorBusy)
+                        ImGui::TextColored(
+                            ImVec4(1.0f, 0.55f, 0.35f, 1.0f),
+                            "Recovering from the last act - the bench waits.");
                     if (!lastCraftMessage.empty())
                         ImGui::TextDisabled("%s", lastCraftMessage.c_str());
-                    if (ImGui::BeginTable("craft_grid", 3,
+                    // Цена и срок — СВОЯ колонка: в колонке материалов их
+                    // срезал клип у всякой строки с двумя частями (кадр
+                    // смоука `open_craft`, 2026-11-14).
+                    if (ImGui::BeginTable("craft_grid", 4,
                                           ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
                     {
-                        ImGui::TableSetupColumn("Item");
-                        ImGui::TableSetupColumn("Materials");
-                        ImGui::TableSetupColumn("");
+                        // Доли ширины — по самому длинному содержимому
+                        // столбца: две части состава («2x Iron Ore (3) 1x
+                        // Wood (0)») против «SP 120  23h45m».
+                        ImGui::TableSetupColumn(
+                            "Item", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+                        ImGui::TableSetupColumn(
+                            "Materials", ImGuiTableColumnFlags_WidthStretch,
+                            1.9f);
+                        ImGui::TableSetupColumn(
+                            "Cost", ImGuiTableColumnFlags_WidthStretch, 0.8f);
+                        ImGui::TableSetupColumn(
+                            "", ImGuiTableColumnFlags_WidthStretch, 1.1f);
                         ImGui::TableHeadersRow();
                         const auto catalog = item_catalog();
                         for (int ci = 0; ci < int(catalog.size()); ++ci)
@@ -1017,20 +1083,31 @@ namespace sm::ui
                                         "%dx %s (%d)", int(part.count),
                                         md->name, have);
                             }
-                            // The SP price of ONE batch: a person-day is a
-                            // FULL bar (the kGatherPerWorkerDay anchor's own
-                            // derivation), so a batch costs bar / tempo —
-                            // the recipe's own action row, the same number
-                            // the town's production day divides by — and it
-                            // is paid INTO THE NEGATIVE (owner 2026-09-12,
-                            // «как в Elin», the march law): the button never
-                            // greys on fatigue, forging on an empty bar
-                            // simply leaves you exhausted for the exhaustion
-                            // bite to find.
-                            const int spCost =
-                                sp_price(int(pools.maxSp), act.spRatePerDay);
-                            ImGui::SameLine();
-                            ImGui::TextDisabled("SP %d", spCost);
+                            // ЦЕНА И СРОК ОДНОЙ ПАРТИИ — ЧИСЛАМИ ДВЕРЕЙ АКТА,
+                            // тех же, что у сквада мира (ряд M-493): цена
+                            // строки, делённая на рабочих юнитов сумки, и
+                            // время партии на тех же юнитов. Платится и В
+                            // МИНУС (отказа по усталости у двери нет, укус
+                            // HP — закон двери траты): кнопка от пустого бара
+                            // не сереет.
+                            const CraftQuote q = with_player_actor(
+                                ses, st, sceneObjs, CraftQuote{},
+                                [&](ActSelf &self, const auto &gate) {
+                                    return CraftQuote{
+                                        squad_act_cost(self, act, 1),
+                                        squad_act_recovery(self, act, 1),
+                                        act_ready(self, act, gate)};
+                                });
+                            // Срок глазу — игровыми часами и минутами
+                            // (`absolute_minute@src/core/time.h`): тик есть
+                            // единица мира, минута — только показ.
+                            const std::uint64_t recMin =
+                                absolute_minute(q.recovery);
+                            ImGui::TableNextColumn();
+                            ImGui::TextDisabled(
+                                "SP %lld  %lluh%02llum", (long long)q.sp,
+                                (unsigned long long)(recMin / 60),
+                                (unsigned long long)(recMin % 60));
                             // ПРАВО — та же пара «ремесло + минранг», которой
                             // гейтится город (recipe_known, M-146 «гейт руки
                             // и гейт города — один»): нулевой кузнечный
@@ -1052,22 +1129,18 @@ namespace sm::ui
                                     int(act.minRank));
                                 ImGui::SameLine();
                             }
-                            // Гейт здесь — ПРЕДСТАВЛЕНИЕ (серость кнопки и
-                            // причина отказа); закон права спрашивает сама
-                            // дверь craft_item тем же recipe_known (M-415/Б2).
-                            ImGui::BeginDisabled(!can || !known);
+                            // Серость кнопки — ПРЕДСТАВЛЕНИЕ ответа двери:
+                            // право акта (`act_ready` — гейт, ремесло, плоская
+                            // цена) и материалы; закон спрашивает сам акт.
+                            ImGui::BeginDisabled(!can || !q.ready);
                             if (ImGui::SmallButton("Craft"))
                             {
-                                if (craft_item(playerBag, ci, 1, sheet.skills,
-                                               kRecipes[ri].action))
+                                // ОДИН ПУТЬ: тот же акт, что у сквада мира, —
+                                // право, материя, цена и восстановление одной
+                                // дверью; часы — гейт субъекта (ряд M-493).
+                                if (craft_as_player(ses, st, sceneObjs, ci, 1)
+                                    > 0)
                                 {
-                                    // THE spend door (movement_cost.h): the
-                                    // debit and the one QUADRATIC law of
-                                    // zero in a single move — forging into
-                                    // the negative bites HP right here, not
-                                    // on some later step (S14.1: «любая
-                                    // затрата ниже 0 бьёт»).
-                                    apply_stamina_cost(pools, spCost);
                                     lastCraftMessage = "Crafted ";
                                     if (yield > 1)
                                     {
@@ -1080,8 +1153,9 @@ namespace sm::ui
                                 }
                                 else
                                 {
-                                    // Materials were shown green, so the one
-                                    // honest refusal left is a full bag.
+                                    // Право и материалы показаны зелёными,
+                                    // значит честный отказ остался один —
+                                    // выходу не легло место в сумке.
                                     lastCraftMessage =
                                         "No room in the bag for it.";
                                 }

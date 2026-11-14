@@ -34,6 +34,7 @@
                                 // в kSquadBirth@src/macro/characters.h)
 #include "macro/upkeep_window.h"  // upkeep_season_window — ОДНА дверь суда границы (M-233)
 #include "macro/squad_act.h"      // squad_craft — акт крафта сквада (M-486)
+#include "sub/ability.h"          // BodyGate — часы тела, субъект акта в сцене (M-493)
 #include "macro/npc_ai.h"         // village/city/capital_craft_pick — решения модулей
 #include "bus/squad_sheet.h"      // refresh_body_from_sheet — тело той же дверью, что мир
 #include "bus/world_row.h"   // raise_flock_into_container / count_human_souls / work_units
@@ -1116,6 +1117,85 @@ void sect14_squad_craft_act() {
               "…и ларь не тронут: металл не исчез");
         std::printf("  [страж ширины] выход %d, отказан лот %d партий из %d "
                     "металла\n", yield, wide, metal);
+    }
+
+    // А7. ЗАНЯТЫЙ СУБЪЕКТ ОТКАЗЫВАЕТ ДВЕРЬЮ АКТА: «решил чтото сделать
+    // запалтитл … и ждёшь рековери прежде чем сделать ещё». Второй акт до
+    // конца восстановления — ноль, и мир не тронут; полярность — тот же лот
+    // у свободного двойника ткётся.
+    {
+        Actor a = born_actor(SquadType::City, 0);
+        CHECK_OR_RETURN(feed(a.bag, clothIdx, 2),
+                        "предусловие: волокно на две партии легло в ларь");
+        ActSelf s{a.pools, a.rt, a.sheet, a.bag};
+        CHECK_OR_RETURN(squad_craft(s, clothIdx, 1) == 1
+                            && a.rt.recoverySteps > 0,
+                        "предусловие: первая партия соткана, сквад висит");
+        const ActSnap busy = snap(a);
+        CHECK(squad_craft(s, clothIdx, 1) == 0 && untouched(a, busy),
+              "ЗАНЯТЫЙ ОТКАЗЫВАЕТ: вторая партия до конца восстановления — "
+              "ноль, бар, гейт и ларь не тронуты");
+        Actor b = born_actor(SquadType::City, 0);
+        CHECK_OR_RETURN(feed(b.bag, clothIdx, 1),
+                        "предусловие: волокно на партию у свободного двойника");
+        ActSelf sb{b.pools, b.rt, b.sheet, b.bag};
+        CHECK(squad_craft(sb, clothIdx, 1) == 1,
+              "…а свободный двойник ту же партию ткёт: отказал гейт, а не ларь");
+    }
+
+    // А8. ИГРОК — ЧАСТНЫЙ СЛУЧАЙ, И В СЦЕНЕ ЧАСЫ ЗАНИМАЕТ ТЕЛО (ряд M-493).
+    // Окно крафта игрока зовёт ТОТ ЖЕ акт со своей строкой сквада
+    // (`craft_as_player@src/ui/overlays.cpp`): на карте — гейт сквада, то есть
+    // буквально `squad_craft`; в сцене — гейт тела `BodyGate@src/sub/ability.h`.
+    // Здесь игрок — сквад-двойник той же анкеты и той же сумки, что сквад мира,
+    // а тело — голая боевая строка: закон судится отношением, не литералом.
+    {
+        Actor world = born_actor(SquadType::City, kCrew);
+        Actor player = born_actor(SquadType::City, kCrew);
+        Actor playerLone = born_actor(SquadType::City, 0);
+        CHECK_OR_RETURN(feed(world.bag, clothIdx, 2)
+                            && feed(player.bag, clothIdx, 2)
+                            && feed(playerLone.bag, clothIdx, 1)
+                            && work_units(player.bag) == kCrew + 1
+                            && work_units(playerLone.bag) == 1,
+                        "предусловие: волокно легло, у двойников по N+1 юниту, "
+                        "у одиночки один");
+        ecs::Combat body{};
+        ecs::Combat bodyLone{};
+        CHECK_OR_RETURN(body.recoverySteps == 0 && bodyLone.recoverySteps == 0,
+                        "предусловие: тела свободны");
+        ActSelf ws{world.pools, world.rt, world.sheet, world.bag};
+        ActSelf ps{player.pools, player.rt, player.sheet, player.bag};
+        ActSelf ls{playerLone.pools, playerLone.rt, playerLone.sheet,
+                   playerLone.bag};
+        CHECK(squad_craft(ws, clothIdx, 1) == 1
+                  && craft_act(ps, sub::BodyGate{&body}, clothIdx, 1) == 1
+                  && craft_act(ls, sub::BodyGate{&bodyLone}, clothIdx, 1) == 1,
+              "сквад мира, игрок с людьми и игрок-одиночка ткут по партии");
+        const int worldCost = maxSp - world.pools.sp;
+        const int playerCost = maxSp - player.pools.sp;
+        const int playerLoneCost = maxSp - playerLone.pools.sp;
+        CHECK(playerCost == worldCost && body.recoverySteps == world.rt.recoverySteps,
+              "ИГРОК — ЧАСТНЫЙ СЛУЧАЙ: при той же анкете и той же сумке цена и "
+              "срок партии у тела игрока те же, что у сквада мира");
+        CHECK(player.rt.recoverySteps == 0 && body.recoverySteps > 0,
+              "В СЦЕНЕ ЧАСЫ ЗАНИМАЕТ ТЕЛО: гейт сквада игрока не тронут");
+        CHECK(playerCost < playerLoneCost
+                  && body.recoverySteps < bodyLone.recoverySteps,
+              "ЛЮДИ В СУМКЕ РАБОТАЮТ: с N людьми партия игрока дешевле в SP и "
+              "короче по восстановлению, чем у одиночки");
+        const ActSnap before = snap(player);
+        const std::uint32_t bodyBefore = body.recoverySteps;
+        CHECK(craft_act(ps, sub::BodyGate{&body}, clothIdx, 1) == 0
+                  && untouched(player, before)
+                  && body.recoverySteps == bodyBefore,
+              "ЗАНЯТОЕ ТЕЛО ОТКАЗЫВАЕТ: вторая партия до конца его "
+              "восстановления — ноль, ничто не тронуто");
+        std::printf("  [игрок в сцене] юнитов %d: −%d SP, тело %u тиков; "
+                    "одиночка: −%d SP, тело %u тиков\n",
+                    work_units(player.bag), playerCost,
+                    unsigned(body.recoverySteps), playerLoneCost,
+                    unsigned(bodyLone.recoverySteps));
     }
 }
 
