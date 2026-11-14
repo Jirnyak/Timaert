@@ -97,12 +97,15 @@ sm::MacroHandle make_walker(sm::MacroStore& st, int mapW, int x, int y,
     // TaxCollector и сваливался в ai_nomad фолбэком снесённого ai_taxrun:
     // роль умерла, фолбэк вместе с ней, и девятнадцать законов марша разом
     // перестали проверяться ЧЕМ БЫ ТО НИ БЫЛО, оставаясь при этом целыми.
-    // Теперь ходок — ТИП СКВАДА (первый ответ диспетчера): корован без
-    // дома честно доходит до того же ai_nomad и просто идёт к цели.
+    // Теперь ходок — ТИП СКВАДА (первый ответ диспетчера): БРОДЯГА
+    // (`SquadType::Nomad`, ряд M-499), в пути которому решать нечего, — он
+    // просто идёт к цели. (Прежде здесь стоял корован без дома, сваливавшийся
+    // в общую думку бродяги; с 2026-11-14 такой корован сам меняет тип на
+    // бродягу и цель бросает — носителем марша он быть перестал.)
     st.kind[h.slot] = ecs::NPCKind{std::uint16_t(NPCType::Peasant),
                                    std::uint16_t{0}};
     ecs::MacroNpcRuntime rt{};
-    rt.squadType = std::uint8_t(SquadType::Caravan);
+    rt.squadType = std::uint8_t(SquadType::Nomad);
     rt.state = std::uint8_t(NPCState::Traveling);
     rt.travelRank = 0;
     rt.marathonRank = 0;

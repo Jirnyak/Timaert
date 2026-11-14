@@ -85,25 +85,25 @@ inline std::uint16_t rooted_slot_by_id(const TickContext& ctx, int id) {
     return rooted_slot_of(store_ctx(ctx), id);
 }
 
-}  // namespace
-
-// УРНА ГОРОДОВ — ОДИН предикат на оба рейса (торговец и кочевник). Он стоял
-// ДВУМЯ побайтово одинаковыми лямбдами в двух соседних поведениях, и это был
-// второй ответ на один вопрос мира (DOD п.6), просто спрятанный в области
-// видимости функции. Обход мест — одна дверь (`for_each_rooted`,
-// `macro/rooted_iter.h`): ось рода ТЕЛА отвечает «город ли это», второго
-// списка городов в мире нет. `notId` — ординал, который спрашивающий
-// исключает (свой дом у торговца, текущая цель у кочевника).
+// УРНА ГОРОДОВ — ОДНА мера на оба вопроса вида о городах мира
+// (`AiView::cities_except` и `AiView::city_except` ниже). Она стояла ДВУМЯ
+// побайтово одинаковыми лямбдами в двух соседних поведениях, и это был
+// второй ответ на один вопрос мира (DOD п.6); потом — общим предикатом, с
+// которым модули сами обходили места мимо окна (ряд M-499, раскладка (з)).
+// Обход мест — одна дверь (`for_each_rooted`, `macro/rooted_iter.h`): ось
+// рода ТЕЛА отвечает «город ли это», второго списка городов в мире нет.
+// `notId` — ординал, который спрашивающий исключает.
 // СТОЛИЦА В УРНЕ НАРАВНЕ С ГОРОДОМ (ряд M-522): с тех пор как корона
 // рождается своим типом, «город» здесь значит «город или столица» — цель
 // бродяги есть ГОРОД МИРА, и столица им остаётся; без второго значения
 // урна молча потеряла бы по городу на фракцию.
-bool is_other_city(const MacroStore& st, std::uint16_t slot,
-                   int notId) {
+bool city_other_than_(const MacroStore& st, std::uint16_t slot, int notId) {
     const SquadType t = SquadType(st.runtime[slot].squadType);
     return (t == SquadType::City || t == SquadType::Capital)
            && int(st.spawnId[slot].index) != notId;
 }
+
+}  // namespace
 
 // (Здесь жили `slot_x` / `slot_y` — клетка слота парой координат «для
 // геометрии марша и округи». Геометрия идёт дверями над ИНДЕКСОМ
@@ -913,6 +913,30 @@ bool AiView::is_settlement(std::uint16_t slot) const {
         SquadType(store_ctx(ctx_).runtime[slot].squadType));
 }
 
+int AiView::cities_except(int notId) const {
+    const MacroStore& st = store_ctx(ctx_);
+    int n = 0;
+    for_each_rooted(st, [&](std::uint16_t slot) {
+        if (city_other_than_(st, slot, notId)) ++n;
+    });
+    return n;
+}
+
+std::uint16_t AiView::city_except(int notId, int k) const {
+    const MacroStore& st = store_ctx(ctx_);
+    // Обход без досрочного выхода: взявший город гасит проход, и остаток
+    // молчит (у двери мест нет break — её порядок есть закон приоритета
+    // клетки). Номер считается вверх: `seen`-й подходящий и есть k-й.
+    std::uint16_t found = kMacroNoSlot;
+    int seen = 0;
+    for_each_rooted(st, [&](std::uint16_t slot) {
+        if (found != kMacroNoSlot || !city_other_than_(st, slot, notId))
+            return;
+        if (seen++ == k) found = slot;
+    });
+    return found;
+}
+
 std::uint16_t AiView::goal_rooted(const ecs::SquadGoal& g) const {
     return ecs::goal_kind(g.what) == ecs::GoalKind::Squad
         ? rooted_slot_by_id(ctx_, int(ecs::goal_ordinal(g.what)))
@@ -1084,8 +1108,6 @@ void AiPult::fact(int subject, FactKind kind, std::uint32_t cell, int amount,
                        amount, object);
 }
 
-void AiPult::nomad(AiSelf& s) { ai_nomad(s.h, s.rt, s.pools, ctx_); }
-
 CaravanDeal AiPult::trade_at(AiSelf& s, std::uint16_t market) {
     MacroStore& st = store_ctx(ctx_);
     return trade_caravan_at_station(
@@ -1144,9 +1166,6 @@ MacroHandle AiPult::spawn(AiSelf& s, SquadType bornType) {
 }
 
 namespace {
-
-// (Объявление `ai_nomad` переехало к пульту выше: фолбэк стал ГЛАГОЛОМ, и
-//  дверь к нему обязана стоять до класса, который её проносит модулю.)
 
 // (caravan_buy_order — белый список закупки «нужды дома → входы рецептов» —
 // СНЕСЁН 2026-09-18 по вердикту владельца: купец берёт то, что выгоднее по
@@ -1404,50 +1423,12 @@ std::uint32_t route_fear_(const TickContext& ctx, std::uint32_t a,
 
 }  // namespace
 
-void ai_nomad(MacroHandle self, ecs::MacroNpcRuntime& rt,
-              [[maybe_unused]] ecs::Pools& pools, const TickContext& ctx) {
-    const MacroStore& st = store_ctx(ctx);
-    ecs::SquadGoal& g = store_ctx(ctx).goal[self.slot];
-    // «Не тот город, где был» — прежний ординал несёт сама цель (род Squad).
-    // Ординал чужой погони городом не окажется: пространство ординалов одно,
-    // и урна ниже сверяет его с ординалами ГОРОДОВ.
-    const int lastRooted = ecs::goal_kind(g.what) == ecs::GoalKind::Squad
-                              ? int(ecs::goal_ordinal(g.what))
-                              : 0;
-    if (rt.state == std::uint8_t(NS::Idle)) {
-        // Дошёл до города — постоял (прибытие назвали ноги).
-        if (ecs::march_arrived(rt)) {
-            charge_squad_recovery(rt,
-                std::uint32_t((10 + rand_int(ctx, 15)) * kAiTicks));
-        }
-        if (!squad_recovering(rt)) {
-            int candidates = 0;
-            for_each_rooted(st, [&](std::uint16_t slot) {
-                if (is_other_city(st, slot, lastRooted))
-                    ++candidates;
-            });
-            if (candidates > 0) {
-                int pick = rand_int(ctx, candidates);
-                bool taken = false;
-                for_each_rooted(st, [&](std::uint16_t slot) {
-                    if (taken || !is_other_city(st, slot, lastRooted))
-                        return;
-                    if (pick-- != 0) return;
-                    ecs::goal_set(g, st.cell[slot].idx,
-                                  ecs::goal_what(ecs::GoalKind::Squad,
-                                                 st.spawnId[slot].index),
-                                  0, std::uint8_t(NS::Idle));
-                    rt.state  = std::uint8_t(NS::Traveling);
-                    taken = true;
-                });
-            } else {
-                charge_squad_recovery(rt, std::uint32_t(10 * kAiTicks));
-            }
-        }
-        return;
-    }
-    // Traveling: в пути решать нечего — везут ноги свипа.
-}
+// (ЗДЕСЬ ЖИЛА `ai_nomad` — думка бродяги без дома, общая под модулями
+//  корована и сборщика: оба звали её глаголом пульта, когда дома не было.
+//  2026-11-14 бродяга стал своим типом со своим модулем
+//  (`SquadType::Nomad`, `nomad_think@src/macro/squad_ai/nomad.cpp`; ряд
+//  M-499, раскладка (з)), а свою паузу держит словом памяти модуля, а не
+//  гейтом восстановления.)
 
 namespace {
 
@@ -1959,6 +1940,9 @@ constexpr AiModuleRow kAiModuleRows[] = {
     // крестьян и тд эмерджентно»): модуль не знает ни деревень, ни артелей —
     // добычу называет сила (nearest_weaker_squad), смерть — авто-бой.
     { SquadType::Dragon,    ai_dragon,    nullptr       },
+    // Бродяга без дома — свой модуль (ряд M-499, раскладка (з)): прежде
+    // думка, общая под строками корована и сборщика.
+    { SquadType::Nomad,     ai_nomad_squad, nullptr     },
 };
 static_assert(std::size(kAiModuleRows) == std::size_t(SquadType::Count),
               "kAiModuleRows must cover every SquadType: a new row of the "

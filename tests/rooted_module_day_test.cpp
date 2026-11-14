@@ -2261,6 +2261,205 @@ void test_the_capital_is_a_caravan_station() {
     CHECK(stood, "и встал на её клетке, а не проехал мимо");
 }
 
+// ═════ БЕЗ ДОМА — БРОДЯГА: СВОЙ ТИП, СВОЙ МОДУЛЬ (ряд M-499, раскладка (з)) ═
+// Владелец, дословно (CANON «РАЗНООБРАЗИЕ ИГРЫ ЕСТЬ НОВЫЕ ТИПЫ СО СВОИМИ
+// МОДУЛЯМИ»): «под каждую профессию смвои агностичные дод инксаплурованный
+// тип с моуделм»; раскладка (з): «бродяга без дома … становятся такими
+// типами». Значит общей думки бродяги под модулями корована и сборщика нет:
+// оставшись без дома, каждый САМ меняет свой тип на `Nomad` своим кодом —
+// память модуля зануляет, цель бросает, встаёт без дела, — а дальше его ведёт
+// модуль бродяги. Назад он не превращается: дома нет.
+//
+// ПРЕДУСЛОВИЯ ФИКСТУРА РОЖАЕТ САМА (§8 п.11): дом — город, ребёнок родится
+// ТЕМ ЖЕ глаголом рождения, каким его рожает модуль города (закон 2б (в)),
+// смерть дома — той же дверью, какой кончает автобой.
+//
+// ТАБЛИЦА МУТАЦИЙ ОБЕИХ ПОЛЯРНОСТЕЙ — в теле коммита (§8 п.6).
+MacroHandle orphan_of(Fixture& f, SquadType type, int x, int y) {
+    MacroStore& st = f.st();
+    const MacroHandle home = f.rooted(SquadType::City, x, y, 64);
+    TickContext ctx{};
+    ctx.mw = f.world();
+    ctx.mapW = kMap;
+    ctx.mapH = kMap;
+    AiPult pult(ctx);
+    AiSelf self{home, st.cell[home.slot], st.runtime[home.slot],
+                st.pools[home.slot], st.goal[home.slot],
+                st.inventory[home.slot].inv, st.sheet[home.slot]};
+    const MacroHandle child = pult.spawn(self, type);
+    CHECK(st.valid(child)
+              && parent_of(st, child.slot)
+                     == int(st.spawnId[home.slot].index)
+              && st.runtime[child.slot].squadType == std::uint8_t(type),
+          "фикстура: город родил ребёнка своего типа дверью рождения");
+    settle_avatar_fraction(st, home, 0.0f);
+    CHECK(st.dead[home.slot] != 0, "фикстура: дом ребёнка умер");
+    return child;
+}
+
+// Ординал живого города, на клетке которого стоит `slot`; 0 — ни на каком.
+int city_under(Fixture& f, std::uint16_t slot) {
+    const MacroStore& st = f.st();
+    for (std::size_t s = 0; s < kUnifiedCap; ++s) {
+        if (st.alive[s] == 0 || st.dead[s] != 0) continue;
+        if (st.runtime[s].squadType != std::uint8_t(SquadType::City)) continue;
+        if (st.cell[s].idx == st.cell[slot].idx)
+            return int(st.spawnId[s].index);
+    }
+    return 0;
+}
+
+void test_a_homeless_caravan_or_collector_becomes_a_nomad() {
+    constexpr SquadType kChildren[] = {SquadType::Caravan,
+                                       SquadType::Collector};
+    for (const SquadType type : kChildren) {
+        const bool caravan = type == SquadType::Caravan;
+        std::printf("  [без дома: %s]\n", caravan ? "корован" : "сборщик");
+        Fixture f;
+        MacroStore& st = f.st();
+        const MacroHandle away = f.rooted(SquadType::City, 20, 10, 64);
+        const MacroHandle other = f.rooted(SquadType::City, 10, 20, 64);
+        const int awayId = int(st.spawnId[away.slot].index);
+        const int otherId = int(st.spawnId[other.slot].index);
+        const MacroHandle child = orphan_of(f, type, 10, 10);
+        // ПАМЯТЬ МОДУЛЯ НЕ ПУСТА И ЦЕЛЬ В ПУТИ — иначе «занулена» и «брошена»
+        // были бы зелены сами собой (§8 п.2).
+        for (std::uint32_t& w : st.runtime[child.slot].mem) w = 7u;
+        ecs::goal_set(st.goal[child.slot], st.cell[away.slot].idx,
+                      ecs::goal_what(ecs::GoalKind::Squad,
+                                     std::uint32_t(awayId)),
+                      0, std::uint8_t(NPCState::Working));
+        st.runtime[child.slot].state = std::uint8_t(NPCState::Traveling);
+
+        MacroNpcAiRuntime rt{};
+        reset_macro_npc_ai_runtime(rt, 56u);
+        int samples = 0, became = -1, reverted = 0;
+        bool memZero = false, dropped = false, idle = false, walks = false;
+        for (int i = 0; i < kThinksPerDay; ++i) {
+            const std::uint8_t before = st.runtime[child.slot].squadType;
+            f.think_on(rt, 1);
+            if (!st.valid(child)) break;
+            ++samples;
+            const ecs::MacroNpcRuntime& crt = st.runtime[child.slot];
+            const ecs::SquadGoal& g = st.goal[child.slot];
+            if (before == std::uint8_t(type)
+                && crt.squadType == std::uint8_t(SquadType::Nomad)) {
+                became = i;
+                memZero = true;
+                for (const std::uint32_t w : crt.mem) memZero = memZero && w == 0;
+                dropped = g.underway == 0;
+                idle = crt.state == std::uint8_t(NPCState::Idle);
+            }
+            if (became < 0) continue;
+            if (crt.squadType != std::uint8_t(SquadType::Nomad)) ++reverted;
+            const int target = ecs::goal_kind(g.what) == ecs::GoalKind::Squad
+                ? int(ecs::goal_ordinal(g.what)) : 0;
+            walks = walks
+                || (crt.state == std::uint8_t(NPCState::Traveling)
+                    && (target == awayId || target == otherId));
+        }
+        CHECK(samples == kThinksPerDay,
+              "прибор отработал сутки: ребёнок жив весь прогон");
+        CHECK(became >= 0,
+              "БЕЗ ДОМА — БРОДЯГА: ребёнок сменил свой тип на Nomad сам");
+        CHECK(memZero, "смена типа зануляет память модуля");
+        CHECK(dropped && idle,
+              "цель брошена и сквад встал без дела — дальше решает модуль "
+              "бродяги");
+        CHECK(reverted == 0, "назад бродяга не превращается: дома нет");
+        CHECK(walks, "и бродяга пошёл к живому городу мира");
+    }
+}
+
+// ═════ БРОДЯГА ХОДИТ ОТ ГОРОДА К ГОРОДУ И ЖДЁТ СВОЕЙ ПАМЯТЬЮ ══════════════
+// Два закона модуля `nomad_think@src/macro/squad_ai/nomad.cpp`: (1) новый
+// город — НЕ тот, на клетке которого бродяга стоит (откуда уходит); (2) ждать
+// модуль вправе только своей памятью — слово `kNomadMemWait` тает ровно на
+// думку, гейт восстановления весь прогон пуст (вердикт владельца
+// 2026-11-13, CANON S25 «ВЗАИМОДЕЙСТВИЕ — НЕ СПОСОБНОСТЬ»). Два плеча: два
+// города — бродяга ходит меж ними; один город — идти некуда, и бродяга стоит
+// на нём, переждав своим словом не один раз.
+void test_the_nomad_walks_city_to_city_and_waits_in_its_own_memory() {
+    for (const int cities : {2, 1}) {
+        std::printf("  [бродяга: городов %d]\n", cities);
+        Fixture f;
+        MacroStore& st = f.st();
+        const MacroHandle a = f.rooted(SquadType::City, 20, 10, 64);
+        if (cities == 2) f.rooted(SquadType::City, 20, 20, 64);
+        const int aId = int(st.spawnId[a.slot].index);
+        const MacroHandle n = orphan_of(f, SquadType::Caravan, 10, 10);
+
+        MacroNpcAiRuntime rt{};
+        reset_macro_npc_ai_runtime(rt, 57u);
+        int samples = 0, legs = 0, repicks = 0, gated = 0;
+        int held = 0, broken = 0, rewaits = 0, leftA = 0;
+        bool arrivedA = false;
+        for (int i = 0; i < kThinksPerDay * 3; ++i) {
+            const ecs::MacroNpcRuntime pre = st.runtime[n.slot];
+            const int standing = city_under(f, n.slot);
+            f.think_on(rt, 1);
+            if (!st.valid(n)) break;
+            ++samples;
+            const ecs::MacroNpcRuntime& crt = st.runtime[n.slot];
+            if (pre.squadType != std::uint8_t(SquadType::Nomad)) continue;
+            if (ecs::squad_recovering(crt)) ++gated;
+            const std::uint32_t before = pre.mem[kNomadMemWait];
+            const std::uint32_t after = crt.mem[kNomadMemWait];
+            if (before >= 2u) {
+                // Ещё ждал: слово тает ровно на думку, нового решения нет.
+                if (after + 1u == before) ++held;
+                else ++broken;
+            } else if (after >= 2u) {
+                ++rewaits;   // дотаяло или пришёл — решил ждать заново
+            }
+            if (pre.state == std::uint8_t(NPCState::Idle)
+                && crt.state == std::uint8_t(NPCState::Traveling)) {
+                ++legs;
+                const ecs::SquadGoal& g = st.goal[n.slot];
+                const int target =
+                    ecs::goal_kind(g.what) == ecs::GoalKind::Squad
+                        ? int(ecs::goal_ordinal(g.what)) : 0;
+                if (standing != 0 && target == standing) ++repicks;
+            }
+            // ПЛЕЧО НУЛЕВОЙ ДЛИНЫ — ТОЖЕ ВЫБОР СТОЯЩЕГО ГОРОДА. Назвавший город
+            // под собой приходит в ту же думку и снова стоит Idle, поэтому
+            // строкой выше его не видно; видно прибытие, случившееся в думку,
+            // начатую без дела: города фикстуры в десяти клетках друг от
+            // друга, и честное плечо за одну думку не кончается.
+            if (pre.state == std::uint8_t(NPCState::Idle)
+                && ecs::march_arrived(crt) && standing != 0
+                && city_under(f, n.slot) == standing)
+                ++repicks;
+            if (city_under(f, n.slot) == aId) arrivedA = true;
+            else if (arrivedA) ++leftA;
+        }
+        CHECK(samples == kThinksPerDay * 3, "прибор отработал трое суток");
+        CHECK(gated == 0,
+              "ГЕЙТ ВОССТАНОВЛЕНИЯ ПУСТ ВЕСЬ ПРОГОН: ожидание бродяги — "
+              "решение модуля, а не долг способности");
+        CHECK(held > 0 && rewaits > 1,
+              "предусловие: бродяга ждал своим словом, и ожидание "
+              "назначалось не один раз");
+        CHECK(broken == 0,
+              "ОЖИДАНИЕ ДЕРЖИТ СВОЁ СЛОВО ПАМЯТИ: пока оно не дотаяло, оно "
+              "тает ровно на думку и нового решения нет");
+        CHECK(repicks == 0,
+              "НЕ ТОТ ГОРОД, ГДЕ СТОИШЬ: новое плечо ни разу не назвало "
+              "город, с клетки которого бродяга уходит");
+        if (cities == 2) {
+            CHECK(legs > 3, "предусловие: бродяга прошёл не одно плечо");
+        } else {
+            CHECK(arrivedA, "предусловие: бродяга дошёл до единственного "
+                            "города мира");
+            CHECK(leftA == 0,
+                  "ИДТИ НЕКУДА — СТОИТ: с единственного города бродяга не "
+                  "уходит и пережидает своим словом");
+        }
+        std::printf("  [бродяга: городов %d] плеч %d, думок ожидания %d, "
+                    "новых ожиданий %d\n", cities, legs, held, rewaits);
+    }
+}
+
 int main() {
     test_village_produces_through_its_own_think();
     test_the_town_remembers_it_has_nothing_to_craft();
@@ -2278,5 +2477,7 @@ int main() {
     test_the_caravan_with_no_market_waits_at_home();
     test_the_tithe_ladder_runs_down();
     test_the_capital_is_a_caravan_station();
+    test_a_homeless_caravan_or_collector_becomes_a_nomad();
+    test_the_nomad_walks_city_to_city_and_waits_in_its_own_memory();
     return sm::test::report("rooted_module_day_test");
 }

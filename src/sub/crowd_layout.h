@@ -75,6 +75,7 @@ inline constexpr CrowdLayoutRow kCrowdLayout[std::size_t(SquadType::Count)] = {
     {.type = SquadType::Caravan},
     {.type = SquadType::Collector},
     {.type = SquadType::Dragon},
+    {.type = SquadType::Nomad},
 };
 
 static_assert(rows_in_enum_order(kCrowdLayout, &CrowdLayoutRow::type),

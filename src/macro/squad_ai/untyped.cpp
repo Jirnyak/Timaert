@@ -11,7 +11,6 @@
 #include "core/torus.h"
 #include "macro/auto_battle.h"
 #include "macro/characters.h"  // стол анкет — ступень лестницы
-#include "macro/rooted_iter.h" // for_each_rooted — урна городов
 #include "macro/squad.h"      // settle_auto_battle, macro_dead
 #include "tables/behaviour.h"
 #include "tables/faction.h"   // faction_ordinal — маги на сборке
@@ -42,28 +41,20 @@ void ai_trader(MacroHandle self, ecs::MacroNpcRuntime& rt,
                 std::uint32_t((20 + pult.rand(30)) * kAiTicks));
         }
         if (!squad_recovering(rt)) {
-            // Pick another city (id != home).
-            int candidates = 0;
-            for_each_rooted(st, [&](std::uint16_t slot) {
-                if (is_other_city(st, slot, myHomeId)) ++candidates;
-            });
+            // Pick another city (id != home) — вопросами вида о городах мира
+            // (`AiView::cities_except` / `AiView::city_except`): сколько их и
+            // который k-й, тем же порядком обхода мест.
+            const int candidates = view.cities_except(myHomeId);
             if (candidates > 0) {
-                int pick = pult.rand(candidates);
-                // Обход без досрочного выхода: взявший урну гасит флаг, и
-                // остаток прохода молчит (у двери мест нет break — её
-                // порядок есть закон приоритета клетки).
-                bool taken = false;
-                for_each_rooted(st, [&](std::uint16_t slot) {
-                    if (taken || !is_other_city(st, slot, myHomeId))
-                        return;
-                    if (pick-- != 0) return;
-                    ecs::goal_set(g, st.cell[slot].idx,
+                const std::uint16_t city =
+                    view.city_except(myHomeId, pult.rand(candidates));
+                if (city != kMacroNoSlot) {
+                    ecs::goal_set(g, view.rooted_cell(city),
                                   ecs::goal_what(ecs::GoalKind::Squad,
-                                                 st.spawnId[slot].index),
+                                                 view.rooted_id(city)),
                                   0, std::uint8_t(NS::Working));
                     rt.state  = std::uint8_t(NS::Traveling);
-                    taken = true;
-                });
+                }
             } else {
                 charge_squad_recovery(rt, std::uint32_t(20 * kAiTicks));
             }

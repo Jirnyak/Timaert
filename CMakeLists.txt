@@ -206,7 +206,8 @@ set(TIMAERT_SQUAD_AI_SOURCES
     src/macro/squad_ai/woodcutters.cpp
     src/macro/squad_ai/caravan.cpp
     src/macro/squad_ai/collector.cpp
-    src/macro/squad_ai/dragon.cpp)
+    src/macro/squad_ai/dragon.cpp
+    src/macro/squad_ai/nomad.cpp)
 
 # (СБОРКА ИГРЫ ПЕРЕЕХАЛА НИЖЕ `timaert_build_flags` — ломоть 5 M-171: игра
 #  собирается МОДУЛЯМИ-ВИДАМИ (`timaert_module`), и каждому модулю нужен

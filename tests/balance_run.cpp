@@ -432,6 +432,13 @@ int main(int argc, char** argv) {
         // Своя доля короны видна только этой колонкой. Хвостом, как прочие
         // поздние колонки; читать ПО ИМЕНИ (§5 п.7).
         std::fprintf(fw, "\tpopCapital");
+        // БРОДЯГИ (ряд M-499, раскладка (з)): сквады типа `Nomad` — корованы
+        // и сборщики, оставшиеся без дома и ставшие бродягами сами. Свой тип
+        // обязан стоять своей колонкой, а не уезжать молча в `crewsOther`:
+        // бродяга считается здесь ВСЯКИЙ, какого бы рода ни было тело его
+        // аватара, и из `crewsOther` он вынут. Хвостом, как прочие поздние
+        // колонки; читать ПО ИМЕНИ (§5 п.7).
+        std::fprintf(fw, "\tcrewsNomad");
         std::fprintf(fw, "\n");
         // ТРИ ПОТОКА МАТЕРИИ, ПО МЕСТАМ (CANON S10, 2026-09-20): гипотеза о
         // расщеплении горизонта — про МЕДИАНЫ по местам (еда топит пол
@@ -742,6 +749,7 @@ int main(int argc, char** argv) {
                 }
             }
             int crewsGather = 0, crewsSell = 0, crewsOther = 0;
+            int crewsNomad = 0;   // всякий бродяга, род тела не спрашивается
             // Счёт по типам артели — массив по самой оси типов сквада.
             int crewsOfType[std::size_t(sm::SquadType::Count)] = {};
             for (std::uint16_t slot = 0;
@@ -749,6 +757,10 @@ int main(int argc, char** argv) {
                 if (macroStore->alive[slot] == 0) continue;
                 const auto& kind = macroStore->kind[slot];
                 const auto& crt = macroStore->runtime[slot];
+                if (crt.squadType == std::uint8_t(sm::SquadType::Nomad)) {
+                    ++crewsNomad;
+                    continue;
+                }
                 if (kind.type != std::uint16_t(sm::NPCType::Peasant))
                     continue;
                 if (crt.squadType < std::uint8_t(sm::SquadType::Count))
@@ -823,6 +835,7 @@ int main(int argc, char** argv) {
                          sc.alive, sc.dead, sc.rooted, aiSecs * 1000.0);
             std::fprintf(fw, "\t%lld", factsDay);
             std::fprintf(fw, "\t%lld", popCapital);
+            std::fprintf(fw, "\t%d", crewsNomad);
             // ЗАКОН СЛОТОВ, И ОН ЖЕ ДЕТЕКТОР ПРИБОРА. Три утверждения, и ни
             // одно не есть пересказанное число (§8 п.4): (1) счётчик стора
             // сходится с независимым сканом своей же колонки — бухгалтерия

@@ -62,8 +62,8 @@ std::uint32_t cells(std::uint32_t n) {
     return n * 2u * std::uint32_t(ecs::kCellSubEdge);
 }
 
-// Ходок по образцу squad_travel_test: корован без дома (ai_nomad) с целью
-// колонкой рода 2 — живой носитель марша.
+// Ходок по образцу squad_travel_test: бродяга (`SquadType::Nomad`) с целью
+// колонкой рода 2 — живой носитель марша: в пути его модулю решать нечего.
 sm::MacroHandle make_walker(sm::MacroStore& st, NPCType type, SquadType stype,
                             std::uint8_t state, int x, int y) {
     sm::MacroHandle h = sm::store_birth(st);
@@ -168,7 +168,7 @@ void test_captured_walker_keeps_cell_share_and_goal() {
     gs.mapH = kMap;
     auto wStore_ = sm::make_macro_store();
     sm::MacroStore& st = *wStore_;
-    const auto h = make_walker(st, NPCType::Peasant, SquadType::Caravan,
+    const auto h = make_walker(st, NPCType::Peasant, SquadType::Nomad,
                                std::uint8_t(NPCState::Traveling), 10, 10);
     sm::ecs::goal_set(st.goal[h.slot], ecs::cell_index(40, 10, kMap), 0, 0,
                       std::uint8_t(NPCState::Idle));

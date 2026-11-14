@@ -111,4 +111,9 @@ void ai_collector(MacroHandle e, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
 void ai_dragon(MacroHandle e, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
                const TickContext& ctx);
 
+// `squad_ai/nomad.cpp` — бродяга без дома: свой тип со своим модулем (ряд
+// M-499, раскладка (з)); корован и сборщик без дома становятся им сами.
+void ai_nomad_squad(MacroHandle e, ecs::MacroNpcRuntime& rt,
+                    ecs::Pools& pools, const TickContext& ctx);
+
 }  // namespace sm

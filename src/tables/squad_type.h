@@ -160,6 +160,17 @@ enum class SquadType : std::uint8_t {
     // ДЕРЁТСЯ и ВОПЛОЩАЕТСЯ. Два разных вопроса, два разных словаря.
     Dragon = 18,
 
+    // ── КОЧЕВНИКИ: архетип Roamer ─────────────────────────────────────────
+    // БРОДЯГА — сквад без дома: возить ему некуда, и он ходит от города к
+    // городу, не возвращаясь в только что покинутый. Свой тип со своим
+    // модулем (ряд M-499, раскладка (з), одобрена владельцем 2026-11-13;
+    // CANON «РАЗНООБРАЗИЕ ИГРЫ ЕСТЬ НОВЫЕ ТИПЫ СО СВОИМИ МОДУЛЯМИ»): прежде это
+    // была общая думка `ai_nomad` под двумя модулями — корован и сборщик без
+    // дома звали её глаголом пульта. Теперь они САМИ меняют свой тип на этот
+    // (каждый своим кодом); назад бродяга не превращается — дома нет.
+    // Не место (не стоит), не работник дома (возить некуда) и не персоналия.
+    Nomad = 19,
+
     Count,
 };
 
@@ -184,7 +195,8 @@ enum class SquadType : std::uint8_t {
 enum class SquadArchetype : std::uint8_t {
     Rooted,  // неподвижный центр мира: стоит на клетке, сеет округу путей
     Worker,  // экономический челнок: артель, корован, сборщик
-    Roamer,  // кочевник по полям — ПУСТ до эпика ИИ (бандиты, патрули, стаи)
+    Roamer,  // кочевник по полям: бродяга без дома (бандиты, патрули, стаи —
+             // эпиком ИИ)
     Hero,    // персоналия с полной анкетой — ПУСТА до эпика ИИ (лорды, игрок)
 
     Count,   // не значение; счёт для таблиц, ключуемых архетипом
@@ -213,9 +225,11 @@ inline constexpr SquadArchetype squad_archetype(SquadType t) {
         case SquadType::Caravan:
         case SquadType::Collector: return SquadArchetype::Worker;
         case SquadType::Dragon:    return SquadArchetype::Hero;
+        case SquadType::Nomad:     return SquadArchetype::Roamer;
         // None — точка течи границы миров (см. шапку оси): бестиповый ходок.
         // До сноса течи (порция Б-6) он кочевник без лица — ближайшая
-        // правда; Roamer-модулей это НЕ заводит, их ещё нет.
+        // правда; своего модуля Roamer это ему не даёт (модуль у оси свой на
+        // тип, у None — `ai_untyped`).
         case SquadType::None:      return SquadArchetype::Roamer;
         case SquadType::Count:     break;  // не значение; метка ради -Wswitch
     }
@@ -229,16 +243,19 @@ static_assert(SquadType::Capital == SquadType(1)
                   && SquadType::Tower == SquadType(9)
                   && SquadType::Artel == SquadType(10)
                   && SquadType::Collector == SquadType(17)
-                  && SquadType::Dragon == SquadType(18),
+                  && SquadType::Dragon == SquadType(18)
+                  && SquadType::Nomad == SquadType(19),
               "неподвижные роды — сплошной отрезок 1..9, работники 10..17, "
-              "персоналии с 18: squad_archetype читает ось, а не список имён");
+              "персоналии с 18, кочевники с 19: squad_archetype читает ось, а "
+              "не список имён");
 static_assert(squad_archetype(SquadType::Capital) == SquadArchetype::Rooted
                   && squad_archetype(SquadType::Tower) == SquadArchetype::Rooted
                   && squad_archetype(SquadType::Artel) == SquadArchetype::Worker
                   && squad_archetype(SquadType::Dragon) == SquadArchetype::Hero
+                  && squad_archetype(SquadType::Nomad) == SquadArchetype::Roamer
                   && squad_archetype(SquadType::None) != SquadArchetype::Rooted,
               "Rooted — ровно неподвижный отрезок; Hero заселён драконом; "
-              "None местом не бывает");
+              "Roamer — бродягой; None местом не бывает");
 
 // ── ЕСТЬ ЛИ У РОДА АВАТАР СВОЕЙ АНКЕТЫ — ВЫВЕДЕННЫЙ ПРЕДИКАТ, НОЛЬ БАЙТ ──
 //
@@ -306,6 +323,7 @@ static_assert(!squad_has_avatar(SquadType::Capital)
                   && squad_has_avatar(SquadType::Artel)
                   && squad_has_avatar(SquadType::Caravan)
                   && squad_has_avatar(SquadType::Dragon)
+                  && squad_has_avatar(SquadType::Nomad)
                   && squad_has_avatar(SquadType::None),
               "воплощается всякий, кто не место: аватар есть у работников, "
               "персоналий и бестипового ходока, и его нет у неподвижных");
@@ -521,6 +539,14 @@ inline constexpr SquadKindRow kSquadKinds[std::size_t(SquadType::Count)] = {
      .color = 0x00000000u,
      .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
      .miniR = 0.0f, .id = "dragon", .label = ""},
+    // БРОДЯГА — ходок, как корован и сборщик, которыми он был: картинка и
+    // подпись с тела, глаголы ходочьи.
+    {.type = SquadType::Nomad, .sprite = SpriteId::None,
+     .spriteDepleted = SpriteId::None, .glyph = ' ', .mini = MiniShape::Dot,
+     .actions = kMapActTalk | kMapActTrade | kMapActAttack,
+     .color = 0x00000000u,
+     .basePx = 12.0f, .maxPx = 56.0f, .minZoom = 10.0f, .labelZoom = 0.0f,
+     .miniR = 0.0f, .id = "nomad", .label = ""},
 };
 
 static_assert(rows_in_enum_order(kSquadKinds, &SquadKindRow::type),

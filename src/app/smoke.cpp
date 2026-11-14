@@ -3341,8 +3341,9 @@ bool run_macro_npc_trace_smoke(App& app) {
 
     // The march is checked as a PROPERTY, never as a compass bearing: this
     // NPC's brain may legitimately re-target (a caravan with no honest home
-    // city degrades to the nomad, which picks its own settlement), and WHICH
-    // way that lies is a fact of the world layout, not of the mechanics. The
+    // city becomes a nomad — its own type — which picks its own settlement),
+    // and WHICH way that lies is a fact of the world layout, not of the
+    // mechanics. The
     // old invariant read `visualMid > baseX` and so silently demanded an
     // EASTWARD walk — it went red the day resource-placed settlements moved
     // the nearest town west (R2), while the budget and the glide it means to

@@ -418,9 +418,9 @@ kNpcTypeDefs — КАТАЛОГ ТЕЛ. Микромир берёт из нег�
 
 | точка | что решает по мобной колонке |
 |---|---|
-| `src/macro/squad_ai/untyped.cpp:416 «return kNpcTypeDefs[kind.type].ai;»` (`effective_behaviour`) | какая машина ИИ ведёт сквад |
-| `src/macro/npc_ai.cpp:1662 «const bool fighter = combatant_behaviour(kNpcTypeDefs[kind.type].ai);»` | гонится ли этот сквад за врагом (шаг угрозы) |
-| `src/macro/npc_ai.cpp:1747 «if (!combatant_behaviour(kNpcTypeDefs[kind.type].ai)) return false;»` | хищник ли этот сквад (шаг охоты по запаху) |
+| `src/macro/squad_ai/untyped.cpp:407 «return kNpcTypeDefs[kind.type].ai;»` (`effective_behaviour`) | какая машина ИИ ведёт сквад |
+| `src/macro/npc_ai.cpp:1643 «const bool fighter = combatant_behaviour(kNpcTypeDefs[kind.type].ai);»` | гонится ли этот сквад за врагом (шаг угрозы) |
+| `src/macro/npc_ai.cpp:1728 «if (!combatant_behaviour(kNpcTypeDefs[kind.type].ai)) return false;»` | хищник ли этот сквад (шаг охоты по запаху) |
 | `npc_spawn.cpp:556` | какой ФРАКЦИИ сквад — «агрессивный род значит разбойник» |
 
 И та же протечка объясняет, почему в каталоге тел лежат три строки с
@@ -3246,7 +3246,7 @@ $$\text{Сырьё} \xrightarrow{\text{Крафт}} \text{Предмет} \xrigh
   добычи НЕТ, а две спящие строки листа — `SkillId::Foraging` и
   `SkillId::Prospecting` — УНИЧТОЖАЮТСЯ (наряд M-144). Причина названа
   фактом, а не вкусом: у обеих НОЛЬ механических читателей (у `Foraging` в
-  коде даже стоит посмертная записка, `src/macro/npc_ai.cpp:2260 «ФУРАЖИР. Скидка ведущего по рангу фуражирования»`), но лист
+  коде даже стоит посмертная записка, `src/macro/npc_ai.cpp:2244 «ФУРАЖИР. Скидка ведущего по рангу фуражирования»`), но лист
   персонажа рисует их проценты общим циклом по `kSkillDefs`
   (`ui/overlays.cpp:887-899`) — то есть игрок читает «Prospecting +1% deposit
   sense per rank» как рабочее обещание мира. Спящая колонка, ВИДИМАЯ игроку,
@@ -9743,7 +9743,7 @@ player's grid» — сетка интерфейса, — и индекс сло�
 ### AI-МОДУЛИ: ОДИН ДИСПЕТЧЕР ПО КОЛОНКЕ, ВНУТРИ МОДУЛЯ — ЧТО УГОДНО ✓ (владелец, 2026-09-25)
 
 **ВЫБОР ЦЕЛИ ПРИНАДЛЕЖИТ МОДУЛЮ, И НИКОМУ БОЛЬШЕ ✓ (владелец, 2026-11-08).**
-Сказано в ответ на развилку аудита о гейте `is_other_city@src/macro/npc_ai.cpp`,
+Сказано в ответ на развилку аудита о гейте `is_other_city`,
 и ответ СНИМАЕТ развилку, а не выбирает её половину. Дословно: «в модуле
 корована будет решаться кто цельб торга только так никакие другие системы не
 должны быть (если ща не так то это насралы легаси)».

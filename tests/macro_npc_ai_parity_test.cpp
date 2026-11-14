@@ -228,13 +228,16 @@ void test_nomad_excludes_current_target() {
     sm::MacroStore& st = *worldStore_;
     const int firstId = push_settlement(gs, st, 10, 10);
     const int standingId = push_settlement(gs, st, 40, 10);
-    // Бродяга — ТИП СКВАДА без дома: диспетчер спрашивает тип первым, а
-    // корован без дома честно сваливается в ai_nomad. На роли тела этот
-    // тест стоять больше не может — роль TaxCollector осталась без машины
-    // 2026-09-22, и фикстура молча перестала ехать.
+    // Бродяга — ТИП СКВАДА со своим модулем (`SquadType::Nomad`, ряд M-499,
+    // раскладка (з)): диспетчер спрашивает тип первым. Прежде фикстура
+    // ставила корован без дома, и тот сваливался в общую думку бродяги;
+    // теперь корован без дома сам становится бродягой (свидетель —
+    // `rooted_module_day_test`), а этот закон — «не тот город, где стоишь» —
+    // судится у самого бродяги. На роли тела тест стоять не может — роль
+    // TaxCollector осталась без машины 2026-09-22.
     auto e = spawn_ai(st, sm::NPCType::Peasant, 40.0f, 10.0f, -1);
     auto& rt = (*sm::body_state<sm::ecs::MacroNpcRuntime>(st, e));
-    rt.squadType = std::uint8_t(sm::SquadType::Caravan);
+    rt.squadType = std::uint8_t(sm::SquadType::Nomad);
     // «Стою у standing» — прежний ординал несёт сама цель (род Squad).
     sm::ecs::goal_set(st.goal[e.slot],
                       sm::ecs::cell_index(40, 10, 128),

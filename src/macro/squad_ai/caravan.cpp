@@ -85,8 +85,19 @@ bool caravan_waits_(ecs::MacroNpcRuntime& rt) {
 
 void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
     const std::uint32_t home = view.home(s.h);
-    if (home == ecs::kNoCell) { pult.nomad(s); return; }
     ecs::SquadGoal& g = s.goal;
+    // КЕМ СТАНОВИТСЯ КОРОВАН БЕЗ ДОМА: БРОДЯГОЙ (ряд M-499, раскладка (з)).
+    // Возить некуда — рейс кончен; свой тип он меняет сам, память модуля
+    // зануляет, цель бросает и встаёт без дела, а дальше его ведёт модуль
+    // бродяги (`squad_ai/nomad.cpp`). Двери «сменить тип» в ядре нет. Назад
+    // в корован бродяга не превращается: дома нет.
+    if (home == ecs::kNoCell) {
+        s.rt.squadType = std::uint8_t(SquadType::Nomad);
+        for (std::uint32_t& w : s.rt.mem) w = 0;
+        ecs::goal_drop(g);
+        s.rt.state = std::uint8_t(NS::Idle);
+        return;
+    }
     // Плечо дома — ребро Parent (M-245): один резолв слота на такт. Ветки
     // «а если дома нет» здесь больше нет, и это не упрощение: `view.home`
     // выше спрашивает ТОТ ЖЕ слот ТОГО ЖЕ ребра и уже отказал бы — ветка
@@ -281,15 +292,14 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
 // walked — reuse, not a second copy (CANON S26).
 
 // Переходник пятёрки — тот же, что у образца: собирает СВОЮ СТРОКУ, ВИД и
-// ПУЛЬТ. Фолбэк «мира нет» ведёт бродягой — ровно куда вёл прежний отказ
-// `!ctx.mw.store` в теле (а `gs` здесь добавлен не ради формы: летопись
-// сделки разыменовывала его без проверки).
+// ПУЛЬТ. Без мира думка не идёт (`gs` спрошен не ради формы: летопись сделки
+// разыменовывает его без проверки). Здесь стоял «фолбэк мира нет» бродягой —
+// ветка НЕДОСТИЖИМАЯ: переходник зовёт только `dispatch`, а его — только
+// драйвер думок `tick_macro_npc_ai@src/macro/npc_ai.cpp`, который без `gs` и
+// стора не идёт вовсе; без стора бродяга к тому же разыменовал бы пустоту.
 void ai_vendor(MacroHandle e, ecs::MacroNpcRuntime& rt,
                ecs::Pools& pools, const TickContext& ctx) {
-    if (!ctx.mw.store || !ctx.mw.gs) {
-        ai_nomad(e, rt, pools, ctx);
-        return;
-    }
+    if (!ctx.mw.store || !ctx.mw.gs) return;
     // Преамбула рефлексов — та же и в том же порядке (M-307, см. ai_artel).
     const ecs::NPCKind& kind = store_ctx(ctx).kind[e.slot];
     scent_squad_deposit(e, kind, ctx);
