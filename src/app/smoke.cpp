@@ -2087,10 +2087,12 @@ sm::MacroHandle smoke_first_city(const App& app) {
     // Which KIND of settlement a scenario wants (TIMAERT_SMOKE_SETTLEMENT).
     // A city by default, because that is what every scenario here has always
     // meant; a village on request, so the village's own generator can be
-    // photographed by the same scripts rather than by a second harness.
+    // photographed by the same scripts rather than by a second harness. The
+    // capital likewise (ряд M-522: корона — свой тип и свой генератор).
     sm::SquadType want = sm::SquadType::City;
     if (const char* k = std::getenv("TIMAERT_SMOKE_SETTLEMENT")) {
         if (std::string_view(k) == "village") want = sm::SquadType::Village;
+        if (std::string_view(k) == "capital") want = sm::SquadType::Capital;
     }
     if (!app.macroStore) return sm::MacroHandle{};
     const sm::MacroStore& st = *app.macroStore;
@@ -3710,9 +3712,13 @@ bool run_dungeon_house_smoke(App& app) {
             sm::settlement_at(app.npcAi.squadIndex, *app.macroStore,
                               int(smoke_player_x(app)),
                               int(smoke_player_y(app)));
-        const bool town = app.macroStore->valid(townH)
-            && sm::SquadType(app.macroStore->runtime[townH.slot].squadType)
-                   == sm::SquadType::City;
+        // Город с полкой — и столица (ряд M-522: тип у короны свой, склад
+        // тот же род).
+        const sm::SquadType townKind = app.macroStore->valid(townH)
+            ? sm::SquadType(app.macroStore->runtime[townH.slot].squadType)
+            : sm::SquadType::None;
+        const bool town = townKind == sm::SquadType::City
+                       || townKind == sm::SquadType::Capital;
         sm::Inventory* townInv = town
             ? &app.macroStore->inventory[townH.slot].inv : nullptr;
         const sm::sub::Structure* chest = nullptr;
@@ -10101,9 +10107,15 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             const std::span<const std::uint8_t> feats =
                 app.gs.features.cells();
+            // Клетка города — и столицы: у короны с ряда M-522 свой байт, а
+            // закон генерации обещает именно СТОЛИЦУ на фракцию.
             std::size_t city = feats.size();
             for (std::size_t i = 0; i < feats.size(); ++i) {
-                if (feats[i] == std::uint8_t(sm::FT_City)) { city = i; break; }
+                if (feats[i] == std::uint8_t(sm::FT_City)
+                    || feats[i] == std::uint8_t(sm::FT_Capital)) {
+                    city = i;
+                    break;
+                }
             }
             if (city == feats.size()) {
                 // Наличие города на любом сиде — закон генерации (столица на

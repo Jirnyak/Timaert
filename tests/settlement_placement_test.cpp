@@ -37,6 +37,7 @@
 #include "macro/birth_squad.h"     // место рождается СО СВОИМ ТЕЛОМ (M-90)
 #include "macro/settlement_score.h"
 #include "macro/spawners.h"
+#include "tables/faction.h"        // faction_index — корона фикстуры
 #include "macro/squad.h"       // suzerain_of — знание роли в interests ТЕЛА
 #include "macro/state.h"
 #include "bus/store.h"
@@ -669,7 +670,8 @@ int settlement_kind_disagreements(const GameState& gs, const FeatureLayer& fl,
     for (int y = 0; y < gs.mapH; ++y) {
         for (int x = 0; x < gs.mapW; ++x) {
             const FeatureType ft = fl.at(cell_of(x, y, fl.width));
-            if (settlement_feature_of(SquadType::City) != ft
+            if (settlement_feature_of(SquadType::Capital) != ft
+                && settlement_feature_of(SquadType::City) != ft
                 && settlement_feature_of(SquadType::Village) != ft
                 && settlement_feature_of(SquadType::Spire) != ft
                 && settlement_feature_of(SquadType::Ruin) != ft) {
@@ -728,6 +730,167 @@ void test_settlement_kind_has_one_answer() {
                      "по приоритету выдачи, штамп — ПОСЛЕДНЕМУ по контейнеру");
 }
 
+// ═════ СТОЛИЦА РОЖДАЕТСЯ СТОЛИЦЕЙ; ЛЕСТНИЦА ДАНИ — ЕЁ РЁБРАМИ ═════════════
+// Ряд M-522, вердикт владельца 2026-11-13 (CANON S25 «СТОЛИЦА РОЖДАЕТСЯ
+// СТОЛИЦЕЙ»): «столицы основных фракций … и вокруг города вокруг городов
+// деревни … и феодально тоже столица выслыает сборщика в гоород а город в
+// деревню». До шага все города плана рождались типом ГОРОДА, и строка
+// столицы — её фича, её модуль, её генератор субмира — в живом мире не
+// исполнялась ни разу.
+//
+// Фикстура КОРОНУЕТ план сама (§8 п.11): две фракции, у каждой корона и
+// город, плюс ничейный город — тот, кого коронованным не назвал никто.
+// Утверждаются ОТНОШЕНИЯ рождённого мира, а не числа: столица у фракции
+// ровно одна и стоит на своей фиче; прочие города — типа города на фиче
+// города; вассалы столицы среди городов — города ЕЁ фракции, и только они;
+// сюзерен деревни — тот, вокруг кого она встала.
+struct CrownedPlanCity { int x, y; const char* faction; bool crown; };
+constexpr CrownedPlanCity kCrownedPlan[] = {
+    {12, 10, "empire",  true},
+    {12, 40, "empire",  false},
+    {50, 10, "timaert", true},
+    {50, 40, "timaert", false},
+    {40, 25, nullptr,   false},
+};
+
+void make_crowned_world(World& w) {
+    store_reset(places());   // мир фикстуры начинается пустым (ломтик F)
+    w.td = make_world();
+    std::vector<std::uint8_t> mask(std::size_t(kW) * kH, 0);
+    build_tree_layer(w.trees, w.td, mask.data(), mask.size());
+    build_deposit_layer(w.deposits, w.td, 777u);
+    w.gs.features.resize(kW, kH);
+    w.gs.worldSeed = 777u;
+    w.gs.mapW = kW;
+    w.gs.mapH = kH;
+    w.cityPlan.clear();
+    for (const CrownedPlanCity& p : kCrownedPlan) {
+        City c{};
+        c.x = p.x;
+        c.y = p.y;
+        c.factionIdx = p.faction != nullptr
+            ? std::int16_t(faction_index(p.faction)) : std::int16_t(-1);
+        c.isCapital = p.crown;
+        c.population = 1000;
+        for (int& cc : c.connections) cc = -1;
+        w.cityPlan.push_back(c);
+    }
+    populate_rooted_from_politik(w.gs, nullptr, places(), w.cityPlan, w.td,
+                                    w.deposits);
+}
+
+// Ординалы ВАССАЛОВ слота — записи `Stance::Vassal` его реестра, поставленные
+// одной дверью на оба конца (`set_relation@src/bus/store.h`). Помощник ЭТОГО
+// свидетеля: в мире вассалов перечисляет окно модуля, и копии его здесь нет.
+std::vector<int> vassal_ids_of(std::uint16_t slot) {
+    std::vector<int> out;
+    const Interests& in = places().interests[slot];
+    for (int k = 0; k < kMaxInterests; ++k) {
+        const Interest& it = in.slots[k];
+        if (it.stance == std::uint8_t(Stance::None)) break;
+        if (it.stance == std::uint8_t(Stance::Vassal)) out.push_back(it.object);
+    }
+    return out;
+}
+
+void test_the_crown_is_born_a_capital() {
+    World w;
+    make_crowned_world(w);
+    const std::vector<RootedRow> capitals = rooted_of(w.gs, SquadType::Capital);
+    const std::vector<RootedRow> cities = cities_of(w.gs);
+    const std::vector<RootedRow> villages = villages_of(w.gs);
+    std::fprintf(stderr, "[crown] столиц %zu, городов %zu, деревень %zu\n",
+                 capitals.size(), cities.size(), villages.size());
+
+    // ── (а) ТИП И ФИЧА ──────────────────────────────────────────────────
+    int crowns = 0, towns = 0;
+    for (const CrownedPlanCity& p : kCrownedPlan) (p.crown ? crowns : towns)++;
+    CHECK(int(capitals.size()) == crowns,
+          "СТОЛИЦА РОЖДАЕТСЯ СТОЛИЦЕЙ: столиц в мире ровно столько, сколько "
+          "корон назвал план");
+    CHECK(int(cities.size()) == towns,
+          "прочие города плана — типа ГОРОДА, включая ничейный");
+    for (const CrownedPlanCity& p : kCrownedPlan) {
+        if (!p.crown) continue;
+        const std::int16_t f = std::int16_t(faction_index(p.faction));
+        int mine = 0;
+        for (const RootedRow& r : capitals)
+            if (std::int16_t(places().kind[r.slot].factionIdx) == f) ++mine;
+        CHECK(mine == 1, "у фракции, чей план назвал корону, ровно ОДНА "
+                         "столица");
+    }
+    for (const RootedRow& r : capitals)
+        CHECK(w.gs.features.at(cell_of(r.x, r.y, kW)) == FT_Capital,
+              "столица стоит на клетке с ФИЧЕЙ СТОЛИЦЫ — её ставит та же дверь "
+              "рождения по колонке строки фичи");
+    for (const RootedRow& r : cities)
+        CHECK(w.gs.features.at(cell_of(r.x, r.y, kW)) == FT_City,
+              "город стоит на клетке с фичей ГОРОДА");
+    // Байт фичи и колонка тела согласны на КАЖДОЙ клетке поселения — тот же
+    // детектор, что у мира без корон, теперь с клеткой столицы в обходе.
+    SquadIndex frame;
+    build_squad_index(frame, places(), kW, kH);
+    int stamped = 0;
+    CHECK(settlement_kind_disagreements(w.gs, w.gs.features, frame, places(),
+                                        &stamped) == 0 && stamped > 0,
+          "байт фичи и тип тела называют род одинаково, столицу тоже");
+
+    // ── (б) ЛЕСТНИЦА ДАНИ — РЁБРАМИ РОЖДЁННОГО МИРА ──────────────────────
+    int vassalCityEdges = 0;   // вассалов-городов у столиц, всего
+    for (const RootedRow& cap : capitals) {
+        CHECK(cap.suzerain == 0, "столица дани не должна никому");
+        const std::int16_t f =
+            std::int16_t(places().kind[cap.slot].factionIdx);
+        int ownCities = 0;
+        for (const RootedRow& c : cities)
+            if (std::int16_t(places().kind[c.slot].factionIdx) == f) ++ownCities;
+        int vassalCities = 0;
+        bool foreign = false;
+        for (const int vid : vassal_ids_of(cap.slot)) {
+            const MacroHandle v = rooted_handle_by_ordinal(
+                places(), std::uint32_t(vid));
+            if (!places().valid(v)) continue;
+            const SquadType vt = SquadType(places().runtime[v.slot].squadType);
+            CHECK(vt != SquadType::Capital,
+                  "столица не бывает вассалом столицы");
+            if (vt != SquadType::City) continue;
+            ++vassalCities;
+            foreign = foreign
+                || std::int16_t(places().kind[v.slot].factionIdx) != f;
+        }
+        CHECK(!foreign, "вассалы-города столицы — города ЕЁ фракции");
+        CHECK(vassalCities == ownCities && vassalCities > 0,
+              "столица держит вассалами ВСЕ города своей фракции");
+        vassalCityEdges += vassalCities;
+    }
+    CHECK(vassalCityEdges == towns - 1,
+          "вассалов-городов у столиц ровно столько, сколько коронованных "
+          "городов: ничейный город короны не имеет");
+    for (const RootedRow& c : cities) {
+        const MacroHandle s = rooted_handle_by_ordinal(
+            places(), std::uint32_t(c.suzerain));
+        if (std::int16_t(places().kind[c.slot].factionIdx) < 0)
+            continue;   // ничейный город сюзерена не имеет — проверен выше
+        CHECK(places().valid(s)
+                  && SquadType(places().runtime[s.slot].squadType)
+                         == SquadType::Capital,
+              "сюзерен коронованного города — СТОЛИЦА");
+    }
+    int villagesOfCapitals = 0;
+    for (const RootedRow& v : villages) {
+        const MacroHandle s = rooted_handle_by_ordinal(
+            places(), std::uint32_t(v.suzerain));
+        const SquadType sk = places().valid(s)
+            ? SquadType(places().runtime[s.slot].squadType)
+            : SquadType::None;
+        CHECK(sk == SquadType::City || sk == SquadType::Capital,
+              "сюзерен деревни — город или столица, вокруг которых она встала");
+        villagesOfCapitals += sk == SquadType::Capital ? 1 : 0;
+    }
+    CHECK(villagesOfCapitals > 0,
+          "вокруг столицы тоже встали деревни, и она им сюзерен");
+}
+
 void test_determinism() {
     // ПЕРЕПИСЬ СНИМАЕТСЯ СРАЗУ: второе расселение обнуляет store, и ссылки
     // на тела первого мира протухли бы молча (ломтик F).
@@ -760,6 +923,7 @@ int main() {
     test_villages_stand_next_to_something();
     test_cities_read_the_ground();
     test_settlement_kind_has_one_answer();
+    test_the_crown_is_born_a_capital();
     test_determinism();
     return sm::test::report("settlement_placement_test");
 }

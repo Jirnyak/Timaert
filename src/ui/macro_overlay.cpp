@@ -539,11 +539,15 @@ void draw_macro_overlay(const MacroWorld& mw,
             // — и спрошено это у САМОЙ строки города, а не двумя её числами,
             // переписанными сюда литералами: пин обязан подниматься над тем,
             // что карта рисует СЕГОДНЯ.
+            // Столица рисуется своей строкой и крупнее города (ряд M-522),
+            // поэтому пин спрашивает обе строки и встаёт над большей.
             const SquadKindRow& cityRow = squad_kind(SquadType::City);
+            const SquadKindRow& capitalRow = squad_kind(SquadType::Capital);
+            const float span = archetype_draw(SquadArchetype::Rooted).cellSpan;
             const float above =
-                mark_size(zoom,
-                          archetype_draw(SquadArchetype::Rooted).cellSpan,
-                          cityRow.basePx, cityRow.maxPx) * 0.5f + r + 4.0f;
+                std::max(mark_size(zoom, span, cityRow.basePx, cityRow.maxPx),
+                         mark_size(zoom, span, capitalRow.basePx,
+                                   capitalRow.maxPx)) * 0.5f + r + 4.0f;
             const ImVec2 c(p.x, p.y - above);                  // pin centre
             // Dark disc + coloured ring so the pin reads over any biome.
             dl->AddCircleFilled(c, r, IM_COL32(0, 0, 0, 150), 20);

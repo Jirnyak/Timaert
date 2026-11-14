@@ -123,7 +123,8 @@ void default_game_state(GameState& gs,
 //
 //   1. Each politik city becomes a city PLACE (a motionless squad: its
 //      ordinal, kind, name and address are the columns of its body),
-//      named from its faction's language.
+//      named from its faction's language; the realm's crown city is born
+//      a CAPITAL (its own type, feature, module and subworld generator).
 //   2. Each settlement spawns satellite villages on land cells in
 //      a small ring (4–14 cells away) — same faction, smaller pop.
 //   3. Markers refreshed so the codex / overlay tooltip / quest engine
@@ -186,9 +187,19 @@ void populate_rooted_from_politik(GameState& gs, Session* ses,
                                 : std::string("Outpost");
         // Место родится ТЕЛОМ одной дверью (ломтик F): ординал эмитит она
         // же, из того же единого эмитента, что сквадам (M-37).
-        const MacroHandle h = birth_squad(gs, ses, st, SquadType::City,
-                                          c.x, c.y, c.factionIdx,
-                                          cityName.c_str(), &terrain);
+        //
+        // СТОЛИЦА РОЖДАЕТСЯ СТОЛИЦЕЙ (вердикт владельца 2026-11-13, CANON
+        // S25 «СТОЛИЦА РОЖДАЕТСЯ СТОЛИЦЕЙ»; ряд M-522): город плана, которого
+        // план назвал короной своей фракции, получает СВОЙ тип — а с ним свою
+        // фичу (её ставит та же дверь рождения по колонке `kind` строки фичи),
+        // свой ИИ-модуль и свой генератор субмира. Признак тот же, по
+        // которому ниже строится лестница дани, — второго ответа «кто
+        // столица» нет. Прежде все города плана рождались типом города, и
+        // строка столицы в живом мире не исполнялась ни разу.
+        const bool crown = c.isCapital && c.factionIdx >= 0;
+        const MacroHandle h = birth_squad(
+            gs, ses, st, crown ? SquadType::Capital : SquadType::City,
+            c.x, c.y, c.factionIdx, cityName.c_str(), &terrain);
         if (!st.valid(h)) continue;      // отказ капа уже прозвучал вслух
         const std::uint16_t slot = h.slot;
         settle_souls(gs, st, slot, souls);
@@ -201,8 +212,7 @@ void populate_rooted_from_politik(GameState& gs, Session* ses,
             squad_birth(SquadType(st.runtime[slot].squadType)));
         const int id = int(st.spawnId[slot].index);
         cityRefs.push_back(CityRef{id, c.x, c.y, c.factionIdx});
-        if (c.isCapital && c.factionIdx >= 0)
-            capitalOf[std::size_t(c.factionIdx)] = id;
+        if (crown) capitalOf[std::size_t(c.factionIdx)] = id;
     }
 
     // THE suzerain edges (CANON S24), stamped here — the one place that

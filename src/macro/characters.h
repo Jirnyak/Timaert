@@ -100,7 +100,9 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
         NPCType::Merchant, /*level*/ 3,
         /*type*/ SquadType::None,
         "empire",
-        SquadType::City, /*homeIndex*/ 0, /*homeFaction*/ nullptr,
+        // Дом — первая столица мира: там он и жил, пока столица рождалась
+        // типом города (строка говорила «город 0»; тип столицы — с M-522).
+        SquadType::Capital, /*homeIndex*/ 0, /*homeFaction*/ nullptr,
         /*homePeak*/ false, /*cell*/ 0, 0,
         AIBehaviour::Waypoints,
         DesignAgenda{.routeToNearest =

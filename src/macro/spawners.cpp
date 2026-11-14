@@ -739,12 +739,14 @@ namespace sm
         // Поселения — клетками их фич: «деревня рядом или город» судится от
         // пика кластера чебышёвым расстоянием на торе в досягаемости
         // добытчика (kGathererReach — тот же радиус, которым шахту потом
-        // будут работать руки).
+        // будут работать руки). Столица — город вердикта наравне (ряд M-522:
+        // байт у неё свой, а «город рядом» она по-прежнему).
         std::vector<std::uint32_t> towns;
         for (std::uint32_t c = 0; c < std::uint32_t(W) * std::uint32_t(H);
              ++c) {
             const FeatureType ft = fl.at(c);
-            if (ft == FT_City || ft == FT_Village) towns.push_back(c);
+            if (ft == FT_Capital || ft == FT_City || ft == FT_Village)
+                towns.push_back(c);
         }
         if (towns.empty()) return;
 

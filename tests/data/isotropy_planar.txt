@@ -164,6 +164,13 @@
 # поляны, руины, шпили, палисады, пещеры. Сюда же планарные градиенты высоты
 # (`dh/dv` в growth.cpp, `(hR-hL)/(hU-hD)` в mountain.cpp), эвристика A* по
 # решётке (streets.cpp) и габариты плана (`w/d`, `w/h` в plots.cpp).
+природа	src/sub/gens/capital.cpp	dx/dy
+природа	src/sub/gens/capital.cpp	dx/dy
+природа	src/sub/gens/capital.cpp	dx/dy
+природа	src/sub/gens/capital.cpp	ddx/ddy
+природа	src/sub/gens/capital.cpp	ddx/ddy
+природа	src/sub/gens/capital.cpp	ax/ay
+природа	src/sub/gens/capital.cpp	bx/by
 природа	src/sub/gens/city.cpp	dx/dy
 природа	src/sub/gens/city_wall.cpp	dx/dy
 природа	src/sub/gens/city_wall.cpp	dx/dy

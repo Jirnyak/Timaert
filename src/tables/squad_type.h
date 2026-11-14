@@ -591,7 +591,11 @@ static_assert([] {
             && rooted_is_settlement(t))
             return false;
     }
-    return rooted_is_settlement(SquadType::City)
+    // Столица — поселение наравне с городом (ряд M-522): корона рождается
+    // своим типом, и вход игрока, встреча и станция корована судят её этой
+    // же дверью; снятый у её строки прилавок красит сборку здесь.
+    return rooted_is_settlement(SquadType::Capital)
+        && rooted_is_settlement(SquadType::City)
         && rooted_is_settlement(SquadType::Village)
         && !rooted_is_settlement(SquadType::Spire);
 }(), "поселение — СТОЯЩИЙ род с прилавком/наймом/доской; подвижный род "

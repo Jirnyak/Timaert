@@ -1895,6 +1895,103 @@ void test_the_caravan_with_no_market_waits_at_home() {
           "СОХРАНЕНИЕ: еда города либо на полке, либо в трюме его рейса");
 }
 
+// ═════ ЛЕСТНИЦА ДАНИ ИДЁТ ВНИЗ ПО СТУПЕНЯМ (ряд M-522) ═════════════════════
+// Владелец, дословно (CANON S25 «СТОЛИЦА РОЖДАЕТСЯ СТОЛИЦЕЙ»): «и феодально
+// тоже столица выслыает сборщика в гоород а город в деревню». Фикстура сама
+// ставит три ступени и два ребра феода дверью мира (§8 п.11): столица —
+// сюзерен города, город — сюзерен деревни. Утверждается, КУДА идут сборщики:
+// сборщик столицы назвал целью город, сборщик города — деревню, и ни один не
+// перешагнул ступень (столица деревню своего вассала не обходит, город к
+// столице не ходит).
+void test_the_tithe_ladder_runs_down() {
+    Fixture f;
+    f.gs.worldTime = world_time_at(1, 8, 0);
+    const MacroHandle cap = f.rooted(SquadType::Capital, 4, 10, 64);
+    const MacroHandle city = f.rooted(SquadType::City, 14, 10, 64);
+    const MacroHandle vil = f.rooted(SquadType::Village, 24, 10, 64);
+    const int capId = int(f.st().spawnId[cap.slot].index);
+    const int cityId = int(f.st().spawnId[city.slot].index);
+    const int vilId = int(f.st().spawnId[vil.slot].index);
+    set_relation(f.st(), cityId, capId, Stance::Suzerain);
+    set_relation(f.st(), vilId, cityId, Stance::Suzerain);
+    CHECK(suzerain_of(f.st(), city.slot) == capId
+              && suzerain_of(f.st(), vil.slot) == cityId,
+          "фикстура: две ступени феода встали дверью мира");
+
+    MacroNpcAiRuntime rt{};
+    reset_macro_npc_ai_runtime(rt, 54u);
+    bool capToCity = false, cityToVil = false;
+    bool capToVil = false, cityToCap = false;
+    int samples = 0;
+    for (int i = 0; i < kThinksPerDay * 2; ++i) {
+        f.think_on(rt, 1);
+        for (std::size_t s = 0; s < kUnifiedCap; ++s) {
+            if (f.st().alive[s] == 0 || f.st().dead[s] != 0) continue;
+            if (f.st().runtime[s].squadType
+                != std::uint8_t(SquadType::Collector))
+                continue;
+            ++samples;
+            const std::uint32_t what = f.st().goal[s].what;
+            if (ecs::goal_kind(what) != ecs::GoalKind::Squad) continue;
+            const int target = int(ecs::goal_ordinal(what));
+            const int home = parent_of(f.st(), std::uint16_t(s));
+            capToCity = capToCity || (home == capId && target == cityId);
+            capToVil = capToVil || (home == capId && target == vilId);
+            cityToVil = cityToVil || (home == cityId && target == vilId);
+            cityToCap = cityToCap || (home == cityId && target == capId);
+        }
+    }
+    CHECK(samples > 0, "прибор померил: сборщики в мире были");
+    CHECK(f.children_of(capId, SquadType::Collector) == 1
+              && f.children_of(cityId, SquadType::Collector) == 1,
+          "каждая ступень с вассалом подняла своего сборщика");
+    CHECK(capToCity, "СТОЛИЦА ВЫСЫЛАЕТ СБОРЩИКА В ГОРОД");
+    CHECK(cityToVil, "ГОРОД ВЫСЫЛАЕТ СБОРЩИКА В ДЕРЕВНЮ");
+    CHECK(!capToVil && !cityToCap,
+          "лестница не перешагивает ступень: столица у деревни вассала не "
+          "берёт, город к своей столице сборщика не шлёт");
+}
+
+// ═════ СТОЛИЦА — СТАНЦИЯ КОРОВАНА, КАК ГОРОД (ряд M-522) ═══════════════════
+// Корона рождается своим типом, и рынок мира она терять не вправе: станцию
+// корована выбирает дверь `next_station` по строке оси («поселение ли») и
+// числу поля под клеткой, а не по имени типа. Фикстура — город с излишком и
+// столица рядом с монетой и нуждой, ЕДИНСТВЕННЫЙ сосед: рейс города обязан
+// назвать её целью и встать на её клетке.
+void test_the_capital_is_a_caravan_station() {
+    Fixture f;
+    const MacroHandle city = f.rooted(SquadType::City, 10, 10, 64);
+    const MacroHandle cap = f.rooted(SquadType::Capital, 14, 10, 64);
+    const int cityId = int(f.st().spawnId[city.slot].index);
+    const int capId = int(f.st().spawnId[cap.slot].index);
+    Inventory& cityInv = f.st().inventory[city.slot].inv;
+    Inventory& capInv = f.st().inventory[cap.slot].inv;
+    const int foodCol = commodity_index("food");
+    CHECK(cityInv.add("food", 6000), "фикстура: излишек еды города");
+    CHECK(capInv.add("coin_timaert_copper", 60000),
+          "фикстура: столица платёжеспособна");
+    f.st().upkeep[cap.slot].needDebt[foodCol] = upkeep_bill(capInv).board;
+
+    MacroNpcAiRuntime rt{};
+    reset_macro_npc_ai_runtime(rt, 55u);
+    const std::uint32_t capCell = f.st().cell[cap.slot].idx;
+    int samples = 0;
+    bool aimed = false, stood = false;
+    for (int i = 0; i < kThinksPerDay * 4; ++i) {
+        f.think_on(rt, 1);
+        const std::uint16_t c = caravan_of(f, cityId);
+        if (c == kMacroNoSlot) continue;
+        ++samples;
+        const std::uint32_t what = f.st().goal[c].what;
+        aimed = aimed || (ecs::goal_kind(what) == ecs::GoalKind::Squad
+                          && int(ecs::goal_ordinal(what)) == capId);
+        stood = stood || stands_at(f, c, capCell);
+    }
+    CHECK(samples > 0, "прибор померил: корован города рождён");
+    CHECK(aimed, "СТОЛИЦА — СТАНЦИЯ КОРОВАНА: рейс города назвал её рынком");
+    CHECK(stood, "и встал на её клетке, а не проехал мимо");
+}
+
 int main() {
     test_village_produces_through_its_own_think();
     test_the_town_remembers_it_has_nothing_to_craft();
@@ -1909,5 +2006,7 @@ int main() {
     test_the_city_and_the_capital_load_their_caravans();
     test_the_trip_follows_the_return_law_at_its_edges();
     test_the_caravan_with_no_market_waits_at_home();
+    test_the_tithe_ladder_runs_down();
+    test_the_capital_is_a_caravan_station();
     return sm::test::report("rooted_module_day_test");
 }

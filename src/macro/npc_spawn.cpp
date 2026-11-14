@@ -246,9 +246,12 @@ void spawn_macro_npcs(GameState& gs, MacroStore& st,
 
     // Per-settlement spawns. Снимок СЛОТОВ городов берётся до рождений:
     // жители встают в ТУ ЖЕ популяцию, и живой обход увидел бы их тоже.
+    // Столица — город с рынком наравне (ряд M-522): её купцы рождаются тем
+    // же броском, что прежде, когда корона носила тип города.
     std::vector<std::uint16_t> cities;
     for_each_rooted(st, [&](std::uint16_t slot) {
-        if (SquadType(st.runtime[slot].squadType) == SquadType::City)
+        const SquadType t = SquadType(st.runtime[slot].squadType);
+        if (t == SquadType::City || t == SquadType::Capital)
             cities.push_back(slot);
     });
     for (std::uint16_t cslot : cities) {

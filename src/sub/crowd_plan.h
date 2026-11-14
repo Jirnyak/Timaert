@@ -83,6 +83,37 @@ inline CrowdPlan crowd_plan_city(const CrowdPlanIn& in) {
     return plan;
 }
 
+// СТОЛИЦА: свой модуль плана (вердикт владельца 2026-11-13 на развилку
+// генератора — «Свой модуль — копия городского»; ряд M-522). Сегодня — полная
+// копия городского плана под своим именем, и копия законна (AGENTS §4 п.5:
+// под модули общего не создаётся); толпа столицы стоит в той геометрии,
+// которую строит её генератор (`gen_capital@src/sub/gens/capital.cpp`), и
+// различие столицы пишется здесь и там, город его не увидит.
+inline CrowdPlan crowd_plan_capital(const CrowdPlanIn& in) {
+    CrowdPlan plan;
+    plan.discRadius = std::min(
+        city_house_radius(in.pop),
+        wall_inner_bound(city_core_radius(in.pop), city_wall_roughness()));
+    plan.keepX = in.centerX;
+    plan.keepY = in.centerY;
+    const Structure* keep = nullptr;
+    for (const Structure& st : in.structures) {
+        if (st.kind != Structure::House) continue;
+        if (st.x < float(in.originX)
+            || st.x >= float(in.originX + kCellSize)) continue;
+        if (st.y < float(in.originY)
+            || st.y >= float(in.originY + kCellSize)) continue;
+        if (keep == nullptr || st.height > keep->height) keep = &st;
+    }
+    if (keep != nullptr) {
+        plan.keepX = keep->x;
+        plan.keepY = keep->y;
+        plan.quarterR = city_upper_radius(in.pop);
+        plan.haveQuarter = true;
+    }
+    return plan;
+}
+
 // ДЕРЕВНЯ: ядро домов; при частоколе — срез его кольцом. Квартала нет.
 inline CrowdPlan crowd_plan_village(const CrowdPlanIn& in) {
     CrowdPlan plan;
@@ -101,12 +132,11 @@ struct CrowdPlanRow {
     CrowdPlanFn plan;
 };
 inline constexpr CrowdPlanRow kCrowdPlanRows[] = {
-    // «ТАМ БУДЕТ ОСОБЫЙ ГЕНЕРАТОР!» (вердикт владельца 2026-10-24 — та же
-    // строка nullptr у FT_Capital в таблице геометрии; ответ владельца
-    // 2026-11-07 на развилку толпы — «nullptr, как в геометрии»): пока
-    // генератора нет, толпа столицы честно НЕ встаёт — род без модуля не
-    // получает чужой стройки (шрам GEN-5).
-    { SquadType::Capital, nullptr },
+    // Столица — свой модуль плана, как и свой генератор (ряд M-522). Здесь
+    // стоял nullptr — «nullptr, как в геометрии» (ответ владельца
+    // 2026-11-07), пока генератора не было: род без модуля не получает чужой
+    // стройки (шрам GEN-5). Генератор пришёл — пришёл и план.
+    { SquadType::Capital, crowd_plan_capital },
     { SquadType::City,    crowd_plan_city },
     { SquadType::Village, crowd_plan_village },
     // Прочие рода стоят в деревенском ядре, «пока свой закон планировки не

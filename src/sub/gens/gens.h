@@ -35,6 +35,7 @@ struct GenInput {
 // внутри себя вольны делать что угодно и брать фундаментальные системы
 // и контекст (который своих читателей не знает — ЗАКОН АГНОСТИЧНОСТИ).
 void gen_open    (const GenInput& in, SubworldMapData& out);
+void gen_capital (const GenInput& in, SubworldMapData& out);
 void gen_city    (const GenInput& in, SubworldMapData& out);
 void gen_village (const GenInput& in, SubworldMapData& out);
 void gen_forest  (const GenInput& in, SubworldMapData& out);

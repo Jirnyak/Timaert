@@ -1075,6 +1075,44 @@ int main() {
     CHECK(ok29, "city generator ignored neighbour road directions");
     if (!ok29) return 1;
 
+    // СТОЛИЦА — СВОЙ МОДУЛЬ (ряд M-522; вердикт владельца «Свой модуль —
+    // копия городского»). Байт столицы обязан назвать СВОЙ генератор, и
+    // генератор обязан отдать постройки: голая земля на клетке короны была
+    // ответом, пока модуля не было, и снова им стать не вправе. Утверждаются
+    // свойства поселения, а не равенство с городом — копия вправе расходиться.
+    CellContext capital = city;
+    capital.cx = 21;
+    capital.cy = -9;
+    capital.feature = FT_Capital;
+    capital.rooted.id = 303;
+    capital.rooted.kind = SquadType::Capital;
+    capital.seed = 0x0C0FFEE5u;
+    fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
+    SubworldMapData capitalOut{};
+    dispatch_generate(capital, nbH, nbB, /*nbBiome5*/nullptr, nbF, capitalOut);
+    CHECK(open_air_gen_for(capital) == gen_capital,
+          "байт столицы назвал СВОЙ модуль генерации");
+    int capitalHouses = 0, capitalWalls = 0, capitalKeeps = 0;
+    int capitalSquares = 0, capitalFields = 0;
+    for (const Structure& s : capitalOut.structures) {
+        if (s.kind == Structure::House) ++capitalHouses;
+        if (s.kind == Structure::Wall) ++capitalWalls;
+        if (s.kind == Structure::House && s.height >= 15.0f) ++capitalKeeps;
+    }
+    for (const std::uint8_t tile : capitalOut.tiles) {
+        if (tile == TILE_SQUARE) ++capitalSquares;
+        if (tile == TILE_FIELD) ++capitalFields;
+    }
+    std::cerr << "capital counts houses=" << capitalHouses
+              << " walls=" << capitalWalls << " keeps=" << capitalKeeps
+              << " squares=" << capitalSquares
+              << " fields=" << capitalFields << "\n";
+    CHECK(capitalHouses > 0 && capitalWalls > 0 && capitalSquares > 0
+              && capitalFields > 0 && capitalKeeps == 1,
+          "СУБМИР СТОЛИЦЫ НЕ ПУСТ: дома, стена, рынок, поля и один донжон");
+    CHECK(wall_structures_on_protected_tiles(capitalOut) == 0,
+          "кладка столицы не стоит на дорогах и площадях");
+
     CellContext village{};
     village.cx = 13;
     village.cy = -3;

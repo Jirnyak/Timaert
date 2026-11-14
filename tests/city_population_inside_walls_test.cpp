@@ -203,9 +203,14 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
     // сравнения `place == City` + settlement_population_radius(bool)).
     // `city` ниже — знание ФИКСТУРЫ о том, что она сама построила (reach —
     // предел геометрии рода), а не второй диспетч закона.
-    const bool city = place == sm::SquadType::City;
+    // Столица строит своим модулем — сегодня копией городского (ряд M-522),
+    // поэтому знание фикстуры о геометрии у неё городское: квартал есть,
+    // предел — городской.
+    const bool city = place == sm::SquadType::City
+                   || place == sm::SquadType::Capital;
     const sm::sub::CrowdPlanFn planFn = sm::sub::crowd_plan_for(place);
     CHECK(planFn != nullptr, "у рода поселения есть модуль плана толпы");
+    if (planFn == nullptr) return s;   // красное выше; звать нечего
     const sm::sub::CrowdPlan plan = planFn(sm::sub::CrowdPlanIn{
         mgr.structures(), cx, cy,
         /*originX*/int(sm::sub::kCellSize), /*originY*/int(sm::sub::kCellSize),
@@ -450,6 +455,32 @@ int main() {
         const bool ok11 = !(1200 - streetAt[0] <= 1200 - streetAt[12]);
         CHECK(ok11, "the hearths do not fill as the sun goes down");
         if (!ok11) return 1;
+    }
+
+    // ── Capital ─────────────────────────────────────────────────────────────
+    // СТОЛИЦА — СВОЙ ГЕНЕРАТОР И СВОЙ ПЛАН ТОЛПЫ (ряд M-522). Пока их не было,
+    // на клетке короны вставали голая земля и НОЛЬ людей; теперь её толпа
+    // обязана стоять в том, что построил её генератор, — тот же закон, что у
+    // города, судится той же дверью спавна. Своих чисел здесь нет: улица по
+    // солнцу, предел, кладка, воды и стены — те же отношения.
+    {
+        sm::sub::SeamlessSubworldManager mgr;
+        mgr.init(0, 0, settlement_resolver(sm::SquadType::Capital, 1200));
+        mgr.consume_composite_dirty_cells();   // сброс грязи: ответ не читается
+        const sm::WorldTime noon = sm::world_time_at(1, 12, 0);
+        const Spread s = measure(mgr, sm::SquadType::Capital, 1200,
+                                 0xCA917A1u, noon);
+        std::fprintf(stderr, "  capital: street %d, doors %d, maxR %.1f\n",
+                     s.citizens, doors_of(mgr), double(s.maxR));
+        CHECK(doors_of(mgr) > 0,
+              "генератор столицы поставил дома — субмир короны не голое поле");
+        CHECK(s.citizens > 0
+                  && s.citizens >= street_floor(1200, doors_of(mgr), noon),
+              "толпа столицы встала — её план толпы есть, и улица полна по "
+              "солнцу");
+        CHECK(s.outsideReach == 0, "люди столицы не за её пределом");
+        CHECK(s.outsideMasonry == 0, "люди столицы не за её стеной");
+        CHECK(s.onSolid == 0, "люди столицы не в воде и не в кладке");
     }
 
     // ── Village ─────────────────────────────────────────────────────────────

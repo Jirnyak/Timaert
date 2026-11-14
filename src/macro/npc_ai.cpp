@@ -94,9 +94,14 @@ inline std::uint16_t rooted_slot_by_id(const TickContext& ctx, int id) {
 // `macro/rooted_iter.h`): ось рода ТЕЛА отвечает «город ли это», второго
 // списка городов в мире нет. `notId` — ординал, который спрашивающий
 // исключает (свой дом у торговца, текущая цель у кочевника).
+// СТОЛИЦА В УРНЕ НАРАВНЕ С ГОРОДОМ (ряд M-522): с тех пор как корона
+// рождается своим типом, «город» здесь значит «город или столица» — цель
+// бродяги есть ГОРОД МИРА, и столица им остаётся; без второго значения
+// урна молча потеряла бы по городу на фракцию.
 bool is_other_city(const MacroStore& st, std::uint16_t slot,
                    int notId) {
-    return SquadType(st.runtime[slot].squadType) == SquadType::City
+    const SquadType t = SquadType(st.runtime[slot].squadType);
+    return (t == SquadType::City || t == SquadType::Capital)
            && int(st.spawnId[slot].index) != notId;
 }
 

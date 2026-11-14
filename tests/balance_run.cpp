@@ -425,6 +425,13 @@ int main(int argc, char** argv) {
         // прожила бы календарно. Хвостом, как слоты выше — ни один прежний
         // индекс не сдвинут, и читать её положено ПО ИМЕНИ (§5 п.7).
         std::fprintf(fw, "\tfacts");
+        // ПАСТВА ОДНИХ СТОЛИЦ (ряд M-522). С тех пор как корона рождается
+        // своим типом, агрегаты «города» (`popCity`, `*_city`) считают город
+        // И столицу — ровно то множество, что они считали, пока столица
+        // носила тип города, — и остаются сравнимыми с прежними базами.
+        // Своя доля короны видна только этой колонкой. Хвостом, как прочие
+        // поздние колонки; читать ПО ИМЕНИ (§5 п.7).
+        std::fprintf(fw, "\tpopCapital");
         std::fprintf(fw, "\n");
         // ТРИ ПОТОКА МАТЕРИИ, ПО МЕСТАМ (CANON S10, 2026-09-20): гипотеза о
         // расщеплении горизонта — про МЕДИАНЫ по местам (еда топит пол
@@ -554,6 +561,7 @@ int main(int argc, char** argv) {
             // ландмарка логово бандитов» — значит колонка обязана быть
             // ненулевой, а сегодня она ноль, и это измеряемая недостройка.
             long long popCity = 0, popVil = 0, popLair = 0, popElse = 0;
+            long long popCapital = 0;   // доля короны внутри popCity
             long long stock[sm::kCommodityCount] = {};
             long long stockCity[sm::kCommodityCount] = {};
             long long stockVil[sm::kCommodityCount] = {};
@@ -569,7 +577,13 @@ int main(int argc, char** argv) {
                 // число фичи, у данжа головы его толпы (v122).
                 const long long flock = cell_number_at(gs, *macroStore, slot);
                 popTotal += flock;
+                // Город прибора — город И столица (ряд M-522, см. колонку
+                // `popCapital`): множество прежних баз.
+                const bool town = kind == sm::SquadType::City
+                               || kind == sm::SquadType::Capital;
+                if (kind == sm::SquadType::Capital) popCapital += flock;
                 switch (kind) {
+                    case sm::SquadType::Capital:
                     case sm::SquadType::City: popCity += flock;
                         break;
                     case sm::SquadType::Village: popVil += flock;
@@ -583,7 +597,7 @@ int main(int argc, char** argv) {
                     const long long n =
                         bag.count_of(sm::commodity_item_index(c));
                     stock[c] += n;
-                    if (kind == sm::SquadType::City) stockCity[c] += n;
+                    if (town) stockCity[c] += n;
                     else if (kind == sm::SquadType::Village)
                         stockVil[c] += n;
                 }
@@ -808,6 +822,7 @@ int main(int argc, char** argv) {
             std::fprintf(fw, "\t%lld\t%lld\t%lld\t%.3f",
                          sc.alive, sc.dead, sc.rooted, aiSecs * 1000.0);
             std::fprintf(fw, "\t%lld", factsDay);
+            std::fprintf(fw, "\t%lld", popCapital);
             // ЗАКОН СЛОТОВ, И ОН ЖЕ ДЕТЕКТОР ПРИБОРА. Три утверждения, и ни
             // одно не есть пересказанное число (§8 п.4): (1) счётчик стора
             // сходится с независимым сканом своей же колонки — бухгалтерия
@@ -896,12 +911,48 @@ int main(int argc, char** argv) {
         sm::for_each_rooted(*macroStore, [&](std::uint16_t slot) {
             const sm::SquadType kind =
                 sm::SquadType(macroStore->runtime[slot].squadType);
-            if (kind != sm::SquadType::City
+            if (kind != sm::SquadType::Capital
+                && kind != sm::SquadType::City
                 && kind != sm::SquadType::Village) return;
             const int flock = cell_number_at(gs, *macroStore, slot);
             popEnd += flock;
             alive += flock > 0 ? 1 : 0;
         });
+        // ЛЕСТНИЦА ДАНИ НА КОНЕЦ ПРОГОНА (ряд M-522): сколько столиц стоит в
+        // мире и сколько у каждой ЖИВЫХ вассалов — городов и деревень
+        // порознь, — плюс столицы без единого вассала-города. Закона прибор
+        // на этом не судит (его свидетели — тесты лестницы), это замер.
+        {
+            int capitals = 0, vassalTowns = 0, vassalVils = 0, lonely = 0;
+            sm::for_each_rooted(*macroStore, [&](std::uint16_t slot) {
+                if (sm::SquadType(macroStore->runtime[slot].squadType)
+                    != sm::SquadType::Capital)
+                    return;
+                ++capitals;
+                int towns = 0;
+                const sm::Interests& in = macroStore->interests[slot];
+                for (int k = 0; k < sm::kMaxInterests; ++k) {
+                    const sm::Interest& it = in.slots[k];
+                    if (it.stance == std::uint8_t(sm::Stance::None)) break;
+                    if (it.stance != std::uint8_t(sm::Stance::Vassal)) continue;
+                    const sm::MacroHandle v = sm::rooted_handle_by_ordinal(
+                        *macroStore, std::uint32_t(it.object));
+                    if (!macroStore->valid(v)) continue;
+                    const sm::SquadType vk =
+                        sm::SquadType(macroStore->runtime[v.slot].squadType);
+                    if (vk == sm::SquadType::City) ++towns;
+                    else if (vk == sm::SquadType::Village) ++vassalVils;
+                }
+                vassalTowns += towns;
+                lonely += towns == 0 ? 1 : 0;
+            });
+            std::fprintf(stderr,
+                         "[capitals] seed=%u day=%d capitals=%d "
+                         "vassalCities=%d vassalVillages=%d "
+                         "withoutCity=%d\n",
+                         seed, gs.worldTime.day(), capitals, vassalTowns,
+                         vassalVils, lonely);
+        }
         const bool populated = popEnd > 0 && alive > 0;
         lawsHold = lawsHold && populated && slotLawHolds;
 

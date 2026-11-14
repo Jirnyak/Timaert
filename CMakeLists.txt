@@ -179,6 +179,7 @@ set(TIMAERT_GENS_SOURCES
     src/sub/gens/swamp.cpp
     src/sub/gens/mountain.cpp
     src/sub/gens/water.cpp
+    src/sub/gens/capital.cpp
     src/sub/gens/city.cpp
     src/sub/gens/city_wall.cpp
     src/sub/gens/village.cpp
@@ -1444,7 +1445,9 @@ timaert_test(subworld_generator_parity_test
     # то есть пин на ту форму был бы пином на выход одного сида — ровно то, что
     # владелец назвал бредом («ДОЛЖНО БЫТЬ 301 предмет»). Теперь 21 гейт
     # утверждает ПОСЛЕ обхода, счёт структурен, и тот же сид его не двигает.
-    PIN "OK subworld_generator_parity_test .109 checks.")
+    # 109 → 112 (ряд M-522): раздел столицы — свой модуль генерации назван
+    # байтом, генератор отдал постройки, кладка не на дорогах.
+    PIN "OK subworld_generator_parity_test .112 checks.")
 
 timaert_test(tree_layer_test
     SOURCES
@@ -2554,7 +2557,9 @@ timaert_test(city_population_inside_walls_test
         src/sub/dgn/spire_tower.cpp
         src/sub/dgn/prologue_road.cpp
         src/macro/player_entity.cpp
-    PIN "OK city_population_inside_walls_test .99 checks.")
+    # 99 → 106 (ряд M-522): блок столицы — генератор поставил дома, толпа
+    # встала по солнцу и стоит в пределе, за стеной никого, в кладке никого.
+    PIN "OK city_population_inside_walls_test .106 checks.")
 # Particle-sim contract (FX Inc A): the transient-VFX pool is Vulkan-free by
 # design, so it links only particles.cpp + core and asserts every numeric
 # invariant of the sim (table, emit, lifecycle, physics, pack, determinism).

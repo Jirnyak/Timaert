@@ -147,10 +147,13 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         // нести информацию и показывала бы ровно 100 % всегда.
         int nearWater = 0, nearDeposit = 0;
         std::vector<std::uint16_t> cityRows, villageRows;
+        // Город отчёта — и столица: деревни встают вокруг КАЖДОГО города
+        // плана, короны тоже (ряд M-522 — тип у неё свой, хинтерланд тот же).
         for_each_rooted(st, [&](std::uint16_t slot) {
-            if (rooted_kind(slot) == SquadType::City)
+            const SquadType k = rooted_kind(slot);
+            if (k == SquadType::City || k == SquadType::Capital)
                 cityRows.push_back(slot);
-            else if (rooted_kind(slot) == SquadType::Village)
+            else if (k == SquadType::Village)
                 villageRows.push_back(slot);
         });
         for (std::uint16_t vs : villageRows) {
@@ -315,7 +318,11 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
             site.y = rooted_y(slot);
             const MacroHandle s = rooted_handle_by_ordinal(
                 st, std::uint32_t(suzerain_of(st, slot)));
-            if (st.valid(s) && rooted_kind(s.slot) == SquadType::City) {
+            // Сюзерен деревни — её рыночный город, а у деревень короны это
+            // столица (ряд M-522): грунтовка к дому одна у обеих.
+            const SquadType sk = st.valid(s) ? rooted_kind(s.slot)
+                                             : SquadType::None;
+            if (sk == SquadType::City || sk == SquadType::Capital) {
                 site.cityX = rooted_x(s.slot);
                 site.cityY = rooted_y(s.slot);
                 site.hasCity = true;

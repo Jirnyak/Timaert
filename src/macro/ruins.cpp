@@ -34,10 +34,12 @@ void generate_ruins(GameState& gs, MacroStore& st, const ZoneLayer& zones,
         || !zones.has_complete_storage()) {
         return;
     }
+    // Городов — вместе со столицами: корона тоже город мира, и число руин
+    // растёт с политикой целиком (ряд M-522 — тип у неё свой, счёт тот же).
     int cities = 0;
     for_each_rooted(st, [&](std::uint16_t slot) {
-        if (SquadType(st.runtime[slot].squadType) == SquadType::City)
-            ++cities;
+        const SquadType t = SquadType(st.runtime[slot].squadType);
+        if (t == SquadType::City || t == SquadType::Capital) ++cities;
     });
     const int target = kRuinBaseCount + cities;
     // Own deterministic stream, distinct from the spire pass (0x59B12E50)

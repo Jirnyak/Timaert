@@ -84,7 +84,8 @@ std::unique_ptr<GameState> make_world(sm::MacroStore& st) {
     GameState& gs = *gsOwn;
     gs.mapW = kW;
     gs.mapH = kH;
-    settle(gs, st, SquadType::City, 10, 10);
+    // Дом Варнавы — столица (строка `kDesignCharacterDefs@src/macro/characters.h`).
+    settle(gs, st, SquadType::Capital, 10, 10);
     settle(gs, st, SquadType::Village, 20, 10);
     settle(gs, st, SquadType::Village, 40, 40);
     return gsOwn;

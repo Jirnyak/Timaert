@@ -81,11 +81,15 @@ void ensure_macro_player_entity(const GameState& gs, Session& ses,
         // генератора, и слоты выдаются по возрастанию, поэтому первый
         // City-слот и есть тот город, который здесь стоял списком
         // `politik.cities[0]`. Второго списка городов у мира больше нет —
-        // план умер вместе с генезисом.
+        // план умер вместе с генезисом. Первый город плана есть СТОЛИЦА
+        // первой фракции, и с тех пор как корона рождается своим типом
+        // (ряд M-522), «город» здесь значит «город или столица»: иначе
+        // игрок молча переехал бы ко второму городу плана.
         bool cityFound = false;
         for_each_rooted(st, [&](std::uint16_t slot) {
             if (cityFound) return;
-            if (SquadType(st.runtime[slot].squadType) != SquadType::City)
+            const SquadType t = SquadType(st.runtime[slot].squadType);
+            if (t != SquadType::City && t != SquadType::Capital)
                 return;
             sx = ecs::cell_x(st.cell[slot], gs.mapW);
             sy = ecs::cell_y(st.cell[slot], gs.mapW);

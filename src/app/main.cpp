@@ -1489,18 +1489,22 @@ void rebake_macro_lights(App& app) {
 // the simulation reads — and the textures follow at the macro path's dirty
 // flush, where the map is next drawn anyway.
 void rebake_world(App& app, bool uploadNow) {
+    // Семена зон «город» — города И столицы: генезис сеет их из плана, где
+    // корона стоит городом, и перепечка обязана видеть тот же набор, хотя
+    // тип у столицы с ряда M-522 свой.
     std::vector<sm::ZoneSeed> zsCities, zsVills;
     sm::for_each_rooted(*app.macroStore, [&](std::uint16_t slot) {
         const sm::SquadType kind =
             sm::SquadType(app.macroStore->runtime[slot].squadType);
-        if (kind != sm::SquadType::City
-            && kind != sm::SquadType::Village)
+        const bool town = kind == sm::SquadType::City
+                       || kind == sm::SquadType::Capital;
+        if (!town && kind != sm::SquadType::Village)
             return;
         const auto& c = app.macroStore->cell[slot];
         const int lx = sm::ecs::cell_x(c, app.gs.mapW);
         const int ly = sm::ecs::cell_y(c, app.gs.mapW);
-        if (kind == sm::SquadType::City) zsCities.push_back({lx, ly});
-        else                                zsVills.push_back({lx, ly});
+        if (town) zsCities.push_back({lx, ly});
+        else      zsVills.push_back({lx, ly});
     });
     app.zones = sm::generate_zones(app.gs.mapW, app.gs.mapH, app.gs.worldSeed,
                                    zsCities, zsVills, app.gs.features,
@@ -3782,7 +3786,8 @@ void draw_debug_ui(App& app) {
     sm::for_each_rooted(*app.macroStore, [&](std::uint16_t slot) {
         const sm::SquadType kind =
             sm::SquadType(app.macroStore->runtime[slot].squadType);
-        if (kind == sm::SquadType::City) ++dbgCities;
+        if (kind == sm::SquadType::City || kind == sm::SquadType::Capital)
+            ++dbgCities;
         else if (kind == sm::SquadType::Village) ++dbgVillages;
     });
     ImGui::Text("Cities %zu  Villages %zu", dbgCities, dbgVillages);
@@ -4042,21 +4047,23 @@ void register_console_commands(App& app) {
             sm::MacroStore& st = *app.macroStore;
             sm::MacroHandle found{};
             int id = 0;
+            // Город консоли — и столица (ряд M-522: тип у короны свой, а
+            // телепорт «в город по имени» её находить обязан).
+            const auto town = [&](std::uint16_t slot) {
+                const sm::SquadType t = sm::SquadType(st.runtime[slot].squadType);
+                return t == sm::SquadType::City || t == sm::SquadType::Capital;
+            };
             if (sm::dev::arg_int(a, 0, id))
                 if (const sm::MacroHandle h = sm::rooted_handle_by_ordinal(
                         st, std::uint32_t(id));
-                    st.valid(h)
-                    && sm::SquadType(st.runtime[h.slot].squadType)
-                           == sm::SquadType::City)
+                    st.valid(h) && town(h.slot))
                     found = h;
             if (!st.valid(found)) {
                 std::string q;
                 for (std::size_t i = 0; i < a.size(); ++i) { if (i) q += ' '; q += a[i]; }
                 sm::for_each_rooted(st, [&](std::uint16_t slot) {
                     if (st.valid(found)) return;
-                    if (sm::SquadType(st.runtime[slot].squadType)
-                        != sm::SquadType::City)
-                        return;
+                    if (!town(slot)) return;
                     if (console_icontains(st.name[slot].text, q))
                         found = sm::handle_at(st, slot);
                 });
@@ -5240,7 +5247,8 @@ void draw_debug_panels(App& app) {
             sm::for_each_rooted(*app.macroStore, [&](std::uint16_t slot) {
                 const sm::SquadType kind =
                     sm::SquadType(app.macroStore->runtime[slot].squadType);
-                if (kind == sm::SquadType::City) ++nCities;
+                if (kind == sm::SquadType::City
+                    || kind == sm::SquadType::Capital) ++nCities;
                 else if (kind == sm::SquadType::Village) ++nVillages;
                 else if (kind == sm::SquadType::Spire) ++nSpires;
             });
@@ -5358,8 +5366,9 @@ void build_world_preview(App& app, int side = 384) {
             }
     };
     sm::for_each_rooted(*app.macroStore, [&](std::uint16_t slot) {
-        if (sm::SquadType(app.macroStore->runtime[slot].squadType)
-            != sm::SquadType::City)
+        const sm::SquadType t =
+            sm::SquadType(app.macroStore->runtime[slot].squadType);
+        if (t != sm::SquadType::City && t != sm::SquadType::Capital)
             return;
         const auto& c = app.macroStore->cell[slot];
         const int px = sm::ecs::cell_x(c, app.gs.mapW) * side / td.width;
@@ -5367,13 +5376,13 @@ void build_world_preview(App& app, int side = 384) {
         stamp(px, py, 1, 240, 200, 60);
     });
     sm::for_each_rooted(*app.macroStore, [&](std::uint16_t slot) {
-        // Столица есть город, не обязанный данью никому (S24: своему
-        // сюзерену она сама себе, и одна дверь ставит ей 0). Прежде здесь
-        // стояла колонка `City::isCapital` плана генератора — второй
-        // ответ на тот же вопрос, и он умер вместе с планом (M-90).
+        // Столица — СВОЙ ТИП (ряд M-522): корона рождается им, и «кто
+        // столица» отвечает ось рода. Здесь стоял вывод «город, не
+        // обязанный данью никому» — заместитель, живший, пока корона
+        // носила тип города; он же красил столицей всякий безфракционный
+        // город. До него — колонка `City::isCapital` плана (умерла, M-90).
         if (sm::SquadType(app.macroStore->runtime[slot].squadType)
-                != sm::SquadType::City
-            || sm::suzerain_of(*app.macroStore, slot) != 0)
+            != sm::SquadType::Capital)
             return;
         const auto& c = app.macroStore->cell[slot];
         const int px = sm::ecs::cell_x(c, app.gs.mapW) * side / td.width;
