@@ -253,8 +253,8 @@ struct ItemRef {
     // 1 + raw row of the commodity dictionary (tables/commodity.h); 0 = the
     // row's own default. The +1 exists because raw row 0 (wood) is a real
     // material and 0 must keep meaning "unset". At SCRAP the byte substitutes
-    // part 0 of the row's composition (owner verdict 2026-09-11): a steel
-    // sword returns steel, not the row's default iron.
+    // part 0 of the row's composition (owner verdict 2026-09-11), and value_of
+    // scales the row's base by that matter's raw price over part 0's (M-484).
     std::uint8_t  material = 0;
     // ЕДИНАЯ КОЛОНКА УРОВНЯ ЭКЗЕМПЛЯРА (владелец, 2026-09-24, эпик единой
     // таблицы): у предмета — прежнее «качество» (0 = обычный), у существа —
@@ -500,10 +500,10 @@ void grant_affixes(ItemRef& item, std::uint8_t power, RngFn rng);
 // the suffix read.
 int affix_count(const ItemRef& item) noexcept;
 
-// What THIS instance is worth: the row's price plus every affix cell priced
-// per point of its bonus row («чем реже, тем ценнее» made arithmetic). A
-// plain stack answers exactly def->value, so nothing in the economy moves.
-// Floored at 0 — a cursed thing is worthless, not a debt.
+// What THIS instance is worth: the row's price × its material's (M-484: raw
+// price of the material over that of the row's part 0), plus every affix cell
+// priced per point of its bonus row; the instance level is not in it. A plain
+// stack answers exactly def->value. Floored at 0 — cursed is worthless, not debt.
 int value_of(const ItemRef& item) noexcept;
 
 // The title's tail, from the affix table's own name column: the FIRST

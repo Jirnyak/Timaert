@@ -1091,6 +1091,80 @@ const AffixDef* affix_def_for_row(std::uint8_t row) {
     return nullptr;
 }
 
+// ── МАТЕРИАЛ — МНОЖИТЕЛЬ БАЗЫ, ВЫВЕДЕННЫЙ ИЗ ЦЕНЫ ЕГО СЫРЬЯ (M-484) ─────────
+// Владелец, дословно: «материал можно сделать как множитель стоимости сразу
+// типа у нас же есть таблоци там предмет (у него разные материалы) так что тут
+// просто множитель стоимости очевидно у мпредта базщовая стоимсти и говно
+// материала или крутой сразу другие стоимости даже раньше чем
+// ценообразование».
+//
+// Строка материала — сырьевая строка словаря (`ItemRef::material` = 1 + её
+// номер), и «насколько материал хорош» у неё УЖЕ авторено: это цена сырья,
+// колонка `value` той же строки каталога (словарь один). Новой колонки не
+// заводится — цена материала constexpr-ВЫВОДИТСЯ отсюда и разъехаться с ценой
+// сырья не может (DOD п.9).
+//
+// МНОЖИТЕЛЬ — ОТНОШЕНИЕ, А НЕ ЧИСЛО С ЯКОРЕМ. Байт 0 значит «материал строки
+// по умолчанию», то есть часть 0 её состава (тот же закон, что у скрапа,
+// `scrap_part_return@src/bus/anketa.cpp`), и база строки этот материал УЖЕ несёт.
+// Поэтому вещь из материала m стоит база × цена(m) / цена(часть 0): умолчание и
+// явно названный тот же материал дают ×1 одним и тем же числом, а «какой
+// материал есть ×1» выбирать не нужно — якорь уже лежит в строке предмета.
+// Мера — точная дробь двух целых колонок (монет за единицу сырья), деление
+// одно и вниз: доля 1/N или процент были бы второй посадкой отношения, которое
+// в авторских колонках уже точное.
+constexpr std::array<int, kRawCommodityCount> kMaterialWorth = [] {
+    std::array<int, kRawCommodityCount> w{};
+    for (int k = 0; k < kRawCommodityCount; ++k) {
+        w[std::size_t(k)] = catalog_value_of(kCommodities[k].id);
+    }
+    return w;
+}();
+
+// Делитель — цена части 0 — не бывает нулём, и материал не стирает вещь: обе
+// цены положительны на каждой строке, которую дверь может спросить (часть 0
+// есть ПЕРВАЯ годная часть состава — так её кладёт `parts_table`).
+constexpr const char* first_part_of(const PartsAuthoringRow& r) {
+    for (const auto& p : r.p) {
+        if (p.mat && p.n > 0) return p.mat;
+    }
+    return nullptr;
+}
+constexpr bool material_prices_are_positive() {
+    for (int w : kMaterialWorth) {
+        if (w <= 0) return false;
+    }
+    for (const PartsAuthoringRow& r : kPartsAuthoring) {
+        const char* first = first_part_of(r);
+        if (first && catalog_value_of(first) <= 0) return false;
+    }
+    return true;
+}
+static_assert(material_prices_are_positive(),
+              "материал без цены сырья обнулил бы вещь, часть 0 без цены — "
+              "деление на ноль в value_of (M-484)");
+
+// ШИРИНА РАСЧЁТОМ (ЗАКОН ТИПА п.1): произведение берётся в `int64`, а итог
+// возвращается в `int`, и здесь доказано, что он влезает, — худшая строка
+// каталога из самого дорогого сырья. Сегодня это статуя 320 из золота вместо
+// камня: 320 × 12 800 / 5 = 819 200, запас ×2600.
+constexpr std::int64_t material_scaled_base_max() {
+    int top = 0;
+    for (int w : kMaterialWorth) top = w > top ? w : top;
+    std::int64_t m = 0;
+    for (const PartsAuthoringRow& r : kPartsAuthoring) {
+        const char* first = first_part_of(r);
+        if (!first) continue;
+        const std::int64_t v = std::int64_t(catalog_value_of(r.id)) * top
+                             / catalog_value_of(first);
+        m = v > m ? v : m;
+    }
+    return m;
+}
+static_assert(material_scaled_base_max() <= INT32_MAX,
+              "база строки, умноженная на материал, не влезает в int двери "
+              "стоимости (M-484)");
+
 } // namespace
 
 int affix_count(const ItemRef& item) noexcept {
@@ -1134,6 +1208,15 @@ int affix_count(const ItemRef& item) noexcept {
 // а стоит столько, сколько говорит его строка. Ценовка этих 43 строк —
 // КОНТЕНТ с блёстом в живую экономику (`hireGold` читают цель охоты
 // `npc_ai.cpp` и запах богатства), и она названа отдельной строкой реестра.
+//
+// ПОРЯДОК ПРЕДМЕТА: БАЗА × МАТЕРИАЛ + АФФИКСЫ (M-484). Материал множит базу
+// строки (`kMaterialWorth` выше — вывод и мера там), а аффикс прибавляет СВОЮ
+// авторскую цену за единицу бонуса и материалом не множится: «of Strength»
+// стоит одинаково на железном и на золотом мече. Строка без состава (сырьё,
+// пища) части 0 не имеет — заменять материалу нечего, и байт молчит, как
+// молчит он у скрапа. УРОВЕНЬ экземпляра (`ItemRef::level`) в стоимость
+// предмета НЕ входит — «не мешай цену и уровень» (CANON), это отдельный вопрос
+// владельца.
 int value_of(const ItemRef& item) noexcept {
     if (world_row_is_creature(item.def)) {
         return hire_price_for(
@@ -1141,6 +1224,14 @@ int value_of(const ItemRef& item) noexcept {
     }
     const ItemDef* def = item_def_at(int(item.def));
     int v = def ? def->value : 0;
+    if (item.material != 0 && int(item.material) <= kRawCommodityCount) {
+        const std::span<const ItemPart> parts = item_parts(int(item.def));
+        if (!parts.empty()) {
+            const int own = item_def_at(int(parts[0].def))->value;
+            v = int(std::int64_t(v)
+                    * kMaterialWorth[std::size_t(item.material - 1)] / own);
+        }
+    }
     for (int i = 0; i < kMaxItemAffixes; ++i) {
         const Bonus b = item.affix_at(i);
         if (b.row == 0 || b.value == 0) continue;

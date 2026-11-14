@@ -13,12 +13,14 @@
 #include "check.h"
 
 #include "bus/anketa.h"
+#include "tables/commodity.h"     // сырьевые строки — номера байта материала
 #include "tables/items.h"
 #include "tables/npc.h"
 #include "tables/progression.h"   // kMaxTier — лестница, у которой свидетель и спрашивает
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -402,6 +404,85 @@ static void test_affix_door() {
     CHECK(value_of(cursed) == 0, "a ruined thing is worthless, not a debt");
 }
 
+// МАТЕРИАЛ — МНОЖИТЕЛЬ БАЗЫ В ДВЕРИ СТОИМОСТИ (M-484, слова владельца — у
+// `value_of@src/tables/items.cpp`). Утверждаются ОТНОШЕНИЯ и один независимый
+// факт мира, а не пересказ формулы двери (§8 п.4–5):
+//   · дрянной материал дешевле умолчания, крутой — дороже;
+//   · явно названный материал строки И ЕСТЬ умолчание — одно число, не два;
+//   · аффикс есть своя цена и материалом не множится;
+//   · строке без состава материалу заменять нечего;
+//   · ЯКОРЬ — закон монетного двора (цена номинала × выход = цена металла):
+//     медная крона из золота стоит ровно золотую крону.
+static void test_material_multiplier() {
+    const auto raw_byte = [](const char* id) {
+        for (int c = 0; c < kRawCommodityCount; ++c) {
+            if (std::strcmp(kCommodities[c].id, id) == 0)
+                return std::uint8_t(1 + c);
+        }
+        return std::uint8_t(0);
+    };
+    const std::uint8_t stone = raw_byte("stone");
+    const std::uint8_t iron = raw_byte("iron");
+    const std::uint8_t gold = raw_byte("gold");
+    CHECK(stone != 0 && iron != 0 && gold != 0,
+          "fixture: stone, iron and gold are raw rows of the dictionary");
+    CHECK(item_def("stone")->value < item_def("iron")->value
+              && item_def("iron")->value < item_def("gold")->value,
+          "fixture: raw prices order stone < iron < gold — the ladder the "
+          "relations below lean on");
+
+    const int swordRow = item_index("wpn_sword");
+    const auto parts = item_parts(swordRow);
+    CHECK(!parts.empty() && int(parts[0].def) == item_index("iron"),
+          "fixture: the sword's default material (part 0) is iron");
+    ItemRef plain{};
+    plain.def = std::uint16_t(swordRow);
+    plain.count = 1;
+    ItemRef ironSword = plain;
+    ironSword.material = iron;
+    ItemRef stoneSword = plain;
+    stoneSword.material = stone;
+    ItemRef goldSword = plain;
+    goldSword.material = gold;
+    CHECK(value_of(plain) == item_def("wpn_sword")->value,
+          "the default material answers exactly the row's base");
+    CHECK(value_of(ironSword) == value_of(plain),
+          "naming the row's own material IS the default: x1, not a second "
+          "price");
+    CHECK(value_of(stoneSword) < value_of(plain),
+          "a junk material cheapens the thing before any pricing");
+    CHECK(value_of(goldSword) > value_of(plain),
+          "a fine material enriches the thing before any pricing");
+
+    // Аффикс — своя авторская цена: его вклад одинаков на любом материале.
+    ItemRef ironRolled = plain;
+    ironRolled.set_affix(0, Bonus{std::uint8_t(BonusId::Str), 4});
+    ItemRef goldRolled = goldSword;
+    goldRolled.set_affix(0, Bonus{std::uint8_t(BonusId::Str), 4});
+    CHECK(value_of(ironRolled) > value_of(plain),
+          "fixture: the affix is worth money (negative control)");
+    CHECK(value_of(goldRolled) - value_of(goldSword)
+              == value_of(ironRolled) - value_of(plain),
+          "the material multiplies the base, never the affix");
+
+    ItemRef food{};
+    food.def = std::uint16_t(item_index("food"));
+    food.count = 1;
+    food.material = gold;
+    CHECK(item_parts(int(food.def)).empty(),
+          "fixture: provisions are terminal — no composition");
+    CHECK(value_of(food) == item_def("food")->value,
+          "a row without part 0 has nothing for a material to replace");
+
+    ItemRef copperCrown{};
+    copperCrown.def = std::uint16_t(item_index("coin_empire_copper"));
+    copperCrown.count = 1;
+    copperCrown.material = gold;
+    CHECK(value_of(copperCrown) == item_def("coin_empire_gold")->value,
+          "anchor: a copper crown struck in gold is worth a gold crown — "
+          "the mint law agrees with the material door");
+}
+
 int main() {
     test_project_combat_melee();
     test_project_combat_missile();
@@ -409,5 +490,6 @@ int main() {
     test_sheet_determinism();
     test_prop_loot_is_the_transfer_rate();
     test_affix_door();
+    test_material_multiplier();
     return sm::test::report("rpg_loot_test");
 }

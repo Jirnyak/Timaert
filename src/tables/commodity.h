@@ -6,11 +6,11 @@
 //     never redeclare. This retires (step by step) the three incompatible
 //     vocabularies: EconomyState resources[6]+goods[15], and eventually the
 //     player item catalog joins the same id space.
-//   * Materials are ROWS of the Raw tier of this same dictionary. An archetype
-//     that can be made OF a material (a future sword) declares an
-//     allowed-materials mask over the raw rows — the groundwork column exists
-//     from day one, crafting arrives later as recipe rows + a material×archetype
-//     multiplier table, no dictionary rework.
+//   * Materials are ROWS of the Raw tier of this same dictionary: an instance
+//     names one by `ItemRef::material` (1 + raw row), scrap returns it in place
+//     of part 0, and the value door scales the row's base by its raw price over
+//     part 0's (M-484) — a ratio derived from the catalog, no multiplier table,
+//     no dictionary rework.
 //   * Procedural items = archetype row here + tiny instance
 //     {archetypeId, materialId, quality, seed} elsewhere — the same
 //     catalog+instance pattern the monster table and sprite resolver use.
