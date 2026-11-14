@@ -1550,6 +1550,13 @@ void test_the_caravan_grows_its_hold_and_brings_it_home() {
     Inventory holdBefore{};
     std::uint32_t gainBefore = 0, dealsBefore = 0;
     int dealThinks = 0, anchored = 0, incomplete = 0, needful = 0;
+    // СДЕЛКА И ВЫЛИВ ВРЕМЕНИ НЕ СТОЯТ (ряд M-494, пункт (1); CANON S25
+    // «ВЗАИМОДЕЙСТВИЕ — НЕ СПОСОБНОСТЬ»): в думку сделки и в думку вылива
+    // гейт восстановления рейса пуст, и следующее решение принято той же
+    // думкой — после сделки рейс уже в пути (к рынку или домой), после
+    // вылива он уже ждёт своим словом памяти либо уже выехал.
+    int dealsFree = 0, dumpThinks = 0, dumpsDecided = 0;
+    bool homeBefore = false;
     bool wasHome = true;            // рейс стоял на клетке дома
     int departures = 0, departuresFromZero = 0;   // выезды после возврата
     const int kThinks = kThinksPerDay * 6;
@@ -1559,6 +1566,7 @@ void test_the_caravan_grows_its_hold_and_brings_it_home() {
             holdBefore = f.st().inventory[c0].inv;
             gainBefore = f.st().runtime[c0].mem[kCaravanMemTripGain];
             dealsBefore = f.st().runtime[c0].mem[kCaravanMemDeals];
+            homeBefore = f.st().cell[c0].idx == homeCell;
         }
         f.think_on(rt, 1);
         ++samples;
@@ -1570,8 +1578,23 @@ void test_the_caravan_grows_its_hold_and_brings_it_home() {
         const bool empty = inventory_mass_g(hold) <= 0
                         && inventory_value(hold) <= 0;
         if (atHome && !empty && !traded) loadedAtHome = true;
+        // ВЫЛИВ: дома с грузом до думки — дома пустой после неё (выезд груз
+        // уносит, а не теряет, так что пустота дома есть вылив и только он).
+        if (c == c0 && homeBefore && atHome && empty
+            && (inventory_mass_g(holdBefore) > 0
+                || inventory_value(holdBefore) > 0)) {
+            ++dumpThinks;
+            if (!ecs::squad_recovering(crt)
+                && (crt.mem[kCaravanMemWait] > 0
+                    || crt.state == std::uint8_t(NPCState::Traveling)))
+                ++dumpsDecided;
+        }
         if (c == c0 && crt.mem[kCaravanMemDeals] == dealsBefore + 1) {
             ++dealThinks;
+            if (!ecs::squad_recovering(crt)
+                && (crt.state == std::uint8_t(NPCState::Traveling)
+                    || crt.state == std::uint8_t(NPCState::Returning)))
+                ++dealsFree;
             const GainAnchor a = gain_anchor(holdBefore, hold, coinIdx);
             const long long grew = (long long)crt.mem[kCaravanMemTripGain]
                                  - (long long)gainBefore;
@@ -1648,6 +1671,14 @@ void test_the_caravan_grows_its_hold_and_brings_it_home() {
     CHECK(anchored == dealThinks,
           "ПРИБЫЛЬ РЕЙСА ЕСТЬ СУММА ПРИБЫЛЕЙ СДЕЛОК: на каждой сделке слово "
           "прибыли выросло ровно в пределах её якоря");
+    CHECK(dealsFree == dealThinks,
+          "СДЕЛКА ВРЕМЕНИ НЕ СТОИТ: в думку каждой сделки гейт восстановления "
+          "рейса пуст, и рейс той же думкой уже в пути — к рынку или домой");
+    CHECK(dumpThinks > 0,
+          "предусловие: рейс хоть раз вылил наторгованное дома");
+    CHECK(dumpsDecided == dumpThinks,
+          "ВЫЛИВ ВРЕМЕНИ НЕ СТОИТ: в думку вылива гейт пуст, и рейс той же "
+          "думкой решил дальше — ждёт своим словом памяти либо выехал");
     CHECK(cameHomeEmpty,
           "РЕЙС ВЕРНУЛСЯ И ОТДАЛ ВСЁ: после сделки корован стоял дома пустым");
     CHECK(cityCoinAfterReturn > 0,
@@ -1661,11 +1692,11 @@ void test_the_caravan_grows_its_hold_and_brings_it_home() {
               + f.st().inventory[c].inv.count_of(coinIdx) == kMarketPurse,
           "СОХРАНЕНИЕ: монета только переходит из рук в руки");
     std::printf("  [рейс] счёт рынка %d → %d после первой сделки, прибыль "
-                "первой сделки %u, сделок рейсов %d, выездов после возврата "
-                "%d\n",
+                "первой сделки %u, сделок рейсов %d (без паузы %d), выливов "
+                "%d (решено той же думкой %d), выездов после возврата %d\n",
                 bill, debtAfterFirstDeal,
                 memAfterFirstDeal.mem[kCaravanMemTripGain], dealThinks,
-                departures);
+                dealsFree, dumpThinks, dumpsDecided, departures);
 }
 
 // ── ГОРОД ГРУЗИТ РЕЙС И ЛЁГКИМ ЗАВАЛОМ; ВЫГОДНЕЙШЕЕ НА ГРАММ — ПЕРВЫМ; В
@@ -2038,7 +2069,38 @@ void test_the_trip_follows_the_return_law_at_its_edges() {
 
 // ВТОРАЯ ПОЛЯРНОСТЬ: соседа нет — рейс стоит дома. Город груз ему дал (он не
 // знает и не должен знать, есть ли рынки: это решение рейса), а рейс никуда
-// не поехал и ждёт долгом восстановления, не чужим поведением.
+// не поехал и ждёт.
+//
+// ЖДЁТ СВОЕЙ ПАМЯТЬЮ, А НЕ ГЕЙТОМ СПОСОБНОСТИ (ряд M-494, пункт (1); вердикт
+// владельца 2026-11-13, CANON S25 «ВЗАИМОДЕЙСТВИЕ — НЕ СПОСОБНОСТЬ»: «ждать
+// модуль вправе своей логикой и своей памятью, не чужим гейтом»). Утверждается
+// форма ожидания, а не его длина: слово `kCaravanMemWait` за думку тает ровно
+// на одну; пока оно не дотаяло, рейс заново не решает; дотаяло — решает и,
+// раз ехать по-прежнему некуда, снова ждёт. Гейт восстановления за весь
+// прогон не заряжен ни разу — акта у рейса нет, а боя фикстура не ставит.
+// (Здесь стояло «ожидание есть долг восстановления своей строки» — тот самый
+// второй писатель гейта, снятый рядом.)
+//
+// ТАБЛИЦА «МУТАЦИЯ → ИСХОД» РЯДА M-494, ПУНКТ (1) (прогнано 2026-11-14;
+// контроль — OK 891 здесь и OK 70 у `collector_tithe_test`; собирались только
+// эти два таргета). Свидетели — этот и плечи «сделка/вылив» рейса выше.
+//   1) пауза гейтом после сделки на рынке вернулась (`(4 + rand(4))` думок)
+//                                  →  КРАСНО, 1 из 891: гейт в думку сделки
+//                                     не пуст
+//   2) пауза гейтом после вылива дома вернулась (`(10 + rand(15))` думок)
+//                                  →  КРАСНО, 1 из 891: в думку вылива гейт
+//                                     не пуст и решения дальше нет
+//   3) слово ожидания не тает      →  КРАСНО, 3 из 891: ожидание держит слово;
+//                                     предусловие «дотаивало»; выезда после
+//                                     возврата нет
+//   4) ожидание не выдерживается (слово тает, но решение каждую думку)
+//                                  →  КРАСНО, 2 из 891
+//   5) ожидание снова гейтом восстановления (прежняя форма)
+//                                  →  КРАСНО, 3 из 891: гейт не пуст весь
+//                                     прогон; вылив не решён той же думкой
+//   6) переименование локальной `loaded` в модуле корована
+//                                  →  МОЛЧИТ, OK 891 и OK 70
+// `collector_tithe_test` на 1–5 молчит (OK 70): корован — не его предмет.
 void test_the_caravan_with_no_market_waits_at_home() {
     Fixture f;
     const MacroHandle city = f.rooted(SquadType::City, 10, 10, 64);
@@ -2051,17 +2113,31 @@ void test_the_caravan_with_no_market_waits_at_home() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 52u);
     const std::uint32_t homeCell = f.st().cell[city.slot].idx;
-    int samples = 0, away = 0, waiting = 0;
+    int samples = 0, away = 0, gated = 0;
+    int held = 0, broken = 0, rewaits = 0;
     bool loaded = false;
     const int kThinks = kThinksPerDay * 3;
     for (int i = 0; i < kThinks; ++i) {
+        const std::uint16_t c0 = caravan_of(f, cityId);
+        const std::uint32_t before =
+            c0 != kMacroNoSlot ? f.st().runtime[c0].mem[kCaravanMemWait] : 0u;
         f.think_on(rt, 1);
         ++samples;
         const std::uint16_t c = caravan_of(f, cityId);
         if (c == kMacroNoSlot) continue;
         if (f.st().cell[c].idx != homeCell) ++away;
-        if (ecs::squad_recovering(f.st().runtime[c])) ++waiting;
+        if (ecs::squad_recovering(f.st().runtime[c])) ++gated;
         if (inventory_value(f.st().inventory[c].inv) > 0) loaded = true;
+        if (c != c0) continue;
+        const std::uint32_t after = f.st().runtime[c].mem[kCaravanMemWait];
+        if (before >= 2u) {
+            // Ещё ждал: слово обязано стаять ровно на одну думку — ни
+            // застыть, ни смениться новым решением.
+            if (after + 1u == before) ++held;
+            else ++broken;
+        } else if (after >= 2u) {
+            ++rewaits;   // дотаяло — решил заново и снова ждёт
+        }
     }
     const std::uint16_t c = caravan_of(f, cityId);
     CHECK(samples == kThinks && c != kMacroNoSlot,
@@ -2070,7 +2146,16 @@ void test_the_caravan_with_no_market_waits_at_home() {
     CHECK(away == 0,
           "СОСЕДА НЕТ — РЕЙС НЕ ПОКИДАЕТ КЛЕТКУ ДОМА (прежде уходил бродить "
           "чужим поведением)");
-    CHECK(waiting > 0, "ожидание есть долг восстановления своей строки");
+    CHECK(held > 0 && rewaits > 1,
+          "предусловие: рейс ждал, и ожидание дотаивало не один раз");
+    CHECK(broken == 0,
+          "ОЖИДАНИЕ ДЕРЖИТ СВОЁ СЛОВО ПАМЯТИ: пока оно не дотаяло, оно тает "
+          "ровно на думку и нового решения нет");
+    CHECK(gated == 0,
+          "ГЕЙТ ВОССТАНОВЛЕНИЯ ПУСТ ВЕСЬ ПРОГОН: ожидание — решение модуля, "
+          "а не долг способности");
+    std::printf("  [рейс без рынка] думок ожидания %d, новых решений ждать %d\n",
+                held, rewaits);
     CHECK(traded_facts_at(f.gs, 10, 10) == 0,
           "сделки не было — не с кем");
     // Груз не пропал: что ушло с полки, лежит в трюме.

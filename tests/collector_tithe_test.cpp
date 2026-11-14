@@ -33,7 +33,10 @@
 //      (е) факт дани: субъект — вассал, объект — сюзерен, число — во сколько
 //          вассал ценит отданное;
 //      (ж) мера квоты — то, что лежит на полке: полка под непогашенным
-//          счётом неотрицательна и не дешевле той же без счёта.
+//          счётом неотрицательна и не дешевле той же без счёта;
+//      (з) взыскание и вылив времени не стоят: в их думку гейт
+//          восстановления пуст, и следующее решение принято той же думкой
+//          (ряд M-494, пункт (1)).
 //   (Город и столица поднимают сборщика при вассале раз в сезон — закон их
 //    модулей, свидетель `test_city_raises_a_collector_for_a_vassal_once_a_season`
 //    в `tests/rooted_module_day_test.cpp`.)
@@ -94,6 +97,17 @@
 //                                      →  КРАСНО, 1 из 64: (г) в том же
 //        сезоне следующего года обход не начался; `rooted_module_day_test`
 //        молчит, OK 827
+//   (ряд M-494, пункт (1), прогнано 2026-11-14; контроль — OK 70 здесь и
+//    OK 891 у `rooted_module_day_test`; собирались только эти два таргета)
+//   9) пауза гейтом после взыскания вернулась (`(2 + rand(3))` думок)
+//                                      →  КРАСНО, 3 из 70: (з) гейт в думку
+//        взыскания не пуст; вылив дома застал гейт полным; ко второму вассалу
+//        той же думкой не пошёл. `rooted_module_day_test` молчит, OK 891
+//  10) пауза гейтом после вылива вернулась (`(10 + rand(15))` думок с
+//      возвратом)                     →  КРАСНО, 2 из 70: (з) гейт в думку
+//        вылива не пуст и ко второму вассалу не пошёл; OK 891 там
+//  11) переименование локальной `tour` в модуле сборщика
+//                                      →  МОЛЧИТ, OK 70 и OK 891
 
 #include "check.h"
 #include <memory>
@@ -642,6 +656,67 @@ void test_the_tour_visits_each_vassal_once_a_season() {
                 taxed_facts(r.gs, secondId));
 }
 
+// (з) ВЗЫСКАНИЕ И ВЫЛИВ ВРЕМЕНИ НЕ СТОЯТ (ряд M-494, пункт (1); вердикт
+// владельца 2026-11-13, CANON S25 «ВЗАИМОДЕЙСТВИЕ — НЕ СПОСОБНОСТЬ»: «ДО
+// ОТКУДА ВАЩЕ ВРЕМЯ это НЕ СПОСОБНОСТИ ЖЕ»). Два вассала одного дома, думка за
+// думкой: в думку взыскания (спина была пуста — стала полна) гейт
+// восстановления сборщика пуст и он той же думкой уже идёт домой; в думку
+// вылива (начал её дома с грузом — кончил пустым: спина пустеет только
+// выливом) гейт пуст и, пока обход не кончен, сборщик той же думкой уже идёт
+// к следующему вассалу — ноги этой же думки выносят его из клетки дома, и
+// потому «дома ли он после» не спрашивается. Утверждаются отношения, а не
+// число тиков.
+void test_the_take_and_the_dump_cost_no_time() {
+    Rig r;
+    build_rig(r, Shelf{.food = kTitheFood, .vx = 12, .vy = 10});
+    MacroStore& st = *r.store;
+    const MacroHandle second =
+        birth_squad(r.gs, nullptr, st, SquadType::Village, 10, 12);
+    settle_souls(r.gs, st, second.slot, 30);
+    st.inventory[second.slot].inv.add("food", kTitheFood);
+    link_vassal(st, int(st.spawnId[second.slot].index), r.homeId);
+    const std::uint32_t homeCell = st.cell[r.home.slot].idx;
+
+    MacroNpcAiRuntime rt{};
+    reset_macro_npc_ai_runtime(rt, 70u);
+    int takes = 0, takesFree = 0, dumps = 0, dumpsFree = 0, onward = 0;
+    for (int i = 0; i < 3 * kRunThinks; ++i) {
+        const std::int64_t bagBefore =
+            inventory_mass_g(st.inventory[r.man.slot].inv);
+        const bool homeBefore = st.cell[r.man.slot].idx == homeCell;
+        MacroWorld mw{.gs = &r.gs, .store = r.store.get()};
+        tick_macro_npc_ai(mw, rt, kAiTicks);
+        if (!st.valid(r.man)) continue;
+        const ecs::MacroNpcRuntime& crt = st.runtime[r.man.slot];
+        const std::int64_t bagAfter =
+            inventory_mass_g(st.inventory[r.man.slot].inv);
+        if (bagBefore <= 0 && bagAfter > 0) {
+            ++takes;
+            if (!ecs::squad_recovering(crt)
+                && crt.state == std::uint8_t(NPCState::Returning)
+                && st.goal[r.man.slot].cell == homeCell)
+                ++takesFree;
+        }
+        if (homeBefore && bagBefore > 0 && bagAfter <= 0) {
+            ++dumps;
+            if (!ecs::squad_recovering(crt)) ++dumpsFree;
+            if (crt.state == std::uint8_t(NPCState::Traveling)) ++onward;
+        }
+    }
+    std::printf("  (з) взысканий %d (свободных %d), выливов %d (свободных %d, "
+                "дальше %d)\n", takes, takesFree, dumps, dumpsFree, onward);
+    CHECK(takes == 2 && dumps == 2,
+          "предусловие: оба вассала обойдены, и оба раза дань вылита дома");
+    CHECK(takesFree == takes,
+          "ВЗЫСКАНИЕ ВРЕМЕНИ НЕ СТОИТ: в думку взыскания гейт пуст, и сборщик "
+          "той же думкой уже идёт домой");
+    CHECK(dumpsFree == dumps,
+          "ВЫЛИВ ВРЕМЕНИ НЕ СТОИТ: в думку вылива гейт восстановления пуст");
+    CHECK(onward == 1,
+          "после первого вылива сборщик ТОЙ ЖЕ думкой пошёл ко второму "
+          "вассалу; после второго обход кончен — он стоит дома");
+}
+
 // (е) ФАКТ ДАНИ — «ВАССАЛ ЗАПЛАТИЛ СЮЗЕРЕНУ»: субъект — вассал, объект —
 // сюзерен (`Taxed@src/bus/fact.h`), число — во сколько вассал ценит отданное.
 // Контроль перестановкой: во втором раскладе вассал рождён ПЕРВЫМ, и его
@@ -761,6 +836,7 @@ int main() {
     test_the_load_is_chosen_by_the_suzerains_valuation();
     test_the_remainder_is_forgiven();
     test_the_tour_visits_each_vassal_once_a_season();
+    test_the_take_and_the_dump_cost_no_time();
     test_the_tithe_fact_names_the_vassal_as_the_payer();
     test_the_shelf_under_an_unpaid_bill_is_worth_no_less();
     return sm::test::report("collector_tithe_test");

@@ -8,6 +8,7 @@
 #include <cstdint>
 
 #include "bus/anketa.h"      // inventory_mass_g
+#include "core/subtract.h"   // sub_sat — угасание счёта ожидания
 #include "macro/currency.h"  // inventory_value — пуст ли трюм
 #include "macro/economy.h"   // trip_goes_on, leg_rate
 
@@ -64,7 +65,24 @@ namespace {
 //     ценит выше рынка; склад дома в сделке не читается вовсе
 //     (`trade_caravan_at_station`);
 //   · домой — по ПРЕДЕЛЬНОЙ ОТДАЧЕ (ступень Working ниже), и дома отдаёт всё.
-// Своя память рейса — пять слов памяти модуля (`kCaravanMem…@src/macro/npc_ai.h`).
+// Своя память рейса — шесть слов памяти модуля (`kCaravanMem…@src/macro/npc_ai.h`).
+//
+// СДЕЛКА НА РЫНКЕ И ВЫЛИВ ДОМА — ВЗАИМОДЕЙСТВИЕ ПАРЫ, А НЕ СПОСОБНОСТЬ: ни цены,
+// ни восстановления (вердикт владельца 2026-11-13, дословно — CANON S25
+// «ВЗАИМОДЕЙСТВИЕ — НЕ СПОСОБНОСТЬ»: «так тут нет способности … поэтому и
+// времени после сдлеки не надо»). Следующее решение рейс принимает той же
+// думкой. (Здесь стояли две паузы «сделал → вишу» гейтом восстановления —
+// после вылива и после сделки; сняты рядом M-494, пункт (1).)
+//
+// ЖДАТЬ МОДУЛЬ ВПРАВЕ ТОЛЬКО СВОЕЙ ПАМЯТЬЮ. Слово `kCaravanMemWait` — сколько
+// думок осталось до следующего решения; оно тает на думку, и думка, на которой
+// оно дотаяло, решает. Истина — «ещё жду».
+bool caravan_waits_(ecs::MacroNpcRuntime& rt) {
+    std::uint32_t& left = rt.mem[kCaravanMemWait];
+    left = sub_sat(left, std::uint32_t(1));   // угасание счёта ожидания
+    return left != 0;
+}
+
 void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
     const std::uint32_t home = view.home(s.h);
     if (home == ecs::kNoCell) { pult.nomad(s); return; }
@@ -81,13 +99,14 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
         // ОТДАЁТ ВСЁ НАТОРГОВАННОЕ (владелец 2026-11-12: «вернуть всё что
         // наторговваал обогатить свой город»): вылив сумки — ОДНА сделка
         // лотом по всему словарю, остаток стоимости — той же дверью цены.
-        // «Дома» — клетка дома, тот же вопрос, что у ног (M-461).
-        if (ecs::march_arrived(rt)) {
-            if (s.cell.idx == home)
-                pult.dump_bag_home(s, homeSlot);
-            charge_squad_recovery(rt,
-                std::uint32_t((10 + pult.rand(15)) * kAiTicks));
-        }
+        // «Дома» — клетка дома, тот же вопрос, что у ног (M-461). Времени у
+        // вылива нет — рейс решает дальше этой же думкой.
+        if (ecs::march_arrived(rt) && s.cell.idx == home)
+            pult.dump_bag_home(s, homeSlot);
+        // Свой акт рейс не делает, и гейт восстановления заряжают ему чужие
+        // двери — сегодня ступень угрозы после автобоя
+        // (`squad_threat_step@src/macro/npc_ai.cpp`); пока он не пуст, рейс
+        // стоит.
         if (squad_recovering(rt)) return;
         // Idle ВНЕ ДОМА — пробуждение после привала в пути (Resting будит в
         // Idle): рейс ПРОДОЛЖАЕТСЯ к рынку, который несёт цель, а без него —
@@ -116,6 +135,7 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
         // здесь — дом, «откуда пришёл» — никто. (Стояло «рынок — из цели»,
         // и у вопроса не было писателя: первый рынок ставил аукцион целей,
         // казнённый ломтём 4 M-72, — ряд M-477.)
+        if (caravan_waits_(rt)) return;
         const bool loaded = inventory_mass_g(s.bag) > 0
                          || inventory_value(s.bag) > 0;
         const std::uint16_t market = !loaded ? kMacroNoSlot
@@ -123,9 +143,10 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
                   home, int(view.rooted_id(homeSlot)), 0, rt.moveMult));
         if (market == kMacroNoSlot || market == homeSlot) {
             // Нечего везти либо некуда ехать (соседа по мембране нет):
-            // переждать — долгом восстановления, не чужим поведением.
-            charge_squad_recovery(rt,
-                std::uint32_t((40 + pult.rand(40)) * kAiTicks));
+            // переждать — решение модуля, и держит его СВОЁ слово памяти,
+            // не гейт способности и не чужое поведение. Число думок взято у
+            // снятой паузы гейтом той же длины и есть баланс, не вывод.
+            rt.mem[kCaravanMemWait] = std::uint32_t(40 + pult.rand(40));
             return;
         }
         // ВЫЕЗД — РЕЙС НАЧИНАЕТ СЕБЯ С НУЛЯ: ни прибыли, ни пройденного пути.
@@ -143,9 +164,9 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
         return;
     }
     if (rt.state == std::uint8_t(NS::Traveling)) {
-        // К рынку везут ноги свипа; прибытие сделает сквад Working само.
-        // АКТ МГНОВЕНЕН: сделка случится первой же свободной думкой, её
-        // длительность повиснет ПОСЛЕ как долг (инверсия castTime).
+        // К рынку везут ноги свипа; прибытие сделает сквад Working само, и
+        // сделка случится первой же свободной думкой. Длительности у неё нет:
+        // сделка не способность.
         return;
     }
     if (rt.state == std::uint8_t(NS::Working)) {
@@ -169,11 +190,8 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
                     std::int64_t(rt.mem[kCaravanMemTripGain]) + dealGain,
                     0xFFFFFFFFll));
             if (leg.movedTableValue > 0) {
-                // СДЕЛКА СОСТОЯЛАСЬ — ДОЛГ ПОВИС («сделал → вишу»): тики
-                // авторские, своей строки у сделки пока нет. Пустой визит
-                // акта не делал — долга нет, развилка решается той же думкой.
-                charge_squad_recovery(rt,
-                    std::uint32_t((4 + pult.rand(4)) * kAiTicks));
+                // СДЕЛКА СОСТОЯЛАСЬ — ВРЕМЕНИ ОНА НЕ СТОИТ, развилка ниже
+                // решается этой же думкой.
                 // Число факта сделки — её стоимость, объект — рынок.
                 pult.fact(int(view.rooted_id(homeSlot)), FactKind::Traded,
                           g.cell, leg.movedTableValue,
