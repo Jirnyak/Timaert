@@ -12,9 +12,10 @@
 //     and therefore never advanced.
 //
 // What is pinned here:
-//   1. Factions are interned STRINGS with no vocabulary and no fixed list:
-//      dedup, pointer-vs-strcmp identity, empty/null rejection, full-table
-//      degradation. Hostility is asymmetric-capable (private grudges ride it).
+//   1. Factions are interned REGISTRY ORDINALS with no vocabulary and no
+//      fixed list: dedup, out-of-registry rejection, the whole registry fits,
+//      the relation reads the ordinal and not the gather order. Hostility is
+//      asymmetric-capable (private grudges ride it).
 //   2. UnitGrid is a correct counting sort; it fits the crowd's bbox; a crowd
 //      spread wider than maxDim grows the CELL, not the allocation.
 //   3. Grid cell sizes come from the crowd's own body/weapon data, so the same
@@ -53,7 +54,6 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
 #include <vector>
 
 using namespace sm;
@@ -69,9 +69,13 @@ constexpr float kReach = 3.0f;
 constexpr float kSpeed = 35.0f;
 constexpr float kSight = 200.0f;
 
-// Faction ids are ordinary strings — exactly what the shipping gather interns.
-const char* const kEmpire = "empire";
-const char* const kBandits = "bandits";
+// Factions are REGISTRY ORDINALS — exactly what the shipping gather interns
+// (the body's `NPCKind::factionIdx` column). Resolved from the name once, at
+// build time, the same way the game resolves `kPlayerFactionSlot`.
+constexpr FactionSlot kEmpire = faction_ordinal("empire");
+constexpr FactionSlot kBandits = faction_ordinal("bandits");
+static_assert(kEmpire >= 0 && kBandits >= 0 && kEmpire != kBandits,
+              "фикстура стоит на двух живых строках реестра");
 
 BodyDesc soldier(float x, float y, int faction, std::uint64_t enemyMask,
                        float sight = kSight) {
@@ -203,40 +207,34 @@ MoveGround flat_terrain() {
     return t;
 }
 
-// ── 1. Factions: interned strings, no vocabulary, no fixed list ──────────
+// ── 1. Factions: interned ORDINALS, no vocabulary, no fixed list ─────────
 void test_factions() {
     FactionSet fs{};
     const int a = fs.intern(kEmpire);
     const int b = fs.intern(kBandits);
     CHECK(a == 0 && b == 1, "interning assigns dense indices in order");
-    CHECK(fs.intern(kEmpire) == a, "same pointer dedups");
-    char copy[16];
-    std::strcpy(copy, "empire");
-    CHECK(fs.intern(copy) == a, "same text dedups even from a different pointer");
+    CHECK(fs.ids[a] == kEmpire && fs.ids[b] == kBandits,
+          "the set keeps the REGISTRY ORDINAL behind each dense index — the "
+          "number the relation matrix is asked by");
+    CHECK(fs.intern(kEmpire) == a, "the same ordinal dedups");
     CHECK(fs.count == 2, "no duplicate slots created");
-    CHECK(fs.intern(nullptr) < 0 && fs.intern("") < 0,
-          "null / empty faction id is refused, not interned");
 
-    // A faction the battle code has never heard of is just another string: this
-    // is the whole point — new factions cost zero code.
-    CHECK(fs.intern("some_brand_new_kingdom") == 2, "unknown faction interns fine");
+    // Outside the registry is factionless — the sentinel the kind column
+    // carries, a stale byte, the reserved tail — never a slot of its own.
+    CHECK(fs.intern(kNoFactionSlot) < 0
+              && fs.intern(FactionSlot(kNoFaction)) < 0
+              && fs.intern(kFactionCount) < 0,
+          "an ordinal outside the registry is refused, not interned");
+    CHECK(fs.count == 2, "a refused ordinal takes no slot");
 
-    // NOTE ON THE CONTRACT: FactionSet stores the POINTER, not a copy, so every
-    // interned id must outlive the tick. The shipping caller only ever passes
-    // string literals from the fighter tables, and this loop must therefore hand
-    // it distinct, stable storage too — reusing one stack buffer would make every
-    // id the same pointer and silently dedup to a single faction.
+    // Every registry row fits: the set cannot overflow, because the registry
+    // itself is capped by the mask width (static_assert at kFactionDefs).
     FactionSet full{};
-    std::vector<std::vector<char>> ids;
-    ids.resize(std::size_t(kMaxFactions));
-    for (int i = 0; i < kMaxFactions; ++i) {
-        ids[std::size_t(i)].resize(16);
-        std::snprintf(ids[std::size_t(i)].data(), 16, "f%d", i);
-        full.intern(ids[std::size_t(i)].data());
-    }
-    CHECK(full.count == kMaxFactions, "table fills to its capacity");
-    CHECK(full.intern("one_too_many") < 0,
-          "beyond capacity degrades to factionless, never overruns");
+    for (int i = 0; i < kFactionCount; ++i) full.intern(FactionSlot(i));
+    CHECK(full.count == kFactionCount, "every registry row interns");
+    for (int i = 0; i < kFactionCount; ++i) full.intern(FactionSlot(i));
+    CHECK(full.count == kFactionCount,
+          "and a second pass over the whole registry adds nothing");
 
     FactionSet cleared{};
     cleared.intern(kEmpire);
@@ -268,49 +266,51 @@ void test_factions() {
 // landed because the 1 s attack cooldown outlasted the stale window. Empty masks
 // are silent: nothing crashes, nothing warns, the army just stops fighting.
 int fake_relation(void* user, const FactionSet& fs, int a, int b) {
-    // "empire" and "bandits" are at war; anything else is indifferent.
+    // The empire and the bandits are at war; anything else is indifferent.
+    // Asked by REGISTRY ORDINAL — `fs.ids[]` — exactly as the engine's
+    // battle_relation_callback asks the relation matrix.
     (void)user;
-    const char* ia = fs.ids[a];
-    const char* ib = fs.ids[b];
-    const bool ab = (std::strcmp(ia, "empire") == 0 && std::strcmp(ib, "bandits") == 0);
-    const bool ba = (std::strcmp(ia, "bandits") == 0 && std::strcmp(ib, "empire") == 0);
+    const FactionSlot ia = fs.ids[a];
+    const FactionSlot ib = fs.ids[b];
+    const bool ab = ia == kEmpire && ib == kBandits;
+    const bool ba = ia == kBandits && ib == kEmpire;
     return (ab || ba) ? -80 : 0;
 }
 
-// ── 1c. The relation callback identifies a faction by INDEX ───────────────
-// The engine's callback used to recognise the player side by comparing
-// `const char*` against a literal — correct only while every spelling of that id
-// came from that same literal. An id built at runtime (from a save, from data,
-// from a console line) is an equal string at a different address, so the
-// comparison silently missed and that faction stopped being the player's side.
-//
-// The set already deduplicates by CONTENT (test_factions above), so both
-// spellings share one index; what is pinned here is the other half — the mask
-// builder hands the callback INDICES into that set, so identity can be an
-// integer comparison and the pointer question never arises. This is exactly the
-// shape SubworldEngine::battle_relation_callback now has.
-void test_relation_callback_identifies_by_index() {
-    char runtimeEmpire[8] = {'e','m','p','i','r','e','\0','\0'};
+// ── 1c. The relation answers by ORDINAL, never by the dense index ──────────
+// The dense index is the tick's address: the set is re-interned from scratch
+// every tick, so index 0 is whoever happened to be gathered first. A relation
+// keyed by the dense index would make war depend on gather ORDER. Pinned here:
+// two sets that interned the same two factions in OPPOSITE order resolve the
+// same war, because the callback reads the ordinal behind each index.
+void test_relation_callback_reads_the_ordinal() {
+    FactionSet ab{};
+    const int abEmp = ab.intern(kEmpire);
+    const int abBan = ab.intern(kBandits);
+    FactionSet ba{};
+    const int baBan = ba.intern(kBandits);
+    const int baEmp = ba.intern(kEmpire);
+    CHECK(abEmp != baEmp && abBan != baBan,
+          "the fixture really permutes the dense indices");
 
-    FactionSet fs{};
-    const int emp = fs.intern(runtimeEmpire);   // the id arrives from data
-    const int ban = fs.intern(kBandits);
+    build_faction_masks(ab, &fake_relation, nullptr, -50);
+    build_faction_masks(ba, &fake_relation, nullptr, -50);
+    CHECK(((ab.enemyMask[abEmp] >> abBan) & 1ull) != 0ull
+              && ((ba.enemyMask[baEmp] >> baBan) & 1ull) != 0ull,
+          "the war resolves whichever faction the gather met first");
+    CHECK(((ab.enemyMask[abBan] >> abEmp) & 1ull) != 0ull
+              && ((ba.enemyMask[baBan] >> baEmp) & 1ull) != 0ull,
+          "and resolves both ways in both orders");
 
-    struct Ctx { int side; };
-    Ctx ctx{emp};
-    build_faction_masks(fs, [](void* u, const FactionSet& set, int a, int b) {
-        const int side = static_cast<Ctx*>(u)->side;
-        CHECK(a >= 0 && a < set.count && b >= 0 && b < set.count,
-              "the callback is handed valid indices into the live set");
-        return (a == side || b == side) ? -80 : 0;   // integer identity
-    }, &ctx, -50);
-
-    CHECK((fs.enemyMask[emp] >> ban) & 1ull,
-          "a runtime-built id is recognised by index, not by address");
-    CHECK((fs.enemyMask[ban] >> emp) & 1ull, "and the pair resolves both ways");
-    // The literal spelling is the SAME faction, so it carries the same mask —
-    // no second row, no divergent allegiance.
-    CHECK(fs.find(kEmpire) == emp, "literal and runtime spelling are one row");
+    // NEGATIVE CONTROL: a third faction the relation does not name stays at
+    // peace with both — the detector above reads a real difference.
+    constexpr FactionSlot kWildlife = faction_ordinal("wildlife");
+    static_assert(kWildlife >= 0);
+    const int wild = ab.intern(kWildlife);
+    build_faction_masks(ab, &fake_relation, nullptr, -50);
+    CHECK(wild >= 0 && ab.enemyMask[wild] == 0ull
+              && ((ab.enemyMask[abEmp] >> wild) & 1ull) == 0ull,
+          "a faction the relation does not name is nobody's enemy");
 }
 
 void test_faction_mask_freshness() {
@@ -1469,7 +1469,7 @@ void test_stop_is_a_stop_not_a_skid() {
 int main() {
     test_factions();
     test_faction_mask_freshness();
-    test_relation_callback_identifies_by_index();
+    test_relation_callback_reads_the_ordinal();
     test_grid();
     test_influence_field();
     test_alert_chain();

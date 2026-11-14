@@ -659,7 +659,7 @@ MacroSeeds seed_macro_npcs(sm::MacroStore& st, int mapW) {
 // humanoid its low byte happened to name.
 bool run_beast_member_projection_case(
     const sm::sub::SeamlessSubworldManager& mgr) {
-    constexpr int kMapW = 1024, kMapH = 1024;
+    constexpr int kMapW = 1024;
     constexpr std::uint16_t kBeast = std::uint16_t(sm::NPCType::Wolf);
 
     auto worldStore_ = sm::make_macro_store();
@@ -689,7 +689,7 @@ bool run_beast_member_projection_case(
     const auto wsl = window_squads_of(stl);
     const int projected = sm::sub::project_macro_npcs_into_subworld(
         objs, stl, mgr, wsl.data(), std::uint32_t(wsl.size()),
-        /*cx*/0, /*cy*/0, kMapW, kMapH, 0xBEA57u,
+        /*cx*/0, /*cy*/0, kMapW, 0xBEA57u,
         sm::sub::WATER_LEVEL);
     if (projected != 3) return false;   // the avatar and both of his members
 
@@ -812,7 +812,7 @@ std::vector<std::array<float, 3>> projection_fingerprint(
 // correct window cell; and the same inputs reproduce the same scene.
 bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     using sm::ecs::SubworldAi;
-    constexpr int kMapW = 1024, kMapH = 1024;
+    constexpr int kMapW = 1024;
     constexpr int kCenterCx = 0, kCenterCy = 0;
     constexpr std::uint32_t kSeed = 0x5D5D5D5Du;
     const float kC = float(sm::sub::kCellSize);
@@ -848,7 +848,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     const auto ws = window_squads_of(*worldStore_);
     const int projected = sm::sub::project_macro_npcs_into_subworld(
         objs, *worldStore_, mgr, ws.data(), std::uint32_t(ws.size()),
-        kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+        kCenterCx, kCenterCy, kMapW, kSeed,
         sm::sub::WATER_LEVEL);
     if (projected != 3) return false;     // three in-window, the far one skipped
 
@@ -963,7 +963,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
         const int again = sm::sub::project_macro_npcs_into_subworld(
             objs, *worldStore_, mgr, wsAgain.data(),
             std::uint32_t(wsAgain.size()),
-            kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+            kCenterCx, kCenterCy, kMapW, kSeed,
             sm::sub::WATER_LEVEL);
         if (again != 0) return false;   // второй зов не рождает ни одного тела
         int standing = 0;
@@ -1008,7 +1008,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     const auto ws2 = window_squads_of(*world2Store_);
     const int projected2 = sm::sub::project_macro_npcs_into_subworld(
         objs2, *world2Store_, mgr, ws2.data(), std::uint32_t(ws2.size()),
-        kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+        kCenterCx, kCenterCy, kMapW, kSeed,
         sm::sub::WATER_LEVEL);
     if (projected2 != 3) return false;
     const std::vector<std::array<float, 3>> fp2 = projection_fingerprint(objs2);
@@ -1044,7 +1044,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
 // прогон не рождал призрака. Предусловие — призрак и перерождение слота —
 // рождается ЗДЕСЬ, а не ожидается от генератора (§8 п.11).
 bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
-    constexpr int kMapW = 1024, kMapH = 1024;
+    constexpr int kMapW = 1024;
     constexpr int kCenterCx = 0, kCenterCy = 0;
     constexpr std::uint32_t kSeed = 0x9A17C0DEu;
 
@@ -1058,7 +1058,7 @@ bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
     const auto wsFirst = window_squads_of(st);
     if (sm::sub::project_macro_npcs_into_subworld(
             objs, st, mgr, wsFirst.data(), std::uint32_t(wsFirst.size()),
-            kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+            kCenterCx, kCenterCy, kMapW, kSeed,
             sm::sub::WATER_LEVEL) != 3) return false;
 
     auto count_origins = [&](bool wantValid) {
@@ -1109,7 +1109,7 @@ bool run_ghost_origin_case(const sm::sub::SeamlessSubworldManager& mgr) {
     const auto wsReborn = window_squads_of(st);
     if (sm::sub::project_macro_npcs_into_subworld(
             objs, st, mgr, wsReborn.data(), std::uint32_t(wsReborn.size()),
-            kCenterCx, kCenterCy, kMapW, kMapH, kSeed,
+            kCenterCx, kCenterCy, kMapW, kSeed,
             sm::sub::WATER_LEVEL) != 1) return false;
     if (count_origins(/*wantValid*/true) != 3) return false;
     if (count_origins(/*wantValid*/false) != 1) return false;   // призрак так и стоит

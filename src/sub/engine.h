@@ -792,16 +792,15 @@ private:
     // арену, И толпу разом, а слот у каждого тела СВОЙ, поэтому добавлений в
     // толпу не бывает больше, чем живых слотов арены, то есть ровно кап.
     float crowdMaxStepM_ = 0.0f;
-    // Faction identity is the id STRING (the universal key gs->factions,
-    // reputation and loot profiles already use), interned per tick into dense
-    // indices. There is no faction creatures in the engine and no limit on the
-    // world's factions — only on how many stand in one window at once.
+    // Faction identity is the REGISTRY ORDINAL of the body's kind column (the
+    // number the relation matrix is indexed by), interned per tick into dense
+    // indices — no name rides this path (ЗАКОН СЛОВАРЯ).
     FactionSet              crowdFactions_;
     int                     crowdPlayerFaction_ = -1;
     // Squared 3D distance to the nearest body hostile to the player, folded out
     // of the battle gather (which already resolves that exact rule). The HUD
     // danger gem and the subworld exit gate read it every frame, so it must be a
-    // cached scalar and not an all-entity scan with string faction lookups.
+    // cached scalar and not an all-entity scan with per-pair faction lookups.
     float                   playerThreatD2_ = kNoThreatDistance2;
     Camera                  cam_;
     // sunfreeze diagnostic (set_sun_freeze / render_time).

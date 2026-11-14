@@ -796,7 +796,9 @@ void test_zero_and_missing_target() {
 // own block.
 //
 // Deliberately NOT asserted here: that the mirror follows. That is the engine's
-// tick-top pass (mirror_bodies_from_record), and this door links no engine.
+// tick-top pass (mirror_bodies_from_record), and this door links no engine;
+// the mirror's own arithmetic is the door `mirror_of_record` and is judged by
+// test_the_mirror_keeps_the_overkill below.
 void test_the_blow_lands_on_the_record() {
     auto arena_ = sm::test::make_scene_arena();
     sm::sub::SubObjects& objs = *arena_;
@@ -897,6 +899,61 @@ void test_shield_rank_does_not_thicken_the_skin() {
     std::fflush(stderr);
 }
 
+// ЗЕРКАЛО НЕСЁТ ПЕРЕБОР УДАРА (ЗАКОН КЛАМПА: «ноль здоровья — не кламп, а
+// СОБЫТИЕ … −150 против −2 есть разница между смертью и разрывом тела»).
+//
+// Два тела с ОДНИМ остатком бара получают удары разной силы. Запись помнит
+// разницу — дверь урона вычитает свободно; закон здесь о ЗЕРКАЛЕ: бары тела,
+// которые движок кладёт в арену дверью `mirror_of_record@src/sub/record.h`
+// (рождение аватара и тик-топ `mirror_bodies_from_record`), обязаны донести
+// её до конца шага. Обрезка снизу свела бы обе раны к одному нулю.
+void test_the_mirror_keeps_the_overkill() {
+    auto arena_ = sm::test::make_scene_arena();
+    sm::sub::SubObjects& objs = *arena_;
+    auto store = sm::make_macro_store();
+    const sm::MacroHandle torn = sm::store_birth(*store);
+    const sm::MacroHandle slain = sm::store_birth(*store);
+    constexpr int kLeft = 10;
+    for (const sm::MacroHandle h : {torn, slain}) {
+        store->pools[h.slot].hp = kLeft;
+        store->pools[h.slot].maxHp = 100;
+    }
+    const int tornBody = make_body(objs, 100);
+    const int slainBody = make_body(objs, 100);
+    sm::test::give_origin(objs, tornBody, torn);
+    sm::test::give_origin(objs, slainBody, slain);
+
+    // Script — удар без смягчения: рана равна удару, перебор виден целиком.
+    const DamageResult rip =
+        apply_damage(objs, store.get(), tornBody, DamageSource{}, kLeft * 16,
+                     DamageKind::Script, sm::DamageType::Blunt);
+    const DamageResult cut =
+        apply_damage(objs, store.get(), slainBody, DamageSource{}, kLeft + 2,
+                     DamageKind::Script, sm::DamageType::Blunt);
+    const sm::ecs::Pools& tornRec =
+        *sm::body_state<sm::ecs::Pools>(*store, torn);
+    const sm::ecs::Pools& slainRec =
+        *sm::body_state<sm::ecs::Pools>(*store, slain);
+    CHECK_OR_RETURN(rip.lethal && cut.lethal && tornRec.hp < slainRec.hp
+                        && slainRec.hp < 0,
+                    "предусловие: оба удара смертельны, и ЗАПИСЬ помнит "
+                    "разную глубину — дверь урона вычитает без обрезки");
+
+    const sm::ecs::Pools tornMirror = sm::sub::mirror_of_record(tornRec);
+    const sm::ecs::Pools slainMirror = sm::sub::mirror_of_record(slainRec);
+    CHECK(tornMirror.hp == tornRec.hp && slainMirror.hp == slainRec.hp,
+          "зеркало несёт бар записи КАК ЕСТЬ, и ниже нуля тоже");
+    CHECK(tornMirror.hp < slainMirror.hp && slainMirror.hp < 0,
+          "разрыв тела отличим от смерти: перебор не стёрт ни у одного");
+
+    // ВЕРХ У ШКАЛЫ ОСТАЁТСЯ — молчащая половина: снят только низ.
+    sm::ecs::Pools over{};
+    over.hp = 120;
+    over.maxHp = 100;
+    CHECK(sm::sub::mirror_of_record(over).hp == over.maxHp,
+          "бар выше потолка зеркало срезает до потолка — верх не тронут");
+}
+
 } // namespace
 
 int main() {
@@ -914,5 +971,6 @@ int main() {
     test_stale_attacker_ref_resolves_to_nobody();
     test_zero_and_missing_target();
     test_the_blow_lands_on_the_record();
+    test_the_mirror_keeps_the_overkill();
     return sm::test::report("damage_door_test");
 }

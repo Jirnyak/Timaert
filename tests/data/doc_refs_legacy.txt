@@ -175,11 +175,9 @@ SKELETON.md	ecs/components.h:243
 SKELETON.md	ecs/components.h:362
 SKELETON.md	effect_applicator.cpp:53-60
 SKELETON.md	effect_applicator.h:12
-SKELETON.md	engine.cpp:1223-1225
 SKELETON.md	engine.cpp:1388
 SKELETON.md	engine.cpp:2285
 SKELETON.md	engine.cpp:2301
-SKELETON.md	engine.cpp:232-234
 SKELETON.md	engine.cpp:2622
 SKELETON.md	engine.h:609
 SKELETON.md	faction.h:320
@@ -285,7 +283,6 @@ SKELETON.md	scent_field.cpp:59-62
 SKELETON.md	scent_field.cpp:6
 SKELETON.md	scent_field.h:118-119
 SKELETON.md	seamless_manager.cpp:283
-SKELETON.md	seamless_manager.cpp:320
 SKELETON.md	seamless_manager.cpp:915
 SKELETON.md	seamless_manager.cpp:922-925
 SKELETON.md	seamless_manager.cpp:970-978
@@ -297,7 +294,6 @@ SKELETON.md	smoke.cpp:5450
 SKELETON.md	spawn.cpp:1010
 SKELETON.md	spawn.cpp:1225
 SKELETON.md	spawn.cpp:1239-1256
-SKELETON.md	spawn.cpp:599-601
 SKELETON.md	spawners.cpp:162
 SKELETON.md	spawners.cpp:210
 SKELETON.md	spawners.cpp:222-241
@@ -329,11 +325,9 @@ SKELETON.md	state.h:510
 SKELETON.md	state.h:617
 SKELETON.md	store.h:65
 SKELETON.md	sub/ai.cpp:28
-SKELETON.md	sub/base_generator.cpp:373-374
 SKELETON.md	sub/damage.cpp:10-11
 SKELETON.md	sub/damage.cpp:105
 SKELETON.md	sub/engine.cpp:1346-1356
-SKELETON.md	sub/engine.cpp:1402-1403
 SKELETON.md	sub/engine.cpp:2265-2266
 SKELETON.md	sub/engine.cpp:2658
 SKELETON.md	sub/engine.cpp:3413
@@ -341,14 +335,12 @@ SKELETON.md	sub/engine.cpp:4501
 SKELETON.md	sub/engine.cpp:4644
 SKELETON.md	sub/engine.cpp:636-638
 SKELETON.md	sub/engine.cpp:779-787
-SKELETON.md	sub/engine.cpp:841-842
 SKELETON.md	sub/engine.h:22
 SKELETON.md	sub/engine.h:252
 SKELETON.md	sub/map_data.h:20-21
 SKELETON.md	sub/map_data.h:518-519
 SKELETON.md	sub/seamless_manager.cpp:309
 SKELETON.md	sub/spawn.cpp:1489-1491
-SKELETON.md	sub/spawn.cpp:514
 SKELETON.md	sub/spell_effects.cpp:388
 SKELETON.md	sub/spell_effects.h:7
 SKELETON.md	surface_lib.glsl:30

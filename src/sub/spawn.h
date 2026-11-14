@@ -422,12 +422,10 @@ void clear_subworld_world_entities(SubObjects& objs);
 // window instead of drifting by one macro cell each crossing.
 void rebase_subworld_entities(SubObjects& objs, float dxTiles, float dyTiles);
 
-// Signed toroidal offset of macro cell `a` from window centre `c` on a torus of
-// circumference `n`. A result in {-1,0,1} means `a` is in the loaded 3×3 window
-// at that cell offset; anything else is outside it. THE translation from a
-// world address to a window one — everything that must survive a re-centre
-// stores the macro cell and asks this at the moment it needs a window position.
-int toroidal_cell_offset(int a, int c, int n);
+// (Здесь была объявлена `toroidal_cell_offset` — смещение клетки мира от
+// центра окна рукописным делением. Перевод «адрес мира → клетка окна» есть
+// дверь тора над индексами `cell_delta@src/core/torus.h`: результат в
+// {-1,0,1} по обеим осям значит «клетка в окне 3×3 на этом смещении».)
 
 // РАЗВЁРТКА ДОЛИ КЛЕТКИ В ОСЬ СЦЕНЫ — точка тел сквада (M-317, ЗАКОН ШВА:
 // «вниз клетка РАЗВОРАЧИВАЕТСЯ в континуум»). Обратная дверь свёртки
@@ -508,8 +506,9 @@ void spawn_player_squad(SubObjects& objs,
 // until 2026-09-18, was the fold-up architecture the mirror law replaced.)
 //
 // A macro NPC is "in the window" when its integer cell is within ±1 of the
-// window centre (centerCx,centerCy) on the map torus (mapW×mapH) — the SAME nine
-// cells the seamless manager loads. Each projection mirrors the settlement-
+// window centre (centerCx,centerCy) on the map torus of `side` — one side for
+// both axes, the world is square (ЗАКОН АДРЕСА) — the SAME nine cells the
+// seamless manager loads. Each projection mirrors the settlement-
 // citizen layout: kind/faction copied verbatim into the arena columns (кусок 1;
 // лицо не хранится — его рост потребляется рождением), HP MIRRORED
 // from the record (not «body-native persistent state» — that was the wording
@@ -561,7 +560,7 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      const MacroHandle* windowSquads,
                                      std::uint32_t windowSquadCount,
                                      int centerCx, int centerCy,
-                                     int mapW, int mapH,
+                                     int side,
                                      std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids = nullptr,
                                      MacroHandle playerFlagRef = {});
@@ -571,7 +570,7 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      const MacroHandle* windowSquads,
                                      std::uint32_t windowSquadCount,
                                      int centerCx, int centerCy,
-                                     int mapW, int mapH,
+                                     int side,
                                      std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids = nullptr,
                                      MacroHandle playerFlagRef = {});

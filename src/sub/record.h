@@ -30,6 +30,7 @@
 // answers, one question.
 #pragma once
 
+#include <algorithm>         // std::max/std::min — двери зеркала баров
 #include "ecs/components.h"
 #include "bus/store.h"
 #include "sub/objects.h"    // SubObjects — единый массив объектов сцены (M-150);
@@ -125,6 +126,22 @@ inline CharacterSheet* slot_sheet_of(SubObjects& o, int s, MacroStore& st) {
     return slot_sheet(o, s);
 }
 
+// ЗЕРКАЛО БАРОВ — КОПИЯ ЗАПИСИ, ОДНО НАПИСАНИЕ НА ОБОИХ ЗВОНЯЩИХ: рождение
+// аватара и тик-топ зеркала (`spawn_player_entity` и
+// `mirror_bodies_from_record` в `src/sub/engine.cpp`; прежде каждый писал эту
+// арифметику сам). У шкалы есть ВЕРХ — бар не выше потолка, потолок не ниже
+// единицы (страж делителя у читателей доли бара), — и НЕТ НИЗА: ноль здоровья
+// есть СОБЫТИЕ, а не край шкалы (ЗАКОН КЛАМПА), и −150 против −2 — разница
+// между смертью и разрывом тела, которую зеркало обязано донести до конца
+// шага. Здесь стоял `clamp(hp, 0, maxHp)` — он стирал её у всякого тела,
+// павшего ниже нуля, при том что запись (дверь урона пишет её свободно в
+// минус, `apply_damage@src/sub/damage.cpp`) её помнила.
+inline ecs::Pools mirror_of_record(const ecs::Pools& record) {
+    ecs::Pools m = record;
+    m.maxHp = std::max(1, m.maxHp);
+    m.hp = std::min(m.hp, m.maxHp);
+    return m;
+}
 
 
 // (Мост единого массива объектов — objects_of/objects_find/objects_attach —

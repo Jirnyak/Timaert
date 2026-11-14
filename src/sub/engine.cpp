@@ -284,6 +284,10 @@ int apply_fall_damage(sub::SubObjects& objs, MacroStore* st, int s,
 // dictionaries that used to live here — with colliding indices across the
 // monster-type bit — are gone; unknown / kNoFaction degrades to the empty id,
 // which every relation path treats as neutral.
+//
+// ЧИТАТЕЛЬ ОДИН, И ОН НА ГРАНИЦЕ: цвет `player_stance` (миникарта и прицел —
+// UI). Сбор толпы боя её больше не зовёт — набор фракций интернирует ординал
+// колонки числом (`FactionSet@src/sub/movement.h`).
 const char* faction_id_for_kind(const ecs::NPCKind* kind) {
     return kind ? faction_id_for_index(kind->factionIdx) : "";
 }
@@ -967,7 +971,7 @@ void SubworldEngine::enter(const MacroWorld& mw, sub::SubObjects& scene,
     const int projected = project_macro_npcs_into_subworld(
         (*objects_), *mw_.store, mgr_,
         frame_->squads.data(), frame_->squadCount, cx, cy,
-        frame_->side, frame_->side,
+        frame_->side,
         cell_seed(frame_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
         scene_sea_level(), &structIndex_, frame_->playerFlag);
     if (projected > 0) {
@@ -1111,10 +1115,11 @@ void SubworldEngine::fold_captured_subs() {
             const ecs::SquadGoal& goal = st.goal[h.slot];
             // Клетка названа = цель жива (корень Б8: род курсу не судья).
             if (goal.cell != ecs::kNoCell) {
-                const int ox = toroidal_cell_offset(
-                    cell_x(goal.cell, side), mgr_.center_cx(), side);
-                const int oy = toroidal_cell_offset(
-                    cell_y(goal.cell, side), mgr_.center_cy(), side);
+                const CellDelta goalOff = cell_delta(
+                    cell_of(mgr_.center_cx(), mgr_.center_cy(), side),
+                    goal.cell, side);
+                const int ox = goalOff.dx;
+                const int oy = goalOff.dy;
                 if (ox < -1 || ox > 1 || oy < -1 || oy > 1) {
                     const int rdx = ox > 0 ? 1 : (ox < 0 ? -1 : 0);
                     const int rdy = oy > 0 ? 1 : (oy < 0 ? -1 : 0);
@@ -1194,7 +1199,7 @@ void SubworldEngine::frame_resynced() {
         project_macro_npcs_into_subworld(
             (*objects_), *mw_.store, mgr_,
             frame_->squads.data(), frame_->squadCount, cx, cy,
-            frame_->side, frame_->side,
+            frame_->side,
             cell_seed(frame_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
             scene_sea_level(), &structIndex_, frame_->playerFlag);
     }
@@ -1349,9 +1354,8 @@ void SubworldEngine::spawn_player_entity() {
                 ? flag_pools(mw_.session, mw_.store) : nullptr) {
             pools = *squadPools;
         }
-        pools.maxHp = std::max(1, pools.maxHp);
-        pools.hp = std::clamp(pools.hp, 0, pools.maxHp);
-        sub::slot_set_pools(*objs, slot, pools);
+        // Та же дверь зеркала, что у тик-топа: верх у бара есть, низа нет.
+        sub::slot_set_pools(*objs, slot, sub::mirror_of_record(pools));
     }
     // NO BodyRadius override. That component is the "sized deliberately"
     // escape hatch (sub/body.h), and using it here is what let a spell's
@@ -1670,9 +1674,9 @@ void SubworldEngine::mirror_bodies_from_record() {
         ecs::Pools& mirror = *mirrorCol;
         const auto* record = body_state<ecs::Pools>(st, originH);
         if (!record || record->maxHp <= 0) continue;
-        mirror = *record;
-        mirror.maxHp = std::max(1, mirror.maxHp);
-        mirror.hp = std::clamp(mirror.hp, 0, mirror.maxHp);
+        // Отрицательный бар записи едет в зеркало КАК ЕСТЬ (ЗАКОН КЛАМПА:
+        // ноль здоровья — событие, не край шкалы) — `mirror_of_record`.
+        mirror = sub::mirror_of_record(*record);
         // ...and the other half of what a record decides: the body's SWING.
         // Gated on «did what stands on him change», because the bars are a
         // block copy and a swing is a sheet re-roll (sub/spawn.h).
@@ -1728,16 +1732,21 @@ void SubworldEngine::report_player_damage() {
         // tick, so it still holds what the bar was when this tick began. No
         // remembered field, and no second memory to keep honest.
         const ecs::Pools& mirror = *mirrorCol;
+        // НИЖНЕЙ ОБРЕЗКИ НИ У ОДНОЙ ИЗ ТРЁХ СТРОК НЕТ (ЗАКОН КЛАМПА: ноль
+        // здоровья — событие, HP уходит в минус свободно). Здесь стоял
+        // `clamp(…, 0, maxHp)`: годмод возвращал записи НЕ то, с чем тик её
+        // нашёл, а `before − after` резал удар по остатку бара — «hit for 10»
+        // о ране в 50. Верх (не выше потолка) остался.
         if (godMode_) {
             // Invulnerable: put the record back where the tick found it and
             // keep the body out of the death path entirely.
-            record->hp = std::clamp(mirror.hp, 0, maxHp);
+            record->hp = std::min(mirror.hp, maxHp);
             sub::slot_flag_clear(objsHit, s, sub::kObjDead);
             return;
         }
-        const int before = std::clamp(mirror.hp, 0, maxHp);
-        const int after = std::clamp(record->hp, 0, maxHp);
-        // Keep the Dead tag consistent with the bar. A lethal hit (after == 0)
+        const int before = std::min(mirror.hp, maxHp);
+        const int after = std::min(record->hp, maxHp);
+        // Keep the Dead tag consistent with the bar. A lethal hit (after <= 0)
         // leaves it on: the entity drops out of every combat view, matching the
         // death screen. Any non-lethal outcome must clear a Dead that a
         // hypothetical over-damage-then-refresh ordering could otherwise strand
@@ -2041,9 +2050,13 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
     const int ccx = mgr_.center_cx() + ox;
     const int ccy = mgr_.center_cy() + oy;
     const CellContext ctx = resolve_context(ccx, ccy);
-    const int W = terrain_->width, H = terrain_->height;
-    const int wcx = wrapi(ccx, W);
-    const int wcy = wrapi(ccy, H);
+    // Клетка мира под этой клеткой окна — ШАГ от центра дверью тора (ЗАКОН
+    // АДРЕСА: заворот — маска; мир квадратен, сторона одна на обе оси).
+    const int W = terrain_->width;
+    const std::uint32_t here = cell_step(
+        cell_of(mgr_.center_cx(), mgr_.center_cy(), W), ox, oy, W);
+    const int wcx = cell_x(here, W);
+    const int wcy = cell_y(here, W);
     // Citizens belong to whoever owns this cell's place — its OWN faction
     // column, the one answer (a spire's crowd is demons because the spire is
     // born theirs, not because its kind says so). Resolved HERE, where the
@@ -2149,7 +2162,7 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
         project_macro_npcs_into_subworld(
             (*objects_), *mw_.store, mgr_,
             frame_->squads.data(), frame_->squadCount, cx, cy,
-            frame_->side, frame_->side,
+            frame_->side,
             cell_seed(frame_->worldSeed, cx, cy) ^ kMacroProjectionSalt,
             scene_sea_level(), &structIndex_, frame_->playerFlag);
     }
@@ -2212,10 +2225,12 @@ void SubworldEngine::tick_zones() {
         // address — so a re-centre moves the circle with the ground it belongs
         // to instead of leaving it behind. A cell outside the loaded 3×3 has no
         // window position at all, and the player cannot be standing in it.
-        const int ox = toroidal_cell_offset(z.cellX, mgr_.center_cx(),
-                                            frame_->side);
-        const int oy = toroidal_cell_offset(z.cellY, mgr_.center_cy(),
-                                            frame_->side);
+        const int side = frame_->side;
+        const CellDelta zoneOff = cell_delta(
+            cell_of(mgr_.center_cx(), mgr_.center_cy(), side),
+            cell_of(z.cellX, z.cellY, side), side);
+        const int ox = zoneOff.dx;
+        const int oy = zoneOff.dy;
         if (ox < -1 || ox > 1 || oy < -1 || oy > 1) {
             subZonesEntered_ &= ~bit;
             continue;
@@ -3633,16 +3648,18 @@ std::uint32_t SubworldEngine::spell_neighbors_callback(
 //
 // ИНТЕРНИРОВАННЫЙ ИНДЕКС — АДРЕС ТИКА, И СЦЕНИЧЕСКОЕ СОСТОЯНИЕ ИМ НЕ
 // АДРЕСУЕТСЯ: набор интернируется с нуля каждый тик, значит `a`/`b` между
-// тиками означают разные народы. Поэтому пара переводится в ОРДИНАЛЫ реестра
-// — ими же спрашивается и матрица, так что круг «ординал → имя → ординал»,
-// стоявший здесь K² раз в тик, заодно разомкнут (`strcmp` на диагонали ушёл:
-// её отвечает сам `relation_of`).
+// тиками означают разные народы. Поэтому пара спрашивается ОРДИНАЛАМИ реестра,
+// которые набор и хранит (`FactionSet@src/sub/movement.h`), — ими же
+// спрашивается и матрица. Имени фракции на этом пути нет ни одного: набор
+// интернирует колонку тела числом, и круг «ординал → имя → ординал»
+// разомкнут с обеих сторон (`strcmp` на диагонали ушёл: её отвечает сам
+// `relation_of`).
 int SubworldEngine::battle_relation_callback(void* user, const FactionSet& set,
                                              int a, int b) {
     auto* self = static_cast<SubworldEngine*>(user);
     if (a < 0 || b < 0 || a >= set.count || b >= set.count) return 0;
-    const FactionSlot fa = faction_index(set.ids[a]);
-    const FactionSlot fb = faction_index(set.ids[b]);
+    const FactionSlot fa = set.ids[a];
+    const FactionSlot fb = set.ids[b];
     if (self->objects_ && self->objects_->at_feud(fa, fb)) {
         return kRelationMin;
     }
@@ -3733,20 +3750,21 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     // (a fleeing deer, the player at his own keys), and it still blocks, is
     // still targeted, still separates.
     //
-    // Faction identity is the id STRING, interned here into a dense index. The
-    // set is rebuilt every tick, so a faction that walks into the window (or a
-    // brand-new faction added to the data) simply appears — there is no creatures to
-    // extend and no vocabulary in the battle code. The relation matrix over the
-    // interned set is recomputed only when that set CHANGES or the refresh timer
-    // fires, which is what keeps the string lookups off the per-frame path.
+    // Faction identity is the REGISTRY ORDINAL the body's kind column already
+    // holds, interned here into a dense index — no name is spelled on this
+    // path (ЗАКОН СЛОВАРЯ). The set is rebuilt every tick, so a faction that
+    // walks into the window (or a brand-new registry row) simply appears —
+    // there is no vocabulary in the battle code. The relation matrix over the
+    // interned set is rebuilt every tick too (see build_faction_masks).
     // Rewinding the count IS the clear: every column is already the ceiling
     // long, so there is nothing to reserve and nothing that can reallocate
     // mid-gather. crowdSlots_ rides the same count.
     crowd_->clear();
     crowdFactions_.clear();
     // The player side is interned FIRST so it owns a stable index for the tick;
-    // it is an ordinary faction with an ordinary id, not a special case.
-    crowdPlayerFaction_ = crowdFactions_.intern(kPlayerFactionId);
+    // it is an ordinary faction row, not a special case. Its ordinal is
+    // resolved from the name ONCE, at build time (`kPlayerFactionSlot`).
+    crowdPlayerFaction_ = crowdFactions_.intern(kPlayerFactionSlot);
     float threat2 = kNoThreatDistance2;
     // The fastest DRIVE in the crowd — combat sprint or brain intent,
     // whichever is larger — bounds how far any body can move per tick, which
@@ -3800,7 +3818,9 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         d.faction = std::int16_t(
             isPlayer && !bodyKind
                 ? crowdPlayerFaction_
-                : crowdFactions_.intern(faction_id_for_kind(bodyKind)));
+                : crowdFactions_.intern(bodyKind
+                                            ? FactionSlot(bodyKind->factionIdx)
+                                            : kNoFactionSlot));
 
         // ONE MOVER, and since 2026-08-30 it means ONE (owner: «БОЙ В ИГРЕ
         // НИЧЕМ НЕ ОСОБЕННЫЙ… нет никакого боя, просто если НПЦ видят врага,
@@ -3865,10 +3885,11 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
                     // Flee-тело, прижатое фауной к кромке, держало want
                     // ненулевым все 256 шагов — румб так и остался Empty).
                     const std::int32_t side = frame_->side;
-                    const int ox = toroidal_cell_offset(
-                        cell_x(goal.cell, side), mgr_.center_cx(), side);
-                    const int oy = toroidal_cell_offset(
-                        cell_y(goal.cell, side), mgr_.center_cy(), side);
+                    const CellDelta goalOff = cell_delta(
+                        cell_of(mgr_.center_cx(), mgr_.center_cy(), side),
+                        goal.cell, side);
+                    const int ox = goalOff.dx;
+                    const int oy = goalOff.dy;
                     std::uint8_t courseDir = kCourseNoStep;
                     if (ox >= -1 && ox <= 1 && oy >= -1 && oy <= 1) {
                         // Цель В ОКНЕ — точечное поле на центр её клетки
@@ -4584,13 +4605,14 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
         set_status("This door leads nowhere.");
         return false;
     }
-    const int mapW = terrain_->width;
-    const int mapH = terrain_->height;
-    if (mapW <= 0 || mapH <= 0) return false;
-    int doorCx = (mgr_.center_cx() + winCellX - 1) % mapW;
-    int doorCy = (mgr_.center_cy() + winCellY - 1) % mapH;
-    if (doorCx < 0) doorCx += mapW;
-    if (doorCy < 0) doorCy += mapH;
+    const int side = terrain_->width;
+    if (side <= 0 || terrain_->height <= 0) return false;
+    // Клетка мира двери — шаг от центра окна дверью тора (ЗАКОН АДРЕСА).
+    const std::uint32_t doorCell = cell_step(
+        cell_of(mgr_.center_cx(), mgr_.center_cy(), side),
+        winCellX - 1, winCellY - 1, side);
+    const int doorCx = cell_x(doorCell, side);
+    const int doorCy = cell_y(doorCell, side);
 
     DungeonSession ses{};
     ses.ref.kind = std::uint8_t(opens);
@@ -4986,13 +5008,13 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     // resolves its interior's cell (window offset from the composite centre).
     const int winCellX = std::clamp(int(orb.x) / kCellSize, 0, 2);
     const int winCellY = std::clamp(int(orb.y) / kCellSize, 0, 2);
-    const int mapW = terrain_->width;
-    const int mapH = terrain_->height;
-    if (mapW <= 0 || mapH <= 0) return false;
-    int cx = (mgr_.center_cx() + winCellX - 1) % mapW;
-    int cy = (mgr_.center_cy() + winCellY - 1) % mapH;
-    if (cx < 0) cx += mapW;
-    if (cy < 0) cy += mapH;
+    const int side = terrain_->width;
+    if (side <= 0 || terrain_->height <= 0) return false;
+    const std::uint32_t orbCell = cell_step(
+        cell_of(mgr_.center_cx(), mgr_.center_cy(), side),
+        winCellX - 1, winCellY - 1, side);
+    const int cx = cell_x(orbCell, side);
+    const int cy = cell_y(orbCell, side);
     // Шпиль клетки спрашивается у ОДНОГО сборщика фактов (macro/cell_facts.h),
     // как его спрашивает `read_sign` ниже; ординал места — его колонка.
     const CellFacts cf = facts_at(cx, cy);
@@ -5078,13 +5100,13 @@ bool SubworldEngine::read_sign(const Structure& sign) {
     // cell, not the window's centre.
     const int winCellX = std::clamp(int(sign.x) / kCellSize, 0, 2);
     const int winCellY = std::clamp(int(sign.y) / kCellSize, 0, 2);
-    const int mapW = terrain_->width;
-    const int mapH = terrain_->height;
-    if (mapW <= 0 || mapH <= 0) return false;
-    int cx = (mgr_.center_cx() + winCellX - 1) % mapW;
-    int cy = (mgr_.center_cy() + winCellY - 1) % mapH;
-    if (cx < 0) cx += mapW;
-    if (cy < 0) cy += mapH;
+    const int side = terrain_->width;
+    if (side <= 0 || terrain_->height <= 0) return false;
+    const std::uint32_t signCell = cell_step(
+        cell_of(mgr_.center_cx(), mgr_.center_cy(), side),
+        winCellX - 1, winCellY - 1, side);
+    const int cx = cell_x(signCell, side);
+    const int cy = cell_y(signCell, side);
     const CellContext ctx = resolve_context(cx, cy);
     const char* rooted = nullptr;
     // «ПОСЕЛЕНИЕ ЛИ ЭТО» СПРАШИВАЕТСЯ У ДАННЫХ, А НЕ У ПАРЫ ИМЁН РОДА (M-336).

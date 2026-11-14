@@ -88,7 +88,6 @@ minus	src/sub/particles.cpp	accum -= 1.0f;
 minus	src/sub/seamless_manager.cpp	playerX -= shiftX * kCellSize;
 minus	src/sub/seamless_manager.cpp	playerY -= shiftY * kCellSize;
 minus	src/sub/sky.h	pick -= int(def.kindWeights[kindIdx]);
-minus	src/sub/spawn.cpp	if (d * 2 > n) d -= n; // fold to (-n/2, n/2]
 minus	src/sub/spell_effects.cpp	p.lifeTimer -= dt;
 minus	src/sub/vk_renderer_3d.cpp	remaining -= n;
 minus	src/tables/fauna.cpp	roll -= double(w[i]);

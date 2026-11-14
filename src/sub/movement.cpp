@@ -2,7 +2,6 @@
 #include "sub/height.h"   // kBodyEyeM — the ONE body height (capsule columns)
 #include <bit>
 #include <cmath>
-#include <cstring>
 #include <algorithm>
 #include "core/math.h"  // kPi/kTwoPi — одно написание на мир
 
@@ -46,30 +45,27 @@ inline void tie_break_dir(int i, int j, float& dx, float& dy) {
 
 void FactionSet::clear() {
     for (int i = 0; i < count; ++i) {
-        ids[i] = nullptr;
+        ids[i] = kNoFactionSlot;
         enemyMask[i] = 0ull;
     }
     count = 0;
 }
 
-int FactionSet::find(const char* id) const {
-    if (!id || id[0] == '\0') return -1;
+int FactionSet::find(FactionSlot ordinal) const {
     for (int i = 0; i < count; ++i) {
-        // Pointer-first: faction ids come from static tables, so identical
-        // factions are usually the identical pointer and strcmp never runs.
-        if (ids[i] == id) return i;
-    }
-    for (int i = 0; i < count; ++i) {
-        if (std::strcmp(ids[i], id) == 0) return i;
+        if (ids[i] == ordinal) return i;
     }
     return -1;
 }
 
-int FactionSet::intern(const char* id) {
-    const int found = find(id);
+// Ёмкости хватает по построению: различных ординалов реестра не больше
+// `kFactionCount`, а он не больше `kMaxFactions` (`static_assert` у реестра).
+// Поэтому проверки «стол полон» здесь нет — её случай невыразим.
+int FactionSet::intern(FactionSlot ordinal) {
+    if (ordinal < 0 || ordinal >= kFactionCount) return -1;
+    const int found = find(ordinal);
     if (found >= 0) return found;
-    if (!id || id[0] == '\0' || count >= kMaxFactions) return -1;
-    ids[count] = id;
+    ids[count] = ordinal;
     enemyMask[count] = 0ull;
     return count++;
 }

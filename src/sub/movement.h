@@ -95,19 +95,28 @@ constexpr float kNoThreatDistance2 = 1.0e18f;
 
 // ── Factions ───────────────────────────────────────────────────────────────
 // There is NO faction vocabulary in this module and no fixed creatures. The
-// universal faction identity in this codebase is the id STRING — the same key
-// gs->factions, player reputation and the loot profiles use — so battle code
-// never names a faction and never needs editing when one is added.
+// faction identity a body carries is the ORDINAL of its registry row — the
+// number already lying in its `NPCKind::factionIdx` column, and the same number
+// the relation matrix is indexed by — so battle code never names a faction and
+// never needs editing when a row is added.
 //
-// Per tick the engine INTERNS the faction id of every body present into a dense
-// index, and asks the macro relation matrix once per interned pair. Hostility is
-// then one shift and one AND (`BodyCrowd::hostile`), while the world may hold
-// any number of factions: only the ones actually standing in this 3×3 window
-// occupy a slot.
+// ЧИСЛОМ, НЕ ИМЕНЕМ (ЗАКОН СЛОВАРЯ И ОРДИНАЛА: «внутри мира — только число»).
+// Здесь стояло «универсальная идентичность фракции — строка id», и набор
+// интернировал ИМЕНА: на каждое тело каждого тика колонка-ординал
+// переводилась в строку, а построение матрицы переводило строку обратно —
+// круг «ординал → имя → ординал» в горячем цикле. Имени тут больше нет ни
+// одного; оно живёт только на границе (UI, консоль).
 //
-// The cap is on SIMULTANEOUSLY PRESENT factions; one enemy mask stays a single
-// std::uint64_t. A 65th distinct faction in one window degrades to neutral (it
-// fights nobody) rather than misbehaving.
+// Per tick the engine INTERNS the registry ordinal of every body present into
+// a dense index, and asks the macro relation matrix once per interned pair.
+// Hostility is then one shift and one AND (`BodyCrowd::hostile`); only the
+// factions actually standing in this 3×3 window occupy a slot.
+//
+// Переполнения набора не бывает ПО ПОСТРОЕНИЮ: интернируются только строки
+// реестра, а их число стоит под `static_assert(kFactionCount <= kMaxFactions)`
+// у самого реестра. Ординал вне реестра (сентинел `kNoFaction`, протухший
+// байт, резервный хвост слотов) получает -1 — «без фракции, не дерётся ни с
+// кем», ровно тот ответ, который прежде давало пустое имя.
 //
 // ИМЯ ЧИСЛУ ОДНО — `kMaxFactions@src/tables/faction.h`, И ЗДЕСЬ ЕГО НЕТ
 // (M-182, вердикт владельца 2026-09-28: «число фракций заменить на 64 (к
@@ -120,7 +129,9 @@ constexpr float kNoThreatDistance2 = 1.0e18f;
 // объявления числа, а не здесь в прозе.
 
 struct FactionSet {
-    const char* ids[kMaxFactions]{};
+    // ids[f] — ОРДИНАЛ строки реестра (`kFactionDefs@src/tables/faction.h`),
+    // занявшей плотный индекс f в этом тике.
+    FactionSlot ids[kMaxFactions]{};
     // enemyMask[f] has bit g set iff faction f treats faction g as an enemy.
     // Asymmetry is allowed and used: the macro matrix is not required to be
     // symmetric, and a body may carry a private grudge on top (see
@@ -129,25 +140,22 @@ struct FactionSet {
     int count = 0;
 
     void clear();
-    // Dense index for a faction id, adding it on first sight. Returns -1 for a
-    // null/empty id or once the table is full. Comparison is pointer-first: the
-    // ids come from static tables, so the common path never reaches strcmp.
-    int intern(const char* id);
-    // Index of an already-interned id, or -1.
-    int find(const char* id) const;
+    // Dense index for a registry ordinal, adding it on first sight. Returns -1
+    // for an ordinal outside the registry (see the header above). Identity is
+    // integer equality — there is no pointer to compare and no text.
+    int intern(FactionSlot ordinal);
+    // Index of an already-interned ordinal, or -1.
+    int find(FactionSlot ordinal) const;
 };
 
 // Fill enemyMask[] for every interned faction by asking `relation` about each
 // ordered pair; a pair is hostile when the relation is < hostileBelow. A faction
 // is never hostile to itself.
 //
-// The callback is handed INTERNED INDICES plus the set they index, not two bare
-// `const char*`. Indices are what this module actually deals in, and they are
-// what a caller can compare: an id string arriving from data or a save is a
-// different pointer than the identical literal, so any callback that recognised
-// a faction by pointer identity was correct only by accident. Ids remain
-// available through `set.ids[]` for whoever genuinely needs the string (the
-// macro relation matrix is keyed by id).
+// The callback is handed INTERNED INDICES plus the set they index. The dense
+// index is the TICK's address and means nothing across ticks; the registry
+// ordinal behind it — `set.ids[a]` — is what the relation matrix and the scene
+// feud are asked by.
 //
 // MUST BE CALLED EVERY TICK, right after interning. This is not an optimisation
 // point: the matrix is K² over the factions PRESENT in the window (2–5 in

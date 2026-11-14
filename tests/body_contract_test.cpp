@@ -397,7 +397,7 @@ void test_a_squad_on_the_map_projects_its_creatures() {
     const int projected = sub::project_macro_npcs_into_subworld(
         arena, *worldStore_, ground, ws.data(), std::uint32_t(ws.size()),
         /*centerCx*/10, /*centerCy*/12,
-        /*mapW*/64, /*mapH*/64, /*seed*/5u,
+        /*side*/64, /*seed*/5u,
         sm::sub::WATER_LEVEL);
     CHECK(projected == 3,
           "a squad of three projects three bodies: the avatar and both members");

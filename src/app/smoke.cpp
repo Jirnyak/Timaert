@@ -1273,7 +1273,7 @@ bool run_capture_exit_smoke(App& app) {
         return false;
     }
     const int mcx = sm::ecs::cell_x(st.cell[macro.slot], side);
-    const int ox = sm::sub::toroidal_cell_offset(mcx, pcx, side);
+    const int ox = sm::torus_offset(pcx, mcx, side);
     const bool steppedOut = ox >= 2;   // вне окна 3×3 ⇒ вне аренды
     const bool walkedNotJumped =
         st.runtime[macro.slot].entryDir != sm::kEntryDirNone;

@@ -627,15 +627,11 @@ void spawn_rooted_population(SubObjects& objs,
 
 } // namespace
 
-// Folded to (-n/2, n/2]. Matches the wrap semantics the macro AI uses
-// (core/torus.h), so "in the window" here means exactly the same cells the
-// seamless manager loads.
-int toroidal_cell_offset(int a, int c, int n) {
-    if (n <= 0) return a - c;
-    int d = ((a - c) % n + n) % n;   // [0, n)
-    if (d * 2 > n) d -= n;           // fold to (-n/2, n/2]
-    return d;
-}
+// (Здесь жила `toroidal_cell_offset` — смещение клетки мира от центра окна,
+// свёрнутое РУКОПИСНЫМ делением `((a - c) % n + n) % n`. Ответ у неё был тот
+// же, что у двери тора `cell_delta@src/core/torus.h`, но вторым написанием и
+// делением по рантайм-делителю на пути мира — дефект ЗАКОНА АДРЕСА п.3. Её
+// звонящие спрашивают дверь тора над индексами.)
 
 // ── The two forms of birth (declared in spawn.h) ─────────────────────────
 
@@ -1432,13 +1428,13 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      const MacroHandle* windowSquads,
                                      std::uint32_t windowSquadCount,
                                      int centerCx, int centerCy,
-                                     int mapW, int mapH,
+                                     int side,
                                      std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids,
                                      MacroHandle playerFlagRef) {
     return project_macro_npcs_into_subworld(objs, st, mgr.tiles(),
                                             windowSquads, windowSquadCount,
-                                            centerCx, centerCy, mapW, mapH,
+                                            centerCx, centerCy, side,
                                             seed, seaLevel, solids,
                                             playerFlagRef);
 }
@@ -1448,7 +1444,7 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
                                      const MacroHandle* windowSquads,
                                      std::uint32_t windowSquadCount,
                                      int centerCx, int centerCy,
-                                     int mapW, int mapH,
+                                     int side,
                                      std::uint32_t seed, float seaLevel,
                                      const StructureIndex* solids,
                                      MacroHandle playerFlagRef) {
@@ -1530,6 +1526,9 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
         }
     }
 
+    // Центр окна — АДРЕС клетки мира, одно число (ЗАКОН АДРЕСА): смещение
+    // сквада от него спрашивается дверью тора над индексами, заворот — маской.
+    const std::uint32_t centerCell = cell_of(centerCx, centerCy, side);
     int projected = 0;
     for (std::uint32_t i = 0; i < windowSquadCount; ++i) {
         const MacroHandle macro = windowSquads[i];
@@ -1541,11 +1540,12 @@ int project_macro_npcs_into_subworld(SubObjects& objs, MacroStore& st,
         const std::uint16_t slot = macro.slot;
         if (slot == flagSlot) continue;
         const ecs::MacroCell mcell = squad_cell(st, macro);
-        const int mcx = ecs::cell_x(mcell, mapW);
-        const int mcy = ecs::cell_y(mcell, mapW);
+        const int mcx = ecs::cell_x(mcell, side);
+        const int mcy = ecs::cell_y(mcell, side);
         // Which of the 3×3 window cells does this macro NPC occupy (if any)?
-        const int ox = toroidal_cell_offset(mcx, centerCx, mapW);
-        const int oy = toroidal_cell_offset(mcy, centerCy, mapH);
+        const CellDelta off = cell_delta(centerCell, mcell.idx, side);
+        const int ox = off.dx;
+        const int oy = off.dy;
         if (ox < -1 || ox > 1 || oy < -1 || oy > 1) continue;
         if ((projectedSlots[std::size_t(slot) >> 6] >> (slot & 63u)) & 1ull)
             continue;
