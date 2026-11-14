@@ -17,12 +17,14 @@
 #include "bus/anketa.h"      // Inventory, Skills, count_human_souls, inventory_mass_g
 #include "core/subtract.h"   // sub_sat — угасание слова ожидания
 #include "macro/currency.h"  // payable_row, inventory_value — пуст ли трюм
-#include "macro/deal.h"      // DealLine — строка лота погрузки
+#include "macro/deal.h"      // DealLine, kNoCarryLimitG — лоты погрузки и крю
 #include "macro/econ_day.h"  // craft_outputs
 #include "macro/economy.h"   // row_side, lot_take, lot_loss, gain_units, gain_denser
 #include "macro/squad.h"     // carry_capacity_g
 #include "tables/actions.h"
 #include "tables/items.h"    // item_parts, item_yield
+#include "tables/npc.h"      // is_folk_kind — людская ли голова
+#include "tables/world_row.h"  // creature_of_world_row — род головы
 
 namespace sm {
 
@@ -35,7 +37,7 @@ namespace {
 
 // ДУШИ СВОБОДНЫ ТОЛЬКО ТЕ, БЕЗ КОТОРЫХ СТОЛИЦА ОСТАЁТСЯ СТОЯТЬ, — отсюда
 // строгое «больше», а не «не меньше». Это не потолок численности (ЗАКОН
-// КЛАМПА): предел рождения даёт сама плата душами (`bleed_flock` в `spawn`),
+// КЛАМПА): предел рождения даёт сама плата душами (аватар и лот голов крю),
 // а здесь сказано лишь то, что последнюю душу из дома не выписывают — иначе
 // столица с ровно восемью головами ушла бы в крю ЦЕЛИКОМ и осталась бы с одним
 // рабочим юнитом — аватаром: тот же бар покупал бы ему в девять раз меньше
@@ -43,6 +45,62 @@ namespace {
 // перестала.
 bool capital_has_spare_souls_(const AiSelf& s) {
     return count_human_souls(s.bag) > kCapitalCrewSouls;
+}
+
+// КРЮ — ТЕ ЖЕ ГОЛОВЫ ДОМА, И КАКИЕ ИМЕННО, РЕШАЕТ СТОЛИЦА (вердикт владельца
+// 2026-11-13, CANON S25 «ТРИ РЕШЕНИЯ О ВЗАИМОДЕЙСТВИИ» п.3; ряд M-496).
+// Рождение — два шага: дверь рождения ставит строку и аватара — одну душу
+// дома (`AiPult::spawn`), — а остальные души крю едут к рождённому ЛОТОМ
+// ГОЛОВ одной передачей (`AiPult::hand`): те же головы, с их родом и
+// уровнем, никого «из спецификации».
+//
+// ОЧЕРЕДЬ ОТДАЧИ — та же, в какой дом теряет души и дверью убыли
+// (`bleed_flock@src/bus/world_row.h`): людские стаки снизу области существ
+// вверх, новейший первым. Каждая строка называет СВОЙ стак и едет ровно
+// (`exact`): снятие стака целиком чинит дыру только у себя и ниже
+// (`Inventory::remove_at@src/bus/anketa.h`), поэтому стаки дальше по очереди
+// адреса не меняют. Возврат — число строк; голов в них до `souls`.
+int capital_crew_lot_(const Inventory& bag, int souls,
+                      DealLine (&lot)[kCapitalCrewSouls]) {
+    int lines = 0;
+    int given = 0;   // голов уже в лоте — счёт вверх, до `souls`
+    for (int k = bag.creature_first();
+         k < kMaxInventorySlots && given < souls && lines < kCapitalCrewSouls;
+         ++k) {
+        const ItemRef& head = bag.slots[std::size_t(k)];
+        if (!is_folk_kind(std::uint16_t(creature_of_world_row(head.def))))
+            continue;
+        const int n = std::min(souls - given, int(head.count));
+        lot[lines] = DealLine{};
+        lot[lines].want = n;
+        lot[lines].def = head.def;
+        lot[lines].slot = std::uint16_t(k);
+        lot[lines].exact = 1;
+        ++lines;
+        given += n;
+    }
+    return lines;
+}
+
+// РОДИТЬ СКВАД ТИПА `t` — строка и аватар дверью рождения, затем крю дома
+// лотом голов. Счёт душ точен по построению: рожает столица только при
+// душах сверх крю (`capital_has_spare_souls_` — гейт звонящего), аватар
+// снимает ровно одну, и после него дома людей не меньше `крю − 1`, так что
+// лот набирает их полностью; передача атомарна (exact-строки, исполнение на
+// копиях), а сумка рождённого пуста (`make_npc@src/macro/npc_spawn.cpp`),
+// и принять лот ей нечем отказать. Дом теряет ровно крю, рождённый несёт
+// аватара и `крю − 1` голов. Возврат — хэндл рождённого (невалидный —
+// рождения не было).
+MacroHandle capital_raise_crew_(AiSelf& s, AiPult& pult, SquadType t) {
+    const MacroHandle born = pult.spawn(s, t);
+    if (born.slot == kMacroNoSlot) return born;
+    DealLine lot[kCapitalCrewSouls];
+    const int lines = capital_crew_lot_(s.bag, kCapitalCrewSouls - 1, lot);
+    if (lines > 0)
+        pult.hand(s.h.slot, born.slot,
+                  std::span<DealLine>(lot, std::size_t(lines)),
+                  kNoCarryLimitG);
+    return born;
 }
 
 // КОГДА МОДУЛЬ СТОЛИЦЫ ДУМАЕТ О КРАФТЕ — ТРИ ВОПРОСА, ТРИ НОСИТЕЛЯ.
@@ -295,7 +353,7 @@ void capital_think(AiSelf& s, const AiView& view, AiPult& pult) {
         && !view.has_child(s.h, SquadType::Collector)
         && s.rt.mem[kCapitalMemCollectorSeason] != season) {
         const MacroHandle born =
-            pult.spawn(s, SquadType::Collector, kCapitalCrewSouls);
+            capital_raise_crew_(s, pult, SquadType::Collector);
         if (born.slot != kMacroNoSlot) s.rt.mem[kCapitalMemCollectorSeason] = season;
     }
     // КОРОВАН — БЕЗ ГЕЙТА НУЖДЫ, И ЭТО НЕ ПРОПУСК: куда ехать и что брать на
@@ -306,7 +364,7 @@ void capital_think(AiSelf& s, const AiView& view, AiPult& pult) {
     // Свободные души читаются ЗАНОВО: сборщик выше мог только что увести
     // свои восемь, и вчерашний ответ о них уже неверен.
     if (capital_has_spare_souls_(s) && !view.has_child(s.h, SquadType::Caravan))
-        pult.spawn(s, SquadType::Caravan, kCapitalCrewSouls);
+        (void)capital_raise_crew_(s, pult, SquadType::Caravan);
     // СТОЛИЦА ГРУЗИТ СВОЙ КОРОВАН (владелец 2026-11-12: «город рождает его и
     // загружает»). Груз отдаёт тот, чей склад: ребёнок, стоящий дома
     // свободным и пустым, получает излишек родителя ОДНОЙ сделкой. Путь

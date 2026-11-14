@@ -7,15 +7,19 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <span>
 
 #include "bus/anketa.h"      // Inventory, Skills, count_human_souls
 #include "core/subtract.h"   // sub_sat — угасание слова ожидания
+#include "macro/deal.h"      // DealLine, kNoCarryLimitG — лот голов крю
 #include "macro/econ_day.h"  // craft_outputs, hunger_commodity_ordinal
 #include "macro/economy.h"   // row_side, lot_take, lot_loss, gain_units
 #include "macro/squad.h"     // carry_capacity_g
 #include "tables/actions.h"
 #include "tables/commodity.h"
 #include "tables/items.h"    // item_parts, item_yield
+#include "tables/npc.h"      // is_folk_kind — людская ли голова
+#include "tables/world_row.h"  // creature_of_world_row — род головы
 
 namespace sm {
 
@@ -28,7 +32,7 @@ namespace {
 
 // ДУШИ СВОБОДНЫ ТОЛЬКО ТЕ, БЕЗ КОТОРЫХ ДЕРЕВНЯ ОСТАЁТСЯ СТОЯТЬ, — отсюда
 // строгое «больше», а не «не меньше». Это не потолок численности (ЗАКОН
-// КЛАМПА): предел рождения даёт сама плата душами (`bleed_flock` в `spawn`),
+// КЛАМПА): предел рождения даёт сама плата душами (аватар и лот голов крю),
 // а здесь сказано лишь то, что последнюю душу из дома не выписывают — иначе
 // деревня с ровно восемью головами ушла бы в крю ЦЕЛИКОМ и осталась бы с
 // одним рабочим юнитом — аватаром: тот же бар покупал бы ему в девять раз
@@ -36,6 +40,60 @@ namespace {
 // производить перестала.
 bool village_has_spare_souls_(const AiSelf& s) {
     return count_human_souls(s.bag) > kVillageCrewSouls;
+}
+
+// КРЮ — ТЕ ЖЕ ГОЛОВЫ ДОМА, И КАКИЕ ИМЕННО, РЕШАЕТ ДЕРЕВНЯ (вердикт владельца
+// 2026-11-13, CANON S25 «ТРИ РЕШЕНИЯ О ВЗАИМОДЕЙСТВИИ» п.3; ряд M-496).
+// Рождение — два шага: дверь рождения ставит строку и аватара — одну душу
+// дома (`AiPult::spawn`), — а остальные души крю едут к рождённому ЛОТОМ
+// ГОЛОВ одной передачей (`AiPult::hand`): те же головы, с их родом и
+// уровнем, никого «из спецификации».
+//
+// ОЧЕРЕДЬ ОТДАЧИ — та же, в какой дом теряет души и дверью убыли
+// (`bleed_flock@src/bus/world_row.h`): людские стаки снизу области существ
+// вверх, новейший первым. Каждая строка называет СВОЙ стак и едет ровно
+// (`exact`): снятие стака целиком чинит дыру только у себя и ниже
+// (`Inventory::remove_at@src/bus/anketa.h`), поэтому стаки дальше по очереди
+// адреса не меняют. Возврат — число строк; голов в них до `souls`.
+int village_crew_lot_(const Inventory& bag, int souls,
+                      DealLine (&lot)[kVillageCrewSouls]) {
+    int lines = 0;
+    int given = 0;   // голов уже в лоте — счёт вверх, до `souls`
+    for (int k = bag.creature_first();
+         k < kMaxInventorySlots && given < souls && lines < kVillageCrewSouls;
+         ++k) {
+        const ItemRef& head = bag.slots[std::size_t(k)];
+        if (!is_folk_kind(std::uint16_t(creature_of_world_row(head.def))))
+            continue;
+        const int n = std::min(souls - given, int(head.count));
+        lot[lines] = DealLine{};
+        lot[lines].want = n;
+        lot[lines].def = head.def;
+        lot[lines].slot = std::uint16_t(k);
+        lot[lines].exact = 1;
+        ++lines;
+        given += n;
+    }
+    return lines;
+}
+
+// РОДИТЬ АРТЕЛЬ ТИПА `t` — строка и аватар дверью рождения, затем крю дома
+// лотом голов. Счёт душ точен по построению: рожает деревня только при
+// душах сверх крю (`village_has_spare_souls_` — гейт звонящего), аватар
+// снимает ровно одну, и после него дома людей не меньше `крю − 1`, так что
+// лот набирает их полностью; передача атомарна (exact-строки, исполнение на
+// копиях), а сумка рождённого пуста (`make_npc@src/macro/npc_spawn.cpp`),
+// и принять лот ей нечем отказать. Дом теряет ровно крю, рождённый несёт
+// аватара и `крю − 1` голов.
+void village_raise_crew_(AiSelf& s, AiPult& pult, SquadType t) {
+    const MacroHandle born = pult.spawn(s, t);
+    if (born.slot == kMacroNoSlot) return;
+    DealLine lot[kVillageCrewSouls];
+    const int lines = village_crew_lot_(s.bag, kVillageCrewSouls - 1, lot);
+    if (lines > 0)
+        pult.hand(s.h.slot, born.slot,
+                  std::span<DealLine>(lot, std::size_t(lines)),
+                  kNoCarryLimitG);
 }
 
 // КОГДА МОДУЛЬ ДЕРЕВНИ ДУМАЕТ О КРАФТЕ — ТРИ ВОПРОСА, ТРИ НОСИТЕЛЯ.
@@ -237,7 +295,7 @@ void village_think(AiSelf& s, const AiView& view, AiPult& pult) {
         if (site == ecs::kNoCell || !wants(view.yield_at(row, site)))
             return false;
         if (view.has_child(s.h, t)) return false;
-        pult.spawn(s, t, kVillageCrewSouls);
+        village_raise_crew_(s, pult, t);
         return true;
     };
     if (raise(SquadType::Ploughmen, ResourceFieldId::Wheat,

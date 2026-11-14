@@ -67,6 +67,7 @@
 #include "macro/upkeep_window.h" // upkeep_bill — сезонный счёт рынка
 #include "macro/deal.h"          // side_row — строка стороны глазами ядра
 #include "macro/squad.h"         // carry_capacity_g — спина стороны
+#include "macro/squad_ai/module_window.h"  // AiPult, AiSelf — дверь рождения напрямую (закон 2б (в))
 #include "bus/store.h"         // parent_of / suzerain_of / set_relation / store_death
 #include "bus/world_row.h"     // count_human_souls
 #include "macro/chronicle.h"
@@ -77,6 +78,7 @@
 #include "macro/tree_layer.h"
 #include "tables/faction.h"
 #include "tables/npc.h"
+#include "tables/world_row.h"   // world_row_of_creature — строка головы-метки
 #include "core/time.h"           // kTicksPerDay — период думки выводится; world_time_at — сезон мира
 #include "tables/seasons.h"       // kDaysPerSeason — следующий сезон фикстуры
 
@@ -679,6 +681,188 @@ void test_village_raises_an_artel_and_pays_in_souls() {
           "утверждён с ОБОИХ концов пары, а не пересчётом одной формулы");
 }
 
+// ═════ 2б. РОЖДЕНИЕ — СТРОКА МАССИВА ПЛЮС ТЕ ЖЕ ГОЛОВЫ РОДИТЕЛЯ (M-496) ═══
+// Вердикт владельца 2026-11-13 (CANON S25 «ТРИ РЕШЕНИЯ О ВЗАИМОДЕЙСТВИИ»
+// п.3): рождение — два шага двух систем. «Появился сквад» — дверь рождения
+// `AiPult::spawn@src/macro/npc_ai.cpp`: строка, тип, связь с родителем и
+// аватар, который есть ОДНА душа родителя (дверь убыли); «родитель отдал
+// души» — лот голов дверью сделки, и едут ТЕ ЖЕ головы. Три закона:
+//   (а) СЧЁТ ДУШ ТОЧЕН: души родителя до = души родителя после + головы
+//       рождённых + их аватары, и плата — ровно крю;
+//   (б) ЕДУТ ТЕ ЖЕ ГОЛОВЫ: людской стак иного рода, чем аватар, и не
+//       первого уровня, стоящий первым в очереди отдачи, уходит из дома
+//       целиком и стоит у рождённого тем же родом и уровнем;
+//   (в) ЛЮДСКОЙ ДУШИ НЕТ — РОЖДЕНИЯ НЕТ: дверь отказывает невалидным
+//       хэндлом, строки не встаёт, контейнер родителя не тронут; одна душа —
+//       рождение есть, и счёт сходится (1 = 0 дома + 0 голов + аватар).
+// (а) и (б) стоят над каждым из трёх модулей поселений — лот крю у каждого
+// своей копией (AGENTS §4 п.5), и мутация одной копии другие не задевает;
+// (в) — над самой дверью, мимо модуля: гейт свободных душ модуля до неё
+// такого родителя не допускает (закон 6 ниже), и иначе её отказ остался бы
+// без свидетеля.
+//
+// ТАБЛИЦА «МУТАЦИЯ → ИСХОД» (§8 п.6; собирался только этот таргет, 886
+// проверок):
+//   `AiPult::spawn`: снят `bleed_flock(s.bag, 1)` — аватар даром
+//       → КРАСНЫЙ 12: (а) и (б) над тремя модулями, (в), законы 2 и 6;
+//   `village_raise_crew_`: лот на `крю − 2` голов
+//       → КРАСНЫЙ 4: плата не крю (здесь, в законах 2 и 6); «счёт точен»
+//         ЗЕЛЁНЫЙ честно — недоданная душа не пропала, она осталась дома;
+//   то же в `city_raise_crew_`, отдельно в `capital_raise_crew_`
+//       → КРАСНЫЙ 1 каждая: плата не крю у своей копии, деревня зелёная;
+//   прежний путь: ростер «из спецификации» (`Peasant` первого уровня,
+//   `крю − 1` голов) и плата `bleed_flock` на всё крю, лот не едет ни у
+//   одного из трёх модулей
+//       → КРАСНЫЙ 4: (б) над тремя модулями и (в) — головы из воздуха;
+//         «счёт точен» ЗЕЛЁНЫЙ — число душ то же, головы другие, и ловит
+//         это ровно (б);
+//   `AiPult::spawn`: снят отказ «людской души нет»
+//       → КРАСНЫЙ 2: (в), обе проверки строки;
+//   МОЛЧИТ `village_crew_lot_`: локаль `lines` переименована → ЗЕЛЁНЫЙ.
+
+// Головы строки `kind` уровня `level` в контейнере — вопрос прибора к слотам.
+int heads_of(const Inventory& inv, NPCType kind, int level) {
+    const std::uint16_t row = world_row_of_creature(kind);
+    int n = 0;
+    for (const ItemRef& s : inv.slots)
+        if (!s.empty() && s.def == row && int(s.level) == level) n += s.count;
+    return n;
+}
+
+// Живых строк массива — «встал ли сквад» спрашивается у мира, не у хэндла.
+int live_squads(const MacroStore& st) {
+    int n = 0;
+    for (std::size_t s = 0; s < kUnifiedCap; ++s)
+        if (st.alive[s] != 0 && st.dead[s] == 0) ++n;
+    return n;
+}
+
+void test_birth_hands_the_parents_own_heads() {
+    // МЕТКА — людская голова иного рода, чем аватар двери рождения
+    // (`Peasant`), и не первого уровня: «из спецификации» её не родить.
+    constexpr NPCType kMarkKind = NPCType::Guard;
+    const int markLevel = npc_def(kMarkKind).baseLevel;
+    CHECK(is_folk_kind(std::uint16_t(kMarkKind)) && markLevel != 1,
+          "метка — людская голова не первого уровня");
+    // Одна метка уходит аватаром, остальные — головами лота: значит меток
+    // не больше крю, иначе часть по праву осталась бы дома.
+    constexpr int kMarks = 3;
+    static_assert(kMarks <= kVillageCrewSouls && kMarks <= kCityCrewSouls
+                      && kMarks <= kCapitalCrewSouls,
+                  "все метки обязаны уйти в крю");
+
+    struct Parent {
+        const char* who;
+        SquadType kind;
+        int crew;
+        SquadType child;
+    };
+    constexpr Parent kParents[] = {
+        {"деревня", SquadType::Village, kVillageCrewSouls,
+         SquadType::Ploughmen},
+        {"город", SquadType::City, kCityCrewSouls, SquadType::Caravan},
+        {"столица", SquadType::Capital, kCapitalCrewSouls,
+         SquadType::Caravan},
+    };
+    for (const Parent& p : kParents) {
+        std::printf("  [рождение: %s]\n", p.who);
+        Fixture f;
+        const MacroHandle home = f.rooted(p.kind, 10, 10, 64);
+        const int homeId = int(f.st().spawnId[home.slot].index);
+        if (p.kind == SquadType::Village) {
+            // Нужда и пашня — без них деревня крю не поднимает (закон 2).
+            f.plough(12, 10);
+            f.st().upkeep[home.slot].needDebt[hunger_commodity_ordinal()] =
+                4096;
+        }
+        Inventory& bag = f.st().inventory[home.slot].inv;
+        CHECK(creatures_push_stack(bag, kMarkKind, markLevel, kMarks),
+              "метки встали в контейнер родителя");
+        CHECK(bag.slots[std::size_t(bag.creature_first())].def
+                  == world_row_of_creature(kMarkKind),
+              "метка — первая в очереди отдачи: новейший людской стак стоит "
+              "у нижней границы области существ");
+        const int before = f.heads(home.slot);
+
+        f.think(kThinksPerDay + 2);
+
+        int born = -1;
+        int kids = 0;
+        int kidSouls = 0;   // головы детей плюс по аватару на каждого
+        for (std::size_t s = 0; s < kUnifiedCap; ++s) {
+            if (f.st().alive[s] == 0 || f.st().dead[s] != 0) continue;
+            // Место — дом себе (self-связь `Parent`, шапка `set_relation` в
+            // `src/bus/store.h`), и своим ребёнком оно не считается.
+            if (s == home.slot) continue;
+            if (parent_of(f.st(), std::uint16_t(s)) != homeId) continue;
+            ++kids;
+            kidSouls += f.heads(std::uint16_t(s)) + 1;
+            if (f.st().runtime[s].squadType == std::uint8_t(p.child))
+                born = int(s);
+        }
+        CHECK(born >= 0 && kids == 1,
+              "родитель родил одного ребёнка нужного типа");
+        const int after = f.heads(home.slot);
+        CHECK(before == after + kidSouls,
+              "(а) СЧЁТ ДУШ ТОЧЕН: души родителя до = души после + головы "
+              "рождённого + его аватар — ни одна душа не возникла и не "
+              "пропала");
+        CHECK(before - after == p.crew,
+              "(а) и плата — ровно крю: аватар одна душа, головы лота — "
+              "остальные");
+        CHECK(heads_of(bag, kMarkKind, markLevel) == 0,
+              "(б) метки дома нет: первая в очереди, она ушла вся");
+        if (born >= 0) {
+            const Inventory& kid = f.st().inventory[std::size_t(born)].inv;
+            CHECK(heads_of(kid, kMarkKind, markLevel) == kMarks - 1,
+                  "(б) ЕДУТ ТЕ ЖЕ ГОЛОВЫ: у рождённого метки того же рода и "
+                  "уровня — все, кроме одной, ставшей аватаром");
+        }
+    }
+
+    // ── (в) ДВЕРЬ РОЖДЕНИЯ: ЛЮДСКОЙ ДУШИ НЕТ — СТРОКИ НЕТ ────────────────
+    {
+        Fixture f;
+        const MacroHandle home = f.rooted(SquadType::City, 10, 10, 0);
+        const int homeId = int(f.st().spawnId[home.slot].index);
+        Inventory& bag = f.st().inventory[home.slot].inv;
+        // Головы есть, людских нет: «пусто» значит именно душ, а не голов.
+        CHECK(creatures_push_stack(bag, NPCType::Horse,
+                                   npc_def(NPCType::Horse).baseLevel, 4)
+                  && bag.sum().heads == 4 && count_human_souls(bag) == 0,
+              "(в) предусловие: четыре головы скота, людских душ ноль");
+        const int squadsBefore = live_squads(f.st());
+        const std::uint64_t revBefore = bag.revision();
+        TickContext ctx{};
+        ctx.mw = f.world();
+        ctx.mapW = kMap;
+        ctx.mapH = kMap;
+        AiPult pult(ctx);
+        MacroStore& st = f.st();
+        AiSelf self{home, st.cell[home.slot], st.runtime[home.slot],
+                    st.pools[home.slot], st.goal[home.slot], bag,
+                    st.sheet[home.slot]};
+        const MacroHandle none = pult.spawn(self, SquadType::Caravan);
+        CHECK(!st.valid(none) && live_squads(st) == squadsBefore,
+              "(в) ЛЮДСКОЙ ДУШИ НЕТ — РОЖДЕНИЯ НЕТ: хэндл невалиден, строки "
+              "в массиве не встало");
+        CHECK(bag.revision() == revBefore,
+              "(в) и контейнер родителя не тронут ни одной записью");
+
+        // Противоположная полярность: одна душа — рождение есть.
+        CHECK(settle_souls(f.gs, st, home.slot, 1) == 1,
+              "(в) фикстура: одна людская душа встала дома");
+        const MacroHandle one = pult.spawn(self, SquadType::Caravan);
+        CHECK(st.valid(one) && live_squads(st) == squadsBefore + 1,
+              "(в) одна душа — рождение есть: строка встала");
+        CHECK(st.valid(one) && count_human_souls(bag) == 0
+                  && f.heads(one.slot) == 0
+                  && parent_of(st, one.slot) == homeId,
+              "(в) и счёт сошёлся: душа дома ушла аватаром, голов у "
+              "рождённого ноль (ростер пуст), родитель назван его домом");
+    }
+}
+
 // ═════ 3. СБОРЩИК — ПРИ ВАССАЛЕ, ОДИН РАЗ ЗА СЕЗОН ═════════════════════
 // Ряд M-495, вердикт владельца 2026-11-14 «Пришёл — забрал 1/8, без книги
 // долгов»: должников в мире нет, поэтому сборщика поднимает не долг, а ВАССАЛ
@@ -898,10 +1082,10 @@ void test_a_standing_rooted_pays_nothing_for_the_road() {
 //
 // ПОЧЕМУ ЭТОТ СВИДЕТЕЛЬ ОБЯЗАН БЫЛ ПОЯВИТЬСЯ — ЧИСЛОМ, А НЕ ВКУСОМ. Гейт
 // НЕСУЩИЙ, и собственная дверь рождения его не дублирует: `AiPult::spawn`
-// судит `count_human_souls < crewSouls`, то есть при РАВЕНСТВЕ пропускает, а
-// `bleed_flock` уводит все восемь. Зонд ревью назвал цену: деревня РОВНО с
-// `kVillageCrewSouls` душами и живой нуждой давала `heads` **8 → 0** и `artels`
-// **0 → 1** со снятым гейтом. При этом ТРИ мутации гейта — снят у деревни,
+// требует лишь одной людской души — на аватара, — а лот голов крю уводит
+// остальные семь, то есть при РАВЕНСТВЕ дом уходит в крю весь. Зонд ревью
+// назвал цену: деревня РОВНО с `kVillageCrewSouls` душами и живой нуждой
+// давала `heads` **8 → 0** и `artels` **0 → 1** со снятым гейтом. При этом ТРИ мутации гейта — снят у деревни,
 // снят у города, строгое `>` заменено на `>=` — проходили **ЗЕЛЁНЫМИ 62/62**:
 // закон стоял в дереве без единого свидетеля (§8 п.6).
 void test_the_last_shift_of_hands_is_never_written_out() {
@@ -1996,6 +2180,7 @@ int main() {
     test_village_produces_through_its_own_think();
     test_the_town_remembers_it_has_nothing_to_craft();
     test_village_raises_an_artel_and_pays_in_souls();
+    test_birth_hands_the_parents_own_heads();
     test_city_raises_a_collector_for_a_vassal_once_a_season();
     test_no_duplicate_child_however_long_the_world_runs();
     test_a_standing_rooted_pays_nothing_for_the_road();

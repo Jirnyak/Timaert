@@ -1124,31 +1124,22 @@ FeatureType AiPult::reshape_feature(MacroHandle self, FeatureType want) {
                        st.cell[self.slot].idx, want);
 }
 
-MacroHandle AiPult::spawn(AiSelf& s, SquadType bornType, int crewSouls) {
-    if (crewSouls <= 0 || !ctx_.mw.gs || !ctx_.mw.terrain)
-        return MacroHandle{};
+MacroHandle AiPult::spawn(AiSelf& s, SquadType bornType) {
+    if (!ctx_.mw.gs || !ctx_.mw.terrain) return MacroHandle{};
     MacroStore& st = store_ctx(ctx_);
-    if (count_human_souls(s.bag) < crewSouls) return MacroHandle{};
+    // Аватар есть душа родителя: людской души дома нет — нет и рождения.
+    if (count_human_souls(s.bag) < 1) return MacroHandle{};
     const std::uint16_t slot = s.h.slot;
     SquadSpec spec{};
     spec.avatarType = NPCType::Peasant;
     spec.x = ecs::cell_x(st.cell[slot], ctx_.mapW);
     spec.y = ecs::cell_y(st.cell[slot], ctx_.mapW);
     spec.parentId = int(st.spawnId[slot].index);
-    for (int m = 1; m < crewSouls; ++m) {
-        // ГЕНЕРИК (CANON S4): члены — ОДИН стак, не пер-душевые
-        // ординалы (`SquadSpecMembers::push` сливает равные записи);
-        // поток имён остаётся лидерам и душам с историей.
-        SoldierRecord rec{};
-        rec.kind = std::uint16_t(spec.avatarType);
-        rec.level = 1;
-        if (!spec.members.push(rec)) break;
-    }
     const MacroHandle born =
         spawn_squad(*ctx_.mw.gs, st, *ctx_.mw.terrain, spec);
     if (!st.valid(born)) return MacroHandle{};
     st.runtime[born.slot].squadType = std::uint8_t(bornType);
-    bleed_flock(s.bag, 1 + spec.members.size());
+    bleed_flock(s.bag, 1);
     return born;
 }
 
