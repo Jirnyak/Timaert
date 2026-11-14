@@ -117,8 +117,8 @@ void miners_think(AiSelf& s, const AiView& view, AiPult& pult) {
         // своим законом и факта не пишут. Судится по остатку после акта.
         // Число факта жилы — ЧТО выработано: строка реестра поля + 1.
         if (got > 0 && view.field_read(ResourceFieldId::Vein, g.cell) == 0) {
-            pult.fact(s, FactKind::Drained, g.cell,
-                      int(ResourceFieldId::Vein) + 1);
+            pult.fact(int(view.rooted_id(homeSlot)), FactKind::Drained,
+                      g.cell, int(ResourceFieldId::Vein) + 1);
         }
         if (got > 0 && !back_full(product)
             && std::int64_t(s.pools.sp) >= cycleCost && ecs::goal_spend(g)) {

@@ -179,6 +179,26 @@ int side_trade_power(const MacroStore& st, std::uint16_t slot) {
     return trade_power_of(effective_sheet_of(st, handle_at(st, slot)));
 }
 
+std::int64_t side_worth(const MacroStore& st, std::uint16_t slot) {
+    const Inventory& inv = st.inventory[slot].inv;
+    // Строка считается один раз, сколько бы стаков её ни лежало: оценка
+    // запаса берёт весь запас строки (`row_side` — счёт по контейнеру).
+    std::uint16_t seen[kMaxInventorySlots];
+    int rows = 0;
+    std::int64_t worth = 0;
+    for (const ItemRef& s : inv.slots) {
+        const ItemDef* d = payable_row(s);
+        if (!d) continue;
+        bool counted = false;
+        for (int k = 0; k < rows && !counted; ++k) counted = seen[k] == s.def;
+        if (counted) continue;
+        seen[rows++] = s.def;
+        worth += lot_loss(side_row(st, slot, int(s.def), d->value),
+                          inv.count_of(int(s.def)));
+    }
+    return worth;
+}
+
 StagedPayment stage_payment(const MacroStore& st, std::uint16_t payer,
                             std::uint16_t receiver, std::int64_t target,
                             std::int64_t ceiling, std::int64_t roomG,

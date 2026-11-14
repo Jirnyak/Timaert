@@ -4,7 +4,16 @@
 
 #include "macro/squad_ai/module_window.h"
 
+#include <algorithm>
 #include <cstdint>
+#include <span>
+
+#include "bus/anketa.h"      // Inventory, ItemRef, kMaxInventorySlots
+#include "core/subtract.h"   // sub_sat — остаток долга и спины на плане груза
+#include "macro/currency.h"  // payable_row — что из полки идёт в счёт
+#include "macro/deal.h"      // DealLine — строка лота дани
+#include "macro/economy.h"   // lot_loss, lot_take, gain_denser — ядро оценки
+#include "tables/items.h"    // item_mass_g
 
 namespace sm {
 
@@ -21,22 +30,134 @@ namespace {
 // это дословно: «город рождает… сборщика налогов, который ходит в
 // вассальные деревни». Машина перевёрнута 2026-09-22.
 //
-// Поручение ставит ТОТ ЖЕ аукцион, что поднимает артель и корована: заявка
-// сборщика — одна на КАЖДОГО должника, объект = ординал вассала, скор —
-// та же выработка в день рейса (стоимость долга / дни пути). Пул рук
-// урезает, как и всех (CANON S4 «рождение сквада — один закон»).
+// (Поручение ставил аукцион — он казнён ломтём 4 M-72; должника модуль
+//  находит сам, разбор у гейта должника в `collector_think` ниже.)
 //
-// ДОЛГ БЕРЁТСЯ ПО ПЛОТНОСТИ СТОИМОСТИ (владелец 2026-09-22): первым уходит
-// самое ценное, что есть у вассала. Это строже прежнего «доля каждого
-// стака» — заплатить зерном, оставив серебро, невозможно.
+// ── ДАНЬ — БАРТЕРОМ: ДОЛГ МЕРЯЕТ ОЦЕНКА ВАССАЛА, ГРУЗ ВЫБИРАЕТ ОЦЕНКА ДОМА ──
+// Владелец, дословно: «даннь также идеёт через бартер так задумано»; разбор
+// одобрен (CANON S25 «ТРИ РЕШЕНИЯ О ВЗАИМОДЕЙСТВИИ» п.2): «Цену называет
+// стоящий — вассал, к которому пришёл сборщик; наценки нет, как в семье (доля
+// ноль). Вассал в своей мерке теряет ровно долг: излишек он ценит дёшево — его
+// уходит много единиц; нужное ему ценит дорого — его берут мало. Что из
+// разрешённого грузить, выбирает оценка сюзерена (нужда дома сборщика)».
 //
+// ОДИН МЕХАНИЗМ, БЕЗ СТАДИЙ. Строка полки вассала даёт столько единиц, сколько
+// разом позволяют полка, свободная спина сборщика и остаток долга, — а долг
+// мерит ОЦЕНКА ВАССАЛА: `n` взятых единиц гасят `lot_loss` его строки на `n`
+// (`lot_loss@src/macro/economy.h`). Порядок строк — что дом сюзерена ценит
+// плотнее на грамм лота (`lot_take` строки дома против массы лота,
+// `gain_denser@src/macro/economy.h`). Форма — та же, какой город грузит
+// корован (`city_load_child_@src/macro/squad_ai/city.cpp`): первый проход
+// считает лоты и сортирует, второй пересчитывает их в пределах остатка. Гейта
+// «берущий ценит выше» у дани нет — дань берётся, а не выменивается.
+//
+// ЧТО ЗДЕСЬ УМЕРЛО (стояло в глаголе пульта `collect_tithe`): стадия «сперва
+// по нужде дома» с нехваткой дома отдельной веткой, долг НОМИНАЛОМ
+// (`owed / base`, `owed -= moved * base`) и добор остатка по плотности
+// стоимости `transfer_value_dense` — вторая оценка той же вещи у той же
+// стороны (AGENTS «ЗАКОН ЕДИНОЙ ЦЕНОМОДЕЛИ» п.5). Нужда дома сама поднимает
+// его оценку строки — тем выше, чем глубже нехватка, — поэтому такие строки
+// встают первыми без отдельного правила.
+//
+// Долг гасится ФАКТОМ: сделка вправе отдать меньше заказанного, поэтому
+// зачитывается `lot_loss` по взятому, дверью пульта `credit_tithe`.
+void collector_take_tithe_(AiSelf& s, const AiView& view, AiPult& pult,
+                           std::uint16_t vassal, std::uint16_t homeSlot) {
+    const std::uint64_t owed = view.tithe_owed(vassal);
+    const std::int64_t backG = view.free_back_g(s.h.slot);   // спина этого рейса
+    if (owed == 0 || backG <= 0) return;
+    const Inventory& shelf = view.bag_of(vassal);
+    // Наибольшее n ≤ cap, которое вассал в своей мерке отдаёт не дороже
+    // `budget`: его потеря растёт с каждой единицей (оценка запаса — функция
+    // состояния), поэтому граница одна и ищется делением пополам.
+    const auto units_within = [](const RowSide& theirs, std::int64_t cap,
+                                 std::uint64_t budget) {
+        std::int64_t lo = 0, hi = cap < 0 ? 0 : cap;
+        while (lo < hi) {
+            const std::int64_t mid = lo + (hi - lo + 1) / 2;
+            if (std::uint64_t(lot_loss(theirs, mid)) <= budget) lo = mid;
+            else hi = mid - 1;
+        }
+        return lo;
+    };
+    struct Row {
+        std::uint16_t def;
+        std::int64_t gain; std::int64_t lotG; std::int64_t massG;
+    };
+    Row rows[kMaxInventorySlots];
+    int rowCount = 0;
+    // Строка судится один раз, сколько бы стаков её ни лежало: лот берёт весь
+    // запас строки (`count_of`), и стаки её сделка снимает сама.
+    std::uint16_t judged[kMaxInventorySlots];
+    int judgedCount = 0;
+    for (int i = 0; i < int(shelf.slots.size()); ++i) {
+        const ItemRef& sl = shelf.slots[std::size_t(i)];
+        const ItemDef* d = payable_row(sl);
+        if (!d) continue;
+        bool seen = false;
+        for (int k = 0; k < judgedCount && !seen; ++k) seen = judged[k] == sl.def;
+        if (seen) continue;
+        judged[judgedCount++] = sl.def;
+        if (d->value <= 0) continue;
+        const std::int64_t massG = item_mass_g(*d);
+        const std::int64_t units = units_within(
+            view.row_of(vassal, int(sl.def)),
+            std::min<std::int64_t>(shelf.count_of(int(sl.def)), backG / massG),
+            owed);
+        if (units <= 0) continue;
+        rows[rowCount++] = Row{sl.def,
+                               lot_take(view.row_of(homeSlot, int(sl.def)), units),
+                               units * massG, massG};
+    }
+    std::sort(rows, rows + rowCount, [](const Row& a, const Row& b) {
+        return gain_denser(a.gain, a.lotG, b.gain, b.lotG);
+    });
+    std::uint64_t left = owed;   // остаток долга на плане, в оценке вассала
+    std::int64_t loadedG = 0;    // масса, уже положенная в лот
+    DealLine lot[kMaxInventorySlots];
+    RowSide theirsAt[kMaxInventorySlots];   // строка вассала ДО сделки
+    int lines = 0;
+    for (int r = 0; r < rowCount && left > 0 && loadedG < backG; ++r) {
+        const RowSide theirs = view.row_of(vassal, int(rows[r].def));
+        const std::int64_t units = units_within(
+            theirs,
+            std::min<std::int64_t>(shelf.count_of(int(rows[r].def)),
+                                   (backG - loadedG) / rows[r].massG),
+            left);
+        if (units <= 0) continue;
+        left = sub_sat(left, std::uint64_t(lot_loss(theirs, units)));
+        loadedG += units * rows[r].massG;
+        lot[lines] = DealLine{};
+        lot[lines].want = int(units);
+        lot[lines].def = rows[r].def;
+        theirsAt[lines] = theirs;
+        ++lines;
+    }
+    if (lines == 0) return;
+    pult.hand(vassal, s.h.slot, std::span<DealLine>(lot, std::size_t(lines)),
+              backG);
+    // Строки лота — разные строки каталога, и сделка снимает только с
+    // вассала, поэтому оценка каждой строки ДО сделки и есть та, от которой
+    // считается его потеря.
+    std::uint64_t worth = 0;
+    for (int i = 0; i < lines; ++i)
+        worth += std::uint64_t(lot_loss(theirsAt[i], lot[i].done));
+    const std::uint64_t credited = pult.credit_tithe(vassal, worth);
+    // Факт дани — «вассал заплатил сюзерену» (`Taxed@src/bus/fact.h`):
+    // субъект — вассал, объект — дом сборщика, число — зачтённое в долг.
+    if (credited > 0)
+        pult.fact(int(view.rooted_id(vassal)), FactKind::Taxed, s.cell.idx,
+                  int(std::min<std::uint64_t>(credited, std::uint64_t(1) << 30)),
+                  int(view.rooted_id(homeSlot)));
+}
+
 // ═════ МОДУЛЬ Collector — форма образца ═════════════════════════════════
 // ДОЛЖНИК — ИЗ ЦЕЛИ (род Squad), как рынок у рейса сбыта: поручение
 // (`rt.errandObject`) здесь умерло тем же ломтём и по той же причине — цель
 // УЖЕ несла ординал вассала в обеих ветках Idle, то есть колонка была
-// вторым носителем одной величины (DOD п.6). Взыскание целиком — ОДИН
-// глагол пульта (`collect_tithe`): «сколько увёз, столько и списал» есть
-// одна транзакция мира, и разрезать её телу модуля нечем.
+// вторым носителем одной величины (DOD п.6). Взыскание целиком — тело этого
+// модуля (`collector_take_tithe_` выше): «сколько увёз, столько и списал»
+// есть одна думка, и долг гасится по факту сделки.
 void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
     const std::uint32_t home = view.home(s.h);
     if (home == ecs::kNoCell) { pult.nomad(s); return; }
@@ -133,7 +254,7 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
             rt.state = std::uint8_t(NS::Traveling);
             return;
         }
-        if (!view.owes_tithe(vassal)) {
+        if (view.tithe_owed(vassal) == 0) {
             // Должник рассчитался (собрали или простили) — ждать нечего,
             // ротация завтра переторгует эту строку заново.
             charge_squad_recovery(rt,
@@ -159,7 +280,7 @@ void collector_think(AiSelf& s, const AiView& view, AiPult& pult) {
     }
     if (rt.state == std::uint8_t(NS::Working)) {
         if (squad_recovering(rt)) return;
-        pult.collect_tithe(s, vassal, homeSlot);
+        collector_take_tithe_(s, view, pult, vassal, homeSlot);
         // ВЗЫСКАНИЕ СЛУЧИЛОСЬ — ДОЛГ ПОВИС («сделал → вишу»): тики
         // авторские, своей строки у взыскания пока нет (придёт с M-307).
         charge_squad_recovery(rt,

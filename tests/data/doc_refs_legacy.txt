@@ -510,7 +510,6 @@ macro-registry.md	npc_ai.cpp:2093-2100
 macro-registry.md	npc_ai.cpp:2196
 macro-registry.md	npc_ai.cpp:2313
 macro-registry.md	npc_ai.cpp:2616
-macro-registry.md	npc_ai.cpp:2850-2960
 macro-registry.md	npc_ai.cpp:2862
 macro-registry.md	npc_ai.cpp:383
 macro-registry.md	npc_ai.cpp:834-849

@@ -2265,6 +2265,11 @@ timaert_test(collector_tithe_test
         src/bus/anketa.cpp
         src/tables/items.cpp
         src/macro/econ_day.cpp
+        # начисление дани — проход дня мира (M-495, закон 5 (г))
+        src/macro/world_tick.cpp
+        src/macro/spires.cpp
+        src/macro/threat_field.cpp
+        src/macro/scent_field.cpp
     LINK_SDL
     # ПИН СЧЁТА ЗАВЕДЁН ПО ЗАМЕРУ, А НЕ ПО ОБЫЧАЮ (M-308). Записанная мутация
     # «ранний `return` до вердиктов третьего закона» прошла ЗЕЛЁНОЙ — 19 → 14
@@ -2273,7 +2278,10 @@ timaert_test(collector_tithe_test
     # невидима. Пин закрывает это целиком — ctest краснеет на любой пропавшей
     # проверке, не разбираясь, какая именно. 24 → 37 (M-488, ломоть 3): закон 5
     # — порядок груза дани по оценке дома и «нужда — не больше нехватки».
-    PIN "OK collector_tithe_test .37 checks")
+    # 37 → 60 (M-495): дань бартером — закон «нужда — не больше нехватки» снят
+    # со своей стадией, закон 5 переписан на оценку вассала и дома (а)–(д).
+    # 60 → 70: (е) субъект факта дани — вассал, (ж) мера полки неотрицательна.
+    PIN "OK collector_tithe_test .70 checks")
 
 timaert_test(woodcutter_gather_test
     SOURCES

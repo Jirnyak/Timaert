@@ -175,7 +175,8 @@ void caravan_think(AiSelf& s, const AiView& view, AiPult& pult) {
                 charge_squad_recovery(rt,
                     std::uint32_t((4 + pult.rand(4)) * kAiTicks));
                 // Число факта сделки — её стоимость, объект — рынок.
-                pult.fact(s, FactKind::Traded, g.cell, leg.movedTableValue,
+                pult.fact(int(view.rooted_id(homeSlot)), FactKind::Traded,
+                          g.cell, leg.movedTableValue,
                           int(ecs::goal_ordinal(g.what)));
                 // СДЕЛКА СОВЕРШЕНА — вера в среднюю по рейсу растёт с каждой
                 // (пустой рынок доверия не прибавляет).

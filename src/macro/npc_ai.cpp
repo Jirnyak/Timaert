@@ -914,8 +914,10 @@ std::uint16_t AiView::goal_rooted(const ecs::SquadGoal& g) const {
         : kMacroNoSlot;
 }
 
-bool AiView::owes_tithe(std::uint16_t rootedSlot) const {
-    return sm::owes_tithe(store_ctx(ctx_), rootedSlot);
+std::uint64_t AiView::tithe_owed(std::uint16_t slot) const {
+    if (!ctx_.mw.store || slot == kMacroNoSlot) return 0;
+    const Interest* e = tithe_of(store_ctx(ctx_), slot);
+    return e ? e->owedValue : 0;
 }
 
 std::uint16_t AiView::owing_vassal(std::uint16_t suzerainSlot) const {
@@ -1064,10 +1066,9 @@ std::uint32_t AiPult::rand_nearby(std::uint32_t around, int radius) {
     return cell_nearby(around, radius, ctx_);
 }
 
-void AiPult::fact(AiSelf& s, FactKind kind, std::uint32_t cell, int amount,
+void AiPult::fact(int subject, FactKind kind, std::uint32_t cell, int amount,
                   int object) {
-    MacroStore& st = store_ctx(ctx_);
-    record_rooted_fact(st, *ctx_.mw.gs, kind, parent_of(st, s.h.slot),
+    record_rooted_fact(store_ctx(ctx_), *ctx_.mw.gs, kind, subject,
                        cell_x(cell, ctx_.mapW), cell_y(cell, ctx_.mapW),
                        amount, object);
 }
@@ -1107,102 +1108,14 @@ void AiPult::dump_bag_home(AiSelf& s, std::uint16_t homeSlot) {
                          inventory_value(s.bag), kNoCarryLimitG);
 }
 
-void AiPult::collect_tithe(AiSelf& s, std::uint16_t vassal,
-                           std::uint16_t homeSlot) {
-    MacroStore& st = store_ctx(ctx_);
-    auto& rt = s.rt;
-    Inventory* bag = &s.bag;
-    Interest* edge = tithe_of(st, vassal);
-    long long owed = edge ? edge->owedValue : 0;
-    long long took = 0;
-    // ── СНАЧАЛА ПО НУЖДЕ ДОМА, ОСТАТОК — ПО ПЛОТНОСТИ ───────────────
-    // Вердикт владельца 2026-09-21, дословно: «грузит ПО НУЖДЕ ДОМА,
-    // остаток — по value_dense_order. Иначе сборщик везёт домой
-    // серебро, а меряем мы еду». Это ровно то, что измерилось
-    // 2026-09-22, когда порядок был только по плотности: город получал
-    // казну и продолжал голодать (food_city −99.8 %).
-    // Чего дому не хватает — сколько не оплачено по его счёту сверх полки,
-    // тем же ответом, каким нужду дома читает сделка (`side_row`: запас
-    // минус счёт). Строка без счёта (сырьё) нуждой не бывает.
-    if (owed > 0) {
-        // ПОРЯДОК НУЖДЫ — ПО ТОМУ, ВО СКОЛЬКО ДОМ ЦЕНИТ НЕДОСТАЮЩИЙ ЛОТ
-        // (`lot_take` его строки на всю нехватку), а НЕ по плотности.
-        // Измерено 2026-09-22: с плотностью еда стоит последней (она
-        // самая дешёвая на килограмм), долг кончался на серебре, и
-        // город продолжал голодать при работающем сборщике
-        // (food_city −99.4 %). Оценка дома уже несёт срочность —
-        // непокрытая нужда сама дорожает, — поэтому ноль новых правил.
-        int order[kCommodityCount];
-        std::int64_t lack[kCommodityCount];
-        std::int64_t urgency[kCommodityCount];
-        for (int c = 0; c < kCommodityCount; ++c) {
-            order[c] = c;
-            const int cid = commodity_item_index(c);
-            const ItemDef* cd = item_def_at(cid);
-            const int cbase = cd ? cd->value : 0;
-            const RowSide home = side_row(st, homeSlot, cid, cbase);
-            lack[c] = home.net < 0 ? -home.net : 0;
-            urgency[c] = lack[c] > 0 && cbase > 0 ? lot_take(home, lack[c])
-                                                  : 0;
-        }
-        for (int a = 1; a < kCommodityCount; ++a)
-            for (int b = a; b > 0
-                            && urgency[order[b]] > urgency[order[b - 1]];
-                 --b)
-                std::swap(order[b], order[b - 1]);
-        for (int oi = 0; oi < kCommodityCount && owed > 0; ++oi) {
-            const int c = order[oi];
-            const int id = commodity_item_index(c);
-            const ItemDef* d = item_def_at(id);
-            const int base = d ? d->value : 0;
-            if (base <= 0) continue;
-            if (lack[c] <= 0) continue;
-            const long long affordable = owed / base;
-            if (affordable <= 0) continue;
-            const int want = int(std::min<long long>(lack[c], affordable));
-            // Взыскание — строка сделки (ломоть 2 M-72): спина сборщика
-            // клампит дверью, факт честный — дюпа «add без снятия» нет.
-            DealLine draw[1];
-            draw[0] = DealLine{};
-            draw[0].want = want;
-            draw[0].def = std::uint16_t(id);
-            deal(st, vassal, s.h.slot, draw, {},
-                 carry_capacity_g(rt, *bag) - inventory_mass_g(*bag),
-                 kNoCarryLimitG);
-            const int moved = draw[0].done;
-            if (moved <= 0) continue;
-            owed -= (long long)moved * base;
-            took += (long long)moved * base;
-        }
-    }
-    // ОСТАТОК ДОЛГА — ПО ПЛОТНОСТИ: самое ценное, что осталось у
-    // вассала. Заплатить зерном, оставив серебро, нельзя ни с какой
-    // стороны — нужда дома уже взяла своё зерно выше.
-    if (owed > 0) {
-        // ЗАГРУЗКА В спину: предел — ОСТАТОК ЁМКОСТИ, тот же, что у
-        // ветки нужды выше (M-308). До этого наряда здесь не было
-        // предела вовсе, и две половины ОДНОЙ загрузки спрашивали спину
-        // по-разному — вассал, гасящий остаток по плотности, грузил
-        // сборщика без всякого предела.
-        const int dense = transfer_value_dense(
-            st.inventory[vassal].inv, Depot(*bag),
-            int(std::min<long long>(owed, 1 << 30)),
-            carry_capacity_g(rt, *bag) - inventory_mass_g(*bag));
-        if (dense > 0) {
-            owed -= dense;
-            took += dense;
-        }
-    }
-    if (took > 0 && edge) {
-        edge->owedValue -= took;
-        if (edge->owedValue < 0) edge->owedValue = 0;
-        record_rooted_fact(st, *ctx_.mw.gs, FactKind::Taxed,
-                             int(st.spawnId[vassal].index),
-                             cell_x(s.cell.idx, ctx_.mapW),
-                             cell_y(s.cell.idx, ctx_.mapW),
-                             int(std::min<long long>(took, 1 << 30)),
-                             parent_of(st, s.h.slot));
-    }
+std::uint64_t AiPult::credit_tithe(std::uint16_t slot, std::uint64_t worth) {
+    if (!ctx_.mw.store || slot == kMacroNoSlot) return 0;
+    Interest* edge = tithe_of(store_ctx(ctx_), slot);
+    // ДОЛГ ГАСНЕТ ДВЕРЬЮ ЗАЧЁТА у колонки (`tithe_credit@src/bus/interests.h`,
+    // `drain`). Здесь стояло голое `-=` с рукописным «ниже нуля — ноль»
+    // (белый список `minus` арх-стража) — насыщение, написанное второй раз
+    // мимо закона трёх дверей.
+    return edge ? tithe_credit(*edge, worth) : 0;
 }
 
 FeatureType AiPult::reshape_feature(MacroHandle self, FeatureType want) {

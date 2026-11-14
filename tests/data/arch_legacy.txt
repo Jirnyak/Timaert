@@ -70,9 +70,6 @@ minus	src/macro/currency.h	left -= take * d.value;
 minus	src/macro/econ_day.cpp	needDebt[idx] -= eaten;
 minus	src/macro/loot_pool.cpp	roll -= double(danger_match_weight(value_strength(i), power));
 minus	src/macro/loot_pool.cpp	left -= paid;
-minus	src/macro/npc_ai.cpp	owed -= (long long)moved * base;
-minus	src/macro/npc_ai.cpp	owed -= dense;
-minus	src/macro/npc_ai.cpp	edge->owedValue -= took;
 minus	src/macro/recovery.cpp	accumulator -= float(whole);
 minus	src/macro/scent_field.cpp	d[yc + x] -= std::int32_t(per) * 8;
 minus	src/macro/spires.cpp	for (; gate >= int(kSpireMinZone); gate -= relaxStep) {
@@ -135,7 +132,6 @@ minus	src/macro/currency.h	left -= take * d.value;	#2
 decr	src/macro/deal.cpp	if (r == 0) --i;
 decr	src/macro/language.cpp	for (int i = n - 1; i > 0; --i) {
 decr	src/macro/nav_field.cpp	for (std::size_t i = chain.size(); i-- > 0;) {
-decr	src/macro/npc_ai.cpp	--b)
 decr	src/macro/npc_ai.cpp	if (pick-- != 0) return;
 decr	src/macro/resource_field.h	else if (was != 0 && v == 0) --liveCells;
 decr	src/macro/settlement_score.cpp	for (int k = kFieldsPerVillage - 1; k > slot; --k)
