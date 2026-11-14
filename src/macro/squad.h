@@ -629,8 +629,8 @@ inline bool order_squad_route(MacroStore& st, std::uint32_t ordinal,
 //  пяти ответов на «свежа ли производная» — рядом **M-301** реестра.
 //  Приезжает сюда транзитом bus/squad_sheet.h.)
 
-// (Двери связи — suzerain_of / parent_of / set_relation / tithe_of /
-// owes_tithe — живут у эмитента идентичности, `store.h`: рождение места
+// (Двери связи — suzerain_of / parent_of / set_relation — живут у
+// эмитента идентичности, `store.h`: рождение места
 // ставит себе self-ребро Parent той же дверью, не включая этот заголовок.)
 
 // ── STANDING, FOR ANY MACRO PARTICIPANT (CANON S20.1) ─────────────────────

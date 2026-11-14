@@ -914,24 +914,30 @@ std::uint16_t AiView::goal_rooted(const ecs::SquadGoal& g) const {
         : kMacroNoSlot;
 }
 
-std::uint64_t AiView::tithe_owed(std::uint16_t slot) const {
-    if (!ctx_.mw.store || slot == kMacroNoSlot) return 0;
-    const Interest* e = tithe_of(store_ctx(ctx_), slot);
-    return e ? e->owedValue : 0;
+int AiView::season() const {
+    if (!ctx_.mw.gs) return 0;
+    return season_ordinal(ctx_.mw.gs->worldTime.day());
 }
 
-std::uint16_t AiView::owing_vassal(std::uint16_t suzerainSlot) const {
-    if (suzerainSlot == kMacroNoSlot) return kMacroNoSlot;
-    const MacroStore& st = store_ctx(ctx_);
-    const Interests& in = st.interests[suzerainSlot];
-    for (int i = 0; i < kMaxInterests; ++i) {
-        const Interest& it = in.slots[i];
+std::int64_t AiView::shelf_worth(std::uint16_t slot) const {
+    if (!ctx_.mw.store || slot == kMacroNoSlot) return 0;
+    return side_worth(store_ctx(ctx_), slot);
+}
+
+std::uint16_t AiView::vassal_at(std::uint16_t suzerainSlot, int i) const {
+    if (suzerainSlot == kMacroNoSlot || i < 0) return kMacroNoSlot;
+    const Interests& in = store_ctx(ctx_).interests[suzerainSlot];
+    int live = 0;
+    for (int k = 0; k < kMaxInterests; ++k) {
+        const Interest& it = in.slots[k];
         if (it.stance == std::uint8_t(Stance::None)) break;
         if (it.stance != std::uint8_t(Stance::Vassal)) continue;
         // Ординал → слот одной дверью резолва (M-271); мёртвый вассал
-        // отвечает kMacroNoSlot и просто пропускается.
+        // отвечает kMacroNoSlot и в счёт живых не идёт.
         const std::uint16_t slot = rooted_slot_by_id(ctx_, it.object);
-        if (slot != kMacroNoSlot && sm::owes_tithe(st, slot)) return slot;
+        if (slot == kMacroNoSlot) continue;
+        if (live == i) return slot;
+        ++live;
     }
     return kMacroNoSlot;
 }
@@ -1075,10 +1081,6 @@ void AiPult::fact(int subject, FactKind kind, std::uint32_t cell, int amount,
 
 void AiPult::nomad(AiSelf& s) { ai_nomad(s.h, s.rt, s.pools, ctx_); }
 
-void AiPult::home_wander(AiSelf& s) {
-    ai_home_wanderer(s.h, s.rt, s.pools, ctx_);
-}
-
 CaravanDeal AiPult::trade_at(AiSelf& s, std::uint16_t market) {
     MacroStore& st = store_ctx(ctx_);
     return trade_caravan_at_station(
@@ -1106,16 +1108,6 @@ void AiPult::dump_bag_home(AiSelf& s, std::uint16_t homeSlot) {
     // (`kNoCarryLimitG@src/macro/deal.h`).
     transfer_value_dense(s.bag, depot_(homeSlot, ctx_.mw),
                          inventory_value(s.bag), kNoCarryLimitG);
-}
-
-std::uint64_t AiPult::credit_tithe(std::uint16_t slot, std::uint64_t worth) {
-    if (!ctx_.mw.store || slot == kMacroNoSlot) return 0;
-    Interest* edge = tithe_of(store_ctx(ctx_), slot);
-    // ДОЛГ ГАСНЕТ ДВЕРЬЮ ЗАЧЁТА у колонки (`tithe_credit@src/bus/interests.h`,
-    // `drain`). Здесь стояло голое `-=` с рукописным «ниже нуля — ноль»
-    // (белый список `minus` арх-стража) — насыщение, написанное второй раз
-    // мимо закона трёх дверей.
-    return edge ? tithe_credit(*edge, worth) : 0;
 }
 
 FeatureType AiPult::reshape_feature(MacroHandle self, FeatureType want) {

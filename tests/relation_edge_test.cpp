@@ -1,10 +1,11 @@
 // РЕБРО СВЯЗИ (M-245): одна ось, две пары — Parent/Child и Suzerain/Vassal,
-// одна дверь `set_relation@src/bus/store.h` на оба конца, долг дани НА
-// РЕБРЕ Suzerain вассала (`tithe_of`). Законы, которые стережёт этот файл:
+// одна дверь `set_relation@src/bus/store.h` на оба конца. (Долг дани на ребре
+// Suzerain вассала умер 2026-11-14 — книги долгов нет, ряд M-495.) Законы,
+// которые стережёт этот файл:
 //   · оба конца ставятся ОДНИМ вызовом, зеркальная роль — вторым значением
 //     оси (роль несимметрична по природе, род 6 фрейма);
 //   · носитель роли у субъекта ровно один: смена сюзерена снимает прежнего
-//     с ОБОИХ концов, и с ребром умирает долг (прощение сменой феода);
+//     с ОБОИХ концов;
 //   · self-связь законна ТОЛЬКО у Parent (дом места — оно само), одной
 //     записью без зеркала; self-феод — отказ;
 //   · СМЕРТЬ ЧИСТИТ РЁБРА: контрагенты умершего теряют свой конец в
@@ -66,7 +67,7 @@ void test_both_ends_one_door() {
           "дом = родитель (ребро Parent)");
 }
 
-void test_role_is_single_and_debt_dies_with_the_edge() {
+void test_role_is_single() {
     MacroStore& st = store();
     store_reset(st);
     const MacroHandle a = birth(st, 11u);
@@ -74,18 +75,16 @@ void test_role_is_single_and_debt_dies_with_the_edge() {
     const MacroHandle s2 = birth(st, 31u);
 
     set_relation(st, int(a.id), int(s1.id), Stance::Suzerain);
-    Interest* edge = tithe_of(st, a.slot);
-    CHECK_OR_RETURN(edge != nullptr, "ребро дани живёт у вассала");
-    edge->owedValue = 500;
-    CHECK(owes_tithe(st, a.slot), "долг на ребре виден");
+    CHECK_OR_RETURN(suzerain_of(st, a.slot) == int(s1.id),
+                    "ребро феода живёт у вассала");
 
-    // Смена феода: прежний сюзерен теряет ОБА конца, долг прощён.
+    // Смена феода: прежний сюзерен теряет ОБА конца.
     set_relation(st, int(a.id), int(s2.id), Stance::Suzerain);
     CHECK(interest_find(st.interests[s1.slot], int(a.id)) == nullptr,
           "прежний сюзерен потерял свой конец");
     CHECK(suzerain_of(st, a.slot) == int(s2.id), "новый сюзерен встал");
-    CHECK(!owes_tithe(st, a.slot),
-          "долг умер вместе с ребром — прощение сменой феода");
+    CHECK(interests_count(st.interests[a.slot]) == 1,
+          "и у вассала ребро феода ОДНО — прежнее снято, а не оставлено рядом");
 
     // «Стал ничьим»: otherId = 0 снимает роль целиком.
     set_relation(st, int(a.id), 0, Stance::Suzerain);
@@ -142,7 +141,7 @@ void test_detector_sees_a_broken_pair() {
 
 int main() {
     test_both_ends_one_door();
-    test_role_is_single_and_debt_dies_with_the_edge();
+    test_role_is_single();
     test_self_edges();
     test_death_cleans_counterpart_ends();
     test_detector_sees_a_broken_pair();

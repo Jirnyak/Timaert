@@ -252,7 +252,6 @@ void build_world(World& w, const TerrainData& land) {
                                             "Round Hamlet", &land);
     settle_souls(gs, st, village.slot, 111);
     set_relation(st, int(village.id), int(city.id), Stance::Suzerain, 80, 0);
-    tithe_of(st, village.slot)->owedValue = 123;
 
     // Второй город УМЕР И ОСТАВИЛ РУИНУ (M-456): та же дверь поля фич, которой
     // пишет строка смерти города. Рождение положило на клетку фичу города,

@@ -13,7 +13,8 @@
 //      второго пути выпуска в мире нет (вызов из `tick_squads_day_` умер);
 //   2. деревня РОЖАЕТ АРТЕЛЬ НУЖНОГО ТИПА (при нужде в еде и пашне у дома —
 //      пахарей, M-488) и ПЛАТИТ ЗА НЕЁ ДУШАМИ своего контейнера;
-//   3. город рожает СБОРЩИКА только при вассале-должнике;
+//   3. город рожает СБОРЩИКА только при вассале и один раз за сезон (ряд
+//      M-495: замены погибшего в том же сезоне нет);
 //   (законы думки города — сборщик, последняя смена рук, руина, погрузка
 //    корована — судятся над ДВУМЯ модулями, городом и столицей: столица —
 //    свой модуль, вердикт владельца 2026-11-13);
@@ -66,7 +67,7 @@
 #include "macro/upkeep_window.h" // upkeep_bill — сезонный счёт рынка
 #include "macro/deal.h"          // side_row — строка стороны глазами ядра
 #include "macro/squad.h"         // carry_capacity_g — спина стороны
-#include "bus/store.h"         // parent_of / tithe_of / set_relation
+#include "bus/store.h"         // parent_of / suzerain_of / set_relation / store_death
 #include "bus/world_row.h"     // count_human_souls
 #include "macro/chronicle.h"
 #include "macro/econ_day.h"      // hunger_commodity_ordinal — счёт нужды
@@ -76,7 +77,8 @@
 #include "macro/tree_layer.h"
 #include "tables/faction.h"
 #include "tables/npc.h"
-#include "core/time.h"           // kTicksPerDay — период думки выводится
+#include "core/time.h"           // kTicksPerDay — период думки выводится; world_time_at — сезон мира
+#include "tables/seasons.h"       // kDaysPerSeason — следующий сезон фикстуры
 
 #include <cstdint>
 #include <vector>
@@ -677,30 +679,31 @@ void test_village_raises_an_artel_and_pays_in_souls() {
           "утверждён с ОБОИХ концов пары, а не пересчётом одной формулы");
 }
 
-// ═════ 3. СБОРЩИК — ТОЛЬКО ПРИ ВАССАЛЕ-ДОЛЖНИКЕ ═════════════════════════
-void test_city_raises_a_collector_only_for_a_debtor() {
+// ═════ 3. СБОРЩИК — ПРИ ВАССАЛЕ, ОДИН РАЗ ЗА СЕЗОН ═════════════════════
+// Ряд M-495, вердикт владельца 2026-11-14 «Пришёл — забрал 1/8, без книги
+// долгов»: должников в мире нет, поэтому сборщика поднимает не долг, а ВАССАЛ
+// — и в сезоне ОДИН раз, иначе замена погибшего посреди сезона начала бы обход
+// заново и обошла бы первых вассалов второй раз. Три плеча над каждым из двух
+// модулей: без вассала — нет; с вассалом — есть; погиб посреди сезона — в том
+// же сезоне замены нет, в следующем — есть (контроль того, что гейт сезона не
+// «больше никогда»).
+//
+// Сезон мира — мировая переменная, и фикстура ставит его сама дверью часов
+// (`world_time_at@src/core/time.h`): думки часов не двигают.
+void test_city_raises_a_collector_for_a_vassal_once_a_season() {
     for (const TownModule& m : kTownModules) {
         std::printf("  [сборщик: %s]\n", m.who);
         Fixture f;
+        f.gs.worldTime = world_time_at(1, 8, 0);
         const MacroHandle city = f.rooted(m.kind, 10, 10, 64);
         const MacroHandle vassal = f.rooted(SquadType::Village, 14, 10, 64);
         const int cityId = int(f.st().spawnId[city.slot].index);
         const int vassalId = int(f.st().spawnId[vassal.slot].index);
 
-        // ФЕОД СТАВИТСЯ ДВЕРЬЮ МИРА: роль зовётся с НИЖНЕГО конца — вассал
-        // получает `Suzerain`, сюзерен зеркало `Vassal` (store.h set_relation).
-        set_relation(f.st(), vassalId, cityId, Stance::Suzerain);
-        const Interest* edge = tithe_of(f.st(), vassal.slot);
-        CHECK(edge != nullptr, "ребро дани легло в реестр вассала");
-        CHECK(!owes_tithe(f.st(), vassal.slot),
-              "и долга на нём пока НЕТ — значит плечо ниже есть настоящее "
-              "условие, а не пустое");
-
-        // ── НЕГАТИВНОЕ ПЛЕЧО: ФЕОД ЕСТЬ, ДОЛГА НЕТ — СБОРЩИКА НЕТ ───────────
+        // ── НЕГАТИВНОЕ ПЛЕЧО: ВАССАЛА НЕТ — СБОРЩИКА НЕТ ────────────────────
         f.think(kThinksPerDay + 2);
         CHECK(f.children_of(cityId, SquadType::Collector) == 0,
-              "БЕЗ ДОЛГА СБОРЩИКА НЕТ: рождать его значило бы послать сквад "
-              "бродить вокруг дома навсегда");
+              "БЕЗ ВАССАЛА СБОРЩИКА НЕТ: обходить ему некого");
         // А КОРОВАН ПРИ ЭТОМ ЕСТЬ — ЭТО РАЗДЕЛЯЕТ ДВА РЕШЕНИЯ ГОРОДА. Без этой
         // проверки «сборщика нет» могло бы значить «город вообще не думает», и
         // негативное плечо выше оказалось бы вакуумным (§8 п.2).
@@ -708,14 +711,45 @@ void test_city_raises_a_collector_only_for_a_debtor() {
               "город ПРИ ТОМ ЖЕ ПРОГОНЕ поднял корован — значит думка шла, и "
               "ноль сборщиков есть РЕШЕНИЕ, а не молчание модуля");
 
-        // ── ПОЛОЖИТЕЛЬНОЕ ПЛЕЧО: ДОЛГ ПОЯВИЛСЯ ─────────────────────────────
-        // Долг живёт СТОИМОСТЬЮ на ребре `Suzerain` самого вассала (M-245).
-        tithe_of(f.st(), vassal.slot)->owedValue = 10000;
-        CHECK(owes_tithe(f.st(), vassal.slot), "долг на ребре стал живым");
+        // ── ПОЛОЖИТЕЛЬНОЕ ПЛЕЧО: ВАССАЛ ПОЯВИЛСЯ ────────────────────────────
+        // ФЕОД СТАВИТСЯ ДВЕРЬЮ МИРА: роль зовётся с НИЖНЕГО конца — вассал
+        // получает `Suzerain`, сюзерен зеркало `Vassal` (store.h set_relation).
+        set_relation(f.st(), vassalId, cityId, Stance::Suzerain);
+        CHECK(suzerain_of(f.st(), vassal.slot) == cityId,
+              "фикстура: феод встал дверью мира");
         f.think(kThinksPerDay + 2);
         CHECK(f.children_of(cityId, SquadType::Collector) == 1,
-              "ДОЛЖНИК ПОЯВИЛСЯ — ГОРОД ПОДНЯЛ СБОРЩИКА, и вопрос этот задан "
+              "ВАССАЛ ПОЯВИЛСЯ — ГОРОД ПОДНЯЛ СБОРЩИКА, и вопрос этот задан "
               "СВОИМИ рёбрами, а не поиском по миру");
+
+        // ── ПОГИБ ПОСРЕДИ СЕЗОНА — ЗАМЕНЫ В ЭТОМ СЕЗОНЕ НЕТ ─────────────────
+        int collector = -1;
+        for (std::size_t sl = 0; sl < kUnifiedCap; ++sl) {
+            if (f.st().alive[sl] == 0 || f.st().dead[sl] != 0) continue;
+            if (f.st().runtime[sl].squadType
+                    == std::uint8_t(SquadType::Collector)
+                && parent_of(f.st(), std::uint16_t(sl)) == cityId)
+                collector = int(sl);
+        }
+        CHECK(collector >= 0, "фикстура: сборщик города нашёлся слотом");
+        if (collector >= 0)
+            store_death(f.st(), handle_at(f.st(), std::uint16_t(collector)));
+        CHECK(f.children_of(cityId, SquadType::Collector) == 0,
+              "фикстура: сборщик погиб");
+        const int headsBefore = f.heads(city.slot);
+        f.think(kThinksPerDay + 2);
+        CHECK(f.children_of(cityId, SquadType::Collector) == 0,
+              "В ТОМ ЖЕ СЕЗОНЕ ВТОРОГО СБОРЩИКА НЕТ: замена погибшего начала бы "
+              "обход с первого вассала и обошла бы его второй раз");
+        CHECK(f.heads(city.slot) == headsBefore,
+              "и душ на него город не выписал — рождения не было вовсе");
+
+        // ── НОВЫЙ СЕЗОН — СБОРЩИК СНОВА ПОДНИМАЕТСЯ ─────────────────────────
+        f.gs.worldTime = world_time_at(1 + kDaysPerSeason, 8, 0);
+        f.think(kThinksPerDay + 2);
+        CHECK(f.children_of(cityId, SquadType::Collector) == 1,
+              "В НОВОМ СЕЗОНЕ СБОРЩИК ПОДНЯТ СНОВА: гейт сезона держит один "
+              "сезон, а не «больше никогда»");
     }
 }
 
@@ -969,9 +1003,9 @@ void test_the_last_shift_of_hands_is_never_written_out() {
     // Без этого плеча два вызова гейта в `city_think` (сборщик и корован)
     // остаются без свидетеля: мутация, снимающая гейт ТОЛЬКО у города,
     // проходит зелёной по деревенским плечам выше. То же у `capital_think` —
-    // своё тело, свои два сайта. Должник вассала назван нарочно — иначе
-    // ветка сборщика не дошла бы до гейта вовсе, и плечо доказывало бы один
-    // сайт из двух.
+    // своё тело, свои два сайта. Вассал назван нарочно — иначе ветка
+    // сборщика не дошла бы до гейта вовсе, и плечо доказывало бы один сайт из
+    // двух.
     for (const TownModule& m : kTownModules) {
         std::printf("  [последняя смена: %s]\n", m.who);
         Fixture f;
@@ -981,16 +1015,15 @@ void test_the_last_shift_of_hands_is_never_written_out() {
         const int cityId = int(f.st().spawnId[city.slot].index);
         const int vassalId = int(f.st().spawnId[vassal.slot].index);
         set_relation(f.st(), vassalId, cityId, Stance::Suzerain);
-        tithe_of(f.st(), vassal.slot)->owedValue = 10000;
-        CHECK(owes_tithe(f.st(), vassal.slot),
-              "долг на ребре живой — значит ветка сборщика ДОХОДИТ до гейта "
+        CHECK(suzerain_of(f.st(), vassal.slot) == cityId,
+              "вассал у города есть — значит ветка сборщика ДОХОДИТ до гейта "
               "свободных душ, а не отсекается раньше");
 
         f.think(kThinksPerDay + 2);
 
         CHECK(f.children_of(cityId, SquadType::Collector) == 0,
               "ГОРОД НЕ ПОДНЯЛ СБОРЩИКА при душах ровно на крю — хотя "
-              "должник есть, то есть отказал именно гейт свободных душ");
+              "вассал есть, то есть отказал именно гейт свободных душ");
         CHECK(f.children_of(cityId, SquadType::Caravan) == 0,
               "и КОРОВАНА не поднял — второй сайт того же гейта, у которого "
               "гейта нужды нет вовсе");
@@ -1866,7 +1899,7 @@ int main() {
     test_village_produces_through_its_own_think();
     test_the_town_remembers_it_has_nothing_to_craft();
     test_village_raises_an_artel_and_pays_in_souls();
-    test_city_raises_a_collector_only_for_a_debtor();
+    test_city_raises_a_collector_for_a_vassal_once_a_season();
     test_no_duplicate_child_however_long_the_world_runs();
     test_a_standing_rooted_pays_nothing_for_the_road();
     test_the_last_shift_of_hands_is_never_written_out();

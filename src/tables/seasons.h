@@ -70,13 +70,23 @@ inline Season season_at(int day) {
     return Season(d / kDaysPerSeason);
 }
 
+// МОНОТОННЫЙ ОРДИНАЛ СЕЗОНА МИРА — сколько полных сезонов прошло до `day`
+// (ряд M-495). `season_at` выше отвечает «какой сезон года» и через год
+// повторяет номер; этот ответ не повторяется никогда, поэтому «тот же ли
+// сезон» им различимо и через годы. Граница та же, что у `season_boundary`
+// ниже: день 1 открывает сезон 0. До первого дня мира сезонов не прошло —
+// ноль, а не отрицательный номер.
+inline constexpr int season_ordinal(int day) {
+    return day > 0 ? (day - 1) / kDaysPerSeason : 0;
+}
+
 inline constexpr const SeasonDef& season_def(Season s) {
     return kSeasons[std::size_t(s)];
 }
 
 // The season BOUNDARY — the one day the world settles its balances and
 // rebakes its slow truths (CANON S19.2: единое окно мира — food and pay for
-// every container a season ahead, the 1/8 arrears cut, the tithe charge, the
+// every container a season ahead, the 1/8 arrears cut, the
 // places' squad court, the expensive field rebakes). Day 1 is the first
 // boundary: a new world pays for its first season the morning it is born,
 // off the mid-life stores it was seeded with. Total over any day, like

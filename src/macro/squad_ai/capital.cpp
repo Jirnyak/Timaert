@@ -281,15 +281,22 @@ void capital_think(AiSelf& s, const AiView& view, AiPult& pult) {
     if (capital_waits_(s, kCapitalMemBirthWait)) return;
     s.rt.mem[kCapitalMemBirthWait] = kAiThinksPerDay;
 
-    // СБОРЩИК — ТОЛЬКО ПРИ ВАССАЛЕ-ДОЛЖНИКЕ, И ВОПРОС ЭТОТ ЗАДАЁТСЯ СВОИМИ
-    // РЁБРАМИ, А НЕ ПОИСКОМ ПО МИРУ (`AiView::owing_vassal` — обход своих
-    // `interests` по `Stance::Vassal`). Должника нет — сборщику некого доить,
-    // и рождать его значило бы послать сквад в `home_wander` навсегда: ровно
-    // так он и жил, пока его цель ставил казнённый аукцион.
+    // СБОРЩИК — ПРИ ВАССАЛЕ, ОДИН РАЗ ЗА СЕЗОН (ряд M-495, вердикт владельца
+    // 2026-11-14 «Пришёл — забрал 1/8, без книги долгов»). «Есть ли у меня
+    // вассал» задаётся СВОИМИ рёбрами, а не поиском по миру
+    // (`AiView::vassal_at` — обход своих `interests` по `Stance::Vassal`):
+    // вассала нет — сборщику некого обходить. Живой сборщик-ребёнок уже
+    // ходит — второго не нужно (`has_child`). И в сезоне сборщик поднимается
+    // ОДИН раз — своё слово памяти: замена погибшего посреди сезона начала бы
+    // обход с первого вассала и обошла бы первых второй раз.
+    const std::uint32_t season = std::uint32_t(view.season()) + 1u;
     if (capital_has_spare_souls_(s)
-        && view.owing_vassal(s.h.slot) != kMacroNoSlot
-        && !view.has_child(s.h, SquadType::Collector)) {
-        pult.spawn(s, SquadType::Collector, kCapitalCrewSouls);
+        && view.vassal_at(s.h.slot, 0) != kMacroNoSlot
+        && !view.has_child(s.h, SquadType::Collector)
+        && s.rt.mem[kCapitalMemCollectorSeason] != season) {
+        const MacroHandle born =
+            pult.spawn(s, SquadType::Collector, kCapitalCrewSouls);
+        if (born.slot != kMacroNoSlot) s.rt.mem[kCapitalMemCollectorSeason] = season;
     }
     // КОРОВАН — БЕЗ ГЕЙТА НУЖДЫ, И ЭТО НЕ ПРОПУСК: куда ехать и что брать на
     // рынке, рейс решает сам, НА МЕСТЕ и своей же анкетой (`caravan_think`:

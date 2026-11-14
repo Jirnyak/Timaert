@@ -319,7 +319,7 @@ enum : int {
 static_assert(kVillageMemCount <= ecs::kModuleMemSlots,
               "память деревни обязана лечь в кап своей памяти модуля");
 
-// ── ПАМЯТЬ МОДУЛЯ City — ТРИ СЛОВА ───────────────────────────────────────
+// ── ПАМЯТЬ МОДУЛЯ City — ЧЕТЫРЕ СЛОВА ────────────────────────────────────
 // Свои имена у города, а не общие с деревней и столицей (AGENTS §4 п.5).
 //   · `kCityMemCraftSeen`, `kCityMemCraftDebt` — «при каком инвентаре и
 //     каком счёте нужды крафтить было нечего»: счётчик изменений своего
@@ -330,16 +330,22 @@ static_assert(kVillageMemCount <= ecs::kModuleMemSlots,
 //   · `kCityMemBirthWait` — сколько думок до следующего круга решений о
 //     рождении и погрузке: раз в сутки (`AiView::has_child` — холодный
 //     проход).
+//   · `kCityMemCollectorSeason` — ординал сезона, в который город последний
+//     раз поднимал сборщика, плюс один (ноль — «не поднимал»; ординал сезона
+//     мира — `AiView::season`, через год не повторяется): в одном сезоне сборщик поднимается один раз, и
+//     замена погибшего посреди сезона не обходит первых вассалов второй раз
+//     (ряд M-495).
 enum : int {
     kCityMemCraftSeen,
     kCityMemCraftDebt,
     kCityMemBirthWait,
+    kCityMemCollectorSeason,
     kCityMemCount
 };
 static_assert(kCityMemCount <= ecs::kModuleMemSlots,
               "память города обязана лечь в кап своей памяти модуля");
 
-// ── ПАМЯТЬ МОДУЛЯ Capital — ТРИ СЛОВА ────────────────────────────────────
+// ── ПАМЯТЬ МОДУЛЯ Capital — ЧЕТЫРЕ СЛОВА ─────────────────────────────────
 // Столица — свой модуль (вердикт владельца 2026-11-13: «столица отдельный
 // модуль»), и память у неё своя, а не общая с городом (AGENTS §4 п.5).
 //   · `kCapitalMemCraftSeen`, `kCapitalMemCraftDebt` — «при каком инвентаре
@@ -351,14 +357,38 @@ static_assert(kCityMemCount <= ecs::kModuleMemSlots,
 //   · `kCapitalMemBirthWait` — сколько думок до следующего круга решений о
 //     рождении и погрузке: раз в сутки (`AiView::has_child` — холодный
 //     проход).
+//   · `kCapitalMemCollectorSeason` — ординал сезона, в который столица
+//     последний раз поднимала сборщика, плюс один (ноль — «не поднимала»;
+//     ординал сезона мира — `AiView::season`, через год не повторяется): в одном сезоне сборщик поднимается один раз, и
+//     замена погибшего посреди сезона не обходит первых вассалов второй раз
+//     (ряд M-495).
 enum : int {
     kCapitalMemCraftSeen,
     kCapitalMemCraftDebt,
     kCapitalMemBirthWait,
+    kCapitalMemCollectorSeason,
     kCapitalMemCount
 };
 static_assert(kCapitalMemCount <= ecs::kModuleMemSlots,
               "память столицы обязана лечь в кап своей памяти модуля");
+
+// ── ПАМЯТЬ МОДУЛЯ Collector — ДВА СЛОВА ──────────────────────────────────
+// Обход вассалов дома раз в сезон, по одному за рейс (вердикт владельца
+// 2026-11-14 «Пришёл — забрал 1/8, без книги долгов», ряд M-495).
+//   · `kCollectorMemSeason` — ординал сезона текущего обхода плюс один (ноль
+//     — обхода ещё не было; ординал сезона мира — `AiView::season`, через
+//     год не повторяется);
+//   · `kCollectorMemCursor` — сколько вассалов дома уже посещено в этом
+//     обходе: следующая цель — вассал с этим номером (`AiView::vassal_at`).
+// Пишет и читает их один модуль — `collector_think`; публичны номера затем,
+// что свидетель обязан видеть, что обход действительно ведётся.
+enum : int {
+    kCollectorMemSeason,
+    kCollectorMemCursor,
+    kCollectorMemCount
+};
+static_assert(kCollectorMemCount <= ecs::kModuleMemSlots,
+              "память сборщика обязана лечь в кап своей памяти модуля");
 // Сутки в думках: думка идёт раз в `kAiTicks` мировых тиков.
 inline constexpr std::uint32_t kAiThinksPerDay =
     std::uint32_t(kTicksPerDay / kAiTicks);

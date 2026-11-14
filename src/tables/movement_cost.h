@@ -151,8 +151,7 @@ constexpr float kStaminaPerWeightHour = 2.0f;
 // the old linear curve at −32: shallower debt is GENTLER than before (−8 →
 // 2 HP, was 8 — a narrow ford costs blood, not life), deeper is crueller
 // (−64 → 128, was 64 — the open sea drowns faster). The floor is honest: a
-// debt whose square sits below the divisor bites nothing — the same
-// asymmetric floor the tithe average keeps by design.
+// debt whose square sits below the divisor bites nothing.
 constexpr int kExhaustionBiteDivisor = 32;
 
 // THE ONE RECOVERY LAW (CANON S14; owner rulings Session 21 and 2026-09-03):

@@ -35,10 +35,10 @@ namespace sm {
 // приезжают транзитом включения tables/faction.h строкой выше.)
 
 // (ФЕОДАЛЬНОЕ РЕБРО `TitheEdge` И ПУЛ `fief` УМЕРЛИ 2026-10-22, M-245:
-//  долг и память дани живут НА РЕБРЕ Suzerain самого вассала —
-//  `Interest@src/bus/interests.h`, двери `tithe_of`/`owes_tithe` у
-//  эмитента идентичности. Второй носитель одной связи снесён вместе с
-//  counting-sort-пулом 393 КиБ и тремя его дверями.)
+//  долг и память дани переехали на ребро Suzerain самого вассала, а
+//  2026-11-14 умерли и там — книги долгов в мире нет (ряд M-495). Второй
+//  носитель одной связи снесён вместе с counting-sort-пулом 393 КиБ и
+//  тремя его дверями.)
 
 // ── СТРОКА ФРАКЦИИ ───────────────────────────────────────────────────────
 struct FactionRow {
@@ -63,13 +63,12 @@ static_assert(sizeof(FactionRow) == 96,
 
 struct FactionState {
     FactionRow rows[kMaxFactions] = {};
-    // Сезон, за который начисление дани уже прошло (-1 = никогда): один
-    // штамп на мир, потому что граница сезона одна и проход один
-    // (`tithe_daily_@src/macro/world_tick.cpp`).
-    std::int32_t titheSeasonAssessed = -1;
+    // (Штамп сезона начисления дани `titheSeasonAssessed` умер 2026-11-14
+    //  вместе с общим проходом начисления, ряд M-495: дань берёт модуль
+    //  сборщика на месте, и миру нечего помнить о сезоне её начисления.)
 };
-static_assert(sizeof(FactionState) == 96 * 64 + 4,
-              "строки (6144) + штамп сезона (4) = 6148 Б");
+static_assert(sizeof(FactionState) == 96 * 64,
+              "только строки: 64 × 96 = 6144 Б");
 
 // ── ДВЕРИ СТРОК ──────────────────────────────────────────────────────────
 
@@ -174,7 +173,7 @@ inline void add_faction_standing(FactionState& f, FactionSlot actor,
 }
 
 // (Три двери пула — `tithe_edge`/`tithe_edge_add`/`tithe_edge_remove` —
-//  умерли вместе с ним, M-245; долг отвечает `tithe_of@src/bus/store.h`.)
+//  умерли вместе с ним, M-245; долга дани с 2026-11-14 нет вовсе, M-495.)
 
 } // namespace sm
 
@@ -197,5 +196,4 @@ TIMAERT_ROW(sm::FactionState);
 // списка; дыра выравнивания или забытый член не собираются.
 TIMAERT_PACKED(sm::FactionRow, &sm::FactionRow::id, &sm::FactionRow::color,
     &sm::FactionRow::rel, &sm::FactionRow::used, &sm::FactionRow::pad);
-TIMAERT_PACKED(sm::FactionState, &sm::FactionState::rows,
-    &sm::FactionState::titheSeasonAssessed);
+TIMAERT_PACKED(sm::FactionState, &sm::FactionState::rows);

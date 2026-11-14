@@ -816,6 +816,14 @@ struct GameState {
     // поле `featureNumber` ниже. Второго адреса у поля нет: конверт
     // `MacroWorld` своего указателя на него больше не несёт.
     FeatureLayer features;
+    // ДЫРА ВЫРАВНИВАНИЯ, НАЗВАННАЯ ПОЛЕМ (стена «без дыр», CRAFT §10). Здесь
+    // её закрывал штамп сезона начисления дани в строках фракций (4 Б
+    // `FactionState`); он умер 2026-11-14 с общим проходом начисления (ряд
+    // M-495), и сумма членов состояния перестала быть кратной 8 — перед
+    // восьмибайтовым состоянием игрока встали 4 Б, не принадлежащие ни одному
+    // члену. Перестановкой дыра не уходит (нечётна сама сумма), поэтому она
+    // названа; поле стоит нулём и читателей не имеет, как `MacroStore::pad`.
+    std::uint32_t pad = 0;
     PlayerState player;
     // (КЭШ НОСИТЕЛЯ ФЛАЖКА `playerFlagRef` ЗДЕСЬ БОЛЬШЕ НЕ ЖИВЁТ — вердикт
     // владельца 2026-11-10, вопрос В1 сейв-эпика. Истина «кто игрок» — колонка
@@ -1231,7 +1239,7 @@ TIMAERT_PACKED(sm::GameState, &sm::GameState::worldSeed, &sm::GameState::mapW,
     &sm::GameState::chronicle, &sm::GameState::scent,
     &sm::GameState::factions, &sm::GameState::cellOwner,
     &sm::GameState::treeLayer, &sm::GameState::features,
-    &sm::GameState::player, &sm::GameState::worldTime,
+    &sm::GameState::pad, &sm::GameState::player, &sm::GameState::worldTime,
     &sm::GameState::worldTickRt, &sm::GameState::macroAiRhythm,
     &sm::GameState::playerRoll, &sm::GameState::wheatScars,
     &sm::GameState::featureNumber, &sm::GameState::faunaField,

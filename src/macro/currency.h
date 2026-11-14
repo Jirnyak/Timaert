@@ -233,11 +233,10 @@ inline int transfer_value_dense(Inventory& from, Depot to, int value,
 //
 // ЗДЕСЬ СТОЯЛО «the tithe's coin half averages it so it never double-counts
 // the goods half it stands beside», И ЭТО БЫЛА ЛОЖЬ О ЖИВОМ ЧИТАТЕЛЕ (M-436,
-// 2026-11-08). У дани нет монетной половины: `tithe_daily_@src/macro/
-// world_tick.cpp` усредняет оценку вассалом ВСЕЙ своей полки одной дверью
-// `side_worth@src/macro/deal.h`, а модуль сборщика
-// (`collector_think@src/macro/squad_ai/collector.cpp`) грузит бартером по
-// оценке дома — ни один из двоих эту перепись не зовёт, и во всём `src/` её
+// 2026-11-08). У дани нет монетной половины: модуль сборщика
+// (`collector_think@src/macro/squad_ai/collector.cpp`) меряет квоту оценкой
+// вассалом ВСЕЙ своей полки одной дверью `side_worth@src/macro/deal.h` и
+// грузит бартером по оценке дома — эту перепись он не зовёт, и во всём `src/` её
 // зовёт ровно один сайт, смоук. Опасна такая шапка не словом, а тем, что называет ЖИВОГО
 // читателя: следующий агент снимает дверь как сироту — и не находит его, либо
 // оставляет её как несущую — и ошибается в обратную сторону.
