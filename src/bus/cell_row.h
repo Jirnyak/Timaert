@@ -68,7 +68,7 @@ struct RootedFacts {
 // ЗАКОН СЛОВАРЯ п.6 требует у ординала-ИДЕНТИЧНОСТИ ровно нуля как «никого»,
 // а `−1` запрещает прямо. То есть ассерт ниже ОХРАНЯЕТ ДОЛГ: он делает
 // правильный сентинел несобираемым, и «карьер −1» (RootedFacts ·
-// RootedContext · RootedView · MacroCursor · DungeonSession · regionRootedId)
+// RootedContext · MacroCursor · DungeonSession · regionRootedId)
 // из-за него нельзя починить по частям. Корень карьера —
 // `settlement_at_player@src/app/main.cpp` — выправлен тем же днём; остаток,
 // включая переворот ЭТОГО дефолта и ~20 тестовых фикстур, пишущих `−1`,

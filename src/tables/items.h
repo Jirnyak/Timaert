@@ -490,11 +490,9 @@ std::uint8_t affix_power(int tier);
 // Non-wearables (slotMask 0) are refused: an affix is a WORN thing.
 void grant_affixes(ItemRef& item, std::uint8_t power, RngFn rng);
 
-// The affix table's own listing, for printers (the dev console) — same
-// contract as loot_profile_count/loot_profile_id.
-std::size_t affix_def_count() noexcept;
-// (`affix_def_key` СНЕСЕНА 2026-11-08, M-436: печатника, для которого она
-//  заведена, в дереве нет — ноль звонящих в `src/` и в `tests/`. Ключ строки
+// (`affix_def_key` СНЕСЕНА 2026-11-08, M-436, и `affix_def_count` следом —
+//  M-488, гигиена: печатника, для которого они заведены, в дереве нет — ноль
+//  звонящих в `src/` и в `tests/`. Ключ строки
 //  аффикса есть колонка `key` её строки, и дверь над ней вернётся в тот день,
 //  когда у неё родится читатель, а не раньше.)
 

@@ -1,4 +1,4 @@
-// Locks the RUNTIME contract of the audio system (macro/audio.h) on a live
+// Locks the RUNTIME contract of the audio system (app/audio.h) on a live
 // device: init, the loaded set, what playback tracks, and that shutdown really
 // lets go. The dummy SDL driver makes this runnable headless, so a regression
 // in the mixer wiring is caught here and not in a player's ears.
@@ -13,7 +13,7 @@
 // check.h exists to make impossible (§8 п.2).
 
 #include "check.h"
-#include "macro/audio.h"
+#include "app/audio.h"
 
 #define SDL_MAIN_HANDLED
 #include <SDL.h>

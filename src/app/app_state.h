@@ -60,7 +60,7 @@
 #include "bus/anketa.h"
 #include "macro/recovery.h"
 #include "macro/travel.h"
-#include "macro/audio.h"
+#include "app/audio.h"
 #include "macro/save.h"
 #include "tables/seasons.h"
 #include "content/spells/casting.h"
@@ -280,7 +280,7 @@ struct App {
     // the remainder instead of each rounding on its own. Runtime only.
     // (No travel-stamina field. The player's ONE signed fractional carry is
     // `MacroNpcRuntime::spCarry` on his squad entity — the same field every
-    // lord keeps — reached through player_sp_carry(app).)
+    // lord keeps — reached through `player_pools(app).spCarry`.)
 
     // Macro tree list (used for biome features and woodcutter NPC AI).
     std::vector<sm::TreePoint> trees;
@@ -494,7 +494,12 @@ void perform_encounter_auto(App& app, sm::MacroHandle npc, sm::Ambush ambush);
 bool settle_encounter_accord(App& app, sm::MacroHandle npc, int days);
 void close_pre_battle(App& app);
 void detect_forced_encounter(App& app);
-float& player_sp_carry(App& app);
+// Ординал ближайшего поселения в радиусе `radius` КЛЕТОК ПУТИ вокруг игрока
+// (метрика `cell_dist@src/core/torus.h`), 0 — «никого». Свидетель закона
+// «R клеток пути — считается, R+1 — нет» — смоук `settlement_radius`.
+int settlement_at_player(const sm::GameState& gs, const sm::Session& ses,
+                         const sm::MacroStore& st, const sm::SquadIndex& idx,
+                         int radius = 3);
 sm::ecs::Pools& player_pools(App& app);
 sm::CharacterSheet player_effective_sheet(const App& app);
 void sync_audio_music(App& app);
@@ -507,10 +512,6 @@ void sync_relative_mouse_mode(App& app);
 std::vector<sm::PathPoint> build_flight_path(int sx, int sy, int gx, int gy,
                                              int mapW);
 // (count_tick_events/latest_tick_event умерли с тегом SpellCast — M-410.)
-// HIS march caches — the two columns every squad carries (travelRank,
-// marathonRank, carryPerSoulG), on the FLAG. The hourly burn reads them, and so
-// does the camp-repays question.
-sm::ecs::MacroNpcRuntime* player_march_cache(App& app);
 bool cast_active_spell(App& app);
 void aim_rest_until_rested(App& app);
 int apply_rest_promotion(App& app, int ticks);

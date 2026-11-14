@@ -20,7 +20,7 @@
 //   1) `kind` — чей род ставит этот байт → `label` его строки `kSquadKinds`
 //      («Capital», «City», «Village», «Spire», «Ruin»). Это НЕ дубль строки,
 //      которую тултип печатает рядом: та несёт ИМЯ ЭКЗЕМПЛЯРА сквада
-//      (`RootedView::name`, «Kingsford»), а эта — его РОД;
+//      (колонка `name` сквада, «Kingsford»), а эта — его РОД;
 //   2) `yieldItem` — что с фичи берут → `name` строки каталога у шести шахт
 //      («Clay», «Iron Ore», «Stone», «Silver Ore», «Copper Ore», «Gold Ore»)
 //      и у льна («Fibre»);

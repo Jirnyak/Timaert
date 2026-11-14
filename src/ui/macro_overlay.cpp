@@ -17,7 +17,6 @@
 #include "ecs/components.h"
 #include "macro/state.h"
 #include "macro/squad.h"   // record_deed — THE deed door (S20.1)
-#include "macro/rooted_iter.h"
 #include "macro/spires.h"   // spire_orb — ОДИН вывод об орбе (M-233 п.8)
 #include "ui/squad_draw.h"
 #include "macro/markers.h"
@@ -267,20 +266,31 @@ void draw_macro_overlay(const MacroWorld& mw,
     // ── Hover-cell highlight + tooltip (chrome) and settlement pick (input).
     if (cursor.hoverValid) {
         // Rooted under the cursor is resolved ALWAYS — click-to-select
-        // must keep working even when the overlay chrome is hidden. One
-        // visitor pass names EVERY kind (first hit wins, in the visitor's
-        // resolve_context priority order) and picks the settlement id for
-        // the click when the hit is a city.
+        // must keep working even when the overlay chrome is hidden.
+        // КТО ВЛАДЕЕТ КЛЕТКОЙ — ОДНОЙ ДВЕРЬЮ КАРКАСА (ЗАКОН КЛЕТОЧНОГО
+        // КАРКАСА): `settlement_at@src/macro/squad_index.h` отвечает бакетом
+        // клетки по закону `kRootedYieldOrder` — тот же приоритет спорной
+        // клетки, что был у обхода. Здесь стоял обход визитора мест — скан
+        // капа × родов каждый кадр на вопрос об ОДНОЙ клетке. Своего
+        // цикла по рангу рядом с `squads_in_frame` здесь нет нарочно: он
+        // переписал бы закон владения клеткой второй раз (DOD п.6).
+        // Несобранный каркас отвечает «никто» — нулевой вклад.
         const char* rooted = "";
         int hoverSettlementId = -1;
-        for_each_rooted_view(mw, [&](const RootedView& lm) {
-            if (lm.x != cursor.hoverX || lm.y != cursor.hoverY) return;
-            if (!rooted[0]) rooted = lm.name;
-            // Any place is pickable — the City hardcode died with
-            // PLAY-2; the panel itself decides which tabs the kind shows.
-            if (lm.type != SquadType::None && hoverSettlementId < 0)
-                hoverSettlementId = lm.id;
-        });
+        const MacroStore& hst = *mw.store;
+        const MacroHandle owner = mw.squads
+            ? settlement_at(*mw.squads, hst, cursor.hoverX, cursor.hoverY)
+            : MacroHandle{};
+        if (hst.valid(owner) && hst.dead[owner.slot] == 0) {
+            // Безымянный показывает колонку `label` своей строки рода.
+            rooted = hst.name[owner.slot].text;
+            if (!rooted[0])
+                rooted = squad_kind(SquadType(hst.runtime[owner.slot]
+                                                  .squadType)).label.data();
+            // Any place is pickable — the panel itself decides which tabs
+            // the kind shows.
+            hoverSettlementId = int(hst.spawnId[owner.slot].index);
+        }
 
         if (showMarkers) {
             // After the Y flip the cell's screen rect has top = wy+1, bottom = wy.

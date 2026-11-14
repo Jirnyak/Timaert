@@ -1072,10 +1072,6 @@ void grant_affixes(ItemRef& item, std::uint8_t power, RngFn rng) {
     }
 }
 
-std::size_t affix_def_count() noexcept {
-    return sizeof(kAffixDefs) / sizeof(kAffixDefs[0]);
-}
-
 namespace {
 
 // The affix-table row that speaks for a stored bonus row — how a saved

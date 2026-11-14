@@ -116,9 +116,6 @@ inline constexpr std::uint64_t absolute_hour(std::uint64_t tick) {
     return (tick * 3) >> 10;
 }
 
-inline constexpr int tick_of_day(std::uint64_t tick) {
-    return int(tick % kTicksPerDay);
-}
 // Day 0 is the first day the ladder can express. A new game seeds day 1 so
 // that tables/seasons.h reads day 1 as the first day of Spring.
 inline constexpr int day_of(std::uint64_t tick) {
@@ -162,10 +159,8 @@ inline constexpr std::uint64_t ticks_to_advance_minutes(std::uint64_t from,
         absolute_minute(from) + std::uint64_t(minutes);
     return tick_at_absolute_minute(target) - from;
 }
-inline constexpr std::uint64_t ticks_to_advance_hours(std::uint64_t from,
-                                                      std::int64_t hours) {
-    return ticks_to_advance_minutes(from, hours * 60);
-}
+// (Часовой близнец `ticks_to_advance_hours` умер M-488, гигиена: звонящих
+//  в игре ноль, а час есть 60 минут той же двери выше.)
 
 // ── How real time is allowed to touch the world: only to make it WAIT ────
 //

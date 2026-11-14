@@ -106,8 +106,9 @@ inline constexpr std::uint8_t kMarkerSurface[4] = {
 
 // ── ДВЕРИ СПИСКА ─────────────────────────────────────────────────────────
 // Подпись входит видом на байты и ложится в запись с завершающим нулём;
-// длиннее ячейки — усекается (это текст для глаз, не адрес).
-inline std::string_view marker_label(const Marker& m) { return {m.label}; }
+// длиннее ячейки — усекается (это текст для глаз, не адрес). Читают её
+// колонкой `label` — дверь чтения `marker_label` умерла с нулём звонящих
+// (M-488, гигиена).
 
 inline void set_marker_label(Marker& m, std::string_view label) {
     const std::size_t n = label.size() < kMarkerLabelBytes - 1u

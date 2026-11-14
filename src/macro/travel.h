@@ -57,17 +57,11 @@ struct Inventory;
 // compose instead: this rank buys the burn-per-hour down, the pace shortens the
 // hours exposed to it.
 //
-// СТОИТ ЗДЕСЬ, А НЕ У ЗАКОНА ЖЖЕНИЯ, И ЭТО ГРАНИЦА ДВУХ ТАБЛИЦ, А НЕ
-// УДОБСТВО (ломоть 1а эпика пакетов v1). `Skills` — РАНГИ ЛОРДА, то есть
-// анкета, экземпляр (AGENTS §11: «`Skills` — не таблица навыков, а ранги
-// лорда»), поэтому дверь, читающая их, в нейтральный слой каталогов войти не
-// может по закону — а сам закон жжения туда уехал целиком. Дом выбран не по
-// слою: ВТОРОЙ множитель того же произведения уже живёт ниже
-// (`overload_burden_from_capacity`), и теперь оба стоят рядом, как и читаются
-// — `burn_stamina_per_hour(вес, перегруз, выучка)`.
-inline float travel_skill_efficiency(const Skills& s) {
-    return skill_mult(s, SkillId::Travel);
-}
+// Выучку читают ОДНОЙ дверью навыка — `skill_mult_of(SkillId::Travel, ранг)`
+// (свип сквада и час игрока, ранг из кэша `travelRank`), и входит она в
+// `burn_stamina_per_hour(вес, перегруз, выучка)` третьим множителем. (Обёртка
+// над листом `travel_skill_efficiency` жила здесь и умерла M-488, гигиена:
+// второй ответ на тот же вопрос с нулём звонящих в игре.)
 
 // THE overload law, for any back on the map. It was called
 // `player_overload_charge` and only the player was ever charged by it, so a

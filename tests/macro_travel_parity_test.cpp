@@ -210,7 +210,7 @@ void test_overload_is_a_factor_of_the_hour() {
     // is where it shows.
     sm::Skills master{};
     master[sm::SkillId::Travel] = sm::kMaxSkillRank;
-    const float eff = sm::travel_skill_efficiency(master);
+    const float eff = sm::skill_mult(master, sm::SkillId::Travel);
     CHECK(nearf(sm::burn_stamina_per_hour(10.0f, 1.0f, eff), 0.0f),
           "at mastery the ground is free");
     CHECK(nearf(sm::burn_stamina_per_hour(10.0f, 3.0f, eff), 0.0f),
@@ -331,7 +331,7 @@ float cells_per_game_hour() {
 float march_drain_per_hour(int fullBarSp, const sm::Skills& skills,
                            float weight, int marathonRank = 0) {
     return sm::burn_stamina_per_hour(weight, /*overloadBurden=*/1.0f,
-                                     sm::travel_skill_efficiency(skills))
+                                     sm::skill_mult(skills, sm::SkillId::Travel))
            - sm::rest_stamina_per_hour(fullBarSp, marathonRank);
 }
 
@@ -357,7 +357,7 @@ float march_hours(int fullBarSp, const sm::Skills& skills, float weight) {
 // may or may not cover it is a property of the BODY, not of the cell.
 float burn_per_cell(const sm::Skills& skills, float weight) {
     const float perHour = sm::burn_stamina_per_hour(
-        weight, /*overloadBurden=*/1.0f, sm::travel_skill_efficiency(skills));
+        weight, /*overloadBurden=*/1.0f, sm::skill_mult(skills, sm::SkillId::Travel));
     const float cellsPerHour =
         cells_per_game_hour() * sm::terrain_speed_mult(weight)
         * float(sm::calculate_derived(sm::default_attributes(), skills)
@@ -431,7 +431,7 @@ void test_travel_balance_holds_its_intent() {
     // whoever walks it, sustainably or not.
     const auto rate = [&](float w) {
         return sm::burn_stamina_per_hour(w, 1.0f,
-                                         sm::travel_skill_efficiency(skills));
+                                         sm::skill_mult(skills, sm::SkillId::Travel));
     };
     CHECK(nearf(rate(meadowW) / rate(roadW), meadowW / roadW, 0.01f),
           "the hourly rate scales as the weight, exactly");
@@ -508,10 +508,10 @@ void test_travel_balance_holds_its_intent() {
           "a night of camp is the bare regen law and nothing else: no ground "
           "under a halted body costs it a point");
 
-    CHECK(sm::travel_skill_efficiency(vetSkills) < 1.0f
-              && sm::travel_skill_efficiency(vetSkills) > 0.0f,
+    CHECK(sm::skill_mult(vetSkills, sm::SkillId::Travel) < 1.0f
+              && sm::skill_mult(vetSkills, sm::SkillId::Travel) > 0.0f,
           "the travel skill discounts terrain without ever making it free");
-    CHECK(nearf(sm::travel_skill_efficiency(skills), 1.0f),
+    CHECK(nearf(sm::skill_mult(skills, sm::SkillId::Travel), 1.0f),
           "an untrained traveller gets no discount");
 
     // One skill, one meaning — AND THE MEANING OF `athletics` SHARPENED on
@@ -522,7 +522,7 @@ void test_travel_balance_holds_its_intent() {
     // quantum rather than a design change, so it is stated rather than hidden.
     sm::Skills sprinter = skills;
     sprinter[sm::SkillId::Athletics] = 20;
-    CHECK(nearf(sm::travel_skill_efficiency(sprinter), 1.0f),
+    CHECK(nearf(sm::skill_mult(sprinter, sm::SkillId::Travel), 1.0f),
           "athletics does not make ground cheaper per hour");
     CHECK(nearf(march_drain_per_hour(fresh.maxSp, sprinter, meadowW),
                 march_drain_per_hour(fresh.maxSp, skills, meadowW)),
@@ -538,7 +538,7 @@ void test_travel_balance_holds_its_intent() {
     CHECK(sm::calculate_derived(attrs, pathfinder).moveSpeedPct
               == sm::calculate_derived(attrs, skills).moveSpeedPct,
           "the travel skill does not make the traveller faster");
-    CHECK(sm::travel_skill_efficiency(pathfinder) < 1.0f,
+    CHECK(sm::skill_mult(pathfinder, sm::SkillId::Travel) < 1.0f,
           "the travel skill does make ground cheaper");
 
     // A night undoes a day, and the march half of the pin is ONE ARGUMENT
@@ -648,7 +648,7 @@ void test_travel_balance_holds_its_intent() {
                 double(mountainCell), double(waterCell),
                 double(march_hours(veteran.maxSp, vetSkills, waterW)),
                 veteran.maxSp,
-                double(sm::travel_skill_efficiency(vetSkills)), freshRestH);
+                double(sm::skill_mult(vetSkills, sm::SkillId::Travel)), freshRestH);
 }
 
 // (No test_invalid_terrain_fails_closed. It pinned that a REJECTED terrain

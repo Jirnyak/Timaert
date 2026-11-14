@@ -83,6 +83,8 @@ enum class SmokeAction : std::uint8_t {
     MacroTravelSp,
     MacroRecovery,
     RestSp,
+    MacroRestFact,
+    SettlementRadius,
     TimeAdvanceBurst,
     ChronicleRate,
     DeltaCapProbe,

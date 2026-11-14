@@ -132,13 +132,10 @@ constexpr float kStaminaPerWeightHour = 2.0f;
 // healing for free; a caller-shaped law was a door to the opposite — a body
 // nobody remembered to call simply stopped living.)
 
-// (НЕТ `travel_skill_efficiency` — переехала в `macro/travel.h` ломтём 1а
-// эпика пакетов v1, и переезд вынужден ЗАКОНОМ ДВУХ ТАБЛИЦ, а не слоями: она
-// читает `Skills`, то есть РАНГИ ЛОРДА — анкету, экземпляр, — а нейтральный
-// слой каталогов анкет не видит. Её новый дом не случаен: там же живёт ВТОРОЙ
-// множитель этого же произведения, `overload_burden_from_capacity`. Выучка
-// входит в закон ровно через аргумент `efficiency` у `burn_stamina_per_hour`
-// ниже, как и прежде — один множитель, одна дверь.)
+// (НЕТ `travel_skill_efficiency` — обёртка над листом умерла M-488, гигиена,
+// с нулём звонящих в игре. Выучка входит в закон ровно через аргумент
+// `efficiency` у `burn_stamina_per_hour` ниже — одной дверью навыка
+// `skill_mult_of(SkillId::Travel, ранг)`.)
 
 // Death by exhaustion, and it is DESIGN, not an accident — and since
 // 2026-09-17 the ONE law of zero is QUADRATIC (owner, CANON S14.1, дословно:

@@ -368,7 +368,7 @@ function(timaert_module _name)
     if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
         target_compile_definitions(timaert_${_name} PRIVATE
             TIMAERT_HAS_SDL_MIXER=1)
-        # Включения миксера (SDL_mixer.h у macro/audio.cpp) приезжают
+        # Включения миксера (SDL_mixer.h у app/audio.cpp) приезжают
         # usage-requirement'ом цели; линкует миксер по-прежнему exe.
         target_link_libraries(timaert_${_name} PRIVATE
             ${TIMAERT_SDL2_MIXER_TARGET})
@@ -1042,13 +1042,13 @@ timaert_test(melee_reach_test
 
 timaert_test(audio_contract_test
     SOURCES
-        src/macro/audio.cpp
+        src/app/audio.cpp
     LINK_SDL LINK_MIXER
     PIN "OK audio_contract_test .32 checks.")
 
 timaert_test(audio_runtime_test
     SOURCES
-        src/macro/audio.cpp
+        src/app/audio.cpp
     LINK_SDL LINK_MIXER)
 
 # Звался `spawn_entity_event_test` по событию SpawnEntity, снесённому M-410;
@@ -1833,7 +1833,7 @@ timaert_test(relation_edge_test)
 # whole-day durations converting at zero residue.
 
 timaert_test(time_ladder_test
-    PIN "OK time_ladder_test .115689 checks.")
+    PIN "OK time_ladder_test .115687 checks.")
 # Seasons data contract (tables/seasons.h). Header-only, pure derivation of the
 # world day — no macro/renderer sources needed. Proves the season cycle starts
 # at Spring on day 1, is periodic and total (wraps non-positive days), and that

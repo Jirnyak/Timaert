@@ -66,7 +66,7 @@
 #include "bus/anketa.h"
 #include "macro/recovery.h"
 #include "macro/travel.h"
-#include "macro/audio.h"
+#include "app/audio.h"
 #include "macro/save.h"
 #include "tables/seasons.h"
 #include "content/spells/casting.h"
@@ -455,29 +455,34 @@ sm::MacroHandle settlement_by_id(const sm::MacroStore& st, int id) {
 // (`nextSpawnId = 1@src/bus/store.h`), значит ноль свободен навсегда, а `−1`
 // у ординала-ИДЕНТИЧНОСТИ запрещён прямо («я не люблю −1» — владелец).
 // ОСТАТОК КАРЬЕРА НАЗВАН И НЕ ЗАКРЫТ: `MacroCursor::hover/clickedSettlementId`,
-// `RootedFacts/RootedContext/RootedView::id`, `DungeonSession::settlementId`,
+// `RootedFacts/RootedContext::id`, `DungeonSession::settlementId`,
 // `regionRootedId@src/macro/nav_field.h` — → M-75.
 int settlement_at_player(const sm::GameState& gs, const sm::Session& ses,
                          const sm::MacroStore& st,
-                         const sm::SquadIndex& idx, int radius = 3) {
+                         const sm::SquadIndex& idx, int radius) {
     const sm::ecs::MacroCell* pc = sm::player_flag_cell(ses, st);
     if (!pc) return 0;   // «никого» у ординала-идентичности есть НОЛЬ
-    const int px = sm::ecs::cell_x(*pc, gs.mapW);
-    const int py = sm::ecs::cell_y(*pc, gs.mapW);
     // Место в радиусе — КАРКАСОМ (ломоть 6; скан всех мест умер): рамка
-    // (2r+1)², точный отбор евклидовым диском той же меры, что прежде.
-    // Ответ — БЛИЖАЙШЕЕ место (прежний скан отдавал первое по ординалу —
-    // при двух поселениях в диске выбор был порядком рождения, не миром).
-    const int r2 = radius * radius;
+    // (2r+1)² даёт кандидатов, отбор и «кто ближе» — ОДНОЙ метрикой пути
+    // (`cell_within`/`cell_dist@src/core/torus.h`, ЗАКОН АДРЕСА п.6): радиус
+    // авторится В КЛЕТКАХ ПУТИ. Здесь стоял евклидов диск — сумма квадратов
+    // смещений над клетками, второе число диагонали у одного вопроса. При
+    // радиусе 3 множество клеток то же (|dx|,|dy| ≤ (3,0) или (2,2)); ничья
+    // (3,0) против (2,2) решается порядком бакета. Ответ — БЛИЖАЙШЕЕ место
+    // (прежний скан отдавал первое по ординалу — выбор был порядком
+    // рождения, не миром).
     int found = 0;
-    int bestD2 = r2 + 1;
-    sm::squads_in_frame(idx, st, px, py, radius,
-                        [&](std::uint16_t slot, int dx, int dy) {
+    int bestDist = 0;
+    sm::squads_in_frame(idx, st, sm::ecs::cell_x(*pc, gs.mapW),
+                        sm::ecs::cell_y(*pc, gs.mapW), radius,
+                        [&](std::uint16_t slot, int, int) {
         const sm::SquadType kind = sm::SquadType(st.runtime[slot].squadType);
         if (!sm::rooted_is_settlement(kind)) return;
-        const int d2 = dx * dx + dy * dy;
-        if (d2 > r2 || d2 >= bestD2) return;
-        bestD2 = d2;
+        const std::uint32_t at = st.cell[slot].idx;
+        if (!sm::cell_within(pc->idx, at, radius, gs.mapW)) return;
+        const int d = sm::cell_dist(pc->idx, at, gs.mapW);
+        if (found != 0 && d >= bestDist) return;
+        bestDist = d;
         found = int(st.spawnId[slot].index);
     });
     return found;
@@ -986,8 +991,6 @@ void draw_pre_battle_modal(App& app) {
 // читателя. Живой побочный зов refresh_player_settlement переехал к её
 // звонящему — шаг ходока.)
 
-float& player_sp_carry(App& app);   // defined with the world-query helpers
-
 // THE player's macro walk, and since 2026-10-06 it CHARGES NOTHING — exactly
 // like a squad's try_move. What stood here was a per-cell charge with its own
 // cell-cost resolve (terrain + features + trees, a second answer to the weight
@@ -1050,27 +1053,10 @@ float macro_cell_cost_weight(const App& app) {
 // rested» теперь доезжает до полной планки где угодно, включая открытое море,
 // и компрессия времени не может привести в конец, которого нет.)
 
-// HIS march caches, the same two columns every squad carries (travelRank,
-// marathonRank, carryPerSoulG) — filled by the ONE sheet door
-// (macro/squad.h refresh_body_from_sheet, reached every macro turn through
-// refresh_player_body). On the FLAG, because that is the body that walks and
-// the body whose bars `player_pools` returns. nullptr before a world exists.
-sm::ecs::MacroNpcRuntime* player_march_cache(App& app) {
-    if (!app.macroStore) return nullptr;
-    const sm::MacroHandle h = sm::player_flag_handle(app.session);
-    if (!app.macroStore->valid(h)) return nullptr;
-    return &app.macroStore->runtime[h.slot];
-}
-
-// His carry, through the one door. The scratch fallback is the same shape
-// player_bag uses: a frame before the world exists must not crash, and a
-// carry with nowhere to live is a carry nobody reads.
-float& player_sp_carry(App& app) {
-    static float scratch = 0.0f;
-    float* carry = app.macroStore
-        ? sm::player_sp_carry(app.session, *app.macroStore) : nullptr;
-    return carry ? *carry : scratch;
-}
+// (Обёртки `player_march_cache` и `player_sp_carry` жили здесь и умерли
+//  M-488, гигиена: звал их только смоук. Остаток SP — колонка `spCarry`
+//  тех же `Pools`, что отдаёт `player_pools` ниже; кэши марша — рантайм
+//  флажка, `player_flag_handle`.)
 
 // His three bars, through the one door (landing 4: the Pools on his squad
 // entity IS the store — no scalar copy anywhere). Same scratch idiom as the
@@ -3509,10 +3495,24 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // lord's think calls (macro/recovery.h settle_pools_over_time), asked
         // UNCONDITIONALLY. Since the owner's inversion of 2026-10-24 the
         // always-on half is the SP REGEN — it runs whether he marches, stands
-        // or sleeps — and what `marching` gates is the BURN (and HP/MP, where
+        // or sleeps — and what `marched` gates is the BURN (and HP/MP, where
         // «марш не лечит» still stands). The sea is still priced rather than
         // forbidden, by the SIGN of the difference, but the price is paid
         // ВПЛАВЬ: stopping in it recovers him.
+        //
+        // ШЁЛ ЛИ ОН — ФАКТ ХОДА, А НЕ НАМЕРЕНИЕ (вердикт владельца
+        // 2026-11-12: «не двигается не жжот … чтобы сжигание включало именно
+        // движение как универсальная система»; AGENTS §5 п.14). Ответ даёт
+        // ТОТ ЖЕ флаг `kMarchAdvanced`, что у ритма сквада
+        // (`settle_march_rhythm@src/macro/npc_ai.cpp`): ядро марша `try_move`
+        // ставит его на первом оплаченном кванте. Здесь стоял
+        // `!cursor.path.empty()` — НАМЕРЕНИЕ: игрок с проложенным путём, чьи
+        // ноги не шли (ввод выключен, путь не начат), жёг SP и не лечился.
+        // Флаги хода живут одну думку — у свипа их гасит драйвер перед
+        // ногами; думка игрока кончается этим расчётом часа, и гасит их он:
+        // ноги, не звавшиеся до следующего расчёта, «не шли» (иначе
+        // вставший ровно в центре клетки — путь сброшен, доезжать некуда —
+        // нёс бы флаг последнего шага вечно).
         //
         // The hour is priced from the one baked cost grid under his feet, times
         // the two FACTORS the dead per-cell charge used to carry as terms: his
@@ -3533,12 +3533,13 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // until he POSSESSES a lord — and from then on the old law healed the
         // body he had left behind while the screen showed the body he was
         // wearing. One body, one set of bars, one hour.
-        const bool marching = !app.cursor.path.empty();
         if (stats.timeTick.minutesAdvanced > 0) {
             const sm::MacroHandle flagH = sm::player_flag_handle(app.session);
             if (app.macroStore->valid(flagH)) {
-                const sm::ecs::MacroNpcRuntime& prt =
+                sm::ecs::MacroNpcRuntime& prt =
                     app.macroStore->runtime[flagH.slot];
+                const bool marched =
+                    (prt.marchFlags & sm::ecs::kMarchAdvanced) != 0;
                 sm::settle_pools_over_time(
                     player_pools(app),
                     float(stats.timeTick.minutesAdvanced) / 60.0f,
@@ -3550,7 +3551,8 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                             player_bag(app)),
                         sm::skill_mult_of(sm::SkillId::Travel,
                                           int(prt.travelRank))),
-                    /*resting=*/!marching);
+                    /*resting=*/!marched);
+                prt.marchFlags &= sm::ecs::kMarchArrived;
             }
         }
         // (Доплата долга свипов, стоявшая здесь, умерла с M-379 вместе с
@@ -4159,8 +4161,9 @@ void register_console_commands(App& app) {
                 spec.y = pc ? sm::ecs::cell_y(*pc, app.gs.mapW) : 0;
             }
             // Row ids in a console-made creatures: a private id space (high two
-            // bits 01) so they can never collide with garrison ids (high bit
-            // 1) or quest/hire ids.
+            // bits 01). (Пространства гарнизона и квестов, от которых оно
+            // отгораживалось, умерли вместе с ними; других писателей ids
+            // душ со старшими битами в игре нет.)
             static std::uint32_t seq = 0;
             ++seq;
             const int mlvl = level > 0 ? level

@@ -317,11 +317,6 @@ const Inventory* player_inventory(const Session& ses,
     return slot == kMacroNoSlot ? nullptr : &st.inventory[slot].inv;
 }
 
-float* player_sp_carry(const Session& ses, MacroStore& st) {
-    const std::uint16_t slot = flag_slot_or_none(ses, st);
-    return slot == kMacroNoSlot ? nullptr : &st.pools[slot].spCarry;
-}
-
 ecs::Pools* player_pools(const Session& ses, MacroStore& st) {
     const std::uint16_t slot = flag_slot_or_none(ses, st);
     return slot == kMacroNoSlot ? nullptr : &st.pools[slot];

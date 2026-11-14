@@ -227,12 +227,9 @@ const Inventory* player_inventory(const Session& ses, const MacroStore& st);
 // УНИЧТОЖЕНЫ 2026-10-11, перепись сирот: `recall` имел НОЛЬ прод-вызовов,
 // то есть никто никогда не вспоминал, а писала память одна недоплата штрафа.
 // 2.125 МиБ по капу — 99 % всех мёртвых байт макро-состояния.)
-// The player's ONE signed fractional stamina carry — `MacroNpcRuntime::spCarry`
-// of his record, the very field every lord on the map keeps. It used to
-// be two unsigned accumulators on App (a spend-only TravelStamina and a
-// regen-only slot in PlayerRecoveryAccumulator), which between them could not
-// even express the state his own bar was in: a debt with a fraction owed.
-float* player_sp_carry(const Session& ses, MacroStore& st);
+// (Дверь `player_sp_carry` жила здесь и умерла M-488, гигиена: её звала
+//  только обёртка смоука. Остаток SP — колонка `spCarry` тех же `Pools`,
+//  что отдаёт `player_pools` ниже, второго адреса у него нет.)
 
 // THE player's three bars — the ordinary ecs::Pools of his record, the
 // very block every lord and every scene body keeps (landing 4, owner

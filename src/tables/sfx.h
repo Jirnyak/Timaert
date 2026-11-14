@@ -1,7 +1,8 @@
 // SfxId — словарь ЗВУКОВ игры. ПЕРЕЕХАЛ из macro/audio.h ломтём 1б эпика
 // пакетов v1: субмир очередит звук именем ряда (`queue_sfx@src/sub/engine.h`),
-// а сама система звука (AudioSystem, SDL_mixer, MusicId) осталась в
-// macro/audio.h — там состояние, здесь только ИМЕНА. Тот же шов, которым
+// а сама система звука (AudioSystem, SDL_mixer, MusicId) живёт в
+// app/audio.h (звук — платформа; из macro/ уехала M-488) — там состояние,
+// здесь только ИМЕНА. Тот же шов, которым
 // FeatureType уехал в tables/feature_type.h, а слой остался в macro/features.h
 // (M-181, граница ТИП против ЭКЗЕМПЛЯРА).
 #pragma once

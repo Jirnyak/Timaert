@@ -90,11 +90,10 @@ inline float moon_phase01f(MoonId m, float dayf) {
     return t / period;
 }
 
-// Whole-day phase (1-based, like season_at) — DELEGATES to the float form so
-// the two can never drift: moon_phase01(m, d) == moon_phase01f(m, float(d)).
-inline float moon_phase01(MoonId m, int day) {
-    return moon_phase01f(m, float(day));
-}
+// (Целодневные близнецы `moon_phase01`/`moon_illumination01` и
+//  `moon_is_waxing` жили здесь и умерли M-488, гигиена: в игре у них ноль
+//  звонящих — небо спрашивает непрерывную фазу ниже, а «растёт ли луна»
+//  не читал никто.)
 
 // Illuminated fraction of the disc in [0,1]: 0 at new moon (phase 0), 1 at full
 // (phase 0.5), symmetric waxing/waning. The standard illuminated-fraction
@@ -102,15 +101,6 @@ inline float moon_phase01(MoonId m, int day) {
 // disc / moonlight contribution by, replacing the hardcoded always-full moon.
 inline float moon_illumination01f(MoonId m, float dayf) {
     return 0.5f * (1.0f - std::cos(kTwoPi * moon_phase01f(m, dayf)));
-}
-inline float moon_illumination01(MoonId m, int day) {
-    return moon_illumination01f(m, float(day));
-}
-
-// True while the moon is growing (new → full); false while shrinking. Handy for
-// a crescent's orientation. phase in (0,0.5) waxes, (0.5,1) wanes.
-inline bool moon_is_waxing(MoonId m, int day) {
-    return moon_phase01(m, day) < 0.5f;
 }
 
 // ── Sky position — procedural orbits ────────────────────────────────────────

@@ -25,7 +25,6 @@
 // выводится из листа, значит судить его надо по той же таблице, из которой
 // лист берёт `birth_squad`.
 #include "macro/characters.h"
-#include "macro/travel.h"   // travel_skill_efficiency — выучка читает РАНГИ анкеты
 #include "tables/movement_cost.h"
 
 #include <cstdio>
@@ -321,7 +320,7 @@ void test_the_governed_numbers_follow_the_row() {
     // And the cost skill, through the movement law's own door.
     Skills pathfinder{};
     pathfinder[SkillId::Travel] = 25;
-    CHECK(travel_skill_efficiency(pathfinder) < 1.0f,
+    CHECK(skill_mult(pathfinder, SkillId::Travel) < 1.0f,
           "training travel makes ground cheaper");
     CHECK(calculate_derived(a, pathfinder).moveSpeedPct
               == bareD.moveSpeedPct,

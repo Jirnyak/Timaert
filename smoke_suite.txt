@@ -87,6 +87,8 @@ spend_skill_bodybuilding
 macro_travel_sp
 macro_recovery
 rest_sp
+macro_rest_fact
+settlement_radius
 timeadvance_burst
 chronicle_rate
 # Кап обратного потока шва — тем же прибором-счётчиком, что кольцо летописи:

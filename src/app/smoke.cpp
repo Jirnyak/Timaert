@@ -459,6 +459,8 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"macro_travel_sp", SmokeAction::MacroTravelSp},
     {"macro_recovery", SmokeAction::MacroRecovery},
     {"rest_sp", SmokeAction::RestSp},
+    {"macro_rest_fact", SmokeAction::MacroRestFact},
+    {"settlement_radius", SmokeAction::SettlementRadius},
     {"timeadvance_burst", SmokeAction::TimeAdvanceBurst},
     {"chronicle_rate", SmokeAction::ChronicleRate},
     {"delta_cap_probe", SmokeAction::DeltaCapProbe},
@@ -2285,12 +2287,12 @@ bool run_macro_travel_sp_smoke(App& app) {
     // Measured before the line existed: accounted 0.000 against a bracket of
     // −5.013..−4.447.
     player_pools(app).sp = player_pools(app).maxSp / 2;
-    player_sp_carry(app) = 0.0f;
+    player_pools(app).spCarry = 0.0f;
     const int beforeSp = player_pools(app).sp;
     const int beforeHp = player_pools(app).hp;
     const float beforeX = smoke_player_x(app);
     const float beforeY = smoke_player_y(app);
-    const float carryBefore = player_sp_carry(app);
+    const float carryBefore = player_pools(app).spCarry;
     const std::uint64_t tickBefore = app.gs.worldTime.tick;
 
     // Walk it through REAL FRAMES, not by calling the step directly. The whole
@@ -2312,7 +2314,7 @@ bool run_macro_travel_sp_smoke(App& app) {
     // Fractional costs, so what is measured is the WHOLE spend: points taken
     // out of the bar plus points still owed in the signed carry.
     const float accounted =
-        float(spentSp) + (carryBefore - player_sp_carry(app));
+        float(spentSp) + (carryBefore - player_pools(app).spCarry);
     // Hours of GAME time the march actually took — the quantum the law prices
     // in, read from the world clock and not from frames (AGENTS: calibrate in
     // ticks, never in real seconds).
@@ -2323,8 +2325,12 @@ bool run_macro_travel_sp_smoke(App& app) {
     // walker's load and training is a SECOND copy of production logic
     // (AGENTS §8 п.5), and this one was: it priced the ground at the sheet's
     // Travel rank while the burn priced it at the cached one. They happen to
-    // agree, and «happen to» is not a witness.
-    const sm::ecs::MacroNpcRuntime* prt = player_march_cache(app);
+    // agree, and «happen to» is not a witness. The caches live on the FLAG —
+    // the record the hourly settle reads (обёртка `player_march_cache` умерла
+    // M-488, гигиена: звал её только этот смоук).
+    const sm::MacroHandle walkerH = sm::player_flag_handle(app.session);
+    const sm::ecs::MacroNpcRuntime* prt = app.macroStore->valid(walkerH)
+        ? &app.macroStore->runtime[walkerH.slot] : nullptr;
     const float burden = prt
         ? sm::overload_burden_from_capacity(
               sm::carry_capacity_g(*prt, player_bag(app)),
@@ -2370,7 +2376,7 @@ bool run_macro_travel_sp_smoke(App& app) {
                  double(hours), double(accounted),
                  double(floorBurn), double(ceilBurn),
                  double(cheapest), double(dearest),
-                 double(carryBefore), double(player_sp_carry(app)));
+                 double(carryBefore), double(player_pools(app).spCarry));
     std::fflush(stderr);
 
     // One condition, one message — so a failure says WHICH law broke.
@@ -2737,6 +2743,228 @@ bool run_rest_sp_smoke(App& app) {
         smoke_fail(app, "rest_sp invariant");
         return false;
     }
+    return true;
+}
+
+// ── ОТДЫХ ИГРОКА — ФАКТ ХОДА, А НЕ НАМЕРЕНИЕ (M-488, гигиена) ────────────
+// ЗАКОН (вердикт владельца 2026-11-12, AGENTS §5 п.14): «не двигается не
+// жжот» — отдыхает тело, чьи ноги до расчёта часа не проехали ни кванта, и
+// у игрока это тот же флаг хода `kMarchAdvanced`, что у ритма сквада. Три
+// фазы, и каждая строит своё предусловие сама (§8 п.11):
+//   1. СТОИТ С ПРОЛОЖЕННЫМ ПУТЁМ — маршрут есть, ввода нет, ноги не зовутся:
+//      тело обязано лечиться (по НАМЕРЕНИЮ оно «шло» бы и не лечилось);
+//   2. ИДЁТ — тот же путь с вводом: марш не лечит HP;
+//   3. ВСТАЛ РОВНО В ЦЕНТРЕ КЛЕТКИ — путь сброшен, доля дома, ноги больше
+//      не зовутся: флаг последнего шага не смеет пережить час, который его
+//      прочёл (иначе вставший жёг бы планку вечно).
+// Меряется HP: «марш не лечит» живёт на HP/MP, а SP регенерирует всегда.
+// Потолки листа сведены к единице выносливости и воли — тем же приёмом, что
+// у `macro_recovery`, — чтобы минуты отдыха покупали ЦЕЛЫЕ очки.
+bool run_macro_rest_fact_smoke(App& app) {
+    if (!smoke_boot_invariants_hold(app)) {
+        smoke_fail(app, "macro_rest_fact boot invariants");
+        return false;
+    }
+    if (app.subworld.active()) {
+        smoke_fail(app, "macro_rest_fact while subworld active");
+        return false;
+    }
+    smoke_clear_modal_overlays(app);
+    const sm::MacroHandle fh = sm::player_flag_handle(app.session);
+    if (!app.macroStore->valid(fh)) {
+        smoke_fail(app, "macro_rest_fact has no player flag squad");
+        return false;
+    }
+    sm::PathResult path;
+    if (!smoke_find_macro_travel_path(app, path)) {
+        smoke_fail(app, "macro_rest_fact found no path");
+        return false;
+    }
+    sm::edit_squad_sheet(*app.macroStore, fh, [](sm::CharacterSheet& s) {
+        s.attributes[sm::AttributeId::End] = 1;
+        s.attributes[sm::AttributeId::Wil] = 1;
+    });
+    // Ссылку на полосы через тик не держим (урок rest_sp) — берём заново.
+    const auto wound = [&app] {
+        sm::ecs::Pools& p = player_pools(app);
+        p.hp = 1;
+        p.sp = p.maxSp / 2;
+        p.hpCarry = p.mpCarry = p.spCarry = 0.0f;
+    };
+    // Прожить N игровых минут оборотами главного цикла. Модалка мира стоит
+    // мир — она гасится, судится отдых, а не события.
+    const auto live_minutes = [&app](int minutes, bool input) {
+        int lived = 0, turns = 0;
+        while (lived < minutes && turns < 8192) {
+            if (world_paused(app)) smoke_clear_modal_overlays(app);
+            lived += advance_sim_steps(app, 1, input).timeTick.minutesAdvanced;
+            ++turns;
+        }
+        return lived;
+    };
+    constexpr int kRestMinutes = 12;
+    constexpr int kWalkMinutes = 6;
+
+    // ФАЗА 1 — путь проложен, ноги не зовутся.
+    wound();
+    app.cursor.path.assign(path.path.begin(), path.path.end());
+    app.cursor.pathIdx = 1;
+    const std::uint32_t cellBefore = app.macroStore->cell[fh.slot].idx;
+    const int lived1 = live_minutes(kRestMinutes, /*input=*/false);
+    const bool stoodWithRoute = app.macroStore->cell[fh.slot].idx == cellBefore
+                             && !app.cursor.path.empty();
+    const int hpStand = player_pools(app).hp;
+
+    // ФАЗА 2 — тот же путь, ввод включён: ноги идут.
+    wound();
+    const sm::ecs::CellSub subBefore = app.macroStore->runtime[fh.slot].sub;
+    const int lived2 = live_minutes(kWalkMinutes, /*input=*/true);
+    const sm::ecs::CellSub subAfter = app.macroStore->runtime[fh.slot].sub;
+    const bool walked = app.macroStore->cell[fh.slot].idx != cellBefore
+                     || subAfter.x != subBefore.x || subAfter.y != subBefore.y;
+    const bool stillRouted = !app.cursor.path.empty();
+    const int hpWalk = player_pools(app).hp;
+
+    // ФАЗА 3 — встал ровно в центре: путь сброшен, доля дома, ввод включён,
+    // и гейт ног сам не зовёт марш (идти некуда, доезжать нечего).
+    app.cursor.path.clear();
+    app.cursor.pathIdx = 0;
+    app.macroStore->runtime[fh.slot].sub = sm::ecs::CellSub{};
+    wound();
+    const int lived3 = live_minutes(kRestMinutes, /*input=*/true);
+    const int hpStop = player_pools(app).hp;
+
+    std::fprintf(stderr,
+                 "[smoke] macro_rest_fact lived=%d/%d/%d stood_with_route=%d "
+                 "walked=%d still_routed=%d hp_stand=%d hp_walk=%d "
+                 "hp_stop=%d maxHp=%d\n",
+                 lived1, lived2, lived3, stoodWithRoute ? 1 : 0,
+                 walked ? 1 : 0, stillRouted ? 1 : 0, hpStand, hpWalk,
+                 hpStop, player_pools(app).maxHp);
+    std::fflush(stderr);
+
+    if (lived1 < kRestMinutes || lived2 < kWalkMinutes
+        || lived3 < kRestMinutes) {
+        smoke_fail(app, "macro_rest_fact could not live its minutes: the "
+                        "world stayed paused");
+        return false;
+    }
+    if (!stoodWithRoute || !walked || !stillRouted) {
+        smoke_fail(app, "macro_rest_fact precondition: phase 1 must stand "
+                        "with a route, phase 2 must walk without finishing it");
+        return false;
+    }
+    SMOKE_CHECK(app, hpStand > 1,
+                "standing with a laid route RESTS: rest is the fact of no "
+                "step, not an empty route");
+    SMOKE_CHECK(app, hpWalk == 1,
+                "a body whose legs rode quanta does not heal: the march does "
+                "not mend HP");
+    SMOKE_CHECK(app, hpStop > 1,
+                "a body stopped dead-centre rests: the last step's flag dies "
+                "with the hour that read it");
+    return true;
+}
+
+// ── «СТОЮ В ПОСЕЛЕНИИ» — РАДИУС В КЛЕТКАХ ПУТИ (M-488, гигиена) ───────────
+// ЗАКОН АДРЕСА п.6: близость к поселению меряется ОДНОЙ метрикой пути
+// (`cell_dist@src/core/torus.h`: прямой шаг 2, диагональ 3), радиус
+// авторится В КЛЕТКАХ ПУТИ — место на пути в R клеток СЧИТАЕТСЯ, на шаг
+// дальше (R прямых и одна диагональ, R+1 прямых) — НЕТ; из нескольких
+// побеждает БЛИЖАЙШЕЕ. Свидетель ставит флажок игрока смещениями от
+// поселения S и спрашивает дверь `settlement_at_player`. S — САМОЕ ОДИНОКОЕ
+// поселение мира, чтобы за него не ответили соседи, а утверждения сказаны
+// так, что сосед их не ломает: внутри — найдено место не дальше S; снаружи —
+// не S, и найденное лежит в радиусе. R перебирается (2, 3, 4): закон про
+// любой радиус, числа игры здесь нет.
+bool run_settlement_radius_smoke(App& app) {
+    if (!smoke_boot_invariants_hold(app)) {
+        smoke_fail(app, "settlement_radius boot invariants");
+        return false;
+    }
+    if (app.subworld.active()) {
+        smoke_fail(app, "settlement_radius while subworld active");
+        return false;
+    }
+    sm::MacroStore& st = *app.macroStore;
+    const int side = app.gs.mapW;
+    const sm::MacroHandle fh = sm::player_flag_handle(app.session);
+    if (!st.valid(fh)) {
+        smoke_fail(app, "settlement_radius has no player flag squad");
+        return false;
+    }
+    std::vector<std::uint16_t> towns;
+    sm::for_each_rooted(st, [&](std::uint16_t s) {
+        if (sm::rooted_is_settlement(sm::SquadType(st.runtime[s].squadType)))
+            towns.push_back(s);
+    });
+    if (towns.empty()) {
+        smoke_fail(app, "settlement_radius: the world was obliged to birth "
+                        "settlements and has none");
+        return false;
+    }
+    std::uint16_t lone = towns[0];
+    int loneGap = -1;
+    for (const std::uint16_t a : towns) {
+        int gap = 1 << 30;
+        for (const std::uint16_t b : towns) {
+            if (a == b) continue;
+            gap = std::min(gap, sm::cell_dist(st.cell[a].idx, st.cell[b].idx,
+                                              side));
+        }
+        if (gap > loneGap) { loneGap = gap; lone = a; }
+    }
+    const std::uint32_t home = st.cell[fh.slot].idx;
+    const std::uint32_t sCell = st.cell[lone].idx;
+    const int sId = int(st.spawnId[lone].index);
+    const auto cell_of_town = [&st](int id) {
+        const sm::MacroHandle h =
+            sm::rooted_handle_by_ordinal(st, std::uint32_t(id));
+        return st.valid(h) ? st.cell[h.slot].idx : sm::kNoCell;
+    };
+    struct Offset { int dx, dy; bool inside; };
+    int asked = 0, wrongIn = 0, wrongOut = 0;
+    for (int r = 2; r <= 4; ++r) {
+        const int k = (2 * r) / 3;   // самая длинная диагональ внутри радиуса
+        const Offset offsets[] = {
+            { r, 0, true}, {0, -r, true}, {k, k, true}, {-k, k, true},
+            { r, 1, false}, {-(r + 1), 0, false}, {k + 1, -(k + 1), false},
+        };
+        for (const Offset& o : offsets) {
+            const std::uint32_t at = sm::cell_step(sCell, o.dx, o.dy, side);
+            st.cell[fh.slot].idx = at;
+            const int found = settlement_at_player(
+                app.gs, app.session, st, app.npcAi.squadIndex, r);
+            ++asked;
+            const std::uint32_t fc = found != 0 ? cell_of_town(found)
+                                                : sm::kNoCell;
+            if (o.inside) {
+                if (found == 0 || fc == sm::kNoCell
+                    || sm::cell_dist(at, fc, side)
+                           > sm::cell_dist(at, sCell, side))
+                    ++wrongIn;
+            } else {
+                if (found == sId
+                    || (found != 0
+                        && (fc == sm::kNoCell
+                            || !sm::cell_within(at, fc, r, side))))
+                    ++wrongOut;
+            }
+        }
+    }
+    st.cell[fh.slot].idx = home;
+
+    std::fprintf(stderr,
+                 "[smoke] settlement_radius towns=%zu lone_gap=%d asked=%d "
+                 "wrong_in=%d wrong_out=%d\n",
+                 towns.size(), loneGap, asked, wrongIn, wrongOut);
+    std::fflush(stderr);
+    SMOKE_CHECK(app, asked > 0 && wrongIn == 0,
+                "a settlement R path-cells away is the place the player "
+                "stands in (or a nearer one is)");
+    SMOKE_CHECK(app, asked > 0 && wrongOut == 0,
+                "a settlement one step past R path-cells is NOT the place the "
+                "player stands in");
     return true;
 }
 
@@ -11018,6 +11246,16 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=rest_sp\n");
             std::fflush(stderr);
             if (run_rest_sp_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::MacroRestFact:
+            std::fprintf(stderr, "[smoke] action=macro_rest_fact\n");
+            std::fflush(stderr);
+            if (run_macro_rest_fact_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::SettlementRadius:
+            std::fprintf(stderr, "[smoke] action=settlement_radius\n");
+            std::fflush(stderr);
+            if (run_settlement_radius_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::TimeAdvanceBurst:
             std::fprintf(stderr, "[smoke] action=timeadvance_burst\n");

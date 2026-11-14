@@ -39,8 +39,8 @@ namespace {
 // neutral, because its slot does not exist — the same fail-closed answer the
 // map form gave for a missing key.
 int relation(const sm::GameState& gs, const char* a, const char* b) {
-    return sm::relation_of(gs.factions, sm::faction_slot(gs.factions, a),
-                           sm::faction_slot(gs.factions, b));
+    return sm::relation_of(gs.factions, sm::faction_index(a),
+                           sm::faction_index(b));
 }
 
 bool hostile(const sm::GameState& gs, const char* a, const char* b) {
@@ -121,7 +121,8 @@ void check_one_seed(std::uint32_t seed) {
     int slots = 0, displaced = 0;
     for (int i = 0; i < kFactionCount; ++i) {
         ++slots;
-        if (faction_slot(gs.factions, kFactionDefs[i].id) != i) ++displaced;
+        if (std::strcmp(gs.factions.rows[i].id, kFactionDefs[i].id) != 0)
+            ++displaced;
     }
     CHECK(slots == kFactionCount, "every faction was looked up in the matrix");
     CHECK(displaced == 0,

@@ -44,9 +44,9 @@ void test_moons() {
         int samples = 0, outOfRange = 0, notPeriodic = 0;
         for (int day : {1, 2, 7, 14, 28, 100, 365}) {
             ++samples;
-            const float p = moon_phase01(m, day);
+            const float p = moon_phase01f(m, float(day));
             if (!(p >= 0.0f && p < 1.0f)) ++outOfRange;
-            if (std::fabs(p - moon_phase01(m, day + d.cyclePeriodDays)) > 1e-6f)
+            if (std::fabs(p - moon_phase01f(m, float(day + d.cyclePeriodDays))) > 1e-6f)
                 ++notPeriodic;
         }
         CHECK(samples > 0 && outOfRange == 0,
@@ -59,30 +59,27 @@ void test_moons() {
         // fail on NaN. Walking the days forward and then backward catches what
         // that could not — hidden state that remembers the previous query.
         std::vector<float> forward;
-        for (int day = 1; day <= 40; ++day) forward.push_back(moon_phase01(m, day));
+        for (int day = 1; day <= 40; ++day) forward.push_back(moon_phase01f(m, float(day)));
         int drifted = 0;
         for (int day = 40; day >= 1; --day) {
-            if (forward[std::size_t(day - 1)] != moon_phase01(m, day)) ++drifted;
+            if (forward[std::size_t(day - 1)] != moon_phase01f(m, float(day))) ++drifted;
         }
         CHECK(forward.size() == 40u && drifted == 0,
               "the phase of a day does not depend on which days were asked before");
 
         // Non-positive days must still resolve (callers never guard).
-        CHECK(in01(moon_illumination01(m, 0))
-                  && in01(moon_illumination01(m, -1))
-                  && in01(moon_illumination01(m, 1 - 5 * d.cyclePeriodDays)),
+        CHECK(in01(moon_illumination01f(m, 0.0f))
+                  && in01(moon_illumination01f(m, -1.0f))
+                  && in01(moon_illumination01f(m, float(1 - 5 * d.cyclePeriodDays))),
               "days at or before zero still yield a valid illumination");
 
         // Day (1 - phaseOffsetDays) has t == 0 -> phase 0 -> new moon.
         const int newDay = 1 - d.phaseOffsetDays;
         const int fullDay = newDay + d.cyclePeriodDays / 2;
-        CHECK(moon_illumination01(m, newDay) <= 1e-4f,
+        CHECK(moon_illumination01f(m, float(newDay)) <= 1e-4f,
               "the new moon is dark");
-        CHECK(moon_illumination01(m, fullDay) >= 0.95f,
+        CHECK(moon_illumination01f(m, float(fullDay)) >= 0.95f,
               "half a cycle later the same moon is full");
-        CHECK(moon_is_waxing(m, newDay + 1)
-                  == (moon_phase01(m, newDay + 1) < 0.5f),
-              "waxing means the first half of the cycle, and nothing else");
     }
 }
 
@@ -95,8 +92,8 @@ void test_moons_desync() {
     bool differ = false;
     for (int day = 1; day <= 400 && !differ; ++day) {
         ++days;
-        if (std::fabs(moon_illumination01(MoonId::Pale, day)
-                      - moon_illumination01(MoonId::Crimson, day)) > 0.25f)
+        if (std::fabs(moon_illumination01f(MoonId::Pale, float(day))
+                      - moon_illumination01f(MoonId::Crimson, float(day))) > 0.25f)
             differ = true;
     }
     CHECK(days > 0 && differ,
@@ -108,19 +105,6 @@ void test_moons_desync() {
 // EMERGE from the math — they are no longer pinned by a -sunDir hardcode.
 void test_moon_orbits() {
     using namespace sm;
-
-    // Whole-day phase must be the float formula sampled at the integer — one
-    // master formula, the delegation can never drift.
-    int mismatches = 0, samples = 0;
-    for (int mi = 0; mi < int(MoonId::Count); ++mi) {
-        for (int day : {-3, 0, 1, 14, 141, 365}) {
-            ++samples;
-            if (moon_phase01(MoonId(mi), day)
-                != moon_phase01f(MoonId(mi), float(day))) ++mismatches;
-        }
-    }
-    CHECK(samples > 0 && mismatches == 0,
-          "whole-day phase IS the continuous phase sampled at the integer");
 
     int notUnit = 0, poses = 0;
     for (int mi = 0; mi < int(MoonId::Count); ++mi) {

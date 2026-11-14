@@ -85,12 +85,10 @@ inline void claim_registry_rows(FactionState& f) {
     }
 }
 
-// Слот по id: только реестр (рантайм-имена уничтожены вердиктом).
-inline FactionSlot faction_slot(const FactionState&, const char* id) {
-    if (!id || id[0] == '\0') return kNoFactionSlot;
-    const int reg = faction_index(id);
-    return reg >= 0 ? reg : kNoFactionSlot;
-}
+// (Слот по id — `faction_slot` — жил здесь и умер M-488, гигиена: он был
+//  вторым именем `faction_index@src/tables/faction.h` (рантайм-имена
+//  уничтожены вердиктом, слот фракции есть её ординал реестра), и звонящих
+//  в игре у него не было.)
 
 // Отношение по слотам — горячая форма: два чтения массива, ноль строк.
 inline int relation_of(const FactionState& f, FactionSlot a, FactionSlot b) {
